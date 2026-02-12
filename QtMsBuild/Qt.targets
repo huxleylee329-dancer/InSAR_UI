@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <QtIntDir>$(IntDir)</QtIntDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(QtIntDir);$(QtIncludeDir);$(QtIncludeDir)\QtCore;$(QtIncludeDir)\QtGui;$(QtIncludeDir)\QtWidgets;$(QtIncludeDir)\QtCharts;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <Target Name="QtUic" BeforeTargets="QtMoc">
+    <Exec Command="&quot;$(QtUicDir)\uic.exe&quot; &quot;%(QtUic.FullPath)&quot; -o &quot;$(QtIntDir)ui_%(Filename).h&quot;" Condition="'%(QtUic.FullPath)' != ''"/>
+  </Target>
+
+  <Target Name="QtRcc" BeforeTargets="QtMoc">
+    <Exec Command="&quot;$(QtRccDir)\rcc.exe&quot; &quot;%(QtRcc.FullPath)&quot; -o &quot;$(QtIntDir)qrc_%(Filename).cpp&quot;" Condition="'%(QtRcc.FullPath)' != ''"/>
+    <ItemGroup>
+      <ClCompile Include="$(QtIntDir)qrc_%(QtRcc.Filename).cpp" Condition="'%(QtRcc.FullPath)' != ''"/>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="QtMoc" BeforeTargets="ClCompile">
+    <Exec Command="&quot;$(QtMocDir)\moc.exe&quot; &quot;%(QtMoc.FullPath)&quot; -o &quot;$(QtIntDir)moc_%(Filename).cpp&quot;" Condition="'%(QtMoc.FullPath)' != ''"/>
+    <ItemGroup>
+      <ClCompile Include="$(QtIntDir)moc_%(QtMoc.Filename).cpp" Condition="'%(QtMoc.FullPath)' != ''"/>
+    </ItemGroup>
+  </Target>
+</Project>

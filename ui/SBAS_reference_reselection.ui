@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SBAS_reference_reselection</class>
+ <widget class="QWidget" name="SBAS_reference_reselection">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>358</width>
+    <height>215</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>SBAS参考点重选</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="../QtWidgetsApplication3.qrc">
+    <normaloff>:/QtWidgetsApplication3/bin/icon/InSARapp.ico</normaloff>:/QtWidgetsApplication3/bin/icon/InSARapp.ico</iconset>
+  </property>
+  <layout class="QGridLayout" name="gridLayout_3">
+   <item row="1" column="1">
+    <widget class="QComboBox" name="comboBox_srcNode"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_2">
+     <property name="text">
+      <string>选择图像源</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QComboBox" name="comboBox_project"/>
+   </item>
+   <item row="2" column="0" colspan="2">
+    <widget class="QPushButton" name="reselection">
+     <property name="text">
+      <string>参考点重选</string>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="0">
+    <widget class="QLabel" name="label">
+     <property name="text">
+      <string>选择工程</string>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="0">
+    <widget class="QProgressBar" name="progressBar">
+     <property name="value">
+      <number>24</number>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources>
+  <include location="../QtWidgetsApplication3.qrc"/>
+ </resources>
+ <connections/>
+</ui>

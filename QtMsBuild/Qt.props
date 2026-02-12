@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <QtInstall Condition="'$(QtInstall)' == ''">5.15.2_msvc2019_64</QtInstall>
+    <QtInstallDir Condition="'$(QtInstallDir)' == ''">D:\Qt\5.15.2\msvc2019_64</QtInstallDir>
+    <QtBinDir Condition="'$(QtBinDir)' == ''">$(QtInstallDir)\bin</QtBinDir>
+    <QtLibDir Condition="'$(QtLibDir)' == ''">$(QtInstallDir)\lib</QtLibDir>
+    <QtIncludeDir Condition="'$(QtIncludeDir)' == ''">$(QtInstallDir)\include</QtIncludeDir>
+    <QtMocDir Condition="'$(QtMocDir)' == ''">$(QtInstallDir)\bin</QtMocDir>
+    <QtUicDir Condition="'$(QtUicDir)' == ''">$(QtInstallDir)\bin</QtUicDir>
+    <QtRccDir Condition="'$(QtRccDir)' == ''">$(QtInstallDir)\bin</QtRccDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(IntDir);$(QtIncludeDir);$(QtIncludeDir)\QtCore;$(QtIncludeDir)\QtGui;$(QtIncludeDir)\QtWidgets;$(QtIncludeDir)\QtCharts;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>QT_NODES_SHARED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(QtLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

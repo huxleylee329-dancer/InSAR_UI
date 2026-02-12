@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>967</width>
+    <height>730</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QSplitter" name="splitter_2">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+      <widget class="QSplitter" name="splitter">
+       <property name="orientation">
+        <enum>Qt::Vertical</enum>
+       </property>
+       <widget class="TreeView" name="treeView">
+        <property name="minimumSize">
+         <size>
+          <width>500</width>
+          <height>300</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>800</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <property name="expandsOnDoubleClick">
+         <bool>true</bool>
+        </property>
+        <attribute name="headerVisible">
+         <bool>true</bool>
+        </attribute>
+       </widget>
+       <widget class="TreeView" name="tool">
+        <property name="minimumSize">
+         <size>
+          <width>300</width>
+          <height>300</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>700</width>
+          <height>16777215</height>
+         </size>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QTabWidget" name="tabWidget">
+       <property name="currentIndex">
+        <number>-1</number>
+       </property>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>967</width>
+     <height>26</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="File">
+    <property name="styleSheet">
+     <string notr="true"/>
+    </property>
+    <property name="title">
+     <string>文件</string>
+    </property>
+    <addaction name="actionNew"/>
+    <addaction name="actionOpen"/>
+    <addaction name="actionRecent"/>
+    <addaction name="actionSave"/>
+    <addaction name="actionSave_as"/>
+    <addaction name="actionSave_all"/>
+    <addaction name="actionQuit"/>
+   </widget>
+   <widget class="QMenu" name="Edit">
+    <property name="title">
+     <string>编辑</string>
+    </property>
+   </widget>
+   <widget class="QMenu" name="View">
+    <property name="title">
+     <string>视图</string>
+    </property>
+    <addaction name="actionNodeEditor"/>
+   </widget>
+   <widget class="QMenu" name="Setteing">
+    <property name="title">
+     <string>设置</string>
+    </property>
+   </widget>
+   <widget class="QMenu" name="Process">
+    <property name="title">
+     <string>工具</string>
+    </property>
+    <widget class="QMenu" name="menuImport">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="title">
+      <string>import</string>
+     </property>
+     <property name="icon">
+      <iconset resource="../QtWidgetsApplication3.qrc">
+       <normaloff>:/QtWidgetsApplication3/bin/icon/import.png</normaloff>:/QtWidgetsApplication3/bin/icon/import.png</iconset>
+     </property>
+     <addaction name="actionTSX"/>
+     <addaction name="actionSentinel_1"/>
+     <addaction name="actionCOSMOS_SkyMed"/>
+     <addaction name="actionALOS_2"/>
+    </widget>
+    <widget class="QMenu" name="menuSentinel1_Tool">
+     <property name="title">
+      <string>Sentinel1 Tools</string>
+     </property>
+     <addaction name="actionS1_Deburst"/>
+     <addaction name="actionS1_TOPS_BackGeocoding"/>
+     <addaction name="actionS1_frame_merge"/>
+     <addaction name="actionS1_swath_merge"/>
+    </widget>
+    <addaction name="menuImport"/>
+    <addaction name="actionCut"/>
+    <addaction name="actionRegistration"/>
+    <addaction name="actiongeocode"/>
+    <addaction name="menuSentinel1_Tool"/>
+   </widget>
+   <widget class="QMenu" name="Help">
+    <property name="title">
+     <string>帮助</string>
+    </property>
+   </widget>
+   <widget class="QMenu" name="menuInSAR">
+    <property name="title">
+     <string>InSAR</string>
+    </property>
+    <addaction name="actionBaseline_Preview"/>
+    <addaction name="actionInterferometric_Formation"/>
+    <addaction name="actionDenoise"/>
+    <addaction name="actionUnwrap"/>
+    <addaction name="actionDEM"/>
+   </widget>
+   <widget class="QMenu" name="menuDInSAR">
+    <property name="title">
+     <string>DInSAR</string>
+    </property>
+    <widget class="QMenu" name="menuSBAS">
+     <property name="title">
+      <string>SBAS</string>
+     </property>
+     <property name="icon">
+      <iconset resource="../QtWidgetsApplication3.qrc">
+       <normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</iconset>
+     </property>
+     <addaction name="actionBaseline_Formation"/>
+     <addaction name="actionSBAS_deformation"/>
+     <addaction name="actionreference_re_selection"/>
+     <addaction name="actionDeformation_Preview"/>
+     <addaction name="actionExport_KML"/>
+    </widget>
+    <addaction name="actionSLC_deramp"/>
+    <addaction name="menuSBAS"/>
+   </widget>
+   <widget class="QMenu" name="menuSAR">
+    <property name="title">
+     <string>SAR</string>
+    </property>
+   </widget>
+   <addaction name="File"/>
+   <addaction name="Edit"/>
+   <addaction name="View"/>
+   <addaction name="Setteing"/>
+   <addaction name="Process"/>
+   <addaction name="Help"/>
+   <addaction name="menuSAR"/>
+   <addaction name="menuInSAR"/>
+   <addaction name="menuDInSAR"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionNew">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/new_project.png</normaloff>:/QtWidgetsApplication3/bin/icon/new_project.png</iconset>
+   </property>
+   <property name="text">
+    <string>新建工程</string>
+   </property>
+  </action>
+  <action name="actionOpen">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/open_project.png</normaloff>:/QtWidgetsApplication3/bin/icon/open_project.png</iconset>
+   </property>
+   <property name="text">
+    <string>打开工程</string>
+   </property>
+  </action>
+  <action name="actionRecent">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/recen_open.png</normaloff>:/QtWidgetsApplication3/bin/icon/recen_open.png</iconset>
+   </property>
+   <property name="text">
+    <string>最近打开</string>
+   </property>
+  </action>
+  <action name="actionSave">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/save.png</normaloff>:/QtWidgetsApplication3/bin/icon/save.png</iconset>
+   </property>
+   <property name="text">
+    <string>保存工程</string>
+   </property>
+  </action>
+  <action name="actionSave_as">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/saveas.png</normaloff>:/QtWidgetsApplication3/bin/icon/saveas.png</iconset>
+   </property>
+   <property name="text">
+    <string>另存为</string>
+   </property>
+  </action>
+  <action name="actionSave_all">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/saveall.png</normaloff>:/QtWidgetsApplication3/bin/icon/saveall.png</iconset>
+   </property>
+   <property name="text">
+    <string>全部保存</string>
+   </property>
+  </action>
+  <action name="actionClose">
+   <property name="icon">
+    <iconset>
+     <normaloff>../bin/icon/close.png</normaloff>../bin/icon/close.png</iconset>
+   </property>
+   <property name="text">
+    <string>关闭</string>
+   </property>
+  </action>
+  <action name="actionQuit">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/quit.png</normaloff>:/QtWidgetsApplication3/bin/icon/quit.png</iconset>
+   </property>
+   <property name="text">
+    <string>退出</string>
+   </property>
+  </action>
+  <action name="actionRegistration">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</iconset>
+   </property>
+   <property name="text">
+    <string>coregistration</string>
+   </property>
+  </action>
+  <action name="actionInterferometric_Formation">
+   <property name="text">
+    <string>Interferometric Formation</string>
+   </property>
+  </action>
+  <action name="actionDenoise">
+   <property name="text">
+    <string>Denoise</string>
+   </property>
+  </action>
+  <action name="actionUnwrap">
+   <property name="text">
+    <string>Unwrap</string>
+   </property>
+  </action>
+  <action name="actionDEM">
+   <property name="text">
+    <string>DEM</string>
+   </property>
+  </action>
+  <action name="actionCut">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/cut.png</normaloff>:/QtWidgetsApplication3/bin/icon/cut.png</iconset>
+   </property>
+   <property name="text">
+    <string>AOI</string>
+   </property>
+  </action>
+  <action name="actionTSX">
+   <property name="text">
+    <string>TSX</string>
+   </property>
+  </action>
+  <action name="actionSentinel_1">
+   <property name="text">
+    <string>Sentinel-1</string>
+   </property>
+  </action>
+  <action name="actionBaseline_Preview">
+   <property name="text">
+    <string>Baseline Preview</string>
+   </property>
+  </action>
+  <action name="actionS1_TOPS_BackGeocoding">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</iconset>
+   </property>
+   <property name="text">
+    <string>S1 TOPS BackGeocoding</string>
+   </property>
+  </action>
+  <action name="actionS1_Deburst">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/splice.png</normaloff>:/QtWidgetsApplication3/bin/icon/splice.png</iconset>
+   </property>
+   <property name="text">
+    <string>S1 Deburst</string>
+   </property>
+  </action>
+  <action name="actionSLC_deramp">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/dem.png</normaloff>:/QtWidgetsApplication3/bin/icon/dem.png</iconset>
+   </property>
+   <property name="text">
+    <string>SLC_deramp</string>
+   </property>
+  </action>
+  <action name="actionBaseline_Formation">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</iconset>
+   </property>
+   <property name="text">
+    <string>Baseline Formation</string>
+   </property>
+  </action>
+  <action name="actionSBAS_deformation">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/time_series.png</normaloff>:/QtWidgetsApplication3/bin/icon/time_series.png</iconset>
+   </property>
+   <property name="text">
+    <string>Time-Series Analysis</string>
+   </property>
+  </action>
+  <action name="actionDeformation_Preview">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/view.png</normaloff>:/QtWidgetsApplication3/bin/icon/view.png</iconset>
+   </property>
+   <property name="text">
+    <string>Time Series View</string>
+   </property>
+  </action>
+  <action name="actionreference_re_selection">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/reference.png</normaloff>:/QtWidgetsApplication3/bin/icon/reference.png</iconset>
+   </property>
+   <property name="text">
+    <string>reference re-selection</string>
+   </property>
+  </action>
+  <action name="actionExport_KML">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/GoogleEarth.png</normaloff>:/QtWidgetsApplication3/bin/icon/GoogleEarth.png</iconset>
+   </property>
+   <property name="text">
+    <string>export as kml</string>
+   </property>
+  </action>
+  <action name="actiongeocode">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/geocoding.png</normaloff>:/QtWidgetsApplication3/bin/icon/geocoding.png</iconset>
+   </property>
+   <property name="text">
+    <string>Geocoding</string>
+   </property>
+  </action>
+  <action name="actionS1_frame_merge">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/frame_merge.png</normaloff>:/QtWidgetsApplication3/bin/icon/frame_merge.png</iconset>
+   </property>
+   <property name="text">
+    <string>S1 frame merge</string>
+   </property>
+  </action>
+  <action name="actionS1_swath_merge">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/bin/icon/swath_merge.png</normaloff>:/QtWidgetsApplication3/bin/icon/swath_merge.png</iconset>
+   </property>
+   <property name="text">
+    <string>S1 swath merge</string>
+   </property>
+  </action>
+  <action name="actionCOSMOS_SkyMed">
+   <property name="text">
+    <string>CSG-2</string>
+   </property>
+  </action>
+  <action name="actionALOS_2">
+   <property name="text">
+    <string>ALOS-2</string>
+   </property>
+  </action>
+  <action name="actionNodeEditor">
+   <property name="text">
+    <string>节点编辑器</string>
+   </property>
+  </action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TreeView</class>
+   <extends>QTreeView</extends>
+   <header>treeview.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources>
+  <include location="../QtWidgetsApplication3.qrc"/>
+ </resources>
+ <connections/>
+</ui>

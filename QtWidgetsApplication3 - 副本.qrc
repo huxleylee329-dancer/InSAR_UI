@@ -1,0 +1,44 @@
+<RCC>
+    <qresource prefix="/QtWidgetsApplication3">
+        <file>bin/icon/InSARapp.ico</file>
+        <file>bin/icon/new_project.png</file>
+        <file>bin/icon/open_project.png</file>
+        <file>bin/icon/recen_open.png</file>
+        <file>bin/icon/save.png</file>
+        <file>bin/icon/saveall.png</file>
+        <file>bin/icon/saveas.png</file>
+        <file>bin/icon/quit.png</file>
+        <file>bin/icon/folder.png</file>
+        <file>bin/icon/project.png</file>
+        <file>bin/icon/open_project2.png</file>
+        <file>bin/icon/new_project2.png</file>
+        <file>bin/icon/quit2.png</file>
+        <file>bin/icon/save1.png</file>
+        <file>bin/icon/saveas2.png</file>
+        <file>bin/icon/imagedata.png</file>
+        <file>bin/icon/project1.png</file>
+        <file>bin/icon/toolbox.png</file>
+        <file>bin/icon/tool.png</file>
+        <file>bin/icon/export.png</file>
+        <file>bin/icon/cut.png</file>
+        <file>bin/icon/import.png</file>
+        <file>bin/icon/coregistration.png</file>
+        <file>bin/icon/splice.png</file>
+        <file>bin/icon/dem.png</file>
+        <file>bin/icon/baseline_formation.png</file>
+        <file>bin/icon/time_series.png</file>
+        <file>bin/icon/hand.png</file>
+        <file>bin/icon/zoom.png</file>
+        <file>bin/icon/cursor_down.png</file>
+        <file>bin/icon/cursor_up.png</file>
+        <file>bin/icon/mark.png</file>
+        <file>bin/icon/view.png</file>
+        <file>bin/icon/reference.png</file>
+        <file>bin/icon/GCPs.png</file>
+        <file>bin/icon/delete.png</file>
+        <file>bin/icon/GoogleEarth.png</file>
+        <file>bin/icon/geocoding.png</file>
+        <file>bin/icon/frame_merge.png</file>
+        <file>bin/icon/swath_merge.png</file>
+    </qresource>
+</RCC>
