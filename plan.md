@@ -2,47 +2,78 @@
 
 本计划用于实现 SatExplorer 项目中的基于节点的可视化流程编辑器功能。
 
+**注意：** QtNodes 库必须使用静态链接方式集成，动态链接会导致运行时错误。
+
+## 进度总结
+
+- [x] 阶段 1: QtNodes 库集成 - 已完成（2024）
+- [x] 阶段 2: 基础架构搭建 - 已完成（2024）
+
+### 已完成的工作
+
+1. QtNodes 库已通过静态链接方式成功集成
+2. 创建了节点编辑器窗口类 `NodeEditorWindow`
+3. 创建了自定义数据类型文件 `NodeDataTypes.h`
+4. 创建了节点模型注册表 `NodeModels.h/cpp`
+5. 在 MainWindow 中添加了节点编辑器入口（on_actionNodeEditor_triggered）
+
+### 已清理的测试代码
+
+- 移除了 `NodeEditorWindow.cpp` 中的调试输出和延时初始化代码
+- 移除了对 `TestNodeModels.h` 和 `SimpleTestNode.h` 的引用
+- 简化了 `NodeModels.cpp`，移除调试代码
+- 移除了未使用的头文件包含
+
+### 待清理的文件（可选）
+
+以下测试文件不再需要，可以删除：
+- `include/TestNodeModels.h`
+- `TestNodeModels.cpp`
+- `include/SimpleTestNode.h`
+
+---
+
 ## 阶段 1: QtNodes 库集成
 
 ### 1.1 构建或获取 QtNodes 库
-- [ ] 检查 `D:\SRC\nodeeditor` 是否已构建完成
-- [ ] 如未构建，执行 CMake 构建命令生成 QtNodes 库文件
-- [ ] 确认库文件位置（Debug: `QtNodes_d.lib`, Release: `QtNodes.lib`）
+- [x] 检查 `D:\SRC\nodeeditor` 是否已构建完成
+- [x] 如未构建，执行 CMake 构建命令生成 QtNodes 库文件
+- [x] 确认库文件位置（Debug: `QtNodes_d.lib`, Release: `QtNodes.lib`）
 
 ### 1.2 修改项目文件集成 QtNodes
-- [ ] 编辑 `QtWidgetsApplication3.vcxproj`
-- [ ] 添加 `D:\SRC\nodeeditor\include` 到 AdditionalIncludeDirectories
-- [ ] 添加 QtNodes 源文件到项目（或配置为库链接）
-- [ ] 添加 QtNodes 库目录和库名称到 Linker 配置
-- [ ] 确保 Qt 相关模块（core, gui, widgets）已配置
+- [x] 编辑 `QtWidgetsApplication3.vcxproj`
+- [x] 添加 `D:\SRC\nodeeditor\include` 到 AdditionalIncludeDirectories
+- [x] 添加 QtNodes 源文件到项目（或配置为库链接）
+- [x] 添加 QtNodes 库目录和库名称到 Linker 配置
+- [x] 确保 Qt 相关模块（core, gui, widgets）已配置
 
 ### 1.3 验证集成
-- [ ] 尝试编译项目，确认无编译错误
-- [ ] 添加简单的测试代码，确认 QtNodes 头文件可以正常引用
+- [x] 尝试编译项目，确认无编译错误
+- [x] 添加简单的测试代码，确认 QtNodes 头文件可以正常引用
 
 ## 阶段 2: 基础架构搭建
 
 ### 2.1 创建节点编辑器窗口类
-- [ ] 创建 `include\NodeEditorWindow.h`
-- [ ] 创建 `NodeEditorWindow.cpp`
-- [ ] 继承 QMainWindow，设计基本布局
-- [ ] 添加工具栏（新建、打开、保存、运行等按钮）
-- [ ] 添加 central widget 容器用于 GraphicsView
+- [x] 创建 `include\NodeEditorWindow.h`
+- [x] 创建 `NodeEditorWindow.cpp`
+- [x] 继承 QMainWindow，设计基本布局
+- [x] 添加工具栏（新建、打开、保存、运行等按钮）
+- [x] 添加 central widget 容器用于 GraphicsView
 
 ### 2.2 创建自定义数据类型文件
-- [ ] 创建 `include\NodeDataTypes.h`
-- [ ] 实现 `ImageData` 类（SAR 图像数据）
-- [ ] 实现 `MetadataData` 类（元数据）
-- [ ] 实现 `BaselineData` 类（基线数据）
-- [ ] 实现 `PairListData` 类（干涉对列表）
-- [ ] 实现 `TimeSeriesData` 类（时间序列数据）
-- [ ] 实现 `CoordinateMatrixData` 类（坐标变换矩阵）
+- [x] 创建 `include\NodeDataTypes.h`
+- [x] 实现 `ImageData` 类（SAR 图像数据）
+- [x] 实现 `MetadataData` 类（元数据）
+- [x] 实现 `BaselineData` 类（基线数据）
+- [x] 实现 `PairListData` 类（干涉对列表）
+- [x] 实现 `TimeSeriesData` 类（时间序列数据）
+- [x] 实现 `CoordinateMatrixData` 类（坐标变换矩阵）
 
 ### 2.3 创建节点模型基类和注册表
-- [ ] 创建 `include\NodeModels.h`
-- [ ] 创建 `NodeModels.cpp`
-- [ ] 定义 InSAR 节点注册表初始化函数
-- [ ] 实现 `createNodeRegistry()` 函数返回注册表
+- [x] 创建 `include\NodeModels.h`
+- [x] 创建 `NodeModels.cpp`
+- [x] 定义 InSAR 节点注册表初始化函数
+- [x] 实现 `createNodeRegistry()` 函数返回注册表
 
 ## 阶段 3: 数据导入节点实现
 

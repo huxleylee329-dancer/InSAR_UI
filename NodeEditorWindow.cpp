@@ -1,6 +1,5 @@
 #include "NodeEditorWindow.h"
 #include "NodeModels.h"
-#include "TestNodeModels.h"
 
 #include <QtNodes/DataFlowGraphicsScene>
 #include <QtNodes/GraphicsView>
@@ -18,12 +17,7 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QStatusBar>
-#include <QTimer>
-#include <QThread>
-#include <QDebug>
-#include <QLabel>
 #include <memory>
-#include <exception>
 
 NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -46,28 +40,10 @@ NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     setupToolbar();
     setupMenu();
 
-    // Initialize registry immediately
-    try {
-        m_registry = QtNodes::registerTestNodeModels();
-        qDebug() << "Registry created";
-    } catch (const std::exception& e) {
-        qCritical() << "Exception during registry creation:" << e.what();
-        return;
-    }
+    // Initialize node registry
+    m_registry = QtNodes::registerInSARNodeModels();
 
-    // Create a placeholder widget until scene is ready
-    auto *placeholder = new QLabel("Node Editor Initializing...", m_layout->widget());
-    placeholder->setAlignment(Qt::AlignCenter);
-    placeholder->setStyleSheet("font-size: 16px; color: #666;");
-    m_layout->addWidget(placeholder);
-
-    // Defer full scene creation
-    QTimer::singleShot(100, this, [this, placeholder]() {
-        qDebug() << "Attempting delayed scene creation (100ms)...";
-        setupSceneInternal();
-        placeholder->deleteLater();
-    });
-
+    setupSceneInternal();
     applyStyles();
 }
 
@@ -80,56 +56,20 @@ NodeEditorWindow::~NodeEditorWindow()
 
 void NodeEditorWindow::setupSceneInternal()
 {
-    qDebug() << "NodeEditorWindow::setupSceneInternal() called";
-    qDebug() << "Current thread:" << QThread::currentThread();
-    qDebug() << "This object thread:" << this->thread();
-
-    if (QThread::currentThread() != this->thread()) {
-        qWarning() << "setupSceneInternal() called from different thread!";
-        return;
-    }
-
     if (m_scene) {
-        qDebug() << "Scene already created, skipping";
         return;
     }
 
     // Create graph model
-    try {
-        m_graphModel = new QtNodes::DataFlowGraphModel(m_registry);
-        qDebug() << "Graph model created, address:" << (void*)m_graphModel;
-    } catch (const std::exception& e) {
-        qCritical() << "Exception during graph model creation:" << e.what();
-        return;
-    }
+    m_graphModel = new QtNodes::DataFlowGraphModel(m_registry);
 
-    // Try creating scene
-    try {
-        qDebug() << "About to create DataFlowGraphicsScene...";
-        m_scene = new QtNodes::DataFlowGraphicsScene(*m_graphModel, nullptr);
-        qDebug() << "Scene created successfully, address:" << (void*)m_scene;
-
-        m_scene->setParent(this);
-        qDebug() << "Scene parent set";
-    } catch (const std::exception& e) {
-        qCritical() << "Exception during scene creation:" << e.what();
-        return;
-    } catch (...) {
-        qCritical() << "Unknown exception during scene creation";
-        return;
-    }
-
-    // Set scene size
+    // Create scene
+    m_scene = new QtNodes::DataFlowGraphicsScene(*m_graphModel, this);
     m_scene->setSceneRect(-5000, -5000, 10000, 10000);
-    qDebug() << "Scene rect set";
 
     // Create view
     m_view = new QtNodes::GraphicsView(m_scene);
-    qDebug() << "View created";
-
-    // Add view to layout
     m_layout->addWidget(m_view);
-    qDebug() << "View added to layout";
 }
 
 void NodeEditorWindow::setupUi()

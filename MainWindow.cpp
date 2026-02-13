@@ -82,6 +82,7 @@ MainWindow::MainWindow(QWidget* parent)
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
     connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
     connect(ui.tabWidget, &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
+    connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
 }
 MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 {
@@ -105,6 +106,7 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
     connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
     connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
+    connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
     this->open_from_project_file(str);
 }
 MainWindow::~MainWindow()
