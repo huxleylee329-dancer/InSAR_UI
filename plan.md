@@ -2,8 +2,6 @@
 
 本计划用于实现 SatExplorer 项目中的基于节点的可视化流程编辑器功能。
 
-**注意：** QtNodes 库必须使用静态链接方式集成，动态链接会导致运行时错误。
-
 ## 进度总结
 
 - [x] 阶段 1: QtNodes 库集成 - 已完成（2024）
@@ -17,19 +15,34 @@
 4. 创建了节点模型注册表 `NodeModels.h/cpp`
 5. 在 MainWindow 中添加了节点编辑器入口（on_actionNodeEditor_triggered）
 
-### 已清理的测试代码
+### 编译错误修复（2025-02-27）
 
-- 移除了 `NodeEditorWindow.cpp` 中的调试输出和延时初始化代码
-- 移除了对 `TestNodeModels.h` 和 `SimpleTestNode.h` 的引用
-- 简化了 `NodeModels.cpp`，移除调试代码
-- 移除了未使用的头文件包含
+修复了 QtNodes 集成过程中的编译和链接错误：
 
-### 待清理的文件（可选）
+1. **Qt MOC 错误修复**：
+   - 将包含 `Q_OBJECT` 宏的 QtNodes 头文件添加到 `<QtMoc>` 处理列表：
+     - `AbstractGraphModel.hpp` - 抽象图模型基类
+     - `BasicGraphicsScene.hpp` - 基础图形场景
+     - `ConnectionGraphicsObject.hpp` - 连接图形对象
+     - `DataFlowGraphicsScene.hpp` - 数据流图形场景
+     - `DataFlowGraphModel.hpp` - 数据流图模型
+     - `GraphicsView.hpp` - 图形视图
+     - `NodeDelegateModel.hpp` - 节点代理模型
+     - `NodeGraphicsObject.hpp` - 节点图形对象
+   - 移除了 `Style.hpp`（Q_OBJECT 已被注释）
 
-以下测试文件不再需要，可以删除：
-- `include/TestNodeModels.h`
-- `TestNodeModels.cpp`
-- `include/SimpleTestNode.h`
+2. **Q_NAMESPACE 错误修复**：
+   - 将 `Definitions.hpp` 从 `<ClInclude>` 移至 `<QtMoc>`，该文件包含 `Q_NAMESPACE` 和 `Q_ENUM_NS` 宏
+   - 这解决了 Qt 5.15.2 中命名空间元对象的链接错误
+
+3. **Qt 资源编译错误修复**：
+   - 使用 Qt rcc 工具手动生成 `qrc_QtWidgetsApplication3.cpp`
+   - 将生成的文件添加到 `<ClCompile>` 列表
+   - 从 `<None>` 中移除重复的 qrc 文件引用
+   - 这解决了 `qInitResources_QtWidgetsApplication3` 未定义的链接错误
+
+4. **项目文件修改**：
+   - 修改 `QtWidgetsApplication3.vcxproj` 添加上述 MOC 和资源配置
 
 ---
 
