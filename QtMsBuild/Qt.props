@@ -12,8 +12,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(IntDir);$(QtIncludeDir);$(QtIncludeDir)\QtCore;$(QtIncludeDir)\QtGui;$(QtIncludeDir)\QtWidgets;$(QtIncludeDir)\QtCharts;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>QT_NODES_SHARED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(QtIncludeDir);$(QtIncludeDir)\QtCore;$(QtIncludeDir)\QtGui;$(QtIncludeDir)\QtWidgets;$(QtIncludeDir)\QtCharts;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(QtLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>

@@ -10,7 +10,9 @@
     </ClCompile>
   </ItemDefinitionGroup>
 
-  <Target Name="QtUic" BeforeTargets="QtMoc">
+  <Target Name="QtUic" BeforeTargets="QtMoc"
+          Inputs="@(QtUic)"
+          Outputs="$(QtIntDir)ui_%(QtUic.Filename).h">
     <Exec Command="&quot;$(QtUicDir)\uic.exe&quot; &quot;%(QtUic.FullPath)&quot; -o &quot;$(QtIntDir)ui_%(Filename).h&quot;" Condition="'%(QtUic.FullPath)' != ''"/>
   </Target>
 
@@ -21,7 +23,9 @@
     </ItemGroup>
   </Target>
 
-  <Target Name="QtMoc" BeforeTargets="ClCompile">
+  <Target Name="QtMoc" BeforeTargets="ClCompile"
+          Inputs="@(QtMoc)"
+          Outputs="$(QtIntDir)moc_%(QtMoc.Filename).cpp">
     <Exec Command="&quot;$(QtMocDir)\moc.exe&quot; &quot;%(QtMoc.FullPath)&quot; -o &quot;$(QtIntDir)moc_%(Filename).cpp&quot;" Condition="'%(QtMoc.FullPath)' != ''"/>
     <ItemGroup>
       <ClCompile Include="$(QtIntDir)moc_%(QtMoc.Filename).cpp" Condition="'%(QtMoc.FullPath)' != ''"/>
