@@ -1,4 +1,4 @@
-#include"ImageView.h"
+ï»¿#include"ImageView.h"
 #include<qcursor.h>
 #include<QWheelEvent>
 #include<QMouseEvent>
@@ -42,10 +42,10 @@ void ImageView::mousePressEvent(QMouseEvent* event)
         qDebug() << "The scene is null";
         return;
     }
-    // ¼ÇÂ¼Êó±ê°´ÏÂÊ±µÄÖÐÐÄµã×ø±ê
+    // è®°å½•é¼ æ ‡æŒ‰ä¸‹æ—¶çš„ä¸­å¿ƒç‚¹åæ ‡
     sceneMousePos = this->mapToScene(event->pos());
-    // ¼ÇÂ¼µ±Ç°Êó±êÔÚviewÖÐµÄÎ»ÖÃ£¬ÓÃÀ´ÔÚmouseMoveÊÂ¼þÖÐ¼ÆËãÆ«ÒÆ
-    // ´Ë´¦²»½«view×ø±ê×ª»»³Éscene×ø±êµÄÔ­ÒòÊÇÓÅ»¯ÐÔÄÜ£¬ÔÚmoveµÄ¹ý³ÌÖÐ»á²úÉú¶¶¶¯
+    // è®°å½•å½“å‰é¼ æ ‡åœ¨viewä¸­çš„ä½ç½®ï¼Œç”¨æ¥åœ¨mouseMoveäº‹ä»¶ä¸­è®¡ç®—åç§»
+    // æ­¤å¤„ä¸å°†viewåæ ‡è½¬æ¢æˆsceneåæ ‡çš„åŽŸå› æ˜¯ä¼˜åŒ–æ€§èƒ½ï¼Œåœ¨moveçš„è¿‡ç¨‹ä¸­ä¼šäº§ç”ŸæŠ–åŠ¨
     posAnchor = event->pos();
     isMousePressed = true;
 }

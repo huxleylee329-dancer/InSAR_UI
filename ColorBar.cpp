@@ -1,4 +1,4 @@
-#include <ColorBar.h>
+ï»¿#include <ColorBar.h>
 
 ColorBar::ColorBar(QWidget* parent) : QLabel(parent)
 {
@@ -22,7 +22,7 @@ int ColorBar::SetData(QString Data_path, QString Type)
     if (Data_path == NULL ||
         Type == NULL)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½Êı¾İ,ÇëÈ·±£Êı¾İÃ»ÓĞ±»É¾³ı»òÒÆ¶¯"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°æ•°æ®,è¯·ç¡®ä¿æ•°æ®æ²¡æœ‰è¢«åˆ é™¤æˆ–ç§»åŠ¨"));
         return -1;
     }
     if (Type == "phase" ||

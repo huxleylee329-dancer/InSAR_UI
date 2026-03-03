@@ -1,4 +1,4 @@
-#include "NewProject.h"
+ï»¿#include "NewProject.h"
 #include <qfiledialog.h>
 #include<qmessagebox.h>
 #include<qsettings.h>
@@ -67,28 +67,28 @@ void NewProject::on_buttonBox_accepted()
 {
     if (ui->NamelineEdit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëÐÂ½¨¹¤³ÌÃû³Æ£¨¸ÃÃû³ÆÓ¦ÎªÊý×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£©£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥æ–°å»ºå·¥ç¨‹åç§°ï¼ˆè¯¥åç§°åº”ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼‰ï¼"));
         return;
     }
     bool bFlag = ui->NamelineEdit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢Òâ¹¤³ÌÃû³ÆÓ¦µ±ÎªÊý×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„å·¥ç¨‹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
     if (ui->savelineEdit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çëä¯ÀÀ»òÊäÈë±£´æ¹¤³ÌÂ·¾¶£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æµè§ˆæˆ–è¾“å…¥ä¿å­˜å·¥ç¨‹è·¯å¾„ï¼"));
         return;
     }
     bFlag = ui->savelineEdit->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢Òâ¹¤³ÌÂ·¾¶²»Ó¦°üº¬ÖÐÎÄ»òÌØÊâ×Ö·û£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„å·¥ç¨‹è·¯å¾„ä¸åº”åŒ…å«ä¸­æ–‡æˆ–ç‰¹æ®Šå­—ç¬¦ï¼"));
         return;
     }
 
-    //¹¤³Ì·ÀÖØÃû¼ì²é
+    //å·¥ç¨‹é˜²é‡åæ£€æŸ¥
     if (copy_model)
     {
         if (copy_model->findItems(ui->NamelineEdit->text() + ".insar").size() != 0) return;

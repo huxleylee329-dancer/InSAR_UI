@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_S1_TOPS_BackGeocoding.h"
@@ -29,11 +29,11 @@ signals:
     void operate(int, int, QString, QString, QString, QString, QStandardItemModel*, bool);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_currentIndexChanged();
-    /*Êı¾İ½ÚµãÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ•°æ®èŠ‚ç‚¹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_2_currentIndexChanged();
-    /*Ö÷Í¼ÏñÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*ä¸»å›¾åƒé€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_3_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

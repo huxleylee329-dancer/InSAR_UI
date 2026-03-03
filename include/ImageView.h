@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include<QGraphicsView>
 
 class ImageView : public QGraphicsView
@@ -13,7 +13,7 @@ protected:
 	void mousePressEvent(QMouseEvent*);
 	void mouseReleaseEvent(QMouseEvent*);
 private:
-	QPointF sceneMousePos;//sceneÊó±ê»¬ÂÖ¹ö¶¯Ê±µÄÖĞĞÄ×ø±ê£¬ÓÃÓÚÊó±êÖĞĞÄËõ·Å
-	QPointF posAnchor;//viewÊó±ê×ø±ê£¬ÓÃÓÚÍÏ×§£¬ÓÉÓÚÍÏ×§¹ı³ÌÖĞÓĞ¶¶¶¯£¬¹Ê²»×ª»¯Îªscene×ø±ê
+	QPointF sceneMousePos;//sceneé¼ æ ‡æ»‘è½®æ»šåŠ¨æ—¶çš„ä¸­å¿ƒåæ ‡ï¼Œç”¨äºé¼ æ ‡ä¸­å¿ƒç¼©æ”¾
+	QPointF posAnchor;//viewé¼ æ ‡åæ ‡ï¼Œç”¨äºæ‹–æ‹½ï¼Œç”±äºæ‹–æ‹½è¿‡ç¨‹ä¸­æœ‰æŠ–åŠ¨ï¼Œæ•…ä¸è½¬åŒ–ä¸ºsceneåæ ‡
 	bool isMousePressed;
 };

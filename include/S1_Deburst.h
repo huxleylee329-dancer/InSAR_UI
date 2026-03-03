@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_S1_Deburst.h"
@@ -29,9 +29,9 @@ signals:
     void operate(QString, QString, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_currentIndexChanged();
-    /*Êı¾İ½ÚµãÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ•°æ®èŠ‚ç‚¹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_2_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

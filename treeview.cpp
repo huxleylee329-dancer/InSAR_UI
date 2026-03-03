@@ -1,4 +1,4 @@
-#include "treeview.h"  
+ï»¿#include "treeview.h"  
 #include"icon_source.h"
 #include<qmessagebox.h>
 #include <QMenu>  
@@ -100,24 +100,24 @@ void TreeView::mouseDoubleClickEvent(QMouseEvent * event)
     }
  }
 
-void TreeView::slotCustomContextMenu(const QPoint& point) //²Ûº¯Êý¶¨Òå
+void TreeView::slotCustomContextMenu(const QPoint& point) //æ§½å‡½æ•°å®šä¹‰
 {
     if (type == 1)
     {
-        if (!model->itemFromIndex(this->currentIndex())->parent())//¹¤³Ì½Úµã²Ëµ¥À¸
+        if (!model->itemFromIndex(this->currentIndex())->parent())//å·¥ç¨‹èŠ‚ç‚¹èœå•æ 
         {
             QMenu* menu = new QMenu(this);
-            QAction* unload = new QAction(QString::fromLocal8Bit("Ð¶ÔØ¹¤³Ì"));
+            QAction* unload = new QAction(QString::fromLocal8Bit("å¸è½½å·¥ç¨‹"));
             menu->addAction(unload);
             connect(unload, SIGNAL(triggered()), this, SLOT(Unload()));
             menu->exec(this->mapToGlobal(point));
         }
-        //Í¼ÏñÊý¾Ý½Úµã²Ëµ¥À¸
+        //å›¾åƒæ•°æ®èŠ‚ç‚¹èœå•æ 
         else if (!model->itemFromIndex(this->currentIndex())->hasChildren() && model->itemFromIndex(this->currentIndex())->parent())
         {
             QMenu* menu = new QMenu(this);
-            QAction* image_saveas = new QAction(QString::fromLocal8Bit("Áí´æÎª"));
-            QAction* image_delete = new QAction(QString::fromLocal8Bit("É¾³ý"));
+            QAction* image_saveas = new QAction(QString::fromLocal8Bit("å¦å­˜ä¸º"));
+            QAction* image_delete = new QAction(QString::fromLocal8Bit("åˆ é™¤"));
             image_saveas->setIcon(QIcon(EXPORT_ICON));
             image_delete->setIcon(QIcon(EXPORT_ICON));
             menu->addAction(image_saveas);
@@ -150,7 +150,7 @@ void TreeView::Delete()
     }
     else
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸ÃÊý¾ÝÕýÔÚ´¦ÀíÖÐ£¬ÎÞ·¨É¾³ý£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥æ•°æ®æ­£åœ¨å¤„ç†ä¸­ï¼Œæ— æ³•åˆ é™¤ï¼"));
     }
 }
 
@@ -163,7 +163,7 @@ void TreeView::Unload()
     }
     else
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÕýÔÚ´¦ÀíÖÐ£¬ÎÞ·¨Ð¶ÔØ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ­£åœ¨å¤„ç†ä¸­ï¼Œæ— æ³•å¸è½½ï¼"));
     }
 }
 
@@ -180,7 +180,7 @@ void TreeView::Import()
         if (!path.isEmpty())
         {
             QString dirname = QFileDialog::getSaveFileName(this,
-                QString::fromLocal8Bit("Í¼ÏñÁí´æÎª"),
+                QString::fromLocal8Bit("å›¾åƒå¦å­˜ä¸º"),
                 "/",
                 "*.jpg");
             QFileInfo fileinfo = QFileInfo(dirname);
@@ -193,7 +193,7 @@ void TreeView::Import()
                 mTreeProcess = new QProgressDialog("Loading Image...", "Cancel", 0, 100);
                 mTreeProcess->setFixedSize(450, 100);
                 mTreeProcess->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
-                mTreeProcess->setWindowTitle(QString::fromLocal8Bit("±£´æ½ø¶È"));
+                mTreeProcess->setWindowTitle(QString::fromLocal8Bit("ä¿å­˜è¿›åº¦"));
                 mTreeProcess->setCancelButton(false);
                 //this->Process->setAutoClose(true);
                 mTreeProcess->setValue(0);

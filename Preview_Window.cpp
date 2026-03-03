@@ -1,4 +1,4 @@
-#include<Preview_Window.h>
+ï»¿#include<Preview_Window.h>
 #include<icon_source.h>
 Preview_Window::Preview_Window(QWidget* parent)
     : QWidget(parent)
@@ -29,9 +29,9 @@ Preview_Window::Preview_Window(QWidget* parent)
     MoveButton->installEventFilter(this);
     ScaledButton->installEventFilter(this);
     CutButton->installEventFilter(this);
-    /*Ò³Ãæ³õÊ¼»¯²¼¾Ö*/
-    ButtonBox->addButton(QString::fromLocal8Bit("È·¶¨"), QDialogButtonBox::AcceptRole);
-    ButtonBox->addButton(QString::fromLocal8Bit("È¡Ïû"), QDialogButtonBox::RejectRole);
+    /*é¡µé¢åˆå§‹åŒ–å¸ƒå±€*/
+    ButtonBox->addButton(QString::fromLocal8Bit("ç¡®å®š"), QDialogButtonBox::AcceptRole);
+    ButtonBox->addButton(QString::fromLocal8Bit("å–æ¶ˆ"), QDialogButtonBox::RejectRole);
     connect(ButtonBox, &QDialogButtonBox::accepted, View, &Preview::GetOffset);
     connect(ButtonBox, &QDialogButtonBox::rejected, this, &Preview_Window::Close);
     connect(View, &Preview::Parent_Close, this, &Preview_Window::Close);
@@ -167,10 +167,10 @@ void Preview::mousePressEvent(QMouseEvent* event)
             qDebug() << "The scene is null";
             return ;
         }
-        // ¼ÇÂ¼Êó±ê°´ÏÂÊ±µÄÖĞĞÄµã×ø±ê
+        // è®°å½•é¼ æ ‡æŒ‰ä¸‹æ—¶çš„ä¸­å¿ƒç‚¹åæ ‡
         sceneMousePos = mapToScene(event->pos()) - event->pos() +QPointF(width() / 2, height() / 2);
 
-        // ´Ë´¦²»½«view×ø±ê×ª»»³Éscene×ø±êµÄÔ­ÒòÊÇÓÅ»¯ĞÔÄÜ£¬ÔÚmoveµÄ¹ı³ÌÖĞ»á²úÉú¶¶¶¯
+        // æ­¤å¤„ä¸å°†viewåæ ‡è½¬æ¢æˆsceneåæ ‡çš„åŸå› æ˜¯ä¼˜åŒ–æ€§èƒ½ï¼Œåœ¨moveçš„è¿‡ç¨‹ä¸­ä¼šäº§ç”ŸæŠ–åŠ¨
         posAnchor = event->pos();
         isMousePressed = true;
     }
@@ -221,7 +221,7 @@ void Preview::mouseMoveEvent(QMouseEvent* event)
         if (isMousePressed) {
             //setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
             viewport()->setCursor(Qt::ClosedHandCursor);
-            centerOn(sceneMousePos - offsetPos);    //Ò»¶¨Òª±£Ö¤scene±Èview´ó£¬²»È»º¯ÊıÎŞĞ§
+            centerOn(sceneMousePos - offsetPos);    //ä¸€å®šè¦ä¿è¯sceneæ¯”viewå¤§ï¼Œä¸ç„¶å‡½æ•°æ— æ•ˆ
         }
         else
         {
@@ -238,10 +238,10 @@ void Preview::mouseMoveEvent(QMouseEvent* event)
         {
             //QPoint MousePos = et->pos();
             mEnd = mapToScene(event->pos());
-            int pen_width = 4;  //Ïß¿í£¬½¨Òé¿íÒ»Ğ©£¬·ñÔòËõĞ¡ÈİÒ×¿´²»¼û
-            /*±£Ö¤²Ã¼ô¿òÔÚÍ¼ÏñÄÚ*/
+            int pen_width = 4;  //çº¿å®½ï¼Œå»ºè®®å®½ä¸€äº›ï¼Œå¦åˆ™ç¼©å°å®¹æ˜“çœ‹ä¸è§
+            /*ä¿è¯è£å‰ªæ¡†åœ¨å›¾åƒå†…*/
             if (mStart.x() >= mScene->width())
-                mStart.setX(mScene->width()-pen_width); //¼õÈ¥Ïß¿í£¬·ñÔò»áÊ¹sceneµü´ú¼Ó³¤
+                mStart.setX(mScene->width()-pen_width); //å‡å»çº¿å®½ï¼Œå¦åˆ™ä¼šä½¿sceneè¿­ä»£åŠ é•¿
             else if (mStart.x() < 0)
                 mStart.setX(0);
 
@@ -272,7 +272,7 @@ void Preview::mouseMoveEvent(QMouseEvent* event)
             mRect->setRect(mStart.x(), mStart.y(), mEnd.x() - mStart.x(), mEnd.y() - mStart.y());
             //mRect->setFlag(QGraphicsItem::ItemIgnoresTransformations);
             mScene->addItem(mRect);
-            this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+            this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
         }
     }
 }
@@ -342,7 +342,7 @@ void Preview::GetOffset()
     QPoint left_top, Qpoint, right_bottom;
     if (mStart == mEnd)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Çë°´×¡Êó±ê×ó¼ü¿òÑ¡¸ĞĞËÈ¤ÇøÓò½øĞĞ²Ã¼ô"));
+        QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·æŒ‰ä½é¼ æ ‡å·¦é”®æ¡†é€‰æ„Ÿå…´è¶£åŒºåŸŸè¿›è¡Œè£å‰ª"));
         return;
     }
     if (mStart.x() > mEnd.x())
@@ -373,7 +373,7 @@ void Preview::GetOffset()
     double h5_right = double(right_bottom.x()- Coord_ItemToScene.x()) / width;
     double h5_top = double(left_top.y()- Coord_ItemToScene.y()) / height;
     double h5_bottom = double(right_bottom.y()- Coord_ItemToScene.y()) / height;
-    emit SendPos(h5_left, h5_right, h5_top, h5_bottom);     //´«µİËÄ±ßÔÚÔ­Í¼µÄ±ÈÀıÒÔ²Ã¼ô
-    emit Parent_Close();    //ÓÃÓÚ¹Ø±Õ¸¸Ç×´°¿Ú
+    emit SendPos(h5_left, h5_right, h5_top, h5_bottom);     //ä¼ é€’å››è¾¹åœ¨åŸå›¾çš„æ¯”ä¾‹ä»¥è£å‰ª
+    emit Parent_Close();    //ç”¨äºå…³é—­çˆ¶äº²çª—å£
 }
 

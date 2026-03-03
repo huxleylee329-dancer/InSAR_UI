@@ -1,4 +1,4 @@
-#include "MyPage.h"
+ï»¿#include "MyPage.h"
 #include "MyToolBox.h"
 #include <QListWidget>
 #include <QPushButton>
@@ -10,16 +10,16 @@
 
 MyPage::MyPage(QWidget* parent, int name, int number) : QWidget(parent)
 {
-    //³õÊ¼»¯±äÁ¿
+    //åˆå§‹åŒ–å˜é‡
     ToolBox = (MyToolBox*)parent;
     page_number = number;
     m_bExpand = false;
     process_index = name;
 
-    //´´½¨±êÌâÀ¸¡¢ÄÚÈÝÇø¡¢Ãû³Æ¡¢Í¼±ê
+    //åˆ›å»ºæ ‡é¢˜æ ã€å†…å®¹åŒºã€åç§°ã€å›¾æ ‡
     createCtrl();
 
-    //³õÊ¼»¯²¼¾Ö
+    //åˆå§‹åŒ–å¸ƒå±€
     initLayout();
     if (name == Import);
     {
@@ -184,7 +184,7 @@ bool MyPage::get_param(template_DEM_para* parameter)
 
 void MyPage::createCtrl()
 {
-    //±êÌâÀ¸
+    //æ ‡é¢˜æ 
     Bar = new QWidget(this);
     Bar->setMinimumHeight(BAR_HEIGHT);
     Bar->setStyleSheet("background: rgb(170, 170, 170)");
@@ -192,7 +192,7 @@ void MyPage::createCtrl()
     {
     case Import:
     {
-        Name = new QLabel(QString::fromLocal8Bit("µ¼ÈëÊý¾Ý"), Bar);
+        Name = new QLabel(QString::fromLocal8Bit("å¯¼å…¥æ•°æ®"), Bar);
         //Name->adjustSize();
 
         Content = new QWidget(this);
@@ -217,19 +217,19 @@ void MyPage::createCtrl()
     }
     case Cut:
     {
-        Name = new QLabel(QString::fromLocal8Bit("´¦ÀíÇøÓòÖÐÐÄ×ø±ê"), Bar);
+        Name = new QLabel(QString::fromLocal8Bit("å¤„ç†åŒºåŸŸä¸­å¿ƒåæ ‡"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QLabel* lon_label = new QLabel(QString::fromLocal8Bit("¾­¶È(¡ã)£º"));
+        QLabel* lon_label = new QLabel(QString::fromLocal8Bit("ç»åº¦(Â°)ï¼š"));
         lon_label->adjustSize();
-        QLabel* lat_label = new QLabel(QString::fromLocal8Bit("Î³¶È(¡ã)£º"));
+        QLabel* lat_label = new QLabel(QString::fromLocal8Bit("çº¬åº¦(Â°)ï¼š"));
         lat_label->adjustSize();
-        QLabel* height_label = new QLabel(QString::fromLocal8Bit("¸ß¶È(m)£º"));
+        QLabel* height_label = new QLabel(QString::fromLocal8Bit("é«˜åº¦(m)ï¼š"));
         height_label->adjustSize();
-        QLabel* width_label = new QLabel(QString::fromLocal8Bit("¿í¶È(m)£º"));
+        QLabel* width_label = new QLabel(QString::fromLocal8Bit("å®½åº¦(m)ï¼š"));
         width_label->adjustSize();
         lon = new QLineEdit;
         lon->adjustSize();
@@ -257,22 +257,22 @@ void MyPage::createCtrl()
     }
     case Regis:
     {
-        Name = new QLabel(QString::fromLocal8Bit("Í¼ÏñÅä×¼"), Bar);
+        Name = new QLabel(QString::fromLocal8Bit("å›¾åƒé…å‡†"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        //QLabel* index_label = new QLabel(QString::fromLocal8Bit("Ö÷Í¼ÏñÐòºÅ(1-n)£º"));
+        //QLabel* index_label = new QLabel(QString::fromLocal8Bit("ä¸»å›¾åƒåºå·(1-n)ï¼š"));
         //index_label->adjustSize();
         //Index = new QLineEdit;
         //Index->adjustSize();
-        QLabel* interp_label = new QLabel(QString::fromLocal8Bit("²åÖµ±¶Êý(2^n)£º"));
+        QLabel* interp_label = new QLabel(QString::fromLocal8Bit("æ’å€¼å€æ•°(2^n)ï¼š"));
         interp_label->adjustSize();
         Interp = new QLineEdit;
         Interp->adjustSize();
         Interp->setPlaceholderText("8");
-        QLabel* block_label = new QLabel(QString::fromLocal8Bit("×Ó¿é³ß´ç(2^n)£º"));
+        QLabel* block_label = new QLabel(QString::fromLocal8Bit("å­å—å°ºå¯¸(2^n)ï¼š"));
         block_label->adjustSize();
         Block = new QLineEdit;
         Block->adjustSize();
@@ -290,29 +290,29 @@ void MyPage::createCtrl()
     }
     case IF:
     {
-        Name = new QLabel(QString::fromLocal8Bit("¸ÉÉæÏàÎ»Éú³É"), Bar);
+        Name = new QLabel(QString::fromLocal8Bit("å¹²æ¶‰ç›¸ä½ç”Ÿæˆ"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        //QLabel* IFindex_label = new QLabel(QString::fromLocal8Bit("Ö÷Í¼ÏñÐòºÅ(1-n)£º"));
+        //QLabel* IFindex_label = new QLabel(QString::fromLocal8Bit("ä¸»å›¾åƒåºå·(1-n)ï¼š"));
         //IFindex_label->adjustSize();
         //IF_index = new  QLineEdit;
         //IF_index->adjustSize();
-        //IsDeflat = new QCheckBox(QString::fromLocal8Bit("ÊÇ·ñÈ¥Æ½µØ"));
+        //IsDeflat = new QCheckBox(QString::fromLocal8Bit("æ˜¯å¦åŽ»å¹³åœ°"));
         //IsDeflat->adjustSize();
-        //Istopo = new QCheckBox(QString::fromLocal8Bit("ÊÇ·ñÈ¥µØÐÎ"));
+        //Istopo = new QCheckBox(QString::fromLocal8Bit("æ˜¯å¦åŽ»åœ°å½¢"));
         //Istopo->adjustSize();
-        Iscoh = new QCheckBox(QString::fromLocal8Bit("ÊÇ·ñ¼ÆËãÏà¸ÉÏµÊý"));
+        Iscoh = new QCheckBox(QString::fromLocal8Bit("æ˜¯å¦è®¡ç®—ç›¸å¹²ç³»æ•°"));
         Iscoh->adjustSize();
         Iscoh->setChecked(true);
-        win_h_abel = new QLabel(QString::fromLocal8Bit("Ïà¸ÉÏµÊý¹À¼Æ´°¿Ú¸ß¶È£º"));
+        win_h_abel = new QLabel(QString::fromLocal8Bit("ç›¸å¹²ç³»æ•°ä¼°è®¡çª—å£é«˜åº¦ï¼š"));
         win_h_abel->adjustSize();
         win_h = new QLineEdit;
         win_h->adjustSize();
         win_h->setPlaceholderText("3");
-        win_w_label = new QLabel(QString::fromLocal8Bit("Ïà¸ÉÏµÊý¹À¼Æ´°¿Ú¿í¶È£º"));
+        win_w_label = new QLabel(QString::fromLocal8Bit("ç›¸å¹²ç³»æ•°ä¼°è®¡çª—å£å®½åº¦ï¼š"));
         win_w_label->adjustSize();
         win_w = new QLineEdit;
         win_w->adjustSize();
@@ -321,12 +321,12 @@ void MyPage::createCtrl()
         //win_h->hide();
         //win_w_label->hide();
         //win_w->hide();
-        QLabel* Multi_az_label = new QLabel(QString::fromLocal8Bit("¶àÊÓ±¶Êý(·½Î»Ïò)£º"));
+        QLabel* Multi_az_label = new QLabel(QString::fromLocal8Bit("å¤šè§†å€æ•°(æ–¹ä½å‘)ï¼š"));
         Multi_az_label->adjustSize();
         multi_az = new  QLineEdit;
         multi_az->adjustSize();
         multi_az->setPlaceholderText("1");
-        QLabel* Multi_rg_label = new QLabel(QString::fromLocal8Bit("¶àÊÓ±¶Êý(¾àÀëÏò)£º"));
+        QLabel* Multi_rg_label = new QLabel(QString::fromLocal8Bit("å¤šè§†å€æ•°(è·ç¦»å‘)ï¼š"));
         Multi_rg_label->adjustSize();
         multi_rg = new  QLineEdit;
         multi_rg->adjustSize();
@@ -350,33 +350,33 @@ void MyPage::createCtrl()
     }
     case Denoise:
     {
-        Name = new QLabel(QString::fromLocal8Bit("ÏàÎ»ÂË²¨"), Bar);
+        Name = new QLabel(QString::fromLocal8Bit("ç›¸ä½æ»¤æ³¢"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QGroupBox* Denoise_box = new QGroupBox(QString::fromLocal8Bit("ÂË²¨·½·¨"));
-        Slop_button = new QRadioButton(QString::fromLocal8Bit("Ð±ÆÂ×ÔÊÊÓ¦"));
+        QGroupBox* Denoise_box = new QGroupBox(QString::fromLocal8Bit("æ»¤æ³¢æ–¹æ³•"));
+        Slop_button = new QRadioButton(QString::fromLocal8Bit("æ–œå¡è‡ªé€‚åº”"));
         Slop_button->adjustSize();
-        Goldstein_button = new QRadioButton(QString::fromLocal8Bit("GoldsteinÂË²¨"));
+        Goldstein_button = new QRadioButton(QString::fromLocal8Bit("Goldsteinæ»¤æ³¢"));
         Goldstein_button->adjustSize();
         Goldstein_button->setChecked(true);
-        DL_button = new QRadioButton(QString::fromLocal8Bit("Éî¶ÈÑ§Ï°ÂË²¨"));
+        DL_button = new QRadioButton(QString::fromLocal8Bit("æ·±åº¦å­¦ä¹ æ»¤æ³¢"));
         DL_button->adjustSize();
         QHBoxLayout* Box_Layout = new QHBoxLayout;
         Box_Layout->addWidget(Slop_button);
         Box_Layout->addWidget(Goldstein_button);
         Box_Layout->addWidget(DL_button);
         Denoise_box->setLayout(Box_Layout);
-        Slop_label = new QLabel(QString::fromLocal8Bit("Ð±ÆÂ×ÔÊÊÓ¦´°¿Ú³ß´ç£º"));
+        Slop_label = new QLabel(QString::fromLocal8Bit("æ–œå¡è‡ªé€‚åº”çª—å£å°ºå¯¸ï¼š"));
         Slop_label->adjustSize();
         Slop_label->hide();
         Slop_win = new QLineEdit;
         Slop_win->adjustSize();
         Slop_win->setPlaceholderText("11");
         Slop_win->hide();
-        Pre_label = new QLabel(QString::fromLocal8Bit("Ô¤ÂË²¨´°¿Ú³ß´ç£º"));
+        Pre_label = new QLabel(QString::fromLocal8Bit("é¢„æ»¤æ³¢çª—å£å°ºå¯¸ï¼š"));
         Pre_label->adjustSize();
         Pre_label->hide();
         Pre_win = new QLineEdit;
@@ -388,10 +388,10 @@ void MyPage::createCtrl()
         Slop_layout->addWidget(Slop_win);
         Slop_layout->addWidget(Pre_label);
         Slop_layout->addWidget(Pre_win);
-        Goldstein_label = new QLabel(QString::fromLocal8Bit("GoldsteinÂË²¨´°³ß´ç£º"));
+        Goldstein_label = new QLabel(QString::fromLocal8Bit("Goldsteinæ»¤æ³¢çª—å°ºå¯¸ï¼š"));
         Goldstein_label->adjustSize();
         //Goldstein_label->hide();
-        Goldstein_pad_label = new QLabel(QString::fromLocal8Bit("GoldsteinÂË²¨²¹Áã³ß´ç£º"));
+        Goldstein_pad_label = new QLabel(QString::fromLocal8Bit("Goldsteinæ»¤æ³¢è¡¥é›¶å°ºå¯¸ï¼š"));
         Goldstein_pad_label->adjustSize();
         //Goldstein_pad_label->hide();
         Goldstein_win = new QLineEdit;
@@ -402,7 +402,7 @@ void MyPage::createCtrl()
         Goldstein_pad_win->adjustSize();
         Goldstein_pad_win->setPlaceholderText("8");
         //Goldstein_pad_win->hide();
-        alpha_label = new QLabel(QString::fromLocal8Bit("alpha£º"));
+        alpha_label = new QLabel(QString::fromLocal8Bit("alphaï¼š"));
         alpha_label, adjustSize();
         //alpha_label->hide();
         alpha = new QLineEdit;
@@ -425,21 +425,21 @@ void MyPage::createCtrl()
     }
     case Unwrap:
     {
-        Name = new QLabel(QString::fromLocal8Bit("ÏàÎ»½â²ø"), Bar);
+        Name = new QLabel(QString::fromLocal8Bit("ç›¸ä½è§£ç¼ "), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QGroupBox* Unwrap_box = new QGroupBox(QString::fromLocal8Bit("½â²ø·½·¨"));
-        SPD = new QRadioButton(QString::fromLocal8Bit("ÖÊÁ¿Í¼·¨"));
+        QGroupBox* Unwrap_box = new QGroupBox(QString::fromLocal8Bit("è§£ç¼ æ–¹æ³•"));
+        SPD = new QRadioButton(QString::fromLocal8Bit("è´¨é‡å›¾æ³•"));
         SPD->adjustSize();
-        MCF = new QRadioButton(QString::fromLocal8Bit("×îÐ¡·ÑÓÃÁ÷"));
+        MCF = new QRadioButton(QString::fromLocal8Bit("æœ€å°è´¹ç”¨æµ"));
         MCF->adjustSize();
         MCF->setChecked(true);
         SNAPHU = new QRadioButton(QString::fromLocal8Bit("SNAPHU"));
         SNAPHU->adjustSize();
-        Q_M = new QRadioButton(QString::fromLocal8Bit("×ÛºÏ·¨"));
+        Q_M = new QRadioButton(QString::fromLocal8Bit("ç»¼åˆæ³•"));
         Q_M->adjustSize();
         QHBoxLayout* Box_Layout = new QHBoxLayout;
         Box_Layout->addWidget(SPD);
@@ -447,7 +447,7 @@ void MyPage::createCtrl()
         Box_Layout->addWidget(SNAPHU);
         Box_Layout->addWidget(Q_M);
         Unwrap_box->setLayout(Box_Layout);
-        threshold_label = new QLabel(QString::fromLocal8Bit("Ïà¸ÉÏµÊýãÐÖµ£º"));
+        threshold_label = new QLabel(QString::fromLocal8Bit("ç›¸å¹²ç³»æ•°é˜ˆå€¼ï¼š"));
         threshold_label->adjustSize();
         threshold_label->hide();
         threshold = new QLineEdit;
@@ -465,20 +465,20 @@ void MyPage::createCtrl()
     }
     case Dem:
     {
-        Name = new QLabel(QString::fromLocal8Bit("¸ß³Ì·´ÑÝ"), Bar);
+        Name = new QLabel(QString::fromLocal8Bit("é«˜ç¨‹åæ¼”"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QGroupBox* DEM_box = new QGroupBox(QString::fromLocal8Bit("DEM·½·¨"));
-        Newton = new QRadioButton(QString::fromLocal8Bit("Å£¶Ù·¨"));
+        QGroupBox* DEM_box = new QGroupBox(QString::fromLocal8Bit("DEMæ–¹æ³•"));
+        Newton = new QRadioButton(QString::fromLocal8Bit("ç‰›é¡¿æ³•"));
         Newton->adjustSize();
         Newton->setChecked(true);
         QHBoxLayout* Box_Layout = new QHBoxLayout;
         Box_Layout->addWidget(Newton);
         DEM_box->setLayout(Box_Layout);
-        times_label = new QLabel(QString::fromLocal8Bit("µü´ú´ÎÊý£º"));
+        times_label = new QLabel(QString::fromLocal8Bit("è¿­ä»£æ¬¡æ•°ï¼š"));
         times_label->adjustSize();
         times_label->hide();
         iteration_times= new QLineEdit;
@@ -501,7 +501,7 @@ void MyPage::createCtrl()
 
 void MyPage::initLayout()
 {
-    //±êÌâÀ¸²¼¾Ö
+    //æ ‡é¢˜æ å¸ƒå±€
     QHBoxLayout* pBarLayout = new QHBoxLayout;
     pBarLayout->addWidget(Name);
     pBarLayout->addStretch();
@@ -510,7 +510,7 @@ void MyPage::initLayout()
     pBarLayout->setContentsMargins(10, 0, 4, 0);
     Bar->setLayout(pBarLayout);
 
-    //ÕûÌå²¼¾Ö
+    //æ•´ä½“å¸ƒå±€
     QVBoxLayout* pMainLayout = new QVBoxLayout;
     pMainLayout->addWidget(Bar);
     pMainLayout->addWidget(Content);
@@ -522,20 +522,20 @@ void MyPage::initLayout()
 
 void MyPage::setIcon()
 {
-    //Í¼±ê
+    //å›¾æ ‡
     //QPixmap pixmap(m_bExpand ? ":/Others/Icon/Others/top.png" : ":/Others/Icon/Others/bottom.png");
     //Icon->setPixmap(pixmap);
 }
 
 void MyPage::stateSwitch()
 {
-    //Í¼±ê
+    //å›¾æ ‡
     setIcon();
 
-    //×´Ì¬
+    //çŠ¶æ€
     Content->setVisible(m_bExpand);
 
-    //×ÔÊÊÓ¦¸ß¶È
+    //è‡ªé€‚åº”é«˜åº¦
     this->adjustSize();
     this->setFixedWidth(ToolBox->width());
     ToolBox->adjustScrollAreaWidgetSize();
@@ -657,7 +657,7 @@ void MyPage::DEM_Settings()
 void MyPage::addimage()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("¼ÓÈëÔ­Ê¼Êý¾Ý"),
+        QString::fromLocal8Bit("åŠ å…¥åŽŸå§‹æ•°æ®"),
         "",
         "file(*)");
     Import_list->addItem(filename);

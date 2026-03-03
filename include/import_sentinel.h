@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include"ui_import_sentinel.h"
@@ -12,7 +12,7 @@ public:
     ~import_sentinel();
 public slots:
     void ShowProjectList(QStandardItemModel*);
-    /*ÅúÁ¿µ¼ÈëÎÄ¼şÃûÉú³É*/
+    /*æ‰¹é‡å¯¼å…¥æ–‡ä»¶åç”Ÿæˆ*/
     bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist);
     void ChangeVision(bool Editable);
 private:
@@ -30,25 +30,25 @@ signals:
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();
-    /*ÅúÁ¿µ¼ÈëÄ¿±ê¹¤³Ì°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥ç›®æ ‡å·¥ç¨‹æŒ‰é’®å“åº”å‡½æ•°*/
     void on_ComboBox_dst_project_2_currentIndexChanged();
-    /*ÅúÁ¿µ¼ÈëÌí¼Ó°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥æ·»åŠ æŒ‰é’®å“åº”å‡½æ•°*/
     void on_pushButton_add_pressed();
-    /*ÅúÁ¿µ¼ÈëÒÆ³ı°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥ç§»é™¤æŒ‰é’®å“åº”å‡½æ•°*/
     void on_pushButton_remove_pressed();
     void on_browse_Button_pressed();
     void on_pushButton_POD_pressed();
-    /*ÅúÁ¿µ¼ÈëÈ·¶¨°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥ç¡®å®šæŒ‰é’®å“åº”å‡½æ•°*/
     void on_buttonBox_2_accepted();
     void on_buttonBox_accepted();
-    /*ÅúÁ¿µ¼ÈëÈ¡Ïû°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥å–æ¶ˆæŒ‰é’®å“åº”å‡½æ•°*/
     void on_buttonBox_2_rejected();
     void on_buttonBox_rejected();
     void on_ComboBox_subswath_currentIndexChanged();
-    /*ÅúÁ¿µ¼Èë×Ó´øÑ¡ÔñÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥å­å¸¦é€‰æ‹©å“åº”å‡½æ•°*/
     void on_ComboBox_subswath_2_currentIndexChanged();
     void on_ComboBox_polarization_currentIndexChanged();
-    /*ÅúÁ¿µ¼Èë¼«»¯·½Ê½Ñ¡ÔñÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥æåŒ–æ–¹å¼é€‰æ‹©å“åº”å‡½æ•°*/
     void on_ComboBox_polarization_2_currentIndexChanged();
 
     void updateProcess(int, QString);

@@ -1,4 +1,4 @@
-#include"MainWindow.h"
+ï»¿#include"MainWindow.h"
 #include"import_CSK.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
@@ -77,7 +77,7 @@ void import_CSK::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -156,7 +156,7 @@ void import_CSK::on_comboBox_dst_project_currentIndexChanged()
 void import_CSK::on_pushButton_add_pressed()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("µ¼ÈëCOSMO-SkyMedÊı¾İ"),
+        QString::fromLocal8Bit("å¯¼å…¥COSMO-SkyMedæ•°æ®"),
         "",
         "*.h5");
     ui->listWidget->addItem(filename);
@@ -190,21 +190,21 @@ void import_CSK::on_buttonBox_rejected()
 
 void import_CSK::on_buttonBox_accepted()
 {
-    //¼ì²éµ¼ÈëÎÄ¼şlistÊÇ·ñÎª¿Õ
+    //æ£€æŸ¥å¯¼å…¥æ–‡ä»¶listæ˜¯å¦ä¸ºç©º
     if (ui->listWidget->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("µ¼ÈëÍ¼ÏñÎÄ¼şÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("å¯¼å…¥å›¾åƒæ–‡ä»¶ä¸ºç©ºï¼"));
         return;
     }
-    //¼ì²éÄ¿±ê½ÚµãÃû
+    //æ£€æŸ¥ç›®æ ‡èŠ‚ç‚¹å
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÃûÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹åä¸ºç©ºï¼"));
         return;
     }
 
 
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project->currentText())[0];
     if (!project) {
         return;
@@ -219,11 +219,11 @@ void import_CSK::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒºÍµ¼ÈëÊı¾İ¼¶±ğ²»Í¬£¬ÇëÖØÃüÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”å’Œå¯¼å…¥æ•°æ®çº§åˆ«ä¸åŒï¼Œè¯·é‡å‘½åï¼"));
         return;
     }
 
-    //¸ù¾İÔ­Ê¼ÎÄ¼şÈÕÆÚÉú³Éµ¼ÈëÎÄ¼şÃû³Æ
+    //æ ¹æ®åŸå§‹æ–‡ä»¶æ—¥æœŸç”Ÿæˆå¯¼å…¥æ–‡ä»¶åç§°
     vector<QString> original_namelist;
     vector<QString> import_namelist;
     if (!generate_name(ui->listWidget, original_namelist, import_namelist)) return;
@@ -243,11 +243,11 @@ void import_CSK::on_buttonBox_accepted()
     connect(import_CSK_thread, &MyThread::sendModel, this, &import_CSK::TransitModel);
     import_CSK_thread->thread()->start();
     emit operate2(
-        this->save_path, //±£´æÂ·¾¶
-        original_namelist,//Ô­Ê¼ÎÄ¼şÃû
-        import_namelist, //µ¼ÈëÎÄ¼şÃû
-        ui->lineEdit_dst_node->text(), //µ¼Èë½ÚµãÃû
-        ui->comboBox_dst_project->currentText(), //µ¼Èë¹¤³ÌÃû
+        this->save_path, //ä¿å­˜è·¯å¾„
+        original_namelist,//åŸå§‹æ–‡ä»¶å
+        import_namelist, //å¯¼å…¥æ–‡ä»¶å
+        ui->lineEdit_dst_node->text(), //å¯¼å…¥èŠ‚ç‚¹å
+        ui->comboBox_dst_project->currentText(), //å¯¼å…¥å·¥ç¨‹å
         this->copy);
     ChangeVision(false);
 }

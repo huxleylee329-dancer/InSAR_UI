@@ -1,4 +1,4 @@
-#include<QMessageBox>
+ï»¿#include<QMessageBox>
 #include<qcoreapplication.h>
 #include"template_dem_IPC_thread.h"
 #include"InSAR_IPC.h"
@@ -45,7 +45,7 @@ void template_dem_IPC_thread::RunThread(InSAR_IPC* ipc, template_DEM_para_back* 
         }
         else if (header.msgType == eCallbackType_MsgFinished)
         {
-            // ¸üÐÂ½çÃæ
+            // æ›´æ–°ç•Œé¢
             updateProcess(100, "Finished");
             memcpy(callback_para, &(header.callback_para), sizeof(template_DEM_para_back));
             Sleep(3000);
@@ -63,9 +63,9 @@ void template_dem_IPC_thread::RunThread(InSAR_IPC* ipc, template_DEM_para_back* 
 
         }
 
-        // ²Ù×÷Íê±Ï£¬ÉèÖÃ×Ó½ø³ÌÎªÓÐÐÅºÅ
+        // æ“ä½œå®Œæ¯•ï¼Œè®¾ç½®å­è¿›ç¨‹ä¸ºæœ‰ä¿¡å·
         IPC->SetEventIntf(false);
-        // ÉèÖÃ±¾½ø³ÌÎªÎÞÐÅºÅ
+        // è®¾ç½®æœ¬è¿›ç¨‹ä¸ºæ— ä¿¡å·
         IPC->ResetEventIntf(true);
     }
     emit endProcess();

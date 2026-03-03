@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<FormatConversion.h>
 #include "ui_Cut.h"
@@ -22,14 +22,14 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 
-    void ReceivePos(double left, double right, double top, double bottom);  //½ÓÊÕ²Ã¼ô¿òÔÚÍ¼ÏñÖĞµÄÎ»ÖÃ
-    /*²Ã¼ô×Ó´°¿Ú·¢ËÍÈ¡ÏûÏûÏ¢*/
+    void ReceivePos(double left, double right, double top, double bottom);  //æ¥æ”¶è£å‰ªæ¡†åœ¨å›¾åƒä¸­çš„ä½ç½®
+    /*è£å‰ªå­çª—å£å‘é€å–æ¶ˆæ¶ˆæ¯*/
     void cancelled();
 private:
     double h5_left, h5_right, h5_top, h5_bottom;
-    /*ÈôÒÑ¾­µã»÷¹ıÔ¤ÀÀ£¬Ôò½ûÖ¹ÔÙ´Îµã»÷*/
+    /*è‹¥å·²ç»ç‚¹å‡»è¿‡é¢„è§ˆï¼Œåˆ™ç¦æ­¢å†æ¬¡ç‚¹å‡»*/
     bool isPreviewPressed;
-    /*ÊÇ·ñÕıÔÚ²Ã¼ô*/
+    /*æ˜¯å¦æ­£åœ¨è£å‰ª*/
     bool isCutting;
     Ui::Cut* ui;
     QString save_path;
@@ -51,20 +51,20 @@ signals:
     void sendCopy(QStandardItemModel*);
 private slots:
     //void on_SourcepushButton_pressed();
-    /*¾­Î³¶È²Ã¼ôÏÂÀ­¿ò*/
+    /*ç»çº¬åº¦è£å‰ªä¸‹æ‹‰æ¡†*/
     void on_comboBox_currentIndexChanged();
     void on_comboBox_2_currentIndexChanged();
-    /*¿òÑ¡²Ã¼ôÏÂÀ­¿ò*/
+    /*æ¡†é€‰è£å‰ªä¸‹æ‹‰æ¡†*/
     void on_comboBox_3_currentIndexChanged();
     void on_comboBox_4_currentIndexChanged();
     //void addIndex();
     //void accepted();
-    /*¾­Î³¶È²Ã¼ôÈ·¶¨¡¢È¡Ïû*/
+    /*ç»çº¬åº¦è£å‰ªç¡®å®šã€å–æ¶ˆ*/
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
 
     void on_Preview_pressed();
-    /*¿òÑ¡²Ã¼ôÈ·¶¨¡¢È¡Ïû*/
+    /*æ¡†é€‰è£å‰ªç¡®å®šã€å–æ¶ˆ*/
     void on_buttonBox_2_accepted();
     void on_buttonBox_2_rejected();
 

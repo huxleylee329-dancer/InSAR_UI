@@ -1,4 +1,4 @@
-#include"MyThread.h"
+ï»¿#include"MyThread.h"
 #include"icon_source.h"
 #include<Utils.h>
 #include<Deflat.h>
@@ -88,7 +88,7 @@ void MyThread::import_sentinel(
 	QString temp_folder = QString("/") + folder + QString("/");
 	QString relative_path = temp_folder + filename + ".h5";
 	QString h5_path = QString("%1%2%3.h5").arg(project_path).arg(temp_folder).arg(filename);
-	emit updateProcess(20, QString::fromLocal8Bit("ÕıÔÚµ¼ÈëÊı¾İ£¬ÇëÄÍĞÄµÈ´ı¡­¡­"));
+	emit updateProcess(20, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥æ•°æ®ï¼Œè¯·è€å¿ƒç­‰å¾…â€¦â€¦"));
 	FormatConversion conversion;
 	ret = conversion.import_sentinel(manifest_file.toStdString().c_str(),
 		subswath.toStdString().c_str(),
@@ -103,7 +103,7 @@ void MyThread::import_sentinel(
 		tmp_dir.removeRecursively();
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("¼´½«Íê³É¡­¡­"));
+	emit updateProcess(90, QString::fromLocal8Bit("å³å°†å®Œæˆâ€¦â€¦"));
 
 	QStandardItem* project = model->findItems(project_name)[0];
 	if (!project) {
@@ -197,7 +197,7 @@ void MyThread::import_sentinel_patch(
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+	emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		QString filename = import_namelist[i];
@@ -272,7 +272,7 @@ void MyThread::import_sentinel_patch(
 			return;
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+		emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	}
 	
 	emit sendModel(model);
@@ -307,7 +307,7 @@ void MyThread::import_sentinel_patch(
 	QString temp_folder = QString("/") + folder + QString("/");
 	QString relative_path = temp_folder + filename + ".h5";
 	QString h5_path = QString("%1%2%3.h5").arg(project_path).arg(temp_folder).arg(filename);
-	emit updateProcess(20, QString::fromLocal8Bit("ÕıÔÚµ¼ÈëÊı¾İ£¬ÇëÄÍĞÄµÈ´ı¡­¡­"));
+	emit updateProcess(20, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥æ•°æ®ï¼Œè¯·è€å¿ƒç­‰å¾…â€¦â€¦"));
 	FormatConversion conversion;
 	ret = conversion.TSX2h5(xml_filename.toStdString().c_str(), 
 		h5_path.toStdString().c_str(),
@@ -319,7 +319,7 @@ void MyThread::import_sentinel_patch(
 		tmp_dir.removeRecursively();
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("¼´½«Íê³É¡­¡­"));
+	emit updateProcess(90, QString::fromLocal8Bit("å³å°†å®Œæˆâ€¦â€¦"));
 
 	QStandardItem* project = model->findItems(project_name)[0];
 	if (!project) {
@@ -410,7 +410,7 @@ void MyThread::import_TSX_patch(
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+	emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		QString filename = import_namelist[i];
@@ -486,7 +486,7 @@ void MyThread::import_TSX_patch(
 			return;
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+		emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	}
 	
 	emit sendModel(model);
@@ -514,7 +514,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+	emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		QString filename = import_namelist[i];
@@ -588,7 +588,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 			return;
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+		emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	}
 
 	emit sendModel(model);
@@ -625,7 +625,7 @@ void MyThread::import_ALOS2_patch(
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+	emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		QString filename = import_namelist[i];
@@ -699,7 +699,7 @@ void MyThread::import_ALOS2_patch(
 			return;
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµ¼Èë..."));
+		emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨å¯¼å…¥..."));
 	}
 
 	emit sendModel(model);
@@ -720,9 +720,9 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		ComplexMat SLC64;
 		FormatConversion FC;
-		emit updateProcess(10, QString::fromLocal8Bit("×¼±¸Êı¾İ¡­¡­"));
+		emit updateProcess(10, QString::fromLocal8Bit("å‡†å¤‡æ•°æ®â€¦â€¦"));
 		FC.read_slc_from_h5(h5_path.toStdString().c_str(), SLC64);
-		emit updateProcess(40, QString::fromLocal8Bit("×¼±¸Í¼ÏñÎÄ¼ş¡­¡­"));
+		emit updateProcess(40, QString::fromLocal8Bit("å‡†å¤‡å›¾åƒæ–‡ä»¶â€¦â€¦"));
 		util.saveSLC(bmp_path.toStdString().c_str(), /*65*/65, SLC64);
 		if (QThread::currentThread()->isInterruptionRequested())
 		{
@@ -732,13 +732,13 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		}
 		if (SLC64.GetCols() * SLC64.GetRows() > 25e6)
 		{
-			emit updateProcess(80, QString::fromLocal8Bit("½µ²ÉÑù´¦Àí¡­¡­"));
+			emit updateProcess(80, QString::fromLocal8Bit("é™é‡‡æ ·å¤„ç†â€¦â€¦"));
 			int down_sample_times = (int)sqrt(floor(double(SLC64.GetCols() * SLC64.GetRows()) / 25e6));
 			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(SLC64.GetRows() / down_sample_times),
 				(int)(SLC64.GetCols() / down_sample_times));
 		}
 
-		emit updateProcess(90, QString::fromLocal8Bit("Ğ´ÈëÍ¼ÏñÎÄ¼ş¡­¡­"));
+		emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥å›¾åƒæ–‡ä»¶â€¦â€¦"));
 		//if (!ret)
 		//{
 		//	fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -752,20 +752,20 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat phase;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("¶ÁÈ¡Êı¾İ¡­¡­"));
+		emit updateProcess(20, QString::fromLocal8Bit("è¯»å–æ•°æ®â€¦â€¦"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "phase", phase);
-		emit updateProcess(50, QString::fromLocal8Bit("¸ñÊ½×ª»»¡­¡­"));
+		emit updateProcess(50, QString::fromLocal8Bit("æ ¼å¼è½¬æ¢â€¦â€¦"));
 		ret = util.savephase(bmp_path.toStdString().c_str(), "jet", phase);
 
 		if (phase.rows * phase.cols > 25e6)
 		{
-			emit updateProcess(80, QString::fromLocal8Bit("½µ²ÉÑù´¦Àí¡­¡­"));
+			emit updateProcess(80, QString::fromLocal8Bit("é™é‡‡æ ·å¤„ç†â€¦â€¦"));
 			int down_sample_times = (int)sqrt(floor(double(phase.rows * phase.cols) / 25e6));
 			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(phase.rows / down_sample_times),
 				(int)(phase.cols / down_sample_times));
 		}
 
-		emit updateProcess(90, QString::fromLocal8Bit("Ğ´ÈëÍ¼ÏñÎÄ¼ş¡­¡­"));
+		emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥å›¾åƒæ–‡ä»¶â€¦â€¦"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -779,20 +779,20 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat coherence;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("¶ÁÈ¡Êı¾İ¡­¡­"));
+		emit updateProcess(20, QString::fromLocal8Bit("è¯»å–æ•°æ®â€¦â€¦"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "coherence", coherence);
-		emit updateProcess(50, QString::fromLocal8Bit("¸ñÊ½×ª»»¡­¡­"));
+		emit updateProcess(50, QString::fromLocal8Bit("æ ¼å¼è½¬æ¢â€¦â€¦"));
 		ret = util.savephase(bmp_path.toStdString().c_str(), "gray", coherence);
 
 		if (coherence.rows * coherence.cols > 25e6)
 		{
-			emit updateProcess(80, QString::fromLocal8Bit("½µ²ÉÑù´¦Àí¡­¡­"));
+			emit updateProcess(80, QString::fromLocal8Bit("é™é‡‡æ ·å¤„ç†â€¦â€¦"));
 			int down_sample_times = (int)sqrt(floor(double(coherence.rows * coherence.cols) / 25e6));
 			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(coherence.rows / down_sample_times),
 				(int)(coherence.cols / down_sample_times));
 		}
 
-		emit updateProcess(90, QString::fromLocal8Bit("Ğ´ÈëÍ¼ÏñÎÄ¼ş¡­¡­"));
+		emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥å›¾åƒæ–‡ä»¶â€¦â€¦"));
 		
 		if (!ret)
 		{
@@ -806,11 +806,11 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat phase;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("¶ÁÈ¡Êı¾İ¡­¡­"));
+		emit updateProcess(20, QString::fromLocal8Bit("è¯»å–æ•°æ®â€¦â€¦"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "dem", phase);
-		emit updateProcess(50, QString::fromLocal8Bit("¸ñÊ½×ª»»¡­¡­"));
+		emit updateProcess(50, QString::fromLocal8Bit("æ ¼å¼è½¬æ¢â€¦â€¦"));
 		ret = util.savephase(bmp_path.toStdString().c_str(), "jet", phase);
-		emit updateProcess(90, QString::fromLocal8Bit("Ğ´ÈëbmpÎÄ¼ş¡­¡­"));
+		emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥bmpæ–‡ä»¶â€¦â€¦"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -823,11 +823,11 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat phase;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("¶ÁÈ¡Êı¾İ¡­¡­"));
+		emit updateProcess(20, QString::fromLocal8Bit("è¯»å–æ•°æ®â€¦â€¦"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "amplitude", phase);
-		emit updateProcess(50, QString::fromLocal8Bit("¸ñÊ½×ª»»¡­¡­"));
+		emit updateProcess(50, QString::fromLocal8Bit("æ ¼å¼è½¬æ¢â€¦â€¦"));
 		ret = util.saveAmplitude(bmp_path.toStdString().c_str(), phase);
-		emit updateProcess(90, QString::fromLocal8Bit("Ğ´ÈëbmpÎÄ¼ş¡­¡­"));
+		emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥bmpæ–‡ä»¶â€¦â€¦"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -841,13 +841,13 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 
 		Mat defomation_velocity, mask;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("¶ÁÈ¡Êı¾İ¡­¡­"));
+		emit updateProcess(20, QString::fromLocal8Bit("è¯»å–æ•°æ®â€¦â€¦"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
 		ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "mask", mask);
-		emit updateProcess(50, QString::fromLocal8Bit("¸ñÊ½×ª»»¡­¡­"));
+		emit updateProcess(50, QString::fromLocal8Bit("æ ¼å¼è½¬æ¢â€¦â€¦"));
 		if(ret == 0) util.savephase_white(bmp_path.toStdString().c_str(), "jet", defomation_velocity, mask);
 		else util.savephase(bmp_path.toStdString().c_str(), "jet", defomation_velocity);
-		emit updateProcess(90, QString::fromLocal8Bit("Ğ´ÈëÍ¼ÏñÎÄ¼ş¡­¡­"));
+		emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥å›¾åƒæ–‡ä»¶â€¦â€¦"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -870,7 +870,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
 		src_node == NULL ||
 		dst_node == NULL)
 	{
-		//QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ!"), QString::fromLocal8Bit("È±ÉÙ´¦ÀíËùĞè²ÎÊı£¬Çë¼ì²éÊÇ·ñÌîĞ´ÍêÕû£¡"));
+		//QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š!"), QString::fromLocal8Bit("ç¼ºå°‘å¤„ç†æ‰€éœ€å‚æ•°ï¼Œè¯·æ£€æŸ¥æ˜¯å¦å¡«å†™å®Œæ•´ï¼"));
 		return;
 	}
 	DOC = new XMLFile;
@@ -884,7 +884,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
     QModelIndex pro_index = model->indexFromItem(project);
     QStandardItem* Images_Cut = new QStandardItem(dst_node);
 	int src_node_index = 0;
-	/*ÕÒµ½Ô´½Úµã²¢¼ÆËãÆä½ÚµãÏÂÍ¼ÏñÊıÁ¿*/
+	/*æ‰¾åˆ°æºèŠ‚ç‚¹å¹¶è®¡ç®—å…¶èŠ‚ç‚¹ä¸‹å›¾åƒæ•°é‡*/
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == src_node)
@@ -907,7 +907,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
     QStandardItem* Images_Cut_Rank = new QStandardItem("complex-1.0");
     project->setChild(insert, 1, Images_Cut_Rank);
     QModelIndex origin =  model->indexFromItem(project->child(0, 0));
-    emit updateProcess(10, QString::fromLocal8Bit("ÕıÔÚ¶ÁÈ¡Í¼Æ¬ĞÅÏ¢¡­¡­"));
+    emit updateProcess(10, QString::fromLocal8Bit("æ­£åœ¨è¯»å–å›¾ç‰‡ä¿¡æ¯â€¦â€¦"));
     QByteArray file_abs_path = QString("%1/%2").arg(save_path).arg(project_name).toLocal8Bit();
     DOC->XMLFile_load(file_abs_path.data());
 	
@@ -966,7 +966,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
             offset_row, offset_col, para.at(0), para.at(1),
            para.at(2), para.at(3), "complex-1.0");
 		
-       emit updateProcess(10 + i * 90 / (image_number), QString::fromLocal8Bit("ÕıÔÚ²Ã¼ôµÚ%1¸öÎÄ¼ş").arg(i+1));
+       emit updateProcess(10 + i * 90 / (image_number), QString::fromLocal8Bit("æ­£åœ¨è£å‰ªç¬¬%1ä¸ªæ–‡ä»¶").arg(i+1));
     }
 	DOC->XMLFile_save(file_abs_path.data());
 	emit sendModel(model);
@@ -996,7 +996,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 	QByteArray file_abs_path = QString("%1/%2").arg(save_path).arg(project_name).toLocal8Bit();
 	DOC->XMLFile_load(file_abs_path.data());
 
-	//²éÕÒ±»²Ã¼ô½ÚµãÊÇ·ñ´æÔÚÖ÷½Úµã
+	//æŸ¥æ‰¾è¢«è£å‰ªèŠ‚ç‚¹æ˜¯å¦å­˜åœ¨ä¸»èŠ‚ç‚¹
 	int master_index = -1;
 	TiXmlElement* DataNode = NULL;
 	int ret = DOC->find_node_with_attribute("DataNode", "name", node_name.toStdString().c_str(), DataNode);
@@ -1014,7 +1014,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 	QStandardItem* project = model->findItems(project_name)[0];
 	QStandardItem* node;
 	int src_node_index = 0;
-	/*ÕÒµ½Ô´½Úµã²¢¼ÆËãÆä½ÚµãÏÂÍ¼ÏñÊıÁ¿*/
+	/*æ‰¾åˆ°æºèŠ‚ç‚¹å¹¶è®¡ç®—å…¶èŠ‚ç‚¹ä¸‹å›¾åƒæ•°é‡*/
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == node_name)
@@ -1029,7 +1029,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 	QModelIndex pro_index = model->indexFromItem(project);
 	QStandardItem* Images_Cut = new QStandardItem(dst_node);
 	int insert = 0;
-	/*»ñÈ¡Ô´½ÚµãÊı¾İµÈ¼¶ĞÅÏ¢*/
+	/*è·å–æºèŠ‚ç‚¹æ•°æ®ç­‰çº§ä¿¡æ¯*/
 	QString src_data_rank = project->child(src_node_index, 1)->text();
 	if (src_data_rank == QString("complex-0.0"))
 	{
@@ -1136,7 +1136,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 	QStandardItem* Images_Cut_Rank = new QStandardItem(src_data_rank);
 	project->setChild(insert, 1, Images_Cut_Rank);
 
-	emit updateProcess(10, QString::fromLocal8Bit("ÕıÔÚ¶ÁÈ¡Í¼Æ¬ĞÅÏ¢¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("æ­£åœ¨è¯»å–å›¾ç‰‡ä¿¡æ¯â€¦â€¦"));
 
 	
 	
@@ -1204,7 +1204,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 			offset_row, offset_col, 0, 0, 0, 0, src_data_rank.toStdString().c_str());
 		
 
-		emit updateProcess(10 + i * 90 / (image_number), QString::fromLocal8Bit("ÕıÔÚ²Ã¼ôµÚ%1¸öÎÄ¼ş").arg(i + 1));
+		emit updateProcess(10 + i * 90 / (image_number), QString::fromLocal8Bit("æ­£åœ¨è£å‰ªç¬¬%1ä¸ªæ–‡ä»¶").arg(i + 1));
 	}
 	DOC->XMLFile_save(file_abs_path.data());
 	emit sendModel(model);
@@ -1219,7 +1219,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
 		Cut_name.isEmpty() ||
 		file_name.isEmpty())
 	{
-		//QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ!"), QString::fromLocal8Bit("È±ÉÙ´¦ÀíËùĞè²ÎÊı£¬Çë¼ì²éÊÇ·ñÌîĞ´ÍêÕû£¡"));
+		//QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š!"), QString::fromLocal8Bit("ç¼ºå°‘å¤„ç†æ‰€éœ€å‚æ•°ï¼Œè¯·æ£€æŸ¥æ˜¯å¦å¡«å†™å®Œæ•´ï¼"));
 		return;
 	}
 	QStandardItem* project = model->findItems(project_name)[0];
@@ -1253,14 +1253,14 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
 			break;
         }
     }
-	emit updateProcess(10, QString::fromLocal8Bit("¿ªÊ¼½øĞĞÅä×¼¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å¼€å§‹è¿›è¡Œé…å‡†â€¦â€¦"));
 	Mat offset_row_out, offset_col_out;
     int ret = Registration_copy(SAR_images, SAR_images_regis, offset_row_out, offset_col_out, index, interp_times, block_size);
     if (ret<0 || QThread::currentThread()->isInterruptionRequested())
     {
 		return;
     }
-    /*½¨Á¢Åä×¼¸ù½Úµã*/
+    /*å»ºç«‹é…å‡†æ ¹èŠ‚ç‚¹*/
     QStandardItem* regis = new QStandardItem(file_name);
     regis->setToolTip(project_name);
     int insert = 0;
@@ -1279,7 +1279,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
     QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
     project->setChild(insert, 1, regis_Rank);
     FormatConversion FC;
-    /*»ñÈ¡Ö÷ĞÇ²ÎÊı*/
+    /*è·å–ä¸»æ˜Ÿå‚æ•°*/
     Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
     Mat tmp_double = Mat::zeros(1, 1, CV_64FC1);
     double interp_interval;
@@ -1304,10 +1304,10 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
     Rows = SLC.GetRows();
     Cols = SLC.GetCols();
     QString temporal_baseline, B_parallel, B_effect;
-    /*Ìí¼ÓÍ¼Ïñµ½modelÖĞ²¢¸´ÖÆh5²ÎÊı*/
+    /*æ·»åŠ å›¾åƒåˆ°modelä¸­å¹¶å¤åˆ¶h5å‚æ•°*/
     vector<int> Row_offset;
     vector<int> Col_offset;
-	emit updateProcess(90, QString::fromLocal8Bit("Ğ´Èë¸¨Öú²ÎÊı¡­¡­"));
+	emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥è¾…åŠ©å‚æ•°â€¦â€¦"));
     for (int i = 0; i < image_number; i++)
     {
 		if (QThread::currentThread()->isInterruptionRequested())
@@ -1322,7 +1322,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
 		regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
         regis->appendRow(regis_images_name);
         regis->setChild(i, 1, regis_images_path);
-        /*Ğ´Èë¸¨Öú²ÎÊıµ½h5*/
+        /*å†™å…¥è¾…åŠ©å‚æ•°åˆ°h5*/
 		offset_row = offset_col = 0;
         FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
         FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
@@ -1337,8 +1337,8 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
         Col_offset.push_back(offset_col);
         FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", Rows);
         FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", Cols);
-        /*¹À¼ÆÊ±¿Õ»ùÏß*/
-        if (i == index - 1)  //Ö÷Í¼Ïñ
+        /*ä¼°è®¡æ—¶ç©ºåŸºçº¿*/
+        if (i == index - 1)  //ä¸»å›¾åƒ
         {
             temporal_baseline += "0 ";
             B_parallel += "0 ";
@@ -1373,9 +1373,9 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
 			
         }
     }
-    /*Ğ´ÈëXML*/
+    /*å†™å…¥XML*/
     XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("Ğ´Èë¹¤³ÌÎÄ¼ş¡­¡­"));
+	emit updateProcess(95, QString::fromLocal8Bit("å†™å…¥å·¥ç¨‹æ–‡ä»¶â€¦â€¦"));
 	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
     for (int i = 0; i < image_number; i++)
     {
@@ -1411,7 +1411,7 @@ void MyThread::DEMAssistCoregistration(
 	if (!dir.exists(dstNode))
 		int ret = dir.mkdir(dstNode);
 
-	//Íâ²¿DEMÎÄ¼ş¼Ğ
+	//å¤–éƒ¨DEMæ–‡ä»¶å¤¹
 	QString appPath = QCoreApplication::applicationDirPath();
 	QString demPath = appPath + "/dem";
 	string dempath = demPath.toStdString();
@@ -1447,7 +1447,7 @@ void MyThread::DEMAssistCoregistration(
 	}
 	if (SAR_images.size() < 2) return;
 
-	emit updateProcess(10, QString::fromLocal8Bit("¿ªÊ¼½øĞĞÅä×¼¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å¼€å§‹è¿›è¡Œé…å‡†â€¦â€¦"));
 	masterIndex = masterIndex < 1 ? 1 : masterIndex;
 	masterIndex = masterIndex > images_number ? images_number : masterIndex;
 
@@ -1540,11 +1540,11 @@ void MyThread::DEMAssistCoregistration(
 		conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
 		conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
 		count++;
-		emit updateProcess(10 + double(count) / double(images_number - 1) * 80, QString::fromLocal8Bit("ÕıÔÚ´¦Àí..."));
+		emit updateProcess(10 + double(count) / double(images_number - 1) * 80, QString::fromLocal8Bit("æ­£åœ¨å¤„ç†..."));
 	}
 
 
-	/*½¨Á¢Åä×¼¸ù½Úµã*/
+	/*å»ºç«‹é…å‡†æ ¹èŠ‚ç‚¹*/
 	QStandardItem* regis = new QStandardItem(dstNode);
 	regis->setToolTip(project_name);
 	int insert = 0;
@@ -1580,9 +1580,9 @@ void MyThread::DEMAssistCoregistration(
 		B_parallel += "0 ";
 		B_effect += "0 ";
 	}
-	/*Ğ´ÈëXML*/
+	/*å†™å…¥XML*/
 	XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("Ğ´Èë¹¤³ÌÎÄ¼ş¡­¡­"));
+	emit updateProcess(95, QString::fromLocal8Bit("å†™å…¥å·¥ç¨‹æ–‡ä»¶â€¦â€¦"));
 	xmlfile.XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
 	for (int i = 0; i < images_number; i++)
 	{
@@ -1645,8 +1645,8 @@ void MyThread::S1_Deburst(
 			}
 		}
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("¿ªÊ¼burstÆ´½Ó¡­¡­"));
-	//burstÆ´½Ó
+	emit updateProcess(10, QString::fromLocal8Bit("å¼€å§‹burstæ‹¼æ¥â€¦â€¦"));
+	//burstæ‹¼æ¥
 	for (int i = 1; i <= SAR_images.size(); i++)
 	{
 		Sentinel1Utils su(SAR_images[i - 1].c_str());
@@ -1654,9 +1654,9 @@ void MyThread::S1_Deburst(
 		if (ret < 0) return;
 		ret = su.deburst(SAR_images_deburst[i - 1].c_str());
 		if (ret < 0) return;
-		emit updateProcess(10.0 + 80.0 / SAR_images.size() * i, QString::fromLocal8Bit("burstÆ´½Ó½ø¶È%1¡­¡­").arg(10.0 + 80.0 / SAR_images.size() * i));
+		emit updateProcess(10.0 + 80.0 / SAR_images.size() * i, QString::fromLocal8Bit("burstæ‹¼æ¥è¿›åº¦%1â€¦â€¦").arg(10.0 + 80.0 / SAR_images.size() * i));
 	}
-	/*½¨Á¢deburst¸ù½Úµã*/
+	/*å»ºç«‹deburstæ ¹èŠ‚ç‚¹*/
 	QStandardItem* deburst = new QStandardItem(dstNode);
 	deburst->setToolTip(dstProject);
 	int insert = 0;
@@ -1673,9 +1673,9 @@ void MyThread::S1_Deburst(
 	QStandardItem* deburst_Rank = new QStandardItem("complex-1.0");
 	project->setChild(insert, 1, deburst_Rank);
 	
-	/*Ğ´ÈëXML*/
+	/*å†™å…¥XML*/
 	XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("Ğ´Èë¹¤³ÌÎÄ¼ş¡­¡­"));
+	emit updateProcess(95, QString::fromLocal8Bit("å†™å…¥å·¥ç¨‹æ–‡ä»¶â€¦â€¦"));
 	xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
 	for (int i = 0; i < SAR_images_deburst.size(); i++)
 	{
@@ -1744,15 +1744,15 @@ void MyThread::S1_TOPS_BackGeocoding(
 			}
 		}
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("¿ªÊ¼ºóÏòµØÀí±àÂëÅä×¼¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å¼€å§‹åå‘åœ°ç†ç¼–ç é…å‡†â€¦â€¦"));
 
-	//Íâ²¿DEMÎÄ¼ş¼Ğ
+	//å¤–éƒ¨DEMæ–‡ä»¶å¤¹
 	QString appPath = QCoreApplication::applicationDirPath();
 	QString demPath = appPath + "/dem";
 	QDir appDir(appPath);
 	if (!appDir.exists("dem")) appDir.mkdir("dem");
 
-	//ºóÏòµØÀí±àÂëÅä×¼
+	//åå‘åœ°ç†ç¼–ç é…å‡†
 	Sentinel1BackGeocoding backgeocoding; FormatConversion conversion;
 	ComplexMat slaveSLC, tmp;
 	Utils util;
@@ -1873,7 +1873,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 			outDir.removeRecursively();
 			return;
 		}
-		emit updateProcess(10.0 + 50.0 / burstCount * (i + 1), QString::fromLocal8Bit("ºóÏòµØÀí±àÂëÅä×¼¡­¡­"));
+		emit updateProcess(10.0 + 50.0 / burstCount * (i + 1), QString::fromLocal8Bit("åå‘åœ°ç†ç¼–ç é…å‡†â€¦â€¦"));
 	}
 
 	if (b_ESD)
@@ -1952,7 +1952,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 			Mat output, out_x;
 			phase0 = phase0.reshape(0, 1);
 			util.hist(phase0, -PI, PI, 0.1, out_x, output);
-			//À­¸ñÀÊÈÕ²åÖµ
+			//æ‹‰æ ¼æœ—æ—¥æ’å€¼
 			double x0, x1, x2, x3, y0, y1, y2, y3, x; x = 31;
 			x0 = 29; x1 = 30; x2 = 32; x3 = 33;
 			y0 = output.at<double>(29); y1 = output.at<double>(30); y2 = output.at<double>(32); y3 = output.at<double>(33);
@@ -1977,7 +1977,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 				if (j == masterIndex - 1) continue;
 				double offset_a = 0.0;
 				conversion.read_double_from_h5(backgeocoding.outFiles[j].c_str(), "offset_a", &offset_a);
-				//Æ«ÒÆµÍÓÚ0.001ÏñËØÔò²»Óè²¹³¥
+				//åç§»ä½äº0.001åƒç´ åˆ™ä¸äºˆè¡¥å¿
 				if (fabs(offset_a) < 0.001) continue;
 				if (!backgeocoding.burstOffsetComputed)
 				{
@@ -2028,7 +2028,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 			offset_row += linesPerBurst;
 			backgeocoding.isMasterRgAzComputed = false;
 
-			emit updateProcess(60 + 30 / burstCount * (i + 1), QString::fromLocal8Bit("ÔöÇ¿Æ×·Ö¼¯Ğ£Õı¡­¡­"));
+			emit updateProcess(60 + 30 / burstCount * (i + 1), QString::fromLocal8Bit("å¢å¼ºè°±åˆ†é›†æ ¡æ­£â€¦â€¦"));
 		}
 	}
 
@@ -2048,10 +2048,10 @@ void MyThread::S1_TOPS_BackGeocoding(
 			cv::vconcat(slc.im, tmp.im, slc.im);
 		}
 		conversion.write_slc_to_h5(backgeocoding.outFiles[i].c_str(), slc);
-		emit updateProcess(90 + 10 / burstCount * (i + 1), QString::fromLocal8Bit("deburst¡­¡­"));
+		emit updateProcess(90 + 10 / burstCount * (i + 1), QString::fromLocal8Bit("deburstâ€¦â€¦"));
 	}
 
-	/*½¨Á¢Åä×¼¸ù½Úµã*/
+	/*å»ºç«‹é…å‡†æ ¹èŠ‚ç‚¹*/
 	QStandardItem* regis = new QStandardItem(dstNode);
 	regis->setToolTip(dstProject);
 	int insert = 0;
@@ -2069,15 +2069,15 @@ void MyThread::S1_TOPS_BackGeocoding(
 	QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
 	project->setChild(insert, 1, regis_Rank);
 	FormatConversion FC;
-	/*»ñÈ¡Ö÷ĞÇ²ÎÊı*/
+	/*è·å–ä¸»æ˜Ÿå‚æ•°*/
 	Mat outArray;
 	int rows, cols;
 	FC.read_array_from_h5(SAR_images_regis.at(masterIndex - 1).c_str(), "s_re", outArray);
 	rows = outArray.rows; cols = outArray.cols;
 	offset_row = 0;
 	int offset_col = 0;
-	/*Ìí¼ÓÍ¼Ïñµ½modelÖĞ²¢¸´ÖÆh5²ÎÊı*/
-	//emit updateProcess(90, QString::fromLocal8Bit("Ğ´Èë¸¨Öú²ÎÊı¡­¡­"));
+	/*æ·»åŠ å›¾åƒåˆ°modelä¸­å¹¶å¤åˆ¶h5å‚æ•°*/
+	//emit updateProcess(90, QString::fromLocal8Bit("å†™å…¥è¾…åŠ©å‚æ•°â€¦â€¦"));
 	for (int i = 0; i < images_number; i++)
 	{
 		QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
@@ -2087,7 +2087,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 		regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
 		regis->appendRow(regis_images_name);
 		regis->setChild(i, 1, regis_images_path);
-		/*Ğ´Èë¸¨Öú²ÎÊıµ½h5*/
+		/*å†™å…¥è¾…åŠ©å‚æ•°åˆ°h5*/
 		FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
 		FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
 		FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
@@ -2096,9 +2096,9 @@ void MyThread::S1_TOPS_BackGeocoding(
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", rows);
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
 	}
-	/*Ğ´ÈëXML*/
+	/*å†™å…¥XML*/
 	XMLFile xmlfile;
-	//emit updateProcess(95, QString::fromLocal8Bit("Ğ´Èë¹¤³ÌÎÄ¼ş¡­¡­"));
+	//emit updateProcess(95, QString::fromLocal8Bit("å†™å…¥å·¥ç¨‹æ–‡ä»¶â€¦â€¦"));
 	xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
 	for (int i = 0; i < images_number; i++)
 	{
@@ -2129,13 +2129,13 @@ void MyThread::SLC_deramp(
 	{
 		return;
 	}
-	//È·¶¨Íâ²¿DEMÎÄ¼ş¼Ğ
+	//ç¡®å®šå¤–éƒ¨DEMæ–‡ä»¶å¤¹
 	QString appPath = QCoreApplication::applicationDirPath();
 	QString demPath = appPath + "/dem";
 	QDir appDir(appPath);
 	if (!appDir.exists("dem")) appDir.mkdir("dem");
 
-	//È·¶¨´ı´¦ÀíÊı¾İÎÄ¼ş
+	//ç¡®å®šå¾…å¤„ç†æ•°æ®æ–‡ä»¶
 	Utils util; FormatConversion conversion; Deflat flat;
 	vector<string> SAR_images, SAR_images_deramp;
 	QList<QString> origin;
@@ -2162,7 +2162,7 @@ void MyThread::SLC_deramp(
 		SAR_images_deramp.push_back(QString("%1/%2/%3_deramp.h5").arg(save_path).arg(dst_node)
 			.arg(origin_name).toStdString());
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("¿ªÊ¼¼ÆËã¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å¼€å§‹è®¡ç®—â€¦â€¦"));
 	int ret;
 	QDir dir(save_path);
 	if (!dir.exists(dst_node))dir.mkdir(dst_node);
@@ -2201,7 +2201,7 @@ void MyThread::SLC_deramp(
 	ret = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
 		prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
 	//mappedDem = 0;
-	/*½¨Á¢deramp¸ù½Úµã*/
+	/*å»ºç«‹derampæ ¹èŠ‚ç‚¹*/
 	QStandardItem* deramp = new QStandardItem(dst_node);
 	deramp->setToolTip(project_name);
 	int insert = 0;
@@ -2236,7 +2236,7 @@ void MyThread::SLC_deramp(
 		ret = conversion.write_int_to_h5(SAR_images_deramp[i].c_str(), "range_len", sceneWidth);
 		ret = conversion.write_int_to_h5(SAR_images_deramp[i].c_str(), "azimuth_len", sceneHeight);
 		double process = 10 + 80 / (double(image_number)) * double(i + 1);
-		//Ğ´Èëµ½¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍÖĞ
+		//å†™å…¥åˆ°å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹ä¸­
 		QFileInfo fileinfo = QFileInfo(QString(SAR_images_deramp.at(i).c_str()));
 		QStandardItem* deramp_images_name = new QStandardItem(fileinfo.baseName());
 		deramp_images_name->setToolTip("complex");
@@ -2245,12 +2245,12 @@ void MyThread::SLC_deramp(
 		deramp->appendRow(deramp_images_name);
 		deramp->setChild(i, 1, deramp_images_path);
 
-		emit updateProcess(process, QString::fromLocal8Bit("½ø¶È..."));
+		emit updateProcess(process, QString::fromLocal8Bit("è¿›åº¦..."));
 	}
 
-	/*Ğ´ÈëXML*/
+	/*å†™å…¥XML*/
 	XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("Ğ´Èë¹¤³ÌÎÄ¼ş¡­¡­"));
+	emit updateProcess(95, QString::fromLocal8Bit("å†™å…¥å·¥ç¨‹æ–‡ä»¶â€¦â€¦"));
 	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 	for (int i = 0; i < image_number; i++)
 	{
@@ -2302,9 +2302,9 @@ void MyThread::Baseline_Formation(
 	{
 		SAR_images.push_back(image->child(i, 1)->text().toStdString());
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("¿ªÊ¼»ùÏß¹À¼Æ¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å¼€å§‹åŸºçº¿ä¼°è®¡â€¦â€¦"));
 	FormatConversion FC;
-	/*»ñÈ¡Ö÷ĞÇ²ÎÊı*/
+	/*è·å–ä¸»æ˜Ÿå‚æ•°*/
 	Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
 	double interp_interval;
 	int offset_row, offset_col;
@@ -2322,7 +2322,7 @@ void MyThread::Baseline_Formation(
 	FC.utc2gps(time_master_str.c_str(), &time_Master);
 	FC.read_int_from_h5(SAR_images.at(masterIndex - 1).c_str(), "range_len", &Cols);
 	FC.read_int_from_h5(SAR_images.at(masterIndex - 1).c_str(), "azimuth_len", &Rows);
-	/*Ìí¼ÓÍ¼Ïñµ½modelÖĞ²¢¸´ÖÆh5²ÎÊı*/
+	/*æ·»åŠ å›¾åƒåˆ°modelä¸­å¹¶å¤åˆ¶h5å‚æ•°*/
 	vector<int> Row_offset;
 	vector<int> Col_offset;
 
@@ -2333,8 +2333,8 @@ void MyThread::Baseline_Formation(
 		{
 			return;
 		}
-		/*¹À¼ÆÊ±¿Õ»ùÏß*/
-		if (i == masterIndex - 1)  //Ö÷Í¼Ïñ
+		/*ä¼°è®¡æ—¶ç©ºåŸºçº¿*/
+		if (i == masterIndex - 1)  //ä¸»å›¾åƒ
 		{
 			temporal_baseline.push_back(0);
 			spatial_baseline.push_back(0);
@@ -2360,7 +2360,7 @@ void MyThread::Baseline_Formation(
 				offset_row, offset_col, Rows, Cols, interp_interval, interp_interval_slave, &V_baseline, &H_baseline, &sigma_V, &sigma_H);
 			spatial_baseline.push_back(V_baseline);
 		}
-		emit updateProcess(20 + (i + 1) * 80 / image_number, QString::fromLocal8Bit("ÕıÔÚ¼ÆËãÊ±¿Õ»ùÏß¡­¡­"));
+		emit updateProcess(20 + (i + 1) * 80 / image_number, QString::fromLocal8Bit("æ­£åœ¨è®¡ç®—æ—¶ç©ºåŸºçº¿â€¦â€¦"));
 	}
 	
 	emit sendBL(temporal_baseline, spatial_baseline, masterIndex);
@@ -2386,13 +2386,13 @@ void MyThread::SBAS_time_series(
 	QStandardItemModel* model
 )
 {
-	/*´´½¨csvÎÄ¼ş*/
+	/*åˆ›å»ºcsvæ–‡ä»¶*/
 	QDir csv(csv_path);
-	if (!csv.exists()) //ÅĞ¶ÏÎÄ¼şÊÇ·ñ´æÔÚ£¬²»´æÔÚÔò´´½¨
+	if (!csv.exists()) //åˆ¤æ–­æ–‡ä»¶æ˜¯å¦å­˜åœ¨ï¼Œä¸å­˜åœ¨åˆ™åˆ›å»º
 	{
 		if (!csv.mkpath(csv.absolutePath()))
 		{
-			QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("´´½¨csvÎÄ¼şÊ§°Ü£¬Çë¼ì²éÂ·¾¶ÊÇ·ñÕıÈ·!"));
+			QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("åˆ›å»ºcsvæ–‡ä»¶å¤±è´¥ï¼Œè¯·æ£€æŸ¥è·¯å¾„æ˜¯å¦æ­£ç¡®!"));
 			return;
 		}
 	}
@@ -2400,11 +2400,11 @@ void MyThread::SBAS_time_series(
 	QTextStream in(&csv_file);;
 	if (!csv_file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
 	{	
-		QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("´´½¨csvÎÄ¼şÊ§°Ü£¬Çë¼ì²éÂ·¾¶ÊÇ·ñÕıÈ·!"));
+		QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("åˆ›å»ºcsvæ–‡ä»¶å¤±è´¥ï¼Œè¯·æ£€æŸ¥è·¯å¾„æ˜¯å¦æ­£ç¡®!"));
 		return;
 	}
 
-	/*»ñÈ¡SARÍ¼ÏñÊı¾İ¶ÑÕ»ÎÄ¼şĞÅÏ¢*/
+	/*è·å–SARå›¾åƒæ•°æ®å †æ ˆæ–‡ä»¶ä¿¡æ¯*/
 
 	Utils util; SBAS sbas; FormatConversion conversion; Unwrap unwrap;
 	int ret;
@@ -2429,11 +2429,11 @@ void MyThread::SBAS_time_series(
 	{
 		SAR_images.push_back(image->child(i, 1)->text().toStdString());
 	}
-	//È·¶¨Ó¦ÓÃ³ÌĞòÂ·¾¶
+	//ç¡®å®šåº”ç”¨ç¨‹åºè·¯å¾„
 	string appPath = QCoreApplication::applicationDirPath().toStdString();
 	std::replace(appPath.begin(), appPath.end(), '/', '\\');
-	/*¸ÉÉæÏàÎ»Éú³É*/
-	emit updateProcess(10, QString::fromLocal8Bit("²î·Ö¸ÉÉæÏàÎ»Éú³É¡­¡­"));
+	/*å¹²æ¶‰ç›¸ä½ç”Ÿæˆ*/
+	emit updateProcess(10, QString::fromLocal8Bit("å·®åˆ†å¹²æ¶‰ç›¸ä½ç”Ÿæˆâ€¦â€¦"));
 	Mat temporal, spatial, formation_matrix, spatial_baseline, temporal_baseline;
 	util.spatialTemporalBaselineEstimation(SAR_images, 1, temporal, spatial);
 	sbas.get_formation_matrix(spatial, temporal, spatial_thresh, temporal_thresh_low, temporal_thresh / 365.0,
@@ -2446,7 +2446,7 @@ void MyThread::SBAS_time_series(
 	sbas.generate_interferograms(SAR_images, formation_matrix, spatial_baseline, temporal_baseline, multilook_az, multilook_rg,
 		path1.c_str(), true, alpha);
 
-	/*¼ÆËã¸ßÏà¸Éµã*/
+	/*è®¡ç®—é«˜ç›¸å¹²ç‚¹*/
 	vector<SBAS_edge> edges;
 	vector<SBAS_node> nodes;
 	vector<SBAS_triangle> triangles;
@@ -2473,7 +2473,7 @@ void MyThread::SBAS_time_series(
 	string mcf_solution = path1 + "\\mcf_problem.net.sol";
 	if (unwrap_method == 1)
 	{
-		/*Éú³É¸ßÏà¸ÉÈı½ÇÍøÂç*/
+		/*ç”Ÿæˆé«˜ç›¸å¹²ä¸‰è§’ç½‘ç»œ*/
 		sbas.generate_high_coherence_mask(phaseFiles, 3, 3, coherence_thresh, 0.5, mask);
 		int nonzero = cv::countNonZero(mask);
 		string node_file = path1 + "\\high_coherence.node";
@@ -2489,7 +2489,7 @@ void MyThread::SBAS_time_series(
 
 		
 		double obj;
-		//Èı½ÇÍøÂç½â²ø
+		//ä¸‰è§’ç½‘ç»œè§£ç¼ 
 		for (int i = 0; i < phaseFiles.size(); i++)
 		{
 			conversion.read_array_from_h5(phaseFiles[i].c_str(), "phase", phase);
@@ -2517,12 +2517,12 @@ void MyThread::SBAS_time_series(
 				nodes[j].b_unwrapped = false;
 			}
 			int process = double(i + 1) / phaseFiles.size() * 100.0 * 0.5;
-			emit updateProcess(10 + process, QString::fromLocal8Bit("ÏàÎ»½â²øÖĞ¡­¡­"));
+			emit updateProcess(10 + process, QString::fromLocal8Bit("ç›¸ä½è§£ç¼ ä¸­â€¦â€¦"));
 		}
 	}
 	else
 	{
-		//¹æÔòÍøÂç½â²ø
+		//è§„åˆ™ç½‘ç»œè§£ç¼ 
 		mask = 1;
 		for (int i = 0; i < phaseFiles.size(); i++)
 		{
@@ -2534,23 +2534,23 @@ void MyThread::SBAS_time_series(
 			}
 			Mat residue, phase2;
 			util.residue(phase, residue);
-			if (unwrap_method == 2)//SNAPHU·½·¨
+			if (unwrap_method == 2)//SNAPHUæ–¹æ³•
 			{
 				unwrap.snaphu(phase, phase2, path1.c_str());
 			}
-			else//MCF·½·¨
+			else//MCFæ–¹æ³•
 			{
 				unwrap.MCF(phase, phase2, coherence, residue, mcf_problem.c_str(), appPath.c_str());
 			}
 			//phase2 = phase2 - phase2.at<double>(0, 0);
 			conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase2);
 			int process = double(i + 1) / phaseFiles.size() * 100.0 * 0.5;
-			emit updateProcess(10 + process, QString::fromLocal8Bit("ÏàÎ»½â²øÖĞ¡­¡­"));
+			emit updateProcess(10 + process, QString::fromLocal8Bit("ç›¸ä½è§£ç¼ ä¸­â€¦â€¦"));
 		}
 	}
-	/*µÚÒ»´Î¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½*/
-	emit updateProcess(65, QString::fromLocal8Bit("¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½¡­¡­"));
-	//¸ù¾İ²Î¿¼µã½øĞĞÏàÎ»Ğ£Õı£¬²Î¿¼µãÄ¬ÈÏÎª×î×óÉÏ½ÇµÄµã
+	/*ç¬¬ä¸€æ¬¡è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³*/
+	emit updateProcess(65, QString::fromLocal8Bit("è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³â€¦â€¦"));
+	//æ ¹æ®å‚è€ƒç‚¹è¿›è¡Œç›¸ä½æ ¡æ­£ï¼Œå‚è€ƒç‚¹é»˜è®¤ä¸ºæœ€å·¦ä¸Šè§’çš„ç‚¹
 	int ref_i = 0, ref_j = 0;
 	bool b_break = false;
 	for (int i = 0; i < phase.rows; i++)
@@ -2575,10 +2575,10 @@ void MyThread::SBAS_time_series(
 		conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase);
 	}
 
-	/*×îĞ¡¶ş³Ë·¨Çó½âÏßĞÔĞÎ±äËÙÂÊºÍ¸ß³Ì²Ğ²î*/
-	//Ê×ÏÈÈ·¶¨¾ØÕóB
-	int M = phaseFiles.size();//¸ÉÉæÍ¼·ùÊı
-	int N = SAR_images.size() - 1;//Ê±¼äĞòÁĞÊı
+	/*æœ€å°äºŒä¹˜æ³•æ±‚è§£çº¿æ€§å½¢å˜é€Ÿç‡å’Œé«˜ç¨‹æ®‹å·®*/
+	//é¦–å…ˆç¡®å®šçŸ©é˜µB
+	int M = phaseFiles.size();//å¹²æ¶‰å›¾å¹…æ•°
+	int N = SAR_images.size() - 1;//æ—¶é—´åºåˆ—æ•°
 	Mat B(M, N, CV_64F); B = 0.0;
 	Mat one = Mat::ones(N, 1, CV_64F);
 	for (int i = 0; i < M; i++)
@@ -2594,7 +2594,7 @@ void MyThread::SBAS_time_series(
 		}
 	}
 	Mat B1 = B * one;
-	//È·¶¨¾ØÕóc
+	//ç¡®å®šçŸ©é˜µc
 	Mat c(M, 1, CV_64F), col(nodes.size(), 1, CV_64F); c = 0.0; col = 0.0;
 	vector<Mat> phase_vec, phase_vec2, coh_vec;
 	phase_vec.resize(M); phase_vec2.resize(N + 1); coh_vec.resize(M);
@@ -2637,7 +2637,7 @@ void MyThread::SBAS_time_series(
 	count = 0;
 	Mat coh_variation(1, M, CV_64F); coh_variation = 0.0;
 	
-	emit updateProcess(70, QString::fromLocal8Bit("Ê±¼äĞòÁĞ·ÖÎö¡­¡­"));
+	emit updateProcess(70, QString::fromLocal8Bit("æ—¶é—´åºåˆ—åˆ†æâ€¦â€¦"));
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < phase.rows; i++)
 	{
@@ -2651,7 +2651,7 @@ void MyThread::SBAS_time_series(
 					temp.at<double>(k, 0) = phase_vec[k].at<double>(i, j);
 					temp_coh.at<double>(k, k) = coh_vec[k].at<double>(i, j);
 				}
-				//×îĞ¡¶ş³Ë·¨Çó½â
+				//æœ€å°äºŒä¹˜æ³•æ±‚è§£
 				Mat A_t, A, b;
 				BMc.copyTo(A);
 				temp.copyTo(b);
@@ -2672,7 +2672,7 @@ void MyThread::SBAS_time_series(
 		}
 	}
 
-	/*µÚ¶ş´Î¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½*/
+	/*ç¬¬äºŒæ¬¡è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³*/
 	v = v / 4 / PI * wavelength;
 	Mat refinement_mask; mask.copyTo(refinement_mask); refinement_mask = 0;
 	for (int i = 0; i < phase.rows; i++)
@@ -2685,11 +2685,11 @@ void MyThread::SBAS_time_series(
 			}
 		}
 	}
-	emit updateProcess(75, QString::fromLocal8Bit("µÚ¶ş´Î¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½¡­¡­"));
+	emit updateProcess(75, QString::fromLocal8Bit("ç¬¬äºŒæ¬¡è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³â€¦â€¦"));
 	
 	for (int i = 0; i < phaseFiles.size(); i++)
 	{
-		//Ã»ÓĞÕÒµ½×ã¹»µÄµã½øĞĞÖØÈ¥Æ½ÔòÖ±½ÓÊ¹ÓÃµÚÒ»´ÎÖØÈ¥Æ½µÄ½á¹û
+		//æ²¡æœ‰æ‰¾åˆ°è¶³å¤Ÿçš„ç‚¹è¿›è¡Œé‡å»å¹³åˆ™ç›´æ¥ä½¿ç”¨ç¬¬ä¸€æ¬¡é‡å»å¹³çš„ç»“æœ
 		if (cv::countNonZero(refinement_mask) < 4)
 		{
 			conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
@@ -2732,7 +2732,7 @@ void MyThread::SBAS_time_series(
 					temp.at<double>(k, 0) = phase_vec[k].at<double>(i, j);
 					temp_coh.at<double>(k, k) = coh_vec[k].at<double>(i, j);
 				}
-				//×îĞ¡¶ş³Ë·¨Çó½â
+				//æœ€å°äºŒä¹˜æ³•æ±‚è§£
 				Mat A_t, A, b;
 				BMc.copyTo(A);
 				temp.copyTo(b);
@@ -2749,7 +2749,7 @@ void MyThread::SBAS_time_series(
 					v.at<double>(i, j) = x.at<double>(0, 0);
 					z.at<double>(i, j) = x.at<double>(1, 0);
 				}
-				//¼õÈ¥µØĞÎÎó²îÏàÎ»
+				//å‡å»åœ°å½¢è¯¯å·®ç›¸ä½
 				temp = temp - x.at<double>(1, 0) * c;
 				B.copyTo(A);
 				temp.copyTo(b);
@@ -2769,7 +2769,7 @@ void MyThread::SBAS_time_series(
 							+ phase_vec2[k - 1].at<double>(i, j);
 					}
 				}
-				//¼ÆËãÊ±¼äÏà¹ØÏµÊı
+				//è®¡ç®—æ—¶é—´ç›¸å…³ç³»æ•°
 				x = B * x;
 				coh = 0.0;
 				sbas.compute_temporal_coherence(x, temp, &coh);
@@ -2779,8 +2779,8 @@ void MyThread::SBAS_time_series(
 	}
 
 	
-	//±£´æÊ±Ğò·ÖÎö½á¹û
-	emit updateProcess(80, QString::fromLocal8Bit("½á¹ûÉ¸Ñ¡¡­¡­"));
+	//ä¿å­˜æ—¶åºåˆ†æç»“æœ
+	emit updateProcess(80, QString::fromLocal8Bit("ç»“æœç­›é€‰â€¦â€¦"));
 	Mat out_mask, mask_count_map;
 	mask.copyTo(out_mask);
 	mask.copyTo(mask_count_map);
@@ -2802,7 +2802,7 @@ void MyThread::SBAS_time_series(
 			}
 		}
 	}
-	//Èç¹ûÄ£ĞÍÏà¹ØÏµÊıãĞÖµÌ«¸ßµ¼ÖÂÃ»ÓĞµã±»Ñ¡³ö£¬ÔòÈ«Ñ¡
+	//å¦‚æœæ¨¡å‹ç›¸å…³ç³»æ•°é˜ˆå€¼å¤ªé«˜å¯¼è‡´æ²¡æœ‰ç‚¹è¢«é€‰å‡ºï¼Œåˆ™å…¨é€‰
 	if (valide_count == 0)
 	{
 		valide_count = cv::countNonZero(mask);
@@ -2840,7 +2840,7 @@ void MyThread::SBAS_time_series(
 				}
 				series.copyTo(time_series(cv::Range(valide_count, valide_count + 1), cv::Range(0, N + 1)));
 				valide_count++;
-				//×îĞ¡¶ş³Ë·¨ÄâºÏÏßĞÔĞÎ±äËÙÂÊ
+				//æœ€å°äºŒä¹˜æ³•æ‹Ÿåˆçº¿æ€§å½¢å˜é€Ÿç‡
 				Mat temp_A_t, temp_x;
 				cv::transpose(temp_A, temp_A_t);
 				temp_A = temp_A_t * temp_A;
@@ -2855,7 +2855,7 @@ void MyThread::SBAS_time_series(
 		}
 	}
 	csv_file.close();
-	emit updateProcess(95, QString::fromLocal8Bit("½á¹û±£´æ¡­¡­"));
+	emit updateProcess(95, QString::fromLocal8Bit("ç»“æœä¿å­˜â€¦â€¦"));
 	Mat mapped_lat, mapped_lon;
 	double max_def, min_def;
 	
@@ -2903,7 +2903,7 @@ void MyThread::SBAS_time_series(
 	
 
 
-	/*½¨Á¢SBASÊ±¼äĞòÁĞ·ÖÎö¸ù½Úµã*/
+	/*å»ºç«‹SBASæ—¶é—´åºåˆ—åˆ†ææ ¹èŠ‚ç‚¹*/
 	QStandardItem* SBAS_series = new QStandardItem(dstNode);
 	SBAS_series->setToolTip(project_name);
 	int insert = 0;
@@ -2928,7 +2928,7 @@ void MyThread::SBAS_time_series(
 	QStandardItem* SBAS_series_Rank = new QStandardItem("SBAS-1.0");
 	project->setChild(insert, 1, SBAS_series_Rank);
 
-	//Ğ´Èëµ½¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍÖĞ
+	//å†™å…¥åˆ°å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹ä¸­
 	QStandardItem* SBAS_series_name = new QStandardItem(QString("SBAS_time_series"));
 	SBAS_series_name->setToolTip("SBAS");
 	std::replace(times_series_h5.begin(), times_series_h5.end(), '\\', '/');
@@ -2938,7 +2938,7 @@ void MyThread::SBAS_time_series(
 	SBAS_series->appendRow(SBAS_series_name);
 	SBAS_series->setChild(0, 1, SBAS_series_name_path);
 
-	/*Ğ´ÈëXML*/
+	/*å†™å…¥XML*/
 	XMLFile xmlfile;
 	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 	QString relativePath = QString("/%1/SBAS_time_series.h5").arg(dstNode);
@@ -2951,7 +2951,7 @@ void MyThread::SBAS_time_series(
 
 void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode, int ref_row, int ref_col, QList<QPoint> GCPs, QStandardItemModel* model)
 {
-	/*»ñÈ¡SARÍ¼ÏñÊı¾İ¶ÑÕ»ÎÄ¼şĞÅÏ¢*/
+	/*è·å–SARå›¾åƒæ•°æ®å †æ ˆæ–‡ä»¶ä¿¡æ¯*/
 
 	Utils util; SBAS sbas; FormatConversion conversion;
 	int ret;
@@ -2973,7 +2973,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 	ret = conversion.read_array_from_h5(times_series_h5.c_str(), "formation_matrix", formation_matrix);
 	ret = conversion.read_array_from_h5(times_series_h5.c_str(), "mask", mask);
 	ret = conversion.read_array_from_h5(times_series_h5.c_str(), "temporal_baseline", temporal_baseline);
-	//È·¶¨Ó¦ÓÃ³ÌĞòÂ·¾¶
+	//ç¡®å®šåº”ç”¨ç¨‹åºè·¯å¾„
 	string appPath = QCoreApplication::applicationDirPath().toStdString();
 	std::replace(appPath.begin(), appPath.end(), '/', '\\');
 	QString ifgSavePath = save_path + "/" + srcNode;
@@ -3005,8 +3005,8 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 	}
 	
 	Mat coherence, phase;
-	/*¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½*/
-	emit updateProcess(10, QString::fromLocal8Bit("¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½¡­¡­"));
+	/*è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³*/
+	emit updateProcess(10, QString::fromLocal8Bit("è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³â€¦â€¦"));
 	for (int i = 0; i < phaseFiles.size(); i++)
 	{
 		conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
@@ -3016,10 +3016,10 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 		conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0, phase.rows, phase.cols);
 	}
 
-	/*×îĞ¡¶ş³Ë·¨Çó½âÏßĞÔĞÎ±äËÙÂÊºÍ¸ß³Ì²Ğ²î*/
-	//Ê×ÏÈÈ·¶¨¾ØÕóB
-	int M = phaseFiles.size();//¸ÉÉæÍ¼·ùÊı
-	int N = temporal_baseline.cols - 1;//Ê±¼äĞòÁĞÊı
+	/*æœ€å°äºŒä¹˜æ³•æ±‚è§£çº¿æ€§å½¢å˜é€Ÿç‡å’Œé«˜ç¨‹æ®‹å·®*/
+	//é¦–å…ˆç¡®å®šçŸ©é˜µB
+	int M = phaseFiles.size();//å¹²æ¶‰å›¾å¹…æ•°
+	int N = temporal_baseline.cols - 1;//æ—¶é—´åºåˆ—æ•°
 	Mat B(M, N, CV_64F); B = 0.0;
 	Mat one = Mat::ones(N, 1, CV_64F);
 	for (int i = 0; i < M; i++)
@@ -3035,7 +3035,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 		}
 	}
 	Mat B1 = B * one;
-	//È·¶¨¾ØÕóc
+	//ç¡®å®šçŸ©é˜µc
 	Mat c(M, 1, CV_64F); c = 0.0;
 	vector<Mat> phase_vec, phase_vec2, coh_vec;
 	phase_vec.resize(M); phase_vec2.resize(N + 1); coh_vec.resize(M);
@@ -3077,7 +3077,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 	cv::hconcat(B1, c, BMc);
 	count = 0;
 	
-	emit updateProcess(30, QString::fromLocal8Bit("Ê±¼äĞòÁĞ·ÖÎö¡­¡­"));
+	emit updateProcess(30, QString::fromLocal8Bit("æ—¶é—´åºåˆ—åˆ†æâ€¦â€¦"));
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < phase.rows; i++)
 	{
@@ -3091,7 +3091,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 					temp.at<double>(k, 0) = phase_vec[k].at<double>(i, j);
 					temp_coh.at<double>(k, k) = coh_vec[k].at<double>(i, j);
 				}
-				//×îĞ¡¶ş³Ë·¨Çó½â
+				//æœ€å°äºŒä¹˜æ³•æ±‚è§£
 				Mat A_t, A, b;
 				BMc.copyTo(A);
 				temp.copyTo(b);
@@ -3108,7 +3108,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 					v.at<double>(i, j) = x.at<double>(0, 0);
 					z.at<double>(i, j) = x.at<double>(1, 0);
 				}
-				//¼õÈ¥µØĞÎÎó²îÏàÎ»
+				//å‡å»åœ°å½¢è¯¯å·®ç›¸ä½
 				temp = temp - x.at<double>(1, 0) * c;
 				B.copyTo(A);
 				temp.copyTo(b);
@@ -3128,7 +3128,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 							+ phase_vec2[k - 1].at<double>(i, j);
 					}
 				}
-				//¼ÆËãÊ±¼äÏà¹ØÏµÊı
+				//è®¡ç®—æ—¶é—´ç›¸å…³ç³»æ•°
 				x = B * x;
 				coh = 0.0;
 				sbas.compute_temporal_coherence(x, temp, &coh);
@@ -3138,8 +3138,8 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 	}
 
 
-	//±£´æÊ±Ğò·ÖÎö½á¹û
-	emit updateProcess(80, QString::fromLocal8Bit("½á¹ûÉ¸Ñ¡¡­¡­"));
+	//ä¿å­˜æ—¶åºåˆ†æç»“æœ
+	emit updateProcess(80, QString::fromLocal8Bit("ç»“æœç­›é€‰â€¦â€¦"));
 	int nr, nc;
 	nr = mask.rows; nc = mask.cols;
 	int valide_count = cv::countNonZero(mask);
@@ -3161,7 +3161,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 				}
 				series.copyTo(time_series(cv::Range(valide_count, valide_count + 1), cv::Range(0, N + 1)));
 				valide_count++;
-				//×îĞ¡¶ş³Ë·¨ÄâºÏÏßĞÔĞÎ±äËÙÂÊ
+				//æœ€å°äºŒä¹˜æ³•æ‹Ÿåˆçº¿æ€§å½¢å˜é€Ÿç‡
 				Mat temp_A_t, temp_x;
 				cv::transpose(temp_A, temp_A_t);
 				temp_A = temp_A_t * temp_A;
@@ -3173,7 +3173,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 			}
 		}
 	}
-	emit updateProcess(95, QString::fromLocal8Bit("½á¹û±£´æ¡­¡­"));
+	emit updateProcess(95, QString::fromLocal8Bit("ç»“æœä¿å­˜â€¦â€¦"));
 	time_series = time_series / 4 / PI * wavelength;
 	double max_def, min_def;
 	Mat Max(1, 1, CV_64F), Min(1, 1, CV_64F);
@@ -3214,7 +3214,7 @@ void MyThread::Geocoding(
 	QDir dir(save_path);
 	if (!dir.exists(dstNode))
 		dir.mkdir(dstNode);
-	//Íâ²¿DEMÎÄ¼ş¼Ğ
+	//å¤–éƒ¨DEMæ–‡ä»¶å¤¹
 	QString appPath = QCoreApplication::applicationDirPath();
 	QString demPath = appPath + "/dem";
 	QDir appDir(appPath);
@@ -3242,11 +3242,11 @@ void MyThread::Geocoding(
 			break;
 		}
 	}
-	emit updateProcess(2, QString::fromLocal8Bit("ÕıÔÚµØÀí±àÂë¡­¡­"));
+	emit updateProcess(2, QString::fromLocal8Bit("æ­£åœ¨åœ°ç†ç¼–ç â€¦â€¦"));
 	FormatConversion conversion; Utils util;
 	QString geocode_Rank_level;
 	int ret;
-	//¸ÉÉæ²úÆ·µØÀí±àÂë
+	//å¹²æ¶‰äº§å“åœ°ç†ç¼–ç 
 	if (type == 1)
 	{
 		String source_file;
@@ -3289,7 +3289,7 @@ void MyThread::Geocoding(
 			ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
 			ret = flat.demMapping(dem, mappedDem, mapped_lat, mapped_lon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
 				prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
-			//¶àÊÓ²Ù×÷
+			//å¤šè§†æ“ä½œ
 			if (multilook_rg > 1 || multilook_az > 1)
 			{
 				int rows_mapped = sceneHeight / multilook_az;
@@ -3315,7 +3315,7 @@ void MyThread::Geocoding(
 				lon_new.copyTo(mapped_lat);
 			}
 		}
-		emit updateProcess(20, QString::fromLocal8Bit("ÕıÔÚµØÀí±àÂë¡­¡­"));
+		emit updateProcess(20, QString::fromLocal8Bit("æ­£åœ¨åœ°ç†ç¼–ç â€¦â€¦"));
 		double lat_north, lat_south, lon_west, lon_east;
 		for (int i = 0; i < input_files.size(); i++)
 		{
@@ -3376,10 +3376,10 @@ void MyThread::Geocoding(
 			}
 			int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
 
-			emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµØÀí±àÂë¡­¡­"));
+			emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨åœ°ç†ç¼–ç â€¦â€¦"));
 		}
 	}
-	//SARÍ¼ÏñµØÀí±àÂë
+	//SARå›¾åƒåœ°ç†ç¼–ç 
 	else
 	{
 		String source_file;
@@ -3436,7 +3436,7 @@ void MyThread::Geocoding(
 				prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
 		}
 
-		//¶àÊÓ²Ù×÷
+		//å¤šè§†æ“ä½œ
 		if (multi_rg > 1 || multi_az > 1)
 		{
 			int rows_mapped = mapped_lon.rows / multi_az;
@@ -3462,7 +3462,7 @@ void MyThread::Geocoding(
 			lon_new.copyTo(mapped_lat);
 		}
 
-		emit updateProcess(20, QString::fromLocal8Bit("ÕıÔÚµØÀí±àÂë¡­¡­"));
+		emit updateProcess(20, QString::fromLocal8Bit("æ­£åœ¨åœ°ç†ç¼–ç â€¦â€¦"));
 		double lat_north, lat_south, lon_west, lon_east;
 		for (int i = 0; i < input_files.size(); i++)
 		{
@@ -3478,10 +3478,10 @@ void MyThread::Geocoding(
 			ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
 			ret = conversion.write_array_to_h5(output_files[i].c_str(), "amplitude", mapped_amplitude);
 			int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
-			emit updateProcess(process, QString::fromLocal8Bit("ÕıÔÚµØÀí±àÂë¡­¡­"));
+			emit updateProcess(process, QString::fromLocal8Bit("æ­£åœ¨åœ°ç†ç¼–ç â€¦â€¦"));
 		}
 	}
-	/*½¨Á¢µØÀí±àÂë¸ù½Úµã*/
+	/*å»ºç«‹åœ°ç†ç¼–ç æ ¹èŠ‚ç‚¹*/
 	QStandardItem* geocode = new QStandardItem(dstNode);
 	geocode->setToolTip(project_name);
 	geocode->setIcon(QIcon(FOLDER_ICON));
@@ -3515,7 +3515,7 @@ void MyThread::Geocoding(
 			("/" + dstNode + "/" + fileinfo.baseName() + ".h5").toStdString().c_str(), geocode_Rank_level.toStdString().c_str());
 	}
 	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-	emit updateProcess(100, QString::fromLocal8Bit("Íê³É¡­¡­"));
+	emit updateProcess(100, QString::fromLocal8Bit("å®Œæˆâ€¦â€¦"));
 	emit endProcess();
 }
 
@@ -3535,7 +3535,7 @@ void MyThread::S1_swath_merge(
 	if (!dir.exists(dstNode))
 		dir.mkdir(dstNode);
 
-	//È·¶¨Èı¸ö×Ó´øÏàÎ»ÎÄ¼ş
+	//ç¡®å®šä¸‰ä¸ªå­å¸¦ç›¸ä½æ–‡ä»¶
 	QString IW1_h5, IW2_h5, IW3_h5;
 	for (int i = 0; i < project->rowCount(); i++)
 	{
@@ -3556,7 +3556,7 @@ void MyThread::S1_swath_merge(
 			continue;
 		}
 	}
-	emit updateProcess(30, QString::fromLocal8Bit("ÕıÔÚÆ´½Ó¡­¡­"));
+	emit updateProcess(30, QString::fromLocal8Bit("æ­£åœ¨æ‹¼æ¥â€¦â€¦"));
 	int ret;
 	FormatConversion conversion; Utils util;
 	Mat merged_phase;
@@ -3565,12 +3565,12 @@ void MyThread::S1_swath_merge(
 		merged_h5.toStdString().c_str());
 	if (ret < 0)
 	{
-		emit errorProcess(QString::fromLocal8Bit("ÊäÈë²»·ûºÏÒªÇó£¬ÇëÖØÊÔ£¡"));
+		emit errorProcess(QString::fromLocal8Bit("è¾“å…¥ä¸ç¬¦åˆè¦æ±‚ï¼Œè¯·é‡è¯•ï¼"));
 		//emit endProcess();
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("ÕıÔÚÆ´½Ó¡­¡­"));
-	/*½¨Á¢×Ó´øÆ´½Ó¸ù½Úµã*/
+	emit updateProcess(90, QString::fromLocal8Bit("æ­£åœ¨æ‹¼æ¥â€¦â€¦"));
+	/*å»ºç«‹å­å¸¦æ‹¼æ¥æ ¹èŠ‚ç‚¹*/
 	QStandardItem* swath_merge = new QStandardItem(dstNode);
 	swath_merge->setToolTip(project_name);
 	swath_merge->setIcon(QIcon(FOLDER_ICON));
@@ -3592,7 +3592,7 @@ void MyThread::S1_swath_merge(
 	xml.XMLFile_add_interferometric_phase(dstNode.toStdString().c_str(), "merged_phase",
 		relative_path.toStdString().c_str(), "unknown", "phase-1.0", 0, 0, 0, 0, 0, 0, 0, 0, 0);
 	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-	emit updateProcess(100, QString::fromLocal8Bit("Íê³É¡­¡­"));
+	emit updateProcess(100, QString::fromLocal8Bit("å®Œæˆâ€¦â€¦"));
 	emit endProcess();
 }
 
@@ -3607,7 +3607,7 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	if (!dir.exists(dstNode))
 		dir.mkdir(dstNode);
 
-	//È·¶¨ÏàÁÚµ¥ÊÓ¸´Í¼ÏñÎÄ¼ş
+	//ç¡®å®šç›¸é‚»å•è§†å¤å›¾åƒæ–‡ä»¶
 	QString IW1_h5, IW2_h5;
 	bool b_dstNode_existed = false;
 	QStandardItem* frame_merge = NULL;
@@ -3633,7 +3633,7 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	QFileInfo fileinfo1(IW1_h5);
 	QFileInfo fileinfo2(IW1_h5);
 	QString filename = fileinfo1.baseName() + "_" + fileinfo2.baseName();
-	emit updateProcess(30, QString::fromLocal8Bit("ÕıÔÚÆ´½Ó¡­¡­"));
+	emit updateProcess(30, QString::fromLocal8Bit("æ­£åœ¨æ‹¼æ¥â€¦â€¦"));
 	int ret;
 	FormatConversion conversion; Utils util;
 	Mat merged_phase;
@@ -3642,11 +3642,11 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	ret = util.S1_frame_merge(IW1_h5.toStdString().c_str(), IW2_h5.toStdString().c_str(), merged_h5.toStdString().c_str());
 	if (ret < 0)
 	{
-		emit errorProcess(QString::fromLocal8Bit("ÊäÈë²»·ûºÏÒªÇó£¬ÇëÖØÊÔ£¡"));
+		emit errorProcess(QString::fromLocal8Bit("è¾“å…¥ä¸ç¬¦åˆè¦æ±‚ï¼Œè¯·é‡è¯•ï¼"));
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("ÕıÔÚÆ´½Ó¡­¡­"));
-	/*½¨Á¢×Ó´øÆ´½Ó¸ù½Úµã*/
+	emit updateProcess(90, QString::fromLocal8Bit("æ­£åœ¨æ‹¼æ¥â€¦â€¦"));
+	/*å»ºç«‹å­å¸¦æ‹¼æ¥æ ¹èŠ‚ç‚¹*/
 	
 	if (!b_dstNode_existed)
 	{
@@ -3671,7 +3671,7 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	
 	xml.XMLFile_add_origin(dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
 	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-	emit updateProcess(100, QString::fromLocal8Bit("Íê³É¡­¡­"));
+	emit updateProcess(100, QString::fromLocal8Bit("å®Œæˆâ€¦â€¦"));
 	emit endProcess();
 }
 
@@ -3703,9 +3703,9 @@ void MyThread::Baseline_Estimate(int index, QString project_name, QString dst_no
 	{
 		SAR_images.push_back(image->child(i, 1)->text().toStdString());			
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("¿ªÊ¼½øĞĞ»ùÏß¹À¼Æ¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å¼€å§‹è¿›è¡ŒåŸºçº¿ä¼°è®¡â€¦â€¦"));
 	FormatConversion FC;
-	/*»ñÈ¡Ö÷ĞÇ²ÎÊı*/
+	/*è·å–ä¸»æ˜Ÿå‚æ•°*/
 	Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
 	Mat tmp_double = Mat::zeros(1, 1, CV_64FC1);
 	double interp_interval;
@@ -3729,7 +3729,7 @@ void MyThread::Baseline_Estimate(int index, QString project_name, QString dst_no
 	FC.read_slc_from_h5(SAR_images.at(index - 1).c_str(), SLC);
 	Rows = SLC.GetRows();
 	Cols = SLC.GetCols();
-	/*Ìí¼ÓÍ¼Ïñµ½modelÖĞ²¢¸´ÖÆh5²ÎÊı*/
+	/*æ·»åŠ å›¾åƒåˆ°modelä¸­å¹¶å¤åˆ¶h5å‚æ•°*/
 	vector<int> Row_offset;
 	vector<int> Col_offset;
 	Mat cc = Mat::zeros(2, image_number, CV_64F);
@@ -3740,8 +3740,8 @@ void MyThread::Baseline_Estimate(int index, QString project_name, QString dst_no
 		{
 			return;
 		}
-		/*¹À¼ÆÊ±¿Õ»ùÏß*/
-		if (i == index - 1)  //Ö÷Í¼Ïñ
+		/*ä¼°è®¡æ—¶ç©ºåŸºçº¿*/
+		if (i == index - 1)  //ä¸»å›¾åƒ
 		{
 			temporal_baseline.push_back(0);
 			spatial_baseline.push_back(0);
@@ -3769,7 +3769,7 @@ void MyThread::Baseline_Estimate(int index, QString project_name, QString dst_no
 			cc.at<double>(0, i) = V_baseline;
 			cc.at<double>(1, i) = delta;
 		}
-		emit updateProcess(20 + (i + 1) * 80 / image_number, QString::fromLocal8Bit("ÕıÔÚ¼ÆËãÊ±¿Õ»ùÏß¡­¡­"));
+		emit updateProcess(20 + (i + 1) * 80 / image_number, QString::fromLocal8Bit("æ­£åœ¨è®¡ç®—æ—¶ç©ºåŸºçº¿â€¦â€¦"));
 	}
 	//util.cvmat2bin("E:\\working_dir\\papers\\multibaseline_polarimetric\\beijing\\baseline_distribution.bin", cc);
 	emit sendBL(temporal_baseline, spatial_baseline, index);
@@ -3791,7 +3791,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 		dir.mkdir(file_name);
 		absolute_path = save_path + "/" + file_name;
 	}
-	//Íâ²¿DEMÎÄ¼ş¼Ğ
+	//å¤–éƒ¨DEMæ–‡ä»¶å¤¹
 	QString appPath = QCoreApplication::applicationDirPath();
 	QString demPath = appPath + "/dem";
 	QDir appDir(appPath);
@@ -3810,7 +3810,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 	QString master_path = origin_node->child(master_index, 1)->text();
 	QFileInfo fileinfo(master_path);
 	QString master_name = fileinfo.baseName();
-	/*½¨Á¢¸ù½Úµã*/
+	/*å»ºç«‹æ ¹èŠ‚ç‚¹*/
 	QStandardItem* interferometric_phase = new QStandardItem(file_name);
 	interferometric_phase->setToolTip(project_name);
 	int insert = 0;
@@ -3831,7 +3831,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 	//interferometric_phase_Rank->setToolTip(master_name);
 	project->setChild(insert, 1, interferometric_phase_Rank);
 	
-	emit updateProcess(2, QString::fromLocal8Bit("¿ªÊ¼´¦Àí¡­¡­"));
+	emit updateProcess(2, QString::fromLocal8Bit("å¼€å§‹å¤„ç†â€¦â€¦"));
 	ComplexMat Master;
 	int ret = FC.read_slc_from_h5(master_path.toStdString().c_str(), Master);
 	Mat statevec, lon_coef, lat_coef, inc_coef, statevec2;
@@ -3858,7 +3858,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 	FC.read_str_from_h5(master_path.toStdString().c_str(), "acquisition_stop_time", end);
 	FC.utc2gps(start.c_str(), &acquisitionStartTime);
 	FC.utc2gps(end.c_str(), &acquisitionStopTime);
-	//µØÀí±àÂëĞÅÏ¢
+	//åœ°ç†ç¼–ç ä¿¡æ¯
 	Mat mapped_lon, mapped_lat;
 	bool b_mapped = false;
 	if (multilook_az > 1 || multilook_rg > 1)
@@ -3925,7 +3925,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 			if (Master.type() != CV_32F) Master.convertTo(Master, CV_32F);
 			if (Slave.type() != CV_32F) Slave.convertTo(Slave, CV_32F);
 			ret = util.Multilook(Master, Slave, 1, 1, phase);
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(h5_path.toStdString().c_str());
 			QString master_relative_path = "/" + node_name + "/" + master_regis_name + ".h5";
 			QString slave_relative_path = "/" + node_name + "/" + slave_regis_name + ".h5";
@@ -4006,7 +4006,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 					("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "coherence-1.0", offset_row, offset_col,
 					isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
 			}
-			emit updateProcess(10 + pair * 80 / (count - 1), QString::fromLocal8Bit("Éú³ÉµÚ1%·ù¸ÉÉæÍ¼¡­¡­").arg(pair));
+			emit updateProcess(10 + pair * 80 / (count - 1), QString::fromLocal8Bit("ç”Ÿæˆç¬¬1%å¹…å¹²æ¶‰å›¾â€¦â€¦").arg(pair));
 			pair++;
 
 
@@ -4051,7 +4051,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 	QList<QString> filter_name;
 	QList<QString> relative_filter_path;
 	QList<QString> absolute_filter_path;
-	emit updateProcess(10, QString::fromLocal8Bit("×¼±¸Êı¾İ¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å‡†å¤‡æ•°æ®â€¦â€¦"));
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == node_name)
@@ -4078,7 +4078,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			break;
 		}
 	}
-	/*½¨Á¢¸ù½Úµã*/
+	/*å»ºç«‹æ ¹èŠ‚ç‚¹*/
 	QStandardItem* Denoise = new QStandardItem(file_name);
 	Denoise->setToolTip(project_name);
 	int insert = 0;
@@ -4114,12 +4114,12 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			emit updateProcess(10+i*80/image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼ÏñÂË²¨ÖĞ¡­¡­").arg(i+1));
+			emit updateProcess(10+i*80/image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒæ»¤æ³¢ä¸­â€¦â€¦").arg(i+1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_filter;
 			ret = filter.slope_adaptive_filter(phase, phase_filter, slop_win, pre_win);
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
 			string tmp_str;
@@ -4148,7 +4148,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4158,7 +4158,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 				relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "Slope", slop_win, pre_win,
 				0, 0, 0, "", "", "");
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(filter_name.at(i));
 			image->setToolTip("phase");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4178,12 +4178,12 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼ÏñÂË²¨ÖĞ¡­¡­").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒæ»¤æ³¢ä¸­â€¦â€¦").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_filter;
 			ret = filter.Goldstein_filter(phase, phase_filter, alpha, goldstein_win, n_pad);
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
 			string tmp_str;
@@ -4213,7 +4213,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4223,7 +4223,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 				relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "Goldstein", 0, 0,
 				goldstein_win, n_pad, alpha, "", "", "");
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(filter_name.at(i));
 			image->setToolTip("phase");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4243,13 +4243,13 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼ÏñÂË²¨ÖĞ¡­¡­").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒæ»¤æ³¢ä¸­â€¦â€¦").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_filter;
 			ret = filter.filter_dl(dl_path.toStdString().c_str(),tmp_path.toStdString().c_str(),
 				model_path.toStdString().c_str(), phase, phase_filter);
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
 			string tmp_str;
@@ -4279,7 +4279,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4289,7 +4289,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 				relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "DL", 0, 0,
 				0, 0, 0, dl_path.toStdString().c_str(), model_path.toStdString().c_str(), tmp_path.toStdString().c_str());
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(filter_name.at(i));
 			image->setToolTip("phase");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4336,7 +4336,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 	QList<QString> unwrap_name;
 	QList<QString> relative_unwrap_path;
 	QList<QString> absolute_unwrap_path;
-	emit updateProcess(10, QString::fromLocal8Bit("×¼±¸Êı¾İ¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å‡†å¤‡æ•°æ®â€¦â€¦"));
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == node_name)
@@ -4373,7 +4373,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			break;
 		}
 	}
-	/*½¨Á¢¸ù½Úµã*/
+	/*å»ºç«‹æ ¹èŠ‚ç‚¹*/
 	QStandardItem* Unwrap_node = new QStandardItem(file_name);
 	Unwrap_node->setToolTip(project_name);
 	int insert = 0;
@@ -4409,12 +4409,12 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼Ïñ½â²øÖĞ¡­¡­").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒè§£ç¼ ä¸­â€¦â€¦").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
 			ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap);
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_unwrap_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
 			string tmp_str;
@@ -4444,7 +4444,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4453,7 +4453,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "QualityGuided", 0);
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(unwrap_name.at(i));
 			image->setToolTip("phase");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4470,7 +4470,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼Ïñ½â²øÖĞ¡­¡­").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒè§£ç¼ ä¸­â€¦â€¦").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
@@ -4479,7 +4479,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			ret = util.residue(phase, residue);
 			QString app_path = QCoreApplication::applicationDirPath();
 			ret = unwrap.MCF(phase, phase_unwrap, coherence, residue, (absolute_path+"/MCF.net").toStdString().c_str(), app_path.toStdString().c_str());
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_unwrap_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
 			string tmp_str;
@@ -4509,7 +4509,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4518,7 +4518,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "MCF", 0);
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(unwrap_name.at(i));
 			image->setToolTip("phase");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4535,14 +4535,14 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼Ïñ½â²øÖĞ¡­¡­").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒè§£ç¼ ä¸­â€¦â€¦").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
 			QString app_path = QCoreApplication::applicationDirPath();
 			QString MCF_problem_file = app_path + "";
 			ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), absolute_path.toStdString().c_str(), app_path.toStdString().c_str());
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_unwrap_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
 			string tmp_str;
@@ -4572,7 +4572,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4581,7 +4581,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "Snaphu", 0);
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(unwrap_name.at(i));
 			image->setToolTip("phase");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4599,14 +4599,14 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼Ïñ½â²øÖĞ¡­¡­").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒè§£ç¼ ä¸­â€¦â€¦").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
 			QString app_path = QCoreApplication::applicationDirPath();
 			QString MCF_problem_file = app_path + "";
 			ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold, absolute_path.toStdString().c_str(), app_path.toStdString().c_str());
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_unwrap_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
 			string tmp_str;
@@ -4636,7 +4636,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4645,7 +4645,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "Snaphu", 0);
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(unwrap_name.at(i));
 			image->setToolTip("phase");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4693,7 +4693,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 	QList<QString> dem_name;
 	QList<QString> relative_dem_path;
 	QList<QString> absolute_dem_path;
-	emit updateProcess(10, QString::fromLocal8Bit("×¼±¸Êı¾İ¡­¡­"));
+	emit updateProcess(10, QString::fromLocal8Bit("å‡†å¤‡æ•°æ®â€¦â€¦"));
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == node_name)
@@ -4724,7 +4724,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 			break;
 		}
 	}
-	/*½¨Á¢¸ù½Úµã*/
+	/*å»ºç«‹æ ¹èŠ‚ç‚¹*/
 	QStandardItem* Dem_node = new QStandardItem(file_name);
 	Dem_node->setToolTip(project_name);
 	int insert = 0;
@@ -4762,12 +4762,12 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("µÚ%1·ùÍ¼Ïñ½âÎö¸ß³ÌÖĞ¡­¡­").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("ç¬¬%1å¹…å›¾åƒè§£æé«˜ç¨‹ä¸­â€¦â€¦").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_dem;
 			ret = dem.dem_newton_iter(phase_path.at(i).toStdString().c_str(), phase_dem, save_path.toStdString().c_str(), times, 1);
-			/*Ğ´Èëh5*/
+			/*å†™å…¥h5*/
 			ret = FC.creat_new_h5(absolute_dem_path.at(i).toStdString().c_str());
 			ret = FC.write_array_to_h5(absolute_dem_path.at(i).toStdString().c_str(), "dem", phase_dem);
 			string tmp_str;
@@ -4793,7 +4793,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 			{
 				return;
 			}
-			/*ĞĞÁĞÆ«ÒÆÁ¿*/
+			/*è¡Œåˆ—åç§»é‡*/
 			Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
 			int offset_row = tmp_int.at<int>(0, 0);
@@ -4802,7 +4802,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 			xml.XMLFile_add_dem(file_name.toStdString().c_str(), dem_name.at(i).toStdString().c_str(),
 				relative_dem_path.at(i).toStdString().c_str(), offset_row, offset_col, "Iteration", times);
 
-			/*¹¤³ÌÊ÷*/
+			/*å·¥ç¨‹æ ‘*/
 			QStandardItem* image = new QStandardItem(dem_name.at(i));
 			image->setToolTip("dem");
 			image->setIcon(QIcon(IMAGEDATA_ICON));
@@ -4843,7 +4843,7 @@ int MyThread::Registration_copy(
 		return -1;
 	}
 	
-	//»ñÈ¡¸÷Í¼ÏñµÄ³ß´ç£¬²¢´´½¨Êä³öh5ÎÄ¼ş
+	//è·å–å„å›¾åƒçš„å°ºå¯¸ï¼Œå¹¶åˆ›å»ºè¾“å‡ºh5æ–‡ä»¶
 	FormatConversion conversion;
 	int ret, type;
 	int n_images = SAR_images.size();
@@ -4863,7 +4863,7 @@ int MyThread::Registration_copy(
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
 		images_rows.at<int>(i, 0) = tmp.at<int>(0, 0);
 	}
-	//·Ö¿é¶ÁÈ¡Êı¾İ²¢ÇóÈ¡Æ«ÒÆÁ¿
+	//åˆ†å—è¯»å–æ•°æ®å¹¶æ±‚å–åç§»é‡
 	Utils util; Registration regis;
 	int rows = images_rows.at<int>(Master_index - 1, 0); int cols = images_cols.at<int>(Master_index - 1, 0);
 	int m = rows / blocksize;
@@ -4876,7 +4876,7 @@ int MyThread::Registration_copy(
 	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F);
 	Mat offset_coord_row = Mat::zeros(m, n, CV_64F);
 	Mat offset_coord_col = Mat::zeros(m, n, CV_64F);
-	//×Ó¿éÖĞĞÄ×ø±ê
+	//å­å—ä¸­å¿ƒåæ ‡
 	for (int i = 0; i < m; i++)
 	{
 		for (int j = 0; j < n; j++)
@@ -4885,7 +4885,7 @@ int MyThread::Registration_copy(
 			offset_coord_col.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * j + 1);
 		}
 	}
-	//¸ù¾İÊäÈëÍ¼Ïñ³ß´ç´óĞ¡ÅĞ¶ÏÊÇ·ñ·Ö¿é¶ÁÈ¡£¨³¬¹ı20000¡Á20000Ôò·Ö¿é¶ÁÈ¡£¬·ñÔòÒ»´ÎĞÔ¶ÁÈ¡£©
+	//æ ¹æ®è¾“å…¥å›¾åƒå°ºå¯¸å¤§å°åˆ¤æ–­æ˜¯å¦åˆ†å—è¯»å–ï¼ˆè¶…è¿‡20000Ã—20000åˆ™åˆ†å—è¯»å–ï¼Œå¦åˆ™ä¸€æ¬¡æ€§è¯»å–ï¼‰
 	ComplexMat master_w, slave_w;
 	bool b_block = true; bool master_read = false;
 	if (rows * cols < 20000 * 20000) b_block = false;
@@ -4897,7 +4897,7 @@ int MyThread::Registration_copy(
 			offset_col_out.at<int>(ii, 0) = 0;
 			continue;
 		}
-		if (!b_block)//²»·Ö¿é¶ÁÈ¡
+		if (!b_block)//ä¸åˆ†å—è¯»å–
 		{
 			if (!master_read)
 			{
@@ -4905,7 +4905,7 @@ int MyThread::Registration_copy(
 				if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
 				master_read = true;
 				type = master_w.type();
-				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//Ğ´Ö÷Í¼Ïñ
+				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//å†™ä¸»å›¾åƒ
 			}
 
 			ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave_w);
@@ -4929,12 +4929,12 @@ int MyThread::Registration_copy(
 				if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
 				master_read = true;
 				type = master_w.type();
-				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//Ğ´Ö÷Í¼Ïñ
+				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//å†™ä¸»å›¾åƒ
 			}
 		}
 		
-		//·Ö¿é¶ÁÈ¡²¢¼ÆËãÆ«ÒÆÁ¿
-		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 0.5), QString::fromLocal8Bit("µÚ%1¶ÔÍ¼Ïñ´¦ÀíÖĞ¡­¡­").arg(ii + 1));
+		//åˆ†å—è¯»å–å¹¶è®¡ç®—åç§»é‡
+		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 0.5), QString::fromLocal8Bit("ç¬¬%1å¯¹å›¾åƒå¤„ç†ä¸­â€¦â€¦").arg(ii + 1));
 		int mm, nn;
 		mm = images_rows.at<int>(ii, 0) / blocksize;
 		nn = images_cols.at<int>(ii, 0) / blocksize;
@@ -4956,7 +4956,7 @@ int MyThread::Registration_copy(
 
 
 
-						//¼ÆËãÆ«ÒÆÁ¿
+						//è®¡ç®—åç§»é‡
 						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
 						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
 						move_r = 0; move_c = 0;
@@ -4985,7 +4985,7 @@ int MyThread::Registration_copy(
 					offset_row = j * blocksize; offset_col = k * blocksize;
 					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
 					{
-						//mm = j + 1; nn = k + 1;//¼ÇÂ¼Êµ¼ÊµÄ×Ó¿éĞĞÁĞÊı
+						//mm = j + 1; nn = k + 1;//è®°å½•å®é™…çš„å­å—è¡Œåˆ—æ•°
 						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, master.im);
 						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
 						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, master.re);
@@ -4995,7 +4995,7 @@ int MyThread::Registration_copy(
 						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, slave.re);
 						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
 
-						//¼ÆËãÆ«ÒÆÁ¿
+						//è®¡ç®—åç§»é‡
 						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
 						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
 
@@ -5014,8 +5014,8 @@ int MyThread::Registration_copy(
 		}
 
 
-		//ÌŞ³ıoutliers
-		m = mm; n = nn;//¸üĞÂÊµ¼Ê×Ó¿éĞĞÁĞÊı
+		//å‰”é™¤outliers
+		m = mm; n = nn;//æ›´æ–°å®é™…å­å—è¡Œåˆ—æ•°
 		Mat sentinel = Mat::zeros(m, n, CV_64F);
 		int ix, iy, count = 0, c = 0; double delta, thresh = 2.0;
 		for (int i = 0; i < m; i++)
@@ -5023,25 +5023,25 @@ int MyThread::Registration_copy(
 			for (int j = 0; j < n; j++)
 			{
 				count = 0;
-				//ÉÏ
+				//ä¸Š
 				ix = j;
 				iy = i - 1; iy = iy < 0 ? 0 : iy;
 				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
 				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
 				if (fabs(delta) >= thresh) count++;
-				//ÏÂ
+				//ä¸‹
 				ix = j;
 				iy = i + 1; iy = iy > m - 1 ? m - 1 : iy;
 				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
 				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
 				if (fabs(delta) >= thresh) count++;
-				//×ó
+				//å·¦
 				ix = j - 1; ix = ix < 0 ? 0 : ix;
 				iy = i;
 				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
 				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
 				if (fabs(delta) >= thresh) count++;
-				//ÓÒ
+				//å³
 				ix = j + 1; ix = ix > n - 1 ? n - 1 : ix;
 				iy = i;
 				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
@@ -5079,8 +5079,8 @@ int MyThread::Registration_copy(
 			fprintf(stderr, "stack_coregistration(): insufficient valide sub blocks!\n");
 			return -1;
 		}
-		//Æ«ÒÆÁ¿ÄâºÏ£¨×ø±ê×ö¹éÒ»»¯´¦Àí£©
-		//ÄâºÏ¹«Ê½Îª offser_row / offser_col = a0 + a1 * x + a2 * y;
+		//åç§»é‡æ‹Ÿåˆï¼ˆåæ ‡åšå½’ä¸€åŒ–å¤„ç†ï¼‰
+		//æ‹Ÿåˆå…¬å¼ä¸º offser_row / offser_col = a0 + a1 * x + a2 * y;
 		double offset_x = (double)cols / 2;
 		double offset_y = (double)rows / 2;
 		double scale_x = (double)cols;
@@ -5140,10 +5140,10 @@ int MyThread::Registration_copy(
 		}
 
 		/*---------------------------------------*/
-		/*    Ë«ÏßĞÔ²åÖµ»ñÈ¡ÖØ²ÉÑùºóµÄ¸¨Í¼Ïñ     */
+		/*    åŒçº¿æ€§æ’å€¼è·å–é‡é‡‡æ ·åçš„è¾…å›¾åƒ     */
 		/*---------------------------------------*/
 
-		//»ñÈ¡¸¨Í¼Ïñ×óÉÏ½ÇÏà¶ÔÓÚÖ÷Í¼ÏñµÄÆ«ÒÆÁ¿
+		//è·å–è¾…å›¾åƒå·¦ä¸Šè§’ç›¸å¯¹äºä¸»å›¾åƒçš„åç§»é‡
 		Mat tt(1, 3, CV_64F);
 		tt.at<double>(0, 0) = 1.0;
 		tt.at<double>(0, 1) = (0.0 - offset_x) / scale_x;
@@ -5207,33 +5207,33 @@ int MyThread::Registration_copy(
 					nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
 					if (type == CV_16S)
 					{
-						//Êµ²¿²åÖµ
+						//å®éƒ¨æ’å€¼
 						upper = (double)slave1.re.at<short>(mm0, nn0) + double(slave1.re.at<short>(mm0, nn1) - slave1.re.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
 						lower = (double)slave1.re.at<short>(mm1, nn0) + double(slave1.re.at<short>(mm1, nn1) - slave1.re.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
 						slave_tmp.re.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
-						//Ğé²¿²åÖµ
+						//è™šéƒ¨æ’å€¼
 						upper = (double)slave1.im.at<short>(mm0, nn0) + double(slave1.im.at<short>(mm0, nn1) - slave1.im.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
 						lower = (double)slave1.im.at<short>(mm1, nn0) + double(slave1.im.at<short>(mm1, nn1) - slave1.im.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
 						slave_tmp.im.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
 					}
 					else if (type == CV_32F)
 					{
-						//Êµ²¿²åÖµ
+						//å®éƒ¨æ’å€¼
 						upper = slave1.re.at<float>(mm0, nn0) + (slave1.re.at<float>(mm0, nn1) - slave1.re.at<float>(mm0, nn0)) * (jjjj - (double)nn0);
 						lower = slave1.re.at<float>(mm1, nn0) + (slave1.re.at<float>(mm1, nn1) - slave1.re.at<float>(mm1, nn0)) * (jjjj - (double)nn0);
 						slave_tmp.re.at<float>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-						//Ğé²¿²åÖµ
+						//è™šéƒ¨æ’å€¼
 						upper = slave1.im.at<float>(mm0, nn0) + (slave1.im.at<float>(mm0, nn1) - slave1.im.at<float>(mm0, nn0)) * (jjjj - (double)nn0);
 						lower = slave1.im.at<float>(mm1, nn0) + (slave1.im.at<float>(mm1, nn1) - slave1.im.at<float>(mm1, nn0)) * (jjjj - (double)nn0);
 						slave_tmp.im.at<float>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
 					}
 					else
 					{
-						//Êµ²¿²åÖµ
+						//å®éƒ¨æ’å€¼
 						upper = slave1.re.at<double>(mm0, nn0) + (slave1.re.at<double>(mm0, nn1) - slave1.re.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
 						lower = slave1.re.at<double>(mm1, nn0) + (slave1.re.at<double>(mm1, nn1) - slave1.re.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
 						slave_tmp.re.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-						//Ğé²¿²åÖµ
+						//è™šéƒ¨æ’å€¼
 						upper = slave1.im.at<double>(mm0, nn0) + (slave1.im.at<double>(mm0, nn1) - slave1.im.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
 						lower = slave1.im.at<double>(mm1, nn0) + (slave1.im.at<double>(mm1, nn1) - slave1.im.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
 						slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
@@ -5246,7 +5246,7 @@ int MyThread::Registration_copy(
 
 		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
-		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 1.0), QString::fromLocal8Bit("µÚ%1¶ÔÍ¼Ïñ´¦ÀíÖĞ¡­¡­").arg(ii + 1));
+		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 1.0), QString::fromLocal8Bit("ç¬¬%1å¯¹å›¾åƒå¤„ç†ä¸­â€¦â€¦").arg(ii + 1));
 	}
 	return 0;
 }
@@ -5278,8 +5278,8 @@ int MyThread::complex_coherence(
 		return -1;
 	}
 
-	int win_a = (est_wndsize_az - 1) / 2; //·½Î»´°°ë¾¶
-	int win_r = (est_wndsize_rg - 1) / 2; //¾àÀë´°°ë¾¶
+	int win_a = (est_wndsize_az - 1) / 2; //æ–¹ä½çª—åŠå¾„
+	int win_r = (est_wndsize_rg - 1) / 2; //è·ç¦»çª—åŠå¾„
 
 	int na_new = na - 2 * win_a;
 	int nr_new = nr - 2 * win_r;

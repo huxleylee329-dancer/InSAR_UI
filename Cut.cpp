@@ -1,4 +1,4 @@
-#include"Cut.h"
+ï»¿#include"Cut.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -29,7 +29,7 @@ Cut::Cut(QWidget* parent) :
 Cut::~Cut()
 {
     Cut_thread = NULL;
-    /*¸Ä±ä¹¤³ÌÎÄ¼şµÄ´¦Àí×´Ì¬ÎªNOT_IN_PROCESS*/
+    /*æ”¹å˜å·¥ç¨‹æ–‡ä»¶çš„å¤„ç†çŠ¶æ€ä¸ºNOT_IN_PROCESS*/
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
@@ -49,13 +49,13 @@ void Cut::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
    
@@ -69,7 +69,7 @@ void Cut::endProcess()
     isPreviewPressed = false;
     isCutting = false;
     ui->Preview->setDisabled(false);
-    ui->Preview->setText(QString::fromLocal8Bit("Ô¤ÀÀ"));
+    ui->Preview->setText(QString::fromLocal8Bit("é¢„è§ˆ"));
     ui->Preview->repaint();
     ui->buttonBox_2->setDisabled(false);
     ui->comboBox_3->setDisabled(false);
@@ -110,22 +110,22 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
 
     if (ui->comboBox_4->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈÅä×¼ÔÙ½øĞĞ¿òÑ¡²Ã¼ô»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆé…å‡†å†è¿›è¡Œæ¡†é€‰è£å‰ªæˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     if (ui->lineEdit_2->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë´æ·Å²Ã¼ôÎÄ¼şµÄÎÄ¼ş¼ĞÃû³Æ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥å­˜æ”¾è£å‰ªæ–‡ä»¶çš„æ–‡ä»¶å¤¹åç§°ï¼"));
         return;
     }
     bool bFlag = ui->lineEdit_2->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
 
-    ui->Preview->setText(QString::fromLocal8Bit("ÕıÔÚ²Ã¼ô..."));
+    ui->Preview->setText(QString::fromLocal8Bit("æ­£åœ¨è£å‰ª..."));
     ui->Preview->repaint();
     ui->buttonBox_2->setDisabled(true);
     ui->comboBox_3->setDisabled(true);
@@ -154,10 +154,10 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
 
 void Cut::cancelled()
 {
-    if (isCutting) return;//ÓÉÓÚÔ¤ÀÀ×Ó´°¿ÚÔÚµã»÷È·¶¨»òÕß¹Ø±ÕÖ®ºó¶¼»á·¢ËÍdestroyÏûÏ¢£¬ÎªÁËÇø·Ö£¬ÉèÖÃÊÇ·ñÕıÔÚ²Ã¼ô±êÖ¾¡£
+    if (isCutting) return;//ç”±äºé¢„è§ˆå­çª—å£åœ¨ç‚¹å‡»ç¡®å®šæˆ–è€…å…³é—­ä¹‹åéƒ½ä¼šå‘é€destroyæ¶ˆæ¯ï¼Œä¸ºäº†åŒºåˆ†ï¼Œè®¾ç½®æ˜¯å¦æ­£åœ¨è£å‰ªæ ‡å¿—ã€‚
     isPreviewPressed = false;
     ui->Preview->setDisabled(false);
-    ui->Preview->setText(QString::fromLocal8Bit("Ô¤ÀÀ"));
+    ui->Preview->setText(QString::fromLocal8Bit("é¢„è§ˆ"));
     ui->Preview->repaint();
 }
 
@@ -187,7 +187,7 @@ void Cut::ShowProjectList(QStandardItemModel *model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -207,7 +207,7 @@ void Cut::ShowProjectList(QStandardItemModel *model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÍ¼ÏñÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥å›¾åƒæ•°æ®ï¼"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -323,38 +323,38 @@ void Cut::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®æˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     if (ui->lineEdit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë´æ·Å²Ã¼ôÎÄ¼şµÄÎÄ¼ş¼ĞÃû³Æ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥å­˜æ”¾è£å‰ªæ–‡ä»¶çš„æ–‡ä»¶å¤¹åç§°ï¼"));
         return;
     }
     bool bFlag = ui->lineEdit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
     if (ui->lon->text().isEmpty() || ui->lat->text().isEmpty() ||
         ui->Height->text().isEmpty() || ui->Width->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÈ·±£ÊäÈë²ÎÊıÍêÕû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·ç¡®ä¿è¾“å…¥å‚æ•°å®Œæ•´ï¼"));
         return;
     }
     ui->lon->text().toDouble(&bFlag);
     bool bFlag2 = ui->lat->text().toDouble(&bFlag2);
     if (bFlag ==false || bFlag2 == false)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¾­Î³¶ÈÓ¦ÎªĞ¡Êı£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç»çº¬åº¦åº”ä¸ºå°æ•°ï¼"));
         return;
     }
     ui->Height->text().toDouble(&bFlag);
     ui->Width->text().toDouble(&bFlag2);
     if (bFlag == false || bFlag2 == false)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸ß¶ÈÓë¿í¶ÈÓ¦ÎªĞ¡Êı£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("é«˜åº¦ä¸å®½åº¦åº”ä¸ºå°æ•°ï¼"));
         return;
     }
     ui->progressBar->setHidden(0);
@@ -396,7 +396,7 @@ void Cut::on_Preview_pressed()
     if (isPreviewPressed) return;
     isPreviewPressed = true;
     ui->Preview->setDisabled(true);
-    ui->Preview->setText(QString::fromLocal8Bit("ÕıÔÚ¼ÓÔØÔ¤ÀÀÍ¼..."));
+    ui->Preview->setText(QString::fromLocal8Bit("æ­£åœ¨åŠ è½½é¢„è§ˆå›¾..."));
     ui->Preview->repaint();
     QStandardItem* project = copy->findItems(ui->comboBox_3->currentText())[0];
     QString image_name;
@@ -450,7 +450,7 @@ void Cut::on_Preview_pressed()
 
 void Cut::on_buttonBox_2_accepted()
 {
-    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÔ¤ÀÀ²¢Ñ¡Ôñ²Ã¼ôÇøÓò£¡"));
+    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·é¢„è§ˆå¹¶é€‰æ‹©è£å‰ªåŒºåŸŸï¼"));
 }
 
 void Cut::on_buttonBox_2_rejected()

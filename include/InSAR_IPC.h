@@ -1,13 +1,13 @@
-#ifndef INSAR_IPC_H_
+ï»¿#ifndef INSAR_IPC_H_
 #define INSAR_IPC_H_
 
 #include <string>
 #include <Windows.h>
 #include"para_struct.h"
 
-// ÊÂ¼şÀàĞÍ
+// äº‹ä»¶ç±»å‹
 
-// Ê¹ÓÃ×¢Òâ:
+// ä½¿ç”¨æ³¨æ„:
 // CLYXCIPC server, client
 // server.InitIPCMemory(true, "server", 0);
 // server.InitSelfEvent("serverEvent", FALSE);
@@ -29,27 +29,27 @@ private:
 	SYSTEM_INFO info;
 
 public:
-	// ³õÊ¼»¯¹²ÏíÄÚ´æ
+	// åˆå§‹åŒ–å…±äº«å†…å­˜
 	bool InitIPCMemory(bool bSever, LPCWSTR fileName, DWORD dwServerMapSize = 0);
-	// ¹²ÏíÄÚ´æ¶ÁÈ¡
+	// å…±äº«å†…å­˜è¯»å–
 	bool ReadData(DWORD& dwOffset, DWORD dwSize, char* buf);
-	// ¹²ÏíÄÚ´æĞ´Èë
+	// å…±äº«å†…å­˜å†™å…¥
 	bool WriteData(DWORD& dwOffset, char* buf, DWORD dwSize);
 
 public:
-	// Í¨ĞÅÊÂ¼ş³õÊ¼»¯£¬³õÊ¼»¯×Ô¼ºÊÂ¼ş
+	// é€šä¿¡äº‹ä»¶åˆå§‹åŒ–ï¼Œåˆå§‹åŒ–è‡ªå·±äº‹ä»¶
 	bool InitSelfEvent(LPCWSTR eventName, BOOL bInitState);
-	// Í¨ĞÅ³õÊ¼»¯£¬³õÊ¼»¯¶Ô·½ÊÂ¼ş 
+	// é€šä¿¡åˆå§‹åŒ–ï¼Œåˆå§‹åŒ–å¯¹æ–¹äº‹ä»¶ 
 	bool InitOtherEvent(LPCWSTR eventName, BOOL bInitState);
-	// Í¨ĞÅ³õÊ¼»¯£¬³õÊ¼»¯¶Ô·½ÊÂ¼ş 
+	// é€šä¿¡åˆå§‹åŒ–ï¼Œåˆå§‹åŒ–å¯¹æ–¹äº‹ä»¶ 
 	bool OpenSelfEvent(LPCWSTR eventName);
-	// Í¨ĞÅ³õÊ¼»¯£¬³õÊ¼»¯¶Ô·½ÊÂ¼ş 
+	// é€šä¿¡åˆå§‹åŒ–ï¼Œåˆå§‹åŒ–å¯¹æ–¹äº‹ä»¶ 
 	bool OpenOtherEvent(LPCWSTR eventName);
-	// ÉèÖÃÓĞĞÅºÅ×´Ì¬
+	// è®¾ç½®æœ‰ä¿¡å·çŠ¶æ€
 	void SetEventIntf(bool bSelf);
-	// ÉèÖÃÎŞĞÅºÅ×´Ì¬
+	// è®¾ç½®æ— ä¿¡å·çŠ¶æ€
 	void ResetEventIntf(bool bSelf);
-	// »ñÈ¡ÊÂ¼ş
+	// è·å–äº‹ä»¶
 	HANDLE GetEvent(bool bSelf);
 };
 
@@ -57,24 +57,24 @@ public:
 
 enum eCallbackType
 {
-	eCallbackType_Unknown = 0,			// Î´ÖªÀàĞÍ
-	eCallbackType_UpdateCmplt,			// ¸üĞÂµ±Ç°Íê³É½ø¶È
-	eCallbackType_MsgFinished,			// Í¨ÖªÈÎÎñÍê³É
-	eCallbackType_MsgError,				// Í¨ÖªÈÎÎñ·¢Éú´íÎó
-	eCallbackType_RequestData,			// ÇëÇóÊı¾İ
-	eCallbackType_SaveData				// ´æ´¢Êı¾İ
+	eCallbackType_Unknown = 0,			// æœªçŸ¥ç±»å‹
+	eCallbackType_UpdateCmplt,			// æ›´æ–°å½“å‰å®Œæˆè¿›åº¦
+	eCallbackType_MsgFinished,			// é€šçŸ¥ä»»åŠ¡å®Œæˆ
+	eCallbackType_MsgError,				// é€šçŸ¥ä»»åŠ¡å‘ç”Ÿé”™è¯¯
+	eCallbackType_RequestData,			// è¯·æ±‚æ•°æ®
+	eCallbackType_SaveData				// å­˜å‚¨æ•°æ®
 };
 
-// IPCÏûÏ¢Í·
+// IPCæ¶ˆæ¯å¤´
 struct stcIPCMsgHeader
 {
-	/*ÏûÏ¢ÀàĞÍ*/
+	/*æ¶ˆæ¯ç±»å‹*/
 	int msgType;
-	/*½ø¶ÈĞÅÏ¢*/
+	/*è¿›åº¦ä¿¡æ¯*/
 	int progress;
-	/*ÏûÏ¢ÄÚÈİ*/
+	/*æ¶ˆæ¯å†…å®¹*/
 	char message[2048];
-	/*»Ø´«²ÎÊı*/
+	/*å›ä¼ å‚æ•°*/
 	template_DEM_para_back callback_para;
 	stcIPCMsgHeader()
 	{

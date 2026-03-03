@@ -1,19 +1,19 @@
-#include<Baseline_Preview.h>
+ï»¿#include<Baseline_Preview.h>
 
 Baseline_Preview::Baseline_Preview(QWidget* parent) :
     QWidget(parent)
 {
     this->resize(QSize(400, 400));
-    this->setWindowTitle(QString::fromLocal8Bit("»ùÏßÔ¤ÀÀ"));
+    this->setWindowTitle(QString::fromLocal8Bit("åŸºçº¿é¢„è§ˆ"));
     mChart = new QChart();
-    mChart->setTitle(QString::fromLocal8Bit("Ê±¿Õ»ùÏß"));
+    mChart->setTitle(QString::fromLocal8Bit("æ—¶ç©ºåŸºçº¿"));
     mChartView = new QChartView(mChart, this);
-    mChart = mChartView->chart();   //¹ØÁª
+    mChart = mChartView->chart();   //å…³è”
     mAxisX = new QValueAxis();
     mAxisY = new QValueAxis();
     mChart->setAxisX(mAxisX);
     mChart->setAxisY(mAxisY);
-    mChartView->setRenderHint(QPainter::Antialiasing); //¿¹¾â³Ý
+    mChartView->setRenderHint(QPainter::Antialiasing); //æŠ—é”¯é½¿
    
     mLabel = new QLabel(mChartView);
 }
@@ -25,7 +25,7 @@ Baseline_Preview::~Baseline_Preview()
 
 void Baseline_Preview::resizeEvent(QResizeEvent* event)
 {
-    /*´°¿Ú±ä»¯Ê±ÖØÔØÍ¼Æ¬²¢¸ü¸Ä³ß´ç*/
+    /*çª—å£å˜åŒ–æ—¶é‡è½½å›¾ç‰‡å¹¶æ›´æ”¹å°ºå¯¸*/
     mChartView->resize(this->size());
 }
 
@@ -49,8 +49,8 @@ void Baseline_Preview::Paint(QList<double> temporal_baseline, QList<double> spat
     double pad_space = (Max_space - Min_space) / 10;
     mAxisX->setRange(Min_time - pad_time, Max_time + pad_time);
     mAxisY->setRange(Min_space - pad_space, Max_space + pad_space);
-    mAxisX->setTitleText(QString::fromLocal8Bit("Ê±¼ä»ùÏß/£¨Ìì£©"));
-    mAxisY->setTitleText(QString::fromLocal8Bit("¿Õ¼ä»ùÏß/£¨Ã×£©"));
+    mAxisX->setTitleText(QString::fromLocal8Bit("æ—¶é—´åŸºçº¿/ï¼ˆå¤©ï¼‰"));
+    mAxisY->setTitleText(QString::fromLocal8Bit("ç©ºé—´åŸºçº¿/ï¼ˆç±³ï¼‰"));
     for (int i = 0; i < temporal_baseline.size(); i++)
     {
         if (i == index - 1)
@@ -108,7 +108,7 @@ void Baseline_Preview::ShowData(const QPointF& point, bool state)
         mLabel->setText(QString("(%1,%2)").arg(QString::number(point.x(), 'f', 1)).arg(QString::number(point.y(), 'f', 1)));
         mLabel->setStyleSheet("QLabel { background-color : rgb(129, 199, 212); color : rgb(0, 92, 175); border-radius:3px;font:20pt }");
         QPoint curPos = mapFromGlobal(QCursor::pos());
-        mLabel->move(curPos.x() - mLabel->width() / 2, curPos.y() - mLabel->height() * 1.5);//ÒÆ¶¯ÊýÖµ m_valueLabel->show();//ÏÔÊ¾³öÀ´
+        mLabel->move(curPos.x() - mLabel->width() / 2, curPos.y() - mLabel->height() * 1.5);//ç§»åŠ¨æ•°å€¼ m_valueLabel->show();//æ˜¾ç¤ºå‡ºæ¥
         mLabel->show();
     }
     else

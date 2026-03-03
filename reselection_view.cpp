@@ -1,4 +1,4 @@
-#include"reselection_view.h"
+ï»¿#include"reselection_view.h"
 #include"FormatConversion.h"
 #include<icon_source.h>
 #ifdef DEBUG
@@ -18,7 +18,7 @@ reselection_view_Window::reselection_view_Window(QWidget* parent)
     ButtonBox = new QDialogButtonBox(Qt::Horizontal);
     View = new reselection_view();
     setWindowIcon(QIcon(APP_ICON));
-    setWindowTitle(QString::fromLocal8Bit("SBAS²Î¿¼µãÖØÑ¡"));
+    setWindowTitle(QString::fromLocal8Bit("SBASå‚è€ƒç‚¹é‡é€‰"));
 
     MoveButton = new QPushButton();
     MoveButton->setIcon(QIcon(HAND_ICON));
@@ -47,16 +47,16 @@ reselection_view_Window::reselection_view_Window(QWidget* parent)
     GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
 
     status_label = new QLabel();
-    status_label->setText(QString::fromLocal8Bit("             ...Î´Ñ¡ÖĞÈÎºÎ²Ù×÷"));
+    status_label->setText(QString::fromLocal8Bit("             ...æœªé€‰ä¸­ä»»ä½•æ“ä½œ"));
 
     MoveButton->installEventFilter(this);
     ScaledButton->installEventFilter(this);
     SelectButton->installEventFilter(this);
     GCPsButton->installEventFilter(this);
     GCPsDeleteButton->installEventFilter(this);
-    /*Ò³Ãæ³õÊ¼»¯²¼¾Ö*/
-    ButtonBox->addButton(QString::fromLocal8Bit("È·¶¨"), QDialogButtonBox::AcceptRole);
-    ButtonBox->addButton(QString::fromLocal8Bit("È¡Ïû"), QDialogButtonBox::RejectRole);
+    /*é¡µé¢åˆå§‹åŒ–å¸ƒå±€*/
+    ButtonBox->addButton(QString::fromLocal8Bit("ç¡®å®š"), QDialogButtonBox::AcceptRole);
+    ButtonBox->addButton(QString::fromLocal8Bit("å–æ¶ˆ"), QDialogButtonBox::RejectRole);
     connect(ButtonBox, &QDialogButtonBox::accepted, View, &reselection_view::GetOffset);
     connect(ButtonBox, &QDialogButtonBox::rejected, this, &reselection_view_Window::Close);
     connect(View, &reselection_view::send_coordinate, this, &reselection_view_Window::receive_coordinate);
@@ -122,7 +122,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...Æ½ÒÆ"));
+            status_label->setText(QString::fromLocal8Bit("             ...å¹³ç§»"));
             View->SetState(Move_State);
             View->viewport()->setCursor(QCursor(Qt::PointingHandCursor));
         }
@@ -136,7 +136,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...Ëõ·Å"));
+            status_label->setText(QString::fromLocal8Bit("             ...ç¼©æ”¾"));
             View->SetState(Scaled_State);
             View->viewport()->setCursor(QCursor(View->Cursor_up));
         }
@@ -150,7 +150,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(128,128,128)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...²Î¿¼µãÑ¡Ôñ"));
+            status_label->setText(QString::fromLocal8Bit("             ...å‚è€ƒç‚¹é€‰æ‹©"));
             View->SetState(Check_State);
             View->viewport()->setCursor(QCursor(Qt::CrossCursor));
         }
@@ -164,7 +164,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(128,128,128)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...Ìí¼ÓÖØÈ¥Æ½ºÍ¹ìµÀ¾«Á¶¿ØÖÆµã"));
+            status_label->setText(QString::fromLocal8Bit("             ...æ·»åŠ é‡å»å¹³å’Œè½¨é“ç²¾ç‚¼æ§åˆ¶ç‚¹"));
             View->SetState(GCPs_state);
             View->viewport()->setCursor(QCursor(Qt::PointingHandCursor));
         }
@@ -178,7 +178,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(128,128,128)}");
-            status_label->setText(QString::fromLocal8Bit("             ...ÌŞ³ıÖØÈ¥Æ½ºÍ¹ìµÀ¾«Á¶¿ØÖÆµã"));
+            status_label->setText(QString::fromLocal8Bit("             ...å‰”é™¤é‡å»å¹³å’Œè½¨é“ç²¾ç‚¼æ§åˆ¶ç‚¹"));
             View->SetState(GCPs_delete);
             View->viewport()->setCursor(QCursor(Qt::ArrowCursor));
         }
@@ -264,10 +264,10 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
             qDebug() << "The scene is null";
             return;
         }
-        // ¼ÇÂ¼Êó±ê°´ÏÂÊ±µÄÖĞĞÄµã×ø±ê
+        // è®°å½•é¼ æ ‡æŒ‰ä¸‹æ—¶çš„ä¸­å¿ƒç‚¹åæ ‡
         sceneMousePos = mapToScene(event->pos()) - event->pos() + QPointF(width() / 2, height() / 2);
 
-        // ´Ë´¦²»½«view×ø±ê×ª»»³Éscene×ø±êµÄÔ­ÒòÊÇÓÅ»¯ĞÔÄÜ£¬ÔÚmoveµÄ¹ı³ÌÖĞ»á²úÉú¶¶¶¯
+        // æ­¤å¤„ä¸å°†viewåæ ‡è½¬æ¢æˆsceneåæ ‡çš„åŸå› æ˜¯ä¼˜åŒ–æ€§èƒ½ï¼Œåœ¨moveçš„è¿‡ç¨‹ä¸­ä¼šäº§ç”ŸæŠ–åŠ¨
         posAnchor = event->pos();
         isMousePressed = true;
     }
@@ -304,8 +304,8 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
         {
             //QPoint MousePos = et->pos();
             mFirst = mapToScene(event->pos());
-            int pen_width = 4;  //Ïß¿í£¬½¨Òé¿íÒ»Ğ©£¬·ñÔòËõĞ¡ÈİÒ×¿´²»¼û
-            /*±£Ö¤²Ã¼ô¿òÔÚÍ¼ÏñÄÚ*/
+            int pen_width = 4;  //çº¿å®½ï¼Œå»ºè®®å®½ä¸€äº›ï¼Œå¦åˆ™ç¼©å°å®¹æ˜“çœ‹ä¸è§
+            /*ä¿è¯è£å‰ªæ¡†åœ¨å›¾åƒå†…*/
 
             if (mFirst.x() > mScene->width() || mFirst.x() < 0 || mFirst.y() > mScene->height() || mFirst.y() < 0)
             {
@@ -313,12 +313,12 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
                 mScene->removeItem(mFirstRect);
                 mFirstRect->setRect(0, 0, 0, 0);
                 mScene->addItem(mFirstRect);
-                this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
             }
             else
             {
                 if (mFirst.x() >= mScene->width() - 5 - pen_width)
-                    mFirst.setX(mScene->width() - 5 - pen_width); //¼õÈ¥Ïß¿í£¬·ñÔò»áÊ¹sceneµü´ú¼Ó³¤
+                    mFirst.setX(mScene->width() - 5 - pen_width); //å‡å»çº¿å®½ï¼Œå¦åˆ™ä¼šä½¿sceneè¿­ä»£åŠ é•¿
                 else if (mFirst.x() < 4)
                     mFirst.setX(4);
 
@@ -335,7 +335,7 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
                 //mRect->setFlag(QGraphicsItem::ItemIgnoresTransformations);
                 mScene->addItem(mFirstRect);
                 mFirstIsChecked = true;
-                this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
             }
         }
     }
@@ -345,8 +345,8 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
         {
             //QPoint MousePos = et->pos();
             mSecond = mapToScene(event->pos());
-            int pen_width = 4;  //Ïß¿í£¬½¨Òé¿íÒ»Ğ©£¬·ñÔòËõĞ¡ÈİÒ×¿´²»¼û
-            /*±£Ö¤²Ã¼ô¿òÔÚÍ¼ÏñÄÚ*/
+            int pen_width = 4;  //çº¿å®½ï¼Œå»ºè®®å®½ä¸€äº›ï¼Œå¦åˆ™ç¼©å°å®¹æ˜“çœ‹ä¸è§
+            /*ä¿è¯è£å‰ªæ¡†åœ¨å›¾åƒå†…*/
 
             if (mSecond.x() > mScene->width() || mSecond.x() < 0 || mSecond.y() > mScene->height() || mSecond.y() < 0)
             {
@@ -355,7 +355,7 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
             else
             {
                 if (mSecond.x() >= mScene->width() - 5 - pen_width)
-                    mSecond.setX(mScene->width() - 5 - pen_width); //¼õÈ¥Ïß¿í£¬·ñÔò»áÊ¹sceneµü´ú¼Ó³¤
+                    mSecond.setX(mScene->width() - 5 - pen_width); //å‡å»çº¿å®½ï¼Œå¦åˆ™ä¼šä½¿sceneè¿­ä»£åŠ é•¿
                 else if (mSecond.x() < 4)
                     mSecond.setX(4);
 
@@ -370,7 +370,7 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
                 mRect->setPen(p);
                 mRect->setRect(mSecond.x() - 4, mSecond.y() - 4, 10, 10);
                 mScene->addItem(mRect);
-                this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
                 GCPs_point.push_back(mSecond);
                 GCPs_rect.push_back(mRect);
             }
@@ -401,7 +401,7 @@ void reselection_view::mouseMoveEvent(QMouseEvent* event)
         if (isMousePressed) {
             //setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
             viewport()->setCursor(Qt::ClosedHandCursor);
-            centerOn(sceneMousePos - offsetPos);    //Ò»¶¨Òª±£Ö¤scene±Èview´ó£¬²»È»º¯ÊıÎŞĞ§
+            centerOn(sceneMousePos - offsetPos);    //ä¸€å®šè¦ä¿è¯sceneæ¯”viewå¤§ï¼Œä¸ç„¶å‡½æ•°æ— æ•ˆ
         }
         else
         {
@@ -470,7 +470,7 @@ void reselection_view::GetOffset()
 
     if (mPath == NULL)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÎŞĞÎ±äÎÄ¼ş"));
+        QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("æ— å½¢å˜æ–‡ä»¶"));
         return;
     }
     FormatConversion FC;
@@ -502,7 +502,7 @@ void reselection_view::GetOffset()
     }
     if (!b_break)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("Î´Ñ¡ÖĞ²Î¿¼µã£¬ÇëÖØÊÔ£¡"));
+        QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("æœªé€‰ä¸­å‚è€ƒç‚¹ï¼Œè¯·é‡è¯•ï¼"));
         return;
     }
     QList<QPoint> plist;

@@ -1,4 +1,4 @@
-#include"Baseline_Formation.h"
+ï»¿#include"Baseline_Formation.h"
 #include"ui_Baseline_Formation.h"
 #include"Coordinate.h"
 #include"icon_source.h"
@@ -33,7 +33,7 @@ Baseline_Formation::~Baseline_Formation()
 void Baseline_Formation::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Baseline_Formation::endProcess()
@@ -99,7 +99,7 @@ void Baseline_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎÞ¿É´¦ÀíÊý¾Ý£¬ÇëÏÈµ¼ÈëÊý¾Ý£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         ui->comboBox_dst_node->clear();
         ui->comboBox_masterImage->clear();
         return;
@@ -124,7 +124,7 @@ void Baseline_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎÞÊý¾Ý£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
         ui->comboBox_dst_node->clear();
         ui->comboBox_masterImage->clear();
         return;
@@ -138,7 +138,7 @@ void Baseline_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_masterImage->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎÞÊý¾Ý£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
         ui->comboBox_masterImage->clear();
         return;
     }
@@ -171,7 +171,7 @@ void Baseline_Formation::on_comboBox_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎÞÊý¾Ý£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             ui->comboBox_dst_node->clear();
             ui->comboBox_masterImage->clear();
             return;
@@ -182,7 +182,7 @@ void Baseline_Formation::on_comboBox_currentIndexChanged()
         }
         if (ui->comboBox_masterImage->count() < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎÞÊý¾Ý£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             ui->comboBox_masterImage->clear();
             return;
         }
@@ -237,7 +237,7 @@ void Baseline_Formation::on_comboBox_dst_node_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎÞÊý¾Ý£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             ui->comboBox_masterImage->clear();
             return;
         }
@@ -256,26 +256,26 @@ void Baseline_Formation::on_buttonBox_accepted()
     bool bFlag = false;
     if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÏÂÎ´¼ì²âµ½Êý¾Ý£¡ÇëÏÈµ¼ÈëÍ¼Ïñ»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹ä¸‹æœªæ£€æµ‹åˆ°æ•°æ®ï¼è¯·å…ˆå¯¼å…¥å›¾åƒæˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     int ret;
     ret = sscanf(ui->lineEdit_spatial_thresh->text().toStdString().c_str(), "%lf", &spatial_thresh);
     if (ret != 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëºÏ·¨¿Õ¼ä»ùÏßãÐÖµ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥åˆæ³•ç©ºé—´åŸºçº¿é˜ˆå€¼ï¼"));
         return;
     }
     ret = sscanf(ui->lineEdit_temporal_thresh->text().toStdString().c_str(), "%lf", &temporal_thresh);
     if (ret != 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëºÏ·¨Ê±¼ä»ùÏßãÐÖµ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥åˆæ³•æ—¶é—´åŸºçº¿é˜ˆå€¼ï¼"));
         return;
     }
     ret = sscanf(ui->lineEdit_temporal_thresh_low->text().toStdString().c_str(), "%lf", &temporal_thresh_low);
     if (ret != 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëºÏ·¨Ê±¼ä»ùÏßãÐÖµ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥åˆæ³•æ—¶é—´åŸºçº¿é˜ˆå€¼ï¼"));
         return;
     }
     int index = ui->comboBox_masterImage->currentIndex() + 1;/*= ui->Index_edit->text().toUInt(&bFlag)*/;

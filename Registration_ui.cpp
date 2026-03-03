@@ -1,4 +1,4 @@
-#include"Registration_ui.h"
+ï»¿#include"Registration_ui.h"
 #include"ui_Registration_ui.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -60,13 +60,13 @@ void Registration_ui::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -170,7 +170,7 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
@@ -197,19 +197,19 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
     ui->comboBox_2->setCurrentIndex(0);
     ui->comboBox_node->setCurrentIndex(0);
 
-    //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
+    //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
     ui->comboBox_masterIndex->clear();
     ui->comboBox_masterIndex2->clear();
     if (node->rowCount() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("½ÚµãÎŞÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("èŠ‚ç‚¹æ— æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
@@ -231,7 +231,7 @@ void Registration_ui::on_comboBox_currentIndexChanged()
         int count = project->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -249,7 +249,7 @@ void Registration_ui::on_comboBox_currentIndexChanged()
         }
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÂú×ãĞèÇóµÄÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ»¡è¶³éœ€æ±‚çš„æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -259,7 +259,7 @@ void Registration_ui::on_comboBox_currentIndexChanged()
         count = node->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -280,7 +280,7 @@ void Registration_ui::on_comboBox_project_currentIndexChanged()
         int count = project->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -298,7 +298,7 @@ void Registration_ui::on_comboBox_project_currentIndexChanged()
         }
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÂú×ãĞèÇóµÄÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ»¡è¶³éœ€æ±‚çš„æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -308,7 +308,7 @@ void Registration_ui::on_comboBox_project_currentIndexChanged()
         count = node->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -340,7 +340,7 @@ void Registration_ui::on_comboBox_node_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -374,7 +374,7 @@ void Registration_ui::on_comboBox_2_currentIndexChanged()
         
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -393,18 +393,18 @@ void Registration_ui::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈ½øĞĞ²Ã¼ô»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆè¿›è¡Œè£å‰ªæˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     if (ui->fileedit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë´æ·ÅÅä×¼ÎÄ¼şµÄÎÄ¼ş¼ĞÃû³Æ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥å­˜æ”¾é…å‡†æ–‡ä»¶çš„æ–‡ä»¶å¤¹åç§°ï¼"));
         return;
     }
     bool bFlag = ui->fileedit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
     int index = ui->comboBox_masterIndex->currentIndex() + 1;
@@ -443,22 +443,22 @@ void Registration_ui::on_buttonBox_2_accepted()
 {
     if (ui->comboBox_node->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
         return;
     }
     if (ui->lineEdit_dstNode->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëÄ¿±ê½ÚµãÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥ç›®æ ‡èŠ‚ç‚¹åï¼"));
         return;
     }
     bool bFlag = ui->lineEdit_dstNode->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
 
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_project->currentText())[0];
     if (!project) {
         return;
@@ -473,7 +473,7 @@ void Registration_ui::on_buttonBox_2_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒºÍÅä×¼Êı¾İ¼¶±ğ²»Í¬£¬ÇëÖØÃüÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”å’Œé…å‡†æ•°æ®çº§åˆ«ä¸åŒï¼Œè¯·é‡å‘½åï¼"));
         return;
     }
 

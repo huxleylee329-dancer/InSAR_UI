@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_Registration_ui.h"
@@ -31,9 +31,9 @@ signals:
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_currentIndexChanged();
-    /*DEM¸¨ÖúÅä×¼¹¤³ÌÑ¡ÔñÏìÓ¦º¯Êı*/
+    /*DEMè¾…åŠ©é…å‡†å·¥ç¨‹é€‰æ‹©å“åº”å‡½æ•°*/
     void on_comboBox_project_currentIndexChanged();
-    /*DEM¸¨ÖúÊı¾İ½Úµã¹¤³ÌÑ¡ÔñÏìÓ¦º¯Êı*/
+    /*DEMè¾…åŠ©æ•°æ®èŠ‚ç‚¹å·¥ç¨‹é€‰æ‹©å“åº”å‡½æ•°*/
     void on_comboBox_node_currentIndexChanged();
     void on_comboBox_2_currentIndexChanged();
     // void on_masterpushButton_pressed();

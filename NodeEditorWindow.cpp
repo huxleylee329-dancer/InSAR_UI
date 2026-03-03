@@ -197,7 +197,7 @@ void NodeEditorWindow::applyStyles()
         "\"FontColor\": \"white\","
         "\"FontFamily\": \"Arial\","
         "\"FontSize\": 12,"
-        "\"Opacity\": 1.0"
+        "\"Opacity\": 0.8"
         "}"
         "}");
 

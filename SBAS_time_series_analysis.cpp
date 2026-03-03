@@ -1,4 +1,4 @@
-#include"SBAS_time_series_analysis.h"
+ï»¿#include"SBAS_time_series_analysis.h"
 #include"ui_SBAS_time_series_analysis.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -61,7 +61,7 @@ SBAS_time_series_analysis::~SBAS_time_series_analysis()
 void SBAS_time_series_analysis::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void SBAS_time_series_analysis::endProcess()
@@ -119,7 +119,7 @@ void SBAS_time_series_analysis::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎÞ¿É´¦ÀíÊý¾Ý£¬ÇëÏÈµ¼ÈëÊý¾Ý£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         ui->comboBox_srcNode->clear();
         return;
     }
@@ -141,7 +141,7 @@ void SBAS_time_series_analysis::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎÞÊý¾Ý£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
         ui->comboBox_srcNode->clear();
         return;
     }
@@ -171,7 +171,7 @@ void SBAS_time_series_analysis::on_comboBox_project_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎÞÊý¾Ý£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             ui->comboBox_srcNode->clear();
             return;
         }
@@ -246,7 +246,7 @@ void SBAS_time_series_analysis::on_comboBox_srcNode_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎÞÊý¾Ý£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             return;
         }
     }
@@ -255,7 +255,7 @@ void SBAS_time_series_analysis::on_comboBox_srcNode_currentIndexChanged()
 void SBAS_time_series_analysis::on_buttonbrowse_triggered()
 {
     QString save_path = QFileDialog::getSaveFileName(this,
-        QString::fromLocal8Bit("csvÁí´æÎª"),
+        QString::fromLocal8Bit("csvå¦å­˜ä¸º"),
         "/",
         "*.csv");
     ui->csv_path->setText(save_path);
@@ -266,10 +266,10 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     bool bFlag = false;
     if (copy->item(ui->comboBox_project->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÏÂÎ´¼ì²âµ½Êý¾Ý£¡ÇëÏÈµ¼ÈëÍ¼Ïñ»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹ä¸‹æœªæ£€æµ‹åˆ°æ•°æ®ï¼è¯·å…ˆå¯¼å…¥å›¾åƒæˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     if (ui->lineEdit_dstNode->text().isEmpty()) return;
     QStandardItem* project = this->copy->findItems(ui->comboBox_project->currentText())[0];
     if (!project) {
@@ -279,19 +279,19 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     {
         if (ui->lineEdit_dstNode->text() == project->child(i)->text())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇëÖØÃüÃû£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œè¯·é‡å‘½åï¼"));
             return;
         }
     }
     if (ui->csv_path->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëÐÂ½¨¹¤³ÌÃû³Æ£¨¸ÃÃû³ÆÓ¦ÎªÊý×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£©£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥æ–°å»ºå·¥ç¨‹åç§°ï¼ˆè¯¥åç§°åº”ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼‰ï¼"));
         return;
     }
     bFlag = ui->csv_path->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢Òâ¹¤³ÌÃû³ÆÓ¦µ±ÎªÊý×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„å·¥ç¨‹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
     if (ui->radioButton_MCF->isChecked())

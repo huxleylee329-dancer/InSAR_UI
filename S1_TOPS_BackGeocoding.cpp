@@ -1,4 +1,4 @@
-#include"S1_TOPS_BackGeocoding.h"
+ï»¿#include"S1_TOPS_BackGeocoding.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -42,7 +42,7 @@ S1_TOPS_BackGeocoding::~S1_TOPS_BackGeocoding()
 void S1_TOPS_BackGeocoding::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void S1_TOPS_BackGeocoding::endProcess()
@@ -131,12 +131,12 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
     
     if (ui->comboBox->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
     ui->comboBox_2->clear();
-    //¹¤³ÌÎÄ¼ş
+    //å·¥ç¨‹æ–‡ä»¶
     ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
     ret = xmldoc.find_node("DataNode", pnode);
@@ -152,13 +152,13 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
     ui->comboBox_2->setCurrentIndex(0);
 
-    //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
+    //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
     ui->comboBox_3->clear();
     ret = xmldoc.find_node("DataNode", pnode);
     if (ret < 0) return;
@@ -210,13 +210,13 @@ void S1_TOPS_BackGeocoding::on_comboBox_currentIndexChanged()
         }
         if (ui->comboBox_2->count() == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
         ui->comboBox_2->setCurrentIndex(0);
 
-        //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
+        //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
         ui->comboBox_3->clear();
         ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
@@ -259,7 +259,7 @@ void S1_TOPS_BackGeocoding::on_comboBox_2_currentIndexChanged()
         XMLFile xmldoc;
         int ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
         if (ret < 0) return;
-        //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
+        //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
         ui->comboBox_3->clear();
         ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
@@ -297,18 +297,18 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼"));
         return;
     }
     if (ui->fileedit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë´æ·ÅºóÏòµØÀí±àÂë´¦Àí½á¹ûÎÄ¼şµÄÎÄ¼ş¼ĞÃû³Æ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥å­˜æ”¾åå‘åœ°ç†ç¼–ç å¤„ç†ç»“æœæ–‡ä»¶çš„æ–‡ä»¶å¤¹åç§°ï¼"));
         return;
     }
     bool bFlag = ui->fileedit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
     int index = ui->comboBox_3->currentIndex() + 1;
@@ -316,12 +316,12 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
     if (image_number < 2) return;
     if (!bFlag || index < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ö÷Í¼ÏñĞòºÅÓ¦ÎªÕıÕûÊı£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ä¸»å›¾åƒåºå·åº”ä¸ºæ­£æ•´æ•°ï¼"));
         return;
     }
     else if (index > image_number)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ö÷Í¼ÏñË÷Òı³¬³ö·¶Î§£¬ÇëÈ·ÈÏ¸ÃÊı×Ö²»³¬¹ı½ÚµãÏÂ×ÜÍ¼ÏñÊıÁ¿£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ä¸»å›¾åƒç´¢å¼•è¶…å‡ºèŒƒå›´ï¼Œè¯·ç¡®è®¤è¯¥æ•°å­—ä¸è¶…è¿‡èŠ‚ç‚¹ä¸‹æ€»å›¾åƒæ•°é‡ï¼"));
         return;
     }
 

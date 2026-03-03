@@ -1,4 +1,4 @@
-#include<Mould.h>
+ï»¿#include<Mould.h>
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
@@ -51,9 +51,9 @@ Mould::Mould(QWidget* parent) :
     other_event[0] = 0;
     project_name = "toDEM";
     project_path = "c:/";
-    sensor_name = "TSX";//ÎÀĞÇÃûÔİ¶¨ÎªTerraSAR-X,¿ÉĞŞ¸Ä
+    sensor_name = "TSX";//å«æ˜Ÿåæš‚å®šä¸ºTerraSAR-X,å¯ä¿®æ”¹
     this->setWindowIcon(QIcon(APP_ICON));
-    this->setWindowTitle(QString::fromLocal8Bit("DEMÄ£°å²ÎÊıÉèÖÃ"));
+    this->setWindowTitle(QString::fromLocal8Bit("DEMæ¨¡æ¿å‚æ•°è®¾ç½®"));
     connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &Mould::accepted);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Mould::rejected);
     connect(ui->browse, &QPushButton::clicked, this, &Mould::Browse_Savepath);
@@ -98,7 +98,7 @@ Mould::~Mould()
 
 bool Mould::eventFilter(QObject* watched, QEvent* event)
 {
-    //ÖØĞÂ¸Ä±ä¿Ø¼şµÄÏÔÊ¾´óĞ¡
+    //é‡æ–°æ”¹å˜æ§ä»¶çš„æ˜¾ç¤ºå¤§å°
     switch ((int)event->type())
     {
     case QEvent::Resize:
@@ -120,7 +120,7 @@ bool Mould::eventFilter(QObject* watched, QEvent* event)
 void Mould::accepted()
 {
     USES_CONVERSION;
-    //±£´æÄ£°å²ÎÊı
+    //ä¿å­˜æ¨¡æ¿å‚æ•°
     for (int i = 0; i < 7; i++)
     {
         MyPage* page = ui->ToolBox->getItem(i);
@@ -140,14 +140,14 @@ void Mould::accepted()
     strcpy(parameter->working_directory, project_path.toStdString().c_str());
     strcpy(parameter->sensor, sensor_name.toStdString().c_str());
 
-    //¹¤³Ì·ÀÖØÃû¼ì²é
+    //å·¥ç¨‹é˜²é‡åæ£€æŸ¥
     if (copy_model)
     {
         if (copy_model->findItems(project_name + ".insar").size() != 0) return;
     }
 
-    m_pCurIPC = new InSAR_IPC();//³õÊ¼»¯Í¨ĞÅÖ¸Õë
-    set_IPC_name_bytime();//¸ù¾İÊ±¼ä´Á´´½¨Î©Ò»µÄ¹²ÏíÄÚ´æºÍÊÂ¼ş
+    m_pCurIPC = new InSAR_IPC();//åˆå§‹åŒ–é€šä¿¡æŒ‡é’ˆ
+    set_IPC_name_bytime();//æ ¹æ®æ—¶é—´æˆ³åˆ›å»ºæƒŸä¸€çš„å…±äº«å†…å­˜å’Œäº‹ä»¶
     bool bInit = m_pCurIPC->InitIPCMemory(true, QString(shared_memory_name).toStdWString().data(), 102400000);
     if (!bInit) return;
     bInit = m_pCurIPC->InitSelfEvent(QString(self_event).toStdWString().data(), FALSE);
@@ -155,17 +155,17 @@ void Mould::accepted()
     bInit = m_pCurIPC->InitOtherEvent(QString(other_event).toStdWString().data(), TRUE);
     if (!bInit) return;
 
-    //½ûÓÃÈ·¶¨°´Å¥
+    //ç¦ç”¨ç¡®å®šæŒ‰é’®
     ui->buttonBox->buttons().at(0)->setDisabled(true);
 
-    //Ïò¹²ÏíÄÚ´æĞ´Èë´¦Àí²ÎÊı
+    //å‘å…±äº«å†…å­˜å†™å…¥å¤„ç†å‚æ•°
     DWORD dwOffset = 0;
     m_pCurIPC->WriteData(dwOffset, (char*)parameter, sizeof(template_DEM_para));
-    // Ä¬ÈÏÉèÖÃ×Ó½ø³ÌÓĞĞÅºÅ£¬±¾½ø³ÌÎŞĞÅºÅ
+    // é»˜è®¤è®¾ç½®å­è¿›ç¨‹æœ‰ä¿¡å·ï¼Œæœ¬è¿›ç¨‹æ— ä¿¡å·
     m_pCurIPC->SetEventIntf(false);
     m_pCurIPC->ResetEventIntf(true);
 
-    //´´½¨µÈ´ıÏìÓ¦×ÓÏß³Ì
+    //åˆ›å»ºç­‰å¾…å“åº”å­çº¿ç¨‹
 
     IPC_thread = new template_dem_IPC_thread;
     IPC_thread->moveToThread(new QThread(this));
@@ -180,13 +180,13 @@ void Mould::accepted()
 
     ui->progressBar->setHidden(false);
     ui->progressBar->setValue(1);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("¿ªÊ¼´¦Àí¡­¡­"));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("å¼€å§‹å¤„ç†â€¦â€¦"));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     this->operate(m_pCurIPC, callback_para);
 
 
-    //´´½¨×Ó½ø³Ì½øĞĞ´¦Àí
+    //åˆ›å»ºå­è¿›ç¨‹è¿›è¡Œå¤„ç†
     QString app_path = QCoreApplication::applicationDirPath();
     QString exe_name = "template_dem.exe";
     QString shared_mem_name(shared_memory_name);
@@ -212,7 +212,7 @@ void Mould::rejected()
 
 void Mould::Browse_Savepath()
 {
-    QString path = QFileDialog::getExistingDirectory(this, QString::fromLocal8Bit("ÇëÑ¡Ôñ±£´æÂ·¾¶"), "");
+    QString path = QFileDialog::getExistingDirectory(this, QString::fromLocal8Bit("è¯·é€‰æ‹©ä¿å­˜è·¯å¾„"), "");
     ui->project_path->setText(path);
     project_path = path;
 }
@@ -222,7 +222,7 @@ void Mould::Browse_Savepath()
 void Mould::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     Sleep(3000);
 }
@@ -297,7 +297,7 @@ void Mould::add_project()
     if (!copy_model || !b_job_finished || !callback_para) return;
 
     /*---------------------------------------*/
-    /*        Ïò½çÃæ¹¤³ÌÊ÷ÖĞ¼ÓÈëĞÂµÄ¹¤³Ì     */
+    /*        å‘ç•Œé¢å·¥ç¨‹æ ‘ä¸­åŠ å…¥æ–°çš„å·¥ç¨‹     */
     /*---------------------------------------*/
 
     QStandardItem* project = new QStandardItem(project_name + ".insar");
@@ -309,7 +309,7 @@ void Mould::add_project()
     copy_model->setItem(copy_model->rowCount() - 1, 1, item1_path);
 
 
-    //µ¼ÈëÊı¾İ
+    //å¯¼å…¥æ•°æ®
     
     QStandardItem* origin = new QStandardItem(callback_para->import_node_name);
     origin->setIcon(QIcon(FOLDER_ICON));
@@ -332,7 +332,7 @@ void Mould::add_project()
     origin->setChild(origin->rowCount() - 1, 1, import_slave_file);
 
 
-    //²Ã¼ô
+    //è£å‰ª
 
     QStandardItem* AOI_node_name = new QStandardItem(callback_para->AOI_node_name);
     AOI_node_name->setIcon(QIcon(FOLDER_ICON));
@@ -355,7 +355,7 @@ void Mould::add_project()
     AOI_node_name->appendRow(AOI_slave_name);
     AOI_node_name->setChild(AOI_node_name->rowCount() - 1, 1, AOI_slave_file);
 
-    //Åä×¼
+    //é…å‡†
 
     QStandardItem* regis_node_name = new QStandardItem(callback_para->regis_node_name);
     regis_node_name->setIcon(QIcon(FOLDER_ICON));
@@ -378,7 +378,7 @@ void Mould::add_project()
     regis_node_name->appendRow(regis_slave_name);
     regis_node_name->setChild(regis_node_name->rowCount() - 1, 1, regis_slave_file);
 
-    //¸ÉÉæ
+    //å¹²æ¶‰
     QStandardItem* ifg_node_name = new QStandardItem(callback_para->ifg_node_name);
     ifg_node_name->setIcon(QIcon(FOLDER_ICON));
     project->appendRow(ifg_node_name);
@@ -404,7 +404,7 @@ void Mould::add_project()
     }
 
 
-    //ÂË²¨
+    //æ»¤æ³¢
 
     QStandardItem* denoise_node_name = new QStandardItem(callback_para->denoise_node_name);
     denoise_node_name->setIcon(QIcon(FOLDER_ICON));
@@ -420,7 +420,7 @@ void Mould::add_project()
     denoise_node_name->appendRow(denoise_ifg_name);
     denoise_node_name->setChild(denoise_node_name->rowCount() - 1, 1, denoise_ifg_file);
 
-    //½â²ø
+    //è§£ç¼ 
 
     QStandardItem* unwrap_node_name = new QStandardItem(callback_para->unwrap_node_name);
     unwrap_node_name->setIcon(QIcon(FOLDER_ICON));
@@ -436,7 +436,7 @@ void Mould::add_project()
     unwrap_node_name->appendRow(unwrap_ifg_name);
     unwrap_node_name->setChild(unwrap_node_name->rowCount() - 1, 1, unwrap_ifg_file);
 
-    //¸ß³Ì
+    //é«˜ç¨‹
 
     QStandardItem* dem_node_name = new QStandardItem(callback_para->dem_node_name);
     dem_node_name->setIcon(QIcon(FOLDER_ICON));
@@ -454,7 +454,7 @@ void Mould::add_project()
 
 
     /*---------------------------------------*/
-    /*             ĞÂ½¨xml¹¤³ÌÎÄ¼ş           */
+    /*             æ–°å»ºxmlå·¥ç¨‹æ–‡ä»¶           */
     /*---------------------------------------*/
     XMLFile xml;
     QFileInfo info = QFileInfo(project_path);
@@ -462,7 +462,7 @@ void Mould::add_project()
     QString xml_file = project_path + "/" + project_name + "/" + project_name + ".insar";
     xml.XMLFile_creat_new_project((path + "/" + project_name).toStdString().c_str(), QString("%1.insar").arg(project_name).toStdString().c_str(), "1.0");
     
-    //µ¼ÈëÊı¾İ
+    //å¯¼å…¥æ•°æ®
     DOC = new XMLFile;
     DOC->XMLFile_load(xml_file.toStdString().c_str());
     DOC->XMLFile_add_origin(QString(callback_para->import_node_name).toStdString().c_str(),
@@ -474,7 +474,7 @@ void Mould::add_project()
         QString("/" + QString(callback_para->import_node_name) + "/" + QString(callback_para->import_slave_name) + ".h5").toStdString().c_str(),
         sensor_name.toStdString().c_str());
 
-    //²Ã¼ô
+    //è£å‰ª
     DOC->XMLFile_add_cut(QString(callback_para->AOI_node_name).toStdString().c_str(),
         QString(callback_para->AOI_master_name).toStdString().c_str(),
         QString("/" + QString(callback_para->AOI_node_name) + "/" + QString(callback_para->AOI_master_name) + ".h5").toStdString().c_str(),
@@ -488,7 +488,7 @@ void Mould::add_project()
         parameter->AOI_center_lon, parameter->AOI_center_lat,
         parameter->AOI_width, parameter->AOI_height, "complex-1.0");
 
-    //Åä×¼
+    //é…å‡†
 
     DOC->XMLFile_add_regis(
         QString(callback_para->regis_node_name).toStdString().c_str(),
@@ -517,7 +517,7 @@ void Mould::add_project()
         "0 0"
     );
 
-    //¸ÉÉæ
+    //å¹²æ¶‰
 
     DOC->XMLFile_add_interferometric_phase(
         QString(callback_para->ifg_node_name).toStdString().c_str(),
@@ -556,7 +556,7 @@ void Mould::add_project()
     }
     
 
-    //ÂË²¨
+    //æ»¤æ³¢
     const char* filter_method = NULL;
     if (parameter->denoise_method == 1)
     {
@@ -587,7 +587,7 @@ void Mould::add_project()
         " "
     );
 
-    //½â²ø
+    //è§£ç¼ 
     const char* unwrap_method = NULL;
     if (parameter->unwrap_method == 1)
     {
@@ -614,7 +614,7 @@ void Mould::add_project()
         unwrap_method,
         parameter->unwrap_coh_thresh);
 
-    //¸ß³Ì
+    //é«˜ç¨‹
 
     DOC->XMLFile_add_dem(
         QString(callback_para->dem_node_name).toStdString().c_str(),

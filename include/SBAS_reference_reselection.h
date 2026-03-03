@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<FormatConversion.h>
 #include"ui_SBAS_reference_reselection.h"
@@ -25,9 +25,9 @@ public slots:
     void StopThread();
 private:
     double h5_left, h5_right, h5_top, h5_bottom;
-    /*ÈôÒÑ¾­µã»÷¹ıÔ¤ÀÀ£¬Ôò½ûÖ¹ÔÙ´Îµã»÷*/
+    /*è‹¥å·²ç»ç‚¹å‡»è¿‡é¢„è§ˆï¼Œåˆ™ç¦æ­¢å†æ¬¡ç‚¹å‡»*/
     bool isReselectionPressed;
-    /*ÊÇ·ñÕıÔÚÑ¡Ôñ²Î¿¼µã*/
+    /*æ˜¯å¦æ­£åœ¨é€‰æ‹©å‚è€ƒç‚¹*/
     bool isSBAS_reference_reselection;
     Ui::SBAS_reference_reselection* ui;
     QString save_path;

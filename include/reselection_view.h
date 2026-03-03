@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include<QtCharts/QtCharts>
 #include <QtGui> 
 #include <QDebug> 
@@ -18,46 +18,46 @@ QT_CHARTS_USE_NAMESPACE
 using namespace cv;
 
 
-/*Ô¤ÀÀÍ¼ÏÔÊ¾ÇøÓò*/
+/*é¢„è§ˆå›¾æ˜¾ç¤ºåŒºåŸŸ*/
 class reselection_view :public QGraphicsView
 {
     Q_OBJECT
 public:
     explicit reselection_view(QWidget* parent = Q_NULLPTR);
     ~reselection_view();
-    /** @brief ÉèÖÃÔ¤ÀÀÍ¼
-    * @param path                       Í¼Æ¬Â·¾¶
+    /** @brief è®¾ç½®é¢„è§ˆå›¾
+    * @param path                       å›¾ç‰‡è·¯å¾„
     */
     void setPixmap(const QString& path);
-    /** @brief ÉèÖÃÄ¿Ç°×´Ì¬£¨ÒÆ¶¯¡¢Ëõ·Å¡¢²Ã¼ô£©
-    * @param s                          ×´Ì¬
+    /** @brief è®¾ç½®ç›®å‰çŠ¶æ€ï¼ˆç§»åŠ¨ã€ç¼©æ”¾ã€è£å‰ªï¼‰
+    * @param s                          çŠ¶æ€
     */
     void SetState(State s);
-    /** @brief ÉèÖÃÑ¡µã±êÖ¾£¨trueÎª¹Û²âµã£¬flaseÎª²Î¿¼µã£©
-    * @param flag                       ±êÖ¾
+    /** @brief è®¾ç½®é€‰ç‚¹æ ‡å¿—ï¼ˆtrueä¸ºè§‚æµ‹ç‚¹ï¼Œflaseä¸ºå‚è€ƒç‚¹ï¼‰
+    * @param flag                       æ ‡å¿—
     */
     void SetPointFlag(bool flag);
-    /** @brief ÉèÖÃĞÎ±äÎÄ¼şÂ·¾¶
-    * @param path                       Â·¾¶
+    /** @brief è®¾ç½®å½¢å˜æ–‡ä»¶è·¯å¾„
+    * @param path                       è·¯å¾„
     */
     void SetH5Path(QString& path);
 
     State GetState();
 
-    QGraphicsScene* mScene;             //×Ó³¡¾°
-    QGraphicsRectItem* mFirstRect;      //Ê×Ñ¡µã¿ò
-    QGraphicsRectItem* mSecondRect;     //´ÎÑ¡µã¿ò
+    QGraphicsScene* mScene;             //å­åœºæ™¯
+    QGraphicsRectItem* mFirstRect;      //é¦–é€‰ç‚¹æ¡†
+    QGraphicsRectItem* mSecondRect;     //æ¬¡é€‰ç‚¹æ¡†
     QList<QGraphicsRectItem*> GCPs_rect;
     QList<QPointF> GCPs_point;
-    QGraphicsPixmapItem* mPixmap;       //Ô¤ÀÀÍ¼Item
+    QGraphicsPixmapItem* mPixmap;       //é¢„è§ˆå›¾Item
     QPixmap Cursor_up, Cursor_down;
     QList<QPoint> MatPos;
-    bool mFirstIsChecked, mSecondIsChecked;  //¼ì²âÊÇ·ñÑ¡µã
+    bool mFirstIsChecked, mSecondIsChecked;  //æ£€æµ‹æ˜¯å¦é€‰ç‚¹
 signals:
-    //·¢ËÍ²Î¿¼µã×ø±ê£¨ĞĞÁĞÊı´Ó0¿ªÊ¼£©
+    //å‘é€å‚è€ƒç‚¹åæ ‡ï¼ˆè¡Œåˆ—æ•°ä»0å¼€å§‹ï¼‰
     void send_coordinate(int rows, int cols, QList<QPoint>);
 public slots:
-    /** @brief »ñÈ¡²Ã¼ô¿òËÄ±ß±ÈÀı
+    /** @brief è·å–è£å‰ªæ¡†å››è¾¹æ¯”ä¾‹
     */
     void GetOffset();
 protected:
@@ -66,17 +66,17 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event);
     void wheelEvent(QWheelEvent* event);
 private:
-    QString mPath;                      //ĞÎ±äÎÄ¼şÂ·¾¶
-    QPointF sceneMousePos;//sceneÊó±ê»¬ÂÖ¹ö¶¯Ê±µÄÖĞĞÄ×ø±ê£¬ÓÃÓÚÊó±êÖĞĞÄËõ·Å
-    QPointF posAnchor;//viewÊó±ê×ø±ê£¬ÓÃÓÚÍÏ×§£¬ÓÉÓÚÍÏ×§¹ı³ÌÖĞÓĞ¶¶¶¯£¬¹Ê²»×ª»¯Îªscene×ø±ê
-    bool isMousePressed;                //ÓÃÓÚÅĞ¶ÏÒÆ¶¯Ê±Êó±êÊÇ·ñ°´ÏÂ
-    State mState;                       //²Ù×÷×´Ì¬
+    QString mPath;                      //å½¢å˜æ–‡ä»¶è·¯å¾„
+    QPointF sceneMousePos;//sceneé¼ æ ‡æ»‘è½®æ»šåŠ¨æ—¶çš„ä¸­å¿ƒåæ ‡ï¼Œç”¨äºé¼ æ ‡ä¸­å¿ƒç¼©æ”¾
+    QPointF posAnchor;//viewé¼ æ ‡åæ ‡ï¼Œç”¨äºæ‹–æ‹½ï¼Œç”±äºæ‹–æ‹½è¿‡ç¨‹ä¸­æœ‰æŠ–åŠ¨ï¼Œæ•…ä¸è½¬åŒ–ä¸ºsceneåæ ‡
+    bool isMousePressed;                //ç”¨äºåˆ¤æ–­ç§»åŠ¨æ—¶é¼ æ ‡æ˜¯å¦æŒ‰ä¸‹
+    State mState;                       //æ“ä½œçŠ¶æ€
     bool mPointFlag;
-    QPointF mFirst, mSecond;            //¼ÇÂ¼¹Û²âµãºÍ²Î¿¼µã  
+    QPointF mFirst, mSecond;            //è®°å½•è§‚æµ‹ç‚¹å’Œå‚è€ƒç‚¹  
 
 };
 
-/*ÕûÌå´°¿Ú*/
+/*æ•´ä½“çª—å£*/
 class reselection_view_Window : public QWidget
 {
     Q_OBJECT
@@ -84,8 +84,8 @@ public:
     explicit reselection_view_Window(QWidget* parent = 0);
     ~reselection_view_Window();
     void resizeEvent(QResizeEvent* event);
-    QDialogButtonBox* ButtonBox;        //È·¶¨¡¢È¡Ïû°´Å¥
-    reselection_view* View;                      //ÓÃÓÚÏÔÊ¾Ô¤ÀÀÍ¼µÄ×Ô¶¨ÒåQGraphicsView
+    QDialogButtonBox* ButtonBox;        //ç¡®å®šã€å–æ¶ˆæŒ‰é’®
+    reselection_view* View;                      //ç”¨äºæ˜¾ç¤ºé¢„è§ˆå›¾çš„è‡ªå®šä¹‰QGraphicsView
 signals:
     void send_coordinate(int, int, QList<QPoint>);
 public slots:

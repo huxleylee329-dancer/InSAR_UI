@@ -72,22 +72,89 @@ QtNodes 中包含 `Q_OBJECT` 宏的头文件**必须**添加到 `<QtMoc>` 列表
 
 ## 增量编译优化
 
-### 问题
-Qt Visual Studio Tools 可能将部分文件编译到 `QtWidget.B5697A67/x64/Debug/` 而不是 `x64\Debug/` 目录。
+### 问题症状
+修改任何源文件后，Visual Studio 执行全量编译，耗时超过 1 分钟，而不是只编译修改的文件（通常只需几秒）。
+
+### 问题根因
+`QtMsBuild\Qt.targets` 文件中的 `QtMoc`、`QtUic` 和 `QtRcc` 目标缺少 `Inputs` 和 `Outputs` 属性，导致 MSBuild 无法正确跟踪文件依赖关系。每次构建时这些目标都会无条件执行，导致所有 MOC 文件都被重新生成和编译。
 
 ### 解决方案
 
-**不修改 IntDir**：改变输出目录会触发完整重建。
+在 `QtMsBuild\Qt.targets` 中为每个 Target 添加 `Inputs` 和 `Outputs` 属性：
 
-**正确做法：**
-1. 在 VS 中执行"清理"（Clean）来清除旧文件
-2. 然后执行"生成"（Build）进行增量编译
-3. 不要频繁修改 .vcxproj 文件（每次修改都可能触发完整重建）
+**QtUic 目标（第 13-17 行）：**
+```xml
+<Target Name="QtUic" BeforeTargets="QtMoc"
+        Inputs="@(QtUic)"
+        Outputs="$(QtIntDir)ui_%(QtUic.Filename).h">
+  <Exec Command="&quot;$(QtUicDir)\uic.exe&quot; &quot;%(QtUic.FullPath)&quot; -o &quot;$(QtIntDir)ui_%(Filename).h&quot;" Condition="'%(QtUic.FullPath)' != ''"/>
+</Target>
+```
 
-**性能提示：**
-- 修改 .cpp 文件后，只需重新编译该文件
-- 修改 .h 文件后，会重新编译依赖它的所有 .cpp 文件（包括 MOC 文件）
-- 如果不小心修改了 .vcxproj 文件，下次编译会重新编译所有文件
+**QtMoc 目标（第 26-33 行）：**
+```xml
+<Target Name="QtMoc" BeforeTargets="ClCompile"
+        Inputs="@(QtMoc)"
+        Outputs="$(QtIntDir)moc_%(QtMoc.Filename).cpp">
+  <Exec Command="&quot;$(QtMocDir)\moc.exe&quot; &quot;%(QtMoc.FullPath)&quot; -o &quot;$(QtIntDir)moc_%(Filename).cpp&quot;" Condition="'%(QtMoc.FullPath)' != ''"/>
+  <ItemGroup>
+    <ClCompile Include="$(QtIntDir)moc_%(QtMoc.Filename).cpp" Condition="'%(QtMoc.FullPath)' != ''"/>
+  </ItemGroup>
+</Target>
+```
+
+### 修复后的行为
+
+**修改 .cpp 文件：**
+- 只重新编译该 .cpp 文件
+- MOC 文件不会重新生成（因为头文件未修改）
+- 链接步骤执行
+
+**修改 .h 文件：**
+- 重新编译该 .cpp 文件
+- 重新生成并编译对应的 moc_*.cpp 文件
+- 重新编译所有依赖该头文件的其他 .cpp 文件
+- 链接步骤执行
+
+### 验证步骤
+
+1. 关闭 Visual Studio
+2. 删除缓存目录：
+   ```bash
+   rm -rf D:/SRC/InSAR_UI/.vs
+   rm -rf D:/SRC/InSAR_UI/x64
+   ```
+3. 重新打开 Visual Studio
+4. 重新生成解决方案（第一次会全量编译）
+5. 测试增量编译：修改 `Cut.cpp` 的一行，然后编译
+
+### 预期结果
+
+修改 `Cut.cpp` 后，应该只看到：
+- `Cut.cpp` 被编译
+- `moc_Cut.cpp` **不应该**被重新编译（因为 `include\Cut.h` 没有修改）
+- 链接步骤执行
+- 编译时间少于 10 秒
+
+### 实际测试结果
+
+✅ **测试通过**（2026-03-03）
+- 修改 `Cut.cpp` 后只有该文件被编译
+- 编译时间：7 秒（相比修复前的 1 分 15 秒）
+- 增量编译正常工作
+
+### 额外配置
+
+在 `QtWidgetsApplication3.vcxproj` 的 Debug|x64 配置中添加了 `IntDir`：
+```xml
+<PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <OutDir>.\bin\</OutDir>
+    <TargetName>SatExplorer</TargetName>
+    <IntDir>x64\Debug\</IntDir>
+</PropertyGroup>
+```
+
+虽然添加 `IntDir` 有助于保持输出目录清晰，但**真正解决增量编译问题**的是在 `Qt.targets` 中添加 `Inputs` 和 `Outputs` 属性。
 
 ---
 
@@ -239,4 +306,14 @@ D:\SRC\InSAR_UI\
 
 ---
 
-## 最后更新：2026-03-02
+## 最后更新：2026-03-03
+
+### 更新记录
+
+**2026-03-03：**
+- 修复增量编译失效问题：在 `Qt.targets` 中添加 `Inputs` 和 `Outputs` 属性
+- 编译时间从全量编译的 1 分 15 秒降至增量编译的 7 秒
+- 更新 `QtWidgetsApplication3.vcxproj` 添加 `IntDir=x64\Debug\` 配置
+
+**2026-03-02：**
+- 初始版本，记录 QtNodes 集成和基本构建配置

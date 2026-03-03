@@ -1,4 +1,4 @@
-#include<MyToolBox.h>
+ï»¿#include<MyToolBox.h>
 #include<MyPage.h>
 #include<qevent.h>
 #include<QScrollBar>
@@ -108,23 +108,23 @@ void MyToolBox::renewLayout()
 
 void MyToolBox::createScrollArea()
 {
-    //´´½¨
+    //åˆ›å»º
     Page_wnd = new QWidget;
     Area = new QScrollArea(this);
     Area->setWidget(Page_wnd);
-    Area->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);    //²»¿ªÆôºáÏò¹ö¶¯
-    Area->verticalScrollBar()->installEventFilter(this);           //¸øÊúÏò¹ö¶¯°²×°¹ýÂËÆ÷£¬ÒòÎªÔÚ¹ö¶¯Ìõ³öÏÖ»òÕßÏûÊ§µÄÊ±ºòÐèÒªµ÷½Úm_pScrollAreaWidget´óÐ¡
+    Area->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);    //ä¸å¼€å¯æ¨ªå‘æ»šåŠ¨
+    Area->verticalScrollBar()->installEventFilter(this);           //ç»™ç«–å‘æ»šåŠ¨å®‰è£…è¿‡æ»¤å™¨ï¼Œå› ä¸ºåœ¨æ»šåŠ¨æ¡å‡ºçŽ°æˆ–è€…æ¶ˆå¤±çš„æ—¶å€™éœ€è¦è°ƒèŠ‚m_pScrollAreaWidgetå¤§å°
 }
 
 bool MyToolBox::eventFilter(QObject* watched, QEvent* event)
 {
-    //ÖØÐÂ¸Ä±ä¿Ø¼þµÄÏÔÊ¾´óÐ¡
+    //é‡æ–°æ”¹å˜æŽ§ä»¶çš„æ˜¾ç¤ºå¤§å°
     switch ((int)event->type())
     {
     case QEvent::Resize:
         if (watched->inherits("MyToolBox"))
         {
-            //¸ù¾Ýµ±Ç°ÊÇ·ñÓÐ¹ö¶¯Ìõ³öÏÖ£¬Èç¹ûÓÐÐèÒª¼õÈ¥¹ö¶¯ÌõµÄ¿í¶ÈÒÔÃâµ²×¡BarµÄÍ¼±ê
+            //æ ¹æ®å½“å‰æ˜¯å¦æœ‰æ»šåŠ¨æ¡å‡ºçŽ°ï¼Œå¦‚æžœæœ‰éœ€è¦å‡åŽ»æ»šåŠ¨æ¡çš„å®½åº¦ä»¥å…æŒ¡ä½Barçš„å›¾æ ‡
             bool b = Area->verticalScrollBar()->isVisible();
             int iScrollBarWidth = Area->verticalScrollBar()->width();
 
@@ -138,7 +138,7 @@ bool MyToolBox::eventFilter(QObject* watched, QEvent* event)
     case QEvent::Hide:
         if (watched->inherits("QScrollBar"))
         {
-            //ÔÚµã»÷BarÏÔÊ¾/Òþ²ØContents ¸ù¾Ýµ±Ç°ÊÇ·ñÓÐ¹ö¶¯Ìõ³öÏÖ£¬Èç¹ûÓÐÐèÒª¼õÈ¥¹ö¶¯ÌõµÄ¿í¶ÈÒÔÃâµ²×¡BarµÄÍ¼±ê
+            //åœ¨ç‚¹å‡»Baræ˜¾ç¤º/éšè—Contents æ ¹æ®å½“å‰æ˜¯å¦æœ‰æ»šåŠ¨æ¡å‡ºçŽ°ï¼Œå¦‚æžœæœ‰éœ€è¦å‡åŽ»æ»šåŠ¨æ¡çš„å®½åº¦ä»¥å…æŒ¡ä½Barçš„å›¾æ ‡
             int iScrollBarWidth = Area->verticalScrollBar()->width();
             int iWidth = width() - ((event->type() == QEvent::Show) ? iScrollBarWidth : 0);
             if (Page_wnd) Page_wnd->setFixedWidth(iWidth);

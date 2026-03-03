@@ -1,4 +1,4 @@
-#include"S1_swath_merge.h"
+ï»¿#include"S1_swath_merge.h"
 #include"ui_S1_swath_merge.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -35,7 +35,7 @@ void S1_swath_merge::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -145,7 +145,7 @@ void S1_swath_merge::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
@@ -171,7 +171,7 @@ void S1_swath_merge::ShowProjectList(QStandardItemModel* model)
     }
     if (!isnodefound)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
         //this->deleteLater();
         return;
     }
@@ -183,10 +183,10 @@ void S1_swath_merge::ShowProjectList(QStandardItemModel* model)
     ui->comboBox_IW2_data->clear();
     ui->comboBox_IW3_data->clear();
 
-    //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
+    //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
     if (node->rowCount() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("½ÚµãÎŞÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("èŠ‚ç‚¹æ— æ•°æ®ï¼"));
         //this->deleteLater();
         return;
     }
@@ -212,7 +212,7 @@ void S1_swath_merge::on_comboBox_project_currentIndexChanged()
         int count = project->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             //this->deleteLater();
             return;
         }
@@ -232,7 +232,7 @@ void S1_swath_merge::on_comboBox_project_currentIndexChanged()
         }
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÂú×ãĞèÇóµÄÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ»¡è¶³éœ€æ±‚çš„æ•°æ®ï¼"));
             //this->deleteLater();
             return;
         }
@@ -241,13 +241,13 @@ void S1_swath_merge::on_comboBox_project_currentIndexChanged()
         ui->comboBox_IW3_node->setCurrentIndex(0);
 
         
-        //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
+        //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
         ui->comboBox_IW1_data->clear();
         ui->comboBox_IW2_data->clear();
         ui->comboBox_IW3_data->clear();
         if (node->rowCount() < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             //this->deleteLater();
             return;
         }
@@ -281,7 +281,7 @@ void S1_swath_merge::on_comboBox_IW1_node_currentIndexChanged()
         ui->comboBox_IW1_data->clear();
         if (!node || num <= 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             //this->deleteLater();
             return;
         }
@@ -311,7 +311,7 @@ void S1_swath_merge::on_comboBox_IW2_node_currentIndexChanged()
         ui->comboBox_IW2_data->clear();
         if (!node || num <= 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             //this->deleteLater();
             return;
         }
@@ -341,7 +341,7 @@ void S1_swath_merge::on_comboBox_IW3_node_currentIndexChanged()
         ui->comboBox_IW3_data->clear();
         if (!node || num <= 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             //this->deleteLater();
             return;
         }
@@ -357,16 +357,16 @@ void S1_swath_merge::on_buttonBox_accepted()
 {
     if (ui->comboBox_IW1_node->count() == 0 || ui->comboBox_IW2_node->count() == 0 || ui->comboBox_IW3_node->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼"));
         return;
     }
     bool bFlag = ui->lineEdit_dstNode->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ãû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_project->currentText())[0];
     if (!project) {
         return;
@@ -375,7 +375,7 @@ void S1_swath_merge::on_buttonBox_accepted()
     {
         if (ui->lineEdit_dstNode->text() == project->child(i)->text())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇëÖØÃüÃû£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œè¯·é‡å‘½åï¼"));
             return;
         }
     }

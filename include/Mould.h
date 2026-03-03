@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include<MyToolBox.h>
@@ -25,7 +25,7 @@ public slots:
     void endProcess();
     void StopThread();
     void endThread();
-    /*Ïò½çÃæ¹¤³ÌÊ÷ÖĞ¼ÓÈëĞÂµÄ¹¤³Ì£¬²¢ĞÂ½¨xml¹¤³ÌÎÄ¼ş*/
+    /*å‘ç•Œé¢å·¥ç¨‹æ ‘ä¸­åŠ å…¥æ–°çš„å·¥ç¨‹ï¼Œå¹¶æ–°å»ºxmlå·¥ç¨‹æ–‡ä»¶*/
     void add_project();
 signals:
     void operate(InSAR_IPC* IPC, template_DEM_para_back* callback_para);
@@ -40,9 +40,9 @@ private:
     InSAR_IPC* m_pCurIPC;
     HANDLE processHandle;
     template_DEM_para* parameter;
-    /*¼ÆËãÈÎÎñÊÇ·ñÕı³£½áÊø*/
+    /*è®¡ç®—ä»»åŠ¡æ˜¯å¦æ­£å¸¸ç»“æŸ*/
     bool b_job_finished;
-    /*×Ó½ø³Ì»Ø´«²ÎÊı£¨ÓÃÓÚ¸üĞÂ½çÃæ¹¤³ÌÊ÷ºÍĞÂ½¨xml¹¤³ÌÎÄ¼ş£©*/
+    /*å­è¿›ç¨‹å›ä¼ å‚æ•°ï¼ˆç”¨äºæ›´æ–°ç•Œé¢å·¥ç¨‹æ ‘å’Œæ–°å»ºxmlå·¥ç¨‹æ–‡ä»¶ï¼‰*/
     template_DEM_para_back* callback_para;
     char shared_memory_name[512];
     char self_event[512];

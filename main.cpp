@@ -1,4 +1,4 @@
-#include"QtGui"
+ï»¿#include"QtGui"
 #include<ColorBar.h>
 #include <QtWidgets/QApplication>
 #include"MainWindow.h"
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
     //csv_test.close();
     QApplication a(argc, argv);
     QPixmap* k = new QPixmap(QString(CURSOR_UP_ICON));
-    /*¿ª»úÆô¶¯»­Ãæ*/
+    /*å¼€æœºå¯åŠ¨ç”»é¢*/
     char szFilePath[MAX_PATH + 1] = { 0 };
     GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
     (strrchr(szFilePath, '\\'))[0] = 0;
@@ -35,13 +35,13 @@ int main(int argc, char *argv[])
     QPixmap pixmap(exe_path.c_str());
     QSplashScreen splash(pixmap);
     splash.show();
-    splash.showMessage(QStringLiteral("ÕıÔÚÆô¶¯£¬ÇëÉÔºó......"), Qt::AlignHCenter | Qt::AlignBottom, Qt::white);
+    splash.showMessage(QStringLiteral("æ­£åœ¨å¯åŠ¨ï¼Œè¯·ç¨å......"), Qt::AlignHCenter | Qt::AlignBottom, Qt::white);
     QDateTime n = QDateTime::currentDateTime();
     QDateTime now;
     do {
         now = QDateTime::currentDateTime();
-    } while (n.secsTo(now) <= 1);//3ÎªĞèÒªÑÓÊ±µÄÃëÊı
-    /*Ê¹³ÌĞòÔÚÏÔÊ¾Æô¶¯»­ÃæµÄÍ¬Ê±ÈÔÄÜÏìÓ¦Êó±êµÈÆäËûÊÂ¼ş*/
+    } while (n.secsTo(now) <= 1);//3ä¸ºéœ€è¦å»¶æ—¶çš„ç§’æ•°
+    /*ä½¿ç¨‹åºåœ¨æ˜¾ç¤ºå¯åŠ¨ç”»é¢çš„åŒæ—¶ä»èƒ½å“åº”é¼ æ ‡ç­‰å…¶ä»–äº‹ä»¶*/
     a.processEvents();
     //if (argc == 3)
     //{

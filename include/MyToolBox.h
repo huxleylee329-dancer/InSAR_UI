@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include <QScrollArea>
 #include <QHBoxLayout>
@@ -38,7 +38,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event);
 
 private:
-    //¹ö¶¯ÊÓ´°
+    //æ»šåŠ¨è§†çª—
     QScrollArea* Area;
     QWidget* Page_wnd;
 

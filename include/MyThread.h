@@ -1,4 +1,4 @@
-#ifndef MYTHREAD_H
+ï»¿#ifndef MYTHREAD_H
 #define MYTHREAD_H
 #include<QMetaType>
 #include <QObject>
@@ -17,16 +17,16 @@ public:
 	~MyThread();
 public slots:
 	void Import();
-	/** @brief µ¼ÈësentinelÊı¾İ
-	* @param PODFile                      ÉÚ±øÒ»ºÅ¾«¹ìÊı¾İ
-	* @param manifest_file                ÉÚ±øÒ»ºÅIWÊı¾İ²úÆ·manifestÎÄ¼ş£¨´ø¾ø¶ÔÂ·¾¶£©
-	* @param subswath                     ×Ó´øÑ¡Ôñ
-	* @param polarization                 ¼«»¯·½Ê½
-	* @param project_path                 ¹¤³Ì¾ø¶ÔÂ·¾¶
-	* @param folder                       ´¢´æ½á¹û½ÚµãÃû
-	* @param filename                     ´¢´æ½á¹ûÎÄ¼şÃû£¨²»´øÂ·¾¶£©
-	* @param project_name                 ¹¤³ÌÎÄ¼şÃû£¨²»´øÂ·¾¶£©
-	* @param model                        treeview½á¹¹
+	/** @brief å¯¼å…¥sentinelæ•°æ®
+	* @param PODFile                      å“¨å…µä¸€å·ç²¾è½¨æ•°æ®
+	* @param manifest_file                å“¨å…µä¸€å·IWæ•°æ®äº§å“manifestæ–‡ä»¶ï¼ˆå¸¦ç»å¯¹è·¯å¾„ï¼‰
+	* @param subswath                     å­å¸¦é€‰æ‹©
+	* @param polarization                 æåŒ–æ–¹å¼
+	* @param project_path                 å·¥ç¨‹ç»å¯¹è·¯å¾„
+	* @param folder                       å‚¨å­˜ç»“æœèŠ‚ç‚¹å
+	* @param filename                     å‚¨å­˜ç»“æœæ–‡ä»¶åï¼ˆä¸å¸¦è·¯å¾„ï¼‰
+	* @param project_name                 å·¥ç¨‹æ–‡ä»¶åï¼ˆä¸å¸¦è·¯å¾„ï¼‰
+	* @param model                        treeviewç»“æ„
 	*/
 	void import_sentinel(
 		QString PODFile,
@@ -39,15 +39,15 @@ public slots:
 		QString project_name,
 		QStandardItemModel* model
 	);
-	/*@brief ÅúÁ¿µ¼ÈëÉÚ±øÊı¾İ
-	* @param original_namelist            Ô­Ê¼ÎÄ¼ş
-	* @param import_namelist              µ¼ÈëÎÄ¼ş
-	* @param subswath                     ×Ó´ø
-	* @param polarization                 ¼«»¯
-	* @param savepath                     ±£´æÂ·¾¶
-	* @param dst_node                     Ä¿±ê½ÚµãÃû
-	* @param dst_project                  Ä¿±ê¹¤³ÌÃû
-	* @param model                        treeviewÄ£ĞÍ
+	/*@brief æ‰¹é‡å¯¼å…¥å“¨å…µæ•°æ®
+	* @param original_namelist            åŸå§‹æ–‡ä»¶
+	* @param import_namelist              å¯¼å…¥æ–‡ä»¶
+	* @param subswath                     å­å¸¦
+	* @param polarization                 æåŒ–
+	* @param savepath                     ä¿å­˜è·¯å¾„
+	* @param dst_node                     ç›®æ ‡èŠ‚ç‚¹å
+	* @param dst_project                  ç›®æ ‡å·¥ç¨‹å
+	* @param model                        treeviewæ¨¡å‹
 	*/
 	void import_sentinel_patch(
 		vector<QString> original_namelist,
@@ -59,14 +59,14 @@ public slots:
 		QString dst_project,
 		QStandardItemModel* model
 	);
-	/** @brief µ¼ÈëTerraSARÊı¾İ
-	* @param polarization                 ¼«»¯·½Ê½
-	* @param xml_filename                 xmlÎÄ¼şÃû
-	* @param project_path                 ¹¤³Ì¾ø¶ÔÂ·¾¶
-	* @param folder                       ´¢´æ½á¹û½ÚµãÃû
-	* @param filename                     ´¢´æ½á¹ûÎÄ¼şÃû£¨²»´øÂ·¾¶£©
-	* @param project_name                 ¹¤³ÌÎÄ¼şÃû£¨²»´øÂ·¾¶£©
-	* @param model                        treeview½á¹¹
+	/** @brief å¯¼å…¥TerraSARæ•°æ®
+	* @param polarization                 æåŒ–æ–¹å¼
+	* @param xml_filename                 xmlæ–‡ä»¶å
+	* @param project_path                 å·¥ç¨‹ç»å¯¹è·¯å¾„
+	* @param folder                       å‚¨å­˜ç»“æœèŠ‚ç‚¹å
+	* @param filename                     å‚¨å­˜ç»“æœæ–‡ä»¶åï¼ˆä¸å¸¦è·¯å¾„ï¼‰
+	* @param project_name                 å·¥ç¨‹æ–‡ä»¶åï¼ˆä¸å¸¦è·¯å¾„ï¼‰
+	* @param model                        treeviewç»“æ„
 	*/
 	void import_TSX(
 		QString polarization,
@@ -77,14 +77,14 @@ public slots:
 		QString project_name,
 		QStandardItemModel* model
 	);
-	/*@brief ÅúÁ¿µ¼ÈëTerraSARÊı¾İ
-	* @param polarization                ¼«»¯·½Ê½
-	* @param savepath                    ±£´æÂ·¾¶
-	* @param original_file_list          Ô­Ê¼ÎÄ¼ş
-	* @param import_namelist             µ¼ÈëÎÄ¼şÃû
-	* @param dst_node                    Ä¿±ê½Úµã
-	* @param dst_project                 Ä¿±ê¹¤³Ì
-	* @param copy                        treeviewÄ£ĞÍ
+	/*@brief æ‰¹é‡å¯¼å…¥TerraSARæ•°æ®
+	* @param polarization                æåŒ–æ–¹å¼
+	* @param savepath                    ä¿å­˜è·¯å¾„
+	* @param original_file_list          åŸå§‹æ–‡ä»¶
+	* @param import_namelist             å¯¼å…¥æ–‡ä»¶å
+	* @param dst_node                    ç›®æ ‡èŠ‚ç‚¹
+	* @param dst_project                 ç›®æ ‡å·¥ç¨‹
+	* @param copy                        treeviewæ¨¡å‹
 	*/
 	void import_TSX_patch(
 		QString polarization,
@@ -95,13 +95,13 @@ public slots:
 		QString dst_project,
 		QStandardItemModel* model
 	);
-	/*@brief ÅúÁ¿µ¼ÈëCOSMOS-SkyMedÊı¾İ
-	* @param savepath                    ±£´æÂ·¾¶
-	* @param original_file_list          Ô­Ê¼ÎÄ¼ş
-	* @param import_namelist             µ¼ÈëÎÄ¼şÃû
-	* @param dst_node                    Ä¿±ê½Úµã
-	* @param dst_project                 Ä¿±ê¹¤³Ì
-	* @param copy                        treeviewÄ£ĞÍ
+	/*@brief æ‰¹é‡å¯¼å…¥COSMOS-SkyMedæ•°æ®
+	* @param savepath                    ä¿å­˜è·¯å¾„
+	* @param original_file_list          åŸå§‹æ–‡ä»¶
+	* @param import_namelist             å¯¼å…¥æ–‡ä»¶å
+	* @param dst_node                    ç›®æ ‡èŠ‚ç‚¹
+	* @param dst_project                 ç›®æ ‡å·¥ç¨‹
+	* @param copy                        treeviewæ¨¡å‹
 	*/
 	void import_CSK_patch(
 		QString savepath,
@@ -111,14 +111,14 @@ public slots:
 		QString dst_project,
 		QStandardItemModel* model
 	);
-	/*@brief ÅúÁ¿µ¼ÈëALOS2Êı¾İ
-	* @param savepath                    ±£´æÂ·¾¶
-	* @param IMG_file_list               Ô­Ê¼ÎÄ¼ş(IMGÎÄ¼ş)
-	* @param LED_file_list2              Ô­Ê¼ÎÄ¼ş(LEDÎÄ¼ş)
-	* @param import_namelist             µ¼ÈëÎÄ¼şÃû
-	* @param dst_node                    Ä¿±ê½Úµã
-	* @param dst_project                 Ä¿±ê¹¤³Ì
-	* @param copy                        treeviewÄ£ĞÍ
+	/*@brief æ‰¹é‡å¯¼å…¥ALOS2æ•°æ®
+	* @param savepath                    ä¿å­˜è·¯å¾„
+	* @param IMG_file_list               åŸå§‹æ–‡ä»¶(IMGæ–‡ä»¶)
+	* @param LED_file_list2              åŸå§‹æ–‡ä»¶(LEDæ–‡ä»¶)
+	* @param import_namelist             å¯¼å…¥æ–‡ä»¶å
+	* @param dst_node                    ç›®æ ‡èŠ‚ç‚¹
+	* @param dst_project                 ç›®æ ‡å·¥ç¨‹
+	* @param copy                        treeviewæ¨¡å‹
 	*/
 	void import_ALOS2_patch(
 		QString savepath,
@@ -130,11 +130,11 @@ public slots:
 		QStandardItemModel* model
 	);
 	void ShowImage(QString, QString, QString);
-	/*@brief ¾­Î³¶È²Ã¼ôËã·¨
+	/*@brief ç»çº¬åº¦è£å‰ªç®—æ³•
 	* @param 
 	*/
 	void Cut(QList<double>, QString, QString, QString, QString, QStandardItemModel*);
-	/*@brief ¿òÑ¡²Ã¼ôËã·¨
+	/*@brief æ¡†é€‰è£å‰ªç®—æ³•
 	* @param
 	*/
 	void Cut2(
@@ -149,13 +149,13 @@ public slots:
 		QStandardItemModel* model
 	);
 	void Regis(QList<int>, QString, QString, QString, QString, QStandardItemModel*);
-	/*@brief DEM¸¨ÖúÅä×¼
-	* @param masterIndex                Ö÷Í¼ÏñĞòºÅ(´Ó1¿ªÊ¼)
-	* @param savepath                   ¹¤³Ì±£´æÂ·¾¶
-	* @param project                    ¹¤³ÌÃû
-	* @param srcNode                    Ô´Êı¾İ½Úµã
-	* @param dstNode                    Ä¿±ê½Úµã
-	* @param model                      Ê÷Ä£ĞÍ
+	/*@brief DEMè¾…åŠ©é…å‡†
+	* @param masterIndex                ä¸»å›¾åƒåºå·(ä»1å¼€å§‹)
+	* @param savepath                   å·¥ç¨‹ä¿å­˜è·¯å¾„
+	* @param project                    å·¥ç¨‹å
+	* @param srcNode                    æºæ•°æ®èŠ‚ç‚¹
+	* @param dstNode                    ç›®æ ‡èŠ‚ç‚¹
+	* @param model                      æ ‘æ¨¡å‹
 	*/
 	void DEMAssistCoregistration(
 		int masterIndex,
@@ -165,12 +165,12 @@ public slots:
 		QString dstNode,
 		QStandardItemModel* model
 	);
-	/*@brief ÉÚ±øÒ»ºÅÊı¾İburstÆ´½Ó´¦Àí
-	* @param savePath                   ±£´æÂ·¾¶
-	* @param dstProject                 Ä¿±ê¹¤³Ì
-	* @param srcNode                    Ô´½Úµã
-	* @param dstNode                    Ä¿±ê½Úµã
-	* @param treeModel                  Ê÷Ä£ĞÍ
+	/*@brief å“¨å…µä¸€å·æ•°æ®burstæ‹¼æ¥å¤„ç†
+	* @param savePath                   ä¿å­˜è·¯å¾„
+	* @param dstProject                 ç›®æ ‡å·¥ç¨‹
+	* @param srcNode                    æºèŠ‚ç‚¹
+	* @param dstNode                    ç›®æ ‡èŠ‚ç‚¹
+	* @param treeModel                  æ ‘æ¨¡å‹
 	*/
 	void S1_Deburst(
 		QString savePath,
@@ -179,15 +179,15 @@ public slots:
 		QString dstNode,
 		QStandardItemModel* model
 	);
-	/*@brief ÉÚ±øÒ»ºÅºóÏòµØÀí±àÂëÅä×¼
-	* @param images_number              Í¼Ïñ·ùÊı
-	* @param masterIndex                Ö÷Í¼ĞòºÅ£¨´Ó1¿ªÊ¼£©
-	* @param savePath                   ±£´æÂ·¾¶
-	* @param dstProject                 Ä¿±ê¹¤³Ì
-	* @param srcNode                    Ô´½Úµã
-	* @param dstNode                    Ä¿±ê½Úµã
-	* @param treeModel                  Ê÷Ä£ĞÍ
-	* @param b_ESD                      ÊÇ·ñ²ÉÓÃESD
+	/*@brief å“¨å…µä¸€å·åå‘åœ°ç†ç¼–ç é…å‡†
+	* @param images_number              å›¾åƒå¹…æ•°
+	* @param masterIndex                ä¸»å›¾åºå·ï¼ˆä»1å¼€å§‹ï¼‰
+	* @param savePath                   ä¿å­˜è·¯å¾„
+	* @param dstProject                 ç›®æ ‡å·¥ç¨‹
+	* @param srcNode                    æºèŠ‚ç‚¹
+	* @param dstNode                    ç›®æ ‡èŠ‚ç‚¹
+	* @param treeModel                  æ ‘æ¨¡å‹
+	* @param b_ESD                      æ˜¯å¦é‡‡ç”¨ESD
 	*/
 	void S1_TOPS_BackGeocoding(
 		int images_number,
@@ -199,12 +199,12 @@ public slots:
 		QStandardItemModel* model,
 		bool b_ESD = true
 	);
-	/*@brief Åä×¼ºóSARÍ¼Ïñ¶ÑÕ»È¥²Î¿¼ÏàÎ»´¦Àí£¨°üÀ¨Æ½µØºÍµØĞÎÏàÎ»£©
-	* @param masterIndex                Ö÷Í¼ÏñĞòºÅ£¨´Ó1¿ªÊ¼£©
-	* @param project_name               ¹¤³ÌÃû
-	* @param src_node                   ´ı´¦ÀíÊı¾İ½ÚµãÃû
-	* @param dst_node                   ½á¹û±£´æ½ÚµãÃû
-	* @param model                      ¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍ
+	/*@brief é…å‡†åSARå›¾åƒå †æ ˆå»å‚è€ƒç›¸ä½å¤„ç†ï¼ˆåŒ…æ‹¬å¹³åœ°å’Œåœ°å½¢ç›¸ä½ï¼‰
+	* @param masterIndex                ä¸»å›¾åƒåºå·ï¼ˆä»1å¼€å§‹ï¼‰
+	* @param project_name               å·¥ç¨‹å
+	* @param src_node                   å¾…å¤„ç†æ•°æ®èŠ‚ç‚¹å
+	* @param dst_node                   ç»“æœä¿å­˜èŠ‚ç‚¹å
+	* @param model                      å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹
 	*/
 	void SLC_deramp(
 		int masterIndex,
@@ -213,11 +213,11 @@ public slots:
 		QString dst_node,
 		QStandardItemModel* model
 	);
-	/*@brief ¹À¼Æ»ùÏß·Ö²¼²¢¼ÆËãĞ¡»ùÏß¼¯¸ÉÉæ×éºÏ¾ØÕó
-	* @param masterIndex               Ö÷Í¼ÏñĞòºÅ£¨´Ó1¿ªÊ¼£©
-	* @param project_name              ¹¤³ÌÃû
-	* @param src_node                  ´ı´¦ÀíÊı¾İ½Úµã
-	* @param model                     ¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍ
+	/*@brief ä¼°è®¡åŸºçº¿åˆ†å¸ƒå¹¶è®¡ç®—å°åŸºçº¿é›†å¹²æ¶‰ç»„åˆçŸ©é˜µ
+	* @param masterIndex               ä¸»å›¾åƒåºå·ï¼ˆä»1å¼€å§‹ï¼‰
+	* @param project_name              å·¥ç¨‹å
+	* @param src_node                  å¾…å¤„ç†æ•°æ®èŠ‚ç‚¹
+	* @param model                     å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹
 	*/
 	void Baseline_Formation(
 		int masterIndex,
@@ -225,23 +225,23 @@ public slots:
 		QString src_node,
 		QStandardItemModel* model
 	);
-	/*@brief Ğ¡»ùÏß¼¯Ê±¼äĞòÁĞ·ÖÎö
-	* @param temporal_thresh_low        Ê±¼ä»ùÏßµÍãĞÖµ£¨day£©
-	* @param temporal_thresh            Ê±¼ä»ùÏß¸ßãĞÖµ£¨day£©
-	* @param spatial_thresh             ¿Õ¼ä»ùÏßãĞÖµ£¨m£©
-	* @param multilook_rg               ¾àÀëÏò¶àÊÓ±¶Êı
-	* @param multilook_az               ·½Î»Ïò¶àÊÓ±¶Êı
-	* @param unwrap_method              ½â²ø·½·¨£¨1£ºDelaunay_MCF£¬2£ºSNAPHU£¬3£ºMCF£©
-	* @param Goldstein_alpha            GoldsteinÂË²¨Ç¿¶È
-	* @param coherence_thresh           ¸ßÏà¸ÉãĞÖµ
-	* @param temporal_coherence_thresh  Ä£ĞÍÏà¹ØÏµÊıãĞÖµ
-	* @param refinement_coh_thresh      ¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½¿ØÖÆµãÉ¸Ñ¡Ïà¹ØÏµÊıãĞÖµ
-	* @param refinemen_def_thresh       ¹ìµÀ¾«Á¶ºÍÖØÈ¥Æ½¿ØÖÆµãÉ¸Ñ¡ĞÎ±äËÙÂÊãĞÖµ£¨m/year£©
-	* @param project                    ¹¤³ÌÃû
-	* @param srcNode                    Êı¾İ½ÚµãÃû
-	* @param dstNode                    Ä¿±ê½Úµã
-	* @param csv_path                   csvÎÄ¼ş±£´æÂ·¾¶
-	* @param model                      ¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍ
+	/*@brief å°åŸºçº¿é›†æ—¶é—´åºåˆ—åˆ†æ
+	* @param temporal_thresh_low        æ—¶é—´åŸºçº¿ä½é˜ˆå€¼ï¼ˆdayï¼‰
+	* @param temporal_thresh            æ—¶é—´åŸºçº¿é«˜é˜ˆå€¼ï¼ˆdayï¼‰
+	* @param spatial_thresh             ç©ºé—´åŸºçº¿é˜ˆå€¼ï¼ˆmï¼‰
+	* @param multilook_rg               è·ç¦»å‘å¤šè§†å€æ•°
+	* @param multilook_az               æ–¹ä½å‘å¤šè§†å€æ•°
+	* @param unwrap_method              è§£ç¼ æ–¹æ³•ï¼ˆ1ï¼šDelaunay_MCFï¼Œ2ï¼šSNAPHUï¼Œ3ï¼šMCFï¼‰
+	* @param Goldstein_alpha            Goldsteinæ»¤æ³¢å¼ºåº¦
+	* @param coherence_thresh           é«˜ç›¸å¹²é˜ˆå€¼
+	* @param temporal_coherence_thresh  æ¨¡å‹ç›¸å…³ç³»æ•°é˜ˆå€¼
+	* @param refinement_coh_thresh      è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³æ§åˆ¶ç‚¹ç­›é€‰ç›¸å…³ç³»æ•°é˜ˆå€¼
+	* @param refinemen_def_thresh       è½¨é“ç²¾ç‚¼å’Œé‡å»å¹³æ§åˆ¶ç‚¹ç­›é€‰å½¢å˜é€Ÿç‡é˜ˆå€¼ï¼ˆm/yearï¼‰
+	* @param project                    å·¥ç¨‹å
+	* @param srcNode                    æ•°æ®èŠ‚ç‚¹å
+	* @param dstNode                    ç›®æ ‡èŠ‚ç‚¹
+	* @param csv_path                   csvæ–‡ä»¶ä¿å­˜è·¯å¾„
+	* @param model                      å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹
 	*/
 	void SBAS_time_series(
 		double temporal_thresh_low,
@@ -261,13 +261,13 @@ public slots:
 		QString csv_path,
 		QStandardItemModel* model
 	);
-	/*@brief SBASÊ±¼äĞòÁĞ·ÖÎö²Î¿¼µãÖØÑ¡
-	* @param project            Ä¿±ê¹¤³Ì
-	* @param srcNode            Ä¿±êÊı¾İ½Úµã
-	* @param ref_row            ²Î¿¼µãĞĞÊı
-	* @param ref_col            ²Î¿¼µãÁĞÊı
-	* @param GCPs               ÖØÈ¥Æ½²Î¿¼µã
-	* @param model              ¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍ
+	/*@brief SBASæ—¶é—´åºåˆ—åˆ†æå‚è€ƒç‚¹é‡é€‰
+	* @param project            ç›®æ ‡å·¥ç¨‹
+	* @param srcNode            ç›®æ ‡æ•°æ®èŠ‚ç‚¹
+	* @param ref_row            å‚è€ƒç‚¹è¡Œæ•°
+	* @param ref_col            å‚è€ƒç‚¹åˆ—æ•°
+	* @param GCPs               é‡å»å¹³å‚è€ƒç‚¹
+	* @param model              å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹
 	*/
 	void SBAS_reference_reselection(
 		QString project,
@@ -277,14 +277,14 @@ public slots:
 		QList<QPoint> GCPs,
 		QStandardItemModel* model
 	);
-	/*@brief µØÀí±àÂë
-	* @param type              µØÀí±àÂë¶ÔÏó£¨1£º¸ÉÉæ²úÆ·£¬2£ºSAR¸´Í¼Ïñ£©
-	* @param multi_rg          ¾àÀëÏò¶àÊÓ±¶Êı£¨ÓÃÓÚSARÍ¼ÏñµØÀí±àÂë£©
-	* @param multi_az          ·½Î»Ïò¶àÊÓ±¶Êı£¨ÓÃÓÚSARÍ¼ÏñµØÀí±àÂë£©
-	* @param project           ¹¤³ÌÃû
-	* @param srcNode           Ô´½ÚµãÃû
-	* @param dstNode           Ä¿±ê½ÚµãÃû
-	* @param model             ¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍ
+	/*@brief åœ°ç†ç¼–ç 
+	* @param type              åœ°ç†ç¼–ç å¯¹è±¡ï¼ˆ1ï¼šå¹²æ¶‰äº§å“ï¼Œ2ï¼šSARå¤å›¾åƒï¼‰
+	* @param multi_rg          è·ç¦»å‘å¤šè§†å€æ•°ï¼ˆç”¨äºSARå›¾åƒåœ°ç†ç¼–ç ï¼‰
+	* @param multi_az          æ–¹ä½å‘å¤šè§†å€æ•°ï¼ˆç”¨äºSARå›¾åƒåœ°ç†ç¼–ç ï¼‰
+	* @param project           å·¥ç¨‹å
+	* @param srcNode           æºèŠ‚ç‚¹å
+	* @param dstNode           ç›®æ ‡èŠ‚ç‚¹å
+	* @param model             å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹
 	*/
 	void Geocoding(
 		int type,
@@ -295,16 +295,16 @@ public slots:
 		QString dstNode,
 		QStandardItemModel* model
 	);
-	/*@brief ÉÚ±øÒ»ºÅ¸ÉÉæÏàÎ»×Ó´øÆ´½Ó
-	* @param index1            ×Ó´ø1¸ÉÉæÏàÎ»Í¼ÏñĞòºÅ£¨1-based£©
-	* @param index2            ×Ó´ø2¸ÉÉæÏàÎ»Í¼ÏñĞòºÅ
-	* @param index3            ×Ó´ø3¸ÉÉæÏàÎ»Í¼ÏñĞòºÅ
-	* @param project_name      ¹¤³ÌÎÄ¼şÃû
-	* @param srcNode1          ×Ó´ø1¸ÉÉæÏàÎ»Êı¾İ½Úµã
-	* @param srcNode2          ×Ó´ø2¸ÉÉæÏàÎ»Êı¾İ½Úµã
-	* @param srcNode3          ×Ó´ø3¸ÉÉæÏàÎ»Êı¾İ½Úµã
-	* @param dstNode           Ä¿±ê½Úµã
-	* @param model             ¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍ
+	/*@brief å“¨å…µä¸€å·å¹²æ¶‰ç›¸ä½å­å¸¦æ‹¼æ¥
+	* @param index1            å­å¸¦1å¹²æ¶‰ç›¸ä½å›¾åƒåºå·ï¼ˆ1-basedï¼‰
+	* @param index2            å­å¸¦2å¹²æ¶‰ç›¸ä½å›¾åƒåºå·
+	* @param index3            å­å¸¦3å¹²æ¶‰ç›¸ä½å›¾åƒåºå·
+	* @param project_name      å·¥ç¨‹æ–‡ä»¶å
+	* @param srcNode1          å­å¸¦1å¹²æ¶‰ç›¸ä½æ•°æ®èŠ‚ç‚¹
+	* @param srcNode2          å­å¸¦2å¹²æ¶‰ç›¸ä½æ•°æ®èŠ‚ç‚¹
+	* @param srcNode3          å­å¸¦3å¹²æ¶‰ç›¸ä½æ•°æ®èŠ‚ç‚¹
+	* @param dstNode           ç›®æ ‡èŠ‚ç‚¹
+	* @param model             å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹
 	*/
 	void S1_swath_merge(
 		int index1,
@@ -317,14 +317,14 @@ public slots:
 		QString dstNode,
 		QStandardItemModel* model
 	);
-	/*@brief ÉÚ±øÒ»ºÅÏàÁÚframeµ¥ÊÓ¸´Í¼ÏñÆ´½Ó
-	* @param index1            ×Ó´ø1¸ÉÉæÏàÎ»Í¼ÏñĞòºÅ£¨1-based£©
-	* @param index2            ×Ó´ø2¸ÉÉæÏàÎ»Í¼ÏñĞòºÅ
-	* @param project_name      ¹¤³ÌÎÄ¼şÃû
-	* @param srcNode1          ×Ó´ø1¸ÉÉæÏàÎ»Êı¾İ½Úµã
-	* @param srcNode2          ×Ó´ø2¸ÉÉæÏàÎ»Êı¾İ½Úµã
-	* @param dstNode           Ä¿±ê½Úµã
-	* @param model             ¹¤³Ì¹ÜÀíÊ÷Ä£ĞÍ
+	/*@brief å“¨å…µä¸€å·ç›¸é‚»frameå•è§†å¤å›¾åƒæ‹¼æ¥
+	* @param index1            å­å¸¦1å¹²æ¶‰ç›¸ä½å›¾åƒåºå·ï¼ˆ1-basedï¼‰
+	* @param index2            å­å¸¦2å¹²æ¶‰ç›¸ä½å›¾åƒåºå·
+	* @param project_name      å·¥ç¨‹æ–‡ä»¶å
+	* @param srcNode1          å­å¸¦1å¹²æ¶‰ç›¸ä½æ•°æ®èŠ‚ç‚¹
+	* @param srcNode2          å­å¸¦2å¹²æ¶‰ç›¸ä½æ•°æ®èŠ‚ç‚¹
+	* @param dstNode           ç›®æ ‡èŠ‚ç‚¹
+	* @param model             å·¥ç¨‹ç®¡ç†æ ‘æ¨¡å‹
 	*/
 	void S1_frame_merge(
 		int index1,
@@ -345,7 +345,7 @@ public slots:
 signals:
 	void updateProcess(int, QString);
 	void endProcess();
-	/*´«Êä´íÎóĞÅÏ¢*/
+	/*ä¼ è¾“é”™è¯¯ä¿¡æ¯*/
 	void errorProcess(QString error_msg);
 	void sendModel(QStandardItemModel*);
 	void sendBL(QList<double>temporal_baseline, QList<double>spatial_baseline, int index);

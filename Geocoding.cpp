@@ -1,4 +1,4 @@
-#include"Geocoding.h"
+ï»¿#include"Geocoding.h"
 #include"ui_Geocoding.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -47,13 +47,13 @@ void Geocoding::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -147,7 +147,7 @@ void Geocoding::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
@@ -190,7 +190,7 @@ void Geocoding::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_node1->count() == 0 && ui->comboBox_node2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
         this->deleteLater();
         return;
     }
@@ -209,7 +209,7 @@ void Geocoding::on_comboBox_project1_currentIndexChanged()
         int count = project->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -231,7 +231,7 @@ void Geocoding::on_comboBox_project1_currentIndexChanged()
         }
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÂú×ãĞèÇóµÄÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ»¡è¶³éœ€æ±‚çš„æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -250,7 +250,7 @@ void Geocoding::on_comboBox_project2_currentIndexChanged()
         int count = project->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -268,7 +268,7 @@ void Geocoding::on_comboBox_project2_currentIndexChanged()
         }
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÂú×ãĞèÇóµÄÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ»¡è¶³éœ€æ±‚çš„æ•°æ®ï¼"));
             this->deleteLater();
             return;
         }
@@ -281,16 +281,16 @@ void Geocoding::on_buttonBox_accepted()
 {
     if (ui->comboBox_node1->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼"));
         return;
     }
     bool bFlag = ui->lineEdit_dstnode1->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ãû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_project1->currentText())[0];
     if (!project) {
         return;
@@ -299,7 +299,7 @@ void Geocoding::on_buttonBox_accepted()
     {
         if (ui->lineEdit_dstnode1->text() == project->child(i)->text())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇëÖØÃüÃû£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œè¯·é‡å‘½åï¼"));
             return;
         }
     }
@@ -332,16 +332,16 @@ void Geocoding::on_buttonBox_2_accepted()
 {
     if (ui->comboBox_node2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼"));
         return;
     }
     bool bFlag = ui->lineEdit_dstnode2->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ãû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_project2->currentText())[0];
     if (!project) {
         return;
@@ -350,7 +350,7 @@ void Geocoding::on_buttonBox_2_accepted()
     {
         if (ui->lineEdit_dstnode2->text() == project->child(i)->text())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇëÖØÃüÃû£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œè¯·é‡å‘½åï¼"));
             return;
         }
     }

@@ -1,4 +1,4 @@
-#include<Deformation_Preview_Window.h>
+ï»¿#include<Deformation_Preview_Window.h>
 
 #include<icon_source.h>
 
@@ -15,14 +15,14 @@ Deformation_Preview_Window::Deformation_Preview_Window(QWidget* parent)
     ButtonBox = new QDialogButtonBox(Qt::Horizontal);
     View = new Deformation_Preview();
     setWindowIcon(QIcon(APP_ICON));
-    setWindowTitle(QString::fromLocal8Bit("SBASĞÎ±äÊ±¼äĞòÁĞ²é¿´"));
+    setWindowTitle(QString::fromLocal8Bit("SBASå½¢å˜æ—¶é—´åºåˆ—æŸ¥çœ‹"));
     Methods = new QButtonGroup;
-    AbsoluteButton = new QRadioButton(QString::fromLocal8Bit("¾ø¶ÔĞÎ±äĞòÁĞ"));
+    AbsoluteButton = new QRadioButton(QString::fromLocal8Bit("ç»å¯¹å½¢å˜åºåˆ—"));
     AbsoluteButton->setMinimumHeight(50);
     AbsoluteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
     AbsoluteButton->setChecked(true);
 
-    RelativeButton = new QRadioButton(QString::fromLocal8Bit("Ïà¶ÔĞÎ±äĞòÁĞ"));
+    RelativeButton = new QRadioButton(QString::fromLocal8Bit("ç›¸å¯¹å½¢å˜åºåˆ—"));
     RelativeButton->setMinimumHeight(50);
     RelativeButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
 
@@ -33,13 +33,13 @@ Deformation_Preview_Window::Deformation_Preview_Window(QWidget* parent)
     Methods->addButton(RelativeButton);
 
     ChoosePoint = new QButtonGroup;
-    FirstPointButton = new QRadioButton(QString::fromLocal8Bit("Ñ¡Ôñ¹Û²âµã"));
+    FirstPointButton = new QRadioButton(QString::fromLocal8Bit("é€‰æ‹©è§‚æµ‹ç‚¹"));
     FirstPointButton->setMinimumHeight(50);
     FirstPointButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
     FirstPointButton->setChecked(true);
     FirstPointButton->hide();
 
-    SecondPointButton = new QRadioButton(QString::fromLocal8Bit("Ñ¡Ôñ²Î¿¼µã"));
+    SecondPointButton = new QRadioButton(QString::fromLocal8Bit("é€‰æ‹©å‚è€ƒç‚¹"));
     SecondPointButton->setMinimumHeight(50);
     SecondPointButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
     SecondPointButton->hide();
@@ -69,9 +69,9 @@ Deformation_Preview_Window::Deformation_Preview_Window(QWidget* parent)
     MoveButton->installEventFilter(this);
     ScaledButton->installEventFilter(this);
     CutButton->installEventFilter(this);
-    /*Ò³Ãæ³õÊ¼»¯²¼¾Ö*/
-    ButtonBox->addButton(QString::fromLocal8Bit("È·¶¨"), QDialogButtonBox::AcceptRole);
-    ButtonBox->addButton(QString::fromLocal8Bit("È¡Ïû"), QDialogButtonBox::RejectRole);
+    /*é¡µé¢åˆå§‹åŒ–å¸ƒå±€*/
+    ButtonBox->addButton(QString::fromLocal8Bit("ç¡®å®š"), QDialogButtonBox::AcceptRole);
+    ButtonBox->addButton(QString::fromLocal8Bit("å–æ¶ˆ"), QDialogButtonBox::RejectRole);
     connect(ButtonBox, &QDialogButtonBox::accepted, View, &Deformation_Preview::GetOffset);
     connect(ButtonBox, &QDialogButtonBox::rejected, this, &Deformation_Preview_Window::Close);
 
@@ -307,10 +307,10 @@ void Deformation_Preview::mousePressEvent(QMouseEvent* event)
             qDebug() << "The scene is null";
             return;
         }
-        // ¼ÇÂ¼Êó±ê°´ÏÂÊ±µÄÖĞĞÄµã×ø±ê
+        // è®°å½•é¼ æ ‡æŒ‰ä¸‹æ—¶çš„ä¸­å¿ƒç‚¹åæ ‡
         sceneMousePos = mapToScene(event->pos()) - event->pos() + QPointF(width() / 2, height() / 2);
 
-        // ´Ë´¦²»½«view×ø±ê×ª»»³Éscene×ø±êµÄÔ­ÒòÊÇÓÅ»¯ĞÔÄÜ£¬ÔÚmoveµÄ¹ı³ÌÖĞ»á²úÉú¶¶¶¯
+        // æ­¤å¤„ä¸å°†viewåæ ‡è½¬æ¢æˆsceneåæ ‡çš„åŸå› æ˜¯ä¼˜åŒ–æ€§èƒ½ï¼Œåœ¨moveçš„è¿‡ç¨‹ä¸­ä¼šäº§ç”ŸæŠ–åŠ¨
         posAnchor = event->pos();
         isMousePressed = true;
     }
@@ -349,8 +349,8 @@ void Deformation_Preview::mousePressEvent(QMouseEvent* event)
             {
                 //QPoint MousePos = et->pos();
                 mFirst = mapToScene(event->pos());
-                int pen_width = 4;  //Ïß¿í£¬½¨Òé¿íÒ»Ğ©£¬·ñÔòËõĞ¡ÈİÒ×¿´²»¼û
-                /*±£Ö¤²Ã¼ô¿òÔÚÍ¼ÏñÄÚ*/
+                int pen_width = 4;  //çº¿å®½ï¼Œå»ºè®®å®½ä¸€äº›ï¼Œå¦åˆ™ç¼©å°å®¹æ˜“çœ‹ä¸è§
+                /*ä¿è¯è£å‰ªæ¡†åœ¨å›¾åƒå†…*/
 
                 if (mFirst.x() > mScene->width() || mFirst.x() < 0 || mFirst.y() > mScene->height() || mFirst.y() < 0)
                 {
@@ -358,12 +358,12 @@ void Deformation_Preview::mousePressEvent(QMouseEvent* event)
                     mScene->removeItem(mFirstRect);
                     mFirstRect->setRect(0, 0, 0, 0);
                     mScene->addItem(mFirstRect);
-                    this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                    this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
                 }
                 else
                 {
                     if (mFirst.x() >= mScene->width() - 5 - pen_width)
-                        mFirst.setX(mScene->width() - 5 - pen_width); //¼õÈ¥Ïß¿í£¬·ñÔò»áÊ¹sceneµü´ú¼Ó³¤
+                        mFirst.setX(mScene->width() - 5 - pen_width); //å‡å»çº¿å®½ï¼Œå¦åˆ™ä¼šä½¿sceneè¿­ä»£åŠ é•¿
                     else if (mFirst.x() < 4)
                         mFirst.setX(4);
 
@@ -380,7 +380,7 @@ void Deformation_Preview::mousePressEvent(QMouseEvent* event)
                     //mRect->setFlag(QGraphicsItem::ItemIgnoresTransformations);
                     mScene->addItem(mFirstRect);
                     mFirstIsChecked = true;
-                    this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                    this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
                 }
 
                 
@@ -394,20 +394,20 @@ void Deformation_Preview::mousePressEvent(QMouseEvent* event)
                 if (mPointFlag)
                 {
                     mFirst = mapToScene(event->pos());
-                    int pen_width = 4;  //Ïß¿í£¬½¨Òé¿íÒ»Ğ©£¬·ñÔòËõĞ¡ÈİÒ×¿´²»¼û
-                    /*±£Ö¤²Ã¼ô¿òÔÚÍ¼ÏñÄÚ*/
+                    int pen_width = 4;  //çº¿å®½ï¼Œå»ºè®®å®½ä¸€äº›ï¼Œå¦åˆ™ç¼©å°å®¹æ˜“çœ‹ä¸è§
+                    /*ä¿è¯è£å‰ªæ¡†åœ¨å›¾åƒå†…*/
                     if (mFirst.x() > mScene->width() || mFirst.x() < 0 || mFirst.y() > mScene->height() || mFirst.y() < 0)
                     {
                         mFirstIsChecked = false;
                         mScene->removeItem(mFirstRect);
                         mFirstRect->setRect(0, 0, 0, 0);
                         mScene->addItem(mFirstRect);
-                        this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                        this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
                     }
                     else
                     {
                         if (mFirst.x() >= mScene->width() - 5 - pen_width)
-                            mFirst.setX(mScene->width() - 5 - pen_width); //¼õÈ¥Ïß¿í£¬·ñÔò»áÊ¹sceneµü´ú¼Ó³¤
+                            mFirst.setX(mScene->width() - 5 - pen_width); //å‡å»çº¿å®½ï¼Œå¦åˆ™ä¼šä½¿sceneè¿­ä»£åŠ é•¿
                         else if (mFirst.x() < 4)
                             mFirst.setX(4);
 
@@ -424,27 +424,27 @@ void Deformation_Preview::mousePressEvent(QMouseEvent* event)
                         //mRect->setFlag(QGraphicsItem::ItemIgnoresTransformations);
                         mScene->addItem(mFirstRect);
                         mFirstIsChecked = true;
-                        this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                        this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
                     }
                     
                 }
                 else
                 {
                     mSecond = mapToScene(event->pos());
-                    int pen_width = 4;  //Ïß¿í£¬½¨Òé¿íÒ»Ğ©£¬·ñÔòËõĞ¡ÈİÒ×¿´²»¼û
-                    /*±£Ö¤²Ã¼ô¿òÔÚÍ¼ÏñÄÚ*/
+                    int pen_width = 4;  //çº¿å®½ï¼Œå»ºè®®å®½ä¸€äº›ï¼Œå¦åˆ™ç¼©å°å®¹æ˜“çœ‹ä¸è§
+                    /*ä¿è¯è£å‰ªæ¡†åœ¨å›¾åƒå†…*/
                     if (mSecond.x() > mScene->width() || mSecond.x() < 0 || mSecond.y() > mScene->height() || mSecond.y() < 0)
                     {
                         mSecondIsChecked = false;
                         mScene->removeItem(mSecondRect);
                         mSecondRect->setRect(0, 0, 0, 0);
                         mScene->addItem(mSecondRect);
-                        this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                        this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
                     }
                     else
                     {
                         if (mSecond.x() >= mScene->width() - 5 - pen_width)
-                            mSecond.setX(mScene->width() - 5 - pen_width); //¼õÈ¥Ïß¿í£¬·ñÔò»áÊ¹sceneµü´ú¼Ó³¤
+                            mSecond.setX(mScene->width() - 5 - pen_width); //å‡å»çº¿å®½ï¼Œå¦åˆ™ä¼šä½¿sceneè¿­ä»£åŠ é•¿
                         else if (mSecond.x() < 4)
                             mSecond.setX(4);
 
@@ -461,7 +461,7 @@ void Deformation_Preview::mousePressEvent(QMouseEvent* event)
                         //mRect->setFlag(QGraphicsItem::ItemIgnoresTransformations);
                         mScene->addItem(mSecondRect);
                         mSecondIsChecked = true;
-                        this->viewport()->update();     //Ê±¿Ì¸üĞÂ£¬·ñÔò»áÓĞ²ĞÓ°
+                        this->viewport()->update();     //æ—¶åˆ»æ›´æ–°ï¼Œå¦åˆ™ä¼šæœ‰æ®‹å½±
                     }
                     
                 }
@@ -484,7 +484,7 @@ void Deformation_Preview::mouseMoveEvent(QMouseEvent* event)
         if (isMousePressed) {
             //setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
             viewport()->setCursor(Qt::ClosedHandCursor);
-            centerOn(sceneMousePos - offsetPos);    //Ò»¶¨Òª±£Ö¤scene±Èview´ó£¬²»È»º¯ÊıÎŞĞ§
+            centerOn(sceneMousePos - offsetPos);    //ä¸€å®šè¦ä¿è¯sceneæ¯”viewå¤§ï¼Œä¸ç„¶å‡½æ•°æ— æ•ˆ
         }
         else
         {
@@ -553,14 +553,14 @@ void Deformation_Preview::GetOffset()
 
     if (mPath == NULL)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÎŞĞÎ±äÎÄ¼ş"));
+        QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("æ— å½¢å˜æ–‡ä»¶"));
         return;
     }
     if (mMethod == AbsoluteResult)
     {
         if (!mFirstIsChecked)
         {
-            QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÑ¡ÔñÏëÒª¹À¼ÆµÄµã"));
+            QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·é€‰æ‹©æƒ³è¦ä¼°è®¡çš„ç‚¹"));
             return;
         }
         else
@@ -603,7 +603,7 @@ void Deformation_Preview::GetOffset()
                 }
             Result /= count;
             //Result = -Result;
-            Deformation_Chart* map = new Deformation_Chart(QString::fromLocal8Bit("¾ø¶ÔĞÎ±äÊ±¼äĞòÁĞ"));
+            Deformation_Chart* map = new Deformation_Chart(QString::fromLocal8Bit("ç»å¯¹å½¢å˜æ—¶é—´åºåˆ—"));
             map->SetMinMax(Min_def, Max_def);
             map->SetData(Times_Series, Result);
             map->show();
@@ -614,7 +614,7 @@ void Deformation_Preview::GetOffset()
     {
         if (mFirstIsChecked == false || mSecondIsChecked == false)
         {
-            QMessageBox::warning(NULL, QString::fromLocal8Bit("¾¯¸æ"), QString::fromLocal8Bit("ÇëÑ¡Ôñ²Î¿¼µãÓë¹Û²âµã"));
+            QMessageBox::warning(NULL, QString::fromLocal8Bit("è­¦å‘Š"), QString::fromLocal8Bit("è¯·é€‰æ‹©å‚è€ƒç‚¹ä¸è§‚æµ‹ç‚¹"));
             return;
         }
         else
@@ -683,7 +683,7 @@ void Deformation_Preview::GetOffset()
             Result /= count;
             Result2 /= count2;
             Result = Result - Result2;
-            Deformation_Chart* map = new Deformation_Chart(QString::fromLocal8Bit("Ïà¶ÔĞÎ±äÊ±¼äĞòÁĞ"));
+            Deformation_Chart* map = new Deformation_Chart(QString::fromLocal8Bit("ç›¸å¯¹å½¢å˜æ—¶é—´åºåˆ—"));
             map->SetMinMax(Min_def, Max_def);
             map->SetData(Times_Series, Result);
             map->show();
@@ -701,14 +701,14 @@ Deformation_Chart::Deformation_Chart(QWidget* parent) :
     this->resize(QSize(400, 400));
     this->setWindowTitle(QString::fromLocal8Bit(""));
     mChart = new QChart();
-    mChart->setTitle(QString::fromLocal8Bit("Ê±¿Õ»ùÏß"));
+    mChart->setTitle(QString::fromLocal8Bit("æ—¶ç©ºåŸºçº¿"));
     mChartView = new QChartView(mChart, this);
-    mChart = mChartView->chart();   //¹ØÁª
+    mChart = mChartView->chart();   //å…³è”
     mAxisX = new QValueAxis();
     mAxisY = new QValueAxis();
     mChart->setAxisX(mAxisX);
     mChart->setAxisY(mAxisY);
-    mChartView->setRenderHint(QPainter::Antialiasing); //¿¹¾â³İ
+    mChartView->setRenderHint(QPainter::Antialiasing); //æŠ—é”¯é½¿
     MinDefomation = -0.5;
     MaxDeformation = 0.5;
     mLabel = new QLabel(mChartView);
@@ -716,18 +716,18 @@ Deformation_Chart::Deformation_Chart(QWidget* parent) :
 Deformation_Chart::Deformation_Chart(QString Title)
 {
     this->resize(QSize(400, 400));
-    this->setWindowTitle(QString::fromLocal8Bit("ĞÎ±äÔ¤ÀÀ"));
+    this->setWindowTitle(QString::fromLocal8Bit("å½¢å˜é¢„è§ˆ"));
     this->setWindowIcon(QIcon(APP_ICON));
     mChart = new QChart();
     mChart->legend()->hide();
     mChart->setTitle(Title);
     mChartView = new QChartView(mChart, this);
-    mChart = mChartView->chart();   //¹ØÁª
+    mChart = mChartView->chart();   //å…³è”
     mAxisX = new QValueAxis();
     mAxisY = new QValueAxis();
     mChart->setAxisX(mAxisX);
     mChart->setAxisY(mAxisY);
-    mChartView->setRenderHint(QPainter::Antialiasing); //¿¹¾â³İ
+    mChartView->setRenderHint(QPainter::Antialiasing); //æŠ—é”¯é½¿
     MinDefomation = -0.5;
     MaxDeformation = 0.5;
     mLabel = new QLabel(mChartView);
@@ -740,7 +740,7 @@ Deformation_Chart::~Deformation_Chart()
 
 void Deformation_Chart::resizeEvent(QResizeEvent* event)
 {
-    /*´°¿Ú±ä»¯Ê±ÖØÔØÍ¼Æ¬²¢¸ü¸Ä³ß´ç*/
+    /*çª—å£å˜åŒ–æ—¶é‡è½½å›¾ç‰‡å¹¶æ›´æ”¹å°ºå¯¸*/
     mChartView->resize(this->size());
 }
 
@@ -783,8 +783,8 @@ void Deformation_Chart::Paint(QList<double> temporal_baseline, QList<double> spa
     mAxisX->setLabelFormat("%.2f");
     mAxisY->setRange(MinDefomation, MaxDeformation);
     mAxisY->setLabelFormat("%.2f");
-    mAxisX->setTitleText(QString::fromLocal8Bit("Ê±¼ä»ùÏß£¨Ìì£©"));
-    mAxisY->setTitleText(QString::fromLocal8Bit("ĞÎ±ä£¨Ã×£©"));
+    mAxisX->setTitleText(QString::fromLocal8Bit("æ—¶é—´åŸºçº¿ï¼ˆå¤©ï¼‰"));
+    mAxisY->setTitleText(QString::fromLocal8Bit("å½¢å˜ï¼ˆç±³ï¼‰"));
     /*for (int i = 0; i < temporal_baseline.size(); i++)
     {
         QLineSeries* mLine = new QLineSeries();
@@ -826,7 +826,7 @@ void Deformation_Chart::ShowData(const QPointF& point, bool state)
         mLabel->setText(QString("(%1,%2)").arg(QString::number(point.x(), 'f', 1)).arg(QString::number(point.y(), 'f', 3)));
         mLabel->setStyleSheet("QLabel { background-color : rgb(129, 199, 212); color : rgb(0, 92, 175); border-radius:3px;font:20pt }");
         QPoint curPos = mapFromGlobal(QCursor::pos());
-        mLabel->move(curPos.x() - mLabel->width() / 2, curPos.y() - mLabel->height() * 1.5);//ÒÆ¶¯ÊıÖµ m_valueLabel->show();//ÏÔÊ¾³öÀ´
+        mLabel->move(curPos.x() - mLabel->width() / 2, curPos.y() - mLabel->height() * 1.5);//ç§»åŠ¨æ•°å€¼ m_valueLabel->show();//æ˜¾ç¤ºå‡ºæ¥
         mLabel->show();
     }
     else

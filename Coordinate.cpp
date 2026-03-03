@@ -1,4 +1,4 @@
-#include<Coordinate.h>
+ï»¿#include<Coordinate.h>
 #include<cstdlib>
 #include<ctime>
 #include"opencv2\opencv.hpp"
@@ -8,20 +8,20 @@ Coordinate::Coordinate(QWidget* parent) :
     ui(new Ui::Coordinate)
 {
     ui->setupUi(this);
-    image = QImage(wnd_width, wnd_height, QImage::Format_RGB32);  //³õÊ¼»¯»­²¼
+    image = QImage(wnd_width, wnd_height, QImage::Format_RGB32);  //åˆå§‹åŒ–ç”»å¸ƒ
     QColor backColor = qRgb(255, 255, 255);  
-    image.fill(backColor);//¶Ô»­²¼½øĞĞÌî³ä
+    image.fill(backColor);//å¯¹ç”»å¸ƒè¿›è¡Œå¡«å……
     this->setFixedSize(wnd_width,wnd_height);
-    this->setWindowTitle(QString::fromLocal8Bit("»ùÏßÔ¤ÀÀ"));
+    this->setWindowTitle(QString::fromLocal8Bit("åŸºçº¿é¢„è§ˆ"));
     mChart = new QChart();
-    mChart->setTitle(QString::fromLocal8Bit("Ğ¡»ùÏß¼¯Ê±¿Õ»ùÏß×éºÏ"));
+    mChart->setTitle(QString::fromLocal8Bit("å°åŸºçº¿é›†æ—¶ç©ºåŸºçº¿ç»„åˆ"));
     mChartView = new QChartView(mChart, this);
-    mChart = mChartView->chart();   //¹ØÁª
+    mChart = mChartView->chart();   //å…³è”
     mAxisX = new QValueAxis();
     mAxisY = new QValueAxis();
     mChart->setAxisX(mAxisX);
     mChart->setAxisY(mAxisY);
-    mChartView->setRenderHint(QPainter::Antialiasing); //¿¹¾â³İ
+    mChartView->setRenderHint(QPainter::Antialiasing); //æŠ—é”¯é½¿
 
     mLabel = new QLabel(mChartView);
 }
@@ -29,19 +29,19 @@ Coordinate::Coordinate(QWidget* parent) :
 void Coordinate::Paint(QList<double> temporal_baseline, QList<double> spatial_baseline, int index)
 {
     QPainter painter(&image);
-    painter.setRenderHint(QPainter::Antialiasing, true);//ÉèÖÃ·´¾â³İÄ£Ê½
+    painter.setRenderHint(QPainter::Antialiasing, true);//è®¾ç½®åé”¯é½¿æ¨¡å¼
 
 
-    int pointx = 50, pointy = /*1400*/700;//È·¶¨×ø±êÖáÆğµã×ø±ê£¨Qt×ø±êÏµyÖá·½ÏòÏòÏÂ£¬ÕâÀïĞèÒª·´¹ıÀ´£©
-    double width = /*1900*/900 - pointx, height = /*1350*/650;//È·¶¨×ø±êÖá¿í¶È¸ú¸ß¶È
+    int pointx = 50, pointy = /*1400*/700;//ç¡®å®šåæ ‡è½´èµ·ç‚¹åæ ‡ï¼ˆQtåæ ‡ç³»yè½´æ–¹å‘å‘ä¸‹ï¼Œè¿™é‡Œéœ€è¦åè¿‡æ¥ï¼‰
+    double width = /*1900*/900 - pointx, height = /*1350*/650;//ç¡®å®šåæ ‡è½´å®½åº¦è·Ÿé«˜åº¦
 
-    //painter.drawRect(5, 5, wnd_width - 40, wnd_width - 40);//ÍâÎ§µÄ¾ØĞÎ£¬´Ó(5,5)Æğ
+    //painter.drawRect(5, 5, wnd_width - 40, wnd_width - 40);//å¤–å›´çš„çŸ©å½¢ï¼Œä»(5,5)èµ·
 
-    painter.drawLine(pointx, pointy, int(width) + pointx, pointy);//×ø±êÖáx¿í¶ÈÎªwidth
-    painter.drawLine(pointx, pointy - int(height), pointx, pointy);//×ø±êÖáy¸ß¶ÈÎªheight
+    painter.drawLine(pointx, pointy, int(width) + pointx, pointy);//åæ ‡è½´xå®½åº¦ä¸ºwidth
+    painter.drawLine(pointx, pointy - int(height), pointx, pointy);//åæ ‡è½´yé«˜åº¦ä¸ºheight
 
-    int number = temporal_baseline.size();//numberÎªÊı¾İ¸öÊı
-    /*»ñÈ¡»ùÏß×î´ó×îĞ¡ÖµÒÔÈ·¶¨×ø±êÖáÉÏµÄ¼ä¸ô*/
+    int number = temporal_baseline.size();//numberä¸ºæ•°æ®ä¸ªæ•°
+    /*è·å–åŸºçº¿æœ€å¤§æœ€å°å€¼ä»¥ç¡®å®šåæ ‡è½´ä¸Šçš„é—´éš”*/
     double time_min = 1e15, time_max = -1e15;
     double spatial_min = 1e15, spatial_max = -1e15;
     for (int i = 0; i < number; i++)
@@ -63,22 +63,22 @@ void Coordinate::Paint(QList<double> temporal_baseline, QList<double> spatial_ba
             spatial_max = spatial_baseline.at(i);
         }
     }
-    double time_span = time_max - time_min;//Ê±¼ä»ùÏß·¶Î§
-    double spatial_span = spatial_max - spatial_min;//¿Õ¼ä»ùÏß·¶Î§
+    double time_span = time_max - time_min;//æ—¶é—´åŸºçº¿èŒƒå›´
+    double spatial_span = spatial_max - spatial_min;//ç©ºé—´åŸºçº¿èŒƒå›´
 
     QPen pen, penPoint, penOrigin;
-    /*ÏßÌõ±Ê£ººÚÉ«*/
+    /*çº¿æ¡ç¬”ï¼šé»‘è‰²*/
     pen.setColor(Qt::black);
     pen.setWidth(5);
-    /*ÆäËûµã£ººÚÉ«*/
+    /*å…¶ä»–ç‚¹ï¼šé»‘è‰²*/
     penPoint.setColor(Qt::black);
     penPoint.setWidth(20);
-    /*Ô­µã£ººìÉ«*/
+    /*åŸç‚¹ï¼šçº¢è‰²*/
     penOrigin.setColor(Qt::red);
     penOrigin.setWidth(20);
 
-    painter.setPen(penOrigin);//»ùµã±êºì
-    /*Ô­µã×ø±ê*/
+    painter.setPen(penOrigin);//åŸºç‚¹æ ‡çº¢
+    /*åŸç‚¹åæ ‡*/
     int Origin_x = pointx + (temporal_baseline.at(index - 1) - time_min) / time_span * width;
     int Origin_y = pointy - (spatial_baseline.at(index - 1) - spatial_min) / spatial_span * height;
     painter.drawPoint(Origin_x, Origin_y);
@@ -92,25 +92,25 @@ void Coordinate::Paint(QList<double> temporal_baseline, QList<double> spatial_ba
             painter.setPen(pen);
             int Point_x = pointx + (temporal_baseline.at(i) - time_min) / time_span * width;
             int Point_y = pointy - (spatial_baseline.at(i) - spatial_min) / spatial_span * height;
-            painter.drawLine(Point_x, Point_y, Origin_x, Origin_y);//Á¬Ïß
+            painter.drawLine(Point_x, Point_y, Origin_x, Origin_y);//è¿çº¿
 
             painter.setPen(penPoint);
-            painter.drawPoint(Point_x, Point_y);//±ê¼Ç¸÷¸öµã
+            painter.drawPoint(Point_x, Point_y);//æ ‡è®°å„ä¸ªç‚¹
         }
         
     }
-    //»æÖÆ¿Ì¶ÈÏß
+    //ç»˜åˆ¶åˆ»åº¦çº¿
     QPen penDegree;
     penDegree.setColor(Qt::black);
     penDegree.setWidth(2);
     painter.setPen(penDegree);
-    //»­ÉÏxÖá¿Ì¶ÈÏß
+    //ç”»ä¸Šxè½´åˆ»åº¦çº¿
     int x_count = 50;
     for (int i = 0; i < x_count; i++)
     {
-        double deltaX = time_span / x_count;//xÖá¿Ì¶È¼ä¸ô
+        double deltaX = time_span / x_count;//xè½´åˆ»åº¦é—´éš”
         painter.drawLine(pointx + i * width / x_count, pointy, pointx + i * width / x_count, pointy + 10);
-        if ((i) % 5 == 0)//Ã¿Îå¸öµã±êÊı¾İ
+        if ((i) % 5 == 0)//æ¯äº”ä¸ªç‚¹æ ‡æ•°æ®
         {
             painter.drawText(pointx + i * width / x_count,
                 pointy + 40, QString::number(int(time_min + i * deltaX)));
@@ -119,20 +119,20 @@ void Coordinate::Paint(QList<double> temporal_baseline, QList<double> spatial_ba
         
         
     }
-    painter.drawText(pointx + width, pointy - 10, QString::fromLocal8Bit("Ê±¼ä(Ìì)"));
-    painter.drawText(pointx + width /2, pointy + 80, QString::fromLocal8Bit("Ê±¿Õ»ùÏß·Ö²¼"));
-    //yÖá¿Ì¶ÈÏß
-    int y_count = 30;//yÖá¿Ì¶È¼ä¸ô
+    painter.drawText(pointx + width, pointy - 10, QString::fromLocal8Bit("æ—¶é—´(å¤©)"));
+    painter.drawText(pointx + width /2, pointy + 80, QString::fromLocal8Bit("æ—¶ç©ºåŸºçº¿åˆ†å¸ƒ"));
+    //yè½´åˆ»åº¦çº¿
+    int y_count = 30;//yè½´åˆ»åº¦é—´éš”
     for (int i = 0; i < y_count; i++)
     {
         double deltaY = spatial_span / y_count;
         painter.drawLine(pointx, pointy - i * height / y_count,
             pointx - 4, pointy - i * height / y_count);
-        if ((i) % 2 == 0)//Ã¿Á½¸öµã±êÊı¾İ
+        if ((i) % 2 == 0)//æ¯ä¸¤ä¸ªç‚¹æ ‡æ•°æ®
         painter.drawText(pointx - 40, pointy - i * height / y_count,
             QString::number(int(spatial_min+i*deltaY)));
     }
-    painter.drawText(pointx -20, pointy - height - 10, QString::fromLocal8Bit("¿Õ¼ä»ùÏß(Ã×)"));
+    painter.drawText(pointx -20, pointy - height - 10, QString::fromLocal8Bit("ç©ºé—´åŸºçº¿(ç±³)"));
 }
 
 Coordinate::~Coordinate()
@@ -178,8 +178,8 @@ void Coordinate::Paint2(
     double pad_space = (Max_space - Min_space) / 10;
     mAxisX->setRange(Min_time - pad_time, Max_time + pad_time);
     mAxisY->setRange(Min_space - pad_space, Max_space + pad_space);
-    mAxisX->setTitleText(QString::fromLocal8Bit("Ê±¼ä»ùÏß/£¨Ìì£©"));
-    mAxisY->setTitleText(QString::fromLocal8Bit("¿Õ¼ä»ùÏß/£¨Ã×£©"));
+    mAxisX->setTitleText(QString::fromLocal8Bit("æ—¶é—´åŸºçº¿/ï¼ˆå¤©ï¼‰"));
+    mAxisY->setTitleText(QString::fromLocal8Bit("ç©ºé—´åŸºçº¿/ï¼ˆç±³ï¼‰"));
 
     for (int i = 0; i < temporal_baseline.size(); i++)
     {
@@ -232,7 +232,7 @@ void Coordinate::ShowData(const QPointF& point, bool state)
         mLabel->setText(QString("(%1,%2)").arg(QString::number(point.x(), 'f', 1)).arg(QString::number(point.y(), 'f', 1)));
         mLabel->setStyleSheet("QLabel { background-color : rgb(129, 199, 212); color : rgb(0, 92, 175); border-radius:3px;font:20pt }");
         QPoint curPos = mapFromGlobal(QCursor::pos());
-        mLabel->move(curPos.x() - mLabel->width() / 2, curPos.y() - mLabel->height() * 1.5);//ÒÆ¶¯ÊıÖµ m_valueLabel->show();//ÏÔÊ¾³öÀ´
+        mLabel->move(curPos.x() - mLabel->width() / 2, curPos.y() - mLabel->height() * 1.5);//ç§»åŠ¨æ•°å€¼ m_valueLabel->show();//æ˜¾ç¤ºå‡ºæ¥
         mLabel->show();
     }
     else

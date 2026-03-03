@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_S1_frame_merge.h"
@@ -30,11 +30,11 @@ signals:
     void operate(int index1, int index2, QString project, QString node1, QString node2, QString dstNode, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_project_currentIndexChanged();
     void on_comboBox_node1_currentIndexChanged();
     void on_comboBox_node2_currentIndexChanged();
-    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     //void on_comboBox_project2_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

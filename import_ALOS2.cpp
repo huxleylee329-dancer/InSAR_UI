@@ -1,4 +1,4 @@
-#include"MainWindow.h"
+ï»¿#include"MainWindow.h"
 #include"import_ALOS2.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
@@ -65,7 +65,7 @@ bool import_ALOS2::generate_name(
             if (!temp_led.exists()) return false;
             original_nameslist2.push_back(led);
             string polarization = tmp.substr(4, 2);
-            //´ÓLEDÎÄ¼şÖĞ¶ÁÈ¡ÅÄÉãÈÕÆÚ
+            //ä»LEDæ–‡ä»¶ä¸­è¯»å–æ‹æ‘„æ—¥æœŸ
             string name;
             FILE* fp = NULL;
             fp = fopen(led.toStdString().c_str(), "rb");
@@ -117,7 +117,7 @@ void import_ALOS2::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -196,7 +196,7 @@ void import_ALOS2::on_comboBox_dst_project_currentIndexChanged()
 void import_ALOS2::on_pushButton_add_pressed()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("µ¼ÈëALOS2Êı¾İ"),
+        QString::fromLocal8Bit("å¯¼å…¥ALOS2æ•°æ®"),
         "",
         "");
     ui->listWidget->addItem(filename);
@@ -230,21 +230,21 @@ void import_ALOS2::on_buttonBox_rejected()
 
 void import_ALOS2::on_buttonBox_accepted()
 {
-    //¼ì²éµ¼ÈëÎÄ¼şlistÊÇ·ñÎª¿Õ
+    //æ£€æŸ¥å¯¼å…¥æ–‡ä»¶listæ˜¯å¦ä¸ºç©º
     if (ui->listWidget->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("µ¼ÈëÍ¼ÏñÎÄ¼şÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("å¯¼å…¥å›¾åƒæ–‡ä»¶ä¸ºç©ºï¼"));
         return;
     }
-    //¼ì²éÄ¿±ê½ÚµãÃû
+    //æ£€æŸ¥ç›®æ ‡èŠ‚ç‚¹å
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÃûÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹åä¸ºç©ºï¼"));
         return;
     }
 
 
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project->currentText())[0];
     if (!project) {
         return;
@@ -259,16 +259,16 @@ void import_ALOS2::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒºÍµ¼ÈëÊı¾İ¼¶±ğ²»Í¬£¬ÇëÖØÃüÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”å’Œå¯¼å…¥æ•°æ®çº§åˆ«ä¸åŒï¼Œè¯·é‡å‘½åï¼"));
         return;
     }
 
-    //¸ù¾İÔ­Ê¼ÎÄ¼şÈÕÆÚÉú³Éµ¼ÈëÎÄ¼şÃû³Æ
+    //æ ¹æ®åŸå§‹æ–‡ä»¶æ—¥æœŸç”Ÿæˆå¯¼å…¥æ–‡ä»¶åç§°
     vector<QString> original_namelist, original_namelist2;
     vector<QString> import_namelist;
     if (!generate_name(ui->listWidget, original_namelist, import_namelist, original_namelist2))
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÊäÈëIMGÊı¾İ²»ºÏ·¨£¬»òÕßÍ¬¼¶Ä¿Â¼ÏÂÃ»ÓĞLEDÎÄ¼ş£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¾“å…¥IMGæ•°æ®ä¸åˆæ³•ï¼Œæˆ–è€…åŒçº§ç›®å½•ä¸‹æ²¡æœ‰LEDæ–‡ä»¶ï¼"));
         return;
     }
 
@@ -287,12 +287,12 @@ void import_ALOS2::on_buttonBox_accepted()
     connect(import_ALOS2_thread, &MyThread::sendModel, this, &import_ALOS2::TransitModel);
     import_ALOS2_thread->thread()->start();
     emit operate2(
-        this->save_path, //±£´æÂ·¾¶
-        original_namelist,//Ô­Ê¼ÎÄ¼şÃû(IMGÎÄ¼ş)
-        original_namelist2,//£¨LEDÎÄ¼ş£©
-        import_namelist, //µ¼ÈëÎÄ¼şÃû
-        ui->lineEdit_dst_node->text(), //µ¼Èë½ÚµãÃû
-        ui->comboBox_dst_project->currentText(), //µ¼Èë¹¤³ÌÃû
+        this->save_path, //ä¿å­˜è·¯å¾„
+        original_namelist,//åŸå§‹æ–‡ä»¶å(IMGæ–‡ä»¶)
+        original_namelist2,//ï¼ˆLEDæ–‡ä»¶ï¼‰
+        import_namelist, //å¯¼å…¥æ–‡ä»¶å
+        ui->lineEdit_dst_node->text(), //å¯¼å…¥èŠ‚ç‚¹å
+        ui->comboBox_dst_project->currentText(), //å¯¼å…¥å·¥ç¨‹å
         this->copy);
     ChangeVision(false);
 }

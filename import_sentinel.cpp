@@ -1,4 +1,4 @@
-#include"MainWindow.h"
+ï»¿#include"MainWindow.h"
 #include"import_sentinel.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
@@ -37,8 +37,8 @@ import_sentinel::import_sentinel(QWidget* parent) :
     ui->ComboBox_polarization_2->addItem("vv");
     ui->ComboBox_polarization_2->addItem("vh");
     ui->ComboBox_polarization_2->setCurrentIndex(0);
-    ui->lineEdit_dst_node->setPlaceholderText(QString::fromLocal8Bit("²»ÒªÊäÈëÖĞÎÄ×Ö·û"));
-    ui->lineEdit_dst_node_2->setPlaceholderText(QString::fromLocal8Bit("²»ÒªÊäÈëÖĞÎÄ×Ö·û"));
+    ui->lineEdit_dst_node->setPlaceholderText(QString::fromLocal8Bit("ä¸è¦è¾“å…¥ä¸­æ–‡å­—ç¬¦"));
+    ui->lineEdit_dst_node_2->setPlaceholderText(QString::fromLocal8Bit("ä¸è¦è¾“å…¥ä¸­æ–‡å­—ç¬¦"));
     old_path = "C:\\";
     date = "";
 }
@@ -159,13 +159,13 @@ void import_sentinel::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -255,7 +255,7 @@ void import_sentinel::on_pushButton_add_pressed()
 {
     bool isWarning = 0;
     QString dirname = QFileDialog::getExistingDirectory(this,
-        QString::fromLocal8Bit("µ¼ÈëÉÚ±øÊı¾İ"),
+        QString::fromLocal8Bit("å¯¼å…¥å“¨å…µæ•°æ®"),
         "/",
         QFileDialog::ShowDirsOnly);
     QDir* FileDir = new QDir(dirname);
@@ -295,7 +295,7 @@ void import_sentinel::on_pushButton_add_pressed()
     }
     if (isWarning)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("×¢Òâ"), QString::fromLocal8Bit("¼ì²âµ½ÄúÊÔÍ¼ÖØ¸´Ìí¼ÓÏàÍ¬Êı¾İ£¬ÒÑ½«ÆäºöÂÔ¡£"));
+        QMessageBox::warning(NULL, QString::fromLocal8Bit("æ³¨æ„"), QString::fromLocal8Bit("æ£€æµ‹åˆ°æ‚¨è¯•å›¾é‡å¤æ·»åŠ ç›¸åŒæ•°æ®ï¼Œå·²å°†å…¶å¿½ç•¥ã€‚"));
     }
     for (int i = 0; i < ui->listWidget->count(); i++)
     {
@@ -375,19 +375,19 @@ void import_sentinel::on_pushButton_POD_pressed()
 
 void import_sentinel::on_buttonBox_2_accepted()
 {
-    //¼ì²éµ¼ÈëÎÄ¼şlistÊÇ·ñÎª¿Õ
+    //æ£€æŸ¥å¯¼å…¥æ–‡ä»¶listæ˜¯å¦ä¸ºç©º
     if (ui->listWidget->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("µ¼ÈëÍ¼ÏñÎÄ¼şÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("å¯¼å…¥å›¾åƒæ–‡ä»¶ä¸ºç©ºï¼"));
         return;
     }
-    //¼ì²éÄ¿±ê½ÚµãÃû
+    //æ£€æŸ¥ç›®æ ‡èŠ‚ç‚¹å
     if (ui->lineEdit_dst_node_2->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÃûÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹åä¸ºç©ºï¼"));
         return;
     }
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project->currentText())[0];
     if (!project) {
         return;
@@ -402,11 +402,11 @@ void import_sentinel::on_buttonBox_2_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒºÍµ¼ÈëÊı¾İ¼¶±ğ²»Í¬£¬ÇëÖØÃüÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”å’Œå¯¼å…¥æ•°æ®çº§åˆ«ä¸åŒï¼Œè¯·é‡å‘½åï¼"));
         return;
     }
 
-    //¸ù¾İÔ­Ê¼ÎÄ¼şÃû¼°¼«»¯·½Ê½ºÍ×Ó´øÉú³Éµ¼ÈëÎÄ¼şÃû³Æ
+    //æ ¹æ®åŸå§‹æ–‡ä»¶ååŠæåŒ–æ–¹å¼å’Œå­å¸¦ç”Ÿæˆå¯¼å…¥æ–‡ä»¶åç§°
     vector<QString> original_namelist;
     vector<QString> import_namelist;
     if (!generate_name(ui->listWidget, original_namelist, import_namelist)) return;
@@ -440,20 +440,20 @@ void import_sentinel::on_buttonBox_accepted()
 {
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹ä¸ºç©ºï¼"));
         return;
     }
     if (ui->lineEdit_manifest_file->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÊäÈëÍ¼ÏñÎÄ¼şÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¾“å…¥å›¾åƒæ–‡ä»¶ä¸ºç©ºï¼"));
         return;
     }
     if (ui->LineEdit_dst_filename->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("µ¼ÈëÍ¼ÏñÎÄ¼şÃûÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("å¯¼å…¥å›¾åƒæ–‡ä»¶åä¸ºç©ºï¼"));
         return;
     }
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
 
     QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project->currentText())[0];
     if (!project) {
@@ -469,7 +469,7 @@ void import_sentinel::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒºÍµ¼ÈëÊı¾İ¼¶±ğ²»Í¬£¬ÇëÖØÃüÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”å’Œå¯¼å…¥æ•°æ®çº§åˆ«ä¸åŒï¼Œè¯·é‡å‘½åï¼"));
         return;
     }
 

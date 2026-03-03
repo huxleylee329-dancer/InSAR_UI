@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_Geocoding.h"
@@ -29,9 +29,9 @@ signals:
     void operate(int, int, int, QString, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_project1_currentIndexChanged();
-    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
+    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_project2_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QtGui> 
 #include <QDebug> 
 #include <QtWidgets>
@@ -7,7 +7,7 @@
 #include <qgraphicssceneevent.h>
 class QPixmap;
 class QPaintEvent;
-/*ÓÃÓÚÅĞ¶Ï²Ù×÷×´Ì¬µÄÃ¶¾ÙÁ¿*/
+/*ç”¨äºåˆ¤æ–­æ“ä½œçŠ¶æ€çš„æšä¸¾é‡*/
 enum State
 {
     UnChecked,
@@ -20,28 +20,28 @@ enum State
 };
 
 
-/*Ô¤ÀÀÍ¼ÏÔÊ¾ÇøÓò*/
+/*é¢„è§ˆå›¾æ˜¾ç¤ºåŒºåŸŸ*/
 class Preview :public QGraphicsView
 {
     Q_OBJECT
 public:
     explicit Preview(QWidget* parent = Q_NULLPTR);
     ~Preview();
-    /** @brief ÉèÖÃÔ¤ÀÀÍ¼
-    * @param path                       Í¼Æ¬Â·¾¶
+    /** @brief è®¾ç½®é¢„è§ˆå›¾
+    * @param path                       å›¾ç‰‡è·¯å¾„
     */
     void setPixmap(const QString& path);
-    /** @brief ÉèÖÃÄ¿Ç°×´Ì¬£¨ÒÆ¶¯¡¢Ëõ·Å¡¢²Ã¼ô£©
-    * @param s                          ×´Ì¬
+    /** @brief è®¾ç½®ç›®å‰çŠ¶æ€ï¼ˆç§»åŠ¨ã€ç¼©æ”¾ã€è£å‰ªï¼‰
+    * @param s                          çŠ¶æ€
     */
     void SetState(State s);
 
-    QGraphicsScene* mScene;             //×Ó³¡¾°
-    QGraphicsRectItem* mRect;           //²Ã¼ô¿ò
-    QGraphicsPixmapItem* mPixmap;       //Ô¤ÀÀÍ¼Item
+    QGraphicsScene* mScene;             //å­åœºæ™¯
+    QGraphicsRectItem* mRect;           //è£å‰ªæ¡†
+    QGraphicsPixmapItem* mPixmap;       //é¢„è§ˆå›¾Item
     QPixmap Cursor_up, Cursor_down;
 public slots:
-    /** @brief »ñÈ¡²Ã¼ô¿òËÄ±ß±ÈÀı
+    /** @brief è·å–è£å‰ªæ¡†å››è¾¹æ¯”ä¾‹
     */
     void GetOffset();
 signals:
@@ -54,14 +54,14 @@ protected:
     void wheelEvent(QWheelEvent* event);
 private:
 
-    QPointF sceneMousePos;//sceneÊó±ê»¬ÂÖ¹ö¶¯Ê±µÄÖĞĞÄ×ø±ê£¬ÓÃÓÚÊó±êÖĞĞÄËõ·Å
-    QPointF posAnchor;//viewÊó±ê×ø±ê£¬ÓÃÓÚÍÏ×§£¬ÓÉÓÚÍÏ×§¹ı³ÌÖĞÓĞ¶¶¶¯£¬¹Ê²»×ª»¯Îªscene×ø±ê
-    bool isMousePressed;                //ÓÃÓÚÅĞ¶ÏÒÆ¶¯Ê±Êó±êÊÇ·ñ°´ÏÂ
-    State mState;                       //²Ù×÷×´Ì¬
-    QPointF mStart, mEnd;               //¼ÇÂ¼ÆğÊ¼µãÓëÖÕÖ¹µã                
+    QPointF sceneMousePos;//sceneé¼ æ ‡æ»‘è½®æ»šåŠ¨æ—¶çš„ä¸­å¿ƒåæ ‡ï¼Œç”¨äºé¼ æ ‡ä¸­å¿ƒç¼©æ”¾
+    QPointF posAnchor;//viewé¼ æ ‡åæ ‡ï¼Œç”¨äºæ‹–æ‹½ï¼Œç”±äºæ‹–æ‹½è¿‡ç¨‹ä¸­æœ‰æŠ–åŠ¨ï¼Œæ•…ä¸è½¬åŒ–ä¸ºsceneåæ ‡
+    bool isMousePressed;                //ç”¨äºåˆ¤æ–­ç§»åŠ¨æ—¶é¼ æ ‡æ˜¯å¦æŒ‰ä¸‹
+    State mState;                       //æ“ä½œçŠ¶æ€
+    QPointF mStart, mEnd;               //è®°å½•èµ·å§‹ç‚¹ä¸ç»ˆæ­¢ç‚¹                
 };
 
-/*ÕûÌå´°¿Ú*/
+/*æ•´ä½“çª—å£*/
 class Preview_Window : public QWidget
 {
     Q_OBJECT
@@ -69,8 +69,8 @@ public:
     explicit Preview_Window(QWidget* parent = 0);
     ~Preview_Window();
     void resizeEvent(QResizeEvent* event);
-    QDialogButtonBox* ButtonBox;        //È·¶¨¡¢È¡Ïû°´Å¥
-    Preview* View;                      //ÓÃÓÚÏÔÊ¾Ô¤ÀÀÍ¼µÄ×Ô¶¨ÒåQGraphicsView
+    QDialogButtonBox* ButtonBox;        //ç¡®å®šã€å–æ¶ˆæŒ‰é’®
+    Preview* View;                      //ç”¨äºæ˜¾ç¤ºé¢„è§ˆå›¾çš„è‡ªå®šä¹‰QGraphicsView
 public slots:
     void Close();
 protected:

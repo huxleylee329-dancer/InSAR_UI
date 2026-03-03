@@ -1,4 +1,4 @@
-#include"Filter_ui.h"
+ï»¿#include"Filter_ui.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -53,7 +53,7 @@ Filter_ui::~Filter_ui()
 void Filter_ui::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Filter_ui::endProcess()
@@ -158,7 +158,7 @@ void Filter_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -170,7 +170,7 @@ void Filter_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¬ÇëÏÈÉú³É¸ÉÉæÏàÎ»£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆç”Ÿæˆå¹²æ¶‰ç›¸ä½ï¼"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -222,31 +222,31 @@ void Filter_ui::on_buttonBox_accepted()
     bool bFlag3 = false;
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈÉú³É¸ÉÉæÊı¾İ»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆç”Ÿæˆå¹²æ¶‰æ•°æ®æˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     if (this->method == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÑ¡ÔñÂË²¨·½·¨!"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·é€‰æ‹©æ»¤æ³¢æ–¹æ³•!"));
         return;
     }
     else if (ui->SlopButton->isChecked())
     {
         if (ui->Slop_win->text().isEmpty() || ui->Prefilter_win->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëÔ¤ÂË²¨¼°Ğ±ÆÂ´°¿ÚÂË²¨µÄ³ß´ç£¨ÆæÊı£©!"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥é¢„æ»¤æ³¢åŠæ–œå¡çª—å£æ»¤æ³¢çš„å°ºå¯¸ï¼ˆå¥‡æ•°ï¼‰!"));
             return;
         }
         int slop = ui->Slop_win->text().toInt(&bFlag);
         int pre = ui->Prefilter_win->text().toInt(&bFlag2);
         if (bFlag == false || bFlag2 == false)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ô¤ÂË²¨¼°Ğ±ÆÂ´°¿ÚÂË²¨µÄ³ß´çÓ¦ÎªÆæÊı!"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("é¢„æ»¤æ³¢åŠæ–œå¡çª—å£æ»¤æ³¢çš„å°ºå¯¸åº”ä¸ºå¥‡æ•°!"));
             return;
         }
         else if (slop <= 0 || pre <= 0 || slop % 2 == 0 || pre % 2 == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ô¤ÂË²¨¼°Ğ±ÆÂ´°¿ÚÂË²¨µÄ³ß´çÓ¦ÎªÆæÊı!"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("é¢„æ»¤æ³¢åŠæ–œå¡çª—å£æ»¤æ³¢çš„å°ºå¯¸åº”ä¸ºå¥‡æ•°!"));
             return;
         }
     }
@@ -254,7 +254,7 @@ void Filter_ui::on_buttonBox_accepted()
     {
         if (ui->Goldstein_win->text().isEmpty() || ui->alpha->text().isEmpty() || ui->n_pad->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëGoldsteinÂË²¨ËùĞè²ÎÊı!ÆäÖĞ´°¿Ú³ß´ç¼°²¹Áã´°¿ÚÓ¦Îª2µÄÕıÕû´ÎÃİ£¨Èç64,16£©£¬alphaÓ¦Îª0-1µÄĞ¡Êı¡£"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥Goldsteinæ»¤æ³¢æ‰€éœ€å‚æ•°!å…¶ä¸­çª—å£å°ºå¯¸åŠè¡¥é›¶çª—å£åº”ä¸º2çš„æ­£æ•´æ¬¡å¹‚ï¼ˆå¦‚64,16ï¼‰ï¼Œalphaåº”ä¸º0-1çš„å°æ•°ã€‚"));
             return;
         }
         int goldstein = ui->Goldstein_win->text().toInt(&bFlag);
@@ -262,22 +262,22 @@ void Filter_ui::on_buttonBox_accepted()
         double a = ui->alpha->text().toDouble(&bFlag3);
         if (!(bFlag & bFlag2 & bFlag3))
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÈ·ÈÏÊäÈë²ÎÊıÊÇ·ñ¹æ·¶£¨´°¿Ú³ß´ç¼°²¹Áã´°¿ÚÓ¦Îª2µÄÕıÕû´ÎÃİ£¨Èç64,16£©£¬alphaÓ¦Îª0-1µÄĞ¡Êı£©"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·ç¡®è®¤è¾“å…¥å‚æ•°æ˜¯å¦è§„èŒƒï¼ˆçª—å£å°ºå¯¸åŠè¡¥é›¶çª—å£åº”ä¸º2çš„æ­£æ•´æ¬¡å¹‚ï¼ˆå¦‚64,16ï¼‰ï¼Œalphaåº”ä¸º0-1çš„å°æ•°ï¼‰"));
             return;
         }
         else if ((goldstein & (goldstein - 1)) != 0 || (pad & (pad - 1)) != 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÈ·ÈÏ´°¿Ú³ß´ç¼°²¹Áã´°¿ÚÎª2µÄÕıÕû´ÎÃİ£¨Èç64,16£©"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·ç¡®è®¤çª—å£å°ºå¯¸åŠè¡¥é›¶çª—å£ä¸º2çš„æ­£æ•´æ¬¡å¹‚ï¼ˆå¦‚64,16ï¼‰"));
             return;
         }
         else if (goldstein == 1 || pad == 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("´°¿Ú³ß´ç¼°²¹Áã³ß´ç²»Ó¦Îª1"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("çª—å£å°ºå¯¸åŠè¡¥é›¶å°ºå¯¸ä¸åº”ä¸º1"));
             return;
         }
         else if (a < 0 || a >1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÈ·±£alphaÔÚ0-1Çø¼ä£¬alphaÔ½´ó£¬ÂË²¨³Ì¶ÈÔ½¸ß£¬ÊÊÓÃÓÚÔëÉù¸üÇ¿µÄÍ¼Ïñ¡£"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·ç¡®ä¿alphaåœ¨0-1åŒºé—´ï¼Œalphaè¶Šå¤§ï¼Œæ»¤æ³¢ç¨‹åº¦è¶Šé«˜ï¼Œé€‚ç”¨äºå™ªå£°æ›´å¼ºçš„å›¾åƒã€‚"));
             return;
         }
 
@@ -288,13 +288,13 @@ void Filter_ui::on_buttonBox_accepted()
     }
     if (ui->file_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë±£´æÂË²¨ÏàÎ»µÄÎÄ¼ş¼ĞÃû³Æ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥ä¿å­˜æ»¤æ³¢ç›¸ä½çš„æ–‡ä»¶å¤¹åç§°ï¼"));
         return;
     }
     bFlag = ui->file_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
     Filter_thread = new MyThread;

@@ -1,4 +1,4 @@
-#include"OpenProject.h"
+ï»¿#include"OpenProject.h"
 #include"icon_source.h"
 #include<QFileDialog>
 #include<QMessageBox>
@@ -58,7 +58,7 @@ void OpenProject::on_buttonBox_accepted()
                 else
                 {
                     Project_Path->setText(abs_path.toStdString().c_str());
-                    q->Clear(); q->LinkEndChild(new TiXmlText(abs_path.toStdString().c_str()));//¸üÐÂ¾ø¶ÔÂ·¾¶
+                    q->Clear(); q->LinkEndChild(new TiXmlText(abs_path.toStdString().c_str()));//æ›´æ–°ç»å¯¹è·¯å¾„
                 }
             this->model->appendRow(Project);
             this->model->setItem(this->model->rowCount()-1, 1, Project_Path);

@@ -1,4 +1,4 @@
-#include"MainWindow.h"
+ï»¿#include"MainWindow.h"
 #include"Import_TSX.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
@@ -115,13 +115,13 @@ void Import_TSX::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -211,7 +211,7 @@ void Import_TSX::on_comboBox_dst_project_2_currentIndexChanged()
 void Import_TSX::on_button_xml_browse_pressed()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("µ¼Èë TerraSAR-X/TanDEM-X Êı¾İ"),
+        QString::fromLocal8Bit("å¯¼å…¥ TerraSAR-X/TanDEM-X æ•°æ®"),
         this->xml_path,
         "*.xml");
     if (QFile::exists(filename))
@@ -244,7 +244,7 @@ void Import_TSX::saveSystemSettings()
 void Import_TSX::on_pushButton_add_pressed()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("µ¼Èë TerraSAR-X/TanDEM-X Êı¾İ"),
+        QString::fromLocal8Bit("å¯¼å…¥ TerraSAR-X/TanDEM-X æ•°æ®"),
         "",
         "*.xml");
     ui->listWidget->addItem(filename);
@@ -274,34 +274,34 @@ void Import_TSX::on_buttonBox_accepted()
 {
     if (ui->LineEdit_xml->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëTerrSAR xmlÎÄ¼ş£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥TerrSAR xmlæ–‡ä»¶ï¼"));
         return;
     }
     bool bFlag = ui->LineEdit_xml->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÂ·¾¶ÖĞÓ¦µ±½ö°üº¬Êı×Ö¡¢×ÖÄ¸¼°ÏÂ»®Ïß£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„è·¯å¾„ä¸­åº”å½“ä»…åŒ…å«æ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿ï¼"));
         return;
     }
     if (ui->LineEdit_dst_filename->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëÏëÒª±£´æµÄÍ¼Æ¬Ãû³Æ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥æƒ³è¦ä¿å­˜çš„å›¾ç‰‡åç§°ï¼"));
         return;
     }
     bFlag = ui->LineEdit_dst_filename->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÍ¼ÏñÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„å›¾åƒåç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
 
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÃûÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹åä¸ºç©ºï¼"));
         return;
     }
 
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
 
     QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project->currentText())[0];
     if (!project) {
@@ -317,7 +317,7 @@ void Import_TSX::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒºÍµ¼ÈëÊı¾İ¼¶±ğ²»Í¬£¬ÇëÖØÃüÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”å’Œå¯¼å…¥æ•°æ®çº§åˆ«ä¸åŒï¼Œè¯·é‡å‘½åï¼"));
         return;
     }
 
@@ -352,21 +352,21 @@ void Import_TSX::on_buttonBox_rejected()
 
 void Import_TSX::on_buttonBox_2_accepted()
 {
-    //¼ì²éµ¼ÈëÎÄ¼şlistÊÇ·ñÎª¿Õ
+    //æ£€æŸ¥å¯¼å…¥æ–‡ä»¶listæ˜¯å¦ä¸ºç©º
     if (ui->listWidget->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("µ¼ÈëÍ¼ÏñÎÄ¼şÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("å¯¼å…¥å›¾åƒæ–‡ä»¶ä¸ºç©ºï¼"));
         return;
     }
-    //¼ì²éÄ¿±ê½ÚµãÃû
+    //æ£€æŸ¥ç›®æ ‡èŠ‚ç‚¹å
     if (ui->lineEdit_dst_node_2->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÃûÎª¿Õ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹åä¸ºç©ºï¼"));
         return;
     }
     
 
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project_2->currentText())[0];
     if (!project) {
         return;
@@ -381,11 +381,11 @@ void Import_TSX::on_buttonBox_2_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒºÍµ¼ÈëÊı¾İ¼¶±ğ²»Í¬£¬ÇëÖØÃüÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”å’Œå¯¼å…¥æ•°æ®çº§åˆ«ä¸åŒï¼Œè¯·é‡å‘½åï¼"));
         return;
     }
 
-    //¸ù¾İÔ­Ê¼ÎÄ¼şÈÕÆÚÉú³Éµ¼ÈëÎÄ¼şÃû³Æ
+    //æ ¹æ®åŸå§‹æ–‡ä»¶æ—¥æœŸç”Ÿæˆå¯¼å…¥æ–‡ä»¶åç§°
     vector<QString> original_namelist;
     vector<QString> import_namelist;
     if (!generate_name(ui->listWidget, original_namelist, import_namelist)) return;
@@ -405,11 +405,11 @@ void Import_TSX::on_buttonBox_2_accepted()
     import_TSX_thread2->thread()->start();
     emit operate2(
         ui->comboBox_pol2->currentText(),
-        this->save_path, //±£´æÂ·¾¶
-        original_namelist,//Ô­Ê¼ÎÄ¼şÃû
-        import_namelist, //µ¼ÈëÎÄ¼şÃû
-        ui->lineEdit_dst_node_2->text(), //µ¼Èë½ÚµãÃû
-        ui->comboBox_dst_project_2->currentText(), //µ¼Èë¹¤³ÌÃû
+        this->save_path, //ä¿å­˜è·¯å¾„
+        original_namelist,//åŸå§‹æ–‡ä»¶å
+        import_namelist, //å¯¼å…¥æ–‡ä»¶å
+        ui->lineEdit_dst_node_2->text(), //å¯¼å…¥èŠ‚ç‚¹å
+        ui->comboBox_dst_project_2->currentText(), //å¯¼å…¥å·¥ç¨‹å
         this->copy);
     ChangeVision(false);
 }

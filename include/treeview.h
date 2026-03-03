@@ -1,4 +1,4 @@
-
+ï»¿
 #pragma once
 #include <QtGui> 
 #include<qtreeview.h>
@@ -27,19 +27,19 @@ public slots:
 
 private:
     int num_pro;
-    int type;//1£º×óÉÏ¹¤³ÌÊ÷£¬2£º×óÏÂÄ£°å
+    int type;//1ï¼šå·¦ä¸Šå·¥ç¨‹æ ‘ï¼Œ2ï¼šå·¦ä¸‹æ¨¡æ¿
     MyThread* thread;
     void updateProcess(int value, QString information);
 signals:
     void sendindex(QModelIndex);
-    /*¸üĞÂtreeview*/
+    /*æ›´æ–°treeview*/
     void operate(QString, QString, QString);
     void update();
     void updateProcess_info(int, QString);
 private slots:
     void Import();
     void Delete();
-    /*Ğ¶ÔØ¹¤³ÌÏìÓ¦º¯Êı*/
+    /*å¸è½½å·¥ç¨‹å“åº”å‡½æ•°*/
     void Unload();
     void StopThread();
  }; 

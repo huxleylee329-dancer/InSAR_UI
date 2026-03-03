@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 #include <QLabel>
 #include <QtWidgets/QMainWindow>
 #include <QHBoxLayout>
@@ -22,7 +22,7 @@ public:
     inline void setBarHeight(int height) { Bar->setFixedHeight(height); }
     inline void setContentLayout(QLayout* Layout = NULL) { Content->setLayout(Layout); }
     void ResizePage();
-    /*´«Öµº¯Êı*/
+    /*ä¼ å€¼å‡½æ•°*/
     bool get_param(template_DEM_para* parameter);
 private:
     void createCtrl();
@@ -91,13 +91,13 @@ protected:
 
 private:
     bool m_bExpand;
-    int process_index;        //²½ÖèÃû³Æ
+    int process_index;        //æ­¥éª¤åç§°
    
-    QLabel* Name;       //±êÌâÃû³Æ
-    QLabel* Icon;       //Í¼±ê
-    QWidget* Bar;        //±êÌâÀ¸
-    QWidget* Content;    //ÄÚÈİÇø
+    QLabel* Name;       //æ ‡é¢˜åç§°
+    QLabel* Icon;       //å›¾æ ‡
+    QWidget* Bar;        //æ ‡é¢˜æ 
+    QWidget* Content;    //å†…å®¹åŒº
 
-    MyToolBox* ToolBox;  //¸¸´°¿Ú
+    MyToolBox* ToolBox;  //çˆ¶çª—å£
     int page_number;
 };
