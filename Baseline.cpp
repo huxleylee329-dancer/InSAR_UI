@@ -15,6 +15,7 @@
 //#pragma comment(lib, "FormatConversion_d.lib")
 //#endif
 //#include<FormatConversion.h>
+
 Baseline::Baseline(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::Baseline)

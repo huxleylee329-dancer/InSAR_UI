@@ -2,20 +2,73 @@
 
 本计划用于实现 SatExplorer 项目中的基于节点的可视化流程编辑器功能。
 
-## 进度总结
+## 进度总结（2026-03-02 更新）
 
-- [x] 阶段 1: QtNodes 库集成 - 已完成（2024）
-- [x] 阶段 2: 基础架构搭建 - 已完成（2024）
+- [x] 阶段 1: QtNodes 库集成 - 已完成
+- [x] 阶段 2: 基础架构搭建 - 部分完成
+- [ ] 阶段 3: 数据导入节点实现 - 未开始
+- [ ] 阶段 4: 预处理节点实现 - 未开始
+- [ ] 阶段 5: 配准节点实现 - 未开始
+- [ ] 阶段 6: 干涉处理节点实现 - 未开始
+- [ ] 阶段 7: 基线处理节点实现 - 未开始
+- [ ] 阶段 8: SBAS 处理节点实现 - 未开始
+- [ ] 阶段 9: 可视化节点实现 - 未开始
+- [ ] 阶段 10: 工具节点实现 - 未开始
+- [ ] 阶段 11: 与 MyThread 集成 - 未开始
+- [x] 阶段 12: 保存与加载 - 部分完成（基础框架）
+- [x] 阶段 13: UI 集成 - 已完成
+- [ ] 阶段 14: 测试与优化 - 未开始
+- [ ] 阶段 15: 文档与示例 - 未开始
 
-### 已完成的工作
+### 已完成的工作（2026-03-02 更新）
 
-1. QtNodes 库已通过静态链接方式成功集成
-2. 创建了节点编辑器窗口类 `NodeEditorWindow`
-3. 创建了自定义数据类型文件 `NodeDataTypes.h`
-4. 创建了节点模型注册表 `NodeModels.h/cpp`
-5. 在 MainWindow 中添加了节点编辑器入口（on_actionNodeEditor_triggered）
+1. **QtNodes 库集成（阶段 1 - 已完成）**
+   - QtNodes 源代码通过静态链接方式完全集成到项目中
+   - 所有 QtNodes 源文件在 `QtNodes/src/` 目录下
+   - 所有 QtNodes 头文件在 `include/QtNodes/internal/` 目录下
+   - 在 `QtWidgetsApplication3.vcxproj` 中正确配置：
+     - QtNodes 的 `.cpp` 文件添加到 `<ClCompile>` 列表
+     - QtNodes 的 `.hpp` 文件添加到 `<ClInclude>` 列表
+     - 包含 `Q_OBJECT` 宏的头文件添加到 `<QtMoc>` 处理列表
+     - `Definitions.hpp`（包含 `Q_NAMESPACE`）添加到 `<QtMoc>`
 
-### 编译错误修复（2025-02-27）
+2. **NodeEditorWindow 窗口类（阶段 2.1 - 已完成）**
+   - `NodeEditorWindow.h` - 完整的头文件定义
+   - `NodeEditorWindow.cpp` - 完整的实现，包括：
+     - 工具栏（新建、保存、加载、清除、删除、退出按钮）
+     - 菜单栏（文件、编辑、帮助菜单）
+     - 场景和视图初始化
+     - 保存/加载 JSON 格式的流程图
+     - 深色主题样式配置
+     - 状态栏显示节点和连接数量
+
+3. **NodeDataTypes 自定义数据类型（阶段 2.2 - 已完成）**
+   - `ImageData` - SAR 图像数据
+   - `MetadataData` - 元数据
+   - `BaselineData` - 基线数据
+   - `PairListData` - 干涉对列表
+   - `TimeSeriesData` - 时间序列数据
+   - `CoordinateMatrixData` - 坐标变换矩阵
+
+4. **NodeModels 节点模型注册表（阶段 2.3 - 部分完成）**
+   - `NodeModels.h` - 注册表接口定义
+   - `NodeModels.cpp` - 仅包含空实现的注册表：
+     - `registerTestNodeModels()` - 返回空注册表
+     - `registerInSARNodeModels()` - 当前直接返回空测试注册表（TODO: 需实现）
+
+5. **UI 集成（阶段 13 - 已完成）**
+   - MainWindow.h 中声明了 `on_actionNodeEditor_triggered()` 槽函数
+   - MainWindow.cpp:666-671 中实现了打开 NodeEditorWindow 的逻辑
+   - 节点编辑器可作为独立窗口打开
+
+### 当前限制
+
+1. **节点模型未实现**：虽然创建了数据类型和注册表框架，但没有任何具体的节点模型实现（如 ImportNode、FilterNode 等）
+2. **注册表为空**：当前 `registerInSARNodeModels()` 返回空注册表，无法创建任何节点
+3. **与 MyThread 无集成**：节点处理功能尚未与现有的 MyThread 工作线程集成
+4. **流程保存/加载仅为框架**：虽然实现了 JSON 保存/加载的基础代码，但需要进一步验证和测试
+
+### 编译错误修复记录（2025-02-27）
 
 修复了 QtNodes 集成过程中的编译和链接错误：
 
@@ -70,8 +123,11 @@
 - [x] 创建 `include\NodeEditorWindow.h`
 - [x] 创建 `NodeEditorWindow.cpp`
 - [x] 继承 QMainWindow，设计基本布局
-- [x] 添加工具栏（新建、打开、保存、运行等按钮）
+- [x] 添加工具栏（新建、保存、加载、清除、删除、退出按钮）
 - [x] 添加 central widget 容器用于 GraphicsView
+- [x] 实现场景和视图初始化
+- [x] 实现保存/加载 JSON 格式流程图
+- [x] 应用深色主题样式
 
 ### 2.2 创建自定义数据类型文件
 - [x] 创建 `include\NodeDataTypes.h`
@@ -86,7 +142,20 @@
 - [x] 创建 `include\NodeModels.h`
 - [x] 创建 `NodeModels.cpp`
 - [x] 定义 InSAR 节点注册表初始化函数
-- [x] 实现 `createNodeRegistry()` 函数返回注册表
+- [x] 实现 `registerInSARNodeModels()` 函数（已注册测试节点）
+- [x] 创建示例测试节点以验证编辑器功能
+
+**测试节点已创建：**
+- `TestNodes.h` - 测试节点头文件
+- `TestNodes.cpp` - 测试节点实现
+  - `SimpleSourceNode` - 源节点（输出固定值）
+  - `SimpleMathNode` - 数学节点（连接两个输入）
+  - `SimpleDisplayNode` - 显示节点
+
+**测试方法：**
+1. 打开节点编辑器（菜单 → 节点编辑器）
+2. 从右侧面板**拖拽**节点到画布
+3. 连接节点：拖拽输出端口到输入端口
 
 ## 阶段 3: 数据导入节点实现
 
@@ -246,32 +315,32 @@
 ## 阶段 12: 保存与加载
 
 ### 12.1 流程保存
-- [ ] 实现从图模型生成 JSON
+- [x] 实现从图模型生成 JSON（NodeEditorWindow.cpp:229-245）
 - [ ] 扩展现有的 XML 项目格式以包含流程图
 - [ ] 实现流程保存到项目文件
 
 ### 12.2 流程加载
-- [ ] 实现从 JSON/XML 恢复图模型
+- [x] 实现从 JSON 恢复图模型（NodeEditorWindow.cpp:247-281）
 - [ ] 实现节点状态的恢复
 - [ ] 处理文件路径引用
 
 ### 12.3 导入导出
-- [ ] 实现导出流程图到独立 JSON 文件
-- [ ] 实现从独立 JSON 文件导入流程图
+- [x] 实现导出流程图到独立 JSON 文件（NodeEditorWindow.cpp:229-245）
+- [x] 实现从独立 JSON 文件导入流程图（NodeEditorWindow.cpp:247-281）
+- [ ] 测试保存/加载功能的完整性
 
 ## 阶段 13: UI 集成
 
 ### 13.1 添加到 MainWindow
-- [ ] 在 MainWindow 中添加"节点编辑器"菜单项
-- [ ] 添加"节点编辑器"工具栏按钮
-- [ ] 创建并显示 NodeEditorWindow
+- [x] 在 MainWindow 中添加"节点编辑器"菜单项（on_actionNodeEditor_triggered）
+- [x] 创建并显示 NodeEditorWindow（MainWindow.cpp:666-671）
 
 ### 13.2 与现有项目树集成
 - [ ] 实现节点输出自动添加到项目树
 - [ ] 实现从项目树拖拽数据到节点编辑器
 
 ### 13.3 自定义样式
-- [ ] 应用适合 SatExplorer 的深色主题
+- [x] 应用适合 SatExplorer 的深色主题（NodeEditorWindow.cpp:155-198）
 - [ ] 为不同类型节点使用不同颜色
 - [ ] 自定义图标和标签
 

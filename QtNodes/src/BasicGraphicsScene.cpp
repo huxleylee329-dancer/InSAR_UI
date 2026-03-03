@@ -278,7 +278,8 @@ void BasicGraphicsScene::onNodePositionUpdated(NodeId const nodeId)
 {
     auto node = nodeGraphicsObject(nodeId);
     if (node) {
-        node->setPos(_graphModel.nodeData(nodeId, NodeRole::Position).value<QPointF>());
+        QPointF newPos = _graphModel.nodeData(nodeId, NodeRole::Position).value<QPointF>();
+        node->setPos(newPos);
         node->update();
         _nodeDrag = true;
     }

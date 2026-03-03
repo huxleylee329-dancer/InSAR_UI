@@ -1,7 +1,11 @@
 #include "NodeModels.h"
 #include "NodeDataTypes.h"
+#include "TestNodes.h"
 
 #include <memory>
+
+// Uncomment this line to disable test nodes when real InSAR nodes are implemented
+#define ENABLE_TEST_NODES
 
 namespace QtNodes {
 
@@ -9,6 +13,14 @@ namespace QtNodes {
 std::shared_ptr<NodeDelegateModelRegistry> registerTestNodeModels()
 {
     auto registry = std::make_shared<NodeDelegateModelRegistry>();
+
+#ifdef ENABLE_TEST_NODES
+    // Register test nodes in a "Test" category
+    registry->registerModel<SimpleSourceNode>("Test");
+    registry->registerModel<SimpleMathNode>("Test");
+    registry->registerModel<SimpleDisplayNode>("Test");
+#endif
+
     return registry;
 }
 

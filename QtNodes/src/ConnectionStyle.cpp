@@ -29,7 +29,8 @@ ConnectionStyle::ConnectionStyle()
 
 ConnectionStyle::ConnectionStyle(QString jsonText)
 {
-    loadJsonFile(":DefaultStyle.json");
+    // Note: The default constructor already loads DefaultStyle.json
+    // We don't need to load it again here
     loadJsonText(jsonText);
 }
 

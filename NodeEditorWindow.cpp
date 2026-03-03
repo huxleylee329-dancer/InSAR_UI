@@ -1,6 +1,10 @@
 #include "NodeEditorWindow.h"
 #include "NodeModels.h"
 
+#include <QPainter>
+#include <QTimer>
+#include <QtWidgets/QGraphicsItem>
+#include <QtWidgets/QGraphicsObject>
 #include <QtNodes/DataFlowGraphicsScene>
 #include <QtNodes/GraphicsView>
 #include <QtNodes/DataFlowGraphModel>
@@ -8,6 +12,11 @@
 #include <QtNodes/ConnectionStyle>
 #include <QtNodes/NodeStyle>
 #include <QtNodes/GraphicsViewStyle>
+
+// Forward declarations
+namespace QtNodes {
+class NodeGraphicsObject;
+}
 
 #include <QVBoxLayout>
 #include <QToolBar>
@@ -44,7 +53,6 @@ NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     m_registry = QtNodes::registerInSARNodeModels();
 
     setupSceneInternal();
-    applyStyles();
 }
 
 NodeEditorWindow::~NodeEditorWindow()
@@ -65,11 +73,19 @@ void NodeEditorWindow::setupSceneInternal()
 
     // Create scene
     m_scene = new QtNodes::DataFlowGraphicsScene(*m_graphModel, this);
-    m_scene->setSceneRect(-5000, -5000, 10000, 10000);
 
     // Create view
     m_view = new QtNodes::GraphicsView(m_scene);
     m_layout->addWidget(m_view);
+
+    // Connect to scene modification signal to update view when nodes are created
+    connect(m_scene, &QtNodes::BasicGraphicsScene::modified, this, &NodeEditorWindow::onSceneModified);
+
+    // Set view properties to ensure proper display
+    m_view->setRenderHint(QPainter::Antialiasing);
+    m_view->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    m_view->setDragMode(QGraphicsView::ScrollHandDrag);  // Allow panning with mouse drag
+    m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 }
 
 void NodeEditorWindow::setupUi()
@@ -180,9 +196,11 @@ void NodeEditorWindow::applyStyles()
         "\"ShadowColor\": \"#000000\","
         "\"FontColor\": \"white\","
         "\"FontFamily\": \"Arial\","
-        "\"FontSize\": 12"
+        "\"FontSize\": 12,"
+        "\"Opacity\": 1.0"
         "}"
         "}");
+
 
     QtNodes::GraphicsViewStyle::setStyle(
         "{"

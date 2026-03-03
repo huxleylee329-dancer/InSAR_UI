@@ -57,8 +57,15 @@ NodeGraphicsObject::NodeGraphicsObject(BasicGraphicsScene &scene, NodeId nodeId)
     nodeScene()->nodeGeometry().recomputeSize(_nodeId);
 
     QPointF const pos = _graphModel.nodeData<QPointF>(_nodeId, NodeRole::Position);
-
     setPos(pos);
+
+    // Connect to position updates
+    connect(&_graphModel, &AbstractGraphModel::nodePositionUpdated, [this, nodeId](NodeId const id) {
+        if (id == nodeId) {
+            QPointF newPos = _graphModel.nodeData<QPointF>(nodeId, NodeRole::Position);
+            setPos(newPos);
+        }
+    });
 
     connect(&_graphModel, &AbstractGraphModel::nodeFlagsUpdated, [this](NodeId const nodeId) {
         if (_nodeId == nodeId)
