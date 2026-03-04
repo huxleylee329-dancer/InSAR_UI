@@ -4,7 +4,7 @@
 #include"MainWindow.h"
 #include"qheaderview.h"
 #include <QPixmap>
-#include <QSplashScreen>
+//#include <QSplashScreen>
 #include<string>
 #include<icon_source.h>
 //#include<QStyleFactory>
@@ -27,6 +27,7 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
     QPixmap* k = new QPixmap(QString(CURSOR_UP_ICON));
     /*开机启动画面*/
+    /*
     char szFilePath[MAX_PATH + 1] = { 0 };
     GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
     (strrchr(szFilePath, '\\'))[0] = 0;
@@ -41,6 +42,7 @@ int main(int argc, char *argv[])
     do {
         now = QDateTime::currentDateTime();
     } while (n.secsTo(now) <= 1);//3为需要延时的秒数
+    */
     /*使程序在显示启动画面的同时仍能响应鼠标等其他事件*/
     a.processEvents();
     //if (argc == 3)
@@ -66,6 +68,6 @@ int main(int argc, char *argv[])
     }
     //b->setAttribute(Qt::WA_QuitOnClose);
     b->show();
-    splash.finish(b);
+    //splash.finish(b);
     return a.exec();
 }

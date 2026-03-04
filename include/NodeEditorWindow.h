@@ -3,6 +3,12 @@
 
 #include <QMainWindow>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QSplitter>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QToolBar>
 #include <QAction>
 #include <QMenuBar>
@@ -12,6 +18,15 @@
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QStandardItemModel>
+#include <QDrag>
+#include <QMimeData>
+#include <QEvent>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QMouseEvent>
+#include <QPixmap>
+#include <QPainter>
 #include <memory>
 
 // QtNodes headers
@@ -22,6 +37,116 @@
 #include <QtNodes/ConnectionStyle>
 #include <QtNodes/NodeStyle>
 #include <QtNodes/GraphicsViewStyle>
+#include <QtNodes/internal/UndoCommands.hpp>
+
+// Custom tree widget for node palette with drag support
+class NodeTreeWidget : public QTreeWidget
+{
+    Q_OBJECT
+public:
+    explicit NodeTreeWidget(QWidget *parent = nullptr) : QTreeWidget(parent)
+    {
+        setDragEnabled(true);
+        setDragDropMode(QAbstractItemView::InternalMove);
+        setSelectionMode(QAbstractItemView::SingleSelection);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        QTreeWidgetItem *item = itemAt(event->pos());
+        if (item && item->parent() == nullptr) {
+            // Don't drag category items - just ignore the event
+            return;
+        }
+        QTreeWidget::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        QTreeWidgetItem *item = itemAt(event->pos());
+        if (item && item->parent() == nullptr) {
+            return;  // Don't drag category items
+        }
+
+        if (event->buttons() & Qt::LeftButton) {
+            QTreeWidgetItem *current = currentItem();
+            if (current && current->parent() != nullptr) {
+                QString modelName = current->data(0, Qt::UserRole).toString();
+                if (!modelName.isEmpty()) {
+                    QMimeData *mimeData = new QMimeData();
+                    mimeData->setText(modelName);
+                    mimeData->setData("application/x-node-palette", modelName.toUtf8());
+
+                    QDrag *drag = new QDrag(this);
+                    drag->setMimeData(mimeData);
+
+                    // Create a simple drag pixmap
+                    QPixmap pixmap(120, 24);
+                    pixmap.fill(Qt::white);
+                    QPainter painter(&pixmap);
+                    painter.setPen(Qt::black);
+                    painter.drawText(pixmap.rect(), Qt::AlignCenter, modelName);
+                    drag->setPixmap(pixmap);
+
+                    drag->exec(Qt::CopyAction);
+                    return;
+                }
+            }
+        }
+        QTreeWidget::mouseMoveEvent(event);
+    }
+};
+
+// Custom GraphicsView to handle drops from palette
+class PaletteGraphicsView : public QtNodes::GraphicsView
+{
+    Q_OBJECT
+public:
+    explicit PaletteGraphicsView(QtNodes::BasicGraphicsScene *scene, QWidget *parent = nullptr)
+        : QtNodes::GraphicsView(scene, parent)
+    {
+        setAcceptDrops(true);
+    }
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override
+    {
+        if (event->mimeData()->hasFormat("application/x-node-palette")) {
+            event->acceptProposedAction();
+            return;
+        }
+        QtNodes::GraphicsView::dragEnterEvent(event);
+    }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        if (event->mimeData()->hasFormat("application/x-node-palette")) {
+            event->acceptProposedAction();
+            return;
+        }
+        QtNodes::GraphicsView::dragMoveEvent(event);
+    }
+
+    void dropEvent(QDropEvent *event) override
+    {
+        if (event->mimeData()->hasFormat("application/x-node-palette")) {
+            QString modelName = QString::fromUtf8(
+                event->mimeData()->data("application/x-node-palette"));
+
+            QPointF scenePos = mapToScene(event->pos());
+
+            QtNodes::BasicGraphicsScene *scene = nodeScene();
+            if (scene) {
+                scene->undoStack().push(
+                    new QtNodes::CreateCommand(scene, modelName, scenePos));
+            }
+
+            event->acceptProposedAction();
+            return;
+        }
+        QtNodes::GraphicsView::dropEvent(event);
+    }
+};
 
 class NodeEditorWindow : public QMainWindow
 {
@@ -45,19 +170,26 @@ private slots:
     void onDelete();
     void onSceneModified(QtNodes::BasicGraphicsScene *);
     void onSceneLoaded();
+    void onSearchTextChanged(const QString &text);
+    void onNodeItemDoubleClicked(QTreeWidgetItem *item, int column);
+    void onNodeItemClicked(QTreeWidgetItem *item, int column);
+    void onTogglePaletteCollapsed();
 
 private:
     void setupUi();
     void setupToolbar();
     void setupMenu();
     void setupSceneInternal();
+    void setupNodePalette();
+    void populateNodeTree();
     void applyStyles();
     QString getSaveFilePath();
     QString getOpenFilePath();
 
 private:
     // UI components
-    QVBoxLayout *m_layout;
+    QHBoxLayout *m_mainLayout;
+    QSplitter *m_splitter;
     QToolBar *m_toolbar;
     QAction *m_actionNew;
     QAction *m_actionSave;
@@ -66,11 +198,21 @@ private:
     QAction *m_actionDelete;
     QAction *m_actionExit;
 
+    // Node palette
+    QWidget *m_nodePalette;
+    QVBoxLayout *m_paletteLayout;
+    QLineEdit *m_searchBox;
+    NodeTreeWidget *m_nodeTree;
+    QPushButton *m_closePaletteButton;
+    QWidget *m_tabContainer;
+    QPushButton *m_paletteTabButton;
+    bool m_paletteCollapsed;
+
     // Node Editor components
     std::shared_ptr<QtNodes::NodeDelegateModelRegistry> m_registry;
     QtNodes::DataFlowGraphModel *m_graphModel;
     QtNodes::DataFlowGraphicsScene *m_scene;
-    QtNodes::GraphicsView *m_view;
+    PaletteGraphicsView *m_view;
 
     // State
     QString m_currentFilePath;

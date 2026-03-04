@@ -12,6 +12,7 @@
 #include <QtNodes/ConnectionStyle>
 #include <QtNodes/NodeStyle>
 #include <QtNodes/GraphicsViewStyle>
+#include <QtNodes/internal/Definitions.hpp>
 
 // Forward declarations
 namespace QtNodes {
@@ -19,6 +20,13 @@ class NodeGraphicsObject;
 }
 
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QSplitter>
+#include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QLabel>
 #include <QToolBar>
 #include <QAction>
 #include <QFileDialog>
@@ -31,7 +39,8 @@ class NodeGraphicsObject;
 
 NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_layout(nullptr)
+    , m_mainLayout(nullptr)
+    , m_splitter(nullptr)
     , m_toolbar(nullptr)
     , m_actionNew(nullptr)
     , m_actionSave(nullptr)
@@ -39,6 +48,14 @@ NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     , m_actionClear(nullptr)
     , m_actionDelete(nullptr)
     , m_actionExit(nullptr)
+    , m_nodePalette(nullptr)
+    , m_paletteLayout(nullptr)
+    , m_searchBox(nullptr)
+    , m_nodeTree(nullptr)
+    , m_closePaletteButton(nullptr)
+    , m_tabContainer(nullptr)
+    , m_paletteTabButton(nullptr)
+    , m_paletteCollapsed(false)
     , m_graphModel(nullptr)
     , m_scene(nullptr)
     , m_view(nullptr)
@@ -78,9 +95,12 @@ void NodeEditorWindow::setupSceneInternal()
     // Create scene
     m_scene = new QtNodes::DataFlowGraphicsScene(*m_graphModel, this);
 
-    // Create view
-    m_view = new QtNodes::GraphicsView(m_scene);
-    m_layout->addWidget(m_view);
+    // Create view (custom subclass to handle drag & drop)
+    m_view = new PaletteGraphicsView(m_scene);
+    m_splitter->addWidget(m_view);
+
+    // Setup node palette
+    setupNodePalette();
 
     // Connect to scene modification signal to update view when nodes are created
     connect(m_scene, &QtNodes::BasicGraphicsScene::modified, this, &NodeEditorWindow::onSceneModified);
@@ -97,9 +117,13 @@ void NodeEditorWindow::setupUi()
     auto *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
-    m_layout = new QVBoxLayout(centralWidget);
-    m_layout->setContentsMargins(0, 0, 0, 0);
-    m_layout->setSpacing(0);
+    m_mainLayout = new QHBoxLayout(centralWidget);
+    m_mainLayout->setContentsMargins(0, 0, 0, 0);
+    m_mainLayout->setSpacing(0);
+
+    // Create splitter
+    m_splitter = new QSplitter(Qt::Horizontal, this);
+    m_mainLayout->addWidget(m_splitter);
 }
 
 void NodeEditorWindow::setupToolbar()
@@ -170,6 +194,246 @@ void NodeEditorWindow::setupMenu()
                          "For InSAR data processing workflow design");
     });
     menuHelp->addAction(actionAbout);
+}
+
+void NodeEditorWindow::setupNodePalette()
+{
+    // Main palette widget
+    m_nodePalette = new QWidget();
+    m_paletteLayout = new QVBoxLayout(m_nodePalette);
+    m_paletteLayout->setContentsMargins(0, 0, 0, 0);
+    m_paletteLayout->setSpacing(0);
+
+    // Set size for the palette
+    m_nodePalette->setMinimumWidth(200);
+    m_nodePalette->setMaximumWidth(300);
+
+    // Add right border effect (raised 3D style like popup menu)
+    m_nodePalette->setStyleSheet(
+        "QWidget {"
+        "    border-right: 2px solid #888888;"
+        "    border-top: 1px solid #e0e0e0;"
+        "    border-bottom: 1px solid #e0e0e0;"
+        "    background-color: #f5f5f5;"
+        "}"
+    );
+
+    // Title bar with close button
+    auto *titleBar = new QWidget();
+    auto *titleLayout = new QHBoxLayout(titleBar);
+    titleLayout->setContentsMargins(4, 4, 4, 4);
+    titleLayout->setSpacing(0);
+
+    auto *titleLabel = new QLabel("Node Palette");
+    titleLayout->addWidget(titleLabel);
+
+    titleLayout->addStretch();
+
+    // Collapse button - fixed size
+    m_closePaletteButton = new QPushButton();
+    m_closePaletteButton->setText(">");
+    m_closePaletteButton->setFixedSize(16, 16);
+    m_closePaletteButton->setStyleSheet("QPushButton { border: none; padding: 0px; }");
+    m_closePaletteButton->setToolTip("Collapse palette");
+    connect(m_closePaletteButton, &QPushButton::clicked,
+            this, &NodeEditorWindow::onTogglePaletteCollapsed);
+    titleLayout->addWidget(m_closePaletteButton);
+
+    titleBar->setLayout(titleLayout);
+    m_paletteLayout->addWidget(titleBar);
+
+    // Search box
+    m_searchBox = new QLineEdit();
+    m_searchBox->setPlaceholderText("Search nodes...");
+    m_searchBox->setClearButtonEnabled(true);
+    m_paletteLayout->addWidget(m_searchBox);
+
+    // Node tree (custom widget with drag support)
+    m_nodeTree = new NodeTreeWidget();
+    m_nodeTree->setHeaderHidden(true);
+    m_nodeTree->setIndentation(12);
+    m_paletteLayout->addWidget(m_nodeTree);
+
+    // Initialize node tree
+    populateNodeTree();
+
+    // Connect signals
+    connect(m_searchBox, &QLineEdit::textChanged,
+            this, &NodeEditorWindow::onSearchTextChanged);
+    connect(m_nodeTree, &QTreeWidget::itemDoubleClicked,
+            this, &NodeEditorWindow::onNodeItemDoubleClicked);
+    connect(m_nodeTree, &QTreeWidget::itemClicked,
+            this, &NodeEditorWindow::onNodeItemClicked);
+
+    // Collapsed tab button (small "ear" dock-style)
+    // Use a container with button fixed at top-right
+    m_tabContainer = new QWidget();
+    m_tabContainer->setFixedWidth(8);
+    auto *tabLayout = new QVBoxLayout(m_tabContainer);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
+    tabLayout->setSpacing(0);
+
+    m_paletteTabButton = new QPushButton();
+    m_paletteTabButton->setText("<");
+    m_paletteTabButton->setFixedSize(8, 60);
+    m_paletteTabButton->setStyleSheet(
+        "QPushButton {"
+        "    border: none;"
+        "    padding: 0px;"
+        "    background-color: #e0e0e0;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: #d0d0d0;"
+        "}"
+    );
+    m_paletteTabButton->setToolTip("Expand palette");
+
+    // Button at top, rest stretches
+    tabLayout->addWidget(m_paletteTabButton);
+    tabLayout->addStretch();
+
+    m_tabContainer->hide();
+    connect(m_paletteTabButton, &QPushButton::clicked,
+            this, &NodeEditorWindow::onTogglePaletteCollapsed);
+
+    // Add to splitter
+    m_splitter->addWidget(m_nodePalette);
+    m_splitter->addWidget(m_tabContainer);
+
+    // Default: palette expanded
+    m_paletteCollapsed = false;
+}
+
+void NodeEditorWindow::populateNodeTree()
+{
+    m_nodeTree->clear();
+
+    auto categories = m_registry->categories();
+
+    for (const QString &category : categories)
+    {
+        // Create category item (not selectable)
+        auto *categoryItem = new QTreeWidgetItem(m_nodeTree);
+        categoryItem->setText(0, category);
+        categoryItem->setFlags(Qt::ItemIsEnabled);
+
+        // Get all models in this category
+        auto models = m_registry->registeredModelsCategoryAssociation();
+        for (const auto &pair : models)
+        {
+            if (pair.second == category)
+            {
+                auto *modelItem = new QTreeWidgetItem(categoryItem);
+                modelItem->setText(0, pair.first);  // Node name
+                modelItem->setData(0, Qt::UserRole, pair.first);  // Store node ID
+                modelItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            }
+        }
+
+        categoryItem->setExpanded(true);
+    }
+}
+
+void NodeEditorWindow::onSearchTextChanged(const QString &text)
+{
+    QTreeWidgetItemIterator it(m_nodeTree);
+    while (*it)
+    {
+        QTreeWidgetItem *item = *it;
+        QString itemName = item->text(0);
+
+        bool match = text.isEmpty() ||
+                   itemName.contains(text, Qt::CaseInsensitive);
+
+        // Top-level category items: always shown, but check children visibility
+        if (item->parent() == nullptr)
+        {
+            if (text.isEmpty())
+            {
+                // Restore all children visibility
+                for (int i = 0; i < item->childCount(); ++i)
+                {
+                    item->child(i)->setHidden(false);
+                }
+            }
+            else
+            {
+                // Expand category during search
+                item->setExpanded(true);
+            }
+        }
+        else
+        {
+            // Node item: show/hide based on match
+            item->setHidden(!match);
+            // If matching, make sure parent is visible
+            if (match && item->parent())
+            {
+                item->parent()->setHidden(false);
+                item->parent()->setExpanded(true);
+            }
+        }
+
+        ++it;
+    }
+}
+
+void NodeEditorWindow::onTogglePaletteCollapsed()
+{
+    QList<int> sizes = m_splitter->sizes();
+
+    if (m_paletteCollapsed)
+    {
+        // Expand palette
+        m_nodePalette->show();
+        m_tabContainer->hide();
+        m_closePaletteButton->setText(">");
+        m_closePaletteButton->setToolTip("Collapse palette");
+        m_paletteCollapsed = false;
+        // Set sizes: canvas keeps current, panel gets 200px, tab gets 0
+        sizes[1] = 200;
+        sizes[2] = 0;
+        m_splitter->setSizes(sizes);
+    }
+    else
+    {
+        // Collapse palette - only show the small "ear"
+        m_nodePalette->hide();
+        m_tabContainer->show();
+        m_paletteCollapsed = true;
+        // Set sizes: canvas keeps current + panel width, panel gets 0, tab gets 8px
+        sizes[0] = sizes[0] + sizes[1];  // Canvas gets panel's space
+        sizes[1] = 0;
+        sizes[2] = 8;
+        m_splitter->setSizes(sizes);
+    }
+}
+
+void NodeEditorWindow::onNodeItemDoubleClicked(QTreeWidgetItem *item, int column)
+{
+    if (item->parent() == nullptr)
+        return;  // Ignore category items
+
+    QString modelName = item->data(0, Qt::UserRole).toString();
+
+    // Get canvas center position
+    QPointF scenePos = m_view->mapToScene(m_view->viewport()->rect().center());
+
+    // Create node directly through graphModel
+    QtNodes::NodeId nodeId = m_graphModel->addNode(modelName);
+    if (nodeId != QtNodes::InvalidNodeId) {
+        m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, scenePos);
+        statusBar()->showMessage(QString("Added node: %1").arg(modelName));
+    }
+}
+
+void NodeEditorWindow::onNodeItemClicked(QTreeWidgetItem *item, int column)
+{
+    if (item->parent() == nullptr)
+        return;
+
+    QString modelName = item->data(0, Qt::UserRole).toString();
+    statusBar()->showMessage(QString("Double-click to add: %1").arg(modelName));
 }
 
 void NodeEditorWindow::applyStyles()
