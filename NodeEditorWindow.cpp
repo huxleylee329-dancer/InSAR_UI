@@ -26,6 +26,7 @@ class NodeGraphicsObject;
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QStatusBar>
+#include <QList>
 #include <memory>
 
 NodeEditorWindow::NodeEditorWindow(QWidget *parent)
@@ -41,6 +42,9 @@ NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     , m_graphModel(nullptr)
     , m_scene(nullptr)
     , m_view(nullptr)
+    , m_projectModel(nullptr)
+    , m_projectPath()
+    , m_projectName()
 {
     setWindowTitle("InSAR Node Editor");
     resize(1200, 800);
@@ -317,8 +321,29 @@ void NodeEditorWindow::onClear()
 void NodeEditorWindow::onDelete()
 {
     // Delete selected nodes and connections
-    // QtNodes scene handles deletion operation via Delete key
-    statusBar()->showMessage("Use Delete key to delete selected items");
+    if (!m_scene || !m_graphModel)
+        return;
+
+    // Get selected nodes using the scene's method
+    auto selectedNodeIds = m_scene->selectedNodes();
+    int nodeCount = selectedNodeIds.size();
+
+    // Delete selected nodes
+    for (auto nodeId : selectedNodeIds)
+    {
+        m_graphModel->deleteNode(nodeId);
+    }
+
+    // Connections are automatically removed when nodes are deleted
+
+    if (nodeCount > 0)
+    {
+        statusBar()->showMessage(QString("Deleted %1 node(s)").arg(nodeCount));
+    }
+    else
+    {
+        statusBar()->showMessage("No nodes selected");
+    }
 }
 
 void NodeEditorWindow::onSceneModified(QtNodes::BasicGraphicsScene *)
@@ -344,4 +369,26 @@ void NodeEditorWindow::onSceneLoaded()
 {
     if (m_view)
         m_view->centerScene();
+}
+
+void NodeEditorWindow::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+{
+    m_projectModel = model;
+    m_projectPath = path;
+    m_projectName = name;
+}
+
+QStandardItemModel* NodeEditorWindow::projectModel() const
+{
+    return m_projectModel;
+}
+
+QString NodeEditorWindow::projectPath() const
+{
+    return m_projectPath;
+}
+
+QString NodeEditorWindow::projectName() const
+{
+    return m_projectName;
 }

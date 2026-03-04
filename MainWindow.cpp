@@ -667,6 +667,15 @@ void MainWindow::on_actionNodeEditor_triggered()
 {
     NodeEditorWindow* editor = new NodeEditorWindow(nullptr);
     editor->setAttribute(Qt::WA_DeleteOnClose, true);
+
+    // Read project information from Config.ini
+    QSettings settings(QString("Config.ini"), QSettings::IniFormat);
+    QString projectPath = settings.value("Project/SavePath", "").toString();
+    QString projectName = settings.value("Project/projectname", "").toString();
+
+    // Set project context for the editor
+    editor->setProjectContext(model, projectPath, projectName);
+
     editor->show();
 }
 void MainWindow::RenewTree(QStandardItemModel* copy)

@@ -2,11 +2,11 @@
 
 本计划用于实现 SatExplorer 项目中的基于节点的可视化流程编辑器功能。
 
-## 进度总结（2026-03-02 更新）
+## 进度总结（2026-03-04 更新）
 
 - [x] 阶段 1: QtNodes 库集成 - 已完成
-- [x] 阶段 2: 基础架构搭建 - 部分完成
-- [ ] 阶段 3: 数据导入节点实现 - 未开始
+- [x] 阶段 2: 基础架构搭建 - 已完成
+- [x] 阶段 3: 数据导入节点实现 - 部分完成（Sentinel-1）
 - [ ] 阶段 4: 预处理节点实现 - 未开始
 - [ ] 阶段 5: 配准节点实现 - 未开始
 - [ ] 阶段 6: 干涉处理节点实现 - 未开始
@@ -14,13 +14,13 @@
 - [ ] 阶段 8: SBAS 处理节点实现 - 未开始
 - [ ] 阶段 9: 可视化节点实现 - 未开始
 - [ ] 阶段 10: 工具节点实现 - 未开始
-- [ ] 阶段 11: 与 MyThread 集成 - 未开始
-- [x] 阶段 12: 保存与加载 - 部分完成（基础框架）
+- [x] 阶段 11: 与 MyThread 集成 - 部分完成（导入节点）
+- [x] 阶段 12: 保存与加载 - 已完成
 - [x] 阶段 13: UI 集成 - 已完成
-- [ ] 阶段 14: 测试与优化 - 未开始
+- [ ] 阶段 14: 测试与优化 - 部分完成
 - [ ] 阶段 15: 文档与示例 - 未开始
 
-### 已完成的工作（2026-03-02 更新）
+### 已完成的工作（2026-03-04 更新）
 
 1. **QtNodes 库集成（阶段 1 - 已完成）**
    - QtNodes 源代码通过静态链接方式完全集成到项目中
@@ -41,6 +41,7 @@
      - 保存/加载 JSON 格式的流程图
      - 深色主题样式配置
      - 状态栏显示节点和连接数量
+     - **项目上下文传递**（setProjectContext, projectModel, projectPath, projectName）
 
 3. **NodeDataTypes 自定义数据类型（阶段 2.2 - 已完成）**
    - `ImageData` - SAR 图像数据
@@ -50,23 +51,65 @@
    - `TimeSeriesData` - 时间序列数据
    - `CoordinateMatrixData` - 坐标变换矩阵
 
-4. **NodeModels 节点模型注册表（阶段 2.3 - 部分完成）**
+4. **NodeModels 节点模型注册表（阶段 2.3 - 已完成）**
    - `NodeModels.h` - 注册表接口定义
-   - `NodeModels.cpp` - 仅包含空实现的注册表：
-     - `registerTestNodeModels()` - 返回空注册表
-     - `registerInSARNodeModels()` - 当前直接返回空测试注册表（TODO: 需实现）
+   - `NodeModels.cpp` - 包含注册表实现：
+     - `registerTestNodeModels()` - 返回测试节点注册表
+     - `registerInSARNodeModels()` - 返回 InSAR 节点注册表（包含 Sentinel-1 节点）
 
 5. **UI 集成（阶段 13 - 已完成）**
    - MainWindow.h 中声明了 `on_actionNodeEditor_triggered()` 槽函数
-   - MainWindow.cpp:666-671 中实现了打开 NodeEditorWindow 的逻辑
+   - MainWindow.cpp:666-680 中实现了打开 NodeEditorWindow 的逻辑
    - 节点编辑器可作为独立窗口打开
+   - **传递当前项目上下文到节点编辑器**
+
+6. **数据导入节点实现（阶段 3 - 部分完成）**
+   - **`ImportDataTypes.h`** - 导入节点数据类型
+     - `ImportedFileData` - 已导入文件数据类型（包含文件路径和节点名）
+
+   - **`ImportNodeBase.h/cpp`** - 导入节点基类
+     - 通用端口配置（无输入，单输出）
+     - 项目上下文获取方法（projectModel, projectPath, projectName）
+     - 进度更新和状态管理
+     - 与 NodeEditorWindow 的集成接口
+
+   - **`Sentinel1ImportNode.h/cpp`** - Sentinel-1 单文件导入节点
+     - Manifest 文件选择
+     - POD 文件选择（可选）
+     - 子波束选择下拉框（iw1/iw2/iw3）
+     - 极化方式下拉框（vv/vh）
+     - 进度条和状态标签
+     - 与 MyThread::import_sentinel 集成
+
+   - **`Sentinel1BatchImportNode.h/cpp`** - Sentinel-1 批量导入节点
+     - 文件列表控件（显示多个 manifest 路径）
+     - 添加/删除文件按钮
+     - 子波束和极化共享设置
+     - 与 MyThread::import_sentinel_patch 集成
+
+7. **Bug 修复记录（2026-03-04）**
+
+   - **删除功能修复**：
+     - 修改 `NodeEditorWindow::onDelete()` 实现真正的删除功能
+     - 调用 `m_scene->selectedNodes()` 获取选中节点
+     - 调用 `m_graphModel->deleteNode()` 删除节点
+
+   - **Mac 删除快捷键修复**：
+     - 修改 `QtNodes/src/GraphicsView.cpp` 中的删除快捷键
+     - 同时支持 Delete 键（Windows）和 Backspace 键（Mac）
+     - 将快捷键作用域从 WidgetShortcut 改为 WindowShortcut
+
+   - **Widget 清理修复**：
+     - 从 `Sentinel1ImportNode` 析构函数移除 `delete m_widget;`
+     - 从 `Sentinel1BatchImportNode` 析构函数移除 `delete m_widget;`
+     - QtNodes 通过 QGraphicsProxyWidget 管理 widget 生命周期，不应手动删除
 
 ### 当前限制
 
-1. **节点模型未实现**：虽然创建了数据类型和注册表框架，但没有任何具体的节点模型实现（如 ImportNode、FilterNode 等）
-2. **注册表为空**：当前 `registerInSARNodeModels()` 返回空注册表，无法创建任何节点
-3. **与 MyThread 无集成**：节点处理功能尚未与现有的 MyThread 工作线程集成
-4. **流程保存/加载仅为框架**：虽然实现了 JSON 保存/加载的基础代码，但需要进一步验证和测试
+1. **节点模型未完全实现**：仅实现了 Sentinel-1 导入节点，其他导入节点和处理节点尚未实现
+2. **UI 样式未优化**：导入节点界面使用默认样式，未应用深色主题
+3. **与项目树集成不完整**：节点输出不会自动添加到项目树
+4. **实际数据处理未验证**：虽然实现了与 MyThread 的接口，但尚未用真实数据测试
 
 ### 编译错误修复记录（2025-02-27）
 
@@ -128,6 +171,7 @@
 - [x] 实现场景和视图初始化
 - [x] 实现保存/加载 JSON 格式流程图
 - [x] 应用深色主题样式
+- [x] 添加项目上下文传递接口
 
 ### 2.2 创建自定义数据类型文件
 - [x] 创建 `include\NodeDataTypes.h`
@@ -137,12 +181,13 @@
 - [x] 实现 `PairListData` 类（干涉对列表）
 - [x] 实现 `TimeSeriesData` 类（时间序列数据）
 - [x] 实现 `CoordinateMatrixData` 类（坐标变换矩阵）
+- [x] 实现 `ImportedFileData` 类（已导入文件数据）
 
 ### 2.3 创建节点模型基类和注册表
 - [x] 创建 `include\NodeModels.h`
 - [x] 创建 `NodeModels.cpp`
 - [x] 定义 InSAR 节点注册表初始化函数
-- [x] 实现 `registerInSARNodeModels()` 函数（已注册测试节点）
+- [x] 实现 `registerInSARNodeModels()` 函数（已注册 Sentinel-1 节点和测试节点）
 - [x] 创建示例测试节点以验证编辑器功能
 
 **测试节点已创建：**
@@ -156,28 +201,37 @@
 1. 打开节点编辑器（菜单 → 节点编辑器）
 2. 从右侧面板**拖拽**节点到画布
 3. 连接节点：拖拽输出端口到输入端口
+4. 选中节点后点击工具栏的 Delete 按钮（或按 Delete/Backspace 键）删除节点
 
 ## 阶段 3: 数据导入节点实现
 
 ### 3.1 导入节点基类
-- [ ] 创建 `ImportNodeBase` 抽象基类
-- [ ] 实现文件选择对话框
-- [ ] 实现进度更新信号
+- [x] 创建 `ImportNodeBase` 抽象基类
+- [x] 实现文件选择对话框
+- [x] 实现进度更新信号
+- [x] 实现项目上下文获取方法
 
 ### 3.2 Sentinel-1 导入节点
-- [ ] 创建 `Sentinel1ImportNode` 类
-- [ ] 实现 POD 文件选择
-- [ ] 实现 manifest 文件选择
-- [ ] 实现子波束和极化参数设置
-- [ ] 调用 MyThread::import_sentinel 方法
+- [x] 创建 `Sentinel1ImportNode` 类
+- [x] 实现 POD 文件选择
+- [x] 实现 manifest 文件选择
+- [x] 实现子波束和极化参数设置
+- [x] 调用 MyThread::import_sentinel 方法
+- [x] 实现文件名自动生成
 
-### 3.3 TSX 导入节点
+### 3.3 Sentinel-1 批量导入节点
+- [x] 创建 `Sentinel1BatchImportNode` 类
+- [x] 实现文件列表管理（添加/删除）
+- [x] 实现子波束和极化参数设置
+- [x] 调用 MyThread::import_sentinel_patch 方法
+
+### 3.4 TSX 导入节点
 - [ ] 创建 `TSXImportNode` 类
 - [ ] 实现 XML 文件选择
 - [ ] 实现极化参数设置
 - [ ] 调用 MyThread::import_TSX 方法
 
-### 3.4 其他导入节点
+### 3.5 其他导入节点
 - [ ] 创建 `CSKImportNode` 类
 - [ ] 创建 `ALOS2ImportNode` 类
 - [ ] 实现各自的参数设置界面
@@ -302,15 +356,15 @@
 ## 阶段 11: 与 MyThread 集成
 
 ### 11.1 异步处理集成
-- [ ] 创建 `NodeThread` 类继承 QThread
+- [x] 为导入节点实现独立 MyThread 实例
 - [ ] 将节点处理操作转移到后台线程
-- [ ] 实现进度信号从节点到界面的传递
-- [ ] 实现取消操作机制
+- [x] 实现进度信号从节点到界面的传递
+- [x] 实现取消操作机制
 
 ### 11.2 错误处理
-- [ ] 为每个节点添加错误处理逻辑
-- [ ] 实现错误信号传递
-- [ ] 在界面上显示错误信息
+- [x] 为导入节点添加错误处理逻辑
+- [x] 实现错误信号传递
+- [x] 在界面上显示错误信息
 
 ## 阶段 12: 保存与加载
 
@@ -333,7 +387,8 @@
 
 ### 13.1 添加到 MainWindow
 - [x] 在 MainWindow 中添加"节点编辑器"菜单项（on_actionNodeEditor_triggered）
-- [x] 创建并显示 NodeEditorWindow（MainWindow.cpp:666-671）
+- [x] 创建并显示 NodeEditorWindow（MainWindow.cpp:666-680）
+- [x] 传递项目上下文到节点编辑器
 
 ### 13.2 与现有项目树集成
 - [ ] 实现节点输出自动添加到项目树
@@ -347,14 +402,17 @@
 ## 阶段 14: 测试与优化
 
 ### 14.1 单元测试
-- [ ] 测试每个节点的基本功能
+- [x] 测试 TestNode 的基本功能
+- [x] 测试节点拖拽和连接
+- [x] 测试节点删除功能
+- [ ] 测试 Sentinel-1 导入节点功能
 - [ ] 测试数据流传播
-- [ ] 测试连接/断开连接
 
 ### 14.2 集成测试
 - [ ] 测试完整的处理流程
 - [ ] 测试保存/加载功能
 - [ ] 测试取消操作
+- [ ] 测试实际 Sentinel-1 数据导入
 
 ### 14.3 性能优化
 - [ ] 优化大量节点的渲染性能
@@ -380,15 +438,17 @@
 按照以下顺序执行各阶段：
 
 1. **阶段 1-2**（必须先完成）：库集成和基础架构
-2. **阶段 3-10**（可并行）：各类节点实现
-3. **阶段 11**（节点实现后）：MyThread 集成
-4. **阶段 12-13**（功能完成后）：保存加载和 UI 集成
-5. **阶段 14**：测试与优化
-6. **阶段 15**：文档
+2. **阶段 3**：数据导入节点实现（已完成 Sentinel-1）
+3. **阶段 4-10**（可并行）：各类处理节点实现
+4. **阶段 11**：MyThread 集成
+5. **阶段 12-13**：保存加载和 UI 集成
+6. **阶段 14**：测试与优化
+7. **阶段 15**：文档
 
 ## 关键决策点
 
-1. **节点线程模型**：每个节点使用独立线程还是共享线程池？
-2. **数据存储**：大文件（HDF5）是存储路径还是直接数据？
-3. **项目文件格式**：扩展现有 XML 还是使用新的 JSON 格式？
-4. **实时预览**：是否需要实时预览节点输出？
+1. **节点线程模型**：每个节点使用独立线程还是共享线程池？——当前方案：每个导入节点使用独立 MyThread 实例
+2. **数据存储**：大文件（HDF5）是存储路径还是直接数据？——当前方案：存储文件路径
+3. **项目文件格式**：扩展现有 XML 还是使用新的 JSON 格式？——当前方案：流程图使用 JSON，项目使用 XML
+4. **实时预览**：是否需要实时预览节点输出？——待定
+5. **UI 样式**：是否统一应用深色主题？——待定（用户反馈当前样式不满意）

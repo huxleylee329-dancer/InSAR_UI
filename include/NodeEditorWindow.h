@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QStatusBar>
+#include <QStandardItemModel>
 #include <memory>
 
 // QtNodes headers
@@ -29,6 +30,12 @@ class NodeEditorWindow : public QMainWindow
 public:
     explicit NodeEditorWindow(QWidget *parent = nullptr);
     ~NodeEditorWindow();
+
+    // Project context methods
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name);
+    QStandardItemModel* projectModel() const;
+    QString projectPath() const;
+    QString projectName() const;
 
 private slots:
     void onNew();
@@ -67,6 +74,11 @@ private:
 
     // State
     QString m_currentFilePath;
+
+    // Project context
+    QStandardItemModel* m_projectModel;
+    QString m_projectPath;
+    QString m_projectName;
 };
 
 #endif // NODEEDITORWINDOW_H

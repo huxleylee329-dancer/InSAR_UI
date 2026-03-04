@@ -100,14 +100,14 @@
    </widget>
    <widget class="QMenu" name="Edit">
     <property name="title">
-     <string>编辑</string>
+     <string>流程编辑器</string>
     </property>
+    <addaction name="actionNodeEditor"/>
    </widget>
    <widget class="QMenu" name="View">
     <property name="title">
      <string>视图</string>
     </property>
-    <addaction name="actionNodeEditor"/>
    </widget>
    <widget class="QMenu" name="Setteing">
     <property name="title">
@@ -440,7 +440,7 @@
   </action>
   <action name="actionNodeEditor">
    <property name="text">
-    <string>节点编辑器</string>
+    <string>流程编辑器</string>
    </property>
   </action>
  </widget>

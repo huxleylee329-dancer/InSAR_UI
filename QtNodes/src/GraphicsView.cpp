@@ -90,8 +90,11 @@ void GraphicsView::setScene(BasicGraphicsScene *scene)
     {
         delete _deleteSelectionAction;
         _deleteSelectionAction = new QAction(QStringLiteral("Delete Selection"), this);
-        _deleteSelectionAction->setShortcutContext(Qt::ShortcutContext::WidgetShortcut);
-        _deleteSelectionAction->setShortcut(QKeySequence(QKeySequence::Delete));
+        _deleteSelectionAction->setShortcutContext(Qt::ShortcutContext::WindowShortcut);
+        // Support both Delete key (Windows) and Backspace key (Mac)
+        QList<QKeySequence> shortcuts;
+        shortcuts << QKeySequence(QKeySequence::Delete) << QKeySequence(Qt::Key_Backspace);
+        _deleteSelectionAction->setShortcuts(shortcuts);
         _deleteSelectionAction->setAutoRepeat(false);
         connect(_deleteSelectionAction,
                 &QAction::triggered,
