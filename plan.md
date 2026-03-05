@@ -8,7 +8,7 @@
 - [x] 阶段 2: 基础架构搭建 - 已完成
 - [x] 阶段 2.5: 右侧节点面板 - 已完成 ✨
 - [x] 阶段 3: 数据导入节点实现 - 已完成（Sentinel-1, TerraSAR-X, COSMO-SkyMed, ALOS-2）
-- [ ] 阶段 4: 预处理节点实现 - 未开始
+- [x] 阶段 4: 预处理节点实现 - 已完成 ✨
 - [ ] 阶段 5: 配准节点实现 - 未开始
 - [ ] 阶段 6: 干涉处理节点实现 - 未开始
 - [ ] 阶段 7: 基线处理节点实现 - 未开始
@@ -24,6 +24,58 @@
 ---
 
 ## 已完成的工作（2026-03-05 更新）
+
+### 预处理节点（阶段 4 - 已完成）✨
+
+**已实现节点**：
+- S1 Deburst 节点 (`S1DeburstNode`)
+- S1 Frame Merge 节点 (`S1FrameMergeNode`)
+- S1 Swath Merge 节点 (`S1SwathMergeNode`)
+
+**注册位置**：`NodeModels.cpp` 中的 `registerInSARNodeModels()` 函数
+
+**面板配置**：`NodeEditorWindow.cpp` 中的 `getPaletteFullOrder()` 函数
+- 添加了 "Preprocessing" 顶级分类
+- 添加了 "Sentinel-1" 子分类
+- 添加了三个叶子项：Deburst, Frame Merge, Swath Merge
+
+**数据类型**：使用 `ImportedFileData` 作为输入/输出类型（包含 filePath 和 nodeName）
+
+**文件列表**：
+- `include/S1DeburstNode.h` - S1DeburstNode 头文件
+- `S1DeburstNode.cpp` - S1DeburstNode 实现
+- `include/S1FrameMergeNode.h` - S1FrameMergeNode 头文件
+- `S1FrameMergeNode.cpp` - S1FrameMergeNode 实现
+- `include/S1SwathMergeNode.h` - S1SwathMergeNode 头文件
+- `S1SwathMergeNode.cpp` - S1SwathMergeNode 实现
+
+**S1DeburstNode 功能**：
+- 1 个输入端口，1 个输出端口
+- 输出节点名称参数（自动生成默认值）
+- 调用 `MyThread::S1_Deburst(savePath, dstProject, srcNode, dstNode, model)`
+- 显示输入数据信息
+- 进度条和状态标签
+- 处理/停止按钮
+
+**S1FrameMergeNode 功能**：
+- 2 个输入端口，1 个输出端口
+- 两个图像索引参数（QSpinBox，默认 1）
+- 输出节点名称参数（自动生成默认值）
+- 调用 `MyThread::S1_frame_merge(index1, index2, projectName, srcNode1, srcNode2, dstNode, model)`
+- 显示两个输入数据信息
+- 进度条和状态标签
+- 处理/停止按钮
+
+**S1SwathMergeNode 功能**：
+- 3 个输入端口，1 个输出端口
+- 三个图像索引参数（QSpinBox，默认 1）
+- 输出节点名称参数（自动生成默认值）
+- 调用 `MyThread::S1_swath_merge(index1, index2, index3, projectName, srcNode1, srcNode2, srcNode3, dstNode, model)`
+- 显示三个输入数据信息
+- 进度条和状态标签
+- 处理/停止按钮
+
+---
 
 ### 数据导入节点（阶段 3 - 已完成）
 
@@ -185,8 +237,8 @@
 
 ### 当前限制
 
-1. **处理节点未实现**：已实现所有导入节点（Sentinel-1, TerraSAR-X, COSMO-SkyMed, ALOS-2），但处理节点（预处理、配准、干涉等）尚未实现
-2. **UI 样式未优化**：导入节点界面使用默认样式，未应用深色主题
+1. **处理节点未完全实现**：已实现所有导入节点和 Sentinel-1 预处理节点（Deburst, Frame Merge, Swath Merge），但配准、干涉等处理节点尚未实现
+2. **UI 样式未优化**：节点界面使用默认样式，未应用深色主题
 3. **与项目树集成不完整**：节点输出不会自动添加到项目树
 4. **实际数据处理未验证**：虽然实现了与 MyThread 的接口，但尚未用真实数据测试
 
@@ -321,20 +373,23 @@
 ## 阶段 4: 预处理节点实现
 
 ### 4.1 S1 Deburst 节点
-- [ ] 创建 `S1DeburstNode` 类
-- [ ] 实现输入输出端口（ImageData）
-- [ ] 调用 MyThread::S1_Deburst 方法
+- [x] 创建 `S1DeburstNode` 类
+- [x] 实现输入输出端口（ImportedFileData）
+- [x] 调用 MyThread::S1_Deburst 方法
+- [x] 添加到右侧面板
 
 ### 4.2 S1 帧拼接节点
-- [ ] 创建 `S1FrameMergeNode` 类
-- [ ] 实现多输入端口（2个 ImageData）
-- [ ] 实现索引参数设置
-- [ ] 调用 MyThread::S1_frame_merge 方法
+- [x] 创建 `S1FrameMergeNode` 类
+- [x] 实现多输入端口（2个 ImportedFileData）
+- [x] 实现索引参数设置
+- [x] 调用 MyThread::S1_frame_merge 方法
+- [x] 添加到右侧面板
 
 ### 4.3 S1 条带拼接节点
-- [ ] 创建 `S1SwathMergeNode` 类
-- [ ] 实现多输入端口（3个 ImageData）
-- [ ] 调用 MyThread::S1_swath_merge 方法
+- [x] 创建 `S1SwathMergeNode` 类
+- [x] 实现多输入端口（3个 ImportedFileData）
+- [x] 调用 MyThread::S1_swath_merge 方法
+- [x] 添加到右侧面板
 
 ## 阶段 5: 配准节点实现
 

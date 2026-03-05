@@ -8,6 +8,9 @@
 #include "TSXBatchImportNode.h"
 #include "CSKImportNode.h"
 #include "ALOS2ImportNode.h"
+#include "S1DeburstNode.h"
+#include "S1FrameMergeNode.h"
+#include "S1SwathMergeNode.h"
 
 #include <memory>
 
@@ -50,6 +53,14 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 
     // ALOS-2
     registry->registerModel<ALOS2ImportNode>("Data Import/ALOS-2/Batch Import");
+
+    // ============================================================================
+    // Preprocessing Nodes
+    // ============================================================================
+    // Sentinel-1 Preprocessing
+    registry->registerModel<S1DeburstNode>("Preprocessing/Sentinel-1/Deburst");
+    registry->registerModel<S1FrameMergeNode>("Preprocessing/Sentinel-1/Frame Merge");
+    registry->registerModel<S1SwathMergeNode>("Preprocessing/Sentinel-1/Swath Merge");
 
     // ============================================================================
     // Future Categories (placeholders for upcoming functionality)

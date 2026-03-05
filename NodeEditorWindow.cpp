@@ -13,7 +13,8 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
     // ===== 1. 顶级分类顺序 =====
     order.topLevel = QStringList{
         "Data Import",    // 第一级分类
-        "Test"            // 第二级分类
+        "Preprocessing",  // 第二级分类
+        "Test"            // 第三级分类
     };
 
     // ===== 2. 子分类顺序 =====
@@ -23,6 +24,10 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
         "TerraSAR-X",       // 第二个
         "COSMO-SkyMed",     // 第三个
         "ALOS-2"            // 第四个
+    };
+
+    order.subcategories["Preprocessing"] = QStringList{
+        "Sentinel-1"        // Preprocessing 下的第一个子分类
     };
 
     // ===== 3. 叶子项顺序 =====
@@ -43,6 +48,13 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
 
     order.leafItems["Data Import/ALOS-2"] = QStringList{
         "Batch Import"
+    };
+
+    // Preprocessing 类叶子项顺序
+    order.leafItems["Preprocessing/Sentinel-1"] = QStringList{
+        "Deburst",          // Sentinel-1 预处理节点：去突刺
+        "Frame Merge",      // 帧拼接
+        "Swath Merge"       // 条带拼接
     };
 
     // Test 类叶子项顺序

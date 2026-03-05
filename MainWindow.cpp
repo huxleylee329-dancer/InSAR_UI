@@ -70,9 +70,9 @@ MainWindow::MainWindow(QWidget* parent)
     // Set APP icon
     this->setWindowTitle("SatExplorer");
     this->setWindowIcon(QIcon(APP_ICON));
-    ui.Process->setDisabled(1);
-    ui.menuInSAR->setDisabled(1);
-    ui.menuDInSAR->setDisabled(1);
+    ui.Process->setDisabled(0);
+    ui.menuInSAR->setDisabled(0);
+    ui.menuDInSAR->setDisabled(0);
 
     ui.treeView->init_tree();
     ui.tool->init_mould();
