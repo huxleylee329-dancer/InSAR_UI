@@ -131,7 +131,9 @@ CreateCommand::CreateCommand(BasicGraphicsScene *scene,
 {
     _nodeId = _scene->graphModel().addNode(name);
     if (_nodeId != InvalidNodeId) {
+        _scene->clearSelection();  // Clear previous selection
         _scene->graphModel().setNodeData(_nodeId, NodeRole::Position, mouseScenePos);
+        _scene->nodeGraphicsObject(_nodeId)->setSelected(true);  // Auto-select newly created node
     } else {
         setObsolete(true);
     }

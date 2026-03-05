@@ -104,7 +104,14 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
 {
     if (type == 1)
     {
-        if (!model->itemFromIndex(this->currentIndex())->parent())//工程节点菜单栏
+        QModelIndex index = this->indexAt(point);  // 获取鼠标位置下的项
+        QStandardItem* item = model->itemFromIndex(index);
+
+        // 检查项是否有效
+        if (!item || !index.isValid())
+            return;
+
+        if (!item->parent())//工程节点菜单栏
         {
             QMenu* menu = new QMenu(this);
             QAction* unload = new QAction(QString::fromLocal8Bit("卸载工程"));
@@ -113,7 +120,7 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
             menu->exec(this->mapToGlobal(point));
         }
         //图像数据节点菜单栏
-        else if (!model->itemFromIndex(this->currentIndex())->hasChildren() && model->itemFromIndex(this->currentIndex())->parent())
+        else if (!item->hasChildren() && item->parent())
         {
             QMenu* menu = new QMenu(this);
             QAction* image_saveas = new QAction(QString::fromLocal8Bit("另存为"));
@@ -126,7 +133,7 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
             connect(image_delete, &QAction::triggered, this, &TreeView::Delete);
             menu->exec(this->mapToGlobal(point));
         }
-        
+
     }
 }
 

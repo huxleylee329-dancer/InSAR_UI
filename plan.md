@@ -7,7 +7,7 @@
 - [x] 阶段 1: QtNodes 库集成 - 已完成
 - [x] 阶段 2: 基础架构搭建 - 已完成
 - [x] 阶段 2.5: 右侧节点面板 - 已完成 ✨
-- [x] 阶段 3: 数据导入节点实现 - 部分完成（Sentinel-1）
+- [x] 阶段 3: 数据导入节点实现 - 已完成（Sentinel-1, TerraSAR-X, COSMO-SkyMed, ALOS-2）
 - [ ] 阶段 4: 预处理节点实现 - 未开始
 - [ ] 阶段 5: 配准节点实现 - 未开始
 - [ ] 阶段 6: 干涉处理节点实现 - 未开始
@@ -24,6 +24,18 @@
 ---
 
 ## 已完成的工作（2026-03-05 更新）
+
+### 数据导入节点（阶段 3 - 已完成）
+
+**已实现节点**：
+- Sentinel-1 单文件导入节点 (`Sentinel1ImportNode`)
+- Sentinel-1 批量导入节点 (`Sentinel1BatchImportNode`)
+- TerraSAR-X 单文件导入节点 (`TSXImportNode`)
+- TerraSAR-X 批量导入节点 (`TSXBatchImportNode`)
+- COSMO-SkyMed 批量导入节点 (`CSKImportNode`)
+- ALOS-2 批量导入节点 (`ALOS2ImportNode`)
+
+**注册位置**：`NodeModels.cpp` 中的 `registerInSARNodeModels()` 函数
 
 ### 右侧节点面板（阶段 2.5 - 已完成）
 
@@ -106,7 +118,7 @@
    - 节点编辑器可作为独立窗口打开
    - **传递当前项目上下文到节点编辑器**
 
-6. **数据导入节点实现（阶段 3 - 部分完成）**
+6. **数据导入节点实现（阶段 3 - 已完成）**
    - **`ImportDataTypes.h`** - 导入节点数据类型
      - `ImportedFileData` - 已导入文件数据类型（包含文件路径和节点名）
 
@@ -130,6 +142,30 @@
      - 子波束和极化共享设置
      - 与 MyThread::import_sentinel_patch 集成
 
+   - **`TSXImportNode.h/cpp`** - TerraSAR-X 单文件导入节点
+     - XML 文件选择
+     - 极化方式下拉框（hh/hv/vh/vv）
+     - 进度条和状态标签
+     - 与 MyThread::import_TSX 集成
+
+   - **`TSXBatchImportNode.h/cpp`** - TerraSAR-X 批量导入节点
+     - 文件列表控件
+     - 添加/删除文件按钮
+     - 共享极化设置
+     - 与 MyThread::import_TSX 批量调用集成
+
+   - **`CSKImportNode.h/cpp`** - COSMO-SkyMed 批量导入节点
+     - 文件列表控件（H5 文件）
+     - 添加/删除文件按钮
+     - 进度条和状态标签
+     - 与 MyThread::import_CSK 集成
+
+   - **`ALOS2ImportNode.h/cpp`** - ALOS-2 批量导入节点
+     - 文件列表控件（IMG 文件）
+     - 添加/删除文件按钮
+     - 进度条和状态标签
+     - 与 MyThread::import_ALOS2 集成
+
 7. **Bug 修复记录（2026-03-04）**
 
    - **删除功能修复**：
@@ -149,7 +185,7 @@
 
 ### 当前限制
 
-1. **节点模型未完全实现**：仅实现了 Sentinel-1 导入节点，其他导入节点和处理节点尚未实现
+1. **处理节点未实现**：已实现所有导入节点（Sentinel-1, TerraSAR-X, COSMO-SkyMed, ALOS-2），但处理节点（预处理、配准、干涉等）尚未实现
 2. **UI 样式未优化**：导入节点界面使用默认样式，未应用深色主题
 3. **与项目树集成不完整**：节点输出不会自动添加到项目树
 4. **实际数据处理未验证**：虽然实现了与 MyThread 的接口，但尚未用真实数据测试
@@ -271,15 +307,16 @@
 - [x] 调用 MyThread::import_sentinel_patch 方法
 
 ### 3.4 TSX 导入节点
-- [ ] 创建 `TSXImportNode` 类
-- [ ] 实现 XML 文件选择
-- [ ] 实现极化参数设置
-- [ ] 调用 MyThread::import_TSX 方法
+- [x] 创建 `TSXImportNode` 类
+- [x] 创建 `TSXBatchImportNode` 类
+- [x] 实现 XML 文件选择
+- [x] 实现极化参数设置
+- [x] 调用 MyThread::import_TSX 方法
 
 ### 3.5 其他导入节点
-- [ ] 创建 `CSKImportNode` 类
-- [ ] 创建 `ALOS2ImportNode` 类
-- [ ] 实现各自的参数设置界面
+- [x] 创建 `CSKImportNode` 类
+- [x] 创建 `ALOS2ImportNode` 类
+- [x] 实现各自的参数设置界面
 
 ## 阶段 4: 预处理节点实现
 

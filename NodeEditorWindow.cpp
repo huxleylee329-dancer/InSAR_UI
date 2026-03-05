@@ -67,11 +67,7 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
 #include <QtNodes/NodeStyle>
 #include <QtNodes/GraphicsViewStyle>
 #include <QtNodes/internal/Definitions.hpp>
-
-// Forward declarations
-namespace QtNodes {
-class NodeGraphicsObject;
-}
+#include <QtNodes/internal/NodeGraphicsObject.hpp>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -644,7 +640,9 @@ void NodeEditorWindow::onNodeItemDoubleClicked(QTreeWidgetItem *item, int column
     // Create node directly through graphModel
     QtNodes::NodeId nodeId = m_graphModel->addNode(modelName);
     if (nodeId != QtNodes::InvalidNodeId) {
+        m_scene->clearSelection();  // Clear previous selection
         m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, scenePos);
+        m_scene->nodeGraphicsObject(nodeId)->setSelected(true);  // Auto-select newly created node
         statusBar()->showMessage(QString("Added node: %1").arg(modelName));
     }
 }
