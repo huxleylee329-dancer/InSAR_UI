@@ -1,4 +1,4 @@
-#ifndef NODEEDITORWINDOW_H
+﻿#ifndef NODEEDITORWINDOW_H
 #define NODEEDITORWINDOW_H
 
 #include <QMainWindow>
@@ -46,33 +46,48 @@ class NodeTreeWidget : public QTreeWidget
 public:
     explicit NodeTreeWidget(QWidget *parent = nullptr) : QTreeWidget(parent)
     {
-        setDragEnabled(true);
-        setDragDropMode(QAbstractItemView::InternalMove);
         setSelectionMode(QAbstractItemView::SingleSelection);
+        setDragEnabled(false);  // Disable built-in drag
     }
 
     void mousePressEvent(QMouseEvent *event) override
     {
+        m_dragStartPos = event->pos();
+        QTreeWidget::mousePressEvent(event);
+    }
+
+    void mouseDoubleClickEvent(QMouseEvent *event) override
+    {
+        // Ignore double-click on category items - let parent handle expand/collapse
         QTreeWidgetItem *item = itemAt(event->pos());
-        if (item && item->parent() == nullptr) {
-            // Don't drag category items - just ignore the event
+        if (item && item->childCount() > 0)
+        {
+            QTreeWidget::mouseDoubleClickEvent(event);
             return;
         }
-        QTreeWidget::mousePressEvent(event);
+        // Ignore double-click on leaf items
+        QTreeWidget::mouseDoubleClickEvent(event);
     }
 
     void mouseMoveEvent(QMouseEvent *event) override
     {
         QTreeWidgetItem *item = itemAt(event->pos());
-        if (item && item->parent() == nullptr) {
-            return;  // Don't drag category items
+        // Don't drag category items
+        if (item && item->childCount() > 0)
+        {
+            QTreeWidget::mouseMoveEvent(event);
+            return;
         }
 
-        if (event->buttons() & Qt::LeftButton) {
+        // Start drag for leaf items (only after moving more than 10 pixels)
+        if (event->buttons() & Qt::LeftButton && (event->pos() - m_dragStartPos).manhattanLength() > 10)
+        {
             QTreeWidgetItem *current = currentItem();
-            if (current && current->parent() != nullptr) {
+            if (current && current->childCount() == 0)
+            {
                 QString modelName = current->data(0, Qt::UserRole).toString();
-                if (!modelName.isEmpty()) {
+                if (!modelName.isEmpty())
+                {
                     QMimeData *mimeData = new QMimeData();
                     mimeData->setText(modelName);
                     mimeData->setData("application/x-node-palette", modelName.toUtf8());
@@ -95,6 +110,9 @@ public:
         }
         QTreeWidget::mouseMoveEvent(event);
     }
+
+private:
+    QPoint m_dragStartPos;
 };
 
 // Custom GraphicsView to handle drops from palette
@@ -183,6 +201,13 @@ private:
     void setupNodePalette();
     void populateNodeTree();
     void applyStyles();
+
+    // Node palette full order configuration
+    static struct PaletteOrder {
+        QStringList topLevel;           // 顶级分类顺序
+        QMap<QString, QStringList> subcategories;  // 顶级分类 -> 子分类顺序
+        QMap<QString, QStringList> leafItems;      // 子分类路径 -> 叶子项顺序
+    } getPaletteFullOrder();
     QString getSaveFilePath();
     QString getOpenFilePath();
 

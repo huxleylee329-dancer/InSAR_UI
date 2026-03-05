@@ -2,7 +2,7 @@
 
 本计划用于实现 SatExplorer 项目中的基于节点的可视化流程编辑器功能。
 
-## 进度总结（2026-03-04 更新）
+## 进度总结（2026-03-05 更新）
 
 - [x] 阶段 1: QtNodes 库集成 - 已完成
 - [x] 阶段 2: 基础架构搭建 - 已完成
@@ -21,26 +21,51 @@
 - [ ] 阶段 14: 测试与优化 - 部分完成
 - [ ] 阶段 15: 文档与示例 - 未开始
 
-### 已完成的工作（2026-03-04 更新）
+---
 
-**阶段 2.5: 右侧节点面板（新增 - 已完成）**
-- **文件**：`include/NodeEditorWindow.h`, `NodeEditorWindow.cpp`
-- **功能**：
-  - 右侧节点面板显示节点分类树
-  - 搜索框支持过滤节点列表
-  - 双击节点项添加到画布中心
-  - **拖拽节点到画布任意位置添加**
-  - 折叠/展开功能（Adobe式dock风格）
-  - 3D边框效果
+## 已完成的工作（2026-03-05 更新）
 
-- **实现类**：
-  - `NodeTreeWidget` - 继承QTreeWidget，支持拖拽
-  - `PaletteGraphicsView` - 继承GraphicsView，接受拖放
+### 右侧节点面板（阶段 2.5 - 已完成）
 
-- **拖拽MIME格式**：`application/x-node-palette`
-- **临时优化**：注释掉main.cpp中启动画面代码加速开发
+**文件**: `include/NodeEditorWindow.h`, `NodeEditorWindow.cpp`
 
-1. **QtNodes 库集成（阶段 1 - 已完成）**
+**功能**:
+- 右侧节点面板显示节点分类树
+- 搜索框支持过滤节点列表
+- 双击节点项添加到画布中心
+- 拖拽节点到画布任意位置添加
+- 折叠/展开功能（Adobe 风格 dock 风格）
+- 3D 边框效果
+
+**实现类**:
+- `NodeTreeWidget` - 继承 QTreeWidget，支持拖拽
+- `PaletteGraphicsView` - 继承 GraphicsView，接受拖放
+
+**拖拽 MIME 格式**: `application/x-node-palette`
+
+**面板结构优化**:
+- 修正为正确的 3 级层级结构
+- 实现了 `PaletteOrder` 结构体统一管理所有级别顺序
+- 在 `getPaletteFullOrder()` 函数中修改顺序即可
+
+**拖拽实现优化**:
+- 使用 `setDragEnabled(false)` + 手动拖拽处理
+- 距离检测：鼠标移动超过 10 像素才启动拖拽
+- 分类项（有子项的）不能被拖拽
+- 叶子项（没有子项的）可以被拖拽
+
+**折叠/展开修复**:
+- 修复了双击导致折叠/展开失效的问题
+- 添加了 `mouseDoubleClickEvent()` 处理
+- 禁用 Qt 内置拖拽，避免与折叠/展开冲突
+
+**编码修复**:
+- 为 `NodeEditorWindow.h` 和 `NodeEditorWindow.cpp` 添加 UTF-8 BOM
+- 文件保存为 Unicode 格式，可以安全使用中文注释
+
+---
+
+### QtNodes 库集成（阶段 1 - 已完成）
    - QtNodes 源代码通过静态链接方式完全集成到项目中
    - 所有 QtNodes 源文件在 `QtNodes/src/` 目录下
    - 所有 QtNodes 头文件在 `include/QtNodes/internal/` 目录下

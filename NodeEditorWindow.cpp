@@ -1,5 +1,59 @@
-#include "NodeEditorWindow.h"
+﻿#include "NodeEditorWindow.h"
 #include "NodeModels.h"
+
+// ============================================================================
+// Node Palette Full Order Configuration
+// ============================================================================
+// 在这里修改来控制所有级别的显示顺序
+// ============================================================================
+NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
+{
+    PaletteOrder order;
+
+    // ===== 1. 顶级分类顺序 =====
+    order.topLevel = QStringList{
+        "Data Import",    // 第一级分类
+        "Test"            // 第二级分类
+    };
+
+    // ===== 2. 子分类顺序 =====
+    // 格式: 顶级分类名 -> 子分类列表（按顺序）
+    order.subcategories["Data Import"] = QStringList{
+        "Sentinel-1",       // Data Import 下的第一个子分类
+        "TerraSAR-X",       // 第二个
+        "COSMO-SkyMed",     // 第三个
+        "ALOS-2"            // 第四个
+    };
+
+    // ===== 3. 叶子项顺序 =====
+    // 格式: 子分类完整路径 -> 叶子项列表（按顺序）
+    order.leafItems["Data Import/Sentinel-1"] = QStringList{
+        "Single Import",      // Sentinel-1 下的第一个
+        "Batch Import"        // Sentinel-1 下的第二个
+    };
+
+    order.leafItems["Data Import/TerraSAR-X"] = QStringList{
+        "Single Import",
+        "Batch Import"
+    };
+
+    order.leafItems["Data Import/COSMO-SkyMed"] = QStringList{
+        "Batch Import"
+    };
+
+    order.leafItems["Data Import/ALOS-2"] = QStringList{
+        "Batch Import"
+    };
+
+    // Test 类叶子项顺序
+    order.leafItems["Test"] = QStringList{
+        "SimpleSource",
+        "SimpleDisplay",
+        "SimpleMath"
+    };
+
+    return order;
+}
 
 #include <QPainter>
 #include <QTimer>
@@ -35,6 +89,9 @@ class NodeGraphicsObject;
 #include <QMessageBox>
 #include <QStatusBar>
 #include <QList>
+#include <QMap>
+#include <QPair>
+#include <algorithm>
 #include <memory>
 
 NodeEditorWindow::NodeEditorWindow(QWidget *parent)
@@ -252,6 +309,7 @@ void NodeEditorWindow::setupNodePalette()
     m_nodeTree = new NodeTreeWidget();
     m_nodeTree->setHeaderHidden(true);
     m_nodeTree->setIndentation(12);
+    m_nodeTree->setSortingEnabled(false);  // Keep creation order, not alphabetical
     m_paletteLayout->addWidget(m_nodeTree);
 
     // Initialize node tree
@@ -308,29 +366,163 @@ void NodeEditorWindow::populateNodeTree()
 {
     m_nodeTree->clear();
 
-    auto categories = m_registry->categories();
+    auto models = m_registry->registeredModelsCategoryAssociation();
+    PaletteOrder order = getPaletteFullOrder();
 
-    for (const QString &category : categories)
+    // Group models by their paths
+    // Map: path -> list of (modelName, leafName) or (modelName, modelName) for 1-level
+    QMap<QString, QList<QPair<QString, QString>>> pathModels;
+    QMap<QString, QStringList> allPaths;  // All paths that have models
+
+    for (const auto &pair : models)
     {
-        // Create category item (not selectable)
-        auto *categoryItem = new QTreeWidgetItem(m_nodeTree);
-        categoryItem->setText(0, category);
-        categoryItem->setFlags(Qt::ItemIsEnabled);
+        const QString &modelName = pair.first;
+        const QString &categoryPath = pair.second;
 
-        // Get all models in this category
-        auto models = m_registry->registeredModelsCategoryAssociation();
-        for (const auto &pair : models)
+        QStringList parts = categoryPath.split('/', Qt::SkipEmptyParts);
+        if (parts.isEmpty())
+            continue;
+
+        if (parts.size() == 1)
         {
-            if (pair.second == category)
-            {
-                auto *modelItem = new QTreeWidgetItem(categoryItem);
-                modelItem->setText(0, pair.first);  // Node name
-                modelItem->setData(0, Qt::UserRole, pair.first);  // Store node ID
-                modelItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            // 1-level: path is category, leafName is modelName
+            pathModels[categoryPath].append(qMakePair(modelName, modelName));
+        }
+        else
+        {
+            // Multi-level: last part is leaf, rest is subcategory path
+            QString subcategory = QStringList(parts.mid(0, parts.size() - 1)).join('/');
+            QString leafName = parts.last();
+            pathModels[subcategory].append(qMakePair(modelName, leafName));
+        }
+
+        // Track all paths
+        allPaths[categoryPath] = QStringList();
+    }
+
+    // Helper function to find or create a tree item
+    auto findOrCreateItem = [this](QTreeWidgetItem *parent, const QString &text, bool isLeaf) -> QTreeWidgetItem* {
+        QTreeWidgetItem *targetParent = parent ? parent : nullptr;
+
+        int count = targetParent ? targetParent->childCount() : m_nodeTree->topLevelItemCount();
+        for (int i = 0; i < count; ++i) {
+            QTreeWidgetItem *item = targetParent ? targetParent->child(i) : m_nodeTree->topLevelItem(i);
+            if (item->text(0) == text) {
+                return item;
             }
         }
 
-        categoryItem->setExpanded(true);
+        QTreeWidgetItem *newItem = targetParent ? new QTreeWidgetItem(targetParent) : new QTreeWidgetItem(m_nodeTree);
+        newItem->setText(0, text);
+        newItem->setExpanded(!isLeaf);
+        newItem->setFlags(isLeaf ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable) : Qt::ItemIsEnabled);
+        return newItem;
+    };
+
+    // Process top-level categories in defined order
+    for (const QString &topLevel : order.topLevel)
+    {
+        QTreeWidgetItem *topItem = findOrCreateItem(nullptr, topLevel, false);
+
+        // Get subcategories for this top-level category
+        QStringList subcategories = order.subcategories.value(topLevel);
+
+        // If no subcategories defined, this is a 1-level category
+        if (subcategories.isEmpty())
+        {
+            QList<QPair<QString, QString>> &modelsList = pathModels[topLevel];
+
+            // Sort according to leafItems order, or alphabetically as fallback
+            const QStringList &leafOrder = order.leafItems.value(topLevel);
+            if (!leafOrder.isEmpty())
+            {
+                QList<QPair<QString, QString>> sortedModels;
+                for (const QString &leafName : leafOrder)
+                {
+                    for (const auto &modelInfo : modelsList)
+                    {
+                        if (modelInfo.second == leafName)
+                            sortedModels.append(modelInfo);
+                    }
+                }
+                // Add any models not in order list
+                for (const auto &modelInfo : modelsList)
+                {
+                    if (!leafOrder.contains(modelInfo.second))
+                        sortedModels.append(modelInfo);
+                }
+                modelsList = sortedModels;
+            }
+            else
+            {
+                // Sort alphabetically
+                std::sort(modelsList.begin(), modelsList.end(),
+                    [](const QPair<QString, QString> &a, const QPair<QString, QString> &b) {
+                        return a.second < b.second;
+                    });
+            }
+
+            // Add models
+            for (const auto &modelInfo : modelsList)
+            {
+                QTreeWidgetItem *item = new QTreeWidgetItem(topItem);
+                item->setText(0, modelInfo.second);
+                item->setData(0, Qt::UserRole, modelInfo.first);
+                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            }
+            topItem->setExpanded(true);
+            continue;
+        }
+
+        // Process each subcategory in defined order
+        for (const QString &subcategory : subcategories)
+        {
+            QString subcategoryPath = topLevel + "/" + subcategory;
+            QTreeWidgetItem *subItem = findOrCreateItem(topItem, subcategory, false);
+
+            QList<QPair<QString, QString>> &modelsList = pathModels[subcategoryPath];
+
+            // Sort according to leafItems order
+            const QStringList &leafOrder = order.leafItems.value(subcategoryPath);
+            if (!leafOrder.isEmpty())
+            {
+                QList<QPair<QString, QString>> sortedModels;
+                for (const QString &leafName : leafOrder)
+                {
+                    for (const auto &modelInfo : modelsList)
+                    {
+                        if (modelInfo.second == leafName)
+                            sortedModels.append(modelInfo);
+                    }
+                }
+                // Add any models not in order list
+                for (const auto &modelInfo : modelsList)
+                {
+                    if (!leafOrder.contains(modelInfo.second))
+                        sortedModels.append(modelInfo);
+                }
+                modelsList = sortedModels;
+            }
+            else
+            {
+                // Fallback to alphabetical sort
+                std::sort(modelsList.begin(), modelsList.end(),
+                    [](const QPair<QString, QString> &a, const QPair<QString, QString> &b) {
+                        return a.second < b.second;
+                    });
+            }
+
+            // Add leaf items
+            for (const auto &modelInfo : modelsList)
+            {
+                QTreeWidgetItem *item = new QTreeWidgetItem(subItem);
+                item->setText(0, modelInfo.second);
+                item->setData(0, Qt::UserRole, modelInfo.first);
+                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            }
+            subItem->setExpanded(true);
+        }
+        topItem->setExpanded(true);
     }
 }
 
@@ -345,36 +537,66 @@ void NodeEditorWindow::onSearchTextChanged(const QString &text)
         bool match = text.isEmpty() ||
                    itemName.contains(text, Qt::CaseInsensitive);
 
-        // Top-level category items: always shown, but check children visibility
-        if (item->parent() == nullptr)
+        // Leaf nodes (items without children) - these are the clickable nodes
+        if (item->childCount() == 0)
         {
+            // Show/hide based on match
+            item->setHidden(!match);
+            // If matching, make sure all parent categories are visible and expanded
+            if (match)
+            {
+                QTreeWidgetItem *parent = item->parent();
+                while (parent)
+                {
+                    parent->setHidden(false);
+                    parent->setExpanded(true);
+                    parent = parent->parent();
+                }
+            }
+        }
+        // Category items (items with children)
+        else
+        {
+            // Categories are always shown if they have any visible children
+            // We'll determine this after processing all items
             if (text.isEmpty())
             {
-                // Restore all children visibility
-                for (int i = 0; i < item->childCount(); ++i)
-                {
-                    item->child(i)->setHidden(false);
-                }
+                item->setHidden(false);
+                // Expand all by default when search is empty
+                item->setExpanded(true);
             }
             else
             {
-                // Expand category during search
+                // During search, expand to show matching children
                 item->setExpanded(true);
-            }
-        }
-        else
-        {
-            // Node item: show/hide based on match
-            item->setHidden(!match);
-            // If matching, make sure parent is visible
-            if (match && item->parent())
-            {
-                item->parent()->setHidden(false);
-                item->parent()->setExpanded(true);
             }
         }
 
         ++it;
+    }
+
+    // Second pass: hide categories that have no visible children
+    if (!text.isEmpty())
+    {
+        QTreeWidgetItemIterator it2(m_nodeTree);
+        while (*it2)
+        {
+            QTreeWidgetItem *item = *it2;
+            if (item->childCount() > 0)
+            {
+                bool hasVisibleChildren = false;
+                for (int i = 0; i < item->childCount(); ++i)
+                {
+                    if (!item->child(i)->isHidden())
+                    {
+                        hasVisibleChildren = true;
+                        break;
+                    }
+                }
+                item->setHidden(!hasVisibleChildren);
+            }
+            ++it2;
+        }
     }
 }
 

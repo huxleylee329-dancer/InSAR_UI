@@ -4,6 +4,10 @@
 #include "TestNodes.h"
 #include "Sentinel1ImportNode.h"
 #include "Sentinel1BatchImportNode.h"
+#include "TSXImportNode.h"
+#include "TSXBatchImportNode.h"
+#include "CSKImportNode.h"
+#include "ALOS2ImportNode.h"
 
 #include <memory>
 
@@ -32,9 +36,48 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 {
     auto registry = std::make_shared<NodeDelegateModelRegistry>();
 
-    // Register Sentinel-1 import nodes
-    registry->registerModel<Sentinel1ImportNode>("Import/Sentinel-1");
-    registry->registerModel<Sentinel1BatchImportNode>("Import/Sentinel-1");
+    // Register Data Import nodes - Using 3-level hierarchy
+    // Sentinel-1
+    registry->registerModel<Sentinel1ImportNode>("Data Import/Sentinel-1/Single Import");
+    registry->registerModel<Sentinel1BatchImportNode>("Data Import/Sentinel-1/Batch Import");
+
+    // TerraSAR-X
+    registry->registerModel<TSXImportNode>("Data Import/TerraSAR-X/Single Import");
+    registry->registerModel<TSXBatchImportNode>("Data Import/TerraSAR-X/Batch Import");
+
+    // COSMO-SkyMed
+    registry->registerModel<CSKImportNode>("Data Import/COSMO-SkyMed/Batch Import");
+
+    // ALOS-2
+    registry->registerModel<ALOS2ImportNode>("Data Import/ALOS-2/Batch Import");
+
+    // ============================================================================
+    // Future Categories (placeholders for upcoming functionality)
+    // ============================================================================
+
+    // Preprocessing nodes (to be implemented)
+    // registry->registerModel<CutNode>("Preprocessing/Region Crop/AOI Crop");
+    // registry->registerModel<Cut2Node>("Preprocessing/Region Crop/Frame Crop");
+    // registry->registerModel<FilterNode>("Preprocessing/Filter/Goldstein");
+    // registry->registerModel<UnwrapNode>("Preprocessing/Phase Unwrapping/SNAPHU");
+
+    // Registration nodes (to be implemented)
+    // registry->registerModel<RegisNode>("Registration/Intensity Based/Coarse");
+    // registry->registerModel<DEMAssistCoregNode>("Registration/DEM Assisted/Fine");
+    // registry->registerModel<TOPSBackGeocodingNode>("Registration/TopSAR/Back-Geocoding");
+
+    // Interferometry nodes (to be implemented)
+    // registry->registerModel<InterferometricNode>("Interferometry/Interferogram Formation");
+    // registry->registerModel<BaselineFormationNode>("Interferometry/Baseline Estimation");
+
+    // SBAS/DInSAR nodes (to be implemented)
+    // registry->registerModel<SBASTimeSeriesNode>("SBAS/Time Series Analysis");
+    // registry->registerModel<SBASReferenceReselectionNode>("SBAS/Reference Reselection");
+    // registry->registerModel<DeformationVisualNode>("SBAS/Deformation Visualization");
+
+    // Export nodes (to be implemented)
+    // registry->registerModel<GeocodingNode>("Export/Geocoding/Image");
+    // registry->registerModel<KMLExportNode>("Export/KML");
 
     // Register test nodes for development (can be removed when all InSAR nodes are implemented)
 #ifdef ENABLE_TEST_NODES
