@@ -65,6 +65,15 @@
     <OutDir>.\bin\</OutDir>
     <TargetName>SatExplorer</TargetName>
   </PropertyGroup>
+  <ItemGroup>
+    <Filter Include="Source Files" />
+    <Filter Include="QtNodes" />
+    <Filter Include="QtNodes\Src" />
+    <Filter Include="QtNodes\Include" />
+    <Filter Include="Header Files" />
+    <Filter Include="UI Files" />
+    <Filter Include="Resources" />
+  </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -78,7 +87,7 @@
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <PreprocessorDefinitions>NODE_EDITOR_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;D:\SRC\InSAR_UI\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -95,7 +104,7 @@
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PreprocessorDefinitions>NODE_EDITOR_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;D:\SRC\InSAR_UI\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -105,260 +114,638 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Baseline.cpp" />
-    <ClCompile Include="Baseline_Formation.cpp" />
-    <ClCompile Include="Baseline_Preview.cpp" />
-    <ClCompile Include="ColorBar.cpp" />
-    <ClCompile Include="Coordinate.cpp" />
-    <ClCompile Include="Cut.cpp" />
-    <ClCompile Include="Deformation_Average.cpp" />
-    <ClCompile Include="Deformation_Preview_Window.cpp" />
-    <ClCompile Include="Dem_ui.cpp" />
-    <ClCompile Include="Export_KML.cpp" />
-    <ClCompile Include="Filter_ui.cpp" />
-    <ClCompile Include="Geocoding.cpp" />
-    <ClCompile Include="ImageView.cpp" />
-    <ClCompile Include="import_ALOS2.cpp" />
-    <ClCompile Include="import_CSK.cpp" />
-    <ClCompile Include="import_sentinel.cpp" />
-    <ClCompile Include="Import_TSX.cpp" />
-    <ClCompile Include="Interferometric_Formation.cpp" />
-    <ClCompile Include="InSAR_IPC.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="MainWindow.cpp" />
-    <ClCompile Include="MyThread.cpp" />
-    <ClCompile Include="NewProject.cpp" />
-    <ClCompile Include="OpenProject.cpp" />
-    <ClCompile Include="Preview_Window.cpp" />
-    <ClCompile Include="Registration_ui.cpp" />
-    <ClCompile Include="reselection_view.cpp" />
-    <ClCompile Include="S1_Deburst.cpp" />
-    <ClCompile Include="S1_frame_merge.cpp" />
-    <ClCompile Include="S1_swath_merge.cpp" />
-    <ClCompile Include="S1_TOPS_BackGeocoding.cpp" />
-    <ClCompile Include="SBAS_reference_reselection.cpp" />
-    <ClCompile Include="SBAS_time_series_analysis.cpp" />
-    <ClCompile Include="SLC_deramp.cpp" />
-    <ClCompile Include="tinystr.cpp" />
-    <ClCompile Include="tinyxml.cpp" />
-    <ClCompile Include="tinyxmlerror.cpp" />
-    <ClCompile Include="tinyxmlparser.cpp" />
-    <ClCompile Include="treeview.cpp" />
-    <ClCompile Include="Unwrap_ui.cpp" />
-    <ClCompile Include="NodeEditorWindow.cpp" />
-    <ClCompile Include="NodeModels.cpp" />
-    <ClCompile Include="TestNodes.cpp" />
-    <ClCompile Include="ImportNodeBase.cpp" />
-    <ClCompile Include="Sentinel1ImportNode.cpp" />
-    <ClCompile Include="Sentinel1BatchImportNode.cpp" />
-    <ClCompile Include="TSXImportNode.cpp" />
-    <ClCompile Include="TSXBatchImportNode.cpp" />
-    <ClCompile Include="CSKImportNode.cpp" />
-    <ClCompile Include="ALOS2ImportNode.cpp" />
-    <ClCompile Include="S1DeburstNode.cpp" />
-    <ClCompile Include="S1FrameMergeNode.cpp" />
-    <ClCompile Include="S1SwathMergeNode.cpp" />
+    <ClCompile Include="Baseline.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Baseline_Formation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Baseline_Preview.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ColorBar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Coordinate.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Cut.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Deformation_Average.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Deformation_Preview_Window.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Dem_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Export_KML.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Filter_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Geocoding.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ImageView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_ALOS2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_CSK.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_sentinel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Import_TSX.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Interferometric_Formation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="InSAR_IPC.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MainWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MyThread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NewProject.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="OpenProject.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Preview_Window.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Registration_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="reselection_view.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1_Deburst.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1_frame_merge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1_swath_merge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1_TOPS_BackGeocoding.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SBAS_reference_reselection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SBAS_time_series_analysis.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SLC_deramp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tinystr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tinyxml.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tinyxmlerror.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="tinyxmlparser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="treeview.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Unwrap_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NodeEditorWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NodeModels.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TestNodes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ImportNodeBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Sentinel1ImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Sentinel1BatchImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TSXImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TSXBatchImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CSKImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ALOS2ImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1DeburstNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1FrameMergeNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1SwathMergeNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
     <ClCompile Include="QtNodes\src\AbstractGraphModel.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\AbstractNodeGeometry.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\BasicGraphicsScene.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\ConnectionGraphicsObject.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\ConnectionState.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\ConnectionStyle.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\DataFlowGraphicsScene.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\DataFlowGraphModel.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\DefaultConnectionPainter.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\DefaultHorizontalNodeGeometry.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\DefaultNodePainter.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\DefaultVerticalNodeGeometry.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\Definitions.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\GraphicsView.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\GraphicsViewStyle.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\locateNode.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\NodeConnectionInteraction.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\NodeDelegateModel.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\NodeDelegateModelRegistry.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\NodeGraphicsObject.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\NodeState.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\NodeStyle.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\StyleCollection.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\UndoCommands.cpp">
-      <AdditionalIncludeDirectories>$(ProjectDir)\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <Filter>QtNodes\Src</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <QtRcc Include="resources\QtWidgetsApplication3.qrc" />
+    <QtRcc Include="resources\QtWidgetsApplication3.qrc">
+      <Filter>Resources</Filter>
+    </QtRcc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\Cut.h" />
+    <QtMoc Include="include\Cut.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\Filter_ui.h" />
+    <QtMoc Include="include\Filter_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\ImageView.h" />
+    <QtMoc Include="include\ImageView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\Import_TSX.h" />
+    <QtMoc Include="include\Import_TSX.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\Interferometric_Formation.h" />
+    <QtMoc Include="include\Interferometric_Formation.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\MainWindow.h" />
+    <QtMoc Include="include\MainWindow.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\MyThread.h" />
+    <QtMoc Include="include\MyThread.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\NewProject.h" />
+    <QtMoc Include="include\NewProject.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\OpenProject.h" />
+    <QtMoc Include="include\OpenProject.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\QtWidgetsApplication3.h" />
+    <QtMoc Include="include\QtWidgetsApplication3.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\Registration_ui.h" />
+    <QtMoc Include="include\Registration_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\Dem_ui.h" />
-    <QtMoc Include="include\import_sentinel.h" />
-    <QtMoc Include="include\Baseline.h" />
-    <QtMoc Include="include\Coordinate.h" />
-    <QtMoc Include="include\Baseline_Formation.h" />
-    <QtMoc Include="include\Baseline_Preview.h" />
-    <QtMoc Include="include\ColorBar.h" />
-    <QtMoc Include="include\Deformation_Average.h" />
-    <QtMoc Include="include\Deformation_Preview_Window.h" />
-    <QtMoc Include="include\Export_KML.h" />
-    <QtMoc Include="include\Geocoding.h" />
-    <ClInclude Include="include\icon_source.h" />
-    <QtMoc Include="include\import_CSK.h" />
-    <QtMoc Include="include\import_ALOS2.h" />
-    <ClInclude Include="include\InSAR_IPC.h" />
-    <QtMoc Include="include\S1_TOPS_BackGeocoding.h" />
-    <QtMoc Include="include\S1_Deburst.h" />
-    <QtMoc Include="include\SLC_deramp.h" />
-    <QtMoc Include="include\SBAS_time_series_analysis.h" />
-    <QtMoc Include="include\Preview_Window.h" />
-    <QtMoc Include="include\SBAS_reference_reselection.h" />
-    <QtMoc Include="include\reselection_view.h" />
-    <QtMoc Include="include\S1_swath_merge.h" />
-    <QtMoc Include="include\S1_frame_merge.h" />
-    <ClInclude Include="include\tinystr.h" />
-    <ClInclude Include="include\tinyxml.h" />
-    <QtMoc Include="include\Unwrap_ui.h" />
-    <ClInclude Include="resource.h" />
-    <QtMoc Include="include\treeview.h" />
-    <QtMoc Include="include\NodeEditorWindow.h" />
-    <QtMoc Include="include\TestNodes.h" />
-    <QtMoc Include="include\ImportNodeBase.h" />
-    <QtMoc Include="include\Sentinel1ImportNode.h" />
-    <QtMoc Include="include\Sentinel1BatchImportNode.h" />
-    <QtMoc Include="include\TSXImportNode.h" />
-    <QtMoc Include="include\TSXBatchImportNode.h" />
-    <QtMoc Include="include\CSKImportNode.h" />
-    <QtMoc Include="include\ALOS2ImportNode.h" />
-    <QtMoc Include="include\S1DeburstNode.h" />
-    <QtMoc Include="include\S1FrameMergeNode.h" />
-    <QtMoc Include="include\S1SwathMergeNode.h" />
-    <ClInclude Include="include\NodeDataTypes.h" />
-    <ClInclude Include="include\NodeModels.h" />
-    <ClInclude Include="include\ImportDataTypes.h" />
-    <QtMoc Include="include\QtNodes\internal\Definitions.hpp" />
-    <QtMoc Include="include\QtNodes\internal\AbstractGraphModel.hpp" />
-    <QtMoc Include="include\QtNodes\internal\BasicGraphicsScene.hpp" />
-    <QtMoc Include="include\QtNodes\internal\ConnectionGraphicsObject.hpp" />
-    <QtMoc Include="include\QtNodes\internal\DataFlowGraphicsScene.hpp" />
-    <QtMoc Include="include\QtNodes\internal\DataFlowGraphModel.hpp" />
-    <QtMoc Include="include\QtNodes\internal\GraphicsView.hpp" />
-    <QtMoc Include="include\QtNodes\internal\NodeDelegateModel.hpp" />
-    <QtMoc Include="include\QtNodes\internal\NodeGraphicsObject.hpp" />
+    <QtMoc Include="include\Dem_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\import_sentinel.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Baseline.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Coordinate.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Baseline_Formation.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Baseline_Preview.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ColorBar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Deformation_Average.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Deformation_Preview_Window.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Export_KML.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Geocoding.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="include\icon_source.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="include\import_CSK.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\import_ALOS2.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="include\InSAR_IPC.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="include\S1_TOPS_BackGeocoding.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1_Deburst.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SLC_deramp.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SBAS_time_series_analysis.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Preview_Window.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SBAS_reference_reselection.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\reselection_view.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1_swath_merge.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1_frame_merge.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="include\tinystr.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\tinyxml.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="include\Unwrap_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="include\treeview.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\NodeEditorWindow.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TestNodes.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ImportNodeBase.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Sentinel1ImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Sentinel1BatchImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TSXImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TSXBatchImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\CSKImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ALOS2ImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1DeburstNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1FrameMergeNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1SwathMergeNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="include\NodeDataTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\NodeModels.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ImportDataTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <QtMoc Include="include\QtNodes\internal\Definitions.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\AbstractGraphModel.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\BasicGraphicsScene.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\ConnectionGraphicsObject.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\DataFlowGraphicsScene.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\DataFlowGraphModel.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\GraphicsView.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\NodeDelegateModel.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\NodeGraphicsObject.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtUic Include="ui\Baseline.ui" />
-    <QtUic Include="ui\Baseline_Formation.ui" />
-    <QtUic Include="ui\Coordinate.ui" />
-    <QtUic Include="ui\Cut.ui" />
-    <QtUic Include="ui\Deformation_Average.ui" />
-    <QtUic Include="ui\Dem_ui.ui" />
-    <QtUic Include="ui\Export_KML.ui" />
-    <QtUic Include="ui\Filter_ui.ui" />
-    <QtUic Include="ui\Geocoding.ui" />
-    <QtUic Include="ui\import_ALOS2.ui" />
-    <QtUic Include="ui\import_CSK.ui" />
-    <QtUic Include="ui\import_sentinel.ui" />
-    <QtUic Include="ui\Import_TSX.ui" />
-    <QtUic Include="ui\Interferometric_Formation.ui" />
-    <QtUic Include="ui\MainWindow.ui" />
-    <QtUic Include="ui\NewProject.ui" />
-    <QtUic Include="ui\OpenProject.ui" />
-    <QtUic Include="ui\QtWidgetsApplication3.ui" />
-    <QtUic Include="ui\Registration_ui.ui" />
-    <QtUic Include="ui\S1_Deburst.ui" />
-    <QtUic Include="ui\S1_frame_merge.ui" />
-    <QtUic Include="ui\S1_swath_merge.ui" />
-    <QtUic Include="ui\S1_TOPS_BackGeocoding.ui" />
-    <QtUic Include="ui\SBAS_reference_reselection.ui" />
-    <QtUic Include="ui\SBAS_time_series_analysis.ui" />
-    <QtUic Include="ui\SLC_deramp.ui" />
-    <QtUic Include="ui\Unwrap_ui.ui" />
+    <QtUic Include="ui\Baseline.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Baseline_Formation.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Coordinate.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Cut.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Deformation_Average.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Dem_ui.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Export_KML.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Filter_ui.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Geocoding.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\import_ALOS2.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\import_CSK.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\import_sentinel.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Import_TSX.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Interferometric_Formation.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\MainWindow.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\NewProject.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\OpenProject.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\QtWidgetsApplication3.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Registration_ui.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\S1_Deburst.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\S1_frame_merge.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\S1_swath_merge.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\S1_TOPS_BackGeocoding.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\SBAS_reference_reselection.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\SBAS_time_series_analysis.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\SLC_deramp.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Unwrap_ui.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="resources\icon\InSARapp.ico" />
+    <Image Include="resources\icon\InSARapp.ico">
+      <Filter>Resources</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="resources\DefaultStyle.json" />
+    <None Include="resources\DefaultStyle.json">
+      <Filter>Resources</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="resources\QtWidgetsApplication3.rc" />
+    <ResourceCompile Include="resources\QtWidgetsApplication3.rc">
+      <Filter>Resources</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\QtNodes\internal\AbstractConnectionPainter.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\AbstractNodeGeometry.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\AbstractNodePainter.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\ConnectionIdHash.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\ConnectionIdUtils.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\ConnectionState.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\ConnectionStyle.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\DefaultConnectionPainter.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\DefaultHorizontalNodeGeometry.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\DefaultNodePainter.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\DefaultVerticalNodeGeometry.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\Export.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\GraphicsViewStyle.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\locateNode.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeConnectionInteraction.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeData.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeDelegateModelRegistry.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeState.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeStyle.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\OperatingSystem.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\QUuidStdHash.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\QStringStdHash.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\Serializable.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\Style.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\StyleCollection.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\UndoCommands.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
