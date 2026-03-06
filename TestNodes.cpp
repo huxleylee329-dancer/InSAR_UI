@@ -115,6 +115,7 @@ SimpleDisplayNode::SimpleDisplayNode()
 {
     _label->setAlignment(Qt::AlignCenter);
     _label->setStyleSheet("QLabel { background-color: #2a5a8f; border-radius: 5px; padding: 5px; }");
+    _label->setMinimumWidth(100);
 }
 
 unsigned int SimpleDisplayNode::nPorts(PortType portType) const

@@ -41,5 +41,6 @@
         <file>icon/InSARapp.ico</file>
         <file>icon/new_project.png</file>
 		<file>DefaultStyle.json</file>
+		<file>icon/flow_editor.png</file>
     </qresource>
 </RCC>

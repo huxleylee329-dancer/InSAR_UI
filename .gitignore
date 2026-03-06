@@ -226,8 +226,8 @@ x64/
 screenshot/
 bin/
 
-*.vcxproj
-*.filters
+# *.vcxproj
+# *.filters
 *.docx
 *.sln
 *.ini

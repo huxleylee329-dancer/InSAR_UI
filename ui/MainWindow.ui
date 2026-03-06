@@ -439,6 +439,10 @@
    </property>
   </action>
   <action name="actionNodeEditor">
+   <property name="icon">
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/icon/flow_editor.png</normaloff>:/QtWidgetsApplication3/icon/flow_editor.png</iconset>
+   </property>
    <property name="text">
     <string>流程编辑器</string>
    </property>
