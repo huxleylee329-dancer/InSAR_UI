@@ -130,7 +130,7 @@
      </property>
      <property name="icon">
       <iconset resource="../QtWidgetsApplication3.qrc">
-       <normaloff>:/QtWidgetsApplication3/bin/icon/import.png</normaloff>:/QtWidgetsApplication3/bin/icon/import.png</iconset>
+       <normaloff>:/QtWidgetsApplication3/icon/import.png</normaloff>:/QtWidgetsApplication3/icon/import.png</iconset>
      </property>
      <addaction name="actionTSX"/>
      <addaction name="actionSentinel_1"/>
@@ -177,7 +177,7 @@
      </property>
      <property name="icon">
       <iconset resource="../QtWidgetsApplication3.qrc">
-       <normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</iconset>
+       <normaloff>:/QtWidgetsApplication3/icon/baseline_formation.png</normaloff>:/QtWidgetsApplication3/icon/baseline_formation.png</iconset>
      </property>
      <addaction name="actionBaseline_Formation"/>
      <addaction name="actionSBAS_deformation"/>
@@ -207,7 +207,7 @@
   <action name="actionNew">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/new_project.png</normaloff>:/QtWidgetsApplication3/bin/icon/new_project.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/new_project.png</normaloff>:/QtWidgetsApplication3/icon/new_project.png</iconset>
    </property>
    <property name="text">
     <string>新建工程</string>
@@ -216,7 +216,7 @@
   <action name="actionOpen">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/open_project.png</normaloff>:/QtWidgetsApplication3/bin/icon/open_project.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/open_project.png</normaloff>:/QtWidgetsApplication3/icon/open_project.png</iconset>
    </property>
    <property name="text">
     <string>打开工程</string>
@@ -225,7 +225,7 @@
   <action name="actionRecent">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/recen_open.png</normaloff>:/QtWidgetsApplication3/bin/icon/recen_open.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/recen_open.png</normaloff>:/QtWidgetsApplication3/icon/recen_open.png</iconset>
    </property>
    <property name="text">
     <string>最近打开</string>
@@ -234,7 +234,7 @@
   <action name="actionSave">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/save.png</normaloff>:/QtWidgetsApplication3/bin/icon/save.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/save.png</normaloff>:/QtWidgetsApplication3/icon/save.png</iconset>
    </property>
    <property name="text">
     <string>保存工程</string>
@@ -243,7 +243,7 @@
   <action name="actionSave_as">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/saveas.png</normaloff>:/QtWidgetsApplication3/bin/icon/saveas.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/saveas.png</normaloff>:/QtWidgetsApplication3/icon/saveas.png</iconset>
    </property>
    <property name="text">
     <string>另存为</string>
@@ -252,7 +252,7 @@
   <action name="actionSave_all">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/saveall.png</normaloff>:/QtWidgetsApplication3/bin/icon/saveall.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/saveall.png</normaloff>:/QtWidgetsApplication3/icon/saveall.png</iconset>
    </property>
    <property name="text">
     <string>全部保存</string>
@@ -260,8 +260,8 @@
   </action>
   <action name="actionClose">
    <property name="icon">
-    <iconset>
-     <normaloff>../bin/icon/close.png</normaloff>../bin/icon/close.png</iconset>
+    <iconset resource="../QtWidgetsApplication3.qrc">
+     <normaloff>:/QtWidgetsApplication3/icon/close.png</normaloff>:/QtWidgetsApplication3/icon/close.png</iconset>
    </property>
    <property name="text">
     <string>关闭</string>
@@ -270,7 +270,7 @@
   <action name="actionQuit">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/quit.png</normaloff>:/QtWidgetsApplication3/bin/icon/quit.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/quit.png</normaloff>:/QtWidgetsApplication3/icon/quit.png</iconset>
    </property>
    <property name="text">
     <string>退出</string>
@@ -279,7 +279,7 @@
   <action name="actionRegistration">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/coregistration.png</normaloff>:/QtWidgetsApplication3/icon/coregistration.png</iconset>
    </property>
    <property name="text">
     <string>coregistration</string>
@@ -308,7 +308,7 @@
   <action name="actionCut">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/cut.png</normaloff>:/QtWidgetsApplication3/bin/icon/cut.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/cut.png</normaloff>:/QtWidgetsApplication3/icon/cut.png</iconset>
    </property>
    <property name="text">
     <string>AOI</string>
@@ -332,7 +332,7 @@
   <action name="actionS1_TOPS_BackGeocoding">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</normaloff>:/QtWidgetsApplication3/bin/icon/coregistration.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/coregistration.png</normaloff>:/QtWidgetsApplication3/icon/coregistration.png</iconset>
    </property>
    <property name="text">
     <string>S1 TOPS BackGeocoding</string>
@@ -341,7 +341,7 @@
   <action name="actionS1_Deburst">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/splice.png</normaloff>:/QtWidgetsApplication3/bin/icon/splice.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/splice.png</normaloff>:/QtWidgetsApplication3/icon/splice.png</iconset>
    </property>
    <property name="text">
     <string>S1 Deburst</string>
@@ -350,7 +350,7 @@
   <action name="actionSLC_deramp">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/dem.png</normaloff>:/QtWidgetsApplication3/bin/icon/dem.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/dem.png</normaloff>:/QtWidgetsApplication3/icon/dem.png</iconset>
    </property>
    <property name="text">
     <string>SLC_deramp</string>
@@ -359,7 +359,7 @@
   <action name="actionBaseline_Formation">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</normaloff>:/QtWidgetsApplication3/bin/icon/baseline_formation.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/baseline_formation.png</normaloff>:/QtWidgetsApplication3/icon/baseline_formation.png</iconset>
    </property>
    <property name="text">
     <string>Baseline Formation</string>
@@ -368,7 +368,7 @@
   <action name="actionSBAS_deformation">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/time_series.png</normaloff>:/QtWidgetsApplication3/bin/icon/time_series.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/time_series.png</normaloff>:/QtWidgetsApplication3/icon/time_series.png</iconset>
    </property>
    <property name="text">
     <string>Time-Series Analysis</string>
@@ -377,7 +377,7 @@
   <action name="actionDeformation_Preview">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/view.png</normaloff>:/QtWidgetsApplication3/bin/icon/view.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/view.png</normaloff>:/QtWidgetsApplication3/icon/view.png</iconset>
    </property>
    <property name="text">
     <string>Time Series View</string>
@@ -386,7 +386,7 @@
   <action name="actionreference_re_selection">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/reference.png</normaloff>:/QtWidgetsApplication3/bin/icon/reference.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/reference.png</normaloff>:/QtWidgetsApplication3/icon/reference.png</iconset>
    </property>
    <property name="text">
     <string>reference re-selection</string>
@@ -395,7 +395,7 @@
   <action name="actionExport_KML">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/GoogleEarth.png</normaloff>:/QtWidgetsApplication3/bin/icon/GoogleEarth.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/GoogleEarth.png</normaloff>:/QtWidgetsApplication3/icon/GoogleEarth.png</iconset>
    </property>
    <property name="text">
     <string>export as kml</string>
@@ -404,7 +404,7 @@
   <action name="actiongeocode">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/geocoding.png</normaloff>:/QtWidgetsApplication3/bin/icon/geocoding.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/geocoding.png</normaloff>:/QtWidgetsApplication3/icon/geocoding.png</iconset>
    </property>
    <property name="text">
     <string>Geocoding</string>
@@ -413,7 +413,7 @@
   <action name="actionS1_frame_merge">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/frame_merge.png</normaloff>:/QtWidgetsApplication3/bin/icon/frame_merge.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/frame_merge.png</normaloff>:/QtWidgetsApplication3/icon/frame_merge.png</iconset>
    </property>
    <property name="text">
     <string>S1 frame merge</string>
@@ -422,7 +422,7 @@
   <action name="actionS1_swath_merge">
    <property name="icon">
     <iconset resource="../QtWidgetsApplication3.qrc">
-     <normaloff>:/QtWidgetsApplication3/bin/icon/swath_merge.png</normaloff>:/QtWidgetsApplication3/bin/icon/swath_merge.png</iconset>
+     <normaloff>:/QtWidgetsApplication3/icon/swath_merge.png</normaloff>:/QtWidgetsApplication3/icon/swath_merge.png</iconset>
    </property>
    <property name="text">
     <string>S1 swath merge</string>

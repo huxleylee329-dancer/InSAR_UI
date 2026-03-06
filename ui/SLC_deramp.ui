@@ -15,7 +15,7 @@
   </property>
   <property name="windowIcon">
    <iconset resource="../QtWidgetsApplication3.qrc">
-    <normaloff>:/QtWidgetsApplication3/bin/icon/dem.png</normaloff>:/QtWidgetsApplication3/bin/icon/dem.png</iconset>
+    <normaloff>:/QtWidgetsApplication3/icon/dem.png</normaloff>:/QtWidgetsApplication3/icon/dem.png</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>

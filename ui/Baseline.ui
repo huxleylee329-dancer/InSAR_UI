@@ -15,7 +15,7 @@
   </property>
   <property name="windowIcon">
    <iconset>
-    <normaloff>:/QtWidgetsApplication3/bin/icon/InSARapp.ico</normaloff>:/QtWidgetsApplication3/bin/icon/InSARapp.ico</iconset>
+    <normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>

@@ -76,6 +76,8 @@ _Chutzpah*
 # Visual C++ cache files
 ipch/
 *.aps
+# Resource Compiler temporary files
+RCa*
 *.ncb
 *.opensdf
 *.sdf
@@ -220,6 +222,8 @@ _Pvt_Extensions
 # self defined ignore files
 
 x64/
+# Screenshot directory for Claude
+screenshot/
 bin/
 
 *.vcxproj

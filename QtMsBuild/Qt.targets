@@ -16,7 +16,9 @@
     <Exec Command="&quot;$(QtUicDir)\uic.exe&quot; &quot;%(QtUic.FullPath)&quot; -o &quot;$(QtIntDir)ui_%(Filename).h&quot;" Condition="'%(QtUic.FullPath)' != ''"/>
   </Target>
 
-  <Target Name="QtRcc" BeforeTargets="QtMoc">
+  <Target Name="QtRcc" BeforeTargets="QtMoc"
+          Inputs="@(QtRcc)"
+          Outputs="$(QtIntDir)qrc_%(QtRcc.Filename).cpp">
     <Exec Command="&quot;$(QtRccDir)\rcc.exe&quot; &quot;%(QtRcc.FullPath)&quot; -o &quot;$(QtIntDir)qrc_%(Filename).cpp&quot;" Condition="'%(QtRcc.FullPath)' != ''"/>
     <ItemGroup>
       <ClCompile Include="$(QtIntDir)qrc_%(QtRcc.Filename).cpp" Condition="'%(QtRcc.FullPath)' != ''"/>

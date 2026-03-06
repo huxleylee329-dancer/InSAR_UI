@@ -36,37 +36,33 @@ QtNodes 中包含 `Q_OBJECT` 宏的头文件**必须**添加到 `<QtMoc>` 列表
 
 ### 3. Qt 资源文件（qrc）配置
 
-**问题：** 重复编译导致链接错误
+**配置方式：** 使用 QtRcc 自动生成（推荐）
+
+在 `QtWidgetsApplication3.vcxproj` 中配置：
+```xml
+<ItemGroup>
+  <QtRcc Include="resources\QtWidgetsApplication3.qrc" />
+</ItemGroup>
 ```
-错误 LNK1120: 1 个无法解析的外部命令
-错误 LNK2001: 无法解析的外部符号 "qInitResources_QtWidgetsApplication3"
-```
 
-**解决方案：** 使用手动生成的 qrc cpp 文件，禁用 QtRcc 自动生成
-
-1. 手动使用 Qt rcc 生成资源文件：
-   ```bash
-   rcc resources/QtWidgetsApplication3.qrc -o qrc_QtWidgetsApplication3.cpp
-   ```
-
-2. 在 vcxproj 中配置（**不要同时使用两种方式**）：
-
-   ```xml
-   <!-- 方案1：使用手动生成的 qrc 文件（推荐） -->
-   <ClCompile Include="qrc_QtWidgetsApplication3.cpp" />
-
-   <!-- 禁用 QtRcc 自动生成 -->
-   <!--
-   <ItemGroup>
-     <QtRcc Include="resources\QtWidgetsApplication3.qrc" />
-   </ItemGroup>
-   -->
-   ```
+QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例如：
+- Debug: `x64\Debug\qrc_QtWidgetsApplication3.cpp`
+- Release: `x64\Release\qrc_QtWidgetsApplication3.cpp`
 
 **关键点：**
-- ❌ 不要同时使用 `<ClCompile Include="qrc_*.cpp" />` 和 `<QtRcc Include="*.qrc" />`
-- ✅ 只用一种方式，推荐使用手动生成的 cpp 文件
-- `qrc_QtWidgetsApplication3.cpp` 文件应放在项目根目录
+- ✅ 只使用 `<QtRcc Include="*.qrc" />` 方式
+- ❌ 不要使用手动生成的 `<ClCompile Include="qrc_*.cpp" />`
+- QtRcc 支持**增量编译**：仅在 qrc 文件或引用的资源文件修改时才重新生成
+- `QtMsBuild\Qt.targets` 中的 QtRcc 目标已添加 `Inputs` 和 `Outputs` 属性以支持增量构建
+
+**如果遇到链接错误：**
+```
+错误 LNK2001: 无法解析的外部符号 "qInitResources_QtWidgetsApplication3"
+```
+确保：
+1. QtRcc item group 已启用（未注释）
+2. 没有同时使用手动生成的 qrc cpp 文件
+3. 清理并重新构建项目
 
 ---
 
@@ -157,6 +153,94 @@ QtNodes 中包含 `Q_OBJECT` 宏的头文件**必须**添加到 `<QtMoc>` 列表
 虽然添加 `IntDir` 有助于保持输出目录清晰，但**真正解决增量编译问题**的是在 `Qt.targets` 中添加 `Inputs` 和 `Outputs` 属性。
 
 ---
+
+## QtRcc 自动生成优化（2026-03-06）
+
+### 问题背景
+之前项目使用手动生成的 `qrc_QtWidgetsApplication3.cpp` 文件，QtRcc 自动生成被禁用。这种方式有以下缺点：
+- 手动维护，容易忘记更新
+- 无法利用增量构建优势
+- qrc 文件内容变化时需要手动重新生成
+
+### 解决方案
+
+**1. 启用 QtRcc 自动生成**
+在 `Qt.targets` 中为 QtRcc 目标添加 `Inputs` 和 `Outputs` 属性以支持增量构建：
+```xml
+<Target Name="QtRcc" BeforeTargets="QtMoc"
+        Inputs="@(QtRcc)"
+        Outputs="$(QtIntDir)qrc_%(QtRcc.Filename).cpp">
+  <Exec Command="&quot;$(QtRccDir)\rcc.exe&quot; &quot;%(QtRcc.FullPath)&quot; -o &quot;$(QtIntDir)qrc_%(Filename).cpp&quot;" Condition="'%(QtRcc.FullPath)' != ''"/>
+  <ItemGroup>
+    <ClCompile Include="$(QtIntDir)qrc_%(QtRcc.Filename).cpp" Condition="'%(QtRcc.FullPath)' != ''"/>
+  </ItemGroup>
+</Target>
+```
+
+**2. 启用 QtRcc item group**
+在 `QtWidgetsApplication3.vcxproj` 中取消注释：
+```xml
+<ItemGroup>
+  <QtRcc Include="resources\QtWidgetsApplication3.qrc" />
+</ItemGroup>
+```
+
+**3. 移除手动编译配置**
+删除：
+```xml
+<ClCompile Include="qrc_QtWidgetsApplication3.cpp" />
+```
+
+**4. 删除手动生成的文件**
+删除项目根目录下的 `qrc_QtWidgetsApplication3.cpp` 文件。
+
+**5. 移除 PostBuildEvent 复制命令**
+删除 Release 配置中的 icon 目录复制命令（不再需要 bin/icon/）：
+```xml
+<ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  <PostBuildEvent>
+    <Command>xcopy /Y /E /I "$(ProjectDir)resources\icon" "$(OutDir)icon"</Command>
+  </PostBuildEvent>
+</ItemDefinitionGroup>
+```
+
+### 图标路径修复
+
+**问题：** 所有 UI 文件和 `icon_source.h` 中的图标路径使用 `:/QtWidgetsApplication3/bin/icon/`，但 qrc 文件中定义的路径是 `:/QtWidgetsApplication3/icon/`（没有 bin），导致图标无法显示。
+
+**解决：** 统一修改为正确的资源路径 `:/QtWidgetsApplication3/icon/`
+
+修改的文件：
+- `include/icon_source.h` - 图标常量定义
+- `ui/*.ui` - 所有 UI 文件（MainWindow.ui 及 25 个对话框 UI 文件）
+
+修复后，所有图标都通过 Qt 资源系统正确加载，不再依赖 `bin/icon/` 目录。
+
+### 资源文件路径修复
+
+修复 `resources/QtWidgetsApplication3.rc` 中的 include 路径：
+```xml
+<!-- 修复前 -->
+#include "resource.h"   <!-- 找不到，因为 .rc 在 resources/ 目录 -->
+
+<!-- 修复后 -->
+#include "../resource.h"  <!-- 正确指向项目根目录 -->
+```
+
+### .gitignore 更新
+
+添加以下忽略规则：
+```gitignore
+# Resource Compiler temporary files
+RCa*
+
+# Screenshot directory for Claude
+screenshot/
+```
+
+---
+
+## 节点开发规范
 
 ## 节点开发规范
 
@@ -306,9 +390,17 @@ D:\SRC\InSAR_UI\
 
 ---
 
-## 最后更新：2026-03-03
+## 最后更新：2026-03-06
 
 ### 更新记录
+
+**2026-03-06：**
+- 启用 QtRcc 自动生成：在 `Qt.targets` 中为 QtRcc 添加 `Inputs` 和 `Outputs` 属性
+- 移除手动生成的 `qrc_QtWidgetsApplication3.cpp` 和相关编译配置
+- 修复图标路径问题：统一所有 UI 文件和 `icon_source.h` 使用 `:/QtWidgetsApplication3/icon/` 路径
+- 修复资源文件 include 路径：`resources/QtWidgetsApplication3.rc` 改为 `#include "../resource.h"`
+- 移除 PostBuildEvent：删除 Release 配置中的 icon 目录复制命令，删除 Debug 配置中的空 PostBuildEvent
+- 更新 .gitignore：添加 `RCa*` 和 `screenshot/` 忽略规则
 
 **2026-03-03：**
 - 修复增量编译失效问题：在 `Qt.targets` 中添加 `Inputs` 和 `Outputs` 属性
