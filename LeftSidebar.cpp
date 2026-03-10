@@ -104,6 +104,8 @@ LeftSidebar::LeftSidebar(QWidget *parent)
     , m_nodeTree(nullptr)
     , m_workflowBrowser(nullptr)
     , m_workflowPath()
+    , m_collapsed(false)
+    , m_normalWidth(250)
 {
     setupUi();
 }
@@ -133,6 +135,25 @@ void LeftSidebar::setupUi()
     // Set size
     setMinimumWidth(200);
     setMaximumWidth(300);
+}
+
+void LeftSidebar::toggleCollapse()
+{
+    m_collapsed = !m_collapsed;
+
+    if (m_collapsed)
+    {
+        m_normalWidth = width();
+        setFixedWidth(30);
+        m_tabWidget->hide();
+    }
+    else
+    {
+        m_tabWidget->show();
+        setFixedWidth(m_normalWidth);
+        setMinimumWidth(200);
+        setMaximumWidth(300);
+    }
 }
 
 void LeftSidebar::setupNodeLibraryTab()

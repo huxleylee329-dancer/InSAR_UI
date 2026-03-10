@@ -16,6 +16,7 @@
 #include <QScrollArea>
 #include <QGroupBox>
 #include <QFormLayout>
+#include <QDir>
 #include <memory>
 
 // QtNodes headers
@@ -51,6 +52,10 @@ public:
     // 清除选择
     void clearSelection();
 
+    // 折叠/展开功能
+    void toggleCollapse();
+    bool isCollapsed() const { return m_collapsed; }
+
 signals:
     void propertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value);
 
@@ -70,6 +75,8 @@ private:
     // Data
     QtNodes::DataFlowGraphModel *m_graphModel;
     QtNodes::NodeId m_selectedNodeId;
+    bool m_collapsed;
+    int m_normalWidth;
 };
 
 /**

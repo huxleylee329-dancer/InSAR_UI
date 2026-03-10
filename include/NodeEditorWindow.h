@@ -144,6 +144,10 @@ private slots:
     void onClearQueue();
     void onShowHistory();
 
+    // Panel toggle operations
+    void onToggleLeftSidebar();
+    void onToggleRightPanel();
+
     // Group operations
     void onGroupSelection();
 

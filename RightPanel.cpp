@@ -243,6 +243,8 @@ RightPanel::RightPanel(QWidget *parent)
     , m_queueManager(nullptr)
     , m_graphModel(nullptr)
     , m_selectedNodeId(QtNodes::InvalidNodeId)
+    , m_collapsed(false)
+    , m_normalWidth(300)
 {
     setupUi();
 }
@@ -275,6 +277,25 @@ void RightPanel::setupUi()
     // Set size
     setMinimumWidth(200);
     setMaximumWidth(350);
+}
+
+void RightPanel::toggleCollapse()
+{
+    m_collapsed = !m_collapsed;
+
+    if (m_collapsed)
+    {
+        m_normalWidth = width();
+        setFixedWidth(30);
+        m_tabWidget->hide();
+    }
+    else
+    {
+        m_tabWidget->show();
+        setFixedWidth(m_normalWidth);
+        setMinimumWidth(200);
+        setMaximumWidth(350);
+    }
 }
 
 void RightPanel::setupPropertiesTab()

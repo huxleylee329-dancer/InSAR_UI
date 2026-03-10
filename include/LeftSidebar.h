@@ -16,6 +16,7 @@
 #include <QMouseEvent>
 #include <QPixmap>
 #include <QPainter>
+#include <QDir>
 #include <memory>
 
 // QtNodes headers
@@ -155,6 +156,10 @@ public:
     void setWorkflowPath(const QString &path) { m_workflowPath = path; }
     QString workflowPath() const { return m_workflowPath; }
 
+    // 折叠/展开功能
+    void toggleCollapse();
+    bool isCollapsed() const { return m_collapsed; }
+
 signals:
     // 节点库相关信号
     void nodeDoubleClicked(const QString &modelName);
@@ -184,6 +189,8 @@ private:
     // Data
     std::shared_ptr<QtNodes::NodeDelegateModelRegistry> m_registry;
     QString m_workflowPath;
+    bool m_collapsed;
+    int m_normalWidth;
 };
 
 #endif // LEFTSIDEBAR_H

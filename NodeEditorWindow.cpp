@@ -314,6 +314,21 @@ void NodeEditorWindow::setupToolbar()
 
     m_toolbar->addSeparator();
 
+    // Panel toggle actions
+    QAction *actionToggleLeft = new QAction("◀ Left Panel", this);
+    actionToggleLeft->setStatusTip("Toggle left sidebar");
+    actionToggleLeft->setCheckable(false);
+    connect(actionToggleLeft, &QAction::triggered, this, &NodeEditorWindow::onToggleLeftSidebar);
+    m_toolbar->addAction(actionToggleLeft);
+
+    QAction *actionToggleRight = new QAction("Right Panel ▶", this);
+    actionToggleRight->setStatusTip("Toggle right panel");
+    actionToggleRight->setCheckable(false);
+    connect(actionToggleRight, &QAction::triggered, this, &NodeEditorWindow::onToggleRightPanel);
+    m_toolbar->addAction(actionToggleRight);
+
+    m_toolbar->addSeparator();
+
     // Queue actions
     m_actionQueue = new QAction("Queue", this);
     m_actionQueue->setStatusTip("Queue prompt - execute current workflow");
@@ -738,6 +753,28 @@ void NodeEditorWindow::onShowHistory()
 {
     // Placeholder for history
     QMessageBox::information(this, "Execution History", "Execution history will be implemented in a future update.");
+}
+
+// ============================================================================
+// Panel Toggle Operations
+// ============================================================================
+
+void NodeEditorWindow::onToggleLeftSidebar()
+{
+    if (m_leftSidebar)
+    {
+        m_leftSidebar->toggleCollapse();
+        statusBar()->showMessage(m_leftSidebar->isCollapsed() ? "Left panel hidden" : "Left panel shown");
+    }
+}
+
+void NodeEditorWindow::onToggleRightPanel()
+{
+    if (m_rightPanel)
+    {
+        m_rightPanel->toggleCollapse();
+        statusBar()->showMessage(m_rightPanel->isCollapsed() ? "Right panel hidden" : "Right panel shown");
+    }
 }
 
 // ============================================================================
