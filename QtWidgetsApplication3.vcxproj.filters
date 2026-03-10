@@ -259,6 +259,15 @@
     <ClCompile Include="QtNodes\src\DefaultVerticalNodeGeometry.cpp">
       <Filter>QtNodes\Src</Filter>
     </ClCompile>
+    <ClCompile Include="NodeGroupManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NoteNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RightPanel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\Cut.h">
@@ -466,6 +475,21 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\Sentinel1ImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="LeftSidebar.cpp">
+      <Filter>Source Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\LeftSidebar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\NodeGroupManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\NoteNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\RightPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

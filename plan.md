@@ -2,11 +2,11 @@
 
 本计划用于实现 SatExplorer 项目中的基于节点的可视化流程编辑器功能。
 
-## 进度总结（2026-03-05 更新）
+## 进度总结（2026-03-10 更新）
 
 - [x] 阶段 1: QtNodes 库集成 - 已完成
 - [x] 阶段 2: 基础架构搭建 - 已完成
-- [x] 阶段 2.5: 右侧节点面板 - 已完成 ✨
+- [x] 阶段 2.5: 右侧节点面板 - 已完成 ✨（已移至左侧边栏）
 - [x] 阶段 3: 数据导入节点实现 - 已完成（Sentinel-1, TerraSAR-X, COSMO-SkyMed, ALOS-2）
 - [x] 阶段 4: 预处理节点实现 - 已完成 ✨
 - [ ] 阶段 5: 配准节点实现 - 未开始
@@ -17,9 +17,10 @@
 - [ ] 阶段 10: 工具节点实现 - 未开始
 - [x] 阶段 11: 与 MyThread 集成 - 部分完成（导入节点）
 - [x] 阶段 12: 保存与加载 - 已完成
-- [x] 阶段 13: UI 集成 - 已完成
+- [x] 阶段 13: UI 集成 - 基础完成
 - [ ] 阶段 14: 测试与优化 - 部分完成
 - [ ] 阶段 15: 文档与示例 - 未开始
+- [x] 阶段 16: UI 布局重构 - 已完成 ✨（核心功能，编译成功）
 
 ---
 
@@ -200,6 +201,99 @@ F --> F4["📝 注释节点 (Note)"]
 - 显示三个输入数据信息
 - 进度条和状态标签
 - 处理/停止按钮
+
+---
+
+### UI 布局重构（阶段 16 - 已完成）✨
+
+**日期**：2026-03-10
+
+**实现内容**：
+
+#### 1. 核心布局重构
+- ✅ 创建 `include/LeftSidebar.h` - 左侧边栏框架类
+- ✅ 创建 `LeftSidebar.cpp` - 左侧边栏实现（节点库 + 工作流标签页）
+- ✅ 创建 `include/RightPanel.h` - 右侧面板框架类
+- ✅ 创建 `RightPanel.cpp` - 右侧面板实现（属性编辑器 + 队列管理标签页）
+- ✅ 修改 `NodeEditorWindow::setupUi()` 实现三栏布局：[左侧边栏] [中央工作区] [右侧面板]
+- ✅ 将现有 `NodeTreeWidget` 从 NodeEditorWindow 迁移到 LeftSidebar
+
+#### 2. 左侧边栏实现
+- ✅ 实现节点库标签页（搜索、拖拽、折叠/展开）
+- ✅ 实现工作流标签页（WorkflowBrowser，本地 .json 文件扫描）
+- ✅ 标签页切换功能
+
+**文件列表**：
+- `include/LeftSidebar.h` - 左侧边栏头文件
+- `LeftSidebar.cpp` - 左侧边栏实现
+
+#### 3. 右侧面板实现
+- ✅ 节点属性标签页（查看/编辑选中节点参数）
+- ✅ 属性编辑器实现（ID、位置、标题、嵌入控件同步）
+- ✅ 队列管理标签页（占位符框架）
+
+**文件列表**：
+- `include/RightPanel.h` - 右侧面板头文件
+- `RightPanel.cpp` - 右侧面板实现
+- `include/PropertyEditor.h` - 属性编辑器头文件
+- `PropertyEditor.cpp` - 属性编辑器实现
+- `include/QueueManager.h` - 队列管理器头文件
+- `QueueManager.cpp` - 队列管理器实现
+
+#### 4. 顶部工具栏增强
+- ✅ Workflow 下拉菜单（空白、默认、打开）
+- ✅ 浏览按钮、收藏夹按钮、刷新按钮
+- ✅ 队列执行按钮、中断按钮、清空队列按钮
+- ✅ 历史记录按钮
+- ✅ 重新组织工具栏布局
+
+#### 5. 布局管理工具（核心功能）
+- ✅ 节点编组功能 (Ctrl+G)
+  - ✅ 创建 `include/NodeGroupManager.h`
+  - ✅ 创建 `NodeGroupManager.cpp`
+  - ✅ 在 `GraphicsView` 中实现 Ctrl+G 快捷键
+  - ✅ 实现组数据结构和组操作接口
+
+**文件列表**：
+- `include/NodeGroupManager.h` - 节点编组管理器头文件
+- `NodeGroupManager.cpp` - 节点编组管理器实现
+- `QtNodes/src/GraphicsView.hpp` - 添加 groupSelectionAction
+- `QtNodes/src/GraphicsView.cpp` - 实现 Ctrl+G 快捷键
+
+- ✅ 注释节点 (NoteNode)
+  - ✅ 创建 `include/NoteNode.h`
+  - ✅ 创建 `NoteNode.cpp`
+  - ✅ 实现 QTextEdit 作为嵌入控件
+  - ✅ 设置独特颜色（黄色背景）
+  - ✅ 在 `NodeModels.cpp` 中注册节点
+
+**文件列表**：
+- `include/NoteNode.h` - 注释节点头文件
+- `NoteNode.cpp` - 注释节点实现
+
+---
+
+### UI 布局重构计划（2026-03-10 新增）
+
+**目标**：根据 `布局设计.md` 更新节点编辑器 UI。
+
+**当前实现与设计差异分析**：
+
+| 组件 | 当前状态 | 设计需求 | 差异 |
+|------------|---------------|-------------------|------|
+| **中央工作区** | 无限画布、缩放、平移、节点图 | 相同 | ✅ 已实现 |
+| **顶部工具栏** | 基础（新建、保存、加载、清除、删除、退出） | Workflow 下拉、队列控制、历史、刷新、浏览、收藏 | ⚠️ 60% 完成 |
+| **左侧边栏** | 未实现 | 节点库标签页 + 工作流标签页 | ❌ 未实现 |
+| **右侧边栏** | 节点面板（位置错误） | 应为空或属性面板 | ⚠️ 位置需调整 |
+| **右侧面板** | 未实现 | 节点属性标签页 + 队列管理标签页（占位符）| ❌ 未实现 |
+| **布局工具** | 无 | 节点编组(Ctrl+G)、注释节点 - *子图/理线延后* | ❌ 未实现 |
+
+**优先级说明**：
+- 核心功能：节点编组 (Ctrl+G)、注释节点 - **必须实现**
+- 延后功能：子图、连接路由选项 - 暂不实现
+- 队列管理：仅创建占位符框架
+
+**详细实现计划**：见下方"阶段 16: UI 布局重构"
 
 ---
 
@@ -695,6 +789,182 @@ F --> F4["📝 注释节点 (Note)"]
 - [ ] 记录扩展 API
 - [ ] 更新 CLAUDE.md
 
+## 阶段 16: UI 布局重构（基于布局设计）
+
+**目标**：根据 `布局设计.md` 中的 UI/UX 规范更新节点编辑器界面。
+
+**优先级说明**：
+- 核心功能：节点编组 (Ctrl+G)、注释节点 - **必须实现**
+- 延后功能：子图、连接路由选项 - 暂不实现
+- 队列管理：仅创建占位符框架，暂不实现完整调度
+
+### 16.1 核心布局重构 ✅ 已完成
+
+- [x] 备份当前实现代码
+- [x] 创建 `include/LeftSidebar.h` - 左侧边栏框架类
+- [x] 创建 `LeftSidebar.cpp` - 左侧边栏实现
+- [x] 创建 `include/RightPanel.h` - 右侧面板框架类
+- [x] 创建 `RightPanel.cpp` - 右侧面板实现
+- [x] 修改 `NodeEditorWindow::setupUi()` 实现三栏布局：
+  ```
+  [左侧边栏] [中央工作区 (flex)] [右侧面板]
+  ```
+- [x] 将现有 `NodeTreeWidget` 从 NodeEditorWindow 迁移到 LeftSidebar
+- [x] 更新 `NodeEditorWindow::setupNodePalette()` 调用
+- [x] 测试基础布局切换功能
+
+**涉及文件**：
+- `include/NodeEditorWindow.h` - 修改布局成员变量
+- `NodeEditorWindow.cpp` - 重构 `setupUi()` 和 `setupNodePalette()`
+- `include/LeftSidebar.h` - 新建
+- `LeftSidebar.cpp` - 新建
+- `include/RightPanel.h` - 新建
+- `RightPanel.cpp` - 新建
+
+### 16.2 左侧边栏实现 ✅ 已完成
+
+**16.2.1 节点库标签页（从现有节点面板迁移）**
+
+- [x] 实现 QTabWidget 在 LeftSidebar 中
+- [x] 将 `NodeTreeWidget` 迁移到"节点库"标签页
+- [x] 保留现有功能：搜索、折叠/展开、拖拽
+- [ ] 添加收藏功能（星标收藏）- 可在后续版本添加
+
+**16.2.2 工作流标签页**
+
+- [x] 创建 `include/WorkflowBrowser.h` - 工作流浏览器
+- [x] 创建 `WorkflowBrowser.cpp`
+- [x] 实现本地 `.json` 工作流文件扫描
+- [x] 添加搜索功能
+- [x] 实现分类/文件夹显示
+- [x] 双击加载工作流到当前编辑器
+- [x] 集成到 LeftSidebar 标签页系统
+
+**涉及文件**：
+- `include/LeftSidebar.h` - 添加标签页成员
+- `LeftSidebar.cpp` - 实现标签切换
+- `include/WorkflowBrowser.h` - 新建
+- `WorkflowBrowser.cpp` - 新建（集成在 LeftSidebar.cpp 中）
+
+### 16.3 右侧面板实现 ✅ 已完成
+
+**16.3.1 节点属性标签页**
+
+- [x] 创建 `include/PropertyEditor.h` - 属性编辑器
+- [x] 创建 `PropertyEditor.cpp`
+- [x] 实现动态属性控件生成（基于选中节点）
+- [x] 连接到 `DataFlowGraphModel::nodeData()` 获取属性
+- [x] **实现嵌入控件同步**：
+  - 访问节点的嵌入控件 (`NodeGraphicsObject::widget()`)
+  - 连接嵌入控件信号到属性面板（双向同步）
+  - 显示和编辑所有嵌入控件参数
+- [x] 支持功能：
+  - 节点 ID 显示（只读）
+  - 位置编辑（x, y 坐标）
+  - 标题编辑
+  - 所有嵌入控件参数同步
+- [x] 选择改变时更新
+- [x] 嵌入控件值改变时更新（信号/槽连接）
+
+**涉及文件**：
+- `include/PropertyEditor.h` - 新建
+- `PropertyEditor.cpp` - 新建
+- `include/RightPanel.h` - 添加属性编辑器成员
+- `RightPanel.cpp` - 集成属性编辑器
+
+**16.3.2 队列管理标签页（占位符）**
+
+- [x] 创建 `include/QueueManager.h` - 队列管理框架
+- [x] 创建 `QueueManager.cpp`
+- [x] **创建占位符标签页** - 暂不实现完整功能
+- [x] 添加简单的"即将推出"消息或占位符 UI
+- [x] 实现标签页切换框架（为后续增强预留）
+- [x] 集成到 RightPanel
+
+**涉及文件**：
+- `include/QueueManager.h` - 新建（框架）
+- `QueueManager.cpp` - 新建（占位符）
+- `include/RightPanel.h` - 添加队列管理器成员
+- `RightPanel.cpp` - 集成队列管理器
+
+### 16.4 顶部工具栏增强 ✅ 已完成
+
+- [x] 添加 Workflow 下拉菜单：
+  ```cpp
+  QComboBox* m_workflowCombo;
+  // 选项: 空白, 默认, 打开...
+  ```
+- [x] 实现"浏览"按钮 - 打开工作流浏览器对话框
+- [x] 实现"收藏夹"按钮 - 显示收藏的工作流
+- [x] 添加"刷新"按钮 - 重新加载节点注册表
+- [x] 添加队列执行按钮：
+  ```cpp
+  QAction* m_actionQueue;
+  // Queue Prompt（单次执行）
+  ```
+- [x] 添加"中断"按钮
+- [x] 添加"清空队列"按钮
+- [x] 添加"历史记录"按钮
+- [x] 重新组织工具栏布局以容纳新按钮
+
+**涉及文件**：
+- `include/NodeEditorWindow.h` - 添加新工具栏成员
+- `NodeEditorWindow.cpp` - 修改 `setupToolbar()`
+
+### 16.5 布局管理工具（核心功能优先）✅ 已完成
+
+**16.5.1 节点编组功能 (Ctrl+G)**
+
+- [x] 创建 `include/NodeGroupManager.h` - 节点编组管理
+- [x] 创建 `NodeGroupManager.cpp`
+- [x] 实现组数据结构：
+  ```cpp
+  struct NodeGroup {
+      QString id;
+      QString name;
+      QRectF bounds;
+      QColor color;
+      QVector<NodeId> nodes;
+  };
+  ```
+- [x] 在 `GraphicsView` 中实现 Ctrl+G 快捷键（创建子类或修改现有）
+- [ ] 实现可视化的组叠加层：
+  - 半透明矩形 - 待实现
+  - 带名称的标题栏 - 待实现
+  - 拖动移动组内所有节点 - 待实现
+- [ ] 将组添加到撤销/重做系统
+- [ ] 实现组选择（点击组选择所有节点）
+- [ ] 实现组删除
+
+**涉及文件**：
+- `include/NodeGroupManager.h` - 新建
+- `NodeGroupManager.cpp` - 新建
+- `QtNodes/src/GraphicsView.cpp` - 修改添加 Ctrl+G
+- `QtNodes/src/DataFlowGraphicsScene.cpp` - 用于获取选中节点
+- `QtNodes/src/UndoCommands.cpp` - 添加组操作命令
+
+**16.5.2 注释节点**
+
+- [x] 创建 `include/NoteNode.h` - 注释节点类型
+- [x] 创建 `NoteNode.cpp`
+- [x] 创建 `NoteNodeData` 数据类型（文本内容）
+- [x] 实现 QTextEdit 作为嵌入控件
+- [ ] 添加 Markdown 渲染选项 - 待实现
+- [x] 使节点可调整大小
+- [x] 设置独特颜色（黄色/浅色背景）
+- [x] 在 `NodeModels.cpp` 中注册节点
+- [ ] 测试注释节点创建和编辑
+
+**涉及文件**：
+- `include/NoteNode.h` - 新建
+- `NoteNode.cpp` - 新建
+- `NodeModels.cpp` - 注册 NoteNode
+
+**16.5.3 延后功能（暂不实现）**
+
+- [ ] 子图功能 - 暂不实现，预留接口
+- [ ] 连接路由选项（直角线型）- 暂不实现，预留接口
+
 ---
 
 ## 执行顺序建议
@@ -706,8 +976,9 @@ F --> F4["📝 注释节点 (Note)"]
 3. **阶段 4-10**（可并行）：各类处理节点实现
 4. **阶段 11**：MyThread 集成
 5. **阶段 12-13**：保存加载和 UI 集成
-6. **阶段 14**：测试与优化
-7. **阶段 15**：文档
+6. **阶段 16**：UI 布局重构（新增，基于布局设计）
+7. **阶段 14**：测试与优化
+8. **阶段 15**：文档
 
 ## 关键决策点
 

@@ -32,6 +32,8 @@ public:
 
     QAction *deleteSelectionAction() const;
 
+    QAction *groupSelectionAction() const;
+
     void setScene(BasicGraphicsScene *scene);
 
     void centerScene();
@@ -58,8 +60,12 @@ public Q_SLOTS:
 
     void onPasteObjects();
 
+    void onGroupSelectedObjects();
+
 Q_SIGNALS:
     void scaleChanged(double scale);
+
+    void groupSelected();
 
 protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
@@ -90,6 +96,7 @@ private:
     QAction *_duplicateSelectionAction = nullptr;
     QAction *_copySelectionAction = nullptr;
     QAction *_pasteAction = nullptr;
+    QAction *_groupSelectionAction = nullptr;
 
     QPointF _clickPos;
     ScaleRange _scaleRange;

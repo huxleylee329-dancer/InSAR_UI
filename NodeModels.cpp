@@ -2,6 +2,7 @@
 #include "NodeDataTypes.h"
 #include "ImportDataTypes.h"
 #include "TestNodes.h"
+#include "NoteNode.h"
 #include "Sentinel1ImportNode.h"
 #include "Sentinel1BatchImportNode.h"
 #include "TSXImportNode.h"
@@ -23,6 +24,9 @@ namespace QtNodes {
 std::shared_ptr<NodeDelegateModelRegistry> registerTestNodeModels()
 {
     auto registry = std::make_shared<NodeDelegateModelRegistry>();
+
+    // Register Note node (layout management tool)
+    registry->registerModel<NoteNode>("Note");
 
 #ifdef ENABLE_TEST_NODES
     // Register test nodes in a "Test" category
@@ -96,6 +100,9 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<SimpleMathNode>("Test");
     registry->registerModel<SimpleDisplayNode>("Test");
 #endif
+
+    // Register Note node (layout management tool)
+    registry->registerModel<NoteNode>("Note");
 
     return registry;
 }

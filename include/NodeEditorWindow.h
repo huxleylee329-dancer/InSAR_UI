@@ -25,8 +25,7 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QMouseEvent>
-#include <QPixmap>
-#include <QPainter>
+#include <QComboBox>
 #include <memory>
 
 // QtNodes headers
@@ -39,81 +38,10 @@
 #include <QtNodes/GraphicsViewStyle>
 #include <QtNodes/internal/UndoCommands.hpp>
 
-// Custom tree widget for node palette with drag support
-class NodeTreeWidget : public QTreeWidget
-{
-    Q_OBJECT
-public:
-    explicit NodeTreeWidget(QWidget *parent = nullptr) : QTreeWidget(parent)
-    {
-        setSelectionMode(QAbstractItemView::SingleSelection);
-        setDragEnabled(false);  // Disable built-in drag
-    }
-
-    void mousePressEvent(QMouseEvent *event) override
-    {
-        m_dragStartPos = event->pos();
-        QTreeWidget::mousePressEvent(event);
-    }
-
-    void mouseDoubleClickEvent(QMouseEvent *event) override
-    {
-        // Ignore double-click on category items - let parent handle expand/collapse
-        QTreeWidgetItem *item = itemAt(event->pos());
-        if (item && item->childCount() > 0)
-        {
-            QTreeWidget::mouseDoubleClickEvent(event);
-            return;
-        }
-        // Ignore double-click on leaf items
-        QTreeWidget::mouseDoubleClickEvent(event);
-    }
-
-    void mouseMoveEvent(QMouseEvent *event) override
-    {
-        QTreeWidgetItem *item = itemAt(event->pos());
-        // Don't drag category items
-        if (item && item->childCount() > 0)
-        {
-            QTreeWidget::mouseMoveEvent(event);
-            return;
-        }
-
-        // Start drag for leaf items (only after moving more than 10 pixels)
-        if (event->buttons() & Qt::LeftButton && (event->pos() - m_dragStartPos).manhattanLength() > 10)
-        {
-            QTreeWidgetItem *current = currentItem();
-            if (current && current->childCount() == 0)
-            {
-                QString modelName = current->data(0, Qt::UserRole).toString();
-                if (!modelName.isEmpty())
-                {
-                    QMimeData *mimeData = new QMimeData();
-                    mimeData->setText(modelName);
-                    mimeData->setData("application/x-node-palette", modelName.toUtf8());
-
-                    QDrag *drag = new QDrag(this);
-                    drag->setMimeData(mimeData);
-
-                    // Create a simple drag pixmap
-                    QPixmap pixmap(120, 24);
-                    pixmap.fill(Qt::white);
-                    QPainter painter(&pixmap);
-                    painter.setPen(Qt::black);
-                    painter.drawText(pixmap.rect(), Qt::AlignCenter, modelName);
-                    drag->setPixmap(pixmap);
-
-                    drag->exec(Qt::CopyAction);
-                    return;
-                }
-            }
-        }
-        QTreeWidget::mouseMoveEvent(event);
-    }
-
-private:
-    QPoint m_dragStartPos;
-};
+// Forward declarations
+class LeftSidebar;
+class RightPanel;
+class NodeGroupManager;
 
 // Custom GraphicsView to handle drops from palette
 class PaletteGraphicsView : public QtNodes::GraphicsView
@@ -180,26 +108,50 @@ public:
     QString projectPath() const;
     QString projectName() const;
 
+    // Getters for new components
+    LeftSidebar* leftSidebar() const { return m_leftSidebar; }
+    RightPanel* rightPanel() const { return m_rightPanel; }
+
 private slots:
+    // File operations
     void onNew();
     void onSave();
     void onLoad();
+
+    // Edit operations
     void onClear();
     void onDelete();
+
+    // Scene operations
     void onSceneModified(QtNodes::BasicGraphicsScene *);
     void onSceneLoaded();
-    void onSearchTextChanged(const QString &text);
-    void onNodeItemDoubleClicked(QTreeWidgetItem *item, int column);
-    void onNodeItemClicked(QTreeWidgetItem *item, int column);
-    void onTogglePaletteCollapsed();
+
+    // Left sidebar signals
+    void onNodeDoubleClicked(const QString &modelName);
+    void onNodeSearchTextChanged(const QString &text);
+    void onNodeItemClicked(const QString &modelName);
+    void onWorkflowLoadRequested(const QString &filePath);
+
+    // Right panel signals
+    void onPropertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value);
+
+    // Toolbar operations
+    void onWorkflowComboChanged(int index);
+    void onBrowseWorkflows();
+    void onRefreshNodes();
+    void onQueueExecute();
+    void onInterruptExecution();
+    void onClearQueue();
+    void onShowHistory();
+
+    // Group operations
+    void onGroupSelection();
 
 private:
     void setupUi();
     void setupToolbar();
     void setupMenu();
     void setupSceneInternal();
-    void setupNodePalette();
-    void populateNodeTree();
     void applyStyles();
 
     // Node palette full order configuration
@@ -208,36 +160,43 @@ private:
         QMap<QString, QStringList> subcategories;  // 顶级分类 -> 子分类顺序
         QMap<QString, QStringList> leafItems;      // 子分类路径 -> 叶子项顺序
     } getPaletteFullOrder();
+
     QString getSaveFilePath();
     QString getOpenFilePath();
 
 private:
-    // UI components
-    QHBoxLayout *m_mainLayout;
+    // UI layout components
     QSplitter *m_splitter;
+
+    // Sidebars
+    LeftSidebar *m_leftSidebar;
+    RightPanel *m_rightPanel;
+
+    // Toolbar components
     QToolBar *m_toolbar;
+    QComboBox *m_workflowCombo;
     QAction *m_actionNew;
     QAction *m_actionSave;
     QAction *m_actionLoad;
     QAction *m_actionClear;
     QAction *m_actionDelete;
     QAction *m_actionExit;
-
-    // Node palette
-    QWidget *m_nodePalette;
-    QVBoxLayout *m_paletteLayout;
-    QLineEdit *m_searchBox;
-    NodeTreeWidget *m_nodeTree;
-    QPushButton *m_closePaletteButton;
-    QWidget *m_tabContainer;
-    QPushButton *m_paletteTabButton;
-    bool m_paletteCollapsed;
+    QAction *m_actionBrowse;
+    QAction *m_actionFavorite;
+    QAction *m_actionRefresh;
+    QAction *m_actionQueue;
+    QAction *m_actionInterrupt;
+    QAction *m_actionClearQueue;
+    QAction *m_actionHistory;
 
     // Node Editor components
     std::shared_ptr<QtNodes::NodeDelegateModelRegistry> m_registry;
     QtNodes::DataFlowGraphModel *m_graphModel;
     QtNodes::DataFlowGraphicsScene *m_scene;
     PaletteGraphicsView *m_view;
+
+    // Node Group Manager
+    NodeGroupManager *m_groupManager;
 
     // State
     QString m_currentFilePath;

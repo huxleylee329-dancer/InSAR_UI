@@ -72,6 +72,11 @@ QAction *GraphicsView::deleteSelectionAction() const
     return _deleteSelectionAction;
 }
 
+QAction *GraphicsView::groupSelectionAction() const
+{
+    return _groupSelectionAction;
+}
+
 void GraphicsView::setScene(BasicGraphicsScene *scene)
 {
     QGraphicsView::setScene(scene);
@@ -141,6 +146,17 @@ void GraphicsView::setScene(BasicGraphicsScene *scene)
         connect(_pasteAction, &QAction::triggered, this, &GraphicsView::onPasteObjects);
 
         addAction(_pasteAction);
+    }
+
+    {
+        delete _groupSelectionAction;
+        _groupSelectionAction = new QAction(QStringLiteral("Group Selection"), this);
+        _groupSelectionAction->setShortcutContext(Qt::ShortcutContext::WidgetShortcut);
+        _groupSelectionAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_G));
+        _groupSelectionAction->setAutoRepeat(false);
+        connect(_groupSelectionAction, &QAction::triggered, this, &GraphicsView::onGroupSelectedObjects);
+
+        addAction(_groupSelectionAction);
     }
 
     auto undoAction = scene->undoStack().createUndoAction(this, tr("&Undo"));
@@ -297,6 +313,11 @@ void GraphicsView::onPasteObjects()
 {
     QPointF const pastePosition = scenePastePosition();
     nodeScene()->undoStack().push(new PasteCommand(nodeScene(), pastePosition));
+}
+
+void GraphicsView::onGroupSelectedObjects()
+{
+    emit groupSelected();
 }
 
 void GraphicsView::keyPressEvent(QKeyEvent *event)

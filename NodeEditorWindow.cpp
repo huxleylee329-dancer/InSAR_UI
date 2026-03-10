@@ -1,5 +1,42 @@
 ﻿#include "NodeEditorWindow.h"
+#include "LeftSidebar.h"
+#include "RightPanel.h"
+#include "NodeGroupManager.h"
 #include "NodeModels.h"
+
+#include <QPainter>
+#include <QTimer>
+#include <QtWidgets/QGraphicsItem>
+#include <QtWidgets/QGraphicsObject>
+#include <QtNodes/DataFlowGraphicsScene>
+#include <QtNodes/GraphicsView>
+#include <QtNodes/DataFlowGraphModel>
+#include <QtNodes/NodeDelegateModelRegistry>
+#include <QtNodes/ConnectionStyle>
+#include <QtNodes/NodeStyle>
+#include <QtNodes/GraphicsViewStyle>
+#include <QtNodes/internal/Definitions.hpp>
+#include <QtNodes/internal/NodeGraphicsObject.hpp>
+
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QSplitter>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QLabel>
+#include <QToolBar>
+#include <QAction>
+#include <QFileDialog>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMessageBox>
+#include <QStatusBar>
+#include <QList>
+#include <QMap>
+#include <QPair>
+#include <QComboBox>
+#include <algorithm>
+#include <memory>
 
 // ============================================================================
 // Node Palette Full Order Configuration
@@ -67,69 +104,36 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
     return order;
 }
 
-#include <QPainter>
-#include <QTimer>
-#include <QtWidgets/QGraphicsItem>
-#include <QtWidgets/QGraphicsObject>
-#include <QtNodes/DataFlowGraphicsScene>
-#include <QtNodes/GraphicsView>
-#include <QtNodes/DataFlowGraphModel>
-#include <QtNodes/NodeDelegateModelRegistry>
-#include <QtNodes/ConnectionStyle>
-#include <QtNodes/NodeStyle>
-#include <QtNodes/GraphicsViewStyle>
-#include <QtNodes/internal/Definitions.hpp>
-#include <QtNodes/internal/NodeGraphicsObject.hpp>
-
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QSplitter>
-#include <QTreeWidget>
-#include <QTreeWidgetItemIterator>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QLabel>
-#include <QToolBar>
-#include <QAction>
-#include <QFileDialog>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QMessageBox>
-#include <QStatusBar>
-#include <QList>
-#include <QMap>
-#include <QPair>
-#include <algorithm>
-#include <memory>
-
 NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_mainLayout(nullptr)
     , m_splitter(nullptr)
+    , m_leftSidebar(nullptr)
+    , m_rightPanel(nullptr)
     , m_toolbar(nullptr)
+    , m_workflowCombo(nullptr)
     , m_actionNew(nullptr)
     , m_actionSave(nullptr)
     , m_actionLoad(nullptr)
     , m_actionClear(nullptr)
     , m_actionDelete(nullptr)
     , m_actionExit(nullptr)
-    , m_nodePalette(nullptr)
-    , m_paletteLayout(nullptr)
-    , m_searchBox(nullptr)
-    , m_nodeTree(nullptr)
-    , m_closePaletteButton(nullptr)
-    , m_tabContainer(nullptr)
-    , m_paletteTabButton(nullptr)
-    , m_paletteCollapsed(false)
+    , m_actionBrowse(nullptr)
+    , m_actionFavorite(nullptr)
+    , m_actionRefresh(nullptr)
+    , m_actionQueue(nullptr)
+    , m_actionInterrupt(nullptr)
+    , m_actionClearQueue(nullptr)
+    , m_actionHistory(nullptr)
     , m_graphModel(nullptr)
     , m_scene(nullptr)
     , m_view(nullptr)
+    , m_groupManager(nullptr)
     , m_projectModel(nullptr)
     , m_projectPath()
     , m_projectName()
 {
     setWindowTitle("InSAR Node Editor");
-    resize(1200, 800);
+    resize(1400, 900);
 
     setupUi();
     setupToolbar();
@@ -146,6 +150,7 @@ NodeEditorWindow::~NodeEditorWindow()
     delete m_view;
     delete m_scene;
     delete m_graphModel;
+    delete m_groupManager;
 }
 
 void NodeEditorWindow::setupSceneInternal()
@@ -162,18 +167,53 @@ void NodeEditorWindow::setupSceneInternal()
 
     // Create view (custom subclass to handle drag & drop)
     m_view = new PaletteGraphicsView(m_scene);
+
+    // Setup splitter with 3 panes: [LeftSidebar] [View] [RightPanel]
+    m_splitter->addWidget(m_leftSidebar);
     m_splitter->addWidget(m_view);
+    m_splitter->addWidget(m_rightPanel);
 
-    // Setup node palette
-    setupNodePalette();
+    // Set initial sizes (Left: 250px, Center: flex, Right: 300px)
+    QList<int> sizes;
+    sizes << 250 << 700 << 300;
+    m_splitter->setSizes(sizes);
 
-    // Connect to scene modification signal to update view when nodes are created
+    // Pass registry to left sidebar
+    m_leftSidebar->setRegistry(m_registry);
+
+    // Pass graph model to right panel
+    m_rightPanel->setGraphModel(m_graphModel);
+
+    // Create and configure group manager
+    m_groupManager = new NodeGroupManager(this);
+    m_groupManager->setGraphModel(m_graphModel);
+    m_groupManager->setScene(m_scene);
+
+    // Connect to scene modification signal
     connect(m_scene, &QtNodes::BasicGraphicsScene::modified, this, &NodeEditorWindow::onSceneModified);
 
-    // Set view properties to ensure proper display
+    // Connect to scene selection changes for property panel
+    connect(m_scene, &QtNodes::BasicGraphicsScene::nodeSelected, this, [this](QtNodes::NodeId nodeId) {
+        m_rightPanel->setSelectedNode(nodeId);
+    });
+
+    // Connect to node clicked to update property panel
+    connect(m_scene, &QtNodes::BasicGraphicsScene::nodeClicked, this, [this](QtNodes::NodeId nodeId) {
+        auto selectedNodes = m_scene->selectedNodes();
+        if (selectedNodes.size() == 1) {
+            m_rightPanel->setSelectedNode(selectedNodes[0]);
+        } else {
+            m_rightPanel->clearSelection();
+        }
+    });
+
+    // Connect to group selection signal
+    connect(m_view, &QtNodes::GraphicsView::groupSelected, this, &NodeEditorWindow::onGroupSelection);
+
+    // Set view properties
     m_view->setRenderHint(QPainter::Antialiasing);
     m_view->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
-    m_view->setDragMode(QGraphicsView::ScrollHandDrag);  // Allow panning with mouse drag
+    m_view->setDragMode(QGraphicsView::ScrollHandDrag);
     m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 }
 
@@ -182,55 +222,139 @@ void NodeEditorWindow::setupUi()
     auto *centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
-    m_mainLayout = new QHBoxLayout(centralWidget);
-    m_mainLayout->setContentsMargins(0, 0, 0, 0);
-    m_mainLayout->setSpacing(0);
+    auto *mainLayout = new QVBoxLayout(centralWidget);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(0);
 
-    // Create splitter
+    // Create horizontal splitter for 3-pane layout
     m_splitter = new QSplitter(Qt::Horizontal, this);
-    m_mainLayout->addWidget(m_splitter);
+    m_splitter->setChildrenCollapsible(false);  // Don't allow collapsing to 0
+
+    mainLayout->addWidget(m_splitter);
+
+    // Create left sidebar
+    m_leftSidebar = new LeftSidebar(this);
+
+    // Create right panel
+    m_rightPanel = new RightPanel(this);
+
+    // Connect signals from left sidebar
+    connect(m_leftSidebar, &LeftSidebar::nodeDoubleClicked,
+            this, &NodeEditorWindow::onNodeDoubleClicked);
+    connect(m_leftSidebar, &LeftSidebar::nodeSearchTextChanged,
+            this, &NodeEditorWindow::onNodeSearchTextChanged);
+    connect(m_leftSidebar, &LeftSidebar::nodeItemClicked,
+            this, &NodeEditorWindow::onNodeItemClicked);
+    connect(m_leftSidebar, &LeftSidebar::workflowLoadRequested,
+            this, &NodeEditorWindow::onWorkflowLoadRequested);
+
+    // Connect signals from right panel
+    connect(m_rightPanel, &RightPanel::propertyChanged,
+            this, &NodeEditorWindow::onPropertyChanged);
 }
 
 void NodeEditorWindow::setupToolbar()
 {
     m_toolbar = addToolBar("Main Toolbar");
+    m_toolbar->setMovable(false);  // Keep toolbar fixed at top
 
+    // Workflow dropdown
+    QLabel *workflowLabel = new QLabel("Workflow:");
+    m_toolbar->addWidget(workflowLabel);
+
+    m_workflowCombo = new QComboBox();
+    m_workflowCombo->setMinimumWidth(120);
+    m_workflowCombo->addItem("Blank");
+    m_workflowCombo->addItem("Default");
+    m_workflowCombo->addItem("Open...");
+    m_toolbar->addWidget(m_workflowCombo);
+    connect(m_workflowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &NodeEditorWindow::onWorkflowComboChanged);
+
+    m_toolbar->addSeparator();
+
+    // File actions
     m_actionNew = new QAction("New", this);
     m_actionNew->setShortcut(QKeySequence::New);
     m_actionNew->setStatusTip("Create new graph");
     connect(m_actionNew, &QAction::triggered, this, &NodeEditorWindow::onNew);
+    m_toolbar->addAction(m_actionNew);
 
     m_actionSave = new QAction("Save", this);
     m_actionSave->setShortcut(QKeySequence::Save);
     m_actionSave->setStatusTip("Save graph to file");
     connect(m_actionSave, &QAction::triggered, this, &NodeEditorWindow::onSave);
+    m_toolbar->addAction(m_actionSave);
 
     m_actionLoad = new QAction("Load", this);
     m_actionLoad->setShortcut(QKeySequence::Open);
     m_actionLoad->setStatusTip("Load graph from file");
     connect(m_actionLoad, &QAction::triggered, this, &NodeEditorWindow::onLoad);
+    m_toolbar->addAction(m_actionLoad);
 
+    m_toolbar->addSeparator();
+
+    // Browse and Favorite
+    m_actionBrowse = new QAction("Browse", this);
+    m_actionBrowse->setStatusTip("Browse local workflows");
+    connect(m_actionBrowse, &QAction::triggered, this, &NodeEditorWindow::onBrowseWorkflows);
+    m_toolbar->addAction(m_actionBrowse);
+
+    m_actionFavorite = new QAction("Favorite", this);
+    m_actionFavorite->setStatusTip("Show favorite workflows");
+    connect(m_actionFavorite, &QAction::triggered, this, [this]() {
+        QMessageBox::information(this, "Favorite Workflows", "Favorite workflows feature coming soon.");
+    });
+    m_toolbar->addAction(m_actionFavorite);
+
+    m_actionRefresh = new QAction("Refresh", this);
+    m_actionRefresh->setStatusTip("Refresh node definitions");
+    connect(m_actionRefresh, &QAction::triggered, this, &NodeEditorWindow::onRefreshNodes);
+    m_toolbar->addAction(m_actionRefresh);
+
+    m_toolbar->addSeparator();
+
+    // Queue actions
+    m_actionQueue = new QAction("Queue", this);
+    m_actionQueue->setStatusTip("Queue prompt - execute current workflow");
+    connect(m_actionQueue, &QAction::triggered, this, &NodeEditorWindow::onQueueExecute);
+    m_toolbar->addAction(m_actionQueue);
+
+    m_actionInterrupt = new QAction("Interrupt", this);
+    m_actionInterrupt->setStatusTip("Interrupt current execution");
+    connect(m_actionInterrupt, &QAction::triggered, this, &NodeEditorWindow::onInterruptExecution);
+    m_toolbar->addAction(m_actionInterrupt);
+
+    m_actionClearQueue = new QAction("Clear Queue", this);
+    m_actionClearQueue->setStatusTip("Clear all queued tasks");
+    connect(m_actionClearQueue, &QAction::triggered, this, &NodeEditorWindow::onClearQueue);
+    m_toolbar->addAction(m_actionClearQueue);
+
+    m_actionHistory = new QAction("History", this);
+    m_actionHistory->setStatusTip("Show execution history");
+    connect(m_actionHistory, &QAction::triggered, this, &NodeEditorWindow::onShowHistory);
+    m_toolbar->addAction(m_actionHistory);
+
+    m_toolbar->addSeparator();
+
+    // Edit actions
     m_actionClear = new QAction("Clear", this);
     m_actionClear->setStatusTip("Clear all nodes");
     connect(m_actionClear, &QAction::triggered, this, &NodeEditorWindow::onClear);
+    m_toolbar->addAction(m_actionClear);
 
     m_actionDelete = new QAction("Delete", this);
     m_actionDelete->setShortcut(QKeySequence::Delete);
     m_actionDelete->setStatusTip("Delete selected nodes and connections");
     connect(m_actionDelete, &QAction::triggered, this, &NodeEditorWindow::onDelete);
+    m_toolbar->addAction(m_actionDelete);
+
+    m_toolbar->addSeparator();
 
     m_actionExit = new QAction("Exit", this);
     m_actionExit->setShortcut(QKeySequence::Quit);
     m_actionExit->setStatusTip("Exit node editor");
     connect(m_actionExit, &QAction::triggered, this, &NodeEditorWindow::close);
-
-    m_toolbar->addAction(m_actionNew);
-    m_toolbar->addAction(m_actionSave);
-    m_toolbar->addAction(m_actionLoad);
-    m_toolbar->addSeparator();
-    m_toolbar->addAction(m_actionClear);
-    m_toolbar->addAction(m_actionDelete);
-    m_toolbar->addSeparator();
     m_toolbar->addAction(m_actionExit);
 
     statusBar()->showMessage("Ready");
@@ -250,6 +374,10 @@ void NodeEditorWindow::setupMenu()
     menuEdit->addSeparator();
     menuEdit->addAction(m_actionClear);
 
+    auto *menuView = menuBar()->addMenu("View");
+    menuEdit->addAction(m_actionBrowse);
+    menuEdit->addAction(m_actionHistory);
+
     auto *menuHelp = menuBar()->addMenu("Help");
     auto *actionAbout = new QAction("About", this);
     connect(actionAbout, &QAction::triggered, this, [this]() {
@@ -259,413 +387,6 @@ void NodeEditorWindow::setupMenu()
                          "For InSAR data processing workflow design");
     });
     menuHelp->addAction(actionAbout);
-}
-
-void NodeEditorWindow::setupNodePalette()
-{
-    // Main palette widget
-    m_nodePalette = new QWidget();
-    m_paletteLayout = new QVBoxLayout(m_nodePalette);
-    m_paletteLayout->setContentsMargins(0, 0, 0, 0);
-    m_paletteLayout->setSpacing(0);
-
-    // Set size for the palette
-    m_nodePalette->setMinimumWidth(200);
-    m_nodePalette->setMaximumWidth(300);
-
-    // Add right border effect (raised 3D style like popup menu)
-    m_nodePalette->setStyleSheet(
-        "QWidget {"
-        "    border-right: 2px solid #888888;"
-        "    border-top: 1px solid #e0e0e0;"
-        "    border-bottom: 1px solid #e0e0e0;"
-        "    background-color: #f5f5f5;"
-        "}"
-    );
-
-    // Title bar with close button
-    auto *titleBar = new QWidget();
-    auto *titleLayout = new QHBoxLayout(titleBar);
-    titleLayout->setContentsMargins(4, 4, 4, 4);
-    titleLayout->setSpacing(0);
-
-    auto *titleLabel = new QLabel("Node Palette");
-    titleLayout->addWidget(titleLabel);
-
-    titleLayout->addStretch();
-
-    // Collapse button - fixed size
-    m_closePaletteButton = new QPushButton();
-    m_closePaletteButton->setText(">");
-    m_closePaletteButton->setFixedSize(16, 16);
-    m_closePaletteButton->setStyleSheet("QPushButton { border: none; padding: 0px; }");
-    m_closePaletteButton->setToolTip("Collapse palette");
-    connect(m_closePaletteButton, &QPushButton::clicked,
-            this, &NodeEditorWindow::onTogglePaletteCollapsed);
-    titleLayout->addWidget(m_closePaletteButton);
-
-    titleBar->setLayout(titleLayout);
-    m_paletteLayout->addWidget(titleBar);
-
-    // Search box
-    m_searchBox = new QLineEdit();
-    m_searchBox->setPlaceholderText("Search nodes...");
-    m_searchBox->setClearButtonEnabled(true);
-    m_paletteLayout->addWidget(m_searchBox);
-
-    // Node tree (custom widget with drag support)
-    m_nodeTree = new NodeTreeWidget();
-    m_nodeTree->setHeaderHidden(true);
-    m_nodeTree->setIndentation(12);
-    m_nodeTree->setSortingEnabled(false);  // Keep creation order, not alphabetical
-    m_paletteLayout->addWidget(m_nodeTree);
-
-    // Initialize node tree
-    populateNodeTree();
-
-    // Connect signals
-    connect(m_searchBox, &QLineEdit::textChanged,
-            this, &NodeEditorWindow::onSearchTextChanged);
-    connect(m_nodeTree, &QTreeWidget::itemDoubleClicked,
-            this, &NodeEditorWindow::onNodeItemDoubleClicked);
-    connect(m_nodeTree, &QTreeWidget::itemClicked,
-            this, &NodeEditorWindow::onNodeItemClicked);
-
-    // Collapsed tab button (small "ear" dock-style)
-    // Use a container with button fixed at top-right
-    m_tabContainer = new QWidget();
-    m_tabContainer->setFixedWidth(8);
-    auto *tabLayout = new QVBoxLayout(m_tabContainer);
-    tabLayout->setContentsMargins(0, 0, 0, 0);
-    tabLayout->setSpacing(0);
-
-    m_paletteTabButton = new QPushButton();
-    m_paletteTabButton->setText("<");
-    m_paletteTabButton->setFixedSize(8, 60);
-    m_paletteTabButton->setStyleSheet(
-        "QPushButton {"
-        "    border: none;"
-        "    padding: 0px;"
-        "    background-color: #e0e0e0;"
-        "}"
-        "QPushButton:hover {"
-        "    background-color: #d0d0d0;"
-        "}"
-    );
-    m_paletteTabButton->setToolTip("Expand palette");
-
-    // Button at top, rest stretches
-    tabLayout->addWidget(m_paletteTabButton);
-    tabLayout->addStretch();
-
-    m_tabContainer->hide();
-    connect(m_paletteTabButton, &QPushButton::clicked,
-            this, &NodeEditorWindow::onTogglePaletteCollapsed);
-
-    // Add to splitter
-    m_splitter->addWidget(m_nodePalette);
-    m_splitter->addWidget(m_tabContainer);
-
-    // Default: palette expanded
-    m_paletteCollapsed = false;
-}
-
-void NodeEditorWindow::populateNodeTree()
-{
-    m_nodeTree->clear();
-
-    auto models = m_registry->registeredModelsCategoryAssociation();
-    PaletteOrder order = getPaletteFullOrder();
-
-    // Group models by their paths
-    // Map: path -> list of (modelName, leafName) or (modelName, modelName) for 1-level
-    QMap<QString, QList<QPair<QString, QString>>> pathModels;
-    QMap<QString, QStringList> allPaths;  // All paths that have models
-
-    for (const auto &pair : models)
-    {
-        const QString &modelName = pair.first;
-        const QString &categoryPath = pair.second;
-
-        QStringList parts = categoryPath.split('/', Qt::SkipEmptyParts);
-        if (parts.isEmpty())
-            continue;
-
-        if (parts.size() == 1)
-        {
-            // 1-level: path is category, leafName is modelName
-            pathModels[categoryPath].append(qMakePair(modelName, modelName));
-        }
-        else
-        {
-            // Multi-level: last part is leaf, rest is subcategory path
-            QString subcategory = QStringList(parts.mid(0, parts.size() - 1)).join('/');
-            QString leafName = parts.last();
-            pathModels[subcategory].append(qMakePair(modelName, leafName));
-        }
-
-        // Track all paths
-        allPaths[categoryPath] = QStringList();
-    }
-
-    // Helper function to find or create a tree item
-    auto findOrCreateItem = [this](QTreeWidgetItem *parent, const QString &text, bool isLeaf) -> QTreeWidgetItem* {
-        QTreeWidgetItem *targetParent = parent ? parent : nullptr;
-
-        int count = targetParent ? targetParent->childCount() : m_nodeTree->topLevelItemCount();
-        for (int i = 0; i < count; ++i) {
-            QTreeWidgetItem *item = targetParent ? targetParent->child(i) : m_nodeTree->topLevelItem(i);
-            if (item->text(0) == text) {
-                return item;
-            }
-        }
-
-        QTreeWidgetItem *newItem = targetParent ? new QTreeWidgetItem(targetParent) : new QTreeWidgetItem(m_nodeTree);
-        newItem->setText(0, text);
-        newItem->setExpanded(!isLeaf);
-        newItem->setFlags(isLeaf ? (Qt::ItemIsEnabled | Qt::ItemIsSelectable) : Qt::ItemIsEnabled);
-        return newItem;
-    };
-
-    // Process top-level categories in defined order
-    for (const QString &topLevel : order.topLevel)
-    {
-        QTreeWidgetItem *topItem = findOrCreateItem(nullptr, topLevel, false);
-
-        // Get subcategories for this top-level category
-        QStringList subcategories = order.subcategories.value(topLevel);
-
-        // If no subcategories defined, this is a 1-level category
-        if (subcategories.isEmpty())
-        {
-            QList<QPair<QString, QString>> &modelsList = pathModels[topLevel];
-
-            // Sort according to leafItems order, or alphabetically as fallback
-            const QStringList &leafOrder = order.leafItems.value(topLevel);
-            if (!leafOrder.isEmpty())
-            {
-                QList<QPair<QString, QString>> sortedModels;
-                for (const QString &leafName : leafOrder)
-                {
-                    for (const auto &modelInfo : modelsList)
-                    {
-                        if (modelInfo.second == leafName)
-                            sortedModels.append(modelInfo);
-                    }
-                }
-                // Add any models not in order list
-                for (const auto &modelInfo : modelsList)
-                {
-                    if (!leafOrder.contains(modelInfo.second))
-                        sortedModels.append(modelInfo);
-                }
-                modelsList = sortedModels;
-            }
-            else
-            {
-                // Sort alphabetically
-                std::sort(modelsList.begin(), modelsList.end(),
-                    [](const QPair<QString, QString> &a, const QPair<QString, QString> &b) {
-                        return a.second < b.second;
-                    });
-            }
-
-            // Add models
-            for (const auto &modelInfo : modelsList)
-            {
-                QTreeWidgetItem *item = new QTreeWidgetItem(topItem);
-                item->setText(0, modelInfo.second);
-                item->setData(0, Qt::UserRole, modelInfo.first);
-                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-            }
-            topItem->setExpanded(true);
-            continue;
-        }
-
-        // Process each subcategory in defined order
-        for (const QString &subcategory : subcategories)
-        {
-            QString subcategoryPath = topLevel + "/" + subcategory;
-            QTreeWidgetItem *subItem = findOrCreateItem(topItem, subcategory, false);
-
-            QList<QPair<QString, QString>> &modelsList = pathModels[subcategoryPath];
-
-            // Sort according to leafItems order
-            const QStringList &leafOrder = order.leafItems.value(subcategoryPath);
-            if (!leafOrder.isEmpty())
-            {
-                QList<QPair<QString, QString>> sortedModels;
-                for (const QString &leafName : leafOrder)
-                {
-                    for (const auto &modelInfo : modelsList)
-                    {
-                        if (modelInfo.second == leafName)
-                            sortedModels.append(modelInfo);
-                    }
-                }
-                // Add any models not in order list
-                for (const auto &modelInfo : modelsList)
-                {
-                    if (!leafOrder.contains(modelInfo.second))
-                        sortedModels.append(modelInfo);
-                }
-                modelsList = sortedModels;
-            }
-            else
-            {
-                // Fallback to alphabetical sort
-                std::sort(modelsList.begin(), modelsList.end(),
-                    [](const QPair<QString, QString> &a, const QPair<QString, QString> &b) {
-                        return a.second < b.second;
-                    });
-            }
-
-            // Add leaf items
-            for (const auto &modelInfo : modelsList)
-            {
-                QTreeWidgetItem *item = new QTreeWidgetItem(subItem);
-                item->setText(0, modelInfo.second);
-                item->setData(0, Qt::UserRole, modelInfo.first);
-                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-            }
-            subItem->setExpanded(true);
-        }
-        topItem->setExpanded(true);
-    }
-}
-
-void NodeEditorWindow::onSearchTextChanged(const QString &text)
-{
-    QTreeWidgetItemIterator it(m_nodeTree);
-    while (*it)
-    {
-        QTreeWidgetItem *item = *it;
-        QString itemName = item->text(0);
-
-        bool match = text.isEmpty() ||
-                   itemName.contains(text, Qt::CaseInsensitive);
-
-        // Leaf nodes (items without children) - these are the clickable nodes
-        if (item->childCount() == 0)
-        {
-            // Show/hide based on match
-            item->setHidden(!match);
-            // If matching, make sure all parent categories are visible and expanded
-            if (match)
-            {
-                QTreeWidgetItem *parent = item->parent();
-                while (parent)
-                {
-                    parent->setHidden(false);
-                    parent->setExpanded(true);
-                    parent = parent->parent();
-                }
-            }
-        }
-        // Category items (items with children)
-        else
-        {
-            // Categories are always shown if they have any visible children
-            // We'll determine this after processing all items
-            if (text.isEmpty())
-            {
-                item->setHidden(false);
-                // Expand all by default when search is empty
-                item->setExpanded(true);
-            }
-            else
-            {
-                // During search, expand to show matching children
-                item->setExpanded(true);
-            }
-        }
-
-        ++it;
-    }
-
-    // Second pass: hide categories that have no visible children
-    if (!text.isEmpty())
-    {
-        QTreeWidgetItemIterator it2(m_nodeTree);
-        while (*it2)
-        {
-            QTreeWidgetItem *item = *it2;
-            if (item->childCount() > 0)
-            {
-                bool hasVisibleChildren = false;
-                for (int i = 0; i < item->childCount(); ++i)
-                {
-                    if (!item->child(i)->isHidden())
-                    {
-                        hasVisibleChildren = true;
-                        break;
-                    }
-                }
-                item->setHidden(!hasVisibleChildren);
-            }
-            ++it2;
-        }
-    }
-}
-
-void NodeEditorWindow::onTogglePaletteCollapsed()
-{
-    QList<int> sizes = m_splitter->sizes();
-
-    if (m_paletteCollapsed)
-    {
-        // Expand palette
-        m_nodePalette->show();
-        m_tabContainer->hide();
-        m_closePaletteButton->setText(">");
-        m_closePaletteButton->setToolTip("Collapse palette");
-        m_paletteCollapsed = false;
-        // Set sizes: canvas keeps current, panel gets 200px, tab gets 0
-        sizes[1] = 200;
-        sizes[2] = 0;
-        m_splitter->setSizes(sizes);
-    }
-    else
-    {
-        // Collapse palette - only show the small "ear"
-        m_nodePalette->hide();
-        m_tabContainer->show();
-        m_paletteCollapsed = true;
-        // Set sizes: canvas keeps current + panel width, panel gets 0, tab gets 8px
-        sizes[0] = sizes[0] + sizes[1];  // Canvas gets panel's space
-        sizes[1] = 0;
-        sizes[2] = 8;
-        m_splitter->setSizes(sizes);
-    }
-}
-
-void NodeEditorWindow::onNodeItemDoubleClicked(QTreeWidgetItem *item, int column)
-{
-    if (item->parent() == nullptr)
-        return;  // Ignore category items
-
-    QString modelName = item->data(0, Qt::UserRole).toString();
-
-    // Get canvas center position
-    QPointF scenePos = m_view->mapToScene(m_view->viewport()->rect().center());
-
-    // Create node directly through graphModel
-    QtNodes::NodeId nodeId = m_graphModel->addNode(modelName);
-    if (nodeId != QtNodes::InvalidNodeId) {
-        m_scene->clearSelection();  // Clear previous selection
-        m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, scenePos);
-        m_scene->nodeGraphicsObject(nodeId)->setSelected(true);  // Auto-select newly created node
-        statusBar()->showMessage(QString("Added node: %1").arg(modelName));
-    }
-}
-
-void NodeEditorWindow::onNodeItemClicked(QTreeWidgetItem *item, int column)
-{
-    if (item->parent() == nullptr)
-        return;
-
-    QString modelName = item->data(0, Qt::UserRole).toString();
-    statusBar()->showMessage(QString("Double-click to add: %1").arg(modelName));
 }
 
 void NodeEditorWindow::applyStyles()
@@ -736,9 +457,12 @@ QString NodeEditorWindow::getOpenFilePath()
     );
 }
 
+// ============================================================================
+// File Operations
+// ============================================================================
+
 void NodeEditorWindow::onNew()
 {
-    // Clear scene
     onClear();
     m_currentFilePath.clear();
     statusBar()->showMessage("New graph created");
@@ -798,39 +522,39 @@ void NodeEditorWindow::onLoad()
     }
 }
 
+// ============================================================================
+// Edit Operations
+// ============================================================================
+
 void NodeEditorWindow::onClear()
 {
     if (!m_graphModel)
         return;
 
-    // Delete all nodes
     auto nodeIds = m_graphModel->allNodeIds();
     for (auto nodeId : nodeIds)
     {
         m_graphModel->deleteNode(nodeId);
     }
 
-    // All connections are automatically removed when nodes are deleted
+    m_rightPanel->clearSelection();
     statusBar()->showMessage("Cleared all nodes");
 }
 
 void NodeEditorWindow::onDelete()
 {
-    // Delete selected nodes and connections
     if (!m_scene || !m_graphModel)
         return;
 
-    // Get selected nodes using the scene's method
     auto selectedNodeIds = m_scene->selectedNodes();
     int nodeCount = selectedNodeIds.size();
 
-    // Delete selected nodes
     for (auto nodeId : selectedNodeIds)
     {
         m_graphModel->deleteNode(nodeId);
     }
 
-    // Connections are automatically removed when nodes are deleted
+    m_rightPanel->clearSelection();
 
     if (nodeCount > 0)
     {
@@ -842,6 +566,10 @@ void NodeEditorWindow::onDelete()
     }
 }
 
+// ============================================================================
+// Scene Operations
+// ============================================================================
+
 void NodeEditorWindow::onSceneModified(QtNodes::BasicGraphicsScene *)
 {
     if (!m_graphModel)
@@ -849,7 +577,6 @@ void NodeEditorWindow::onSceneModified(QtNodes::BasicGraphicsScene *)
 
     int nodeCount = m_graphModel->allNodeIds().size();
 
-    // Count all connections
     int connectionCount = 0;
     auto nodeIds = m_graphModel->allNodeIds();
     for (auto nodeId : nodeIds)
@@ -867,11 +594,199 @@ void NodeEditorWindow::onSceneLoaded()
         m_view->centerScene();
 }
 
+// ============================================================================
+// Left Sidebar Signals
+// ============================================================================
+
+void NodeEditorWindow::onNodeDoubleClicked(const QString &modelName)
+{
+    if (!m_view || !m_graphModel)
+        return;
+
+    QPointF scenePos = m_view->mapToScene(m_view->viewport()->rect().center());
+
+    QtNodes::NodeId nodeId = m_graphModel->addNode(modelName);
+    if (nodeId != QtNodes::InvalidNodeId) {
+        m_scene->clearSelection();
+        m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, scenePos);
+        m_scene->nodeGraphicsObject(nodeId)->setSelected(true);
+        m_rightPanel->setSelectedNode(nodeId);
+        statusBar()->showMessage(QString("Added node: %1").arg(modelName));
+    }
+}
+
+void NodeEditorWindow::onNodeSearchTextChanged(const QString &text)
+{
+    Q_UNUSED(text);
+    // Search is handled by LeftSidebar internally
+}
+
+void NodeEditorWindow::onNodeItemClicked(const QString &modelName)
+{
+    statusBar()->showMessage(QString("Double-click to add: %1").arg(modelName));
+}
+
+void NodeEditorWindow::onWorkflowLoadRequested(const QString &filePath)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        QMessageBox::warning(this, "Error", "Cannot open file: " + filePath);
+        return;
+    }
+
+    QByteArray data = file.readAll();
+    file.close();
+
+    QJsonDocument doc(QJsonDocument::fromJson(data));
+    if (!doc.isObject())
+    {
+        QMessageBox::warning(this, "Error", "Invalid file format");
+        return;
+    }
+
+    onClear();
+    if (m_scene->load())
+    {
+        m_currentFilePath = filePath;
+        setWindowModified(false);
+        statusBar()->showMessage("Loaded workflow: " + QFileInfo(filePath).baseName());
+    }
+    else
+    {
+        QMessageBox::warning(this, "Error", "Cannot load workflow: " + filePath);
+    }
+}
+
+// ============================================================================
+// Right Panel Signals
+// ============================================================================
+
+void NodeEditorWindow::onPropertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value)
+{
+    if (!m_graphModel)
+        return;
+
+    if (property == "caption")
+    {
+        m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Caption, value);
+    }
+    else if (property == "position")
+    {
+        m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, value);
+    }
+    // Other properties can be handled here as needed
+}
+
+// ============================================================================
+// Toolbar Operations
+// ============================================================================
+
+void NodeEditorWindow::onWorkflowComboChanged(int index)
+{
+    if (index == 0)  // Blank
+    {
+        onNew();
+    }
+    else if (index == 1)  // Default
+    {
+        onNew();
+        statusBar()->showMessage("Loaded default workflow template");
+    }
+    else if (index == 2)  // Open...
+    {
+        onLoad();
+        m_workflowCombo->setCurrentIndex(0);  // Reset to Blank
+    }
+}
+
+void NodeEditorWindow::onBrowseWorkflows()
+{
+    // Switch to Workflows tab in left sidebar
+    // This would require exposing tab switching from LeftSidebar
+    QMessageBox::information(this, "Browse Workflows", "Workflow browser available in left sidebar Workflows tab.");
+}
+
+void NodeEditorWindow::onRefreshNodes()
+{
+    if (m_leftSidebar)
+    {
+        m_leftSidebar->setRegistry(m_registry);
+        statusBar()->showMessage("Node definitions refreshed");
+    }
+}
+
+void NodeEditorWindow::onQueueExecute()
+{
+    // Placeholder for queue execution
+    QMessageBox::information(this, "Queue Execution", "Queue execution will be implemented in a future update.");
+}
+
+void NodeEditorWindow::onInterruptExecution()
+{
+    // Placeholder for interrupt
+    QMessageBox::information(this, "Interrupt", "Interrupt functionality will be implemented in a future update.");
+}
+
+void NodeEditorWindow::onClearQueue()
+{
+    // Placeholder for clear queue
+    QMessageBox::information(this, "Clear Queue", "Clear queue functionality will be implemented in a future update.");
+}
+
+void NodeEditorWindow::onShowHistory()
+{
+    // Placeholder for history
+    QMessageBox::information(this, "Execution History", "Execution history will be implemented in a future update.");
+}
+
+// ============================================================================
+// Group Operations
+// ============================================================================
+
+void NodeEditorWindow::onGroupSelection()
+{
+    if (!m_scene || !m_groupManager)
+        return;
+
+    auto selectedNodes = m_scene->selectedNodes();
+    if (selectedNodes.size() < 2)
+    {
+        statusBar()->showMessage("Select at least 2 nodes to group (Ctrl+click to select multiple)");
+        return;
+    }
+
+    // Create group with selected nodes
+    QVector<QtNodes::NodeId> nodeIds;
+    for (QtNodes::NodeId nodeId : selectedNodes)
+    {
+        nodeIds.append(nodeId);
+    }
+
+    // Convert to QVector for group manager
+    m_groupManager->createGroup("New Group", nodeIds);
+
+    statusBar()->showMessage(QString("Created group with %1 nodes").arg(nodeIds.size()));
+}
+
+// ============================================================================
+// Project Context
+// ============================================================================
+
 void NodeEditorWindow::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
 {
     m_projectModel = model;
     m_projectPath = path;
     m_projectName = name;
+
+    // Set workflow path for left sidebar
+    if (m_leftSidebar && !path.isEmpty())
+    {
+        QDir dir(path);
+        dir.cdUp();  // Go to project directory
+        QString workflowDir = dir.filePath("workflows");
+        m_leftSidebar->setWorkflowPath(workflowDir);
+    }
 }
 
 QStandardItemModel* NodeEditorWindow::projectModel() const

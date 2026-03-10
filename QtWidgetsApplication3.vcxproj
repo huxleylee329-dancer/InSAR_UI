@@ -171,6 +171,9 @@
     <ClCompile Include="InSAR_IPC.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+	<ClCompile Include="LeftSidebar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -183,7 +186,12 @@
     <ClCompile Include="NewProject.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="OpenProject.cpp">
+    <ClCompile Include="NodeGroupManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NoteNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>	<ClCompile Include="OpenProject.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Preview_Window.cpp">
@@ -193,6 +201,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="reselection_view.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+	<ClCompile Include="RightPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="S1_Deburst.cpp">
@@ -479,6 +490,18 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1_frame_merge.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\LeftSidebar.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\NodeGroupManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\NoteNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\RightPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="include\tinystr.h">
