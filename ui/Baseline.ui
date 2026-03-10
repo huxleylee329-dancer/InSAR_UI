@@ -14,7 +14,7 @@
    <string>基线预览</string>
   </property>
   <property name="windowIcon">
-   <iconset>
+   <iconset resource="../resources/QtWidgetsApplication3.qrc">
     <normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -72,7 +72,7 @@
      <item>
       <widget class="QDialogButtonBox" name="buttonBox">
        <property name="standardButtons">
-        <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
+        <set>QDialogButtonBox::NoButton</set>
        </property>
       </widget>
      </item>
@@ -81,7 +81,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../QtWidgetsApplication3.qrc"/>
+  <include location="../resources/QtWidgetsApplication3.qrc"/>
  </resources>
  <connections/>
 </ui>

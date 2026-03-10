@@ -14,7 +14,7 @@
    <string>地理编码</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../QtWidgetsApplication3.qrc">
+   <iconset resource="../resources/QtWidgetsApplication3.qrc">
     <normaloff>:/QtWidgetsApplication3/icon/geocoding.png</normaloff>:/QtWidgetsApplication3/icon/geocoding.png</iconset>
   </property>
   <layout class="QHBoxLayout" name="horizontalLayout">
@@ -186,7 +186,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../QtWidgetsApplication3.qrc"/>
+  <include location="../resources/QtWidgetsApplication3.qrc"/>
  </resources>
  <connections/>
 </ui>
