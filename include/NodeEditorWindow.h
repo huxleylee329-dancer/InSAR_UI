@@ -4,7 +4,6 @@
 #include <QMainWindow>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QSplitter>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QLineEdit>
@@ -28,6 +27,11 @@
 #include <QComboBox>
 #include <memory>
 
+// ADS (Qt Advanced Docking System)
+#include "ads_globals.h"
+#include "DockManager.h"
+#include "DockWidget.h"
+
 // QtNodes headers
 #include <QtNodes/DataFlowGraphicsScene>
 #include <QtNodes/GraphicsView>
@@ -36,11 +40,17 @@
 #include <QtNodes/ConnectionStyle>
 #include <QtNodes/NodeStyle>
 #include <QtNodes/GraphicsViewStyle>
+#include <QtNodes/internal/Definitions.hpp>
+#include <QtNodes/internal/NodeGraphicsObject.hpp>
 #include <QtNodes/internal/UndoCommands.hpp>
 
 // Forward declarations
-class LeftSidebar;
-class RightPanel;
+class NodeEditorWindow;
+class WorkflowBrowser;
+class NodeLibraryWidget;
+class NodeTreeWidget;
+class PropertyEditor;
+class QueueManagerWidget;
 class NodeGroupManager;
 
 // Custom GraphicsView to handle drops from palette
@@ -109,8 +119,9 @@ public:
     QString projectName() const;
 
     // Getters for new components
-    LeftSidebar* leftSidebar() const { return m_leftSidebar; }
-    RightPanel* rightPanel() const { return m_rightPanel; }
+    NodeLibraryWidget* nodeLibrary() const { return m_nodeLibrary; }
+    PropertyEditor* propertyEditor() const { return m_propertyEditor; }
+    WorkflowBrowser* workflowBrowser() const { return m_workflowBrowser; }
 
 private slots:
     // File operations
@@ -130,9 +141,11 @@ private slots:
     void onNodeDoubleClicked(const QString &modelName);
     void onNodeSearchTextChanged(const QString &text);
     void onNodeItemClicked(const QString &modelName);
+
+    // Workflow browser signals
     void onWorkflowLoadRequested(const QString &filePath);
 
-    // Right panel signals
+    // Property editor signals
     void onPropertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value);
 
     // Toolbar operations
@@ -145,8 +158,10 @@ private slots:
     void onShowHistory();
 
     // Panel toggle operations
-    void onToggleLeftSidebar();
-    void onToggleRightPanel();
+    void onToggleNodesDock();
+    void onToggleWorkflowsDock();
+    void onTogglePropertiesDock();
+    void onToggleQueueDock();
 
     // Group operations
     void onGroupSelection();
@@ -169,12 +184,25 @@ private:
     QString getOpenFilePath();
 
 private:
-    // UI layout components
-    QSplitter *m_splitter;
+    // Use ADS namespace alias
+    typedef ads::CDockManager DockManager;
+    typedef ads::CDockWidget DockWidget;
 
-    // Sidebars
-    LeftSidebar *m_leftSidebar;
-    RightPanel *m_rightPanel;
+    // UI layout components
+    DockManager *m_dockManager;
+
+    // ADS dock widgets
+    DockWidget *m_nodesDockWidget;
+    DockWidget *m_workflowsDockWidget;
+    DockWidget *m_canvasDockWidget;
+    DockWidget *m_propertiesDockWidget;
+    DockWidget *m_queueDockWidget;
+
+    // Individual dock widget components
+    WorkflowBrowser *m_workflowBrowser;
+    NodeLibraryWidget *m_nodeLibrary;
+    PropertyEditor *m_propertyEditor;
+    QueueManagerWidget *m_queueManager;
 
     // Toolbar components
     QToolBar *m_toolbar;

@@ -26,6 +26,15 @@
     <Filter Include="QtNodes\Include">
       <UniqueIdentifier>{B5697A6A-58FE-4652-ABE8-294BC7298051}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ADS">
+      <UniqueIdentifier>{B5697A6B-58FE-4652-ABE8-294BC7298052}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ADS\Src">
+      <UniqueIdentifier>{B5697A6C-58FE-4652-ABE8-294BC7298053}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ADS\Include">
+      <UniqueIdentifier>{B5697A6D-58FE-4652-ABE8-294BC7298054}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -265,8 +274,74 @@
     <ClCompile Include="NoteNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="RightPanel.cpp">
+    <ClCompile Include="DockWidgets.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\ads_globals.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\AutoHideDockContainer.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\AutoHideSideBar.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\AutoHideTab.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockAreaTabBar.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockAreaTitleBar.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockAreaWidget.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockComponentsFactory.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockContainerWidget.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockFocusController.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockingStateReader.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockManager.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockOverlay.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockSplitter.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockWidget.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockWidgetTab.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\ElidingLabel.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\FloatingDockContainer.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\FloatingDragPreview.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\IconProvider.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\PushButton.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\ResizeHandle.cpp">
+      <Filter>ADS\Src</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -381,12 +456,6 @@
     <QtMoc Include="include\CSKImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\S1DeburstNode.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="include\S1FrameMergeNode.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="include\S1SwathMergeNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -477,20 +546,86 @@
     <QtMoc Include="include\Sentinel1ImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="LeftSidebar.cpp">
-      <Filter>Source Files</Filter>
-    </QtMoc>
-    <QtMoc Include="include\LeftSidebar.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="include\NodeGroupManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\NoteNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\RightPanel.h">
+    <QtMoc Include="include\DockWidgets.h">
       <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\NodeTreeWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\ads_globals.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\AutoHideDockContainer.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\AutoHideSideBar.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\AutoHideTab.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaTabBar.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaTitleBar.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaWidget.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockComponentsFactory.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockContainerWidget.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockFocusController.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockingStateReader.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockManager.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockOverlay.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockSplitter.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockWidget.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockWidgetTab.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\ElidingLabel.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\FloatingDockContainer.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\FloatingDragPreview.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\IconProvider.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\PushButton.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\ResizeHandle.h">
+      <Filter>ADS\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaTitleBar_p.h">
+      <Filter>ADS\Include</Filter>
     </QtMoc>
   </ItemGroup>
   <ItemGroup>
@@ -720,5 +855,14 @@
     <QtRcc Include="resources\QtWidgetsApplication3.qrc">
       <Filter>Resource Files</Filter>
     </QtRcc>
+    <QtRcc Include="ADS\ads.qrc">
+      <Filter>ADS</Filter>
+    </QtRcc>
+    <Image Include="ADS\images\*.*">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <None Include="ADS\stylesheets\*.*">
+      <Filter>ADS\Stylesheets</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -1,8 +1,12 @@
 ﻿#include "NodeEditorWindow.h"
-#include "LeftSidebar.h"
-#include "RightPanel.h"
+#include "DockWidgets.h"
 #include "NodeGroupManager.h"
 #include "NodeModels.h"
+
+// ADS (Qt Advanced Docking System)
+#include "ads_globals.h"
+#include "DockManager.h"
+#include "DockWidget.h"
 
 #include <QPainter>
 #include <QTimer>
@@ -106,9 +110,16 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
 
 NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_splitter(nullptr)
-    , m_leftSidebar(nullptr)
-    , m_rightPanel(nullptr)
+    , m_dockManager(nullptr)
+    , m_nodesDockWidget(nullptr)
+    , m_workflowsDockWidget(nullptr)
+    , m_canvasDockWidget(nullptr)
+    , m_propertiesDockWidget(nullptr)
+    , m_queueDockWidget(nullptr)
+    , m_workflowBrowser(nullptr)
+    , m_nodeLibrary(nullptr)
+    , m_propertyEditor(nullptr)
+    , m_queueManager(nullptr)
     , m_toolbar(nullptr)
     , m_workflowCombo(nullptr)
     , m_actionNew(nullptr)
@@ -147,9 +158,7 @@ NodeEditorWindow::NodeEditorWindow(QWidget *parent)
 
 NodeEditorWindow::~NodeEditorWindow()
 {
-    delete m_view;
-    delete m_scene;
-    delete m_graphModel;
+    // Dock widgets are managed by CDockManager
     delete m_groupManager;
 }
 
@@ -168,21 +177,52 @@ void NodeEditorWindow::setupSceneInternal()
     // Create view (custom subclass to handle drag & drop)
     m_view = new PaletteGraphicsView(m_scene);
 
-    // Setup splitter with 3 panes: [LeftSidebar] [View] [RightPanel]
-    m_splitter->addWidget(m_leftSidebar);
-    m_splitter->addWidget(m_view);
-    m_splitter->addWidget(m_rightPanel);
+    // Setup ADS Dock Manager with dock widgets
 
-    // Set initial sizes (Left: 250px, Center: flex, Right: 300px)
-    QList<int> sizes;
-    sizes << 250 << 700 << 300;
-    m_splitter->setSizes(sizes);
+    // 1. Create canvas dock widget (central widget)
+    m_canvasDockWidget = new ads::CDockWidget("Canvas", this);
+    m_canvasDockWidget->setWidget(m_view);
+    m_canvasDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
+    m_dockManager->setCentralWidget(m_canvasDockWidget);
 
-    // Pass registry to left sidebar
-    m_leftSidebar->setRegistry(m_registry);
+    // 2. Create Nodes dock widget (left side)
+    m_nodesDockWidget = new ads::CDockWidget("Nodes", this);
+    m_nodesDockWidget->setWidget(m_nodeLibrary);
+    m_nodesDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
+    m_dockManager->addDockWidget(ads::LeftDockWidgetArea, m_nodesDockWidget);
 
-    // Pass graph model to right panel
-    m_rightPanel->setGraphModel(m_graphModel);
+    // 3. Create Workflows dock widget (left side)
+    m_workflowsDockWidget = new ads::CDockWidget("Workflows", this);
+    m_workflowsDockWidget->setWidget(m_workflowBrowser);
+    m_workflowsDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
+    m_dockManager->addDockWidget(ads::LeftDockWidgetArea, m_workflowsDockWidget, m_nodesDockWidget->dockAreaWidget());
+
+    // 4. Create Properties dock widget (right side)
+    m_propertiesDockWidget = new ads::CDockWidget("Properties", this);
+    m_propertiesDockWidget->setWidget(m_propertyEditor);
+    m_propertiesDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
+    m_dockManager->addDockWidget(ads::RightDockWidgetArea, m_propertiesDockWidget);
+
+    // 5. Create Queue dock widget (right side)
+    m_queueDockWidget = new ads::CDockWidget("Queue", this);
+    m_queueDockWidget->setWidget(m_queueManager);
+    m_queueDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
+    m_dockManager->addDockWidget(ads::RightDockWidgetArea, m_queueDockWidget, m_propertiesDockWidget->dockAreaWidget());
+
+    // Pass registry to node library
+    m_nodeLibrary->setRegistry(m_registry);
+
+    // Pass graph model to property editor
+    m_propertyEditor->setGraphModel(m_graphModel);
+
+    // Set workflow path for workflow browser
+    if (!m_projectPath.isEmpty())
+    {
+        QDir dir(m_projectPath);
+        dir.cdUp();
+        QString workflowDir = dir.filePath("workflows");
+        m_workflowBrowser->setWorkflowPath(workflowDir);
+    }
 
     // Create and configure group manager
     m_groupManager = new NodeGroupManager(this);
@@ -194,16 +234,16 @@ void NodeEditorWindow::setupSceneInternal()
 
     // Connect to scene selection changes for property panel
     connect(m_scene, &QtNodes::BasicGraphicsScene::nodeSelected, this, [this](QtNodes::NodeId nodeId) {
-        m_rightPanel->setSelectedNode(nodeId);
+        m_propertyEditor->setSelectedNode(nodeId);
     });
 
     // Connect to node clicked to update property panel
     connect(m_scene, &QtNodes::BasicGraphicsScene::nodeClicked, this, [this](QtNodes::NodeId nodeId) {
         auto selectedNodes = m_scene->selectedNodes();
         if (selectedNodes.size() == 1) {
-            m_rightPanel->setSelectedNode(selectedNodes[0]);
+            m_propertyEditor->setSelectedNode(selectedNodes[0]);
         } else {
-            m_rightPanel->clearSelection();
+            m_propertyEditor->clearSelection();
         }
     });
 
@@ -219,37 +259,29 @@ void NodeEditorWindow::setupSceneInternal()
 
 void NodeEditorWindow::setupUi()
 {
-    auto *centralWidget = new QWidget(this);
-    setCentralWidget(centralWidget);
+    // Create ADS Dock Manager
+    m_dockManager = new ads::CDockManager(this);
 
-    auto *mainLayout = new QVBoxLayout(centralWidget);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
+    // Create dock widget components
+    m_nodeLibrary = new NodeLibraryWidget();
+    m_workflowBrowser = new WorkflowBrowser();
+    m_propertyEditor = new PropertyEditor();
+    m_queueManager = new QueueManagerWidget();
 
-    // Create horizontal splitter for 3-pane layout
-    m_splitter = new QSplitter(Qt::Horizontal, this);
-    m_splitter->setChildrenCollapsible(false);  // Don't allow collapsing to 0
-
-    mainLayout->addWidget(m_splitter);
-
-    // Create left sidebar
-    m_leftSidebar = new LeftSidebar(this);
-
-    // Create right panel
-    m_rightPanel = new RightPanel(this);
-
-    // Connect signals from left sidebar
-    connect(m_leftSidebar, &LeftSidebar::nodeDoubleClicked,
+    // Connect node library signals
+    connect(m_nodeLibrary, &NodeLibraryWidget::nodeDoubleClicked,
             this, &NodeEditorWindow::onNodeDoubleClicked);
-    connect(m_leftSidebar, &LeftSidebar::nodeSearchTextChanged,
+    connect(m_nodeLibrary, &NodeLibraryWidget::nodeSearchTextChanged,
             this, &NodeEditorWindow::onNodeSearchTextChanged);
-    connect(m_leftSidebar, &LeftSidebar::nodeItemClicked,
+    connect(m_nodeLibrary, &NodeLibraryWidget::nodeItemClicked,
             this, &NodeEditorWindow::onNodeItemClicked);
-    connect(m_leftSidebar, &LeftSidebar::workflowLoadRequested,
+
+    // Connect workflow browser signals
+    connect(m_workflowBrowser, &WorkflowBrowser::loadWorkflow,
             this, &NodeEditorWindow::onWorkflowLoadRequested);
 
-    // Connect signals from right panel
-    connect(m_rightPanel, &RightPanel::propertyChanged,
+    // Connect property editor signals
+    connect(m_propertyEditor, &PropertyEditor::propertyChanged,
             this, &NodeEditorWindow::onPropertyChanged);
 }
 
@@ -315,17 +347,29 @@ void NodeEditorWindow::setupToolbar()
     m_toolbar->addSeparator();
 
     // Panel toggle actions
-    QAction *actionToggleLeft = new QAction("◀ Left Panel", this);
-    actionToggleLeft->setStatusTip("Toggle left sidebar");
-    actionToggleLeft->setCheckable(false);
-    connect(actionToggleLeft, &QAction::triggered, this, &NodeEditorWindow::onToggleLeftSidebar);
-    m_toolbar->addAction(actionToggleLeft);
+    QAction *actionToggleNodes = new QAction("< Nodes", this);
+    actionToggleNodes->setStatusTip("Toggle Nodes panel");
+    actionToggleNodes->setCheckable(false);
+    connect(actionToggleNodes, &QAction::triggered, this, &NodeEditorWindow::onToggleNodesDock);
+    m_toolbar->addAction(actionToggleNodes);
 
-    QAction *actionToggleRight = new QAction("Right Panel ▶", this);
-    actionToggleRight->setStatusTip("Toggle right panel");
-    actionToggleRight->setCheckable(false);
-    connect(actionToggleRight, &QAction::triggered, this, &NodeEditorWindow::onToggleRightPanel);
-    m_toolbar->addAction(actionToggleRight);
+    QAction *actionToggleWorkflows = new QAction("< Workflows", this);
+    actionToggleWorkflows->setStatusTip("Toggle Workflows panel");
+    actionToggleWorkflows->setCheckable(false);
+    connect(actionToggleWorkflows, &QAction::triggered, this, &NodeEditorWindow::onToggleWorkflowsDock);
+    m_toolbar->addAction(actionToggleWorkflows);
+
+    QAction *actionToggleProperties = new QAction("Properties >", this);
+    actionToggleProperties->setStatusTip("Toggle Properties panel");
+    actionToggleProperties->setCheckable(false);
+    connect(actionToggleProperties, &QAction::triggered, this, &NodeEditorWindow::onTogglePropertiesDock);
+    m_toolbar->addAction(actionToggleProperties);
+
+    QAction *actionToggleQueue = new QAction("Queue >", this);
+    actionToggleQueue->setStatusTip("Toggle Queue panel");
+    actionToggleQueue->setCheckable(false);
+    connect(actionToggleQueue, &QAction::triggered, this, &NodeEditorWindow::onToggleQueueDock);
+    m_toolbar->addAction(actionToggleQueue);
 
     m_toolbar->addSeparator();
 
@@ -552,7 +596,7 @@ void NodeEditorWindow::onClear()
         m_graphModel->deleteNode(nodeId);
     }
 
-    m_rightPanel->clearSelection();
+    m_propertyEditor->clearSelection();
     statusBar()->showMessage("Cleared all nodes");
 }
 
@@ -569,7 +613,7 @@ void NodeEditorWindow::onDelete()
         m_graphModel->deleteNode(nodeId);
     }
 
-    m_rightPanel->clearSelection();
+    m_propertyEditor->clearSelection();
 
     if (nodeCount > 0)
     {
@@ -625,7 +669,7 @@ void NodeEditorWindow::onNodeDoubleClicked(const QString &modelName)
         m_scene->clearSelection();
         m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, scenePos);
         m_scene->nodeGraphicsObject(nodeId)->setSelected(true);
-        m_rightPanel->setSelectedNode(nodeId);
+        m_propertyEditor->setSelectedNode(nodeId);
         statusBar()->showMessage(QString("Added node: %1").arg(modelName));
     }
 }
@@ -724,9 +768,9 @@ void NodeEditorWindow::onBrowseWorkflows()
 
 void NodeEditorWindow::onRefreshNodes()
 {
-    if (m_leftSidebar)
+    if (m_nodeLibrary)
     {
-        m_leftSidebar->setRegistry(m_registry);
+        m_nodeLibrary->setRegistry(m_registry);
         statusBar()->showMessage("Node definitions refreshed");
     }
 }
@@ -759,21 +803,75 @@ void NodeEditorWindow::onShowHistory()
 // Panel Toggle Operations
 // ============================================================================
 
-void NodeEditorWindow::onToggleLeftSidebar()
+void NodeEditorWindow::onToggleNodesDock()
 {
-    if (m_leftSidebar)
+    if (m_nodesDockWidget)
     {
-        m_leftSidebar->toggleCollapse();
-        statusBar()->showMessage(m_leftSidebar->isCollapsed() ? "Left panel hidden" : "Left panel shown");
+        // Toggle dock widget visibility using ADS
+        if (m_nodesDockWidget->isVisible())
+        {
+            m_nodesDockWidget->closeDockWidget();
+            statusBar()->showMessage("Nodes panel hidden");
+        }
+        else
+        {
+            m_nodesDockWidget->toggleView(true);
+            statusBar()->showMessage("Nodes panel shown");
+        }
     }
 }
 
-void NodeEditorWindow::onToggleRightPanel()
+void NodeEditorWindow::onToggleWorkflowsDock()
 {
-    if (m_rightPanel)
+    if (m_workflowsDockWidget)
     {
-        m_rightPanel->toggleCollapse();
-        statusBar()->showMessage(m_rightPanel->isCollapsed() ? "Right panel hidden" : "Right panel shown");
+        // Toggle dock widget visibility using ADS
+        if (m_workflowsDockWidget->isVisible())
+        {
+            m_workflowsDockWidget->closeDockWidget();
+            statusBar()->showMessage("Workflows panel hidden");
+        }
+        else
+        {
+            m_workflowsDockWidget->toggleView(true);
+            statusBar()->showMessage("Workflows panel shown");
+        }
+    }
+}
+
+void NodeEditorWindow::onTogglePropertiesDock()
+{
+    if (m_propertiesDockWidget)
+    {
+        // Toggle dock widget visibility using ADS
+        if (m_propertiesDockWidget->isVisible())
+        {
+            m_propertiesDockWidget->closeDockWidget();
+            statusBar()->showMessage("Properties panel hidden");
+        }
+        else
+        {
+            m_propertiesDockWidget->toggleView(true);
+            statusBar()->showMessage("Properties panel shown");
+        }
+    }
+}
+
+void NodeEditorWindow::onToggleQueueDock()
+{
+    if (m_queueDockWidget)
+    {
+        // Toggle dock widget visibility using ADS
+        if (m_queueDockWidget->isVisible())
+        {
+            m_queueDockWidget->closeDockWidget();
+            statusBar()->showMessage("Queue panel hidden");
+        }
+        else
+        {
+            m_queueDockWidget->toggleView(true);
+            statusBar()->showMessage("Queue panel shown");
+        }
     }
 }
 
@@ -816,13 +914,13 @@ void NodeEditorWindow::setProjectContext(QStandardItemModel* model, const QStrin
     m_projectPath = path;
     m_projectName = name;
 
-    // Set workflow path for left sidebar
-    if (m_leftSidebar && !path.isEmpty())
+    // Set workflow path for workflow browser
+    if (m_workflowBrowser && !path.isEmpty())
     {
         QDir dir(path);
         dir.cdUp();  // Go to project directory
         QString workflowDir = dir.filePath("workflows");
-        m_leftSidebar->setWorkflowPath(workflowDir);
+        m_workflowBrowser->setWorkflowPath(workflowDir);
     }
 }
 

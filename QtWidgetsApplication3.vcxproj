@@ -70,6 +70,11 @@
     <Filter Include="QtNodes" />
     <Filter Include="QtNodes\Src" />
     <Filter Include="QtNodes\Include" />
+    <Filter Include="ADS" />
+    <Filter Include="ADS\Src" />
+    <Filter Include="ADS\Include" />
+    <Filter Include="ADS\Images" />
+    <Filter Include="ADS\Stylesheets" />
     <Filter Include="Header Files" />
     <Filter Include="UI Files" />
     <Filter Include="Resources" />
@@ -86,8 +91,8 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
-      <PreprocessorDefinitions>NODE_EDITOR_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;D:\SRC\InSAR_UI\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NODE_EDITOR_STATIC;ADS_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;D:\SRC\InSAR_UI\include\QtNodes\internal;D:\SRC\InSAR_UI\include\ADS;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -103,8 +108,8 @@
       <DebugInformationFormat>None</DebugInformationFormat>
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
-      <PreprocessorDefinitions>NODE_EDITOR_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;D:\SRC\InSAR_UI\include\QtNodes\internal;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NODE_EDITOR_STATIC;ADS_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\InSAR_UI\include;D:\SRC\InSAR_UI\include\QtNodes\internal;D:\SRC\InSAR_UI\include\ADS;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -171,9 +176,6 @@
     <ClCompile Include="InSAR_IPC.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-	<ClCompile Include="LeftSidebar.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -191,7 +193,8 @@
     </ClCompile>
     <ClCompile Include="NoteNode.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>	<ClCompile Include="OpenProject.cpp">
+    </ClCompile>
+    <ClCompile Include="OpenProject.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Preview_Window.cpp">
@@ -201,9 +204,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="reselection_view.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-	<ClCompile Include="RightPanel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="S1_Deburst.cpp">
@@ -246,6 +246,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NodeEditorWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DockWidgets.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NodeModels.cpp">
@@ -358,6 +361,79 @@
     <ClCompile Include="QtNodes\src\UndoCommands.cpp">
       <Filter>QtNodes\Src</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ADS\ads_globals.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\AutoHideDockContainer.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\AutoHideSideBar.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\AutoHideTab.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockAreaTabBar.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockAreaTitleBar.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockAreaWidget.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockComponentsFactory.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockContainerWidget.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockFocusController.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockingStateReader.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockManager.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockOverlay.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockSplitter.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockWidget.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\DockWidgetTab.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\ElidingLabel.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\FloatingDockContainer.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\FloatingDragPreview.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\IconProvider.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\PushButton.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ADS\ResizeHandle.cpp">
+      <Filter>ADS\Src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <QtRcc Include="ADS\ads.qrc">
+      <Filter>ADS</Filter>
+    </QtRcc>
   </ItemGroup>
   <ItemGroup>
     <QtRcc Include="resources\QtWidgetsApplication3.qrc">
@@ -492,16 +568,10 @@
     <QtMoc Include="include\S1_frame_merge.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\LeftSidebar.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="include\NodeGroupManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\NoteNode.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="include\RightPanel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="include\tinystr.h">
@@ -520,6 +590,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\NodeEditorWindow.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DockWidgets.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\TestNodes.h">
@@ -546,13 +619,16 @@
     <QtMoc Include="include\ALOS2ImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\NodeTreeWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1SwathMergeNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\S1DeburstNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1FrameMergeNode.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="include\S1SwathMergeNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="include\NodeDataTypes.h">
@@ -769,6 +845,77 @@
     <ClInclude Include="include\QtNodes\internal\UndoCommands.hpp">
       <Filter>QtNodes\Include</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="include\ADS\ads_globals.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\AutoHideDockContainer.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\AutoHideSideBar.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\AutoHideTab.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaTabBar.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaTitleBar.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaWidget.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockComponentsFactory.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockContainerWidget.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockFocusController.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockingStateReader.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockManager.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockOverlay.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockSplitter.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockWidget.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockWidgetTab.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\ElidingLabel.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\FloatingDockContainer.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\FloatingDragPreview.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\IconProvider.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\PushButton.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\ResizeHandle.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ADS\DockAreaTitleBar_p.h">
+      <Filter>ADS\Src</Filter>
+    </QtMoc>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">
