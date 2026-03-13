@@ -8,6 +8,7 @@
 #include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
+#include <QLineEdit>
 #include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -39,8 +40,7 @@ protected:
     QString getOutputNodeName() const override;
 
     // Helper methods
-    void onImportButtonClicked();
-    void onStopButtonClicked();
+    QString generateImportName(const QString& manifestPath) const;
 
 private slots:
     void onAddFilesClicked();
@@ -59,10 +59,8 @@ private:
     QListWidget* m_fileListWidget;
     QComboBox* m_subswathCombo;
     QComboBox* m_polarizationCombo;
-    QPushButton* m_importButton;
-    QPushButton* m_stopButton;
+    QComboBox* m_projectCombo;
     QProgressBar* m_progressBar;
-    QLabel* m_statusLabel;
 
     // State
     QStringList m_manifestPaths;

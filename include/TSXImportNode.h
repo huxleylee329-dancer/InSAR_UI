@@ -1,4 +1,4 @@
-#ifndef TSXIMPORTNODE_H
+﻿#ifndef TSXIMPORTNODE_H
 #define TSXIMPORTNODE_H
 
 #include "ImportNodeBase.h"
@@ -41,8 +41,6 @@ protected:
 
     // Helper methods
     QString generateOutputFileName() const;
-    void onImportButtonClicked();
-    void onStopButtonClicked();
 
 private slots:
     void onXmlBrowseClicked();
@@ -57,12 +55,11 @@ signals:
 private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
+    QLineEdit* m_outputFileNameEdit;
     QLineEdit* m_xmlEdit;
     QComboBox* m_polarizationCombo;
-    QPushButton* m_importButton;
-    QPushButton* m_stopButton;
+    QComboBox* m_projectCombo;
     QProgressBar* m_progressBar;
-    QLabel* m_statusLabel;
 
     // State
     QString m_xmlPath;

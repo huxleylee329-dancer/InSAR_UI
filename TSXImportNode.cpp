@@ -1,3 +1,7 @@
+﻿#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
 #include "TSXImportNode.h"
 #include <QFileInfo>
 
@@ -6,12 +10,11 @@ namespace QtNodes {
 TSXImportNode::TSXImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
+    , m_outputFileNameEdit(nullptr)
     , m_xmlEdit(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_importButton(nullptr)
-    , m_stopButton(nullptr)
+    , m_projectCombo(nullptr)
     , m_progressBar(nullptr)
-    , m_statusLabel(nullptr)
     , m_xmlPath()
     , m_importedFilePath()
     , m_outputFileName()
@@ -51,60 +54,74 @@ QWidget* TSXImportNode::createWidget()
 {
     auto* widget = new QWidget();
     auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(5, 5, 5, 5);
-    layout->setSpacing(5);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
 
-    // Output node name
-    layout->addWidget(new QLabel("Output Node Name:"));
-    m_outputNodeNameEdit = new QLineEdit();
-    layout->addWidget(m_outputNodeNameEdit);
-
-    // XML file selection
-    layout->addWidget(new QLabel("XML File:"));
-    auto* xmlLayout = new QHBoxLayout();
+    // XML file row: Label:LineEdit:Button
+    auto* xmlRow = new QHBoxLayout();
+    xmlRow->addWidget(new QLabel("TSX/TDX图像（.xml）："));
     m_xmlEdit = new QLineEdit();
-    QPushButton* xmlBrowse = new QPushButton("Browse...");
-    xmlLayout->addWidget(m_xmlEdit);
-    xmlLayout->addWidget(xmlBrowse);
-    layout->addLayout(xmlLayout);
+    QPushButton* xmlBrowse = new QPushButton("浏览...");
+    xmlRow->addWidget(m_xmlEdit);
+    xmlRow->addWidget(xmlBrowse);
+    layout->addLayout(xmlRow);
 
-    // Polarization selection
-    layout->addWidget(new QLabel("Polarization:"));
-    m_polarizationCombo = new QComboBox();
-    m_polarizationCombo->addItem("HH");
-    m_polarizationCombo->addItem("VV");
-    layout->addWidget(m_polarizationCombo);
+    // Target project row [3:7]
+    auto* projectRow = new QHBoxLayout();
+    projectRow->setStretch(0, 3);
+    projectRow->setStretch(1, 7);
+    projectRow->addWidget(new QLabel("目标工程："));
+    m_projectCombo = new QComboBox();
+    m_projectCombo->setEditable(false);
+    if (!projectName().isEmpty())
+    {
+        m_projectCombo->addItem(projectName());
+    }
+    projectRow->addWidget(m_projectCombo);
+    layout->addLayout(projectRow);
 
-    // Separator
-    QFrame* line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(line);
+    // Target node row [3:7]
+    auto* nodeRow = new QHBoxLayout();
+    nodeRow->setStretch(0, 3);
+    nodeRow->setStretch(1, 7);
+    nodeRow->addWidget(new QLabel("目标节点："));
+    m_outputNodeNameEdit = new QLineEdit();
+    nodeRow->addWidget(m_outputNodeNameEdit);
+    layout->addLayout(nodeRow);
 
-    // Progress bar
+    // Output filename row [3:7]
+    auto* filenameRow = new QHBoxLayout();
+    filenameRow->setStretch(0, 3);
+    filenameRow->setStretch(1, 7);
+    filenameRow->addWidget(new QLabel("目标文件名："));
+    m_outputFileNameEdit = new QLineEdit();
+    filenameRow->addWidget(m_outputFileNameEdit);
+    layout->addLayout(filenameRow);
+
+    // Progress bar row [5:5]
+    auto* progressRow = new QHBoxLayout();
+    progressRow->setStretch(0, 5);
+    progressRow->setStretch(1, 5);
     m_progressBar = new QProgressBar();
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
-    layout->addWidget(m_progressBar);
+    progressRow->addWidget(m_progressBar);
+    progressRow->addStretch();
+    layout->addLayout(progressRow);
 
-    // Status label
-    m_statusLabel = new QLabel("Ready");
-    m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
-
-    // Buttons
-    auto* buttonLayout = new QHBoxLayout();
-    m_importButton = new QPushButton("Import");
-    m_stopButton = new QPushButton("Stop");
-    m_stopButton->setEnabled(false);
-    buttonLayout->addWidget(m_importButton);
-    buttonLayout->addWidget(m_stopButton);
-    layout->addLayout(buttonLayout);
+    // Polarization row [3:7]
+    auto* polRow = new QHBoxLayout();
+    polRow->setStretch(0, 3);
+    polRow->setStretch(1, 7);
+    polRow->addWidget(new QLabel("极化方式："));
+    m_polarizationCombo = new QComboBox();
+    m_polarizationCombo->addItem("HH");
+    m_polarizationCombo->addItem("VV");
+    polRow->addWidget(m_polarizationCombo);
+    layout->addLayout(polRow);
 
     // Connect signals
     connect(xmlBrowse, &QPushButton::clicked, this, &TSXImportNode::onXmlBrowseClicked);
-    connect(m_importButton, &QPushButton::clicked, this, &TSXImportNode::onImportButtonClicked);
-    connect(m_stopButton, &QPushButton::clicked, this, &TSXImportNode::onStopButtonClicked);
 
     return widget;
 }
@@ -117,20 +134,32 @@ void TSXImportNode::executeImport()
     m_xmlPath = m_xmlEdit->text().trimmed();
     if (m_xmlPath.isEmpty())
     {
-        onError("Please select an XML file.");
+        onError("请选择一个 XML 文件。");
         return;
     }
 
     if (!QFileInfo::exists(m_xmlPath))
     {
-        onError("XML file does not exist: " + m_xmlPath);
+        onError("XML 文件不存在：" + m_xmlPath);
         return;
     }
 
-    m_outputFileName = generateOutputFileName();
+    // Get output filename from edit box, or generate if empty
+    m_outputFileName = m_outputFileNameEdit->text().trimmed();
     if (m_outputFileName.isEmpty())
     {
-        onError("Could not generate output file name from XML file.");
+        m_outputFileName = generateOutputFileName();
+        if (m_outputFileName.isEmpty())
+        {
+            onError("无法从 XML 文件生成输出文件名。");
+            return;
+        }
+        m_outputFileNameEdit->setText(m_outputFileName);
+    }
+
+    if (m_outputFileName.isEmpty())
+    {
+        onError("无法从 XML 文件生成输出文件名。");
         return;
     }
 
@@ -204,9 +233,9 @@ void TSXImportNode::onXmlBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
         m_widget,
-        "Select TerraSAR-X XML File",
+        "导入 TerraSAR-X/TanDEM-X 数据",
         QFileInfo(m_xmlPath).absolutePath(),
-        "XML Files (*.xml);;All Files (*)"
+        "XML 文件 (*.xml)"
     );
 
     if (!filePath.isEmpty())
@@ -214,58 +243,17 @@ void TSXImportNode::onXmlBrowseClicked()
         m_xmlEdit->setText(filePath);
 
         QString autoName = generateOutputFileName();
-        if (!autoName.isEmpty() && m_outputNodeNameEdit->text().isEmpty())
+        if (!autoName.isEmpty() && m_outputFileNameEdit->text().isEmpty())
         {
-            m_outputNodeNameEdit->setText(autoName);
+            m_outputFileNameEdit->setText(autoName);
         }
     }
 }
 
-void TSXImportNode::onImportButtonClicked()
-{
-    if (m_isProcessing)
-        return;
-
-    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "No project is currently open. Please open a project first.");
-        return;
-    }
-
-    QString nodeName = getOutputNodeName();
-    if (nodeName.isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "Please enter an output node name.");
-        return;
-    }
-
-    m_isProcessing = true;
-    m_canStop = true;
-    m_importButton->setEnabled(false);
-    m_stopButton->setEnabled(true);
-    m_progressBar->setValue(0);
-    m_statusLabel->setText("Starting import...");
-
-    executeImport();
-}
-
-void TSXImportNode::onStopButtonClicked()
-{
-    if (!m_isProcessing || !m_canStop)
-        return;
-
-    m_statusLabel->setText("Stopping...");
-    m_canStop = false;
-    m_statusLabel->setText("Import stopped");
-    m_isProcessing = false;
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
-}
-
 void TSXImportNode::onImportProgress(int progress, const QString& message)
 {
+    Q_UNUSED(message);
     m_progressBar->setValue(progress);
-    m_statusLabel->setText(message);
 }
 
 void TSXImportNode::onImportFinished()
@@ -275,10 +263,7 @@ void TSXImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_statusLabel->setText("Import completed successfully!");
     m_progressBar->setValue(100);
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
 
     if (m_thread)
     {

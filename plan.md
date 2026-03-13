@@ -22,6 +22,74 @@
 - [ ] 阶段 14: 测试与优化 - 部分完成
 - [ ] 阶段 15: 文档与示例 - 未开始
 - [x] 阶段 16: UI 布局重构 - 已完成 ✨（核心功能，编译成功）
+- [x] TSXImportNode UI 对齐主窗口"导入"标签页设计 - 已完成 ✨（2026-03-13）
+- [x] TSXBatchImportNode UI 对齐主窗口"批量导入"标签页设计 - 已完成 ✨（2026-03-13）
+
+---
+
+## TSXImportNode UI 对齐主窗口"导入"标签页设计（2026-03-13）
+
+**问题描述**：Node Editor 版本的 TSXImportNode 界面与主窗口的 `Import_TSX.ui` 中"导入"标签页设计不一致。
+
+**已完成修改**：
+- 头文件 (`include/TSXImportNode.h`)：
+  - ✅ 删除 `m_importButton`, `m_stopButton`, `m_statusLabel` 成员变量
+  - ✅ 添加 `m_projectCombo`, `m_outputFileNameEdit` 成员变量
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 槽函数
+- 实现文件 (`TSXImportNode.cpp`)：
+  - ✅ 添加 UTF-8 BOM 编码指令
+  - ✅ 重写 `createWidget()` 方法，使用中文标签和主窗口布局
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 方法
+  - ✅ 修改 `onXmlBrowseClicked()` 使用中文对话框
+  - ✅ 修改 `executeImport()` 从 `m_outputFileNameEdit` 获取输出文件名
+  - ✅ 修改 `onImportProgress()` 移除状态标签更新
+  - ✅ 修改 `onImportFinished()` 移除按钮和状态标签更新
+
+**UI 布局**（与主窗口"导入"标签页一致）：
+```
+QVBoxLayout (margins=8, spacing=6)
+├── QHBoxLayout - TSX/TDX图像（.xml） [Label:LineEdit:Button]
+├── QHBoxLayout [3:7] - 目标工程（ComboBox，只读）
+├── QHBoxLayout [3:7] - 目标节点
+├── QHBoxLayout [3:7] - 目标文件名
+├── QHBoxLayout [5:5] - 进度条
+└── QHBoxLayout [3:7] - 极化方式
+```
+
+---
+
+## TSXBatchImportNode UI 对齐主窗口"批量导入"标签页设计（2026-03-13）
+
+**问题描述**：Node Editor 版本的 TSXBatchImportNode 界面与主窗口的 `Import_TSX.ui` 中"批量导入"标签页设计不一致。
+
+**已完成修改**：
+- 头文件 (`include/TSXBatchImportNode.h`)：
+  - ✅ 删除 `m_importButton`, `m_stopButton`, `m_statusLabel` 成员变量
+  - ✅ 添加 `m_projectCombo` 成员变量
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 槽函数
+- 实现文件 (`TSXBatchImportNode.cpp`)：
+  - ✅ 添加 UTF-8 BOM 编码指令
+  - ✅ 重写 `createWidget()` 方法，使用中文标签和主窗口布局
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 方法
+  - ✅ 修改 `onAddFilesClicked()` 使用中文对话框
+  - ✅ 修改 `onImportProgress()` 移除状态标签更新
+  - ✅ 修改 `onImportFinished()` 移除按钮和状态标签更新
+
+**UI 布局**（与主窗口"批量导入"标签页一致）：
+```
+QVBoxLayout (margins=8, spacing=6) - stretch="4,4"
+├── QHBoxLayout (stretch="8,2") - 上半部分：文件列表
+│   ├── QListWidget - 文件列表
+│   └── QVBoxLayout - 添加/移除按钮
+│       ├── QPushButton - "添加"
+│       └── QPushButton - "移除"
+└── QHBoxLayout - 下半部分：配置选项
+    └── QVBoxLayout
+        ├── QHBoxLayout [3:7] - 目标工程（ComboBox，只读）
+        ├── QHBoxLayout [3:7] - 目标节点
+        ├── QHBoxLayout [3:7] - 极化方式
+        └── QHBoxLayout [5:5] - 进度条
+```
 
 ---
 

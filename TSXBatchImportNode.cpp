@@ -1,3 +1,7 @@
+﻿#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
 #include "TSXBatchImportNode.h"
 #include <QFileInfo>
 
@@ -8,10 +12,8 @@ TSXBatchImportNode::TSXBatchImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_importButton(nullptr)
-    , m_stopButton(nullptr)
+    , m_projectCombo(nullptr)
     , m_progressBar(nullptr)
-    , m_statusLabel(nullptr)
     , m_xmlPaths()
     , m_importedFilePaths()
     , m_workerThread(nullptr)
@@ -48,68 +50,85 @@ TSXBatchImportNode::~TSXBatchImportNode()
 QWidget* TSXBatchImportNode::createWidget()
 {
     auto* widget = new QWidget();
-    auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(5, 5, 5, 5);
-    layout->setSpacing(5);
+    auto* mainLayout = new QVBoxLayout(widget);
+    mainLayout->setContentsMargins(8, 8, 8, 8);
+    mainLayout->setSpacing(6);
 
-    // Output node name
-    layout->addWidget(new QLabel("Output Node Name:"));
-    m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("TSX_Batch_Import");
-    layout->addWidget(m_outputNodeNameEdit);
+    // Top section: file list (8:2 stretch) - stretch 4
+    auto* topSection = new QHBoxLayout();
+    topSection->setStretch(0, 8);
+    topSection->setStretch(1, 2);
 
-    // File list
-    layout->addWidget(new QLabel("XML Files:"));
+    // Left side: file list widget
     m_fileListWidget = new QListWidget();
-    m_fileListWidget->setMaximumHeight(100);
-    layout->addWidget(m_fileListWidget);
+    topSection->addWidget(m_fileListWidget);
 
-    // Add/Remove buttons
-    auto* buttonLayout = new QHBoxLayout();
-    QPushButton* addFiles = new QPushButton("Add Files");
-    QPushButton* removeFiles = new QPushButton("Remove");
+    // Right side: add/remove buttons
+    auto* buttonLayout = new QVBoxLayout();
+    QPushButton* addFiles = new QPushButton("添加");
+    QPushButton* removeFiles = new QPushButton("移除");
     buttonLayout->addWidget(addFiles);
     buttonLayout->addWidget(removeFiles);
-    layout->addLayout(buttonLayout);
+    topSection->addLayout(buttonLayout);
 
-    // Polarization selection
-    layout->addWidget(new QLabel("Polarization:"));
+    mainLayout->addLayout(topSection, 4);
+
+    // Bottom section: configuration options - stretch 4
+    auto* bottomSection = new QHBoxLayout();
+    auto* configLayout = new QVBoxLayout();
+
+    // Target project [3:7]
+    auto* projectRow = new QHBoxLayout();
+    projectRow->setStretch(0, 3);
+    projectRow->setStretch(1, 7);
+    projectRow->addWidget(new QLabel("目标工程："));
+    m_projectCombo = new QComboBox();
+    m_projectCombo->setEditable(false);
+    if (!projectName().isEmpty())
+    {
+        m_projectCombo->addItem(projectName());
+    }
+    projectRow->addWidget(m_projectCombo);
+    configLayout->addLayout(projectRow);
+
+    // Target node [3:7]
+    auto* nodeRow = new QHBoxLayout();
+    nodeRow->setStretch(0, 3);
+    nodeRow->setStretch(1, 7);
+    nodeRow->addWidget(new QLabel("目标节点："));
+    m_outputNodeNameEdit = new QLineEdit();
+    m_outputNodeNameEdit->setText("TSX_Batch_Import");
+    nodeRow->addWidget(m_outputNodeNameEdit);
+    configLayout->addLayout(nodeRow);
+
+    // Polarization [3:7]
+    auto* polRow = new QHBoxLayout();
+    polRow->setStretch(0, 3);
+    polRow->setStretch(1, 7);
+    polRow->addWidget(new QLabel("极化方式："));
     m_polarizationCombo = new QComboBox();
     m_polarizationCombo->addItem("HH");
     m_polarizationCombo->addItem("VV");
-    layout->addWidget(m_polarizationCombo);
+    polRow->addWidget(m_polarizationCombo);
+    configLayout->addLayout(polRow);
 
-    // Separator
-    QFrame* line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(line);
-
-    // Progress bar
+    // Progress bar row [5:5]
+    auto* progressRow = new QHBoxLayout();
+    progressRow->setStretch(0, 5);
+    progressRow->setStretch(1, 5);
     m_progressBar = new QProgressBar();
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
-    layout->addWidget(m_progressBar);
+    progressRow->addWidget(m_progressBar);
+    progressRow->addStretch();
+    configLayout->addLayout(progressRow);
 
-    // Status label
-    m_statusLabel = new QLabel("Ready");
-    m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
-
-    // Buttons
-    auto* importButtonLayout = new QHBoxLayout();
-    m_importButton = new QPushButton("Import");
-    m_stopButton = new QPushButton("Stop");
-    m_stopButton->setEnabled(false);
-    importButtonLayout->addWidget(m_importButton);
-    importButtonLayout->addWidget(m_stopButton);
-    layout->addLayout(importButtonLayout);
+    bottomSection->addLayout(configLayout);
+    mainLayout->addLayout(bottomSection, 4);
 
     // Connect signals
     connect(addFiles, &QPushButton::clicked, this, &TSXBatchImportNode::onAddFilesClicked);
     connect(removeFiles, &QPushButton::clicked, this, &TSXBatchImportNode::onRemoveFilesClicked);
-    connect(m_importButton, &QPushButton::clicked, this, &TSXBatchImportNode::onImportButtonClicked);
-    connect(m_stopButton, &QPushButton::clicked, this, &TSXBatchImportNode::onStopButtonClicked);
 
     return widget;
 }
@@ -118,7 +137,7 @@ void TSXBatchImportNode::executeImport()
 {
     if (m_xmlPaths.isEmpty())
     {
-        onError("Please add at least one XML file.");
+        onError("请至少添加一个 XML 文件。");
         return;
     }
 
@@ -126,7 +145,7 @@ void TSXBatchImportNode::executeImport()
     {
         if (!QFileInfo::exists(path))
         {
-            onError("XML file does not exist: " + path);
+            onError("XML 文件不存在：" + path);
             return;
         }
     }
@@ -139,7 +158,7 @@ void TSXBatchImportNode::executeImport()
         QString importName = generateOutputFileName(xmlPath);
         if (importName.isEmpty())
         {
-            onError("Could not generate output file name from XML: " + xmlPath);
+            onError("无法从 XML 文件生成输出文件名：" + xmlPath);
             return;
         }
         originalFileList.push_back(xmlPath);
@@ -213,54 +232,13 @@ QString TSXBatchImportNode::generateOutputFileName(const QString& xmlPath) const
     return QString();
 }
 
-void TSXBatchImportNode::onImportButtonClicked()
-{
-    if (m_isProcessing)
-        return;
-
-    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "No project is currently open. Please open a project first.");
-        return;
-    }
-
-    QString nodeName = getOutputNodeName();
-    if (nodeName.isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "Please enter an output node name.");
-        return;
-    }
-
-    m_isProcessing = true;
-    m_canStop = true;
-    m_importButton->setEnabled(false);
-    m_stopButton->setEnabled(true);
-    m_progressBar->setValue(0);
-    m_statusLabel->setText("Starting import...");
-
-    executeImport();
-}
-
-void TSXBatchImportNode::onStopButtonClicked()
-{
-    if (!m_isProcessing || !m_canStop)
-        return;
-
-    m_statusLabel->setText("Stopping...");
-    m_canStop = false;
-    m_statusLabel->setText("Import stopped");
-    m_isProcessing = false;
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
-}
-
 void TSXBatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
         m_widget,
-        "Select TerraSAR-X XML Files",
+        "导入 TerraSAR-X/TanDEM-X 数据",
         QDir::currentPath(),
-        "XML Files (*.xml);;All Files (*)"
+        "XML 文件 (*.xml)"
     );
 
     for (const QString& file : files)
@@ -286,8 +264,8 @@ void TSXBatchImportNode::onRemoveFilesClicked()
 
 void TSXBatchImportNode::onImportProgress(int progress, const QString& message)
 {
+    Q_UNUSED(message);
     m_progressBar->setValue(progress);
-    m_statusLabel->setText(message);
 }
 
 void TSXBatchImportNode::onImportFinished()
@@ -306,10 +284,7 @@ void TSXBatchImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_statusLabel->setText("Import completed successfully!");
     m_progressBar->setValue(100);
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
 
     if (m_thread)
     {

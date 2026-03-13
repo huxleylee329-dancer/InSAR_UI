@@ -1,20 +1,23 @@
-#include "Sentinel1ImportNode.h"
+﻿#include "Sentinel1ImportNode.h"
 #include <QFileInfo>
 #include <QRegularExpression>
+
+#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
 
 namespace QtNodes {
 
 Sentinel1ImportNode::Sentinel1ImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
+    , m_outputFileNameEdit(nullptr)
+    , m_projectCombo(nullptr)
     , m_manifestEdit(nullptr)
     , m_podEdit(nullptr)
     , m_subswathCombo(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_importButton(nullptr)
-    , m_stopButton(nullptr)
     , m_progressBar(nullptr)
-    , m_statusLabel(nullptr)
     , m_manifestPath()
     , m_podPath()
     , m_importedFilePath()
@@ -55,46 +58,95 @@ QWidget* Sentinel1ImportNode::createWidget()
 {
     auto* widget = new QWidget();
     auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(5, 5, 5, 5);
-    layout->setSpacing(5);
+    layout->setContentsMargins(8, 8, 8, 8);
+    layout->setSpacing(6);
 
-    // Output node name
-    layout->addWidget(new QLabel("Output Node Name:"));
-    m_outputNodeNameEdit = new QLineEdit();
-    layout->addWidget(m_outputNodeNameEdit);
-
-    // Manifest file selection
-    layout->addWidget(new QLabel("Manifest File:"));
+    // 哨兵图像文件（.safe） + 浏览按钮 [3:5:2]
     auto* manifestLayout = new QHBoxLayout();
+    manifestLayout->setStretch(0, 3);
+    manifestLayout->setStretch(1, 5);
+    manifestLayout->setStretch(2, 2);
+    QLabel* manifestLabel = new QLabel("哨兵图像文件（.safe）");
+    manifestLayout->addWidget(manifestLabel);
     m_manifestEdit = new QLineEdit();
-    QPushButton* manifestBrowse = new QPushButton("Browse...");
+    m_manifestEdit->setPlaceholderText("选择 .safe 目录中的 manifest 文件");
     manifestLayout->addWidget(m_manifestEdit);
+    QPushButton* manifestBrowse = new QPushButton("浏览...");
     manifestLayout->addWidget(manifestBrowse);
     layout->addLayout(manifestLayout);
 
-    // POD file selection
-    layout->addWidget(new QLabel("POD File (Optional):"));
+    // 精轨文件（可空缺） + 浏览按钮 [3:5:2]
     auto* podLayout = new QHBoxLayout();
+    podLayout->setStretch(0, 3);
+    podLayout->setStretch(1, 5);
+    podLayout->setStretch(2, 2);
+    QLabel* podLabel = new QLabel("精轨文件（可空缺）");
+    podLayout->addWidget(podLabel);
     m_podEdit = new QLineEdit();
-    QPushButton* podBrowse = new QPushButton("Browse...");
+    m_podEdit->setPlaceholderText("可选，留空则不使用精轨文件");
     podLayout->addWidget(m_podEdit);
+    QPushButton* podBrowse = new QPushButton("浏览...");
     podLayout->addWidget(podBrowse);
     layout->addLayout(podLayout);
 
-    // Subswath selection
-    layout->addWidget(new QLabel("Subswath:"));
+    // 子带选择（subswath） [3:7]
+    auto* subswathLayout = new QHBoxLayout();
+    subswathLayout->setStretch(0, 3);
+    subswathLayout->setStretch(1, 7);
+    QLabel* subswathLabel = new QLabel("子带选择（subswath）");
+    subswathLayout->addWidget(subswathLabel);
     m_subswathCombo = new QComboBox();
     m_subswathCombo->addItem("iw1");
     m_subswathCombo->addItem("iw2");
     m_subswathCombo->addItem("iw3");
-    layout->addWidget(m_subswathCombo);
+    subswathLayout->addWidget(m_subswathCombo);
+    layout->addLayout(subswathLayout);
 
-    // Polarization selection
-    layout->addWidget(new QLabel("Polarization:"));
+    // 极化方式选择 [3:7]
+    auto* polLayout = new QHBoxLayout();
+    polLayout->setStretch(0, 3);
+    polLayout->setStretch(1, 7);
+    QLabel* polLabel = new QLabel("极化方式选择");
+    polLayout->addWidget(polLabel);
     m_polarizationCombo = new QComboBox();
     m_polarizationCombo->addItem("vv");
     m_polarizationCombo->addItem("vh");
-    layout->addWidget(m_polarizationCombo);
+    polLayout->addWidget(m_polarizationCombo);
+    layout->addLayout(polLayout);
+
+    // 目标工程 [3:7]
+    auto* projectLayout = new QHBoxLayout();
+    projectLayout->setStretch(0, 3);
+    projectLayout->setStretch(1, 7);
+    QLabel* projectLabel = new QLabel("目标工程");
+    projectLayout->addWidget(projectLabel);
+    m_projectCombo = new QComboBox();
+    m_projectCombo->setEditable(false);
+    m_projectCombo->setPlaceholderText("当前打开的项目");
+    projectLayout->addWidget(m_projectCombo);
+    layout->addLayout(projectLayout);
+
+    // 目标节点名 [3:7]
+    auto* nodeNameLayout = new QHBoxLayout();
+    nodeNameLayout->setStretch(0, 3);
+    nodeNameLayout->setStretch(1, 7);
+    QLabel* nodeNameLabel = new QLabel("目标节点名");
+    nodeNameLayout->addWidget(nodeNameLabel);
+    m_outputNodeNameEdit = new QLineEdit();
+    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
+    nodeNameLayout->addWidget(m_outputNodeNameEdit);
+    layout->addLayout(nodeNameLayout);
+
+    // 目标文件名 [3:7]
+    auto* fileNameLayout = new QHBoxLayout();
+    fileNameLayout->setStretch(0, 3);
+    fileNameLayout->setStretch(1, 7);
+    QLabel* fileNameLabel = new QLabel("目标文件名");
+    fileNameLayout->addWidget(fileNameLabel);
+    m_outputFileNameEdit = new QLineEdit();
+    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
+    fileNameLayout->addWidget(m_outputFileNameEdit);
+    layout->addLayout(fileNameLayout);
 
     // Separator
     QFrame* line = new QFrame();
@@ -108,25 +160,27 @@ QWidget* Sentinel1ImportNode::createWidget()
     m_progressBar->setValue(0);
     layout->addWidget(m_progressBar);
 
-    // Status label
-    m_statusLabel = new QLabel("Ready");
-    m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
-
-    // Buttons
-    auto* buttonLayout = new QHBoxLayout();
-    m_importButton = new QPushButton("Import");
-    m_stopButton = new QPushButton("Stop");
-    m_stopButton->setEnabled(false);
-    buttonLayout->addWidget(m_importButton);
-    buttonLayout->addWidget(m_stopButton);
-    layout->addLayout(buttonLayout);
+    // Bottom spacer
+    layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     // Connect signals
     connect(manifestBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onManifestBrowseClicked);
     connect(podBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onPodBrowseClicked);
-    connect(m_importButton, &QPushButton::clicked, this, &Sentinel1ImportNode::onImportButtonClicked);
-    connect(m_stopButton, &QPushButton::clicked, this, &Sentinel1ImportNode::onStopButtonClicked);
+    connect(m_manifestEdit, &QLineEdit::textChanged, this, [this]() {
+        QString autoName = generateOutputFileName();
+        if (!autoName.isEmpty() && m_outputNodeNameEdit->text().isEmpty()) {
+            m_outputNodeNameEdit->setText(autoName);
+        }
+        if (!autoName.isEmpty() && m_outputFileNameEdit->text().isEmpty()) {
+            m_outputFileNameEdit->setText(autoName);
+        }
+    });
+
+    // Set project name if available
+    QString currentProject = projectName();
+    if (!currentProject.isEmpty()) {
+        m_projectCombo->addItem(currentProject);
+    }
 
     return widget;
 }
@@ -139,27 +193,27 @@ void Sentinel1ImportNode::executeImport()
     m_manifestPath = m_manifestEdit->text().trimmed();
     if (m_manifestPath.isEmpty())
     {
-        onError("Please select a manifest file.");
+        onError("请选择清单文件");
         return;
     }
 
     if (!QFileInfo::exists(m_manifestPath))
     {
-        onError("Manifest file does not exist: " + m_manifestPath);
+        onError("清单文件不存在：" + m_manifestPath);
         return;
     }
 
     m_podPath = m_podEdit->text().trimmed();
     if (!m_podPath.isEmpty() && !QFileInfo::exists(m_podPath))
     {
-        onError("POD file does not exist: " + m_podPath);
+        onError("精轨文件不存在：" + m_podPath);
         return;
     }
 
-    m_outputFileName = generateOutputFileName();
+    m_outputFileName = getOutputFileName();
     if (m_outputFileName.isEmpty())
     {
-        onError("Could not generate output file name from manifest.");
+        onError("无法从清单文件生成输出文件名");
         return;
     }
 
@@ -219,6 +273,16 @@ QString Sentinel1ImportNode::getOutputNodeName() const
     return name;
 }
 
+QString Sentinel1ImportNode::getOutputFileName() const
+{
+    QString fileName = m_outputFileNameEdit->text().trimmed();
+    if (fileName.isEmpty())
+    {
+        return generateOutputFileName();
+    }
+    return fileName;
+}
+
 QString Sentinel1ImportNode::generateOutputFileName() const
 {
     QFileInfo fileInfo(m_manifestPath);
@@ -241,9 +305,9 @@ void Sentinel1ImportNode::onManifestBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
         m_widget,
-        "Select Sentinel-1 Manifest File",
+        "选择哨兵一号清单文件",
         QFileInfo(m_manifestPath).absolutePath(),
-        "Manifest Files (*.manifest);;All Files (*)"
+        "清单文件 (*.manifest);;所有文件 (*)"
     );
 
     if (!filePath.isEmpty())
@@ -255,6 +319,10 @@ void Sentinel1ImportNode::onManifestBrowseClicked()
         {
             m_outputNodeNameEdit->setText(autoName);
         }
+        if (!autoName.isEmpty() && m_outputFileNameEdit->text().isEmpty())
+        {
+            m_outputFileNameEdit->setText(autoName);
+        }
     }
 }
 
@@ -262,9 +330,9 @@ void Sentinel1ImportNode::onPodBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
         m_widget,
-        "Select POD File",
+        "选择精轨文件",
         QFileInfo(m_podPath).absolutePath(),
-        "POD Files (*.EOF *.eofs);;All Files (*)"
+        "精轨文件 (*.EOF *.eofs);;所有文件 (*)"
     );
 
     if (!filePath.isEmpty())
@@ -273,51 +341,10 @@ void Sentinel1ImportNode::onPodBrowseClicked()
     }
 }
 
-void Sentinel1ImportNode::onImportButtonClicked()
-{
-    if (m_isProcessing)
-        return;
-
-    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "No project is currently open. Please open a project first.");
-        return;
-    }
-
-    QString nodeName = getOutputNodeName();
-    if (nodeName.isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "Please enter an output node name.");
-        return;
-    }
-
-    m_isProcessing = true;
-    m_canStop = true;
-    m_importButton->setEnabled(false);
-    m_stopButton->setEnabled(true);
-    m_progressBar->setValue(0);
-    m_statusLabel->setText("Starting import...");
-
-    executeImport();
-}
-
-void Sentinel1ImportNode::onStopButtonClicked()
-{
-    if (!m_isProcessing || !m_canStop)
-        return;
-
-    m_statusLabel->setText("Stopping...");
-    m_canStop = false;
-    m_statusLabel->setText("Import stopped");
-    m_isProcessing = false;
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
-}
-
 void Sentinel1ImportNode::onImportProgress(int progress, const QString& message)
 {
+    Q_UNUSED(message);
     m_progressBar->setValue(progress);
-    m_statusLabel->setText(message);
 }
 
 void Sentinel1ImportNode::onImportFinished()
@@ -327,10 +354,7 @@ void Sentinel1ImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_statusLabel->setText("Import completed successfully!");
     m_progressBar->setValue(100);
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
 
     if (m_thread)
     {
