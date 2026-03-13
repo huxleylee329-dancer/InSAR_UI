@@ -35,6 +35,8 @@
 class NodeEditorWindow;
 class NodeTreeWidget;
 
+#include "PaletteOrder.h"
+
 // ============================================================================
 // Left Side Panel Components
 // ============================================================================
@@ -76,6 +78,7 @@ public:
     explicit NodeLibraryWidget(QWidget *parent = nullptr);
 
     void setRegistry(std::shared_ptr<QtNodes::NodeDelegateModelRegistry> registry);
+    void setPaletteOrder(const PaletteOrder& order);  // Implemented in .cpp
 
 signals:
     void nodeDoubleClicked(const QString &modelName);
@@ -94,6 +97,7 @@ private:
     QLineEdit *m_searchBox;
     NodeTreeWidget *m_nodeTree;
     std::shared_ptr<QtNodes::NodeDelegateModelRegistry> m_registry;
+    PaletteOrder m_paletteOrder;  // Palette order configuration
 };
 
 // ============================================================================

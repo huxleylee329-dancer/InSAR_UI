@@ -1,10 +1,12 @@
-#include "include/DockWidgets.h"
+﻿#include "include/DockWidgets.h"
 #include "include/NodeTreeWidget.h"
+#include "include/PaletteOrder.h"
 #include "NodeModels.h"
 
 #include <QTreeWidgetItemIterator>
 #include <QStyle>
 #include <QFileInfo>
+#include <QSet>
 #include <algorithm>
 
 // ============================================================================
@@ -94,7 +96,7 @@ void WorkflowBrowser::onSearchTextChanged(const QString &text)
     {
         QTreeWidgetItem *emptyItem = m_workflowList->topLevelItem(0);
         if (emptyItem)
-        emptyItem->setHidden(hasVisible);
+            emptyItem->setHidden(hasVisible);
     }
 }
 
@@ -153,6 +155,14 @@ void NodeLibraryWidget::setRegistry(std::shared_ptr<QtNodes::NodeDelegateModelRe
     populateNodeTree();
 }
 
+void NodeLibraryWidget::setPaletteOrder(const PaletteOrder& order)
+{
+    m_paletteOrder.topLevel = order.topLevel;
+    m_paletteOrder.subcategories = order.subcategories;
+    m_paletteOrder.leafItems = order.leafItems;
+    populateNodeTree();
+}
+
 void NodeLibraryWidget::populateNodeTree()
 {
     if (!m_registry)
@@ -162,7 +172,7 @@ void NodeLibraryWidget::populateNodeTree()
 
     auto models = m_registry->registeredModelsCategoryAssociation();
 
-    // Group models by their paths
+    // Build a map: category path -> list of (modelName, caption)
     QMap<QString, QList<QPair<QString, QString>>> pathModels;
 
     for (const auto &pair : models)
@@ -170,93 +180,187 @@ void NodeLibraryWidget::populateNodeTree()
         const QString &modelName = pair.first;
         const QString &categoryPath = pair.second;
 
+        // Create model instance to get caption
+        auto model = m_registry->create(modelName);
+        if (!model)
+            continue;
+
+        QString caption = model->caption();
+
         QStringList parts = categoryPath.split('/', Qt::SkipEmptyParts);
         if (parts.isEmpty())
+            continue;
+
+        if (parts.size() == 1)
         {
-            // Top-level model without category - just use model name
-            pathModels[modelName].append(QPair<QString, QString>(modelName, modelName));
+            // 1-level: path is category (e.g., "Test")
+            pathModels[categoryPath].append(qMakePair(modelName, caption));
+        }
+        else if (parts.size() == 2)
+        {
+            // 2-level: e.g., "Test/SimpleSource"
+            pathModels[categoryPath].append(qMakePair(modelName, caption));
         }
         else
         {
-            pathModels[categoryPath].append(QPair<QString, QString>(modelName, modelName));
+            // 3-level: e.g., "Data Import/Sentinel-1/Single Import"
+            QString topLevel = parts[0];
+            QString subcategory = parts[1];
+            QString leafPath = topLevel + "/" + subcategory;
+            pathModels[leafPath].append(qMakePair(modelName, caption));
         }
     }
 
-    // Build tree structure respecting the order
-    QMap<QString, QTreeWidgetItem*> topItems;
-
-    for (auto it = pathModels.begin(); it != pathModels.end(); ++it)
+    // Process top-level categories in palette order
+    for (const QString &topLevel : m_paletteOrder.topLevel)
     {
-        const QString &categoryPath = it.key();
-        const QList<QPair<QString, QString>> &modelsList = it.value();
+        if (topLevel.isEmpty())
+            continue;
 
-        QStringList parts = categoryPath.split('/', Qt::SkipEmptyParts);
-        QTreeWidgetItem *currentParent = nullptr;
-
-        // Build/create category hierarchy
-        for (int i = 0; i < parts.size(); ++i)
+        // Check if this top-level has any models registered
+        bool hasModels = false;
+        for (auto it = pathModels.constBegin(); it != pathModels.constEnd(); ++it)
         {
-            QString categoryPart = parts[i];
-            QString categoryPathSoFar;
-            for (int j = 0; j <= i; ++j)
+            const QString &path = it.key();
+            if (path == topLevel || path.startsWith(topLevel + "/"))
             {
-                if (j > 0)
-                    categoryPathSoFar += '/';
-                categoryPathSoFar += parts[j];
+                hasModels = true;
+                break;
             }
-
-            // Find or create this category item
-            if (!topItems.contains(categoryPathSoFar))
-            {
-                bool isLeaf = (i == parts.size() - 1);
-                QTreeWidgetItem *newItem = new QTreeWidgetItem(m_nodeTree);
-                newItem->setText(0, isLeaf ? modelsList.first().second : categoryPart);
-                newItem->setFlags(isLeaf ? Qt::ItemIsEnabled | Qt::ItemIsSelectable
-                                        : Qt::ItemIsEnabled);
-                topItems[categoryPathSoFar] = newItem;
-
-                if (i == 0)
-                {
-                    // Add as top-level item
-                }
-                else
-                {
-                    QString parentPath;
-                    for (int j = 0; j < i; ++j)
-                    {
-                        if (j > 0)
-                            parentPath += '/';
-                        parentPath += parts[j];
-                    }
-                    if (topItems.contains(parentPath))
-                    {
-                        topItems[parentPath]->addChild(newItem);
-                        break;
-                    }
-                }
-            }
-
-            currentParent = topItems[categoryPathSoFar];
         }
 
-        // Add models if this is a leaf category
-        if (currentParent)
-        {
-            // Sort models alphabetically by display name
-            QList<QPair<QString, QString>> sortedModels = modelsList;
-            std::sort(sortedModels.begin(), sortedModels.end(),
-                [](const QPair<QString, QString> &a, const QPair<QString, QString> &b) {
-                    return a.second < b.second;
-                });
+        if (!hasModels)
+            continue;
 
-            for (const auto &modelInfo : sortedModels)
+        // Create top-level item
+        QTreeWidgetItem *topItem = new QTreeWidgetItem(m_nodeTree);
+        topItem->setText(0, topLevel);
+        topItem->setExpanded(false);
+        topItem->setFlags(Qt::ItemIsEnabled);
+
+        // Process subcategories for this top-level in palette order
+        QStringList subcategories = m_paletteOrder.subcategories.value(topLevel);
+        for (const QString &subcategory : subcategories)
+        {
+            if (subcategory.isEmpty())
+                continue;
+
+            QString subPath = topLevel + "/" + subcategory;
+
+            // Check if this subcategory has models
+            if (!pathModels.contains(subPath))
+                continue;
+
+            // Create subcategory item
+            QTreeWidgetItem *subItem = new QTreeWidgetItem(topItem);
+            subItem->setText(0, subcategory);
+            subItem->setExpanded(false);
+            subItem->setFlags(Qt::ItemIsEnabled);
+
+            // Add leaf items in palette order
+            QList<PaletteOrder::LeafItem> leafOrder = m_paletteOrder.leafItems.value(subPath);
+            const QList<QPair<QString, QString>> &modelsList = pathModels[subPath];
+
+            // Build a map: caption -> modelName for matching
+            QMap<QString, QString> captionToModelName;
+            for (const auto &modelPair : modelsList)
             {
-                QTreeWidgetItem *item = new QTreeWidgetItem(currentParent);
-                item->setText(0, modelInfo.second);
-                item->setData(0, Qt::UserRole, modelInfo.first);
-                item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                captionToModelName[modelPair.second] = modelPair.first;
             }
-            currentParent->setExpanded(true);
+
+            // Track models that have been added
+            QSet<QString> addedModelNames;
+
+            // Match leafOrder items by caption to find correct modelName
+            for (const PaletteOrder::LeafItem &leafItemInfo : leafOrder)
+            {
+                const QString &displayName = leafItemInfo.displayName;
+                const QString &caption = leafItemInfo.caption;
+
+                if (caption.isEmpty())
+                    continue;
+
+                // Find the model by caption
+                if (captionToModelName.contains(caption))
+                {
+                    const QString &modelName = captionToModelName[caption];
+                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(subItem);
+                    leafItem->setText(0, displayName);  // Use display name for UI
+                    leafItem->setData(0, Qt::UserRole, modelName);
+                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    addedModelNames.insert(modelName);
+                }
+            }
+
+            // Add any remaining models not in leafOrder
+            for (const auto &modelPair : modelsList)
+            {
+                const QString &modelName = modelPair.first;
+                const QString &caption = modelPair.second;
+                if (!addedModelNames.contains(modelName))
+                {
+                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(subItem);
+                    leafItem->setText(0, caption);
+                    leafItem->setData(0, Qt::UserRole, modelName);
+                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    addedModelNames.insert(modelName);
+                }
+            }
+
+            subItem->setExpanded(true);
+        }
+
+        // Handle direct models under top-level (for "Test" and "Note" cases)
+        if (pathModels.contains(topLevel))
+        {
+            const QList<QPair<QString, QString>> &modelsList = pathModels[topLevel];
+
+            // Build a map: caption -> modelName for matching
+            QMap<QString, QString> captionToModelName;
+            for (const auto &modelPair : modelsList)
+            {
+                captionToModelName[modelPair.second] = modelPair.first;
+            }
+
+            // Track models that have been added
+            QSet<QString> addedModelNames;
+
+            // Match leafOrder items by caption to find correct modelName
+            QList<PaletteOrder::LeafItem> leafOrder = m_paletteOrder.leafItems.value(topLevel);
+            for (const PaletteOrder::LeafItem &leafItemInfo : leafOrder)
+            {
+                const QString &displayName = leafItemInfo.displayName;
+                const QString &caption = leafItemInfo.caption;
+
+                if (caption.isEmpty())
+                    continue;
+
+                // Find the model by caption
+                if (captionToModelName.contains(caption))
+                {
+                    const QString &modelName = captionToModelName[caption];
+                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(topItem);
+                    leafItem->setText(0, displayName);  // Use display name for UI
+                    leafItem->setData(0, Qt::UserRole, modelName);
+                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    addedModelNames.insert(modelName);
+                }
+            }
+
+            // Add any remaining models not in leafOrder
+            for (const auto &modelPair : modelsList)
+            {
+                const QString &modelName = modelPair.first;
+                const QString &caption = modelPair.second;
+                if (!addedModelNames.contains(modelName))
+                {
+                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(topItem);
+                    leafItem->setText(0, caption);
+                    leafItem->setData(0, Qt::UserRole, modelName);
+                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    addedModelNames.insert(modelName);
+                }
+            }
         }
     }
 
@@ -325,6 +429,10 @@ PropertyEditor::PropertyEditor(QWidget *parent)
     , m_graphModel(nullptr)
     , m_currentNodeId(QtNodes::InvalidNodeId)
     , m_updatingProperties(false)
+    , m_nodeIdLabel(nullptr)
+    , m_captionEdit(nullptr)
+    , m_xSpinBox(nullptr)
+    , m_ySpinBox(nullptr)
 {
     setupUi();
 }
@@ -365,7 +473,7 @@ void PropertyEditor::setupUi()
     // Initial state
     m_noSelectionLabel = new QLabel("No node selected");
     m_noSelectionLabel->setAlignment(Qt::AlignCenter);
-    m_noSelectionLabel->setStyleSheet("color: #888888; font padding: 8px;");
+    m_noSelectionLabel->setStyleSheet("color: #888888; font-style: italic; padding: 8px;");
     m_contentWidget->layout()->addWidget(m_noSelectionLabel);
 }
 
@@ -380,13 +488,22 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
         return;
 
     m_currentNodeId = nodeId;
+
+    // 清理旧的 m_nodeIdLabel（如果存在）
+    if (m_nodeIdLabel)
+    {
+        m_contentWidget->layout()->removeWidget(m_nodeIdLabel);
+        m_nodeIdLabel->deleteLater();
+        m_nodeIdLabel = nullptr;
+    }
+
     clearProperties();
+
+    m_noSelectionLabel->hide();
 
     if (!m_graphModel || nodeId == QtNodes::InvalidNodeId)
     {
-        m_nodeIdLabel = nullptr;
         m_noSelectionLabel->show();
-        m_contentWidget->layout()->removeWidget(m_nodeIdLabel);
         return;
     }
 
@@ -403,22 +520,31 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
 void PropertyEditor::clearSelection()
 {
     m_currentNodeId = QtNodes::InvalidNodeId;
+
+    // 先移除旧的 m_nodeIdLabel（如果存在）
+    if (m_nodeIdLabel)
+    {
+        m_contentWidget->layout()->removeWidget(m_nodeIdLabel);
+        m_nodeIdLabel->deleteLater();
+        m_nodeIdLabel = nullptr;  // 立即置空，防止访问已删除对象
+    }
+
     clearProperties();
 
-    m_nodeIdLabel = nullptr;
     m_noSelectionLabel->show();
-    m_contentWidget->layout()->removeWidget(m_nodeIdLabel);
 }
 
 void PropertyEditor::generateProperties(QtNodes::NodeId nodeId)
 {
-    // Clear existing properties
+    // Clear existing properties and m_nodeIdLabel
     while (QLayoutItem *item = m_formLayout->takeAt(0))
     {
         if (item->widget())
             item->widget()->deleteLater();
         delete item;
     }
+
+    // 注意：不在这里删除 m_nodeIdLabel，因为它由 setSelectedNode 管理
 
     // Get node data
     QString caption = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Caption).toString();
@@ -501,7 +627,6 @@ void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *l
             layout->addRow(propertyName, propEdit);
 
             // Store original widget for updates
-            m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, QVariant::fromValue(propEdit));
         }
         else if (spinBox)
         {

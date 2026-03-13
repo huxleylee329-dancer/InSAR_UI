@@ -7,6 +7,7 @@
 #include "ads_globals.h"
 #include "DockManager.h"
 #include "DockWidget.h"
+#include "DockAreaWidget.h"
 
 #include <QPainter>
 #include <QTimer>
@@ -47,7 +48,7 @@
 // ============================================================================
 // 在这里修改来控制所有级别的显示顺序
 // ============================================================================
-NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
+PaletteOrder NodeEditorWindow::getPaletteFullOrder()
 {
     PaletteOrder order;
 
@@ -55,7 +56,8 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
     order.topLevel = QStringList{
         "Data Import",    // 第一级分类
         "Preprocessing",  // 第二级分类
-        "Test"            // 第三级分类
+        "Note",          // 注释节点分类
+        "Test"           // 测试节点分类
     };
 
     // ===== 2. 子分类顺序 =====
@@ -73,36 +75,42 @@ NodeEditorWindow::PaletteOrder NodeEditorWindow::getPaletteFullOrder()
 
     // ===== 3. 叶子项顺序 =====
     // 格式: 子分类完整路径 -> 叶子项列表（按顺序）
-    order.leafItems["Data Import/Sentinel-1"] = QStringList{
-        "Single Import",      // Sentinel-1 下的第一个
-        "Batch Import"        // Sentinel-1 下的第二个
+    // LeafItem 结构: {显示名称, 实际 caption}
+    order.leafItems["Data Import/Sentinel-1"] = QList<PaletteOrder::LeafItem>{
+        {"Single Import", "Sentinel-1 Import"},      // Sentinel-1 单文件导入
+        {"Batch Import", "Sentinel-1 Batch Import"} // Sentinel-1 批量导入
     };
 
-    order.leafItems["Data Import/TerraSAR-X"] = QStringList{
-        "Single Import",
-        "Batch Import"
+    order.leafItems["Data Import/TerraSAR-X"] = QList<PaletteOrder::LeafItem>{
+        {"Single Import", "TerraSAR-X Import"},       // TerraSAR-X 单文件导入
+        {"Batch Import", "TerraSAR-X Batch Import"} // TerraSAR-X 批量导入
     };
 
-    order.leafItems["Data Import/COSMO-SkyMed"] = QStringList{
-        "Batch Import"
+    order.leafItems["Data Import/COSMO-SkyMed"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "COSMO-SkyMed Import"}     // COSMO-SkyMed 批量导入
     };
 
-    order.leafItems["Data Import/ALOS-2"] = QStringList{
-        "Batch Import"
+    order.leafItems["Data Import/ALOS-2"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "ALOS-2 Import"}           // ALOS-2 批量导入
     };
 
     // Preprocessing 类叶子项顺序
-    order.leafItems["Preprocessing/Sentinel-1"] = QStringList{
-        "Deburst",          // Sentinel-1 预处理节点：去突刺
-        "Frame Merge",      // 帧拼接
-        "Swath Merge"       // 条带拼接
+    order.leafItems["Preprocessing/Sentinel-1"] = QList<PaletteOrder::LeafItem>{
+        {"Deburst", "S1 Deburst"},     // Sentinel-1 预处理：去突刺
+        {"Frame Merge", "S1 Frame Merge"},  // 帧拼接
+        {"Swath Merge", "S1 Swath Merge"}   // 条带拼接
     };
 
     // Test 类叶子项顺序
-    order.leafItems["Test"] = QStringList{
-        "SimpleSource",
-        "SimpleDisplay",
-        "SimpleMath"
+    order.leafItems["Test"] = QList<PaletteOrder::LeafItem>{
+        {"Source", "Source"},        // SimpleSourceNode
+        {"Display", "Display"},       // SimpleDisplayNode
+        {"Math (Concat)", "Math (Concat)"} // SimpleMathNode
+    };
+
+    // Note 类叶子项顺序（直接挂在顶级分类下）
+    order.leafItems["Note"] = QList<PaletteOrder::LeafItem>{
+        {"Note", "Note"}          // NoteNode - 文本注释节点
     };
 
     return order;
@@ -135,6 +143,10 @@ NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     , m_actionInterrupt(nullptr)
     , m_actionClearQueue(nullptr)
     , m_actionHistory(nullptr)
+    , m_actionToggleNodes(nullptr)
+    , m_actionToggleWorkflows(nullptr)
+    , m_actionToggleProperties(nullptr)
+    , m_actionToggleQueue(nullptr)
     , m_graphModel(nullptr)
     , m_scene(nullptr)
     , m_view(nullptr)
@@ -177,6 +189,16 @@ void NodeEditorWindow::setupSceneInternal()
     // Create view (custom subclass to handle drag & drop)
     m_view = new PaletteGraphicsView(m_scene);
 
+    // Connect drop event signal
+    connect(m_view, &PaletteGraphicsView::nodeDropped,
+            this, &NodeEditorWindow::onNodeDropped);
+
+    // Connect background click signal to clear property panel
+    connect(m_view, &PaletteGraphicsView::backgroundClicked,
+            this, [this]() {
+                m_propertyEditor->clearSelection();
+            });
+
     // Setup ADS Dock Manager with dock widgets
 
     // 1. Create canvas dock widget (central widget)
@@ -185,32 +207,52 @@ void NodeEditorWindow::setupSceneInternal()
     m_canvasDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
     m_dockManager->setCentralWidget(m_canvasDockWidget);
 
-    // 2. Create Nodes dock widget (left side)
+    // 2. Create Nodes dock widget (left side) - base tab
     m_nodesDockWidget = new ads::CDockWidget("Nodes", this);
     m_nodesDockWidget->setWidget(m_nodeLibrary);
     m_nodesDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
     m_dockManager->addDockWidget(ads::LeftDockWidgetArea, m_nodesDockWidget);
 
-    // 3. Create Workflows dock widget (left side)
+    // 3. Create Workflows dock widget (left side) - add as tab to Nodes area at index 1
     m_workflowsDockWidget = new ads::CDockWidget("Workflows", this);
     m_workflowsDockWidget->setWidget(m_workflowBrowser);
     m_workflowsDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
-    m_dockManager->addDockWidget(ads::LeftDockWidgetArea, m_workflowsDockWidget, m_nodesDockWidget->dockAreaWidget());
+    m_dockManager->addDockWidgetTabToArea(m_workflowsDockWidget, m_nodesDockWidget->dockAreaWidget(), 1);
+    // Set Nodes as the active tab (index 0) - Workflows gets auto-activated when added
+    m_nodesDockWidget->dockAreaWidget()->setCurrentIndex(0);
 
-    // 4. Create Properties dock widget (right side)
+    // 4. Create Properties dock widget (right side) - base tab
     m_propertiesDockWidget = new ads::CDockWidget("Properties", this);
     m_propertiesDockWidget->setWidget(m_propertyEditor);
     m_propertiesDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
     m_dockManager->addDockWidget(ads::RightDockWidgetArea, m_propertiesDockWidget);
 
-    // 5. Create Queue dock widget (right side)
+    // 5. Create Queue dock widget (right side) - add as tab to Properties area at index 1
     m_queueDockWidget = new ads::CDockWidget("Queue", this);
     m_queueDockWidget->setWidget(m_queueManager);
     m_queueDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
-    m_dockManager->addDockWidget(ads::RightDockWidgetArea, m_queueDockWidget, m_propertiesDockWidget->dockAreaWidget());
+    m_dockManager->addDockWidgetTabToArea(m_queueDockWidget, m_propertiesDockWidget->dockAreaWidget(), 1);
+    // Set Properties as the active tab (index 0) - Queue gets auto-activated when added
+    m_propertiesDockWidget->dockAreaWidget()->setCurrentIndex(0);
+
+    // Set initial splitter sizes using a timer to ensure window is fully laid out
+    QTimer::singleShot(0, this, [this]() {
+        QList<int> splitterSizes = m_dockManager->splitterSizes(m_propertiesDockWidget->dockAreaWidget());
+        if (splitterSizes.size() == 3)
+        {
+            int rightSize = 300;  // Right panel: 300 pixels
+            int leftSize = splitterSizes[0];  // Keep left panel size from initial layout
+            int totalWidth = splitterSizes[0] + splitterSizes[1] + splitterSizes[2];
+            int canvasSize = totalWidth - leftSize - rightSize;  // Canvas fills remaining space
+            splitterSizes = {leftSize, canvasSize, rightSize};
+            m_dockManager->setSplitterSizes(m_propertiesDockWidget->dockAreaWidget(), splitterSizes);
+        }
+    });
 
     // Pass registry to node library
     m_nodeLibrary->setRegistry(m_registry);
+    // Pass palette order to control display order
+    m_nodeLibrary->setPaletteOrder(getPaletteFullOrder());
 
     // Pass graph model to property editor
     m_propertyEditor->setGraphModel(m_graphModel);
@@ -346,30 +388,22 @@ void NodeEditorWindow::setupToolbar()
 
     m_toolbar->addSeparator();
 
-    // Panel toggle actions
-    QAction *actionToggleNodes = new QAction("< Nodes", this);
-    actionToggleNodes->setStatusTip("Toggle Nodes panel");
-    actionToggleNodes->setCheckable(false);
-    connect(actionToggleNodes, &QAction::triggered, this, &NodeEditorWindow::onToggleNodesDock);
-    m_toolbar->addAction(actionToggleNodes);
+    // Panel toggle actions (for View menu only)
+    m_actionToggleNodes = new QAction("Nodes", this);
+    m_actionToggleNodes->setStatusTip("Toggle Nodes panel");
+    connect(m_actionToggleNodes, &QAction::triggered, this, &NodeEditorWindow::onToggleNodesDock);
 
-    QAction *actionToggleWorkflows = new QAction("< Workflows", this);
-    actionToggleWorkflows->setStatusTip("Toggle Workflows panel");
-    actionToggleWorkflows->setCheckable(false);
-    connect(actionToggleWorkflows, &QAction::triggered, this, &NodeEditorWindow::onToggleWorkflowsDock);
-    m_toolbar->addAction(actionToggleWorkflows);
+    m_actionToggleWorkflows = new QAction("Workflows", this);
+    m_actionToggleWorkflows->setStatusTip("Toggle Workflows panel");
+    connect(m_actionToggleWorkflows, &QAction::triggered, this, &NodeEditorWindow::onToggleWorkflowsDock);
 
-    QAction *actionToggleProperties = new QAction("Properties >", this);
-    actionToggleProperties->setStatusTip("Toggle Properties panel");
-    actionToggleProperties->setCheckable(false);
-    connect(actionToggleProperties, &QAction::triggered, this, &NodeEditorWindow::onTogglePropertiesDock);
-    m_toolbar->addAction(actionToggleProperties);
+    m_actionToggleProperties = new QAction("Properties", this);
+    m_actionToggleProperties->setStatusTip("Toggle Properties panel");
+    connect(m_actionToggleProperties, &QAction::triggered, this, &NodeEditorWindow::onTogglePropertiesDock);
 
-    QAction *actionToggleQueue = new QAction("Queue >", this);
-    actionToggleQueue->setStatusTip("Toggle Queue panel");
-    actionToggleQueue->setCheckable(false);
-    connect(actionToggleQueue, &QAction::triggered, this, &NodeEditorWindow::onToggleQueueDock);
-    m_toolbar->addAction(actionToggleQueue);
+    m_actionToggleQueue = new QAction("Queue", this);
+    m_actionToggleQueue->setStatusTip("Toggle Queue panel");
+    connect(m_actionToggleQueue, &QAction::triggered, this, &NodeEditorWindow::onToggleQueueDock);
 
     m_toolbar->addSeparator();
 
@@ -434,8 +468,16 @@ void NodeEditorWindow::setupMenu()
     menuEdit->addAction(m_actionClear);
 
     auto *menuView = menuBar()->addMenu("View");
-    menuEdit->addAction(m_actionBrowse);
-    menuEdit->addAction(m_actionHistory);
+    // Panel toggle actions
+    menuView->addAction(m_actionToggleNodes);
+    menuView->addAction(m_actionToggleWorkflows);
+    menuView->addAction(m_actionToggleProperties);
+    menuView->addAction(m_actionToggleQueue);
+    menuView->addSeparator();
+
+   // Browse and History
+    menuView->addAction(m_actionBrowse);
+    menuView->addAction(m_actionHistory);
 
     auto *menuHelp = menuBar()->addMenu("Help");
     auto *actionAbout = new QAction("About", this);
@@ -685,6 +727,12 @@ void NodeEditorWindow::onNodeItemClicked(const QString &modelName)
     statusBar()->showMessage(QString("Double-click to add: %1").arg(modelName));
 }
 
+void NodeEditorWindow::onNodeDropped(QtNodes::NodeId nodeId, const QString &modelName)
+{
+    m_propertyEditor->setSelectedNode(nodeId);
+    statusBar()->showMessage(QString("Added node: %1").arg(modelName));
+}
+
 void NodeEditorWindow::onWorkflowLoadRequested(const QString &filePath)
 {
     QFile file(filePath);
@@ -771,6 +819,7 @@ void NodeEditorWindow::onRefreshNodes()
     if (m_nodeLibrary)
     {
         m_nodeLibrary->setRegistry(m_registry);
+        m_nodeLibrary->setPaletteOrder(getPaletteFullOrder());
         statusBar()->showMessage("Node definitions refreshed");
     }
 }

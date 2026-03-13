@@ -26,6 +26,7 @@
 #include <QMouseEvent>
 #include <QComboBox>
 #include <memory>
+#include "PaletteOrder.h"
 
 // ADS (Qt Advanced Docking System)
 #include "ads_globals.h"
@@ -64,6 +65,10 @@ public:
         setAcceptDrops(true);
     }
 
+signals:
+    void nodeDropped(QtNodes::NodeId nodeId, const QString &modelName);
+    void backgroundClicked();  // 点击画布背景时发射
+
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override
     {
@@ -93,14 +98,44 @@ protected:
 
             QtNodes::BasicGraphicsScene *scene = nodeScene();
             if (scene) {
-                scene->undoStack().push(
-                    new QtNodes::CreateCommand(scene, modelName, scenePos));
+                // 清除所有选中
+                scene->clearSelection();
+
+                // 直接创建节点（绕过 undoStack 以便立即获取节点ID）
+                QtNodes::NodeId nodeId = scene->graphModel().addNode(modelName);
+                if (nodeId != QtNodes::InvalidNodeId) {
+                    // 设置节点位置
+                    scene->graphModel().setNodeData(nodeId, QtNodes::NodeRole::Position, scenePos);
+
+                    // 选中新节点
+                    auto *nodeObj = scene->nodeGraphicsObject(nodeId);
+                    if (nodeObj) {
+                        nodeObj->setSelected(true);
+                    }
+
+                    // 发射信号通知 NodeEditorWindow 更新属性面板
+                    emit nodeDropped(nodeId, modelName);
+                }
             }
 
             event->acceptProposedAction();
             return;
         }
         QtNodes::GraphicsView::dropEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        QtNodes::BasicGraphicsScene *scene = nodeScene();
+        if (scene) {
+            // 检查点击的是否是节点
+            QGraphicsItem *item = scene->itemAt(mapToScene(event->pos()), QTransform());
+            if (!item) {
+                // 点击的是背景，发射信号
+                emit backgroundClicked();
+            }
+        }
+        QtNodes::GraphicsView::mousePressEvent(event);
     }
 };
 
@@ -141,6 +176,7 @@ private slots:
     void onNodeDoubleClicked(const QString &modelName);
     void onNodeSearchTextChanged(const QString &text);
     void onNodeItemClicked(const QString &modelName);
+    void onNodeDropped(QtNodes::NodeId nodeId, const QString &modelName);
 
     // Workflow browser signals
     void onWorkflowLoadRequested(const QString &filePath);
@@ -174,11 +210,7 @@ private:
     void applyStyles();
 
     // Node palette full order configuration
-    static struct PaletteOrder {
-        QStringList topLevel;           // 顶级分类顺序
-        QMap<QString, QStringList> subcategories;  // 顶级分类 -> 子分类顺序
-        QMap<QString, QStringList> leafItems;      // 子分类路径 -> 叶子项顺序
-    } getPaletteFullOrder();
+    PaletteOrder getPaletteFullOrder();
 
     QString getSaveFilePath();
     QString getOpenFilePath();
@@ -220,6 +252,12 @@ private:
     QAction *m_actionInterrupt;
     QAction *m_actionClearQueue;
     QAction *m_actionHistory;
+
+    // Panel toggle actions
+    QAction *m_actionToggleNodes;
+    QAction *m_actionToggleWorkflows;
+    QAction *m_actionToggleProperties;
+    QAction *m_actionToggleQueue;
 
     // Node Editor components
     std::shared_ptr<QtNodes::NodeDelegateModelRegistry> m_registry;

@@ -2,13 +2,14 @@
 
 本计划用于实现 SatExplorer 项目中的基于节点的可视化流程编辑器功能。
 
-## 进度总结（2026-03-10 更新）
+## 进度总结（2026-03-12 更新）
 
 - [x] 阶段 1: QtNodes 库集成 - 已完成
 - [x] 阶段 2: 基础架构搭建 - 已完成
 - [x] 阶段 2.5: 右侧节点面板 - 已完成 ✨（已移至左侧边栏）
 - [x] 阶段 3: 数据导入节点实现 - 已完成（Sentinel-1, TerraSAR-X, COSMO-SkyMed, ALOS-2）
 - [x] 阶段 4: 预处理节点实现 - 已完成 ✨
+- [x] 阶段 2.5.1: 节点调色板顺序功能 - 已完成 ✨（2026-03-12）
 - [ ] 阶段 5: 配准节点实现 - 未开始
 - [ ] 阶段 6: 干涉处理节点实现 - 未开始
 - [ ] 阶段 7: 基线处理节点实现 - 未开始
@@ -150,7 +151,62 @@ F --> F4["📝 注释节点 (Note)"]
 
 ---
 
-## 已完成的工作（2026-03-05 更新）
+## 已完成的工作（2026-03-12 更新）
+
+### 节点调色板顺序功能（阶段 2.5.1 - 已完成）✨
+
+**日期**：2026-03-12
+
+**问题描述**：节点库中的节点显示顺序不是完全按照 `getPaletteFullOrder()` 中定义的顺序进行的。
+
+**原因分析**：
+1. `populateNodeTree()` 完全没有使用 `m_paletteOrder` 来控制显示顺序
+2. 使用 `QMap`（按键字母顺序排序）而不是调色板顺序
+3. 叶子项按字母顺序排序，而不是使用 `m_paletteOrder.leafItems` 顺序
+4. 使用路径最后一部分作为显示名称，而不是节点的 `caption()` 返回值
+
+**修复内容**：
+
+#### 1. 修复拼写错误 (DockWidgets.cpp)
+- ✅ `Qt::ItemariIsEnabled` → `Qt::ItemIsEnabled`
+- ✅ `*itit` → `*it`
+- ✅ `populate populateNodeTree()` → `populateNodeTree()`
+- ✅ `prop->setPlaceholderText` → `propEdit->setPlaceholderText`
+
+#### 2. 创建调色板顺序结构 (include/PaletteOrder.h)
+```cpp
+struct PaletteOrder {
+    QStringList topLevel;              // 顶级分类顺序
+    QMap<QString, QStringList> subcategories;  // 顶级 -> 子分类顺序
+    QMap<QString, QStringList> leafItems;      // 子分类路径 -> 叶子项顺序
+};
+```
+
+#### 3. 修改 NodeLibraryWidget::populateNodeTree()
+- ✅ 获取每个模型的 `caption()` 作为显示名称
+- ✅ 按照 `m_paletteOrder.topLevel` 遍历顶级分类
+- ✅ 按照 `m_paletteOrder.subcategories` 遍历子分类
+- ✅ 按照 `m_paletteOrder.leafItems` 遍历叶子节点
+- ✅ 使用 caption 与调色板顺序匹配
+
+#### 4. 更新 getPaletteFullOrder() 的叶子项
+使用实际的 caption 值：
+- **Test 分类**：`"Source"`, `"Display"`, `"Math (Concat)"`
+- **Data Import/Sentinel-1**：`"Sentinel-1 Import"`, `"Sentinel-1 Batch Import"`
+- **Data Import/TerraSAR-X**：`"TerraSAR-X Import"`, `"TerraSAR-X Batch Import"`
+- **Data Import/COSMO-SkyMed**：`"COSMO-SkyMed Import"`
+- **Data Import/ALOS-2**：`"ALOS-2 Import"`
+- **Preprocessing/Sentinel-1**：`"S1 Deburst"`, `"S1 Frame Merge"`, `"S1 Swath Merge"`
+
+**文件列表**：
+- `include/PaletteOrder.h` - 调色板顺序结构定义（新建）
+- `include/DockWidgets.h` - 添加 `setPaletteOrder()` 方法和 `m_paletteOrder` 成员
+- `DockWidgets.cpp` - 修改 `populateNodeTree()` 实现调色板顺序
+- `NodeEditorWindow.cpp` - 更新 `getPaletteFullOrder()` 使用实际 caption 值
+
+---
+
+### 预处理节点（阶段 4 - 已完成）✨
 
 ### 预处理节点（阶段 4 - 已完成）✨
 
