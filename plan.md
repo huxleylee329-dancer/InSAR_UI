@@ -24,6 +24,8 @@
 - [x] 阶段 16: UI 布局重构 - 已完成 ✨（核心功能，编译成功）
 - [x] TSXImportNode UI 对齐主窗口"导入"标签页设计 - 已完成 ✨（2026-03-13）
 - [x] TSXBatchImportNode UI 对齐主窗口"批量导入"标签页设计 - 已完成 ✨（2026-03-13）
+- [x] CSKImportNode UI 对齐主窗口"批量导入"标签页设计 - 已完成 ✨（2026-03-16）
+- [x] ALOS2ImportNode UI 对齐 import_ALOS2.ui 设计 - 已完成 ✨（2026-03-16）
 
 ---
 
@@ -90,6 +92,108 @@ QVBoxLayout (margins=8, spacing=6) - stretch="4,4"
         ├── QHBoxLayout [3:7] - 极化方式
         └── QHBoxLayout [5:5] - 进度条
 ```
+
+---
+
+## CSKImportNode UI 对齐主窗口"批量导入"标签页设计（2026-03-16）
+
+**问题描述**：Node Editor 版本的 CSKImportNode 界面与主窗口的 `Import_TSX.ui` 中"批量导入"标签页设计不一致。
+
+**已完成修改**：
+- 头文件 (`include/CSKImportNode.h`)：
+  - ✅ 添加 UTF-8 BOM 编码指令
+  - ✅ 添加 `#include <QComboBox>`
+  - ✅ 添加 `m_projectCombo` 成员变量
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 方法声明
+- 实现文件 (`CSKImportNode.cpp`)：
+  - ✅ 添加 UTF-8 BOM 编码指令
+  - ✅ 更新构造函数初始化列表
+  - ✅ 重写 `createWidget()` 方法，使用中文标签和主窗口布局
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 方法
+  - ✅ 修改 `onAddFilesClicked()` 使用中文对话框
+  - ✅ 修改 `onImportProgress()` 只更新进度条
+  - ✅ 修改 `onImportFinished()` 移除状态标签和按钮更新
+  - ✅ 修改 `executeImport()` 错误消息为中文
+  - ✅ 更新默认节点名称为 "CSK_Batch_Import"
+
+**UI 布局**（与主窗口"批量导入"标签页一致）：
+```
+QVBoxLayout (margins=8, spacing=6) - stretch="4,4"
+├── QHBoxLayout (stretch="8,2") - 上半部分：文件列表
+│   ├── QListWidget - 文件列表
+│   └── QVBoxLayout - 添加/移除按钮
+│       ├── QPushButton - "添加"
+│       └── QPushButton - "移除"
+└── QHBoxLayout - 下半部分：配置选项
+    └── QVBoxLayout
+        ├── QHBoxLayout [3:7] - 目标工程（ComboBox，只读）
+        ├── QHBoxLayout [3:7] - 目标节点
+        └── QHBoxLayout [5:5] - 进度条
+```
+
+**文件列表**：
+- `include/CSKImportNode.h` - 头文件
+- `CSKImportNode.cpp` - 实现文件
+
+---
+
+## ALOS2ImportNode UI 对齐 import_ALOS2.ui 设计（2026-03-16）
+
+**问题描述**：Node Editor 版本的 ALOS2ImportNode 界面与 `import_ALOS2.ui` 设计不一致。
+
+**已完成修改**：
+- 头文件 (`include/ALOS2ImportNode.h`)：
+  - ✅ 添加 UTF-8 BOM 编码指令
+  - ✅ 添加 `#include <QComboBox>`
+  - ✅ 添加 `m_projectCombo` 成员变量
+  - ✅ 添加 `m_progressText` 成员变量（进度百分比文本标签）
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 方法声明
+- 实现文件 (`ALOS2ImportNode.cpp`)：
+  - ✅ 添加 UTF-8 BOM 编码指令
+  - ✅ 更新构造函数初始化列表
+  - ✅ 重写 `createWidget()` 方法，使用中文标签和 import_ALOS2.ui 布局
+  - ✅ 删除 `onImportButtonClicked()`, `onStopButtonClicked()` 方法
+  - ✅ 修改 `onAddFilesClicked()` 使用中文对话框
+  - ✅ 修改 `onImportProgress()` 同时更新进度条和进度文本
+  - ✅ 修改 `onImportFinished()` 设置进度文本为 "100%"
+  - ✅ 修改 `executeImport()` 错误消息为中文
+  - ✅ 更新默认节点名称为 "ALOS2_Batch_Import"
+  - ✅ 添加控件尺寸设置：
+    - 目标工程下拉框：`setFixedHeight(32)`, `setMinimumWidth(150)`
+    - 目标节点输入框：`setFixedHeight(32)`, `setMinimumWidth(150)`
+    - 进度条：`setFixedHeight(20)`, `setTextVisible(false)`
+    - 进度文本标签：`setMinimumWidth(50)`, `setFixedHeight(20)`, `setAlignment(Qt::AlignCenter)`
+  - ✅ 更新布局比例为 [2:8]（标签20%，控件80%）
+
+**UI 布局**（与 import_ALOS2.ui 一致）：
+```
+QVBoxLayout (margins=8, spacing=6) - stretch="4,4"
+├── QHBoxLayout (stretch="8,2") - 上半部分：文件列表
+│   ├── QListWidget - 文件列表
+│   └── QVBoxLayout - 添加/移除按钮
+│       ├── QPushButton - "添加"
+│       └── QPushButton - "移除"
+└── QHBoxLayout - 下半部分：配置选项
+    └── QVBoxLayout
+        ├── QHBoxLayout [2:8] - 目标工程（ComboBox，只读）
+        │   └── QComboBox - 固定高度 32px，最小宽度 150px
+        ├── QHBoxLayout [2:8] - 目标节点
+        │   └── QLineEdit - 固定高度 32px，最小宽度 150px
+        └── QHBoxLayout - 进度条和文本
+            ├── QProgressBar - 固定高度 20px，隐藏内置文本
+            └── QLabel ("0%") - 最小宽度 50px，固定高度 20px，居中对齐
+```
+
+**尺寸设置说明**：
+- `setFixedHeight(px)` - 设置固定高度
+- `setMinimumWidth(px)` - 设置最小宽度，允许扩展
+- `setFixedWidth(px)` - 设置固定宽度（通常不建议，让布局自动控制）
+- `setAlignment(Qt::AlignCenter)` - 文字居中对齐
+- `setTextVisible(false)` - 隐藏进度条内置的百分比文本
+
+**文件列表**：
+- `include/ALOS2ImportNode.h` - 头文件
+- `ALOS2ImportNode.cpp` - 实现文件
 
 ---
 

@@ -1,3 +1,7 @@
+﻿#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
 #include "CSKImportNode.h"
 #include <QFileInfo>
 
@@ -7,6 +11,7 @@ CSKImportNode::CSKImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
+    , m_projectCombo(nullptr)
     , m_importButton(nullptr)
     , m_stopButton(nullptr)
     , m_progressBar(nullptr)
@@ -47,61 +52,76 @@ CSKImportNode::~CSKImportNode()
 QWidget* CSKImportNode::createWidget()
 {
     auto* widget = new QWidget();
-    auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(5, 5, 5, 5);
-    layout->setSpacing(5);
+    auto* mainLayout = new QVBoxLayout(widget);
+    mainLayout->setContentsMargins(8, 8, 8, 8);
+    mainLayout->setSpacing(6);
 
-    // Output node name
-    layout->addWidget(new QLabel("Output Node Name:"));
-    m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("CSK_Import");
-    layout->addWidget(m_outputNodeNameEdit);
+    // Top section: file list (8:2 stretch) - stretch 4
+    auto* topSection = new QHBoxLayout();
+    topSection->setStretch(0, 8);
+    topSection->setStretch(1, 2);
 
-    // File list
-    layout->addWidget(new QLabel("CSK Files (.h5):"));
+    // Left side: file list widget
     m_fileListWidget = new QListWidget();
-    m_fileListWidget->setMaximumHeight(100);
-    layout->addWidget(m_fileListWidget);
+    topSection->addWidget(m_fileListWidget);
 
-    // Add/Remove buttons
-    auto* buttonLayout = new QHBoxLayout();
-    QPushButton* addFiles = new QPushButton("Add Files");
-    QPushButton* removeFiles = new QPushButton("Remove");
+    // Right side: add/remove buttons
+    auto* buttonLayout = new QVBoxLayout();
+    QPushButton* addFiles = new QPushButton("添加");
+    QPushButton* removeFiles = new QPushButton("移除");
     buttonLayout->addWidget(addFiles);
     buttonLayout->addWidget(removeFiles);
-    layout->addLayout(buttonLayout);
+    topSection->addLayout(buttonLayout);
 
-    // Separator
-    QFrame* line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(line);
+    mainLayout->addLayout(topSection, 4);
 
-    // Progress bar
+    // Bottom section: configuration options - stretch 4
+    auto* bottomSection = new QHBoxLayout();
+    auto* configLayout = new QVBoxLayout();
+
+    // Target project [3:7]
+    auto* projectRow = new QHBoxLayout();
+    projectRow->setStretch(0, 3);
+    projectRow->setStretch(1, 7);
+    projectRow->addWidget(new QLabel("目标工程："));
+    m_projectCombo = new QComboBox();
+    m_projectCombo->setEditable(false);
+    if (!projectName().isEmpty())
+    {
+        m_projectCombo->addItem(projectName());
+    }
+    projectRow->addWidget(m_projectCombo);
+    configLayout->addLayout(projectRow);
+
+    // Target node [3:7]
+    auto* nodeRow = new QHBoxLayout();
+    nodeRow->setStretch(0, 3);
+    nodeRow->setStretch(1, 7);
+    nodeRow->addWidget(new QLabel("目标节点："));
+    m_outputNodeNameEdit = new QLineEdit();
+    m_outputNodeNameEdit->setText("CSK_Batch_Import");
+    nodeRow->addWidget(m_outputNodeNameEdit);
+    configLayout->addLayout(nodeRow);
+
+    // CSK does not need polarization selection (auto-detect)
+
+    // Progress bar row [5:5]
+    auto* progressRow = new QHBoxLayout();
+    progressRow->setStretch(0, 5);
+    progressRow->setStretch(1, 5);
     m_progressBar = new QProgressBar();
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
-    layout->addWidget(m_progressBar);
+    progressRow->addWidget(m_progressBar);
+    progressRow->addStretch();
+    configLayout->addLayout(progressRow);
 
-    // Status label
-    m_statusLabel = new QLabel("Ready");
-    m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
-
-    // Buttons
-    auto* importButtonLayout = new QHBoxLayout();
-    m_importButton = new QPushButton("Import");
-    m_stopButton = new QPushButton("Stop");
-    m_stopButton->setEnabled(false);
-    importButtonLayout->addWidget(m_importButton);
-    importButtonLayout->addWidget(m_stopButton);
-    layout->addLayout(importButtonLayout);
+    bottomSection->addLayout(configLayout);
+    mainLayout->addLayout(bottomSection, 4);
 
     // Connect signals
     connect(addFiles, &QPushButton::clicked, this, &CSKImportNode::onAddFilesClicked);
     connect(removeFiles, &QPushButton::clicked, this, &CSKImportNode::onRemoveFilesClicked);
-    connect(m_importButton, &QPushButton::clicked, this, &CSKImportNode::onImportButtonClicked);
-    connect(m_stopButton, &QPushButton::clicked, this, &CSKImportNode::onStopButtonClicked);
 
     return widget;
 }
@@ -110,7 +130,7 @@ void CSKImportNode::executeImport()
 {
     if (m_filePaths.isEmpty())
     {
-        onError("Please add at least one CSK file.");
+        onError("请至少添加一个 H5 文件。");
         return;
     }
 
@@ -118,7 +138,7 @@ void CSKImportNode::executeImport()
     {
         if (!QFileInfo::exists(path))
         {
-            onError("CSK file does not exist: " + path);
+            onError("H5 文件不存在：" + path);
             return;
         }
     }
@@ -131,7 +151,7 @@ void CSKImportNode::executeImport()
         QString importName = generateOutputFileName(filePath);
         if (importName.isEmpty())
         {
-            onError("Could not generate output file name from: " + filePath);
+            onError("无法从 H5 文件生成输出文件名：" + filePath);
             return;
         }
         originalFileList.push_back(filePath);
@@ -183,7 +203,7 @@ QString CSKImportNode::getOutputNodeName() const
     QString name = m_outputNodeNameEdit->text().trimmed();
     if (name.isEmpty())
     {
-        return "CSK_Import";
+        return "CSK_Batch_Import";
     }
     return name;
 }
@@ -207,54 +227,13 @@ QString CSKImportNode::generateOutputFileName(const QString& filePath) const
     return QString();
 }
 
-void CSKImportNode::onImportButtonClicked()
-{
-    if (m_isProcessing)
-        return;
-
-    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "No project is currently open. Please open a project first.");
-        return;
-    }
-
-    QString nodeName = getOutputNodeName();
-    if (nodeName.isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "Please enter an output node name.");
-        return;
-    }
-
-    m_isProcessing = true;
-    m_canStop = true;
-    m_importButton->setEnabled(false);
-    m_stopButton->setEnabled(true);
-    m_progressBar->setValue(0);
-    m_statusLabel->setText("Starting import...");
-
-    executeImport();
-}
-
-void CSKImportNode::onStopButtonClicked()
-{
-    if (!m_isProcessing || !m_canStop)
-        return;
-
-    m_statusLabel->setText("Stopping...");
-    m_canStop = false;
-    m_statusLabel->setText("Import stopped");
-    m_isProcessing = false;
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
-}
-
 void CSKImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
         m_widget,
-        "Select COSMO-SkyMed Files",
+        "导入 COSMO-SkyMed 数据",
         QDir::currentPath(),
-        "CSK Files (*.h5);;All Files (*)"
+        "H5 文件 (*.h5)"
     );
 
     for (const QString& file : files)
@@ -280,8 +259,8 @@ void CSKImportNode::onRemoveFilesClicked()
 
 void CSKImportNode::onImportProgress(int progress, const QString& message)
 {
+    Q_UNUSED(message);  // Ignore message
     m_progressBar->setValue(progress);
-    m_statusLabel->setText(message);
 }
 
 void CSKImportNode::onImportFinished()
@@ -300,11 +279,9 @@ void CSKImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_statusLabel->setText("Import completed successfully!");
     m_progressBar->setValue(100);
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
 
+    // Clean up thread (consistent with TSXBatchImportNode)
     if (m_thread)
     {
         m_thread->quit();

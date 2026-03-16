@@ -1,3 +1,7 @@
+﻿#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
 #include "ALOS2ImportNode.h"
 #include <QFileInfo>
 #include <QDir>
@@ -8,9 +12,11 @@ ALOS2ImportNode::ALOS2ImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
+    , m_projectCombo(nullptr)
     , m_importButton(nullptr)
     , m_stopButton(nullptr)
     , m_progressBar(nullptr)
+    , m_progressText(nullptr)
     , m_statusLabel(nullptr)
     , m_imgPaths()
     , m_importedFilePaths()
@@ -48,61 +54,85 @@ ALOS2ImportNode::~ALOS2ImportNode()
 QWidget* ALOS2ImportNode::createWidget()
 {
     auto* widget = new QWidget();
-    auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(5, 5, 5, 5);
-    layout->setSpacing(5);
+    auto* mainLayout = new QVBoxLayout(widget);
+    mainLayout->setContentsMargins(8, 8, 8, 8);
+    mainLayout->setSpacing(6);
 
-    // Output node name
-    layout->addWidget(new QLabel("Output Node Name:"));
-    m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("ALOS2_Import");
-    layout->addWidget(m_outputNodeNameEdit);
+    // Top section: file list (8:2 stretch) - stretch 4
+    auto* topSection = new QHBoxLayout();
+    topSection->setStretch(0, 8);
+    topSection->setStretch(1, 2);
 
-    // File list
-    layout->addWidget(new QLabel("IMG Files:"));
+    // Left side: file list widget
     m_fileListWidget = new QListWidget();
-    m_fileListWidget->setMaximumHeight(100);
-    layout->addWidget(m_fileListWidget);
+    topSection->addWidget(m_fileListWidget);
 
-    // Add/Remove buttons
-    auto* buttonLayout = new QHBoxLayout();
-    QPushButton* addFiles = new QPushButton("Add Files");
-    QPushButton* removeFiles = new QPushButton("Remove");
+    // Right side: add/remove buttons
+    auto* buttonLayout = new QVBoxLayout();
+    QPushButton* addFiles = new QPushButton("添加");
+    QPushButton* removeFiles = new QPushButton("移除");
     buttonLayout->addWidget(addFiles);
     buttonLayout->addWidget(removeFiles);
-    layout->addLayout(buttonLayout);
+    topSection->addLayout(buttonLayout);
 
-    // Separator
-    QFrame* line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(line);
+    mainLayout->addLayout(topSection, 4);
 
-    // Progress bar
+    // Bottom section: configuration options - stretch 4
+    auto* bottomSection = new QHBoxLayout();
+    auto* configLayout = new QVBoxLayout();
+
+    // Target project [2:8]
+    auto* projectRow = new QHBoxLayout();
+    projectRow->setStretch(0, 2);
+    projectRow->setStretch(1, 8);
+    projectRow->addWidget(new QLabel("目标工程："));
+    m_projectCombo = new QComboBox();
+    m_projectCombo->setEditable(false);
+    m_projectCombo->setFixedHeight(32);
+    m_projectCombo->setMinimumWidth(150);
+    if (!projectName().isEmpty())
+    {
+        m_projectCombo->addItem(projectName());
+    }
+    projectRow->addWidget(m_projectCombo);
+    configLayout->addLayout(projectRow);
+
+    // Target node [2:8]
+    auto* nodeRow = new QHBoxLayout();
+    nodeRow->setStretch(0, 2);
+    nodeRow->setStretch(1, 8);
+    nodeRow->addWidget(new QLabel("目标节点："));
+    m_outputNodeNameEdit = new QLineEdit();
+    m_outputNodeNameEdit->setText("ALOS2_Batch_Import");
+    m_outputNodeNameEdit->setFixedHeight(32);
+    m_outputNodeNameEdit->setMinimumWidth(150);
+    nodeRow->addWidget(m_outputNodeNameEdit);
+    configLayout->addLayout(nodeRow);
+
+    // Progress bar row with text
+    auto* progressRow = new QHBoxLayout();
     m_progressBar = new QProgressBar();
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
-    layout->addWidget(m_progressBar);
+    m_progressBar->setTextVisible(false);  // Hide built-in text
+    m_progressBar->setFixedHeight(20);
+    progressRow->addWidget(m_progressBar);
 
-    // Status label
-    m_statusLabel = new QLabel("Ready");
-    m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
+    // Progress percentage text label
+    m_progressText = new QLabel("0%");
+    m_progressText->setMinimumWidth(50);
+    m_progressText->setFixedHeight(20);
+    m_progressText->setAlignment(Qt::AlignCenter);
+    progressRow->addWidget(m_progressText);
 
-    // Buttons
-    auto* importButtonLayout = new QHBoxLayout();
-    m_importButton = new QPushButton("Import");
-    m_stopButton = new QPushButton("Stop");
-    m_stopButton->setEnabled(false);
-    importButtonLayout->addWidget(m_importButton);
-    importButtonLayout->addWidget(m_stopButton);
-    layout->addLayout(importButtonLayout);
+    configLayout->addLayout(progressRow);
+
+    bottomSection->addLayout(configLayout);
+    mainLayout->addLayout(bottomSection, 4);
 
     // Connect signals
     connect(addFiles, &QPushButton::clicked, this, &ALOS2ImportNode::onAddFilesClicked);
     connect(removeFiles, &QPushButton::clicked, this, &ALOS2ImportNode::onRemoveFilesClicked);
-    connect(m_importButton, &QPushButton::clicked, this, &ALOS2ImportNode::onImportButtonClicked);
-    connect(m_stopButton, &QPushButton::clicked, this, &ALOS2ImportNode::onStopButtonClicked);
 
     return widget;
 }
@@ -111,7 +141,7 @@ void ALOS2ImportNode::executeImport()
 {
     if (m_imgPaths.isEmpty())
     {
-        onError("Please add at least one IMG file.");
+        onError("请至少添加一个 IMG 文件。");
         return;
     }
 
@@ -119,7 +149,7 @@ void ALOS2ImportNode::executeImport()
     {
         if (!QFileInfo::exists(path))
         {
-            onError("IMG file does not exist: " + path);
+            onError("IMG 文件不存在：" + path);
             return;
         }
     }
@@ -133,14 +163,14 @@ void ALOS2ImportNode::executeImport()
         QString importName = generateOutputFileName(imgPath);
         if (importName.isEmpty())
         {
-            onError("Could not generate output file name from IMG: " + imgPath);
+            onError("无法从 IMG 文件生成输出文件名：" + imgPath);
             return;
         }
 
         QString ledPath = generateLEDPath(imgPath);
         if (!QFileInfo::exists(ledPath))
         {
-            onError("LED file not found for IMG: " + imgPath);
+            onError("IMG 文件对应的 LED 文件未找到：" + imgPath);
             return;
         }
 
@@ -195,7 +225,7 @@ QString ALOS2ImportNode::getOutputNodeName() const
     QString name = m_outputNodeNameEdit->text().trimmed();
     if (name.isEmpty())
     {
-        return "ALOS2_Import";
+        return "ALOS2_Batch_Import";
     }
     return name;
 }
@@ -247,54 +277,13 @@ QString ALOS2ImportNode::generateLEDPath(const QString& imgPath) const
     return QString();
 }
 
-void ALOS2ImportNode::onImportButtonClicked()
-{
-    if (m_isProcessing)
-        return;
-
-    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "No project is currently open. Please open a project first.");
-        return;
-    }
-
-    QString nodeName = getOutputNodeName();
-    if (nodeName.isEmpty())
-    {
-        QMessageBox::warning(m_widget, "Error", "Please enter an output node name.");
-        return;
-    }
-
-    m_isProcessing = true;
-    m_canStop = true;
-    m_importButton->setEnabled(false);
-    m_stopButton->setEnabled(true);
-    m_progressBar->setValue(0);
-    m_statusLabel->setText("Starting import...");
-
-    executeImport();
-}
-
-void ALOS2ImportNode::onStopButtonClicked()
-{
-    if (!m_isProcessing || !m_canStop)
-        return;
-
-    m_statusLabel->setText("Stopping...");
-    m_canStop = false;
-    m_statusLabel->setText("Import stopped");
-    m_isProcessing = false;
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
-}
-
 void ALOS2ImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
         m_widget,
-        "Select ALOS-2 IMG Files",
+        "导入 ALOS-2 数据",
         QDir::currentPath(),
-        "IMG Files (*.IMG *.img);;All Files (*)"
+        "IMG 文件 (*.IMG *.img)"
     );
 
     for (const QString& file : files)
@@ -320,8 +309,9 @@ void ALOS2ImportNode::onRemoveFilesClicked()
 
 void ALOS2ImportNode::onImportProgress(int progress, const QString& message)
 {
+    Q_UNUSED(message);  // Ignore message
     m_progressBar->setValue(progress);
-    m_statusLabel->setText(message);
+    m_progressText->setText(QString("%1%").arg(progress));
 }
 
 void ALOS2ImportNode::onImportFinished()
@@ -340,11 +330,10 @@ void ALOS2ImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_statusLabel->setText("Import completed successfully!");
     m_progressBar->setValue(100);
-    m_importButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
+    m_progressText->setText("100%");
 
+    // Clean up thread (consistent with TSXBatchImportNode)
     if (m_thread)
     {
         m_thread->quit();

@@ -1,12 +1,17 @@
 #ifndef CSKIMPORTNODE_H
 #define CSKIMPORTNODE_H
 
+#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
 #include "ImportNodeBase.h"
 #include "MyThread.h"
 #include <QWidget>
 #include <QListWidget>
 #include <QPushButton>
 #include <QLabel>
+#include <QComboBox>
 #include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -39,8 +44,6 @@ protected:
 
     // Helper methods
     QString generateOutputFileName(const QString& filePath) const;
-    void onImportButtonClicked();
-    void onStopButtonClicked();
 
 private slots:
     void onAddFilesClicked();
@@ -57,10 +60,11 @@ private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QPushButton* m_importButton;
-    QPushButton* m_stopButton;
+    QComboBox* m_projectCombo;  // Target project dropdown (read-only)
+    QPushButton* m_importButton;  // Kept for compatibility, not used in UI
+    QPushButton* m_stopButton;  // Kept for compatibility, not used in UI
     QProgressBar* m_progressBar;
-    QLabel* m_statusLabel;
+    QLabel* m_statusLabel;  // Kept for compatibility, not used in UI
 
     // State
     QStringList m_filePaths;
