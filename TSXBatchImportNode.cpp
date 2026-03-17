@@ -112,15 +112,12 @@ QWidget* TSXBatchImportNode::createWidget()
     polRow->addWidget(m_polarizationCombo);
     configLayout->addLayout(polRow);
 
-    // Progress bar row [5:5]
+    // Progress bar row
     auto* progressRow = new QHBoxLayout();
-    progressRow->setStretch(0, 5);
-    progressRow->setStretch(1, 5);
     m_progressBar = new QProgressBar();
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
     progressRow->addWidget(m_progressBar);
-    progressRow->addStretch();
     configLayout->addLayout(progressRow);
 
     bottomSection->addLayout(configLayout);

@@ -98,17 +98,6 @@ QWidget* TSXImportNode::createWidget()
     filenameRow->addWidget(m_outputFileNameEdit);
     layout->addLayout(filenameRow);
 
-    // Progress bar row [5:5]
-    auto* progressRow = new QHBoxLayout();
-    progressRow->setStretch(0, 5);
-    progressRow->setStretch(1, 5);
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    progressRow->addWidget(m_progressBar);
-    progressRow->addStretch();
-    layout->addLayout(progressRow);
-
     // Polarization row [3:7]
     auto* polRow = new QHBoxLayout();
     polRow->setStretch(0, 3);
@@ -119,6 +108,14 @@ QWidget* TSXImportNode::createWidget()
     m_polarizationCombo->addItem("VV");
     polRow->addWidget(m_polarizationCombo);
     layout->addLayout(polRow);
+
+    // Progress bar row
+    auto* progressRow = new QHBoxLayout();
+    m_progressBar = new QProgressBar();
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(0);
+    progressRow->addWidget(m_progressBar);
+    layout->addLayout(progressRow);
 
     // Connect signals
     connect(xmlBrowse, &QPushButton::clicked, this, &TSXImportNode::onXmlBrowseClicked);

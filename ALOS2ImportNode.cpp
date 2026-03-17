@@ -13,11 +13,7 @@ ALOS2ImportNode::ALOS2ImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
     , m_projectCombo(nullptr)
-    , m_importButton(nullptr)
-    , m_stopButton(nullptr)
     , m_progressBar(nullptr)
-    , m_progressText(nullptr)
-    , m_statusLabel(nullptr)
     , m_imgPaths()
     , m_importedFilePaths()
     , m_workerThread(nullptr)
@@ -81,15 +77,13 @@ QWidget* ALOS2ImportNode::createWidget()
     auto* bottomSection = new QHBoxLayout();
     auto* configLayout = new QVBoxLayout();
 
-    // Target project [2:8]
+    // Target project [3:7]
     auto* projectRow = new QHBoxLayout();
-    projectRow->setStretch(0, 2);
-    projectRow->setStretch(1, 8);
+    projectRow->setStretch(0, 3);
+    projectRow->setStretch(1, 7);
     projectRow->addWidget(new QLabel("目标工程："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
-    m_projectCombo->setFixedHeight(32);
-    m_projectCombo->setMinimumWidth(150);
     if (!projectName().isEmpty())
     {
         m_projectCombo->addItem(projectName());
@@ -97,34 +91,22 @@ QWidget* ALOS2ImportNode::createWidget()
     projectRow->addWidget(m_projectCombo);
     configLayout->addLayout(projectRow);
 
-    // Target node [2:8]
+    // Target node [3:7]
     auto* nodeRow = new QHBoxLayout();
-    nodeRow->setStretch(0, 2);
-    nodeRow->setStretch(1, 8);
+    nodeRow->setStretch(0, 3);
+    nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("ALOS2_Batch_Import");
-    m_outputNodeNameEdit->setFixedHeight(32);
-    m_outputNodeNameEdit->setMinimumWidth(150);
     nodeRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nodeRow);
 
-    // Progress bar row with text
+    // Progress bar row
     auto* progressRow = new QHBoxLayout();
     m_progressBar = new QProgressBar();
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
-    m_progressBar->setTextVisible(false);  // Hide built-in text
-    m_progressBar->setFixedHeight(20);
     progressRow->addWidget(m_progressBar);
-
-    // Progress percentage text label
-    m_progressText = new QLabel("0%");
-    m_progressText->setMinimumWidth(50);
-    m_progressText->setFixedHeight(20);
-    m_progressText->setAlignment(Qt::AlignCenter);
-    progressRow->addWidget(m_progressText);
-
     configLayout->addLayout(progressRow);
 
     bottomSection->addLayout(configLayout);
@@ -166,6 +148,7 @@ void ALOS2ImportNode::executeImport()
             onError("无法从 IMG 文件生成输出文件名：" + imgPath);
             return;
         }
+        imgFileList.push_back(imgPath);
 
         QString ledPath = generateLEDPath(imgPath);
         if (!QFileInfo::exists(ledPath))
@@ -173,8 +156,6 @@ void ALOS2ImportNode::executeImport()
             onError("IMG 文件对应的 LED 文件未找到：" + imgPath);
             return;
         }
-
-        imgFileList.push_back(imgPath);
         ledFileList.push_back(ledPath);
         importNameList.push_back(importName);
     }
@@ -256,25 +237,20 @@ QString ALOS2ImportNode::generateLEDPath(const QString& imgPath) const
 
     // LED file has same numbering as IMG file
     // IMG: ALOS2xxxxx-HH-xxxxx-001-xxx-xxxxx (39 chars)
-    // LED: LED-ALOS2xxxxx-HH-xxxxx-001-xxx-xxxxx (same except LED prefix)
-    // The numbering part is after the last '-' and before the file extension
+    // LED: LED-ALOS2xxxxx-HH-xxxxx-001-xxx-xxxxx (same base structure as IMG)
+    // LED files are in the same directory with "LED" prefix instead of "IMG"
+    // The numbering part is at position 34-36 (001)
     // Actually, looking at ALOS-2 naming, LED files are usually:
     // LED-ALOS2xxxxx-HH-xxxxx-001-xxx-xxxxx (same base structure as IMG)
     // LED files are in the same directory with "LED" prefix instead of "IMG"
-
-    if (imgBaseName.length() == 39)
-    {
-        // The number is at position 34-36 (001)
-        QString number = imgBaseName.mid(34, 3);
-        // Get the directory
-        QDir dir = imgFileInfo.absoluteDir();
-        // Construct LED file name: LED-ALOS2xxxxx-HH-xxxxx-001-xxx-xxxxx
-        QString ledBaseName = "LED-" + imgBaseName.mid(3);  // Remove "IMG-" and add "LED-"
-        QString ledPath = dir.filePath(ledBaseName + ".LED");
-        return ledPath;
-    }
-
-    return QString();
+    // The number is at position 34-36 (001)
+    // Get the directory
+    QDir dir = imgFileInfo.absoluteDir();
+    // Construct LED file name: LED-ALOS2xxxxx-HH-xxxxx-001-xxx-xxxxx
+    // Remove "IMG-" and add "LED-"
+    QString ledBaseName = "LED-" + imgBaseName.mid(3);  // Remove "IMG-" and add "LED-"
+    QString ledPath = dir.filePath(ledBaseName + ".LED");
+    return ledPath;
 }
 
 void ALOS2ImportNode::onAddFilesClicked()
@@ -311,7 +287,6 @@ void ALOS2ImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);  // Ignore message
     m_progressBar->setValue(progress);
-    m_progressText->setText(QString("%1%").arg(progress));
 }
 
 void ALOS2ImportNode::onImportFinished()
@@ -331,7 +306,6 @@ void ALOS2ImportNode::onImportFinished()
     ImportNodeBase::onImportFinished();
 
     m_progressBar->setValue(100);
-    m_progressText->setText("100%");
 
     // Clean up thread (consistent with TSXBatchImportNode)
     if (m_thread)

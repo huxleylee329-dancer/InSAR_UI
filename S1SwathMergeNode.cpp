@@ -1,3 +1,7 @@
+﻿#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
 #include "S1SwathMergeNode.h"
 #include "NodeEditorWindow.h"
 #include <QFileInfo>
@@ -6,13 +10,11 @@ namespace QtNodes {
 
 S1SwathMergeNode::S1SwathMergeNode()
     : m_widget(nullptr)
-    , m_inputLabels{nullptr, nullptr, nullptr}
+    , m_projectCombo(nullptr)
+    , m_dataNodeCombo{nullptr, nullptr, nullptr}
     , m_indexSpins{nullptr, nullptr, nullptr}
     , m_outputNodeNameEdit(nullptr)
-    , m_processButton(nullptr)
-    , m_stopButton(nullptr)
     , m_progressBar(nullptr)
-    , m_statusLabel(nullptr)
     , m_inputs{nullptr, nullptr, nullptr}
     , m_outputData(nullptr)
     , m_workerThread(nullptr)
@@ -59,9 +61,9 @@ NodeDataType S1SwathMergeNode::dataType(PortType portType, PortIndex portIndex) 
 {
     Q_UNUSED(portIndex);
     if (portType == PortType::Out)
-        return NodeDataType{"imported_file", "Imported File"};
+        return NodeDataType{"imported_file", "S1 Merged Swath"};
     // Input ports accept ImportedFileData
-    return NodeDataType{"imported_file", "Imported File"};
+    return NodeDataType{"imported_file", "S1 Swath Data"};
 }
 
 std::shared_ptr<NodeData> S1SwathMergeNode::outData(PortIndex port)
@@ -75,13 +77,13 @@ void S1SwathMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     if (port >= 0 && port < 3)
     {
         m_inputs[port] = std::dynamic_pointer_cast<ImportedFileData>(data);
-        updateInputLabels();
+        updateLabels();
 
-        // Enable/disable process button based on input availability
-        bool allInputsConnected = (m_inputs[0] != nullptr) &&
-                                 (m_inputs[1] != nullptr) &&
-                                 (m_inputs[2] != nullptr);
-        m_processButton->setEnabled(allInputsConnected);
+        // Generate default output name if all inputs connected and name not set
+        if (m_inputs[0] && m_inputs[1] && m_inputs[2] && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty())
+        {
+            m_outputNodeNameEdit->setText(generateDefaultOutputName());
+        }
     }
 }
 
@@ -98,17 +100,40 @@ void S1SwathMergeNode::createWidget()
 {
     m_widget = new QWidget();
     auto* layout = new QVBoxLayout(m_widget);
-    layout->setContentsMargins(5, 5, 5, 5);
-    layout->setSpacing(5);
+    layout->setContentsMargins(6, 6, 6, 6);
+    layout->setSpacing(6);
 
-    // Input data info - Input 1 (IW1)
-    layout->addWidget(new QLabel("IW1 Input:"));
-    m_inputLabels[0] = new QLabel("No input");
-    m_inputLabels[0]->setWordWrap(true);
-    m_inputLabels[0]->setStyleSheet("QLabel { background-color: #f0f0f0; padding: 3px; border-radius: 2px; }");
-    layout->addWidget(m_inputLabels[0]);
+    // 选择工程
+    auto* projectLayout = new QHBoxLayout();
+    QLabel* projectLabel = new QLabel("选择工程");
+    projectLayout->addWidget(projectLabel);
+    m_projectCombo = new QComboBox();
+    m_projectCombo->setEditable(false);
+    m_projectCombo->addItem(projectName().isEmpty() ? "未打开项目" : projectName());
+    projectLayout->addWidget(m_projectCombo);
+    layout->addLayout(projectLayout);
 
-    // Image index 1
+    // 数据节点 IW1 [1:1]
+    auto* dataNode1Layout = new QHBoxLayout();
+    QLabel* dataNode1Label = new QLabel("IW1 数据节点");
+    dataNode1Layout->addWidget(dataNode1Label);
+    m_dataNodeCombo[0] = new QComboBox();
+    m_dataNodeCombo[0]->setEditable(false);
+    if (m_inputs[0])
+    {
+        QString nodeName = m_inputs[0]->nodeName();
+        QString filePath = m_inputs[0]->filePath();
+        QFileInfo fileInfo(filePath);
+        m_dataNodeCombo[0]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+    }
+    else
+    {
+        m_dataNodeCombo[0]->addItem("等待输入");
+    }
+    dataNode1Layout->addWidget(m_dataNodeCombo[0]);
+    layout->addLayout(dataNode1Layout);
+
+    // Image Index 1
     auto* index1Layout = new QHBoxLayout();
     index1Layout->addWidget(new QLabel("Image Index 1:"));
     m_indexSpins[0] = new QSpinBox();
@@ -116,17 +141,29 @@ void S1SwathMergeNode::createWidget()
     m_indexSpins[0]->setMaximum(100);
     m_indexSpins[0]->setValue(1);
     index1Layout->addWidget(m_indexSpins[0]);
-    index1Layout->addStretch();
     layout->addLayout(index1Layout);
 
-    // Input data info - Input 2 (IW2)
-    layout->addWidget(new QLabel("IW2 Input:"));
-    m_inputLabels[1] = new QLabel("No input");
-    m_inputLabels[1]->setWordWrap(true);
-    m_inputLabels[1]->setStyleSheet("QLabel { background-color: #f0f0f0; padding: 3px; border-radius: 2px; }");
-    layout->addWidget(m_inputLabels[1]);
+    // 数据节点 IW2 [1:1]
+    auto* dataNode2Layout = new QHBoxLayout();
+    QLabel* dataNode2Label = new QLabel("IW2 数据节点");
+    dataNode2Layout->addWidget(dataNode2Label);
+    m_dataNodeCombo[1] = new QComboBox();
+    m_dataNodeCombo[1]->setEditable(false);
+    if (m_inputs[1])
+    {
+        QString nodeName = m_inputs[1]->nodeName();
+        QString filePath = m_inputs[1]->filePath();
+        QFileInfo fileInfo(filePath);
+        m_dataNodeCombo[1]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+    }
+    else
+    {
+        m_dataNodeCombo[1]->addItem("等待输入");
+    }
+    dataNode2Layout->addWidget(m_dataNodeCombo[1]);
+    layout->addLayout(dataNode2Layout);
 
-    // Image index 2
+    // Image Index 2
     auto* index2Layout = new QHBoxLayout();
     index2Layout->addWidget(new QLabel("Image Index 2:"));
     m_indexSpins[1] = new QSpinBox();
@@ -134,17 +171,29 @@ void S1SwathMergeNode::createWidget()
     m_indexSpins[1]->setMaximum(100);
     m_indexSpins[1]->setValue(1);
     index2Layout->addWidget(m_indexSpins[1]);
-    index2Layout->addStretch();
     layout->addLayout(index2Layout);
 
-    // Input data info - Input 3 (IW3)
-    layout->addWidget(new QLabel("IW3 Input:"));
-    m_inputLabels[2] = new QLabel("No input");
-    m_inputLabels[2]->setWordWrap(true);
-    m_inputLabels[2]->setStyleSheet("QLabel { background-color: #f0f0f0; padding: 3px; border-radius: 2px; }");
-    layout->addWidget(m_inputLabels[2]);
+    // 数据节点 IW3 [1:1]
+    auto* dataNode3Layout = new QHBoxLayout();
+    QLabel* dataNode3Label = new QLabel("IW3 数据节点");
+    dataNode3Layout->addWidget(dataNode3Label);
+    m_dataNodeCombo[2] = new QComboBox();
+    m_dataNodeCombo[2]->setEditable(false);
+    if (m_inputs[2])
+    {
+        QString nodeName = m_inputs[2]->nodeName();
+        QString filePath = m_inputs[2]->filePath();
+        QFileInfo fileInfo(filePath);
+        m_dataNodeCombo[2]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+    }
+    else
+    {
+        m_dataNodeCombo[2]->addItem("等待输入");
+    }
+    dataNode3Layout->addWidget(m_dataNodeCombo[2]);
+    layout->addLayout(dataNode3Layout);
 
-    // Image index 3
+    // Image Index 3
     auto* index3Layout = new QHBoxLayout();
     index3Layout->addWidget(new QLabel("Image Index 3:"));
     m_indexSpins[2] = new QSpinBox();
@@ -152,13 +201,19 @@ void S1SwathMergeNode::createWidget()
     m_indexSpins[2]->setMaximum(100);
     m_indexSpins[2]->setValue(1);
     index3Layout->addWidget(m_indexSpins[2]);
-    index3Layout->addStretch();
     layout->addLayout(index3Layout);
 
-    // Output node name
-    layout->addWidget(new QLabel("Output Node Name:"));
+    // 目标节点名
+    auto* nodeNameLayout = new QHBoxLayout();
+    QLabel* nodeNameLabel = new QLabel("目标节点名");
+    nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    layout->addWidget(m_outputNodeNameEdit);
+    m_outputNodeNameEdit->setPlaceholderText("不要输入中文字符");
+    nodeNameLayout->addWidget(m_outputNodeNameEdit);
+    layout->addLayout(nodeNameLayout);
+
+    // Spacer
+    layout->addSpacing(6);
 
     // Separator
     QFrame* line = new QFrame();
@@ -170,55 +225,47 @@ void S1SwathMergeNode::createWidget()
     m_progressBar = new QProgressBar();
     m_progressBar->setRange(0, 100);
     m_progressBar->setValue(0);
+    m_progressBar->setTextVisible(true);
     layout->addWidget(m_progressBar);
 
-    // Status label
-    m_statusLabel = new QLabel("Ready");
-    m_statusLabel->setWordWrap(true);
-    layout->addWidget(m_statusLabel);
-
-    // Buttons
-    auto* buttonLayout = new QHBoxLayout();
-    m_processButton = new QPushButton("Process");
-    m_processButton->setEnabled(false);
-    m_stopButton = new QPushButton("Stop");
-    m_stopButton->setEnabled(false);
-    buttonLayout->addWidget(m_processButton);
-    buttonLayout->addWidget(m_stopButton);
-    layout->addLayout(buttonLayout);
-
-    // Connect signals
-    connect(m_processButton, &QPushButton::clicked, this, &S1SwathMergeNode::onProcessButtonClicked);
-    connect(m_stopButton, &QPushButton::clicked, this, &S1SwathMergeNode::onStopButtonClicked);
+    // Bottom spacer
+    layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 }
 
-void S1SwathMergeNode::updateInputLabels()
+void S1SwathMergeNode::updateLabels()
 {
-    const char* labels[] = {"IW1", "IW2", "IW3"};
-    for (int i = 0; i < 3; ++i)
+    // Update project combo
+    if (m_projectCombo)
     {
-        if (m_inputs[i] && m_inputLabels[i])
+        QString projName = projectName();
+        if (!projName.isEmpty())
         {
-            QString nodeName = m_inputs[i]->nodeName();
-            QString filePath = m_inputs[i]->filePath();
-            QFileInfo fileInfo(filePath);
-
-            QString text = QString("<b>Node:</b> %1<br><b>File:</b> %2")
-                .arg(nodeName)
-                .arg(fileInfo.fileName());
-
-            m_inputLabels[i]->setText(text);
-        }
-        else if (m_inputLabels[i])
-        {
-            m_inputLabels[i]->setText("No " + QString(labels[i]) + " input");
+            if (m_projectCombo->count() == 0 || m_projectCombo->itemText(0) != projName)
+            {
+                m_projectCombo->clear();
+                m_projectCombo->addItem(projName);
+            }
         }
     }
 
-    // Generate default output name if all inputs connected and name not set
-    if (m_inputs[0] && m_inputs[1] && m_inputs[2] && m_outputNodeNameEdit->text().isEmpty())
+    // Update data node combos
+    for (int i = 0; i < 3; ++i)
     {
-        m_outputNodeNameEdit->setText(generateDefaultOutputName());
+        if (m_dataNodeCombo[i])
+        {
+            m_dataNodeCombo[i]->clear();
+            if (m_inputs[i])
+            {
+                QString nodeName = m_inputs[i]->nodeName();
+                QString filePath = m_inputs[i]->filePath();
+                QFileInfo fileInfo(filePath);
+                m_dataNodeCombo[i]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+            }
+            else
+            {
+                m_dataNodeCombo[i]->addItem("等待输入");
+            }
+        }
     }
 }
 
@@ -258,70 +305,11 @@ bool S1SwathMergeNode::validateInputs() const
     return true;
 }
 
-void S1SwathMergeNode::onProcessButtonClicked()
-{
-    if (!validateInputs())
-    {
-        m_statusLabel->setText("Error: Invalid inputs or no project open");
-        return;
-    }
-
-    // Get project context
-    QString projectName = this->projectName();
-    QStandardItemModel* model = projectModel();
-    QString node1 = m_inputs[0]->nodeName();
-    QString node2 = m_inputs[1]->nodeName();
-    QString node3 = m_inputs[2]->nodeName();
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text();
-
-    // Create worker thread
-    m_workerThread = new MyThread();
-    m_thread = new QThread();
-    m_workerThread->moveToThread(m_thread);
-
-    // Connect signals
-    connect(this, &S1SwathMergeNode::startSwathMerge,
-            m_workerThread, &MyThread::S1_swath_merge);
-    connect(m_workerThread, &MyThread::updateProcess,
-            this, &S1SwathMergeNode::onProgressUpdate);
-    connect(m_workerThread, &MyThread::endProcess,
-            this, &S1SwathMergeNode::onProcessingFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
-            this, &S1SwathMergeNode::onError);
-    connect(m_workerThread, &MyThread::sendModel,
-            this, &S1SwathMergeNode::onModelUpdated);
-
-    // Prepare UI
-    m_processButton->setEnabled(false);
-    m_stopButton->setEnabled(true);
-    m_statusLabel->setText("Processing...");
-    m_progressBar->setValue(0);
-
-    // Start processing
-    int index1 = m_indexSpins[0]->value();
-    int index2 = m_indexSpins[1]->value();
-    int index3 = m_indexSpins[2]->value();
-
-    Q_EMIT startSwathMerge(index1, index2, index3, projectName, node1, node2, node3, dstNode, model);
-
-    m_thread->start();
-}
-
-void S1SwathMergeNode::onStopButtonClicked()
-{
-    if (m_workerThread && m_thread && m_thread->isRunning())
-    {
-        m_workerThread->StopProcess();
-        m_statusLabel->setText("Stopping...");
-    }
-}
-
 void S1SwathMergeNode::onProgressUpdate(int progress, const QString& message)
 {
     m_progressBar->setValue(progress);
-    m_statusLabel->setText(message);
+    m_progressBar->setFormat(QString("%1：%2%").arg(message).arg(progress));
+    m_progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 
 void S1SwathMergeNode::onProcessingFinished()
@@ -349,9 +337,6 @@ void S1SwathMergeNode::onProcessingFinished()
     }
 
     // Update UI
-    m_processButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
-    m_statusLabel->setText("Processing completed successfully!");
     m_progressBar->setValue(100);
 
     // Notify downstream nodes
@@ -360,8 +345,6 @@ void S1SwathMergeNode::onProcessingFinished()
 
 void S1SwathMergeNode::onError(const QString& error)
 {
-    m_statusLabel->setText("Error: " + error);
-
     // Clean up thread
     if (m_thread)
     {
@@ -376,9 +359,6 @@ void S1SwathMergeNode::onError(const QString& error)
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
-
-    m_processButton->setEnabled(true);
-    m_stopButton->setEnabled(false);
 }
 
 void S1SwathMergeNode::onModelUpdated(QStandardItemModel* model)

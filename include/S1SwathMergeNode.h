@@ -4,16 +4,19 @@
 #include "ImportDataTypes.h"
 #include "MyThread.h"
 #include <QtNodes/NodeDelegateModel>
+#include <QtNodes/NodeData>
 #include <QWidget>
-#include <QSpinBox>
-#include <QPushButton>
 #include <QLabel>
-#include <QProgressBar>
+#include <QComboBox>
+#include <QSpinBox>
 #include <QLineEdit>
+#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFrame>
 #include <QThread>
+#include <QStandardItemModel>
+#include <QFileInfo>
 #include <memory>
 
 // Forward declarations
@@ -44,13 +47,11 @@ public:
 private:
     // UI elements
     QWidget* m_widget;
-    QLabel* m_inputLabels[3];
+    QComboBox* m_projectCombo;
+    QComboBox* m_dataNodeCombo[3];
     QSpinBox* m_indexSpins[3];
     QLineEdit* m_outputNodeNameEdit;
-    QPushButton* m_processButton;
-    QPushButton* m_stopButton;
     QProgressBar* m_progressBar;
-    QLabel* m_statusLabel;
 
     // Input data storage
     std::shared_ptr<ImportedFileData> m_inputs[3];
@@ -62,14 +63,12 @@ private:
 
     // Helper methods
     void createWidget();
-    void onProcessButtonClicked();
-    void onStopButtonClicked();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
-    void updateInputLabels();
+    void updateLabels();
     QString generateDefaultOutputName() const;
 
     // Get NodeEditorWindow reference

@@ -65,7 +65,6 @@ private:
     QPushButton* m_importButton;  // Kept for compatibility, not used in UI
     QPushButton* m_stopButton;  // Kept for compatibility, not used in UI
     QProgressBar* m_progressBar;
-    QLabel* m_progressText;  // Progress percentage text label
     QLabel* m_statusLabel;  // Kept for compatibility, not used in UI
 
     // State

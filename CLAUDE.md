@@ -8,14 +8,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
-```bash
-# Build Debug (x64)
-msbuild QtWidgetsApplication3.sln /p:Configuration=Debug /p:Platform=x64
-
-# Build Release (x64)
-msbuild QtWidgetsApplication3.sln /p:Configuration=Release /p:Platform=x64
-```
-
 Output directory: `bin/`
 - Debug: `SatExplorer.exe` with `_d.dll` suffix libraries
 - Release: `SatExplorer.exe` without debug suffix
