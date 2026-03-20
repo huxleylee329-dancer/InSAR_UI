@@ -447,6 +447,11 @@
     <string>流程编辑器</string>
    </property>
   </action>
+  <action name="actionTheme">
+   <property name="text">
+    <string>主题</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>

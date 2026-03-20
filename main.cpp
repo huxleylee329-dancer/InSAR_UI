@@ -7,7 +7,53 @@
 //#include <QSplashScreen>
 #include<string>
 #include<icon_source.h>
+#include <QFile>
+#include <QSettings>
 //#include<QStyleFactory>
+
+// Global function to load QSS from file
+QString loadStyleSheet(const QString &fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning() << "Failed to load stylesheet:" << fileName;
+        return QString();
+    }
+    QString content = QString::fromUtf8(file.readAll());
+    qDebug() << "Loaded stylesheet:" << fileName << "Size:" << content.length() << "chars";
+    return content;
+}
+
+// Global function to apply theme
+void applyTheme(const QString &theme = "light")
+{
+    // Get application directory
+    QString appDir = QCoreApplication::applicationDirPath();
+    QString stylesDir = appDir + "/../stylesheets/";
+
+    // Load base styles
+    QString appStyle = loadStyleSheet(stylesDir + "application.qss");
+    QString widgetStyle = loadStyleSheet(stylesDir + "widgets.qss");
+    QString dialogStyle = loadStyleSheet(stylesDir + "dialogs.qss");
+    QString mainWindowStyle = loadStyleSheet(stylesDir + "mainwindow.qss");
+    QString nodeEditorStyle = loadStyleSheet(stylesDir + "nodeeditor.qss");
+    QString importNodesStyle = loadStyleSheet(stylesDir + "importnodes.qss");
+
+    // Load theme variant
+    QString themeStyle = loadStyleSheet(stylesDir + "themes/" + theme + ".qss");
+
+    // Combine all styles
+    QString fullStyle = appStyle + "\n" +
+                       widgetStyle + "\n" +
+                       dialogStyle + "\n" +
+                       mainWindowStyle + "\n" +
+                       nodeEditorStyle + "\n" +
+                       importNodesStyle + "\n" +
+                       themeStyle;
+
+    qApp->setStyleSheet(fullStyle);
+}
+
 int main(int argc, char *argv[])
 {
    /* QFile csv_test("E:/Urumqi2/SBAS.csv");
@@ -22,9 +68,17 @@ int main(int argc, char *argv[])
         }
         in << "\n";
     }
-      */  
+      */
     //csv_test.close();
     QApplication a(argc, argv);
+
+    // Load theme preference from Config.ini
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    QString theme = settings.value("Appearance/Theme", "light").toString();
+
+    // Apply default theme
+    applyTheme(theme);
+
     QPixmap* k = new QPixmap(QString(CURSOR_UP_ICON));
     /*开机启动画面*/
     /*

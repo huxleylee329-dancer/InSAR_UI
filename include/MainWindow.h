@@ -45,6 +45,7 @@ private:
     int TabCount_Before = -1;
 
     QTimer *t;
+    QString m_currentTheme;  // Current theme: light, dark, fusion
     XMLFile* project;
     QStandardItemModel* model;
     // Double click project file to open
@@ -87,4 +88,12 @@ private slots:
     void ShowColorBar(int index);
     // Open node editor
     void on_actionNodeEditor_triggered();
+    // Theme switching
+    void onThemeLight();
+    void onThemeDark();
+    void onThemeFusion();
+private:
+    void setupThemeMenu();
+    void setTheme(const QString &theme);
+    void updateThemeCheckState(QMenu* themeMenu, const QString& theme);
 };

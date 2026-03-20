@@ -1,0 +1,22 @@
+/* Dialog-specific styles - dialogs.qss */
+
+QDialog {
+    background-color: #F5F5F5;
+}
+
+QDialogButtonBox {
+    button-layout: 0;  /* WinLayout */
+}
+
+QDialogButtonBox QPushButton {
+    min-width: 80px;
+}
+
+/* Form dialogs - standard styling for import dialogs */
+QDialog QLabel {
+    color: #333333;
+}
+
+QDialog QLineEdit {
+    min-height: 24px;
+}

@@ -3,6 +3,9 @@
 #include"Baseline.h"
 #include<Deformation_Average.h>
 #include "MainWindow.h"
+
+// External function declarations from main.cpp
+extern void applyTheme(const QString &theme);
 #include"OpenProject.h"
 #include"NewProject.h"
 #include"Import_TSX.h"
@@ -42,6 +45,7 @@
 #include<qgraphicsitem.h>
 #include<qmessagebox.h>
 #include<qdialogbuttonbox.h>
+#include<qsettings.h>
 // Include headers
 //#include<FormatConversion.h>
 //#include<Utils.h>
@@ -79,6 +83,13 @@ MainWindow::MainWindow(QWidget* parent)
 
     ui.tabWidget->setTabsClosable(true);
     connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
+
+    // Load initial theme from Config.ini
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    m_currentTheme = settings.value("Appearance/Theme", "light").toString();
+
+    // Setup theme menu (after setting m_currentTheme)
+    setupThemeMenu();
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
     connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
     connect(ui.tabWidget, &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
@@ -103,7 +114,18 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 
     ui.tabWidget->setTabsClosable(true);
     cout << ui.tabWidget->count();
+
+    // Load initial theme from Config.ini
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    m_currentTheme = settings.value("Appearance/Theme", "light").toString();
+
     connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
+    //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
+    connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
+    connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
+
+    // Setup theme menu (after setting m_currentTheme)
+    setupThemeMenu();
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
     connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
     connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
@@ -780,5 +802,86 @@ void MainWindow::on_tabWidget_tabCloseRequested(int index)
 
         }
 
+    }
+}
+
+void MainWindow::onThemeLight()
+{
+    setTheme("light");
+}
+
+void MainWindow::onThemeDark()
+{
+    setTheme("dark");
+}
+
+void MainWindow::onThemeFusion()
+{
+    setTheme("fusion");
+}
+
+void MainWindow::setTheme(const QString &theme)
+{
+    // Apply theme using global function
+    applyTheme(theme);
+
+    // Update current theme variable
+    m_currentTheme = theme;
+
+    // Save to Config.ini
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    settings.setValue("Appearance/Theme", theme);
+    settings.sync();
+
+    // Update theme menu check state
+    QMenu* settingsMenu = ui.Setteing;
+    QList<QMenu*> submenus = settingsMenu->findChildren<QMenu*>();
+    for (QMenu* submenu : submenus) {
+        if (submenu->title().contains(QString::fromUtf8("主题"))) {
+            updateThemeCheckState(submenu, theme);
+            break;
+        }
+    }
+}
+
+void MainWindow::setupThemeMenu()
+{
+    // Find or create Settings menu
+    QMenu* settingsMenu = ui.Setteing;
+
+    // Create Theme submenu under Settings
+    QMenu* themeMenu = settingsMenu->addMenu(QString::fromUtf8("主题"));
+
+    // Create theme actions with checkable property
+    QAction* lightAction = themeMenu->addAction(QString::fromUtf8("浅色主题"));
+    lightAction->setCheckable(true);
+    lightAction->setData("light");
+
+    QAction* darkAction = themeMenu->addAction(QString::fromUtf8("深色主题"));
+    darkAction->setCheckable(true);
+    darkAction->setData("dark");
+
+    QAction* fusionAction = themeMenu->addAction(QString::fromUtf8("Fusion主题"));
+    fusionAction->setCheckable(true);
+    fusionAction->setData("fusion");
+
+    // Set initial check state based on current theme
+    updateThemeCheckState(themeMenu, m_currentTheme);
+
+    // Connect actions
+    connect(lightAction, &QAction::triggered, this, &MainWindow::onThemeLight);
+    connect(darkAction, &QAction::triggered, this, &MainWindow::onThemeDark);
+    connect(fusionAction, &QAction::triggered, this, &MainWindow::onThemeFusion);
+}
+
+void MainWindow::updateThemeCheckState(QMenu* themeMenu, const QString& theme)
+{
+    QList<QAction*> actions = themeMenu->actions();
+    for (QAction* action : actions) {
+        if (action->data().toString() == theme) {
+            action->setChecked(true);
+        } else {
+            action->setChecked(false);
+        }
     }
 }

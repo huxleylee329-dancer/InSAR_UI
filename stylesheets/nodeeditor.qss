@@ -1,0 +1,74 @@
+/* Node Editor styles - nodeeditor.qss */
+
+/* Node Editor Window */
+NodeEditorWindow {
+    background-color: #F5F5F5;
+}
+
+/* Graphics View / Canvas */
+PaletteGraphicsView {
+    background-color: #FFFFFF;
+    border: none;
+}
+
+PaletteGraphicsView QFrame {
+    background-color: #FFFFFF;
+}
+
+/* Dock Widgets */
+ads--CDockWidget {
+    background-color: #F0F0F0;
+    border: 1px solid #CCCCCC;
+}
+
+ads--CDockWidget #title {
+    background-color: #E0E0E0;
+    padding: 4px;
+    font-weight: bold;
+}
+
+/* Node Tree Widget */
+NodeTreeWidget {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+}
+
+NodeTreeWidget QHeaderView::section {
+    background-color: #F0F0F0;
+    border: 1px solid #CCCCCC;
+    padding: 4px;
+}
+
+NodeTreeWidget::item {
+    padding: 4px;
+}
+
+/* Property Editor */
+PropertyEditor {
+    background-color: #F0F0F0;
+}
+
+PropertyEditor QLineEdit {
+    background-color: white;
+}
+
+/* Search Box in node palette */
+QLineEdit#searchBox {
+    border-radius: 4px;
+    padding: 6px 10px;
+}
+
+/* Workflow Browser */
+WorkflowBrowser {
+    background-color: #F0F0F0;
+}
+
+/* Queue Manager */
+QueueManagerWidget {
+    background-color: #F0F0F0;
+}
+
+QueueManagerWidget QProgressBar {
+    min-height: 20px;
+}

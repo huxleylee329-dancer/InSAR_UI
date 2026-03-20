@@ -14,7 +14,7 @@ SimpleSourceNode::SimpleSourceNode()
     , _value("Hello World")
 {
     _edit->setPlaceholderText("输入文本...");
-    _edit->setStyleSheet("QLineEdit { background-color: #4a9acf; border-radius: 5px; padding: 5px; color: white; }");
+    _edit->setObjectName("sourceLineEdit");
 
     connect(_edit, &QLineEdit::textChanged, this, &SimpleSourceNode::onTextChanged);
 }
@@ -62,7 +62,7 @@ SimpleMathNode::SimpleMathNode()
     , _label(new QLabel("Waiting for input..."))
 {
     _label->setAlignment(Qt::AlignCenter);
-    _label->setStyleSheet("QLabel { background-color: #3a7aaf; border-radius: 5px; padding: 5px; }");
+    _label->setObjectName("mathLabel");
 }
 
 unsigned int SimpleMathNode::nPorts(PortType portType) const
@@ -123,7 +123,7 @@ SimpleDisplayNode::SimpleDisplayNode()
     : _label(new QLabel("No input"))
 {
     _label->setAlignment(Qt::AlignCenter);
-    _label->setStyleSheet("QLabel { background-color: #2a5a8f; border-radius: 5px; padding: 5px; }");
+    _label->setObjectName("displayLabel");
     _label->setMinimumWidth(100);
 }
 

@@ -42,5 +42,15 @@
         <file>icon/new_project.png</file>
 		<file>DefaultStyle.json</file>
 		<file>icon/flow_editor.png</file>
+        <!-- Stylesheets -->
+        <file>../stylesheets/application.qss</file>
+        <file>../stylesheets/widgets.qss</file>
+        <file>../stylesheets/dialogs.qss</file>
+        <file>../stylesheets/mainwindow.qss</file>
+        <file>../stylesheets/nodeeditor.qss</file>
+        <file>../stylesheets/importnodes.qss</file>
+        <file>../stylesheets/themes/light.qss</file>
+        <file>../stylesheets/themes/dark.qss</file>
+        <file>../stylesheets/themes/fusion.qss</file>
     </qresource>
 </RCC>

@@ -1,0 +1,235 @@
+/* Common widget styles - widgets.qss */
+
+/* QPushButton */
+QPushButton {
+    background-color: #F0F0F0;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 6px 12px;
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background-color: #E0E0E0;
+    border-color: #4a9acf;
+}
+
+QPushButton:pressed {
+    background-color: #D0D0D0;
+}
+
+QPushButton:disabled {
+    background-color: #F5F5F5;
+    color: #AAAAAA;
+    border-color: #EEEEEE;
+}
+
+QPushButton.primary {
+    background-color: #4a9acf;
+    color: white;
+    border: none;
+}
+
+QPushButton.primary:hover {
+    background-color: #3a7aaf;
+}
+
+QPushButton.primary:pressed {
+    background-color: #2a6a9f;
+}
+
+/* QLineEdit */
+QLineEdit {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-height: 24px;
+}
+
+QLineEdit:focus {
+    border-color: #4a9acf;
+}
+
+QLineEdit:disabled {
+    background-color: #F5F5F5;
+    color: #AAAAAA;
+}
+
+/* QComboBox */
+QComboBox {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-width: 80px;
+}
+
+QComboBox:hover {
+    border-color: #4a9acf;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    selection-background-color: #4a9acf;
+    selection-color: white;
+}
+
+/* QCheckBox */
+QCheckBox {
+    spacing: 5px;
+}
+
+QCheckBox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 1px solid #CCCCCC;
+    border-radius: 3px;
+    background-color: white;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #4a9acf;
+    border-color: #4a9acf;
+}
+
+/* QSpinBox */
+QSpinBox {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+QSpinBox:focus {
+    border-color: #4a9acf;
+}
+
+/* QDoubleSpinBox */
+QDoubleSpinBox {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+QDoubleSpinBox:focus {
+    border-color: #4a9acf;
+}
+
+/* QProgressBar */
+QProgressBar {
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    background-color: #F0F0F0;
+    text-align: center;
+    min-height: 20px;
+}
+
+QProgressBar::chunk {
+    background-color: #4a9acf;
+    border-radius: 3px;
+}
+
+/* QLabel */
+QLabel {
+    color: #333333;
+}
+
+/* QTabWidget */
+QTabWidget::pane {
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background-color: #F0F0F0;
+    border: 1px solid #CCCCCC;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: 8px 16px;
+    margin-right: 2px;
+}
+
+QTabBar::tab:selected {
+    background-color: white;
+    border-bottom: 1px solid white;
+}
+
+QTabBar::tab:hover:!selected {
+    background-color: #E0E0E0;
+}
+
+/* QTreeWidget */
+QTreeWidget {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    alternate-background-color: #F9F9F9;
+}
+
+QTreeWidget::item {
+    padding: 4px;
+}
+
+QTreeWidget::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+QTreeWidget::item:hover {
+    background-color: #E0E0E0;
+}
+
+/* QListWidget */
+QListWidget {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+}
+
+QListWidget::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+/* QGroupBox */
+QGroupBox {
+    border: 1px solid #CCCCCC;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+}
+
+/* QSlider */
+QSlider::groove:horizontal {
+    height: 6px;
+    background: #E0E0E0;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    width: 16px;
+    height: 16px;
+    background: #4a9acf;
+    border-radius: 8px;
+    margin: -5px 0;
+}
+
+QSlider::handle:horizontal:hover {
+    background: #3a7aaf;
+}

@@ -1,0 +1,42 @@
+/* Global font and base styling - application.qss */
+* {
+    font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+    font-size: 9pt;
+}
+
+QMainWindow {
+    background-color: #F5F5F5;
+}
+
+QStatusBar {
+    background-color: #F0F0F0;
+    border-top: 1px solid #CCCCCC;
+}
+
+QMenuBar {
+    background-color: #F5F5F5;
+    border-bottom: 1px solid #CCCCCC;
+}
+
+QMenuBar::item {
+    padding: 4px 12px;
+}
+
+QMenuBar::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+QToolBar {
+    background-color: #F0F0F0;
+    border-bottom: 1px solid #CCCCCC;
+    spacing: 3px;
+}
+
+QSplitter::handle {
+    background-color: #E0E0E0;
+}
+
+QSplitter::handle:hover {
+    background-color: #4a9acf;
+}

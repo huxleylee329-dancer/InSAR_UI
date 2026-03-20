@@ -1,0 +1,105 @@
+/* Fusion theme - flat, modern, primary color emphasis - themes/fusion.qss */
+
+QPushButton {
+    border-radius: 2px;
+    background-color: #4a9acf;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 8px 16px;
+}
+
+QPushButton:hover {
+    background-color: #3a7aaf;
+}
+
+QPushButton:pressed {
+    background-color: #2a6a9f;
+}
+
+QPushButton:disabled {
+    background-color: #E0E0E0;
+    color: #AAAAAA;
+}
+
+QLineEdit {
+    background-color: white;
+    border: 1px solid #E0E0E0;
+    border-radius: 2px;
+    padding: 6px 10px;
+}
+
+QLineEdit:focus {
+    border-color: #4a9acf;
+    border-width: 2px;
+}
+
+QComboBox {
+    background-color: white;
+    border: 1px solid #E0E0E0;
+    border-radius: 2px;
+    padding: 6px 10px;
+}
+
+QComboBox:hover {
+    border-color: #4a9acf;
+}
+
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #E0E0E0;
+    border-radius: 2px;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #4a9acf;
+    border: none;
+}
+
+QTabBar::tab {
+    background-color: #F0F0F0;
+    color: #666666;
+    border-radius: 2px 2px 0 0;
+    border: none;
+    padding: 10px 20px;
+}
+
+QTabBar::tab:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+QProgressBar {
+    border: none;
+    border-radius: 2px;
+    background-color: #E0E0E0;
+}
+
+QProgressBar::chunk {
+    background-color: #4a9acf;
+    border-radius: 2px;
+}
+
+/* Tree styling */
+QTreeWidget {
+    border: none;
+    alternate-background-color: #F9F9F9;
+}
+
+QTreeWidget::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+/* Group styling */
+QGroupBox {
+    border: 2px solid #E0E0E0;
+    border-radius: 6px;
+    margin-top: 12px;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    color: #4a9acf;
+}

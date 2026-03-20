@@ -1,0 +1,39 @@
+/* MainWindow specific styling - mainwindow.qss */
+
+MainWindow {
+    background-color: #F5F5F5;
+}
+
+MainWindow #treeView {
+    background-color: white;
+    border: none;
+}
+
+MainWindow #tabWidget {
+    background-color: white;
+}
+
+MainWindow #Process {  /* QProgressBar */
+    min-height: 24px;
+}
+
+/* Project tree styling */
+MainWindow QTreeView {
+    background-color: white;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    show-decoration-selected: 1;
+}
+
+MainWindow QTreeView::item {
+    padding: 4px;
+}
+
+MainWindow QTreeView::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+MainWindow QTreeView::item:hover {
+    background-color: #E0E0E0;
+}
