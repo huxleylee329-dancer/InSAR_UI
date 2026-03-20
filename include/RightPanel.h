@@ -114,6 +114,7 @@ private:
 
     // 辅助函数：从嵌入控件提取参数
     void extractPropertiesFromWidget(QWidget *widget, QFormLayout *layout, QtNodes::NodeId nodeId);
+    QString getLabelForWidget(QWidget *widget);  // 从布局中提取控件的标签文本
 
     // UI components
     QScrollArea *m_scrollArea;

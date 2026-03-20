@@ -550,6 +550,8 @@ void PropertyEditor::generateProperties(QtNodes::NodeId nodeId)
     QString caption = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Caption).toString();
     m_captionEdit = new QLineEdit(caption);
     m_captionEdit->setPlaceholderText("Enter node caption...");
+    m_captionEdit->setReadOnly(true);  // Caption is read-only
+    m_captionEdit->setStyleSheet("background-color: #F0F0F0;");
     connect(m_captionEdit, &QLineEdit::textChanged, this, &PropertyEditor::onPropertyValueChanged);
     m_formLayout->addRow("Caption:", m_captionEdit);
 
@@ -571,6 +573,13 @@ void PropertyEditor::generateProperties(QtNodes::NodeId nodeId)
     connect(m_ySpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, &PropertyEditor::onPropertyValueChanged);
     m_formLayout->addRow("Y:", m_ySpinBox);
+
+    // Add separator line between basic properties and widget properties
+    QFrame *separator = new QFrame();
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    separator->setStyleSheet("background-color: #CCCCCC;");
+    m_formLayout->addRow(separator);
 
     // Check for embedded widget and extract properties
     auto delegateModel = m_graphModel->delegateModel<QtNodes::NodeDelegateModel>(nodeId);
@@ -598,6 +607,104 @@ void PropertyEditor::clearProperties()
     m_ySpinBox = nullptr;
 }
 
+QString PropertyEditor::getLabelForWidget(QWidget *widget)
+{
+    if (!widget)
+        return "";
+
+    // First check if there's a buddy label set
+    QList<QLabel*> labels = widget->findChildren<QLabel*>();
+    for (QLabel *label : labels)
+    {
+        if (label->buddy() == widget && !label->text().isEmpty())
+            return label->text();
+    }
+
+    // Try to find label in the widget's layout (sibling labels)
+    QLayout *currentLayout = nullptr;
+    if (widget->parentWidget())
+        currentLayout = widget->parentWidget()->layout();
+    while (currentLayout)
+    {
+        // Check all layout items
+        for (int i = 0; i < currentLayout->count(); ++i)
+        {
+            QLayoutItem *item = currentLayout->itemAt(i);
+            if (!item)
+                continue;
+
+            // Check if this is a label that could be for this widget
+            QLabel *label = qobject_cast<QLabel*>(item->widget());
+            if (label && !label->text().isEmpty())
+            {
+                // If this label has this widget as buddy, use it
+                if (label->buddy() == widget)
+                    return label->text();
+            }
+
+            // Check nested layouts (like QHBoxLayout)
+            QLayout *childLayout = item->layout();
+            if (childLayout)
+            {
+                for (int j = 0; j < childLayout->count(); ++j)
+                {
+                    QLayoutItem *childItem = childLayout->itemAt(j);
+                    if (!childItem)
+                        continue;
+
+                    QLabel *childLabel = qobject_cast<QLabel*>(childItem->widget());
+                    if (childLabel && !childLabel->text().isEmpty())
+                    {
+                        // Check if this is a label for the widget (based on buddy or position)
+                        if (childLabel->buddy() == widget)
+                            return childLabel->text();
+                    }
+
+                    // Check if this item is our widget, then look for labels before it
+                    if (childItem->widget() == widget && j > 0)
+                    {
+                        // Look for a label in the same layout before this widget
+                        for (int k = j - 1; k >= 0; --k)
+                        {
+                            QLayoutItem *siblingItem = childLayout->itemAt(k);
+                            if (!siblingItem)
+                                continue;
+                            QLabel *siblingLabel = qobject_cast<QLabel*>(siblingItem->widget());
+                            if (siblingLabel && !siblingLabel->text().isEmpty())
+                            {
+                                // Check object name pattern (label_XXX)
+                                QString labelName = siblingLabel->objectName().toLower();
+                                if (labelName.startsWith("label") && !labelName.contains("file"))
+                                    return siblingLabel->text();
+                                return siblingLabel->text();
+                            }
+                            // If we hit another input widget, stop looking
+                            QWidget *siblingWidget = siblingItem->widget();
+                            if (qobject_cast<QLineEdit*>(siblingWidget) ||
+                                qobject_cast<QSpinBox*>(siblingWidget) ||
+                                qobject_cast<QDoubleSpinBox*>(siblingWidget) ||
+                                qobject_cast<QCheckBox*>(siblingWidget) ||
+                                qobject_cast<QComboBox*>(siblingWidget))
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Move to parent layout
+        QWidget *layoutParentWidget = currentLayout->parentWidget();
+        if (layoutParentWidget && layoutParentWidget->parentWidget())
+            currentLayout = layoutParentWidget->parentWidget()->layout();
+        else
+            currentLayout = nullptr;
+    }
+
+    return "";
+}
+
 void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *layout, QtNodes::NodeId nodeId)
 {
     // Find all input widgets (QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox)
@@ -614,13 +721,14 @@ void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *l
         QString label = "";
         QString propertyName = "";
 
-        // Get property name from object name
+        // Get property name from widget label or object name
+        QString labelFromLayout = getLabelForWidget(child);
         QString objectName = child->objectName();
+        propertyName = labelFromLayout.isEmpty() ? (objectName.isEmpty() ? "Value" : objectName) : labelFromLayout;
 
         if (lineEdit)
         {
             label = lineEdit->text();
-            propertyName = objectName.isEmpty() ? "Value" : objectName;
             QLineEdit *propEdit = new QLineEdit(label);
             propEdit->setPlaceholderText("Enter value...");
             connect(propEdit, &QLineEdit::textChanged, this, &PropertyEditor::onPropertyValueChanged);
@@ -631,7 +739,6 @@ void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *l
         else if (spinBox)
         {
             int value = spinBox->value();
-            propertyName = objectName.isEmpty() ? "Value" : objectName;
             QSpinBox *propSpinBox = new QSpinBox();
             propSpinBox->setRange(spinBox->minimum(), spinBox->maximum());
             propSpinBox->setSingleStep(spinBox->singleStep());
@@ -642,7 +749,6 @@ void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *l
         else if (doubleSpinBox)
         {
             double value = doubleSpinBox->value();
-            propertyName = objectName.isEmpty() ? "Value" : objectName;
             QDoubleSpinBox *propDoubleSpinBox = new QDoubleSpinBox();
             propDoubleSpinBox->setRange(doubleSpinBox->minimum(), doubleSpinBox->maximum());
             propDoubleSpinBox->setDecimals(doubleSpinBox->decimals());
@@ -654,7 +760,6 @@ void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *l
         else if (checkBox)
         {
             bool value = checkBox->isChecked();
-            propertyName = objectName.isEmpty() ? "Value" : objectName;
             QCheckBox *propCheckBox = new QCheckBox(propertyName);
             propCheckBox->setChecked(value);
             connect(propCheckBox, &QCheckBox::stateChanged, this, &PropertyEditor::onPropertyValueChanged);
@@ -663,7 +768,6 @@ void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *l
         else if (comboBox)
         {
             int index = comboBox->currentIndex();
-            propertyName = objectName.isEmpty() ? "Value" : objectName;
             QComboBox *propComboBox = new QComboBox();
             // Copy all items from source combo box
             for (int i = 0; i < comboBox->count(); ++i) {

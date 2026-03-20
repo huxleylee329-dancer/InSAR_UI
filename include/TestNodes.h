@@ -4,6 +4,7 @@
 #include <QtNodes/NodeDelegateModel>
 #include <QtNodes/NodeData>
 #include <QLabel>
+#include <QLineEdit>
 
 namespace QtNodes {
 
@@ -56,8 +57,11 @@ public:
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     QWidget *embeddedWidget() override;
 
+private slots:
+    void onTextChanged(const QString &text);
+
 private:
-    QLabel *_label;
+    QLineEdit *_edit;
     QString _value;
 };
 

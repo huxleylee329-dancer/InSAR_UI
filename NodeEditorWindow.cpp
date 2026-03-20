@@ -676,6 +676,27 @@ void NodeEditorWindow::onSceneModified(QtNodes::BasicGraphicsScene *)
     if (!m_graphModel)
         return;
 
+    // 检查PropertyEditor中显示的节点是否仍然存在
+    QtNodes::NodeId currentPropNodeId = m_propertyEditor->currentNodeId();
+    if (currentPropNodeId != QtNodes::InvalidNodeId)
+    {
+        // 检查该节点是否仍然存在于模型中
+        bool nodeExists = false;
+        for (auto nodeId : m_graphModel->allNodeIds())
+        {
+            if (nodeId == currentPropNodeId)
+            {
+                nodeExists = true;
+                break;
+            }
+        }
+        // 如果节点不存在（被删除），清除属性面板
+        if (!nodeExists)
+        {
+            m_propertyEditor->clearSelection();
+        }
+    }
+
     int nodeCount = m_graphModel->allNodeIds().size();
 
     int connectionCount = 0;

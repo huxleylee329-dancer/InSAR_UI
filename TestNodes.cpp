@@ -2,6 +2,7 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QLineEdit>
 
 namespace QtNodes {
 
@@ -9,11 +10,13 @@ namespace QtNodes {
 // Simple Source Node Implementation
 // ============================================================================
 SimpleSourceNode::SimpleSourceNode()
-    : _label(new QLabel("Hello World"))
+    : _edit(new QLineEdit("Hello World"))
     , _value("Hello World")
 {
-    _label->setAlignment(Qt::AlignCenter);
-    _label->setStyleSheet("QLabel { background-color: #4a9acf; border-radius: 5px; padding: 5px; }");
+    _edit->setPlaceholderText("输入文本...");
+    _edit->setStyleSheet("QLineEdit { background-color: #4a9acf; border-radius: 5px; padding: 5px; color: white; }");
+
+    connect(_edit, &QLineEdit::textChanged, this, &SimpleSourceNode::onTextChanged);
 }
 
 unsigned int SimpleSourceNode::nPorts(PortType portType) const
@@ -40,9 +43,15 @@ void SimpleSourceNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     Q_UNUSED(port);
 }
 
+void SimpleSourceNode::onTextChanged(const QString &text)
+{
+    _value = text;
+    Q_EMIT dataUpdated(0);
+}
+
 QWidget *SimpleSourceNode::embeddedWidget()
 {
-    return _label;
+    return _edit;
 }
 
 // ============================================================================

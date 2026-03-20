@@ -121,6 +121,8 @@ public:
 
     void clearSelection();
 
+    QtNodes::NodeId currentNodeId() const { return m_currentNodeId; }
+
 signals:
     void propertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value);
 
@@ -132,6 +134,7 @@ private:
     void clearProperties();
     void generateProperties(QtNodes::NodeId nodeId);
     void extractPropertiesFromWidget(QWidget *widget, QFormLayout *layout, QtNodes::NodeId nodeId);
+    QString getLabelForWidget(QWidget *widget);  // 从布局中提取控件的标签文本
 
     QScrollArea *m_scrollArea;
     QWidget *m_contentWidget;
