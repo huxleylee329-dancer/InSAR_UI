@@ -1,0 +1,478 @@
+/* Dark theme - comprehensive color overrides - themes/dark.qss */
+
+QMainWindow {
+    background-color: #353535;
+}
+
+MainWindow #treeView,
+MainWindow #tool {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+}
+
+QTreeView QHeaderView::section {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #555555;
+}
+
+MainWindow #tabWidget {
+    background-color: #2b2b2b;
+}
+
+MainWindow QTabBar::tab {
+    background-color: #404040;
+    color: #CCCCCC;
+}
+
+MainWindow QTabBar::tab:selected {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+}
+
+QStatusBar {
+    background-color: #2b2b2b;
+    border-top: 1px solid #444444;
+}
+
+QMenuBar {
+    background-color: #2b2b2b;
+    border-bottom: 1px solid #444444;
+}
+
+QMenuBar::item {
+    color: #FFFFFF;
+}
+
+QMenuBar::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+QToolBar {
+    background-color: #2b2b2b;
+    border-bottom: 1px solid #444444;
+}
+
+QToolBar QToolButton {
+    color: #FFFFFF;
+}
+
+QToolBar QToolButton:hover {
+    color: #FFFFFF;
+}
+
+QPushButton {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
+QPushButton:hover {
+    background-color: #505050;
+    border-color: #4a9acf;
+}
+
+QPushButton:pressed {
+    background-color: #303030;
+}
+
+QPushButton:disabled {
+    background-color: #2b2b2b;
+    color: #666666;
+}
+
+QPushButton.primary {
+    background-color: #4a9acf;
+    color: white;
+    border: none;
+}
+
+QPushButton.primary:hover {
+    background-color: #5ab9df;
+}
+
+QPushButton.primary:pressed {
+    background-color: #3a8abf;
+}
+
+QLineEdit {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
+QLineEdit:focus {
+    border-color: #4a9acf;
+}
+
+QLineEdit:disabled {
+    background-color: #2b2b2b;
+    color: #666666;
+}
+
+QComboBox {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
+QComboBox:hover {
+    border-color: #4a9acf;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+    selection-background-color: #4a9acf;
+    selection-color: white;
+}
+
+QCheckBox::indicator {
+    background-color: #404040;
+    border: 1px solid #666666;
+}
+
+QCheckBox::indicator:checked {
+    background-color: #4a9acf;
+    border-color: #4a9acf;
+}
+
+QSpinBox {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
+QDoubleSpinBox {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    background-color: #505050;
+    border: 1px solid #666666;
+}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background-color: #505050;
+    border: 1px solid #666666;
+}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: #606060;
+}
+
+QLabel {
+    color: #FFFFFF;
+}
+
+QTabWidget::pane {
+    background-color: #2b2b2b;
+    border: 1px solid #444444;
+}
+
+QTabBar::tab {
+    background-color: #404040;
+    color: #CCCCCC;
+    border: 1px solid #444444;
+}
+
+QTabBar::tab:selected {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+    border-bottom: 1px solid #2b2b2b;
+}
+
+QTabBar::tab:hover:!selected {
+    background-color: #505050;
+}
+
+QTreeWidget {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+    border: 1px solid #444444;
+}
+
+QTreeWidget::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+QTreeWidget::item:hover {
+    background-color: #404040;
+}
+
+QListWidget {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+    border: 1px solid #444444;
+}
+
+QListWidget::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
+QGroupBox {
+    border: 1px solid #444444;
+    color: #FFFFFF;
+}
+
+QGroupBox::title {
+    color: #FFFFFF;
+}
+
+QDialog {
+    background-color: #353535;
+}
+
+ads--CDockWidget {
+    background-color: #2b2b2b;
+    border: 1px solid #444444;
+}
+
+/* ADS dock title bar */
+#dockAreaTitleBar {
+    background-color: #404040;
+}
+
+#autoHideTitleLabel {
+    color: #FFFFFF;
+}
+
+/* ADS dock close button */
+#dockAreaCloseButton {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    min-width: 16px;
+    max-width: 16px;
+    min-height: 16px;
+    max-height: 16px;
+}
+
+#dockAreaCloseButton:hover {
+    background-color: #505050;
+}
+
+#dockAreaCloseButton QPushButton {
+    border: none;
+    padding: 0px;
+}
+
+#dockAreaCloseButton QPushButton::menu-indicator {
+    width: 0px;
+}
+
+/* Tab container */
+#tabsContainerWidget {
+    background-color: #404040;
+}
+
+/* Tab label text */
+#dockWidgetTabLabel {
+    color: #CCCCCC;
+}
+
+/* Tab close button */
+#tabCloseButton {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    min-width: 16px;
+    max-width: 16px;
+    min-height: 16px;
+    max-height: 16px;
+}
+
+#tabCloseButton:hover {
+    background-color: #505050;
+}
+
+#tabCloseButton QPushButton::menu-indicator {
+    width: 0px;
+}
+
+/* ADS title bar buttons (catch-all for all buttons) */
+#dockAreaTitleBar QToolButton {
+    background: transparent;
+    border: none;
+    color: #FFFFFF;
+}
+
+#dockAreaTitleBar QPushButton {
+    background: transparent;
+    border: none;
+    color: #FFFFFF;
+}
+
+/* Tab bar container (CDockWidgetTab inherits QFrame) */
+#dockAreaTitleBar QFrame {
+    background-color: transparent;
+    border: none;
+}
+
+#dockAreaTitleBar QFrame QLabel {
+    color: #CCCCCC;
+}
+
+/* ADS dock area container */
+ads--CDockAreaWidget {
+    background-color: #2b2b2b;
+}
+
+ads--CDockWidget QWidget {
+    background-color: #2b2b2b;
+}
+
+/* ADS dock area tab bar (when multiple docks in same area) */
+ads--CDockAreaWidget QTabBar::tab {
+    background-color: #404040;
+    color: #CCCCCC;
+}
+
+ads--CDockAreaWidget QTabBar::tab:selected {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+}
+
+ads--CDockAreaWidget QTabBar::tab:hover:!selected {
+    background-color: #505050;
+}
+
+NodeTreeWidget {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+    border: 1px solid #444444;
+}
+
+PropertyEditor {
+    background-color: #2b2b2b;
+}
+
+PropertyEditor QLabel {
+    color: #FFFFFF;
+}
+
+PropertyEditor QLineEdit {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+PropertyEditor QDoubleSpinBox {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+PropertyEditor QComboBox {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+PropertyEditor QSpinBox {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+PropertyEditor QCheckBox {
+    color: #FFFFFF;
+}
+
+PropertyEditor QFrame[frameShape="4"] { /* HLine */
+    background-color: #666666;
+}
+
+/* Note editor in dark theme */
+QTextEdit#noteTextEdit {
+    background-color: #353535;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+
+
+/* Import nodes in dark theme */
+/* Node embedded widget (via objectName) */
+QWidget#NodeEmbeddedWidget {
+    background-color: #2b2b2b;
+}
+
+/* All controls inside node embedded widget - use space descendant selector */
+QWidget#NodeEmbeddedWidget * QLabel {
+    color: #FFFFFF;
+}
+
+QWidget#NodeEmbeddedWidget * QLineEdit {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+QWidget#NodeEmbeddedWidget * QComboBox {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+QWidget#NodeEmbeddedWidget * QComboBox QAbstractItemView {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+QWidget#NodeEmbeddedWidget * QListWidget {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+QWidget#NodeEmbeddedWidget * QProgressBar {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+/* QPushButton in nodes */
+QWidget#NodeEmbeddedWidget * QPushButton {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
+ImportNodeBase QLineEdit {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+ImportNodeBase QComboBox {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+ImportNodeBase QComboBox QAbstractItemView {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+ImportNodeBase QListWidget {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+ImportNodeBase QProgressBar {
+    background-color: #404040;
+    color: #FFFFFF;
+}
+
+/* QPushButton in nodes */
+ImportNodeBase QPushButton {
+    background-color: #404040;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
+ImportNodeBase QPushButton:hover {
+    background-color: #505050;
+    border-color: #4a9acf;
+}

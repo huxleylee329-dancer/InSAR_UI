@@ -6,14 +6,7 @@ NodeEditorWindow {
 }
 
 /* Graphics View / Canvas */
-PaletteGraphicsView {
-    background-color: #FFFFFF;
-    border: none;
-}
-
-PaletteGraphicsView QFrame {
-    background-color: #FFFFFF;
-}
+/* PaletteGraphicsView styles controlled by DefaultStyle_*.json files */
 
 /* Dock Widgets */
 ads--CDockWidget {

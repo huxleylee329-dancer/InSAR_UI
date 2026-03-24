@@ -698,6 +698,9 @@ void MainWindow::on_actionNodeEditor_triggered()
     // Set project context for the editor
     editor->setProjectContext(model, projectPath, projectName);
 
+    // Apply current QtNodes theme
+    editor->setQtNodesTheme(m_currentTheme);
+
     editor->show();
 }
 void MainWindow::RenewTree(QStandardItemModel* copy)

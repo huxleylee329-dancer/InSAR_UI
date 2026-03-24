@@ -45,6 +45,9 @@ QWidget* ImportNodeBase::embeddedWidget()
     if (!m_widget)
     {
         m_widget = createWidget();
+
+        // Set object name for QSS targeting
+        m_widget->setObjectName("NodeEmbeddedWidget");
     }
     return m_widget;
 }

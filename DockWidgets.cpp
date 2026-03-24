@@ -473,7 +473,6 @@ void PropertyEditor::setupUi()
     // Initial state
     m_noSelectionLabel = new QLabel("No node selected");
     m_noSelectionLabel->setAlignment(Qt::AlignCenter);
-    m_noSelectionLabel->setStyleSheet("color: #888888; font-style: italic; padding: 8px;");
     m_contentWidget->layout()->addWidget(m_noSelectionLabel);
 }
 
@@ -511,7 +510,6 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
 
     // Add node ID display
     m_nodeIdLabel = new QLabel("Node ID: " + QString::number(static_cast<int>(nodeId)));
-    m_nodeIdLabel->setStyleSheet("color: #AAAAAA; font-weight: bold; font-size: 11px; padding: 4px;");
     static_cast<QVBoxLayout*>(m_contentWidget->layout())->insertWidget(0, m_nodeIdLabel);
 
     generateProperties(nodeId);
@@ -551,7 +549,6 @@ void PropertyEditor::generateProperties(QtNodes::NodeId nodeId)
     m_captionEdit = new QLineEdit(caption);
     m_captionEdit->setPlaceholderText("Enter node caption...");
     m_captionEdit->setReadOnly(true);  // Caption is read-only
-    m_captionEdit->setStyleSheet("background-color: #F0F0F0;");
     connect(m_captionEdit, &QLineEdit::textChanged, this, &PropertyEditor::onPropertyValueChanged);
     m_formLayout->addRow("Caption:", m_captionEdit);
 
@@ -578,7 +575,6 @@ void PropertyEditor::generateProperties(QtNodes::NodeId nodeId)
     QFrame *separator = new QFrame();
     separator->setFrameShape(QFrame::HLine);
     separator->setFrameShadow(QFrame::Sunken);
-    separator->setStyleSheet("background-color: #CCCCCC;");
     m_formLayout->addRow(separator);
 
     // Check for embedded widget and extract properties
@@ -819,12 +815,10 @@ void QueueManagerWidget::setupUi()
     layout->setContentsMargins(8, 8, 8, 8);
 
     QLabel *label = new QLabel("Execution Queue");
-    label->setStyleSheet("font-size: 14px; font-weight: bold; color: #CCCCCC; padding: 8px;");
     layout->addWidget(label);
 
     QLabel *placeholder = new QLabel("Queue functionality coming soon...");
     placeholder->setAlignment(Qt::AlignCenter);
-    placeholder->setStyleSheet("color: #666666; padding: 20px;");
     layout->addWidget(placeholder);
 
     layout->addStretch();

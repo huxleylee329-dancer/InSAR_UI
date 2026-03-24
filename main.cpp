@@ -27,20 +27,16 @@ QString loadStyleSheet(const QString &fileName)
 // Global function to apply theme
 void applyTheme(const QString &theme = "light")
 {
-    // Get application directory
-    QString appDir = QCoreApplication::applicationDirPath();
-    QString stylesDir = appDir + "/../stylesheets/";
-
-    // Load base styles
-    QString appStyle = loadStyleSheet(stylesDir + "application.qss");
-    QString widgetStyle = loadStyleSheet(stylesDir + "widgets.qss");
-    QString dialogStyle = loadStyleSheet(stylesDir + "dialogs.qss");
-    QString mainWindowStyle = loadStyleSheet(stylesDir + "mainwindow.qss");
-    QString nodeEditorStyle = loadStyleSheet(stylesDir + "nodeeditor.qss");
-    QString importNodesStyle = loadStyleSheet(stylesDir + "importnodes.qss");
+    // Load base styles from Qt resources
+    QString appStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/application.qss");
+    QString widgetStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/widgets.qss");
+    QString dialogStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/dialogs.qss");
+    QString mainWindowStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/mainwindow.qss");
+    QString nodeEditorStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/nodeeditor.qss");
+    QString importNodesStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/importnodes.qss");
 
     // Load theme variant
-    QString themeStyle = loadStyleSheet(stylesDir + "themes/" + theme + ".qss");
+    QString themeStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/themes/" + theme + ".qss");
 
     // Combine all styles
     QString fullStyle = appStyle + "\n" +

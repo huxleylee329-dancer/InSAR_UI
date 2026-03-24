@@ -1,0 +1,42 @@
+{
+  "GraphicsViewStyle": {
+    "BackgroundColor": [245, 245, 245],
+    "FineGridColor": [230, 230, 230],
+    "CoarseGridColor": [200, 200, 200]
+  },
+  "NodeStyle": {
+    "NormalBoundaryColor": [180, 180, 180],
+    "SelectedBoundaryColor": [74, 154, 255],
+    "GradientColor0": [235, 235, 235],
+    "GradientColor1": [220, 220, 220],
+    "GradientColor2": [205, 205, 205],
+    "GradientColor3": [190, 190, 190],
+    "ShadowColor": [100, 100, 100],
+    "FontColor" : "#333333",
+    "FontColorFaded" : "#888888",
+    "ConnectionPointColor": [150, 150, 150],
+    "FilledConnectionPointColor": "#4a9acf",
+    "ErrorColor": "#d63031",
+    "WarningColor": [200, 150, 50],
+
+    "PenWidth": 1.0,
+    "HoveredPenWidth": 1.5,
+
+    "ConnectionPointDiameter": 8.0,
+
+    "Opacity": 0.9
+  },
+  "ConnectionStyle": {
+    "ConstructionColor": "#cccccc",
+    "NormalColor": "#666666",
+    "SelectedColor": "#4a9acf",
+    "SelectedHaloColor": "#3a7aaf",
+    "HoveredColor": "#999999",
+
+    "LineWidth": 2.0,
+    "ConstructionLineWidth": 1.5,
+    "PointDiameter": 10.0,
+
+    "UseDataDefinedColors": false
+  }
+}

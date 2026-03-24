@@ -760,6 +760,15 @@
     <None Include="resources\DefaultStyle.json">
       <Filter>Resources</Filter>
     </None>
+    <None Include="resources\DefaultStyle_light.json">
+      <Filter>Resources</Filter>
+    </None>
+    <None Include="resources\DefaultStyle_dark.json">
+      <Filter>Resources</Filter>
+    </None>
+    <None Include="resources\DefaultStyle_fusion.json">
+      <Filter>Resources</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resources\QtWidgetsApplication3.rc">

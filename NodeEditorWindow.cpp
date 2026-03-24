@@ -165,6 +165,10 @@ NodeEditorWindow::NodeEditorWindow(QWidget *parent)
     // Initialize node registry
     m_registry = QtNodes::registerInSARNodeModels();
 
+    // Initialize theme before creating scene
+    // This ensures correct theme is applied when scene is created
+    initTheme();
+
     setupSceneInternal();
 }
 
@@ -172,6 +176,14 @@ NodeEditorWindow::~NodeEditorWindow()
 {
     // Dock widgets are managed by CDockManager
     delete m_groupManager;
+}
+
+// Initialize default theme (called from constructor)
+void NodeEditorWindow::initTheme()
+{
+    // Apply default (light) theme for initial load
+    // This ensures proper theme is loaded before scene creation
+    setQtNodesTheme("light");
 }
 
 void NodeEditorWindow::setupSceneInternal()
@@ -192,6 +204,7 @@ void NodeEditorWindow::setupSceneInternal()
     // Connect drop event signal
     connect(m_view, &PaletteGraphicsView::nodeDropped,
             this, &NodeEditorWindow::onNodeDropped);
+
 
     // Connect background click signal to clear property panel
     connect(m_view, &PaletteGraphicsView::backgroundClicked,
@@ -1007,4 +1020,65 @@ QString NodeEditorWindow::projectPath() const
 QString NodeEditorWindow::projectName() const
 {
     return m_projectName;
+}
+
+// ============================================================================
+// Theme Methods
+// ============================================================================
+
+void NodeEditorWindow::setQtNodesTheme(const QString &theme)
+{
+    QString jsonContent;
+
+    // Load and apply NodeStyle
+    jsonContent = QtNodes::NodeStyle::loadThemeFile(theme);
+    if (!jsonContent.isEmpty()) {
+        QtNodes::NodeStyle::setNodeStyle(jsonContent);
+    }
+
+    // Load and apply ConnectionStyle
+    jsonContent = QtNodes::ConnectionStyle::loadThemeFile(theme);
+    if (!jsonContent.isEmpty()) {
+        QtNodes::ConnectionStyle::setConnectionStyle(jsonContent);
+    }
+
+    // Load and apply GraphicsViewStyle
+    jsonContent = QtNodes::GraphicsViewStyle::loadThemeFile(theme);
+    if (!jsonContent.isEmpty()) {
+        QtNodes::GraphicsViewStyle::setStyle(jsonContent);
+    }
+
+    // Apply background color to all node embedded widgets
+    if (m_scene) {
+        std::unordered_set<QtNodes::NodeId> nodeIds = m_graphModel->allNodeIds();
+        for (QtNodes::NodeId nodeId : nodeIds) {
+            // Get embedded widget from graph model
+            QVariant widgetVar = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Widget);
+            QWidget* widget = qobject_cast<QWidget*>(widgetVar.value<QObject*>());
+            if (widget) {
+                QString bgColor;
+                if (theme == "light") {
+                    bgColor = "#F5F5F5";
+                } else if (theme == "dark") {
+                    bgColor = "#2b2b2b";
+                } else {  // fusion
+                    bgColor = "white";
+                }
+                widget->setStyleSheet(QString("background-color: %1;").arg(bgColor));
+            }
+        }
+    }
+
+    // Force scene update to refresh visuals
+    if (m_scene) {
+        m_scene->update();
+    }
+    if (m_view) {
+        // Update background brush from new theme
+        auto const &flowViewStyle = QtNodes::StyleCollection::flowViewStyle();
+        m_view->setBackgroundBrush(flowViewStyle.BackgroundColor);
+        m_view->update();
+    }
+
+    qDebug() << "Applied QtNodes theme:" << theme;
 }

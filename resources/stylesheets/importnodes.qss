@@ -2,6 +2,7 @@
 
 /* Source Node - blue */
 QLineEdit#sourceLineEdit {
+    background-color: #3a7aaf;
     border-radius: 5px;
     padding: 5px;
     color: white;

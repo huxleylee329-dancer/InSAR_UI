@@ -5,6 +5,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonValueRef>
+#include <QtCore/QFile>
 
 #include <QDebug>
 
@@ -39,6 +40,24 @@ void ConnectionStyle::setConnectionStyle(QString jsonText)
     ConnectionStyle style(jsonText);
 
     StyleCollection::setConnectionStyle(style);
+}
+
+QString ConnectionStyle::loadThemeFile(const QString &theme)
+{
+    initResources();
+
+    QString filePath = QString(":/QtWidgetsApplication3/DefaultStyle_%1.json").arg(theme);
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning() << "Failed to load theme file:" << filePath;
+        return QString();
+    }
+
+    QString content = QString::fromUtf8(file.readAll());
+    file.close();
+
+    qDebug() << "Loaded QtNodes ConnectionStyle theme:" << theme << "Size:" << content.length() << "chars";
+    return content;
 }
 
 #ifdef STYLE_DEBUG

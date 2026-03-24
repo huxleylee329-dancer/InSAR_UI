@@ -23,16 +23,6 @@ QWidget *NoteNode::embeddedWidget()
         m_textEdit = new QTextEdit();
         m_textEdit->setPlaceholderText("Add a note...");
         m_textEdit->setPlainText("New note");
-        m_textEdit->setStyleSheet(
-            "QTextEdit {"
-            "    background-color: #FFF9C4;"  // Light yellow background
-            "    border: 1px solid #FFC107;"
-            "    border-radius: 4px;"
-            "    padding: 4px;"
-            "    font-family: Arial;"
-            "    font-size: 11px;"
-            "}"
-        );
         m_textEdit->setMinimumWidth(180);
         m_textEdit->setMinimumHeight(80);
 

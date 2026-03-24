@@ -21,6 +21,8 @@ public:
 public:
     static void setNodeStyle(QString jsonText);
 
+    static QString loadThemeFile(const QString &theme);
+
 public:
     void loadJson(QJsonObject const &json) override;
 

@@ -153,6 +153,10 @@ public:
     QString projectPath() const;
     QString projectName() const;
 
+    // Theme methods
+    void setQtNodesTheme(const QString &theme);
+    void initTheme();
+
     // Getters for new components
     NodeLibraryWidget* nodeLibrary() const { return m_nodeLibrary; }
     PropertyEditor* propertyEditor() const { return m_propertyEditor; }

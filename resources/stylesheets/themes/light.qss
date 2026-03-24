@@ -1,0 +1,73 @@
+/* Light theme - minimal overrides, just ensure colors are correct - themes/light.qss */
+
+QMainWindow {
+    background-color: #F5F5F5;
+}
+
+QTreeView {
+    background-color: white;
+    color: #333333;
+}
+
+QTreeView QHeaderView::section {
+    background-color: #f0f0f0;
+    color: #333333;
+    border: 1px solid #cccccc;
+}
+
+QLabel {
+    color: #333333;
+}
+
+QLineEdit {
+    background-color: white;
+    color: #333333;
+}
+
+QTextEdit {
+    background-color: white;
+    color: #333333;
+}
+
+QPlainTextEdit {
+    background-color: white;
+    color: #333333;
+}
+
+/* Note editor in light theme */
+QTextEdit#noteTextEdit {
+    background-color: #FFF9C4;
+    color: #333333;
+    border: 1px solid #FFC107;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+/* Toolbar */
+QToolBar QToolButton {
+    color: #333333;
+}
+
+/* Tab close button */
+#tabCloseButton {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    min-width: 16px;
+    max-width: 16px;
+    min-height: 16px;
+    max-height: 16px;
+}
+
+#tabCloseButton:hover {
+    background-color: #505050;
+}
+
+#tabCloseButton QPushButton {
+    border: none;
+    padding: 0px;
+}
+
+#tabCloseButton QPushButton::menu-indicator {
+    width: 0px;
+}

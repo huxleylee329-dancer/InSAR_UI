@@ -19,6 +19,8 @@ public:
 public:
     static void setConnectionStyle(QString jsonText);
 
+    static QString loadThemeFile(const QString &theme);
+
 public:
     void loadJson(QJsonObject const &json) override;
 

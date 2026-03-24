@@ -99,6 +99,8 @@ QWidget* S1SwathMergeNode::embeddedWidget()
 void S1SwathMergeNode::createWidget()
 {
     m_widget = new QWidget();
+    m_widget->setObjectName("NodeEmbeddedWidget");
+    m_widget->setMinimumWidth(280);
     auto* layout = new QVBoxLayout(m_widget);
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(6);

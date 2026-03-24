@@ -4,6 +4,7 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonValueRef>
+#include <QtCore/QDebug>
 
 #include "StyleCollection.hpp"
 
@@ -34,6 +35,24 @@ void GraphicsViewStyle::setStyle(QString jsonText)
     GraphicsViewStyle style(jsonText);
 
     StyleCollection::setGraphicsViewStyle(style);
+}
+
+QString GraphicsViewStyle::loadThemeFile(const QString &theme)
+{
+    initResources();
+
+    QString filePath = QString(":/QtWidgetsApplication3/DefaultStyle_%1.json").arg(theme);
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning() << "Failed to load theme file:" << filePath;
+        return QString();
+    }
+
+    QString content = QString::fromUtf8(file.readAll());
+    file.close();
+
+    qDebug() << "Loaded QtNodes GraphicsViewStyle theme:" << theme << "Size:" << content.length() << "chars";
+    return content;
 }
 
 #ifdef STYLE_DEBUG

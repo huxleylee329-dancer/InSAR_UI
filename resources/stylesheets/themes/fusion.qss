@@ -1,5 +1,19 @@
 /* Fusion theme - flat, modern, primary color emphasis - themes/fusion.qss */
 
+/* Note editor in fusion theme */
+QTextEdit#noteTextEdit {
+    background-color: #FFF9C4;
+    color: #333333;
+    border: 1px solid #FFC107;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+/* Toolbar */
+QToolBar QToolButton {
+    color: #333333;
+}
+
 QPushButton {
     border-radius: 2px;
     background-color: #4a9acf;
@@ -82,6 +96,23 @@ QProgressBar::chunk {
 }
 
 /* Tree styling */
+QTreeView {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+}
+
+QTreeView QHeaderView::section {
+    background-color: #F0F0F0;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+}
+
+QTreeView::item:selected {
+    background-color: #4a9acf;
+    color: white;
+}
+
 QTreeWidget {
     border: none;
     alternate-background-color: #F9F9F9;
@@ -102,4 +133,28 @@ QGroupBox {
 
 QGroupBox::title {
     color: #4a9acf;
+}
+
+/* Tab close button */
+#tabCloseButton {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    min-width: 16px;
+    max-width: 16px;
+    min-height: 16px;
+    max-height: 16px;
+}
+
+#tabCloseButton:hover {
+    background-color: #505050;
+}
+
+#tabCloseButton QPushButton {
+    border: none;
+    padding: 0px;
+}
+
+#tabCloseButton QPushButton::menu-indicator {
+    width: 0px;
 }
