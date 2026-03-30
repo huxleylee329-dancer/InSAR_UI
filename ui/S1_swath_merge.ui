@@ -14,8 +14,8 @@
    <string>哨兵一号子带拼接</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../resources/QtWidgetsApplication3.qrc">
-    <normaloff>:/QtWidgetsApplication3/icon/swath_merge.png</normaloff>:/QtWidgetsApplication3/icon/swath_merge.png</iconset>
+   <iconset resource="../resources/SatExplorer.qrc">
+    <normaloff>:/SatExplorer/icon/swath_merge.png</normaloff>:/SatExplorer/icon/swath_merge.png</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -159,7 +159,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../resources/QtWidgetsApplication3.qrc"/>
+  <include location="../resources/SatExplorer.qrc"/>
  </resources>
  <connections/>
 </ui>

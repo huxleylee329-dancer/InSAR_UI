@@ -14,8 +14,8 @@
    <string>SBAS形变时间序列查看</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../resources/QtWidgetsApplication3.qrc">
-    <normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</iconset>
+   <iconset resource="../resources/SatExplorer.qrc">
+    <normaloff>:/SatExplorer/icon/InSARapp.ico</normaloff>:/SatExplorer/icon/InSARapp.ico</iconset>
   </property>
   <layout class="QGridLayout" name="gridLayout_3">
    <item row="1" column="1">
@@ -48,7 +48,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../resources/QtWidgetsApplication3.qrc"/>
+  <include location="../resources/SatExplorer.qrc"/>
  </resources>
  <connections/>
 </ui>

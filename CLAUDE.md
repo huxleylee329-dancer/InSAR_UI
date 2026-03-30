@@ -80,7 +80,7 @@ User Action → Dialog UI → Signal → MainWindow → MyThread Worker
 ### Solution Structure
 
 The Visual Studio solution contains two projects:
-1. **QtWidgetsApplication3** - Main GUI application (`SatExplorer.exe`)
+1. **SatExplorer** - Main GUI application (`SatExplorer.exe`)
 2. **template_dem** - Console subprocess for DEM processing (uses IPC)
 
 ## Code Organization

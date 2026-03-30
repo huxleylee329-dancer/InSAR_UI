@@ -622,7 +622,7 @@ target_link_libraries(SatExplorer
 
 ### 1. 添加到 VS 项目
 
-修改 `QtWidgetsApplication3.vcxproj`，添加：
+修改 `SatExplorer.vcxproj`，添加：
 - `D:\SRC\nodeeditor\include` 到 AdditionalIncludeDirectories
 - `D:\SRC\nodeeditor\src` 中的源文件
 - 链接 `QtNodes` 库

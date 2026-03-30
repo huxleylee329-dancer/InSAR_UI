@@ -14,8 +14,8 @@
    <string>SBAS时间序列分析</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../resources/QtWidgetsApplication3.qrc">
-    <normaloff>:/QtWidgetsApplication3/icon/time_series.png</normaloff>:/QtWidgetsApplication3/icon/time_series.png</iconset>
+   <iconset resource="../resources/SatExplorer.qrc">
+    <normaloff>:/SatExplorer/icon/time_series.png</normaloff>:/SatExplorer/icon/time_series.png</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2" stretch="2,2,2,2,0,1,1">
    <item>
@@ -306,7 +306,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../resources/QtWidgetsApplication3.qrc"/>
+  <include location="../resources/SatExplorer.qrc"/>
  </resources>
  <connections/>
 </ui>

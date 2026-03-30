@@ -581,7 +581,7 @@ struct PaletteOrder {
    - QtNodes 源代码通过静态链接方式完全集成到项目中
    - 所有 QtNodes 源文件在 `QtNodes/src/` 目录下
    - 所有 QtNodes 头文件在 `include/QtNodes/internal/` 目录下
-   - 在 `QtWidgetsApplication3.vcxproj` 中正确配置：
+   - 在 `SatExplorer.vcxproj` 中正确配置：
      - QtNodes 的 `.cpp` 文件添加到 `<ClCompile>` 列表
      - QtNodes 的 `.hpp` 文件添加到 `<ClInclude>` 列表
      - 包含 `Q_OBJECT` 宏的头文件添加到 `<QtMoc>` 处理列表
@@ -711,13 +711,13 @@ struct PaletteOrder {
    - 这解决了 Qt 5.15.2 中命名空间元对象的链接错误
 
 3. **Qt 资源编译错误修复**：
-   - 使用 Qt rcc 工具手动生成 `qrc_QtWidgetsApplication3.cpp`
+   - 使用 Qt rcc 工具手动生成 `qrc_SatExplorer.cpp`
    - 将生成的文件添加到 `<ClCompile>` 列表
    - 从 `<None>` 中移除重复的 qrc 文件引用
-   - 这解决了 `qInitResources_QtWidgetsApplication3` 未定义的链接错误
+   - 这解决了 `qInitResources_SatExplorer` 未定义的链接错误
 
 4. **项目文件修改**：
-   - 修改 `QtWidgetsApplication3.vcxproj` 添加上述 MOC 和资源配置
+   - 修改 `SatExplorer.vcxproj` 添加上述 MOC 和资源配置
 
 ---
 
@@ -729,7 +729,7 @@ struct PaletteOrder {
 - [x] 确认库文件位置（Debug: `QtNodes_d.lib`, Release: `QtNodes.lib`）
 
 ### 1.2 修改项目文件集成 QtNodes
-- [x] 编辑 `QtWidgetsApplication3.vcxproj`
+- [x] 编辑 `SatExplorer.vcxproj`
 - [x] 添加 `D:\SRC\nodeeditor\include` 到 AdditionalIncludeDirectories
 - [x] 添加 QtNodes 源文件到项目（或配置为库链接）
 - [x] 添加 QtNodes 库目录和库名称到 Linker 配置

@@ -28,15 +28,15 @@ QString loadStyleSheet(const QString &fileName)
 void applyTheme(const QString &theme = "light")
 {
     // Load base styles from Qt resources
-    QString appStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/application.qss");
-    QString widgetStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/widgets.qss");
-    QString dialogStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/dialogs.qss");
-    QString mainWindowStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/mainwindow.qss");
-    QString nodeEditorStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/nodeeditor.qss");
-    QString importNodesStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/importnodes.qss");
+    QString appStyle = loadStyleSheet(":/SatExplorer/stylesheets/application.qss");
+    QString widgetStyle = loadStyleSheet(":/SatExplorer/stylesheets/widgets.qss");
+    QString dialogStyle = loadStyleSheet(":/SatExplorer/stylesheets/dialogs.qss");
+    QString mainWindowStyle = loadStyleSheet(":/SatExplorer/stylesheets/mainwindow.qss");
+    QString nodeEditorStyle = loadStyleSheet(":/SatExplorer/stylesheets/nodeeditor.qss");
+    QString importNodesStyle = loadStyleSheet(":/SatExplorer/stylesheets/importnodes.qss");
 
     // Load theme variant
-    QString themeStyle = loadStyleSheet(":/QtWidgetsApplication3/stylesheets/themes/" + theme + ".qss");
+    QString themeStyle = loadStyleSheet(":/SatExplorer/stylesheets/themes/" + theme + ".qss");
 
     // Combine all styles
     QString fullStyle = appStyle + "\n" +

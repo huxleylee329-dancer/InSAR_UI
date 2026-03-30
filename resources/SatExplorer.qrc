@@ -1,5 +1,5 @@
 <RCC>
-    <qresource prefix="/QtWidgetsApplication3">
+    <qresource prefix="/SatExplorer">
         <file>icon/open_project.png</file>
         <file>icon/recen_open.png</file>
         <file>icon/save.png</file>

@@ -73,11 +73,11 @@ QPixmap ExecutableNodePainter::loadAndColorizeIcon(const QString &resourcePath, 
 ExecutableNodePainter::ExecutableNodePainter()
 {
     // Load and colorize SVG icons from resources
-    _pixmapAutomatic = loadAndColorizeIcon(QStringLiteral(":/QtWidgetsApplication3/refresh-cw.svg"), ::COLOR_AUTOMATIC, QSize(20, 20));
-    _pixmapManual = loadAndColorizeIcon(QStringLiteral(":/QtWidgetsApplication3/refresh-cw-off.svg"), ::COLOR_MANUAL, QSize(20, 20));
-    _pixmapPlay = loadAndColorizeIcon(QStringLiteral(":/QtWidgetsApplication3/play.svg"), ::COLOR_PLAY, QSize(16, 16));
-    _pixmapStop = loadAndColorizeIcon(QStringLiteral(":/QtWidgetsApplication3/stop.svg"), ::COLOR_STOP, QSize(16, 16));
-    _pixmapEye = loadAndColorizeIcon(QStringLiteral(":/QtWidgetsApplication3/eye.svg"), ::COLOR_EYE, QSize(20, 20));
+    _pixmapAutomatic = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/refresh-cw.svg"), ::COLOR_AUTOMATIC, QSize(20, 20));
+    _pixmapManual = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/refresh-cw-off.svg"), ::COLOR_MANUAL, QSize(20, 20));
+    _pixmapPlay = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/play.svg"), ::COLOR_PLAY, QSize(16, 16));
+    _pixmapStop = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/stop.svg"), ::COLOR_STOP, QSize(16, 16));
+    _pixmapEye = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/eye.svg"), ::COLOR_EYE, QSize(20, 20));
 }
 
 void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) const

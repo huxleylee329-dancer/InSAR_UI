@@ -14,8 +14,8 @@
    <string>导出到Google Earth</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../resources/QtWidgetsApplication3.qrc">
-    <normaloff>:/QtWidgetsApplication3/icon/GoogleEarth.png</normaloff>:/QtWidgetsApplication3/icon/GoogleEarth.png</iconset>
+   <iconset resource="../resources/SatExplorer.qrc">
+    <normaloff>:/SatExplorer/icon/GoogleEarth.png</normaloff>:/SatExplorer/icon/GoogleEarth.png</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -83,7 +83,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../resources/QtWidgetsApplication3.qrc"/>
+  <include location="../resources/SatExplorer.qrc"/>
  </resources>
  <connections/>
 </ui>

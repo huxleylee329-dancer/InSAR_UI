@@ -14,8 +14,8 @@
    <string>相位解缠</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../resources/QtWidgetsApplication3.qrc">
-    <normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</normaloff>:/QtWidgetsApplication3/icon/InSARapp.ico</iconset>
+   <iconset resource="../resources/SatExplorer.qrc">
+    <normaloff>:/SatExplorer/icon/InSARapp.ico</normaloff>:/SatExplorer/icon/InSARapp.ico</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -140,7 +140,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../resources/QtWidgetsApplication3.qrc"/>
+  <include location="../resources/SatExplorer.qrc"/>
  </resources>
  <connections/>
 </ui>

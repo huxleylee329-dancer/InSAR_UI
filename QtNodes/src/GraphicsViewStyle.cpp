@@ -12,7 +12,7 @@ using QtNodes::GraphicsViewStyle;
 
 inline void initResources()
 {
-    Q_INIT_RESOURCE(QtWidgetsApplication3);
+    Q_INIT_RESOURCE(SatExplorer);
 }
 
 GraphicsViewStyle::GraphicsViewStyle()
@@ -22,7 +22,7 @@ GraphicsViewStyle::GraphicsViewStyle()
     initResources();
 
     // This configuration is stored inside the compiled unit and is loaded statically
-    loadJsonFile(":/QtWidgetsApplication3/DefaultStyle.json");
+    loadJsonFile(":/SatExplorer/DefaultStyle.json");
 }
 
 GraphicsViewStyle::GraphicsViewStyle(QString jsonText)
@@ -41,7 +41,7 @@ QString GraphicsViewStyle::loadThemeFile(const QString &theme)
 {
     initResources();
 
-    QString filePath = QString(":/QtWidgetsApplication3/DefaultStyle_%1.json").arg(theme);
+    QString filePath = QString(":/SatExplorer/DefaultStyle_%1.json").arg(theme);
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qWarning() << "Failed to load theme file:" << filePath;

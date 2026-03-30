@@ -18,7 +18,7 @@ QtNodes 库通过静态链接方式集成到项目中，所有源文件都在项
 
 QtNodes 中包含 `Q_OBJECT` 宏的头文件**必须**添加到 `<QtMoc>` 列表，否则会报链接错误。
 
-在 `QtWidgetsApplication3.vcxproj` 中配置：
+在 `SatExplorer.vcxproj` 中配置：
 
 ```xml
 <QtMoc Include="include\QtNodes\internal\Definitions.hpp" />
@@ -38,16 +38,16 @@ QtNodes 中包含 `Q_OBJECT` 宏的头文件**必须**添加到 `<QtMoc>` 列表
 
 **配置方式：** 使用 QtRcc 自动生成（推荐）
 
-在 `QtWidgetsApplication3.vcxproj` 中配置：
+在 `SatExplorer.vcxproj` 中配置：
 ```xml
 <ItemGroup>
-  <QtRcc Include="resources\QtWidgetsApplication3.qrc" />
+  <QtRcc Include="resources\SatExplorer.qrc" />
 </ItemGroup>
 ```
 
-QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例如：
-- Debug: `x64\Debug\qrc_QtWidgetsApplication3.cpp`
-- Release: `x64\Release\qrc_QtWidgetsApplication3.cpp`
+QtRcc 会在构建时自动生成 `$(IntDir)qrc_SatExplorer.cpp`，例如：
+- Debug: `x64\Debug\qrc_SatExplorer.cpp`
+- Release: `x64\Release\qrc_SatExplorer.cpp`
 
 **关键点：**
 - ✅ 只使用 `<QtRcc Include="*.qrc" />` 方式
@@ -57,7 +57,7 @@ QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例
 
 **如果遇到链接错误：**
 ```
-错误 LNK2001: 无法解析的外部符号 "qInitResources_QtWidgetsApplication3"
+错误 LNK2001: 无法解析的外部符号 "qInitResources_SatExplorer"
 ```
 确保：
 1. QtRcc item group 已启用（未注释）
@@ -141,7 +141,7 @@ QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例
 
 ### 额外配置
 
-在 `QtWidgetsApplication3.vcxproj` 的 Debug|x64 配置中添加了 `IntDir`：
+在 `SatExplorer.vcxproj` 的 Debug|x64 配置中添加了 `IntDir`：
 ```xml
 <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <OutDir>.\bin\</OutDir>
@@ -157,7 +157,7 @@ QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例
 ## QtRcc 自动生成优化（2026-03-06）
 
 ### 问题背景
-之前项目使用手动生成的 `qrc_QtWidgetsApplication3.cpp` 文件，QtRcc 自动生成被禁用。这种方式有以下缺点：
+之前项目使用手动生成的 `qrc_SatExplorer.cpp` 文件，QtRcc 自动生成被禁用。这种方式有以下缺点：
 - 手动维护，容易忘记更新
 - 无法利用增量构建优势
 - qrc 文件内容变化时需要手动重新生成
@@ -178,21 +178,21 @@ QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例
 ```
 
 **2. 启用 QtRcc item group**
-在 `QtWidgetsApplication3.vcxproj` 中取消注释：
+在 `SatExplorer.vcxproj` 中取消注释：
 ```xml
 <ItemGroup>
-  <QtRcc Include="resources\QtWidgetsApplication3.qrc" />
+  <QtRcc Include="resources\SatExplorer.qrc" />
 </ItemGroup>
 ```
 
 **3. 移除手动编译配置**
 删除：
 ```xml
-<ClCompile Include="qrc_QtWidgetsApplication3.cpp" />
+<ClCompile Include="qrc_SatExplorer.cpp" />
 ```
 
 **4. 删除手动生成的文件**
-删除项目根目录下的 `qrc_QtWidgetsApplication3.cpp` 文件。
+删除项目根目录下的 `qrc_SatExplorer.cpp` 文件。
 
 **5. 移除 PostBuildEvent 复制命令**
 删除 Release 配置中的 icon 目录复制命令（不再需要 bin/icon/）：
@@ -206,9 +206,9 @@ QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例
 
 ### 图标路径修复
 
-**问题：** 所有 UI 文件和 `icon_source.h` 中的图标路径使用 `:/QtWidgetsApplication3/bin/icon/`，但 qrc 文件中定义的路径是 `:/QtWidgetsApplication3/icon/`（没有 bin），导致图标无法显示。
+**问题：** 所有 UI 文件和 `icon_source.h` 中的图标路径使用 `:/SatExplorer/bin/icon/`，但 qrc 文件中定义的路径是 `:/SatExplorer/icon/`（没有 bin），导致图标无法显示。
 
-**解决：** 统一修改为正确的资源路径 `:/QtWidgetsApplication3/icon/`
+**解决：** 统一修改为正确的资源路径 `:/SatExplorer/icon/`
 
 修改的文件：
 - `include/icon_source.h` - 图标常量定义
@@ -218,7 +218,7 @@ QtRcc 会在构建时自动生成 `$(IntDir)qrc_QtWidgetsApplication3.cpp`，例
 
 ### 资源文件路径修复
 
-修复 `resources/QtWidgetsApplication3.rc` 中的 include 路径：
+修复 `resources/SatExplorer.rc` 中的 include 路径：
 ```xml
 <!-- 修复前 -->
 #include "resource.h"   <!-- 找不到，因为 .rc 在 resources/ 目录 -->
@@ -338,7 +338,7 @@ error LNK2019: 无法解析的外部符号 "qt_static_metacall"
 
 ### 错误：qInitResources 未定义
 ```
-error LNK2001: 无法解析的外部符号 "qInitResources_QtWidgetsApplication3"
+error LNK2001: 无法解析的外部符号 "qInitResources_SatExplorer"
 ```
 **解决：** 检查 qrc 文件配置，确保只使用一种编译方式（手动或自动，不要同时使用）
 
@@ -379,13 +379,13 @@ D:\SRC\InSAR_UI\
 ├── NodeEditorWindow.cpp
 ├── NodeModels.cpp
 ├── TestNodes.cpp
-├── qrc_QtWidgetsApplication3.cpp  # 手动生成的资源文件
+├── qrc_SatExplorer.cpp  # 手动生成的资源文件
 ├── resources\
-│   └── QtWidgetsApplication3.qrc
+│   └── SatExplorer.qrc
 ├── Debug\                    # obj 文件目录（生成）
 ├── bin\                      # exe 和 dll 输出目录
 ├── QtWidget.B5697A67\      # Qt VS Tools 临时目录（正常）
-└── QtWidgetsApplication3.vcxproj    # VS 项目文件
+└── SatExplorer.vcxproj    # VS 项目文件
 ```
 
 ---
@@ -396,16 +396,16 @@ D:\SRC\InSAR_UI\
 
 **2026-03-06：**
 - 启用 QtRcc 自动生成：在 `Qt.targets` 中为 QtRcc 添加 `Inputs` 和 `Outputs` 属性
-- 移除手动生成的 `qrc_QtWidgetsApplication3.cpp` 和相关编译配置
-- 修复图标路径问题：统一所有 UI 文件和 `icon_source.h` 使用 `:/QtWidgetsApplication3/icon/` 路径
-- 修复资源文件 include 路径：`resources/QtWidgetsApplication3.rc` 改为 `#include "../resource.h"`
+- 移除手动生成的 `qrc_SatExplorer.cpp` 和相关编译配置
+- 修复图标路径问题：统一所有 UI 文件和 `icon_source.h` 使用 `:/SatExplorer/icon/` 路径
+- 修复资源文件 include 路径：`resources/SatExplorer.rc` 改为 `#include "../resource.h"`
 - 移除 PostBuildEvent：删除 Release 配置中的 icon 目录复制命令，删除 Debug 配置中的空 PostBuildEvent
 - 更新 .gitignore：添加 `RCa*` 和 `screenshot/` 忽略规则
 
 **2026-03-03：**
 - 修复增量编译失效问题：在 `Qt.targets` 中添加 `Inputs` 和 `Outputs` 属性
 - 编译时间从全量编译的 1 分 15 秒降至增量编译的 7 秒
-- 更新 `QtWidgetsApplication3.vcxproj` 添加 `IntDir=x64\Debug\` 配置
+- 更新 `SatExplorer.vcxproj` 添加 `IntDir=x64\Debug\` 配置
 
 **2026-03-02：**
 - 初始版本，记录 QtNodes 集成和基本构建配置

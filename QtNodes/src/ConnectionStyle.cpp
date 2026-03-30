@@ -15,7 +15,7 @@ using QtNodes::ConnectionStyle;
 
 inline void initResources()
 {
-    Q_INIT_RESOURCE(QtWidgetsApplication3);
+    Q_INIT_RESOURCE(SatExplorer);
 }
 
 ConnectionStyle::ConnectionStyle()
@@ -25,7 +25,7 @@ ConnectionStyle::ConnectionStyle()
     initResources();
 
     // This configuration is stored inside the compiled unit and is loaded statically
-    loadJsonFile(":/QtWidgetsApplication3/DefaultStyle.json");
+    loadJsonFile(":/SatExplorer/DefaultStyle.json");
 }
 
 ConnectionStyle::ConnectionStyle(QString jsonText)
@@ -46,7 +46,7 @@ QString ConnectionStyle::loadThemeFile(const QString &theme)
 {
     initResources();
 
-    QString filePath = QString(":/QtWidgetsApplication3/DefaultStyle_%1.json").arg(theme);
+    QString filePath = QString(":/SatExplorer/DefaultStyle_%1.json").arg(theme);
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qWarning() << "Failed to load theme file:" << filePath;

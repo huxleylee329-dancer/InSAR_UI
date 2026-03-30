@@ -463,7 +463,7 @@
     </QtRcc>
   </ItemGroup>
   <ItemGroup>
-    <QtRcc Include="resources\QtWidgetsApplication3.qrc">
+    <QtRcc Include="resources\SatExplorer.qrc">
       <Filter>Resources</Filter>
     </QtRcc>
   </ItemGroup>
@@ -513,7 +513,7 @@
     </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\QtWidgetsApplication3.h">
+    <QtMoc Include="include\SatExplorer.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
@@ -747,7 +747,7 @@
     <QtUic Include="ui\OpenProject.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\QtWidgetsApplication3.ui">
+    <QtUic Include="ui\SatExplorer.ui">
       <Filter>UI Files</Filter>
     </QtUic>
     <QtUic Include="ui\Registration_ui.ui">
@@ -798,7 +798,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="resources\QtWidgetsApplication3.rc">
+    <ResourceCompile Include="resources\SatExplorer.rc">
       <Filter>Resources</Filter>
     </ResourceCompile>
   </ItemGroup>
