@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <QtCore/QUuid>
 #include <QtWidgets/QGraphicsScene>
@@ -51,6 +51,8 @@ public:
     AbstractNodePainter &nodePainter();
 
     AbstractConnectionPainter &connectionPainter();
+
+    void setNodeGeometry(std::unique_ptr<AbstractNodeGeometry> geometry);
 
     void setNodePainter(std::unique_ptr<AbstractNodePainter> newPainter);
 

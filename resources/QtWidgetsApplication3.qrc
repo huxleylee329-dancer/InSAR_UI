@@ -45,6 +45,12 @@
         <file>DefaultStyle_dark.json</file>
         <file>DefaultStyle_fusion.json</file>
         <file>icon/flow_editor.png</file>
+        <!-- Executable Nodes SVG Icons -->
+        <file>eye.svg</file>
+        <file>play.svg</file>
+        <file>stop.svg</file>
+        <file>refresh-cw.svg</file>
+        <file>refresh-cw-off.svg</file>
         <!-- Stylesheets -->
         <file>stylesheets/application.qss</file>
         <file>stylesheets/widgets.qss</file>

@@ -108,6 +108,11 @@ AbstractConnectionPainter &BasicGraphicsScene::connectionPainter()
     return *_connectionPainter;
 }
 
+void BasicGraphicsScene::setNodeGeometry(std::unique_ptr<AbstractNodeGeometry> geometry)
+{
+    _nodeGeometry = std::move(geometry);
+}
+
 void BasicGraphicsScene::setNodePainter(std::unique_ptr<AbstractNodePainter> newPainter)
 {
     _nodePainter = std::move(newPainter);

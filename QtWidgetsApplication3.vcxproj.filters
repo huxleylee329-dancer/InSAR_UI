@@ -268,6 +268,33 @@
     <ClCompile Include="QtNodes\src\DefaultVerticalNodeGeometry.cpp">
       <Filter>QtNodes\Src</Filter>
     </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableDataFlowGraphModel.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableNodeDelegateModel.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableNodeGeometry.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableNodePainter.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDataSnapshot.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDataSnapshotHelper.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDetailAnimationController.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDetailOverlay.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDetailWindow.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
     <ClCompile Include="NodeGroupManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -627,6 +654,21 @@
     <QtMoc Include="include\ADS\DockAreaTitleBar_p.h">
       <Filter>ADS\Include</Filter>
     </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\ExecutableDataFlowGraphModel.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\ExecutableNodeDelegateModel.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\NodeDetailAnimationController.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\NodeDetailOverlay.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\NodeDetailWindow.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <QtUic Include="ui\Filter_ui.ui">
@@ -832,6 +874,18 @@
     <ClInclude Include="include\QtNodes\internal\UndoCommands.hpp">
       <Filter>QtNodes\Include</Filter>
     </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\ExecutableNodeGeometry.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\ExecutableNodePainter.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeDataSnapshot.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeDataSnapshotHelper.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -843,6 +897,15 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="resources\DefaultStyle.json">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="resources\DefaultStyle_dark.json">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="resources\DefaultStyle_fusion.json">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="resources\DefaultStyle_light.json">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
@@ -858,10 +921,67 @@
     <QtRcc Include="ADS\ads.qrc">
       <Filter>ADS</Filter>
     </QtRcc>
-    <Image Include="ADS\images\*.*">
+    <Image Include="ADS\images\close-button-focused.svg">
       <Filter>ADS\Images</Filter>
     </Image>
-    <None Include="ADS\stylesheets\*.*">
+    <Image Include="ADS\images\close-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\detach-button-disabled.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\detach-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\maximize-button-focused.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\maximize-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\minimize-button-focused.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\minimize-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\pin-button-big.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\pin-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\restore-button-focused.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\restore-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\tabs-menu-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\vs-pin-button-disabled.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\vs-pin-button-pinned-focused.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\vs-pin-button-pinned.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\vs-pin-button.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <Image Include="ADS\images\vs-pin-button_45.svg">
+      <Filter>ADS\Images</Filter>
+    </Image>
+    <None Include="ADS\stylesheets\default_linux.css">
+      <Filter>ADS\Stylesheets</Filter>
+    </None>
+    <None Include="ADS\stylesheets\focus_highlighting.css">
+      <Filter>ADS\Stylesheets</Filter>
+    </None>
+    <None Include="ADS\stylesheets\focus_highlighting_linux.css">
       <Filter>ADS\Stylesheets</Filter>
     </None>
   </ItemGroup>

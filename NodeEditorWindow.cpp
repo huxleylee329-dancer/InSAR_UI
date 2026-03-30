@@ -192,8 +192,8 @@ void NodeEditorWindow::setupSceneInternal()
         return;
     }
 
-    // Create graph model
-    m_graphModel = new QtNodes::DataFlowGraphModel(m_registry);
+    // Create graph model (Executable supports manual/automatic execution modes)
+    m_graphModel = new QtNodes::ExecutableDataFlowGraphModel(m_registry);
 
     // Create scene
     m_scene = new QtNodes::DataFlowGraphicsScene(*m_graphModel, this);
@@ -310,6 +310,21 @@ void NodeEditorWindow::setupSceneInternal()
     m_view->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
     m_view->setDragMode(QGraphicsView::ScrollHandDrag);
     m_view->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
+
+    // Replace default geometry and painter with executable versions
+    // This enables: execution mode button, start/stop button, detail button, and progress bar display
+    std::unique_ptr<QtNodes::AbstractNodeGeometry> execGeometry = std::make_unique<QtNodes::ExecutableNodeGeometry>(*m_graphModel);
+    m_scene->setNodeGeometry(std::move(execGeometry));
+
+    std::unique_ptr<QtNodes::AbstractNodePainter> execPainter = std::make_unique<QtNodes::ExecutableNodePainter>();
+    m_scene->setNodePainter(std::move(execPainter));
+
+    // Set scene pointer in graph model for node context access
+    m_graphModel->setScene(m_scene);
+
+    // Install event filter to handle executable node button clicks
+    // This follows the upstream nodeeditor example pattern
+    m_view->viewport()->installEventFilter(this);
 }
 
 void NodeEditorWindow::setupUi()
@@ -1081,4 +1096,106 @@ void NodeEditorWindow::setQtNodesTheme(const QString &theme)
     }
 
     qDebug() << "Applied QtNodes theme:" << theme;
+}
+
+bool NodeEditorWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    // Block interaction with scene when detail view is open
+    if (_detailWindow && _detailWindow->isVisible()) {
+        return QMainWindow::eventFilter(obj, event);
+    }
+
+    if (event->type() == QEvent::MouseButtonPress && obj == m_view->viewport()) {
+        QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+        QPointF scenePos = m_view->mapToScene(mouseEvent->pos());
+        QGraphicsItem *item = m_view->itemAt(mouseEvent->pos());
+
+        if (auto *ngo = dynamic_cast<QtNodes::NodeGraphicsObject*>(item)) {
+            QtNodes::NodeId nodeId = ngo->nodeId();
+            auto *delegateModel = m_graphModel->delegateModel<QtNodes::NodeDelegateModel>(nodeId);
+            auto *execModel = dynamic_cast<QtNodes::ExecutableNodeDelegateModel*>(delegateModel);
+
+            if (execModel && execModel->useExternalLayout()) {
+                // Convert to node local coordinates
+                QPointF nodePos = ngo->sceneTransform().inverted().map(scenePos);
+
+                auto &geo = dynamic_cast<QtNodes::ExecutableNodeGeometry&>(m_scene->nodeGeometry());
+
+                if (geo.hitTestModeButton(nodeId, nodePos)) {
+                    // Toggle mode
+                    QtNodes::ExecutionMode currentMode = execModel->executionMode();
+                    execModel->setExecutionMode(
+                        currentMode == QtNodes::ExecutionMode::Automatic
+                            ? QtNodes::ExecutionMode::Manual
+                            : QtNodes::ExecutionMode::Automatic);
+                    ngo->update();
+                    return true;
+                }
+                else if (geo.hitTestStartButton(nodeId, nodePos)) {
+                    // Toggle start/stop
+                    if (execModel->executionState() == QtNodes::ExecutionState::Running) {
+                        execModel->stop();
+                    } else {
+                        execModel->start();
+                    }
+                    ngo->update();
+                    return true;
+                }
+                else if (geo.hitTestDetailButton(nodeId, nodePos)) {
+                    // Open detail view
+                    openDetailView(ngo, execModel);
+                    return true;
+                }
+            }
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
+void NodeEditorWindow::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::ExecutableNodeDelegateModel* execModel)
+{
+    // Capture snapshot of node data
+    QtNodes::NodeDataSnapshot snapshot = QtNodes::captureNodeData(
+        execModel, m_scene, ngo->nodeId());
+
+    // Create detail window and overlay
+    _detailWindow = new QtNodes::NodeDetailWindow(nullptr);  // Top-level window
+    _detailOverlay = new QtNodes::NodeDetailOverlay(m_view->viewport());
+    _detailOverlay->setGeometry(m_view->viewport()->rect());
+
+    // Load data into detail window
+    _detailWindow->loadData(snapshot);
+
+    // Create and setup animation controller
+    _animationController = new QtNodes::NodeDetailAnimationController(this);
+    connect(_animationController, &QtNodes::NodeDetailAnimationController::openAnimationCompleted,
+            [this]() {
+                // Animation complete, detail window now visible and interactive
+            });
+    connect(_animationController, &QtNodes::NodeDetailAnimationController::closeAnimationCompleted,
+            this, &NodeEditorWindow::cleanupDetailWindow);
+
+    // Connect close button to trigger reverse animation
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::closeRequested, [this, ngo]() {
+        _animationController->startCloseAnimation(ngo, _detailWindow, _detailOverlay);
+    });
+
+    // Start the open animation sequence
+    _animationController->startOpenAnimation(ngo, _detailWindow, _detailOverlay);
+}
+
+void NodeEditorWindow::cleanupDetailWindow()
+{
+    if (_detailWindow) {
+        _detailWindow->deleteLater();
+        _detailWindow = nullptr;
+    }
+    if (_detailOverlay) {
+        _detailOverlay->deleteLater();
+        _detailOverlay = nullptr;
+    }
+    if (_animationController) {
+        _animationController->deleteLater();
+        _animationController = nullptr;
+    }
 }

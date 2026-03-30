@@ -34,12 +34,12 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>5.15.2_msvc2019_64</QtInstall>
-    <QtModules>core;gui;widgets;charts;opengl</QtModules>
+    <QtModules>core;gui;widgets;charts;opengl;svg</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
     <QtInstall>5.15.2_msvc2019_64</QtInstall>
-    <QtModules>core;gui;widgets;charts;opengl</QtModules>
+    <QtModules>core;gui;widgets;charts;opengl;svg</QtModules>
     <QtBuildConfig>release</QtBuildConfig>
   </PropertyGroup>
   <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') or !Exists('$(QtMsBuild)\qt.props')">
@@ -98,7 +98,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>D:\SRC\opencv\build\x64\vc15\lib;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\InSAR_UI\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -115,7 +115,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <AdditionalLibraryDirectories>D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\InSAR_UI\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -359,6 +359,33 @@
       <Filter>QtNodes\Src</Filter>
     </ClCompile>
     <ClCompile Include="QtNodes\src\UndoCommands.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableDataFlowGraphModel.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableNodeDelegateModel.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableNodeGeometry.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\ExecutableNodePainter.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDataSnapshot.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDataSnapshotHelper.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDetailAnimationController.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDetailOverlay.cpp">
+      <Filter>QtNodes\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\NodeDetailWindow.cpp">
       <Filter>QtNodes\Src</Filter>
     </ClCompile>
   </ItemGroup>
@@ -854,6 +881,33 @@
     <ClInclude Include="include\QtNodes\internal\UndoCommands.hpp">
       <Filter>QtNodes\Include</Filter>
     </ClInclude>
+    <QtMoc Include="include\QtNodes\internal\ExecutableDataFlowGraphModel.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\ExecutableNodeDelegateModel.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <ClInclude Include="include\QtNodes\internal\ExecutableNodeGeometry.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\ExecutableNodePainter.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeDataSnapshot.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\QtNodes\internal\NodeDataSnapshotHelper.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </ClInclude>
+    <QtMoc Include="include\QtNodes\internal\NodeDetailAnimationController.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\NodeDetailOverlay.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\NodeDetailWindow.hpp">
+      <Filter>QtNodes\Include</Filter>
+    </QtMoc>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\ADS\ads_globals.h">

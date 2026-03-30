@@ -1,10 +1,15 @@
-#ifndef TESTNODES_H
+﻿#ifndef TESTNODES_H
 #define TESTNODES_H
 
 #include <QtNodes/NodeDelegateModel>
 #include <QtNodes/NodeData>
+#include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QLabel>
 #include <QLineEdit>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QWidget>
+#include <QString>
 
 namespace QtNodes {
 
@@ -36,89 +41,140 @@ private:
 };
 
 // ============================================================================
-// Simple Source Node - Outputs a fixed value
+// Simple Source Node - Outputs a fixed value (Executable Version)
 // ============================================================================
-class SimpleSourceNode : public NodeDelegateModel
+class SimpleSourceNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
 public:
     SimpleSourceNode();
-    ~SimpleSourceNode() = default;
+    ~SimpleSourceNode() override = default;
 
     QString caption() const override { return QStringLiteral("Source"); }
-    QString name() const override { return QStringLiteral("SimpleSource"); }
-    unsigned int nPorts(PortType portType) const override;
+    QString name() const override { return QStringLiteral("ExecutableSource"); }
 
+    unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
 
     std::shared_ptr<NodeData> outData(PortIndex port) override;
 
-    void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
+    void setInData(std::shared_ptr<NodeData> data, PortIndex port) override {}
     QWidget *embeddedWidget() override;
+
+    QJsonObject save() const override;
+    void load(QJsonObject const &p) override;
+
+    void setExecutionMode(ExecutionMode mode) override;
+
+protected:
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
 
 private slots:
     void onTextChanged(const QString &text);
 
 private:
+    void simulateWorkStep();
+
+private:
     QLineEdit *_edit;
     QString _value;
+    std::shared_ptr<SimpleData> _data;
+    bool _stopRequested = false;
+    int _currentProgress = 0;
+    bool _dataModified = false;  // Data modified but not executed in Manual mode
 };
 
 // ============================================================================
-// Simple Math Node - Concatenates input values
+// Simple Math Node - Concatenates input values (Executable Version)
 // ============================================================================
-class SimpleMathNode : public NodeDelegateModel
+class SimpleMathNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
 public:
     SimpleMathNode();
-    ~SimpleMathNode() = default;
+    ~SimpleMathNode() override = default;
 
     QString caption() const override { return QStringLiteral("Math (Concat)"); }
-    QString name() const override { return QStringLiteral("SimpleMath"); }
-    unsigned int nPorts(PortType portType) const override;
+    QString name() const override { return QStringLiteral("ExecutableMath"); }
 
+    unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
 
     std::shared_ptr<NodeData> outData(PortIndex port) override;
 
-    void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
+    void setInData(std::shared_ptr<NodeData> data, PortIndex portIndex) override;
+
     QWidget *embeddedWidget() override;
 
+    QJsonObject save() const override;
+    void load(QJsonObject const &p) override;
+
+    void setExecutionMode(ExecutionMode mode) override;
+
+protected:
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
+
 private:
-    std::shared_ptr<SimpleData> _input1;
-    std::shared_ptr<SimpleData> _input2;
+    void simulateWorkStep();
+
+private:
+    std::weak_ptr<SimpleData> _input1;
+    std::weak_ptr<SimpleData> _input2;
     std::shared_ptr<SimpleData> _output;
     QLabel *_label;
+    bool _stopRequested = false;
+    int _currentProgress = 0;
+    bool _dataModified = false;  // Input changed but not executed in Manual mode
 };
 
 // ============================================================================
-// Simple Display Node - Shows the input value
+// Simple Display Node - Shows the input value (Executable Version)
 // ============================================================================
-class SimpleDisplayNode : public NodeDelegateModel
+class SimpleDisplayNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
 public:
     SimpleDisplayNode();
-    ~SimpleDisplayNode() = default;
+    ~SimpleDisplayNode() override = default;
 
     QString caption() const override { return QStringLiteral("Display"); }
-    QString name() const override { return QStringLiteral("SimpleDisplay"); }
-    unsigned int nPorts(PortType portType) const override;
+    QString name() const override { return QStringLiteral("ExecutableDisplay"); }
 
+    unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
 
     std::shared_ptr<NodeData> outData(PortIndex port) override;
 
-    void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
+    void setInData(std::shared_ptr<NodeData> data, PortIndex portIndex) override;
+
     QWidget *embeddedWidget() override;
 
+    QJsonObject save() const override;
+    void load(QJsonObject const &p) override;
+
+    void setExecutionMode(ExecutionMode mode) override;
+
+protected:
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
+
 private:
-    std::shared_ptr<SimpleData> _input;
+    void simulateWorkStep();
+
+    std::weak_ptr<SimpleData> _input;
+    std::shared_ptr<SimpleData> _cachedData;
     QLabel *_label;
+    bool _stopRequested = false;
+    int _currentProgress = 0;
+    bool _dataModified = false;  // Input changed but not executed in Manual mode
 };
 
 } // namespace QtNodes

@@ -37,7 +37,15 @@
 #include <QtNodes/DataFlowGraphicsScene>
 #include <QtNodes/GraphicsView>
 #include <QtNodes/DataFlowGraphModel>
+#include "QtNodes/internal/ExecutableDataFlowGraphModel.hpp"
+#include "QtNodes/internal/ExecutableNodeGeometry.hpp"
+#include "QtNodes/internal/ExecutableNodePainter.hpp"
+#include "QtNodes/internal/NodeDetailWindow.hpp"
+#include "QtNodes/internal/NodeDetailOverlay.hpp"
+#include "QtNodes/internal/NodeDetailAnimationController.hpp"
+#include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include <QtNodes/NodeDelegateModelRegistry>
+#include <QtNodes/Internal/NodeGraphicsObject.hpp>
 #include <QtNodes/ConnectionStyle>
 #include <QtNodes/NodeStyle>
 #include <QtNodes/GraphicsViewStyle>
@@ -265,7 +273,7 @@ private:
 
     // Node Editor components
     std::shared_ptr<QtNodes::NodeDelegateModelRegistry> m_registry;
-    QtNodes::DataFlowGraphModel *m_graphModel;
+    QtNodes::ExecutableDataFlowGraphModel *m_graphModel;
     QtNodes::DataFlowGraphicsScene *m_scene;
     PaletteGraphicsView *m_view;
 
@@ -279,6 +287,18 @@ private:
     QStandardItemModel* m_projectModel;
     QString m_projectPath;
     QString m_projectName;
+
+    // Detail view components for executable nodes
+    QtNodes::NodeDetailWindow *_detailWindow = nullptr;
+    QtNodes::NodeDetailOverlay *_detailOverlay = nullptr;
+    QtNodes::NodeDetailAnimationController *_animationController = nullptr;
+
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+
+private:
+    void openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::ExecutableNodeDelegateModel* execModel);
+    void cleanupDetailWindow();
 };
 
 #endif // NODEEDITORWINDOW_H
