@@ -15,29 +15,44 @@
 
 #include <QtSvg/QSvgRenderer>
 
-// Initialize static constexpr color constants
+// Initialize color scheme (DYNAMIC THEME ADAPTATION)
 namespace {
-    // Icon colors
-    constexpr QColor COLOR_AUTOMATIC{0, 120, 215};  // #0078D7
-    constexpr QColor COLOR_MANUAL{216, 59, 1};      // #D83B01
-    constexpr QColor COLOR_PLAY{0, 160, 0};         // #00A000
-    constexpr QColor COLOR_STOP{200, 50, 50};       // #C83232
-    constexpr QColor COLOR_EYE{200, 200, 200};      // #C8C8C8
+    // Icon colors (PROFESSIONAL VERSION - softer, more cohesive)
+    constexpr QColor COLOR_AUTOMATIC{59, 130, 246};  // #3B82F6 (system blue)
+    constexpr QColor COLOR_MANUAL{245, 158, 11};     // #F59E0B (system amber)
+    constexpr QColor COLOR_PLAY{16, 185, 129};        // #10B981 (professional green)
+    constexpr QColor COLOR_STOP{239, 68, 68};        // #EF4444 (professional red)
+    constexpr QColor COLOR_EYE{148, 163, 184};       // #94A3B8 (subtle gray)
 
-    // State background colors (VIBRANT VERSION)
-    constexpr QColor COLOR_IDLE_START{245, 245, 245};      // #F5F5F5 (unchanged - idle should be subtle)
-    constexpr QColor COLOR_IDLE_END{232, 232, 232};         // #E8E8E8 (unchanged)
-    constexpr QColor COLOR_PENDING{209, 196, 233};         // #D1C4E9 (vibrant purple)
-    constexpr QColor COLOR_RUNNING_START{30, 136, 229};     // #1E88E5 (vibrant blue)
-    constexpr QColor COLOR_RUNNING_END{61, 168, 240};       // #3DA8F0 (vibrant blue)
-    constexpr QColor COLOR_COMPLETED{0, 230, 118};          // #00E676 (vibrant green)
-    constexpr QColor COLOR_STOPPED_START{255, 159, 67};    // #FF9F43 (vibrant orange)
-    constexpr QColor COLOR_STOPPED_END{255, 109, 0};        // #FF6D00 (vibrant orange)
-    constexpr QColor COLOR_WARNING_START{255, 214, 0};      // #FFD600 (vibrant yellow)
-    constexpr QColor COLOR_WARNING_END{255, 193, 7};         // #FFC107 (vibrant yellow)
-    constexpr QColor COLOR_ERROR_START{255, 23, 68};        // #FF1744 (vibrant red)
-    constexpr QColor COLOR_ERROR_END{213, 0, 0};            // #D50000 (vibrant red)
-    constexpr QColor COLOR_DISABLED{200, 200, 200};       // #C8C8C8 (darker gray for disabled)
+    // State background colors - LIGHT THEME (Low saturation, cohesive with main app)
+    constexpr QColor COLOR_IDLE_START_L{241, 245, 249};     // #F1F5F9
+    constexpr QColor COLOR_IDLE_END_L{226, 232, 240};       // #E2E8F0
+    constexpr QColor COLOR_PENDING_L{167, 243, 208};        // #A7F3D0
+    constexpr QColor COLOR_RUNNING_START_L{59, 130, 246};    // #3B82F6
+    constexpr QColor COLOR_RUNNING_END_L{96, 165, 250};      // #60A5FA
+    constexpr QColor COLOR_COMPLETED_L{16, 185, 129};        // #10B981
+    constexpr QColor COLOR_STOPPED_START_L{245, 158, 11};     // #F59E0B
+    constexpr QColor COLOR_STOPPED_END_L{217, 119, 6};       // #D97706
+    constexpr QColor COLOR_WARNING_START_L{251, 191, 36};       // #FBBF24
+    constexpr QColor COLOR_WARNING_END_L{245, 158, 11};        // #F59E0B
+    constexpr QColor COLOR_ERROR_START_L{239, 68, 68};         // #EF4444
+    constexpr QColor COLOR_ERROR_END_L{220, 38, 38};          // #DC2626
+    constexpr QColor COLOR_DISABLED_L{148, 163, 184};        // #94A3B8
+
+    // State background colors - DARK THEME (Matches main app dark theme)
+    constexpr QColor COLOR_IDLE_START_D{64, 64, 64};         // #404040
+    constexpr QColor COLOR_IDLE_END_D{64, 64, 64};          // #404040
+    constexpr QColor COLOR_PENDING_D{64, 64, 64};          // #404040
+    constexpr QColor COLOR_RUNNING_START_D{43, 64, 75};       // #2B404B
+    constexpr QColor COLOR_RUNNING_END_D{74, 116, 141};       // #4A748D
+    constexpr QColor COLOR_COMPLETED_D{74, 169, 207};        // #4AA9CF
+    constexpr QColor COLOR_STOPPED_START_D{251, 191, 36};   // #FBBF24
+    constexpr QColor COLOR_STOPPED_END_D{217, 119, 6};       // #D97706
+    constexpr QColor COLOR_WARNING_START_D{251, 191, 36};    // #FBBF24
+    constexpr QColor COLOR_WARNING_END_D{217, 119, 6};       // #D97706
+    constexpr QColor COLOR_ERROR_START_D{239, 68, 68};         // #EF4444
+    constexpr QColor COLOR_ERROR_END_D{220, 38, 38};          // #DC2626
+    constexpr QColor COLOR_DISABLED_D{80, 80, 80};           // #505050
 }
 
 namespace QtNodes {
@@ -118,7 +133,37 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
     painter->setRenderHint(QPainter::Antialiasing);
 
     // Draw main node rectangle
-    drawMainRect(painter, ngo, geo, mode, state);
+    // Get the view widget from the scene for theme detection context
+    ::QWidget* context = nullptr;
+    if (!ngo.nodeScene()->views().isEmpty()) {
+        QGraphicsView* view = ngo.nodeScene()->views().first();
+        context = (QWidget*)view;
+    }
+    drawMainRect(painter, ngo, geo, mode, state, context);  // Pass view as context for theme detection
+
+    // Draw "M" badge for Manual mode in node body (top-left corner)
+    if (mode == ExecutionMode::Manual) {
+        painter->save();
+
+        // Badge position: top-left corner of main rectangle
+        // Offset 4px from edges for better visibility
+        QRectF badgeRect(8, 4, 16, 16);
+
+        // Draw badge background
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(::COLOR_MANUAL);
+        painter->drawRoundedRect(badgeRect, 3.0, 3.0);
+
+        // Draw "M" text
+        painter->setPen(Qt::white);
+        QFont badgeFont = painter->font();
+        badgeFont.setBold(false);
+        badgeFont.setPointSize(9);
+        painter->setFont(badgeFont);
+        painter->drawText(badgeRect, Qt::AlignCenter, "M");
+
+        painter->restore();
+    }
 
     // Draw text background for better readability on all states
     {
@@ -201,18 +246,19 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
     _defaultPainter.drawResizeRect(painter, ngo);
 
     // Draw progress bar - always visible
-    drawProgressBar(painter, ngo, geo, progress);
+    drawProgressBar(painter, ngo, geo, progress, context);
 
     // Draw ears last so they are on top - only when selected
     if (isSelected) {
-        drawLeftEar(painter, ngo, geo, mode, state);
-        drawRightEar(painter, ngo, geo, state);
+        drawLeftEar(painter, ngo, geo, mode, state, context);
+        drawRightEar(painter, ngo, geo, state, context);
     }
 }
 
 void ExecutableNodePainter::drawMainRect(QPainter *painter, NodeGraphicsObject &ngo,
                                          ExecutableNodeGeometry &geo,
-                                         ExecutionMode mode, ExecutionState state) const
+                                         ExecutionMode mode, ExecutionState state,
+                                         QWidget* context) const
 {
     auto &nodeStyle = StyleCollection::nodeStyle();
     QSize size = geo.size(ngo.nodeId());
@@ -226,7 +272,7 @@ void ExecutableNodePainter::drawMainRect(QPainter *painter, NodeGraphicsObject &
     painter->setPen(ngo.isSelected() ? pen : normalPen);
 
     // For Automatic mode + Idle state, use default NodeStyle gradient
-    // Otherwise use state-based gradient colors
+    // Otherwise use state-based gradient colors (theme-aware)
     QLinearGradient gradient(QPointF(0, 0), QPointF(0, boundary.height()));
     if (mode == ExecutionMode::Automatic && state == ExecutionState::Idle) {
         // Use default NodeStyle colors
@@ -235,26 +281,29 @@ void ExecutableNodePainter::drawMainRect(QPainter *painter, NodeGraphicsObject &
         gradient.setColorAt(0.7, nodeStyle.GradientColor2);
         gradient.setColorAt(1.0, nodeStyle.GradientColor3);
     } else {
-        gradient.setColorAt(0.0, gradientStartColor(mode, state));
-        gradient.setColorAt(0.3, gradientStartColor(mode, state));
-        gradient.setColorAt(0.7, gradientEndColor(mode, state));
-        gradient.setColorAt(1.0, gradientEndColor(mode, state));
+        // Use theme-aware colors
+        gradient.setColorAt(0.0, gradientStartColor(mode, state, context));
+        gradient.setColorAt(0.3, gradientStartColor(mode, state, context));
+        gradient.setColorAt(0.7, gradientEndColor(mode, state, context));
+        gradient.setColorAt(1.0, gradientEndColor(mode, state, context));
     }
     painter->setBrush(gradient);
 
     painter->drawRoundedRect(boundary, radius, radius);
 
-    // Draw texture overlays
+    // Apply opacity for Disabled state (UX best practice: use opacity reduction instead of texture)
     if (state == ExecutionState::Disabled) {
-        drawDisabledTexture(painter, boundary);
-    } else if (mode == ExecutionMode::Manual) {
-        drawManualTexture(painter, boundary);
+        painter->save();
+        painter->setOpacity(0.5);  // 50% opacity for disabled state
+        painter->drawRoundedRect(boundary, radius, radius);
+        painter->restore();
     }
 }
 
 void ExecutableNodePainter::drawLeftEar(QPainter *painter, NodeGraphicsObject &ngo,
                                         ExecutableNodeGeometry &geo,
-                                        ExecutionMode mode, ExecutionState state) const
+                                        ExecutionMode mode, ExecutionState state,
+                                        QWidget* context) const
 {
     //auto &nodeStyle = StyleCollection::nodeStyle();
     QRectF earRect = geo.leftEarRect(ngo.nodeId());
@@ -289,7 +338,8 @@ void ExecutableNodePainter::drawLeftEar(QPainter *painter, NodeGraphicsObject &n
 
 void ExecutableNodePainter::drawRightEar(QPainter *painter, NodeGraphicsObject &ngo,
                                          ExecutableNodeGeometry &geo,
-                                         ExecutionState /*state*/) const
+                                         ExecutionState /*state*/,
+                                         QWidget* context) const
 {
     QRectF earRect = geo.rightEarRect(ngo.nodeId());
 
@@ -310,7 +360,8 @@ void ExecutableNodePainter::drawRightEar(QPainter *painter, NodeGraphicsObject &
 
 void ExecutableNodePainter::drawProgressBar(QPainter *painter, NodeGraphicsObject &ngo,
                                             ExecutableNodeGeometry &geo,
-                                            int progress) const
+                                            int progress,
+                                            QWidget* context) const
 {
     QRectF barRect = geo.progressBarRect(ngo.nodeId());
 
@@ -318,9 +369,11 @@ void ExecutableNodePainter::drawProgressBar(QPainter *painter, NodeGraphicsObjec
     double margin = (barRect.height() >= 3) ? 1.0 : 0.0;
     double radius = qMin(2.0, barRect.height() / 2.0);
 
-    // Background
-    painter->setPen(QColor(204, 204, 204));
-    painter->setBrush(QColor(240, 240, 240));
+    // Background (theme-aware idle colors)
+    QColor idleStart = themedColor(::COLOR_IDLE_START_L, ::COLOR_IDLE_START_D, context);
+    QColor idleEnd = themedColor(::COLOR_IDLE_END_L, ::COLOR_IDLE_END_D, context);
+    painter->setPen(idleEnd);
+    painter->setBrush(idleStart);
     painter->drawRoundedRect(barRect, radius, radius);
 
     // Progress chunk
@@ -332,7 +385,9 @@ void ExecutableNodePainter::drawProgressBar(QPainter *painter, NodeGraphicsObjec
         if (progressRect.width() < 1) {
             progressRect.setWidth(1);
         }
-        painter->setBrush(QColor(0, 120, 212));
+        // Use theme-aware running color for progress
+        QColor runningStart = themedColor(::COLOR_RUNNING_START_L, ::COLOR_RUNNING_START_D, context);
+        painter->setBrush(runningStart);
         painter->setPen(Qt::NoPen);
         painter->drawRoundedRect(progressRect, qMax(0.0, radius - margin), qMax(0.0, radius - margin));
     }
@@ -355,111 +410,89 @@ QColor ExecutableNodePainter::stateColor(ExecutionState /*state*/) const
     return QColor(136, 136, 136);
 }
 
-QColor ExecutableNodePainter::gradientStartColor(ExecutionMode mode, ExecutionState state) const
+QColor ExecutableNodePainter::gradientStartColor(ExecutionMode mode, ExecutionState state, QWidget* context) const
 {
     Q_UNUSED(mode);
+
+    // Get context for theme detection
+    QWidget* themeContext = context;
+
     switch (state) {
     case ExecutionState::Idle:
-        return ::COLOR_IDLE_START;
+        return themedColor(::COLOR_IDLE_START_L, ::COLOR_IDLE_START_D, themeContext);
     case ExecutionState::Pending:
-        return ::COLOR_PENDING;
+        return themedColor(::COLOR_PENDING_L, ::COLOR_PENDING_D, themeContext);
     case ExecutionState::Running:
-        return ::COLOR_RUNNING_START;
+        return themedColor(::COLOR_RUNNING_START_L, ::COLOR_RUNNING_START_D, themeContext);
     case ExecutionState::Completed:
-        return ::COLOR_COMPLETED;
+        return themedColor(::COLOR_COMPLETED_L, ::COLOR_COMPLETED_D, themeContext);
     case ExecutionState::Stopped:
-        return ::COLOR_STOPPED_START;
+        return themedColor(::COLOR_STOPPED_START_L, ::COLOR_STOPPED_START_D, themeContext);
     case ExecutionState::Warning:
-        return ::COLOR_WARNING_START;
+        return themedColor(::COLOR_WARNING_START_L, ::COLOR_WARNING_START_D, themeContext);
     case ExecutionState::Error:
-        return ::COLOR_ERROR_START;
+        return themedColor(::COLOR_ERROR_START_L, ::COLOR_ERROR_START_D, themeContext);
     case ExecutionState::Disabled:
-        return ::COLOR_DISABLED;
+        return themedColor(::COLOR_DISABLED_L, ::COLOR_DISABLED_D, themeContext);
     }
-    return ::COLOR_IDLE_START;
+    return themedColor(::COLOR_IDLE_START_L, ::COLOR_IDLE_START_D, themeContext);
 }
 
-QColor ExecutableNodePainter::gradientEndColor(ExecutionMode mode, ExecutionState state) const
+QColor ExecutableNodePainter::gradientEndColor(ExecutionMode mode, ExecutionState state, QWidget* context) const
 {
     Q_UNUSED(mode);
+
+    // Get context for theme detection
+    QWidget* themeContext = context;
+
     switch (state) {
     case ExecutionState::Idle:
-        return ::COLOR_IDLE_END;
+        return themedColor(::COLOR_IDLE_END_L, ::COLOR_IDLE_END_D, themeContext);
     case ExecutionState::Pending:
-        return ::COLOR_PENDING;
+        return themedColor(::COLOR_PENDING_L, ::COLOR_PENDING_D, themeContext);
     case ExecutionState::Running:
-        return ::COLOR_RUNNING_END;
+        return themedColor(::COLOR_RUNNING_END_L, ::COLOR_RUNNING_END_D, themeContext);
     case ExecutionState::Completed:
-        return ::COLOR_COMPLETED;
+        return themedColor(::COLOR_COMPLETED_L, ::COLOR_COMPLETED_D, themeContext);
     case ExecutionState::Stopped:
-        return ::COLOR_STOPPED_END;
+        return themedColor(::COLOR_STOPPED_END_L, ::COLOR_STOPPED_END_D, themeContext);
     case ExecutionState::Warning:
-        return ::COLOR_WARNING_END;
+        return themedColor(::COLOR_WARNING_END_L, ::COLOR_WARNING_END_D, themeContext);
     case ExecutionState::Error:
-        return ::COLOR_ERROR_END;
+        return themedColor(::COLOR_ERROR_END_L, ::COLOR_ERROR_END_D, themeContext);
     case ExecutionState::Disabled:
-        return ::COLOR_DISABLED;
+        return themedColor(::COLOR_DISABLED_L, ::COLOR_DISABLED_D, themeContext);
     }
-    return ::COLOR_IDLE_END;
-}
-
-void ExecutableNodePainter::drawManualTexture(QPainter *painter, const QRectF &rect) const
-{
-    // Draw diagonal line texture for Manual mode
-    // Line color: semi-transparent dark gray
-    // Line angle: 45 degrees
-    // Line spacing: 5 pixels
-    // Line width: 1 pixel
-
-    painter->save();
-    painter->setClipRect(rect);
-
-    QPen texturePen(QColor(0, 0, 0, 100), 1); // Semi-transparent dark gray for visibility
-    painter->setPen(texturePen);
-    painter->setBrush(QBrush(Qt::black));
-
-    // Draw diagonal lines from top-right to bottom-left (45 degree angle)
-    double spacing = 10.0;  // Spaced out more for less dense texture
-    double xStart = rect.left();
-
-    // Lines starting from top edge
-    for (double x = xStart; x < rect.right() + rect.height(); x += spacing) {
-        double y1 = rect.top();
-        double x1 = x;
-        double y2 = rect.bottom();
-        double x2 = x - rect.height();
-        painter->drawLine(QPointF(x1, y1), QPointF(x2, y2));
-    }
-
-    painter->restore();
-}
-
-void ExecutableNodePainter::drawDisabledTexture(QPainter *painter, const QRectF &rect) const
-{
-    // Draw denser diagonal line texture for Disabled state
-    // Same as Manual texture but with denser lines
-
-    painter->save();
-    painter->setClipRect(rect);
-
-    QPen texturePen(QColor(200, 200, 200, 100), 1); // Denser, darker lines
-    painter->setPen(texturePen);
-    painter->setBrush(Qt::NoBrush);
-
-    // Draw diagonal lines with 3 pixel spacing
-    double spacing = 3.0;
-    double xStart = rect.left();
-
-    // Lines starting from top edge
-    for (double x = xStart; x < rect.right() + rect.height(); x += spacing) {
-        double y1 = rect.top();
-        double x1 = x;
-        double y2 = rect.bottom();
-        double x2 = x - rect.height();
-        painter->drawLine(QPointF(x1, y1), QPointF(x2, y2));
-    }
-
-    painter->restore();
+    return themedColor(::COLOR_IDLE_END_L, ::COLOR_IDLE_END_D, themeContext);
 }
 
 } // namespace QtNodes
+
+// ============================================================================
+// Theme Detection Helper Functions
+// ============================================================================
+
+bool QtNodes::ExecutableNodePainter::isDarkTheme(QWidget* widget)
+{
+    if (!widget) return false;
+
+    // Check if parent window uses dark theme by examining background color
+    // Dark theme: #353535 or #2B2B2B
+    // Light theme: #F5F5F5 or white colors
+
+    QVariant bgColor = widget->property("theme-background");
+    if (bgColor.isValid()) {
+        QColor color = bgColor.value<QColor>();
+        // Check for dark theme colors
+        if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
+            return true;  // Dark theme
+        }
+    }
+
+    return false;  // Default to light theme
+}
+
+QColor QtNodes::ExecutableNodePainter::themedColor(const QColor& lightColor, const QColor& darkColor, QWidget* context) const
+{
+    return isDarkTheme(context) ? darkColor : lightColor;
+}

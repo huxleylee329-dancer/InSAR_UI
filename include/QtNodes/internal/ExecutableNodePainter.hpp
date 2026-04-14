@@ -7,6 +7,8 @@
 
 #include <QPixmap>
 
+class QWidget;
+
 namespace QtNodes {
 
 class NodeGraphicsObject;
@@ -22,28 +24,33 @@ public:
 private:
     void drawMainRect(QPainter *painter, NodeGraphicsObject &ngo,
                       ExecutableNodeGeometry &geo,
-                      ExecutionMode mode, ExecutionState state) const;
+                      ExecutionMode mode, ExecutionState state,
+                      ::QWidget* context) const;
     void drawLeftEar(QPainter *painter, NodeGraphicsObject &ngo,
                      ExecutableNodeGeometry &geo,
-                     ExecutionMode mode, ExecutionState state) const;
+                     ExecutionMode mode, ExecutionState state,
+                     ::QWidget* context) const;
     void drawRightEar(QPainter *painter, NodeGraphicsObject &ngo,
                       ExecutableNodeGeometry &geo,
-                      ExecutionState state) const;
+                      ExecutionState state,
+                      ::QWidget* context) const;
     void drawProgressBar(QPainter *painter, NodeGraphicsObject &ngo,
                          ExecutableNodeGeometry &geo,
-                         int progress) const;
+                         int progress,
+                         ::QWidget* context) const;
     void drawStartButton(QPainter *painter, QRectF rect, ExecutionState state) const;
 
-    /// Get gradient start color based on mode and state
-    QColor gradientStartColor(ExecutionMode mode, ExecutionState state) const;
-    /// Get gradient end color based on mode and state
-    QColor gradientEndColor(ExecutionMode mode, ExecutionState state) const;
-    /// Draw diagonal line texture for Manual mode
-    void drawManualTexture(QPainter *painter, const QRectF &rect) const;
-    /// Draw denser diagonal line texture for Disabled state
-    void drawDisabledTexture(QPainter *painter, const QRectF &rect) const;
+    /// Get gradient start color based on mode and state (theme-aware)
+    QColor gradientStartColor(ExecutionMode mode, ExecutionState state, ::QWidget* context) const;
+    /// Get gradient end color based on mode and state (theme-aware)
+    QColor gradientEndColor(ExecutionMode mode, ExecutionState state, ::QWidget* context) const;
 
     QColor stateColor(ExecutionState state) const;
+
+    /// Check if dark theme is active (detects from parent widget)
+    static bool isDarkTheme(::QWidget* widget);
+    /// Get theme-aware color (light or dark)
+    QColor themedColor(const QColor& lightColor, const QColor& darkColor, ::QWidget* context) const;
 
 private:
     QPixmap loadAndColorizeIcon(const QString &resourcePath, const QColor &color, const QSize &size);

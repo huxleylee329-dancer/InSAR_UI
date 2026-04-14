@@ -46,7 +46,7 @@ public:
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
-    QWidget* embeddedWidget() override;
+    ::QWidget* embeddedWidget() override;
 
 protected:
     // Subclass must override these

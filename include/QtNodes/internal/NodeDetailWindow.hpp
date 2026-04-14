@@ -38,7 +38,7 @@ private:
     QWidget* createInputSection();
     QWidget* createProcessingSection();
     QWidget* createOutputSection();
-    void addPortData(QVBoxLayout* layout, const PortDataInfo& info, const QString& title);
+    void addPortData(QVBoxLayout* layout, const PortDataInfo& info, const QString& title, QWidget* parent = nullptr);
 
     QPushButton* _closeButton;
     QLabel* _titleLabel;
@@ -56,29 +56,53 @@ private:
     std::vector<QString> _processingInfo;
     std::vector<PortDataInfo> _outputPorts;
 
-    // Style constants
-    static constexpr char const* STYLE_WINDOW =
+    // Style constants - GLASSMORPHISM VERSION (THEME AWARE)
+    static constexpr char const* STYLE_WINDOW_LIGHT =
         "NodeDetailWindow {"
-        "  background-color: #F5F5F5;"
+        "  background-color: rgba(241, 245, 249, 0.95);"  // Light theme window bg
+        "}";
+
+    static constexpr char const* STYLE_WINDOW_DARK =
+        "NodeDetailWindow {"
+        "  background-color: rgba(43, 64, 75, 0.95);"  // Dark theme window bg
         "}";
 
     static constexpr char const* STYLE_CARD =
         "#DetailCard {"
-        "  background-color: #FFFFFF;"
-        "  border: 1px solid #E8E8E8;"
-        "  border-radius: 8px;"
+        "  background-color: rgba(255, 255, 255, 0.7);"  // Glass: 70% white
+        "  border: 1px solid rgba(255, 255, 255, 0.15);"
+        "  border-radius: 12px;"
+        "}";
+
+    static constexpr char const* STYLE_CARD_DARK =
+        "#DetailCard {"
+        "  background-color: rgba(64, 64, 64, 0.7);"
+        "  border: 1px solid rgba(255, 255, 255, 0.1);"
+        "  border-radius: 12px;"
         "}";
 
     static constexpr char const* STYLE_CARD_TITLE =
         "#CardTitle {"
-        "  color: #333333;"
+        "  color: #1E3A8A;"  // System text color
         "  font-size: 14px;"
         "  font-weight: bold;"
-        "  padding: 8px;"
-        "  background: #FAFAFA;"
-        "  border-bottom: 1px solid #E8E8E8;"
-        "  border-top-left-radius: 8px;"
-        "  border-top-right-radius: 8px;"
+        "  padding: 10px;"
+        "  background: rgba(241, 245, 249, 0.5);"  // Light theme title bg
+        "  border-bottom: 1px solid rgba(255, 255, 255, 0.15);"
+        "  border-top-left-radius: 12px;"
+        "  border-top-right-radius: 12px;"
+        "}";
+
+    static constexpr char const* STYLE_CARD_TITLE_DARK =
+        "#CardTitle {"
+        "  color: #FFFFFF;"  // Dark theme text
+        "  font-size: 14px;"
+        "  font-weight: bold;"
+        "  padding: 10px;"
+        "  background: rgba(64, 64, 64, 0.5);"  // Dark theme title bg
+        "  border-bottom: 1px solid rgba(255, 255, 255, 0.15);"
+        "  border-top-left-radius: 12px;"
+        "  border-top-right-radius: 12px;"
         "}";
 
     static constexpr char const* STYLE_SCROLL_AREA =
@@ -87,76 +111,113 @@ private:
         "  background: transparent;"
         "}";
 
+    static constexpr char const* STYLE_SCROLL_CONTENT =
+        "QWidget {"
+        "  background: transparent;"
+        "}";
+
     static constexpr char const* STYLE_PORT_CARD =
         "QFrame {"
-        "  background-color: #FFFFFF;"
-        "  border: 1px solid #F0F0F0;"
-        "  border-radius: 4px;"
+        "  background-color: rgba(255, 255, 255, 0.7);"
+        "  border: 1px solid rgba(255, 255, 255, 0.15);"
+        "  border-radius: 8px;"
+        "}";
+
+    static constexpr char const* STYLE_PORT_CARD_DARK =
+        "QFrame {"
+        "  background-color: rgba(64, 64, 64, 0.7);"
+        "  border: 1px solid rgba(255, 255, 255, 0.1);"
+        "  border-radius: 8px;"
         "}";
 
     static constexpr char const* STYLE_INFO_LABEL_TEMPLATE =
         "QLabel {"
-        "  background-color: #F0F4FF;"
-        "  color: #333333;"
+        "  background-color: rgba(241, 245, 249, 0.6);"
+        "  color: #1E3A8A;"
         "  padding: 8px;"
         "  border-radius: 4px;"
-        "  border: 1px solid #E0E8FF;"
+        "  border-left: 3px solid #3B82F6;"
         "  font-size: %1px;"
         "}";
 
-    static constexpr char const* STYLE_TEXT_PRIMARY = "color: #333333;";
-    static constexpr char const* STYLE_TEXT_SECONDARY = "color: #666666;";
-    static constexpr char const* STYLE_TEXT_TERTIARY = "color: #999999;";
-
-    static constexpr char const* STYLE_TITLE =
+    static constexpr char const* STYLE_INFO_LABEL_TEMPLATE_DARK =
         "QLabel {"
-        "  color: #333333;"
+        "  background-color: rgba(64, 64, 64, 0.6);"
+        "  color: #FFFFFF;"
+        "  padding: 8px;"
+        "  border-radius: 4px;"
+        "  border-left: 3px solid #2B404B;"
+        "  font-size: %1px;"
         "}";
 
+    static constexpr char const* STYLE_TEXT_PRIMARY_LIGHT = "color: #1E3A8A;";
+    static constexpr char const* STYLE_TEXT_PRIMARY_DARK = "color: #FFFFFF;";
+    static constexpr char const* STYLE_TEXT_SECONDARY_LIGHT = "color: #64748B;";
+    static constexpr char const* STYLE_TEXT_SECONDARY_DARK = "color: #94A3B8;";
+    static constexpr char const* STYLE_TEXT_TERTIARY = "color: #94A3B8;";
+
+    // Close button styles
     static constexpr char const* STYLE_CLOSE_BUTTON =
         "QPushButton {"
-        "  background-color: #0078D4;"
-        "  color: #FFFFFF;"
-        "  border: none;"
-        "  border-radius: 4px;"
-        "  padding: 8px 24px;"
-        "  font-size: 13px;"
-        "  font-weight: 500;"
+        "  background-color: #3B82F6;"
+        "  color: white;"
+        "  padding: 8px 32px;"
+        "  border-radius: 6px;"
+        "  font-weight: bold;"
         "}"
-        "QPushButton:hover {"
-        "  background-color: #0069C0;"
+        "QPushButton:hover { background-color: #60A5FA; }"
+        "QPushButton:pressed { background-color: #3B82F6; }";
+
+    static constexpr char const* STYLE_CLOSE_BUTTON_LIGHT = STYLE_CLOSE_BUTTON;
+
+    static constexpr char const* STYLE_CLOSE_BUTTON_DARK =
+        "QPushButton {"
+        "  background-color: #2B404B;"
+        "  color: white;"
+        "  padding: 8px 32px;"
+        "  border-radius: 6px;"
+        "  font-weight: bold;"
         "}"
-        "QPushButton:pressed {"
-        "  background-color: #005A9E;"
-        "}";
+        "QPushButton:hover { background-color: #4A748D; }"
+        "QPushButton:pressed { background-color: #2B404B; }";
 
-    static constexpr char const* STYLE_SCROLL_CONTENT =
-        "QWidget {"
-        "  background-color: #FFFFFF;"
-        "}";
-
+    // Scrollbar styles (light theme)
     static constexpr char const* STYLE_SCROLLBAR =
         "QScrollBar:vertical {"
-        "  border: none;"
-        "  background: #F5F5F5;"
-        "  width: 8px;"
-        "  margin: 0px;"
-        "  border-radius: 4px;"
+        "  background: rgba(241, 245, 249, 0.3);"
+        "  width: 12px;"
+        "  border-radius: 6px;"
         "}"
         "QScrollBar::handle:vertical {"
-        "  background: #D0D0D0;"
+        "  background: rgba(59, 130, 246, 0.6);"
         "  min-height: 20px;"
-        "  border-radius: 4px;"
+        "  border-radius: 6px;"
         "}"
-        "QScrollBar::handle:vertical:hover {"
-        "  background: #B0B0B0;"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }";
+
+    static constexpr char const* STYLE_SCROLLBAR_LIGHT = STYLE_SCROLLBAR;
+
+    static constexpr char const* STYLE_SCROLLBAR_DARK =
+        "QScrollBar:vertical {"
+        "  background: rgba(64, 64, 64, 0.3);"
+        "  width: 12px;"
+        "  border-radius: 6px;"
         "}"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
-        "  height: 0px;"
+        "QScrollBar::handle:vertical {"
+        "  background: rgba(74, 116, 141, 0.6);"
+        "  min-height: 20px;"
+        "  border-radius: 6px;"
         "}"
-        "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {"
-        "  background: none;"
-        "}";
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }";
+
+    // Title label styles
+    static constexpr char const* STYLE_TITLE =
+        "QLabel { color: #1E3A8A; }";
+
+    static constexpr char const* STYLE_TITLE_LIGHT = STYLE_TITLE;
+
+    static constexpr char const* STYLE_TITLE_DARK =
+        "QLabel { color: #FFFFFF; }";
 
     // Font sizes
     static constexpr int FONT_SIZE_TITLE = 14;      // Card title
@@ -165,8 +226,26 @@ private:
     static constexpr int FONT_SIZE_PORT_VALUE = 11;  // Port value
     static constexpr int FONT_SIZE_INFO = 10;         // Info label
 
+    // Port text colors (light theme)
+    static constexpr char const* COLOR_PORT_NAME_LIGHT = "#333333";
+    static constexpr char const* COLOR_PORT_TYPE_LIGHT = "#666666";
+    static constexpr char const* COLOR_PORT_VALUE_LIGHT = "#333333";
+    static constexpr char const* COLOR_STATUS_CONNECTED_LIGHT = "#00A000";
+    static constexpr char const* COLOR_STATUS_DISCONNECTED_LIGHT = "#AA0000";
+
+    // Port text colors (dark theme)
+    static constexpr char const* COLOR_PORT_NAME_DARK = "#FFFFFF";
+    static constexpr char const* COLOR_PORT_TYPE_DARK = "#94A3B8";
+    static constexpr char const* COLOR_PORT_VALUE_DARK = "#FFFFFF";
+    static constexpr char const* COLOR_STATUS_CONNECTED_DARK = "#10B981";
+    static constexpr char const* COLOR_STATUS_DISCONNECTED_DARK = "#EF4444";
+
     static constexpr int SECTION_MIN_WIDTH = 250;
     static constexpr int CONTENT_MAX_HEIGHT = 400;
+
+    /// Theme detection
+    static bool isDarkTheme(QWidget* parent);
+    static QString getThemeStylesheet(QWidget* parent);
 };
 
 } // namespace QtNodes

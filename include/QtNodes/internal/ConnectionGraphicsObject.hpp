@@ -61,7 +61,7 @@ public:
 protected:
     void paint(QPainter *painter,
                QStyleOptionGraphicsItem const *option,
-               QWidget *widget = 0) override;
+               ::QWidget *widget = 0) override;
 
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
 

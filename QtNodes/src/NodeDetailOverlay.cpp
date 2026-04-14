@@ -6,7 +6,7 @@ namespace QtNodes {
 
 NodeDetailOverlay::NodeDetailOverlay(QWidget* parent)
     : QWidget(parent)
-    , _overlayColor(0, 0, 0, 128)  // 50% opacity in color
+    , _overlayColor(15, 23, 42, 102)  // Deep blue semi-transparent (rgba(15, 23, 42, 0.4))
     , _opacityEffect(new QGraphicsOpacityEffect(this))
 {
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
@@ -29,8 +29,18 @@ void NodeDetailOverlay::paintEvent(QPaintEvent* /*event*/)
 {
     QPainter painter(this);
 
-    // Fill the entire widget with semi-transparent black
-    painter.fillRect(rect(), _overlayColor);
+    // Create radial gradient to simulate backdrop blur effect
+    // Center is more transparent (blurrier), edges are more solid
+    QRadialGradient gradient(rect().center(), qMax(rect().width(), rect().height()) * 0.7);
+
+    // Center: rgba(15, 23, 42, 0.25) - very transparent (blurred)
+    // Edge: rgba(15, 23, 42, 0.5) - more solid
+    gradient.setColorAt(0.0, QColor(15, 23, 42, 64));
+    gradient.setColorAt(1.0, QColor(15, 23, 42, 128));
+
+    painter.setBrush(QBrush(gradient));
+    painter.setPen(Qt::NoPen);
+    painter.drawRect(rect());
 }
 
 } // namespace QtNodes

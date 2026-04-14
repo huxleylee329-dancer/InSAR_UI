@@ -39,7 +39,7 @@ void ImportNodeBase::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     Q_UNUSED(port);
 }
 
-QWidget* ImportNodeBase::embeddedWidget()
+::QWidget* ImportNodeBase::embeddedWidget()
 {
     // Create widget on first access
     if (!m_widget)
@@ -111,7 +111,7 @@ NodeEditorWindow* ImportNodeBase::getNodeEditorWindow() const
     if (!m_widget)
         return nullptr;
 
-    QWidget* parent = m_widget->parentWidget();
+    ::QWidget* parent = m_widget->parentWidget();
     while (parent)
     {
         auto* editor = qobject_cast<NodeEditorWindow*>(parent);

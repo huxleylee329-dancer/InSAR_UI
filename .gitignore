@@ -225,11 +225,12 @@ x64/
 # Screenshot directory for Claude
 screenshot/
 bin/
+.claude/skills/
 
 # *.vcxproj
 # *.filters
 *.docx
-*.sln
+# *.sln
 *.ini
 dllmain.cpp
 ReadMe.txt

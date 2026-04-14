@@ -6,6 +6,8 @@
 #include <QScrollArea>
 #include <QFrame>
 #include <QFont>
+#include <QVariant>
+#include <QColor>
 
 namespace QtNodes {
 
@@ -26,8 +28,8 @@ NodeDetailWindow::NodeDetailWindow(QWidget* parent)
     // Don't use WA_TranslucentBackground as it interferes with opacity animation
     // setAttribute(Qt::WA_TranslucentBackground);
 
-    // Set background color with alpha for transparency
-    setStyleSheet(STYLE_WINDOW);
+    // Set background color with alpha for transparency (theme-aware)
+    setStyleSheet(getThemeStylesheet(parent));
 
     // Set initial opacity to very low but not zero to ensure window is "visible"
     setWindowOpacity(0.01);
@@ -49,7 +51,7 @@ void NodeDetailWindow::setupUI()
     titleFont.setPointSize(16);
     titleFont.setBold(true);
     _titleLabel->setFont(titleFont);
-    _titleLabel->setStyleSheet(STYLE_TITLE);
+    // No individual stylesheet - window-wide stylesheet is set in constructor
     mainLayout->addWidget(_titleLabel);
 
     // Content area with 3 columns
@@ -70,7 +72,7 @@ void NodeDetailWindow::setupUI()
 
     // Close button
     _closeButton = new QPushButton(QObject::tr("Close"));
-    _closeButton->setStyleSheet(STYLE_CLOSE_BUTTON);
+    // No individual stylesheet - window-wide stylesheet is set in constructor
     connect(_closeButton, &QPushButton::clicked, this, &NodeDetailWindow::closeRequested);
     mainLayout->addWidget(_closeButton, 0, Qt::AlignCenter);
 
@@ -83,7 +85,7 @@ QWidget* NodeDetailWindow::createInputSection()
     auto* frame = new QFrame();
     frame->setObjectName("DetailCard");
     frame->setMinimumWidth(SECTION_MIN_WIDTH);
-    frame->setStyleSheet(STYLE_CARD);
+    // No individual stylesheet - window-wide stylesheet is set in constructor
 
     auto* layout = new QVBoxLayout(frame);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -91,17 +93,17 @@ QWidget* NodeDetailWindow::createInputSection()
 
     auto* title = new QLabel(QObject::tr("Input Data"));
     title->setObjectName("CardTitle");
-    title->setStyleSheet(STYLE_CARD_TITLE);
+    // No individual stylesheet - window-wide stylesheet styles #CardTitle
     title->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
 
     auto* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setMaximumHeight(CONTENT_MAX_HEIGHT);
-    scrollArea->setStyleSheet(QString(STYLE_SCROLL_AREA) + " " + STYLE_SCROLLBAR);
+    // No individual stylesheet - window-wide stylesheet handles scrollbar styling
 
     auto* scrollContent = new QWidget();
-    scrollContent->setStyleSheet(STYLE_SCROLL_CONTENT);
+    // No individual stylesheet on scroll content
     _inputLayout = new QVBoxLayout(scrollContent);
     _inputLayout->setContentsMargins(10, 10, 10, 10);
     _inputLayout->setSpacing(8);
@@ -118,7 +120,7 @@ QWidget* NodeDetailWindow::createProcessingSection()
     auto* frame = new QFrame();
     frame->setObjectName("DetailCard");
     frame->setMinimumWidth(SECTION_MIN_WIDTH);
-    frame->setStyleSheet(STYLE_CARD);
+    // No individual stylesheet - window-wide stylesheet is set in constructor
 
     auto* layout = new QVBoxLayout(frame);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -126,14 +128,14 @@ QWidget* NodeDetailWindow::createProcessingSection()
 
     auto* title = new QLabel(QObject::tr("Processing Info"));
     title->setObjectName("CardTitle");
-    title->setStyleSheet(STYLE_CARD_TITLE);
+    // No individual stylesheet - window-wide stylesheet styles #CardTitle
     title->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
 
     auto* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setMaximumHeight(CONTENT_MAX_HEIGHT);
-    scrollArea->setStyleSheet(QString(STYLE_SCROLL_AREA) + " " + STYLE_SCROLLBAR);
+    // No individual stylesheet - window-wide stylesheet handles scrollbar styling
 
     auto* scrollContent = new QWidget();
     scrollContent->setStyleSheet(STYLE_SCROLL_CONTENT);
@@ -153,7 +155,7 @@ QWidget* NodeDetailWindow::createOutputSection()
     auto* frame = new QFrame();
     frame->setObjectName("DetailCard");
     frame->setMinimumWidth(SECTION_MIN_WIDTH);
-    frame->setStyleSheet(STYLE_CARD);
+    // No individual stylesheet - window-wide stylesheet is set in constructor
 
     auto* layout = new QVBoxLayout(frame);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -161,17 +163,17 @@ QWidget* NodeDetailWindow::createOutputSection()
 
     auto* title = new QLabel(QObject::tr("Output Data"));
     title->setObjectName("CardTitle");
-    title->setStyleSheet(STYLE_CARD_TITLE);
+    // No individual stylesheet - window-wide stylesheet styles #CardTitle
     title->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
 
     auto* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
     scrollArea->setMaximumHeight(CONTENT_MAX_HEIGHT);
-    scrollArea->setStyleSheet(QString(STYLE_SCROLL_AREA) + " " + STYLE_SCROLLBAR);
+    // No individual stylesheet - window-wide stylesheet handles scrollbar styling
 
     auto* scrollContent = new QWidget();
-    scrollContent->setStyleSheet(STYLE_SCROLL_CONTENT);
+    // No individual stylesheet on scroll content
     _outputLayout = new QVBoxLayout(scrollContent);
     _outputLayout->setContentsMargins(10, 10, 10, 10);
     _outputLayout->setSpacing(8);
@@ -183,34 +185,48 @@ QWidget* NodeDetailWindow::createOutputSection()
     return frame;
 }
 
-void NodeDetailWindow::addPortData(QVBoxLayout* layout, const PortDataInfo& info, const QString& title)
+void NodeDetailWindow::addPortData(QVBoxLayout* layout, const PortDataInfo& info, const QString& title, QWidget* parent)
 {
+    bool isDark = isDarkTheme(parent);
+
     // Port info card frame
     auto* cardFrame = new QFrame();
-    cardFrame->setStyleSheet(STYLE_PORT_CARD);
+    cardFrame->setStyleSheet(isDark ? STYLE_PORT_CARD_DARK : STYLE_PORT_CARD);
     auto* cardLayout = new QVBoxLayout(cardFrame);
     cardLayout->setContentsMargins(10, 10, 10, 10);
     cardLayout->setSpacing(6);
 
+    // Port name label
     auto* nameLabel = new QLabel(title);
-    nameLabel->setStyleSheet(QString("color: #333333; font-weight: bold; font-size: %1px;").arg(FONT_SIZE_PORT_NAME));
+    nameLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: %2px;")
+        .arg(isDark ? COLOR_PORT_NAME_DARK : COLOR_PORT_NAME_LIGHT)
+        .arg(FONT_SIZE_PORT_NAME));
     cardLayout->addWidget(nameLabel);
 
+    // Type label
     auto* typeLabel = new QLabel(QObject::tr("Type: %1").arg(info.dataType));
     typeLabel->setWordWrap(true);
-    typeLabel->setStyleSheet(QString("color: #666666; font-size: %1px;").arg(FONT_SIZE_PORT_TYPE));
+    typeLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+        .arg(isDark ? COLOR_PORT_TYPE_DARK : COLOR_PORT_TYPE_LIGHT)
+        .arg(FONT_SIZE_PORT_TYPE));
     cardLayout->addWidget(typeLabel);
 
+    // Value label
     auto* valueLabel = new QLabel(QObject::tr("Value: %1").arg(info.value));
     valueLabel->setWordWrap(true);
-    valueLabel->setStyleSheet(QString("color: #333333; font-weight: bold; font-size: %1px;").arg(FONT_SIZE_PORT_VALUE));
+    valueLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: %2px;")
+        .arg(isDark ? COLOR_PORT_VALUE_DARK : COLOR_PORT_VALUE_LIGHT)
+        .arg(FONT_SIZE_PORT_VALUE));
     cardLayout->addWidget(valueLabel);
 
+    // Status label
     auto* statusLabel = new QLabel(info.isConnected
         ? QObject::tr("Connected")
         : QObject::tr("Not connected"));
     statusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-        .arg(info.isConnected ? "#00A000" : "#AA0000")
+        .arg(info.isConnected
+            ? (isDark ? COLOR_STATUS_CONNECTED_DARK : COLOR_STATUS_CONNECTED_LIGHT)
+            : (isDark ? COLOR_STATUS_DISCONNECTED_DARK : COLOR_STATUS_DISCONNECTED_LIGHT))
         .arg(FONT_SIZE_PORT_TYPE));
     cardLayout->addWidget(statusLabel);
 
@@ -238,14 +254,16 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         QString portTitle = QObject::tr("Port %1: %2")
             .arg(port.index)
             .arg(port.name);
-        addPortData(_inputLayout, port, portTitle);
+        addPortData(_inputLayout, port, portTitle, this);
     }
 
     // Add processing info
+    bool isDark = isDarkTheme(parentWidget());
+    QString infoLabelTemplate = isDark ? STYLE_INFO_LABEL_TEMPLATE_DARK : STYLE_INFO_LABEL_TEMPLATE;
     for (size_t i = 0; i < _processingInfo.size(); ++i) {
         auto* infoLabel = new QLabel(_processingInfo[i]);
         infoLabel->setWordWrap(true);
-        infoLabel->setStyleSheet(QString(STYLE_INFO_LABEL_TEMPLATE).arg(FONT_SIZE_INFO));
+        infoLabel->setStyleSheet(QString(infoLabelTemplate).arg(FONT_SIZE_INFO));
         _processingLayout->insertWidget(_processingLayout->count() - 1, infoLabel);
     }
 
@@ -254,7 +272,7 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         QString portTitle = QObject::tr("Port %1: %2")
             .arg(port.index)
             .arg(port.name);
-        addPortData(_outputLayout, port, portTitle);
+        addPortData(_outputLayout, port, portTitle, this);
     }
 }
 
@@ -289,6 +307,77 @@ void NodeDetailWindow::clearData()
         delete item;
     }
     _outputPorts.clear();
+}
+
+// ============================================================================
+// Theme Detection Helper Functions
+// ============================================================================
+
+bool NodeDetailWindow::isDarkTheme(QWidget* parent)
+{
+    if (!parent) return false;
+
+    // Check parent window's background color
+    QVariant bgColor = parent->property("theme-background");
+    if (bgColor.isValid()) {
+        QColor color = bgColor.value<QColor>();
+        // Dark theme: dark background colors
+        if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+QString NodeDetailWindow::getThemeStylesheet(QWidget* parent)
+{
+    bool isDark = isDarkTheme(parent);
+
+    // Window background
+    QString windowBg = isDark ? STYLE_WINDOW_DARK : STYLE_WINDOW_LIGHT;
+
+    // Card frame
+    QString card = isDark ? STYLE_CARD_DARK : STYLE_CARD;
+
+    // Card title
+    QString cardTitle = isDark ? STYLE_CARD_TITLE_DARK : STYLE_CARD_TITLE;
+
+    // Scroll area
+    QString scrollArea = STYLE_SCROLL_AREA;  // Same for both themes
+
+    // Port card
+    QString portCard = isDark ? STYLE_PORT_CARD_DARK : STYLE_PORT_CARD;
+
+    // Info labels
+    QString infoLabel = isDark ? STYLE_INFO_LABEL_TEMPLATE_DARK : STYLE_INFO_LABEL_TEMPLATE;
+
+    // Text colors
+    QString textPrimary = isDark ? STYLE_TEXT_PRIMARY_DARK : STYLE_TEXT_PRIMARY_LIGHT;
+    QString textSecondary = isDark ? STYLE_TEXT_SECONDARY_DARK : STYLE_TEXT_SECONDARY_LIGHT;
+
+    // Close button
+    QString closeButton = isDark ? STYLE_CLOSE_BUTTON_DARK : STYLE_CLOSE_BUTTON_LIGHT;
+
+    // Scrollbar
+    QString scrollbar = isDark ? STYLE_SCROLLBAR_DARK : STYLE_SCROLLBAR_LIGHT;
+
+    // Title label
+    QString title = isDark ? STYLE_TITLE_DARK : STYLE_TITLE_LIGHT;
+
+    // Combine all styles
+    return QString("%1%2%3%4%5%6%7%8%9%10%11%12")
+        .arg(windowBg)
+        .arg(card)
+        .arg(cardTitle)
+        .arg(scrollArea)
+        .arg(portCard)
+        .arg(infoLabel)
+        .arg(textPrimary)
+        .arg(textSecondary)
+        .arg(closeButton)
+        .arg(scrollbar)
+        .arg(title);
 }
 
 } // namespace QtNodes

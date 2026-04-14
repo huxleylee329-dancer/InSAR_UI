@@ -76,7 +76,7 @@ public:
    * allocated in the constructor but not actually embedded into some
    * QGraphicsProxyWidget, we'll gonna have a dangling pointer.
    */
-    virtual QWidget *embeddedWidget() = 0;
+    virtual ::QWidget *embeddedWidget() = 0;
 
     virtual bool resizable() const { return false; }
 

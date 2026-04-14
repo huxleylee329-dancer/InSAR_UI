@@ -58,7 +58,7 @@ public:
 
     std::shared_ptr<NodeData> outData(PortIndex const port) override;
 
-    QWidget *embeddedWidget() override { return _widget; }
+    ::QWidget *embeddedWidget() override { return _widget; }
 
     /// Access to input/output data for detail view capture
     std::shared_ptr<NodeData> getInputData(PortIndex portIndex);
@@ -121,7 +121,7 @@ protected:
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _outputData;
 
     // Widget managed by NodeDelegateModel base class (ownership handled by base)
-    QWidget *_widget;
+    ::QWidget *_widget;
 
     int _progress;
     NodeId _nodeId;

@@ -49,7 +49,8 @@ NodeDataType SimpleSourceNode::dataType(PortType portType, PortIndex portIndex) 
 {
     Q_UNUSED(portType);
     Q_UNUSED(portIndex);
-    return SimpleData().type();
+    // Output port shows "Out Data"
+    return NodeDataType{"simple", "Out Data"};
 }
 
 std::shared_ptr<NodeData> SimpleSourceNode::outData(PortIndex port)
@@ -174,6 +175,7 @@ SimpleMathNode::SimpleMathNode()
 {
     _label->setAlignment(Qt::AlignCenter);
     _label->setMinimumWidth(100);
+    _label->setObjectName("mathLabel");
 
     // 设置默认为自动模式
     setExecutionMode(ExecutionMode::Automatic);
@@ -199,9 +201,14 @@ unsigned int SimpleMathNode::nPorts(PortType portType) const
 
 NodeDataType SimpleMathNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portType);
     Q_UNUSED(portIndex);
-    return SimpleData().type();
+    if (portType == PortType::In) {
+        // Input ports show "In Data"
+        return NodeDataType{"simple", "In Data"};
+    } else {
+        // Output port shows "Out Data"
+        return NodeDataType{"simple", "Out Data"};
+    }
 }
 
 std::shared_ptr<NodeData> SimpleMathNode::outData(PortIndex port)
@@ -369,6 +376,7 @@ SimpleDisplayNode::SimpleDisplayNode()
 {
     _label->setAlignment(Qt::AlignCenter);
     _label->setMinimumWidth(100);
+    _label->setObjectName("displayLabel");
 
     // 设置默认为自动模式
     setExecutionMode(ExecutionMode::Automatic);
@@ -396,7 +404,8 @@ NodeDataType SimpleDisplayNode::dataType(PortType portType, PortIndex portIndex)
 {
     Q_UNUSED(portType);
     Q_UNUSED(portIndex);
-    return SimpleData().type();
+    // Input port shows "In Data"
+    return NodeDataType{"simple", "In Data"};
 }
 
 std::shared_ptr<NodeData> SimpleDisplayNode::outData(PortIndex port)

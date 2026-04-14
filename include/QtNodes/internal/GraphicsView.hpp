@@ -22,8 +22,8 @@ public:
     };
 
 public:
-    GraphicsView(QWidget *parent = Q_NULLPTR);
-    GraphicsView(BasicGraphicsScene *scene, QWidget *parent = Q_NULLPTR);
+    GraphicsView(::QWidget *parent = Q_NULLPTR);
+    GraphicsView(BasicGraphicsScene *scene, ::QWidget *parent = Q_NULLPTR);
 
     GraphicsView(const GraphicsView &) = delete;
     GraphicsView operator=(const GraphicsView &) = delete;

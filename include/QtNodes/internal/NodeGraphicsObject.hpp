@@ -55,7 +55,7 @@ public:
 protected:
     void paint(QPainter *painter,
                QStyleOptionGraphicsItem const *option,
-               QWidget *widget = 0) override;
+               ::QWidget *widget = 0) override;
 
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
 

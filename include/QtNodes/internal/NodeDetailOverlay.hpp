@@ -9,7 +9,7 @@ namespace QtNodes {
 
 /// Overlay widget that dims the background scene when detail view is open
 /// Creates a semi-transparent dark overlay to indicate non-interactive state
-class NODE_EDITOR_PUBLIC NodeDetailOverlay : public QWidget
+class NODE_EDITOR_PUBLIC NodeDetailOverlay : public ::QWidget
 {
     Q_OBJECT
 

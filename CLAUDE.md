@@ -12,6 +12,8 @@ Output directory: `bin/`
 - Debug: `SatExplorer.exe` with `_d.dll` suffix libraries
 - Release: `SatExplorer.exe` without debug suffix
 
+User always builds by himeself in another visual studio environment. Don't try to build after coding.
+
 ## Architecture
 
 ### High-Level Design
