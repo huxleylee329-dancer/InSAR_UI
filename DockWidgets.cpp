@@ -9,6 +9,11 @@
 #include <QSet>
 #include <algorithm>
 
+// QtNodes headers
+#include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
+#include <QtNodes/internal/NodeDataSnapshot.hpp>
+#include <QtNodes/internal/NodeDetailWindow.hpp>
+
 // ============================================================================
 // WorkflowBrowser Implementation
 // ============================================================================
@@ -429,11 +434,15 @@ PropertyEditor::PropertyEditor(QWidget *parent)
     , m_graphModel(nullptr)
     , m_currentNodeId(QtNodes::InvalidNodeId)
     , m_updatingProperties(false)
+    , m_isExecutable(false)
     , m_nodeIdLabel(nullptr)
-    , m_captionEdit(nullptr)
     , m_xSpinBox(nullptr)
     , m_ySpinBox(nullptr)
+    , m_executionStateLabel(nullptr)
+    , m_progressBar(nullptr)
+    , m_modeLabel(nullptr)
 {
+    m_nodeData.progress = 0;
     setupUi();
 }
 
@@ -452,28 +461,165 @@ void PropertyEditor::setupUi()
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_scrollArea->setFrameShape(QFrame::NoFrame);
 
     // Create content widget
     m_contentWidget = new QWidget();
-    m_contentWidget->setMinimumWidth(200);
+    m_contentWidget->setMinimumWidth(250);
 
-    auto *contentLayout = new QVBoxLayout(m_contentWidget);
-    contentLayout->setContentsMargins(8, 8, 8, 8);
-    contentLayout->setSpacing(12);
-
-    // Form layout for properties
-    m_formLayout = new QFormLayout();
-    m_formLayout->setContentsMargins(0, 0, 0, 0);
-    contentLayout->addLayout(m_formLayout);
-    contentLayout->addStretch();
+    m_mainLayout = new QVBoxLayout(m_contentWidget);
+    m_mainLayout->setContentsMargins(8, 8, 8, 8);
+    m_mainLayout->setSpacing(8);
+    m_mainLayout->addStretch();
 
     m_scrollArea->setWidget(m_contentWidget);
     layout->addWidget(m_scrollArea);
 
-    // Initial state
+    // Initial state - no selection
     m_noSelectionLabel = new QLabel("No node selected");
     m_noSelectionLabel->setAlignment(Qt::AlignCenter);
-    m_contentWidget->layout()->addWidget(m_noSelectionLabel);
+    bool darkTheme = isDarkTheme();
+    QString noSelectionTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+    m_noSelectionLabel->setStyleSheet(QString("color: %1;").arg(noSelectionTextColor));
+    m_mainLayout->insertWidget(0, m_noSelectionLabel);
+
+    // Create collapsible sections
+    createCollapsibleSection(m_inputSection, "Input Data");
+    createCollapsibleSection(m_processingSection, "Processing Info");
+    createCollapsibleSection(m_outputSection, "Output Data");
+
+    // Add sections to layout (before the stretch)
+    m_mainLayout->insertWidget(m_mainLayout->count() - 1, m_inputSection.container);
+    m_mainLayout->insertWidget(m_mainLayout->count() - 1, m_processingSection.container);
+    m_mainLayout->insertWidget(m_mainLayout->count() - 1, m_outputSection.container);
+
+    // Hide sections initially (shown when node selected)
+    m_inputSection.container->hide();
+    m_processingSection.container->hide();
+    m_outputSection.container->hide();
+}
+
+void PropertyEditor::createCollapsibleSection(CollapsibleSection& section, const QString& title)
+{
+    bool darkTheme = isDarkTheme();
+
+    section.container = new QWidget();
+    QVBoxLayout* layout = new QVBoxLayout(section.container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(2);
+
+    // Create header with glass effect
+    section.header = new QWidget();
+    QString headerBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
+    QString headerBorder = darkTheme ? "rgba(148, 163, 184, 0.2)" : "rgba(148, 163, 184, 0.15)";
+    QString headerTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
+
+    section.header->setStyleSheet(QString(
+        "QWidget {"
+        "  background-color: %1;"
+        "  border: 1px solid %2;"
+        "  border-radius: 6px;"
+        "}"
+    ).arg(headerBg).arg(headerBorder));
+
+    QHBoxLayout* headerLayout = new QHBoxLayout(section.header);
+    headerLayout->setContentsMargins(10, 10, 10, 10);
+    headerLayout->setSpacing(8);
+
+    section.toggleButton = new QToolButton();
+    section.toggleButton->setArrowType(Qt::ArrowType::DownArrow);  // 默认展开
+    section.toggleButton->setMaximumWidth(24);
+    section.toggleButton->setMinimumWidth(24);
+    QString toggleButtonColor = darkTheme ? "#94A3B8" : "#3B82F6";
+    section.toggleButton->setStyleSheet(QString(
+        "QToolButton {"
+        "  border: none;"
+        "  background: transparent;"
+        "  color: %1;"
+        "}"
+        "QToolButton:hover {"
+        "  color: %2;"
+        "}"
+    ).arg(toggleButtonColor).arg(darkTheme ? "#FFFFFF" : "#60A5FA"));
+    connect(section.toggleButton, &QToolButton::clicked, this, [this, &section]() {
+        toggleSection(section);
+    });
+
+    section.titleLabel = new QLabel(title);
+    section.titleLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(headerTextColor));
+
+    headerLayout->addWidget(section.toggleButton);
+    headerLayout->addWidget(section.titleLabel);
+    headerLayout->addStretch();
+
+    layout->addWidget(section.header);
+
+    // Create content area
+    section.scrollArea = new QScrollArea();
+    section.scrollArea->setMaximumHeight(300);
+    section.scrollArea->setWidgetResizable(true);
+    section.scrollArea->setFrameShape(QFrame::NoFrame);
+    section.scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    section.scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+    // Apply scrollbar styles
+    QString scrollbarBg = darkTheme ? "rgba(64, 64, 64, 0.3)" : "rgba(241, 245, 249, 0.3)";
+    QString scrollbarHandle = darkTheme ? "rgba(74, 116, 141, 0.6)" : "rgba(59, 130, 246, 0.6)";
+
+    section.scrollArea->setStyleSheet(QString(
+        "QScrollArea {"
+        "  border: none;"
+        "  background: transparent;"
+        "}"
+        "QScrollBar:vertical {"
+        "  background: %1;"
+        "  width: 10px;"
+        "  border-radius: 5px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "  background: %2;"
+        "  min-height: 20px;"
+        "  border-radius: 5px;"
+        "}"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
+    ).arg(scrollbarBg).arg(scrollbarHandle));
+
+    section.contentWidget = new QWidget();
+    section.contentWidget->setStyleSheet("QWidget { background: transparent; }");
+    QVBoxLayout* contentLayout = new QVBoxLayout(section.contentWidget);
+    contentLayout->setContentsMargins(8, 8, 8, 8);
+    contentLayout->setSpacing(6);
+    contentLayout->addStretch();
+
+    section.scrollArea->setWidget(section.contentWidget);
+    layout->addWidget(section.scrollArea);
+
+    section.isExpanded = true;  // 默认全部展开
+}
+
+void PropertyEditor::toggleSection(CollapsibleSection& section)
+{
+    section.isExpanded = !section.isExpanded;
+
+    if (section.isExpanded) {
+        section.toggleButton->setArrowType(Qt::ArrowType::DownArrow);
+        section.scrollArea->show();
+    } else {
+        section.toggleButton->setArrowType(Qt::ArrowType::RightArrow);
+        section.scrollArea->hide();
+    }
+}
+
+bool PropertyEditor::isDarkTheme() const
+{
+    QVariant bgColor = property("theme-background");
+    if (bgColor.isValid()) {
+        QColor color = bgColor.value<QColor>();
+        if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void PropertyEditor::setGraphModel(QtNodes::DataFlowGraphModel *model)
@@ -488,13 +634,25 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
 
     m_currentNodeId = nodeId;
 
-    // 清理旧的 m_nodeIdLabel（如果存在）
+    // 清理旧的 m_nodeIdLabel
     if (m_nodeIdLabel)
     {
-        m_contentWidget->layout()->removeWidget(m_nodeIdLabel);
+        m_mainLayout->removeWidget(m_nodeIdLabel);
         m_nodeIdLabel->deleteLater();
         m_nodeIdLabel = nullptr;
     }
+
+    // 清理 basicInfoWidget（包含 captionEdit 等控件）
+    // 注意：这些控件是在 basicInfoWidget 内部，不要单独删除
+    clearBasicInfoFromLayout();
+
+    // 重置指向 basicInfoWidget 内部控件的指针
+    // 因为删除 basicInfoWidget 时，这些控件也被删除了
+    m_xSpinBox = nullptr;
+    m_ySpinBox = nullptr;
+    m_executionStateLabel = nullptr;
+    m_progressBar = nullptr;
+    m_modeLabel = nullptr;
 
     clearProperties();
 
@@ -503,16 +661,27 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
     if (!m_graphModel || nodeId == QtNodes::InvalidNodeId)
     {
         m_noSelectionLabel->show();
+        // Hide collapsible sections
+        m_inputSection.container->hide();
+        m_processingSection.container->hide();
+        m_outputSection.container->hide();
         return;
     }
 
+    // Capture node data
+    captureNodeData(nodeId);
+
     m_noSelectionLabel->hide();
 
-    // Add node ID display
-    m_nodeIdLabel = new QLabel("Node ID: " + QString::number(static_cast<int>(nodeId)));
-    static_cast<QVBoxLayout*>(m_contentWidget->layout())->insertWidget(0, m_nodeIdLabel);
+    // Show collapsible sections
+    m_inputSection.container->show();
+    m_processingSection.container->show();
+    m_outputSection.container->show();
 
-    generateProperties(nodeId);
+    // Clear old separator and basicInfoWidget from layout
+    clearBasicInfoFromLayout();
+
+    generateProperties();
 }
 
 void PropertyEditor::clearSelection()
@@ -522,257 +691,619 @@ void PropertyEditor::clearSelection()
     // 先移除旧的 m_nodeIdLabel（如果存在）
     if (m_nodeIdLabel)
     {
-        m_contentWidget->layout()->removeWidget(m_nodeIdLabel);
+        m_mainLayout->removeWidget(m_nodeIdLabel);
         m_nodeIdLabel->deleteLater();
         m_nodeIdLabel = nullptr;  // 立即置空，防止访问已删除对象
     }
 
     clearProperties();
 
+    // Clear any remaining basic info from layout
+    clearBasicInfoFromLayout();
+
+    // Reset pointers to controls inside basicInfoWidget
+    // (they are deleted when basicInfoWidget is deleted)
+    m_xSpinBox = nullptr;
+    m_ySpinBox = nullptr;
+    m_executionStateLabel = nullptr;
+    m_progressBar = nullptr;
+    m_modeLabel = nullptr;
+
+    // Hide collapsible sections
+    m_inputSection.container->hide();
+    m_processingSection.container->hide();
+    m_outputSection.container->hide();
+
     m_noSelectionLabel->show();
 }
 
-void PropertyEditor::generateProperties(QtNodes::NodeId nodeId)
+void PropertyEditor::refreshCurrentNode()
 {
-    // Clear existing properties and m_nodeIdLabel
-    while (QLayoutItem *item = m_formLayout->takeAt(0))
-    {
-        if (item->widget())
-            item->widget()->deleteLater();
-        delete item;
+    // Only refresh if there's a currently selected node
+    if (m_currentNodeId == QtNodes::InvalidNodeId || !m_graphModel) {
+        return;
     }
 
-    // 注意：不在这里删除 m_nodeIdLabel，因为它由 setSelectedNode 管理
+    // Re-capture node data (this updates m_nodeData with latest values)
+    captureNodeData(m_currentNodeId);
 
-    // Get node data
-    QString caption = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Caption).toString();
-    m_captionEdit = new QLineEdit(caption);
-    m_captionEdit->setPlaceholderText("Enter node caption...");
-    m_captionEdit->setReadOnly(true);  // Caption is read-only
-    connect(m_captionEdit, &QLineEdit::textChanged, this, &PropertyEditor::onPropertyValueChanged);
-    m_formLayout->addRow("Caption:", m_captionEdit);
+    // Clear old node ID label
+    if (m_nodeIdLabel) {
+        m_mainLayout->removeWidget(m_nodeIdLabel);
+        m_nodeIdLabel->deleteLater();
+        m_nodeIdLabel = nullptr;
+    }
 
-    // Position property
-    QPointF pos = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Position).value<QPointF>();
+    // Clear old basic info widget (caption, position, etc.)
+    clearBasicInfoFromLayout();
 
+    // Clear collapsible section content
+    clearProperties();
+
+    // Regenerate all sections with updated data
+    generateProperties();
+}
+
+void PropertyEditor::generateProperties()
+{
+    // Note: clearProperties() is already called in setSelectedNode() before this method
+    // No need to clear again here since m_nodeData was updated by captureNodeData()
+
+    bool darkTheme = isDarkTheme();
+
+    // Add node ID display at top
+    m_nodeIdLabel = new QLabel("Node ID: " + QString::number(static_cast<int>(m_currentNodeId)));
+    QString nodeIdTextColor = darkTheme ? "#94A3B8" : "#64748B";
+    m_nodeIdLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(nodeIdTextColor));
+    m_mainLayout->insertWidget(0, m_nodeIdLabel);
+
+    // Generate each section
+    generateBasicInfoSection();
+    generateInputSection();
+    generateProcessingSection();
+    generateOutputSection();
+}
+
+void PropertyEditor::generateBasicInfoSection()
+{
+    bool darkTheme = isDarkTheme();
+
+    QFrame* separator = new QFrame();
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    if (darkTheme) {
+        separator->setStyleSheet("QFrame { background-color: rgba(255, 255, 255, 0.1); max-height: 1px; }");
+    } else {
+        separator->setStyleSheet("QFrame { background-color: #E2E8F0; max-height: 1px; }");
+    }
+    m_mainLayout->insertWidget(1, separator);
+
+    // Create basic info container with glass effect
+    QWidget* basicInfoWidget = new QWidget();
+    basicInfoWidget->setStyleSheet(QString(
+        "QWidget {"
+        "  background-color: %1;"
+        "  border-radius: 8px;"
+        "}"
+    ).arg(darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)"));
+
+    QVBoxLayout* basicInfoLayout = new QVBoxLayout(basicInfoWidget);
+    basicInfoLayout->setContentsMargins(12, 12, 12, 12);
+    basicInfoLayout->setSpacing(8);
+
+    QString primaryTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
+    QString secondaryTextColor = darkTheme ? "#94A3B8" : "#334155";
+    QString inputBgColor = darkTheme ? "rgba(64, 64, 64, 0.8)" : "rgba(255, 255, 255, 0.9)";
+    QString inputBorderColor = darkTheme ? "rgba(148, 163, 184, 0.3)" : "#CBD5E1";
+
+    // Caption - 使用横向布局在一行显示
+    QHBoxLayout* captionLayout = new QHBoxLayout();
+    captionLayout->setSpacing(4);
+
+    QLabel* captionLabel = new QLabel("Caption:");
+    captionLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(primaryTextColor));
+
+    QLabel* captionValueLabel = new QLabel(m_nodeData.caption);
+    captionValueLabel->setStyleSheet(QString("color: %1;").arg(primaryTextColor));
+    captionValueLabel->setWordWrap(true);
+
+    captionLayout->addWidget(captionLabel);
+    captionLayout->addWidget(captionValueLabel);
+    captionLayout->addStretch();
+    basicInfoLayout->addLayout(captionLayout);
+
+    // Position
+    QHBoxLayout* posLayout = new QHBoxLayout();
+    posLayout->setSpacing(12);
+
+    QLabel* xLabel = new QLabel("X:");
+    xLabel->setStyleSheet(QString("font-weight: bold; color: %1; min-width: 20px;").arg(primaryTextColor));
     m_xSpinBox = new QDoubleSpinBox();
     m_xSpinBox->setRange(-1e6, 1e6);
     m_xSpinBox->setDecimals(2);
-    m_xSpinBox->setValue(pos.x());
+    m_xSpinBox->setValue(m_nodeData.position.x());
+    m_xSpinBox->setStyleSheet(QString(
+        "QDoubleSpinBox {"
+        "  background-color: %1;"
+        "  border: 1px solid %2;"
+        "  border-radius: 4px;"
+        "  padding: 4px;"
+        "  color: %3;"
+        "}"
+        "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
+        "  border: none;"
+        "  width: 16px;"
+        "}"
+    ).arg(inputBgColor).arg(inputBorderColor).arg(primaryTextColor));
     connect(m_xSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, &PropertyEditor::onPropertyValueChanged);
-    m_formLayout->addRow("X:", m_xSpinBox);
+    posLayout->addWidget(xLabel);
+    posLayout->addWidget(m_xSpinBox);
 
+    QLabel* yLabel = new QLabel("Y:");
+    yLabel->setStyleSheet(QString("font-weight: bold; color: %1; min-width: 20px;").arg(primaryTextColor));
     m_ySpinBox = new QDoubleSpinBox();
     m_ySpinBox->setRange(-1e6, 1e6);
     m_ySpinBox->setDecimals(2);
-    m_ySpinBox->setValue(pos.y());
+    m_ySpinBox->setValue(m_nodeData.position.y());
+    m_ySpinBox->setStyleSheet(QString(
+        "QDoubleSpinBox {"
+        "  background-color: %1;"
+        "  border: 1px solid %2;"
+        "  border-radius: 4px;"
+        "  padding: 4px;"
+        "  color: %3;"
+        "}"
+        "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
+        "  border: none;"
+        "  width: 16px;"
+        "}"
+    ).arg(inputBgColor).arg(inputBorderColor).arg(primaryTextColor));
     connect(m_ySpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, &PropertyEditor::onPropertyValueChanged);
-    m_formLayout->addRow("Y:", m_ySpinBox);
+    posLayout->addWidget(yLabel);
+    posLayout->addWidget(m_ySpinBox);
 
-    // Add separator line between basic properties and widget properties
-    QFrame *separator = new QFrame();
-    separator->setFrameShape(QFrame::HLine);
-    separator->setFrameShadow(QFrame::Sunken);
-    m_formLayout->addRow(separator);
+    basicInfoLayout->addLayout(posLayout);
 
-    // Check for embedded widget and extract properties
-    auto delegateModel = m_graphModel->delegateModel<QtNodes::NodeDelegateModel>(nodeId);
-    if (delegateModel)
-    {
-        QWidget *embeddedWidget = delegateModel->embeddedWidget();
-        if (embeddedWidget)
-        {
-            extractPropertiesFromWidget(embeddedWidget, m_formLayout, nodeId);
+    // Execution state and progress (only for ExecutableNode)
+    if (m_isExecutable) {
+        QHBoxLayout* execLayout = new QHBoxLayout();
+        execLayout->setSpacing(12);
+
+        // Execution state
+        QLabel* stateTitle = new QLabel("State:");
+        stateTitle->setStyleSheet(QString("font-weight: bold; color: %1;").arg(primaryTextColor));
+        m_executionStateLabel = new QLabel(executionStateToString(m_nodeData.executionState));
+
+        // Color based on state
+        QString stateColor = "#64748B";  // gray (default)
+        switch (m_nodeData.executionState) {
+            case QtNodes::ExecutionState::Idle: stateColor = darkTheme ? "#94A3B8" : "#94A3B8"; break;
+            case QtNodes::ExecutionState::Pending: stateColor = "#10B981"; break;
+            case QtNodes::ExecutionState::Running: stateColor = darkTheme ? "#4AA9CF" : "#3B82F6"; break;
+            case QtNodes::ExecutionState::Completed: stateColor = "#10B981"; break;
+            case QtNodes::ExecutionState::Stopped: stateColor = "#F59E0B"; break;
+            case QtNodes::ExecutionState::Warning: stateColor = "#FBBF24"; break;
+            case QtNodes::ExecutionState::Error: stateColor = "#EF4444"; break;
+            case QtNodes::ExecutionState::Disabled: stateColor = "#94A3B8"; break;
+        }
+        m_executionStateLabel->setStyleSheet(QString("color: %1; font-weight: bold;").arg(stateColor));
+
+        // Execution mode
+        QLabel* modeTitle = new QLabel("Mode:");
+        modeTitle->setStyleSheet(QString("font-weight: bold; color: %1;").arg(primaryTextColor));
+        m_modeLabel = new QLabel(executionModeToString(m_nodeData.executionMode));
+        QString modeColor = (m_nodeData.executionMode == QtNodes::ExecutionMode::Automatic) ? "#3B82F6" : "#F59E0B";
+        m_modeLabel->setStyleSheet(QString("color: %1; font-weight: bold;").arg(modeColor));
+
+        execLayout->addWidget(stateTitle);
+        execLayout->addWidget(m_executionStateLabel);
+        execLayout->addSpacing(16);
+        execLayout->addWidget(modeTitle);
+        execLayout->addWidget(m_modeLabel);
+        execLayout->addStretch();
+
+        basicInfoLayout->addLayout(execLayout);
+
+        // Progress bar
+        if (m_nodeData.executionState == QtNodes::ExecutionState::Running) {
+            QLabel* progressLabel = new QLabel("Progress:");
+            progressLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(primaryTextColor));
+            basicInfoLayout->addWidget(progressLabel);
+
+            m_progressBar = new QProgressBar();
+            m_progressBar->setRange(0, 100);
+            m_progressBar->setValue(m_nodeData.progress);
+            m_progressBar->setTextVisible(true);
+            m_progressBar->setFormat("%p%");
+
+            QString progressBarBg = darkTheme ? "rgba(64, 64, 64, 0.8)" : "rgba(241, 245, 249, 0.9)";
+            QString progressBarChunk = darkTheme ? "#4AA9CF" : "#3B82F6";
+            QString progressBarBorder = darkTheme ? "rgba(148, 163, 184, 0.3)" : "#CBD5E1";
+
+            m_progressBar->setStyleSheet(
+                QString(
+                    "QProgressBar {"
+                    "   border: 1px solid %1;"
+                    "   border-radius: 4px;"
+                    "   background-color: %2;"
+                    "   text-align: center;"
+                    "   height: 20px;"
+                    "   color: %3;"
+                    "}"
+                    "QProgressBar::chunk {"
+                    "   background-color: %4;"
+                    "   border-radius: 3px;"
+                    "}"
+                ).arg(progressBarBorder).arg(progressBarBg).arg(primaryTextColor).arg(progressBarChunk)
+            );
+            basicInfoLayout->addWidget(m_progressBar);
         }
     }
+
+    m_mainLayout->insertWidget(2, basicInfoWidget);
+}
+
+void PropertyEditor::generateInputSection()
+{
+    bool darkTheme = isDarkTheme();
+
+    QVBoxLayout* contentLayout = qobject_cast<QVBoxLayout*>(m_inputSection.contentWidget->layout());
+    if (!contentLayout) return;
+
+    // Remove stretch to add content
+    contentLayout->removeItem(contentLayout->itemAt(contentLayout->count() - 1));
+
+    QString noPortsTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+
+    if (m_nodeData.inputPorts.isEmpty()) {
+        QLabel* noPortsLabel = new QLabel("No input ports");
+        noPortsLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noPortsTextColor));
+        contentLayout->addWidget(noPortsLabel);
+    } else {
+        for (const PortDataInfo& info : m_nodeData.inputPorts) {
+            // Input ports are generally not editable (data comes from connected nodes)
+            addPortCard(contentLayout, info, false);
+        }
+    }
+
+    contentLayout->addStretch();
+}
+
+void PropertyEditor::generateProcessingSection()
+{
+    bool darkTheme = isDarkTheme();
+
+    QVBoxLayout* contentLayout = qobject_cast<QVBoxLayout*>(m_processingSection.contentWidget->layout());
+    if (!contentLayout) return;
+
+    // Remove stretch to add content
+    contentLayout->removeItem(contentLayout->itemAt(contentLayout->count() - 1));
+
+    QString infoTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
+    QString infoBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.6)";
+    QString noInfoTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+
+    if (m_nodeData.processingInfo.isEmpty()) {
+        QLabel* noInfoLabel = new QLabel("No processing info available");
+        noInfoLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noInfoTextColor));
+        contentLayout->addWidget(noInfoLabel);
+    } else {
+        for (const QString& info : m_nodeData.processingInfo) {
+            QLabel* infoLabel = new QLabel(info);
+            infoLabel->setWordWrap(true);
+            infoLabel->setStyleSheet(QString(
+                "QLabel {"
+                "  color: %1;"
+                "  background-color: %2;"
+                "  padding: 8px 10px;"
+                "  border-radius: 4px;"
+                "  border-left: 3px solid #3B82F6;"
+                "}"
+            ).arg(infoTextColor).arg(infoBg));
+            contentLayout->addWidget(infoLabel);
+        }
+    }
+
+    contentLayout->addStretch();
+}
+
+void PropertyEditor::generateOutputSection()
+{
+    bool darkTheme = isDarkTheme();
+
+    QVBoxLayout* contentLayout = qobject_cast<QVBoxLayout*>(m_outputSection.contentWidget->layout());
+    if (!contentLayout) return;
+
+    // Remove stretch to add content
+    contentLayout->removeItem(contentLayout->itemAt(contentLayout->count() - 1));
+
+    QString noPortsTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+
+    if (m_nodeData.outputPorts.isEmpty()) {
+        QLabel* noPortsLabel = new QLabel("No output ports");
+        noPortsLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noPortsTextColor));
+        contentLayout->addWidget(noPortsLabel);
+    } else {
+        for (const PortDataInfo& info : m_nodeData.outputPorts) {
+            // Output ports may be editable for source nodes
+            // For now, mark as not editable
+            addPortCard(contentLayout, info, false);
+        }
+    }
+
+    contentLayout->addStretch();
+}
+
+void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, bool isEditable)
+{
+    bool darkTheme = isDarkTheme();
+
+    // Create card with glass effect
+    QFrame* card = new QFrame();
+    card->setFrameShape(QFrame::StyledPanel);
+
+    QString cardBg = darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)";
+    QString cardBorder = darkTheme ? "rgba(148, 163, 184, 0.3)" : "rgba(148, 163, 184, 0.3)";
+
+    card->setStyleSheet(QString(
+        "QFrame {"
+        "   background-color: %1;"
+        "   border: 1px solid %2;"
+        "   border-radius: 8px;"
+        "}"
+    ).arg(cardBg).arg(cardBorder));
+
+    QVBoxLayout* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(10, 10, 10, 10);
+    cardLayout->setSpacing(6);
+
+    // Text colors based on theme
+    QString primaryTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
+    QString secondaryTextColor = darkTheme ? "#94A3B8" : "#64748B";
+    QString tertiaryTextColor = darkTheme ? "#FFFFFF" : "#334155";
+
+    // Port name and index with bold styling
+    QString headerText = QString("<b>%1</b> <span style='color: %2;'>[Port %3]</span>")
+        .arg(info.name).arg(secondaryTextColor).arg(info.index);
+    QLabel* nameLabel = new QLabel(headerText);
+    nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(primaryTextColor));
+    cardLayout->addWidget(nameLabel);
+
+    // Data type
+    QLabel* typeLabel = new QLabel(QString("Type: %1").arg(info.dataType));
+    typeLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
+    cardLayout->addWidget(typeLabel);
+
+    // Value (if exists) with glass effect
+    if (!info.value.isEmpty()) {
+        QString displayValue = info.value;
+        // Truncate long values
+        if (displayValue.length() > 60) {
+            displayValue = displayValue.left(60) + "...";
+        }
+
+        QLabel* valueLabel = new QLabel(QString("Value: %1").arg(displayValue));
+        QString valueBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
+        valueLabel->setStyleSheet(QString(
+            "QLabel {"
+            "   color: %1;"
+            "   font-size: 11px;"
+            "   background-color: %2;"
+            "   padding: 6px 8px;"
+            "   border-radius: 4px;"
+            "   border-left: 3px solid #3B82F6;"
+            "}"
+        ).arg(tertiaryTextColor).arg(valueBg));
+        valueLabel->setWordWrap(true);
+        cardLayout->addWidget(valueLabel);
+    }
+
+    // Connection status with color coding (using QChar for better Unicode support)
+    QString statusText = info.isConnected ?
+        QString(QChar(0x25CF)) + " Connected" :
+        QString(QChar(0x25CB)) + " Not connected";
+    QString statusColor = info.isConnected ? "#10B981" : "#94A3B8";
+    QLabel* statusLabel = new QLabel(statusText);
+    statusLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: bold;").arg(statusColor));
+    cardLayout->addWidget(statusLabel);
+
+    layout->addWidget(card);
 }
 
 void PropertyEditor::clearProperties()
 {
-    while (QLayoutItem *item = m_formLayout->takeAt(0))
-    {
-        if (item->widget())
-            item->widget()->deleteLater();
-        delete item;
-    }
+    // Clear collapsible section content
+    auto clearSectionContent = [](CollapsibleSection& section) {
+        if (section.contentWidget) {
+            QVBoxLayout* layout = qobject_cast<QVBoxLayout*>(section.contentWidget->layout());
+            if (layout) {
+                while (QLayoutItem* item = layout->takeAt(0)) {
+                    if (item->widget()) {
+                        item->widget()->deleteLater();
+                    }
+                    delete item;
+                }
+                layout->addStretch();
+            }
+        }
+    };
 
-    m_captionEdit = nullptr;
-    m_xSpinBox = nullptr;
-    m_ySpinBox = nullptr;
+    clearSectionContent(m_inputSection);
+    clearSectionContent(m_processingSection);
+    clearSectionContent(m_outputSection);
 }
 
-QString PropertyEditor::getLabelForWidget(QWidget *widget)
+void PropertyEditor::clearBasicInfoFromLayout()
 {
-    if (!widget)
-        return "";
+    if (!m_mainLayout)
+        return;
 
-    // First check if there's a buddy label set
-    QList<QLabel*> labels = widget->findChildren<QLabel*>();
-    for (QLabel *label : labels)
+    // Iterate through layout items to find and remove separator and basicInfoWidget
+    // We iterate backwards to safely remove items
+    for (int i = m_mainLayout->count() - 1; i >= 0; --i)
     {
-        if (label->buddy() == widget && !label->text().isEmpty())
-            return label->text();
+        QLayoutItem* item = m_mainLayout->itemAt(i);
+        if (!item)
+            continue;
+
+        QWidget* widget = item->widget();
+        if (!widget)
+            continue;
+
+        // Skip collapsible section containers and noSelectionLabel only
+        // m_nodeIdLabel should be removed before calling this method
+        if (widget == m_inputSection.container ||
+            widget == m_processingSection.container ||
+            widget == m_outputSection.container ||
+            widget == m_noSelectionLabel)
+        {
+            continue;
+        }
+
+        // Remove and delete the widget (separator or basicInfoWidget)
+        m_mainLayout->removeWidget(widget);
+        widget->deleteLater();
+    }
+}
+
+void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
+{
+    if (!m_graphModel || nodeId == QtNodes::InvalidNodeId) {
+        m_isExecutable = false;
+        return;
     }
 
-    // Try to find label in the widget's layout (sibling labels)
-    QLayout *currentLayout = nullptr;
-    if (widget->parentWidget())
-        currentLayout = widget->parentWidget()->layout();
-    while (currentLayout)
-    {
-        // Check all layout items
-        for (int i = 0; i < currentLayout->count(); ++i)
-        {
-            QLayoutItem *item = currentLayout->itemAt(i);
-            if (!item)
-                continue;
+    // Clear old data before capturing new data
+    m_nodeData.inputPorts.clear();
+    m_nodeData.outputPorts.clear();
+    m_nodeData.processingInfo.clear();
 
-            // Check if this is a label that could be for this widget
-            QLabel *label = qobject_cast<QLabel*>(item->widget());
-            if (label && !label->text().isEmpty())
-            {
-                // If this label has this widget as buddy, use it
-                if (label->buddy() == widget)
-                    return label->text();
+    // Capture basic node info
+    m_nodeData.caption = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Caption).toString();
+    m_nodeData.position = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Position).value<QPointF>();
+
+    // Try to get ExecutableNodeDelegateModel
+    auto execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+    m_isExecutable = (execModel != nullptr);
+
+    if (m_isExecutable && execModel) {
+        // Capture execution state and progress
+        m_nodeData.executionState = execModel->executionState();
+        m_nodeData.executionMode = execModel->executionMode();
+        m_nodeData.progress = execModel->progress();
+
+        // Capture input ports
+        int inputPortCount = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::InPortCount).toInt();
+        for (int i = 0; i < inputPortCount; ++i) {
+            PortDataInfo info;
+            info.index = i;
+            info.name = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::Caption).toString();
+            if (info.name.isEmpty()) {
+                info.name = QString("Input %1").arg(i);
             }
+            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::DataType).toString();
+            info.value = "";  // Will be filled if connected
+            info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::In, i).empty();
 
-            // Check nested layouts (like QHBoxLayout)
-            QLayout *childLayout = item->layout();
-            if (childLayout)
-            {
-                for (int j = 0; j < childLayout->count(); ++j)
-                {
-                    QLayoutItem *childItem = childLayout->itemAt(j);
-                    if (!childItem)
-                        continue;
-
-                    QLabel *childLabel = qobject_cast<QLabel*>(childItem->widget());
-                    if (childLabel && !childLabel->text().isEmpty())
-                    {
-                        // Check if this is a label for the widget (based on buddy or position)
-                        if (childLabel->buddy() == widget)
-                            return childLabel->text();
-                    }
-
-                    // Check if this item is our widget, then look for labels before it
-                    if (childItem->widget() == widget && j > 0)
-                    {
-                        // Look for a label in the same layout before this widget
-                        for (int k = j - 1; k >= 0; --k)
-                        {
-                            QLayoutItem *siblingItem = childLayout->itemAt(k);
-                            if (!siblingItem)
-                                continue;
-                            QLabel *siblingLabel = qobject_cast<QLabel*>(siblingItem->widget());
-                            if (siblingLabel && !siblingLabel->text().isEmpty())
-                            {
-                                // Check object name pattern (label_XXX)
-                                QString labelName = siblingLabel->objectName().toLower();
-                                if (labelName.startsWith("label") && !labelName.contains("file"))
-                                    return siblingLabel->text();
-                                return siblingLabel->text();
-                            }
-                            // If we hit another input widget, stop looking
-                            QWidget *siblingWidget = siblingItem->widget();
-                            if (qobject_cast<QLineEdit*>(siblingWidget) ||
-                                qobject_cast<QSpinBox*>(siblingWidget) ||
-                                qobject_cast<QDoubleSpinBox*>(siblingWidget) ||
-                                qobject_cast<QCheckBox*>(siblingWidget) ||
-                                qobject_cast<QComboBox*>(siblingWidget))
-                            {
-                                break;
-                            }
-                        }
-                    }
+            if (info.isConnected && execModel) {
+                auto data = execModel->getInputData(i);
+                if (data) {
+                    // Use data type name as value representation
+                    info.value = data->type().name;
                 }
             }
+
+            m_nodeData.inputPorts.append(info);
         }
 
-        // Move to parent layout
-        QWidget *layoutParentWidget = currentLayout->parentWidget();
-        if (layoutParentWidget && layoutParentWidget->parentWidget())
-            currentLayout = layoutParentWidget->parentWidget()->layout();
-        else
-            currentLayout = nullptr;
-    }
+        // Capture output ports
+        int outputPortCount = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::OutPortCount).toInt();
+        for (int i = 0; i < outputPortCount; ++i) {
+            PortDataInfo info;
+            info.index = i;
+            info.name = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::Caption).toString();
+            if (info.name.isEmpty()) {
+                info.name = QString("Output %1").arg(i);
+            }
+            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::DataType).toString();
+            info.value = "";  // Will be filled if data exists
+            info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::Out, i).empty();
 
-    return "";
+            if (execModel) {
+                auto data = execModel->getOutputData(i);
+                if (data) {
+                    // Use data type name as value representation
+                    info.value = data->type().name;
+                }
+            }
+
+            m_nodeData.outputPorts.append(info);
+        }
+
+        // Processing info is cleared (no status/mode info since shown in Basic Info section)
+        // This section is reserved for future use (e.g., processing logs, messages, etc.)
+        m_nodeData.processingInfo.clear();
+    } else {
+        // Non-executable node - just capture port metadata
+        int inputPortCount = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::InPortCount).toInt();
+        for (int i = 0; i < inputPortCount; ++i) {
+            PortDataInfo info;
+            info.index = i;
+            info.name = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::Caption).toString();
+            if (info.name.isEmpty()) {
+                info.name = QString("Input %1").arg(i);
+            }
+            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::DataType).toString();
+            info.value = "";
+            info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::In, i).empty();
+            m_nodeData.inputPorts.append(info);
+        }
+
+        int outputPortCount = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::OutPortCount).toInt();
+        for (int i = 0; i < outputPortCount; ++i) {
+            PortDataInfo info;
+            info.index = i;
+            info.name = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::Caption).toString();
+            if (info.name.isEmpty()) {
+                info.name = QString("Output %1").arg(i);
+            }
+            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::DataType).toString();
+            info.value = "";
+            info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::Out, i).empty();
+            m_nodeData.outputPorts.append(info);
+        }
+
+        m_nodeData.executionState = QtNodes::ExecutionState::Idle;
+        m_nodeData.executionMode = QtNodes::ExecutionMode::Automatic;
+        m_nodeData.progress = 0;
+        // Processing info is cleared (reserved for future use)
+        m_nodeData.processingInfo.clear();
+    }
 }
 
-void PropertyEditor::extractPropertiesFromWidget(QWidget *widget, QFormLayout *layout, QtNodes::NodeId nodeId)
+QString PropertyEditor::executionStateToString(QtNodes::ExecutionState state) const
 {
-    // Find all input widgets (QLineEdit, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox)
-    QList<QWidget*> children = widget->findChildren<QWidget*>();
+    switch (state) {
+        case QtNodes::ExecutionState::Idle: return "Idle";
+        case QtNodes::ExecutionState::Pending: return "Pending";
+        case QtNodes::ExecutionState::Running: return "Running";
+        case QtNodes::ExecutionState::Completed: return "Completed";
+        case QtNodes::ExecutionState::Stopped: return "Stopped";
+        case QtNodes::ExecutionState::Warning: return "Warning";
+        case QtNodes::ExecutionState::Error: return "Error";
+        case QtNodes::ExecutionState::Disabled: return "Disabled";
+        default: return "Unknown";
+    }
+}
 
-    for (QWidget *child : children)
-    {
-        QLineEdit *lineEdit = qobject_cast<QLineEdit*>(child);
-        QSpinBox *spinBox = qobject_cast<QSpinBox*>(child);
-        QDoubleSpinBox *doubleSpinBox = qobject_cast<QDoubleSpinBox*>(child);
-        QCheckBox *checkBox = qobject_cast<QCheckBox*>(child);
-        QComboBox *comboBox = qobject_cast<QComboBox*>(child);
-
-        QString label = "";
-        QString propertyName = "";
-
-        // Get property name from widget label or object name
-        QString labelFromLayout = getLabelForWidget(child);
-        QString objectName = child->objectName();
-        propertyName = labelFromLayout.isEmpty() ? (objectName.isEmpty() ? "Value" : objectName) : labelFromLayout;
-
-        if (lineEdit)
-        {
-            label = lineEdit->text();
-            QLineEdit *propEdit = new QLineEdit(label);
-            propEdit->setPlaceholderText("Enter value...");
-            connect(propEdit, &QLineEdit::textChanged, this, &PropertyEditor::onPropertyValueChanged);
-            layout->addRow(propertyName, propEdit);
-
-            // Store original widget for updates
-        }
-        else if (spinBox)
-        {
-            int value = spinBox->value();
-            QSpinBox *propSpinBox = new QSpinBox();
-            propSpinBox->setRange(spinBox->minimum(), spinBox->maximum());
-            propSpinBox->setSingleStep(spinBox->singleStep());
-            propSpinBox->setValue(value);
-            connect(propSpinBox, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, &PropertyEditor::onPropertyValueChanged);
-            layout->addRow(propertyName, propSpinBox);
-        }
-        else if (doubleSpinBox)
-        {
-            double value = doubleSpinBox->value();
-            QDoubleSpinBox *propDoubleSpinBox = new QDoubleSpinBox();
-            propDoubleSpinBox->setRange(doubleSpinBox->minimum(), doubleSpinBox->maximum());
-            propDoubleSpinBox->setDecimals(doubleSpinBox->decimals());
-            propDoubleSpinBox->setSingleStep(doubleSpinBox->singleStep());
-            propDoubleSpinBox->setValue(value);
-            connect(propDoubleSpinBox, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this, &PropertyEditor::onPropertyValueChanged);
-            layout->addRow(propertyName, propDoubleSpinBox);
-        }
-        else if (checkBox)
-        {
-            bool value = checkBox->isChecked();
-            QCheckBox *propCheckBox = new QCheckBox(propertyName);
-            propCheckBox->setChecked(value);
-            connect(propCheckBox, &QCheckBox::stateChanged, this, &PropertyEditor::onPropertyValueChanged);
-            layout->addRow(propCheckBox);
-        }
-        else if (comboBox)
-        {
-            int index = comboBox->currentIndex();
-            QComboBox *propComboBox = new QComboBox();
-            // Copy all items from source combo box
-            for (int i = 0; i < comboBox->count(); ++i) {
-                propComboBox->addItem(comboBox->itemText(i));
-            }
-            propComboBox->setCurrentIndex(index);
-            connect(propComboBox, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, &PropertyEditor::onPropertyValueChanged);
-            layout->addRow(propertyName, propComboBox);
-        }
+QString PropertyEditor::executionModeToString(QtNodes::ExecutionMode mode) const
+{
+    switch (mode) {
+        case QtNodes::ExecutionMode::Automatic: return "Automatic";
+        case QtNodes::ExecutionMode::Manual: return "Manual";
+        default: return "Unknown";
     }
 }
 
@@ -783,19 +1314,15 @@ void PropertyEditor::onPropertyValueChanged()
 
     m_updatingProperties = true;
 
-    // Update caption
-    if (m_captionEdit)
-    {
-        QString caption = m_captionEdit->text();
-        m_graphModel->setNodeData(m_currentNodeId, QtNodes::NodeRole::Caption, caption);
-    }
-
     // Update position
     if (m_xSpinBox && m_ySpinBox)
     {
         QPointF pos(m_xSpinBox->value(), m_ySpinBox->value());
         m_graphModel->setNodeData(m_currentNodeId, QtNodes::NodeRole::Position, pos);
     }
+
+    // Emit signal for property change notification
+    emit propertyChanged(m_currentNodeId, "basic", QVariant());
 
     m_updatingProperties = false;
 }

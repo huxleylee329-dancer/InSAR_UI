@@ -25,6 +25,9 @@
 #include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QToolButton>
+#include <QProgressBar>
+#include <QVector>
 #include <memory>
 
 // QtNodes headers
@@ -104,9 +107,41 @@ private:
 // Right Side Panel Components
 // ============================================================================
 
+// Forward declarations for QtNodes types
+namespace QtNodes {
+    enum class NodeRole;
+    enum class ExecutionMode;
+    enum class ExecutionState;
+    class ExecutableNodeDelegateModel;
+}
+
+/**
+ * @brief PortDataInfo - 端口数据信息
+ */
+struct PortDataInfo {
+    QtNodes::PortIndex index;
+    QString name;
+    QString dataType;
+    QString value;
+    bool isConnected;
+};
+
+/**
+ * @brief CollapsibleSection - 可折叠部分结构
+ */
+struct CollapsibleSection {
+    QWidget* container = nullptr;
+    QWidget* header = nullptr;
+    QToolButton* toggleButton = nullptr;
+    QLabel* titleLabel = nullptr;
+    QScrollArea* scrollArea = nullptr;
+    QWidget* contentWidget = nullptr;
+    bool isExpanded = true;
+};
+
 /**
  * @brief PropertyEditor - 属性编辑器
- * 动态生成属性控件，基于选中节点的嵌入控件参数
+ * 显示节点基本信息、输入/处理/输出数据部分
  */
 class PropertyEditor : public QWidget
 {
@@ -121,6 +156,8 @@ public:
 
     void clearSelection();
 
+    void refreshCurrentNode();  // Refresh properties of currently selected node
+
     QtNodes::NodeId currentNodeId() const { return m_currentNodeId; }
 
 signals:
@@ -130,24 +167,64 @@ private slots:
     void onPropertyValueChanged();
 
 private:
+    // UI Setup
     void setupUi();
-    void clearProperties();
-    void generateProperties(QtNodes::NodeId nodeId);
-    void extractPropertiesFromWidget(QWidget *widget, QFormLayout *layout, QtNodes::NodeId nodeId);
-    QString getLabelForWidget(QWidget *widget);  // 从布局中提取控件的标签文本
+    void createCollapsibleSection(CollapsibleSection& section, const QString& title);
+    void toggleSection(CollapsibleSection& section);
 
+    // Data Capture
+    void captureNodeData(QtNodes::NodeId nodeId);
+    void clearProperties();
+    void clearBasicInfoFromLayout();
+
+    // Property Generation
+    void generateProperties();
+    void generateBasicInfoSection();
+    void generateInputSection();
+    void generateProcessingSection();
+    void generateOutputSection();
+    void addPortCard(QVBoxLayout* layout, const PortDataInfo& info, bool isEditable);
+
+    // Helpers
+    QString executionStateToString(QtNodes::ExecutionState state) const;
+    QString executionModeToString(QtNodes::ExecutionMode mode) const;
+    bool isDarkTheme() const;
+
+    // Basic Info UI
     QScrollArea *m_scrollArea;
     QWidget *m_contentWidget;
-    QFormLayout *m_formLayout;
+    QVBoxLayout *m_mainLayout;
     QLabel *m_noSelectionLabel;
     QLabel *m_nodeIdLabel;
-    QLineEdit *m_captionEdit;
     QDoubleSpinBox *m_xSpinBox;
     QDoubleSpinBox *m_ySpinBox;
+    QLabel *m_executionStateLabel;
+    QProgressBar *m_progressBar;
+    QLabel *m_modeLabel;
 
+    // Collapsible Sections
+    CollapsibleSection m_inputSection;
+    CollapsibleSection m_processingSection;
+    CollapsibleSection m_outputSection;
+
+    // Data
     QtNodes::DataFlowGraphModel *m_graphModel;
     QtNodes::NodeId m_currentNodeId;
     bool m_updatingProperties;  // Flag to prevent recursive updates
+    bool m_isExecutable;        // Whether current node is an ExecutableNode
+
+    // Captured Data
+    struct NodeData {
+        QString caption;
+        QPointF position;
+        QtNodes::ExecutionState executionState;
+        QtNodes::ExecutionMode executionMode;
+        int progress;
+        QVector<PortDataInfo> inputPorts;
+        QVector<PortDataInfo> outputPorts;
+        QVector<QString> processingInfo;
+    };
+    NodeData m_nodeData;
 };
 
 /**

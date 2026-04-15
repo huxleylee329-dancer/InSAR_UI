@@ -71,6 +71,7 @@ All actual InSAR processing is done by external DLLs loaded from `bin/`:
 - Each processing module has a dedicated dialog (e.g., `Filter_ui`, `Unwrap_ui`, `import_sentinel`)
 - Custom widgets: `ColorBar` (color scale overlay), `ImageView` (custom image viewer)
 - QCustomPlot library for plotting/baseline visualization
+- @.claude/rules/UI.md  refer to this rule when apply UI color or pattern
 
 ### Data Flow Pattern
 

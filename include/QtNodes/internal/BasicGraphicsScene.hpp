@@ -129,6 +129,9 @@ Q_SIGNALS:
     /// Signal allows showing custom context menu upon clicking a node.
     void nodeContextMenu(NodeId const nodeId, QPointF const pos);
 
+    /// Signal emitted when node properties (execution mode/state) change
+    void nodePropertyChanged(NodeId const nodeId);
+
 private:
     /// @brief Creates Node and Connection graphics objects.
     /**

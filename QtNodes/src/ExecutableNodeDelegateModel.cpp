@@ -27,6 +27,8 @@ void ExecutableNodeDelegateModel::triggerVisualUpdate()
         if (ngo != nullptr) {
             ngo->update();
         }
+        // Emit signal to notify that node properties have changed
+        Q_EMIT _scene->nodePropertyChanged(_nodeId);
     }
 }
 

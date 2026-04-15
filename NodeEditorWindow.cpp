@@ -287,18 +287,34 @@ void NodeEditorWindow::setupSceneInternal()
     // Connect to scene modification signal
     connect(m_scene, &QtNodes::BasicGraphicsScene::modified, this, &NodeEditorWindow::onSceneModified);
 
+    // Connect to node moved signal to refresh property panel coordinates
+    connect(m_scene, &QtNodes::BasicGraphicsScene::nodeMoved, this, [this](QtNodes::NodeId nodeId, QPointF const &newLocation) {
+        if (m_propertyEditor->currentNodeId() == nodeId) {
+            m_propertyEditor->refreshCurrentNode();
+        }
+    });
+
     // Connect to scene selection changes for property panel
     connect(m_scene, &QtNodes::BasicGraphicsScene::nodeSelected, this, [this](QtNodes::NodeId nodeId) {
         m_propertyEditor->setSelectedNode(nodeId);
     });
 
     // Connect to node clicked to update property panel
+    // Use the clicked node ID directly instead of checking selectedNodes()
+    // This ensures the property panel updates even when selection state is inconsistent
     connect(m_scene, &QtNodes::BasicGraphicsScene::nodeClicked, this, [this](QtNodes::NodeId nodeId) {
-        auto selectedNodes = m_scene->selectedNodes();
-        if (selectedNodes.size() == 1) {
-            m_propertyEditor->setSelectedNode(selectedNodes[0]);
+        if (nodeId != QtNodes::InvalidNodeId) {
+            m_propertyEditor->setSelectedNode(nodeId);
         } else {
             m_propertyEditor->clearSelection();
+        }
+    });
+
+    // Connect to node property changed signal to refresh property panel when node execution mode/state changes
+    connect(m_scene, &QtNodes::BasicGraphicsScene::nodePropertyChanged, this, [this](QtNodes::NodeId nodeId) {
+        // If the node whose properties changed is currently displayed, refresh it
+        if (m_propertyEditor->currentNodeId() == nodeId) {
+            m_propertyEditor->refreshCurrentNode();
         }
     });
 
