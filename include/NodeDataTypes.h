@@ -1,9 +1,10 @@
-﻿#ifndef NODEDATA_TYPES_H
+#ifndef NODEDATA_TYPES_H
 #define NODEDATA_TYPES_H
 
 #include <QtNodes/NodeData>
 #include <opencv2/opencv.hpp>
 #include <string>
+#include <QFileInfo>
 
 namespace QtNodes {
 
@@ -29,6 +30,45 @@ public:
     {
         auto d = dynamic_cast<ImageData const *>(&nodeData);
         return d != nullptr;
+    }
+
+    QString getSummary() const override
+    {
+        if (_image.empty()) {
+            return "Empty Image";
+        }
+        return QString("%1x%2").arg(_image.cols).arg(_image.rows);
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_image.empty()) {
+            fields.append({"Width", QString::number(_image.cols), FieldEditType::None});
+            fields.append({"Height", QString::number(_image.rows), FieldEditType::None});
+            fields.append({"Channels", QString::number(_image.channels()), FieldEditType::None});
+            fields.append({"Depth", QString::number(_image.depth()), FieldEditType::None});
+        }
+        if (!_filePath.isEmpty()) {
+            QString path = _filePath;
+            if (path.length() > 50) path = "..." + path.right(47);
+            DataField pathField;
+            pathField.key = "Path";
+            pathField.value = path;
+            pathField.editType = FieldEditType::Path;
+            pathField.pathFilter = "Image Files (*.tif *.tiff *.png *.jpg *.jpeg);;All Files (*)";
+            fields.append(pathField);
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        if (key == "Path") {
+            _filePath = value;
+            return true;
+        }
+        return false;
     }
 
 private:
@@ -58,6 +98,33 @@ public:
         return d != nullptr;
     }
 
+    QString getSummary() const override
+    {
+        if (_metadata.isEmpty()) return "Empty Metadata";
+        QString summary = _metadata.left(30);
+        if (_metadata.length() > 30) summary += "...";
+        return summary;
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_metadata.isEmpty()) {
+            QString truncated = _metadata;
+            if (truncated.length() > 200) truncated = truncated.left(200) + "...";
+            fields.append({"Content", truncated, FieldEditType::None});
+            fields.append({"Length", QString::number(_metadata.length()) + " chars", FieldEditType::None});
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        Q_UNUSED(key);
+        Q_UNUSED(value);
+        return false;
+    }
+
 private:
     QString _metadata;
 };
@@ -82,6 +149,30 @@ public:
     {
         auto d = dynamic_cast<BaselineData const *>(&nodeData);
         return d != nullptr;
+    }
+
+    QString getSummary() const override
+    {
+        if (_baselineInfo.isEmpty()) return "Empty Baseline";
+        return _baselineInfo.left(40);
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_baselineInfo.isEmpty()) {
+            fields.append({"Info", _baselineInfo, FieldEditType::Text});
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        if (key == "Info") {
+            _baselineInfo = value;
+            return true;
+        }
+        return false;
     }
 
 private:
@@ -110,6 +201,33 @@ public:
         return d != nullptr;
     }
 
+    QString getSummary() const override
+    {
+        if (_pairList.isEmpty()) return "0 pairs";
+        int pairCount = _pairList.count('\n');
+        return QString("%1 pairs").arg(pairCount);
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_pairList.isEmpty()) {
+            int pairCount = _pairList.count('\n');
+            fields.append({"Pairs", QString::number(pairCount), FieldEditType::None});
+            QString preview = _pairList.left(100);
+            if (_pairList.length() > 100) preview += "...";
+            fields.append({"Preview", preview, FieldEditType::None});
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        Q_UNUSED(key);
+        Q_UNUSED(value);
+        return false;
+    }
+
 private:
     QString _pairList;
 };
@@ -136,6 +254,30 @@ public:
         return d != nullptr;
     }
 
+    QString getSummary() const override
+    {
+        if (_timeSeries.isEmpty()) return "0 time points";
+        int pointCount = _timeSeries.count('\n');
+        return QString("%1 time points").arg(pointCount);
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_timeSeries.isEmpty()) {
+            int pointCount = _timeSeries.count('\n');
+            fields.append({"Time Points", QString::number(pointCount), FieldEditType::None});
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        Q_UNUSED(key);
+        Q_UNUSED(value);
+        return false;
+    }
+
 private:
     QString _timeSeries;
 };
@@ -160,6 +302,30 @@ public:
     {
         auto d = dynamic_cast<CoordinateMatrixData const *>(&nodeData);
         return d != nullptr;
+    }
+
+    QString getSummary() const override
+    {
+        if (_matrixInfo.isEmpty()) return "Empty Matrix";
+        return _matrixInfo.left(40);
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_matrixInfo.isEmpty()) {
+            fields.append({"Info", _matrixInfo, FieldEditType::Text});
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        if (key == "Info") {
+            _matrixInfo = value;
+            return true;
+        }
+        return false;
     }
 
 private:

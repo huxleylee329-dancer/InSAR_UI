@@ -22,6 +22,7 @@
 #include <QtNodes/GraphicsViewStyle>
 #include <QtNodes/internal/Definitions.hpp>
 #include <QtNodes/internal/NodeGraphicsObject.hpp>
+#include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -286,6 +287,9 @@ void NodeEditorWindow::setupSceneInternal()
 
     // Connect to scene modification signal
     connect(m_scene, &QtNodes::BasicGraphicsScene::modified, this, &NodeEditorWindow::onSceneModified);
+
+    // Connect to port data changed signal from property editor
+    connect(m_propertyEditor, &PropertyEditor::portDataChanged, this, &NodeEditorWindow::onPortDataChanged);
 
     // Connect to node moved signal to refresh property panel coordinates
     connect(m_scene, &QtNodes::BasicGraphicsScene::nodeMoved, this, [this](QtNodes::NodeId nodeId, QPointF const &newLocation) {
@@ -754,6 +758,33 @@ void NodeEditorWindow::onSceneModified(QtNodes::BasicGraphicsScene *)
     statusBar()->showMessage(QString("Nodes: %1, Connections: %2").arg(nodeCount).arg(connectionCount / 2));
 }
 
+void NodeEditorWindow::onPortDataChanged(QtNodes::NodeId nodeId, QtNodes::PortType portType, int portIndex, const QString& fieldKey, const QString& newValue)
+{
+    if (!m_graphModel || nodeId == QtNodes::InvalidNodeId)
+        return;
+
+    auto execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+    if (!execModel)
+        return;
+
+    // 获取端口数据
+    std::shared_ptr<QtNodes::NodeData> portData;
+    if (portType == QtNodes::PortType::In) {
+        portData = execModel->getInputData(portIndex);
+    } else {
+        portData = execModel->getOutputData(portIndex);
+    }
+
+    if (!portData)
+        return;
+
+    // 设置字段值
+    if (portData->setField(fieldKey, newValue)) {
+        // 刷新属性面板显示更新后的值
+        m_propertyEditor->refreshCurrentNode();
+    }
+}
+
 void NodeEditorWindow::onSceneLoaded()
 {
     if (m_view)
@@ -847,7 +878,19 @@ void NodeEditorWindow::onPropertyChanged(QtNodes::NodeId nodeId, const QString &
     {
         m_graphModel->setNodeData(nodeId, QtNodes::NodeRole::Position, value);
     }
-    // Other properties can be handled here as needed
+    else if (property == "basic")
+    {
+        // Basic info (position) already handled
+    }
+    else
+    {
+        // Try to set as parameter on ExecutableNodeDelegateModel
+        auto execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+        if (execModel)
+        {
+            execModel->setParameter(property, value.toString());
+        }
+    }
 }
 
 // ============================================================================
@@ -1111,7 +1154,16 @@ void NodeEditorWindow::setQtNodesTheme(const QString &theme)
         m_view->update();
     }
 
-    qDebug() << "Applied QtNodes theme:" << theme;
+    // Set theme-background property for PropertyEditor to detect theme
+    if (m_propertyEditor) {
+        if (theme == "dark") {
+            m_propertyEditor->setProperty("theme-background", QColor(43, 64, 75));
+        } else {
+            m_propertyEditor->setProperty("theme-background", QColor(241, 245, 249));
+        }
+        // Refresh property panel to apply theme changes
+        m_propertyEditor->refreshCurrentNode();
+    }
 }
 
 bool NodeEditorWindow::eventFilter(QObject *obj, QEvent *event)
@@ -1175,7 +1227,7 @@ void NodeEditorWindow::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes:
         execModel, m_scene, ngo->nodeId());
 
     // Create detail window and overlay
-    _detailWindow = new QtNodes::NodeDetailWindow(nullptr);  // Top-level window
+    _detailWindow = new QtNodes::NodeDetailWindow(this);  // Pass parent for theme detection
     _detailOverlay = new QtNodes::NodeDetailOverlay(m_view->viewport());
     _detailOverlay->setGeometry(m_view->viewport()->rect());
 

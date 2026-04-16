@@ -117,6 +117,28 @@ void SimpleSourceNode::setExecutionMode(ExecutionMode mode)
     }
 }
 
+QVector<ParameterInfo> SimpleSourceNode::getParameters() const
+{
+    QVector<ParameterInfo> params;
+
+    ParameterInfo param;
+    param.name = "Source Text";
+    param.dataType = "Simple Data";
+    param.value = _edit->text();
+    param.editType = FieldEditType::Text;
+    params.append(param);
+
+    return params;
+}
+
+void SimpleSourceNode::setParameter(const QString& paramName, const QString& value)
+{
+    if (paramName == "Source Text") {
+        _edit->setText(value);
+        // The onTextChanged slot will be triggered, updating _value and data
+    }
+}
+
 // 执行实现
 void SimpleSourceNode::execute()
 {

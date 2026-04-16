@@ -13,6 +13,8 @@
 
 namespace QtNodes {
 
+struct ParameterInfo;
+
 /// Detail window displaying 3-column view of node information
 /// Shows: Input Info | Processing Info | Output Info
 class NODE_EDITOR_PUBLIC NodeDetailWindow : public QDialog
@@ -38,7 +40,8 @@ private:
     QWidget* createInputSection();
     QWidget* createProcessingSection();
     QWidget* createOutputSection();
-    void addPortData(QVBoxLayout* layout, const PortDataInfo& info, const QString& title, QWidget* parent = nullptr);
+    void renderPortCard(QVBoxLayout* layout, const PortDataInfo& info, QWidget* parent = nullptr);
+    void renderParameterCard(QVBoxLayout* layout, const ParameterInfo& param, QWidget* parent = nullptr);
 
     QPushButton* _closeButton;
     QLabel* _titleLabel;
@@ -53,6 +56,7 @@ private:
 
     // Stored data
     std::vector<PortDataInfo> _inputPorts;
+    QVector<ParameterInfo> _parameters;
     std::vector<QString> _processingInfo;
     std::vector<PortDataInfo> _outputPorts;
 
@@ -114,20 +118,6 @@ private:
     static constexpr char const* STYLE_SCROLL_CONTENT =
         "QWidget {"
         "  background: transparent;"
-        "}";
-
-    static constexpr char const* STYLE_PORT_CARD =
-        "QFrame {"
-        "  background-color: rgba(255, 255, 255, 0.7);"
-        "  border: 1px solid rgba(255, 255, 255, 0.15);"
-        "  border-radius: 8px;"
-        "}";
-
-    static constexpr char const* STYLE_PORT_CARD_DARK =
-        "QFrame {"
-        "  background-color: rgba(64, 64, 64, 0.7);"
-        "  border: 1px solid rgba(255, 255, 255, 0.1);"
-        "  border-radius: 8px;"
         "}";
 
     static constexpr char const* STYLE_INFO_LABEL_TEMPLATE =
@@ -220,25 +210,7 @@ private:
         "QLabel { color: #FFFFFF; }";
 
     // Font sizes
-    static constexpr int FONT_SIZE_TITLE = 14;      // Card title
-    static constexpr int FONT_SIZE_PORT_NAME = 11;  // Port name
-    static constexpr int FONT_SIZE_PORT_TYPE = 10;  // Port type/status
-    static constexpr int FONT_SIZE_PORT_VALUE = 11;  // Port value
     static constexpr int FONT_SIZE_INFO = 10;         // Info label
-
-    // Port text colors (light theme)
-    static constexpr char const* COLOR_PORT_NAME_LIGHT = "#333333";
-    static constexpr char const* COLOR_PORT_TYPE_LIGHT = "#666666";
-    static constexpr char const* COLOR_PORT_VALUE_LIGHT = "#333333";
-    static constexpr char const* COLOR_STATUS_CONNECTED_LIGHT = "#00A000";
-    static constexpr char const* COLOR_STATUS_DISCONNECTED_LIGHT = "#AA0000";
-
-    // Port text colors (dark theme)
-    static constexpr char const* COLOR_PORT_NAME_DARK = "#FFFFFF";
-    static constexpr char const* COLOR_PORT_TYPE_DARK = "#94A3B8";
-    static constexpr char const* COLOR_PORT_VALUE_DARK = "#FFFFFF";
-    static constexpr char const* COLOR_STATUS_CONNECTED_DARK = "#10B981";
-    static constexpr char const* COLOR_STATUS_DISCONNECTED_DARK = "#EF4444";
 
     static constexpr int SECTION_MIN_WIDTH = 250;
     static constexpr int CONTENT_MAX_HEIGHT = 400;

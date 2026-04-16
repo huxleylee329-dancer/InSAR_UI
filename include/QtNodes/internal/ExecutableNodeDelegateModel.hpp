@@ -3,6 +3,7 @@
 #include "NodeDelegateModel.hpp"
 #include "Export.hpp"
 #include "BasicGraphicsScene.hpp"
+#include "NodeData.hpp"
 
 #include <unordered_map>
 #include <memory>
@@ -28,6 +29,22 @@ enum class ExecutionState
     Warning,    // 有警告/需要特别注意
     Error,      // 执行出错
     Disabled    // 禁用状态（人工设置进入）
+};
+
+/**
+ * @brief ParameterInfo - 控件参数信息
+ * 用于显示和编辑节点控件中的参数（如 QLineEdit、QSpinBox 等）
+ */
+struct NODE_EDITOR_PUBLIC ParameterInfo
+{
+    QString name;                    // 参数名称
+    QString dataType;                // 数据类型
+    QString value;                   // 当前值
+    FieldEditType editType = FieldEditType::None;  // 编辑类型
+    double minNumber = -1000000.0;                // 数字最小值
+    double maxNumber = 1000000.0;                  // 数字最大值
+    int decimals = 2;                              // 小数位数
+    QString pathFilter = "All Files (*)";          // 文件过滤器
 };
 
 class NODE_EDITOR_PUBLIC ExecutableNodeDelegateModel : public NodeDelegateModel
@@ -65,12 +82,26 @@ public:
     void setOutputData(PortIndex portIndex, std::shared_ptr<NodeData> data);
     std::shared_ptr<NodeData> getOutputData(PortIndex portIndex);
 
+    /// Get widget parameters for display and editing in Properties panel
+    /// Returns parameters from node's widgets (e.g., QLineEdit, QSpinBox, etc.)
+    /// Default implementation returns empty vector (no parameters)
+    virtual QVector<ParameterInfo> getParameters() const;
+
+    /// Set a parameter value from Properties panel
+    /// Called when user edits a parameter in Properties panel
+    /// Default implementation does nothing (parameters are read-only)
+    virtual void setParameter(const QString& paramName, const QString& value);
+
 public Q_SLOTS:
     void start();
 
     void stop();
 
     void setProgress(int percent);
+
+    /// Trigger automatic execution for this node
+    /// Used when a source node is connected in auto mode
+    void triggerAutoExecution();
 
 Q_SIGNALS:
     void executionStarted();

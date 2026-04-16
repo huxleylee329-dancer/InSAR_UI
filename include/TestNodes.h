@@ -36,6 +36,32 @@ public:
         return d != nullptr;
     }
 
+    QString getSummary() const override
+    {
+        return _value;
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        // 可编辑数值字段
+        DataField valueField;
+        valueField.key = "Value";
+        valueField.value = _value;
+        valueField.editType = FieldEditType::Text;
+        fields.append(valueField);
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        if (key == "Value") {
+            _value = value;
+            return true;
+        }
+        return false;
+    }
+
 private:
     QString _value;
 };
@@ -66,6 +92,9 @@ public:
     void load(QJsonObject const &p) override;
 
     void setExecutionMode(ExecutionMode mode) override;
+
+    QVector<ParameterInfo> getParameters() const override;
+    void setParameter(const QString& paramName, const QString& value) override;
 
 protected:
     void execute() override;

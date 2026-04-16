@@ -146,6 +146,19 @@ void ExecutableNodeDelegateModel::setProgress(int percent)
     triggerVisualUpdate();
 }
 
+void ExecutableNodeDelegateModel::triggerAutoExecution()
+{
+    if (_mode != ExecutionMode::Automatic) {
+        return;
+    }
+
+    // For nodes with no input ports (source nodes), trigger automatic processing
+    unsigned int inPortCount = nPorts(PortType::In);
+    if (inPortCount == 0) {
+        processAutomatically();
+    }
+}
+
 void ExecutableNodeDelegateModel::finishExecution()
 {
     if (_state != ExecutionState::Running) {
@@ -277,6 +290,19 @@ bool ExecutableNodeDelegateModel::isPending() const
 
     // Pending if: connected but no data, or multi-port but not all have data
     return !allConnectedPortsHaveData;
+}
+
+QVector<ParameterInfo> ExecutableNodeDelegateModel::getParameters() const
+{
+    // Default implementation: no parameters
+    return {};
+}
+
+void ExecutableNodeDelegateModel::setParameter(const QString& paramName, const QString& value)
+{
+    // Default implementation: do nothing (parameters are read-only)
+    Q_UNUSED(paramName);
+    Q_UNUSED(value);
 }
 
 } // namespace QtNodes

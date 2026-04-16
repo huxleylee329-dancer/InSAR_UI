@@ -26,6 +26,33 @@ public:
     QString text() const { return m_text; }
     void setText(const QString &text) { m_text = text; }
 
+    QString getSummary() const override
+    {
+        if (m_text.isEmpty()) return "Empty Note";
+        QString summary = m_text.left(30);
+        if (m_text.length() > 30) summary += "...";
+        return summary;
+    }
+
+    QVector<QtNodes::DataField> getFields() const override
+    {
+        QVector<QtNodes::DataField> fields;
+        if (!m_text.isEmpty()) {
+            QString truncated = m_text;
+            if (truncated.length() > 200) truncated = truncated.left(200) + "...";
+            fields.append({"Content", truncated, QtNodes::FieldEditType::None});
+            fields.append({"Length", QString::number(m_text.length()) + " chars", QtNodes::FieldEditType::None});
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        Q_UNUSED(key);
+        Q_UNUSED(value);
+        return false;
+    }
+
 private:
     QString m_text;
 };

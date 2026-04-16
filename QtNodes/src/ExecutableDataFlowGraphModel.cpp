@@ -56,6 +56,14 @@ void ExecutableDataFlowGraphModel::addConnection(ConnectionId const connectionId
                        emptyData,
                        PortRole::Data);
         }
+        else {
+            // Auto mode: trigger automatic execution for source nodes (nodes with no input ports)
+            auto *execModel = delegateModel<ExecutableNodeDelegateModel>(connectionId.outNodeId);
+            if (execModel && execModel->nPorts(PortType::In) == 0) {
+                // This is a source node being connected in auto mode, trigger automatic execution
+                execModel->triggerAutoExecution();
+            }
+        }
     }
 }
 

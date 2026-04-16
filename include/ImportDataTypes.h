@@ -3,6 +3,7 @@
 
 #include <QtNodes/NodeData>
 #include <QString>
+#include <QFileInfo>
 
 namespace QtNodes {
 
@@ -32,9 +33,43 @@ public:
         return d != nullptr;
     }
 
+    QString getSummary() const override
+    {
+        if (_filePath.isEmpty()) return "No File";
+        QFileInfo fi(_filePath);
+        return fi.fileName();  // 只返回文件名
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_filePath.isEmpty()) {
+            QFileInfo fi(_filePath);
+            fields.append({"File", fi.fileName(), FieldEditType::None});
+            fields.append({"Size", QString::number(fi.size() / 1024.0, 'f', 2) + " KB", FieldEditType::None});
+
+            // 可编辑：节点名称
+            DataField nameField;
+            nameField.key = "Node";
+            nameField.value = _nodeName;
+            nameField.editType = FieldEditType::Text;
+            fields.append(nameField);
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        if (key == "Node") {
+            _nodeName = value;
+            return true;
+        }
+        return false;
+    }
+
 private:
-    QString _filePath;  // Path to the imported file
-    QString _nodeName;  // Node name in the project tree
+    QString _filePath;  // Path to imported file
+    QString _nodeName;  // Node name in project tree
 };
 
 } // namespace QtNodes

@@ -8,6 +8,7 @@
 #include <QFont>
 #include <QVariant>
 #include <QColor>
+#include <QDebug>
 
 namespace QtNodes {
 
@@ -103,7 +104,7 @@ QWidget* NodeDetailWindow::createInputSection()
     // No individual stylesheet - window-wide stylesheet handles scrollbar styling
 
     auto* scrollContent = new QWidget();
-    // No individual stylesheet on scroll content
+    scrollContent->setStyleSheet(STYLE_SCROLL_CONTENT);
     _inputLayout = new QVBoxLayout(scrollContent);
     _inputLayout->setContentsMargins(10, 10, 10, 10);
     _inputLayout->setSpacing(8);
@@ -173,7 +174,7 @@ QWidget* NodeDetailWindow::createOutputSection()
     // No individual stylesheet - window-wide stylesheet handles scrollbar styling
 
     auto* scrollContent = new QWidget();
-    // No individual stylesheet on scroll content
+    scrollContent->setStyleSheet(STYLE_SCROLL_CONTENT);
     _outputLayout = new QVBoxLayout(scrollContent);
     _outputLayout->setContentsMargins(10, 10, 10, 10);
     _outputLayout->setSpacing(8);
@@ -185,52 +186,172 @@ QWidget* NodeDetailWindow::createOutputSection()
     return frame;
 }
 
-void NodeDetailWindow::addPortData(QVBoxLayout* layout, const PortDataInfo& info, const QString& title, QWidget* parent)
+void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& info, QWidget* parent)
 {
     bool isDark = isDarkTheme(parent);
 
-    // Port info card frame
-    auto* cardFrame = new QFrame();
-    cardFrame->setStyleSheet(isDark ? STYLE_PORT_CARD_DARK : STYLE_PORT_CARD);
-    auto* cardLayout = new QVBoxLayout(cardFrame);
+    // Create card with glass effect (same as PropertyEditor)
+    QFrame* card = new QFrame();
+    card->setFrameShape(QFrame::StyledPanel);
+
+    QString cardBg = isDark ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)";
+    QString cardBorder = isDark ? "rgba(148, 163, 184, 0.3)" : "rgba(148, 163, 184, 0.3)";
+
+    card->setStyleSheet(QString(
+        "QFrame {"
+        "   background-color: %1;"
+        "   border: 1px solid %2;"
+        "   border-radius: 8px;"
+        "}"
+    ).arg(cardBg).arg(cardBorder));
+
+    QVBoxLayout* cardLayout = new QVBoxLayout(card);
     cardLayout->setContentsMargins(10, 10, 10, 10);
     cardLayout->setSpacing(6);
 
-    // Port name label
-    auto* nameLabel = new QLabel(title);
-    nameLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: %2px;")
-        .arg(isDark ? COLOR_PORT_NAME_DARK : COLOR_PORT_NAME_LIGHT)
-        .arg(FONT_SIZE_PORT_NAME));
+    // Text colors based on theme (same as PropertyEditor)
+    QString primaryTextColor = isDark ? "#FFFFFF" : "#1E3A8A";
+    QString secondaryTextColor = isDark ? "#94A3B8" : "#64748B";
+    QString tertiaryTextColor = isDark ? "#FFFFFF" : "#334155";
+
+    // Port name with optional index (same as PropertyEditor)
+    QString headerText;
+    if (info.showIndex) {
+        headerText = QString("<b>%1</b> <span style='color: %2;'>[%3]</span>")
+            .arg(info.name).arg(secondaryTextColor).arg(info.index);
+    } else {
+        headerText = QString("<b>%1</b>").arg(info.name);
+    }
+    QLabel* nameLabel = new QLabel(headerText);
+    nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(primaryTextColor));
     cardLayout->addWidget(nameLabel);
 
-    // Type label
-    auto* typeLabel = new QLabel(QObject::tr("Type: %1").arg(info.dataType));
-    typeLabel->setWordWrap(true);
-    typeLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-        .arg(isDark ? COLOR_PORT_TYPE_DARK : COLOR_PORT_TYPE_LIGHT)
-        .arg(FONT_SIZE_PORT_TYPE));
+    // Data type (same as PropertyEditor)
+    if (!info.dataType.isEmpty()) {
+        QLabel* typeLabel = new QLabel(QString("Type: %1").arg(info.dataType));
+        typeLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
+        cardLayout->addWidget(typeLabel);
+    }
+
+    // Summary (same as PropertyEditor)
+    if (!info.summary.isEmpty()) {
+        QString displaySummary = info.summary;
+        // Truncate long values
+        if (displaySummary.length() > 60) {
+            displaySummary = displaySummary.left(60) + "...";
+        }
+
+        QLabel* summaryLabel = new QLabel(displaySummary);
+        QString summaryBg = isDark ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
+        summaryLabel->setStyleSheet(QString(
+            "QLabel {"
+            "   color: %1;"
+            "   font-size: 11px;"
+            "   background-color: %2;"
+            "   padding: 6px 8px;"
+            "   border-radius: 4px;"
+            "   border-left: 3px solid #3B82F6;"
+            "}"
+        ).arg(tertiaryTextColor).arg(summaryBg));
+        summaryLabel->setWordWrap(true);
+        cardLayout->addWidget(summaryLabel);
+    }
+
+    // Fields (read-only only, same as PropertyEditor without edit support)
+    if (!info.fields.isEmpty()) {
+        for (const auto& field : info.fields) {
+            QHBoxLayout* fieldLayout = new QHBoxLayout();
+            fieldLayout->setSpacing(6);
+
+            QLabel* keyLabel = new QLabel(field.key + ":");
+            keyLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
+            keyLabel->setMinimumWidth(60);
+            fieldLayout->addWidget(keyLabel);
+
+            QString displayValue = field.value;
+            if (displayValue.length() > 50) {
+                displayValue = displayValue.left(50) + "...";
+            }
+            QLabel* valueLabel = new QLabel(displayValue);
+            valueLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(tertiaryTextColor));
+            valueLabel->setWordWrap(true);
+            fieldLayout->addWidget(valueLabel);
+
+            cardLayout->addLayout(fieldLayout);
+        }
+    }
+
+    // Connection status (simplified from PropertyEditor)
+    if (!info.isConnected) {
+        QLabel* statusLabel = new QLabel("Not connected");
+        statusLabel->setStyleSheet(QString("color: %1; font-style: italic; font-size: 10px;")
+            .arg(isDark ? "#EF4444" : "#AA0000"));
+        cardLayout->addWidget(statusLabel);
+    }
+
+    layout->insertWidget(layout->count() - 1, card);
+}
+
+void NodeDetailWindow::renderParameterCard(QVBoxLayout* layout, const ParameterInfo& param, QWidget* parent)
+{
+    bool isDark = isDarkTheme(parent);
+
+    // Create card with glass effect (same as PropertyEditor)
+    QFrame* card = new QFrame();
+    card->setFrameShape(QFrame::StyledPanel);
+
+    QString cardBg = isDark ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)";
+    QString cardBorder = isDark ? "rgba(148, 163, 184, 0.3)" : "rgba(148, 163, 184, 0.3)";
+
+    card->setStyleSheet(QString(
+        "QFrame {"
+        "   background-color: %1;"
+        "   border: 1px solid %2;"
+        "   border-radius: 8px;"
+        "}"
+    ).arg(cardBg).arg(cardBorder));
+
+    QVBoxLayout* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(10, 10, 10, 10);
+    cardLayout->setSpacing(6);
+
+    // Text colors based on theme (same as PropertyEditor)
+    QString primaryTextColor = isDark ? "#FFFFFF" : "#1E3A8A";
+    QString secondaryTextColor = isDark ? "#94A3B8" : "#64748B";
+    QString tertiaryTextColor = isDark ? "#FFFFFF" : "#334155";
+
+    // Parameter name with bold styling
+    QLabel* nameLabel = new QLabel(QString("<b>%1</b>").arg(param.name));
+    nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(primaryTextColor));
+    cardLayout->addWidget(nameLabel);
+
+    // Data type
+    QLabel* typeLabel = new QLabel(QString("Type: %1").arg(param.dataType));
+    typeLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
     cardLayout->addWidget(typeLabel);
 
-    // Value label
-    auto* valueLabel = new QLabel(QObject::tr("Value: %1").arg(info.value));
+    // Display value (read-only in Detail View, same as PropertyEditor's read-only)
+    QString displayValue = param.value;
+    if (displayValue.length() > 60) {
+        displayValue = displayValue.left(60) + "...";
+    }
+
+    QLabel* valueLabel = new QLabel(displayValue);
+    QString valueBg = isDark ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
+    valueLabel->setStyleSheet(QString(
+        "QLabel {"
+        "   color: %1;"
+        "   font-size: 11px;"
+        "   background-color: %2;"
+        "   padding: 6px 8px;"
+        "   border-radius: 4px;"
+        "   border-left: 3px solid #3B82F6;"
+        "}"
+    ).arg(tertiaryTextColor).arg(valueBg));
     valueLabel->setWordWrap(true);
-    valueLabel->setStyleSheet(QString("color: %1; font-weight: bold; font-size: %2px;")
-        .arg(isDark ? COLOR_PORT_VALUE_DARK : COLOR_PORT_VALUE_LIGHT)
-        .arg(FONT_SIZE_PORT_VALUE));
     cardLayout->addWidget(valueLabel);
 
-    // Status label
-    auto* statusLabel = new QLabel(info.isConnected
-        ? QObject::tr("Connected")
-        : QObject::tr("Not connected"));
-    statusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-        .arg(info.isConnected
-            ? (isDark ? COLOR_STATUS_CONNECTED_DARK : COLOR_STATUS_CONNECTED_LIGHT)
-            : (isDark ? COLOR_STATUS_DISCONNECTED_DARK : COLOR_STATUS_DISCONNECTED_LIGHT))
-        .arg(FONT_SIZE_PORT_TYPE));
-    cardLayout->addWidget(statusLabel);
-
-    layout->insertWidget(layout->count() - 1, cardFrame);
+    layout->insertWidget(layout->count() - 1, card);
 }
 
 void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
@@ -246,33 +367,86 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
 
     // Store data
     _inputPorts = snapshot.inputPorts;
+    _parameters = snapshot.parameters;
     _processingInfo = snapshot.processingInfo;
     _outputPorts = snapshot.outputPorts;
 
-    // Add input port data
-    for (const auto& port : _inputPorts) {
-        QString portTitle = QObject::tr("Port %1: %2")
-            .arg(port.index)
-            .arg(port.name);
-        addPortData(_inputLayout, port, portTitle, this);
+    // Add input port data and node parameters (same as PropertyEditor)
+    bool hasContent = false;
+    bool isDark = isDarkTheme(this);
+    QString sectionTextColor = isDark ? "#94A3B8" : "#64748B";
+
+    // Input ports first
+    if (!_inputPorts.empty()) {
+        QLabel* portsLabel = new QLabel(QObject::tr("Port Data"));
+        portsLabel->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px; margin-bottom: 4px;").arg(sectionTextColor));
+        _inputLayout->insertWidget(_inputLayout->count() - 1, portsLabel);
+
+        for (size_t i = 0; i < _inputPorts.size(); ++i) {
+            renderPortCard(_inputLayout, _inputPorts[i], this);
+        }
+        hasContent = true;
+    }
+
+    // Add node parameters if any (this is the missing part!)
+    if (!_parameters.empty()) {
+        if (hasContent) {
+            // Add separator between ports and parameters
+            QString sectionBgColor = isDark ? "rgba(64, 64, 64, 0.5)" : "rgba(241, 245, 249, 0.8)";
+            QLabel* separator = new QLabel();
+            separator->setStyleSheet(QString("background-color: %1; margin: 12px 0; max-height: 1px;").arg(sectionBgColor));
+            _inputLayout->insertWidget(_inputLayout->count() - 1, separator);
+        }
+
+        QLabel* paramsLabel = new QLabel(QObject::tr("Node Parameters"));
+        paramsLabel->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px; margin-bottom: 4px;").arg(sectionTextColor));
+        _inputLayout->insertWidget(_inputLayout->count() - 1, paramsLabel);
+
+        for (const auto& param : _parameters) {
+            renderParameterCard(_inputLayout, param, this);
+        }
+        hasContent = true;
+    }
+
+    // Show "No content" message if nothing to display
+    if (!hasContent) {
+        bool isDark = isDarkTheme(this);
+        QString textColor = isDark ? "#94A3B8" : "#94A3B8";
+        QLabel* noContentLabel = new QLabel(QObject::tr("No input ports or parameters"));
+        noContentLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(textColor));
+        noContentLabel->setAlignment(Qt::AlignCenter);
+        _inputLayout->insertWidget(_inputLayout->count() - 1, noContentLabel);
     }
 
     // Add processing info
-    bool isDark = isDarkTheme(parentWidget());
     QString infoLabelTemplate = isDark ? STYLE_INFO_LABEL_TEMPLATE_DARK : STYLE_INFO_LABEL_TEMPLATE;
-    for (size_t i = 0; i < _processingInfo.size(); ++i) {
-        auto* infoLabel = new QLabel(_processingInfo[i]);
-        infoLabel->setWordWrap(true);
-        infoLabel->setStyleSheet(QString(infoLabelTemplate).arg(FONT_SIZE_INFO));
-        _processingLayout->insertWidget(_processingLayout->count() - 1, infoLabel);
+    if (_processingInfo.empty()) {
+        QString textColor = isDark ? "#94A3B8" : "#94A3B8";
+        QLabel* noContentLabel = new QLabel(QObject::tr("No processing info available"));
+        noContentLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(textColor));
+        noContentLabel->setAlignment(Qt::AlignCenter);
+        _processingLayout->insertWidget(_processingLayout->count() - 1, noContentLabel);
+    } else {
+        for (size_t i = 0; i < _processingInfo.size(); ++i) {
+            auto* infoLabel = new QLabel(_processingInfo[i]);
+            infoLabel->setWordWrap(true);
+            infoLabel->setStyleSheet(QString(infoLabelTemplate).arg(FONT_SIZE_INFO));
+            _processingLayout->insertWidget(_processingLayout->count() - 1, infoLabel);
+        }
     }
 
     // Add output port data
-    for (const auto& port : _outputPorts) {
-        QString portTitle = QObject::tr("Port %1: %2")
-            .arg(port.index)
-            .arg(port.name);
-        addPortData(_outputLayout, port, portTitle, this);
+    if (_outputPorts.empty()) {
+        bool isDark = isDarkTheme(this);
+        QString textColor = isDark ? "#94A3B8" : "#94A3B8";
+        QLabel* noContentLabel = new QLabel(QObject::tr("No output ports"));
+        noContentLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(textColor));
+        noContentLabel->setAlignment(Qt::AlignCenter);
+        _outputLayout->insertWidget(_outputLayout->count() - 1, noContentLabel);
+    } else {
+        for (const auto& port : _outputPorts) {
+            renderPortCard(_outputLayout, port, this);
+        }
     }
 }
 
@@ -287,6 +461,7 @@ void NodeDetailWindow::clearData()
         delete item;
     }
     _inputPorts.clear();
+    _parameters.clear();
 
     // Clear processing section
     while (_processingLayout->count() > 1) {
@@ -346,15 +521,8 @@ QString NodeDetailWindow::getThemeStylesheet(QWidget* parent)
     // Scroll area
     QString scrollArea = STYLE_SCROLL_AREA;  // Same for both themes
 
-    // Port card
-    QString portCard = isDark ? STYLE_PORT_CARD_DARK : STYLE_PORT_CARD;
-
     // Info labels
     QString infoLabel = isDark ? STYLE_INFO_LABEL_TEMPLATE_DARK : STYLE_INFO_LABEL_TEMPLATE;
-
-    // Text colors
-    QString textPrimary = isDark ? STYLE_TEXT_PRIMARY_DARK : STYLE_TEXT_PRIMARY_LIGHT;
-    QString textSecondary = isDark ? STYLE_TEXT_SECONDARY_DARK : STYLE_TEXT_SECONDARY_LIGHT;
 
     // Close button
     QString closeButton = isDark ? STYLE_CLOSE_BUTTON_DARK : STYLE_CLOSE_BUTTON_LIGHT;
@@ -366,15 +534,12 @@ QString NodeDetailWindow::getThemeStylesheet(QWidget* parent)
     QString title = isDark ? STYLE_TITLE_DARK : STYLE_TITLE_LIGHT;
 
     // Combine all styles
-    return QString("%1%2%3%4%5%6%7%8%9%10%11%12")
+    return QString("%1%2%3%4%5%6%7%8%9")
         .arg(windowBg)
         .arg(card)
         .arg(cardTitle)
         .arg(scrollArea)
-        .arg(portCard)
         .arg(infoLabel)
-        .arg(textPrimary)
-        .arg(textSecondary)
         .arg(closeButton)
         .arg(scrollbar)
         .arg(title);

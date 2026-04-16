@@ -195,6 +195,7 @@ private slots:
 
     // Property editor signals
     void onPropertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value);
+    void onPortDataChanged(QtNodes::NodeId nodeId, QtNodes::PortType portType, int portIndex, const QString& fieldKey, const QString& newValue);
 
     // Toolbar operations
     void onWorkflowComboChanged(int index);

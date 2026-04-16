@@ -2,10 +2,13 @@
 
 #include "Export.hpp"
 #include "Definitions.hpp"
+#include "NodeData.hpp"
+#include "ExecutableNodeDelegateModel.hpp"
 #include <vector>
 #include <string>
 #include <QString>
 #include <QObject>
+#include <QVector>
 
 namespace QtNodes {
 
@@ -19,10 +22,13 @@ class NodeData;
 struct NODE_EDITOR_PUBLIC PortDataInfo
 {
     PortIndex index;
+    PortType portType;
     QString name;
     QString dataType;
-    QString value;
+    QString summary;
+    QVector<DataField> fields;
     bool isConnected;
+    bool showIndex;
 };
 
 /// Snapshot of node state and data for display in detail view
@@ -34,6 +40,7 @@ struct NODE_EDITOR_PUBLIC NodeDataSnapshot
     int progress;
     std::vector<PortDataInfo> inputPorts;
     std::vector<PortDataInfo> outputPorts;
+    QVector<ParameterInfo> parameters;
 
     /// Processing/intermediate information
     std::vector<QString> processingInfo;

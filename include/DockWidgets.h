@@ -113,6 +113,7 @@ namespace QtNodes {
     enum class ExecutionMode;
     enum class ExecutionState;
     class ExecutableNodeDelegateModel;
+    struct ParameterInfo;
 }
 
 /**
@@ -120,10 +121,13 @@ namespace QtNodes {
  */
 struct PortDataInfo {
     QtNodes::PortIndex index;
+    QtNodes::PortType portType;
     QString name;
     QString dataType;
-    QString value;
+    QString summary;
+    QVector<QtNodes::DataField> fields;
     bool isConnected;
+    bool showIndex;  // 是否需要显示序号后缀
 };
 
 /**
@@ -162,6 +166,7 @@ public:
 
 signals:
     void propertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value);
+    void portDataChanged(QtNodes::NodeId nodeId, QtNodes::PortType portType, int portIndex, const QString& fieldKey, const QString& newValue);
 
 private slots:
     void onPropertyValueChanged();
@@ -184,6 +189,7 @@ private:
     void generateProcessingSection();
     void generateOutputSection();
     void addPortCard(QVBoxLayout* layout, const PortDataInfo& info, bool isEditable);
+    void addParameterCard(QVBoxLayout* layout, const QtNodes::ParameterInfo& param);
 
     // Helpers
     QString executionStateToString(QtNodes::ExecutionState state) const;
@@ -222,6 +228,7 @@ private:
         int progress;
         QVector<PortDataInfo> inputPorts;
         QVector<PortDataInfo> outputPorts;
+        QVector<QtNodes::ParameterInfo> parameters;  // 控件参数（可编辑）
         QVector<QString> processingInfo;
     };
     NodeData m_nodeData;

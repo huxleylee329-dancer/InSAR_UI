@@ -4,6 +4,7 @@
 #include "QtNodes/NodeDelegateModel"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include <QtWidgets/QApplication>
+#include <QDebug>
 
 namespace QtNodes {
 
@@ -51,14 +52,25 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     // Capture input ports data
     unsigned int inPortCount = graphModel.nodeData<unsigned int>(
         nodeId, NodeRole::InPortCount);
+
     for (PortIndex i = 0; i < inPortCount; ++i) {
         PortDataInfo info;
         info.index = i;
+        info.portType = PortType::In;
+        info.showIndex = (inPortCount > 1);
         info.name = getPortName(graphModel, nodeId, PortType::In, i);
         info.dataType = graphModel.portData(nodeId, PortType::In, i, PortRole::DataType)
                                         .value<NodeDataType>().name;
-        info.value = nodeDataToString(model->getInputData(i));
         info.isConnected = !graphModel.connections(nodeId, PortType::In, i).empty();
+
+        // Capture summary and fields if connected
+        if (info.isConnected) {
+            auto data = model->getInputData(i);
+            if (data) {
+                info.summary = data->getSummary();
+                info.fields = data->getFields();
+            }
+        }
         snapshot.inputPorts.push_back(info);
     }
 
@@ -68,21 +80,29 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     for (PortIndex i = 0; i < outPortCount; ++i) {
         PortDataInfo info;
         info.index = i;
+        info.portType = PortType::Out;
+        info.showIndex = (outPortCount > 1);
         info.name = getPortName(graphModel, nodeId, PortType::Out, i);
         info.dataType = graphModel.portData(nodeId, PortType::Out, i, PortRole::DataType)
                                         .value<NodeDataType>().name;
-        info.value = nodeDataToString(model->getOutputData(i));
         info.isConnected = !graphModel.connections(nodeId, PortType::Out, i).empty();
+
+        // Capture summary and fields
+        auto data = model->getOutputData(i);
+        if (data) {
+            info.summary = data->getSummary();
+            info.fields = data->getFields();
+        }
         snapshot.outputPorts.push_back(info);
     }
 
-    // Processing info placeholder
-    if (snapshot.state == static_cast<int>(ExecutionState::Running) ||
-        snapshot.state == static_cast<int>(ExecutionState::Completed)) {
-        snapshot.processingInfo.push_back(QObject::tr("Node is processing..."));
-    } else if (snapshot.state == static_cast<int>(ExecutionState::Error)) {
-        snapshot.processingInfo.push_back(QObject::tr("Execution failed"));
-    }
+    // Capture node parameters (same as PropertyEditor)
+    snapshot.parameters = model->getParameters();
+
+    // Processing info - leave empty for future processing logs/messages
+    // State and Mode are already displayed in window title (e.g., "Node Name (State)")
+    // No need to duplicate them in processingInfo area
+    snapshot.processingInfo.clear();
 
     return snapshot;
 }

@@ -7,6 +7,9 @@
 #include <QStyle>
 #include <QFileInfo>
 #include <QSet>
+#include <QFileDialog>
+#include <QToolButton>
+#include <QDebug>
 #include <algorithm>
 
 // QtNodes headers
@@ -956,16 +959,47 @@ void PropertyEditor::generateInputSection()
     contentLayout->removeItem(contentLayout->itemAt(contentLayout->count() - 1));
 
     QString noPortsTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+    QString sectionTextColor = darkTheme ? "#94A3B8" : "#64748B";
+    QString sectionBgColor = darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(241, 245, 249, 0.8)";
 
-    if (m_nodeData.inputPorts.isEmpty()) {
-        QLabel* noPortsLabel = new QLabel("No input ports");
-        noPortsLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noPortsTextColor));
-        contentLayout->addWidget(noPortsLabel);
-    } else {
+    bool hasContent = false;
+
+    // Display input ports (from connected upstream nodes)
+    if (!m_nodeData.inputPorts.isEmpty()) {
+        QLabel* portsLabel = new QLabel("Port Data");
+        portsLabel->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px; margin-bottom: 4px;").arg(sectionTextColor));
+        contentLayout->addWidget(portsLabel);
+
         for (const PortDataInfo& info : m_nodeData.inputPorts) {
             // Input ports are generally not editable (data comes from connected nodes)
             addPortCard(contentLayout, info, false);
         }
+        hasContent = true;
+    }
+
+    // Display widget parameters (from node's controls like QLineEdit)
+    if (!m_nodeData.parameters.isEmpty()) {
+        if (hasContent) {
+            // Add separator
+            QLabel* separator = new QLabel();
+            separator->setStyleSheet(QString("background-color: %1; margin: 12px 0; max-height: 1px;").arg(sectionBgColor));
+            contentLayout->addWidget(separator);
+        }
+
+        QLabel* paramsLabel = new QLabel("Node Parameters");
+        paramsLabel->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px; margin-bottom: 4px;").arg(sectionTextColor));
+        contentLayout->addWidget(paramsLabel);
+
+        for (const QtNodes::ParameterInfo& param : m_nodeData.parameters) {
+            addParameterCard(contentLayout, param);
+        }
+        hasContent = true;
+    }
+
+    if (!hasContent) {
+        QLabel* noContentLabel = new QLabel("No input ports or parameters");
+        noContentLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noPortsTextColor));
+        contentLayout->addWidget(noContentLabel);
     }
 
     contentLayout->addStretch();
@@ -1064,9 +1098,14 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
     QString secondaryTextColor = darkTheme ? "#94A3B8" : "#64748B";
     QString tertiaryTextColor = darkTheme ? "#FFFFFF" : "#334155";
 
-    // Port name and index with bold styling
-    QString headerText = QString("<b>%1</b> <span style='color: %2;'>[Port %3]</span>")
-        .arg(info.name).arg(secondaryTextColor).arg(info.index);
+    // Port name with optional index
+    QString headerText;
+    if (info.showIndex) {
+        headerText = QString("<b>%1</b> <span style='color: %2;'>[%3]</span>")
+            .arg(info.name).arg(secondaryTextColor).arg(info.index);
+    } else {
+        headerText = QString("<b>%1</b>").arg(info.name);
+    }
     QLabel* nameLabel = new QLabel(headerText);
     nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(primaryTextColor));
     cardLayout->addWidget(nameLabel);
@@ -1076,15 +1115,369 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
     typeLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
     cardLayout->addWidget(typeLabel);
 
-    // Value (if exists) with glass effect
-    if (!info.value.isEmpty()) {
-        QString displayValue = info.value;
+    // Check if summary and fields are redundant
+    bool showSummary = !info.summary.isEmpty();
+    if (showSummary && !info.fields.isEmpty()) {
+        // If fields has only one field and its value is similar to summary, skip summary
+        if (info.fields.size() == 1) {
+            const auto& firstField = info.fields.first();
+            // Compare summary with field value (case-insensitive, trimmed)
+            QString summaryTrimmed = info.summary.trimmed().toLower();
+            QString valueTrimmed = firstField.value.trimmed().toLower();
+            if (summaryTrimmed == valueTrimmed) {
+                showSummary = false;
+            }
+        }
+    }
+
+    // Summary (if exists and not redundant)
+    if (showSummary) {
+        QString displaySummary = info.summary;
         // Truncate long values
+        if (displaySummary.length() > 60) {
+            displaySummary = displaySummary.left(60) + "...";
+        }
+
+        QLabel* summaryLabel = new QLabel(displaySummary);
+        QString summaryBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
+        summaryLabel->setStyleSheet(QString(
+            "QLabel {"
+            "   color: %1;"
+            "   font-size: 11px;"
+            "   background-color: %2;"
+            "   padding: 6px 8px;"
+            "   border-radius: 4px;"
+            "   border-left: 3px solid #3B82F6;"
+            "}"
+        ).arg(tertiaryTextColor).arg(summaryBg));
+        summaryLabel->setWordWrap(true);
+        cardLayout->addWidget(summaryLabel);
+    }
+
+    // Fields (if exists) - 支持可编辑
+    if (!info.fields.isEmpty()) {
+        for (const auto& field : info.fields) {
+            // 创建字段行
+            QHBoxLayout* fieldLayout = new QHBoxLayout();
+            fieldLayout->setSpacing(6);
+
+            QLabel* keyLabel = new QLabel(field.key + ":");
+            keyLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
+            keyLabel->setMinimumWidth(60);
+            fieldLayout->addWidget(keyLabel);
+
+            // 根据编辑类型和 isEditable 创建不同的控件
+            if (!isEditable || field.editType == QtNodes::FieldEditType::None) {
+                // 只读标签
+                QString displayValue = field.value;
+                if (displayValue.length() > 50) {
+                    displayValue = displayValue.left(50) + "...";
+                }
+                QLabel* valueLabel = new QLabel(displayValue);
+                valueLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(tertiaryTextColor));
+                valueLabel->setWordWrap(true);
+                fieldLayout->addWidget(valueLabel);
+            }
+            else if (field.editType == QtNodes::FieldEditType::Text) {
+                // 只读标签
+                QString displayValue = field.value;
+                if (displayValue.length() > 50) {
+                    displayValue = displayValue.left(50) + "...";
+                }
+                QLabel* valueLabel = new QLabel(displayValue);
+                valueLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(tertiaryTextColor));
+                valueLabel->setWordWrap(true);
+                fieldLayout->addWidget(valueLabel);
+            }
+            else if (field.editType == QtNodes::FieldEditType::Text) {
+                // 文本编辑框
+                QLineEdit* lineEdit = new QLineEdit(field.value);
+                lineEdit->setStyleSheet(QString(
+                    "QLineEdit {"
+                    "   color: %1;"
+                    "   font-size: 10px;"
+                    "   background-color: rgba(255, 255, 255, 0.1);"
+                    "   border: 1px solid rgba(148, 163, 184, 0.3);"
+                    "   border-radius: 4px;"
+                    "   padding: 3px 6px;"
+                    "}"
+                    "QLineEdit:focus {"
+                    "   border-color: #3B82F6;"
+                    "}"
+                ).arg(tertiaryTextColor));
+
+                // 连接编辑完成信号
+                connect(lineEdit, &QLineEdit::editingFinished, this, [this, lineEdit, info, field]() {
+                    QString newValue = lineEdit->text();
+                    if (newValue != field.value) {
+                        emit portDataChanged(m_currentNodeId, info.portType, info.index, field.key, newValue);
+                    }
+                });
+
+                fieldLayout->addWidget(lineEdit);
+            }
+            else if (field.editType == QtNodes::FieldEditType::Number) {
+                // 数字编辑框
+                QDoubleSpinBox* spinBox = new QDoubleSpinBox();
+                spinBox->setRange(field.minNumber, field.maxNumber);
+                spinBox->setDecimals(field.decimals);
+                spinBox->setValue(field.value.toDouble());
+                spinBox->setStyleSheet(QString(
+                    "QDoubleSpinBox {"
+                    "   color: %1;"
+                    "   font-size: 10px;"
+                    "   background-color: rgba(255, 255, 255, 0.1);"
+                    "   border: 1px solid rgba(148, 163, 184, 0.3);"
+                    "   border-radius: 4px;"
+                    "   padding: 2px 6px;"
+                    "}"
+                ).arg(tertiaryTextColor));
+
+                // 连接值变化信号
+                connect(spinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+                        this, [this, info, field](double value) {
+                    QString newValue = QString::number(value, 'f', field.decimals);
+                    emit portDataChanged(m_currentNodeId, info.portType, info.index, field.key, newValue);
+                });
+
+                fieldLayout->addWidget(spinBox);
+            }
+            else if (field.editType == QtNodes::FieldEditType::Path) {
+                // 文件路径选择
+                QHBoxLayout* pathLayout = new QHBoxLayout();
+                pathLayout->setSpacing(4);
+
+                QLineEdit* lineEdit = new QLineEdit(field.value);
+                lineEdit->setStyleSheet(QString(
+                    "QLineEdit {"
+                    "   color: %1;"
+                    "   font-size: 10px;"
+                    "   background-color: rgba(255, 255, 255, 0.1);"
+                    "   border: 1px solid rgba(148, 163, 184, 0.3);"
+                    "   border-radius: 4px;"
+                    "   padding: 3px 6px;"
+                    "}"
+                ).arg(tertiaryTextColor));
+
+                QToolButton* browseBtn = new QToolButton();
+                browseBtn->setText("...");
+                browseBtn->setStyleSheet(QString(
+                    "QToolButton {"
+                    "   background-color: rgba(59, 130, 246, 0.3);"
+                    "   border: 1px solid rgba(59, 130, 246, 0.5);"
+                    "   border-radius: 4px;"
+                    "   min-width: 24px;"
+                    "   max-width: 24px;"
+                    "}"
+                    "QToolButton:hover {"
+                    "   background-color: rgba(59, 130, 246, 0.5);"
+                    "}"
+                ).arg(tertiaryTextColor));
+
+                // 浏览按钮点击事件
+                connect(browseBtn, &QToolButton::clicked, this, [this, lineEdit, field]() {
+                    QString fileName = QFileDialog::getOpenFileName(
+                        this,
+                        "Select File",
+                        lineEdit->text(),
+                        field.pathFilter
+                    );
+                    if (!fileName.isEmpty()) {
+                        lineEdit->setText(fileName);
+                    }
+                });
+
+                // 连接编辑完成信号
+                connect(lineEdit, &QLineEdit::editingFinished, this, [this, lineEdit, info, field]() {
+                    QString newValue = lineEdit->text();
+                    if (newValue != field.value) {
+                        emit portDataChanged(m_currentNodeId, info.portType, info.index, field.key, newValue);
+                    }
+                });
+
+                pathLayout->addWidget(lineEdit, 1);
+                pathLayout->addWidget(browseBtn);
+                fieldLayout->addLayout(pathLayout);
+            }
+
+            cardLayout->addLayout(fieldLayout);
+        }
+    }
+
+    // Connection status with color coding (using QChar for better Unicode support)
+    QString statusText = info.isConnected ?
+        QString(QChar(0x25CF)) + " Connected" :
+        QString(QChar(0x25CB)) + " Not connected";
+    QString statusColor = info.isConnected ? "#10B981" : "#94A3B8";
+    QLabel* statusLabel = new QLabel(statusText);
+    statusLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: bold;").arg(statusColor));
+    cardLayout->addWidget(statusLabel);
+
+    layout->addWidget(card);
+}
+
+void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::ParameterInfo& param)
+{
+    bool darkTheme = isDarkTheme();
+
+    // Create card with glass effect
+    QFrame* card = new QFrame();
+    card->setFrameShape(QFrame::StyledPanel);
+
+    QString cardBg = darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)";
+    QString cardBorder = darkTheme ? "rgba(148, 163, 184, 0.3)" : "rgba(148, 163, 184, 0.3)";
+
+    card->setStyleSheet(QString(
+        "QFrame {"
+        "   background-color: %1;"
+        "   border: 1px solid %2;"
+        "   border-radius: 8px;"
+        "}"
+    ).arg(cardBg).arg(cardBorder));
+
+    QVBoxLayout* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(10, 10, 10, 10);
+    cardLayout->setSpacing(6);
+
+    // Text colors based on theme
+    QString primaryTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
+    QString secondaryTextColor = darkTheme ? "#94A3B8" : "#64748B";
+    QString tertiaryTextColor = darkTheme ? "#FFFFFF" : "#334155";
+
+    // Parameter name with bold styling
+    QLabel* nameLabel = new QLabel(QString("<b>%1</b>").arg(param.name));
+    nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(primaryTextColor));
+    cardLayout->addWidget(nameLabel);
+
+    // Data type
+    QLabel* typeLabel = new QLabel(QString("Type: %1").arg(param.dataType));
+    typeLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
+    cardLayout->addWidget(typeLabel);
+
+    // Create editable control based on editType
+    if (param.editType == QtNodes::FieldEditType::Text) {
+        QLineEdit* edit = new QLineEdit(param.value);
+        edit->setStyleSheet(QString(
+            "QLineEdit {"
+            "   color: %1;"
+            "   font-size: 11px;"
+            "   background-color: rgba(255, 255, 255, 0.1);"
+            "   border: 1px solid rgba(148, 163, 184, 0.3);"
+            "   border-radius: 4px;"
+            "   padding: 4px 8px;"
+            "}"
+            "QLineEdit:hover {"
+            "   border: 1px solid rgba(59, 130, 246, 0.5);"
+            "}"
+            "QLineEdit:focus {"
+            "   border: 1px solid #3B82F6;"
+            "}"
+        ).arg(tertiaryTextColor));
+
+        // Connect editing finished signal to update parameter
+        connect(edit, &QLineEdit::editingFinished, this, [this, edit, param]() {
+            QString newValue = edit->text();
+            if (newValue != param.value) {
+                emit propertyChanged(m_currentNodeId, param.name, newValue);
+                // TODO: Call a method on the node to update the parameter value
+                // This requires extending ExecutableNodeDelegateModel with setParameter()
+            }
+        });
+
+        cardLayout->addWidget(edit);
+    } else if (param.editType == QtNodes::FieldEditType::Number) {
+        QDoubleSpinBox* spinBox = new QDoubleSpinBox();
+        spinBox->setRange(param.minNumber, param.maxNumber);
+        spinBox->setDecimals(param.decimals);
+        spinBox->setValue(param.value.toDouble());
+        spinBox->setStyleSheet(QString(
+            "QDoubleSpinBox {"
+            "   color: %1;"
+            "   font-size: 11px;"
+            "   background-color: rgba(255, 255, 255, 0.1);"
+            "   border: 1px solid rgba(148, 163, 184, 0.3);"
+            "   border-radius: 4px;"
+            "   padding: 2px 4px;"
+            "}"
+            "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
+            "   width: 16px;"
+            "}"
+        ).arg(tertiaryTextColor));
+
+        // Connect value changed signal to update parameter
+        connect(spinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, spinBox, param](double value) {
+            QString newValue = QString::number(value, 'f', param.decimals);
+            emit propertyChanged(m_currentNodeId, param.name, newValue);
+            // TODO: Call a method on the node to update the parameter value
+        });
+
+        cardLayout->addWidget(spinBox);
+    } else if (param.editType == QtNodes::FieldEditType::Path) {
+        QHBoxLayout* pathLayout = new QHBoxLayout();
+        pathLayout->setSpacing(6);
+
+        QLineEdit* edit = new QLineEdit(param.value);
+        edit->setStyleSheet(QString(
+            "QLineEdit {"
+            "   color: %1;"
+            "   font-size: 11px;"
+            "   background-color: rgba(255, 255, 255, 0.1);"
+            "   border: 1px solid rgba(148, 163, 184, 0.3);"
+            "   border-radius: 4px;"
+            "   padding: 4px 8px;"
+            "}"
+        ).arg(tertiaryTextColor));
+
+        QToolButton* browseBtn = new QToolButton();
+        browseBtn->setText("...");
+        browseBtn->setStyleSheet(QString(
+            "QToolButton {"
+            "   background-color: rgba(59, 130, 246, 0.3);"
+            "   border: 1px solid rgba(59, 130, 246, 0.5);"
+            "   border-radius: 4px;"
+            "   min-width: 24px;"
+            "   max-width: 24px;"
+            "}"
+            "QToolButton:hover {"
+            "   background-color: rgba(59, 130, 246, 0.5);"
+            "}"
+        ));
+
+        // Connect browse button to file dialog
+        connect(browseBtn, &QToolButton::clicked, this, [this, edit, param]() {
+            QString fileName = QFileDialog::getOpenFileName(
+                this,
+                QString("Select %1").arg(param.name),
+                edit->text(),
+                param.pathFilter
+            );
+            if (!fileName.isEmpty()) {
+                edit->setText(fileName);
+                emit propertyChanged(m_currentNodeId, param.name, fileName);
+                // TODO: Call a method on the node to update the parameter value
+            }
+        });
+
+        // Connect editing finished signal
+        connect(edit, &QLineEdit::editingFinished, this, [this, edit, param]() {
+            QString newValue = edit->text();
+            if (newValue != param.value) {
+                emit propertyChanged(m_currentNodeId, param.name, newValue);
+                // TODO: Call a method on the node to update the parameter value
+            }
+        });
+
+        pathLayout->addWidget(edit, 1);
+        pathLayout->addWidget(browseBtn);
+        cardLayout->addLayout(pathLayout);
+    } else {
+        // Read-only display
+        QString displayValue = param.value;
         if (displayValue.length() > 60) {
             displayValue = displayValue.left(60) + "...";
         }
 
-        QLabel* valueLabel = new QLabel(QString("Value: %1").arg(displayValue));
+        QLabel* valueLabel = new QLabel(displayValue);
         QString valueBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
         valueLabel->setStyleSheet(QString(
             "QLabel {"
@@ -1099,15 +1492,6 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
         valueLabel->setWordWrap(true);
         cardLayout->addWidget(valueLabel);
     }
-
-    // Connection status with color coding (using QChar for better Unicode support)
-    QString statusText = info.isConnected ?
-        QString(QChar(0x25CF)) + " Connected" :
-        QString(QChar(0x25CB)) + " Not connected";
-    QString statusColor = info.isConnected ? "#10B981" : "#94A3B8";
-    QLabel* statusLabel = new QLabel(statusText);
-    statusLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: bold;").arg(statusColor));
-    cardLayout->addWidget(statusLabel);
 
     layout->addWidget(card);
 }
@@ -1199,19 +1583,31 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         for (int i = 0; i < inputPortCount; ++i) {
             PortDataInfo info;
             info.index = i;
-            info.name = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::Caption).toString();
-            if (info.name.isEmpty()) {
-                info.name = QString("Input %1").arg(i);
+            info.portType = QtNodes::PortType::In;
+            QString caption = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::Caption).toString();
+            if (caption.isEmpty()) {
+                // Use dataType name as port name (e.g., "In Data")
+                auto portDataType = execModel->dataType(QtNodes::PortType::In, i);
+                info.name = portDataType.name;
+                // No custom caption: show index only if there are multiple ports
+                info.showIndex = (inputPortCount > 1);
+            } else {
+                // Has custom caption: use it directly, no index needed
+                info.name = caption;
+                info.showIndex = false;
             }
-            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::DataType).toString();
-            info.value = "";  // Will be filled if connected
+            info.dataType = "";
+            info.summary = "";
+            info.fields = {};
             info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::In, i).empty();
 
             if (info.isConnected && execModel) {
                 auto data = execModel->getInputData(i);
                 if (data) {
-                    // Use data type name as value representation
-                    info.value = data->type().name;
+                    // Get type name directly from data object
+                    info.dataType = data->type().name;
+                    info.summary = data->getSummary();
+                    info.fields = data->getFields();
                 }
             }
 
@@ -1223,24 +1619,39 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         for (int i = 0; i < outputPortCount; ++i) {
             PortDataInfo info;
             info.index = i;
-            info.name = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::Caption).toString();
-            if (info.name.isEmpty()) {
-                info.name = QString("Output %1").arg(i);
+            info.portType = QtNodes::PortType::Out;
+            QString caption = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::Caption).toString();
+            if (caption.isEmpty()) {
+                // Use dataType name as port name (e.g., "Out Data")
+                auto portDataType = execModel->dataType(QtNodes::PortType::Out, i);
+                info.name = portDataType.name;
+                // No custom caption: show index only if there are multiple ports
+                info.showIndex = (outputPortCount > 1);
+            } else {
+                // Has custom caption: use it directly, no index needed
+                info.name = caption;
+                info.showIndex = false;
             }
-            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::DataType).toString();
-            info.value = "";  // Will be filled if data exists
+            info.dataType = "";
+            info.summary = "";
+            info.fields = {};
             info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::Out, i).empty();
 
             if (execModel) {
                 auto data = execModel->getOutputData(i);
                 if (data) {
-                    // Use data type name as value representation
-                    info.value = data->type().name;
+                    // Get type name directly from data object
+                    info.dataType = data->type().name;
+                    info.summary = data->getSummary();
+                    info.fields = data->getFields();
                 }
             }
 
             m_nodeData.outputPorts.append(info);
         }
+
+        // Capture widget parameters (from node's controls like QLineEdit, etc.)
+        m_nodeData.parameters = execModel->getParameters();
 
         // Processing info is cleared (no status/mode info since shown in Basic Info section)
         // This section is reserved for future use (e.g., processing logs, messages, etc.)
@@ -1251,12 +1662,16 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         for (int i = 0; i < inputPortCount; ++i) {
             PortDataInfo info;
             info.index = i;
+            info.portType = QtNodes::PortType::In;
             info.name = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::Caption).toString();
             if (info.name.isEmpty()) {
-                info.name = QString("Input %1").arg(i);
+                // Use dataType name as port name
+                auto portDataType = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::DataType).value<QtNodes::NodeDataType>();
+                info.name = portDataType.name;
             }
-            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::DataType).toString();
-            info.value = "";
+            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::In, i, QtNodes::PortRole::DataType).value<QtNodes::NodeDataType>().name;
+            info.summary = "";
+            info.fields = {};
             info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::In, i).empty();
             m_nodeData.inputPorts.append(info);
         }
@@ -1265,12 +1680,16 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         for (int i = 0; i < outputPortCount; ++i) {
             PortDataInfo info;
             info.index = i;
+            info.portType = QtNodes::PortType::Out;
             info.name = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::Caption).toString();
             if (info.name.isEmpty()) {
-                info.name = QString("Output %1").arg(i);
+                // Use dataType name as port name
+                auto portDataType = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::DataType).value<QtNodes::NodeDataType>();
+                info.name = portDataType.name;
             }
-            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::DataType).toString();
-            info.value = "";
+            info.dataType = m_graphModel->portData(nodeId, QtNodes::PortType::Out, i, QtNodes::PortRole::DataType).value<QtNodes::NodeDataType>().name;
+            info.summary = "";
+            info.fields = {};
             info.isConnected = !m_graphModel->connections(nodeId, QtNodes::PortType::Out, i).empty();
             m_nodeData.outputPorts.append(info);
         }

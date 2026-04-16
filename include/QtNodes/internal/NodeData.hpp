@@ -1,16 +1,17 @@
-#pragma once
+﻿#pragma once
 
 #include <memory>
 
 #include <QtCore/QObject>
 #include <QtCore/QString>
+#include <QtCore/QVector>
 
 #include "Export.hpp"
 
 namespace QtNodes {
 
 /**
- * `id` represents an internal unique data type for the given port.
+ * `id` represents an internal unique data type for given port.
  * `name` is a normal text description.
  */
 struct NODE_EDITOR_PUBLIC NodeDataType
@@ -20,8 +21,33 @@ struct NODE_EDITOR_PUBLIC NodeDataType
 };
 
 /**
+ * @brief FieldEditType - 字段编辑类型
+ */
+enum class FieldEditType
+{
+    None,       // 不可编辑
+    Text,       // 文本输入
+    Number,     // 数字输入（支持 double）
+    Path        // 文件路径选择
+};
+
+/**
+ * @brief DataField - 数据字段描述
+ */
+struct NODE_EDITOR_PUBLIC DataField
+{
+    QString key;
+    QString value;
+    FieldEditType editType = FieldEditType::None;  // 编辑类型
+    double minNumber = -1000000.0;                // 数字最小值
+    double maxNumber = 1000000.0;                  // 数字最大值
+    int decimals = 2;                              // 小数位数
+    QString pathFilter = "All Files (*)";          // 文件过滤器
+};
+
+/**
  * Class represents data transferred between nodes.
- * @param type is used for comparing the types
+ * @param type is used for comparing types
  * The actual data is stored in subtypes
  */
 class NODE_EDITOR_PUBLIC NodeData
@@ -36,6 +62,32 @@ public:
 
     /// Type for inner use
     virtual NodeDataType type() const = 0;
+
+    /**
+     * @brief getSummary - 获取数据摘要（单行简短描述）
+     */
+    virtual QString getSummary() const {
+        return type().name;
+    }
+
+    /**
+     * @brief getFields - 获取数据字段详情
+     */
+    virtual QVector<DataField> getFields() const {
+        return {};
+    }
+
+    /**
+     * @brief setField - 设置字段值
+     * @param key 字段名称
+     * @param value 新值
+     * @return 是否设置成功
+     */
+    virtual bool setField(const QString& key, const QString& value) {
+        Q_UNUSED(key);
+        Q_UNUSED(value);
+        return false;
+    }
 };
 
 } // namespace QtNodes
