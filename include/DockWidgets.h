@@ -138,7 +138,6 @@ struct CollapsibleSection {
     QWidget* header = nullptr;
     QToolButton* toggleButton = nullptr;
     QLabel* titleLabel = nullptr;
-    QScrollArea* scrollArea = nullptr;
     QWidget* contentWidget = nullptr;
     bool isExpanded = true;
 };
@@ -200,6 +199,11 @@ private:
     QScrollArea *m_scrollArea;
     QWidget *m_contentWidget;
     QVBoxLayout *m_mainLayout;
+
+    // 固定顶部区域（Node ID + 基本信息）
+    QWidget *m_fixedTopWidget;
+    QVBoxLayout *m_fixedTopLayout;
+
     QLabel *m_noSelectionLabel;
     QLabel *m_nodeIdLabel;
     QDoubleSpinBox *m_xSpinBox;

@@ -458,48 +458,58 @@ void PropertyEditor::setupUi()
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
 
-    // Create scroll area
+    // === 顶部固定区域（Node ID + 基本信息）===
+    m_fixedTopWidget = new QWidget();
+    m_fixedTopLayout = new QVBoxLayout(m_fixedTopWidget);
+    m_fixedTopLayout->setContentsMargins(8, 8, 8, 8);
+    m_fixedTopLayout->setSpacing(8);
+
+    // "No selection" 标签
+    m_noSelectionLabel = new QLabel("No node selected");
+    m_noSelectionLabel->setAlignment(Qt::AlignCenter);
+    bool darkTheme = isDarkTheme();
+    QString noSelectionTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+    m_noSelectionLabel->setStyleSheet(QString("color: %1;").arg(noSelectionTextColor));
+    m_fixedTopLayout->addWidget(m_noSelectionLabel);
+
+    layout->addWidget(m_fixedTopWidget);
+
+    // === 底部可滚动区域（三个 CollapsibleSection）===
     m_scrollArea = new QScrollArea();
     m_scrollArea->setWidgetResizable(true);
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
 
-    // Create content widget
     m_contentWidget = new QWidget();
     m_contentWidget->setMinimumWidth(250);
 
     m_mainLayout = new QVBoxLayout(m_contentWidget);
     m_mainLayout->setContentsMargins(8, 8, 8, 8);
     m_mainLayout->setSpacing(8);
-    m_mainLayout->addStretch();
+    // 移除 addStretch() - 它在所有内容之前添加，会导致内容被推下去
 
-    m_scrollArea->setWidget(m_contentWidget);
-    layout->addWidget(m_scrollArea);
-
-    // Initial state - no selection
-    m_noSelectionLabel = new QLabel("No node selected");
-    m_noSelectionLabel->setAlignment(Qt::AlignCenter);
-    bool darkTheme = isDarkTheme();
-    QString noSelectionTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
-    m_noSelectionLabel->setStyleSheet(QString("color: %1;").arg(noSelectionTextColor));
-    m_mainLayout->insertWidget(0, m_noSelectionLabel);
-
-    // Create collapsible sections
+    // 创建三个可折叠区域（移除独立的滚动区域）
     createCollapsibleSection(m_inputSection, "Input Data");
     createCollapsibleSection(m_processingSection, "Processing Info");
     createCollapsibleSection(m_outputSection, "Output Data");
 
-    // Add sections to layout (before the stretch)
-    m_mainLayout->insertWidget(m_mainLayout->count() - 1, m_inputSection.container);
-    m_mainLayout->insertWidget(m_mainLayout->count() - 1, m_processingSection.container);
-    m_mainLayout->insertWidget(m_mainLayout->count() - 1, m_outputSection.container);
+    m_mainLayout->addWidget(m_inputSection.container);
+    m_mainLayout->addWidget(m_processingSection.container);
+    m_mainLayout->addWidget(m_outputSection.container);
+    // 添加一个最终的 stretch 来吸收所有额外空间
+    // 这样三个折叠区只会占据实际内容大小，剩余空间留空
+    m_mainLayout->addStretch();
 
-    // Hide sections initially (shown when node selected)
-    m_inputSection.container->hide();
-    m_processingSection.container->hide();
-    m_outputSection.container->hide();
+    m_scrollArea->setWidget(m_contentWidget);
+    // 设置内容靠上对齐，避免内容在 ScrollArea 中垂直居中
+    m_scrollArea->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    layout->addWidget(m_scrollArea);
+
+    // 初始隐藏可滚动区域
+    m_scrollArea->hide();
 }
 
 void PropertyEditor::createCollapsibleSection(CollapsibleSection& section, const QString& title)
@@ -557,45 +567,16 @@ void PropertyEditor::createCollapsibleSection(CollapsibleSection& section, const
 
     layout->addWidget(section.header);
 
-    // Create content area
-    section.scrollArea = new QScrollArea();
-    section.scrollArea->setMaximumHeight(300);
-    section.scrollArea->setWidgetResizable(true);
-    section.scrollArea->setFrameShape(QFrame::NoFrame);
-    section.scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    section.scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-
-    // Apply scrollbar styles
-    QString scrollbarBg = darkTheme ? "rgba(64, 64, 64, 0.3)" : "rgba(241, 245, 249, 0.3)";
-    QString scrollbarHandle = darkTheme ? "rgba(74, 116, 141, 0.6)" : "rgba(59, 130, 246, 0.6)";
-
-    section.scrollArea->setStyleSheet(QString(
-        "QScrollArea {"
-        "  border: none;"
-        "  background: transparent;"
-        "}"
-        "QScrollBar:vertical {"
-        "  background: %1;"
-        "  width: 10px;"
-        "  border-radius: 5px;"
-        "}"
-        "QScrollBar::handle:vertical {"
-        "  background: %2;"
-        "  min-height: 20px;"
-        "  border-radius: 5px;"
-        "}"
-        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
-    ).arg(scrollbarBg).arg(scrollbarHandle));
-
+    // 直接使用 contentWidget 作为内容容器（移除独立的 scrollArea）
     section.contentWidget = new QWidget();
     section.contentWidget->setStyleSheet("QWidget { background: transparent; }");
+
     QVBoxLayout* contentLayout = new QVBoxLayout(section.contentWidget);
     contentLayout->setContentsMargins(8, 8, 8, 8);
     contentLayout->setSpacing(6);
-    contentLayout->addStretch();
+    // 不再添加 stretch，区域按实际内容大小排列
 
-    section.scrollArea->setWidget(section.contentWidget);
-    layout->addWidget(section.scrollArea);
+    layout->addWidget(section.contentWidget);
 
     section.isExpanded = true;  // 默认全部展开
 }
@@ -606,10 +587,10 @@ void PropertyEditor::toggleSection(CollapsibleSection& section)
 
     if (section.isExpanded) {
         section.toggleButton->setArrowType(Qt::ArrowType::DownArrow);
-        section.scrollArea->show();
+        section.contentWidget->show();
     } else {
         section.toggleButton->setArrowType(Qt::ArrowType::RightArrow);
-        section.scrollArea->hide();
+        section.contentWidget->hide();
     }
 }
 
@@ -637,10 +618,10 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
 
     m_currentNodeId = nodeId;
 
-    // 清理旧的 m_nodeIdLabel
+    // 清理旧的 m_nodeIdLabel（从固定顶部区域）
     if (m_nodeIdLabel)
     {
-        m_mainLayout->removeWidget(m_nodeIdLabel);
+        m_fixedTopLayout->removeWidget(m_nodeIdLabel);
         m_nodeIdLabel->deleteLater();
         m_nodeIdLabel = nullptr;
     }
@@ -664,10 +645,8 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
     if (!m_graphModel || nodeId == QtNodes::InvalidNodeId)
     {
         m_noSelectionLabel->show();
-        // Hide collapsible sections
-        m_inputSection.container->hide();
-        m_processingSection.container->hide();
-        m_outputSection.container->hide();
+        // 隐藏可滚动区域
+        m_scrollArea->hide();
         return;
     }
 
@@ -675,11 +654,7 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
     captureNodeData(nodeId);
 
     m_noSelectionLabel->hide();
-
-    // Show collapsible sections
-    m_inputSection.container->show();
-    m_processingSection.container->show();
-    m_outputSection.container->show();
+    m_scrollArea->show();  // 显示可滚动区域
 
     // Clear old separator and basicInfoWidget from layout
     clearBasicInfoFromLayout();
@@ -694,7 +669,7 @@ void PropertyEditor::clearSelection()
     // 先移除旧的 m_nodeIdLabel（如果存在）
     if (m_nodeIdLabel)
     {
-        m_mainLayout->removeWidget(m_nodeIdLabel);
+        m_fixedTopLayout->removeWidget(m_nodeIdLabel);
         m_nodeIdLabel->deleteLater();
         m_nodeIdLabel = nullptr;  // 立即置空，防止访问已删除对象
     }
@@ -712,10 +687,8 @@ void PropertyEditor::clearSelection()
     m_progressBar = nullptr;
     m_modeLabel = nullptr;
 
-    // Hide collapsible sections
-    m_inputSection.container->hide();
-    m_processingSection.container->hide();
-    m_outputSection.container->hide();
+    // Hide scroll area
+    m_scrollArea->hide();
 
     m_noSelectionLabel->show();
 }
@@ -732,7 +705,7 @@ void PropertyEditor::refreshCurrentNode()
 
     // Clear old node ID label
     if (m_nodeIdLabel) {
-        m_mainLayout->removeWidget(m_nodeIdLabel);
+        m_fixedTopLayout->removeWidget(m_nodeIdLabel);
         m_nodeIdLabel->deleteLater();
         m_nodeIdLabel = nullptr;
     }
@@ -754,11 +727,11 @@ void PropertyEditor::generateProperties()
 
     bool darkTheme = isDarkTheme();
 
-    // Add node ID display at top
+    // Add node ID display to fixed top area
     m_nodeIdLabel = new QLabel("Node ID: " + QString::number(static_cast<int>(m_currentNodeId)));
     QString nodeIdTextColor = darkTheme ? "#94A3B8" : "#64748B";
     m_nodeIdLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(nodeIdTextColor));
-    m_mainLayout->insertWidget(0, m_nodeIdLabel);
+    m_fixedTopLayout->insertWidget(0, m_nodeIdLabel);
 
     // Generate each section
     generateBasicInfoSection();
@@ -770,16 +743,6 @@ void PropertyEditor::generateProperties()
 void PropertyEditor::generateBasicInfoSection()
 {
     bool darkTheme = isDarkTheme();
-
-    QFrame* separator = new QFrame();
-    separator->setFrameShape(QFrame::HLine);
-    separator->setFrameShadow(QFrame::Sunken);
-    if (darkTheme) {
-        separator->setStyleSheet("QFrame { background-color: rgba(255, 255, 255, 0.1); max-height: 1px; }");
-    } else {
-        separator->setStyleSheet("QFrame { background-color: #E2E8F0; max-height: 1px; }");
-    }
-    m_mainLayout->insertWidget(1, separator);
 
     // Create basic info container with glass effect
     QWidget* basicInfoWidget = new QWidget();
@@ -945,7 +908,19 @@ void PropertyEditor::generateBasicInfoSection()
         }
     }
 
-    m_mainLayout->insertWidget(2, basicInfoWidget);
+    // 添加到固定顶部区域（而不是 m_mainLayout）
+    m_fixedTopLayout->addWidget(basicInfoWidget);
+
+    // 添加分割条到基本信息下方（固定区域和滚动区域之间）
+    QFrame* separator = new QFrame();
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Sunken);
+    if (darkTheme) {
+        separator->setStyleSheet("QFrame { background-color: rgba(255, 255, 255, 0.1); max-height: 1px; }");
+    } else {
+        separator->setStyleSheet("QFrame { background-color: #E2E8F0; max-height: 1px; }");
+    }
+    m_fixedTopLayout->addWidget(separator);
 }
 
 void PropertyEditor::generateInputSection()
@@ -1001,8 +976,7 @@ void PropertyEditor::generateInputSection()
         noContentLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noPortsTextColor));
         contentLayout->addWidget(noContentLabel);
     }
-
-    contentLayout->addStretch();
+    // 不再添加 stretch，区域按实际内容大小排列
 }
 
 void PropertyEditor::generateProcessingSection()
@@ -1039,8 +1013,7 @@ void PropertyEditor::generateProcessingSection()
             contentLayout->addWidget(infoLabel);
         }
     }
-
-    contentLayout->addStretch();
+    // 不再添加 stretch，区域按实际内容大小排列
 }
 
 void PropertyEditor::generateOutputSection()
@@ -1066,8 +1039,7 @@ void PropertyEditor::generateOutputSection()
             addPortCard(contentLayout, info, false);
         }
     }
-
-    contentLayout->addStretch();
+    // 不再添加 stretch，区域按实际内容大小排列
 }
 
 void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, bool isEditable)
@@ -1509,7 +1481,7 @@ void PropertyEditor::clearProperties()
                     }
                     delete item;
                 }
-                layout->addStretch();
+                // 不再添加 stretch，区域按实际内容大小排列
             }
         }
     };
@@ -1521,33 +1493,25 @@ void PropertyEditor::clearProperties()
 
 void PropertyEditor::clearBasicInfoFromLayout()
 {
-    if (!m_mainLayout)
+    if (!m_fixedTopLayout)
         return;
 
-    // Iterate through layout items to find and remove separator and basicInfoWidget
-    // We iterate backwards to safely remove items
-    for (int i = m_mainLayout->count() - 1; i >= 0; --i)
-    {
-        QLayoutItem* item = m_mainLayout->itemAt(i);
-        if (!item)
-            continue;
+    // 清除 m_fixedTopLayout 中的 separator 和 basicInfoWidget
+    // 跳过 m_noSelectionLabel
+    for (int i = m_fixedTopLayout->count() - 1; i >= 0; --i) {
+        QLayoutItem* item = m_fixedTopLayout->itemAt(i);
+        if (!item) continue;
 
         QWidget* widget = item->widget();
-        if (!widget)
-            continue;
+        if (!widget) continue;
 
-        // Skip collapsible section containers and noSelectionLabel only
-        // m_nodeIdLabel should be removed before calling this method
-        if (widget == m_inputSection.container ||
-            widget == m_processingSection.container ||
-            widget == m_outputSection.container ||
-            widget == m_noSelectionLabel)
-        {
+        // 跳过 m_noSelectionLabel
+        if (widget == m_noSelectionLabel) {
             continue;
         }
 
         // Remove and delete the widget (separator or basicInfoWidget)
-        m_mainLayout->removeWidget(widget);
+        m_fixedTopLayout->removeWidget(widget);
         widget->deleteLater();
     }
 }
