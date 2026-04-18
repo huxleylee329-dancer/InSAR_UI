@@ -5,6 +5,12 @@
 #include<qgraphicsscene.h>
 #include"qprogressdialog.h"
 #include"MyThread.h"
+#include "IApplicationInterface.h"
+#include "InterfaceManager.h"
+
+class WorkspaceUI;
+class WorkflowUI;
+class XMLFile;
 
 class MainWindow : public QMainWindow
 {
@@ -51,6 +57,12 @@ private:
     // Double click project file to open
     QString double_click_open_project_file;
     bool b_open_throug_dbclk = false;
+
+    // Interface manager for workspace/workflow switching
+    InterfaceManager* m_interfaceManager;
+    WorkspaceUI* m_workspaceUI;
+    WorkflowUI* m_workflowUI;
+
 signals:
     void sendModel(QStandardItemModel*);
     void operate(QString, QString, QString);
@@ -86,14 +98,18 @@ private slots:
     void RenewTree(QStandardItemModel*);
     // Switch ColorBar
     void ShowColorBar(int index);
-    // Open node editor
-    void on_actionNodeEditor_triggered();
     // Theme switching
     void onThemeLight();
     void onThemeDark();
     void onThemeFusion();
+    // Interface switching
+    void switchToWorkspace();
+    void switchToWorkflow();
 private:
     void setupThemeMenu();
     void setTheme(const QString &theme);
     void updateThemeCheckState(QMenu* themeMenu, const QString& theme);
+    void setupInterfaceSwitchingMenu();
+    void updateInterfaceMenuCheckState();
+    void initializeInterfaces(QStandardItemModel* model, XMLFile* project, QString filePath = QString());
 };

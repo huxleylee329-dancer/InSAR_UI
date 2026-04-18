@@ -1,31 +1,18 @@
-﻿#ifndef NODEEDITORWINDOW_H
-#define NODEEDITORWINDOW_H
+﻿#ifndef WORKFLOWUI_H
+#define WORKFLOWUI_H
 
-#include <QMainWindow>
+#include "IApplicationInterface.h"
+#include <QWidget>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QTreeWidget>
-#include <QTreeWidgetItem>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QToolBar>
 #include <QAction>
-#include <QMenuBar>
 #include <QFileDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QMessageBox>
-#include <QStatusBar>
 #include <QStandardItemModel>
-#include <QDrag>
-#include <QMimeData>
-#include <QEvent>
-#include <QDragEnterEvent>
-#include <QDragMoveEvent>
-#include <QDropEvent>
-#include <QMouseEvent>
-#include <QComboBox>
-#include <memory>
 #include "PaletteOrder.h"
 
 // ADS (Qt Advanced Docking System)
@@ -50,13 +37,10 @@
 #include <QtNodes/NodeStyle>
 #include <QtNodes/GraphicsViewStyle>
 #include <QtNodes/internal/Definitions.hpp>
-#include <QtNodes/internal/NodeGraphicsObject.hpp>
-#include <QtNodes/internal/UndoCommands.hpp>
 
 #include "PaletteGraphicsView.h"
 
 // Forward declarations
-class NodeEditorWindow;
 class WorkflowBrowser;
 class NodeLibraryWidget;
 class NodeTreeWidget;
@@ -64,13 +48,26 @@ class PropertyEditor;
 class QueueManagerWidget;
 class NodeGroupManager;
 
-class NodeEditorWindow : public QMainWindow
+/**
+ * @brief 工作流节点编辑界面
+ *
+ * 从原NodeEditorWindow重构而来，改为QWidget，实现IApplicationInterface接口
+ */
+class WorkflowUI : public QWidget, public IApplicationInterface
 {
     Q_OBJECT
 
 public:
-    explicit NodeEditorWindow(QWidget *parent = nullptr);
-    ~NodeEditorWindow();
+    explicit WorkflowUI(QWidget *parent = nullptr);
+    ~WorkflowUI() override;
+
+    // IApplicationInterface interface
+    QWidget* centralWidget() override;
+    QList<QToolBar*> toolBars() override;
+    void activate() override;
+    void deactivate() override;
+    QString id() const override;
+    QString displayName() const override;
 
     // Project context methods
     void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name);
@@ -82,7 +79,7 @@ public:
     void setQtNodesTheme(const QString &theme);
     void initTheme();
 
-    // Getters for new components
+    // Getters
     NodeLibraryWidget* nodeLibrary() const { return m_nodeLibrary; }
     PropertyEditor* propertyEditor() const { return m_propertyEditor; }
     WorkflowBrowser* workflowBrowser() const { return m_workflowBrowser; }
@@ -144,6 +141,13 @@ private:
 
     QString getSaveFilePath();
     QString getOpenFilePath();
+
+    void openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::ExecutableNodeDelegateModel* execModel);
+    void cleanupDetailWindow();
+
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     // Use ADS namespace alias
@@ -210,13 +214,6 @@ private:
     QtNodes::NodeDetailWindow *_detailWindow = nullptr;
     QtNodes::NodeDetailOverlay *_detailOverlay = nullptr;
     QtNodes::NodeDetailAnimationController *_animationController = nullptr;
-
-protected:
-    bool eventFilter(QObject *obj, QEvent *event) override;
-
-private:
-    void openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::ExecutableNodeDelegateModel* execModel);
-    void cleanupDetailWindow();
 };
 
-#endif // NODEEDITORWINDOW_H
+#endif // WORKFLOWUI_H

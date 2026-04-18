@@ -27,6 +27,12 @@ QMenuBar::item:selected {
     color: white;
 }
 
+/* Checked menu item styling */
+QMenu::item:checked {
+    background-color: #4a9acf;
+    color: white;
+}
+
 QToolBar {
     background-color: #F0F0F0;
     border-bottom: 1px solid #CCCCCC;

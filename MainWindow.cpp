@@ -1,8 +1,16 @@
+﻿#if defined(_MSC_VER)
+#pragma execution_character_set("utf-8")
+#endif
+
 #include<iostream>
 // Include headers
 #include"Baseline.h"
 #include<Deformation_Average.h>
 #include "MainWindow.h"
+#include "WorkspaceUI.h"
+#include "WorkflowUI.h"
+#include "InterfaceManager.h"
+#include "IApplicationInterface.h"
 
 // External function declarations from main.cpp
 extern void applyTheme(const QString &theme);
@@ -94,6 +102,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
     connect(ui.tabWidget, &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
     connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
+
+    // Initialize interfaces for switching
+    initializeInterfaces(model, project);
+    // Add interface switching menu to View
+    setupInterfaceSwitchingMenu();
 }
 MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 {
@@ -130,10 +143,24 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
     connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
     connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
     this->open_from_project_file(str);
+
+    // Initialize interfaces for switching
+    initializeInterfaces(model, project, str);
+    // Add interface switching menu to View
+    setupInterfaceSwitchingMenu();
 }
 MainWindow::~MainWindow()
 
 {
+    // Cleanup interface manager first - it owns the interface widgets
+    if (m_interfaceManager)
+    {
+        delete m_interfaceManager;
+        m_interfaceManager = nullptr;
+    }
+    m_workspaceUI = nullptr;  // Already deleted by InterfaceManager
+    m_workflowUI = nullptr;  // Already deleted by InterfaceManager
+
     if (!this->Process)
     {
         delete(Process);
@@ -165,14 +192,23 @@ void MainWindow::Addproject(QString name, QString save_path)
 }
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
-    if (ui.tabWidget->count())
+    QMainWindow::resizeEvent(event);
+
+    // After InterfaceManager refactoring:
+    // - If current interface is Workspace, delegate resize to WorkspaceUI
+    // - ui.tabWidget was deleted with old central widget - do not access it
+    if (m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workflow")
     {
-        int index = ui.tabWidget->currentIndex();
-        if (mExist_Color.at(index))
-        {
-            mColors.at(index)->resize(ui.tabWidget->currentWidget()->width() / 10, ui.tabWidget->currentWidget()->height() / 5);
-            mColors.at(index)->move(ui.tabWidget->currentWidget()->mapToGlobal(QPoint(0,0)));
-        }
+        // Node-based workflow does not need ColorBar handling - nothing to do
+        return;
+    }
+
+    // When in workspace interface - let WorkspaceUI handle it
+    if (m_workspaceUI)
+    {
+        // WorkspaceUI handles its own resizing - native event handling will happen
+        // The old ui.tabWidget no longer exists
+        return;
     }
 }
 void MainWindow::updateProcess(int value, QString information)
@@ -685,24 +721,6 @@ void MainWindow::on_actionALOS_2_triggered()
     alos2->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
-void MainWindow::on_actionNodeEditor_triggered()
-{
-    NodeEditorWindow* editor = new NodeEditorWindow(nullptr);
-    editor->setAttribute(Qt::WA_DeleteOnClose, true);
-
-    // Read project information from Config.ini
-    QSettings settings(QString("Config.ini"), QSettings::IniFormat);
-    QString projectPath = settings.value("Project/SavePath", "").toString();
-    QString projectName = settings.value("Project/projectname", "").toString();
-
-    // Set project context for the editor
-    editor->setProjectContext(model, projectPath, projectName);
-
-    // Apply current QtNodes theme
-    editor->setQtNodesTheme(m_currentTheme);
-
-    editor->show();
-}
 void MainWindow::RenewTree(QStandardItemModel* copy)
 {
 
@@ -885,6 +903,124 @@ void MainWindow::updateThemeCheckState(QMenu* themeMenu, const QString& theme)
             action->setChecked(true);
         } else {
             action->setChecked(false);
+        }
+    }
+}
+
+void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* project, QString filePath)
+{
+    // Create interface manager
+    m_interfaceManager = new InterfaceManager(this);
+
+    // Create workspace UI (traditional interface)
+    // Parent is nullptr - will be managed by InterfaceManager
+    m_workspaceUI = new WorkspaceUI(nullptr);
+
+    // WorkspaceUI already has the model set up by MainWindow
+    // Create workflow UI (node editor interface)
+    // Parent is nullptr - will be managed by InterfaceManager
+    m_workflowUI = new WorkflowUI(nullptr);
+
+    // Get project name from file path
+    QString projectName = filePath;
+    if (!filePath.isEmpty()) {
+        QFileInfo info(filePath);
+        projectName = info.baseName();
+    }
+
+    m_workflowUI->setProjectContext(model, filePath, projectName);
+    m_workflowUI->setQtNodesTheme(m_currentTheme);
+
+    // Register interfaces
+    m_interfaceManager->registerInterface(m_workspaceUI);
+    m_interfaceManager->registerInterface(m_workflowUI);
+
+    // Switch to default interface from settings
+    QString defaultInterface = m_interfaceManager->loadDefaultInterface();
+    if (defaultInterface.isEmpty()) {
+        // Default to workspace if no setting
+        defaultInterface = "workspace";
+    }
+
+    // Check if project has saved last interface
+    if (project && !filePath.isEmpty()) {
+        QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(project);
+        if (!lastInterface.isEmpty()) {
+            defaultInterface = lastInterface;
+        }
+    }
+
+    m_interfaceManager->switchToInterface(defaultInterface);
+}
+
+void MainWindow::setupInterfaceSwitchingMenu()
+{
+    QMenu* viewMenu = ui.menubar->findChild<QMenu*>("View");
+    if (!viewMenu) {
+        return;
+    }
+
+    // Add separator if menu is not empty
+    if (!viewMenu->isEmpty()) {
+        viewMenu->addSeparator();
+    }
+
+    // Create action group to ensure mutual exclusivity
+    QActionGroup* interfaceGroup = new QActionGroup(this);
+    interfaceGroup->setExclusive(true);
+
+    // Add workspace action
+    QAction* workspaceAction = viewMenu->addAction(QString::fromUtf8("工作区界面"));
+    workspaceAction->setIcon(QIcon(":/SatExplorer/icon/project.png"));
+    workspaceAction->setCheckable(true);
+    interfaceGroup->addAction(workspaceAction);
+    connect(workspaceAction, &QAction::triggered, this, &MainWindow::switchToWorkspace);
+
+    // Add workflow action
+    QAction* workflowAction = viewMenu->addAction(QString::fromUtf8("工作流界面"));
+    workflowAction->setIcon(QIcon(":/SatExplorer/icon/flow_editor.png"));
+    workflowAction->setCheckable(true);
+    interfaceGroup->addAction(workflowAction);
+    connect(workflowAction, &QAction::triggered, this, &MainWindow::switchToWorkflow);
+
+    updateInterfaceMenuCheckState();
+}
+
+void MainWindow::updateInterfaceMenuCheckState()
+{
+    QMenu* viewMenu = ui.menubar->findChild<QMenu*>("View");
+    if (!viewMenu) return;
+
+    QString currentId = m_interfaceManager->currentInterfaceId();
+    QList<QAction*> actions = viewMenu->actions();
+
+    for (QAction* action : actions) {
+        if (action->text().contains(QString::fromUtf8("工作区"))) {
+            action->setChecked(currentId == "workspace");
+        } else if (action->text().contains(QString::fromUtf8("工作流"))) {
+            action->setChecked(currentId == "workflow");
+        }
+    }
+}
+
+void MainWindow::switchToWorkspace()
+{
+    if (m_interfaceManager->switchToInterface("workspace")) {
+        updateInterfaceMenuCheckState();
+        // Save to project
+        if (project) {
+            m_interfaceManager->saveLastInterfaceToProject(project);
+        }
+    }
+}
+
+void MainWindow::switchToWorkflow()
+{
+    if (m_interfaceManager->switchToInterface("workflow")) {
+        updateInterfaceMenuCheckState();
+        // Save to project
+        if (project) {
+            m_interfaceManager->saveLastInterfaceToProject(project);
         }
     }
 }

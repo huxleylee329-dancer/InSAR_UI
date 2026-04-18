@@ -170,6 +170,9 @@
     <ClCompile Include="Import_TSX.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="InterfaceManager.cpp">
+          <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Interferometric_Formation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -285,6 +288,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="S1SwathMergeNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WelcomeScreen.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WorkflowUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PaletteGraphicsView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WorkspaceUI.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -556,6 +571,9 @@
     <QtMoc Include="include\Geocoding.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\IApplicationInterface.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="include\icon_source.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -601,6 +619,9 @@
     <QtMoc Include="include\NoteNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\InterfaceManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <ClInclude Include="include\tinystr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -608,6 +629,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="include\Unwrap_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\WelcomeScreen.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\WorkflowUI.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\WorkspaceUI.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PaletteGraphicsView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <ClInclude Include="resource.h">

@@ -33,8 +33,8 @@
        <widget class="TreeView" name="treeView">
         <property name="minimumSize">
          <size>
-          <width>500</width>
-          <height>300</height>
+          <width>258</width>
+          <height>258</height>
          </size>
         </property>
         <property name="maximumSize">
@@ -53,8 +53,8 @@
        <widget class="TreeView" name="tool">
         <property name="minimumSize">
          <size>
-          <width>300</width>
-          <height>300</height>
+          <width>258</width>
+          <height>258</height>
          </size>
         </property>
         <property name="maximumSize">
@@ -80,7 +80,7 @@
      <x>0</x>
      <y>0</y>
      <width>967</width>
-     <height>23</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="File">
@@ -100,9 +100,8 @@
    </widget>
    <widget class="QMenu" name="Edit">
     <property name="title">
-     <string>流程编辑器</string>
+     <string>编辑</string>
     </property>
-    <addaction name="actionNodeEditor"/>
    </widget>
    <widget class="QMenu" name="View">
     <property name="title">
@@ -198,10 +197,10 @@
    <addaction name="View"/>
    <addaction name="Setteing"/>
    <addaction name="Process"/>
-   <addaction name="Help"/>
    <addaction name="menuSAR"/>
    <addaction name="menuInSAR"/>
    <addaction name="menuDInSAR"/>
+   <addaction name="Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionNew">
@@ -436,15 +435,6 @@
   <action name="actionALOS_2">
    <property name="text">
     <string>ALOS-2</string>
-   </property>
-  </action>
-  <action name="actionNodeEditor">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/flow_editor.png</normaloff>:/SatExplorer/icon/flow_editor.png</iconset>
-   </property>
-   <property name="text">
-    <string>流程编辑器</string>
    </property>
   </action>
   <action name="actionTheme">

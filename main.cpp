@@ -2,6 +2,7 @@
 #include<ColorBar.h>
 #include <QtWidgets/QApplication>
 #include"MainWindow.h"
+#include"WelcomeScreen.h"
 #include"qheaderview.h"
 #include <QPixmap>
 //#include <QSplashScreen>
@@ -9,6 +10,7 @@
 #include<icon_source.h>
 #include <QFile>
 #include <QSettings>
+#include <QDialog>
 //#include<QStyleFactory>
 
 // Global function to load QSS from file
@@ -76,48 +78,68 @@ int main(int argc, char *argv[])
     applyTheme(theme);
 
     QPixmap* k = new QPixmap(QString(CURSOR_UP_ICON));
-    /*开机启动画面*/
-    /*
-    char szFilePath[MAX_PATH + 1] = { 0 };
-    GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
-    (strrchr(szFilePath, '\\'))[0] = 0;
-    string exe_path(szFilePath);
-    exe_path = exe_path.append("\\icon\\guide.png");
-    QPixmap pixmap(exe_path.c_str());
-    QSplashScreen splash(pixmap);
-    splash.show();
-    splash.showMessage(QStringLiteral("正在启动，请稍后......"), Qt::AlignHCenter | Qt::AlignBottom, Qt::white);
-    QDateTime n = QDateTime::currentDateTime();
-    QDateTime now;
-    do {
-        now = QDateTime::currentDateTime();
-    } while (n.secsTo(now) <= 1);//3为需要延时的秒数
-    */
-    /*使程序在显示启动画面的同时仍能响应鼠标等其他事件*/
-    a.processEvents();
-    //if (argc == 3)
-    //{
-    //    MainWindow b(QString(argv[1]), nullptr);
-    //    b.show();
-    //    splash.finish(&b);
-    //}
-    //else
-    //{
-    //    MainWindow b;
-    //    b.show();
-    //    splash.finish(&b);
-    //}
+
+    // Show welcome screen dialog first
+    WelcomeScreen *welcomeDialog = new WelcomeScreen(nullptr);
+    welcomeDialog->setWindowFlag(Qt::Window);
+    welcomeDialog->showMaximized();
+
+    // Lambda to handle creation/opening of project and close welcome screen
+    QString openedProjectPath;
+    bool shouldProceed = false;
+
+    auto proceedToMainWindow = [&](const QString &projectPath) {
+        openedProjectPath = projectPath;
+        shouldProceed = true;
+        welcomeDialog->close();
+    };
+
+    QObject::connect(welcomeDialog, &WelcomeScreen::newProjectRequested, [proceedToMainWindow]() {
+        proceedToMainWindow("");
+    });
+    QObject::connect(welcomeDialog, &WelcomeScreen::openProjectRequested, [&proceedToMainWindow, &a]() {
+        QString filePath = QFileDialog::getOpenFileName(
+            nullptr,
+            QString::fromUtf8("打开项目"),
+            QDir::currentPath(),
+            QString::fromUtf8("InSAR Project (*.Insar);;All Files (*)")
+        );
+        if (!filePath.isEmpty()) {
+            proceedToMainWindow(filePath);
+        }
+    });
+    QObject::connect(welcomeDialog, &WelcomeScreen::recentProjectRequested, [proceedToMainWindow](const QString &filePath) {
+        proceedToMainWindow(filePath);
+    });
+
+    // Enter event loop - WelcomeScreen handles user interaction
+    // Wait until user chooses to proceed or closes the window
+    while (!shouldProceed && welcomeDialog->isVisible()) {
+        a.processEvents();
+    }
+
+    if (!shouldProceed) {
+        // User closed window without opening project - exit
+        delete welcomeDialog;
+        delete k;
+        return 0;
+    }
+
+    // Create MainWindow
     MainWindow* b = NULL;
-    if (argc == 2)
-    {
+    if (!openedProjectPath.isEmpty()) {
+        b = new MainWindow(openedProjectPath, nullptr);
+    }
+    else if (argc == 2) {
         b = new MainWindow(argv[1], nullptr);
     }
-    else
-    {
+    else {
         b = new MainWindow(nullptr);
     }
-    //b->setAttribute(Qt::WA_QuitOnClose);
-    b->show();
-    //splash.finish(b);
+
+    b->showMaximized();
+
+    delete welcomeDialog;
+    delete k;
     return a.exec();
 }

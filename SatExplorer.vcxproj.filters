@@ -370,6 +370,21 @@
     <ClCompile Include="ADS\ResizeHandle.cpp">
       <Filter>ADS\Src</Filter>
     </ClCompile>
+    <ClCompile Include="InterfaceManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WelcomeScreen.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WorkflowUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WorkspaceUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PaletteGraphicsView.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\Cut.h">
@@ -667,6 +682,24 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\QtNodes\internal\NodeDetailWindow.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\WelcomeScreen.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\WorkflowUI.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\WorkspaceUI.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\IApplicationInterface.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\InterfaceManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PaletteGraphicsView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
