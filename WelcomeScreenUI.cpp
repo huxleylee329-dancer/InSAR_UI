@@ -1,30 +1,24 @@
-#include "WelcomeScreen.h"
+﻿#include "WelcomeScreenUI.h"
 #include <QApplication>
 #include <QPainter>
-#include <QFileDialog>
+#include <QSettings>
 #include <QListWidgetItem>
 #include "icon_source.h"
 
-WelcomeScreen::WelcomeScreen(QWidget *parent)
-    : QDialog(parent)
+WelcomeScreenUI::WelcomeScreenUI(QWidget *parent)
+    : QWidget(parent)
 {
     setupUi();
     loadRecentProjects();
 }
 
-WelcomeScreen::~WelcomeScreen()
+WelcomeScreenUI::~WelcomeScreenUI()
 {
 }
 
-void WelcomeScreen::setupUi()
+void WelcomeScreenUI::setupUi()
 {
-    // Set window properties
-    setWindowTitle("SatExplorer - Welcome");
-    setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
-    setMinimumSize(800, 600);
-    resize(1000, 700);
-
-    // Main layout
+    // Main layout with margins for VS Code-like appearance
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(100, 80, 100, 80);
     mainLayout->setSpacing(30);
@@ -65,7 +59,7 @@ void WelcomeScreen::setupUi()
         "  background-color: #3A8ABF;"
         "}"
     );
-    connect(m_newProjectBtn, &QPushButton::clicked, this, &WelcomeScreen::onNewProjectClicked);
+    connect(m_newProjectBtn, &QPushButton::clicked, this, &WelcomeScreenUI::newProjectRequested);
     btnLayout->addWidget(m_newProjectBtn);
 
     // Open Project button
@@ -86,7 +80,7 @@ void WelcomeScreen::setupUi()
         "  background-color: #404040;"
         "}"
     );
-    connect(m_openProjectBtn, &QPushButton::clicked, this, &WelcomeScreen::onOpenProjectClicked);
+    connect(m_openProjectBtn, &QPushButton::clicked, this, &WelcomeScreenUI::openProjectRequested);
     btnLayout->addWidget(m_openProjectBtn);
 
     mainLayout->addLayout(btnLayout);
@@ -117,13 +111,18 @@ void WelcomeScreen::setupUi()
         "}"
     );
     m_recentList->setMaximumHeight(200);
-    connect(m_recentList, &QListWidget::itemDoubleClicked, this, &WelcomeScreen::onRecentItemDoubleClicked);
+    connect(m_recentList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        QString filePath = item->data(Qt::UserRole).toString();
+        if (!filePath.isEmpty()) {
+            emit recentProjectRequested(filePath);
+        }
+    });
     mainLayout->addWidget(m_recentList);
 
     setLayout(mainLayout);
 }
 
-void WelcomeScreen::loadRecentProjects()
+void WelcomeScreenUI::loadRecentProjects()
 {
     QSettings settings("Config.ini", QSettings::IniFormat);
     QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
@@ -141,48 +140,81 @@ void WelcomeScreen::loadRecentProjects()
     m_recentList->setVisible(m_recentList->count() > 0);
 }
 
-void WelcomeScreen::refreshRecentProjects()
+void WelcomeScreenUI::refreshRecentProjects()
 {
     loadRecentProjects();
 }
 
-void WelcomeScreen::paintEvent(QPaintEvent *event)
+QWidget* WelcomeScreenUI::centralWidget()
 {
-    QDialog::paintEvent(event);
+    return this;
+}
 
-    // Draw faded background logo
+QList<QToolBar*> WelcomeScreenUI::toolBars()
+{
+    // Welcome screen doesn't need its own toolbar
+    return QList<QToolBar*>();
+}
+
+void WelcomeScreenUI::activate()
+{
+    show();
+    refreshRecentProjects();
+}
+
+void WelcomeScreenUI::deactivate()
+{
+    hide();
+}
+
+QString WelcomeScreenUI::id() const
+{
+    return "welcome";
+}
+
+QString WelcomeScreenUI::displayName() const
+{
+    return "欢迎界面";
+}
+
+void WelcomeScreenUI::paintEvent(QPaintEvent *event)
+{
+    QWidget::paintEvent(event);
+
+    // Draw faded background BigIcon
     QPainter painter(this);
-    painter.setOpacity(0.05);
 
-    // Load app icon as background
-    QPixmap logoPixmap(APP_ICON);
-    if (!logoPixmap.isNull()) {
+    // Detect theme from parent window
+    bool isDarkTheme = false;
+    QWidget* parent = parentWidget();
+    while (parent) {
+        QVariant bgColor = parent->property("theme-background");
+        if (bgColor.isValid()) {
+            QColor color = bgColor.value<QColor>();
+            // 深色主题：背景色较深
+            if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
+                isDarkTheme = true;
+            }
+            break;
+        }
+        parent = parent->parentWidget();
+    }
+
+    // 根据主题设置不同的透明度，使图标成为淡淡的背景
+    // 浅色主题：背景亮，图标稍微明显一点
+    // 深色主题：背景深，图标需要更透明一点
+    painter.setOpacity(isDarkTheme ? 0.025 : 0.04);
+
+    // Load BigIcon as background
+    QPixmap bgPixmap(BIGICON_BG);
+    if (!bgPixmap.isNull()) {
         // Scale to reasonable size and center
-        int size = qMin(width(), height()) * 0.6;
-        QPixmap scaled = logoPixmap.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        int size = qMin(width(), height()) * 0.7;
+        QPixmap scaled = bgPixmap.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         int x = (width() - scaled.width()) / 2;
         int y = (height() - scaled.height()) / 2;
         painter.drawPixmap(x, y, scaled);
     }
 
     painter.setOpacity(1.0);
-}
-
-void WelcomeScreen::onNewProjectClicked()
-{
-    emit newProjectRequested();
-}
-
-void WelcomeScreen::onOpenProjectClicked()
-{
-    emit openProjectRequested();
-}
-
-void WelcomeScreen::onRecentItemDoubleClicked(QListWidgetItem *item)
-{
-    QString filePath = item->data(Qt::UserRole).toString();
-    if (!filePath.isEmpty()) {
-        emit recentProjectRequested(filePath);
-        accept();
-    }
 }

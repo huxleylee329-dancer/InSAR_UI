@@ -10,6 +10,7 @@
 
 class WorkspaceUI;
 class WorkflowUI;
+class WelcomeScreenUI;
 class XMLFile;
 
 class MainWindow : public QMainWindow
@@ -33,6 +34,10 @@ public slots:
     void open_from_project_file(QString str);
     // Update treeview
     void update_treeview();
+    // Welcome screen signal handlers
+    void onNewProjectFromWelcome();
+    void onOpenProjectFromWelcome();
+    void onRecentProjectFromWelcome(const QString &filePath);
 protected:
     bool eventFilter(QObject*, QEvent*);
 private:
@@ -62,6 +67,7 @@ private:
     InterfaceManager* m_interfaceManager;
     WorkspaceUI* m_workspaceUI;
     WorkflowUI* m_workflowUI;
+    WelcomeScreenUI* m_welcomeUI;
 
 signals:
     void sendModel(QStandardItemModel*);

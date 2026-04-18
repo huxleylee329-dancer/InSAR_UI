@@ -40,8 +40,6 @@ protected:
 
     // Helper methods
     QString generateOutputFileName(const QString& xmlPath) const;
-    void onImportButtonClicked();
-    void onStopButtonClicked();
 
 private slots:
     void onAddFilesClicked();
@@ -59,10 +57,8 @@ private:
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
     QComboBox* m_polarizationCombo;
-    QPushButton* m_importButton;
-    QPushButton* m_stopButton;
+    QComboBox* m_projectCombo;
     QProgressBar* m_progressBar;
-    QLabel* m_statusLabel;
 
     // State
     QStringList m_xmlPaths;

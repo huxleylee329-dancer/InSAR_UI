@@ -385,6 +385,9 @@
     <ClCompile Include="PaletteGraphicsView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="WelcomeScreenUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\Cut.h">
@@ -700,6 +703,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\PaletteGraphicsView.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\WelcomeScreenUI.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

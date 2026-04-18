@@ -220,12 +220,13 @@ FakesAssemblies/
 _Pvt_Extensions
 
 # self defined ignore files
-
 x64/
-# Screenshot directory for Claude
-screenshot/
 bin/
+
+# Claude related
+screenshot/
 .claude/skills/
+docs/
 
 # *.vcxproj
 # *.filters

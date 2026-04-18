@@ -9,6 +9,7 @@
 #include "MainWindow.h"
 #include "WorkspaceUI.h"
 #include "WorkflowUI.h"
+#include "WelcomeScreenUI.h"
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 
@@ -54,6 +55,7 @@ extern void applyTheme(const QString &theme);
 #include<qmessagebox.h>
 #include<qdialogbuttonbox.h>
 #include<qsettings.h>
+#include<qdir.h>
 // Include headers
 //#include<FormatConversion.h>
 //#include<Utils.h>
@@ -82,9 +84,11 @@ MainWindow::MainWindow(QWidget* parent)
     // Set APP icon
     this->setWindowTitle("SatExplorer");
     this->setWindowIcon(QIcon(APP_ICON));
-    ui.Process->setDisabled(0);
-    ui.menuInSAR->setDisabled(0);
-    ui.menuDInSAR->setDisabled(0);
+    ui.View->setDisabled(0);
+    ui.Process->setDisabled(1);
+    ui.menuSAR->setDisabled(1);
+    ui.menuInSAR->setDisabled(1);
+    ui.menuDInSAR->setDisabled(1);
 
     ui.treeView->init_tree();
     ui.tool->init_mould();
@@ -107,6 +111,9 @@ MainWindow::MainWindow(QWidget* parent)
     initializeInterfaces(model, project);
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
+
+    // No project opened - show welcome screen
+    m_interfaceManager->switchToInterface("welcome");
 }
 MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 {
@@ -139,20 +146,30 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 
     // Setup theme menu (after setting m_currentTheme)
     setupThemeMenu();
-    //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
     connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
     connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
-    this->open_from_project_file(str);
 
     // Initialize interfaces for switching
     initializeInterfaces(model, project, str);
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
+
+    // Open project file and switch to workspace
+    this->open_from_project_file(str);
+
+    // Project opened - switch to workspace or last used interface
+    QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(project);
+    if (!lastInterface.isEmpty()) {
+        m_interfaceManager->switchToInterface(lastInterface);
+    } else {
+        m_interfaceManager->switchToInterface("workspace");
+    }
+    updateInterfaceMenuCheckState();
 }
 MainWindow::~MainWindow()
 
 {
-    // Cleanup interface manager first - it owns the interface widgets
+    // Cleanup interface manager first - it owns interface widgets
     if (m_interfaceManager)
     {
         delete m_interfaceManager;
@@ -160,6 +177,7 @@ MainWindow::~MainWindow()
     }
     m_workspaceUI = nullptr;  // Already deleted by InterfaceManager
     m_workflowUI = nullptr;  // Already deleted by InterfaceManager
+    m_welcomeUI = nullptr;   // Already deleted by InterfaceManager
 
     if (!this->Process)
     {
@@ -912,6 +930,13 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     // Create interface manager
     m_interfaceManager = new InterfaceManager(this);
 
+    // Create welcome screen UI (parent is nullptr - will be managed by InterfaceManager)
+    m_welcomeUI = new WelcomeScreenUI(nullptr);
+    // Connect welcome screen signals
+    connect(m_welcomeUI, &WelcomeScreenUI::newProjectRequested, this, &MainWindow::onNewProjectFromWelcome);
+    connect(m_welcomeUI, &WelcomeScreenUI::openProjectRequested, this, &MainWindow::onOpenProjectFromWelcome);
+    connect(m_welcomeUI, &WelcomeScreenUI::recentProjectRequested, this, &MainWindow::onRecentProjectFromWelcome);
+
     // Create workspace UI (traditional interface)
     // Parent is nullptr - will be managed by InterfaceManager
     m_workspaceUI = new WorkspaceUI(nullptr);
@@ -932,25 +957,20 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     m_workflowUI->setQtNodesTheme(m_currentTheme);
 
     // Register interfaces
+    m_interfaceManager->registerInterface(m_welcomeUI);     // Register welcome first
     m_interfaceManager->registerInterface(m_workspaceUI);
     m_interfaceManager->registerInterface(m_workflowUI);
 
-    // Switch to default interface from settings
-    QString defaultInterface = m_interfaceManager->loadDefaultInterface();
-    if (defaultInterface.isEmpty()) {
-        // Default to workspace if no setting
-        defaultInterface = "workspace";
-    }
-
-    // Check if project has saved last interface
-    if (project && !filePath.isEmpty()) {
-        QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(project);
-        if (!lastInterface.isEmpty()) {
-            defaultInterface = lastInterface;
+    // Switch to default interface from settings (only if project is loaded)
+    if (!filePath.isEmpty()) {
+        QString defaultInterface = m_interfaceManager->loadDefaultInterface();
+        if (defaultInterface.isEmpty()) {
+            defaultInterface = "workspace";  // Default to workspace for loaded projects
         }
+        m_interfaceManager->switchToInterface(defaultInterface);
+        updateInterfaceMenuCheckState();
     }
-
-    m_interfaceManager->switchToInterface(defaultInterface);
+    // else: caller will switch to welcome screen
 }
 
 void MainWindow::setupInterfaceSwitchingMenu()
@@ -1023,4 +1043,44 @@ void MainWindow::switchToWorkflow()
             m_interfaceManager->saveLastInterfaceToProject(project);
         }
     }
+}
+
+void MainWindow::onNewProjectFromWelcome()
+{
+    // Create new project (same logic as on_actionNew_triggered)
+    on_actionNew_triggered();
+
+    // After new project is created, switch to workspace
+    m_interfaceManager->switchToInterface("workspace");
+    updateInterfaceMenuCheckState();
+}
+
+void MainWindow::onOpenProjectFromWelcome()
+{
+    // Show file dialog to open project
+    QString filePath = QFileDialog::getOpenFileName(
+        this,
+        QString::fromUtf8("打开项目"),
+        QDir::currentPath(),
+        QString::fromUtf8("InSAR Project (*.Insar);;All Files (*)")
+    );
+
+    if (!filePath.isEmpty()) {
+        // Open project file
+        open_from_project_file(filePath);
+
+        // Switch to workspace
+        m_interfaceManager->switchToInterface("workspace");
+        updateInterfaceMenuCheckState();
+    }
+}
+
+void MainWindow::onRecentProjectFromWelcome(const QString &filePath)
+{
+    // Open the recent project file
+    open_from_project_file(filePath);
+
+    // Switch to workspace
+    m_interfaceManager->switchToInterface("workspace");
+    updateInterfaceMenuCheckState();
 }

@@ -290,7 +290,7 @@
     <ClCompile Include="S1SwathMergeNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="WelcomeScreen.cpp">
+    <ClCompile Include="WelcomeScreenUI.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="WorkflowUI.cpp">
@@ -631,7 +631,7 @@
     <QtMoc Include="include\Unwrap_ui.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\WelcomeScreen.h">
+    <QtMoc Include="include\WelcomeScreenUI.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\WorkflowUI.h">

@@ -61,5 +61,6 @@
         <file>stylesheets/themes/light.qss</file>
         <file>stylesheets/themes/dark.qss</file>
         <file>stylesheets/themes/fusion.qss</file>
+        <file>BigIcon.PNG</file>
     </qresource>
 </RCC>

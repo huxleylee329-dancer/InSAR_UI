@@ -16,6 +16,7 @@
 #define CURSOR_DOWN_ICON ":/SatExplorer/icon/cursor_down.png"
 #define GCP_ICON ":/SatExplorer/icon/GCPs.png"
 #define DELETE_ICON ":/SatExplorer/icon/delete.png"
+#define BIGICON_BG ":/SatExplorer/BigIcon.PNG"
 
 #define NOT_IN_PROCESS "not_in_process"
 #define IN_PROCESS "in_process"
