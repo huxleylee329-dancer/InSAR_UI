@@ -33,6 +33,11 @@ std::shared_ptr<NodeDelegateModelRegistry> registerTestNodeModels()
     registry->registerModel<SimpleSourceNode>("Test");
     registry->registerModel<SimpleMathNode>("Test");
     registry->registerModel<SimpleDisplayNode>("Test");
+
+    // Card-based layout test nodes (new style)
+    registry->registerModel<CardSimpleSourceNode>("Test");
+    registry->registerModel<CardSimpleMathNode>("Test");
+    registry->registerModel<CardSimpleDisplayNode>("Test");
 #endif
 
     return registry;
@@ -99,6 +104,11 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<SimpleSourceNode>("Test");
     registry->registerModel<SimpleMathNode>("Test");
     registry->registerModel<SimpleDisplayNode>("Test");
+
+    // Card-based layout test nodes (new style)
+    registry->registerModel<CardSimpleSourceNode>("Test");
+    registry->registerModel<CardSimpleMathNode>("Test");
+    registry->registerModel<CardSimpleDisplayNode>("Test");
 #endif
 
     // Register Note node (layout management tool)

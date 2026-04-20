@@ -97,6 +97,9 @@ void NodeGraphicsObject::embedQWidget()
     geometry.recomputeSize(_nodeId);
 
     if (auto w = _graphModel.nodeData(_nodeId, NodeRole::Widget).value<QWidget *>()) {
+        // Set object name for QSS targeting
+        w->setObjectName("NodeEmbeddedWidget");
+
         _proxyWidget = new QGraphicsProxyWidget(this);
 
         _proxyWidget->setWidget(w);

@@ -112,8 +112,8 @@ MainWindow::MainWindow(QWidget* parent)
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
 
-    // No project opened - show welcome screen
-    m_interfaceManager->switchToInterface("welcome");
+    // No project opened - show workflow interface for debugging
+    m_interfaceManager->switchToInterface("workflow");
 }
 MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 {

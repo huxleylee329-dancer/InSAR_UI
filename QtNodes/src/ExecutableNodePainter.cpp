@@ -93,6 +93,16 @@ ExecutableNodePainter::ExecutableNodePainter()
     _pixmapPlay = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/play.svg"), ::COLOR_PLAY, QSize(16, 16));
     _pixmapStop = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/stop.svg"), ::COLOR_STOP, QSize(16, 16));
     _pixmapEye = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/eye.svg"), ::COLOR_EYE, QSize(20, 20));
+
+    // Load state icons for card footer (18x18)
+    _pixmapStateIdle = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/pause.svg"), QColor(113, 119, 132), QSize(18, 18));
+    _pixmapStatePending = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/hourglass.svg"), QColor(59, 130, 246), QSize(18, 18));
+    _pixmapStateRunning = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/sync.svg"), QColor(59, 130, 246), QSize(18, 18));
+    _pixmapStateCompleted = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/check-circle.svg"), QColor(16, 185, 129), QSize(18, 18));
+    _pixmapStateStopped = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/stop.svg"), QColor(245, 158, 11), QSize(18, 18));
+    _pixmapStateWarning = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/warning.svg"), QColor(245, 158, 11), QSize(18, 18));
+    _pixmapStateError = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/x-circle.svg"), QColor(239, 68, 68), QSize(18, 18));
+    _pixmapStateDisabled = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/block.svg"), QColor(148, 163, 184), QSize(18, 18));
 }
 
 void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) const
@@ -113,11 +123,17 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
         return;
     }
 
-    // Check if this is an executable node using external layout
+    // Check if this is an executable node
     auto *execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
-    if (!execModel || !execModel->useExternalLayout()) {
+    if (!execModel) {
         // Fall back to default painting for non-executable nodes
         _defaultPainter.paint(painter, ngo);
+        return;
+    }
+
+    if (!execModel->useExternalLayout()) {
+        // Use card-based layout
+        drawCardLayout(painter, ngo, execModel);
         return;
     }
 
@@ -402,6 +418,398 @@ void ExecutableNodePainter::drawStartButton(QPainter *painter, QRectF rect, Exec
     double dy = (rect.height() - pixmap.height()) / 2.0;
     QPoint topLeft = QPoint(static_cast<int>(rect.left() + dx), static_cast<int>(rect.top() + dy));
     painter->drawPixmap(topLeft, pixmap);
+}
+
+void ExecutableNodePainter::drawCardLayout(QPainter *painter, NodeGraphicsObject &ngo,
+                                            ExecutableNodeDelegateModel *execModel) const
+{
+    auto &geo = dynamic_cast<ExecutableNodeGeometry&>(ngo.nodeScene()->nodeGeometry());
+    QSize size = geo.size(ngo.nodeId());
+
+    ExecutionMode mode = execModel->executionMode();
+    ExecutionState state = execModel->executionState();
+    int progress = execModel->progress();
+    bool isSelected = ngo.isSelected();
+
+    // Antialiasing
+    painter->setRenderHint(QPainter::Antialiasing);
+
+    // Get context widget for theme detection
+    ::QWidget* context = nullptr;
+    if (!ngo.nodeScene()->views().isEmpty()) {
+        QGraphicsView* view = ngo.nodeScene()->views().first();
+        context = (QWidget*)view;
+    }
+
+    // Main card rectangle
+    QRectF cardBounds(0, 0, size.width(), size.height());
+    double const radius = 2.0; // Small rounded corners (rounded-sm)
+
+    painter->save();
+    
+    // Step 1: Draw shadow - different based on state
+    QColor shadowColor;
+    qreal shadowOffset = 2.0;
+    if (state == ExecutionState::Running) {
+        shadowColor = isDarkTheme(context) ? QColor(0, 0, 0, 100) : QColor(0, 0, 0, 60);
+    } else {
+        shadowColor = isDarkTheme(context) ? QColor(0, 0, 0, 60) : QColor(0, 0, 0, 30);
+    }
+    
+    QRectF shadowBounds(shadowOffset, shadowOffset, size.width(), size.height());
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(shadowColor);
+    painter->drawRoundedRect(shadowBounds, radius, radius);
+    
+    // Step 2: Draw main card background
+    QColor bgColor = themedColor(QColor(255, 255, 255), QColor(50, 50, 50), context);
+    
+    // Get pen based on selection - border color #c0c7d4
+    auto &nodeStyle = StyleCollection::nodeStyle();
+    QPen pen(nodeStyle.SelectedBoundaryColor, 2.0);
+    QPen normalPen(isDarkTheme(context) ? QColor(80, 80, 80) : QColor(192, 199, 212), 1.0);
+    painter->setPen(isSelected ? pen : normalPen);
+    
+    painter->setBrush(bgColor);
+    painter->drawRoundedRect(cardBounds, radius, radius);
+
+    // Calculate rectangles for header/content/footer
+    QRectF headerRect(0, 0, size.width(), CARD_HEADER_HEIGHT);
+    QRectF footerRect(0, size.height() - CARD_FOOTER_HEIGHT, size.width(), CARD_FOOTER_HEIGHT);
+
+    // Draw header
+    drawCardHeader(painter, ngo, headerRect, mode, state, context);
+
+    // Draw footer (status bar)
+    drawCardFooter(painter, ngo, footerRect, state, progress, context);
+
+    // Draw standard node elements (caption is drawn in header now, but need ports)
+    // We still need the default painter to draw connection points and ports
+    _defaultPainter.drawConnectionPoints(painter, ngo);
+    _defaultPainter.drawFilledConnectionPoints(painter, ngo);
+
+    // Draw port entry labels with background
+    {
+        painter->save();
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(0, 0, 0, 55));
+
+        AbstractGraphModel &model = ngo.graphModel();
+        AbstractNodeGeometry &geometry = ngo.nodeScene()->nodeGeometry();
+        QFontMetrics fm(painter->font());
+
+        for (PortType portType : {PortType::Out, PortType::In}) {
+            unsigned int n = model.nodeData<unsigned int>(ngo.nodeId(),
+                                  (portType == PortType::Out)
+                                      ? NodeRole::OutPortCount
+                                      : NodeRole::InPortCount);
+
+            for (PortIndex portIndex = 0; portIndex < n; ++portIndex) {
+                QString s;
+
+                if (model.portData<bool>(ngo.nodeId(), portType, portIndex, PortRole::CaptionVisible)) {
+                    s = model.portData<QString>(ngo.nodeId(), portType, portIndex, PortRole::Caption);
+                } else {
+                    auto portData = model.portData(ngo.nodeId(), portType, portIndex, PortRole::DataType);
+                    s = portData.value<NodeDataType>().name;
+                }
+
+                if (!s.isEmpty()) {
+                    QPointF baseline = geometry.portTextPosition(ngo.nodeId(), portType, portIndex);
+                    QRectF bounds = fm.boundingRect(s);
+
+                    double ascent = fm.ascent();
+                    QPointF topLeft(baseline.x(), baseline.y() - ascent);
+                    bounds.moveTopLeft(topLeft);
+
+                    painter->drawRoundedRect(bounds.adjusted(-1, -1, 1, 1), 1.0, 1.0);
+                }
+            }
+        }
+        painter->restore();
+    }
+
+    _defaultPainter.drawEntryLabels(painter, ngo);
+    _defaultPainter.drawResizeRect(painter, ngo);
+}
+
+void ExecutableNodePainter::drawCardHeader(QPainter *painter, NodeGraphicsObject &ngo,
+                                             QRectF bounds, ExecutionMode mode,
+                                             ExecutionState state, ::QWidget* context) const
+{
+    AbstractGraphModel &model = ngo.graphModel();
+    NodeId nodeId = ngo.nodeId();
+
+    // Determine header colors based on mode (matching design)
+    QColor bgColor, textColor;
+
+    if (mode == ExecutionMode::Automatic) {
+        // Automatic mode: background #005fac (RGB 0, 95, 172), white text
+        bgColor = themedColor(QColor(0, 95, 172), QColor(0, 95, 172), context);
+        textColor = QColor(255, 255, 255);
+    } else {
+        // Manual mode: light background, amber (#994700) bottom border, dark text
+        bgColor = themedColor(QColor(255, 255, 255), QColor(50, 50, 50), context);
+        textColor = themedColor(QColor(26, 28, 28), QColor(220, 220, 220), context);
+    }
+
+    painter->save();
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(bgColor);
+    
+    // Draw rounded header top corners - small radius
+    QPainterPath path;
+    path.moveTo(bounds.left(), bounds.bottom());
+    path.lineTo(bounds.left(), bounds.top() + 2.0);
+    path.quadTo(bounds.left(), bounds.top(), bounds.left() + 2.0, bounds.top());
+    path.lineTo(bounds.right() - 2.0, bounds.top());
+    path.quadTo(bounds.right(), bounds.top(), bounds.right(), bounds.top() + 2.0);
+    path.lineTo(bounds.right(), bounds.bottom());
+    path.lineTo(bounds.left(), bounds.bottom());
+    painter->drawPath(path);
+
+    // Add bottom border for manual mode
+    if (mode == ExecutionMode::Manual) {
+        painter->setPen(QPen(themedColor(QColor(153, 71, 0), QColor(153, 71, 0), context), 2));
+        painter->drawLine(bounds.bottomLeft(), bounds.bottomRight());
+    }
+    painter->restore();
+
+    // Draw caption (node name) - 11px bold, tracking tight
+    if (model.nodeData(nodeId, NodeRole::CaptionVisible).toBool()) {
+        QString const name = model.nodeData(nodeId, NodeRole::Caption).toString();
+
+        painter->save();
+        QFont f = painter->font();
+        f.setBold(true);
+        f.setPointSize(10); // text-[11px] in design
+        painter->setFont(f);
+        painter->setPen(textColor);
+
+        // Position: left after icon (16px + 8px)
+        painter->drawText(QRectF(28, 0, bounds.width() - 28 - 60, bounds.height()),
+                         Qt::AlignVCenter, name);
+        painter->restore();
+    }
+
+    // Draw mode icon on the left
+    painter->save();
+    QPixmap const &pixmap = (mode == ExecutionMode::Automatic) ? _pixmapAutomatic : _pixmapManual;
+    double left = 4;
+    double top = bounds.top() + (bounds.height() - pixmap.height()) / 2.0;
+    QPoint topLeft = QPoint(static_cast<int>(left), static_cast<int>(top));
+
+    // Recolor icon for automatic vs manual text contrast
+    if (mode == ExecutionMode::Automatic) {
+        // Already correctly colored
+        painter->drawPixmap(topLeft, pixmap);
+    } else {
+        // Manual mode needs icon color to match text color
+        // Draw with tint matching text color
+        QImage img = pixmap.toImage();
+        QColor tint = textColor;
+        for (int y = 0; y < img.height(); ++y) {
+            for (int x = 0; x < img.width(); ++x) {
+                QColor pixel = img.pixelColor(x, y);
+                if (pixel.alpha() > 0) {
+                    pixel.setRgb(tint.red(), tint.green(), tint.blue(), pixel.alpha());
+                    img.setPixelColor(x, y, pixel);
+                }
+            }
+        }
+        painter->drawPixmap(topLeft, QPixmap::fromImage(img));
+    }
+    painter->restore();
+
+    // Draw buttons on the right
+    drawCardHeaderButtons(painter, bounds, mode, state);
+}
+
+void ExecutableNodePainter::drawCardHeaderButtons(QPainter *painter, QRectF bounds,
+                                                    ExecutionMode mode, ExecutionState state) const
+{
+    // Right to left: eye icon, then play/stop if manual - with better spacing
+    double currentRight = bounds.right() - 12;
+
+    // Draw eye icon always - with better spacing
+    double eyeLeft = currentRight - _pixmapEye.width();
+    double eyeTop = bounds.top() + (bounds.height() - _pixmapEye.height()) / 2.0;
+    painter->drawPixmap(QPoint(static_cast<int>(eyeLeft), static_cast<int>(eyeTop)), _pixmapEye);
+    currentRight = eyeLeft - 16;
+
+    // Draw play/stop button if manual - with better spacing
+    if (mode == ExecutionMode::Manual) {
+        QPixmap const &pixmap = (state == ExecutionState::Running) ? _pixmapStop : _pixmapPlay;
+        double buttonLeft = currentRight - pixmap.width();
+        double buttonTop = bounds.top() + (bounds.height() - pixmap.height()) / 2.0;
+        painter->drawPixmap(QPoint(static_cast<int>(buttonLeft), static_cast<int>(buttonTop)), pixmap);
+    }
+}
+
+void ExecutableNodePainter::drawCardFooter(QPainter *painter, NodeGraphicsObject &/*ngo*/,
+                                             QRectF bounds, ExecutionState state,
+                                             int progress, ::QWidget* context) const
+{
+    painter->save();
+
+    // Footer colors based on design
+    QColor bgColor;
+    QColor textColor;
+    QColor borderColor;
+    QPixmap const *stateIcon;
+
+    // Select colors based on state (from design)
+    switch (state) {
+    case ExecutionState::Idle:
+        bgColor = themedColor(QColor(242, 244, 246), QColor(55, 55, 55), context);
+        textColor = themedColor(QColor(114, 118, 122), QColor(148, 163, 184), context);
+        borderColor = themedColor(QColor(230, 232, 235), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateIdle;
+        break;
+    case ExecutionState::Pending:
+        bgColor = themedColor(QColor(221, 236, 255), QColor(30, 58, 138), context);
+        textColor = themedColor(QColor(0, 95, 172), QColor(96, 165, 250), context);
+        borderColor = themedColor(QColor(196, 222, 255), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStatePending;
+        break;
+    case ExecutionState::Running:
+        bgColor = themedColor(QColor(242, 248, 255), QColor(30, 58, 138), context);
+        textColor = themedColor(QColor(0, 95, 172), QColor(96, 165, 250), context);
+        borderColor = themedColor(QColor(221, 236, 255), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateRunning;
+        break;
+    case ExecutionState::Completed:
+        bgColor = themedColor(QColor(238, 249, 235), QColor(20, 83, 45), context);
+        textColor = themedColor(QColor(48, 122, 60), QColor(74, 222, 128), context);
+        borderColor = themedColor(QColor(226, 243, 221), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateCompleted;
+        break;
+    case ExecutionState::Stopped:
+        bgColor = themedColor(QColor(255, 250, 235), QColor(120, 53, 15), context);
+        textColor = themedColor(QColor(153, 113, 0), QColor(251, 191, 36), context);
+        borderColor = themedColor(QColor(255, 243, 215), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateStopped;
+        break;
+    case ExecutionState::Warning:
+        bgColor = themedColor(QColor(255, 250, 235), QColor(120, 53, 15), context);
+        textColor = themedColor(QColor(153, 113, 0), QColor(251, 191, 36), context);
+        borderColor = themedColor(QColor(255, 243, 215), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateWarning;
+        break;
+    case ExecutionState::Error:
+        bgColor = themedColor(QColor(255, 238, 238), QColor(127, 29, 29), context);
+        textColor = themedColor(QColor(180, 69, 69), QColor(248, 113, 113), context);
+        borderColor = themedColor(QColor(255, 214, 214), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateError;
+        break;
+    case ExecutionState::Disabled:
+        bgColor = themedColor(QColor(242, 244, 246), QColor(55, 55, 55), context);
+        textColor = themedColor(QColor(165, 171, 177), QColor(148, 163, 184), context);
+        borderColor = themedColor(QColor(230, 232, 235), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateDisabled;
+        break;
+    default:
+        bgColor = themedColor(QColor(242, 244, 246), QColor(55, 55, 55), context);
+        textColor = themedColor(QColor(114, 118, 122), QColor(148, 163, 184), context);
+        borderColor = themedColor(QColor(230, 232, 235), QColor(70, 70, 70), context);
+        stateIcon = &_pixmapStateIdle;
+        break;
+    }
+
+    // Draw footer background - with small rounded bottom corners
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(bgColor);
+    QPainterPath path;
+    path.moveTo(bounds.left(), bounds.top());
+    path.lineTo(bounds.left(), bounds.bottom() - 2.0);
+    path.quadTo(bounds.left(), bounds.bottom(), bounds.left() + 2.0, bounds.bottom());
+    path.lineTo(bounds.right() - 2.0, bounds.bottom());
+    path.quadTo(bounds.right(), bounds.bottom(), bounds.right(), bounds.bottom() - 2.0);
+    path.lineTo(bounds.right(), bounds.top());
+    path.lineTo(bounds.left(), bounds.top());
+    painter->drawPath(path);
+    
+    // Draw top border
+    painter->setPen(QPen(borderColor, 1.0));
+    painter->drawLine(bounds.topLeft(), bounds.topRight());
+    painter->restore();
+
+    painter->save();
+ 
+    // Get state name - uppercase
+    QString stateName;
+    switch (state) {
+    case ExecutionState::Idle: stateName = "IDLE"; break;
+    case ExecutionState::Pending: stateName = "READY"; break;
+    case ExecutionState::Running: stateName = "RUNNING"; break;
+    case ExecutionState::Completed: stateName = "COMPLETED"; break;
+    case ExecutionState::Stopped: stateName = "STOPPED"; break;
+    case ExecutionState::Warning: stateName = "WARNING"; break;
+    case ExecutionState::Error: stateName = "ERROR"; break;
+    case ExecutionState::Disabled: stateName = "DISABLED"; break;
+    }
+
+    // Draw state icon on the left (12px from left, vertically centered)
+    double iconLeft = 12; // px-3 left
+    double iconTop = bounds.top() + (bounds.height() - stateIcon->height()) / 2.0;
+    painter->drawPixmap(static_cast<int>(iconLeft), static_cast<int>(iconTop), *stateIcon);
+
+    // Draw state name to the right of icon - 10px bold uppercase
+    painter->save();
+    painter->setPen(textColor);
+    QFont font = painter->font();
+    font.setBold(true);
+    font.setPointSize(8); // text-[10px] in design
+    font.setCapitalization(QFont::AllUppercase);
+    painter->setFont(font);
+
+    double textLeft = iconLeft + stateIcon->width() + 6;
+    painter->drawText(QRectF(textLeft, bounds.top(), 80, bounds.height()),
+                     Qt::AlignVCenter, stateName);
+    painter->restore();
+
+    // Draw progress bar in middle when running
+    if (state == ExecutionState::Running && progress > 0) {
+        QRectF progressRect = bounds.adjusted(100, 10, -50, -10);
+        drawCardProgressBar(painter, progressRect, progress, state, context);
+
+        // Draw percentage on far right
+        painter->save();
+        painter->setPen(textColor);
+        QFont percentFont = painter->font();
+        percentFont.setBold(true);
+        percentFont.setPointSize(8);
+        painter->setFont(percentFont);
+        QString percentText = QString("%1%").arg(progress);
+        painter->drawText(QRectF(bounds.width() - 45, bounds.top(), 40, bounds.height()),
+                         Qt::AlignCenter, percentText);
+        painter->restore();
+    }
+}
+
+void ExecutableNodePainter::drawCardProgressBar(QPainter *painter, QRectF bounds,
+                                                 int progress, ExecutionState /*state*/,
+                                                 ::QWidget* context) const
+{
+    // Background - light gray
+    QColor bgColor = themedColor(QColor(230, 232, 235), QColor(70, 70, 70), context);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(bgColor);
+    double radius = qMin(2.0, bounds.height() / 2.0); // small radius
+    painter->drawRoundedRect(bounds, radius, radius);
+
+    // Progress chunk - #005fac
+    if (progress > 0) {
+        double rightMargin = -(bounds.width() - progress * bounds.width() / 100 - 2);
+        QRectF progressRect = bounds.adjusted(1, 1, rightMargin, -1);
+        if (progressRect.width() < 1) {
+            progressRect.setWidth(1);
+        }
+        // Use design blue color
+        QColor progressColor = themedColor(QColor(0, 95, 172), QColor(0, 95, 172), context);
+        painter->setBrush(progressColor);
+        painter->drawRoundedRect(progressRect, qMax(0.0, radius - 1), qMax(0.0, radius - 1));
+    }
 }
 
 QColor ExecutableNodePainter::stateColor(ExecutionState /*state*/) const

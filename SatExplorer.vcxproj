@@ -171,7 +171,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="InterfaceManager.cpp">
-          <Filter>Source Files</Filter>
+      <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Interferometric_Formation.cpp">
       <Filter>Source Files</Filter>
@@ -203,6 +203,7 @@
     <ClCompile Include="Preview_Window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="QtNodes\src\CardExecutableNodeDelegateModel.cpp" />
     <ClCompile Include="Registration_ui.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -622,6 +623,7 @@
     <QtMoc Include="include\InterfaceManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\CardExecutableNodeDelegateModel.hpp" />
     <ClInclude Include="include\tinystr.h">
       <Filter>Header Files</Filter>
     </ClInclude>

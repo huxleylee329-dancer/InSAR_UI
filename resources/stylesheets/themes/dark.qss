@@ -404,9 +404,9 @@ QTextEdit#noteTextEdit {
 
 
 /* Import nodes in dark theme */
-/* Node embedded widget (via objectName) */
+/* Node embedded widget (via objectName) - flat style, no background for card layout */
 QWidget#NodeEmbeddedWidget {
-    background-color: #2b2b2b;
+    background-color: transparent;
 }
 
 /* All controls inside node embedded widget - use space descendant selector */
@@ -417,11 +417,15 @@ QWidget#NodeEmbeddedWidget * QLabel {
 QWidget#NodeEmbeddedWidget * QLineEdit {
     background-color: #404040;
     color: #FFFFFF;
+    border: 1px solid #505050;
+    border-radius: 0;
 }
 
 QWidget#NodeEmbeddedWidget * QComboBox {
     background-color: #404040;
     color: #FFFFFF;
+    border: 1px solid #505050;
+    border-radius: 0;
 }
 
 QWidget#NodeEmbeddedWidget * QComboBox QAbstractItemView {
@@ -437,13 +441,23 @@ QWidget#NodeEmbeddedWidget * QListWidget {
 QWidget#NodeEmbeddedWidget * QProgressBar {
     background-color: #404040;
     color: #FFFFFF;
+    border-radius: 0;
 }
 
-/* QPushButton in nodes */
+/* QPushButton in nodes - flat style */
 QWidget#NodeEmbeddedWidget * QPushButton {
-    background-color: #404040;
+    background-color: #4A9ACF;
     color: #FFFFFF;
-    border: 1px solid #666666;
+    border: none;
+    border-radius: 0;
+}
+
+QWidget#NodeEmbeddedWidget * QPushButton:hover {
+    background-color: #3A7AAF;
+}
+
+QWidget#NodeEmbeddedWidget * QPushButton:pressed {
+    background-color: #2A6A9F;
 }
 
 ImportNodeBase QLineEdit {

@@ -373,9 +373,6 @@
     <ClCompile Include="InterfaceManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="WelcomeScreen.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="WorkflowUI.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -386,6 +383,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="WelcomeScreenUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="QtNodes\src\CardExecutableNodeDelegateModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -687,9 +687,6 @@
     <QtMoc Include="include\QtNodes\internal\NodeDetailWindow.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\WelcomeScreen.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="include\WorkflowUI.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -706,6 +703,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\WelcomeScreenUI.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\QtNodes\internal\CardExecutableNodeDelegateModel.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

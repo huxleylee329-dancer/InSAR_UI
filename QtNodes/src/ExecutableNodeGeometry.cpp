@@ -26,9 +26,31 @@ ExecutableNodeGeometry::ExecutableNodeGeometry(AbstractGraphModel &graphModel)
 
 QSize ExecutableNodeGeometry::size(NodeId const nodeId) const
 {
-    QSize baseSize = DefaultHorizontalNodeGeometry::size(nodeId);
-    // Add progress bar height plus bottom margin to the total height
-    return QSize(baseSize.width(), baseSize.height() + PROGRESS_BAR_HEIGHT + PROGRESS_BAR_MARGIN);
+    auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+    if (dfModel == nullptr) {
+        return DefaultHorizontalNodeGeometry::size(nodeId);
+    }
+    auto *execModel = dfModel->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+
+    QSize contentSize = DefaultHorizontalNodeGeometry::size(nodeId);
+
+    if (execModel && !execModel->useExternalLayout()) {
+        // Card layout: header + content + footer
+        // Subtract base class caption height and spacing since we don't use them in card layout
+        QRectF baseCapRect = DefaultHorizontalNodeGeometry::captionRect(nodeId);
+        // _portSpasing is 10 in base class, subtract 10*2 = 20
+        int adjustedContentHeight = contentSize.height() - baseCapRect.height() - 10;
+        
+        int totalHeight = CARD_HEADER_HEIGHT + CARD_MARGIN * 2 +
+                          adjustedContentHeight + CARD_FOOTER_HEIGHT;
+        int totalWidth = contentSize.width() + CARD_MARGIN * 2;
+        return QSize(totalWidth, totalHeight);
+    }
+
+    // Original layout: content + progress bar
+    // contentSize already includes caption and ports, just add progress bar
+    int const height = contentSize.height() + PROGRESS_BAR_HEIGHT + PROGRESS_BAR_MARGIN;
+    return QSize(contentSize.width(), height);
 }
 
 void ExecutableNodeGeometry::recomputeSize(NodeId const nodeId) const
@@ -39,6 +61,12 @@ void ExecutableNodeGeometry::recomputeSize(NodeId const nodeId) const
 
 QPointF ExecutableNodeGeometry::widgetPosition(NodeId const nodeId) const
 {
+    auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+    if (dfModel == nullptr) {
+        return DefaultHorizontalNodeGeometry::widgetPosition(nodeId);
+    }
+    auto *execModel = dfModel->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+
     // Get base position from parent class
     // Ears are drawn in the negative y region (above the main node area), so no need to shift widget down.
     // The main node content (caption, ports, widget) all start from y=0 which is already correct.
@@ -52,16 +80,146 @@ QPointF ExecutableNodeGeometry::widgetPosition(NodeId const nodeId) const
     unsigned int captionHeight = captionRect(nodeId).height();
     QSize baseSize = DefaultHorizontalNodeGeometry::size(nodeId);
 
-    // Base height stored in graph model doesn't include PROGRESS_BAR_HEIGHT at bottom.
-    // The widget should be centered in the base area (excluding progress bar), same as before.
-    // But since total height increased by PROGRESS_BAR_HEIGHT, we need to adjust the centering.
-    double newY = (captionHeight + baseSize.height() - widget->height()) / 2.0;
+    double newY;
+
+    if (execModel && !execModel->useExternalLayout()) {
+        // Card layout: widget starts after header + margin (top)
+        newY = CARD_HEADER_HEIGHT + CARD_MARGIN;
+    } else {
+        // Original layout: Base height stored in graph model doesn't include PROGRESS_BAR_HEIGHT at bottom.
+        // The widget should be centered in the base area (excluding progress bar), same as before.
+        // But since total height increased by PROGRESS_BAR_HEIGHT, we need to adjust the centering.
+        newY = (captionHeight + baseSize.height() - widget->height()) / 2.0;
+    }
 
     // Get base X position from parent class (x is correct)
     QPointF basePos = DefaultHorizontalNodeGeometry::widgetPosition(nodeId);
 
-    // No extra shift needed - ears are drawn in negative y above main area, don't affect widget position
+    // For card layout, also shift X by CARD_MARGIN
+    if (execModel && !execModel->useExternalLayout()) {
+        return QPointF(basePos.x() + CARD_MARGIN, newY);
+    }
+
     return QPointF(basePos.x(), newY);
+}
+
+QPointF ExecutableNodeGeometry::portPosition(NodeId const nodeId,
+                                              PortType const portType,
+                                              PortIndex const index) const
+{
+    auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+    if (dfModel == nullptr) {
+        return DefaultHorizontalNodeGeometry::portPosition(nodeId, portType, index);
+    }
+    auto *execModel = dfModel->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+
+    if (execModel && !execModel->useExternalLayout()) {
+        // Card layout: compute port position from scratch, no recursion!
+        unsigned int const step = 20 + 10; // portSize + portSpasing from base class
+        
+        double totalY = CARD_HEADER_HEIGHT + CARD_MARGIN; // start after header
+        totalY += step * index;
+        totalY += step / 2.0;
+
+        QSize size = this->size(nodeId);
+
+        double x;
+        switch (portType) {
+        case PortType::In:
+            x = CARD_MARGIN;
+            break;
+        case PortType::Out:
+            x = size.width() - CARD_MARGIN;
+            break;
+        default:
+            x = 0;
+            break;
+        }
+        return QPointF(x, totalY);
+    }
+
+    return DefaultHorizontalNodeGeometry::portPosition(nodeId, portType, index);
+}
+
+QPointF ExecutableNodeGeometry::portTextPosition(NodeId const nodeId,
+                                                 PortType const portType,
+                                                 PortIndex const index) const
+{
+    auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+    if (dfModel == nullptr) {
+        return DefaultHorizontalNodeGeometry::portTextPosition(nodeId, portType, index);
+    }
+    auto *execModel = dfModel->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+
+    if (execModel && !execModel->useExternalLayout()) {
+        // Card layout: compute based on our own portPosition, no recursion!
+        QPointF p = portPosition(nodeId, portType, index);
+        
+        // Get the text rect
+        QString s;
+        if (_graphModel.portData<bool>(nodeId, portType, index, PortRole::CaptionVisible)) {
+            s = _graphModel.portData<QString>(nodeId, portType, index, PortRole::Caption);
+        } else {
+            auto portData = _graphModel.portData(nodeId, portType, index, PortRole::DataType);
+            s = portData.value<NodeDataType>().name;
+        }
+        QFont f;
+        QFontMetrics fm(f);
+        QRectF rect = fm.boundingRect(s);
+        
+        // Apply same logic as base class: add rect.height()/4 to y
+        p.setY(p.y() + rect.height() / 4.0);
+        
+        // Adjust x position
+        QSize size = this->size(nodeId);
+        switch (portType) {
+        case PortType::In:
+            p.setX(CARD_MARGIN + 10); // _portSpasing is 10
+            break;
+        case PortType::Out:
+            p.setX(size.width() - CARD_MARGIN - 10 - rect.width()); // _portSpasing is 10
+            break;
+        default:
+            break;
+        }
+        return p;
+    }
+
+    return DefaultHorizontalNodeGeometry::portTextPosition(nodeId, portType, index);
+}
+
+QRectF ExecutableNodeGeometry::captionRect(NodeId const nodeId) const
+{
+    auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+    if (dfModel == nullptr) {
+        return DefaultHorizontalNodeGeometry::captionRect(nodeId);
+    }
+    auto *execModel = dfModel->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+
+    if (execModel && !execModel->useExternalLayout()) {
+        // Card layout: caption is drawn in header by painter, not by default painter
+        return QRect();
+    }
+
+    return DefaultHorizontalNodeGeometry::captionRect(nodeId);
+}
+
+QPointF ExecutableNodeGeometry::captionPosition(NodeId const nodeId) const
+{
+    auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+    if (dfModel == nullptr) {
+        return DefaultHorizontalNodeGeometry::captionPosition(nodeId);
+    }
+    auto *execModel = dfModel->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+
+    QPointF basePos = DefaultHorizontalNodeGeometry::captionPosition(nodeId);
+
+    if (execModel && !execModel->useExternalLayout()) {
+        // Card layout: caption is drawn in header by painter
+        return QPointF(basePos.x(), basePos.y() + CARD_HEADER_HEIGHT);
+    }
+
+    return basePos;
 }
 
 QRectF ExecutableNodeGeometry::boundingRect(NodeId const nodeId) const
@@ -150,6 +308,47 @@ bool ExecutableNodeGeometry::hitTestDetailButton(NodeId const nodeId, QPointF co
     double iconSize = 20;
     double iconX = earRect.left() + (earRect.width() - iconSize) / 2.0;
     double iconY = earRect.top() + (earRect.height() - iconSize) / 2.0;
+    QRectF detailRect(iconX, iconY, iconSize, iconSize);
+    return detailRect.contains(point);
+}
+
+bool ExecutableNodeGeometry::hitTestCardModeButton(NodeId const nodeId, QPointF const point) const
+{
+    // Card header: mode button on the left
+    QSize nodeSize = size(nodeId);
+    QRectF headerRect(0, 0, nodeSize.width(), CARD_HEADER_HEIGHT);
+    // Icon is 20x20, left margin 4
+    QRectF modeRect(4, headerRect.top() + (headerRect.height() - 20) / 2.0, 20, 20);
+    return modeRect.contains(point);
+}
+
+bool ExecutableNodeGeometry::hitTestCardStartButton(NodeId const nodeId, QPointF const point) const
+{
+    // Only respond to button clicks in Manual mode
+    auto *delegateModel = getExecutableDelegate(nodeId);
+    if (delegateModel == nullptr || delegateModel->executionMode() != ExecutionMode::Manual) {
+        return false;
+    }
+    
+    QSize nodeSize = size(nodeId);
+    QRectF headerRect(0, 0, nodeSize.width(), CARD_HEADER_HEIGHT);
+    // Start button is to the left of detail button (eye) - new spacing
+    // Detail button (eye) is 20x20, right margin 12, add gap 16
+    double buttonSize = 20;
+    double detailX = headerRect.right() - 12 - buttonSize;
+    double startX = detailX - 16 - buttonSize;
+    QRectF startRect(startX, headerRect.top() + (headerRect.height() - buttonSize) / 2.0, buttonSize, buttonSize);
+    return startRect.contains(point);
+}
+
+bool ExecutableNodeGeometry::hitTestCardDetailButton(NodeId const nodeId, QPointF const point) const
+{
+    QSize nodeSize = size(nodeId);
+    QRectF headerRect(0, 0, nodeSize.width(), CARD_HEADER_HEIGHT);
+    // Eye icon is 20x20, right margin 12 (updated spacing)
+    double iconSize = 20;
+    double iconX = headerRect.right() - 12 - iconSize;
+    double iconY = headerRect.top() + (headerRect.height() - iconSize) / 2.0;
     QRectF detailRect(iconX, iconY, iconSize, iconSize);
     return detailRect.contains(point);
 }

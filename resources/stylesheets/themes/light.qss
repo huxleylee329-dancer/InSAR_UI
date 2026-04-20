@@ -71,3 +71,59 @@ QToolBar QToolButton {
 #tabCloseButton QPushButton::menu-indicator {
     width: 0px;
 }
+
+/* Node embedded widget (via objectName) - flat style for card layout */
+QWidget#NodeEmbeddedWidget {
+    background-color: transparent;
+}
+
+/* All controls inside node embedded widget */
+QWidget#NodeEmbeddedWidget * QLabel {
+    color: #333333;
+}
+
+QWidget#NodeEmbeddedWidget * QLineEdit {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #CCCCCC;
+    border-radius: 0;
+}
+
+QWidget#NodeEmbeddedWidget * QComboBox {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #CCCCCC;
+    border-radius: 0;
+}
+
+QWidget#NodeEmbeddedWidget * QComboBox QAbstractItemView {
+    background-color: white;
+    color: #333333;
+}
+
+QWidget#NodeEmbeddedWidget * QListWidget {
+    background-color: white;
+    color: #333333;
+}
+
+QWidget#NodeEmbeddedWidget * QProgressBar {
+    background-color: white;
+    color: #333333;
+    border-radius: 0;
+}
+
+/* QPushButton in nodes - flat style */
+QWidget#NodeEmbeddedWidget * QPushButton {
+    background-color: #4A9ACF;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 0;
+}
+
+QWidget#NodeEmbeddedWidget * QPushButton:hover {
+    background-color: #3A7AAF;
+}
+
+QWidget#NodeEmbeddedWidget * QPushButton:pressed {
+    background-color: #2A6A9F;
+}

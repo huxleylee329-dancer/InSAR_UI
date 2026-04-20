@@ -51,6 +51,14 @@
         <file>stop.svg</file>
         <file>refresh-cw.svg</file>
         <file>refresh-cw-off.svg</file>
+        <!-- State Icons for Card Footer -->
+        <file>pause.svg</file>
+        <file>hourglass.svg</file>
+        <file>sync.svg</file>
+        <file>check-circle.svg</file>
+        <file>warning.svg</file>
+        <file>x-circle.svg</file>
+        <file>block.svg</file>
         <!-- Stylesheets -->
         <file>stylesheets/application.qss</file>
         <file>stylesheets/widgets.qss</file>

@@ -1152,13 +1152,17 @@ bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)
             auto *delegateModel = m_graphModel->delegateModel<QtNodes::NodeDelegateModel>(nodeId);
             auto *execModel = dynamic_cast<QtNodes::ExecutableNodeDelegateModel*>(delegateModel);
 
-            if (execModel && execModel->useExternalLayout()) {
+            if (execModel) {
                 // Convert to node local coordinates
                 QPointF nodePos = ngo->sceneTransform().inverted().map(scenePos);
 
                 auto &geo = dynamic_cast<QtNodes::ExecutableNodeGeometry&>(m_scene->nodeGeometry());
 
-                if (geo.hitTestModeButton(nodeId, nodePos)) {
+                bool useExternal = execModel->useExternalLayout();
+                
+                // Check for mode button (either external layout or card layout)
+                if ((useExternal && geo.hitTestModeButton(nodeId, nodePos)) || 
+                    (!useExternal && geo.hitTestCardModeButton(nodeId, nodePos))) {
                     // Toggle mode
                     QtNodes::ExecutionMode currentMode = execModel->executionMode();
                     execModel->setExecutionMode(
@@ -1168,7 +1172,9 @@ bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)
                     ngo->update();
                     return true;
                 }
-                else if (geo.hitTestStartButton(nodeId, nodePos)) {
+                // Check for start button (either external layout or card layout)
+                else if ((useExternal && geo.hitTestStartButton(nodeId, nodePos)) || 
+                         (!useExternal && geo.hitTestCardStartButton(nodeId, nodePos))) {
                     // Toggle start/stop
                     if (execModel->executionState() == QtNodes::ExecutionState::Running) {
                         execModel->stop();
@@ -1178,7 +1184,9 @@ bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)
                     ngo->update();
                     return true;
                 }
-                else if (geo.hitTestDetailButton(nodeId, nodePos)) {
+                // Check for detail button (either external layout or card layout)
+                else if ((useExternal && geo.hitTestDetailButton(nodeId, nodePos)) || 
+                         (!useExternal && geo.hitTestCardDetailButton(nodeId, nodePos))) {
                     // Open detail view
                     openDetailView(ngo, execModel);
                     return true;

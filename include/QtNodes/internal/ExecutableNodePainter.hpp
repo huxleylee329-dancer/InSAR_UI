@@ -40,6 +40,21 @@ private:
                          ::QWidget* context) const;
     void drawStartButton(QPainter *painter, QRectF rect, ExecutionState state) const;
 
+    // Card layout drawing
+    void drawCardLayout(QPainter *painter, NodeGraphicsObject &ngo,
+                         ExecutableNodeDelegateModel *execModel) const;
+    void drawCardHeader(QPainter *painter, NodeGraphicsObject &ngo,
+                        QRectF bounds, ExecutionMode mode,
+                        ExecutionState state, ::QWidget* context) const;
+    void drawCardFooter(QPainter *painter, NodeGraphicsObject &ngo,
+                        QRectF bounds, ExecutionState state,
+                        int progress, ::QWidget* context) const;
+    void drawCardProgressBar(QPainter *painter, QRectF bounds,
+                             int progress, ExecutionState state,
+                             ::QWidget* context) const;
+    void drawCardHeaderButtons(QPainter *painter, QRectF bounds,
+                               ExecutionMode mode, ExecutionState state) const;
+
     /// Get gradient start color based on mode and state (theme-aware)
     QColor gradientStartColor(ExecutionMode mode, ExecutionState state, ::QWidget* context) const;
     /// Get gradient end color based on mode and state (theme-aware)
@@ -61,6 +76,16 @@ private:
     QPixmap _pixmapPlay;
     QPixmap _pixmapStop;
     QPixmap _pixmapEye;
+
+    // State icons for card footer
+    QPixmap _pixmapStateIdle;
+    QPixmap _pixmapStatePending;
+    QPixmap _pixmapStateRunning;
+    QPixmap _pixmapStateCompleted;
+    QPixmap _pixmapStateStopped;
+    QPixmap _pixmapStateWarning;
+    QPixmap _pixmapStateError;
+    QPixmap _pixmapStateDisabled;
 
     // Reusable default painter instance for performance
     mutable DefaultNodePainter _defaultPainter;

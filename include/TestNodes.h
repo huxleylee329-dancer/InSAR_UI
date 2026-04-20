@@ -4,6 +4,7 @@
 #include <QtNodes/NodeDelegateModel>
 #include <QtNodes/NodeData>
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
+#include "CardExecutableNodeDelegateModel.hpp"
 #include <QLabel>
 #include <QLineEdit>
 #include <QTimer>
@@ -204,6 +205,136 @@ private:
     bool _stopRequested = false;
     int _currentProgress = 0;
     bool _dataModified = false;  // Input changed but not executed in Manual mode
+};
+
+// ============================================================================
+// Card-based Simple Source Node Implementation (New Card Layout)
+// ============================================================================
+class CardSimpleSourceNode : public CardExecutableNodeDelegateModel
+{
+    Q_OBJECT
+
+public:
+    CardSimpleSourceNode();
+    ~CardSimpleSourceNode() override = default;
+
+    QString caption() const override { return QStringLiteral("Source"); }
+    QString name() const override { return QStringLiteral("Card Simple Source"); }
+
+    QJsonObject save() const override;
+    void load(QJsonObject const &p) override;
+
+    unsigned int nPorts(PortType portType) const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
+
+    void onTextChanged(const QString &text);
+    QWidget *embeddedWidget() override;
+
+    void setExecutionMode(ExecutionMode mode) override;
+    QVector<ParameterInfo> getParameters() const override;
+    void setParameter(const QString& paramName, const QString& value) override;
+
+    // Execution implementation
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
+
+private:
+    void simulateWorkStep();
+
+private:
+    QLineEdit *_edit;
+    QString _value;
+    std::shared_ptr<SimpleData> _data;
+    bool _stopRequested = false;
+    bool _dataModified = false;
+};
+
+// ============================================================================
+// Card-based Simple Math Node Implementation (New Card Layout)
+// ============================================================================
+class CardSimpleMathNode : public CardExecutableNodeDelegateModel
+{
+    Q_OBJECT
+
+public:
+    CardSimpleMathNode();
+    ~CardSimpleMathNode() override = default;
+
+    QString caption() const override { return QStringLiteral("Math (Concat)"); }
+    QString name() const override { return QStringLiteral("Card Simple Math"); }
+
+    QJsonObject save() const override;
+    void load(QJsonObject const &p) override;
+
+    unsigned int nPorts(PortType portType) const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
+
+    void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
+    QWidget *embeddedWidget() override;
+
+    // Execution implementation
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
+
+    void setExecutionMode(ExecutionMode mode) override;
+
+private:
+    void simulateWorkStep();
+
+private:
+    std::shared_ptr<SimpleData> _output;
+    QLabel *_label;
+    std::weak_ptr<SimpleData> _input1;
+    std::weak_ptr<SimpleData> _input2;
+    bool _stopRequested = false;
+    bool _dataModified = false;
+    std::shared_ptr<SimpleData> _cachedData;
+};
+
+// ============================================================================
+// Card-based Simple Display Node Implementation (New Card Layout)
+// ============================================================================
+class CardSimpleDisplayNode : public CardExecutableNodeDelegateModel
+{
+    Q_OBJECT
+
+public:
+    CardSimpleDisplayNode();
+    ~CardSimpleDisplayNode() override = default;
+
+    QString caption() const override { return QStringLiteral("Display"); }
+    QString name() const override { return QStringLiteral("Card Simple Display"); }
+
+    QJsonObject save() const override;
+    void load(QJsonObject const &p) override;
+
+    unsigned int nPorts(PortType portType) const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
+
+    void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
+    QWidget *embeddedWidget() override;
+
+    // Execution implementation
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
+
+    void setExecutionMode(ExecutionMode mode) override;
+
+private:
+    void simulateWorkStep();
+
+private:
+    QLabel *_label;
+    std::weak_ptr<SimpleData> _input;
+    bool _stopRequested = false;
+    bool _dataModified = false;
+    std::shared_ptr<SimpleData> _cachedData;
 };
 
 } // namespace QtNodes
