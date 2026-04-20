@@ -5,11 +5,13 @@
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QPushButton>
 #include <QLabel>
-#include <QListWidget>
+#include <QScrollArea>
 #include <QList>
 #include <QToolBar>
+#include <QFrame>
 
 /**
  * @brief 欢迎界面（作为 IApplicationInterface 实现）
@@ -39,18 +41,29 @@ public:
 signals:
     void newProjectRequested();
     void openProjectRequested();
+    void fetchDataRequested();
     void recentProjectRequested(const QString &filePath);
 
 private:
     void setupUi();
     void loadRecentProjects();
     void paintEvent(QPaintEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
+    void updateThemeStyles();
+    QWidget* createQuickStartButton(const QString &iconName, const QString &title, const QString &description);
+    QWidget* createRecentProjectItem(const QString &name, const QString &path, const QString &time);
+
+    bool m_isDarkTheme = true;
 
     QLabel *m_titleLabel = nullptr;
+    QLabel *m_subtitleLabel = nullptr;
     QPushButton *m_newProjectBtn = nullptr;
     QPushButton *m_openProjectBtn = nullptr;
-    QListWidget *m_recentList = nullptr;
-    QLabel *m_recentLabel = nullptr;
+    QPushButton *m_fetchDataBtn = nullptr;
+    QWidget *m_recentProjectsContainer = nullptr;
+    QFrame *m_tipFrame = nullptr;
+    QLabel *m_tipTitleLabel = nullptr;
+    QLabel *m_tipTextLabel = nullptr;
 };
 
 #endif // WELCOMESCREENUI_H
