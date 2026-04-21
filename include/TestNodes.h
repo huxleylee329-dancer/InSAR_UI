@@ -218,7 +218,7 @@ public:
     CardSimpleSourceNode();
     ~CardSimpleSourceNode() override = default;
 
-    QString caption() const override { return QStringLiteral("Source"); }
+    QString caption() const override { return QStringLiteral("Card Source"); }
     QString name() const override { return QStringLiteral("Card Simple Source"); }
 
     QJsonObject save() const override;
@@ -262,7 +262,7 @@ public:
     CardSimpleMathNode();
     ~CardSimpleMathNode() override = default;
 
-    QString caption() const override { return QStringLiteral("Math (Concat)"); }
+    QString caption() const override { return QStringLiteral("Card Math (Concat)"); }
     QString name() const override { return QStringLiteral("Card Simple Math"); }
 
     QJsonObject save() const override;
@@ -306,7 +306,7 @@ public:
     CardSimpleDisplayNode();
     ~CardSimpleDisplayNode() override = default;
 
-    QString caption() const override { return QStringLiteral("Display"); }
+    QString caption() const override { return QStringLiteral("Card Display"); }
     QString name() const override { return QStringLiteral("Card Simple Display"); }
 
     QJsonObject save() const override;
