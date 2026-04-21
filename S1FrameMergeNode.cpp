@@ -9,12 +9,11 @@
 namespace QtNodes {
 
 S1FrameMergeNode::S1FrameMergeNode()
-    : m_widget(nullptr)
+    : ExecutableNodeDelegateModel()
     , m_projectCombo(nullptr)
     , m_dataNodeCombo{nullptr, nullptr}
     , m_indexSpins{nullptr, nullptr}
     , m_outputNodeNameEdit(nullptr)
-    , m_progressBar(nullptr)
     , m_inputs{nullptr, nullptr}
     , m_outputData(nullptr)
     , m_workerThread(nullptr)
@@ -45,8 +44,6 @@ S1FrameMergeNode::~S1FrameMergeNode()
         m_thread->deleteLater();
         m_thread = nullptr;
     }
-
-    // Note: m_widget is owned by QtNodes QGraphicsProxyWidget, do not delete here
 }
 
 unsigned int S1FrameMergeNode::nPorts(PortType portType) const
@@ -85,23 +82,26 @@ void S1FrameMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             m_outputNodeNameEdit->setText(generateDefaultOutputName());
         }
     }
+
+    // Delegate to base class to handle execution mode
+    ExecutableNodeDelegateModel::setInData(data, port);
 }
 
-QWidget* S1FrameMergeNode::embeddedWidget()
+::QWidget* S1FrameMergeNode::embeddedWidget()
 {
-    if (!m_widget)
+    if (!_widget)
     {
         createWidget();
     }
-    return m_widget;
+    return _widget;
 }
 
 void S1FrameMergeNode::createWidget()
 {
-    m_widget = new QWidget();
-    m_widget->setObjectName("NodeEmbeddedWidget");
-    m_widget->setMinimumWidth(280);
-    auto* layout = new QVBoxLayout(m_widget);
+    _widget = new QWidget();
+    _widget->setObjectName("NodeEmbeddedWidget");
+    _widget->setMinimumWidth(280);
+    auto* layout = new QVBoxLayout(_widget);
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(6);
 
@@ -184,22 +184,6 @@ void S1FrameMergeNode::createWidget()
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
-    // Spacer
-    layout->addSpacing(6);
-
-    // Separator
-    QFrame* line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(line);
-
-    // Progress bar
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    m_progressBar->setTextVisible(true);
-    layout->addWidget(m_progressBar);
-
     // Bottom spacer
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 }
@@ -277,9 +261,8 @@ bool S1FrameMergeNode::validateInputs() const
 
 void S1FrameMergeNode::onProgressUpdate(int progress, const QString& message)
 {
-    m_progressBar->setValue(progress);
-    m_progressBar->setFormat(QString("%1：%2%").arg(message).arg(progress));
-    m_progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    Q_UNUSED(message);
+    setProgress(progress);
 }
 
 void S1FrameMergeNode::onProcessingFinished()
@@ -307,9 +290,11 @@ void S1FrameMergeNode::onProcessingFinished()
     }
 
     // Update UI
-    m_progressBar->setValue(100);
+    m_outputNodeNameEdit->setEnabled(true);
 
-    // Notify downstream nodes
+    // Notify base class that we're finished
+    setProgress(100);
+    finishExecution();
     Q_EMIT dataUpdated(0);
 }
 
@@ -329,6 +314,9 @@ void S1FrameMergeNode::onError(const QString& error)
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
+
+    m_outputNodeNameEdit->setEnabled(true);
+    setState(ExecutionState::Error);
 }
 
 void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
@@ -338,10 +326,10 @@ void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
 
 WorkflowUI* S1FrameMergeNode::getNodeEditorWindow() const
 {
-    if (!m_widget)
+    if (!_widget)
         return nullptr;
 
-    QWidget* parent = m_widget->parentWidget();
+    QWidget* parent = _widget->parentWidget();
     while (parent)
     {
         auto* editor = qobject_cast<WorkflowUI*>(parent);
@@ -369,6 +357,76 @@ QString S1FrameMergeNode::projectName() const
 {
     auto editor = getNodeEditorWindow();
     return editor ? editor->projectName() : QString();
+}
+
+void S1FrameMergeNode::execute()
+{
+    if (executionState() == ExecutionState::Running)
+        return;
+
+    executeProcessing();
+}
+
+void S1FrameMergeNode::stopExecution()
+{
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
+}
+
+void S1FrameMergeNode::processAutomatically()
+{
+    // In automatic mode, if inputs are valid, execute
+    if (validateInputs())
+    {
+        executeProcessing();
+    }
+}
+
+void S1FrameMergeNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ExecutableNodeDelegateModel::setExecutionMode(mode);
+}
+
+void S1FrameMergeNode::executeProcessing()
+{
+    if (!validateInputs())
+        return;
+
+    setProgress(0);
+    setState(ExecutionState::Running);
+
+    // Prepare processing
+    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
+        ? generateDefaultOutputName()
+        : m_outputNodeNameEdit->text();
+    QString project = projectName();
+    QString node1 = m_inputs[0]->nodeName();
+    QString node2 = m_inputs[1]->nodeName();
+    int index1 = m_indexSpins[0]->value();
+    int index2 = m_indexSpins[1]->value();
+
+    // Create thread
+    m_thread = new QThread();
+    m_workerThread = new MyThread();
+    m_workerThread->moveToThread(m_thread);
+
+    // Connect signals
+    connect(m_thread, &QThread::started, [this, index1, index2, project, node1, node2, dstNode]() {
+        Q_EMIT startFrameMerge(index1, index2, project, node1, node2, dstNode, projectModel());
+    });
+    connect(m_workerThread, &MyThread::updateProcess, this, &S1FrameMergeNode::onProgressUpdate);
+    connect(m_workerThread, &MyThread::endProcess, this, &S1FrameMergeNode::onProcessingFinished);
+    connect(m_workerThread, &MyThread::errorProcess, this, &S1FrameMergeNode::onError);
+    connect(m_workerThread, &MyThread::sendModel, this, &S1FrameMergeNode::onModelUpdated);
+    connect(m_workerThread, &MyThread::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
+
+    // Start thread
+    m_thread->start();
+    m_outputNodeNameEdit->setEnabled(false);
 }
 
 } // namespace QtNodes

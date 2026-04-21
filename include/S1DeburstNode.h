@@ -1,14 +1,13 @@
-﻿#ifndef S1DEBURSTNODE_H
+#ifndef S1DEBURSTNODE_H
 #define S1DEBURSTNODE_H
 
 #include "ImportDataTypes.h"
 #include "MyThread.h"
-#include <QtNodes/NodeDelegateModel>
+#include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
 #include <QLabel>
 #include <QComboBox>
-#include <QProgressBar>
 #include <QLineEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -27,7 +26,7 @@ namespace QtNodes {
 // ============================================================================
 // S1DeburstNode - Sentinel-1 Deburst preprocessing node
 // ============================================================================
-class S1DeburstNode : public NodeDelegateModel
+class S1DeburstNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
@@ -42,15 +41,16 @@ public:
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
-    QWidget* embeddedWidget() override;
+    ::QWidget* embeddedWidget() override;
+
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
 
 private:
     // UI elements
-    QWidget* m_widget;
     QComboBox* m_projectCombo;
     QComboBox* m_dataNodeCombo;
     QLineEdit* m_outputNodeNameEdit;
-    QProgressBar* m_progressBar;
 
     // Input data storage
     std::shared_ptr<ImportedFileData> m_inputData;
@@ -59,9 +59,6 @@ private:
     // Worker thread
     MyThread* m_workerThread;
     QThread* m_thread;
-
-    // Processing state
-    bool m_isProcessing;
 
     // Helper methods
     void createWidget();
@@ -72,12 +69,18 @@ private:
     bool validateInputs() const;
     void updateLabels();
     QString generateDefaultOutputName() const;
+    void executeProcessing();
 
     // Get WorkflowUI reference
     WorkflowUI* getNodeEditorWindow() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
+
+    // Executable interface implementation
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
 
 signals:
     void startDeburst(QString savePath, QString dstProject,

@@ -5,11 +5,11 @@
 namespace QtNodes {
 
 ImportNodeBase::ImportNodeBase()
-    : m_outputData(nullptr)
-    , m_isProcessing(false)
-    , m_canStop(false)
-    , m_widget(nullptr)
+    : ExecutableNodeDelegateModel()
+    , m_stopRequested(false)
 {
+    // Set default execution mode
+    setExecutionMode(ExecutionMode::Automatic);
 }
 
 unsigned int ImportNodeBase::nPorts(PortType portType) const
@@ -30,26 +30,33 @@ NodeDataType ImportNodeBase::dataType(PortType portType, PortIndex portIndex) co
 
 std::shared_ptr<NodeData> ImportNodeBase::outData(PortIndex port)
 {
-    return m_outputData;
+    // First try to get data from ExecutableNodeDelegateModel base class
+    auto data = ExecutableNodeDelegateModel::outData(port);
+    if (data)
+        return data;
+    
+    // Fall back to legacy behavior (for backward compatibility)
+    // Note: This should only be needed during transition
+    return nullptr;
 }
 
 void ImportNodeBase::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(data);
-    Q_UNUSED(port);
+    // Call base class implementation
+    ExecutableNodeDelegateModel::setInData(data, port);
 }
 
 ::QWidget* ImportNodeBase::embeddedWidget()
 {
     // Create widget on first access
-    if (!m_widget)
+    if (!_widget)
     {
-        m_widget = createWidget();
+        _widget = createWidget();
 
         // Set object name for QSS targeting
-        m_widget->setObjectName("NodeEmbeddedWidget");
+        _widget->setObjectName("NodeEmbeddedWidget");
     }
-    return m_widget;
+    return _widget;
 }
 
 QStandardItemModel* ImportNodeBase::projectModel() const
@@ -78,8 +85,8 @@ QString ImportNodeBase::getOutputNodeName() const
 
 void ImportNodeBase::onProgressUpdate(int progress, const QString& message)
 {
-    // Default implementation - derived classes can override to update UI
-    Q_UNUSED(progress);
+    // Use ExecutableNodeDelegateModel's progress mechanism
+    setProgress(progress);
     Q_UNUSED(message);
 }
 
@@ -90,28 +97,60 @@ void ImportNodeBase::onImportFinished()
 
     if (!filePath.isEmpty() && !nodeName.isEmpty())
     {
-        m_outputData = std::make_shared<ImportedFileData>(filePath, nodeName);
+        auto outputData = std::make_shared<ImportedFileData>(filePath, nodeName);
+        setOutputData(0, outputData);
         Q_EMIT dataUpdated(0);
     }
 
-    m_isProcessing = false;
-    m_canStop = false;
+    finishExecution();
 }
 
 void ImportNodeBase::onError(const QString& error)
 {
-    m_isProcessing = false;
-    m_canStop = false;
-    Q_UNUSED(error);
+    setState(ExecutionState::Error);
+    Q_EMIT executionError(error);
+}
+
+void ImportNodeBase::execute()
+{
+    m_stopRequested = false;
+    setProgress(0);
+    setState(ExecutionState::Running);
+    
+    // Call the legacy executeImport() method
+    executeImport();
+}
+
+void ImportNodeBase::stopExecution()
+{
+    m_stopRequested = true;
+}
+
+void ImportNodeBase::processAutomatically()
+{
+    // For import nodes, automatic mode typically doesn't do anything
+    // since they need user input to select files
+    // But we'll complete automatic execution to keep the state consistent
+    completeAutomaticExecution();
+}
+
+void ImportNodeBase::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ExecutableNodeDelegateModel::setExecutionMode(mode);
+    
+    // If switching from Manual to Automatic, we could potentially trigger auto-execution
+    // but for import nodes this usually doesn't make sense
+    // So we just update the mode
 }
 
 WorkflowUI* ImportNodeBase::getNodeEditorWindow() const
 {
     // Navigate up the widget hierarchy to find WorkflowUI
-    if (!m_widget)
+    if (!_widget)
         return nullptr;
 
-    ::QWidget* parent = m_widget->parentWidget();
+    ::QWidget* parent = _widget->parentWidget();
     while (parent)
     {
         auto* editor = qobject_cast<WorkflowUI*>(parent);

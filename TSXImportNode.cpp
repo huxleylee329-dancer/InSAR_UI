@@ -14,7 +14,6 @@ TSXImportNode::TSXImportNode()
     , m_xmlEdit(nullptr)
     , m_polarizationCombo(nullptr)
     , m_projectCombo(nullptr)
-    , m_progressBar(nullptr)
     , m_xmlPath()
     , m_importedFilePath()
     , m_outputFileName()
@@ -109,14 +108,6 @@ QWidget* TSXImportNode::createWidget()
     polRow->addWidget(m_polarizationCombo);
     layout->addLayout(polRow);
 
-    // Progress bar row
-    auto* progressRow = new QHBoxLayout();
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    progressRow->addWidget(m_progressBar);
-    layout->addLayout(progressRow);
-
     // Connect signals
     connect(xmlBrowse, &QPushButton::clicked, this, &TSXImportNode::onXmlBrowseClicked);
 
@@ -125,7 +116,8 @@ QWidget* TSXImportNode::createWidget()
 
 void TSXImportNode::executeImport()
 {
-    if (m_isProcessing)
+    // If already running, skip
+    if (executionState() == ExecutionState::Running)
         return;
 
     m_xmlPath = m_xmlEdit->text().trimmed();
@@ -229,7 +221,7 @@ QString TSXImportNode::generateOutputFileName() const
 void TSXImportNode::onXmlBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
-        m_widget,
+        _widget,
         "导入 TerraSAR-X/TanDEM-X 数据",
         QFileInfo(m_xmlPath).absolutePath(),
         "XML 文件 (*.xml)"
@@ -250,7 +242,7 @@ void TSXImportNode::onXmlBrowseClicked()
 void TSXImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);
-    m_progressBar->setValue(progress);
+    setProgress(progress);
 }
 
 void TSXImportNode::onImportFinished()
@@ -260,18 +252,14 @@ void TSXImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_progressBar->setValue(100);
-
-    if (m_thread)
-    {
+    if (m_thread) {
         m_thread->quit();
         m_thread->wait();
         m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
+    if (m_workerThread) {
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
@@ -281,19 +269,23 @@ void TSXImportNode::onThreadError(const QString& error)
 {
     onError(error);
 
-    if (m_thread)
-    {
+    if (m_thread) {
         m_thread->quit();
         m_thread->wait();
         m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
+    if (m_workerThread) {
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
+}
+
+void TSXImportNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ImportNodeBase::setExecutionMode(mode);
 }
 
 void TSXImportNode::onModelUpdated(QStandardItemModel* model)

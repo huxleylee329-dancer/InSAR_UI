@@ -12,7 +12,6 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QComboBox>
-#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileDialog>
@@ -34,6 +33,9 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("COSMO-SkyMed Import"); }
     QString name() const override { return QStringLiteral("CSKImport"); }
+
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
 
 protected:
     // ImportNodeBase interface
@@ -63,7 +65,6 @@ private:
     QComboBox* m_projectCombo;  // Target project dropdown (read-only)
     QPushButton* m_importButton;  // Kept for compatibility, not used in UI
     QPushButton* m_stopButton;  // Kept for compatibility, not used in UI
-    QProgressBar* m_progressBar;
     QLabel* m_statusLabel;  // Kept for compatibility, not used in UI
 
     // State

@@ -14,7 +14,6 @@ CSKImportNode::CSKImportNode()
     , m_projectCombo(nullptr)
     , m_importButton(nullptr)
     , m_stopButton(nullptr)
-    , m_progressBar(nullptr)
     , m_statusLabel(nullptr)
     , m_filePaths()
     , m_importedFilePaths()
@@ -104,14 +103,6 @@ QWidget* CSKImportNode::createWidget()
     configLayout->addLayout(nodeRow);
 
     // CSK does not need polarization selection (auto-detect)
-
-    // Progress bar row
-    auto* progressRow = new QHBoxLayout();
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    progressRow->addWidget(m_progressBar);
-    configLayout->addLayout(progressRow);
 
     bottomSection->addLayout(configLayout);
     mainLayout->addLayout(bottomSection, 4);
@@ -227,7 +218,7 @@ QString CSKImportNode::generateOutputFileName(const QString& filePath) const
 void CSKImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        m_widget,
+        _widget,
         "导入 COSMO-SkyMed 数据",
         QDir::currentPath(),
         "H5 文件 (*.h5)"
@@ -257,7 +248,7 @@ void CSKImportNode::onRemoveFilesClicked()
 void CSKImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);  // Ignore message
-    m_progressBar->setValue(progress);
+    setProgress(progress);
 }
 
 void CSKImportNode::onImportFinished()
@@ -275,8 +266,6 @@ void CSKImportNode::onImportFinished()
     }
 
     ImportNodeBase::onImportFinished();
-
-    m_progressBar->setValue(100);
 
     // Clean up thread (consistent with TSXBatchImportNode)
     if (m_thread)
@@ -311,6 +300,12 @@ void CSKImportNode::onThreadError(const QString& error)
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
+}
+
+void CSKImportNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ImportNodeBase::setExecutionMode(mode);
 }
 
 void CSKImportNode::onModelUpdated(QStandardItemModel* model)

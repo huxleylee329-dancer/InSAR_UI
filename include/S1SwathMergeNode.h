@@ -3,14 +3,13 @@
 
 #include "ImportDataTypes.h"
 #include "MyThread.h"
-#include <QtNodes/NodeDelegateModel>
+#include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
 #include <QLabel>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QLineEdit>
-#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -27,7 +26,7 @@ namespace QtNodes {
 // ============================================================================
 // S1SwathMergeNode - Sentinel-1 Swath Merge preprocessing node
 // ============================================================================
-class S1SwathMergeNode : public NodeDelegateModel
+class S1SwathMergeNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
@@ -42,16 +41,17 @@ public:
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
-    QWidget* embeddedWidget() override;
+    ::QWidget* embeddedWidget() override;
+
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
 
 private:
     // UI elements
-    QWidget* m_widget;
     QComboBox* m_projectCombo;
     QComboBox* m_dataNodeCombo[3];
     QSpinBox* m_indexSpins[3];
     QLineEdit* m_outputNodeNameEdit;
-    QProgressBar* m_progressBar;
 
     // Input data storage
     std::shared_ptr<ImportedFileData> m_inputs[3];
@@ -70,12 +70,18 @@ private:
     bool validateInputs() const;
     void updateLabels();
     QString generateDefaultOutputName() const;
+    void executeProcessing();
 
     // Get WorkflowUI reference
     WorkflowUI* getNodeEditorWindow() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
+
+    // Executable interface implementation
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
 
 signals:
     void startSwathMerge(int index1, int index2, int index3, QString project,

@@ -1,7 +1,7 @@
 #ifndef IMPORTNODEBASE_H
 #define IMPORTNODEBASE_H
 
-#include <QtNodes/NodeDelegateModel>
+#include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QtNodes/NodeDelegateModelRegistry>
 #include <QLineEdit>
@@ -25,7 +25,7 @@ namespace QtNodes {
 // ============================================================================
 // ImportNodeBase - Base class for all import nodes
 // ============================================================================
-class ImportNodeBase : public NodeDelegateModel
+class ImportNodeBase : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
@@ -48,22 +48,20 @@ public:
     QString projectName() const;
     ::QWidget* embeddedWidget() override;
 
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
+
 protected:
-    // Subclass must override these
+    // Subclass must override these (legacy interface)
     virtual void executeImport() = 0;
     virtual QString getImportedFilePath() const = 0;
     virtual QString getOutputNodeName() const;
     virtual QWidget* createWidget() = 0;
 
-    // Output data
-    std::shared_ptr<NodeData> m_outputData;
-
-    // Processing state
-    bool m_isProcessing;
-    bool m_canStop;
-
-    // Cached widget (created on first access)
-    mutable QWidget* m_widget;
+    // New Executable interface that subclasses must override
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
 
     // Helper methods
     void onProgressUpdate(int progress, const QString& message);
@@ -72,6 +70,9 @@ protected:
 
     // Get WorkflowUI reference
     WorkflowUI* getNodeEditorWindow() const;
+
+    // Flag for stop request
+    bool m_stopRequested;
 };
 
 } // namespace QtNodes

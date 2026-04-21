@@ -3,14 +3,13 @@
 
 #include "ImportDataTypes.h"
 #include "MyThread.h"
-#include <QtNodes/NodeDelegateModel>
+#include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
 #include <QLabel>
 #include <QComboBox>
 #include <QSpinBox>
 #include <QLineEdit>
-#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFrame>
@@ -27,7 +26,7 @@ namespace QtNodes {
 // ============================================================================
 // S1FrameMergeNode - Sentinel-1 Frame Merge preprocessing node
 // ============================================================================
-class S1FrameMergeNode : public NodeDelegateModel
+class S1FrameMergeNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
@@ -42,16 +41,17 @@ public:
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
-    QWidget* embeddedWidget() override;
+    ::QWidget* embeddedWidget() override;
+
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
 
 private:
     // UI elements
-    QWidget* m_widget;
     QComboBox* m_projectCombo;
     QComboBox* m_dataNodeCombo[2];
     QSpinBox* m_indexSpins[2];
     QLineEdit* m_outputNodeNameEdit;
-    QProgressBar* m_progressBar;
 
     // Input data storage
     std::shared_ptr<ImportedFileData> m_inputs[2];
@@ -70,12 +70,18 @@ private:
     bool validateInputs() const;
     void updateLabels();
     QString generateDefaultOutputName() const;
+    void executeProcessing();
 
     // Get WorkflowUI reference
     WorkflowUI* getNodeEditorWindow() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
+
+    // Executable interface implementation
+    void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
 
 signals:
     void startFrameMerge(int index1, int index2, QString project,

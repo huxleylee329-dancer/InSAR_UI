@@ -13,7 +13,6 @@ ALOS2ImportNode::ALOS2ImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
     , m_projectCombo(nullptr)
-    , m_progressBar(nullptr)
     , m_imgPaths()
     , m_importedFilePaths()
     , m_workerThread(nullptr)
@@ -100,14 +99,6 @@ QWidget* ALOS2ImportNode::createWidget()
     m_outputNodeNameEdit->setText("ALOS2_Batch_Import");
     nodeRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nodeRow);
-
-    // Progress bar row
-    auto* progressRow = new QHBoxLayout();
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    progressRow->addWidget(m_progressBar);
-    configLayout->addLayout(progressRow);
 
     bottomSection->addLayout(configLayout);
     mainLayout->addLayout(bottomSection, 4);
@@ -256,7 +247,7 @@ QString ALOS2ImportNode::generateLEDPath(const QString& imgPath) const
 void ALOS2ImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        m_widget,
+        _widget,
         "导入 ALOS-2 数据",
         QDir::currentPath(),
         "IMG 文件 (*.IMG *.img)"
@@ -286,7 +277,7 @@ void ALOS2ImportNode::onRemoveFilesClicked()
 void ALOS2ImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);  // Ignore message
-    m_progressBar->setValue(progress);
+    setProgress(progress);
 }
 
 void ALOS2ImportNode::onImportFinished()
@@ -304,8 +295,6 @@ void ALOS2ImportNode::onImportFinished()
     }
 
     ImportNodeBase::onImportFinished();
-
-    m_progressBar->setValue(100);
 
     // Clean up thread (consistent with TSXBatchImportNode)
     if (m_thread)
@@ -340,6 +329,12 @@ void ALOS2ImportNode::onThreadError(const QString& error)
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
+}
+
+void ALOS2ImportNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ImportNodeBase::setExecutionMode(mode);
 }
 
 void ALOS2ImportNode::onModelUpdated(QStandardItemModel* model)

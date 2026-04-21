@@ -17,7 +17,6 @@ Sentinel1ImportNode::Sentinel1ImportNode()
     , m_podEdit(nullptr)
     , m_subswathCombo(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_progressBar(nullptr)
     , m_manifestPath()
     , m_podPath()
     , m_importedFilePath()
@@ -148,18 +147,6 @@ QWidget* Sentinel1ImportNode::createWidget()
     fileNameLayout->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameLayout);
 
-    // Separator
-    QFrame* line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(line);
-
-    // Progress bar
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    layout->addWidget(m_progressBar);
-
     // Bottom spacer
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
@@ -174,6 +161,10 @@ QWidget* Sentinel1ImportNode::createWidget()
         if (!autoName.isEmpty() && m_outputFileNameEdit->text().isEmpty()) {
             m_outputFileNameEdit->setText(autoName);
         }
+        // Invalidate execution when input changes (if in manual mode)
+        if (executionMode() == ExecutionMode::Manual) {
+            invalidateExecution();
+        }
     });
 
     // Set project name if available
@@ -187,7 +178,8 @@ QWidget* Sentinel1ImportNode::createWidget()
 
 void Sentinel1ImportNode::executeImport()
 {
-    if (m_isProcessing)
+    // If already running, skip
+    if (executionState() == ExecutionState::Running)
         return;
 
     m_manifestPath = m_manifestEdit->text().trimmed();
@@ -304,7 +296,7 @@ QString Sentinel1ImportNode::generateOutputFileName() const
 void Sentinel1ImportNode::onManifestBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
-        m_widget,
+        _widget,
         "选择哨兵一号清单文件",
         QFileInfo(m_manifestPath).absolutePath(),
         "清单文件 (*.manifest);;所有文件 (*)"
@@ -329,7 +321,7 @@ void Sentinel1ImportNode::onManifestBrowseClicked()
 void Sentinel1ImportNode::onPodBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
-        m_widget,
+        _widget,
         "选择精轨文件",
         QFileInfo(m_podPath).absolutePath(),
         "精轨文件 (*.EOF *.eofs);;所有文件 (*)"
@@ -344,7 +336,7 @@ void Sentinel1ImportNode::onPodBrowseClicked()
 void Sentinel1ImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);
-    m_progressBar->setValue(progress);
+    setProgress(progress);
 }
 
 void Sentinel1ImportNode::onImportFinished()
@@ -354,18 +346,14 @@ void Sentinel1ImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_progressBar->setValue(100);
-
-    if (m_thread)
-    {
+    if (m_thread) {
         m_thread->quit();
         m_thread->wait();
         m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
+    if (m_workerThread) {
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
@@ -375,19 +363,26 @@ void Sentinel1ImportNode::onThreadError(const QString& error)
 {
     onError(error);
 
-    if (m_thread)
-    {
+    if (m_thread) {
         m_thread->quit();
         m_thread->wait();
         m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
+    if (m_workerThread) {
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
+}
+
+void Sentinel1ImportNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ImportNodeBase::setExecutionMode(mode);
+    
+    // If switching from Manual to Automatic and we have valid data, we could trigger execution
+    // But for import nodes, automatic mode usually doesn't make sense since it needs user selection
 }
 
 void Sentinel1ImportNode::onModelUpdated(QStandardItemModel* model)

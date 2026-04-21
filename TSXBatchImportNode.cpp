@@ -13,7 +13,6 @@ TSXBatchImportNode::TSXBatchImportNode()
     , m_fileListWidget(nullptr)
     , m_polarizationCombo(nullptr)
     , m_projectCombo(nullptr)
-    , m_progressBar(nullptr)
     , m_xmlPaths()
     , m_importedFilePaths()
     , m_workerThread(nullptr)
@@ -111,14 +110,6 @@ QWidget* TSXBatchImportNode::createWidget()
     m_polarizationCombo->addItem("VV");
     polRow->addWidget(m_polarizationCombo);
     configLayout->addLayout(polRow);
-
-    // Progress bar row
-    auto* progressRow = new QHBoxLayout();
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    progressRow->addWidget(m_progressBar);
-    configLayout->addLayout(progressRow);
 
     bottomSection->addLayout(configLayout);
     mainLayout->addLayout(bottomSection, 4);
@@ -232,7 +223,7 @@ QString TSXBatchImportNode::generateOutputFileName(const QString& xmlPath) const
 void TSXBatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        m_widget,
+        _widget,
         "导入 TerraSAR-X/TanDEM-X 数据",
         QDir::currentPath(),
         "XML 文件 (*.xml)"
@@ -262,7 +253,7 @@ void TSXBatchImportNode::onRemoveFilesClicked()
 void TSXBatchImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);
-    m_progressBar->setValue(progress);
+    setProgress(progress);
 }
 
 void TSXBatchImportNode::onImportFinished()
@@ -280,8 +271,6 @@ void TSXBatchImportNode::onImportFinished()
     }
 
     ImportNodeBase::onImportFinished();
-
-    m_progressBar->setValue(100);
 
     if (m_thread)
     {
@@ -315,6 +304,12 @@ void TSXBatchImportNode::onThreadError(const QString& error)
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
+}
+
+void TSXBatchImportNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ImportNodeBase::setExecutionMode(mode);
 }
 
 void TSXBatchImportNode::onModelUpdated(QStandardItemModel* model)

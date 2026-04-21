@@ -9,7 +9,6 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QLineEdit>
-#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileDialog>
@@ -31,6 +30,9 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Sentinel-1 Batch Import"); }
     QString name() const override { return QStringLiteral("Sentinel1BatchImport"); }
+
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
 
 protected:
     // ImportNodeBase interface
@@ -60,7 +62,6 @@ private:
     QComboBox* m_subswathCombo;
     QComboBox* m_polarizationCombo;
     QComboBox* m_projectCombo;
-    QProgressBar* m_progressBar;
 
     // State
     QStringList m_manifestPaths;

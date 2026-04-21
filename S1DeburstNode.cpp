@@ -10,16 +10,14 @@
 namespace QtNodes {
 
 S1DeburstNode::S1DeburstNode()
-    : m_widget(nullptr)
+    : ExecutableNodeDelegateModel()
     , m_projectCombo(nullptr)
     , m_dataNodeCombo(nullptr)
     , m_outputNodeNameEdit(nullptr)
-    , m_progressBar(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
     , m_workerThread(nullptr)
     , m_thread(nullptr)
-    , m_isProcessing(false)
 {
 }
 
@@ -46,8 +44,6 @@ S1DeburstNode::~S1DeburstNode()
         m_thread->deleteLater();
         m_thread = nullptr;
     }
-
-    // Note: m_widget is owned by QtNodes QGraphicsProxyWidget, do not delete here
 }
 
 unsigned int S1DeburstNode::nPorts(PortType portType) const
@@ -84,23 +80,26 @@ void S1DeburstNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     {
         m_outputNodeNameEdit->setText(generateDefaultOutputName());
     }
+
+    // Delegate to base class to handle execution mode
+    ExecutableNodeDelegateModel::setInData(data, port);
 }
 
-QWidget* S1DeburstNode::embeddedWidget()
+::QWidget* S1DeburstNode::embeddedWidget()
 {
-    if (!m_widget)
+    if (!_widget)
     {
         createWidget();
     }
-    return m_widget;
+    return _widget;
 }
 
 void S1DeburstNode::createWidget()
 {
-    m_widget = new QWidget();
-    m_widget->setObjectName("NodeEmbeddedWidget");
-    m_widget->setMinimumWidth(280);
-    auto* layout = new QVBoxLayout(m_widget);
+    _widget = new QWidget();
+    _widget->setObjectName("NodeEmbeddedWidget");
+    _widget->setMinimumWidth(280);
+    auto* layout = new QVBoxLayout(_widget);
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(6);
 
@@ -142,22 +141,6 @@ void S1DeburstNode::createWidget()
     m_outputNodeNameEdit->setPlaceholderText("不要输入中文字符");
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
-
-    // Spacer
-    layout->addSpacing(6);
-
-    // Separator
-    QFrame* line = new QFrame();
-    line->setFrameShape(QFrame::HLine);
-    line->setFrameShadow(QFrame::Sunken);
-    layout->addWidget(line);
-
-    // Progress bar
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    m_progressBar->setTextVisible(true);
-    layout->addWidget(m_progressBar);
 
     // Bottom spacer
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
@@ -232,9 +215,8 @@ bool S1DeburstNode::validateInputs() const
 
 void S1DeburstNode::onProgressUpdate(int progress, const QString& message)
 {
-    m_progressBar->setValue(progress);
-    m_progressBar->setFormat(QString("%1：%2%").arg(message).arg(progress));
-    m_progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    Q_UNUSED(message);
+    setProgress(progress);
 }
 
 void S1DeburstNode::onProcessingFinished()
@@ -262,11 +244,11 @@ void S1DeburstNode::onProcessingFinished()
     }
 
     // Update UI
-    m_isProcessing = false;
     m_outputNodeNameEdit->setEnabled(true);
-    m_progressBar->setValue(100);
 
-    // Notify downstream nodes
+    // Notify base class that we're finished
+    setProgress(100);
+    finishExecution();
     Q_EMIT dataUpdated(0);
 }
 
@@ -287,8 +269,8 @@ void S1DeburstNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
-    m_isProcessing = false;
     m_outputNodeNameEdit->setEnabled(true);
+    setState(ExecutionState::Error);
 }
 
 void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
@@ -298,10 +280,10 @@ void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
 
 WorkflowUI* S1DeburstNode::getNodeEditorWindow() const
 {
-    if (!m_widget)
+    if (!_widget)
         return nullptr;
 
-    QWidget* parent = m_widget->parentWidget();
+    QWidget* parent = _widget->parentWidget();
     while (parent)
     {
         auto* editor = qobject_cast<WorkflowUI*>(parent);
@@ -329,6 +311,74 @@ QString S1DeburstNode::projectName() const
 {
     auto editor = getNodeEditorWindow();
     return editor ? editor->projectName() : QString();
+}
+
+void S1DeburstNode::execute()
+{
+    if (executionState() == ExecutionState::Running)
+        return;
+
+    executeProcessing();
+}
+
+void S1DeburstNode::stopExecution()
+{
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
+}
+
+void S1DeburstNode::processAutomatically()
+{
+    // In automatic mode, if inputs are valid, execute
+    if (validateInputs())
+    {
+        executeProcessing();
+    }
+}
+
+void S1DeburstNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ExecutableNodeDelegateModel::setExecutionMode(mode);
+}
+
+void S1DeburstNode::executeProcessing()
+{
+    if (!validateInputs())
+        return;
+
+    setProgress(0);
+    setState(ExecutionState::Running);
+
+    // Prepare processing
+    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
+        ? generateDefaultOutputName()
+        : m_outputNodeNameEdit->text();
+    QString savePath = projectPath();
+    QString dstProject = projectName();
+    QString srcNode = m_inputData->nodeName();
+
+    // Create thread
+    m_thread = new QThread();
+    m_workerThread = new MyThread();
+    m_workerThread->moveToThread(m_thread);
+
+    // Connect signals
+    connect(m_thread, &QThread::started, [this, savePath, dstProject, srcNode, dstNode]() {
+        Q_EMIT startDeburst(savePath, dstProject, srcNode, dstNode, projectModel());
+    });
+    connect(m_workerThread, &MyThread::updateProcess, this, &S1DeburstNode::onProgressUpdate);
+    connect(m_workerThread, &MyThread::endProcess, this, &S1DeburstNode::onProcessingFinished);
+    connect(m_workerThread, &MyThread::errorProcess, this, &S1DeburstNode::onError);
+    connect(m_workerThread, &MyThread::sendModel, this, &S1DeburstNode::onModelUpdated);
+    connect(m_workerThread, &MyThread::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
+
+    // Start thread
+    m_thread->start();
+    m_outputNodeNameEdit->setEnabled(false);
 }
 
 } // namespace QtNodes

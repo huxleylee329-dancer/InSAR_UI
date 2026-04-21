@@ -1,4 +1,4 @@
-﻿#ifndef TSXIMPORTNODE_H
+#ifndef TSXIMPORTNODE_H
 #define TSXIMPORTNODE_H
 
 #include "ImportNodeBase.h"
@@ -8,7 +8,6 @@
 #include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
-#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileDialog>
@@ -31,6 +30,9 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("TerraSAR-X Import"); }
     QString name() const override { return QStringLiteral("TSXImport"); }
+
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
 
 protected:
     // ImportNodeBase interface
@@ -59,7 +61,6 @@ private:
     QLineEdit* m_xmlEdit;
     QComboBox* m_polarizationCombo;
     QComboBox* m_projectCombo;
-    QProgressBar* m_progressBar;
 
     // State
     QString m_xmlPath;

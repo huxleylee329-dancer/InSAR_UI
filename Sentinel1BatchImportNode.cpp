@@ -15,7 +15,6 @@ Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     , m_subswathCombo(nullptr)
     , m_polarizationCombo(nullptr)
     , m_projectCombo(nullptr)
-    , m_progressBar(nullptr)
     , m_manifestPaths()
     , m_importedFilePaths()
     , m_workerThread(nullptr)
@@ -109,8 +108,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     projectRow->addWidget(new QLabel("目标工程："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
-    if (!projectName().isEmpty())
-    {
+    if (!projectName().isEmpty()) {
         m_projectCombo->addItem(projectName());
     }
     projectRow->addWidget(m_projectCombo);
@@ -125,14 +123,6 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     m_outputNodeNameEdit->setText("S1_Batch_Import");
     nameRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nameRow);
-
-    // Progress bar row
-    auto* progressRow = new QHBoxLayout();
-    m_progressBar = new QProgressBar();
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    progressRow->addWidget(m_progressBar);
-    layout->addLayout(progressRow);
 
     // Connect signals
     connect(addFiles, &QPushButton::clicked, this, &Sentinel1BatchImportNode::onAddFilesClicked);
@@ -248,7 +238,7 @@ QString Sentinel1BatchImportNode::generateImportName(const QString& manifestPath
 void Sentinel1BatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        m_widget,
+        _widget,
         "选择哨兵一号清单文件",
         QDir::currentPath(),
         "清单文件 (*.manifest);;所有文件 (*)"
@@ -278,7 +268,7 @@ void Sentinel1BatchImportNode::onRemoveFilesClicked()
 void Sentinel1BatchImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);
-    m_progressBar->setValue(progress);
+    setProgress(progress);
 }
 
 void Sentinel1BatchImportNode::onImportFinished()
@@ -286,11 +276,9 @@ void Sentinel1BatchImportNode::onImportFinished()
     QString outputNodeName = getOutputNodeName();
 
     m_importedFilePaths.clear();
-    for (int i = 0; i < m_manifestPaths.size(); ++i)
-    {
+    for (int i = 0; i < m_manifestPaths.size(); ++i) {
         QString importName = generateImportName(m_manifestPaths[i]);
-        if (!importName.isEmpty())
-        {
+        if (!importName.isEmpty()) {
             QString filePath = QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(importName);
             m_importedFilePaths.append(filePath);
         }
@@ -298,18 +286,14 @@ void Sentinel1BatchImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
-    m_progressBar->setValue(100);
-
-    if (m_thread)
-    {
+    if (m_thread) {
         m_thread->quit();
         m_thread->wait();
         m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
+    if (m_workerThread) {
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
@@ -319,19 +303,23 @@ void Sentinel1BatchImportNode::onThreadError(const QString& error)
 {
     onError(error);
 
-    if (m_thread)
-    {
+    if (m_thread) {
         m_thread->quit();
         m_thread->wait();
         m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
+    if (m_workerThread) {
         m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
+}
+
+void Sentinel1BatchImportNode::setExecutionMode(ExecutionMode mode)
+{
+    ExecutionMode oldMode = executionMode();
+    ImportNodeBase::setExecutionMode(mode);
 }
 
 void Sentinel1BatchImportNode::onModelUpdated(QStandardItemModel* model)

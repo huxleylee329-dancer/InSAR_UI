@@ -8,7 +8,6 @@
 #include <QComboBox>
 #include <QPushButton>
 #include <QLabel>
-#include <QProgressBar>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileDialog>
@@ -30,6 +29,9 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("TerraSAR-X Batch Import"); }
     QString name() const override { return QStringLiteral("TSXBatchImport"); }
+
+    // ExecutableNodeDelegateModel interface implementation
+    void setExecutionMode(ExecutionMode mode) override;
 
 protected:
     // ImportNodeBase interface
@@ -58,7 +60,6 @@ private:
     QListWidget* m_fileListWidget;
     QComboBox* m_polarizationCombo;
     QComboBox* m_projectCombo;
-    QProgressBar* m_progressBar;
 
     // State
     QStringList m_xmlPaths;
