@@ -735,7 +735,41 @@ void ExecutableNodePainter::drawCardFooter(QPainter *painter, NodeGraphicsObject
     painter->restore();
 
     painter->save();
- 
+
+    // Draw progress bar when running (full-width at bottom layer)
+    double filledWidth = 0;
+    if (state == ExecutionState::Running && progress > 0) {
+        // Draw full-width progress bar (solid color, not transparent)
+        QColor progressColor = themedColor(QColor(0, 95, 172), QColor(0, 95, 172), context);
+
+        filledWidth = bounds.width() * progress / 100.0;
+        QRectF filledRect = bounds;
+        filledRect.setWidth(filledWidth);
+
+        // Draw the filled progress area with rounded bottom corners (match footer style)
+        QPainterPath progressPath;
+        progressPath.moveTo(filledRect.left(), filledRect.top());
+        progressPath.lineTo(filledRect.left(), filledRect.bottom() - 2.0);
+
+        // Only round bottom corners if filled area covers entire footer width
+        if (filledWidth >= bounds.width()) {
+            progressPath.quadTo(filledRect.left(), filledRect.bottom(), filledRect.left() + 2.0, filledRect.bottom());
+            progressPath.lineTo(filledRect.right() - 2.0, filledRect.bottom());
+            progressPath.quadTo(filledRect.right(), filledRect.bottom(), filledRect.right(), filledRect.bottom() - 2.0);
+        } else {
+            progressPath.lineTo(filledRect.left(), filledRect.bottom());
+            progressPath.lineTo(filledRect.right(), filledRect.bottom());
+            progressPath.lineTo(filledRect.right(), filledRect.top());
+        }
+        // Path is already closed after moveTo + lines, no need for extra line back to start
+
+        painter->save();
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(progressColor);
+        painter->drawPath(progressPath);
+        painter->restore();
+    }
+
     // Get state name - uppercase
     QString stateName;
     switch (state) {
@@ -754,61 +788,53 @@ void ExecutableNodePainter::drawCardFooter(QPainter *painter, NodeGraphicsObject
     double iconTop = bounds.top() + (bounds.height() - stateIcon->height()) / 2.0;
     painter->drawPixmap(static_cast<int>(iconLeft), static_cast<int>(iconTop), *stateIcon);
 
-    // Draw state name to the right of icon - 10px bold uppercase
-    painter->save();
-    painter->setPen(textColor);
+    // Prepare font once for all cases
     QFont font = painter->font();
     font.setBold(true);
-    font.setPointSize(8); // text-[10px] in design
+    font.setPointSize(8);
     font.setCapitalization(QFont::AllUppercase);
-    painter->setFont(font);
 
     double textLeft = iconLeft + stateIcon->width() + 6;
-    painter->drawText(QRectF(textLeft, bounds.top(), 80, bounds.height()),
-                     Qt::AlignVCenter, stateName);
-    painter->restore();
 
-    // Draw progress bar in middle when running
     if (state == ExecutionState::Running && progress > 0) {
-        QRectF progressRect = bounds.adjusted(100, 10, -50, -10);
-        drawCardProgressBar(painter, progressRect, progress, state, context);
+        // Smart text drawing: white on progress, gray on non-progress
+        QString percentText = QString("%1%").arg(progress);
+        QFontMetrics fm(font);
+        double textWidth = fm.horizontalAdvance(percentText) + 10;
 
-        // Draw percentage on far right
+        painter->save();
+
+        // 1. Draw white text on progress area (clipped)
+        QRectF progressRect = bounds;
+        progressRect.setWidth(filledWidth);
+        painter->setClipRect(progressRect);
+
+        painter->setPen(themedColor(QColor(255, 255, 255), QColor(255, 255, 255), context));
+        painter->setFont(font);
+        painter->drawText(QRectF(textLeft, bounds.top(), 80, bounds.height()),
+                         Qt::AlignVCenter, stateName);
+        painter->drawText(QRectF(bounds.width() - textWidth, bounds.top(), textWidth - 5, bounds.height()),
+                         Qt::AlignVCenter | Qt::AlignRight, percentText);
+
+        // 2. Draw gray text on non-progress area (clipped)
+        QRectF nonProgressRect = bounds.adjusted(filledWidth, 0, 0, 0);
+        painter->setClipRect(nonProgressRect);
+
+        painter->setPen(textColor);
+        painter->drawText(QRectF(textLeft, bounds.top(), 80, bounds.height()),
+                         Qt::AlignVCenter, stateName);
+        painter->drawText(QRectF(bounds.width() - textWidth, bounds.top(), textWidth - 5, bounds.height()),
+                         Qt::AlignVCenter | Qt::AlignRight, percentText);
+
+        painter->restore();
+    } else {
+        // Normal text drawing when not running
         painter->save();
         painter->setPen(textColor);
-        QFont percentFont = painter->font();
-        percentFont.setBold(true);
-        percentFont.setPointSize(8);
-        painter->setFont(percentFont);
-        QString percentText = QString("%1%").arg(progress);
-        painter->drawText(QRectF(bounds.width() - 45, bounds.top(), 40, bounds.height()),
-                         Qt::AlignCenter, percentText);
+        painter->setFont(font);
+        painter->drawText(QRectF(textLeft, bounds.top(), 80, bounds.height()),
+                         Qt::AlignVCenter, stateName);
         painter->restore();
-    }
-}
-
-void ExecutableNodePainter::drawCardProgressBar(QPainter *painter, QRectF bounds,
-                                                 int progress, ExecutionState /*state*/,
-                                                 ::QWidget* context) const
-{
-    // Background - light gray
-    QColor bgColor = themedColor(QColor(230, 232, 235), QColor(70, 70, 70), context);
-    painter->setPen(Qt::NoPen);
-    painter->setBrush(bgColor);
-    double radius = qMin(2.0, bounds.height() / 2.0); // small radius
-    painter->drawRoundedRect(bounds, radius, radius);
-
-    // Progress chunk - #005fac
-    if (progress > 0) {
-        double rightMargin = -(bounds.width() - progress * bounds.width() / 100 - 2);
-        QRectF progressRect = bounds.adjusted(1, 1, rightMargin, -1);
-        if (progressRect.width() < 1) {
-            progressRect.setWidth(1);
-        }
-        // Use design blue color
-        QColor progressColor = themedColor(QColor(0, 95, 172), QColor(0, 95, 172), context);
-        painter->setBrush(progressColor);
-        painter->drawRoundedRect(progressRect, qMax(0.0, radius - 1), qMax(0.0, radius - 1));
     }
 }
 

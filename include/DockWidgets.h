@@ -35,7 +35,7 @@
 #include <QtNodes/DataFlowGraphModel>
 
 // Forward declarations
-class NodeEditorWindow;
+class WorkflowUI;
 class NodeTreeWidget;
 
 #include "PaletteOrder.h"

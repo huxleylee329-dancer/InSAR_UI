@@ -18,7 +18,7 @@
 #include <memory>
 
 // Forward declarations
-class NodeEditorWindow;
+class WorkflowUI;
 
 namespace QtNodes {
 
@@ -70,8 +70,8 @@ protected:
     void onImportFinished();
     void onError(const QString& error);
 
-    // Get NodeEditorWindow reference
-    NodeEditorWindow* getNodeEditorWindow() const;
+    // Get WorkflowUI reference
+    WorkflowUI* getNodeEditorWindow() const;
 };
 
 } // namespace QtNodes

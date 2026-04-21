@@ -3,7 +3,7 @@
 #endif
 
 #include "S1DeburstNode.h"
-#include "NodeEditorWindow.h"
+#include "WorkflowUI.h"
 #include <QFileInfo>
 #include <QRegularExpression>
 
@@ -296,7 +296,7 @@ void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
     Q_UNUSED(model);
 }
 
-NodeEditorWindow* S1DeburstNode::getNodeEditorWindow() const
+WorkflowUI* S1DeburstNode::getNodeEditorWindow() const
 {
     if (!m_widget)
         return nullptr;
@@ -304,7 +304,7 @@ NodeEditorWindow* S1DeburstNode::getNodeEditorWindow() const
     QWidget* parent = m_widget->parentWidget();
     while (parent)
     {
-        auto* editor = qobject_cast<NodeEditorWindow*>(parent);
+        auto* editor = qobject_cast<WorkflowUI*>(parent);
         if (editor)
             return editor;
         parent = parent->parentWidget();

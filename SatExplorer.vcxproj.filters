@@ -157,9 +157,6 @@
     <ClCompile Include="import_ALOS2.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="NodeEditorWindow.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="NodeModels.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -520,9 +517,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\TSXImportNode.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
-    <QtMoc Include="include\NodeEditorWindow.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\ImportNodeBase.h">

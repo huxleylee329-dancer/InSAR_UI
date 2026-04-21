@@ -9,8 +9,6 @@
 #include <QSet>
 #include <QFileDialog>
 #include <QToolButton>
-#include <QDebug>
-#include <algorithm>
 
 // QtNodes headers
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>

@@ -49,9 +49,6 @@ private:
     void drawCardFooter(QPainter *painter, NodeGraphicsObject &ngo,
                         QRectF bounds, ExecutionState state,
                         int progress, ::QWidget* context) const;
-    void drawCardProgressBar(QPainter *painter, QRectF bounds,
-                             int progress, ExecutionState state,
-                             ::QWidget* context) const;
     void drawCardHeaderButtons(QPainter *painter, QRectF bounds,
                                ExecutionMode mode, ExecutionState state) const;
 

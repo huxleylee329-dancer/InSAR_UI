@@ -1,6 +1,6 @@
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
-#include "NodeEditorWindow.h"
+#include "WorkflowUI.h"
 
 namespace QtNodes {
 
@@ -105,16 +105,16 @@ void ImportNodeBase::onError(const QString& error)
     Q_UNUSED(error);
 }
 
-NodeEditorWindow* ImportNodeBase::getNodeEditorWindow() const
+WorkflowUI* ImportNodeBase::getNodeEditorWindow() const
 {
-    // Navigate up the widget hierarchy to find NodeEditorWindow
+    // Navigate up the widget hierarchy to find WorkflowUI
     if (!m_widget)
         return nullptr;
 
     ::QWidget* parent = m_widget->parentWidget();
     while (parent)
     {
-        auto* editor = qobject_cast<NodeEditorWindow*>(parent);
+        auto* editor = qobject_cast<WorkflowUI*>(parent);
         if (editor)
             return editor;
         parent = parent->parentWidget();

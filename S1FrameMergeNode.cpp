@@ -3,7 +3,7 @@
 #endif
 
 #include "S1FrameMergeNode.h"
-#include "NodeEditorWindow.h"
+#include "WorkflowUI.h"
 #include <QFileInfo>
 
 namespace QtNodes {
@@ -336,7 +336,7 @@ void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
     Q_UNUSED(model);
 }
 
-NodeEditorWindow* S1FrameMergeNode::getNodeEditorWindow() const
+WorkflowUI* S1FrameMergeNode::getNodeEditorWindow() const
 {
     if (!m_widget)
         return nullptr;
@@ -344,7 +344,7 @@ NodeEditorWindow* S1FrameMergeNode::getNodeEditorWindow() const
     QWidget* parent = m_widget->parentWidget();
     while (parent)
     {
-        auto* editor = qobject_cast<NodeEditorWindow*>(parent);
+        auto* editor = qobject_cast<WorkflowUI*>(parent);
         if (editor)
             return editor;
         parent = parent->parentWidget();

@@ -42,7 +42,6 @@ extern void applyTheme(const QString &theme);
 #include"import_CSK.h"
 #include"import_ALOS2.h"
 #include"icon_source.h"
-#include"NodeEditorWindow.h"
 //#include<Mould.h>
 
 // Qt related headers

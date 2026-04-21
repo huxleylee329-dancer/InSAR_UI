@@ -1,10 +1,5 @@
 /* Node Editor styles - nodeeditor.qss */
 
-/* Node Editor Window */
-NodeEditorWindow {
-    background-color: #F5F5F5;
-}
-
 /* Graphics View / Canvas */
 /* PaletteGraphicsView styles controlled by DefaultStyle_*.json files */
 

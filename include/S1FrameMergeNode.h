@@ -20,7 +20,7 @@
 #include <memory>
 
 // Forward declarations
-class NodeEditorWindow;
+class WorkflowUI;
 
 namespace QtNodes {
 
@@ -71,8 +71,8 @@ private:
     void updateLabels();
     QString generateDefaultOutputName() const;
 
-    // Get NodeEditorWindow reference
-    NodeEditorWindow* getNodeEditorWindow() const;
+    // Get WorkflowUI reference
+    WorkflowUI* getNodeEditorWindow() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
