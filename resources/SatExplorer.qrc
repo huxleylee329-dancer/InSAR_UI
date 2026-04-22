@@ -59,6 +59,17 @@
         <file>warning.svg</file>
         <file>x-circle.svg</file>
         <file>block.svg</file>
+        <!-- Material Design Toolbar Icons -->
+        <file>add.svg</file>
+        <file>save.svg</file>
+        <file>folder_open.svg</file>
+        <file>star.svg</file>
+        <file>reorder.svg</file>
+        <file>stop_circle.svg</file>
+        <file>playlist_remove.svg</file>
+        <file>history.svg</file>
+        <file>backspace.svg</file>
+        <file>delete_icon.svg</file>
         <!-- Stylesheets -->
         <file>stylesheets/application.qss</file>
         <file>stylesheets/widgets.qss</file>

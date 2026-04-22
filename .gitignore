@@ -231,6 +231,7 @@ docs/
 # *.vcxproj
 # *.filters
 *.docx
+*.ps1
 # *.sln
 *.ini
 dllmain.cpp

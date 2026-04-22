@@ -44,6 +44,9 @@
 #include <QDir>
 #include <algorithm>
 #include <memory>
+#include <QToolButton>
+#include <QHBoxLayout>
+#include <QPainter>
 
 // ============================================================================
 // Node Palette Full Order Configuration
@@ -121,6 +124,87 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     return order;
 }
 
+// ============================================================================
+// Helper function to create custom toolbar button
+// ============================================================================
+// 简单的图标着色辅助函数
+static QIcon createColoredIcon(const QString &iconPath, const QColor &color)
+{
+    QIcon originalIcon(iconPath);
+    QIcon coloredIcon;
+    
+    // 为所有模式着色
+    QList<QIcon::Mode> modes = { QIcon::Normal, QIcon::Disabled, QIcon::Active, QIcon::Selected };
+    foreach (QIcon::Mode mode, modes) {
+        QList<QIcon::State> states = { QIcon::Off, QIcon::On };
+        foreach (QIcon::State state, states) {
+            QPixmap pixmap = originalIcon.pixmap(QSize(24, 24), mode, state);
+            if (!pixmap.isNull()) {
+                QPixmap colored = pixmap;
+                QPainter painter(&colored);
+                painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                painter.fillRect(colored.rect(), color);
+                painter.end();
+                coloredIcon.addPixmap(colored, mode, state);
+            }
+        }
+    }
+    
+    // 如果上面没成功，尝试基础方法
+    if (coloredIcon.isNull()) {
+        QPixmap pixmap = originalIcon.pixmap(QSize(24, 24));
+        if (!pixmap.isNull()) {
+            QPixmap colored = pixmap;
+            QPainter painter(&colored);
+            painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            painter.fillRect(colored.rect(), color);
+            painter.end();
+            coloredIcon = QIcon(colored);
+        } else {
+            coloredIcon = originalIcon;
+        }
+    }
+    
+    return coloredIcon;
+}
+
+static QToolButton* createToolbarButton(const QString &iconPath, const QString &text, const QColor &iconColor = QColor("#414752"), const QColor &textColor = QColor("#595F66"), QWidget *parent = nullptr)
+{
+    QToolButton *btn = new QToolButton(parent);
+    btn->setMinimumSize(48, 48);
+    btn->setMaximumSize(48, 48);
+    
+    // 加载并着色图标
+    QIcon coloredIcon = createColoredIcon(iconPath, iconColor);
+    
+    btn->setIcon(coloredIcon);
+    btn->setIconSize(QSize(24, 24));
+    btn->setText(text);
+    btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    
+    QString textColorHex = textColor.name();
+    btn->setStyleSheet(
+        QString("QToolButton { "
+        "  border: none; "
+        "  border-radius: 4px; "
+        "  background-color: transparent; "
+        "  color: %1; "
+        "  font-size: 9px; "
+        "  font-weight: bold; "
+        "  text-transform: uppercase; "
+        "  letter-spacing: 0.5px; "
+        "  padding: 2px; "
+        "}"
+        "QToolButton:hover { "
+        "  background-color: #E0E0E0; "
+        "}"
+        "QToolButton:pressed { "
+        "  background-color: #D0D0D0; "
+        "}").arg(textColorHex)
+    );
+    return btn;
+}
+
 WorkflowUI::WorkflowUI(QWidget *parent)
     : QWidget(parent)
     , m_dockManager(nullptr)
@@ -134,7 +218,6 @@ WorkflowUI::WorkflowUI(QWidget *parent)
     , m_propertyEditor(nullptr)
     , m_queueManager(nullptr)
     , m_toolbar(nullptr)
-    , m_workflowCombo(nullptr)
     , m_actionNew(nullptr)
     , m_actionSave(nullptr)
     , m_actionLoad(nullptr)
@@ -506,99 +589,102 @@ void WorkflowUI::setupUi()
 void WorkflowUI::setupToolbar()
 {
     m_toolbar = new QToolBar(this);
-    m_toolbar->setMovable(false);  // Keep toolbar fixed at top
+    m_toolbar->setMovable(false);
+    m_toolbar->setStyleSheet(
+        "QToolBar { "
+        "  background-color: #F3F3F3; "
+        "  border-bottom: 1px solid rgba(192, 199, 212, 0.3); "
+        "  spacing: 2px; "
+        "  padding: 4px 8px; "
+        "}"
+    );
 
-    // Workflow dropdown
-    QLabel *workflowLabel = new QLabel("Workflow:");
-    m_toolbar->addWidget(workflowLabel);
+    // 定义Material Design颜色
+    const QColor COLOR_PRIMARY("#005fac");          // 蓝色
+    const QColor COLOR_TERTIARY("#994700");        // 棕橙色
+    const QColor COLOR_ERROR("#ba1a1a");           // 红色
+    const QColor COLOR_ON_SURFACE_VARIANT("#414752"); // 灰色
+    const QColor COLOR_TEXT("#595F66");            // 文本颜色
 
-    m_workflowCombo = new QComboBox();
-    m_workflowCombo->setMinimumWidth(120);
-    m_workflowCombo->addItem("Blank");
-    m_workflowCombo->addItem("Default");
-    m_workflowCombo->addItem("Open...");
-    m_toolbar->addWidget(m_workflowCombo);
-    connect(m_workflowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &WorkflowUI::onWorkflowComboChanged);
+    // ======================
+    // Group 1: File Operations
+    // ======================
+    // New button (蓝色)
+    QToolButton *btnNew = createToolbarButton(":/SatExplorer/add.svg", "New", COLOR_PRIMARY, COLOR_TEXT, this);
+    connect(btnNew, &QToolButton::clicked, this, &WorkflowUI::onNew);
+    m_toolbar->addWidget(btnNew);
 
-    m_toolbar->addSeparator();
+    // Save button (蓝色)
+    QToolButton *btnSave = createToolbarButton(":/SatExplorer/save.svg", "Save", COLOR_PRIMARY, COLOR_TEXT, this);
+    connect(btnSave, &QToolButton::clicked, this, &WorkflowUI::onSave);
+    m_toolbar->addWidget(btnSave);
 
-    // File actions
-    m_actionNew = new QAction("New", this);
-    m_actionNew->setShortcut(QKeySequence::New);
-    m_actionNew->setStatusTip("Create new graph");
-    connect(m_actionNew, &QAction::triggered, this, &WorkflowUI::onNew);
-    m_toolbar->addAction(m_actionNew);
+    // Load button (蓝色)
+    QToolButton *btnLoad = createToolbarButton(":/SatExplorer/folder_open.svg", "Load", COLOR_PRIMARY, COLOR_TEXT, this);
+    connect(btnLoad, &QToolButton::clicked, this, &WorkflowUI::onLoad);
+    m_toolbar->addWidget(btnLoad);
 
-    m_actionSave = new QAction("Save", this);
-    m_actionSave->setShortcut(QKeySequence::Save);
-    m_actionSave->setStatusTip("Save graph to file");
-    connect(m_actionSave, &QAction::triggered, this, &WorkflowUI::onSave);
-    m_toolbar->addAction(m_actionSave);
-
-    m_actionLoad = new QAction("Load", this);
-    m_actionLoad->setShortcut(QKeySequence::Open);
-    m_actionLoad->setStatusTip("Load graph from file");
-    connect(m_actionLoad, &QAction::triggered, this, &WorkflowUI::onLoad);
-    m_toolbar->addAction(m_actionLoad);
-
-    m_toolbar->addSeparator();
-
-    // Browse and Favorite
-    m_actionBrowse = new QAction("Browse", this);
-    m_actionBrowse->setStatusTip("Browse local workflows");
-    connect(m_actionBrowse, &QAction::triggered, this, &WorkflowUI::onBrowseWorkflows);
-    m_toolbar->addAction(m_actionBrowse);
-
-    m_actionFavorite = new QAction("Favorite", this);
-    m_actionFavorite->setStatusTip("Show favorite workflows");
-    connect(m_actionFavorite, &QAction::triggered, this, [this]() {
+    // Favorite button (棕橙色)
+    QToolButton *btnFav = createToolbarButton(":/SatExplorer/star.svg", "Fav", COLOR_TERTIARY, COLOR_TEXT, this);
+    connect(btnFav, &QToolButton::clicked, this, [this]() {
         QMessageBox::information(this, "Favorite Workflows", "Favorite workflows feature coming soon.");
     });
-    m_toolbar->addAction(m_actionFavorite);
+    m_toolbar->addWidget(btnFav);
 
-    m_actionRefresh = new QAction("Refresh", this);
-    m_actionRefresh->setStatusTip("Refresh node definitions");
-    connect(m_actionRefresh, &QAction::triggered, this, &WorkflowUI::onRefreshNodes);
-    m_toolbar->addAction(m_actionRefresh);
+    // Vertical separator
+    QWidget *sep1 = new QWidget();
+    sep1->setFixedWidth(1);
+    sep1->setStyleSheet("background-color: rgba(192, 199, 212, 0.3);");
+    sep1->setFixedHeight(32);
+    m_toolbar->addWidget(sep1);
 
-    m_toolbar->addSeparator();
+    // ======================
+    // Group 2: Execution Controls
+    // ======================
+    // Sync/Refresh button (灰色)
+    QToolButton *btnSync = createToolbarButton(":/SatExplorer/refresh-cw.svg", "Sync", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnSync, &QToolButton::clicked, this, &WorkflowUI::onRefreshNodes);
+    m_toolbar->addWidget(btnSync);
 
-    // Queue actions
-    m_actionQueue = new QAction("Queue", this);
-    m_actionQueue->setStatusTip("Queue prompt - execute current workflow");
-    connect(m_actionQueue, &QAction::triggered, this, &WorkflowUI::onQueueExecute);
-    m_toolbar->addAction(m_actionQueue);
+    // Queue button (灰色)
+    QToolButton *btnQueue = createToolbarButton(":/SatExplorer/reorder.svg", "Queue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnQueue, &QToolButton::clicked, this, &WorkflowUI::onQueueExecute);
+    m_toolbar->addWidget(btnQueue);
 
-    m_actionInterrupt = new QAction("Interrupt", this);
-    m_actionInterrupt->setStatusTip("Interrupt current execution");
-    connect(m_actionInterrupt, &QAction::triggered, this, &WorkflowUI::onInterruptExecution);
-    m_toolbar->addAction(m_actionInterrupt);
+    // Halt/Interrupt button (红色)
+    QToolButton *btnHalt = createToolbarButton(":/SatExplorer/stop_circle.svg", "Halt", COLOR_ERROR, COLOR_ERROR, this);
+    connect(btnHalt, &QToolButton::clicked, this, &WorkflowUI::onInterruptExecution);
+    m_toolbar->addWidget(btnHalt);
 
-    m_actionClearQueue = new QAction("Clear Queue", this);
-    m_actionClearQueue->setStatusTip("Clear all queued tasks");
-    connect(m_actionClearQueue, &QAction::triggered, this, &WorkflowUI::onClearQueue);
-    m_toolbar->addAction(m_actionClearQueue);
+    // Vertical separator
+    QWidget *sep2 = new QWidget();
+    sep2->setFixedWidth(1);
+    sep2->setStyleSheet("background-color: rgba(192, 199, 212, 0.3);");
+    sep2->setFixedHeight(32);
+    m_toolbar->addWidget(sep2);
 
-    m_actionHistory = new QAction("History", this);
-    m_actionHistory->setStatusTip("Show execution history");
-    connect(m_actionHistory, &QAction::triggered, this, &WorkflowUI::onShowHistory);
-    m_toolbar->addAction(m_actionHistory);
+    // ======================
+    // Group 3: History & Cleanup
+    // ======================
+    // Drop/Clear Queue button (灰色)
+    QToolButton *btnDrop = createToolbarButton(":/SatExplorer/playlist_remove.svg", "Drop", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnDrop, &QToolButton::clicked, this, &WorkflowUI::onClearQueue);
+    m_toolbar->addWidget(btnDrop);
 
-    m_toolbar->addSeparator();
+    // Logs/History button (灰色)
+    QToolButton *btnLogs = createToolbarButton(":/SatExplorer/history.svg", "Logs", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnLogs, &QToolButton::clicked, this, &WorkflowUI::onShowHistory);
+    m_toolbar->addWidget(btnLogs);
 
-    // Edit actions
-    m_actionClear = new QAction("Clear", this);
-    m_actionClear->setStatusTip("Clear all nodes");
-    connect(m_actionClear, &QAction::triggered, this, &WorkflowUI::onClear);
-    m_toolbar->addAction(m_actionClear);
+    // Del/Delete selected button (灰色)
+    QToolButton *btnDel = createToolbarButton(":/SatExplorer/backspace.svg", "DEL", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnDel, &QToolButton::clicked, this, &WorkflowUI::onDelete);
+    m_toolbar->addWidget(btnDel);
 
-    m_actionDelete = new QAction("Delete", this);
-    m_actionDelete->setShortcut(QKeySequence::Delete);
-    m_actionDelete->setStatusTip("Delete selected nodes and connections");
-    connect(m_actionDelete, &QAction::triggered, this, &WorkflowUI::onDelete);
-    m_toolbar->addAction(m_actionDelete);
-
+    // Purge/Clear all button (红色)
+    QToolButton *btnPurge = createToolbarButton(":/SatExplorer/delete_icon.svg", "PURGE", COLOR_ERROR, COLOR_ERROR, this);
+    connect(btnPurge, &QToolButton::clicked, this, &WorkflowUI::onClear);
+    m_toolbar->addWidget(btnPurge);
 }
 
 QString WorkflowUI::getSaveFilePath()
@@ -883,22 +969,7 @@ void WorkflowUI::onPropertyChanged(QtNodes::NodeId nodeId, const QString &proper
 // Toolbar Operations
 // ============================================================================
 
-void WorkflowUI::onWorkflowComboChanged(int index)
-{
-    if (index == 0)  // Blank
-    {
-        onNew();
-    }
-    else if (index == 1)  // Default
-    {
-        onNew();
-    }
-    else if (index == 2)  // Open...
-    {
-        onLoad();
-        m_workflowCombo->setCurrentIndex(0);  // Reset to Blank
-    }
-}
+
 
 void WorkflowUI::onBrowseWorkflows()
 {

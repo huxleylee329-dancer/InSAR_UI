@@ -112,7 +112,6 @@ private slots:
     void onPortDataChanged(QtNodes::NodeId nodeId, QtNodes::PortType portType, int portIndex, const QString& fieldKey, const QString& newValue);
 
     // Toolbar operations
-    void onWorkflowComboChanged(int index);
     void onBrowseWorkflows();
     void onRefreshNodes();
     void onQueueExecute();
@@ -172,7 +171,6 @@ private:
 
     // Toolbar components
     QToolBar *m_toolbar;
-    QComboBox *m_workflowCombo;
     QAction *m_actionNew;
     QAction *m_actionSave;
     QAction *m_actionLoad;
