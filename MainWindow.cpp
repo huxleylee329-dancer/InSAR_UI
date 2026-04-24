@@ -13,6 +13,18 @@
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 
+// Windows DWM 标题栏主题支持
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+
+// DWMWA_USE_IMMERSIVE_DARK_MODE 常量定义（Windows 10 1809+）
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+#endif
+
 // External function declarations from main.cpp
 extern void applyTheme(const QString &theme);
 #include"OpenProject.h"
@@ -113,6 +125,7 @@ MainWindow::MainWindow(QWidget* parent)
 
     // No project opened - show workflow interface for debugging
     m_interfaceManager->switchToInterface("workflow");
+    updateInterfaceMenuCheckState();
 }
 MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 {
@@ -860,6 +873,22 @@ void MainWindow::onThemeFusion()
 
 void MainWindow::setTheme(const QString &theme)
 {
+    // ========================================================================
+    // Windows 标题栏主题设置
+    // ========================================================================
+#ifdef Q_OS_WIN
+    HWND hwnd = NULL;
+    QWindow* window = windowHandle();
+    if (window) {
+        hwnd = reinterpret_cast<HWND>(window->winId());
+        if (hwnd) {
+            BOOL useDarkMode = (theme == "dark") ? TRUE : FALSE;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 
+                                 &useDarkMode, sizeof(useDarkMode));
+        }
+    }
+#endif
+
     // Apply theme using global function
     applyTheme(theme);
 
@@ -871,6 +900,14 @@ void MainWindow::setTheme(const QString &theme)
     settings.setValue("Appearance/Theme", theme);
     settings.sync();
 
+    // Update theme for both interfaces
+    if (m_workspaceUI) {
+        m_workspaceUI->setTheme(theme);
+    }
+    if (m_workflowUI) {
+        m_workflowUI->setQtNodesTheme(theme);
+    }
+
     // Update theme menu check state
     QMenu* settingsMenu = ui.Setteing;
     QList<QMenu*> submenus = settingsMenu->findChildren<QMenu*>();
@@ -879,6 +916,33 @@ void MainWindow::setTheme(const QString &theme)
             updateThemeCheckState(submenu, theme);
             break;
         }
+    }
+
+    // ========================================================================
+    // 强制触发窗口重画以更新标题栏（统一用最大化切换）
+    // ========================================================================
+#ifdef Q_OS_WIN
+    if (hwnd) {
+        bool wasMaximized = isMaximized();
+        if (wasMaximized) {
+            showNormal();
+            showMaximized();
+        } else {
+            showMaximized();
+            showNormal();
+        }
+    }
+#endif
+}
+
+void MainWindow::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+    
+    // 只在第一次 show 时应用主题
+    if (!m_initialThemeApplied) {
+        m_initialThemeApplied = true;
+        setTheme(m_currentTheme);
     }
 }
 
@@ -952,6 +1016,9 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
         projectName = info.baseName();
     }
 
+    // Set project context and theme for both interfaces
+    m_workspaceUI->setProjectContext(model, filePath, projectName);
+    m_workspaceUI->setTheme(m_currentTheme);
     m_workflowUI->setProjectContext(model, filePath, projectName);
     m_workflowUI->setQtNodesTheme(m_currentTheme);
 

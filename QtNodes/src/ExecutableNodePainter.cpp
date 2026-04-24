@@ -15,44 +15,44 @@
 
 #include <QtSvg/QSvgRenderer>
 
-// Initialize color scheme (DYNAMIC THEME ADAPTATION)
+// Initialize color scheme (Dynamic Theme Adaptation) following ui2.md
 namespace {
-    // Icon colors (PROFESSIONAL VERSION - softer, more cohesive)
-    constexpr QColor COLOR_AUTOMATIC{59, 130, 246};  // #3B82F6 (system blue)
-    constexpr QColor COLOR_MANUAL{245, 158, 11};     // #F59E0B (system amber)
-    constexpr QColor COLOR_PLAY{16, 185, 129};        // #10B981 (professional green)
-    constexpr QColor COLOR_STOP{239, 68, 68};        // #EF4444 (professional red)
-    constexpr QColor COLOR_EYE{148, 163, 184};       // #94A3B8 (subtle gray)
+    // Icon colors (ui2.md Section 122-131)
+    constexpr QColor COLOR_AUTOMATIC{0, 95, 172};       // #005FAC (main theme color)
+    constexpr QColor COLOR_MANUAL{153, 71, 0};          // #994700 (tertiary color)
+    constexpr QColor COLOR_PLAY{16, 185, 129};          // #10B981 (play button)
+    constexpr QColor COLOR_STOP{239, 68, 68};           // #EF4444 (stop button)
+    constexpr QColor COLOR_EYE{148, 163, 184};          // #94A3B8 (eye icon)
 
-    // State background colors - LIGHT THEME (Low saturation, cohesive with main app)
-    constexpr QColor COLOR_IDLE_START_L{241, 245, 249};     // #F1F5F9
-    constexpr QColor COLOR_IDLE_END_L{226, 232, 240};       // #E2E8F0
-    constexpr QColor COLOR_PENDING_L{167, 243, 208};        // #A7F3D0
-    constexpr QColor COLOR_RUNNING_START_L{59, 130, 246};    // #3B82F6
-    constexpr QColor COLOR_RUNNING_END_L{96, 165, 250};      // #60A5FA
-    constexpr QColor COLOR_COMPLETED_L{16, 185, 129};        // #10B981
-    constexpr QColor COLOR_STOPPED_START_L{245, 158, 11};     // #F59E0B
-    constexpr QColor COLOR_STOPPED_END_L{217, 119, 6};       // #D97706
-    constexpr QColor COLOR_WARNING_START_L{251, 191, 36};       // #FBBF24
-    constexpr QColor COLOR_WARNING_END_L{245, 158, 11};        // #F59E0B
-    constexpr QColor COLOR_ERROR_START_L{239, 68, 68};         // #EF4444
-    constexpr QColor COLOR_ERROR_END_L{220, 38, 38};          // #DC2626
-    constexpr QColor COLOR_DISABLED_L{148, 163, 184};        // #94A3B8
+    // State background colors - LIGHT THEME (ui2.md Section 87-97)
+    constexpr QColor COLOR_IDLE_START_L{249, 249, 249}; // #F9F9F9 (main background)
+    constexpr QColor COLOR_IDLE_END_L{233, 233, 233};   // #E9E9E9
+    constexpr QColor COLOR_PENDING_L{0, 95, 172};       // #005FAC (ready/running)
+    constexpr QColor COLOR_RUNNING_START_L{0, 95, 172}; // #005FAC
+    constexpr QColor COLOR_RUNNING_END_L{0, 120, 215};  // #0078D7 (hover)
+    constexpr QColor COLOR_COMPLETED_L{16, 185, 129};   // #10B981
+    constexpr QColor COLOR_STOPPED_START_L{245, 158, 11}; // #F59E0B
+    constexpr QColor COLOR_STOPPED_END_L{245, 158, 11};   // #F59E0B
+    constexpr QColor COLOR_WARNING_START_L{251, 191, 36}; // #FBBF24
+    constexpr QColor COLOR_WARNING_END_L{251, 191, 36};   // #FBBF24
+    constexpr QColor COLOR_ERROR_START_L{239, 68, 68};    // #EF4444
+    constexpr QColor COLOR_ERROR_END_L{239, 68, 68};      // #EF4444
+    constexpr QColor COLOR_DISABLED_L{148, 163, 184};   // #94A3B8 (grayscale + opacity)
 
-    // State background colors - DARK THEME (Matches main app dark theme)
-    constexpr QColor COLOR_IDLE_START_D{64, 64, 64};         // #404040
-    constexpr QColor COLOR_IDLE_END_D{64, 64, 64};          // #404040
-    constexpr QColor COLOR_PENDING_D{64, 64, 64};          // #404040
-    constexpr QColor COLOR_RUNNING_START_D{43, 64, 75};       // #2B404B
-    constexpr QColor COLOR_RUNNING_END_D{74, 116, 141};       // #4A748D
-    constexpr QColor COLOR_COMPLETED_D{74, 169, 207};        // #4AA9CF
-    constexpr QColor COLOR_STOPPED_START_D{251, 191, 36};   // #FBBF24
-    constexpr QColor COLOR_STOPPED_END_D{217, 119, 6};       // #D97706
-    constexpr QColor COLOR_WARNING_START_D{251, 191, 36};    // #FBBF24
-    constexpr QColor COLOR_WARNING_END_D{217, 119, 6};       // #D97706
-    constexpr QColor COLOR_ERROR_START_D{239, 68, 68};         // #EF4444
-    constexpr QColor COLOR_ERROR_END_D{220, 38, 38};          // #DC2626
-    constexpr QColor COLOR_DISABLED_D{80, 80, 80};           // #505050
+    // State background colors - DARK THEME (ui2.md Section 102-110)
+    constexpr QColor COLOR_IDLE_START_D{26, 28, 28};    // #1A1C1C (main background)
+    constexpr QColor COLOR_IDLE_END_D{43, 43, 43};      // #2B2B2B
+    constexpr QColor COLOR_PENDING_D{0, 120, 215};      // #0078D7 (ready/running)
+    constexpr QColor COLOR_RUNNING_START_D{0, 120, 215};// #0078D7
+    constexpr QColor COLOR_RUNNING_END_D{0, 120, 215};  // #0078D7
+    constexpr QColor COLOR_COMPLETED_D{74, 169, 207};   // #4AA9CF
+    constexpr QColor COLOR_STOPPED_START_D{251, 191, 36}; // #FBBF24
+    constexpr QColor COLOR_STOPPED_END_D{251, 191, 36};   // #FBBF24
+    constexpr QColor COLOR_WARNING_START_D{251, 191, 36}; // #FBBF24
+    constexpr QColor COLOR_WARNING_END_D{251, 191, 36};   // #FBBF24
+    constexpr QColor COLOR_ERROR_START_D{239, 68, 68};    // #EF4444
+    constexpr QColor COLOR_ERROR_END_D{239, 68, 68};      // #EF4444
+    constexpr QColor COLOR_DISABLED_D{80, 80, 80};      // #505050 (grayscale + opacity)
 }
 
 namespace QtNodes {

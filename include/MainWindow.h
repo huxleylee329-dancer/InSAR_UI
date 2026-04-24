@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <QtWidgets/QMainWindow>
 #include "ui_MainWindow.h"
 #include<ColorBar.h>
@@ -40,8 +40,10 @@ public slots:
     void onRecentProjectFromWelcome(const QString &filePath);
 protected:
     bool eventFilter(QObject*, QEvent*);
+    void showEvent(QShowEvent* event);  // 添加 showEvent 声明
 private:
     Ui::MainWindow ui;
+    bool m_initialThemeApplied = false;  // 标记是否已应用初始主题
     QLabel* mColorbar_Layer;
     QProgressDialog *Process;
     QString bmp_path;

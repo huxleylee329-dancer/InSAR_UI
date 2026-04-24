@@ -338,12 +338,12 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
     cardLayout->setContentsMargins(12, 12, 12, 12);
     cardLayout->setSpacing(4);
 
-    // Text colors
-    QString primaryTextColor = isDark ? "#F9FAFB" : "#1F2937";
+    // Text colors - ui2.md Section 24: #1A1C1C, Section 145: #1D4ED8
+    QString primaryTextColor = isDark ? "#F9FAFB" : "#1A1C1C";
     QString secondaryTextColor = isDark ? "#9CA3AF" : "#6B7280";
     QString tertiaryTextColor = isDark ? "#D1D5DB" : "#374151";
     QString indexColor = isOutput ? (isDark ? "#60A5FA" : "#3B82F6") : secondaryTextColor;
-    QString portNameColor = isOutput ? (isDark ? "#60A5FA" : "#1E40AF") : primaryTextColor;
+    QString portNameColor = isOutput ? (isDark ? "#60A5FA" : "#1D4ED8") : primaryTextColor;
 
     // Header row: Port name + Status badge
     QHBoxLayout* headerLayout = new QHBoxLayout();

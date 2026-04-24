@@ -9,8 +9,13 @@
 
 WorkspaceUI::WorkspaceUI(QWidget *parent)
     : QWidget(parent)
+    , m_projectModel(nullptr)
+    , m_projectPath()
+    , m_projectName()
 {
+    setAutoFillBackground(true);
     setupUi();
+    initTheme();
 }
 
 WorkspaceUI::~WorkspaceUI()
@@ -126,4 +131,84 @@ void WorkspaceUI::resizeEvent(QResizeEvent* event)
             }
         }
     }
+}
+
+void WorkspaceUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+{
+    m_projectModel = model;
+    m_projectPath = path;
+    m_projectName = name;
+
+    // Note: Don't set model to m_treeView here
+    // because MainWindow already manages ui.treeView's model
+    // and WorkspaceUI's m_treeView is a separate instance
+}
+
+QStandardItemModel* WorkspaceUI::projectModel() const
+{
+    return m_projectModel;
+}
+
+QString WorkspaceUI::projectPath() const
+{
+    return m_projectPath;
+}
+
+QString WorkspaceUI::projectName() const
+{
+    return m_projectName;
+}
+
+void WorkspaceUI::initTheme()
+{
+    // Default to light theme
+    setTheme("light");
+}
+
+void WorkspaceUI::setTheme(const QString &theme)
+{
+    m_currentTheme = theme;
+
+    // Set theme-background property for components to detect theme
+    QColor bgColor;
+    QString bgStyle;
+
+    if (theme == "dark") {
+        // Dark theme colors from ui2.md
+        bgColor = QColor(26, 28, 28);  // #1A1C1C
+        bgStyle = "background-color: #1A1C1C;";
+        // Set property with dark theme color
+        this->setProperty("theme-background", QColor(26, 28, 28));
+    } else {
+        // Light theme colors from ui2.md
+        bgColor = QColor(249, 249, 249);  // #F9F9F9
+        bgStyle = "background-color: #F9F9F9;";
+        // Set property with light theme color
+        this->setProperty("theme-background", QColor(249, 249, 249));
+    }
+
+    // Apply background color
+    QPalette palette = this->palette();
+    palette.setColor(QPalette::Window, bgColor);
+    this->setPalette(palette);
+    this->setStyleSheet(bgStyle);
+
+    // Apply colors to children
+    if (m_splitter) {
+        m_splitter->setProperty("theme-background", bgColor);
+    }
+    if (m_splitter2) {
+        m_splitter2->setProperty("theme-background", bgColor);
+    }
+    if (m_treeView) {
+        m_treeView->setProperty("theme-background", bgColor);
+    }
+    if (m_toolTree) {
+        m_toolTree->setProperty("theme-background", bgColor);
+    }
+    if (m_tabWidget) {
+        m_tabWidget->setProperty("theme-background", bgColor);
+    }
+
+    update();
 }

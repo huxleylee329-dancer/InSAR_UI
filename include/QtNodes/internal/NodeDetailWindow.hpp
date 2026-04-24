@@ -68,11 +68,11 @@ private:
     std::vector<QString> _processingInfo;
     std::vector<PortDataInfo> _outputPorts;
 
-    // Style constants - NEW DESIGN
+    // Style constants - following ui2.md Section 135-168
     static constexpr char const* STYLE_WINDOW_LIGHT =
         "NodeDetailWindow {"
         "  background-color: #F9FAFB;"
-        "  border: 1px solid #D1D5DB;"
+        "  border: 1px solid #E5E7EB;"
         "  border-radius: 6px;"
         "}";
 
@@ -87,16 +87,17 @@ private:
     static constexpr char const* STYLE_TITLE_BAR_LIGHT =
         "#TitleBar {"
         "  background-color: #FFFFFF;"
-        "  border-bottom: 1px solid #D1D5DB;"
+        "  border-bottom: 1px solid #E5E7EB;"
         "}";
 
     static constexpr char const* STYLE_TITLE_BAR_DARK =
         "#TitleBar {"
-        "  background-color: #111827;"
-        "  border-bottom: 1px solid #374151;"
+        "  background-color: #374151;"
+        "  border-bottom: 1px solid #4B5563;"
         "}";
 
     // Section title styles (Input Data / Processing Info / Output Data)
+    // ui2.md Section 145: #1D4ED8 for light theme card title text
     static constexpr char const* STYLE_SECTION_TITLE_LIGHT =
         "QLabel {"
         "  color: #1D4ED8;"
@@ -124,7 +125,7 @@ private:
 
     static constexpr char const* STYLE_CARD_DARK = STYLE_CARD;
 
-    // Port card styles
+    // Port card styles - ui2.md Section 136-143
     static constexpr char const* STYLE_PORT_CARD_LIGHT =
         "#PortCard {"
         "  background-color: #FFFFFF;"
@@ -160,7 +161,7 @@ private:
         "  border-radius: 4px;"
         "}";
 
-    // Status badge styles
+    // Status badge styles - ui2.md info tag style
     static constexpr char const* STYLE_BADGE_EMPTY =
         "#Badge {"
         "  background-color: #F3F4F6;"
@@ -232,28 +233,28 @@ private:
     static constexpr char const* STYLE_FOOTER_LIGHT =
         "#Footer {"
         "  background-color: #F3F4F6;"
-        "  border-top: 1px solid #D1D5DB;"
+        "  border-top: 1px solid #E5E7EB;"
         "}";
 
     static constexpr char const* STYLE_FOOTER_DARK =
         "#Footer {"
-        "  background-color: #111827;"
-        "  border-top: 1px solid #374151;"
+        "  background-color: #374151;"
+        "  border-top: 1px solid #4B5563;"
         "}";
 
     static constexpr char const* STYLE_CLOSE_BUTTON =
         "QPushButton {"
-        "  background-color: #334155;"
+        "  background-color: #374151;"
         "  color: white;"
         "  padding: 6px 24px;"
-        "  border: 1px solid #1E293B;"
+        "  border: 1px solid #1F2937;"
         "  border-radius: 4px;"
         "  font-weight: 500;"
         "  font-size: 12px;"
         "  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);"
         "}"
-        "QPushButton:hover { background-color: #1E293B; }"
-        "QPushButton:pressed { background-color: #0F172A; }";
+        "QPushButton:hover { background-color: #1F2937; }"
+        "QPushButton:pressed { background-color: #111827; }";
 
     static constexpr char const* STYLE_CLOSE_BUTTON_LIGHT = STYLE_CLOSE_BUTTON;
     static constexpr char const* STYLE_CLOSE_BUTTON_DARK = STYLE_CLOSE_BUTTON;
@@ -261,12 +262,12 @@ private:
     // Column separator line
     static constexpr char const* STYLE_COLUMN_SEPARATOR_LIGHT =
         "#ColumnSeparator {"
-        "  background-color: #D1D5DB;"
+        "  background-color: #E5E7EB;"
         "}";
 
     static constexpr char const* STYLE_COLUMN_SEPARATOR_DARK =
         "#ColumnSeparator {"
-        "  background-color: #374151;"
+        "  background-color: #4B5563;"
         "}";
 
     // Middle column (Processing Info) background
@@ -280,20 +281,20 @@ private:
         "  background-color: rgba(55, 65, 81, 0.3);"
         "}";
 
-    // Scrollbar styles
+    // Scrollbar styles - ui2.md Section 148-150, 165-167
     static constexpr char const* STYLE_SCROLLBAR =
         "QScrollBar:vertical {"
-        "  background: #F3F4F6;"
+        "  background: #F1F1F1;"
         "  width: 8px;"
         "  border-radius: 4px;"
         "}"
         "QScrollBar::handle:vertical {"
-        "  background: #D1D5DB;"
+        "  background: #C1C1C1;"
         "  min-height: 20px;"
         "  border-radius: 4px;"
         "}"
         "QScrollBar::handle:vertical:hover {"
-        "  background: #9CA3AF;"
+        "  background: #A8A8A8;"
         "}"
         "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }";
 

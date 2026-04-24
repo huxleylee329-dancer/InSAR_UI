@@ -207,6 +207,9 @@ private:
     QStandardItemModel* m_projectModel;
     QString m_projectPath;
     QString m_projectName;
+    
+    // Theme
+    QString m_currentTheme;
 
     // Detail view components for executable nodes
     QtNodes::NodeDetailWindow *_detailWindow = nullptr;

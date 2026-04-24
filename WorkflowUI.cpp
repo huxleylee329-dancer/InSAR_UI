@@ -1167,6 +1167,173 @@ void WorkflowUI::setQtNodesTheme(const QString &theme)
         QtNodes::GraphicsViewStyle::setStyle(jsonContent);
     }
 
+    // Apply toolbar theme styles
+    if (m_toolbar) {
+        QString toolbarStyle;
+        QColor separatorColor;
+        
+        if (theme == "dark") {
+            // Dark theme colors from ui2.md
+            toolbarStyle = R"(
+                QToolBar {
+                    background-color: #1a1c1c;
+                    border-bottom: 1px solid rgba(135, 141, 152, 0.3);
+                    spacing: 2px;
+                    padding: 4px 8px;
+                }
+            )";
+            separatorColor = QColor(135, 141, 152, 77); // rgba(135,141,152,0.3)
+        } else {
+            // Light theme colors from ui2.md
+            toolbarStyle = R"(
+                QToolBar {
+                    background-color: #f3f3f3;
+                    border-bottom: 1px solid rgba(192, 199, 212, 0.3);
+                    spacing: 2px;
+                    padding: 4px 8px;
+                }
+            )";
+            separatorColor = QColor(192, 199, 212, 77); // rgba(192,199,212,0.3)
+        }
+        
+        m_toolbar->setStyleSheet(toolbarStyle);
+        
+        // Update separator widgets (find all child widgets that are separators)
+        for (QObject *obj : m_toolbar->children()) {
+            QWidget *widget = qobject_cast<QWidget*>(obj);
+            if (widget && widget->metaObject()->className() == QString("QWidget")) {
+                widget->setStyleSheet(QString("background-color: %1;").arg(separatorColor.name(QColor::HexArgb)));
+            }
+        }
+        
+        // Update toolbar buttons (simpler approach - set complete stylesheet)
+        for (QObject *obj : m_toolbar->children()) {
+            QToolButton *btn = qobject_cast<QToolButton*>(obj);
+            if (btn) {
+                QString textColor = theme == "dark" ? "#c1c7cf" : "#595F66";
+                QString hoverBg = theme == "dark" ? "#2f3131" : "#E0E0E0";
+                QString pressedBg = theme == "dark" ? "#3f4141" : "#D0D0D0";
+                
+                btn->setStyleSheet(
+                    QString("QToolButton { "
+                    "  border: none; "
+                    "  border-radius: 4px; "
+                    "  background-color: transparent; "
+                    "  color: %1; "
+                    "  font-size: 9px; "
+                    "  font-weight: bold; "
+                    "  text-transform: uppercase; "
+                    "  letter-spacing: 0.5px; "
+                    "  padding: 2px; "
+                    "}"
+                    "QToolButton:hover { "
+                    "  background-color: %2; "
+                    "}"
+                    "QToolButton:pressed { "
+                    "  background-color: %3; "
+                    "}").arg(textColor, hoverBg, pressedBg)
+                );
+            }
+        }
+    }
+
+    // Apply ADS (Qt Advanced Docking System) theme styles
+    if (m_dockManager) {
+        QString adsStyle;
+        
+        if (theme == "dark") {
+            // Dark theme colors from ui2.md
+            adsStyle = R"(
+                ads--CDockContainerWidget {
+                    background: #1a1c1c;
+                }
+                ads--CDockAreaWidget {
+                    background: #121212;
+                }
+                ads--CDockWidgetTab {
+                    background: #1a1c1c;
+                    border-color: #2f3131;
+                    color: #f9f9f9;
+                }
+                ads--CDockWidgetTab[activeTab="true"] {
+                    background: #2f3131;
+                    color: #f9f9f9;
+                }
+                ads--CDockWidgetTab QLabel {
+                    color: #f9f9f9;
+                }
+                ads--CDockWidgetTab[activeTab="true"] QLabel {
+                    color: #f9f9f9;
+                }
+                ads--CDockWidget {
+                    background: #1a1c1c;
+                    border-color: #2f3131;
+                }
+                ads--CAutoHideSideBar {
+                    background: #1a1c1c;
+                }
+                ads--CAutoHideDockContainer {
+                    background: #1a1c1c;
+                }
+                ads--CAutoHideDockContainer ads--CDockAreaTitleBar {
+                    background: #2f3131;
+                }
+                ads--CAutoHideDockContainer ads--CDockAreaWidget[focused="true"] ads--CDockAreaTitleBar {
+                    background: #2f3131;
+                }
+                ads--CResizeHandle {
+                    background: #1a1c1c;
+                }
+            )";
+        } else if (theme == "light") {
+            // Light theme colors from ui2.md
+            adsStyle = R"(
+                ads--CDockContainerWidget {
+                    background: #f9f9f9;
+                }
+                ads--CDockAreaWidget {
+                    background: #f3f3f3;
+                }
+                ads--CDockWidgetTab {
+                    background: #f3f3f3;
+                    border-color: #e2e2e2;
+                    color: #1a1c1c;
+                }
+                ads--CDockWidgetTab[activeTab="true"] {
+                    background: #ffffff;
+                    color: #1a1c1c;
+                }
+                ads--CDockWidgetTab QLabel {
+                    color: #1a1c1c;
+                }
+                ads--CDockWidgetTab[activeTab="true"] QLabel {
+                    color: #1a1c1c;
+                }
+                ads--CDockWidget {
+                    background: #f9f9f9;
+                    border-color: #e2e2e2;
+                }
+                ads--CAutoHideSideBar {
+                    background: #f9f9f9;
+                }
+                ads--CAutoHideDockContainer {
+                    background: #f9f9f9;
+                }
+                ads--CAutoHideDockContainer ads--CDockAreaTitleBar {
+                    background: #0078d7;
+                }
+                ads--CAutoHideDockContainer ads--CDockAreaWidget[focused="true"] ads--CDockAreaTitleBar {
+                    background: #0078d7;
+                }
+                ads--CResizeHandle {
+                    background: #f9f9f9;
+                }
+            )";
+        }
+        
+        m_dockManager->setStyleSheet(adsStyle);
+    }
+
     // Apply background color to all node embedded widgets
     if (m_scene) {
         std::unordered_set<QtNodes::NodeId> nodeIds = m_graphModel->allNodeIds();
