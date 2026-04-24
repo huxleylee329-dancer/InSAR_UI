@@ -134,6 +134,7 @@ CreateCommand::CreateCommand(BasicGraphicsScene *scene,
         _scene->clearSelection();  // Clear previous selection
         _scene->graphModel().setNodeData(_nodeId, NodeRole::Position, mouseScenePos);
         _scene->nodeGraphicsObject(_nodeId)->setSelected(true);  // Auto-select newly created node
+        emit _scene->nodeSelected(_nodeId);  // Emit signal to update property panel
     } else {
         setObsolete(true);
     }

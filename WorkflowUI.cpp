@@ -642,7 +642,7 @@ void WorkflowUI::setupToolbar()
     // Group 2: Execution Controls
     // ======================
     // Sync/Refresh button (灰色)
-    QToolButton *btnSync = createToolbarButton(":/SatExplorer/refresh-cw.svg", "Sync", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnSync = createToolbarButton(":/SatExplorer/refresh-cw.svg", "Refresh", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
     connect(btnSync, &QToolButton::clicked, this, &WorkflowUI::onRefreshNodes);
     m_toolbar->addWidget(btnSync);
 
@@ -667,12 +667,12 @@ void WorkflowUI::setupToolbar()
     // Group 3: History & Cleanup
     // ======================
     // Drop/Clear Queue button (灰色)
-    QToolButton *btnDrop = createToolbarButton(":/SatExplorer/playlist_remove.svg", "Drop", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnDrop = createToolbarButton(":/SatExplorer/playlist_remove.svg", "DeQue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
     connect(btnDrop, &QToolButton::clicked, this, &WorkflowUI::onClearQueue);
     m_toolbar->addWidget(btnDrop);
 
     // Logs/History button (灰色)
-    QToolButton *btnLogs = createToolbarButton(":/SatExplorer/history.svg", "Logs", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnLogs = createToolbarButton(":/SatExplorer/history.svg", "History", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
     connect(btnLogs, &QToolButton::clicked, this, &WorkflowUI::onShowHistory);
     m_toolbar->addWidget(btnLogs);
 
@@ -899,6 +899,8 @@ void WorkflowUI::onNodeItemClicked(const QString &modelName)
 
 void WorkflowUI::onNodeDropped(QtNodes::NodeId nodeId, const QString &modelName)
 {
+    m_scene->clearSelection();
+    m_scene->nodeGraphicsObject(nodeId)->setSelected(true);
     m_propertyEditor->setSelectedNode(nodeId);
 }
 

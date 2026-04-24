@@ -414,9 +414,6 @@
     <QtMoc Include="include\OpenProject.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\SatExplorer.h">
-      <Filter>Header Files</Filter>
-    </QtMoc>
     <QtMoc Include="include\Registration_ui.h">
       <Filter>Header Files</Filter>
     </QtMoc>
