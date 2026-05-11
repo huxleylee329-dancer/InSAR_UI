@@ -393,11 +393,15 @@ void WorkflowUI::setupSceneInternal()
     m_nodesDockWidget = new ads::CDockWidget("Nodes", this);
     m_nodesDockWidget->setWidget(m_nodeLibrary);
     m_nodesDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
-    // Fixed width (250px), expanding height to fill available space
-    m_nodesDockWidget->setMinimumWidth(250);
-    m_nodesDockWidget->setMaximumWidth(250);
+    // Minimum width (200px), expanding height to fill available space
+    m_nodesDockWidget->setMinimumWidth(200);
     m_nodesDockWidget->setMinimumHeight(0);
     m_nodesDockWidget->setMaximumHeight(QWIDGETSIZE_MAX);
+    // Ensure size policy allows resizing
+    QSizePolicy nodesSp = m_nodesDockWidget->sizePolicy();
+    nodesSp.setHorizontalPolicy(QSizePolicy::Preferred);
+    nodesSp.setVerticalPolicy(QSizePolicy::Expanding);
+    m_nodesDockWidget->setSizePolicy(nodesSp);
     m_dockManager->addDockWidget(ads::LeftDockWidgetArea, m_nodesDockWidget);
 
     // 3. Create Workflows dock widget (left side) - add as tab to Nodes area at index 1
@@ -412,11 +416,15 @@ void WorkflowUI::setupSceneInternal()
     m_propertiesDockWidget = new ads::CDockWidget("Properties", this);
     m_propertiesDockWidget->setWidget(m_propertyEditor);
     m_propertiesDockWidget->setFeature(ads::CDockWidget::DockWidgetFloatable, false);
-    // Fixed width (300px), expanding height to fill available space
-    m_propertiesDockWidget->setMinimumWidth(300);
-    m_propertiesDockWidget->setMaximumWidth(300);
+    // Minimum width (250px), expanding height to fill available space
+    m_propertiesDockWidget->setMinimumWidth(250);
     m_propertiesDockWidget->setMinimumHeight(0);
     m_propertiesDockWidget->setMaximumHeight(QWIDGETSIZE_MAX);
+    // Ensure size policy allows resizing
+    QSizePolicy propSp = m_propertiesDockWidget->sizePolicy();
+    propSp.setHorizontalPolicy(QSizePolicy::Preferred);
+    propSp.setVerticalPolicy(QSizePolicy::Expanding);
+    m_propertiesDockWidget->setSizePolicy(propSp);
     m_dockManager->addDockWidget(ads::RightDockWidgetArea, m_propertiesDockWidget);
 
     // 5. Create Queue dock widget (right side) - add as tab to Properties area at index 1
@@ -433,41 +441,34 @@ void WorkflowUI::setupSceneInternal()
     m_nodeLibrary->setPaletteOrder(getPaletteFullOrder());
 
     // After everything is added, do a delayed layout adjustment
-    // We only fix the left and right widths - ADS automatically gives canvas remaining space
+    // Set initial recommended widths for left and right panels - user can resize later
     QTimer::singleShot(10, this, [this]() {
-        const int leftWidth = 250;
-        const int rightWidth = 300;
-
-        qDebug() << "[Delayed layout] DockManager size:" << m_dockManager->size();
+        const int initialLeftWidth = 250;
+        const int initialRightWidth = 300;
 
         // Force dock manager to update layout
         m_dockManager->update();
         m_dockManager->adjustSize();
 
-        // Fix left width
+        // Set initial left width (user can resize later)
         if (m_nodesDockWidget && m_nodesDockWidget->dockAreaWidget()) {
             ads::CDockAreaWidget* dockArea = m_nodesDockWidget->dockAreaWidget();
             QList<int> splitterSizes = m_dockManager->splitterSizes(dockArea);
-            if (!splitterSizes.isEmpty() && splitterSizes[0] != leftWidth) {
-                splitterSizes[0] = leftWidth;
+            if (!splitterSizes.isEmpty() && splitterSizes[0] != initialLeftWidth) {
+                splitterSizes[0] = initialLeftWidth;
                 m_dockManager->setSplitterSizes(dockArea, splitterSizes);
             }
         }
 
-        // Fix right width
+        // Set initial right width (user can resize later)
         if (m_propertiesDockWidget && m_propertiesDockWidget->dockAreaWidget()) {
             ads::CDockAreaWidget* dockArea = m_propertiesDockWidget->dockAreaWidget();
             QList<int> splitterSizes = m_dockManager->splitterSizes(dockArea);
-            if (!splitterSizes.isEmpty() && splitterSizes.last() != rightWidth) {
-                splitterSizes.last() = rightWidth;
+            if (!splitterSizes.isEmpty() && splitterSizes.last() != initialRightWidth) {
+                splitterSizes.last() = initialRightWidth;
                 m_dockManager->setSplitterSizes(dockArea, splitterSizes);
             }
         }
-
-        qDebug() << "[Delayed layout] Final sizes:";
-        qDebug() << "  Left: " << m_nodesDockWidget->size();
-        qDebug() << "  Right: " << m_propertiesDockWidget->size();
-        qDebug() << "  Canvas: " << m_canvasDockWidget->size();
     });
 
     // Pass graph model to property editor

@@ -24,16 +24,26 @@ WorkflowBrowser::WorkflowBrowser(QWidget *parent) : QWidget(parent)
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
+    // Ensure this widget expands to fill available space
+    QSizePolicy sp = sizePolicy();
+    sp.setHorizontalPolicy(QSizePolicy::Expanding);
+    sp.setVerticalPolicy(QSizePolicy::Expanding);
+    setSizePolicy(sp);
+
     // Search box
     m_searchBox = new QLineEdit();
     m_searchBox->setPlaceholderText("Search workflows...");
     m_searchBox->setClearButtonEnabled(true);
     layout->addWidget(m_searchBox);
 
-    // Workflow list
+    // Workflow list - ensure it expands with the container
     m_workflowList = new QTreeWidget();
     m_workflowList->setHeaderHidden(true);
     m_workflowList->setIndentation(12);
+    QSizePolicy listSp = m_workflowList->sizePolicy();
+    listSp.setHorizontalPolicy(QSizePolicy::Expanding);
+    listSp.setVerticalPolicy(QSizePolicy::Expanding);
+    m_workflowList->setSizePolicy(listSp);
     layout->addWidget(m_workflowList);
 
     connect(m_searchBox, &QLineEdit::textChanged, this, &WorkflowBrowser::onSearchTextChanged);
@@ -134,16 +144,26 @@ void NodeLibraryWidget::setupUi()
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
+    // Ensure this widget expands to fill available space
+    QSizePolicy sp = sizePolicy();
+    sp.setHorizontalPolicy(QSizePolicy::Expanding);
+    sp.setVerticalPolicy(QSizePolicy::Expanding);
+    setSizePolicy(sp);
+
     // Search box
     m_searchBox = new QLineEdit();
     m_searchBox->setPlaceholderText("Search nodes...");
     m_searchBox->setClearButtonEnabled(true);
     mainLayout->addWidget(m_searchBox);
 
-    // Node tree widget
+    // Node tree widget - ensure it expands with the container
     m_nodeTree = new NodeTreeWidget();
     m_nodeTree->setHeaderHidden(true);
     m_nodeTree->setIndentation(12);
+    QSizePolicy treeSp = m_nodeTree->sizePolicy();
+    treeSp.setHorizontalPolicy(QSizePolicy::Expanding);
+    treeSp.setVerticalPolicy(QSizePolicy::Expanding);
+    m_nodeTree->setSizePolicy(treeSp);
     mainLayout->addWidget(m_nodeTree);
 
     // Connect signals
@@ -458,6 +478,12 @@ void PropertyEditor::setupUi()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
+    // Ensure this widget expands to fill available space
+    QSizePolicy sp = sizePolicy();
+    sp.setHorizontalPolicy(QSizePolicy::Expanding);
+    sp.setVerticalPolicy(QSizePolicy::Expanding);
+    setSizePolicy(sp);
+
     // === 顶部固定区域（Node ID + 基本信息）===
     m_fixedTopWidget = new QWidget();
     m_fixedTopLayout = new QVBoxLayout(m_fixedTopWidget);
@@ -480,9 +506,15 @@ void PropertyEditor::setupUi()
     m_scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_scrollArea->setFrameShape(QFrame::NoFrame);
+    // Ensure scroll area expands with container
+    QSizePolicy scrollSp = m_scrollArea->sizePolicy();
+    scrollSp.setHorizontalPolicy(QSizePolicy::Expanding);
+    scrollSp.setVerticalPolicy(QSizePolicy::Expanding);
+    m_scrollArea->setSizePolicy(scrollSp);
 
     m_contentWidget = new QWidget();
-    m_contentWidget->setMinimumWidth(250);
+    // Minimum width for content - should match overall PropertyEditor minimum width
+    m_contentWidget->setMinimumWidth(200);
 
     m_mainLayout = new QVBoxLayout(m_contentWidget);
     m_mainLayout->setContentsMargins(8, 8, 8, 8);

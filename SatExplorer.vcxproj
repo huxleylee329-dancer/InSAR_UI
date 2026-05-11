@@ -97,7 +97,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>D:\SRC\opencv\build\x64\vc15\lib;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\InSAR_UI\bin;E:\Thesis_SAR\Macao\TargetDetection\packages\Microsoft.ML.OnnxRuntime.1.25.1\runtimes\win-x64\native;D:\onnxruntime-win-x64-1.26.0\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>D:\SRC\opencv\build\x64\vc15\lib;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\InSAR_UI\bin;D:\onnxruntime-win-x64-1.26.0\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>onnxruntime.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
