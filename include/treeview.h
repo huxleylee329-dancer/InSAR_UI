@@ -42,4 +42,5 @@ private slots:
     /*卸载工程响应函数*/
     void Unload();
     void StopThread();
+    void DeleteNode();
  }; 

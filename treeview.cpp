@@ -5,6 +5,9 @@
 #include <QMenuBar>  
 #include <QStatusBar> 
 #include <QFileDialog>
+#include<QDebug>
+#include<QDir>
+#include<QFile>
 #include<FormatConversion.h>
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
@@ -111,7 +114,9 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
         if (!item || !index.isValid())
             return;
 
-        if (!item->parent())//工程节点菜单栏
+        QModelIndex parentIndex = index.parent();
+
+        if (!parentIndex.isValid())
         {
             QMenu* menu = new QMenu(this);
             QAction* unload = new QAction(QString::fromLocal8Bit("卸载工程"));
@@ -119,8 +124,16 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
             connect(unload, SIGNAL(triggered()), this, SLOT(Unload()));
             menu->exec(this->mapToGlobal(point));
         }
-        //图像数据节点菜单栏
-        else if (!item->hasChildren() && item->parent())
+        else if (!parentIndex.parent().isValid())
+        {
+            QMenu* menu = new QMenu(this);
+            QAction* node_delete = new QAction(QString::fromLocal8Bit("删除节点"));
+            node_delete->setIcon(QIcon(EXPORT_ICON));
+            menu->addAction(node_delete);
+            connect(node_delete, &QAction::triggered, this, &TreeView::DeleteNode);
+            menu->exec(this->mapToGlobal(point));
+        }
+        else
         {
             QMenu* menu = new QMenu(this);
             QAction* image_saveas = new QAction(QString::fromLocal8Bit("另存为"));
@@ -139,8 +152,20 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
 
 void TreeView::Delete()
 {
+    QModelIndex imageIndex = this->currentIndex();
+
+    if (!imageIndex.isValid() ||
+        !imageIndex.parent().isValid() ||
+        !imageIndex.parent().parent().isValid())
+    {
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请选择具体图像数据删除！"));
+        return;
+    }
+
+   
     if (this->currentIndex().isValid())
     {
+        
         QString Project_path = model->itemFromIndex(this->currentIndex().parent().parent().sibling(0, 1))->text();
         QString Project_name = model->itemFromIndex(this->currentIndex().parent().parent())->text();
         QString DataNode_name = model->itemFromIndex(this->currentIndex().parent())->text();
@@ -148,11 +173,16 @@ void TreeView::Delete()
         QModelIndex PathIndex = NameIndex.sibling(0, 1);
         QString path = model->itemFromIndex(PathIndex)->text();
         QString name = model->itemFromIndex(NameIndex)->text();
-        model->removeRow(this->currentIndex().row(), this->currentIndex().parent());
         XMLFile xml;
         xml.XMLFile_load((Project_path+"/"+ Project_name).toStdString().c_str());
         xml.XMLFile_remove_node(DataNode_name.toStdString().c_str(), name.toStdString().c_str(), path.toStdString().c_str());
         xml.XMLFile_save((Project_path + "/" + Project_name).toStdString().c_str());
+        if (QFile::exists(path))
+        {
+            QFile::remove(path);
+        }
+
+        model->removeRow(this->currentIndex().row(), this->currentIndex().parent());
         emit update();
     }
     else
@@ -243,4 +273,68 @@ void TreeView::updateProcess(int value, QString information)
         mTreeProcess->setValue(value);
         mTreeProcess->setLabelText(information);
     }
+}
+
+
+static bool RemoveDataNodeFromProjectXml(const QString& projectFile, const QString& dataNodeName)
+{
+    QByteArray xmlPath = QFile::encodeName(projectFile);
+    TiXmlDocument doc(xmlPath.constData());
+
+    if (!doc.LoadFile())
+        return false;
+
+    TiXmlElement* root = doc.RootElement();
+    if (!root)
+        return false;
+
+    TiXmlElement* node = root->FirstChildElement("DataNode");
+    while (node)
+    {
+        TiXmlElement* next = node->NextSiblingElement("DataNode");
+        const char* name = node->Attribute("name");
+
+        if (name && dataNodeName == QString::fromLocal8Bit(name))
+        {
+            root->RemoveChild(node);
+            return doc.SaveFile();
+        }
+
+        node = next;
+    }
+
+    return true;
+}
+void TreeView::DeleteNode()
+{
+    QModelIndex nodeIndex = this->currentIndex();
+
+    if (!nodeIndex.isValid() || !nodeIndex.parent().isValid() || nodeIndex.parent().parent().isValid())
+    {
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无法删除！"));
+        return;
+    }
+
+    QStandardItem* node = model->itemFromIndex(nodeIndex);
+    if (!node)
+    {
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无法删除！"));
+        return;
+    }
+
+    QString Project_path = model->itemFromIndex(nodeIndex.parent().sibling(0, 1))->text();
+    QString Project_name = model->itemFromIndex(nodeIndex.parent())->text();
+    QString DataNode_name = node->text();
+    QString projectFile = Project_path + "/" + Project_name;
+
+    RemoveDataNodeFromProjectXml(projectFile, DataNode_name);
+
+    QDir dir(Project_path + "/" + DataNode_name);
+    if (dir.exists())
+    {
+        dir.removeRecursively();
+    }
+
+    model->removeRow(nodeIndex.row(), nodeIndex.parent());
+    emit update();
 }

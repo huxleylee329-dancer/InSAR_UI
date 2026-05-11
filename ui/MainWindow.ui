@@ -135,6 +135,7 @@
      <addaction name="actionSentinel_1"/>
      <addaction name="actionCOSMOS_SkyMed"/>
      <addaction name="actionALOS_2"/>
+     <addaction name="actionMacao"/>
     </widget>
     <widget class="QMenu" name="menuSentinel1_Tool">
      <property name="title">
@@ -191,7 +192,37 @@
     <property name="title">
      <string>SAR</string>
     </property>
+    <widget class="QMenu" name="menuImageEnhancement">
+     <property name="title">
+      <string>Image Enhancement</string>
+     </property>
+     <addaction name="actionSpeckleDenoise"/>
+     <addaction name="actionClutterSuppression"/>
+    </widget>
+    <addaction name="menuImageEnhancement"/>
+    <addaction name="actionTargetDetection"/>
+    <addaction name="actionBatchTargetRecognition"/>
    </widget>
+   <action name="actionSpeckleDenoise">
+    <property name="text">
+     <string>Speckle Denoise</string>
+    </property>
+   </action>
+   <action name="actionClutterSuppression">
+    <property name="text">
+     <string>Clutter Suppression</string>
+    </property>
+   </action>
+   <action name="actionBatchTargetRecognition">
+    <property name="text">
+     <string>Batch Target Recognition</string>
+    </property>
+   </action>
+   <action name="actionTargetDetection">
+    <property name="text">
+     <string>Target Detection</string>
+    </property>
+   </action>
    <addaction name="File"/>
    <addaction name="Edit"/>
    <addaction name="View"/>
@@ -437,11 +468,25 @@
     <string>ALOS-2</string>
    </property>
   </action>
-  <action name="actionTheme">
+  <action name="actionNodeEditor">
+   <property name="icon">
+    <iconset resource="../resources/SatExplorer.qrc">
+     <normaloff>:/SatExplorer/icon/flow_editor.png</normaloff>:/SatExplorer/icon/flow_editor.png</iconset>
+   </property>
    <property name="text">
-    <string>主题</string>
+    <string>流程编辑器</string>
    </property>
   </action>
+  <action name="actionMacao">
+   <property name="text">
+    <string>Macao</string>
+   </property>
+  </action>
+  <action name="actionTheme">
+ <property name="text">
+  <string>主题</string>
+ </property>
+</action>
  </widget>
  <customwidgets>
   <customwidget>

@@ -1,0 +1,622 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>BatchTargetRecognition</class>
+ <widget class="QWidget" name="BatchTargetRecognition">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1038</width>
+    <height>821</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>BatchTargetRecognition</string>
+  </property>
+  <widget class="QWidget" name="layoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>2</x>
+     <y>0</y>
+     <width>1031</width>
+     <height>811</height>
+    </rect>
+   </property>
+   <layout class="QHBoxLayout" name="horizontalLayout" stretch="2,5">
+    <item>
+     <widget class="QWidget" name="LeftPanel" native="true">
+      <widget class="QGroupBox" name="inputDataGroup">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>0</y>
+         <width>281</width>
+         <height>221</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>输入数据</string>
+       </property>
+       <widget class="QComboBox" name="projectComboBox">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>30</y>
+          <width>95</width>
+          <height>25</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="clearImageButton">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>110</y>
+          <width>120</width>
+          <height>28</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>清除数据列表</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="imageCountValueLabel">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>160</y>
+          <width>16</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>--</string>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="addImageButton">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>112</y>
+          <width>93</width>
+          <height>28</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>添加数据</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="projectLabel">
+        <property name="geometry">
+         <rect>
+          <x>22</x>
+          <y>31</y>
+          <width>60</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>选择工程</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="Nodelabel">
+        <property name="geometry">
+         <rect>
+          <x>22</x>
+          <y>71</y>
+          <width>60</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>数据节点</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="ImageCountlabel">
+        <property name="geometry">
+         <rect>
+          <x>22</x>
+          <y>160</y>
+          <width>60</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>数据总量</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="label">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>190</y>
+          <width>225</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>说明：真值类型见输入数据文件名</string>
+        </property>
+       </widget>
+       <widget class="QComboBox" name="nodeComboBox">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>70</y>
+          <width>95</width>
+          <height>25</height>
+         </rect>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QGroupBox" name="detectionSettingGroup">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>230</y>
+         <width>281</width>
+         <height>291</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>检测设置</string>
+       </property>
+       <widget class="QLabel" name="modelLabel">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>40</y>
+          <width>72</width>
+          <height>15</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>模型选择</string>
+        </property>
+       </widget>
+       <widget class="QComboBox" name="modelComboBox">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>40</y>
+          <width>95</width>
+          <height>25</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QLabel" name="confidenceLabel">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>90</y>
+          <width>72</width>
+          <height>15</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>置信度</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="ConfidenceLineEdit">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>90</y>
+          <width>113</width>
+          <height>21</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="runDetectionButton">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>150</y>
+          <width>93</width>
+          <height>28</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>开始检测</string>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="stopDetectionButton">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>150</y>
+          <width>93</width>
+          <height>28</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>停止</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="adviceLabel">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>110</y>
+          <width>91</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>(默认值0.65)</string>
+        </property>
+       </widget>
+       <widget class="QProgressBar" name="progressBar">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>200</y>
+          <width>211</width>
+          <height>23</height>
+         </rect>
+        </property>
+        <property name="value">
+         <number>0</number>
+        </property>
+       </widget>
+       <widget class="QLabel" name="Alldatalabel">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>230</y>
+          <width>72</width>
+          <height>15</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>数据总量：</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="AlldataIndexLabel">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>230</y>
+          <width>72</width>
+          <height>15</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>--</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="Detecteddatalabel">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>260</y>
+          <width>72</width>
+          <height>15</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>已检测量：</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="detecteddataIndexLabel">
+        <property name="geometry">
+         <rect>
+          <x>140</x>
+          <y>260</y>
+          <width>72</width>
+          <height>15</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>--</string>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QGroupBox" name="statisticsGroup">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>530</y>
+         <width>281</width>
+         <height>261</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>检测结果</string>
+       </property>
+       <widget class="QPushButton" name="exportResultButton">
+        <property name="geometry">
+         <rect>
+          <x>150</x>
+          <y>200</y>
+          <width>93</width>
+          <height>28</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>导出结果</string>
+        </property>
+       </widget>
+       <widget class="QWidget" name="layoutWidget">
+        <property name="geometry">
+         <rect>
+          <x>30</x>
+          <y>40</y>
+          <width>62</width>
+          <height>151</height>
+         </rect>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout_2">
+         <item>
+          <widget class="QLabel" name="sampleCountLabel">
+           <property name="text">
+            <string>样本数</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="finishedCountLabel">
+           <property name="text">
+            <string>已完成数</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="correctCountLabel">
+           <property name="text">
+            <string>正确数</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="accuracyLabel">
+           <property name="text">
+            <string>准确率</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="layoutWidget">
+        <property name="geometry">
+         <rect>
+          <x>160</x>
+          <y>40</y>
+          <width>61</width>
+          <height>151</height>
+         </rect>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout_3">
+         <item>
+          <widget class="QLabel" name="sampleCountValueLabel">
+           <property name="text">
+            <string>--</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="finishedCountValueLabel">
+           <property name="text">
+            <string>--</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="correctCountValueLabel">
+           <property name="text">
+            <string>--</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="accuracyValueLabel">
+           <property name="text">
+            <string>--</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </widget>
+     </widget>
+    </item>
+    <item>
+     <widget class="QWidget" name="RPanel" native="true">
+      <widget class="QGroupBox" name="resultListgroup">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>10</y>
+         <width>681</width>
+         <height>361</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>文件列表</string>
+       </property>
+       <widget class="QTableWidget" name="resultTableWidget">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>20</y>
+          <width>661</width>
+          <height>331</height>
+         </rect>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QGroupBox" name="groupBox">
+       <property name="geometry">
+        <rect>
+         <x>20</x>
+         <y>380</y>
+         <width>681</width>
+         <height>411</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>数据预览</string>
+       </property>
+       <widget class="QWidget" name="imagePreviewWidget" native="true">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>20</y>
+          <width>361</width>
+          <height>371</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QWidget" name="sampleInfoWidget" native="true">
+        <property name="geometry">
+         <rect>
+          <x>380</x>
+          <y>20</y>
+          <width>291</width>
+          <height>371</height>
+         </rect>
+        </property>
+        <widget class="QLabel" name="label_2">
+         <property name="geometry">
+          <rect>
+           <x>110</x>
+           <y>20</y>
+           <width>101</width>
+           <height>16</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>当前样本信息</string>
+         </property>
+        </widget>
+        <widget class="QLabel" name="label_8">
+         <property name="geometry">
+          <rect>
+           <x>21</x>
+           <y>378</y>
+           <width>72</width>
+           <height>16</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>TextLabel</string>
+         </property>
+        </widget>
+        <widget class="QWidget" name="layoutWidget">
+         <property name="geometry">
+          <rect>
+           <x>40</x>
+           <y>60</y>
+           <width>91</width>
+           <height>311</height>
+          </rect>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_4">
+          <item>
+           <widget class="QLabel" name="fileNameLabel">
+            <property name="text">
+             <string>文件名</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="truthLabel">
+            <property name="text">
+             <string>真值</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="predictionLabel">
+            <property name="text">
+             <string>目标后验概率</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="confidenceValueTitleLabel">
+            <property name="text">
+             <string>置信度</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="correctnessLabel">
+            <property name="text">
+             <string>是否正确</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="resultDisplayLabel">
+            <property name="text">
+             <string>结果显示</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="layoutWidget">
+         <property name="geometry">
+          <rect>
+           <x>160</x>
+           <y>60</y>
+           <width>111</width>
+           <height>311</height>
+          </rect>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_5">
+          <item>
+           <widget class="QLabel" name="fileNameValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="truthValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="predictionValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="confidenceValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="correctnessValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="resultDisplayValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

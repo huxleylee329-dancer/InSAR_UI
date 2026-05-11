@@ -1,0 +1,65 @@
+#ifndef MACAOIMPORTNODE_H
+#define MACAOIMPORTNODE_H
+
+#include "ImportNodeBase.h"
+#include "MyThread.h"
+
+#include <QWidget>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QPushButton>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QThread>
+
+namespace QtNodes {
+
+class MacaoImportNode : public ImportNodeBase
+{
+    Q_OBJECT
+
+public:
+    MacaoImportNode();
+    ~MacaoImportNode();
+
+    QString caption() const override { return QStringLiteral("Macao Import"); }
+    QString name() const override { return QStringLiteral("MacaoImport"); }
+
+    void setExecutionMode(ExecutionMode mode) override;
+
+protected:
+    QWidget* createWidget() override;
+    void executeImport() override;
+    QString getImportedFilePath() const override;
+    QString getOutputNodeName() const override;
+
+private slots:
+    void onImageBrowseClicked();
+    void onImportProgress(int progress, const QString& message);
+    void onImportFinished();
+    void onThreadError(const QString& error);
+    void onModelUpdated(QStandardItemModel* model);
+
+signals:
+    void startMacaoImport(QString, QString, QString, QString, QString, QStandardItemModel*);
+
+private:
+    QLineEdit* m_imageEdit;
+    QLineEdit* m_outputNodeNameEdit;
+    QLineEdit* m_outputFileNameEdit;
+    QComboBox* m_projectCombo;
+
+    QString m_imagePath;
+    QString m_importedFilePath;
+    QString m_outputFileName;
+
+    MyThread* m_workerThread;
+    QThread* m_thread;
+};
+
+} // namespace QtNodes
+
+#endif // MACAOIMPORTNODE_H

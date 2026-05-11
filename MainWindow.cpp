@@ -30,6 +30,7 @@ extern void applyTheme(const QString &theme);
 #include"OpenProject.h"
 #include"NewProject.h"
 #include"Import_TSX.h"
+#include"Import_Macao.h"
 #include"import_sentinel.h"
 #include"Cut.h"
 #include"Registration_ui.h"
@@ -54,6 +55,10 @@ extern void applyTheme(const QString &theme);
 #include"import_CSK.h"
 #include"import_ALOS2.h"
 #include"icon_source.h"
+#include"SpeckleDenoise.h"
+#include"ClutterSuppression.h"
+#include"BatchTargetRecognition.h"
+#include"TargetDetection.h"
 //#include<Mould.h>
 
 // Qt related headers
@@ -100,9 +105,11 @@ MainWindow::MainWindow(QWidget* parent)
     ui.menuSAR->setDisabled(1);
     ui.menuInSAR->setDisabled(1);
     ui.menuDInSAR->setDisabled(1);
+    
 
     ui.treeView->init_tree();
     ui.tool->init_mould();
+    model = ui.treeView->model;
 
     ui.tabWidget->setTabsClosable(true);
     connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
@@ -143,6 +150,7 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
     this->setWindowIcon(QIcon(APP_ICON));
     ui.treeView->init_tree();
     ui.tool->init_mould();
+    model = ui.treeView->model;
 
     ui.tabWidget->setTabsClosable(true);
     cout << ui.tabWidget->count();
@@ -329,6 +337,14 @@ void MainWindow::open_from_project_file(QString str)
     QFileInfo fileinfo = QFileInfo(filename);
     QString abs_path = fileinfo.absolutePath();
     model = ui.treeView->model;
+    if (m_workspaceUI && m_workspaceUI->treeView())
+    {
+        m_workspaceUI->treeView()->setModel(model);
+        m_workspaceUI->treeView()->model = model;
+        m_workspaceUI->treeView()->setColumnHidden(1, true);
+    }
+
+
     int ret = this->project->XMLFile_load(filename.toStdString().c_str());
     if (ret < 0)
     {
@@ -433,7 +449,6 @@ void MainWindow::open_from_project_file(QString str)
     }
     else
         QMessageBox::warning(NULL, "Warning!", "*.Insar is empty!");
-    close();
 }
 void MainWindow::update_treeview()
 {
@@ -442,12 +457,14 @@ void MainWindow::update_treeview()
         if (ui.treeView->model->rowCount() < 1)
         {
             ui.Process->setDisabled(1);
+            ui.menuSAR->setDisabled(1);
             ui.menuInSAR->setDisabled(1);
             ui.menuDInSAR->setDisabled(1);
         }
         else
         {
             ui.Process->setDisabled(0);
+            ui.menuSAR->setDisabled(0);
             ui.menuInSAR->setDisabled(0);
             ui.menuDInSAR->setDisabled(0);
         }
@@ -478,8 +495,21 @@ bool MainWindow::eventFilter(QObject* target, QEvent* event)
 void MainWindow::ShowImage(QModelIndex image)
 {
 
+    if (!image.isValid() ||
+        !image.parent().isValid() ||
+        !image.parent().parent().isValid())
+    {
+        return;
+    }
+
     QString name = ui.treeView->model->index(image.row(), 0, image.parent()).data().toString();
     QString path = ui.treeView->model->index(image.row(), 1, image.parent()).data().toString();
+
+    if (path.isEmpty() || !QFileInfo(path).exists())
+    {
+        return;
+    }
+
     QString type = ui.treeView->model->itemFromIndex(ui.treeView->model->index(image.row(),0,image.parent()))->toolTip();
     if (!path.isEmpty())
     {
@@ -532,7 +562,7 @@ void MainWindow::on_actionNew_triggered()
 {
     NewProject* newpro = new NewProject;
     connect(this, &MainWindow::sendModel, newpro, &NewProject::ReceiveModel);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     newpro->show();
     connect(newpro, &NewProject::sendPath, this, &MainWindow::Addproject);
     newpro->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -543,7 +573,7 @@ void MainWindow::on_actionOpen_triggered()
     OpenProject* open_Window = new OpenProject;
     open_Window->show();
     connect(this, &MainWindow::sendModel, open_Window, &OpenProject::LoadModel);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     connect(open_Window, &OpenProject::sendModel, this, &MainWindow::RenewTree);
     open_Window->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -552,17 +582,28 @@ void MainWindow::on_actionTSX_triggered()
 
     Import_TSX* TSX_win = new Import_TSX;
     connect(this, &MainWindow::sendModel, TSX_win, &Import_TSX::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     TSX_win->show();
 
     connect(TSX_win, &Import_TSX::sendCopy, this, &MainWindow::RenewTree);
     TSX_win->setAttribute(Qt::WA_DeleteOnClose, true);
 }
+void MainWindow::on_actionMacao_triggered()
+{
+
+    Import_Macao* Macao_win = new Import_Macao;
+    connect(this, &MainWindow::sendModel, Macao_win, &Import_Macao::ShowProjectList);
+    emit sendModel(model);
+    Macao_win->show();
+
+    connect(Macao_win, &Import_Macao::sendCopy, this, &MainWindow::RenewTree);
+    Macao_win->setAttribute(Qt::WA_DeleteOnClose, true);
+}
 void MainWindow::on_actionSentinel_1_triggered()
 {
     import_sentinel* sentinel_wnd = new import_sentinel;
     connect(this, &MainWindow::sendModel, sentinel_wnd, &import_sentinel::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     sentinel_wnd->show();
 
     connect(sentinel_wnd, &import_sentinel::sendCopy, this, &MainWindow::RenewTree);
@@ -572,7 +613,7 @@ void MainWindow::on_actionCut_triggered()
 {
     Cut* cut = new Cut();
     connect(this, &MainWindow::sendModel, cut, &Cut::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     cut->show();
     connect(cut, &Cut::sendCopy, this, &MainWindow::RenewTree);
     cut->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -581,7 +622,7 @@ void MainWindow::on_actionRegistration_triggered()
 {
     Registration_ui* regis = new Registration_ui();
     connect(this, &MainWindow::sendModel, regis, &Registration_ui::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     regis->show();
     connect(regis, &Registration_ui::sendCopy, this, &MainWindow::RenewTree);
     regis->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -590,7 +631,7 @@ void MainWindow::on_actionS1_TOPS_BackGeocoding_triggered()
 {
     S1_TOPS_BackGeocoding* backGeocoding = new S1_TOPS_BackGeocoding();
     connect(this, &MainWindow::sendModel, backGeocoding, &S1_TOPS_BackGeocoding::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     backGeocoding->show();
     connect(backGeocoding, &S1_TOPS_BackGeocoding::sendCopy, this, &MainWindow::RenewTree);
     backGeocoding->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -600,7 +641,7 @@ void MainWindow::on_actionS1_Deburst_triggered()
 {
     S1_Deburst* deburst = new S1_Deburst();
     connect(this, &MainWindow::sendModel, deburst, &S1_Deburst::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     deburst->show();
     connect(deburst, &S1_Deburst::sendCopy, this, &MainWindow::RenewTree);
     deburst->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -610,7 +651,7 @@ void MainWindow::on_actionSBAS_deformation_triggered()
 {
     SBAS_time_series_analysis* SBAS_time_series = new SBAS_time_series_analysis();
     connect(this, &MainWindow::sendModel, SBAS_time_series, &SBAS_time_series_analysis::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     SBAS_time_series->show();
     connect(SBAS_time_series, &SBAS_time_series_analysis::sendCopy, this, &MainWindow::RenewTree);
     SBAS_time_series->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -620,7 +661,7 @@ void MainWindow::on_actionDeformation_Preview_triggered()
 {
     Deformation_Average* bl = new Deformation_Average();
     connect(this, &MainWindow::sendModel, bl, &Deformation_Average::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -629,7 +670,7 @@ void MainWindow::on_actionreference_re_selection_triggered()
 {
     SBAS_reference_reselection* bl = new SBAS_reference_reselection();
     connect(this, &MainWindow::sendModel, bl, &SBAS_reference_reselection::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -638,16 +679,54 @@ void MainWindow::on_actionExport_KML_triggered()
 {
     Export_KML* bl = new Export_KML();
     connect(this, &MainWindow::sendModel, bl, &Export_KML::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+void MainWindow::on_actionSpeckleDenoise_triggered()
+{
+     SpeckleDenoise* dlg = new SpeckleDenoise();
+    connect(this, &MainWindow::sendModel, dlg, &SpeckleDenoise::ShowProjectList);
+    connect(dlg, &SpeckleDenoise::sendCopy, this, &MainWindow::RenewTree);
+    emit sendModel(model);
+    dlg->show();
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionClutterSuppression_triggered()
+{
+    ClutterSuppression* dlg = new ClutterSuppression();
+    connect(this, &MainWindow::sendModel, dlg, &ClutterSuppression::ShowProjectList);
+    connect(dlg, &ClutterSuppression::sendCopy, this, &MainWindow::RenewTree);
+    emit sendModel(model);
+    dlg->show();
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+
+void MainWindow::on_actionBatchTargetRecognition_triggered()
+{
+    BatchTargetRecognition* dlg = new BatchTargetRecognition();
+    connect(this, &MainWindow::sendModel, dlg, &BatchTargetRecognition::ShowProjectList);
+    emit sendModel(model);
+    dlg->show();
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionTargetDetection_triggered()
+{
+    TargetDetection* dlg = new TargetDetection();
+    connect(this, &MainWindow::sendModel, dlg, &TargetDetection::ShowProjectList);
+    emit sendModel(model);
+    dlg->show();
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
 void MainWindow::on_actionBaseline_Preview_triggered()
 {
     Baseline* bl = new Baseline();
     connect(this, &MainWindow::sendModel, bl, &Baseline::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -655,7 +734,7 @@ void MainWindow::on_actionSLC_deramp_triggered()
 {
     SLC_deramp* deramp = new SLC_deramp();
     connect(this, &MainWindow::sendModel, deramp, &SLC_deramp::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     deramp->show();
     deramp->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -663,7 +742,7 @@ void MainWindow::on_actionBaseline_Formation_triggered()
 {
     Baseline_Formation* BF = new Baseline_Formation();
     connect(this, &MainWindow::sendModel, BF, &Baseline_Formation::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     BF->show();
     BF->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -671,7 +750,7 @@ void MainWindow::on_actionInterferometric_Formation_triggered()
 {
     Interferometric_Formation* IF = new Interferometric_Formation();
     connect(this, &MainWindow::sendModel, IF, &Interferometric_Formation::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     IF->show();
     connect(IF, &Interferometric_Formation::sendCopy, this, &MainWindow::RenewTree);
     IF->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -680,7 +759,7 @@ void MainWindow::on_actionDenoise_triggered()
 {
     Filter_ui *Denoise = new Filter_ui();
     connect(this, &MainWindow::sendModel, Denoise, &Filter_ui::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     Denoise->show();
     connect(Denoise, &Filter_ui::sendCopy, this, &MainWindow::RenewTree);
     Denoise->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -689,7 +768,7 @@ void MainWindow::on_actionUnwrap_triggered()
 {
     Unwrap_ui* unwrap = new Unwrap_ui();
     connect(this, &MainWindow::sendModel, unwrap, &Unwrap_ui::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     unwrap->show();
     connect(unwrap, &Unwrap_ui::sendCopy, this, &MainWindow::RenewTree);
     unwrap->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -698,7 +777,7 @@ void MainWindow::on_actionDEM_triggered()
 {
     Dem_ui* Dem = new Dem_ui();
     connect(this, &MainWindow::sendModel, Dem, &Dem_ui::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     Dem->show();
     connect(Dem, &Dem_ui::sendCopy, this, &MainWindow::RenewTree);
     Dem->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -707,7 +786,7 @@ void MainWindow::on_actiongeocode_triggered()
 {
     Geocoding* geocode = new Geocoding();
     connect(this, &MainWindow::sendModel, geocode, &Geocoding::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     geocode->show();
     connect(geocode, &Geocoding::sendCopy, this, &MainWindow::RenewTree);
     geocode->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -716,7 +795,7 @@ void MainWindow::on_actionS1_swath_merge_triggered()
 {
     S1_swath_merge* swath_merge = new S1_swath_merge();
     connect(this, &MainWindow::sendModel, swath_merge, &S1_swath_merge::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     swath_merge->show();
     connect(swath_merge, &S1_swath_merge::sendCopy, this, &MainWindow::RenewTree);
     swath_merge->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -725,7 +804,7 @@ void MainWindow::on_actionS1_frame_merge_triggered()
 {
     S1_frame_merge* frame_merge = new S1_frame_merge();
     connect(this, &MainWindow::sendModel, frame_merge, &S1_frame_merge::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     frame_merge->show();
     connect(frame_merge, &S1_frame_merge::sendCopy, this, &MainWindow::RenewTree);
     frame_merge->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -734,7 +813,7 @@ void MainWindow::on_actionCOSMOS_SkyMed_triggered()
 {
     import_CSK* csk = new import_CSK;
     connect(this, &MainWindow::sendModel, csk, &import_CSK::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     csk->show();
 
     connect(csk, &import_CSK::sendCopy, this, &MainWindow::RenewTree);
@@ -744,7 +823,7 @@ void MainWindow::on_actionALOS_2_triggered()
 {
     import_ALOS2* alos2 = new import_ALOS2;
     connect(this, &MainWindow::sendModel, alos2, &import_ALOS2::ShowProjectList);
-    emit sendModel(ui.treeView->model);
+    emit sendModel(model);
     alos2->show();
 
     connect(alos2, &import_ALOS2::sendCopy, this, &MainWindow::RenewTree);
@@ -762,12 +841,25 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
     }
     if(!ui.Process->isEnabled())
         ui.Process->setDisabled(0);
+    if (!ui.menuSAR->isEnabled())
+        ui.menuSAR->setDisabled(0);
     if (!ui.menuInSAR->isEnabled())
         ui.menuInSAR->setDisabled(0);
     if (!ui.menuDInSAR->isEnabled())
         ui.menuDInSAR->setDisabled(0);
-    ui.treeView->setColumnHidden(1, 1);
+    model = copy;
+
+    ui.treeView->setColumnHidden(1, true);
     ui.treeView->setModel(copy);
+    ui.treeView->model = copy;
+
+    if (m_workspaceUI && m_workspaceUI->treeView())
+    {
+        m_workspaceUI->treeView()->setColumnHidden(1, true);
+        m_workspaceUI->treeView()->setModel(copy);
+        m_workspaceUI->treeView()->model = copy;
+    }
+
 }
 void MainWindow::ShowColorBar(int index)
 {
@@ -1003,6 +1095,18 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     // Create workspace UI (traditional interface)
     // Parent is nullptr - will be managed by InterfaceManager
     m_workspaceUI = new WorkspaceUI(nullptr);
+
+    if (m_workspaceUI && m_workspaceUI->treeView())
+    {
+        m_workspaceUI->treeView()->setModel(ui.treeView->model);
+        m_workspaceUI->treeView()->model = ui.treeView->model;
+        m_workspaceUI->treeView()->setColumnHidden(1, true);
+
+        connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)),
+                this, SLOT(ShowImage(QModelIndex)));
+        connect(m_workspaceUI->treeView(), &TreeView::update,
+                this, &MainWindow::update_treeview);
+    }
 
     // WorkspaceUI already has the model set up by MainWindow
     // Create workflow UI (node editor interface)

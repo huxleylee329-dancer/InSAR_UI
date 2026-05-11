@@ -80,6 +80,7 @@ private slots:
     void on_actionNew_triggered();
     void on_actionOpen_triggered();
     void on_actionTSX_triggered();
+    void on_actionMacao_triggered();
     // Import sentinel dialog
     void on_actionSentinel_1_triggered();
     void on_actionCut_triggered();
@@ -110,6 +111,12 @@ private slots:
     void onThemeLight();
     void onThemeDark();
     void onThemeFusion();
+
+    void on_actionSpeckleDenoise_triggered();
+    void on_actionClutterSuppression_triggered();
+    void on_actionBatchTargetRecognition_triggered();
+    void on_actionTargetDetection_triggered();
+
     // Interface switching
     void switchToWorkspace();
     void switchToWorkflow();

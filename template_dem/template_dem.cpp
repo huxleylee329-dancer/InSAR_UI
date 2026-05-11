@@ -220,14 +220,14 @@ int _tmain(int argc, _TCHAR* argv[])
 		else tmp_slave = "slave";
 		dst_h5_master = import_dir + "\\" + tmp_master + ".h5";
 		dst_h5_slave = import_dir + "\\" + tmp_slave + ".h5";
-		ret = conversion.TSX2h5(master_file.c_str(), dst_h5_master.c_str());
+        ret = conversion.TSX2h5(master_file.c_str(), dst_h5_master.c_str(), "HH");
 		if (ret < 0)
 		{
 			processCallback(IPC, eCallbackType_MsgError, 0, "TSX2h5(): failed to import TSX!");
 			return -1;
 		}
 		processCallback(IPC, eCallbackType_UpdateCmplt, 10, "master file imported!");
-		ret = conversion.TSX2h5(slave_file.c_str(), dst_h5_slave.c_str());
+		ret = conversion.TSX2h5(slave_file.c_str(), dst_h5_slave.c_str(), "HH");
 		if (ret < 0)
 		{
 			processCallback(IPC, eCallbackType_MsgError, 0, "TSX2h5(): failed to import TSX!");

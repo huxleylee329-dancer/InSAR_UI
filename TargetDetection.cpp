@@ -1,0 +1,320 @@
+#include "TargetDetection.h"
+#include "basic2.h"
+#include "diff_boxcount.h"
+
+#include <QMessageBox>
+#include <QVBoxLayout>
+#include <QPixmap>
+#include <QFileInfo>
+#include <QDir>
+#include <opencv2/opencv.hpp>
+#include <onnxruntime_cxx_api.h>
+
+
+TargetDetection::TargetDetection(QWidget* parent)
+    : QWidget(parent),
+      ui(new Ui::TargetDetection),
+      copy(nullptr),
+      previewLabel(nullptr)
+{
+    ui->setupUi(this);
+
+    previewLabel = new QLabel(ui->originalImageWidget);
+    previewLabel->setAlignment(Qt::AlignCenter);
+    previewLabel->setScaledContents(true);
+
+    QVBoxLayout* previewLayout = new QVBoxLayout(ui->originalImageWidget);
+    previewLayout->setContentsMargins(0, 0, 0, 0);
+    previewLayout->addWidget(previewLabel);
+
+    ui->lineEdit->setText("0.65");
+
+    ui->modelComboBox->clear();
+    ui->modelComboBox->addItem(
+        "SAR Ship Model 0429",
+        QDir::currentPath() + "/sar_ship_model0429.onnx"
+    );
+
+    ui->ResultIndexlabel->setText("--");
+    ui->confidenceIndexlabel->setText("--");
+    ui->label_7->setText("--");
+}
+
+
+TargetDetection::~TargetDetection()
+{
+    delete ui;
+}
+
+void TargetDetection::ShowProjectList(QStandardItemModel* model)
+{
+    if (model == nullptr || model->rowCount() == 0)
+    {
+        QMessageBox::warning(this, "Warning!", "Please import or open project data first");
+        this->deleteLater();
+        return;
+    }
+
+    copy = model;
+    populateDataNodes();
+}
+
+
+
+void TargetDetection::populateDataNodes()
+{
+    ui->projectComboBox->clear();
+
+    if (!copy)
+        return;
+
+    for (int projectRow = 0; projectRow < copy->rowCount(); ++projectRow)
+    {
+        QStandardItem* projectItem = copy->item(projectRow, 0);
+        if (!projectItem)
+            continue;
+
+        for (int nodeRow = 0; nodeRow < projectItem->rowCount(); ++nodeRow)
+        {
+            QStandardItem* nodeItem = projectItem->child(nodeRow, 0);
+            if (!nodeItem)
+                continue;
+
+            QString displayName = projectItem->text() + " / " + nodeItem->text();
+
+            ui->projectComboBox->addItem(displayName);
+            int index = ui->projectComboBox->count() - 1;
+            ui->projectComboBox->setItemData(index, projectRow, Qt::UserRole);
+            ui->projectComboBox->setItemData(index, nodeRow, Qt::UserRole + 1);
+        }
+    }
+
+    populateImagesForCurrentNode();
+}
+
+void TargetDetection::populateImagesForCurrentNode()
+{
+    ui->inputImageComboBox->clear();
+
+    if (!copy || ui->projectComboBox->currentIndex() < 0)
+        return;
+
+    int projectRow = ui->projectComboBox->currentData(Qt::UserRole).toInt();
+    int nodeRow = ui->projectComboBox->currentData(Qt::UserRole + 1).toInt();
+
+    QStandardItem* projectItem = copy->item(projectRow, 0);
+    if (!projectItem)
+        return;
+
+    QStandardItem* nodeItem = projectItem->child(nodeRow, 0);
+    if (!nodeItem)
+        return;
+
+    for (int imageRow = 0; imageRow < nodeItem->rowCount(); ++imageRow)
+    {
+        QStandardItem* imageItem = nodeItem->child(imageRow, 0);
+        QStandardItem* pathItem = nodeItem->child(imageRow, 1);
+
+        if (!imageItem || !pathItem)
+            continue;
+
+        ui->inputImageComboBox->addItem(imageItem->text(), pathItem->text());
+    }
+}
+
+void TargetDetection::on_projectComboBox_currentIndexChanged(int index)
+{
+    Q_UNUSED(index);
+
+    populateImagesForCurrentNode();
+
+    if (previewLabel)
+        previewLabel->clear();
+
+    ui->ResultIndexlabel->setText("--");
+    ui->confidenceIndexlabel->setText("--");
+    ui->label_7->setText("--");
+}
+
+
+void TargetDetection::on_loadImageButton_clicked()
+{
+    QString imagePath = selectedImagePath();
+
+    if (imagePath.isEmpty())
+    {
+        QMessageBox::warning(this, "Warning", "Please select an input image.");
+        return;
+    }
+
+    if (!QFileInfo::exists(imagePath))
+    {
+        QMessageBox::warning(this, "Warning", "Image file does not exist:\n" + imagePath);
+        return;
+    }
+
+    showPreviewImage(imagePath);
+
+    ui->ResultIndexlabel->setText("--");
+    ui->confidenceIndexlabel->setText("--");
+    ui->label_7->setText(QString::number(threshold(), 'f', 2));
+}
+
+
+QString TargetDetection::selectedImagePath() const
+{
+    return ui->inputImageComboBox->currentData().toString();
+}
+
+QString TargetDetection::selectedModelPath() const
+{
+    return ui->modelComboBox->currentData().toString();
+}
+
+float TargetDetection::threshold() const
+{
+    bool ok = false;
+    float value = ui->lineEdit->text().trimmed().toFloat(&ok);
+
+    if (!ok)
+        return 0.65f;
+
+    if (value < 0.0f)
+        value = 0.0f;
+    if (value > 1.0f)
+        value = 1.0f;
+
+    return value;
+}
+
+void TargetDetection::showPreviewImage(const QString& imagePath)
+{
+    if (!previewLabel)
+        return;
+
+    QPixmap pixmap(imagePath);
+    if (pixmap.isNull())
+    {
+        previewLabel->setText("Preview failed");
+        return;
+    }
+
+    previewLabel->setPixmap(
+        pixmap.scaled(previewLabel->size(),
+                      Qt::KeepAspectRatio,
+                      Qt::SmoothTransformation)
+    );
+}
+
+
+void TargetDetection::on_runDetectionButton_clicked()
+{
+    QString imagePath = selectedImagePath();
+    QString modelPath = selectedModelPath();
+    float thresholdValue = threshold();
+
+    if (imagePath.isEmpty())
+    {
+        QMessageBox::warning(this, "Warning", "Please select an input image.");
+        return;
+    }
+
+    if (!QFileInfo::exists(imagePath))
+    {
+        QMessageBox::warning(this, "Warning", "Image file does not exist:\n" + imagePath);
+        return;
+    }
+
+    if (modelPath.isEmpty() || !QFileInfo::exists(modelPath))
+    {
+        QMessageBox::warning(this, "Warning", "Model file does not exist:\n" + modelPath);
+        return;
+    }
+
+    showPreviewImage(imagePath);
+
+    float shipProb = 0.0f;
+    QString resultText;
+
+    bool ok = runSingleDetection(imagePath, modelPath, thresholdValue, shipProb, resultText);
+    if (!ok)
+        return;
+
+    ui->ResultIndexlabel->setText(resultText);
+    ui->confidenceIndexlabel->setText(QString::number(shipProb * 100.0f, 'f', 2) + "%");
+    ui->label_7->setText(QString::number(thresholdValue, 'f', 2));
+}
+
+
+bool TargetDetection::runSingleDetection(const QString& imagePath,
+                                         const QString& modelPath,
+                                         float thresholdValue,
+                                         float& shipProb,
+                                         QString& resultText)
+{
+    cv::Mat img = cv::imread(imagePath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+    if (img.empty())
+    {
+        QMessageBox::warning(this, "Warning", "Failed to read image.");
+        return false;
+    }
+
+    BasicFeatures feats = extract_basic_features(img);
+    double difbox = extract_diffbox_feature(img);
+
+    std::vector<float> inputTensorValues = {
+        static_cast<float>(feats.fphr),
+        static_cast<float>(difbox),
+        static_cast<float>(feats.correlation),
+        static_cast<float>(feats.contrast),
+        static_cast<float>(feats.asm_val)
+    };
+
+    try
+    {
+        Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ShipDetection");
+        Ort::SessionOptions sessionOptions;
+
+        std::wstring modelPathW = QDir::toNativeSeparators(modelPath).toStdWString();
+        Ort::Session session(env, modelPathW.c_str(), sessionOptions);
+
+        const char* inputNames[] = { "float_input" };
+        const char* outputNames[] = { "label", "probabilities" };
+
+        Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+        std::vector<int64_t> inputShape = { 1, 5 };
+
+        Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
+            memoryInfo,
+            inputTensorValues.data(),
+            inputTensorValues.size(),
+            inputShape.data(),
+            inputShape.size()
+        );
+
+        auto outputTensors = session.Run(
+            Ort::RunOptions{ nullptr },
+            inputNames,
+            &inputTensor,
+            1,
+            outputNames,
+            2
+        );
+
+        float* probArr = outputTensors[1].GetTensorMutableData<float>();
+        shipProb = probArr[1];
+
+        resultText = shipProb >= thresholdValue ? "Ship" : "Sea";
+        return true;
+    }
+    catch (const Ort::Exception& e)
+    {
+        QMessageBox::warning(this, "ONNX Runtime Error", e.what());
+        return false;
+    }
+    catch (const std::exception& e)
+    {
+        QMessageBox::warning(this, "Detection Error", e.what());
+        return false;
+    }
+}

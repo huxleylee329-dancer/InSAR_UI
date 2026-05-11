@@ -103,6 +103,39 @@ public slots:
 	* @param dst_project                 目标工程
 	* @param copy                        treeview模型
 	*/
+	void import_Macao(
+		QString xml_filename,
+		QString project_path,
+		QString folder,
+		QString filename,
+		QString project_name,
+		QStandardItemModel* model
+	);
+	/*@brief 批量导入TerraSAR数据
+	* @param polarization                极化方式
+	* @param savepath                    保存路径
+	* @param original_file_list          原始文件
+	* @param import_namelist             导入文件名
+	* @param dst_node                    目标节点
+	* @param dst_project                 目标工程
+	* @param copy                        treeview模型
+	*/
+	void import_Macao_patch(
+		QString savepath,
+		vector<QString> original_file_list,
+		vector<QString> import_namelist,
+		QString dst_node,
+		QString dst_project,
+		QStandardItemModel* model
+	);
+	/*@brief 批量导入COSMOS-SkyMed数据
+	* @param savepath                    保存路径
+	* @param original_file_list          原始文件
+	* @param import_namelist             导入文件名
+	* @param dst_node                    目标节点
+	* @param dst_project                 目标工程
+	* @param copy                        treeview模型
+	*/
 	void import_CSK_patch(
 		QString savepath,
 		vector<QString> original_file_list,

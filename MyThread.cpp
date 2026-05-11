@@ -9,6 +9,8 @@
 #include"SBAS.h"
 #include<QMessageBox>
 #include<qcoreapplication.h>
+#include<QFile>
+#include<QFileInfo>
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
@@ -381,6 +383,124 @@ void MyThread::import_sentinel_patch(
 	emit endProcess();
 }
 
+	void MyThread::import_Macao(
+	QString xml_filename, 
+	QString project_path,
+	QString folder, 
+	QString filename,
+	QString project_name,
+	QStandardItemModel* model
+)
+{
+	if (xml_filename.isEmpty() ||
+		folder.isEmpty() ||
+		project_path.isEmpty() ||
+		filename.isEmpty() ||
+		project_name.isEmpty() ||
+		model == NULL
+		)
+	{
+		return;
+	}
+
+	int ret=0;
+	QDir dir(project_path);
+	if (!dir.exists(folder))
+		ret = dir.mkdir(folder);
+	emit updateProcess(20, QString::fromLocal8Bit("正在导入数据，请耐心等待……"));
+	QFileInfo fileinfo(xml_filename);
+    QString suffix = fileinfo.suffix();
+
+    QString temp_folder = QString("/") + folder + QString("/");
+    QString relative_path = temp_folder + filename + "." + suffix;
+    QString image_path = QString("%1%2%3.%4")
+        .arg(project_path)
+        .arg(temp_folder)
+        .arg(filename)
+        .arg(suffix);
+
+    ret = QFile::copy(xml_filename, image_path) ? 0 : -1;
+
+
+	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+	{
+		QFile::remove(image_path);
+		QDir tmp_dir(project_path + QString("/") + folder);
+		tmp_dir.removeRecursively();
+		return;
+	}
+	emit updateProcess(90, QString::fromLocal8Bit("即将完成……"));
+
+	QStandardItem* project = model->findItems(project_name)[0];
+	if (!project) {
+		QFile::remove(image_path);
+		QDir tmp_dir(project_path + QString("/") + folder);
+		tmp_dir.removeRecursively();
+		return;
+	}
+	QModelIndex pro_index = model->indexFromItem(project);
+	QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+	QStandardItem* origin = NULL;
+	for (int i = 0; i < project->rowCount(); i++)
+	{
+		if (folder == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
+		{
+			origin = project->child(i); break;
+		}
+	}
+	if (!origin)
+	{
+		origin = new QStandardItem(folder);
+		origin->setIcon(QIcon(FOLDER_ICON));
+		project->appendRow(origin);
+		QStandardItem* Rank = new QStandardItem("complex-0.0");
+		project->setChild(project->rowCount() - 1, 1, Rank);
+	}
+
+	for(int i=0;i<origin->rowCount();i++)
+	{
+		if (origin->child(i)->text() == filename)
+		{
+			QFile::remove(image_path);
+			emit errorProcess(QString::fromLocal8Bit("导入失败：文件名已存在！"));
+			return;
+		}
+	}
+
+	QStandardItem* img = new QStandardItem(filename);
+	img->setToolTip("complex");
+	QStandardItem* img_path = new QStandardItem(image_path);
+	img->setIcon(QIcon(IMAGEDATA_ICON));
+	origin->appendRow(img);
+	origin->setChild(origin->rowCount() - 1, 1, img_path);
+	DOC = new XMLFile;
+	ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+	{
+		QFile::remove(image_path);
+		QDir tmp_dir(project_path + QString("/") + folder);
+		tmp_dir.removeRecursively();
+		return;
+	}
+	ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Macao_SAR");
+	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+	{
+		QFile::remove(image_path);
+		QDir tmp_dir(project_path + QString("/") + folder);
+		tmp_dir.removeRecursively();
+		return;
+	}
+	ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+	{
+		QFile::remove(image_path);
+		QDir tmp_dir(project_path + QString("/") + folder);
+		tmp_dir.removeRecursively();
+		return;
+	}
+	emit sendModel(model);
+	emit endProcess();
+}
 void MyThread::import_TSX_patch(
 	QString polarization,
 	QString savepath,
@@ -493,6 +613,123 @@ void MyThread::import_TSX_patch(
 	emit endProcess();
 }
 
+void MyThread::import_Macao_patch(
+	QString savepath,
+	vector<QString> original_file_list, 
+	vector<QString> import_namelist,
+	QString dst_node,
+	QString dst_project,
+	QStandardItemModel* model
+)
+{
+	if (savepath.isEmpty() ||
+		dst_node.isEmpty() ||
+		dst_project.isEmpty() ||
+		original_file_list.empty() ||
+		import_namelist.empty() ||
+		model == NULL
+		)
+	{
+		return;
+	}
+
+	int ret=0;
+	QDir dir(savepath);
+	if (!dir.exists(dst_node))
+		ret = dir.mkdir(dst_node);
+	int n_images = original_file_list.size();
+	int process = 2;
+	DOC = new XMLFile;
+	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+	for (int i = 0; i < n_images; i++)
+	{
+		QString filename = import_namelist[i];
+        QString image_filename = original_file_list[i];
+        QFileInfo fileinfo(image_filename);
+        QString suffix = fileinfo.suffix();
+
+        QString temp_folder = QString("/") + dst_node + QString("/");
+        QString relative_path = temp_folder + filename + "." + suffix;
+        QString image_path = QString("%1%2%3.%4")
+            .arg(savepath)
+            .arg(temp_folder)
+            .arg(filename)
+            .arg(suffix);
+
+        ret = QFile::copy(image_filename, image_path) ? 0 : -1;
+
+		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+		{
+			QFile::remove(image_path);
+			QDir tmp_dir(savepath + QString("/") + dst_node);
+			tmp_dir.removeRecursively();
+			return;
+		}
+
+		QStandardItem* project = model->findItems(dst_project)[0];
+		if (!project) {
+			QFile::remove(image_path);
+			QDir tmp_dir(savepath + QString("/") + dst_node);
+			tmp_dir.removeRecursively();
+			return;
+		}
+		QModelIndex pro_index = model->indexFromItem(project);
+		QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+		QStandardItem* origin = NULL;
+		for (int i = 0; i < project->rowCount(); i++)
+		{
+			if (dst_node == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
+			{
+				origin = project->child(i); break;
+			}
+		}
+		if (!origin)
+		{
+			origin = new QStandardItem(dst_node);
+			origin->setIcon(QIcon(FOLDER_ICON));
+			project->appendRow(origin);
+			QStandardItem* Rank = new QStandardItem("complex-0.0");
+			project->setChild(project->rowCount() - 1, 1, Rank);
+		}
+		QStandardItem* img = new QStandardItem(filename);
+		img->setToolTip("complex");
+		QStandardItem* img_path = new QStandardItem(image_path);
+		img->setIcon(QIcon(IMAGEDATA_ICON));
+		origin->appendRow(img);
+		origin->setChild(origin->rowCount() - 1, 1, img_path);
+		
+		ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+		{
+			QFile::remove(image_path);
+			QDir tmp_dir(savepath + QString("/") + dst_node);
+			tmp_dir.removeRecursively();
+			return;
+		}
+		ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Macao_SAR");
+		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+		{
+			QFile::remove(image_path);
+			QDir tmp_dir(savepath + QString("/") + dst_node);
+			tmp_dir.removeRecursively();
+			return;
+		}
+		ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
+		{
+			QFile::remove(image_path);
+			QDir tmp_dir(savepath + QString("/") + dst_node);
+			tmp_dir.removeRecursively();
+			return;
+		}
+		process = double(i + 1) / double(n_images) * 100.0;
+		emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+	}
+	
+	emit sendModel(model);
+	emit endProcess();
+}
+
 void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_list, vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model)
 {
 	if (savepath.isEmpty() ||
@@ -506,7 +743,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 		return;
 	}
 
-	int ret;
+	int ret=0;
 	QDir dir(savepath);
 	if (!dir.exists(dst_node))
 		ret = dir.mkdir(dst_node);

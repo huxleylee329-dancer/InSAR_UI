@@ -1,0 +1,474 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ClutterSuppression</class>
+ <widget class="QWidget" name="ClutterSuppression">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1037</width>
+    <height>884</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Clutter Suppression</string>
+  </property>
+  <widget class="QWidget" name="layoutWidget">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>30</y>
+     <width>971</width>
+     <height>781</height>
+    </rect>
+   </property>
+   <layout class="QHBoxLayout" name="horizontalLayout" stretch="3,5">
+    <item>
+     <widget class="QWidget" name="LeftPanel" native="true">
+      <property name="styleSheet">
+       <string notr="true"/>
+      </property>
+      <widget class="QGroupBox" name="roiGroup">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>400</y>
+         <width>359</width>
+         <height>131</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>区域选择</string>
+       </property>
+       <widget class="QWidget" name="widget" native="true">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>20</y>
+          <width>341</width>
+          <height>111</height>
+         </rect>
+        </property>
+        <widget class="QPushButton" name="clearRoiButton">
+         <property name="geometry">
+          <rect>
+           <x>170</x>
+           <y>19</y>
+           <width>120</width>
+           <height>28</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>清除目标框选</string>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="clearRoiButton_2">
+         <property name="geometry">
+          <rect>
+           <x>170</x>
+           <y>62</y>
+           <width>120</width>
+           <height>28</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>清除杂波框选</string>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="startRoiButton">
+         <property name="geometry">
+          <rect>
+           <x>40</x>
+           <y>19</y>
+           <width>120</width>
+           <height>28</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>框选目标区域</string>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="startRoiButton_2">
+         <property name="geometry">
+          <rect>
+           <x>40</x>
+           <y>62</y>
+           <width>120</width>
+           <height>28</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>框选杂波区域</string>
+         </property>
+        </widget>
+       </widget>
+      </widget>
+      <widget class="QGroupBox" name="dataGroup">
+       <property name="geometry">
+        <rect>
+         <x>1</x>
+         <y>1</y>
+         <width>359</width>
+         <height>251</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>数据选择</string>
+       </property>
+       <widget class="QWidget" name="dataWidget" native="true">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>20</y>
+          <width>341</width>
+          <height>221</height>
+         </rect>
+        </property>
+        <widget class="QPushButton" name="loadImageButton">
+         <property name="geometry">
+          <rect>
+           <x>170</x>
+           <y>170</y>
+           <width>100</width>
+           <height>28</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>加载图像</string>
+         </property>
+        </widget>
+        <widget class="QWidget" name="layoutWidget">
+         <property name="geometry">
+          <rect>
+           <x>40</x>
+           <y>10</y>
+           <width>101</width>
+           <height>161</height>
+          </rect>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout">
+          <item>
+           <widget class="QLabel" name="projectLabel">
+            <property name="text">
+             <string>工程选择</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="inputNodeLabel">
+            <property name="text">
+             <string>输入节点</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="inputImageLabel">
+            <property name="text">
+             <string>输入图像</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="outputNodeLabel">
+            <property name="text">
+             <string>输出节点</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QWidget" name="layoutWidget">
+         <property name="geometry">
+          <rect>
+           <x>170</x>
+           <y>10</y>
+           <width>139</width>
+           <height>161</height>
+          </rect>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_2">
+          <item>
+           <widget class="QComboBox" name="projectComboBox"/>
+          </item>
+          <item>
+           <widget class="QComboBox" name="InputComboBox"/>
+          </item>
+          <item>
+           <widget class="QComboBox" name="inputImageComboBox"/>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="NodeWindowSpinBox"/>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </widget>
+      <widget class="QGroupBox" name="enlGroup">
+       <property name="geometry">
+        <rect>
+         <x>1</x>
+         <y>540</y>
+         <width>359</width>
+         <height>201</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>SCR结果</string>
+       </property>
+       <widget class="QWidget" name="enlWidget&#10;" native="true">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>20</y>
+          <width>341</width>
+          <height>161</height>
+         </rect>
+        </property>
+        <widget class="QWidget" name="layoutWidget">
+         <property name="geometry">
+          <rect>
+           <x>40</x>
+           <y>13</y>
+           <width>241</width>
+           <height>141</height>
+          </rect>
+         </property>
+         <layout class="QGridLayout" name="gridLayout">
+          <item row="0" column="0">
+           <widget class="QLabel" name="enlTitleLabel">
+            <property name="text">
+             <string>SCR结果:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="originalEnlLabel">
+            <property name="text">
+             <string>原图SCR：</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLabel" name="originalEnlValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="filteredEnlLabel">
+            <property name="text">
+             <string>滤波后SCR：</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLabel" name="filteredEnlValueLabel">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="beishuEnlLabel_2">
+            <property name="text">
+             <string>性能提升：</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLabel" name="beishu">
+            <property name="text">
+             <string>--</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </widget>
+      <widget class="QGroupBox" name="filterGroup">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>260</y>
+         <width>359</width>
+         <height>131</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>滤波设置</string>
+       </property>
+       <widget class="QWidget" name="widget_2" native="true">
+        <property name="geometry">
+         <rect>
+          <x>40</x>
+          <y>20</y>
+          <width>281</width>
+          <height>101</height>
+         </rect>
+        </property>
+        <widget class="QPushButton" name="runFilterButton">
+         <property name="geometry">
+          <rect>
+           <x>20</x>
+           <y>30</y>
+           <width>120</width>
+           <height>28</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>开始滤波</string>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="deleteFilterButton">
+         <property name="geometry">
+          <rect>
+           <x>150</x>
+           <y>30</y>
+           <width>120</width>
+           <height>28</height>
+          </rect>
+         </property>
+         <property name="text">
+          <string>加载滤波图像</string>
+         </property>
+        </widget>
+       </widget>
+      </widget>
+     </widget>
+    </item>
+    <item>
+     <widget class="QWidget" name="RightPanel" native="true">
+      <widget class="QWidget" name="imageToolbarWidget" native="true">
+       <property name="geometry">
+        <rect>
+         <x>1</x>
+         <y>1</y>
+         <width>599</width>
+         <height>51</height>
+        </rect>
+       </property>
+       <widget class="QComboBox" name="imageTypeComboBox">
+        <property name="geometry">
+         <rect>
+          <x>450</x>
+          <y>21</y>
+          <width>73</width>
+          <height>20</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QLabel" name="imageTypeLabel">
+        <property name="geometry">
+         <rect>
+          <x>371</x>
+          <y>21</y>
+          <width>48</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>显示图像</string>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QGroupBox" name="imageDisplayGroup">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>60</y>
+         <width>599</width>
+         <height>551</height>
+        </rect>
+       </property>
+       <property name="title">
+        <string>图像展示区</string>
+       </property>
+       <widget class="QWidget" name="imageDisplayWidget" native="true">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>30</y>
+          <width>561</width>
+          <height>491</height>
+         </rect>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QWidget" name="layoutWidget">
+       <property name="geometry">
+        <rect>
+         <x>410</x>
+         <y>630</y>
+         <width>141</width>
+         <height>101</height>
+        </rect>
+       </property>
+       <layout class="QFormLayout" name="formLayout">
+        <item row="0" column="0">
+         <widget class="QLabel" name="roiTopLeftLabel">
+          <property name="text">
+           <string>窗口左上坐标：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLabel" name="roiTopLeftValueLabel">
+          <property name="text">
+           <string>--</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="roiWidthLabel">
+          <property name="text">
+           <string>窗口宽度：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QLabel" name="label_4">
+          <property name="text">
+           <string>--</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="roiHeightLabel">
+          <property name="text">
+           <string>窗口高度：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QLabel" name="roiHeightValueLabel">
+          <property name="text">
+           <string>--</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="roiPixelCountLabel">
+          <property name="text">
+           <string>像素数：</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QLabel" name="roiPixelCountValueLabel">
+          <property name="text">
+           <string>--</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

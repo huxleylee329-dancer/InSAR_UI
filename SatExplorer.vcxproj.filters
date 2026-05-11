@@ -169,6 +169,12 @@
     <ClCompile Include="ALOS2ImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MacaoImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MacaoBatchImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="CSKImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -367,6 +373,45 @@
     <ClCompile Include="ADS\ResizeHandle.cpp">
       <Filter>ADS\Src</Filter>
     </ClCompile>
+    <ClCompile Include="SpeckleDenoise.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClutterSuppression.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BatchTargetRecognition.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TargetDetection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="basic2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="diff_boxcount.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Import_Macao.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BM3DWrapper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BM3D_cpp\bm3d.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BM3D_cpp\bm3d_wiener.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BM3D_cpp\group_3d.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BM3D_cpp\patch_2d.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BM3D_cpp\transform.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="InterfaceManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -492,6 +537,12 @@
     <QtMoc Include="include\ALOS2ImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\MacaoImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\MacaoBatchImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\CSKImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -547,9 +598,6 @@
       <Filter>QtNodes\Include</Filter>
     </QtMoc>
     <QtMoc Include="include\QtNodes\internal\NodeGraphicsObject.hpp">
-      <Filter>QtNodes\Include</Filter>
-    </QtMoc>
-    <QtMoc Include="include\SatExplorer.h">
       <Filter>QtNodes\Include</Filter>
     </QtMoc>
     <QtMoc Include="include\Registration_ui.h">
@@ -678,6 +726,21 @@
     <QtMoc Include="include\QtNodes\internal\NodeDetailWindow.hpp">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\SpeckleDenoise.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ClutterSuppression.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\BatchTargetRecognition.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TargetDetection.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Import_Macao.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\WorkflowUI.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -803,6 +866,21 @@
     <QtUic Include="ui\Unwrap_ui.ui">
       <Filter>Form Files</Filter>
     </QtUic>
+    <QtUic Include="ui\SpeckleDenoise.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\ClutterSuppression.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\BatchTargetRecognition.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\TargetDetection.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\Import_Macao.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\tinystr.h">
@@ -917,6 +995,33 @@
       <Filter>QtNodes\Include</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\BM3DWrapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\bm3d.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\bm3d_wiener.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\global_define.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\group_3d.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\patch_2d.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\transform.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\basic2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\diff_boxcount.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
