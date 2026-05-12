@@ -238,6 +238,25 @@ std::shared_ptr<NodeData> ExecutableNodeDelegateModel::getOutputData(PortIndex p
     return nullptr;
 }
 
+QJsonObject ExecutableNodeDelegateModel::save() const
+{
+    QJsonObject modelJson = NodeDelegateModel::save();
+
+    modelJson["execution-mode"] = static_cast<int>(_mode);
+
+    return modelJson;
+}
+
+void ExecutableNodeDelegateModel::load(QJsonObject const &json)
+{
+    NodeDelegateModel::load(json);
+
+    QJsonValue v = json["execution-mode"];
+    if (!v.isUndefined()) {
+        _mode = static_cast<ExecutionMode>(v.toInt());
+    }
+}
+
 void ExecutableNodeDelegateModel::setState(ExecutionState state)
 {
     _state = state;

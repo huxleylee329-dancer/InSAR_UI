@@ -69,6 +69,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     manifestLayout->addWidget(manifestLabel);
     m_manifestEdit = new QLineEdit();
     m_manifestEdit->setPlaceholderText("选择 .safe 目录中的 manifest 文件");
+    connect(m_manifestEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_manifestPath = text; });
     manifestLayout->addWidget(m_manifestEdit);
     QPushButton* manifestBrowse = new QPushButton("浏览...");
     manifestLayout->addWidget(manifestBrowse);
@@ -83,6 +84,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     podLayout->addWidget(podLabel);
     m_podEdit = new QLineEdit();
     m_podEdit->setPlaceholderText("可选，留空则不使用精轨文件");
+    connect(m_podEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_podPath = text; });
     podLayout->addWidget(m_podEdit);
     QPushButton* podBrowse = new QPushButton("浏览...");
     podLayout->addWidget(podBrowse);
@@ -144,6 +146,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     fileNameLayout->addWidget(fileNameLabel);
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
+    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     fileNameLayout->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameLayout);
 
@@ -388,6 +391,43 @@ void Sentinel1ImportNode::setExecutionMode(ExecutionMode mode)
 void Sentinel1ImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject Sentinel1ImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    json["manifestPath"] = m_manifestPath;
+    json["podPath"] = m_podPath;
+    json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : "iw1";
+    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "vv";
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputFileName"] = m_outputFileName;
+    return json;
+}
+
+void Sentinel1ImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_manifestPath = json["manifestPath"].toString();
+    m_podPath = json["podPath"].toString();
+    m_outputFileName = json["outputFileName"].toString();
+
+    if (m_manifestEdit) m_manifestEdit->setText(m_manifestPath);
+    if (m_podEdit) m_podEdit->setText(m_podPath);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString());
+    if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
+
+    QString subswath = json["subswath"].toString("iw1");
+    if (m_subswathCombo) {
+        int idx = m_subswathCombo->findText(subswath);
+        if (idx >= 0) m_subswathCombo->setCurrentIndex(idx);
+    }
+
+    QString pol = json["polarization"].toString("vv");
+    if (m_polarizationCombo) {
+        int idx = m_polarizationCombo->findText(pol);
+        if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
+    }
 }
 
 } // namespace QtNodes

@@ -12,11 +12,11 @@ OpenProject::OpenProject(QWidget* parent) :
 
 OpenProject::~OpenProject()
 {
-    if (!this->project)
+    if (this->project)
     {
         delete(this->project);
         this->project = NULL;
-    }     
+    }
 }
 
 void OpenProject::LoadModel(QStandardItemModel* treeview)
@@ -64,6 +64,10 @@ void OpenProject::on_buttonBox_accepted()
             this->model->setItem(this->model->rowCount()-1, 1, Project_Path);
             for (p = p->NextSiblingElement(); p != NULL; p = p->NextSiblingElement())
             {
+                // 跳过非 DataNode 元素（如 lastInterface、workflow）
+                if (!p->Attribute("name"))
+                    continue;
+
                 QStandardItem* Data_Node = new QStandardItem;
                 Data_Node->setText(p->Attribute("name"));
                 Data_Node->setToolTip(Project->text());
@@ -130,6 +134,7 @@ void OpenProject::on_buttonBox_accepted()
     }
     else
         QMessageBox::warning(NULL, "Warning!", "*.Insar is empty!");
+    emit projectOpened(filename);
     close();
 }
 

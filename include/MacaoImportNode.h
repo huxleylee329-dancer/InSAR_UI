@@ -28,6 +28,9 @@ public:
     QString caption() const override { return QStringLiteral("Macao Import"); }
     QString name() const override { return QStringLiteral("MacaoImport"); }
 
+    QJsonObject save() const override;
+    void load(QJsonObject const &json) override;
+
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:

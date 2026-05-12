@@ -84,11 +84,18 @@ public:
     PropertyEditor* propertyEditor() const { return m_propertyEditor; }
     WorkflowBrowser* workflowBrowser() const { return m_workflowBrowser; }
 
+    // 工作流状态保存/恢复（供项目 save/load 使用）
+    QJsonObject saveWorkflowToJson() const;
+    void loadWorkflowFromJson(const QJsonObject& json);
+
+    // 清空工作流（供关闭工程使用）
+    void clear();
+
 private slots:
     // File operations
     void onNew();
-    void onSave();
-    void onLoad();
+    void onExport();
+    void onImport();
 
     // Edit operations
     void onClear();
@@ -172,8 +179,8 @@ private:
     // Toolbar components
     QToolBar *m_toolbar;
     QAction *m_actionNew;
-    QAction *m_actionSave;
-    QAction *m_actionLoad;
+    QAction *m_actionExport;
+    QAction *m_actionImport;
     QAction *m_actionClear;
     QAction *m_actionDelete;
     QAction *m_actionExit;

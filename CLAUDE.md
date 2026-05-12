@@ -12,7 +12,7 @@ Output directory: `bin/`
 - Debug: `SatExplorer.exe` with `_d.dll` suffix libraries
 - Release: `SatExplorer.exe` without debug suffix
 
-User always builds by himeself in another visual studio environment. Don't try to build after coding.
+User always builds by himself in another visual studio environment. Don't try to build after coding.
 
 ## Architecture
 
@@ -67,7 +67,7 @@ All actual InSAR processing is done by external DLLs loaded from `bin/`:
 
 ### UI Architecture
 
-- 28 Qt Designer `.ui` files in `ui/` directory
+- 33 Qt Designer `.ui` files in `ui/` directory
 - Each processing module has a dedicated dialog (e.g., `Filter_ui`, `Unwrap_ui`, `import_sentinel`)
 - Custom widgets: `ColorBar` (color scale overlay), `ImageView` (custom image viewer)
 - QCustomPlot library for plotting/baseline visualization
@@ -132,7 +132,7 @@ WelcomeScreen (startup) → MainWindow (single top-level)
 **New Files Added:**
 - `include/IApplicationInterface.h` - Abstract interface for all switchable interfaces
 - `include/InterfaceManager.h/cpp` - Manages interface switching and persistence
-- `include/WelcomeScreen.h/cpp` - VS Code-style welcome screen with new/open/recent projects
+- `include/WelcomeScreenUI.h/cpp` - VS Code-style welcome screen with new/open/recent projects
 - `include/WorkspaceUI.h/cpp` - Encapsulates traditional workspace interface
 - `include/WorkflowUI.h/cpp` - Encapsulates node-based workflow interface (refactored from NodeEditorWindow)
 

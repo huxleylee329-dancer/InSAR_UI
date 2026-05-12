@@ -46,6 +46,9 @@ extern void applyTheme(const QString &theme);
 #include"Dem_ui.h"
 #include"SLC_deramp.h"
 #include"Baseline_Formation.h"
+#include <QJsonDocument>
+#include <QJsonObject>
+#include "tinyxml.h"
 #include"SBAS_time_series_analysis.h"
 #include"SBAS_reference_reselection.h"
 #include<Export_KML.h>
@@ -118,6 +121,12 @@ MainWindow::MainWindow(QWidget* parent)
     QSettings settings("Config.ini", QSettings::IniFormat);
     m_currentTheme = settings.value("Appearance/Theme", "light").toString();
 
+    // 创建最近打开子菜单并插入文件菜单
+    m_recentMenu = new QMenu("最近打开", this);
+    m_recentMenu->setIcon(QIcon(":/SatExplorer/icon/recen_open.png"));
+    ui.File->insertMenu(ui.actionSave, m_recentMenu);
+    updateRecentMenu();
+
     // Setup theme menu (after setting m_currentTheme)
     setupThemeMenu();
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
@@ -158,6 +167,12 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
     // Load initial theme from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);
     m_currentTheme = settings.value("Appearance/Theme", "light").toString();
+
+    // 创建最近打开子菜单并插入文件菜单
+    m_recentMenu = new QMenu("最近打开", this);
+    m_recentMenu->setIcon(QIcon(":/SatExplorer/icon/recen_open.png"));
+    ui.File->insertMenu(ui.actionSave, m_recentMenu);
+    updateRecentMenu();
 
     connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
@@ -227,6 +242,11 @@ void MainWindow::Addproject(QString name, QString save_path)
 {
     ui.treeView->NewProject(name, save_path);
     RenewTree(ui.treeView->model);
+
+    // 设置工程路径并加载 XML，使后续保存能正常工作
+    QString projectFile = save_path + "/" + name + ".insar";
+    m_projectPath = projectFile;
+    this->project->XMLFile_load(projectFile.toStdString().c_str());
 }
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
@@ -332,6 +352,8 @@ void MainWindow::Loading(QString Data_path, QString ImageType)
 }
 void MainWindow::open_from_project_file(QString str)
 {
+    // 关闭当前工程（不保存），避免两个工程状态共存
+    closeCurrentProject();
 
     QString filename = str;
     QFileInfo fileinfo = QFileInfo(filename);
@@ -384,6 +406,10 @@ void MainWindow::open_from_project_file(QString str)
             model->setItem(model->rowCount() - 1, 1, Project_Path);
             for (p = p->NextSiblingElement(); p != NULL; p = p->NextSiblingElement())
             {
+                // 跳过非 DataNode 元素（如 lastInterface、workflow）
+                if (!p->Attribute("name"))
+                    continue;
+
                 QStandardItem* Data_Node = new QStandardItem;
                 Data_Node->setText(p->Attribute("name"));
                 Data_Node->setToolTip(Project->text());
@@ -444,6 +470,9 @@ void MainWindow::open_from_project_file(QString str)
             }
             //model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
             this->RenewTree(model);
+
+            // 加载工作流状态
+            loadWorkflowFromProject(str);
         }
         this->project->XMLFile_save(str.toStdString().c_str());
     }
@@ -560,6 +589,9 @@ void MainWindow::ShowImage(QModelIndex image)
 }
 void MainWindow::on_actionNew_triggered()
 {
+    // 关闭当前工程（不保存），避免两个工程状态共存
+    closeCurrentProject();
+
     NewProject* newpro = new NewProject;
     connect(this, &MainWindow::sendModel, newpro, &NewProject::ReceiveModel);
     emit sendModel(model);
@@ -570,12 +602,270 @@ void MainWindow::on_actionNew_triggered()
 }
 void MainWindow::on_actionOpen_triggered()
 {
+    // 关闭当前工程（不保存），避免两个工程状态共存
+    closeCurrentProject();
+
     OpenProject* open_Window = new OpenProject;
     open_Window->show();
     connect(this, &MainWindow::sendModel, open_Window, &OpenProject::LoadModel);
     emit sendModel(model);
     connect(open_Window, &OpenProject::sendModel, this, &MainWindow::RenewTree);
+    connect(open_Window, &OpenProject::projectOpened, this, &MainWindow::loadWorkflowFromProject);
     open_Window->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+void MainWindow::on_actionSave_triggered()
+{
+    if (m_projectPath.isEmpty()) {
+        QMessageBox::warning(this, "提示", "没有打开的工程，无法保存。");
+        return;
+    }
+    saveWorkflowToProject(m_projectPath);
+    this->project->XMLFile_save(m_projectPath.toStdString().c_str());
+}
+void MainWindow::closeCurrentProject()
+{
+    if (m_projectPath.isEmpty())
+        return;
+
+    // 清空工程路径
+    m_projectPath.clear();
+
+    // 重置 XMLFile
+    if (this->project) {
+        delete this->project;
+        this->project = new XMLFile;
+    }
+
+    // 清空主树形视图模型
+    model->clear();
+    model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
+    model->setHeaderData(1, Qt::Horizontal, tr("Path"));
+
+    // 清空工作区树形视图
+    if (m_workspaceUI && m_workspaceUI->treeView()) {
+        m_workspaceUI->treeView()->model->clear();
+        m_workspaceUI->treeView()->model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
+        m_workspaceUI->treeView()->model->setHeaderData(1, Qt::Horizontal, tr("Path"));
+        m_workspaceUI->treeView()->setColumnHidden(1, true);
+    }
+
+    // 清空流程编辑器
+    if (m_workflowUI) {
+        m_workflowUI->clear();
+    }
+
+    // 重置两个界面的工程上下文
+    if (m_workspaceUI)
+        m_workspaceUI->setProjectContext(model, QString(), QString());
+    if (m_workflowUI)
+        m_workflowUI->setProjectContext(model, QString(), QString());
+
+    // 禁用处理菜单（恢复到初始状态）
+    ui.Process->setDisabled(1);
+    ui.menuSAR->setDisabled(1);
+    ui.menuInSAR->setDisabled(1);
+    ui.menuDInSAR->setDisabled(1);
+
+    // 清空标签页
+    while (ui.tabWidget->count() > 0)
+        ui.tabWidget->removeTab(0);
+
+    setWindowTitle("SatExplorer");
+}
+
+void MainWindow::on_actionClose_triggered()
+{
+    if (!m_projectPath.isEmpty()) {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this, "关闭工程",
+            "是否保存当前工程？",
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+
+        if (reply == QMessageBox::Save) {
+            saveWorkflowToProject(m_projectPath);
+            this->project->XMLFile_save(m_projectPath.toStdString().c_str());
+        } else if (reply == QMessageBox::Cancel) {
+            return;
+        }
+    }
+
+    closeCurrentProject();
+
+    // 切换到流程编辑器界面
+    if (m_interfaceManager) {
+        m_interfaceManager->switchToInterface("workflow");
+        updateInterfaceMenuCheckState();
+    }
+}
+void MainWindow::saveWorkflowToProject(const QString& projectFilePath)
+{
+    if (!m_workflowUI || !this->project)
+        return;
+
+    QJsonObject workflowJson = m_workflowUI->saveWorkflowToJson();
+    if (workflowJson.isEmpty())
+        return;
+
+    // 格式化输出 + CDATA 包裹，使人可以直接阅读
+    m_workflowBytes = QJsonDocument(workflowJson).toJson(QJsonDocument::Indented);
+
+    TiXmlElement* root = nullptr;
+    this->project->get_root(root);
+    if (!root)
+        return;
+
+    TiXmlElement* pnode = nullptr;
+    this->project->_find_node(root, "workflow", pnode);
+    if (!pnode) {
+        pnode = new TiXmlElement("workflow");
+        root->LinkEndChild(pnode);
+    } else {
+        pnode->Clear();
+    }
+    TiXmlText* textNode = new TiXmlText(m_workflowBytes.constData());
+    textNode->SetCDATA(true);
+    pnode->LinkEndChild(textNode);
+}
+void MainWindow::loadWorkflowFromProject(const QString& projectFilePath)
+{
+    if (!m_workflowUI || projectFilePath.isEmpty())
+        return;
+
+    // 记录当前工程路径
+    m_projectPath = projectFilePath;
+
+    // 加载项目 XML 到 this->project，确保后续保存不会写空文件
+    if (this->project)
+    {
+        int ret = this->project->XMLFile_load(projectFilePath.toStdString().c_str());
+        if (ret < 0)
+            return;
+    }
+
+    // 读取 <workflow> 元素
+    TiXmlElement* root = nullptr;
+    this->project->get_root(root);
+    if (!root)
+        return;
+
+    TiXmlElement* workflowNode = nullptr;
+    this->project->_find_node(root, "workflow", workflowNode);
+    if (!workflowNode || !workflowNode->GetText())
+        return;
+
+    QByteArray workflowData = QByteArray(workflowNode->GetText());
+    QJsonDocument doc = QJsonDocument::fromJson(workflowData);
+    if (doc.isObject()) {
+        m_workflowUI->loadWorkflowFromJson(doc.object());
+    }
+
+    // 切换到上次使用的界面
+    if (m_interfaceManager && this->project)
+    {
+        QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(this->project);
+        if (!lastInterface.isEmpty()) {
+            m_interfaceManager->switchToInterface(lastInterface);
+        } else {
+            m_interfaceManager->switchToInterface("workspace");
+        }
+        updateInterfaceMenuCheckState();
+    }
+
+    // 添加到最近打开列表
+    addToRecentProjects(projectFilePath);
+}
+void MainWindow::addToRecentProjects(const QString& path)
+{
+    if (path.isEmpty())
+        return;
+
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
+
+    // 移除已存在的相同路径，避免重复
+    recent.removeAll(path);
+
+    // 插入到列表头部
+    recent.prepend(path);
+
+    // 最多保留 10 个
+    while (recent.size() > 10)
+        recent.removeLast();
+
+    settings.setValue("Recent/Projects", recent);
+
+    // 刷新 WelcomeScreen 和文件菜单的最近项目列表
+    if (m_welcomeUI)
+        m_welcomeUI->refreshRecentProjects();
+    updateRecentMenu();
+}
+void MainWindow::updateRecentMenu()
+{
+    m_recentMenu->clear();
+
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
+
+    if (recent.isEmpty()) {
+        QAction* emptyAction = m_recentMenu->addAction("无最近项目");
+        emptyAction->setEnabled(false);
+        return;
+    }
+
+    for (int i = 0; i < recent.size(); ++i) {
+        const QString& path = recent[i];
+        if (path.isEmpty())
+            continue;
+
+        QFileInfo info(path);
+        QString displayName = info.completeBaseName();
+        QString displayPath = info.path();
+
+        // 显示格式：项目名  —  路径
+        QAction* action = m_recentMenu->addAction(displayName + "  —  " + displayPath);
+        action->setData(path);
+        action->setToolTip(path);
+
+        // 用序号标记，便于识别
+        action->setShortcut(QKeySequence());
+
+        connect(action, &QAction::triggered, this, &MainWindow::openRecentProject);
+    }
+
+    m_recentMenu->addSeparator();
+    QAction* clearAction = m_recentMenu->addAction("清除最近列表");
+    connect(clearAction, &QAction::triggered, this, [this]() {
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        settings.remove("Recent/Projects");
+        updateRecentMenu();
+        if (m_welcomeUI)
+            m_welcomeUI->refreshRecentProjects();
+    });
+}
+void MainWindow::openRecentProject()
+{
+    QAction* action = qobject_cast<QAction*>(sender());
+    if (!action)
+        return;
+
+    QString filePath = action->data().toString();
+    if (filePath.isEmpty() || !QFileInfo::exists(filePath)) {
+        QMessageBox::warning(this, "提示", "项目文件不存在：" + filePath);
+        return;
+    }
+
+    open_from_project_file(filePath);
+
+    // 切换到上次使用的界面
+    if (m_interfaceManager && this->project) {
+        QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(this->project);
+        if (!lastInterface.isEmpty()) {
+            m_interfaceManager->switchToInterface(lastInterface);
+        } else {
+            m_interfaceManager->switchToInterface("workspace");
+        }
+        updateInterfaceMenuCheckState();
+    }
 }
 void MainWindow::on_actionTSX_triggered()
 {
@@ -858,6 +1148,14 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
         m_workspaceUI->treeView()->setColumnHidden(1, true);
         m_workspaceUI->treeView()->setModel(copy);
         m_workspaceUI->treeView()->model = copy;
+    }
+
+    // 重新加载项目 XML，确保 MyThread 导入的 DataNode 不会丢失
+    // MyThread 用独立 XMLFile 实例写入 DataNode，MainWindow::project 不知道这些变更
+    // 下次保存会用旧数据覆盖磁盘，所以每次导入后必须重新加载
+    if (!m_projectPath.isEmpty() && this->project)
+    {
+        this->project->XMLFile_load(m_projectPath.toStdString().c_str());
     }
 
 }

@@ -3,6 +3,7 @@
 #endif
 
 #include "Sentinel1BatchImportNode.h"
+#include <QJsonArray>
 #include <QFileInfo>
 #include <QRegularExpression>
 
@@ -325,6 +326,49 @@ void Sentinel1BatchImportNode::setExecutionMode(ExecutionMode mode)
 void Sentinel1BatchImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject Sentinel1BatchImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    QJsonArray pathsArray;
+    for (const QString &path : m_manifestPaths)
+        pathsArray.append(path);
+    json["manifestPaths"] = pathsArray;
+    json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : "iw1";
+    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "vv";
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    return json;
+}
+
+void Sentinel1BatchImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_manifestPaths.clear();
+    QJsonArray pathsArray = json["manifestPaths"].toArray();
+    for (const QJsonValue &val : pathsArray)
+        m_manifestPaths.append(val.toString());
+
+    if (m_fileListWidget) {
+        m_fileListWidget->clear();
+        for (const QString &path : m_manifestPaths)
+            m_fileListWidget->addItem(QFileInfo(path).fileName());
+    }
+
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("S1_Batch_Import"));
+
+    QString subswath = json["subswath"].toString("iw1");
+    if (m_subswathCombo) {
+        int idx = m_subswathCombo->findText(subswath);
+        if (idx >= 0) m_subswathCombo->setCurrentIndex(idx);
+    }
+
+    QString pol = json["polarization"].toString("vv");
+    if (m_polarizationCombo) {
+        int idx = m_polarizationCombo->findText(pol);
+        if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
+    }
 }
 
 } // namespace QtNodes

@@ -27,13 +27,14 @@ SimpleSourceNode::SimpleSourceNode()
 
 QJsonObject SimpleSourceNode::save() const
 {
-    QJsonObject modelJson;
+    QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["text"] = QJsonValue::fromVariant(_value);
     return modelJson;
 }
 
 void SimpleSourceNode::load(QJsonObject const &p)
 {
+    ExecutableNodeDelegateModel::load(p);
     _value = p["text"].toString("Hello World");
     _edit->setText(_value);
 }
@@ -206,12 +207,12 @@ SimpleMathNode::SimpleMathNode()
 
 QJsonObject SimpleMathNode::save() const
 {
-    return QJsonObject();
+    return ExecutableNodeDelegateModel::save();
 }
 
 void SimpleMathNode::load(QJsonObject const &p)
 {
-    Q_UNUSED(p);
+    ExecutableNodeDelegateModel::load(p);
 }
 
 unsigned int SimpleMathNode::nPorts(PortType portType) const
@@ -407,12 +408,12 @@ SimpleDisplayNode::SimpleDisplayNode()
 
 QJsonObject SimpleDisplayNode::save() const
 {
-    return QJsonObject();
+    return ExecutableNodeDelegateModel::save();
 }
 
 void SimpleDisplayNode::load(QJsonObject const &p)
 {
-    Q_UNUSED(p);
+    ExecutableNodeDelegateModel::load(p);
 }
 
 unsigned int SimpleDisplayNode::nPorts(PortType portType) const
@@ -576,13 +577,14 @@ CardSimpleSourceNode::CardSimpleSourceNode()
 
 QJsonObject CardSimpleSourceNode::save() const
 {
-    QJsonObject modelJson;
+    QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["text"] = QJsonValue::fromVariant(_value);
     return modelJson;
 }
 
 void CardSimpleSourceNode::load(QJsonObject const &p)
 {
+    ExecutableNodeDelegateModel::load(p);
     _value = p["text"].toString("Hello World");
     _edit->setText(_value);
 }
@@ -934,10 +936,9 @@ QJsonObject CardSimpleDisplayNode::save() const
 {
     return QJsonObject();
 }
-
-void CardSimpleDisplayNode::load(QJsonObject const &p)
+void CardSimpleDisplayNode::load(QJsonObject const &json)
 {
-    Q_UNUSED(p);
+    ExecutableNodeDelegateModel::load(json);
 }
 
 unsigned int CardSimpleDisplayNode::nPorts(PortType portType) const

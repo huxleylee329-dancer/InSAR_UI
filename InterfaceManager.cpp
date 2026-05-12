@@ -142,7 +142,8 @@ void InterfaceManager::saveLastInterfaceToProject(XMLFile *projectXml) const
         root->LinkEndChild(pnode);
     }
 
-    // Set the text
+    // Set the text (must Clear first, otherwise TiXmlText appends and causes concatenation)
+    pnode->Clear();
     std::string interfaceId = m_currentInterface->id().toStdString();
     TiXmlText* textNode = new TiXmlText(interfaceId.c_str());
     pnode->LinkEndChild(textNode);

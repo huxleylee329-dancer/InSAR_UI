@@ -19,6 +19,7 @@ private:
 
 signals:
     void sendModel(QStandardItemModel* );
+    void projectOpened(const QString& filePath);
 private slots:
     void on_BrowseButton_pressed();
     void on_buttonBox_accepted();

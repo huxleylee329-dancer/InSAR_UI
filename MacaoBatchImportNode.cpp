@@ -1,8 +1,9 @@
-#ifdef _MSC_VER
+ï»¿#ifdef _MSC_VER
 #pragma execution_character_set("utf-8")
 #endif
 
 #include "MacaoBatchImportNode.h"
+#include <QJsonArray>
 
 #include <QDir>
 #include <QFileInfo>
@@ -56,8 +57,8 @@ QWidget* MacaoBatchImportNode::createWidget()
     topSection->addWidget(m_fileListWidget);
 
     auto* buttonLayout = new QVBoxLayout();
-    QPushButton* addFiles = new QPushButton("Ìí¼Ó");
-    QPushButton* removeFiles = new QPushButton("ÒÆ³ý");
+    QPushButton* addFiles = new QPushButton("ï¿½ï¿½ï¿½ï¿½");
+    QPushButton* removeFiles = new QPushButton("ï¿½Æ³ï¿½");
     buttonLayout->addWidget(addFiles);
     buttonLayout->addWidget(removeFiles);
     topSection->addLayout(buttonLayout);
@@ -65,7 +66,7 @@ QWidget* MacaoBatchImportNode::createWidget()
     mainLayout->addLayout(topSection);
 
     auto* projectRow = new QHBoxLayout();
-    projectRow->addWidget(new QLabel("Ä¿±ê¹¤³Ì£º"));
+    projectRow->addWidget(new QLabel("Ä¿ï¿½ê¹¤ï¿½Ì£ï¿½"));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
     if (!projectName().isEmpty())
@@ -74,7 +75,7 @@ QWidget* MacaoBatchImportNode::createWidget()
     mainLayout->addLayout(projectRow);
 
     auto* nodeRow = new QHBoxLayout();
-    nodeRow->addWidget(new QLabel("Ä¿±ê½Úµã£º"));
+    nodeRow->addWidget(new QLabel("Ä¿ï¿½ï¿½Úµã£º"));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("Macao_Batch_Import");
     nodeRow->addWidget(m_outputNodeNameEdit);
@@ -92,7 +93,7 @@ void MacaoBatchImportNode::executeImport()
 {
     if (m_imagePaths.isEmpty())
     {
-        onError("ÇëÖÁÉÙÌí¼ÓÒ»¸ö Macao Í¼ÏñÎÄ¼þ¡£");
+        onError("ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ Macao Í¼ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½");
         return;
     }
 
@@ -103,7 +104,7 @@ void MacaoBatchImportNode::executeImport()
     {
         if (!QFileInfo::exists(imagePath))
         {
-            onError("Macao Í¼ÏñÎÄ¼þ²»´æÔÚ£º" + imagePath);
+            onError("Macao Í¼ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½" + imagePath);
             return;
         }
 
@@ -173,7 +174,7 @@ void MacaoBatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
         _widget,
-        "µ¼Èë Macao Êý¾Ý",
+        "ï¿½ï¿½ï¿½ï¿½ Macao ï¿½ï¿½ï¿½ï¿½",
         QDir::currentPath(),
         "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)"
     );
@@ -266,6 +267,35 @@ void MacaoBatchImportNode::setExecutionMode(ExecutionMode mode)
 void MacaoBatchImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject MacaoBatchImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    QJsonArray pathsArray;
+    for (const QString &path : m_imagePaths)
+        pathsArray.append(path);
+    json["imagePaths"] = pathsArray;
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    return json;
+}
+
+void MacaoBatchImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_imagePaths.clear();
+    QJsonArray pathsArray = json["imagePaths"].toArray();
+    for (const QJsonValue &val : pathsArray)
+        m_imagePaths.append(val.toString());
+
+    if (m_fileListWidget) {
+        m_fileListWidget->clear();
+        for (const QString &path : m_imagePaths)
+            m_fileListWidget->addItem(QFileInfo(path).fileName());
+    }
+
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("Macao_Batch_Import"));
 }
 
 } // namespace QtNodes

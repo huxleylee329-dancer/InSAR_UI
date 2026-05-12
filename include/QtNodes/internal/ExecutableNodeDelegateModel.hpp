@@ -82,6 +82,10 @@ public:
     void setOutputData(PortIndex portIndex, std::shared_ptr<NodeData> data);
     std::shared_ptr<NodeData> getOutputData(PortIndex portIndex);
 
+    QJsonObject save() const override;
+
+    void load(QJsonObject const &json) override;
+
     /// Get widget parameters for display and editing in Properties panel
     /// Returns parameters from node's widgets (e.g., QLineEdit, QSpinBox, etc.)
     /// Default implementation returns empty vector (no parameters)

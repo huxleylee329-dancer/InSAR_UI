@@ -28,6 +28,9 @@ public:
     QString caption() const override { return QStringLiteral("Macao Batch Import"); }
     QString name() const override { return QStringLiteral("MacaoBatchImport"); }
 
+    QJsonObject save() const override;
+    void load(QJsonObject const &json) override;
+
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:

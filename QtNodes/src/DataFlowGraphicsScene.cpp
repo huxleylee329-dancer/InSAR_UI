@@ -6,7 +6,7 @@
 #include "NodeGraphicsObject.hpp"
 #include "UndoCommands.hpp"
 
-#include <QtWidgets/QFileDialog>
+#include <QtCore/QFileInfo>
 #include <QtWidgets/QGraphicsSceneMoveEvent>
 #include <QtWidgets/QHeaderView>
 #include <QtWidgets/QLineEdit>
@@ -144,37 +144,25 @@ QMenu *DataFlowGraphicsScene::createSceneMenu(QPointF const scenePos)
     return modelMenu;
 }
 
-bool DataFlowGraphicsScene::save() const
+bool DataFlowGraphicsScene::save(const QString &filePath) const
 {
-    QString fileName = QFileDialog::getSaveFileName(nullptr,
-                                                    tr("Open Flow Scene"),
-                                                    QDir::homePath(),
-                                                    tr("Flow Scene Files (*.flow)"));
+    if (filePath.isEmpty())
+        return false;
 
-    if (!fileName.isEmpty()) {
-        if (!fileName.endsWith("flow", Qt::CaseInsensitive))
-            fileName += ".flow";
-
-        QFile file(fileName);
-        if (file.open(QIODevice::WriteOnly)) {
-            file.write(QJsonDocument(_graphModel.save()).toJson());
-            return true;
-        }
+    QFile file(filePath);
+    if (file.open(QIODevice::WriteOnly)) {
+        file.write(QJsonDocument(_graphModel.save()).toJson());
+        return true;
     }
     return false;
 }
 
-bool DataFlowGraphicsScene::load()
+bool DataFlowGraphicsScene::load(const QString &filePath)
 {
-    QString fileName = QFileDialog::getOpenFileName(nullptr,
-                                                    tr("Open Flow Scene"),
-                                                    QDir::homePath(),
-                                                    tr("Flow Scene Files (*.flow)"));
-
-    if (!QFileInfo::exists(fileName))
+    if (filePath.isEmpty() || !QFileInfo::exists(filePath))
         return false;
 
-    QFile file(fileName);
+    QFile file(filePath);
 
     if (!file.open(QIODevice::ReadOnly))
         return false;

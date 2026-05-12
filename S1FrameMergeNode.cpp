@@ -5,6 +5,8 @@
 #include "S1FrameMergeNode.h"
 #include "WorkflowUI.h"
 #include <QFileInfo>
+#include <QJsonObject>
+#include <QJsonValue>
 
 namespace QtNodes {
 
@@ -94,6 +96,47 @@ void S1FrameMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         createWidget();
     }
     return _widget;
+}
+
+QJsonObject S1FrameMergeNode::save() const
+{
+    QJsonObject modelJson = ExecutableNodeDelegateModel::save();
+
+    if (m_outputNodeNameEdit)
+        modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
+
+    if (m_indexSpins[0])
+        modelJson["index1"] = m_indexSpins[0]->value();
+    if (m_indexSpins[1])
+        modelJson["index2"] = m_indexSpins[1]->value();
+
+    return modelJson;
+}
+
+void S1FrameMergeNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+
+    QJsonValue vName = json["outputNodeName"];
+    if (!vName.isUndefined())
+    {
+        if (m_outputNodeNameEdit)
+            m_outputNodeNameEdit->setText(vName.toString());
+    }
+
+    QJsonValue v1 = json["index1"];
+    if (!v1.isUndefined())
+    {
+        if (m_indexSpins[0])
+            m_indexSpins[0]->setValue(v1.toInt());
+    }
+
+    QJsonValue v2 = json["index2"];
+    if (!v2.isUndefined())
+    {
+        if (m_indexSpins[1])
+            m_indexSpins[1]->setValue(v2.toInt());
+    }
 }
 
 void S1FrameMergeNode::createWidget()

@@ -107,6 +107,10 @@ public:
 
     QWidget *embeddedWidget() override;
 
+    QJsonObject save() const override;
+
+    void load(QJsonObject const &json) override;
+
     bool resizable() const override { return true; }
 
     QSize minimumSize() const

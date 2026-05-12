@@ -58,6 +58,7 @@ private:
     int TabCount_Before = -1;
 
     QTimer *t;
+    QMenu* m_recentMenu;      // 最近打开子菜单
     QString m_currentTheme;  // Current theme: light, dark, fusion
     XMLFile* project;
     QStandardItemModel* model;
@@ -70,6 +71,12 @@ private:
     WorkspaceUI* m_workspaceUI;
     WorkflowUI* m_workflowUI;
     WelcomeScreenUI* m_welcomeUI;
+
+    // 当前打开的工程文件路径
+    QString m_projectPath;
+
+    // 保存工作流 JSON 数据（TiXmlText 不复制字符串，需要保持生命周期）
+    QByteArray m_workflowBytes;
 
 signals:
     void sendModel(QStandardItemModel*);
@@ -120,6 +127,11 @@ private slots:
     // Interface switching
     void switchToWorkspace();
     void switchToWorkflow();
+
+    // 保存工程
+    void on_actionSave_triggered();
+    // 关闭工程
+    void on_actionClose_triggered();
 private:
     void setupThemeMenu();
     void setTheme(const QString &theme);
@@ -127,4 +139,16 @@ private:
     void setupInterfaceSwitchingMenu();
     void updateInterfaceMenuCheckState();
     void initializeInterfaces(QStandardItemModel* model, XMLFile* project, QString filePath = QString());
+
+    // 关闭当前工程（不含确认对话框），供新建/打开工程前调用
+    void closeCurrentProject();
+
+    // 工作流状态保存/加载
+    void saveWorkflowToProject(const QString& projectFilePath);
+    void loadWorkflowFromProject(const QString& projectFilePath);
+
+    // 最近打开项目管理
+    void addToRecentProjects(const QString& path);
+    void updateRecentMenu();
+    void openRecentProject();
 };

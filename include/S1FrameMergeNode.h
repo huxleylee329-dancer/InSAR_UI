@@ -43,6 +43,10 @@ public:
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     ::QWidget* embeddedWidget() override;
 
+    QJsonObject save() const override;
+
+    void load(QJsonObject const &json) override;
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 

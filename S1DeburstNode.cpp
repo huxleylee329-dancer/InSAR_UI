@@ -6,6 +6,8 @@
 #include "WorkflowUI.h"
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QJsonObject>
+#include <QJsonValue>
 
 namespace QtNodes {
 
@@ -92,6 +94,28 @@ void S1DeburstNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         createWidget();
     }
     return _widget;
+}
+
+QJsonObject S1DeburstNode::save() const
+{
+    QJsonObject modelJson = ExecutableNodeDelegateModel::save();
+
+    if (m_outputNodeNameEdit)
+        modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
+
+    return modelJson;
+}
+
+void S1DeburstNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+
+    QJsonValue v = json["outputNodeName"];
+    if (!v.isUndefined())
+    {
+        if (m_outputNodeNameEdit)
+            m_outputNodeNameEdit->setText(v.toString());
+    }
 }
 
 void S1DeburstNode::createWidget()

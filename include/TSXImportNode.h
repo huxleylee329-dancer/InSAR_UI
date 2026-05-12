@@ -31,6 +31,9 @@ public:
     QString caption() const override { return QStringLiteral("TerraSAR-X Import"); }
     QString name() const override { return QStringLiteral("TSXImport"); }
 
+    QJsonObject save() const override;
+    void load(QJsonObject const &json) override;
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 

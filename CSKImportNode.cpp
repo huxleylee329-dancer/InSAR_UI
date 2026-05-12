@@ -3,6 +3,7 @@
 #endif
 
 #include "CSKImportNode.h"
+#include <QJsonArray>
 #include <QFileInfo>
 
 namespace QtNodes {
@@ -311,6 +312,35 @@ void CSKImportNode::setExecutionMode(ExecutionMode mode)
 void CSKImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject CSKImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    QJsonArray pathsArray;
+    for (const QString &path : m_filePaths)
+        pathsArray.append(path);
+    json["filePaths"] = pathsArray;
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    return json;
+}
+
+void CSKImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_filePaths.clear();
+    QJsonArray pathsArray = json["filePaths"].toArray();
+    for (const QJsonValue &val : pathsArray)
+        m_filePaths.append(val.toString());
+
+    if (m_fileListWidget) {
+        m_fileListWidget->clear();
+        for (const QString &path : m_filePaths)
+            m_fileListWidget->addItem(QFileInfo(path).fileName());
+    }
+
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("CSK_Batch_Import"));
 }
 
 } // namespace QtNodes

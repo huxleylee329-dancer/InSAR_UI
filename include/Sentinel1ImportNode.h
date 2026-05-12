@@ -31,6 +31,9 @@ public:
     QString caption() const override { return QStringLiteral("Sentinel-1 Import"); }
     QString name() const override { return QStringLiteral("Sentinel1Import"); }
 
+    QJsonObject save() const override;
+    void load(QJsonObject const &json) override;
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 

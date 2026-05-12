@@ -5,6 +5,8 @@
 #include "S1SwathMergeNode.h"
 #include "WorkflowUI.h"
 #include <QFileInfo>
+#include <QJsonObject>
+#include <QJsonValue>
 
 namespace QtNodes {
 
@@ -94,6 +96,56 @@ void S1SwathMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         createWidget();
     }
     return _widget;
+}
+
+QJsonObject S1SwathMergeNode::save() const
+{
+    QJsonObject modelJson = ExecutableNodeDelegateModel::save();
+
+    if (m_outputNodeNameEdit)
+        modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
+
+    if (m_indexSpins[0])
+        modelJson["index1"] = m_indexSpins[0]->value();
+    if (m_indexSpins[1])
+        modelJson["index2"] = m_indexSpins[1]->value();
+    if (m_indexSpins[2])
+        modelJson["index3"] = m_indexSpins[2]->value();
+
+    return modelJson;
+}
+
+void S1SwathMergeNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+
+    QJsonValue vName = json["outputNodeName"];
+    if (!vName.isUndefined())
+    {
+        if (m_outputNodeNameEdit)
+            m_outputNodeNameEdit->setText(vName.toString());
+    }
+
+    QJsonValue v1 = json["index1"];
+    if (!v1.isUndefined())
+    {
+        if (m_indexSpins[0])
+            m_indexSpins[0]->setValue(v1.toInt());
+    }
+
+    QJsonValue v2 = json["index2"];
+    if (!v2.isUndefined())
+    {
+        if (m_indexSpins[1])
+            m_indexSpins[1]->setValue(v2.toInt());
+    }
+
+    QJsonValue v3 = json["index3"];
+    if (!v3.isUndefined())
+    {
+        if (m_indexSpins[2])
+            m_indexSpins[2]->setValue(v3.toInt());
+    }
 }
 
 void S1SwathMergeNode::createWidget()

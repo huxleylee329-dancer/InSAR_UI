@@ -1,4 +1,4 @@
-#ifdef _MSC_VER
+ï»¿#ifdef _MSC_VER
 #pragma execution_character_set("utf-8")
 #endif
 
@@ -51,15 +51,16 @@ QWidget* MacaoImportNode::createWidget()
     layout->setSpacing(6);
 
     auto* imageRow = new QHBoxLayout();
-    imageRow->addWidget(new QLabel("MacaoÍ¼Ïñ£º"));
+    imageRow->addWidget(new QLabel("MacaoÍ¼ï¿½ï¿½"));
     m_imageEdit = new QLineEdit();
-    QPushButton* browseButton = new QPushButton("ä¯ÀÀ...");
+    connect(m_imageEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_imagePath = text; });
+    QPushButton* browseButton = new QPushButton("ï¿½ï¿½ï¿½...");
     imageRow->addWidget(m_imageEdit);
     imageRow->addWidget(browseButton);
     layout->addLayout(imageRow);
 
     auto* projectRow = new QHBoxLayout();
-    projectRow->addWidget(new QLabel("Ä¿±ê¹¤³Ì£º"));
+    projectRow->addWidget(new QLabel("Ä¿ï¿½ê¹¤ï¿½Ì£ï¿½"));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
     if (!projectName().isEmpty())
@@ -68,15 +69,16 @@ QWidget* MacaoImportNode::createWidget()
     layout->addLayout(projectRow);
 
     auto* nodeRow = new QHBoxLayout();
-    nodeRow->addWidget(new QLabel("Ä¿±ê½Úµã£º"));
+    nodeRow->addWidget(new QLabel("Ä¿ï¿½ï¿½Úµã£º"));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("Macao_Import");
     nodeRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeRow);
 
     auto* fileNameRow = new QHBoxLayout();
-    fileNameRow->addWidget(new QLabel("Ä¿±êÎÄ¼þÃû£º"));
+    fileNameRow->addWidget(new QLabel("Ä¿ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½"));
     m_outputFileNameEdit = new QLineEdit();
+    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     fileNameRow->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameRow);
 
@@ -94,13 +96,13 @@ void MacaoImportNode::executeImport()
     m_imagePath = m_imageEdit->text().trimmed();
     if (m_imagePath.isEmpty())
     {
-        onError("ÇëÑ¡ÔñÒ»¸ö Macao Í¼ÏñÎÄ¼þ¡£");
+        onError("ï¿½ï¿½Ñ¡ï¿½ï¿½Ò»ï¿½ï¿½ Macao Í¼ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½");
         return;
     }
 
     if (!QFileInfo::exists(m_imagePath))
     {
-        onError("Macao Í¼ÏñÎÄ¼þ²»´æÔÚ£º" + m_imagePath);
+        onError("Macao Í¼ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½" + m_imagePath);
         return;
     }
 
@@ -162,7 +164,7 @@ void MacaoImportNode::onImageBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
         _widget,
-        "µ¼Èë Macao Êý¾Ý",
+        "ï¿½ï¿½ï¿½ï¿½ Macao ï¿½ï¿½ï¿½ï¿½",
         QFileInfo(m_imagePath).absolutePath(),
         "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)"
     );
@@ -233,6 +235,26 @@ void MacaoImportNode::setExecutionMode(ExecutionMode mode)
 void MacaoImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject MacaoImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    json["imagePath"] = m_imagePath;
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputFileName"] = m_outputFileName;
+    return json;
+}
+
+void MacaoImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_imagePath = json["imagePath"].toString();
+    m_outputFileName = json["outputFileName"].toString();
+
+    if (m_imageEdit) m_imageEdit->setText(m_imagePath);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString("Macao_Import"));
+    if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
 }
 
 } // namespace QtNodes

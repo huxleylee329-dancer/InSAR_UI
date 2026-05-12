@@ -3,6 +3,7 @@
 #endif
 
 #include "ALOS2ImportNode.h"
+#include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
 
@@ -340,6 +341,35 @@ void ALOS2ImportNode::setExecutionMode(ExecutionMode mode)
 void ALOS2ImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject ALOS2ImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    QJsonArray pathsArray;
+    for (const QString &path : m_imgPaths)
+        pathsArray.append(path);
+    json["imgPaths"] = pathsArray;
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    return json;
+}
+
+void ALOS2ImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_imgPaths.clear();
+    QJsonArray pathsArray = json["imgPaths"].toArray();
+    for (const QJsonValue &val : pathsArray)
+        m_imgPaths.append(val.toString());
+
+    if (m_fileListWidget) {
+        m_fileListWidget->clear();
+        for (const QString &path : m_imgPaths)
+            m_fileListWidget->addItem(QFileInfo(path).fileName());
+    }
+
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("ALOS2_Batch_Import"));
 }
 
 } // namespace QtNodes

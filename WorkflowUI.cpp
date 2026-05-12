@@ -226,8 +226,8 @@ WorkflowUI::WorkflowUI(QWidget *parent)
     , m_queueManager(nullptr)
     , m_toolbar(nullptr)
     , m_actionNew(nullptr)
-    , m_actionSave(nullptr)
-    , m_actionLoad(nullptr)
+    , m_actionExport(nullptr)
+    , m_actionImport(nullptr)
     , m_actionClear(nullptr)
     , m_actionDelete(nullptr)
     , m_actionExit(nullptr)
@@ -617,20 +617,15 @@ void WorkflowUI::setupToolbar()
     // ======================
     // Group 1: File Operations
     // ======================
-    // New button (蓝色)
-    QToolButton *btnNew = createToolbarButton(":/SatExplorer/add.svg", "New", COLOR_PRIMARY, COLOR_TEXT, this);
-    connect(btnNew, &QToolButton::clicked, this, &WorkflowUI::onNew);
-    m_toolbar->addWidget(btnNew);
+    // Import button (蓝色)
+    QToolButton *btnImport = createToolbarButton(":/SatExplorer/folder_open.svg", "Import", COLOR_PRIMARY, COLOR_TEXT, this);
+    connect(btnImport, &QToolButton::clicked, this, &WorkflowUI::onImport);
+    m_toolbar->addWidget(btnImport);
 
-    // Save button (蓝色)
-    QToolButton *btnSave = createToolbarButton(":/SatExplorer/save.svg", "Save", COLOR_PRIMARY, COLOR_TEXT, this);
-    connect(btnSave, &QToolButton::clicked, this, &WorkflowUI::onSave);
-    m_toolbar->addWidget(btnSave);
-
-    // Load button (蓝色)
-    QToolButton *btnLoad = createToolbarButton(":/SatExplorer/folder_open.svg", "Load", COLOR_PRIMARY, COLOR_TEXT, this);
-    connect(btnLoad, &QToolButton::clicked, this, &WorkflowUI::onLoad);
-    m_toolbar->addWidget(btnLoad);
+    // Export button (蓝色)
+    QToolButton *btnExport = createToolbarButton(":/SatExplorer/save.svg", "Export", COLOR_PRIMARY, COLOR_TEXT, this);
+    connect(btnExport, &QToolButton::clicked, this, &WorkflowUI::onExport);
+    m_toolbar->addWidget(btnExport);
 
     // Favorite button (棕橙色)
     QToolButton *btnFav = createToolbarButton(":/SatExplorer/star.svg", "Fav", COLOR_TERTIARY, COLOR_TEXT, this);
@@ -725,24 +720,24 @@ void WorkflowUI::onNew()
     m_currentFilePath.clear();
 }
 
-void WorkflowUI::onSave()
+void WorkflowUI::onExport()
 {
     QString filePath = getSaveFilePath();
     if (filePath.isEmpty())
         return;
 
-    if (m_scene->save())
+    if (m_scene->save(filePath))
     {
         m_currentFilePath = filePath;
         setWindowModified(false);
     }
     else
     {
-        QMessageBox::warning(this, "Error", "Cannot save file: " + filePath);
+        QMessageBox::warning(this, "Error", "Cannot export file: " + filePath);
     }
 }
 
-void WorkflowUI::onLoad()
+void WorkflowUI::onImport()
 {
     QString filePath = getOpenFilePath();
     if (filePath.isEmpty())
@@ -766,15 +761,34 @@ void WorkflowUI::onLoad()
     }
 
     onClear();
-    if (m_scene->load())
+    if (m_scene->load(filePath))
     {
         m_currentFilePath = filePath;
         setWindowModified(false);
     }
     else
     {
-        QMessageBox::warning(this, "Error", "Cannot load file: " + filePath);
+        QMessageBox::warning(this, "Error", "Cannot import file: " + filePath);
     }
+}
+
+// ============================================================================
+// Workflow State Save/Load (for project integration)
+// ============================================================================
+
+QJsonObject WorkflowUI::saveWorkflowToJson() const
+{
+    if (!m_graphModel)
+        return QJsonObject();
+    return m_graphModel->save();
+}
+
+void WorkflowUI::loadWorkflowFromJson(const QJsonObject& json)
+{
+    if (!m_graphModel || json.isEmpty())
+        return;
+    onClear();
+    m_graphModel->load(json);
 }
 
 // ============================================================================
@@ -793,6 +807,11 @@ void WorkflowUI::onClear()
     }
 
     m_propertyEditor->clearSelection();
+}
+
+void WorkflowUI::clear()
+{
+    onClear();
 }
 
 void WorkflowUI::onDelete()
@@ -932,7 +951,7 @@ void WorkflowUI::onWorkflowLoadRequested(const QString &filePath)
     }
 
     onClear();
-    if (m_scene->load())
+    if (m_scene->load(filePath))
     {
         m_currentFilePath = filePath;
         setWindowModified(false);

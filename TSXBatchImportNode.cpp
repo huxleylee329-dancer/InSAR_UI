@@ -3,6 +3,7 @@
 #endif
 
 #include "TSXBatchImportNode.h"
+#include <QJsonArray>
 #include <QFileInfo>
 
 namespace QtNodes {
@@ -315,6 +316,42 @@ void TSXBatchImportNode::setExecutionMode(ExecutionMode mode)
 void TSXBatchImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject TSXBatchImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    QJsonArray pathsArray;
+    for (const QString &path : m_xmlPaths)
+        pathsArray.append(path);
+    json["xmlPaths"] = pathsArray;
+    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "HH";
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    return json;
+}
+
+void TSXBatchImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_xmlPaths.clear();
+    QJsonArray pathsArray = json["xmlPaths"].toArray();
+    for (const QJsonValue &val : pathsArray)
+        m_xmlPaths.append(val.toString());
+
+    if (m_fileListWidget) {
+        m_fileListWidget->clear();
+        for (const QString &path : m_xmlPaths)
+            m_fileListWidget->addItem(QFileInfo(path).fileName());
+    }
+
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("TSX_Batch_Import"));
+
+    QString pol = json["polarization"].toString("HH");
+    if (m_polarizationCombo) {
+        int idx = m_polarizationCombo->findText(pol);
+        if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
+    }
 }
 
 } // namespace QtNodes

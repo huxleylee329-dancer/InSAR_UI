@@ -59,15 +59,15 @@ NodeGraphicsObject::NodeGraphicsObject(BasicGraphicsScene &scene, NodeId nodeId)
     QPointF const pos = _graphModel.nodeData<QPointF>(_nodeId, NodeRole::Position);
     setPos(pos);
 
-    // Connect to position updates
-    connect(&_graphModel, &AbstractGraphModel::nodePositionUpdated, [this, nodeId](NodeId const id) {
+    // Connect to position updates (use 'this' as context for auto-disconnect on destruction)
+    connect(&_graphModel, &AbstractGraphModel::nodePositionUpdated, this, [this, nodeId](NodeId const id) {
         if (id == nodeId) {
             QPointF newPos = _graphModel.nodeData<QPointF>(nodeId, NodeRole::Position);
             setPos(newPos);
         }
     });
 
-    connect(&_graphModel, &AbstractGraphModel::nodeFlagsUpdated, [this](NodeId const nodeId) {
+    connect(&_graphModel, &AbstractGraphModel::nodeFlagsUpdated, this, [this](NodeId const nodeId) {
         if (_nodeId == nodeId)
             setLockedState();
     });
@@ -109,8 +109,11 @@ void NodeGraphicsObject::embedQWidget()
         geometry.recomputeSize(_nodeId);
 
         if (w->sizePolicy().verticalPolicy() & QSizePolicy::ExpandFlag) {
-            unsigned int widgetHeight = geometry.size(_nodeId).height()
-                                        - geometry.captionRect(_nodeId).height();
+            // Widget starts at captionBottom (captionPosition.y + captionRect.height),
+            // so proxy height = total height - captionBottom
+            QPointF captionPos = geometry.captionPosition(_nodeId);
+            double captionBottom = captionPos.y() + geometry.captionRect(_nodeId).height();
+            unsigned int widgetHeight = geometry.size(_nodeId).height() - captionBottom;
 
             // If the widget wants to use as much vertical space as possible, set
             // it to have the geom's equivalentWidgetHeight.

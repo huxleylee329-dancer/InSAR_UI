@@ -92,10 +92,10 @@
     </property>
     <addaction name="actionNew"/>
     <addaction name="actionOpen"/>
-    <addaction name="actionRecent"/>
     <addaction name="actionSave"/>
     <addaction name="actionSave_as"/>
     <addaction name="actionSave_all"/>
+    <addaction name="actionClose"/>
     <addaction name="actionQuit"/>
    </widget>
    <widget class="QMenu" name="Edit">
@@ -252,15 +252,6 @@
     <string>打开工程</string>
    </property>
   </action>
-  <action name="actionRecent">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/recen_open.png</normaloff>:/SatExplorer/icon/recen_open.png</iconset>
-   </property>
-   <property name="text">
-    <string>最近打开</string>
-   </property>
-  </action>
   <action name="actionSave">
    <property name="icon">
     <iconset resource="../resources/SatExplorer.qrc">
@@ -290,11 +281,11 @@
   </action>
   <action name="actionClose">
    <property name="icon">
-    <iconset>
+    <iconset resource="../resources/SatExplorer.qrc">
      <normaloff>:/SatExplorer/icon/close.png</normaloff>:/SatExplorer/icon/close.png</iconset>
    </property>
    <property name="text">
-    <string>关闭</string>
+    <string>关闭工程</string>
    </property>
   </action>
   <action name="actionQuit">

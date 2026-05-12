@@ -60,6 +60,7 @@ QWidget* TSXImportNode::createWidget()
     auto* xmlRow = new QHBoxLayout();
     xmlRow->addWidget(new QLabel("TSX/TDX图像（.xml）："));
     m_xmlEdit = new QLineEdit();
+    connect(m_xmlEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_xmlPath = text; });
     QPushButton* xmlBrowse = new QPushButton("浏览...");
     xmlRow->addWidget(m_xmlEdit);
     xmlRow->addWidget(xmlBrowse);
@@ -94,6 +95,7 @@ QWidget* TSXImportNode::createWidget()
     filenameRow->setStretch(1, 7);
     filenameRow->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
+    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     filenameRow->addWidget(m_outputFileNameEdit);
     layout->addLayout(filenameRow);
 
@@ -291,6 +293,33 @@ void TSXImportNode::setExecutionMode(ExecutionMode mode)
 void TSXImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+}
+
+QJsonObject TSXImportNode::save() const
+{
+    QJsonObject json = ExecutableNodeDelegateModel::save();
+    json["xmlPath"] = m_xmlPath;
+    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "HH";
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputFileName"] = m_outputFileName;
+    return json;
+}
+
+void TSXImportNode::load(QJsonObject const &json)
+{
+    ExecutableNodeDelegateModel::load(json);
+    m_xmlPath = json["xmlPath"].toString();
+    m_outputFileName = json["outputFileName"].toString();
+
+    if (m_xmlEdit) m_xmlEdit->setText(m_xmlPath);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString());
+    if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
+
+    QString pol = json["polarization"].toString("HH");
+    if (m_polarizationCombo) {
+        int idx = m_polarizationCombo->findText(pol);
+        if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
+    }
 }
 
 } // namespace QtNodes

@@ -5,6 +5,8 @@
 #include <QFont>
 #include <QPalette>
 #include <QVBoxLayout>
+#include <QJsonObject>
+#include <QJsonValue>
 
 NoteNode::NoteNode()
     : m_textEdit(nullptr)
@@ -30,6 +32,38 @@ QWidget *NoteNode::embeddedWidget()
         connect(m_textEdit, &QTextEdit::textChanged, this, &NoteNode::onTextChanged);
     }
     return m_textEdit;
+}
+
+QJsonObject NoteNode::save() const
+{
+    QJsonObject modelJson = NodeDelegateModel::save();
+
+    if (m_textEdit)
+        modelJson["noteText"] = m_textEdit->toPlainText();
+    else
+        modelJson["noteText"] = QString("New note");
+
+    return modelJson;
+}
+
+void NoteNode::load(QJsonObject const &json)
+{
+    QJsonValue v = json["noteText"];
+
+    if (!v.isUndefined())
+    {
+        QString text = v.toString();
+        if (m_textEdit)
+            m_textEdit->setPlainText(text);
+        else
+        {
+            // If widget not created yet, we have a problem because embeddedWidget() creates it.
+            // Usually load() is called after the model is registered and possibly instantiated.
+            // However, it's safer to ensure widget is created if needed, or store the text temporarily.
+            embeddedWidget(); 
+            if (m_textEdit) m_textEdit->setPlainText(text);
+        }
+    }
 }
 
 void NoteNode::onTextChanged()

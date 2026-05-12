@@ -152,10 +152,13 @@ QPointF DefaultHorizontalNodeGeometry::widgetPosition(NodeId const nodeId) const
 
     if (auto w = _graphModel.nodeData<QWidget *>(nodeId, NodeRole::Widget)) {
         // If the widget wants to use as much vertical space as possible,
-        // place it immediately after the caption.
+        // place it immediately after the caption text (with spacing).
         if (w->sizePolicy().verticalPolicy() & QSizePolicy::ExpandFlag) {
+            // Use the actual caption text bottom position to avoid overlap
+            QPointF captionPos = captionPosition(nodeId);
+            double captionBottom = captionPos.y() + captionRect(nodeId).height();
             return QPointF(2.0 * _portSpasing + maxPortsTextAdvance(nodeId, PortType::In),
-                           captionHeight);
+                           captionBottom);
         } else {
             return QPointF(2.0 * _portSpasing + maxPortsTextAdvance(nodeId, PortType::In),
                            (captionHeight + size.height() - w->height()) / 2.0);

@@ -34,6 +34,9 @@ public:
     QString caption() const override { return QStringLiteral("ALOS-2 Import"); }
     QString name() const override { return QStringLiteral("ALOS2Import"); }
 
+    QJsonObject save() const override;
+    void load(QJsonObject const &json) override;
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
