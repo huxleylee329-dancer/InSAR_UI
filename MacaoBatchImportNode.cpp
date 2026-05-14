@@ -91,6 +91,9 @@ QWidget* MacaoBatchImportNode::createWidget()
 
 void MacaoBatchImportNode::executeImport()
 {
+    if (executionState() == ExecutionState::Running)
+        return;
+
     if (m_imagePaths.isEmpty())
     {
         onError("����������һ�� Macao ͼ���ļ���");
@@ -276,7 +279,7 @@ QJsonObject MacaoBatchImportNode::save() const
     for (const QString &path : m_imagePaths)
         pathsArray.append(path);
     json["imagePaths"] = pathsArray;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("Macao_Batch_Import");
     return json;
 }
 

@@ -44,6 +44,10 @@ protected:
     QString getImportedFilePath() const override;
     QString getOutputNodeName() const override;
 
+    // Thread accessors
+    MyThread* workerThread() const override { return m_workerThread; }
+    QThread* qThread() const override { return m_thread; }
+
     // Helper methods
     QString generateOutputFileName() const;
     QString getOutputFileName() const;  // 获取输出文件名（优先使用用户输入，否则自动生成）

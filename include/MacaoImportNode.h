@@ -39,6 +39,10 @@ protected:
     QString getImportedFilePath() const override;
     QString getOutputNodeName() const override;
 
+    // Thread accessors
+    MyThread* workerThread() const override { return m_workerThread; }
+    QThread* qThread() const override { return m_thread; }
+
 private slots:
     void onImageBrowseClicked();
     void onImportProgress(int progress, const QString& message);

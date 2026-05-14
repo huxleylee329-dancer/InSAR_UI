@@ -224,7 +224,6 @@ void Mould::updateProcess(int value, QString information)
     ui->progressBar->setValue(value);
     ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    Sleep(3000);
 }
 
 void Mould::ReceiveModel(QStandardItemModel* model)
@@ -247,6 +246,7 @@ HANDLE Mould::CreateSubProcess(LPWSTR strCmdLine)
 
     if (bOK)
     {
+        CloseHandle(pi.hThread);
         return pi.hProcess;
     }
 
@@ -258,7 +258,7 @@ void Mould::set_IPC_name_bytime()
     time_t t = std::time(0);
     sprintf(shared_memory_name, "SatExplorer_shared_memory_%lld", t);
     sprintf(self_event, "SatExplorer_self_event_%lld", t);
-    sprintf(other_event, "SatExplorer_self_event_%lld", t);
+    sprintf(other_event, "SatExplorer_other_event_%lld", t);
 }
 
 void Mould::endProcess()
@@ -282,6 +282,7 @@ void Mould::StopThread()
             IPC_thread->thread()->quit();
             IPC_thread->thread()->wait();
         }
+        delete IPC_thread;
         IPC_thread = NULL;
     }
 }
@@ -636,6 +637,7 @@ void Mould::TerminateSubProcess()
     if (processHandle && processHandle != INVALID_HANDLE_VALUE)
     {
         TerminateProcess(processHandle, 0);
+        CloseHandle(processHandle);
         processHandle = NULL;
     }
 }

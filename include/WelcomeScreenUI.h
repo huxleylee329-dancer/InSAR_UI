@@ -35,6 +35,19 @@ public:
     QString id() const override;
     QString displayName() const override;
 
+    // Project context (欢迎界面不管理项目，提供空实现)
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name) override;
+    QStandardItemModel* projectModel() const override;
+    QString projectPath() const override;
+    QString projectName() const override;
+
+    // Theme management
+    void initTheme() override;
+    void setTheme(const QString& theme) override;
+
+    // Clear interface (欢迎界面无需清空操作)
+    void clear() override;
+
     // Refresh recent projects list
     void refreshRecentProjects();
 

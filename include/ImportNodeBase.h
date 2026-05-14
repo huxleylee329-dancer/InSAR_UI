@@ -19,6 +19,7 @@
 
 // Forward declarations
 class WorkflowUI;
+class MyThread;
 
 namespace QtNodes {
 
@@ -62,6 +63,10 @@ protected:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+
+    // Thread accessors - subclasses must implement to return their worker/QThread
+    virtual MyThread* workerThread() const = 0;
+    virtual QThread* qThread() const = 0;
 
     // Helper methods
     void onProgressUpdate(int progress, const QString& message);

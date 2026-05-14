@@ -70,14 +70,17 @@ public:
     QString displayName() const override;
 
     // Project context methods
-    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name);
-    QStandardItemModel* projectModel() const;
-    QString projectPath() const;
-    QString projectName() const;
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name) override;
+    QStandardItemModel* projectModel() const override;
+    QString projectPath() const override;
+    QString projectName() const override;
 
     // Theme methods
-    void setQtNodesTheme(const QString &theme);
-    void initTheme();
+    void initTheme() override;
+    void setTheme(const QString &theme) override;
+
+    // Clear interface
+    void clear() override;
 
     // Getters
     NodeLibraryWidget* nodeLibrary() const { return m_nodeLibrary; }
@@ -87,9 +90,6 @@ public:
     // 工作流状态保存/恢复（供项目 save/load 使用）
     QJsonObject saveWorkflowToJson() const;
     void loadWorkflowFromJson(const QJsonObject& json);
-
-    // 清空工作流（供关闭工程使用）
-    void clear();
 
 private slots:
     // File operations

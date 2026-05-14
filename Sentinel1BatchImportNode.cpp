@@ -134,6 +134,9 @@ QWidget* Sentinel1BatchImportNode::createWidget()
 
 void Sentinel1BatchImportNode::executeImport()
 {
+    if (executionState() == ExecutionState::Running)
+        return;
+
     if (m_manifestPaths.isEmpty())
     {
         onError("请至少添加一个清单文件。");
@@ -337,7 +340,7 @@ QJsonObject Sentinel1BatchImportNode::save() const
     json["manifestPaths"] = pathsArray;
     json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : "iw1";
     json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "vv";
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("S1_Batch_Import");
     return json;
 }
 

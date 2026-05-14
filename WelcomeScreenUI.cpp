@@ -546,6 +546,47 @@ QString WelcomeScreenUI::displayName() const
     return "欢迎界面";
 }
 
+void WelcomeScreenUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+{
+    // 欢迎界面不管理项目上下文，空实现
+    Q_UNUSED(model);
+    Q_UNUSED(path);
+    Q_UNUSED(name);
+}
+
+QStandardItemModel* WelcomeScreenUI::projectModel() const
+{
+    return nullptr;
+}
+
+QString WelcomeScreenUI::projectPath() const
+{
+    return QString();
+}
+
+QString WelcomeScreenUI::projectName() const
+{
+    return QString();
+}
+
+void WelcomeScreenUI::initTheme()
+{
+    // 欢迎界面在 activate() 时会检测主题并应用
+    updateThemeStyles();
+}
+
+void WelcomeScreenUI::setTheme(const QString& theme)
+{
+    Q_UNUSED(theme);
+    // 欢迎界面在 activate() 时会从父窗口检测主题
+    updateThemeStyles();
+}
+
+void WelcomeScreenUI::clear()
+{
+    // 欢迎界面无需清空操作
+}
+
 void WelcomeScreenUI::paintEvent(QPaintEvent *event)
 {
     // Don't fill background - let parent window's stylesheet control it

@@ -47,6 +47,10 @@ protected:
     QString getImportedFilePath() const override;
     QString getOutputNodeName() const override;
 
+    // Thread accessors
+    MyThread* workerThread() const override { return m_workerThread; }
+    QThread* qThread() const override { return m_thread; }
+
     // Helper methods
     QString generateOutputFileName(const QString& imgPath) const;
     QString generateLEDPath(const QString& imgPath) const;

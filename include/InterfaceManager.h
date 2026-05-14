@@ -74,6 +74,26 @@ public:
      */
     void saveLastInterfaceToProject(class XMLFile *projectXml) const;
 
+    /**
+     * @brief 设置项目上下文（所有界面共享）
+     * @param model 项目数据模型
+     * @param path 项目文件路径
+     * @param name 项目名称
+     */
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name);
+
+    /**
+     * @brief 获取当前项目模型
+     * @return 项目模型指针
+     */
+    QStandardItemModel* projectModel() const { return m_projectModel; }
+
+    /**
+     * @brief 获取当前项目路径
+     * @return 项目文件路径
+     */
+    QString projectPath() const { return m_projectPath; }
+
 private:
     void removeCurrentToolBars();
     void addInterfaceToolBars(IApplicationInterface *appInterface);
@@ -81,6 +101,11 @@ private:
     QMainWindow *m_mainWindow;
     QList<IApplicationInterface*> m_interfaces;
     IApplicationInterface *m_currentInterface = nullptr;
+
+    // 项目上下文 - 作为权威数据源
+    QStandardItemModel* m_projectModel = nullptr;
+    QString m_projectPath;
+    QString m_projectName;
 };
 
 #endif // INTERFACEMANAGER_H

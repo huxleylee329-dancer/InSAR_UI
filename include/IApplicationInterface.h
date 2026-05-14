@@ -5,6 +5,7 @@
 #include <QList>
 #include <QToolBar>
 #include <QString>
+#include <QStandardItemModel>
 
 /**
  * @brief 应用界面抽象接口
@@ -49,6 +50,48 @@ public:
      * @return 用于菜单显示的名称
      */
     virtual QString displayName() const = 0;
+
+    /**
+     * @brief 设置项目上下文
+     * @param model 项目数据模型
+     * @param path 项目文件路径
+     * @param name 项目名称
+     */
+    virtual void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name) = 0;
+
+    /**
+     * @brief 获取项目数据模型
+     * @return 项目模型指针
+     */
+    virtual QStandardItemModel* projectModel() const = 0;
+
+    /**
+     * @brief 获取项目文件路径
+     * @return 项目文件路径
+     */
+    virtual QString projectPath() const = 0;
+
+    /**
+     * @brief 获取项目名称
+     * @return 项目名称
+     */
+    virtual QString projectName() const = 0;
+
+    /**
+     * @brief 初始化主题（构造时调用）
+     */
+    virtual void initTheme() = 0;
+
+    /**
+     * @brief 应用主题
+     * @param theme 主题名称（"light"、"dark"、"fusion"）
+     */
+    virtual void setTheme(const QString& theme) = 0;
+
+    /**
+     * @brief 清空界面内容（关闭项目时调用）
+     */
+    virtual void clear() = 0;
 };
 
 #endif // IAPPLICATIONINTERFACE_H

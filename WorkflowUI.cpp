@@ -275,7 +275,10 @@ WorkflowUI::WorkflowUI(QWidget *parent)
 
 WorkflowUI::~WorkflowUI()
 {
-    // Dock widgets are managed by CDockManager
+    // m_graphModel has no Qt parent — must be deleted manually
+    delete m_graphModel;
+
+    // m_groupManager has Qt parent (this), auto-deleted; explicit delete is redundant but harmless
     delete m_groupManager;
 }
 
@@ -346,7 +349,7 @@ void WorkflowUI::initTheme()
 {
     // Apply default (light) theme for initial load
     // This ensures proper theme is loaded before scene creation
-    setQtNodesTheme("light");
+    setTheme("light");
 }
 
 void WorkflowUI::setupSceneInternal()
@@ -1172,7 +1175,7 @@ QString WorkflowUI::projectName() const
 // Theme Methods
 // ============================================================================
 
-void WorkflowUI::setQtNodesTheme(const QString &theme)
+void WorkflowUI::setTheme(const QString &theme)
 {
     QString jsonContent;
 

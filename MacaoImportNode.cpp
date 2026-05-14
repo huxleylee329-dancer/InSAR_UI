@@ -241,7 +241,7 @@ QJsonObject MacaoImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
     json["imagePath"] = m_imagePath;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("Macao_Import");
     json["outputFileName"] = m_outputFileName;
     return json;
 }

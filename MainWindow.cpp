@@ -189,17 +189,8 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
 
-    // Open project file and switch to workspace
+    // Open project file (loadWorkflowFromProject inside handles interface switching)
     this->open_from_project_file(str);
-
-    // Project opened - switch to workspace or last used interface
-    QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(project);
-    if (!lastInterface.isEmpty()) {
-        m_interfaceManager->switchToInterface(lastInterface);
-    } else {
-        m_interfaceManager->switchToInterface("workspace");
-    }
-    updateInterfaceMenuCheckState();
 }
 MainWindow::~MainWindow()
 
@@ -214,7 +205,7 @@ MainWindow::~MainWindow()
     m_workflowUI = nullptr;  // Already deleted by InterfaceManager
     m_welcomeUI = nullptr;   // Already deleted by InterfaceManager
 
-    if (!this->Process)
+    if (this->Process)
     {
         delete(Process);
         Process = NULL;
@@ -310,6 +301,10 @@ void MainWindow::StopThread()
 }
 void MainWindow::Loading(QString Data_path, QString ImageType)
 {
+    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
+        return;
+
     QGridLayout* TabLayout = new QGridLayout;
     QWidget* TabChild = new QWidget;
     int index = ui.tabWidget->addTab(TabChild, bmp_name);
@@ -481,9 +476,9 @@ void MainWindow::open_from_project_file(QString str)
 }
 void MainWindow::update_treeview()
 {
-    if (ui.treeView->model)
+    if (model)
     {
-        if (ui.treeView->model->rowCount() < 1)
+        if (model->rowCount() < 1)
         {
             ui.Process->setDisabled(1);
             ui.menuSAR->setDisabled(1);
@@ -502,7 +497,10 @@ void MainWindow::update_treeview()
 
 bool MainWindow::eventFilter(QObject* target, QEvent* event)
 {
-    if (target == ui.tabWidget)
+    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接跳过
+    bool isWorkspace = m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workspace";
+
+    if (isWorkspace && target == ui.tabWidget)
     {
         if (event->type() == QEvent::Resize || event->type() == QEvent::Move)
         {
@@ -510,7 +508,7 @@ bool MainWindow::eventFilter(QObject* target, QEvent* event)
                 mColors.at(ui.tabWidget->currentIndex())->move(ui.tabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
         }
     }
-    if (target == this)
+    if (isWorkspace && target == this)
     {
         if (event->type() == QEvent::Move)
         {
@@ -531,15 +529,15 @@ void MainWindow::ShowImage(QModelIndex image)
         return;
     }
 
-    QString name = ui.treeView->model->index(image.row(), 0, image.parent()).data().toString();
-    QString path = ui.treeView->model->index(image.row(), 1, image.parent()).data().toString();
+    QString name = model->index(image.row(), 0, image.parent()).data().toString();
+    QString path = model->index(image.row(), 1, image.parent()).data().toString();
 
     if (path.isEmpty() || !QFileInfo(path).exists())
     {
         return;
     }
 
-    QString type = ui.treeView->model->itemFromIndex(ui.treeView->model->index(image.row(),0,image.parent()))->toolTip();
+    QString type = model->itemFromIndex(model->index(image.row(),0,image.parent()))->toolTip();
     if (!path.isEmpty())
     {
         QFileInfo fileinfo = QFileInfo(path);
@@ -636,29 +634,34 @@ void MainWindow::closeCurrentProject()
         this->project = new XMLFile;
     }
 
+    // 释放工作流 JSON 数据
+    m_workflowBytes.clear();
+
     // 清空主树形视图模型
     model->clear();
     model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
     model->setHeaderData(1, Qt::Horizontal, tr("Path"));
 
-    // 清空工作区树形视图
-    if (m_workspaceUI && m_workspaceUI->treeView()) {
-        m_workspaceUI->treeView()->model->clear();
-        m_workspaceUI->treeView()->model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
-        m_workspaceUI->treeView()->model->setHeaderData(1, Qt::Horizontal, tr("Path"));
-        m_workspaceUI->treeView()->setColumnHidden(1, true);
+    // 清空工作区（通过接口）
+    if (m_workspaceUI) {
+        m_workspaceUI->clear();
     }
 
-    // 清空流程编辑器
+    // 清空流程编辑器（通过接口）
     if (m_workflowUI) {
         m_workflowUI->clear();
     }
 
-    // 重置两个界面的工程上下文
+    // 重置两个界面的工程上下文（通过接口）
     if (m_workspaceUI)
         m_workspaceUI->setProjectContext(model, QString(), QString());
     if (m_workflowUI)
         m_workflowUI->setProjectContext(model, QString(), QString());
+
+    // 同步重置 InterfaceManager 的项目上下文
+    if (m_interfaceManager) {
+        m_interfaceManager->setProjectContext(model, QString(), QString());
+    }
 
     // 禁用处理菜单（恢复到初始状态）
     ui.Process->setDisabled(1);
@@ -855,17 +858,6 @@ void MainWindow::openRecentProject()
     }
 
     open_from_project_file(filePath);
-
-    // 切换到上次使用的界面
-    if (m_interfaceManager && this->project) {
-        QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(this->project);
-        if (!lastInterface.isEmpty()) {
-            m_interfaceManager->switchToInterface(lastInterface);
-        } else {
-            m_interfaceManager->switchToInterface("workspace");
-        }
-        updateInterfaceMenuCheckState();
-    }
 }
 void MainWindow::on_actionTSX_triggered()
 {
@@ -1161,6 +1153,10 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
 }
 void MainWindow::ShowColorBar(int index)
 {
+    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
+        return;
+
     if ( ui.tabWidget->count()== mExist_Color.size())
     {
         if (ui.tabWidget->count() - 1 >= index)
@@ -1206,9 +1202,13 @@ void MainWindow::ShowColorBar(int index)
 
 bool MainWindow::CheckTab(QModelIndex image)
 {
+    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
+        return false;
+
     int n = ui.tabWidget->count();
     int i = 0;
-    QString name = ui.treeView->model->index(image.row(), 0, image.parent()).data().toString();
+    QString name = model->index(image.row(), 0, image.parent()).data().toString();
     for (i = 0; i < n; i++)
     {
         if (!QString::compare(ui.tabWidget->tabText(i), name))
@@ -1223,6 +1223,10 @@ bool MainWindow::CheckTab(QModelIndex image)
 
 void MainWindow::on_tabWidget_tabCloseRequested(int index)
 {
+    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
+        return;
+
     if (ui.tabWidget->widget(index))
     {
         cout << ui.tabWidget->count();
@@ -1295,7 +1299,7 @@ void MainWindow::setTheme(const QString &theme)
         m_workspaceUI->setTheme(theme);
     }
     if (m_workflowUI) {
-        m_workflowUI->setQtNodesTheme(theme);
+        m_workflowUI->setTheme(theme);
     }
 
     // Update theme menu check state
@@ -1422,7 +1426,12 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     m_workspaceUI->setProjectContext(model, filePath, projectName);
     m_workspaceUI->setTheme(m_currentTheme);
     m_workflowUI->setProjectContext(model, filePath, projectName);
-    m_workflowUI->setQtNodesTheme(m_currentTheme);
+    m_workflowUI->setTheme(m_currentTheme);
+
+    // 同步项目上下文到 InterfaceManager（作为权威数据源）
+    if (m_interfaceManager) {
+        m_interfaceManager->setProjectContext(model, filePath, projectName);
+    }
 
     // Register interfaces
     m_interfaceManager->registerInterface(m_welcomeUI);     // Register welcome first
@@ -1534,21 +1543,11 @@ void MainWindow::onOpenProjectFromWelcome()
     );
 
     if (!filePath.isEmpty()) {
-        // Open project file
         open_from_project_file(filePath);
-
-        // Switch to workspace
-        m_interfaceManager->switchToInterface("workspace");
-        updateInterfaceMenuCheckState();
     }
 }
 
 void MainWindow::onRecentProjectFromWelcome(const QString &filePath)
 {
-    // Open the recent project file
     open_from_project_file(filePath);
-
-    // Switch to workspace
-    m_interfaceManager->switchToInterface("workspace");
-    updateInterfaceMenuCheckState();
 }

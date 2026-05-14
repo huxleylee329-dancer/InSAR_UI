@@ -1,6 +1,7 @@
-#include "ImportNodeBase.h"
+﻿#include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
 #include "WorkflowUI.h"
+#include "MyThread.h"
 
 namespace QtNodes {
 
@@ -124,6 +125,16 @@ void ImportNodeBase::execute()
 void ImportNodeBase::stopExecution()
 {
     m_stopRequested = true;
+
+    // 停止后台工作线程：设置 stop_flag 使批处理循环退出
+    MyThread* wt = workerThread();
+    if (wt)
+        wt->StopProcess();
+
+    // 中断单文件操作中的 isInterruptionRequested() 检查
+    QThread* qt = qThread();
+    if (qt && qt->isRunning())
+        qt->requestInterruption();
 }
 
 void ImportNodeBase::processAutomatically()

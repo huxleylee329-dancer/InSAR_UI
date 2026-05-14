@@ -117,6 +117,9 @@ QWidget* CSKImportNode::createWidget()
 
 void CSKImportNode::executeImport()
 {
+    if (executionState() == ExecutionState::Running)
+        return;
+
     if (m_filePaths.isEmpty())
     {
         onError("请至少添加一个 H5 文件。");
@@ -321,7 +324,7 @@ QJsonObject CSKImportNode::save() const
     for (const QString &path : m_filePaths)
         pathsArray.append(path);
     json["filePaths"] = pathsArray;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("CSK_Batch_Import");
     return json;
 }
 

@@ -202,6 +202,7 @@ void MyThread::import_sentinel_patch(
 	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
+		if (!stop_flag) break;
 		QString filename = import_namelist[i];
 		QString manifest_file = original_filelist[i];
 		QString relative_path = temp_folder + filename + ".h5";
@@ -533,6 +534,7 @@ void MyThread::import_TSX_patch(
 	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
+		if (!stop_flag) break;
 		QString filename = import_namelist[i];
 		QString xml_filename = original_file_list[i];
 		QString temp_folder = QString("/") + dst_node + QString("/");
@@ -643,6 +645,7 @@ void MyThread::import_Macao_patch(
 	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
+		if (!stop_flag) break;
 		QString filename = import_namelist[i];
         QString image_filename = original_file_list[i];
         QFileInfo fileinfo(image_filename);
@@ -754,6 +757,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
+		if (!stop_flag) break;
 		QString filename = import_namelist[i];
 		QString CSK_filename = original_file_list[i];
 		QString temp_folder = QString("/") + dst_node + QString("/");
@@ -865,6 +869,7 @@ void MyThread::import_ALOS2_patch(
 	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
+		if (!stop_flag) break;
 		QString filename = import_namelist[i];
 		QString ALOS_IMG_filename = IMG_file_list[i];
 		QString ALOS_LED_filename = LED_file_list[i];

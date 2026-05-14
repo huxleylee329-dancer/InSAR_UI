@@ -1,4 +1,4 @@
-#include "InterfaceManager.h"
+﻿#include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 #include <FormatConversion.h>
 #include "tinyxml.h"
@@ -58,6 +58,11 @@ bool InterfaceManager::switchToInterface(const QString &interfaceId)
 
     // Add toolbars
     addInterfaceToolBars(newInterface);
+
+    // 同步项目上下文到新界面
+    if (m_projectModel) {
+        newInterface->setProjectContext(m_projectModel, m_projectPath, m_projectName);
+    }
 
     // Activate new interface
     newInterface->activate();
@@ -164,5 +169,17 @@ void InterfaceManager::addInterfaceToolBars(IApplicationInterface *appInterface)
 {
     for (QToolBar *toolbar : appInterface->toolBars()) {
         m_mainWindow->addToolBar(toolbar);
+    }
+}
+
+void InterfaceManager::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+{
+    m_projectModel = model;
+    m_projectPath = path;
+    m_projectName = name;
+
+    // 同步到当前界面
+    if (m_currentInterface) {
+        m_currentInterface->setProjectContext(model, path, name);
     }
 }

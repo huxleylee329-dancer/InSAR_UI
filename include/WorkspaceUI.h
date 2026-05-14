@@ -36,21 +36,24 @@ public:
     QString id() const override;
     QString displayName() const override;
 
+    // Project context management
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name) override;
+    QStandardItemModel* projectModel() const override;
+    QString projectPath() const override;
+    QString projectName() const override;
+
+    // Theme management
+    void initTheme() override;
+    void setTheme(const QString &theme) override;
+
+    // Clear interface
+    void clear() override;
+
     //// Getters for components that MainWindow still needs access to
     TreeView* treeView() const;
     TreeView* toolTree() const;
     QTabWidget* tabWidget() const;
     QSplitter* mainSplitter() const;
-
-    // Project context management
-    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name);
-    QStandardItemModel* projectModel() const;
-    QString projectPath() const;
-    QString projectName() const;
-
-    // Theme management
-    void initTheme();
-    void setTheme(const QString &theme);
 
     // Component access for MainWindow compatibility
     QProgressDialog* processDialog() { return Process; }

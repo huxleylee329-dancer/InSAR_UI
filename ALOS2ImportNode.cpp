@@ -113,6 +113,9 @@ QWidget* ALOS2ImportNode::createWidget()
 
 void ALOS2ImportNode::executeImport()
 {
+    if (executionState() == ExecutionState::Running)
+        return;
+
     if (m_imgPaths.isEmpty())
     {
         onError("请至少添加一个 IMG 文件。");
@@ -350,7 +353,7 @@ QJsonObject ALOS2ImportNode::save() const
     for (const QString &path : m_imgPaths)
         pathsArray.append(path);
     json["imgPaths"] = pathsArray;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("ALOS2_Batch_Import");
     return json;
 }
 

@@ -212,3 +212,28 @@ void WorkspaceUI::setTheme(const QString &theme)
 
     update();
 }
+
+void WorkspaceUI::clear()
+{
+    // 清空树形视图模型
+    if (m_treeView && m_treeView->model) {
+        m_treeView->model->clear();
+        m_treeView->model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
+        m_treeView->model->setHeaderData(1, Qt::Horizontal, tr("Path"));
+        m_treeView->setColumnHidden(1, true);
+    }
+
+    // 清空标签页
+    while (m_tabWidget && m_tabWidget->count() > 0) {
+        m_tabWidget->removeTab(0);
+    }
+
+    // 清空颜色条
+    qDeleteAll(mColors);
+    mColors.clear();
+    mExist_Color.clear();
+
+    // 重置状态
+    ColorBar_Before = -1;
+    TabCount_Before = -1;
+}
