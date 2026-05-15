@@ -15,7 +15,7 @@
   </property>
   <property name="windowIcon">
    <iconset resource="../resources/SatExplorer.qrc">
-    <normaloff>:/SatExplorer/icon/geocoding.png</normaloff>:/SatExplorer/icon/geocoding.png</iconset>
+    <normaloff>:/SatExplorer/icon/svg/geocoding.svg</normaloff>:/SatExplorer/icon/svg/geocoding.svg</iconset>
   </property>
   <layout class="QHBoxLayout" name="horizontalLayout">
    <item>

@@ -32,6 +32,7 @@
 #include <QLabel>
 #include <QToolBar>
 #include <QAction>
+#include "icon_utils.h"
 #include <QFileDialog>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -134,46 +135,6 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 // ============================================================================
 // Helper function to create custom toolbar button
 // ============================================================================
-// 简单的图标着色辅助函数
-static QIcon createColoredIcon(const QString &iconPath, const QColor &color)
-{
-    QIcon originalIcon(iconPath);
-    QIcon coloredIcon;
-    
-    // 为所有模式着色
-    QList<QIcon::Mode> modes = { QIcon::Normal, QIcon::Disabled, QIcon::Active, QIcon::Selected };
-    foreach (QIcon::Mode mode, modes) {
-        QList<QIcon::State> states = { QIcon::Off, QIcon::On };
-        foreach (QIcon::State state, states) {
-            QPixmap pixmap = originalIcon.pixmap(QSize(24, 24), mode, state);
-            if (!pixmap.isNull()) {
-                QPixmap colored = pixmap;
-                QPainter painter(&colored);
-                painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                painter.fillRect(colored.rect(), color);
-                painter.end();
-                coloredIcon.addPixmap(colored, mode, state);
-            }
-        }
-    }
-    
-    // 如果上面没成功，尝试基础方法
-    if (coloredIcon.isNull()) {
-        QPixmap pixmap = originalIcon.pixmap(QSize(24, 24));
-        if (!pixmap.isNull()) {
-            QPixmap colored = pixmap;
-            QPainter painter(&colored);
-            painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            painter.fillRect(colored.rect(), color);
-            painter.end();
-            coloredIcon = QIcon(colored);
-        } else {
-            coloredIcon = originalIcon;
-        }
-    }
-    
-    return coloredIcon;
-}
 
 static QToolButton* createToolbarButton(const QString &iconPath, const QString &text, const QColor &iconColor = QColor("#414752"), const QColor &textColor = QColor("#595F66"), QWidget *parent = nullptr)
 {
@@ -621,17 +582,17 @@ void WorkflowUI::setupToolbar()
     // Group 1: File Operations
     // ======================
     // Import button (蓝色)
-    QToolButton *btnImport = createToolbarButton(":/SatExplorer/folder_open.svg", "Import", COLOR_PRIMARY, COLOR_TEXT, this);
+    QToolButton *btnImport = createToolbarButton(":/SatExplorer/svg/folder_open.svg", "Import", COLOR_PRIMARY, COLOR_TEXT, this);
     connect(btnImport, &QToolButton::clicked, this, &WorkflowUI::onImport);
     m_toolbar->addWidget(btnImport);
 
     // Export button (蓝色)
-    QToolButton *btnExport = createToolbarButton(":/SatExplorer/save.svg", "Export", COLOR_PRIMARY, COLOR_TEXT, this);
+    QToolButton *btnExport = createToolbarButton(":/SatExplorer/svg/save.svg", "Export", COLOR_PRIMARY, COLOR_TEXT, this);
     connect(btnExport, &QToolButton::clicked, this, &WorkflowUI::onExport);
     m_toolbar->addWidget(btnExport);
 
     // Favorite button (棕橙色)
-    QToolButton *btnFav = createToolbarButton(":/SatExplorer/star.svg", "Fav", COLOR_TERTIARY, COLOR_TEXT, this);
+    QToolButton *btnFav = createToolbarButton(":/SatExplorer/svg/star.svg", "Fav", COLOR_TERTIARY, COLOR_TEXT, this);
     connect(btnFav, &QToolButton::clicked, this, [this]() {
         QMessageBox::information(this, "Favorite Workflows", "Favorite workflows feature coming soon.");
     });
@@ -648,17 +609,19 @@ void WorkflowUI::setupToolbar()
     // Group 2: Execution Controls
     // ======================
     // Sync/Refresh button (灰色)
-    QToolButton *btnSync = createToolbarButton(":/SatExplorer/refresh-cw.svg", "Refresh", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnSync = createToolbarButton(":/SatExplorer/svg/refresh-cw.svg", "Refresh", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    m_btnSync = btnSync;
     connect(btnSync, &QToolButton::clicked, this, &WorkflowUI::onRefreshNodes);
     m_toolbar->addWidget(btnSync);
 
     // Queue button (灰色)
-    QToolButton *btnQueue = createToolbarButton(":/SatExplorer/reorder.svg", "Queue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnQueue = createToolbarButton(":/SatExplorer/svg/reorder.svg", "Queue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    m_btnQueue = btnQueue;
     connect(btnQueue, &QToolButton::clicked, this, &WorkflowUI::onQueueExecute);
     m_toolbar->addWidget(btnQueue);
 
     // Halt/Interrupt button (红色)
-    QToolButton *btnHalt = createToolbarButton(":/SatExplorer/stop_circle.svg", "Halt", COLOR_ERROR, COLOR_ERROR, this);
+    QToolButton *btnHalt = createToolbarButton(":/SatExplorer/svg/stop_circle.svg", "Halt", COLOR_ERROR, COLOR_ERROR, this);
     connect(btnHalt, &QToolButton::clicked, this, &WorkflowUI::onInterruptExecution);
     m_toolbar->addWidget(btnHalt);
 
@@ -673,22 +636,25 @@ void WorkflowUI::setupToolbar()
     // Group 3: History & Cleanup
     // ======================
     // Drop/Clear Queue button (灰色)
-    QToolButton *btnDrop = createToolbarButton(":/SatExplorer/playlist_remove.svg", "DeQue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnDrop = createToolbarButton(":/SatExplorer/svg/playlist_remove.svg", "DeQue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    m_btnDrop = btnDrop;
     connect(btnDrop, &QToolButton::clicked, this, &WorkflowUI::onClearQueue);
     m_toolbar->addWidget(btnDrop);
 
     // Logs/History button (灰色)
-    QToolButton *btnLogs = createToolbarButton(":/SatExplorer/history.svg", "History", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnLogs = createToolbarButton(":/SatExplorer/svg/history.svg", "History", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    m_btnLogs = btnLogs;
     connect(btnLogs, &QToolButton::clicked, this, &WorkflowUI::onShowHistory);
     m_toolbar->addWidget(btnLogs);
 
     // Del/Delete selected button (灰色)
-    QToolButton *btnDel = createToolbarButton(":/SatExplorer/backspace.svg", "DEL", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    QToolButton *btnDel = createToolbarButton(":/SatExplorer/svg/backspace.svg", "DEL", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    m_btnDel = btnDel;
     connect(btnDel, &QToolButton::clicked, this, &WorkflowUI::onDelete);
     m_toolbar->addWidget(btnDel);
 
     // Purge/Clear all button (红色)
-    QToolButton *btnPurge = createToolbarButton(":/SatExplorer/delete_icon.svg", "PURGE", COLOR_ERROR, COLOR_ERROR, this);
+    QToolButton *btnPurge = createToolbarButton(":/SatExplorer/svg/delete_icon.svg", "PURGE", COLOR_ERROR, COLOR_ERROR, this);
     connect(btnPurge, &QToolButton::clicked, this, &WorkflowUI::onClear);
     m_toolbar->addWidget(btnPurge);
 }
@@ -1265,9 +1231,15 @@ void WorkflowUI::setTheme(const QString &theme)
                 );
             }
         }
-    }
 
-    // Apply ADS (Qt Advanced Docking System) theme styles
+        // Recolor gray toolbar icons for theme
+        QColor grayIconColor = theme == "dark" ? QColor("#CCCCCC") : QColor("#414752");
+        if (m_btnSync)  m_btnSync->setIcon(createColoredIcon(":/SatExplorer/svg/refresh-cw.svg", grayIconColor));
+        if (m_btnQueue) m_btnQueue->setIcon(createColoredIcon(":/SatExplorer/svg/reorder.svg", grayIconColor));
+        if (m_btnDrop)  m_btnDrop->setIcon(createColoredIcon(":/SatExplorer/svg/playlist_remove.svg", grayIconColor));
+        if (m_btnLogs)  m_btnLogs->setIcon(createColoredIcon(":/SatExplorer/svg/history.svg", grayIconColor));
+        if (m_btnDel)   m_btnDel->setIcon(createColoredIcon(":/SatExplorer/svg/backspace.svg", grayIconColor));
+    }
     if (m_dockManager) {
         QString adsStyle;
         
@@ -1374,7 +1346,7 @@ void WorkflowUI::setTheme(const QString &theme)
             if (widget) {
                 QString bgColor;
                 if (theme == "light") {
-                    bgColor = "#F5F5F5";
+                    bgColor = "#F9F9F9";
                 } else if (theme == "dark") {
                     bgColor = "#2b2b2b";
                 } else {  // fusion

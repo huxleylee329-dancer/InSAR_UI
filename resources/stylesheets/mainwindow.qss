@@ -1,7 +1,7 @@
 /* MainWindow specific styling - mainwindow.qss */
 
 MainWindow {
-    background-color: #F5F5F5;
+    background-color: #F9F9F9;
 }
 
 MainWindow #treeView {
@@ -19,7 +19,6 @@ MainWindow #Process {  /* QProgressBar */
 
 /* Project tree styling */
 MainWindow QTreeView {
-    background-color: white;
     border: 1px solid #CCCCCC;
     border-radius: 4px;
     show-decoration-selected: 1;
@@ -27,13 +26,4 @@ MainWindow QTreeView {
 
 MainWindow QTreeView::item {
     padding: 4px;
-}
-
-MainWindow QTreeView::item:selected {
-    background-color: #4a9acf;
-    color: white;
-}
-
-MainWindow QTreeView::item:hover {
-    background-color: #E0E0E0;
 }

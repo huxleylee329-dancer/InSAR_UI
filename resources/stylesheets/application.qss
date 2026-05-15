@@ -5,7 +5,7 @@
 }
 
 QMainWindow {
-    background-color: #F5F5F5;
+    background-color: #F9F9F9;
 }
 
 QStatusBar {
@@ -14,7 +14,7 @@ QStatusBar {
 }
 
 QMenuBar {
-    background-color: #F5F5F5;
+    background-color: #F9F9F9;
     border-bottom: 1px solid #CCCCCC;
 }
 
@@ -23,13 +23,13 @@ QMenuBar::item {
 }
 
 QMenuBar::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
 /* Checked menu item styling */
 QMenu::item:checked {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -44,5 +44,5 @@ QSplitter::handle {
 }
 
 QSplitter::handle:hover {
-    background-color: #4a9acf;
+    background-color: #005FAC;
 }

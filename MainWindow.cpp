@@ -12,6 +12,7 @@
 #include "WelcomeScreenUI.h"
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
+#include "icon_utils.h"
 
 // Windows DWM 标题栏主题支持
 #ifdef Q_OS_WIN
@@ -88,6 +89,40 @@ extern void applyTheme(const QString &theme);
 //#endif
 using namespace cv;
 
+// ============================================================================
+// Menu icon mapping: action name → SVG resource path
+// ============================================================================
+struct MenuIconMapping {
+    const char* actionName;
+    const char* svgPath;
+};
+static const MenuIconMapping menuIconMap[] = {
+    {"actionNew",                      ":/SatExplorer/svg/new_project.svg"},
+    {"actionOpen",                     ":/SatExplorer/svg/open_project.svg"},
+    {"actionSave",                     ":/SatExplorer/svg/save.svg"},
+    {"actionSave_as",                  ":/SatExplorer/svg/saveas.svg"},
+    {"actionSave_all",                 ":/SatExplorer/svg/saveall.svg"},
+    {"actionClose",                    ":/SatExplorer/svg/close.svg"},
+    {"actionQuit",                     ":/SatExplorer/svg/quit.svg"},
+    {"actionRegistration",             ":/SatExplorer/svg/coregistration.svg"},
+    {"actionCut",                      ":/SatExplorer/svg/cut.svg"},
+    {"actionS1_TOPS_BackGeocoding",    ":/SatExplorer/svg/coregistration.svg"},
+    {"actionS1_Deburst",               ":/SatExplorer/svg/splice.svg"},
+    {"actionSLC_deramp",               ":/SatExplorer/svg/dem.svg"},
+    {"actionBaseline_Formation",       ":/SatExplorer/svg/baseline_formation.svg"},
+    {"actionSBAS_deformation",         ":/SatExplorer/svg/time_series.svg"},
+    {"actionDeformation_Preview",      ":/SatExplorer/svg/view.svg"},
+    {"actionreference_re_selection",   ":/SatExplorer/svg/reference.svg"},
+    {"actionExport_KML",               ":/SatExplorer/svg/GoogleEarth.svg"},
+    {"actiongeocode",                  ":/SatExplorer/svg/geocoding.svg"},
+    {"actionS1_frame_merge",           ":/SatExplorer/svg/frame_merge.svg"},
+    {"actionS1_swath_merge",           ":/SatExplorer/svg/swath_merge.svg"},
+    {"actionNodeEditor",               ":/SatExplorer/svg/flow_editor.svg"},
+    // QMenu icons
+    {"menuImport",                     ":/SatExplorer/svg/import.svg"},
+    {"menuSBAS",                       ":/SatExplorer/svg/baseline_formation.svg"},
+};
+
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
@@ -108,7 +143,7 @@ MainWindow::MainWindow(QWidget* parent)
     ui.menuSAR->setDisabled(1);
     ui.menuInSAR->setDisabled(1);
     ui.menuDInSAR->setDisabled(1);
-    
+
 
     ui.treeView->init_tree();
     ui.tool->init_mould();
@@ -123,8 +158,10 @@ MainWindow::MainWindow(QWidget* parent)
 
     // 创建最近打开子菜单并插入文件菜单
     m_recentMenu = new QMenu("最近打开", this);
-    m_recentMenu->setIcon(QIcon(":/SatExplorer/icon/recen_open.png"));
     ui.File->insertMenu(ui.actionSave, m_recentMenu);
+
+    // Apply menu icons after m_recentMenu is created
+    applyMenuIcons(m_currentTheme == "dark");
     updateRecentMenu();
 
     // Setup theme menu (after setting m_currentTheme)
@@ -170,8 +207,10 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
 
     // 创建最近打开子菜单并插入文件菜单
     m_recentMenu = new QMenu("最近打开", this);
-    m_recentMenu->setIcon(QIcon(":/SatExplorer/icon/recen_open.png"));
     ui.File->insertMenu(ui.actionSave, m_recentMenu);
+
+    // Apply menu icons after m_recentMenu is created
+    applyMenuIcons(m_currentTheme == "dark");
     updateRecentMenu();
 
     connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
@@ -307,8 +346,10 @@ void MainWindow::Loading(QString Data_path, QString ImageType)
 
     QGridLayout* TabLayout = new QGridLayout;
     QWidget* TabChild = new QWidget;
-    int index = ui.tabWidget->addTab(TabChild, bmp_name);
-    ui.tabWidget->setCurrentWidget(TabChild);
+    QTabWidget* activeTabWidget = (m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workspace" && m_workspaceUI)
+        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    int index = activeTabWidget->addTab(TabChild, bmp_name);
+    activeTabWidget->setCurrentWidget(TabChild);
 
 
     ImageView* graph = new ImageView(TabChild);
@@ -381,6 +422,7 @@ void MainWindow::open_from_project_file(QString str)
             QStandardItem* Project = new QStandardItem;
             QStandardItem* Project_Path = new QStandardItem;
             Project->setIcon(QIcon(PROJECT_ICON));
+            Project->setData(PROJECT_ICON, Qt::UserRole + 10);
             Project->setStatusTip(NOT_IN_PROCESS);
             if (!strcmp(q->Value(), "project_name"))
             {
@@ -409,6 +451,7 @@ void MainWindow::open_from_project_file(QString str)
                 Data_Node->setText(p->Attribute("name"));
                 Data_Node->setToolTip(Project->text());
                 Data_Node->setIcon(QIcon(FOLDER_ICON));
+                Data_Node->setData(FOLDER_ICON, Qt::UserRole + 10);
                 Project->appendRow(Data_Node);
                 QStandardItem* Rank = new QStandardItem(p->Attribute("rank"));
                 Project->setChild(Project->rowCount() - 1, 1, Rank);
@@ -459,6 +502,7 @@ void MainWindow::open_from_project_file(QString str)
                     }
                     Data_Node->appendRow(Data);
                     Data->setIcon(QIcon(IMAGEDATA_ICON));
+                    Data->setData(IMAGEDATA_ICON, Qt::UserRole + 10);
                     Data_Node->setChild(i, 1, Data_Path);
                 }
 
@@ -500,20 +544,23 @@ bool MainWindow::eventFilter(QObject* target, QEvent* event)
     // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接跳过
     bool isWorkspace = m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workspace";
 
-    if (isWorkspace && target == ui.tabWidget)
+    QTabWidget* activeTabWidget = (isWorkspace && m_workspaceUI && m_workspaceUI->tabWidget())
+        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+
+    if (isWorkspace && target == activeTabWidget)
     {
         if (event->type() == QEvent::Resize || event->type() == QEvent::Move)
         {
-            if (mColors.size())
-                mColors.at(ui.tabWidget->currentIndex())->move(ui.tabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+            if (mColors.size() && activeTabWidget->currentIndex() >= 0)
+                mColors.at(activeTabWidget->currentIndex())->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
         }
     }
     if (isWorkspace && target == this)
     {
         if (event->type() == QEvent::Move)
         {
-            if (mColors.size())
-                mColors.at(ui.tabWidget->currentIndex())->move(ui.tabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+            if (mColors.size() && activeTabWidget->currentIndex() >= 0)
+                mColors.at(activeTabWidget->currentIndex())->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
         }
     }
     return false;
@@ -531,6 +578,10 @@ void MainWindow::ShowImage(QModelIndex image)
 
     QString name = model->index(image.row(), 0, image.parent()).data().toString();
     QString path = model->index(image.row(), 1, image.parent()).data().toString();
+
+    // 已打开则直接切换到对应tab
+    if (CheckTab(image))
+        return;
 
     if (path.isEmpty() || !QFileInfo(path).exists())
     {
@@ -554,9 +605,19 @@ void MainWindow::ShowImage(QModelIndex image)
             mType = type;
             Loading(mData_path, mType);
         }
-        else
+        else if(!image.child(0,0).isValid() && image.parent().isValid())
         {
-            if(!image.child(0,0).isValid() && image.parent().isValid())
+            QString suffix = fileinfo.suffix().toLower();
+            QStringList imageFormats = {"jpg","jpeg","png","bmp","tif","tiff"};
+            if (imageFormats.contains(suffix))
+            {
+                // Macau等直接导入的普通图片，跳过HDF5读取，直接加载
+                this->bmp_path = path;
+                mData_path = path;
+                mType = type;
+                Loading(mData_path, mType);
+            }
+            else
             {
                 mData_path = path;
                 mType = type;
@@ -579,9 +640,7 @@ void MainWindow::ShowImage(QModelIndex image)
                 connect(this->Process, &QProgressDialog::canceled, this, &MainWindow::StopThread);// , Qt::QueuedConnection);
                 thread->thread()->start();
                 emit operate(path, path_abs, type);
-
             }
-
         }
     }
 }
@@ -670,8 +729,10 @@ void MainWindow::closeCurrentProject()
     ui.menuDInSAR->setDisabled(1);
 
     // 清空标签页
-    while (ui.tabWidget->count() > 0)
-        ui.tabWidget->removeTab(0);
+    QTabWidget* closeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
+        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    while (closeTabWidget->count() > 0)
+        closeTabWidget->removeTab(0);
 
     setWindowTitle("SatExplorer");
 }
@@ -1119,7 +1180,9 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
     {
         ui.treeView->setHidden(0);
         ui.tool->setHidden(0);
-        ui.tabWidget->setHidden(0);
+        QTabWidget* renewTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
+            ? m_workspaceUI->tabWidget() : ui.tabWidget;
+        renewTabWidget->setHidden(0);
     }
     if(!ui.Process->isEnabled())
         ui.Process->setDisabled(0);
@@ -1157,17 +1220,20 @@ void MainWindow::ShowColorBar(int index)
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return;
 
-    if ( ui.tabWidget->count()== mExist_Color.size())
+    QTabWidget* activeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
+        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+
+    if ( activeTabWidget->count()== mExist_Color.size())
     {
-        if (ui.tabWidget->count() - 1 >= index)
+        if (activeTabWidget->count() - 1 >= index)
         {
-            cout << ui.tabWidget->count();
+            cout << activeTabWidget->count();
             cout << "\n" << "new";
             if (mExist_Color.at(index))
             {
 
-                mColors.at(index)->resize(ui.tabWidget->currentWidget()->width() / 5, ui.tabWidget->currentWidget()->height() / 3);
-                mColors.at(index)->move(ui.tabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+                mColors.at(index)->resize(activeTabWidget->currentWidget()->width() / 5, activeTabWidget->currentWidget()->height() / 3);
+                mColors.at(index)->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
                 mColors.at(index)->raise();
                 mColors.at(index)->show();
             }
@@ -1177,26 +1243,26 @@ void MainWindow::ShowColorBar(int index)
         {
             if (mColors.size())
             {
-                cout << ui.tabWidget->count();
+                cout << activeTabWidget->count();
                 cout << "\n" << "hide";
                 mColors.at(ColorBar_Before)->hide();
             }
 
         }
-        cout << ui.tabWidget->count();
+        cout << activeTabWidget->count();
         cout << "\n" << "change";
 
     }
-    if (TabCount_Before >= 0 && TabCount_Before< ui.tabWidget->count())
+    if (TabCount_Before >= 0 && TabCount_Before< activeTabWidget->count())
     {
         if (mColors.size())
         {
-            cout << ui.tabWidget->count();
+            cout << activeTabWidget->count();
             cout << "\n" << "hide";
             mColors.at(ColorBar_Before)->hide();
         }
     }
-    TabCount_Before = ui.tabWidget->count();
+    TabCount_Before = activeTabWidget->count();
     ColorBar_Before = index;
 }
 
@@ -1206,14 +1272,17 @@ bool MainWindow::CheckTab(QModelIndex image)
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return false;
 
-    int n = ui.tabWidget->count();
+    QTabWidget* activeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
+        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+
+    int n = activeTabWidget->count();
     int i = 0;
     QString name = model->index(image.row(), 0, image.parent()).data().toString();
     for (i = 0; i < n; i++)
     {
-        if (!QString::compare(ui.tabWidget->tabText(i), name))
+        if (!QString::compare(activeTabWidget->tabText(i), name))
         {
-            ui.tabWidget->setCurrentIndex(i);
+            activeTabWidget->setCurrentIndex(i);
             return true;
         }
     }
@@ -1227,22 +1296,25 @@ void MainWindow::on_tabWidget_tabCloseRequested(int index)
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return;
 
-    if (ui.tabWidget->widget(index))
+    QTabWidget* activeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
+        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+
+    if (activeTabWidget->widget(index))
     {
-        cout << ui.tabWidget->count();
+        cout << activeTabWidget->count();
         cout << "\n" << "close";
-       // ui.tabWidget->removeTab(index);
-        delete(ui.tabWidget->widget(index));
+       // activeTabWidget->removeTab(index);
+        delete(activeTabWidget->widget(index));
         mColors.removeAt(index);
         mExist_Color.removeAt(index);
-        if (ui.tabWidget->currentIndex() >= 0)
+        if (activeTabWidget->currentIndex() >= 0)
         {
-            if (mExist_Color.at(ui.tabWidget->currentIndex()))
+            if (mExist_Color.at(activeTabWidget->currentIndex()))
             {
-                mColors.at(ui.tabWidget->currentIndex())->resize(ui.tabWidget->currentWidget()->width() / 5, ui.tabWidget->currentWidget()->height() / 3);
-                mColors.at(ui.tabWidget->currentIndex())->move(ui.tabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
-                mColors.at(ui.tabWidget->currentIndex())->raise();
-                mColors.at(ui.tabWidget->currentIndex())->show();
+                mColors.at(activeTabWidget->currentIndex())->resize(activeTabWidget->currentWidget()->width() / 5, activeTabWidget->currentWidget()->height() / 3);
+                mColors.at(activeTabWidget->currentIndex())->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+                mColors.at(activeTabWidget->currentIndex())->raise();
+                mColors.at(activeTabWidget->currentIndex())->show();
             }
 
         }
@@ -1263,6 +1335,27 @@ void MainWindow::onThemeDark()
 void MainWindow::onThemeFusion()
 {
     setTheme("fusion");
+}
+
+void MainWindow::applyMenuIcons(bool isDark)
+{
+    QColor color = themeIconColor(isDark);
+    for (const auto& m : menuIconMap) {
+        QAction* action = findChild<QAction*>(m.actionName);
+        if (action) action->setIcon(createColoredIcon(m.svgPath, color));
+    }
+    if (m_recentMenu) m_recentMenu->setIcon(createColoredIcon(":/SatExplorer/svg/recen_open.svg", color));
+
+    // Dynamic View menu actions (工作区界面 / 工作流界面)
+    QMenu* viewMenu = ui.menubar->findChild<QMenu*>("View");
+    if (viewMenu) {
+        for (QAction* action : viewMenu->actions()) {
+            if (action->text().contains(QString::fromUtf8("工作区")))
+                action->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", color));
+            else if (action->text().contains(QString::fromUtf8("工作流")))
+                action->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", color));
+        }
+    }
 }
 
 void MainWindow::setTheme(const QString &theme)
@@ -1301,6 +1394,14 @@ void MainWindow::setTheme(const QString &theme)
     if (m_workflowUI) {
         m_workflowUI->setTheme(theme);
     }
+
+    // Recolor tree view icons for theme
+    if (ui.treeView) {
+        ui.treeView->updateTreeIcons(theme);
+    }
+
+    // Recolor menu icons for theme
+    applyMenuIcons(theme == "dark");
 
     // Update theme menu check state
     QMenu* settingsMenu = ui.Setteing;
@@ -1410,6 +1511,14 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
                 this, &MainWindow::update_treeview);
     }
 
+    if (m_workspaceUI && m_workspaceUI->tabWidget())
+    {
+        connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged,
+                this, &MainWindow::ShowColorBar);
+        connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested,
+                this, &MainWindow::on_tabWidget_tabCloseRequested);
+    }
+
     // WorkspaceUI already has the model set up by MainWindow
     // Create workflow UI (node editor interface)
     // Parent is nullptr - will be managed by InterfaceManager
@@ -1468,14 +1577,14 @@ void MainWindow::setupInterfaceSwitchingMenu()
 
     // Add workspace action
     QAction* workspaceAction = viewMenu->addAction(QString::fromUtf8("工作区界面"));
-    workspaceAction->setIcon(QIcon(":/SatExplorer/icon/project.png"));
+    workspaceAction->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", themeIconColor(m_currentTheme == "dark")));
     workspaceAction->setCheckable(true);
     interfaceGroup->addAction(workspaceAction);
     connect(workspaceAction, &QAction::triggered, this, &MainWindow::switchToWorkspace);
 
     // Add workflow action
     QAction* workflowAction = viewMenu->addAction(QString::fromUtf8("工作流界面"));
-    workflowAction->setIcon(QIcon(":/SatExplorer/icon/flow_editor.png"));
+    workflowAction->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", themeIconColor(m_currentTheme == "dark")));
     workflowAction->setCheckable(true);
     interfaceGroup->addAction(workflowAction);
     connect(workflowAction, &QAction::triggered, this, &MainWindow::switchToWorkflow);

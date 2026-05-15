@@ -18,6 +18,7 @@ public:
      QList<QStandardItem*> returnTheItems();
      QStandardItemModel* model;
      QProgressDialog* mTreeProcess;
+     void updateTreeIcons(const QString &theme);
      //QItemSelectionModel* modelSelection;
      //File_Path file_path[10];
      void mouseDoubleClickEvent(QMouseEvent* event);

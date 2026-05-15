@@ -1,7 +1,22 @@
 /* Dark theme - comprehensive color overrides - themes/dark.qss */
 
 QMainWindow {
-    background-color: #353535;
+    background-color: #1A1C1C;
+}
+
+QTreeView {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+}
+
+QTreeView::item:selected {
+    background-color: #005FAC;
+    color: white;
+}
+
+QTreeView::item:hover {
+    background-color: #404040;
+    color: #FFFFFF;
 }
 
 MainWindow #treeView,
@@ -45,13 +60,28 @@ QMenuBar::item {
 }
 
 QMenuBar::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
-/* Checked menu item styling */
+QMenu {
+    background-color: #2b2b2b;
+    color: #FFFFFF;
+    border: 1px solid #444444;
+}
+
+QMenu::item {
+    color: #FFFFFF;
+    padding: 4px 20px;
+}
+
+QMenu::item:selected {
+    background-color: #005FAC;
+    color: white;
+}
+
 QMenu::item:checked {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -76,7 +106,7 @@ QPushButton {
 
 QPushButton:hover {
     background-color: #505050;
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 QPushButton:pressed {
@@ -89,17 +119,17 @@ QPushButton:disabled {
 }
 
 QPushButton.primary {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
     border: none;
 }
 
 QPushButton.primary:hover {
-    background-color: #5ab9df;
+    background-color: #2090CC;
 }
 
 QPushButton.primary:pressed {
-    background-color: #3a8abf;
+    background-color: #004F9C;
 }
 
 QLineEdit {
@@ -109,7 +139,7 @@ QLineEdit {
 }
 
 QLineEdit:focus {
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 QLineEdit:disabled {
@@ -124,14 +154,14 @@ QComboBox {
 }
 
 QComboBox:hover {
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 QComboBox QAbstractItemView {
     background-color: #404040;
     color: #FFFFFF;
     border: 1px solid #666666;
-    selection-background-color: #4a9acf;
+    selection-background-color: #005FAC;
     selection-color: white;
 }
 
@@ -141,8 +171,8 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:checked {
-    background-color: #4a9acf;
-    border-color: #4a9acf;
+    background-color: #005FAC;
+    border-color: #005FAC;
 }
 
 QSpinBox {
@@ -204,7 +234,7 @@ QTreeWidget {
 }
 
 QTreeWidget::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -219,7 +249,7 @@ QListWidget {
 }
 
 QListWidget::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -233,7 +263,7 @@ QGroupBox::title {
 }
 
 QDialog {
-    background-color: #353535;
+    background-color: #1A1C1C;
 }
 
 ads--CDockWidget {
@@ -394,7 +424,7 @@ PropertyEditor QFrame[frameShape="4"] { /* HLine */
 
 /* Note editor in dark theme */
 QTextEdit#noteTextEdit {
-    background-color: #353535;
+    background-color: #1A1C1C;
     color: #FFFFFF;
     border: 1px solid #666666;
     border-radius: 4px;
@@ -446,18 +476,18 @@ QWidget#NodeEmbeddedWidget * QProgressBar {
 
 /* QPushButton in nodes - flat style */
 QWidget#NodeEmbeddedWidget * QPushButton {
-    background-color: #4A9ACF;
+    background-color: #005FAC;
     color: #FFFFFF;
     border: none;
     border-radius: 0;
 }
 
 QWidget#NodeEmbeddedWidget * QPushButton:hover {
-    background-color: #3A7AAF;
+    background-color: #107EBC;
 }
 
 QWidget#NodeEmbeddedWidget * QPushButton:pressed {
-    background-color: #2A6A9F;
+    background-color: #003F8C;
 }
 
 ImportNodeBase QLineEdit {
@@ -494,5 +524,5 @@ ImportNodeBase QPushButton {
 
 ImportNodeBase QPushButton:hover {
     background-color: #505050;
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }

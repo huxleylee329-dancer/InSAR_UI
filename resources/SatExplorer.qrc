@@ -1,76 +1,71 @@
 <RCC>
     <qresource prefix="/SatExplorer">
-        <file>icon/open_project.png</file>
-        <file>icon/recen_open.png</file>
-        <file>icon/save.png</file>
-        <file>icon/saveall.png</file>
-        <file>icon/saveas.png</file>
-        <file>icon/quit.png</file>
-        <file>icon/folder.png</file>
-        <file>icon/project.png</file>
-        <file>icon/open_project2.png</file>
-        <file>icon/new_project2.png</file>
-        <file>icon/quit2.png</file>
-        <file>icon/save1.png</file>
-        <file>icon/saveas2.png</file>
-        <file>icon/imagedata.png</file>
-        <file>icon/project1.png</file>
-        <file>icon/toolbox.png</file>
-        <file>icon/tool.png</file>
-        <file>icon/export.png</file>
-        <file>icon/cut.png</file>
-        <file>icon/import.png</file>
-        <file>icon/coregistration.png</file>
-        <file>icon/splice.png</file>
-        <file>icon/dem.png</file>
-        <file>icon/baseline_formation.png</file>
-        <file>icon/time_series.png</file>
-        <file>icon/hand.png</file>
-        <file>icon/zoom.png</file>
-        <file>icon/cursor_down.png</file>
-        <file>icon/cursor_up.png</file>
-        <file>icon/mark.png</file>
-        <file>icon/view.png</file>
-        <file>icon/reference.png</file>
-        <file>icon/GCPs.png</file>
-        <file>icon/delete.png</file>
-        <file>icon/GoogleEarth.png</file>
-        <file>icon/geocoding.png</file>
-        <file>icon/frame_merge.png</file>
-        <file>icon/swath_merge.png</file>
         <file>icon/InSARapp.ico</file>
-        <file>icon/new_project.png</file>
         <file>DefaultStyle.json</file>
         <file>DefaultStyle_light.json</file>
         <file>DefaultStyle_dark.json</file>
         <file>DefaultStyle_fusion.json</file>
-        <file>icon/flow_editor.png</file>
-        <file>icon/close.png</file>
-        <!-- Executable Nodes SVG Icons -->
-        <file>eye.svg</file>
-        <file>play.svg</file>
-        <file>stop.svg</file>
-        <file>refresh-cw.svg</file>
-        <file>refresh-cw-off.svg</file>
-        <!-- State Icons for Card Footer -->
-        <file>pause.svg</file>
-        <file>hourglass.svg</file>
-        <file>sync.svg</file>
-        <file>check-circle.svg</file>
-        <file>warning.svg</file>
-        <file>x-circle.svg</file>
-        <file>block.svg</file>
-        <!-- Material Design Toolbar Icons -->
-        <file>add.svg</file>
-        <file>save.svg</file>
-        <file>folder_open.svg</file>
-        <file>star.svg</file>
-        <file>reorder.svg</file>
-        <file>stop_circle.svg</file>
-        <file>playlist_remove.svg</file>
-        <file>history.svg</file>
-        <file>backspace.svg</file>
-        <file>delete_icon.svg</file>
+        <!-- SVG Icons -->
+        <file>svg/eye.svg</file>
+        <file>svg/play.svg</file>
+        <file>svg/stop.svg</file>
+        <file>svg/refresh-cw.svg</file>
+        <file>svg/refresh-cw-off.svg</file>
+        <file>svg/pause.svg</file>
+        <file>svg/hourglass.svg</file>
+        <file>svg/sync.svg</file>
+        <file>svg/check-circle.svg</file>
+        <file>svg/warning.svg</file>
+        <file>svg/x-circle.svg</file>
+        <file>svg/block.svg</file>
+        <file>svg/add.svg</file>
+        <file>svg/save.svg</file>
+        <file>svg/folder_open.svg</file>
+        <file>svg/star.svg</file>
+        <file>svg/reorder.svg</file>
+        <file>svg/stop_circle.svg</file>
+        <file>svg/playlist_remove.svg</file>
+        <file>svg/history.svg</file>
+        <file>svg/backspace.svg</file>
+        <file>svg/delete_icon.svg</file>
+        <file>svg/project1.svg</file>
+        <file>svg/folder.svg</file>
+        <file>svg/imagedata.svg</file>
+        <file>svg/toolbox.svg</file>
+        <file>svg/tool.svg</file>
+        <file>svg/export.svg</file>
+        <file>svg/cut.svg</file>
+        <file>svg/import.svg</file>
+        <file>svg/coregistration.svg</file>
+        <file>svg/splice.svg</file>
+        <file>svg/dem.svg</file>
+        <file>svg/baseline_formation.svg</file>
+        <file>svg/time_series.svg</file>
+        <file>svg/hand.svg</file>
+        <file>svg/zoom.svg</file>
+        <file>svg/cursor_down.svg</file>
+        <file>svg/cursor_up.svg</file>
+        <file>svg/mark.svg</file>
+        <file>svg/view.svg</file>
+        <file>svg/reference.svg</file>
+        <file>svg/GCPs.svg</file>
+        <file>svg/delete.svg</file>
+        <file>svg/GoogleEarth.svg</file>
+        <file>svg/geocoding.svg</file>
+        <file>svg/frame_merge.svg</file>
+        <file>svg/swath_merge.svg</file>
+        <file>svg/open_project.svg</file>
+        <file>svg/recen_open.svg</file>
+        <file>svg/saveall.svg</file>
+        <file>svg/saveas.svg</file>
+        <file>svg/quit.svg</file>
+        <file>svg/project.svg</file>
+        <file>svg/quit2.svg</file>
+        <file>svg/save1.svg</file>
+        <file>svg/saveas2.svg</file>
+        <file>svg/new_project.svg</file>
+        <file>svg/flow_editor.svg</file>
+        <file>svg/close.svg</file>
         <!-- Stylesheets -->
         <file>stylesheets/application.qss</file>
         <file>stylesheets/widgets.qss</file>
@@ -82,5 +77,6 @@
         <file>stylesheets/themes/dark.qss</file>
         <file>stylesheets/themes/fusion.qss</file>
         <file>BigIcon.PNG</file>
+        <file>guide.png</file>
     </qresource>
 </RCC>

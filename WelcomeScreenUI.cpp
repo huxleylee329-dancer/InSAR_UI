@@ -27,7 +27,8 @@ void WelcomeScreenUI::setupUi()
 
     // Title
     m_titleLabel = new QLabel("SatExplorer");
-    m_titleLabel->setStyleSheet("font-size: 36px; font-weight: bold; color: #4A9ACF;");
+
+    m_titleLabel->setStyleSheet("font-size: 36px; font-weight: bold; color: #005FAC;");
     m_titleLabel->setAlignment(Qt::AlignLeft);
     mainLayout->addWidget(m_titleLabel);
 
@@ -381,7 +382,7 @@ void WelcomeScreenUI::updateThemeStyles()
     const char *tipColor = isDarkTheme ? "#994700" : "#F57C00";
 
     // Update title and subtitle
-    m_titleLabel->setStyleSheet(QString("font-size: 36px; font-weight: bold; color: #4A9ACF;"));
+    m_titleLabel->setStyleSheet(QString("font-size: 36px; font-weight: bold; color: #005FAC;"));
     m_subtitleLabel->setStyleSheet(QString("font-size: 14px; color: %1;").arg(secondaryText));
 
     // Update quick start buttons

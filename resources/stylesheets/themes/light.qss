@@ -1,12 +1,21 @@
 /* Light theme - minimal overrides, just ensure colors are correct - themes/light.qss */
 
 QMainWindow {
-    background-color: #F5F5F5;
+    background-color: #F9F9F9;
 }
 
 QTreeView {
     background-color: white;
-    color: #333333;
+    color: #005FAC;
+}
+
+QTreeView::item:selected {
+    background-color: #005FAC;
+    color: white;
+}
+
+QTreeView::item:hover {
+    background-color: #E0E0E0;
 }
 
 QTreeView QHeaderView::section {
@@ -114,16 +123,16 @@ QWidget#NodeEmbeddedWidget * QProgressBar {
 
 /* QPushButton in nodes - flat style */
 QWidget#NodeEmbeddedWidget * QPushButton {
-    background-color: #4A9ACF;
+    background-color: #005FAC;
     color: #FFFFFF;
     border: none;
     border-radius: 0;
 }
 
 QWidget#NodeEmbeddedWidget * QPushButton:hover {
-    background-color: #3A7AAF;
+    background-color: #107EBC;
 }
 
 QWidget#NodeEmbeddedWidget * QPushButton:pressed {
-    background-color: #2A6A9F;
+    background-color: #003F8C;
 }

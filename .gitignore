@@ -222,6 +222,7 @@ _Pvt_Extensions
 # self defined ignore files
 x64/
 bin/
+tools/
 
 # Claude related
 screenshot/

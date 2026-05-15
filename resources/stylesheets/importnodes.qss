@@ -2,7 +2,7 @@
 
 /* Source Node - blue */
 QLineEdit#sourceLineEdit {
-    background-color: #3a7aaf;
+    background-color: #107EBC;
     border-radius: 5px;
     padding: 5px;
     color: white;
@@ -11,7 +11,7 @@ QLineEdit#sourceLineEdit {
 
 /* Math Node - secondary blue */
 QLabel#mathLabel {
-    background-color: #3a7aaf;
+    background-color: #107EBC;
     border-radius: 5px;
     padding: 5px;
     color: white;
@@ -19,7 +19,7 @@ QLabel#mathLabel {
 
 /* Display Node - secondary blue */
 QLabel#displayLabel {
-    background-color: #3a7aaf;
+    background-color: #107EBC;
     border-radius: 5px;
     padding: 5px;
     color: white;
@@ -34,7 +34,7 @@ ImportNodeBase QPushButton.primary {
 }
 
 ImportNodeBase QPushButton.primary:hover {
-    background-color: #3a7aaf;
+    background-color: #107EBC;
 }
 
 /* Progress bars in import nodes */

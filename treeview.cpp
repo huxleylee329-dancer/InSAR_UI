@@ -1,7 +1,8 @@
-﻿#include "treeview.h"  
+﻿#include "treeview.h"
 #include"icon_source.h"
+#include "icon_utils.h"
 #include<qmessagebox.h>
-#include <QMenu>  
+#include <QMenu>
 #include <QMenuBar>  
 #include <QStatusBar> 
 #include <QFileDialog>
@@ -9,6 +10,16 @@
 #include<QDir>
 #include<QFile>
 #include<FormatConversion.h>
+
+// Icons now use SVG currentColor - automatically follows widget color property
+// No manual tinting needed - theme colors are set via stylesheet
+
+static bool isDarkTheme(QWidget *w)
+{
+    if (!w) return false;
+    QColor bg = w->palette().color(w->backgroundRole());
+    return bg.lightness() < 128;
+}
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
@@ -70,7 +81,36 @@ void TreeView::NewProject(QString name, QString save_path)
     QFileInfo info = QFileInfo(save_path);
     QString path = info.absoluteFilePath();
     xml.XMLFile_creat_new_project(path.toStdString().c_str(),QString("%1.insar").arg(name).toStdString().c_str(), "1.0");
-    
+
+}
+
+void TreeView::updateTreeIcons(const QString &theme)
+{
+    if (!model) return;
+    QColor iconColor = themeIconColor(theme == "dark");
+
+    std::function<void(QStandardItem*)> updateItem = [&](QStandardItem *item) {
+        if (!item) return;
+        QString statusTip = item->statusTip();
+        bool isProject = !statusTip.isEmpty();
+        bool hasChildren = item->hasChildren();
+
+        if (isProject) {
+            item->setIcon(createColoredIcon(PROJECT_ICON, iconColor));
+        } else if (hasChildren) {
+            item->setIcon(createColoredIcon(FOLDER_ICON, iconColor));
+        } else {
+            item->setIcon(createColoredIcon(IMAGEDATA_ICON, iconColor));
+        }
+
+        for (int c = 0; c < item->rowCount(); ++c) {
+            updateItem(item->child(c, 0));
+        }
+    };
+
+    for (int row = 0; row < model->rowCount(); ++row) {
+        updateItem(model->item(row, 0));
+    }
 }
 
 

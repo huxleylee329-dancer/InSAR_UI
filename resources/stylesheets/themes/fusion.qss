@@ -16,7 +16,7 @@ QToolBar QToolButton {
 
 QPushButton {
     border-radius: 2px;
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
     font-weight: bold;
     border: none;
@@ -24,11 +24,11 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #3a7aaf;
+    background-color: #107EBC;
 }
 
 QPushButton:pressed {
-    background-color: #2a6a9f;
+    background-color: #003F8C;
 }
 
 QPushButton:disabled {
@@ -44,7 +44,7 @@ QLineEdit {
 }
 
 QLineEdit:focus {
-    border-color: #4a9acf;
+    border-color: #005FAC;
     border-width: 2px;
 }
 
@@ -56,7 +56,7 @@ QComboBox {
 }
 
 QComboBox:hover {
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 QCheckBox::indicator {
@@ -67,7 +67,7 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:checked {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     border: none;
 }
 
@@ -80,7 +80,7 @@ QTabBar::tab {
 }
 
 QTabBar::tab:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -91,7 +91,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     border-radius: 2px;
 }
 
@@ -109,7 +109,7 @@ QTreeView QHeaderView::section {
 }
 
 QTreeView::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -119,7 +119,7 @@ QTreeWidget {
 }
 
 QTreeWidget::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -132,7 +132,7 @@ QGroupBox {
 }
 
 QGroupBox::title {
-    color: #4a9acf;
+    color: #005FAC;
 }
 
 /* Tab close button */

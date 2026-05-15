@@ -218,6 +218,13 @@ private:
     // Theme
     QString m_currentTheme;
 
+    // Toolbar buttons that need theme-aware icon recoloring
+    QToolButton *m_btnSync = nullptr;
+    QToolButton *m_btnQueue = nullptr;
+    QToolButton *m_btnDrop = nullptr;
+    QToolButton *m_btnLogs = nullptr;
+    QToolButton *m_btnDel = nullptr;
+
     // Detail view components for executable nodes
     QtNodes::NodeDetailWindow *_detailWindow = nullptr;
     QtNodes::NodeDetailOverlay *_detailOverlay = nullptr;

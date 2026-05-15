@@ -127,10 +127,6 @@
      <property name="title">
       <string>import</string>
      </property>
-     <property name="icon">
-      <iconset resource="../resources/SatExplorer.qrc">
-       <normaloff>:/SatExplorer/icon/import.png</normaloff>:/SatExplorer/icon/import.png</iconset>
-     </property>
      <addaction name="actionTSX"/>
      <addaction name="actionSentinel_1"/>
      <addaction name="actionCOSMOS_SkyMed"/>
@@ -174,10 +170,6 @@
     <widget class="QMenu" name="menuSBAS">
      <property name="title">
       <string>SBAS</string>
-     </property>
-     <property name="icon">
-      <iconset resource="../resources/SatExplorer.qrc">
-       <normaloff>:/SatExplorer/icon/baseline_formation.png</normaloff>:/SatExplorer/icon/baseline_formation.png</iconset>
      </property>
      <addaction name="actionBaseline_Formation"/>
      <addaction name="actionSBAS_deformation"/>
@@ -235,73 +227,41 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionNew">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/new_project.png</normaloff>:/SatExplorer/icon/new_project.png</iconset>
-   </property>
    <property name="text">
     <string>新建工程</string>
    </property>
   </action>
   <action name="actionOpen">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/open_project.png</normaloff>:/SatExplorer/icon/open_project.png</iconset>
-   </property>
    <property name="text">
     <string>打开工程</string>
    </property>
   </action>
   <action name="actionSave">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/save.png</normaloff>:/SatExplorer/icon/save.png</iconset>
-   </property>
    <property name="text">
     <string>保存工程</string>
    </property>
   </action>
   <action name="actionSave_as">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/saveas.png</normaloff>:/SatExplorer/icon/saveas.png</iconset>
-   </property>
    <property name="text">
     <string>另存为</string>
    </property>
   </action>
   <action name="actionSave_all">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/saveall.png</normaloff>:/SatExplorer/icon/saveall.png</iconset>
-   </property>
    <property name="text">
     <string>全部保存</string>
    </property>
   </action>
   <action name="actionClose">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/close.png</normaloff>:/SatExplorer/icon/close.png</iconset>
-   </property>
    <property name="text">
     <string>关闭工程</string>
    </property>
   </action>
   <action name="actionQuit">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/quit.png</normaloff>:/SatExplorer/icon/quit.png</iconset>
-   </property>
    <property name="text">
     <string>退出</string>
    </property>
   </action>
   <action name="actionRegistration">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/coregistration.png</normaloff>:/SatExplorer/icon/coregistration.png</iconset>
-   </property>
    <property name="text">
     <string>coregistration</string>
    </property>
@@ -327,10 +287,6 @@
    </property>
   </action>
   <action name="actionCut">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/cut.png</normaloff>:/SatExplorer/icon/cut.png</iconset>
-   </property>
    <property name="text">
     <string>AOI</string>
    </property>
@@ -351,100 +307,56 @@
    </property>
   </action>
   <action name="actionS1_TOPS_BackGeocoding">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/coregistration.png</normaloff>:/SatExplorer/icon/coregistration.png</iconset>
-   </property>
    <property name="text">
     <string>S1 TOPS BackGeocoding</string>
    </property>
   </action>
   <action name="actionS1_Deburst">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/splice.png</normaloff>:/SatExplorer/icon/splice.png</iconset>
-   </property>
    <property name="text">
     <string>S1 Deburst</string>
    </property>
   </action>
   <action name="actionSLC_deramp">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/dem.png</normaloff>:/SatExplorer/icon/dem.png</iconset>
-   </property>
    <property name="text">
     <string>SLC_deramp</string>
    </property>
   </action>
   <action name="actionBaseline_Formation">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/baseline_formation.png</normaloff>:/SatExplorer/icon/baseline_formation.png</iconset>
-   </property>
    <property name="text">
     <string>Baseline Formation</string>
    </property>
   </action>
   <action name="actionSBAS_deformation">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/time_series.png</normaloff>:/SatExplorer/icon/time_series.png</iconset>
-   </property>
    <property name="text">
     <string>Time-Series Analysis</string>
    </property>
   </action>
   <action name="actionDeformation_Preview">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/view.png</normaloff>:/SatExplorer/icon/view.png</iconset>
-   </property>
    <property name="text">
     <string>Time Series View</string>
    </property>
   </action>
   <action name="actionreference_re_selection">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/reference.png</normaloff>:/SatExplorer/icon/reference.png</iconset>
-   </property>
    <property name="text">
     <string>reference re-selection</string>
    </property>
   </action>
   <action name="actionExport_KML">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/GoogleEarth.png</normaloff>:/SatExplorer/icon/GoogleEarth.png</iconset>
-   </property>
    <property name="text">
     <string>export as kml</string>
    </property>
   </action>
   <action name="actiongeocode">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/geocoding.png</normaloff>:/SatExplorer/icon/geocoding.png</iconset>
-   </property>
    <property name="text">
     <string>Geocoding</string>
    </property>
   </action>
   <action name="actionS1_frame_merge">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/frame_merge.png</normaloff>:/SatExplorer/icon/frame_merge.png</iconset>
-   </property>
    <property name="text">
     <string>S1 frame merge</string>
    </property>
   </action>
   <action name="actionS1_swath_merge">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/swath_merge.png</normaloff>:/SatExplorer/icon/swath_merge.png</iconset>
-   </property>
    <property name="text">
     <string>S1 swath merge</string>
    </property>
@@ -460,10 +372,6 @@
    </property>
   </action>
   <action name="actionNodeEditor">
-   <property name="icon">
-    <iconset resource="../resources/SatExplorer.qrc">
-     <normaloff>:/SatExplorer/icon/flow_editor.png</normaloff>:/SatExplorer/icon/flow_editor.png</iconset>
-   </property>
    <property name="text">
     <string>流程编辑器</string>
    </property>

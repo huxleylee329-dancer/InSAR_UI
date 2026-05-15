@@ -135,6 +135,7 @@ private slots:
 private:
     void setupThemeMenu();
     void setTheme(const QString &theme);
+    void applyMenuIcons(bool isDark);
     void updateThemeCheckState(QMenu* themeMenu, const QString& theme);
     void setupInterfaceSwitchingMenu();
     void updateInterfaceMenuCheckState();

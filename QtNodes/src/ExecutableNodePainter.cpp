@@ -88,21 +88,21 @@ QPixmap ExecutableNodePainter::loadAndColorizeIcon(const QString &resourcePath, 
 ExecutableNodePainter::ExecutableNodePainter()
 {
     // Load and colorize SVG icons from resources
-    _pixmapAutomatic = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/refresh-cw.svg"), ::COLOR_AUTOMATIC, QSize(20, 20));
-    _pixmapManual = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/refresh-cw-off.svg"), ::COLOR_MANUAL, QSize(20, 20));
-    _pixmapPlay = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/play.svg"), ::COLOR_PLAY, QSize(16, 16));
-    _pixmapStop = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/stop.svg"), ::COLOR_STOP, QSize(16, 16));
-    _pixmapEye = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/eye.svg"), ::COLOR_EYE, QSize(20, 20));
+    _pixmapAutomatic = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/refresh-cw.svg"), ::COLOR_AUTOMATIC, QSize(20, 20));
+    _pixmapManual = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/refresh-cw-off.svg"), ::COLOR_MANUAL, QSize(20, 20));
+    _pixmapPlay = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/play.svg"), ::COLOR_PLAY, QSize(16, 16));
+    _pixmapStop = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/stop.svg"), ::COLOR_STOP, QSize(16, 16));
+    _pixmapEye = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/eye.svg"), ::COLOR_EYE, QSize(20, 20));
 
     // Load state icons for card footer (18x18)
-    _pixmapStateIdle = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/pause.svg"), QColor(113, 119, 132), QSize(18, 18));
-    _pixmapStatePending = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/hourglass.svg"), QColor(59, 130, 246), QSize(18, 18));
-    _pixmapStateRunning = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/sync.svg"), QColor(59, 130, 246), QSize(18, 18));
-    _pixmapStateCompleted = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/check-circle.svg"), QColor(16, 185, 129), QSize(18, 18));
-    _pixmapStateStopped = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/stop.svg"), QColor(245, 158, 11), QSize(18, 18));
-    _pixmapStateWarning = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/warning.svg"), QColor(245, 158, 11), QSize(18, 18));
-    _pixmapStateError = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/x-circle.svg"), QColor(239, 68, 68), QSize(18, 18));
-    _pixmapStateDisabled = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/block.svg"), QColor(148, 163, 184), QSize(18, 18));
+    _pixmapStateIdle = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/pause.svg"), QColor(113, 119, 132), QSize(18, 18));
+    _pixmapStatePending = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/hourglass.svg"), QColor(59, 130, 246), QSize(18, 18));
+    _pixmapStateRunning = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/sync.svg"), QColor(59, 130, 246), QSize(18, 18));
+    _pixmapStateCompleted = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/check-circle.svg"), QColor(16, 185, 129), QSize(18, 18));
+    _pixmapStateStopped = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/stop.svg"), QColor(245, 158, 11), QSize(18, 18));
+    _pixmapStateWarning = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/warning.svg"), QColor(245, 158, 11), QSize(18, 18));
+    _pixmapStateError = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/x-circle.svg"), QColor(239, 68, 68), QSize(18, 18));
+    _pixmapStateDisabled = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/block.svg"), QColor(148, 163, 184), QSize(18, 18));
 }
 
 void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) const

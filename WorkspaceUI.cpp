@@ -6,6 +6,11 @@
 #include <QVBoxLayout>
 #include "ColorBar.h"
 #include "MyThread.h"
+#include "icon_source.h"
+#include "icon_utils.h"
+
+// Icons now use SVG currentColor - automatically follows widget color property
+// No manual tinting needed - theme colors are set via stylesheet
 
 WorkspaceUI::WorkspaceUI(QWidget *parent)
     : QWidget(parent)
@@ -208,6 +213,28 @@ void WorkspaceUI::setTheme(const QString &theme)
     }
     if (m_tabWidget) {
         m_tabWidget->setProperty("theme-background", bgColor);
+    }
+
+    // Refresh tree view icons for theme
+    if (m_treeView) {
+        m_treeView->updateTreeIcons(theme);
+    }
+    if (m_toolTree && m_toolTree->model) {
+        QColor toolIconColor = themeIconColor(theme == "dark");
+        for (int row = 0; row < m_toolTree->model->rowCount(); ++row) {
+            QStandardItem *item = m_toolTree->model->item(row, 0);
+            if (!item) continue;
+            QString text = item->text();
+            if (text == "InSAR" || text == "DInSAR") {
+                item->setIcon(createColoredIcon(TEMPLATE_FOLDER, toolIconColor));
+            } else {
+                item->setIcon(createColoredIcon(TEMPLATE_TOOL, toolIconColor));
+            }
+            for (int c = 0; c < item->rowCount(); ++c) {
+                QStandardItem *child = item->child(c, 0);
+                if (child) child->setIcon(QIcon(TEMPLATE_TOOL));
+            }
+        }
     }
 
     update();

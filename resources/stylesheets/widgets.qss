@@ -11,7 +11,7 @@ QPushButton {
 
 QPushButton:hover {
     background-color: #E0E0E0;
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 QPushButton:pressed {
@@ -19,23 +19,23 @@ QPushButton:pressed {
 }
 
 QPushButton:disabled {
-    background-color: #F5F5F5;
+    background-color: #F9F9F9;
     color: #AAAAAA;
     border-color: #EEEEEE;
 }
 
 QPushButton.primary {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
     border: none;
 }
 
 QPushButton.primary:hover {
-    background-color: #3a7aaf;
+    background-color: #107EBC;
 }
 
 QPushButton.primary:pressed {
-    background-color: #2a6a9f;
+    background-color: #003F8C;
 }
 
 /* QLineEdit */
@@ -48,11 +48,11 @@ QLineEdit {
 }
 
 QLineEdit:focus {
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 QLineEdit:disabled {
-    background-color: #F5F5F5;
+    background-color: #F9F9F9;
     color: #AAAAAA;
 }
 
@@ -66,7 +66,7 @@ QComboBox {
 }
 
 QComboBox:hover {
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 QComboBox::drop-down {
@@ -77,7 +77,7 @@ QComboBox::drop-down {
 QComboBox QAbstractItemView {
     background-color: white;
     border: 1px solid #CCCCCC;
-    selection-background-color: #4a9acf;
+    selection-background-color: #005FAC;
     selection-color: white;
 }
 
@@ -95,8 +95,8 @@ QCheckBox::indicator {
 }
 
 QCheckBox::indicator:checked {
-    background-color: #4a9acf;
-    border-color: #4a9acf;
+    background-color: #005FAC;
+    border-color: #005FAC;
 }
 
 /* QSpinBox */
@@ -108,7 +108,7 @@ QSpinBox {
 }
 
 QSpinBox:focus {
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 /* QDoubleSpinBox */
@@ -120,7 +120,7 @@ QDoubleSpinBox {
 }
 
 QDoubleSpinBox:focus {
-    border-color: #4a9acf;
+    border-color: #005FAC;
 }
 
 /* QProgressBar */
@@ -133,7 +133,7 @@ QProgressBar {
 }
 
 QProgressBar::chunk {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     border-radius: 3px;
 }
 
@@ -180,7 +180,7 @@ QTreeWidget::item {
 }
 
 QTreeWidget::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -196,7 +196,7 @@ QListWidget {
 }
 
 QListWidget::item:selected {
-    background-color: #4a9acf;
+    background-color: #005FAC;
     color: white;
 }
 
@@ -225,11 +225,11 @@ QSlider::groove:horizontal {
 QSlider::handle:horizontal {
     width: 16px;
     height: 16px;
-    background: #4a9acf;
+    background: #005FAC;
     border-radius: 8px;
     margin: -5px 0;
 }
 
 QSlider::handle:horizontal:hover {
-    background: #3a7aaf;
+    background: #107EBC;
 }
