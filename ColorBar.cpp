@@ -5,16 +5,25 @@ ColorBar::ColorBar(QWidget* parent) : QLabel(parent)
     this->resize(250,400);
     this->setMinimumWidth(250);
     this->setMinimumHeight(400);
-    
+
     mPos_Right_Top = QPoint(this->width(),0);
     update();
     this->setWindowFlags(Qt::Dialog |Qt::FramelessWindowHint| Qt::Tool );
-    this->setStyleSheet("QLabel {background-color: white; border:3px solid gray}");
+    setTheme("light");
 }
 
 ColorBar::~ColorBar()
 {
 
+}
+
+void ColorBar::setTheme(const QString& theme)
+{
+    if (theme == "dark") {
+        this->setStyleSheet("QLabel {background-color: #2d2d30; border:3px solid #555555}");
+    } else {
+        this->setStyleSheet("QLabel {background-color: white; border:3px solid gray}");
+    }
 }
 
 int ColorBar::SetData(QString Data_path, QString Type)

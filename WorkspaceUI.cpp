@@ -39,6 +39,7 @@ void WorkspaceUI::setupUi()
 
     m_treeView = new TreeView(m_splitter);
     m_treeView->init_tree();
+    m_treeView->setColumnHidden(1, true);
     m_treeView->setMinimumSize(300, 300);
     m_treeView->setMaximumSize(QWIDGETSIZE_MAX, 16777215);
 
@@ -184,12 +185,18 @@ void WorkspaceUI::setTheme(const QString &theme)
         bgStyle = "background-color: #1A1C1C;";
         // Set property with dark theme color
         this->setProperty("theme-background", QColor(26, 28, 28));
-    } else {
+    } else if (theme == "light") {
         // Light theme colors from ui2.md
         bgColor = QColor(249, 249, 249);  // #F9F9F9
         bgStyle = "background-color: #F9F9F9;";
         // Set property with light theme color
         this->setProperty("theme-background", QColor(249, 249, 249));
+    } else {  // fusion
+        // Fusion theme colors - flat light gray
+        bgColor = QColor(240, 240, 240);  // #F0F0F0
+        bgStyle = "background-color: #F0F0F0;";
+        // Set property with fusion theme color
+        this->setProperty("theme-background", QColor(240, 240, 240));
     }
 
     // Apply background color

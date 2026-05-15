@@ -19,7 +19,7 @@
 #include <memory>
 
 // Forward declarations
-class WorkflowUI;
+class IApplicationInterface;
 
 namespace QtNodes {
 
@@ -75,8 +75,8 @@ private:
     QString generateDefaultOutputName() const;
     void executeProcessing();
 
-    // Get WorkflowUI reference
-    WorkflowUI* getNodeEditorWindow() const;
+    // Get project context interface
+    IApplicationInterface* getProjectContext() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;

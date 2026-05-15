@@ -352,24 +352,19 @@ void WelcomeScreenUI::activate()
 
 void WelcomeScreenUI::updateThemeStyles()
 {
-    // Detect theme from parent window
+    // Detect theme from own property (consistent with other components)
     bool isDarkTheme = false;
-    QWidget* parent = parentWidget();
-    while (parent) {
-        QVariant bgColor = parent->property("theme-background");
-        if (bgColor.isValid()) {
-            QColor color = bgColor.value<QColor>();
-            if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
-                isDarkTheme = true;
-            }
-            break;
+    QVariant bgColor = property("theme-background");
+    if (bgColor.isValid()) {
+        QColor color = bgColor.value<QColor>();
+        if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
+            isDarkTheme = true;
         }
-        parent = parent->parentWidget();
     }
     m_isDarkTheme = isDarkTheme;
 
     // Define colors based on theme (from UI.md spec)
-    const char *bgColor = isDarkTheme ? "#2B2B2B" : "#F0F0F0";  // Dock background
+    const char *bgColorStr = isDarkTheme ? "#2B2B2B" : "#F0F0F0";  // Dock background
     const char *textColor = isDarkTheme ? "#FFFFFF" : "#333333";   // Text color
     const char *secondaryText = isDarkTheme ? "#888888" : "#666666";  // Secondary text
     const char *btnBg = isDarkTheme ? "#2B2B2B" : "#FFFFFF";     // Button background
@@ -578,8 +573,26 @@ void WelcomeScreenUI::initTheme()
 
 void WelcomeScreenUI::setTheme(const QString& theme)
 {
-    Q_UNUSED(theme);
-    // 欢迎界面在 activate() 时会从父窗口检测主题
+    m_currentTheme = theme;
+
+    // Set theme-background property for components to detect theme
+    QColor bgColor;
+    if (theme == "dark") {
+        bgColor = QColor(26, 28, 28);  // #1A1C1C
+        this->setProperty("theme-background", QColor(26, 28, 28));
+    } else if (theme == "light") {
+        bgColor = QColor(249, 249, 249);  // #F9F9F9
+        this->setProperty("theme-background", QColor(249, 249, 249));
+    } else {  // fusion
+        bgColor = QColor(240, 240, 240);  // #F0F0F0
+        this->setProperty("theme-background", QColor(240, 240, 240));
+    }
+
+    // Apply background color
+    QPalette palette = this->palette();
+    palette.setColor(QPalette::Window, bgColor);
+    this->setPalette(palette);
+
     updateThemeStyles();
 }
 

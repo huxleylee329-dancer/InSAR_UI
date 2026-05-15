@@ -18,7 +18,7 @@
 #include <memory>
 
 // Forward declarations
-class WorkflowUI;
+class IApplicationInterface;
 class MyThread;
 
 namespace QtNodes {
@@ -73,8 +73,8 @@ protected:
     void onImportFinished();
     void onError(const QString& error);
 
-    // Get WorkflowUI reference
-    WorkflowUI* getNodeEditorWindow() const;
+    // Get project context interface
+    IApplicationInterface* getProjectContext() const;
 
     // Flag for stop request
     bool m_stopRequested;

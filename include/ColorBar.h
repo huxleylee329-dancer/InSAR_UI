@@ -18,6 +18,7 @@ public:
 	ColorBar(QWidget* parent = Q_NULLPTR);
 	~ColorBar();
 	int SetData(QString Data_path, QString Type);
+	void setTheme(const QString& theme);
 	void resizeEvent(QResizeEvent* event);
 protected:
 	void paintEvent(QPaintEvent* event);

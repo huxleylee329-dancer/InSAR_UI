@@ -1,6 +1,6 @@
 ﻿#include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
-#include "WorkflowUI.h"
+#include "IApplicationInterface.h"
 #include "MyThread.h"
 
 namespace QtNodes {
@@ -62,20 +62,20 @@ void ImportNodeBase::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
 QStandardItemModel* ImportNodeBase::projectModel() const
 {
-    auto editor = getNodeEditorWindow();
-    return editor ? editor->projectModel() : nullptr;
+    auto iface = getProjectContext();
+    return iface ? iface->projectModel() : nullptr;
 }
 
 QString ImportNodeBase::projectPath() const
 {
-    auto editor = getNodeEditorWindow();
-    return editor ? editor->projectPath() : QString();
+    auto iface = getProjectContext();
+    return iface ? iface->projectPath() : QString();
 }
 
 QString ImportNodeBase::projectName() const
 {
-    auto editor = getNodeEditorWindow();
-    return editor ? editor->projectName() : QString();
+    auto iface = getProjectContext();
+    return iface ? iface->projectName() : QString();
 }
 
 QString ImportNodeBase::getOutputNodeName() const
@@ -155,18 +155,18 @@ void ImportNodeBase::setExecutionMode(ExecutionMode mode)
     // So we just update the mode
 }
 
-WorkflowUI* ImportNodeBase::getNodeEditorWindow() const
+IApplicationInterface* ImportNodeBase::getProjectContext() const
 {
-    // Navigate up the widget hierarchy to find WorkflowUI
+    // Navigate up the widget hierarchy to find the interface
     if (!_widget)
         return nullptr;
 
     ::QWidget* parent = _widget->parentWidget();
     while (parent)
     {
-        auto* editor = qobject_cast<WorkflowUI*>(parent);
-        if (editor)
-            return editor;
+        auto* iface = dynamic_cast<IApplicationInterface*>(parent);
+        if (iface)
+            return iface;
         parent = parent->parentWidget();
     }
 

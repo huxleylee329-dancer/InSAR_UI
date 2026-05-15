@@ -144,13 +144,16 @@ MainWindow::MainWindow(QWidget* parent)
     ui.menuInSAR->setDisabled(1);
     ui.menuDInSAR->setDisabled(1);
 
+    // Initialize interfaces for switching (MUST be early - we use workspace components)
+    initializeInterfaces(model, project);
 
-    ui.treeView->init_tree();
-    ui.tool->init_mould();
-    model = ui.treeView->model;
+    // Use WorkspaceUI components exclusively - no more ui.treeView/ui.tool/ui.tabWidget
+    m_workspaceUI->treeView()->init_tree();
+    // Note: toolTree->init_mould() is already called in WorkspaceUI::setupUi()
+    model = m_workspaceUI->treeView()->model;
 
-    ui.tabWidget->setTabsClosable(true);
-    connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
+    m_workspaceUI->tabWidget()->setTabsClosable(true);
+    connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
 
     // Load initial theme from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);
@@ -167,12 +170,11 @@ MainWindow::MainWindow(QWidget* parent)
     // Setup theme menu (after setting m_currentTheme)
     setupThemeMenu();
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
-    connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
-    connect(ui.tabWidget, &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
+    connect(m_workspaceUI->treeView(), &TreeView::update, this, &MainWindow::update_treeview);
+    connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
+    connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::on_tabWidget_tabCloseRequested);
     connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
 
-    // Initialize interfaces for switching
-    initializeInterfaces(model, project);
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
 
@@ -194,12 +196,16 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
     // Set APP icon
     this->setWindowTitle("SatExplorer");
     this->setWindowIcon(QIcon(APP_ICON));
-    ui.treeView->init_tree();
-    ui.tool->init_mould();
-    model = ui.treeView->model;
 
-    ui.tabWidget->setTabsClosable(true);
-    cout << ui.tabWidget->count();
+    // Initialize interfaces for switching (MUST be early - we use workspace components)
+    initializeInterfaces(model, project, str);
+
+    // Use WorkspaceUI components exclusively
+    m_workspaceUI->treeView()->init_tree();
+    // Note: toolTree->init_mould() is already called in WorkspaceUI::setupUi()
+    model = m_workspaceUI->treeView()->model;
+
+    m_workspaceUI->tabWidget()->setTabsClosable(true);
 
     // Load initial theme from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);
@@ -213,18 +219,16 @@ MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
     applyMenuIcons(m_currentTheme == "dark");
     updateRecentMenu();
 
-    connect(ui.treeView, SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
+    connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
     //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
-    connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
+    connect(m_workspaceUI->treeView(), &TreeView::update, this, &MainWindow::update_treeview);
+    connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
+    connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::on_tabWidget_tabCloseRequested);
     connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
 
     // Setup theme menu (after setting m_currentTheme)
     setupThemeMenu();
-    connect(ui.treeView, &TreeView::update, this, &MainWindow::update_treeview);
-    connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
 
-    // Initialize interfaces for switching
-    initializeInterfaces(model, project, str);
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
 
@@ -270,8 +274,8 @@ MainWindow::~MainWindow()
 //}
 void MainWindow::Addproject(QString name, QString save_path)
 {
-    ui.treeView->NewProject(name, save_path);
-    RenewTree(ui.treeView->model);
+    m_workspaceUI->treeView()->NewProject(name, save_path);
+    RenewTree(m_workspaceUI->treeView()->model);
 
     // 设置工程路径并加载 XML，使后续保存能正常工作
     QString projectFile = save_path + "/" + name + ".insar";
@@ -340,14 +344,13 @@ void MainWindow::StopThread()
 }
 void MainWindow::Loading(QString Data_path, QString ImageType)
 {
-    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    // 界面切换到 Workflow 后直接返回
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return;
 
     QGridLayout* TabLayout = new QGridLayout;
     QWidget* TabChild = new QWidget;
-    QTabWidget* activeTabWidget = (m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workspace" && m_workspaceUI)
-        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    QTabWidget* activeTabWidget = m_workspaceUI->tabWidget();
     int index = activeTabWidget->addTab(TabChild, bmp_name);
     activeTabWidget->setCurrentWidget(TabChild);
 
@@ -394,14 +397,7 @@ void MainWindow::open_from_project_file(QString str)
     QString filename = str;
     QFileInfo fileinfo = QFileInfo(filename);
     QString abs_path = fileinfo.absolutePath();
-    model = ui.treeView->model;
-    if (m_workspaceUI && m_workspaceUI->treeView())
-    {
-        m_workspaceUI->treeView()->setModel(model);
-        m_workspaceUI->treeView()->model = model;
-        m_workspaceUI->treeView()->setColumnHidden(1, true);
-    }
-
+    model = m_workspaceUI->treeView()->model;
 
     int ret = this->project->XMLFile_load(filename.toStdString().c_str());
     if (ret < 0)
@@ -541,11 +537,8 @@ void MainWindow::update_treeview()
 
 bool MainWindow::eventFilter(QObject* target, QEvent* event)
 {
-    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接跳过
     bool isWorkspace = m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workspace";
-
-    QTabWidget* activeTabWidget = (isWorkspace && m_workspaceUI && m_workspaceUI->tabWidget())
-        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    QTabWidget* activeTabWidget = m_workspaceUI->tabWidget();
 
     if (isWorkspace && target == activeTabWidget)
     {
@@ -729,8 +722,7 @@ void MainWindow::closeCurrentProject()
     ui.menuDInSAR->setDisabled(1);
 
     // 清空标签页
-    QTabWidget* closeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
-        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    QTabWidget* closeTabWidget = m_workspaceUI->tabWidget();
     while (closeTabWidget->count() > 0)
         closeTabWidget->removeTab(0);
 
@@ -1176,13 +1168,11 @@ void MainWindow::on_actionALOS_2_triggered()
 void MainWindow::RenewTree(QStandardItemModel* copy)
 {
 
-    if (ui.treeView->isHidden())
+    if (m_workspaceUI->treeView()->isHidden())
     {
-        ui.treeView->setHidden(0);
-        ui.tool->setHidden(0);
-        QTabWidget* renewTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
-            ? m_workspaceUI->tabWidget() : ui.tabWidget;
-        renewTabWidget->setHidden(0);
+        m_workspaceUI->treeView()->setHidden(0);
+        m_workspaceUI->toolTree()->setHidden(0);
+        m_workspaceUI->tabWidget()->setHidden(0);
     }
     if(!ui.Process->isEnabled())
         ui.Process->setDisabled(0);
@@ -1194,16 +1184,8 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
         ui.menuDInSAR->setDisabled(0);
     model = copy;
 
-    ui.treeView->setColumnHidden(1, true);
-    ui.treeView->setModel(copy);
-    ui.treeView->model = copy;
-
-    if (m_workspaceUI && m_workspaceUI->treeView())
-    {
-        m_workspaceUI->treeView()->setColumnHidden(1, true);
-        m_workspaceUI->treeView()->setModel(copy);
-        m_workspaceUI->treeView()->model = copy;
-    }
+    m_workspaceUI->treeView()->setModel(copy);
+    m_workspaceUI->treeView()->model = copy;
 
     // 重新加载项目 XML，确保 MyThread 导入的 DataNode 不会丢失
     // MyThread 用独立 XMLFile 实例写入 DataNode，MainWindow::project 不知道这些变更
@@ -1216,12 +1198,11 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
 }
 void MainWindow::ShowColorBar(int index)
 {
-    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    // 界面切换到 Workflow 后直接返回
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return;
 
-    QTabWidget* activeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
-        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    QTabWidget* activeTabWidget = m_workspaceUI->tabWidget();
 
     if ( activeTabWidget->count()== mExist_Color.size())
     {
@@ -1268,12 +1249,11 @@ void MainWindow::ShowColorBar(int index)
 
 bool MainWindow::CheckTab(QModelIndex image)
 {
-    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    // 界面切换到 Workflow 后直接返回
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return false;
 
-    QTabWidget* activeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
-        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    QTabWidget* activeTabWidget = m_workspaceUI->tabWidget();
 
     int n = activeTabWidget->count();
     int i = 0;
@@ -1292,12 +1272,11 @@ bool MainWindow::CheckTab(QModelIndex image)
 
 void MainWindow::on_tabWidget_tabCloseRequested(int index)
 {
-    // 界面切换到 Workflow 后 ui.tabWidget 已被销毁，直接返回
+    // 界面切换到 Workflow 后直接返回
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return;
 
-    QTabWidget* activeTabWidget = (m_workspaceUI && m_workspaceUI->tabWidget())
-        ? m_workspaceUI->tabWidget() : ui.tabWidget;
+    QTabWidget* activeTabWidget = m_workspaceUI->tabWidget();
 
     if (activeTabWidget->widget(index))
     {
@@ -1387,21 +1366,31 @@ void MainWindow::setTheme(const QString &theme)
     settings.setValue("Appearance/Theme", theme);
     settings.sync();
 
-    // Update theme for both interfaces
+    // Update theme for all interfaces
     if (m_workspaceUI) {
         m_workspaceUI->setTheme(theme);
     }
     if (m_workflowUI) {
         m_workflowUI->setTheme(theme);
     }
+    if (m_welcomeUI) {
+        m_welcomeUI->setTheme(theme);
+    }
 
     // Recolor tree view icons for theme
-    if (ui.treeView) {
-        ui.treeView->updateTreeIcons(theme);
+    if (m_workspaceUI && m_workspaceUI->treeView()) {
+        m_workspaceUI->treeView()->updateTreeIcons(theme);
     }
 
     // Recolor menu icons for theme
     applyMenuIcons(theme == "dark");
+
+    // Update ColorBar theme
+    for (ColorBar* colorBar : mColors) {
+        if (colorBar) {
+            colorBar->setTheme(theme);
+        }
+    }
 
     // Update theme menu check state
     QMenu* settingsMenu = ui.Setteing;
@@ -1499,27 +1488,8 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     // Parent is nullptr - will be managed by InterfaceManager
     m_workspaceUI = new WorkspaceUI(nullptr);
 
-    if (m_workspaceUI && m_workspaceUI->treeView())
-    {
-        m_workspaceUI->treeView()->setModel(ui.treeView->model);
-        m_workspaceUI->treeView()->model = ui.treeView->model;
-        m_workspaceUI->treeView()->setColumnHidden(1, true);
-
-        connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)),
-                this, SLOT(ShowImage(QModelIndex)));
-        connect(m_workspaceUI->treeView(), &TreeView::update,
-                this, &MainWindow::update_treeview);
-    }
-
-    if (m_workspaceUI && m_workspaceUI->tabWidget())
-    {
-        connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged,
-                this, &MainWindow::ShowColorBar);
-        connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested,
-                this, &MainWindow::on_tabWidget_tabCloseRequested);
-    }
-
-    // WorkspaceUI already has the model set up by MainWindow
+    // Note: All signal connections and component initialization happen in the constructor
+    // WorkspaceUI manages its own treeView, toolTree, and tabWidget exclusively
     // Create workflow UI (node editor interface)
     // Parent is nullptr - will be managed by InterfaceManager
     m_workflowUI = new WorkflowUI(nullptr);

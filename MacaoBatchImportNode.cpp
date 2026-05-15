@@ -57,8 +57,8 @@ QWidget* MacaoBatchImportNode::createWidget()
     topSection->addWidget(m_fileListWidget);
 
     auto* buttonLayout = new QVBoxLayout();
-    QPushButton* addFiles = new QPushButton("����");
-    QPushButton* removeFiles = new QPushButton("�Ƴ�");
+    QPushButton* addFiles = new QPushButton("添加");
+    QPushButton* removeFiles = new QPushButton("移除");
     buttonLayout->addWidget(addFiles);
     buttonLayout->addWidget(removeFiles);
     topSection->addLayout(buttonLayout);
@@ -66,7 +66,7 @@ QWidget* MacaoBatchImportNode::createWidget()
     mainLayout->addLayout(topSection);
 
     auto* projectRow = new QHBoxLayout();
-    projectRow->addWidget(new QLabel("Ŀ�깤�̣�"));
+    projectRow->addWidget(new QLabel("项目名称："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
     if (!projectName().isEmpty())
@@ -75,7 +75,7 @@ QWidget* MacaoBatchImportNode::createWidget()
     mainLayout->addLayout(projectRow);
 
     auto* nodeRow = new QHBoxLayout();
-    nodeRow->addWidget(new QLabel("Ŀ��ڵ㣺"));
+    nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("Macao_Batch_Import");
     nodeRow->addWidget(m_outputNodeNameEdit);
@@ -96,7 +96,7 @@ void MacaoBatchImportNode::executeImport()
 
     if (m_imagePaths.isEmpty())
     {
-        onError("����������һ�� Macao ͼ���ļ���");
+        onError("请至少添加一个 Macao 图像文件。");
         return;
     }
 
@@ -107,7 +107,7 @@ void MacaoBatchImportNode::executeImport()
     {
         if (!QFileInfo::exists(imagePath))
         {
-            onError("Macao ͼ���ļ������ڣ�" + imagePath);
+            onError("Macao 图像文件不存在：" + imagePath);
             return;
         }
 
@@ -177,7 +177,7 @@ void MacaoBatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
         _widget,
-        "���� Macao ����",
+        "选择 Macao 图像",
         QDir::currentPath(),
         "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)"
     );

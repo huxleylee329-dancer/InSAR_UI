@@ -158,3 +158,117 @@ QGroupBox::title {
 #tabCloseButton QPushButton::menu-indicator {
     width: 0px;
 }
+
+/* Property Editor for Fusion theme */
+PropertyEditor {
+    background-color: #F0F0F0;
+}
+
+PropertyEditor QLabel {
+    color: #333333;
+}
+
+PropertyEditor QLineEdit {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+    border-radius: 2px;
+    padding: 6px 10px;
+}
+
+PropertyEditor QLineEdit:focus {
+    border-color: #005FAC;
+    border-width: 2px;
+}
+
+PropertyEditor QDoubleSpinBox {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+}
+
+PropertyEditor QComboBox {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+}
+
+PropertyEditor QSpinBox {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+}
+
+PropertyEditor QCheckBox {
+    color: #333333;
+}
+
+PropertyEditor QFrame[frameShape="4"] { /* HLine */
+    background-color: #CCCCCC;
+}
+
+/* Node embedded widget (via objectName) - flat style for card layout */
+QWidget#NodeEmbeddedWidget {
+    background-color: transparent;
+}
+
+/* All controls inside node embedded widget */
+QWidget#NodeEmbeddedWidget * QLabel {
+    color: #333333;
+}
+
+QWidget#NodeEmbeddedWidget * QLineEdit {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+    border-radius: 2px;
+}
+
+QWidget#NodeEmbeddedWidget * QLineEdit:focus {
+    border-color: #005FAC;
+    border-width: 2px;
+}
+
+QWidget#NodeEmbeddedWidget * QComboBox {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #E0E0E0;
+    border-radius: 2px;
+}
+
+QWidget#NodeEmbeddedWidget * QComboBox QAbstractItemView {
+    background-color: white;
+    color: #333333;
+}
+
+QWidget#NodeEmbeddedWidget * QListWidget {
+    background-color: white;
+    color: #333333;
+}
+
+QWidget#NodeEmbeddedWidget * QProgressBar {
+    background-color: white;
+    color: #333333;
+    border-radius: 2px;
+}
+
+QWidget#NodeEmbeddedWidget * QProgressBar::chunk {
+    background-color: #005FAC;
+    border-radius: 2px;
+}
+
+/* QPushButton in nodes - flat style */
+QWidget#NodeEmbeddedWidget * QPushButton {
+    background-color: #005FAC;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 2px;
+}
+
+QWidget#NodeEmbeddedWidget * QPushButton:hover {
+    background-color: #107EBC;
+}
+
+QWidget#NodeEmbeddedWidget * QPushButton:pressed {
+    background-color: #003F8C;
+}

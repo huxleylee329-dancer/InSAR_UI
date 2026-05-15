@@ -1179,7 +1179,7 @@ void WorkflowUI::setTheme(const QString &theme)
                 }
             )";
             separatorColor = QColor(135, 141, 152, 77); // rgba(135,141,152,0.3)
-        } else {
+        } else if (theme == "light") {
             // Light theme colors from ui2.md
             toolbarStyle = R"(
                 QToolBar {
@@ -1190,6 +1190,17 @@ void WorkflowUI::setTheme(const QString &theme)
                 }
             )";
             separatorColor = QColor(192, 199, 212, 77); // rgba(192,199,212,0.3)
+        } else {  // fusion
+            // Fusion theme colors - flat with blue accent
+            toolbarStyle = R"(
+                QToolBar {
+                    background-color: #f0f0f0;
+                    border-bottom: 1px solid rgba(74, 154, 207, 0.3);
+                    spacing: 2px;
+                    padding: 4px 8px;
+                }
+            )";
+            separatorColor = QColor(74, 154, 207, 77); // rgba(74,154,207,0.3)
         }
         
         m_toolbar->setStyleSheet(toolbarStyle);
@@ -1206,10 +1217,21 @@ void WorkflowUI::setTheme(const QString &theme)
         for (QObject *obj : m_toolbar->children()) {
             QToolButton *btn = qobject_cast<QToolButton*>(obj);
             if (btn) {
-                QString textColor = theme == "dark" ? "#c1c7cf" : "#595F66";
-                QString hoverBg = theme == "dark" ? "#2f3131" : "#E0E0E0";
-                QString pressedBg = theme == "dark" ? "#3f4141" : "#D0D0D0";
-                
+                QString textColor, hoverBg, pressedBg;
+                if (theme == "dark") {
+                    textColor = "#c1c7cf";
+                    hoverBg = "#2f3131";
+                    pressedBg = "#3f4141";
+                } else if (theme == "light") {
+                    textColor = "#595F66";
+                    hoverBg = "#E0E0E0";
+                    pressedBg = "#D0D0D0";
+                } else {  // fusion - blue accent
+                    textColor = "#333333";
+                    hoverBg = "#D0E8F5";
+                    pressedBg = "#4a9acf";
+                }
+
                 btn->setStyleSheet(
                     QString("QToolButton { "
                     "  border: none; "
@@ -1233,7 +1255,14 @@ void WorkflowUI::setTheme(const QString &theme)
         }
 
         // Recolor gray toolbar icons for theme
-        QColor grayIconColor = theme == "dark" ? QColor("#CCCCCC") : QColor("#414752");
+        QColor grayIconColor;
+        if (theme == "dark") {
+            grayIconColor = QColor("#CCCCCC");
+        } else if (theme == "light") {
+            grayIconColor = QColor("#414752");
+        } else {  // fusion
+            grayIconColor = QColor("#005FAC");
+        }
         if (m_btnSync)  m_btnSync->setIcon(createColoredIcon(":/SatExplorer/svg/refresh-cw.svg", grayIconColor));
         if (m_btnQueue) m_btnQueue->setIcon(createColoredIcon(":/SatExplorer/svg/reorder.svg", grayIconColor));
         if (m_btnDrop)  m_btnDrop->setIcon(createColoredIcon(":/SatExplorer/svg/playlist_remove.svg", grayIconColor));
@@ -1331,8 +1360,51 @@ void WorkflowUI::setTheme(const QString &theme)
                     background: #f9f9f9;
                 }
             )";
+        } else {  // fusion - flat blue accent
+            adsStyle = R"(
+                ads--CDockContainerWidget {
+                    background: #f0f0f0;
+                }
+                ads--CDockAreaWidget {
+                    background: #e8e8e8;
+                }
+                ads--CDockWidgetTab {
+                    background: #e0e0e0;
+                    border-color: #cccccc;
+                    color: #333333;
+                }
+                ads--CDockWidgetTab[activeTab="true"] {
+                    background: #4a9acf;
+                    color: white;
+                }
+                ads--CDockWidgetTab QLabel {
+                    color: #333333;
+                }
+                ads--CDockWidgetTab[activeTab="true"] QLabel {
+                    color: white;
+                }
+                ads--CDockWidget {
+                    background: #f0f0f0;
+                    border-color: #cccccc;
+                }
+                ads--CAutoHideSideBar {
+                    background: #f0f0f0;
+                }
+                ads--CAutoHideDockContainer {
+                    background: #f0f0f0;
+                }
+                ads--CAutoHideDockContainer ads--CDockAreaTitleBar {
+                    background: #4a9acf;
+                }
+                ads--CAutoHideDockContainer ads--CDockAreaWidget[focused="true"] ads--CDockAreaTitleBar {
+                    background: #4a9acf;
+                }
+                ads--CResizeHandle {
+                    background: #f0f0f0;
+                }
+            )";
         }
-        
+
         m_dockManager->setStyleSheet(adsStyle);
     }
 
@@ -1372,8 +1444,10 @@ void WorkflowUI::setTheme(const QString &theme)
     if (m_propertyEditor) {
         if (theme == "dark") {
             m_propertyEditor->setProperty("theme-background", QColor(43, 64, 75));
-        } else {
+        } else if (theme == "light") {
             m_propertyEditor->setProperty("theme-background", QColor(241, 245, 249));
+        } else {  // fusion
+            m_propertyEditor->setProperty("theme-background", QColor(240, 240, 240));
         }
         // Refresh property panel to apply theme changes
         m_propertyEditor->refreshCurrentNode();

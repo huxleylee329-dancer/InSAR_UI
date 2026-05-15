@@ -66,6 +66,7 @@ private:
     QWidget* createQuickStartButton(const QString &iconName, const QString &title, const QString &description);
     QWidget* createRecentProjectItem(const QString &name, const QString &path, const QString &time);
 
+    QString m_currentTheme = "light";
     bool m_isDarkTheme = true;
 
     QLabel *m_titleLabel = nullptr;

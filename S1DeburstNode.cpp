@@ -3,7 +3,7 @@
 #endif
 
 #include "S1DeburstNode.h"
-#include "WorkflowUI.h"
+#include "IApplicationInterface.h"
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QJsonObject>
@@ -302,7 +302,7 @@ void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
     Q_UNUSED(model);
 }
 
-WorkflowUI* S1DeburstNode::getNodeEditorWindow() const
+IApplicationInterface* S1DeburstNode::getProjectContext() const
 {
     if (!_widget)
         return nullptr;
@@ -310,9 +310,9 @@ WorkflowUI* S1DeburstNode::getNodeEditorWindow() const
     QWidget* parent = _widget->parentWidget();
     while (parent)
     {
-        auto* editor = qobject_cast<WorkflowUI*>(parent);
-        if (editor)
-            return editor;
+        auto* iface = dynamic_cast<IApplicationInterface*>(parent);
+        if (iface)
+            return iface;
         parent = parent->parentWidget();
     }
 
@@ -321,20 +321,20 @@ WorkflowUI* S1DeburstNode::getNodeEditorWindow() const
 
 QStandardItemModel* S1DeburstNode::projectModel() const
 {
-    auto editor = getNodeEditorWindow();
-    return editor ? editor->projectModel() : nullptr;
+    auto iface = getProjectContext();
+    return iface ? iface->projectModel() : nullptr;
 }
 
 QString S1DeburstNode::projectPath() const
 {
-    auto editor = getNodeEditorWindow();
-    return editor ? editor->projectPath() : QString();
+    auto iface = getProjectContext();
+    return iface ? iface->projectPath() : QString();
 }
 
 QString S1DeburstNode::projectName() const
 {
-    auto editor = getNodeEditorWindow();
-    return editor ? editor->projectName() : QString();
+    auto iface = getProjectContext();
+    return iface ? iface->projectName() : QString();
 }
 
 void S1DeburstNode::execute()

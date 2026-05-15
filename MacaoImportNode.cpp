@@ -51,16 +51,16 @@ QWidget* MacaoImportNode::createWidget()
     layout->setSpacing(6);
 
     auto* imageRow = new QHBoxLayout();
-    imageRow->addWidget(new QLabel("Macaoͼ��"));
+    imageRow->addWidget(new QLabel("Macao图像："));
     m_imageEdit = new QLineEdit();
     connect(m_imageEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_imagePath = text; });
-    QPushButton* browseButton = new QPushButton("���...");
+    QPushButton* browseButton = new QPushButton("浏览...");
     imageRow->addWidget(m_imageEdit);
     imageRow->addWidget(browseButton);
     layout->addLayout(imageRow);
 
     auto* projectRow = new QHBoxLayout();
-    projectRow->addWidget(new QLabel("Ŀ�깤�̣�"));
+    projectRow->addWidget(new QLabel("项目名称："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
     if (!projectName().isEmpty())
@@ -69,14 +69,14 @@ QWidget* MacaoImportNode::createWidget()
     layout->addLayout(projectRow);
 
     auto* nodeRow = new QHBoxLayout();
-    nodeRow->addWidget(new QLabel("Ŀ��ڵ㣺"));
+    nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("Macao_Import");
     nodeRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeRow);
 
     auto* fileNameRow = new QHBoxLayout();
-    fileNameRow->addWidget(new QLabel("Ŀ���ļ�����"));
+    fileNameRow->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
     connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     fileNameRow->addWidget(m_outputFileNameEdit);
@@ -96,13 +96,13 @@ void MacaoImportNode::executeImport()
     m_imagePath = m_imageEdit->text().trimmed();
     if (m_imagePath.isEmpty())
     {
-        onError("��ѡ��һ�� Macao ͼ���ļ���");
+        onError("请选择一个 Macao 图像文件。");
         return;
     }
 
     if (!QFileInfo::exists(m_imagePath))
     {
-        onError("Macao ͼ���ļ������ڣ�" + m_imagePath);
+        onError("Macao 图像文件不存在：" + m_imagePath);
         return;
     }
 
@@ -164,7 +164,7 @@ void MacaoImportNode::onImageBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
         _widget,
-        "���� Macao ����",
+        "选择 Macao 图像",
         QFileInfo(m_imagePath).absolutePath(),
         "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)"
     );
