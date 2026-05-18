@@ -1,5 +1,5 @@
 ﻿#include"Baseline_Formation.h"
-#include"ui_Baseline_Formation.h"
+#include"ui_BaselineFormation.h"
 #include"Coordinate.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -11,7 +11,7 @@
 #include<QDir>
 Baseline_Formation::Baseline_Formation(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::Baseline_Formation)
+    ui(new Ui::BaselineFormation)
 {
     ui->setupUi(this);
     ui->progressBar->setValue(0);

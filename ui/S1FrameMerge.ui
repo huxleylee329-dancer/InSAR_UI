@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>S1_frame_merge</class>
- <widget class="QWidget" name="S1_frame_merge">
+ <class>S1FrameMerge</class>
+ <widget class="QWidget" name="S1FrameMerge">
   <property name="geometry">
    <rect>
     <x>0</x>

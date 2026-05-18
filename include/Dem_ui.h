@@ -1,7 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_Dem_ui.h"
+#include "ui_Dem.h"
 #include"MyThread.h"
 
 class Dem_ui : public QWidget
@@ -18,7 +18,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::Dem_ui* ui;
+    Ui::Dem* ui;
     QStandardItemModel* copy;
     MyThread* Dem_thread;
     QString save_path;

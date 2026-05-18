@@ -1,4 +1,4 @@
-ï»¿#include"S1_Deburst.h"
+#include"S1_Deburst.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -17,7 +17,7 @@
 #endif
 S1_Deburst::S1_Deburst(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::S1_Deburst)
+    ui(new Ui::S1Deburst)
 {
     ui->setupUi(this);
     ui->progressBar->setMinimum(0);
@@ -41,7 +41,7 @@ S1_Deburst::~S1_Deburst()
 void S1_Deburst::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void S1_Deburst::endProcess()
@@ -127,12 +127,12 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
 
     if (ui->comboBox->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
         this->deleteLater();
         return;
     }
     ui->comboBox_2->clear();
-    //å·¥ç¨‹æ–‡ä»¶
+    //¹¤³ÌÎÄ¼ş
     ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
     ret = xmldoc.find_node("DataNode", pnode);
@@ -148,7 +148,7 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
         this->deleteLater();
         return;
     }
@@ -183,7 +183,7 @@ void S1_Deburst::on_comboBox_currentIndexChanged()
         }
         if (ui->comboBox_2->count() == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
             this->deleteLater();
             return;
         }
@@ -201,18 +201,18 @@ void S1_Deburst::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¡"));
         return;
     }
     if (ui->fileedit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥å­˜æ”¾burstæ‹¼æ¥å¤„ç†ç»“æœæ–‡ä»¶çš„æ–‡ä»¶å¤¹åç§°ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë´æ·ÅburstÆ´½Ó´¦Àí½á¹ûÎÄ¼şµÄÎÄ¼ş¼ĞÃû³Æ£¡"));
         return;
     }
     bool bFlag = ui->fileedit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
         return;
     }
 

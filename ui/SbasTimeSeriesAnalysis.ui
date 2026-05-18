@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>SBAS_time_series_analysis</class>
- <widget class="QWidget" name="SBAS_time_series_analysis">
+ <class>SbasTimeSeriesAnalysis</class>
+ <widget class="QWidget" name="SbasTimeSeriesAnalysis">
   <property name="geometry">
    <rect>
     <x>0</x>

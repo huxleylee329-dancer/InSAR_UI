@@ -1,7 +1,7 @@
-﻿#pragma once
+#pragma once
 #include <QtWidgets/QWidget>
 #include <qstandarditemmodel.h>
-#include "ui_Import_Macao.h"
+#include "ui_ImportMacao.h"
 #include "MyThread.h"
 
 class Import_Macao : public QWidget
@@ -18,7 +18,7 @@ public slots:
     bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist);
 
 private:
-    Ui::Import_Macao* ui;
+    Ui::ImportMacao* ui;
     QString xml_path;
     QString save_path;
     QStandardItemModel* copy;

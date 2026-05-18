@@ -1,7 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include"ui_Baseline_Formation.h"
+#include"ui_BaselineFormation.h"
 #include"MyThread.h"
 
 class Baseline_Formation : public QWidget
@@ -18,7 +18,7 @@ public slots:
     void StopThread();
     void Paint_Baseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
 private:
-    Ui::Baseline_Formation* ui;
+    Ui::BaselineFormation* ui;
     QStandardItemModel* copy;
     MyThread* Baseline_Formation_thread;
     QString save_path;

@@ -109,7 +109,7 @@ void MyToolBox::renewLayout()
 void MyToolBox::createScrollArea()
 {
     //创建
-    Page_wnd = new QWidget;
+    Page_wnd = new QWidget(this);
     Area = new QScrollArea(this);
     Area->setWidget(Page_wnd);
     Area->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);    //不开启横向滚动

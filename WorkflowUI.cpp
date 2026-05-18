@@ -260,8 +260,8 @@ void WorkflowUI::activate()
     show();
 
     // Ensure dock layout is properly initialized when first shown
-    // This fixes the issue where the left panel appears narrow on first activation
-    if (m_dockManager) {
+    // We only enforce initial widths ONCE. After that, user can resize freely.
+    if (m_dockManager && !m_initialLayoutDone) {
         const int leftWidth = 250;
         const int rightWidth = 300;
 
@@ -284,6 +284,8 @@ void WorkflowUI::activate()
                 m_dockManager->setSplitterSizes(dockArea, splitterSizes);
             }
         }
+
+        m_initialLayoutDone = true;
 
         // Force layout update
         m_dockManager->update();
@@ -405,34 +407,10 @@ void WorkflowUI::setupSceneInternal()
     m_nodeLibrary->setPaletteOrder(getPaletteFullOrder());
 
     // After everything is added, do a delayed layout adjustment
-    // Set initial recommended widths for left and right panels - user can resize later
     QTimer::singleShot(10, this, [this]() {
-        const int initialLeftWidth = 250;
-        const int initialRightWidth = 300;
-
         // Force dock manager to update layout
         m_dockManager->update();
         m_dockManager->adjustSize();
-
-        // Set initial left width (user can resize later)
-        if (m_nodesDockWidget && m_nodesDockWidget->dockAreaWidget()) {
-            ads::CDockAreaWidget* dockArea = m_nodesDockWidget->dockAreaWidget();
-            QList<int> splitterSizes = m_dockManager->splitterSizes(dockArea);
-            if (!splitterSizes.isEmpty() && splitterSizes[0] != initialLeftWidth) {
-                splitterSizes[0] = initialLeftWidth;
-                m_dockManager->setSplitterSizes(dockArea, splitterSizes);
-            }
-        }
-
-        // Set initial right width (user can resize later)
-        if (m_propertiesDockWidget && m_propertiesDockWidget->dockAreaWidget()) {
-            ads::CDockAreaWidget* dockArea = m_propertiesDockWidget->dockAreaWidget();
-            QList<int> splitterSizes = m_dockManager->splitterSizes(dockArea);
-            if (!splitterSizes.isEmpty() && splitterSizes.last() != initialRightWidth) {
-                splitterSizes.last() = initialRightWidth;
-                m_dockManager->setSplitterSizes(dockArea, splitterSizes);
-            }
-        }
     });
 
     // Pass graph model to property editor
@@ -1568,37 +1546,12 @@ void WorkflowUI::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
 
-    // We only need to enforce fixed width for left and right panels
-    // ADS automatically gives the center canvas all remaining space
-    const int leftWidth = 250;
-    const int rightWidth = 300;
-
     qDebug() << "[resizeEvent] WorkflowUI size:" << size()
              << "DockManager:" << m_dockManager->size();
 
-    // Fix left width - left dock area always has left panel as first section
-    if (m_dockManager && m_nodesDockWidget && m_nodesDockWidget->dockAreaWidget()) {
-        ads::CDockAreaWidget* dockArea = m_nodesDockWidget->dockAreaWidget();
-        QList<int> splitterSizes = m_dockManager->splitterSizes(dockArea);
-        if (!splitterSizes.isEmpty() && splitterSizes[0] != leftWidth) {
-            splitterSizes[0] = leftWidth;
-            m_dockManager->setSplitterSizes(dockArea, splitterSizes);
-        }
-    }
-
-    // Fix right width - right dock area always has right panel as last section
-    if (m_dockManager && m_propertiesDockWidget && m_propertiesDockWidget->dockAreaWidget()) {
-        ads::CDockAreaWidget* dockArea = m_propertiesDockWidget->dockAreaWidget();
-        QList<int> splitterSizes = m_dockManager->splitterSizes(dockArea);
-        if (!splitterSizes.isEmpty() && splitterSizes.last() != rightWidth) {
-            splitterSizes.last() = rightWidth;
-            m_dockManager->setSplitterSizes(dockArea, splitterSizes);
-        }
-    }
-
     qDebug() << "[resizeEvent] Final widget sizes:"
-             << "Left:" << m_nodesDockWidget->size()
-             << "Right:" << m_propertiesDockWidget->size()
-             << "Canvas:" << m_canvasDockWidget->size();
+             << "Left:" << (m_nodesDockWidget ? m_nodesDockWidget->size() : QSize())
+             << "Right:" << (m_propertiesDockWidget ? m_propertiesDockWidget->size() : QSize())
+             << "Canvas:" << (m_canvasDockWidget ? m_canvasDockWidget->size() : QSize());
 }
 

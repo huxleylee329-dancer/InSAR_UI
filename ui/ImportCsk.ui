@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>import_ALOS2</class>
- <widget class="QWidget" name="import_ALOS2">
+ <class>ImportCsk</class>
+ <widget class="QWidget" name="ImportCsk">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>导入ALOS2数据</string>
+   <string>导入COSMO-SkyMed数据</string>
   </property>
   <property name="windowIcon">
    <iconset resource="../resources/SatExplorer.qrc">

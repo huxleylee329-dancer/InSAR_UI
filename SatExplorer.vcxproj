@@ -774,7 +774,7 @@
     <QtUic Include="ui\Baseline.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Baseline_Formation.ui">
+    <QtUic Include="ui\BaselineFormation.ui">
       <Filter>UI Files</Filter>
     </QtUic>
     <QtUic Include="ui\BatchTargetRecognition.ui" />
@@ -785,35 +785,35 @@
     <QtUic Include="ui\Cut.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Deformation_Average.ui">
+    <QtUic Include="ui\DeformationAverage.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Dem_ui.ui">
+    <QtUic Include="ui\Dem.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Export_KML.ui">
+    <QtUic Include="ui\ExportKml.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Filter_ui.ui">
+    <QtUic Include="ui\Filter.ui">
       <Filter>UI Files</Filter>
     </QtUic>
     <QtUic Include="ui\Geocoding.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\import_ALOS2.ui">
+    <QtUic Include="ui\ImportAlos2.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\import_CSK.ui">
+    <QtUic Include="ui\ImportCsk.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Import_Macao.ui" />
-    <QtUic Include="ui\import_sentinel.ui">
+    <QtUic Include="ui\ImportMacao.ui" />
+    <QtUic Include="ui\ImportSentinel.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Import_TSX.ui">
+    <QtUic Include="ui\ImportTsx.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Interferometric_Formation.ui">
+    <QtUic Include="ui\InterferometricFormation.ui">
       <Filter>UI Files</Filter>
     </QtUic>
     <QtUic Include="ui\MainWindow.ui">
@@ -828,33 +828,33 @@
     <QtUic Include="ui\SatExplorer.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\Registration_ui.ui">
+    <QtUic Include="ui\Registration.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\S1_Deburst.ui">
+    <QtUic Include="ui\S1Deburst.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\S1_frame_merge.ui">
+    <QtUic Include="ui\S1FrameMerge.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\S1_swath_merge.ui">
+    <QtUic Include="ui\S1SwathMerge.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\S1_TOPS_BackGeocoding.ui">
+    <QtUic Include="ui\S1TopsBackGeocoding.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\SBAS_reference_reselection.ui">
+    <QtUic Include="ui\SbasReferenceReselection.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\SBAS_time_series_analysis.ui">
+    <QtUic Include="ui\SbasTimeSeriesAnalysis.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\SLC_deramp.ui">
+    <QtUic Include="ui\SlcDeramp.ui">
       <Filter>UI Files</Filter>
     </QtUic>
     <QtUic Include="ui\SpeckleDenoise.ui" />
     <QtUic Include="ui\TargetDetection.ui" />
-    <QtUic Include="ui\Unwrap_ui.ui">
+    <QtUic Include="ui\Unwrap.ui">
       <Filter>UI Files</Filter>
     </QtUic>
   </ItemGroup>

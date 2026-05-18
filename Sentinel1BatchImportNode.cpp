@@ -52,21 +52,21 @@ Sentinel1BatchImportNode::~Sentinel1BatchImportNode()
 QWidget* Sentinel1BatchImportNode::createWidget()
 {
     auto* widget = new QWidget();
-    auto* layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(8, 8, 8, 8);
-    layout->setSpacing(6);
+    auto* mainLayout = new QVBoxLayout(widget);
+    mainLayout->setContentsMargins(8, 8, 8, 8);
+    mainLayout->setSpacing(6);
 
-    // File list row [8:2]
-    auto* fileListRow = new QHBoxLayout();
-    fileListRow->setStretch(0, 8);  // QListWidget 占 8 份
-    fileListRow->setStretch(1, 2);  // 按钮占 2 份
+    // Top section: file list (8:2 stretch)
+    auto* topSection = new QHBoxLayout();
+    topSection->setStretch(0, 8);
+    topSection->setStretch(1, 2);
 
     auto* fileListLayout = new QVBoxLayout();
     fileListLayout->setContentsMargins(0, 0, 0, 0);
     m_fileListWidget = new QListWidget();
     m_fileListWidget->setMaximumHeight(100);
     fileListLayout->addWidget(m_fileListWidget);
-    fileListRow->addLayout(fileListLayout);
+    topSection->addLayout(fileListLayout);
 
     auto* buttonColLayout = new QVBoxLayout();
     buttonColLayout->setContentsMargins(0, 0, 0, 0);
@@ -76,8 +76,13 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     buttonColLayout->addWidget(addFiles);
     buttonColLayout->addWidget(removeFiles);
     buttonColLayout->addStretch();
-    fileListRow->addLayout(buttonColLayout);
-    layout->addLayout(fileListRow);
+    topSection->addLayout(buttonColLayout);
+    
+    mainLayout->addLayout(topSection, 4);
+
+    // Bottom section: configuration options
+    auto* bottomSection = new QHBoxLayout();
+    auto* configLayout = new QVBoxLayout();
 
     // Subswath row [3:7]
     auto* subswathRow = new QHBoxLayout();
@@ -89,7 +94,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     m_subswathCombo->addItem("iw2");
     m_subswathCombo->addItem("iw3");
     subswathRow->addWidget(m_subswathCombo);
-    layout->addLayout(subswathRow);
+    configLayout->addLayout(subswathRow);
 
     // Polarization row [3:7]
     auto* polRow = new QHBoxLayout();
@@ -100,7 +105,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     m_polarizationCombo->addItem("vv");
     m_polarizationCombo->addItem("vh");
     polRow->addWidget(m_polarizationCombo);
-    layout->addLayout(polRow);
+    configLayout->addLayout(polRow);
 
     // Target project row [3:7]
     auto* projectRow = new QHBoxLayout();
@@ -113,7 +118,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
         m_projectCombo->addItem(projectName());
     }
     projectRow->addWidget(m_projectCombo);
-    layout->addLayout(projectRow);
+    configLayout->addLayout(projectRow);
 
     // Output node name row [3:7]
     auto* nameRow = new QHBoxLayout();
@@ -123,7 +128,10 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("S1_Batch_Import");
     nameRow->addWidget(m_outputNodeNameEdit);
-    layout->addLayout(nameRow);
+    configLayout->addLayout(nameRow);
+
+    bottomSection->addLayout(configLayout);
+    mainLayout->addLayout(bottomSection, 4);
 
     // Connect signals
     connect(addFiles, &QPushButton::clicked, this, &Sentinel1BatchImportNode::onAddFilesClicked);

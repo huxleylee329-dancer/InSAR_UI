@@ -1,4 +1,4 @@
-ï»¿#include"Deformation_Average.h"
+#include"Deformation_Average.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -11,7 +11,7 @@
 #include<FormatConversion.h>
 Deformation_Average::Deformation_Average(QWidget* parent) :
     QWidget(parent), h5_left(-1), h5_right(-1), h5_top(-1), h5_bottom(-1),
-    ui(new Ui::Deformation_Average)
+    ui(new Ui::DeformationAverage)
 {
     ui->setupUi(this);
     //this->DOC = new XMLFile;
@@ -26,7 +26,7 @@ Deformation_Average::Deformation_Average(QWidget* parent) :
 Deformation_Average::~Deformation_Average()
 {
     Deformation_Average_thread = NULL;
-    /*æ”¹å˜å·¥ç¨‹æ–‡ä»¶çš„å¤„ç†çŠ¶æ€ä¸ºNOT_IN_PROCESS*/
+    /*¸Ä±ä¹¤³ÌÎÄ¼şµÄ´¦Àí×´Ì¬ÎªNOT_IN_PROCESS*/
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
@@ -45,7 +45,7 @@ void Deformation_Average::cancelled()
 {
     isPreviewPressed = false;
     ui->Preview->setDisabled(false);
-    ui->Preview->setText(QString::fromLocal8Bit("æŸ¥çœ‹"));
+    ui->Preview->setText(QString::fromLocal8Bit("²é¿´"));
     ui->Preview->repaint();
 }
 
@@ -74,7 +74,7 @@ void Deformation_Average::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -87,7 +87,7 @@ void Deformation_Average::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥å›¾åƒæ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÍ¼ÏñÊı¾İ£¡"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -154,7 +154,7 @@ void Deformation_Average::on_Preview_pressed()
     if (isPreviewPressed) return;
     isPreviewPressed = true;
     ui->Preview->setDisabled(true);
-    ui->Preview->setText(QString::fromLocal8Bit("æ­£åœ¨æŸ¥çœ‹..."));
+    ui->Preview->setText(QString::fromLocal8Bit("ÕıÔÚ²é¿´..."));
     ui->Preview->repaint();
     QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
     QString image_name;

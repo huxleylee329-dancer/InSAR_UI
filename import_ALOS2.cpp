@@ -6,7 +6,7 @@
 #include<qmessagebox.h>
 import_ALOS2::import_ALOS2(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::import_ALOS2)
+    ui(new Ui::ImportAlos2)
 {
     ui->setupUi(this);
     import_ALOS2_thread = NULL;
@@ -273,19 +273,27 @@ void import_ALOS2::on_buttonBox_accepted()
     }
 
 
+    // Ensure previous threads are released
+    if (import_ALOS2_thread) {
+        import_ALOS2_thread->thread()->quit();
+        import_ALOS2_thread->thread()->wait();
+    }
+
     import_ALOS2_thread = new MyThread;
-    import_ALOS2_thread->moveToThread(new QThread(this));
+    QThread* thread = new QThread(this);
+    import_ALOS2_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
     connect(this, &import_ALOS2::operate2, import_ALOS2_thread, &MyThread::import_ALOS2_patch, Qt::QueuedConnection);
     connect(import_ALOS2_thread, &MyThread::updateProcess, this, &import_ALOS2::updateProcess);
-    connect(import_ALOS2_thread->thread(), &QThread::finished, import_ALOS2_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, import_ALOS2_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
     connect(import_ALOS2_thread, &MyThread::endProcess, this, &import_ALOS2::endProcess);
     connect(import_ALOS2_thread, &MyThread::errorProcess, this, &import_ALOS2::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_ALOS2::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_ALOS2::StopThread);// , Qt::QueuedConnection);
     connect(import_ALOS2_thread, &MyThread::sendModel, this, &import_ALOS2::TransitModel);
-    import_ALOS2_thread->thread()->start();
+    thread->start();
     emit operate2(
         this->save_path, //保存路径
         original_namelist,//原始文件名(IMG文件)

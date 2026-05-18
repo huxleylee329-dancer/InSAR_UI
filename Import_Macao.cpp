@@ -8,7 +8,7 @@
 
 Import_Macao::Import_Macao(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::Import_Macao),
+    ui(new Ui::ImportMacao),
     copy(NULL),
     import_Macao_thread(NULL),
     import_Macao_thread2(NULL)
@@ -136,18 +136,26 @@ void Import_Macao::on_buttonBox_accepted()
         return;
     }
 
+    // Ensure previous threads are released
+    if (import_Macao_thread) {
+        import_Macao_thread->thread()->quit();
+        import_Macao_thread->thread()->wait();
+    }
+
     import_Macao_thread = new MyThread;
-    import_Macao_thread->moveToThread(new QThread(this));
+    QThread* thread = new QThread(this);
+    import_Macao_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
     connect(this, &Import_Macao::operate, import_Macao_thread, &MyThread::import_Macao, Qt::QueuedConnection);
     connect(import_Macao_thread, &MyThread::updateProcess, this, &Import_Macao::updateProcess);
-    connect(import_Macao_thread->thread(), &QThread::finished, import_Macao_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, import_Macao_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
     connect(import_Macao_thread, &MyThread::endProcess, this, &Import_Macao::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_Macao::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_Macao::StopThread);// , Qt::QueuedConnection);
     connect(import_Macao_thread, &MyThread::sendModel, this, &Import_Macao::TransitModel);
-    import_Macao_thread->thread()->start();
+    thread->start();
     emit operate(
         ui->LineEdit_xml->text(),
         this->save_path,
@@ -297,18 +305,26 @@ void Import_Macao::on_buttonBox_2_accepted()
     if (!generate_name(ui->listWidget, original_namelist, import_namelist)) return;
 
 
+    // Ensure previous threads are released
+    if (import_Macao_thread2) {
+        import_Macao_thread2->thread()->quit();
+        import_Macao_thread2->thread()->wait();
+    }
+
     import_Macao_thread2 = new MyThread;
-    import_Macao_thread2->moveToThread(new QThread(this));
+    QThread* thread2 = new QThread(this);
+    import_Macao_thread2->moveToThread(thread2);
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
     connect(this, &Import_Macao::operate2, import_Macao_thread2, &MyThread::import_Macao_patch, Qt::QueuedConnection);
     connect(import_Macao_thread2, &MyThread::updateProcess, this, &Import_Macao::updateProcess);
-    connect(import_Macao_thread2->thread(), &QThread::finished, import_Macao_thread2, &MyThread::deleteLater);
+    connect(thread2, &QThread::finished, import_Macao_thread2, &MyThread::deleteLater);
+    connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
     connect(import_Macao_thread2, &MyThread::endProcess, this, &Import_Macao::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_Macao::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_Macao::StopThread);// , Qt::QueuedConnection);
     connect(import_Macao_thread2, &MyThread::sendModel, this, &Import_Macao::TransitModel);
-    import_Macao_thread2->thread()->start();
+    thread2->start();
     emit operate2(
         this->save_path, //保存路径
         original_namelist,//原始文件名

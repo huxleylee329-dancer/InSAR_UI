@@ -63,6 +63,7 @@ QWidget* CSKImportNode::createWidget()
 
     // Left side: file list widget
     m_fileListWidget = new QListWidget();
+    m_fileListWidget->setMaximumHeight(100);
     topSection->addWidget(m_fileListWidget);
 
     // Right side: add/remove buttons

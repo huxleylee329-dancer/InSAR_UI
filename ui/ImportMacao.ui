@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>Import_TSX</class>
- <widget class="QWidget" name="Import_TSX">
+ <class>ImportMacao</class>
+ <widget class="QWidget" name="ImportMacao">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>导入TerraSAR-X/TanDEM-X数据</string>
+   <string>导入Macao数据</string>
   </property>
   <property name="windowIcon">
    <iconset resource="../resources/SatExplorer.qrc">
@@ -21,7 +21,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>0</number>
+      <number>1</number>
      </property>
      <widget class="QWidget" name="tab_3">
       <attribute name="title">
@@ -33,7 +33,7 @@
          <item>
           <widget class="QLabel" name="label_6">
            <property name="text">
-            <string>TSX/TDX图像（.xml）</string>
+            <string>图像（.jpg,.tiff,*.png,*.bmp）</string>
            </property>
           </widget>
          </item>
@@ -119,16 +119,6 @@
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout_7">
          <item>
-          <widget class="QLabel" name="label_7">
-           <property name="text">
-            <string>极化方式</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QComboBox" name="comboBox_pol"/>
-         </item>
-         <item>
           <widget class="QDialogButtonBox" name="buttonBox">
            <property name="standardButtons">
             <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
@@ -202,20 +192,6 @@
              </item>
              <item>
               <widget class="QLineEdit" name="lineEdit_dst_node_2"/>
-             </item>
-            </layout>
-           </item>
-           <item>
-            <layout class="QHBoxLayout" name="horizontalLayout_8" stretch="3,7">
-             <item>
-              <widget class="QLabel" name="label_8">
-               <property name="text">
-                <string>极化方式</string>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QComboBox" name="comboBox_pol2"/>
              </item>
             </layout>
            </item>

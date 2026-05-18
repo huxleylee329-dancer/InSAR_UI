@@ -108,7 +108,7 @@
      <string>视图</string>
     </property>
    </widget>
-   <widget class="QMenu" name="Setteing">
+   <widget class="QMenu" name="Setting">
     <property name="title">
      <string>设置</string>
     </property>
@@ -218,8 +218,7 @@
    <addaction name="File"/>
    <addaction name="Edit"/>
    <addaction name="View"/>
-   <addaction name="Setteing"/>
-   <addaction name="Process"/>
+   <addaction name="Setting"/>   <addaction name="Process"/>
    <addaction name="menuSAR"/>
    <addaction name="menuInSAR"/>
    <addaction name="menuDInSAR"/>

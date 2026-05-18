@@ -4,36 +4,36 @@
 
 InSAR_IPC::InSAR_IPC()
 {
-	hMapFile = INVALID_HANDLE_VALUE;
+	hMapFile = NULL;
 
-	selfEvent = INVALID_HANDLE_VALUE;
+	selfEvent = NULL;
 
-	otherEvent = INVALID_HANDLE_VALUE;
+	otherEvent = NULL;
 
 	GetSystemInfo(&info);
 }
 
 InSAR_IPC::~InSAR_IPC()
 {
-	if (hMapFile && hMapFile != INVALID_HANDLE_VALUE)
+	if (hMapFile != NULL && hMapFile != INVALID_HANDLE_VALUE)
 	{
 		CloseHandle(hMapFile);
 
-		hMapFile = INVALID_HANDLE_VALUE;
+		hMapFile = NULL;
 	}
 
-	if (otherEvent && otherEvent != INVALID_HANDLE_VALUE)
+	if (otherEvent != NULL && otherEvent != INVALID_HANDLE_VALUE)
 	{
 		CloseHandle(otherEvent);
 
-		otherEvent = INVALID_HANDLE_VALUE;
+		otherEvent = NULL;
 	}
 
-	if (selfEvent && selfEvent != INVALID_HANDLE_VALUE)
+	if (selfEvent != NULL && selfEvent != INVALID_HANDLE_VALUE)
 	{
 		CloseHandle(selfEvent);
 
-		selfEvent = INVALID_HANDLE_VALUE;
+		selfEvent = NULL;
 	}
 }
 
@@ -52,7 +52,7 @@ bool InSAR_IPC::InitIPCMemory(bool bSever, LPCWSTR fileName, DWORD dwServerMapSi
 		hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, fileName);
 	}
 
-	if (hMapFile == INVALID_HANDLE_VALUE)
+	if (hMapFile == NULL || hMapFile == INVALID_HANDLE_VALUE)
 	{
 		return false;
 	}
@@ -62,7 +62,7 @@ bool InSAR_IPC::InitIPCMemory(bool bSever, LPCWSTR fileName, DWORD dwServerMapSi
 
 bool InSAR_IPC::ReadData(DWORD& dwOffset, DWORD dwSize, char* buf)
 {
-	if (INVALID_HANDLE_VALUE == hMapFile)
+	if (hMapFile == NULL || hMapFile == INVALID_HANDLE_VALUE)
 	{
 		return false;
 	}
@@ -101,7 +101,7 @@ bool InSAR_IPC::ReadData(DWORD& dwOffset, DWORD dwSize, char* buf)
 
 bool InSAR_IPC::WriteData(DWORD& dwOffset, char* buf, DWORD dwSize)
 {
-	if (INVALID_HANDLE_VALUE == hMapFile)
+	if (hMapFile == NULL || hMapFile == INVALID_HANDLE_VALUE)
 	{
 		return false;
 	}
@@ -144,7 +144,7 @@ bool InSAR_IPC::InitSelfEvent(LPCWSTR eventName, BOOL bInitState)
 
 	selfEvent = CreateEvent(NULL, TRUE, bInitState, eventName);
 
-	if (INVALID_HANDLE_VALUE == selfEvent)
+	if (selfEvent == NULL || selfEvent == INVALID_HANDLE_VALUE)
 	{
 		bRet = false;
 	}
@@ -158,7 +158,7 @@ bool InSAR_IPC::InitOtherEvent(LPCWSTR eventName, BOOL bInitState)
 
 	otherEvent = CreateEvent(NULL, TRUE, bInitState, eventName);
 
-	if (INVALID_HANDLE_VALUE == otherEvent)
+	if (otherEvent == NULL || otherEvent == INVALID_HANDLE_VALUE)
 	{
 		bRet = false;
 	}
@@ -172,7 +172,7 @@ bool InSAR_IPC::OpenOtherEvent(LPCWSTR eventName)
 
 	otherEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, eventName);
 
-	if (INVALID_HANDLE_VALUE == selfEvent || NULL == selfEvent)
+	if (otherEvent == NULL || otherEvent == INVALID_HANDLE_VALUE)
 	{
 		CString strDebug;
 		strDebug.Format(_T("%s, %d\n"), eventName, GetLastError());
@@ -188,7 +188,7 @@ bool InSAR_IPC::OpenSelfEvent(LPCWSTR eventName)
 
 	selfEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, eventName);
 
-	if (INVALID_HANDLE_VALUE == selfEvent || NULL == selfEvent)
+	if (selfEvent == NULL || selfEvent == INVALID_HANDLE_VALUE)
 	{
 		CString strDebug;
 		strDebug.Format(_T("%s, %d\n"), eventName, GetLastError());
@@ -202,12 +202,12 @@ void InSAR_IPC::SetEventIntf(bool bSelf)
 {
 	if (bSelf)
 	{
-		if (selfEvent != INVALID_HANDLE_VALUE)
+		if (selfEvent != NULL && selfEvent != INVALID_HANDLE_VALUE)
 		{
 			SetEvent(selfEvent);
 		}
 	}
-	else if (otherEvent != INVALID_HANDLE_VALUE)
+	else if (otherEvent != NULL && otherEvent != INVALID_HANDLE_VALUE)
 	{
 		SetEvent(otherEvent);
 	}
@@ -217,12 +217,12 @@ void InSAR_IPC::ResetEventIntf(bool bSelf)
 {
 	if (bSelf)
 	{
-		if (selfEvent != INVALID_HANDLE_VALUE)
+		if (selfEvent != NULL && selfEvent != INVALID_HANDLE_VALUE)
 		{
 			ResetEvent(selfEvent);
 		}
 	}
-	else if (otherEvent != INVALID_HANDLE_VALUE)
+	else if (otherEvent != NULL && otherEvent != INVALID_HANDLE_VALUE)
 	{
 		ResetEvent(otherEvent);
 	}

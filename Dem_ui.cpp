@@ -1,4 +1,4 @@
-ï»¿#include"Dem_ui.h"
+#include"Dem_ui.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -15,7 +15,7 @@
 //#include<FormatConversion.h>
 Dem_ui::Dem_ui(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::Dem_ui)
+    ui(new Ui::Dem)
 {
     ui->setupUi(this);
     ui->times_label->setHidden(1);
@@ -43,7 +43,7 @@ Dem_ui::~Dem_ui()
 void Dem_ui::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Dem_ui::endProcess()
@@ -126,7 +126,7 @@ void Dem_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -138,7 +138,7 @@ void Dem_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆè¿›è¡Œè§£ç¼ ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¬ÇëÏÈ½øĞĞ½â²ø£¡"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -188,7 +188,7 @@ void Dem_ui::on_buttonBox_accepted()
     bool bFlag = false;
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆè¿›è¡Œè§£ç¼ æˆ–æ›´æ¢å·¥ç¨‹ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈ½øĞĞ½â²ø»ò¸ü»»¹¤³Ì£¡"));
         return;
     }
     if (ui->NewtonButton->isChecked()) 
@@ -196,35 +196,35 @@ void Dem_ui::on_buttonBox_accepted()
         this->method = 1;
         if (ui->times->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥ç‰›é¡¿æ³•çš„è¿­ä»£æ¬¡æ•°ï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëÅ£¶Ù·¨µÄµü´ú´ÎÊı£¡"));
             return;
         }
         int times = ui->times->text().toInt(&bFlag);
         if (!bFlag)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¿­ä»£æ¬¡æ•°åº”ä¸ºæ­£æ•´æ•°ï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("µü´ú´ÎÊıÓ¦ÎªÕıÕûÊı£¡"));
             return;
         }
         else if(times<=0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¿­ä»£æ¬¡æ•°åº”ä¸ºæ­£æ•´æ•°ï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("µü´ú´ÎÊıÓ¦ÎªÕıÕûÊı£¡"));
             return;
         }
     }
     if (this->method == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·é€‰æ‹©Demæ–¹æ³•!"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÑ¡ÔñDem·½·¨!"));
         return;
     }
     if (ui->file_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥ä¿å­˜DEMæ•°æ®çš„æ–‡ä»¶å¤¹åç§°ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë±£´æDEMÊı¾İµÄÎÄ¼ş¼ĞÃû³Æ£¡"));
         return;
     }
     bFlag = ui->file_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
         return;
     }
     

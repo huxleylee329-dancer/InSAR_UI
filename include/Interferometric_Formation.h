@@ -1,7 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_Interferometric_Formation.h"
+#include "ui_InterferometricFormation.h"
 #include"MyThread.h"
 
 class Interferometric_Formation : public QWidget
@@ -18,7 +18,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::Interferometric_Formation* ui;
+    Ui::InterferometricFormation* ui;
     QStandardItemModel* copy;
     MyThread* Interferometric_Formation_thread;
     QString save_path;

@@ -1,7 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_Filter_ui.h"
+#include "ui_Filter.h"
 #include"MyThread.h"
 
 class Filter_ui : public QWidget
@@ -18,7 +18,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::Filter_ui* ui;
+    Ui::Filter* ui;
     QStandardItemModel* copy;
     MyThread* Filter_thread;
     QString save_path;

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>Export_KML</class>
- <widget class="QWidget" name="Export_KML">
+ <class>ExportKml</class>
+ <widget class="QWidget" name="ExportKml">
   <property name="geometry">
    <rect>
     <x>0</x>

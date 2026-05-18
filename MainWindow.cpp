@@ -124,6 +124,11 @@ static const MenuIconMapping menuIconMap[] = {
 };
 
 MainWindow::MainWindow(QWidget* parent)
+    : MainWindow(QString(), parent)
+{
+}
+
+MainWindow::MainWindow(QString str, QWidget* parent)
     : QMainWindow(parent)
 {
     if (!this->Process)
@@ -138,14 +143,9 @@ MainWindow::MainWindow(QWidget* parent)
     // Set APP icon
     this->setWindowTitle("SatExplorer");
     this->setWindowIcon(QIcon(APP_ICON));
-    ui.View->setDisabled(0);
-    ui.Process->setDisabled(1);
-    ui.menuSAR->setDisabled(1);
-    ui.menuInSAR->setDisabled(1);
-    ui.menuDInSAR->setDisabled(1);
 
     // Initialize interfaces for switching (MUST be early - we use workspace components)
-    initializeInterfaces(model, project);
+    initializeInterfaces(model, project, str);
 
     // Use WorkspaceUI components exclusively - no more ui.treeView/ui.tool/ui.tabWidget
     m_workspaceUI->treeView()->init_tree();
@@ -153,7 +153,6 @@ MainWindow::MainWindow(QWidget* parent)
     model = m_workspaceUI->treeView()->model;
 
     m_workspaceUI->tabWidget()->setTabsClosable(true);
-    connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
 
     // Load initial theme from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);
@@ -169,7 +168,9 @@ MainWindow::MainWindow(QWidget* parent)
 
     // Setup theme menu (after setting m_currentTheme)
     setupThemeMenu();
-    //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
+    
+    // Connect signals/slots
+    connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
     connect(m_workspaceUI->treeView(), &TreeView::update, this, &MainWindow::update_treeview);
     connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
     connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::on_tabWidget_tabCloseRequested);
@@ -178,62 +179,21 @@ MainWindow::MainWindow(QWidget* parent)
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
 
-    // No project opened - show workflow interface for debugging
-    m_interfaceManager->switchToInterface("workflow");
-    updateInterfaceMenuCheckState();
-}
-MainWindow::MainWindow(QString str, QWidget* parent) : QMainWindow(parent)
-{
-    if (!this->Process)
-    {
-        Process = NULL;
+    if (str.isEmpty()) {
+        // No project opened - show workflow interface for debugging
+        ui.View->setDisabled(0);
+        ui.Process->setDisabled(1);
+        ui.menuSAR->setDisabled(1);
+        ui.menuInSAR->setDisabled(1);
+        ui.menuDInSAR->setDisabled(1);
+        
+        m_interfaceManager->switchToInterface("workflow");
+        updateInterfaceMenuCheckState();
     }
-    ui.setupUi(this);
-    this->project = new XMLFile;
-    this->double_click_open_project_file = "";
-
-
-    // Set APP icon
-    this->setWindowTitle("SatExplorer");
-    this->setWindowIcon(QIcon(APP_ICON));
-
-    // Initialize interfaces for switching (MUST be early - we use workspace components)
-    initializeInterfaces(model, project, str);
-
-    // Use WorkspaceUI components exclusively
-    m_workspaceUI->treeView()->init_tree();
-    // Note: toolTree->init_mould() is already called in WorkspaceUI::setupUi()
-    model = m_workspaceUI->treeView()->model;
-
-    m_workspaceUI->tabWidget()->setTabsClosable(true);
-
-    // Load initial theme from Config.ini
-    QSettings settings("Config.ini", QSettings::IniFormat);
-    m_currentTheme = settings.value("Appearance/Theme", "light").toString();
-
-    // 创建最近打开子菜单并插入文件菜单
-    m_recentMenu = new QMenu("最近打开", this);
-    ui.File->insertMenu(ui.actionSave, m_recentMenu);
-
-    // Apply menu icons after m_recentMenu is created
-    applyMenuIcons(m_currentTheme == "dark");
-    updateRecentMenu();
-
-    connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
-    //connect(ui.tool, &TreeView::sendindex, this, &MainWindow::OpenMould);
-    connect(m_workspaceUI->treeView(), &TreeView::update, this, &MainWindow::update_treeview);
-    connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
-    connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::on_tabWidget_tabCloseRequested);
-    connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
-
-    // Setup theme menu (after setting m_currentTheme)
-    setupThemeMenu();
-
-    // Add interface switching menu to View
-    setupInterfaceSwitchingMenu();
-
-    // Open project file (loadWorkflowFromProject inside handles interface switching)
-    this->open_from_project_file(str);
+    else {
+        // Open project file (loadWorkflowFromProject inside handles interface switching)
+        this->open_from_project_file(str);
+    }
 }
 MainWindow::~MainWindow()
 
@@ -1393,7 +1353,7 @@ void MainWindow::setTheme(const QString &theme)
     }
 
     // Update theme menu check state
-    QMenu* settingsMenu = ui.Setteing;
+    QMenu* settingsMenu = ui.Setting;
     QList<QMenu*> submenus = settingsMenu->findChildren<QMenu*>();
     for (QMenu* submenu : submenus) {
         if (submenu->title().contains(QString::fromUtf8("主题"))) {
@@ -1433,7 +1393,7 @@ void MainWindow::showEvent(QShowEvent* event)
 void MainWindow::setupThemeMenu()
 {
     // Find or create Settings menu
-    QMenu* settingsMenu = ui.Setteing;
+    QMenu* settingsMenu = ui.Setting;
 
     // Create Theme submenu under Settings
     QMenu* themeMenu = settingsMenu->addMenu(QString::fromUtf8("主题"));

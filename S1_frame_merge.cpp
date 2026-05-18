@@ -1,5 +1,5 @@
-ï»¿#include"S1_frame_merge.h"
-#include"ui_S1_frame_merge.h"
+#include"S1_frame_merge.h"
+#include"ui_S1FrameMerge.h"
 #include"icon_source.h"
 #include"FormatConversion.h"
 #include<qdialog.h>
@@ -15,7 +15,7 @@
 #endif
 S1_frame_merge::S1_frame_merge(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::S1_frame_merge)
+    ui(new Ui::S1FrameMerge)
 {
     ui->setupUi(this);
     ui->progressBar->setMinimum(0);
@@ -41,7 +41,7 @@ void S1_frame_merge::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -155,13 +155,13 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
 
     if (ui->comboBox_project->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
         this->deleteLater();
         return;
     }
     ui->comboBox_node1->clear();
     ui->comboBox_node2->clear();
-    //å·¥ç¨‹æ–‡ä»¶
+    //¹¤³ÌÎÄ¼ş
     ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
     ret = xmldoc.find_node("DataNode", pnode);
@@ -178,13 +178,13 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_node1->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
         //this->deleteLater();
         return;
     }
     ui->comboBox_node1->setCurrentIndex(0);
     ui->comboBox_node2->setCurrentIndex(0);
-    //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
+    //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
     ui->comboBox_data1->clear();
     ui->comboBox_data2->clear();
     ret = xmldoc.find_node("DataNode", pnode);
@@ -240,14 +240,14 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
         }
         if (ui->comboBox_node1->count() == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¡"));
             //this->deleteLater();
             return;
         }
         ui->comboBox_node1->setCurrentIndex(0);
         ui->comboBox_node2->setCurrentIndex(0);
 
-        //åˆå§‹åŒ–å›¾åƒæ•°æ®èŠ‚ç‚¹
+        //³õÊ¼»¯Í¼ÏñÊı¾İ½Úµã
         ui->comboBox_data1->clear();
         ui->comboBox_data2->clear();
         ret = xmldoc.find_node("DataNode", pnode);
@@ -295,7 +295,7 @@ void S1_frame_merge::on_comboBox_node1_currentIndexChanged()
         ui->comboBox_data1->clear();
         if (!node || num <= 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
             //this->deleteLater();
             return;
         }
@@ -325,7 +325,7 @@ void S1_frame_merge::on_comboBox_node2_currentIndexChanged()
         ui->comboBox_data2->clear();
         if (!node || num <= 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
             //this->deleteLater();
             return;
         }
@@ -341,16 +341,16 @@ void S1_frame_merge::on_buttonBox_accepted()
 {
     if (ui->comboBox_node1->count() == 0 || ui->comboBox_node2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¡"));
         return;
     }
     bool bFlag = ui->lineEdit_dstnode->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ãû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
         return;
     }
-    //é˜²é‡åæ£€æŸ¥
+    //·ÀÖØÃû¼ì²é
     QStandardItem* project = this->copy->findItems(ui->comboBox_project->currentText())[0];
     if (!project) {
         return;
@@ -359,7 +359,7 @@ void S1_frame_merge::on_buttonBox_accepted()
     {
         if (ui->lineEdit_dstnode->text() == project->child(i)->text() && project->child(i, 1)->text() != QString("complex-0.0"))
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œä¸”æ•°æ®ç­‰çº§ä¸ç¬¦åˆè¦æ±‚ï¼Œè¯·é‡å‘½åï¼"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇÒÊı¾İµÈ¼¶²»·ûºÏÒªÇó£¬ÇëÖØÃüÃû£¡"));
             return;
         }
     }

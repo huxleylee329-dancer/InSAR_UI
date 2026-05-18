@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<FormatConversion.h>
-#include "ui_Deformation_Average.h"
+#include "ui_DeformationAverage.h"
 #include"MyThread.h"
 #include "Deformation_Preview_Window.h"
 #include"ImageView.h"
@@ -21,11 +21,11 @@ public slots:
 
 private:
     double h5_left, h5_right, h5_top, h5_bottom;
-    /*è‹¥å·²ç»ç‚¹å‡»è¿‡é¢„è§ˆï¼Œåˆ™ç¦æ­¢å†æ¬¡ç‚¹å‡»*/
+    /*ÈôÒÑ¾­µã»÷¹ıÔ¤ÀÀ£¬Ôò½ûÖ¹ÔÙ´Îµã»÷*/
     bool isPreviewPressed;
-    /*æ˜¯å¦æ­£åœ¨è£å‰ª*/
+    /*ÊÇ·ñÕıÔÚ²Ã¼ô*/
     bool isDeformation_Averageting;
-    Ui::Deformation_Average* ui;
+    Ui::DeformationAverage* ui;
     QString save_path;
     MyThread* Deformation_Average_thread;
     int image_number;
@@ -33,7 +33,7 @@ private:
 signals:
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*ç»çº¬åº¦è£å‰ªä¸‹æ‹‰æ¡†*/
+    /*¾­Î³¶È²Ã¼ôÏÂÀ­¿ò*/
     void on_comboBox_currentIndexChanged();
     void on_comboBox_2_currentIndexChanged();
 

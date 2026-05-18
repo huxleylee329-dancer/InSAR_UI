@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_Import_TSX.h"
+#include "ui_ImportTsx.h"
 #include"MyThread.h"
 
 class Import_TSX : public QWidget
@@ -12,11 +12,11 @@ public:
     ~Import_TSX();
 public slots:
     void ShowProjectList(QStandardItemModel* );
-    /*ç”Ÿæˆæ‰¹é‡å¯¼å…¥æ–‡ä»¶å*/
+    /*Éú³ÉÅúÁ¿µ¼ÈëÎÄ¼şÃû*/
     bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist,  vector<QString>& import_nameslist);
     void ChangeVision(bool Editable);
 private:
-    Ui::Import_TSX* ui;
+    Ui::ImportTsx* ui;
     QString cos_path;
     QString geo_path;
     QString xml_path;
@@ -31,18 +31,18 @@ signals:
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();
-    /*æ‰¹é‡å¯¼å…¥ç›®æ ‡å·¥ç¨‹æŒ‰é’®å“åº”å‡½æ•°*/
+    /*ÅúÁ¿µ¼ÈëÄ¿±ê¹¤³Ì°´Å¥ÏìÓ¦º¯Êı*/
     void on_comboBox_dst_project_2_currentIndexChanged();
     void on_button_xml_browse_pressed();
-    /*æ‰¹é‡å¯¼å…¥æ·»åŠ æŒ‰é’®å“åº”å‡½æ•°*/
+    /*ÅúÁ¿µ¼ÈëÌí¼Ó°´Å¥ÏìÓ¦º¯Êı*/
     void on_pushButton_add_pressed();
-    /*æ‰¹é‡å¯¼å…¥ç§»é™¤æŒ‰é’®å“åº”å‡½æ•°*/
+    /*ÅúÁ¿µ¼ÈëÒÆ³ı°´Å¥ÏìÓ¦º¯Êı*/
     void on_pushButton_remove_pressed();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
-    /*æ‰¹é‡å¯¼å…¥ç¡®å®šæŒ‰é’®å“åº”å‡½æ•°*/
+    /*ÅúÁ¿µ¼ÈëÈ·¶¨°´Å¥ÏìÓ¦º¯Êı*/
     void on_buttonBox_2_accepted();
-    /*æ‰¹é‡å¯¼å…¥å–æ¶ˆæŒ‰é’®å“åº”å‡½æ•°*/
+    /*ÅúÁ¿µ¼ÈëÈ¡Ïû°´Å¥ÏìÓ¦º¯Êı*/
     void on_buttonBox_2_rejected();
 
     void updateProcess(int, QString);

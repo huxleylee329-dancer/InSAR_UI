@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>import_sentinel</class>
- <widget class="QWidget" name="import_sentinel">
+ <class>ImportSentinel</class>
+ <widget class="QWidget" name="ImportSentinel">
   <property name="geometry">
    <rect>
     <x>0</x>

@@ -1,7 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_Unwrap_ui.h"
+#include "ui_Unwrap.h"
 #include"MyThread.h"
 
 class Unwrap_ui : public QWidget
@@ -18,7 +18,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::Unwrap_ui* ui;
+    Ui::Unwrap* ui;
     QStandardItemModel* copy;
     MyThread* Unwrap_thread;
     QString save_path;

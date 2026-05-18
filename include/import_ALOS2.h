@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_import_ALOS2.h"
+#include "ui_ImportAlos2.h"
 #include"MyThread.h"
 
 class import_ALOS2 : public QWidget
@@ -13,12 +13,12 @@ public:
 public slots:
     void errorProcess(QString error_msg);
     void ShowProjectList(QStandardItemModel*);
-    /*ç”Ÿæˆæ‰¹é‡å¯¼å…¥æ–‡ä»¶å*/
+    /*Éú³ÉÅúÁ¿µ¼ÈëÎÄ¼şÃû*/
     bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist,
         vector<QString>& original_nameslist2);
     void ChangeVision(bool Editable);
 private:
-    Ui::import_ALOS2* ui;
+    Ui::ImportAlos2* ui;
     QString save_path;
     QStandardItemModel* copy;
     MyThread* import_ALOS2_thread;
@@ -29,7 +29,7 @@ signals:
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();
     void on_pushButton_add_pressed();
-    /*æ‰¹é‡å¯¼å…¥ç§»é™¤æŒ‰é’®å“åº”å‡½æ•°*/
+    /*ÅúÁ¿µ¼ÈëÒÆ³ı°´Å¥ÏìÓ¦º¯Êı*/
     void on_pushButton_remove_pressed();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

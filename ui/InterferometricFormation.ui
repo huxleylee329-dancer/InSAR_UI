@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>Interferometric_Formation</class>
- <widget class="QWidget" name="Interferometric_Formation">
+ <class>InterferometricFormation</class>
+ <widget class="QWidget" name="InterferometricFormation">
   <property name="geometry">
    <rect>
     <x>0</x>

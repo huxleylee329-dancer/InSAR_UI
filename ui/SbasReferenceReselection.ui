@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>SBAS_reference_reselection</class>
- <widget class="QWidget" name="SBAS_reference_reselection">
+ <class>SbasReferenceReselection</class>
+ <widget class="QWidget" name="SbasReferenceReselection">
   <property name="geometry">
    <rect>
     <x>0</x>

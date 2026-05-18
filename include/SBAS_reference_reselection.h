@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<FormatConversion.h>
-#include"ui_SBAS_reference_reselection.h"
+#include"ui_SbasReferenceReselection.h"
 #include"MyThread.h"
 #include"reselection_view.h"
 #include"ImageView.h"
@@ -25,11 +25,11 @@ public slots:
     void StopThread();
 private:
     double h5_left, h5_right, h5_top, h5_bottom;
-    /*è‹¥å·²ç»ç‚¹å‡»è¿‡é¢„è§ˆï¼Œåˆ™ç¦æ­¢å†æ¬¡ç‚¹å‡»*/
+    /*ÈôÒÑ¾­µã»÷¹ıÔ¤ÀÀ£¬Ôò½ûÖ¹ÔÙ´Îµã»÷*/
     bool isReselectionPressed;
-    /*æ˜¯å¦æ­£åœ¨é€‰æ‹©å‚è€ƒç‚¹*/
+    /*ÊÇ·ñÕıÔÚÑ¡Ôñ²Î¿¼µã*/
     bool isSBAS_reference_reselection;
-    Ui::SBAS_reference_reselection* ui;
+    Ui::SbasReferenceReselection* ui;
     QString save_path;
     MyThread* SBAS_reference_reselection_thread;
     int image_number;

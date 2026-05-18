@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>S1_TOPS_BackGeocoding</class>
- <widget class="QWidget" name="S1_TOPS_BackGeocoding">
+ <class>S1TopsBackGeocoding</class>
+ <widget class="QWidget" name="S1TopsBackGeocoding">
   <property name="geometry">
    <rect>
     <x>0</x>

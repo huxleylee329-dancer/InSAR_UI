@@ -1,7 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include"ui_SLC_deramp.h"
+#include"ui_SlcDeramp.h"
 #include"MyThread.h"
 
 class SLC_deramp : public QWidget
@@ -17,7 +17,7 @@ public slots:
     void endThread();
     void StopThread();
 private:
-    Ui::SLC_deramp* ui;
+    Ui::SlcDeramp* ui;
     QStandardItemModel* copy;
     MyThread* SLC_deramp_thread;
     QString save_path;

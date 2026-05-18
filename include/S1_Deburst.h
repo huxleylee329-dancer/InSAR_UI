@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_S1_Deburst.h"
+#include "ui_S1Deburst.h"
 #include"MyThread.h"
 
 class S1_Deburst : public QWidget
@@ -18,7 +18,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::S1_Deburst* ui;
+    Ui::S1Deburst* ui;
     QStandardItemModel* copy;
     MyThread* S1_Deburst_thread;
     QString save_path;
@@ -29,9 +29,9 @@ signals:
     void operate(QString, QString, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
+    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
     void on_comboBox_currentIndexChanged();
-    /*æ•°æ®èŠ‚ç‚¹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
+    /*Êı¾İ½ÚµãÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
     void on_comboBox_2_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

@@ -218,6 +218,9 @@ private:
     // Theme
     QString m_currentTheme;
 
+    // Track if initial layout (panel widths) has been performed
+    bool m_initialLayoutDone = false;
+
     // Toolbar buttons that need theme-aware icon recoloring
     QToolButton *m_btnSync = nullptr;
     QToolButton *m_btnQueue = nullptr;

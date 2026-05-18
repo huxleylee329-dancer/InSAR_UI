@@ -2,7 +2,7 @@
 #include<Baseline_Preview.h>
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_Export_KML.h"
+#include "ui_ExportKml.h"
 #include"MyThread.h"
 
 class Export_KML : public QWidget
@@ -15,7 +15,7 @@ public slots:
     void ShowProjectList(QStandardItemModel*);
     void Paint_Colorbar(double mMin, double mMax, QString save_path);
 private:
-    Ui::Export_KML* ui;
+    Ui::ExportKml* ui;
     QStandardItemModel* copy;
 private slots:
     void on_comboBox_currentIndexChanged();

@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_S1_TOPS_BackGeocoding.h"
+#include "ui_S1TopsBackGeocoding.h"
 #include"MyThread.h"
 
 class S1_TOPS_BackGeocoding : public QWidget
@@ -18,7 +18,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::S1_TOPS_BackGeocoding* ui;
+    Ui::S1TopsBackGeocoding* ui;
     QStandardItemModel* copy;
     MyThread* S1_TOPS_BackGeocoding_thread;
     QString save_path;
@@ -29,11 +29,11 @@ signals:
     void operate(int, int, QString, QString, QString, QString, QStandardItemModel*, bool);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
+    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
     void on_comboBox_currentIndexChanged();
-    /*æ•°æ®èŠ‚ç‚¹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
+    /*Êı¾İ½ÚµãÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
     void on_comboBox_2_currentIndexChanged();
-    /*ä¸»å›¾åƒé€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
+    /*Ö÷Í¼ÏñÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
     void on_comboBox_3_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

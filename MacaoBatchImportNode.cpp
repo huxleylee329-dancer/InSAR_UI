@@ -51,11 +51,17 @@ QWidget* MacaoBatchImportNode::createWidget()
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
 
+    // Top section: file list (8:2 stretch)
     auto* topSection = new QHBoxLayout();
+    topSection->setStretch(0, 8);
+    topSection->setStretch(1, 2);
 
+    // Left side: file list widget
     m_fileListWidget = new QListWidget();
+    m_fileListWidget->setMaximumHeight(100);
     topSection->addWidget(m_fileListWidget);
 
+    // Right side: add/remove buttons
     auto* buttonLayout = new QVBoxLayout();
     QPushButton* addFiles = new QPushButton("添加");
     QPushButton* removeFiles = new QPushButton("移除");
@@ -63,23 +69,36 @@ QWidget* MacaoBatchImportNode::createWidget()
     buttonLayout->addWidget(removeFiles);
     topSection->addLayout(buttonLayout);
 
-    mainLayout->addLayout(topSection);
+    mainLayout->addLayout(topSection, 4);
 
+    // Bottom section: configuration options
+    auto* bottomSection = new QHBoxLayout();
+    auto* configLayout = new QVBoxLayout();
+
+    // Project Row [3:7]
     auto* projectRow = new QHBoxLayout();
+    projectRow->setStretch(0, 3);
+    projectRow->setStretch(1, 7);
     projectRow->addWidget(new QLabel("项目名称："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
     if (!projectName().isEmpty())
         m_projectCombo->addItem(projectName());
     projectRow->addWidget(m_projectCombo);
-    mainLayout->addLayout(projectRow);
+    configLayout->addLayout(projectRow);
 
+    // Node Row [3:7]
     auto* nodeRow = new QHBoxLayout();
+    nodeRow->setStretch(0, 3);
+    nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("Macao_Batch_Import");
     nodeRow->addWidget(m_outputNodeNameEdit);
-    mainLayout->addLayout(nodeRow);
+    configLayout->addLayout(nodeRow);
+
+    bottomSection->addLayout(configLayout);
+    mainLayout->addLayout(bottomSection, 4);
 
     connect(addFiles, &QPushButton::clicked,
             this, &MacaoBatchImportNode::onAddFilesClicked);

@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include"ui_SBAS_time_series_analysis.h"
+#include"ui_SbasTimeSeriesAnalysis.h"
 #include"MyThread.h"
 
 class SBAS_time_series_analysis : public QWidget
@@ -18,11 +18,11 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel* model);
 private:
-    Ui::SBAS_time_series_analysis* ui;
+    Ui::SbasTimeSeriesAnalysis* ui;
     QStandardItemModel* copy;
     MyThread* SBAS_time_series_analysis_thread;
     QString save_path;
-    int method;//1ï¼šDelaunay_MCFï¼Œ2ï¼šSNAPHUï¼Œ3ï¼šMCF
+    int method;//1£ºDelaunay_MCF£¬2£ºSNAPHU£¬3£ºMCF
     int image_number;
     double temporal_thresh;
     double spatial_thresh;

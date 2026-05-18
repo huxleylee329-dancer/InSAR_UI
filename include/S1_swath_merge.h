@@ -1,7 +1,7 @@
-ï»¿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
-#include "ui_S1_swath_merge.h"
+#include "ui_S1SwathMerge.h"
 #include"MyThread.h"
 
 class S1_swath_merge : public QWidget
@@ -19,7 +19,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 private:
-    Ui::S1_swath_merge* ui;
+    Ui::S1SwathMerge* ui;
     QStandardItemModel* copy;
     MyThread* S1_swath_merge_thread;
     QString save_path;
@@ -30,12 +30,12 @@ signals:
     void operate(int index1, int index2, int index3, QString project, QString node1, QString node2, QString node3, QString dstNode, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
+    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
     void on_comboBox_project_currentIndexChanged();
     void on_comboBox_IW1_node_currentIndexChanged();
     void on_comboBox_IW2_node_currentIndexChanged();
     void on_comboBox_IW3_node_currentIndexChanged();
-    /*å·¥ç¨‹é€‰æ‹©æŒ‰é’®å“åº”å‡½æ•°*/
+    /*¹¤³ÌÑ¡Ôñ°´Å¥ÏìÓ¦º¯Êı*/
     //void on_comboBox_project2_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

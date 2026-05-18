@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>SLC_deramp</class>
- <widget class="QWidget" name="SLC_deramp">
+ <class>BaselineFormation</class>
+ <widget class="QWidget" name="BaselineFormation">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>416</width>
-    <height>332</height>
+    <width>489</width>
+    <height>253</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>去参考相位</string>
+   <string>干涉组合预览</string>
   </property>
   <property name="windowIcon">
    <iconset resource="../resources/SatExplorer.qrc">
-    <normaloff>:/SatExplorer/icon/svg/dem.svg</normaloff>:/SatExplorer/icon/svg/dem.svg</iconset>
+    <normaloff>:/SatExplorer/icon/InSARapp.ico</normaloff>:/SatExplorer/icon/InSARapp.ico</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -47,16 +47,54 @@
     </layout>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_5" stretch="3,7">
+    <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="3,7">
      <item>
-      <widget class="QLabel" name="label_4">
+      <widget class="QLabel" name="label">
        <property name="text">
-        <string>目标节点名</string>
+        <string>主图像选择</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QLineEdit" name="lineEdit"/>
+      <widget class="QComboBox" name="comboBox_masterImage"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_5" stretch="3,2,3,2">
+     <item>
+      <widget class="QLabel" name="label_4">
+       <property name="text">
+        <string>时间基线高阈值（天）</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="lineEdit_temporal_thresh"/>
+     </item>
+     <item>
+      <widget class="QLabel" name="label_6">
+       <property name="text">
+        <string>时间基线低阈值（天）</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="lineEdit_temporal_thresh_low"/>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_6" stretch="4,6">
+     <item>
+      <widget class="QLabel" name="label_5">
+       <property name="text">
+        <string>空间基线阈值（米）</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="lineEdit_spatial_thresh"/>
      </item>
     </layout>
    </item>

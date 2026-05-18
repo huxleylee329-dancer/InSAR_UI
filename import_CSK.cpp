@@ -6,7 +6,7 @@
 #include<qmessagebox.h>
 import_CSK::import_CSK(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::import_CSK)
+    ui(new Ui::ImportCsk)
 {
     ui->setupUi(this);
     import_CSK_thread = NULL;
@@ -229,19 +229,27 @@ void import_CSK::on_buttonBox_accepted()
     if (!generate_name(ui->listWidget, original_namelist, import_namelist)) return;
 
 
+    // Ensure previous threads are released
+    if (import_CSK_thread) {
+        import_CSK_thread->thread()->quit();
+        import_CSK_thread->thread()->wait();
+    }
+
     import_CSK_thread = new MyThread;
-    import_CSK_thread->moveToThread(new QThread(this));
+    QThread* thread = new QThread(this);
+    import_CSK_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
     connect(this, &import_CSK::operate2, import_CSK_thread, &MyThread::import_CSK_patch, Qt::QueuedConnection);
     connect(import_CSK_thread, &MyThread::updateProcess, this, &import_CSK::updateProcess);
-    connect(import_CSK_thread->thread(), &QThread::finished, import_CSK_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, import_CSK_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
     connect(import_CSK_thread, &MyThread::endProcess, this, &import_CSK::endProcess);
     connect(import_CSK_thread, &MyThread::errorProcess, this, &import_CSK::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_CSK::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_CSK::StopThread);// , Qt::QueuedConnection);
     connect(import_CSK_thread, &MyThread::sendModel, this, &import_CSK::TransitModel);
-    import_CSK_thread->thread()->start();
+    thread->start();
     emit operate2(
         this->save_path, //保存路径
         original_namelist,//原始文件名

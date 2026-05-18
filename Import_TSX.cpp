@@ -11,7 +11,7 @@
 //#endif
 Import_TSX::Import_TSX(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::Import_TSX)
+    ui(new Ui::ImportTsx)
 {
     ui->setupUi(this);
     import_TSX_thread = NULL;
@@ -321,18 +321,26 @@ void Import_TSX::on_buttonBox_accepted()
         return;
     }
 
+    // Ensure previous threads are released
+    if (import_TSX_thread) {
+        import_TSX_thread->thread()->quit();
+        import_TSX_thread->thread()->wait();
+    }
+
     import_TSX_thread = new MyThread;
-    import_TSX_thread->moveToThread(new QThread(this));
+    QThread* thread = new QThread(this);
+    import_TSX_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
     connect(this, &Import_TSX::operate, import_TSX_thread, &MyThread::import_TSX, Qt::QueuedConnection);
     connect(import_TSX_thread, &MyThread::updateProcess, this, &Import_TSX::updateProcess);
-    connect(import_TSX_thread->thread(), &QThread::finished, import_TSX_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, import_TSX_thread, &MyThread::deleteLater);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
     connect(import_TSX_thread, &MyThread::endProcess, this, &Import_TSX::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_TSX::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
     connect(import_TSX_thread, &MyThread::sendModel, this, &Import_TSX::TransitModel);
-    import_TSX_thread->thread()->start();
+    thread->start();
     emit operate(
         ui->comboBox_pol->currentText(),
         ui->LineEdit_xml->text(),
@@ -391,18 +399,26 @@ void Import_TSX::on_buttonBox_2_accepted()
     if (!generate_name(ui->listWidget, original_namelist, import_namelist)) return;
 
 
+    // Ensure previous threads are released
+    if (import_TSX_thread2) {
+        import_TSX_thread2->thread()->quit();
+        import_TSX_thread2->thread()->wait();
+    }
+
     import_TSX_thread2 = new MyThread;
-    import_TSX_thread2->moveToThread(new QThread(this));
+    QThread* thread2 = new QThread(this);
+    import_TSX_thread2->moveToThread(thread2);
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
     connect(this, &Import_TSX::operate2, import_TSX_thread2, &MyThread::import_TSX_patch, Qt::QueuedConnection);
     connect(import_TSX_thread2, &MyThread::updateProcess, this, &Import_TSX::updateProcess);
-    connect(import_TSX_thread2->thread(), &QThread::finished, import_TSX_thread2, &MyThread::deleteLater);
+    connect(thread2, &QThread::finished, import_TSX_thread2, &MyThread::deleteLater);
+    connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
     connect(import_TSX_thread2, &MyThread::endProcess, this, &Import_TSX::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_TSX::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
     connect(import_TSX_thread2, &MyThread::sendModel, this, &Import_TSX::TransitModel);
-    import_TSX_thread2->thread()->start();
+    thread2->start();
     emit operate2(
         ui->comboBox_pol2->currentText(),
         this->save_path, //保存路径
