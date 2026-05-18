@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <QFileInfo>
+#include <QMap>
 
 namespace QtNodes {
 
@@ -74,6 +75,72 @@ public:
 private:
     cv::Mat _image;
     QString _filePath;
+};
+
+/**
+ * @brief Universal lightweight image info data type.
+ * Passes image file path and optional metadata without loading pixels.
+ */
+class ImageInfoData : public NodeData
+{
+public:
+    ImageInfoData() = default;
+    explicit ImageInfoData(const QString& filePath, const QMap<QString, QString>& metadata = {})
+        : _filePath(filePath), _metadata(metadata) {}
+
+    NodeDataType type() const override
+    {
+        return NodeDataType{"image_info", "Image Info"};
+    }
+
+    QString filePath() const { return _filePath; }
+    void setFilePath(const QString& path) { _filePath = path; }
+
+    QString getMetadata(const QString& key) const { return _metadata.value(key); }
+    void setMetadata(const QString& key, const QString& value) { _metadata[key] = value; }
+    QMap<QString, QString> allMetadata() const { return _metadata; }
+
+    bool sameType(NodeData const &nodeData) const override
+    {
+        auto d = dynamic_cast<ImageInfoData const *>(&nodeData);
+        return d != nullptr;
+    }
+
+    QString getSummary() const override
+    {
+        if (_filePath.isEmpty()) return "No File";
+        return QFileInfo(_filePath).fileName();
+    }
+
+    QVector<DataField> getFields() const override
+    {
+        QVector<DataField> fields;
+        if (!_filePath.isEmpty()) {
+            DataField pathField;
+            pathField.key = "Path";
+            pathField.value = _filePath;
+            pathField.editType = FieldEditType::Path;
+            pathField.pathFilter = "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.h5);;All Files (*)";
+            fields.append(pathField);
+        }
+        for (auto it = _metadata.begin(); it != _metadata.end(); ++it) {
+            fields.append({it.key(), it.value(), FieldEditType::None});
+        }
+        return fields;
+    }
+
+    bool setField(const QString& key, const QString& value) override
+    {
+        if (key == "Path") {
+            _filePath = value;
+            return true;
+        }
+        return false;
+    }
+
+private:
+    QString _filePath;
+    QMap<QString, QString> _metadata;
 };
 
 // Metadata data type (orbit information, polarization mode, etc.)

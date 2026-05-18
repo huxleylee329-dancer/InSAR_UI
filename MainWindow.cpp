@@ -130,11 +130,15 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::MainWindow(QString str, QWidget* parent)
     : QMainWindow(parent)
+    , thread(nullptr)
+    , Process(nullptr)
+    , model(nullptr)
+    , project(nullptr)
+    , m_interfaceManager(nullptr)
+    , m_workspaceUI(nullptr)
+    , m_workflowUI(nullptr)
+    , m_welcomeUI(nullptr)
 {
-    if (!this->Process)
-    {
-        Process = NULL;
-    }
     ui.setupUi(this);
     this->project = new XMLFile;
     this->double_click_open_project_file = "";
@@ -144,13 +148,23 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     this->setWindowTitle("SatExplorer");
     this->setWindowIcon(QIcon(APP_ICON));
 
-    // Initialize interfaces for switching (MUST be early - we use workspace components)
-    initializeInterfaces(model, project, str);
+    // Initialize interfaces for switching
+    initializeInterfaces(nullptr, project, str);
 
-    // Use WorkspaceUI components exclusively - no more ui.treeView/ui.tool/ui.tabWidget
+    // Use WorkspaceUI components - get the authoritative model from WorkspaceUI
     m_workspaceUI->treeView()->init_tree();
-    // Note: toolTree->init_mould() is already called in WorkspaceUI::setupUi()
-    model = m_workspaceUI->treeView()->model;
+    this->model = m_workspaceUI->treeView()->model;
+
+    // Determine initial project name
+    QString projectName;
+    if (!str.isEmpty()) {
+        projectName = QFileInfo(str).baseName();
+    }
+
+    // Explicitly sync the valid model and context to all interfaces
+    if (m_interfaceManager) {
+        m_interfaceManager->setProjectContext(this->model, str, projectName);
+    }
 
     m_workspaceUI->tabWidget()->setTabsClosable(true);
 
@@ -634,9 +648,6 @@ void MainWindow::on_actionSave_triggered()
 }
 void MainWindow::closeCurrentProject()
 {
-    if (m_projectPath.isEmpty())
-        return;
-
     // 清空工程路径
     m_projectPath.clear();
 
@@ -650,9 +661,12 @@ void MainWindow::closeCurrentProject()
     m_workflowBytes.clear();
 
     // 清空主树形视图模型
-    model->clear();
-    model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
-    model->setHeaderData(1, Qt::Horizontal, tr("Path"));
+    if (model) {
+        model->clear();
+        model->setColumnCount(2);
+        model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
+        model->setHeaderData(1, Qt::Horizontal, tr("Path"));
+    }
 
     // 清空工作区（通过接口）
     if (m_workspaceUI) {
@@ -682,9 +696,11 @@ void MainWindow::closeCurrentProject()
     ui.menuDInSAR->setDisabled(1);
 
     // 清空标签页
-    QTabWidget* closeTabWidget = m_workspaceUI->tabWidget();
-    while (closeTabWidget->count() > 0)
-        closeTabWidget->removeTab(0);
+    if (m_workspaceUI && m_workspaceUI->tabWidget()) {
+        QTabWidget* closeTabWidget = m_workspaceUI->tabWidget();
+        while (closeTabWidget->count() > 0)
+            closeTabWidget->removeTab(0);
+    }
 
     setWindowTitle("SatExplorer");
 }
@@ -1146,6 +1162,7 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
 
     m_workspaceUI->treeView()->setModel(copy);
     m_workspaceUI->treeView()->model = copy;
+    m_workspaceUI->treeView()->setColumnHidden(1, true);
 
     // 重新加载项目 XML，确保 MyThread 导入的 DataNode 不会丢失
     // MyThread 用独立 XMLFile 实例写入 DataNode，MainWindow::project 不知道这些变更

@@ -69,11 +69,38 @@ QPointF DefaultHorizontalNodeGeometry::portPosition(NodeId const nodeId,
 
     double totalHeight = 0.0;
 
-    totalHeight += captionRect(nodeId).height();
-    totalHeight += _portSpasing;
+    bool isOptional = _graphModel.portData<bool>(nodeId, portType, portIndex, PortRole::IsOptional);
 
-    totalHeight += step * portIndex;
-    totalHeight += step / 2.0;
+    if (isOptional) {
+        unsigned int nPorts = (portType == PortType::In) ? _graphModel.nodeData<PortCount>(nodeId, NodeRole::InPortCount)
+                                                         : _graphModel.nodeData<PortCount>(nodeId, NodeRole::OutPortCount);
+
+        int optionalSuffixCount = 0;
+        for (PortIndex i = portIndex + 1; i < nPorts; ++i) {
+            if (_graphModel.portData<bool>(nodeId, portType, i, PortRole::IsOptional)) {
+                optionalSuffixCount++;
+            }
+        }
+
+        QSize size = _graphModel.nodeData<QSize>(nodeId, NodeRole::Size);
+        totalHeight = size.height();
+        totalHeight -= _portSpasing;
+        totalHeight -= step * optionalSuffixCount;
+        totalHeight -= step / 2.0;
+    } else {
+        int requiredPrefixCount = 0;
+        for (PortIndex i = 0; i < portIndex; ++i) {
+            if (!_graphModel.portData<bool>(nodeId, portType, i, PortRole::IsOptional)) {
+                requiredPrefixCount++;
+            }
+        }
+
+        totalHeight += captionRect(nodeId).height();
+        totalHeight += _portSpasing;
+
+        totalHeight += step * requiredPrefixCount;
+        totalHeight += step / 2.0;
+    }
 
     QSize size = _graphModel.nodeData<QSize>(nodeId, NodeRole::Size);
 

@@ -333,7 +333,10 @@ QVariant DataFlowGraphModel::portData(NodeId nodeId,
 
     case PortRole::Caption:
         result = model->portCaption(portType, portIndex);
+        break;
 
+    case PortRole::IsOptional:
+        result = model->portIsOptional(portType, portIndex);
         break;
     }
 

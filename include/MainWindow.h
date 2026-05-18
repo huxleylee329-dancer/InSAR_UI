@@ -23,6 +23,10 @@ public:
     ~MainWindow();
     void Addproject(QString,QString);
     void resizeEvent(QResizeEvent* event);
+
+    // Getters for application-wide components
+    InterfaceManager* interfaceManager() const { return m_interfaceManager; }
+
 public slots:
     void ShowImage(QModelIndex);
     void updateProcess(int, QString);

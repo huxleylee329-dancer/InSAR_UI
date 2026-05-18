@@ -252,6 +252,7 @@ void WorkspaceUI::clear()
     // 清空树形视图模型
     if (m_treeView && m_treeView->model) {
         m_treeView->model->clear();
+        m_treeView->model->setColumnCount(2);
         m_treeView->model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
         m_treeView->model->setHeaderData(1, Qt::Horizontal, tr("Path"));
         m_treeView->setColumnHidden(1, true);

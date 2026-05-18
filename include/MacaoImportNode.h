@@ -3,6 +3,7 @@
 
 #include "ImportNodeBase.h"
 #include "MyThread.h"
+#include "NodeDataTypes.h"
 
 #include <QWidget>
 #include <QLineEdit>
@@ -30,6 +31,13 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+
+    unsigned int nPorts(PortType portType) const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
 
     void setExecutionMode(ExecutionMode mode) override;
 
@@ -62,6 +70,8 @@ private:
     QString m_imagePath;
     QString m_importedFilePath;
     QString m_outputFileName;
+
+    std::shared_ptr<ImageInfoData> m_imageInfoData;
 
     MyThread* m_workerThread;
     QThread* m_thread;

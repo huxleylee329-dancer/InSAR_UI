@@ -57,6 +57,7 @@ enum class PortRole {
     ConnectionPolicyRole = 2, ///< `enum` ConnectionPolicyRole
     CaptionVisible = 3,       ///< `bool` for caption visibility.
     Caption = 4,              ///< `QString` for port caption.
+    IsOptional = 5,           ///< `bool` for optional port.
 };
 Q_ENUM_NS(PortRole)
 

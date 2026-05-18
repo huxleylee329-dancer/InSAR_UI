@@ -37,6 +37,6 @@
     "ConstructionLineWidth": 1.5,
     "PointDiameter": 10.0,
 
-    "UseDataDefinedColors": false
+    "UseDataDefinedColors": true
   }
 }

@@ -2,6 +2,9 @@
 #include "ImportDataTypes.h"
 #include "IApplicationInterface.h"
 #include "MyThread.h"
+#include "MainWindow.h"
+#include "InterfaceManager.h"
+#include <QApplication>
 
 namespace QtNodes {
 
@@ -157,17 +160,26 @@ void ImportNodeBase::setExecutionMode(ExecutionMode mode)
 
 IApplicationInterface* ImportNodeBase::getProjectContext() const
 {
-    // Navigate up the widget hierarchy to find the interface
-    if (!_widget)
-        return nullptr;
-
-    ::QWidget* parent = _widget->parentWidget();
-    while (parent)
+    // 1. Navigate up the widget hierarchy to find the interface (standard way)
+    if (_widget)
     {
-        auto* iface = dynamic_cast<IApplicationInterface*>(parent);
-        if (iface)
-            return iface;
-        parent = parent->parentWidget();
+        ::QWidget* parent = _widget->parentWidget();
+        while (parent)
+        {
+            auto* iface = dynamic_cast<IApplicationInterface*>(parent);
+            if (iface)
+                return iface;
+            parent = parent->parentWidget();
+        }
+    }
+
+    // 2. Fallback: If not found via hierarchy (e.g., during creation), 
+    // try to find it via main window's current interface
+    foreach(::QWidget * widget, QApplication::topLevelWidgets()) {
+        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
+        if (mainWin && mainWin->interfaceManager()) {
+            return mainWin->interfaceManager()->currentInterface();
+        }
     }
 
     return nullptr;

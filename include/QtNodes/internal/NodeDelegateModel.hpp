@@ -41,6 +41,9 @@ public:
     /// Port caption is used in GUI to label individual ports
     virtual QString portCaption(PortType, PortIndex) const { return QString(); }
 
+    /// Returns true if the port is optional (affects layout)
+    virtual bool portIsOptional(PortType, PortIndex) const { return false; }
+
     /// Name makes this model unique
     virtual QString name() const = 0;
 

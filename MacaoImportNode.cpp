@@ -50,34 +50,64 @@ QWidget* MacaoImportNode::createWidget()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
+    // Macao图像 + 浏览按钮 [3:5:2]
     auto* imageRow = new QHBoxLayout();
+    imageRow->setStretch(0, 3);
+    imageRow->setStretch(1, 5);
+    imageRow->setStretch(2, 2);
     imageRow->addWidget(new QLabel("Macao图像："));
     m_imageEdit = new QLineEdit();
+    m_imageEdit->setPlaceholderText("选择 Macao 图像文件");
     connect(m_imageEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_imagePath = text; });
     QPushButton* browseButton = new QPushButton("浏览...");
     imageRow->addWidget(m_imageEdit);
     imageRow->addWidget(browseButton);
     layout->addLayout(imageRow);
 
+    // 项目名称 [3:7]
     auto* projectRow = new QHBoxLayout();
+    projectRow->setStretch(0, 3);
+    projectRow->setStretch(1, 7);
     projectRow->addWidget(new QLabel("项目名称："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
-    if (!projectName().isEmpty())
-        m_projectCombo->addItem(projectName());
+    
+    // Populate project list from model (Align with Workspace behavior)
+    QStandardItemModel* model = projectModel();
+    if (model && model->rowCount() > 0) {
+        for (int i = 0; i < model->rowCount(); ++i) {
+            auto item = model->item(i, 0);
+            if (item) {
+                m_projectCombo->addItem(item->text());
+            }
+        }
+        // Set current project as default selection
+        int index = m_projectCombo->findText(projectName());
+        if (index >= 0) m_projectCombo->setCurrentIndex(index);
+    } else {
+        m_projectCombo->addItem("未打开项目");
+    }
+
     projectRow->addWidget(m_projectCombo);
     layout->addLayout(projectRow);
 
+    // 目标节点 [3:7]
     auto* nodeRow = new QHBoxLayout();
+    nodeRow->setStretch(0, 3);
+    nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("Macao_Import");
+    m_outputNodeNameEdit->setPlaceholderText("手动输入目标节点名称");
     nodeRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeRow);
 
+    // 目标文件名 [3:7]
     auto* fileNameRow = new QHBoxLayout();
+    fileNameRow->setStretch(0, 3);
+    fileNameRow->setStretch(1, 7);
     fileNameRow->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
+    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
     connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     fileNameRow->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameRow);
@@ -92,6 +122,19 @@ void MacaoImportNode::executeImport()
 {
     if (executionState() == ExecutionState::Running)
         return;
+
+    // Safety check: Ensure project is open
+    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
+    {
+        onError("未检测到打开的项目，请先打开或新建一个项目。");
+        return;
+    }
+
+    if (getOutputNodeName().isEmpty())
+    {
+        onError("目标节点名不能为空！");
+        return;
+    }
 
     m_imagePath = m_imageEdit->text().trimmed();
     if (m_imagePath.isEmpty())
@@ -154,9 +197,6 @@ QString MacaoImportNode::getImportedFilePath() const
 QString MacaoImportNode::getOutputNodeName() const
 {
     QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
-        return "Macao_Import";
-
     return name;
 }
 
@@ -191,7 +231,16 @@ void MacaoImportNode::onImportFinished()
         .arg(getOutputNodeName())
         .arg(m_outputFileName);
 
+    // 1. Process primary InSAR output (Port 0)
     ImportNodeBase::onImportFinished();
+
+    // 2. Process independent preview output (Port 1)
+    if (!m_imagePath.isEmpty())
+    {
+        // Pass the original image path as preview info
+        m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
+        Q_EMIT dataUpdated(1);
+    }
 
     if (m_thread)
     {
@@ -241,7 +290,7 @@ QJsonObject MacaoImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
     json["imagePath"] = m_imagePath;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("Macao_Import");
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
     json["outputFileName"] = m_outputFileName;
     return json;
 }
@@ -253,8 +302,65 @@ void MacaoImportNode::load(QJsonObject const &json)
     m_outputFileName = json["outputFileName"].toString();
 
     if (m_imageEdit) m_imageEdit->setText(m_imagePath);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString("Macao_Import"));
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString());
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
+}
+
+unsigned int MacaoImportNode::nPorts(PortType portType) const
+{
+    // No input ports, two output ports (Port 0: Result, Port 1: Preview)
+    if (portType == PortType::In)
+        return 0;
+    else
+        return 2;
+}
+
+NodeDataType MacaoImportNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out)
+    {
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "Imported File"};
+        else if (portIndex == 1)
+            return NodeDataType{"image_info", "Image Info"};
+    }
+    return NodeDataType();
+}
+
+bool MacaoImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out;
+}
+
+QString MacaoImportNode::portCaption(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out)
+    {
+        if (portIndex == 0)
+            return tr("成果 *");
+        else if (portIndex == 1)
+            return tr("预览 ?");
+    }
+    return QString();
+}
+
+bool MacaoImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
+{
+    // Port 1 is optional
+    if (portType == PortType::Out && portIndex == 1)
+        return true;
+
+    return false;
+}
+
+std::shared_ptr<NodeData> MacaoImportNode::outData(PortIndex port)
+{
+    if (port == 0)
+        return ImportNodeBase::outData(0);
+    else if (port == 1)
+        return m_imageInfoData;
+
+    return nullptr;
 }
 
 } // namespace QtNodes
