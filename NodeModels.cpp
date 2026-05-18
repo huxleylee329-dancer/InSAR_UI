@@ -14,6 +14,7 @@
 #include "S1SwathMergeNode.h"
 #include "MacaoImportNode.h"
 #include "MacaoBatchImportNode.h"
+#include "ImageDisplayNode.h"
 
 #include <memory>
 
@@ -121,6 +122,9 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 
     // Register Note node (layout management tool)
     registry->registerModel<NoteNode>("Note");
+
+    // Display Nodes
+    registry->registerModel<ImageDisplayNode>("Display");
 
     return registry;
 }

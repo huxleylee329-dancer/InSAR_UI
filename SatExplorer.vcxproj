@@ -306,6 +306,9 @@
     <ClCompile Include="MacaoBatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ImageDisplayNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="S1DeburstNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -719,6 +722,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\MacaoBatchImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ImageDisplayNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\NodeTreeWidget.h">

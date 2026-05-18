@@ -58,7 +58,14 @@ QWidget* MacaoImportNode::createWidget()
     imageRow->addWidget(new QLabel("Macao图像："));
     m_imageEdit = new QLineEdit();
     m_imageEdit->setPlaceholderText("选择 Macao 图像文件");
-    connect(m_imageEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_imagePath = text; });
+    connect(m_imageEdit, &QLineEdit::textChanged, this, [this](const QString& text) { 
+        m_imagePath = text; 
+        if (!m_imagePath.isEmpty() && QFileInfo::exists(m_imagePath))
+        {
+            m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
+            Q_EMIT dataUpdated(1);
+        }
+    });
     QPushButton* browseButton = new QPushButton("浏览...");
     imageRow->addWidget(m_imageEdit);
     imageRow->addWidget(browseButton);
@@ -203,10 +210,10 @@ QString MacaoImportNode::getOutputNodeName() const
 void MacaoImportNode::onImageBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
-        _widget,
-        "选择 Macao 图像",
+        nullptr,
+        tr("选择 Macao 图像"),
         QFileInfo(m_imagePath).absolutePath(),
-        "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)"
+        tr("Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
     );
 
     if (filePath.isEmpty())

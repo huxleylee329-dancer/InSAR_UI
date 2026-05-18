@@ -62,6 +62,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.topLevel = QStringList{
         "Data Import",    // 第一级分类
         "Preprocessing",  // 第二级分类
+        "Display",        // 图像显示/预览分类
         "Note",          // 注释节点分类
         "Test"           // 测试节点分类
     };
@@ -104,6 +105,11 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.leafItems["Data Import/Macao"] = QList<PaletteOrder::LeafItem>{
         {"Single Import", "Macao Import"},
         {"Batch Import", "Macao Batch Import"}
+    };
+
+    // Display 类叶子项顺序
+    order.leafItems["Display"] = QList<PaletteOrder::LeafItem>{
+        {"Image Viewer", "Image Preview"}
     };
 
 

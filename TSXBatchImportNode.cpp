@@ -228,10 +228,10 @@ QString TSXBatchImportNode::generateOutputFileName(const QString& xmlPath) const
 void TSXBatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        _widget,
-        "导入 TerraSAR-X/TanDEM-X 数据",
+        nullptr,
+        tr("导入 TerraSAR-X/TanDEM-X 数据"),
         QDir::currentPath(),
-        "XML 文件 (*.xml)"
+        tr("XML 文件 (*.xml)")
     );
 
     for (const QString& file : files)

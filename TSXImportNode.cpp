@@ -223,10 +223,10 @@ QString TSXImportNode::generateOutputFileName() const
 void TSXImportNode::onXmlBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
-        _widget,
-        "导入 TerraSAR-X/TanDEM-X 数据",
+        nullptr,
+        tr("导入 TerraSAR-X/TanDEM-X 数据"),
         QFileInfo(m_xmlPath).absolutePath(),
-        "XML 文件 (*.xml)"
+        tr("XML 文件 (*.xml)")
     );
 
     if (!filePath.isEmpty())

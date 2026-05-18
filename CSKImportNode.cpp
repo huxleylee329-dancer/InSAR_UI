@@ -223,10 +223,10 @@ QString CSKImportNode::generateOutputFileName(const QString& filePath) const
 void CSKImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        _widget,
-        "导入 COSMO-SkyMed 数据",
+        nullptr,
+        tr("导入 COSMO-SkyMed 数据"),
         QDir::currentPath(),
-        "H5 文件 (*.h5)"
+        tr("H5 文件 (*.h5)")
     );
 
     for (const QString& file : files)

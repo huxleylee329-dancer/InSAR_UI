@@ -299,10 +299,10 @@ QString Sentinel1ImportNode::generateOutputFileName() const
 void Sentinel1ImportNode::onManifestBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
-        _widget,
-        "选择哨兵一号清单文件",
+        nullptr,
+        tr("选择哨兵一号清单文件"),
         QFileInfo(m_manifestPath).absolutePath(),
-        "清单文件 (*.manifest);;所有文件 (*)"
+        tr("清单文件 (*.manifest);;所有文件 (*)")
     );
 
     if (!filePath.isEmpty())
@@ -324,10 +324,10 @@ void Sentinel1ImportNode::onManifestBrowseClicked()
 void Sentinel1ImportNode::onPodBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
-        _widget,
-        "选择精轨文件",
+        nullptr,
+        tr("选择精轨文件"),
         QFileInfo(m_podPath).absolutePath(),
-        "精轨文件 (*.EOF *.eofs);;所有文件 (*)"
+        tr("精轨文件 (*.EOF *.eofs);;所有文件 (*)")
     );
 
     if (!filePath.isEmpty())

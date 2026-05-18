@@ -250,10 +250,10 @@ QString Sentinel1BatchImportNode::generateImportName(const QString& manifestPath
 void Sentinel1BatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        _widget,
-        "选择哨兵一号清单文件",
+        nullptr,
+        tr("选择哨兵一号清单文件"),
         QDir::currentPath(),
-        "清单文件 (*.manifest);;所有文件 (*)"
+        tr("清单文件 (*.manifest);;所有文件 (*)")
     );
 
     for (const QString& file : files)

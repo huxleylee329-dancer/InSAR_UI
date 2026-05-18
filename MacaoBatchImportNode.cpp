@@ -195,10 +195,10 @@ QString MacaoBatchImportNode::generateImportName(const QString& imagePath) const
 void MacaoBatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        _widget,
-        "选择 Macao 图像",
+        nullptr,
+        tr("选择 Macao 图像"),
         QDir::currentPath(),
-        "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)"
+        tr("Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
     );
 
     for (const QString& file : files)

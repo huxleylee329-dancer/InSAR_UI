@@ -252,10 +252,10 @@ QString ALOS2ImportNode::generateLEDPath(const QString& imgPath) const
 void ALOS2ImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
-        _widget,
-        "导入 ALOS-2 数据",
+        nullptr,
+        tr("导入 ALOS-2 数据"),
         QDir::currentPath(),
-        "IMG 文件 (*.IMG *.img)"
+        tr("IMG 文件 (*.IMG *.img)")
     );
 
     for (const QString& file : files)
