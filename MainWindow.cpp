@@ -3,6 +3,7 @@
 #endif
 
 #include<iostream>
+#include <exception>
 // Include headers
 #include"Baseline.h"
 #include<Deformation_Average.h>
@@ -31,7 +32,7 @@ extern void applyTheme(const QString &theme);
 #include"OpenProject.h"
 #include"NewProject.h"
 #include"Import_TSX.h"
-#include"Import_Macao.h"
+#include"Import_GenericSAR.h"
 #include"import_sentinel.h"
 #include"Cut.h"
 #include"Registration_ui.h"
@@ -578,7 +579,7 @@ void MainWindow::ShowImage(QModelIndex image)
             QStringList imageFormats = {"jpg","jpeg","png","bmp","tif","tiff"};
             if (imageFormats.contains(suffix))
             {
-                // Macau等直接导入的普通图片，跳过HDF5读取，直接加载
+                // Generic SAR等直接导入的普通图片，跳过HDF5读取，直接加载
                 this->bmp_path = path;
                 mData_path = path;
                 mType = type;
@@ -763,48 +764,57 @@ void MainWindow::loadWorkflowFromProject(const QString& projectFilePath)
     if (!m_workflowUI || projectFilePath.isEmpty())
         return;
 
-    // 记录当前工程路径
-    m_projectPath = projectFilePath;
+    try {
+        // 记录当前工程路径
+        m_projectPath = projectFilePath;
 
-    // 加载项目 XML 到 this->project，确保后续保存不会写空文件
-    if (this->project)
-    {
-        int ret = this->project->XMLFile_load(projectFilePath.toStdString().c_str());
-        if (ret < 0)
-            return;
-    }
-
-    // 读取 <workflow> 元素
-    TiXmlElement* root = nullptr;
-    this->project->get_root(root);
-    if (!root)
-        return;
-
-    TiXmlElement* workflowNode = nullptr;
-    this->project->_find_node(root, "workflow", workflowNode);
-    if (!workflowNode || !workflowNode->GetText())
-        return;
-
-    QByteArray workflowData = QByteArray(workflowNode->GetText());
-    QJsonDocument doc = QJsonDocument::fromJson(workflowData);
-    if (doc.isObject()) {
-        m_workflowUI->loadWorkflowFromJson(doc.object());
-    }
-
-    // 切换到上次使用的界面
-    if (m_interfaceManager && this->project)
-    {
-        QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(this->project);
-        if (!lastInterface.isEmpty()) {
-            m_interfaceManager->switchToInterface(lastInterface);
-        } else {
-            m_interfaceManager->switchToInterface("workspace");
+        // 加载项目 XML 到 this->project，确保后续保存不会写空文件
+        if (this->project)
+        {
+            int ret = this->project->XMLFile_load(projectFilePath.toStdString().c_str());
+            if (ret < 0)
+                return;
         }
-        updateInterfaceMenuCheckState();
-    }
 
-    // 添加到最近打开列表
-    addToRecentProjects(projectFilePath);
+        // 读取 <workflow> 元素
+        TiXmlElement* root = nullptr;
+        this->project->get_root(root);
+        if (!root)
+            return;
+
+        TiXmlElement* workflowNode = nullptr;
+        this->project->_find_node(root, "workflow", workflowNode);
+        if (!workflowNode || !workflowNode->GetText())
+            return;
+
+        QByteArray workflowData = QByteArray(workflowNode->GetText());
+        QJsonDocument doc = QJsonDocument::fromJson(workflowData);
+        if (doc.isObject()) {
+            m_workflowUI->loadWorkflowFromJson(doc.object());
+        }
+
+        // 切换到上次使用的界面
+        if (m_interfaceManager && this->project)
+        {
+            QString lastInterface = m_interfaceManager->loadLastInterfaceFromProject(this->project);
+            if (!lastInterface.isEmpty()) {
+                m_interfaceManager->switchToInterface(lastInterface);
+            }
+            else {
+                m_interfaceManager->switchToInterface("workspace");
+            }
+            updateInterfaceMenuCheckState();
+        }
+
+        // 添加到最近打开列表
+        addToRecentProjects(projectFilePath);
+    }
+    catch (const std::exception& e) {
+        QMessageBox::critical(this, "错误", QString("加载工作流失败：") + QString::fromLocal8Bit(e.what()));
+    }
+    catch (...) {
+        QMessageBox::critical(this, "错误", "加载工作流时发生未知异常。");
+    }
 }
 void MainWindow::addToRecentProjects(const QString& path)
 {
@@ -886,7 +896,15 @@ void MainWindow::openRecentProject()
         return;
     }
 
-    open_from_project_file(filePath);
+    try {
+        open_from_project_file(filePath);
+    }
+    catch (const std::exception& e) {
+        QMessageBox::critical(this, "错误", QString("加载项目失败：") + QString::fromLocal8Bit(e.what()));
+    }
+    catch (...) {
+        QMessageBox::critical(this, "错误", "加载项目时发生未知异常。");
+    }
 }
 void MainWindow::on_actionTSX_triggered()
 {
@@ -899,16 +917,16 @@ void MainWindow::on_actionTSX_triggered()
     connect(TSX_win, &Import_TSX::sendCopy, this, &MainWindow::RenewTree);
     TSX_win->setAttribute(Qt::WA_DeleteOnClose, true);
 }
-void MainWindow::on_actionMacao_triggered()
+void MainWindow::on_actionGenericSAR_triggered()
 {
 
-    Import_Macao* Macao_win = new Import_Macao;
-    connect(this, &MainWindow::sendModel, Macao_win, &Import_Macao::ShowProjectList);
+    Import_GenericSAR* GenericSAR_win = new Import_GenericSAR;
+    connect(this, &MainWindow::sendModel, GenericSAR_win, &Import_GenericSAR::ShowProjectList);
     emit sendModel(model);
-    Macao_win->show();
+    GenericSAR_win->show();
 
-    connect(Macao_win, &Import_Macao::sendCopy, this, &MainWindow::RenewTree);
-    Macao_win->setAttribute(Qt::WA_DeleteOnClose, true);
+    connect(GenericSAR_win, &Import_GenericSAR::sendCopy, this, &MainWindow::RenewTree);
+    GenericSAR_win->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionSentinel_1_triggered()
 {

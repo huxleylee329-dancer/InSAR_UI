@@ -2,7 +2,7 @@
 #pragma execution_character_set("utf-8")
 #endif
 
-#include "MacaoBatchImportNode.h"
+#include "GenericSARBatchImportNode.h"
 #include <QJsonArray>
 
 #include <QDir>
@@ -10,7 +10,7 @@
 
 namespace QtNodes {
 
-MacaoBatchImportNode::MacaoBatchImportNode()
+GenericSARBatchImportNode::GenericSARBatchImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
@@ -20,7 +20,7 @@ MacaoBatchImportNode::MacaoBatchImportNode()
 {
 }
 
-MacaoBatchImportNode::~MacaoBatchImportNode()
+GenericSARBatchImportNode::~GenericSARBatchImportNode()
 {
     if (m_workerThread)
     {
@@ -44,7 +44,7 @@ MacaoBatchImportNode::~MacaoBatchImportNode()
     }
 }
 
-QWidget* MacaoBatchImportNode::createWidget()
+QWidget* GenericSARBatchImportNode::createWidget()
 {
     auto* widget = new QWidget();
     auto* mainLayout = new QVBoxLayout(widget);
@@ -93,7 +93,7 @@ QWidget* MacaoBatchImportNode::createWidget()
     nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("Macao_Batch_Import");
+    m_outputNodeNameEdit->setText("GenericSAR_Batch_Import");
     nodeRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nodeRow);
 
@@ -101,21 +101,21 @@ QWidget* MacaoBatchImportNode::createWidget()
     mainLayout->addLayout(bottomSection, 4);
 
     connect(addFiles, &QPushButton::clicked,
-            this, &MacaoBatchImportNode::onAddFilesClicked);
+            this, &GenericSARBatchImportNode::onAddFilesClicked);
     connect(removeFiles, &QPushButton::clicked,
-            this, &MacaoBatchImportNode::onRemoveFilesClicked);
+            this, &GenericSARBatchImportNode::onRemoveFilesClicked);
 
     return widget;
 }
 
-void MacaoBatchImportNode::executeImport()
+void GenericSARBatchImportNode::executeImport()
 {
     if (executionState() == ExecutionState::Running)
         return;
 
     if (m_imagePaths.isEmpty())
     {
-        onError("请至少添加一个 Macao 图像文件。");
+        onError("请至少添加一个 通用 SAR 图像文件。");
         return;
     }
 
@@ -126,7 +126,7 @@ void MacaoBatchImportNode::executeImport()
     {
         if (!QFileInfo::exists(imagePath))
         {
-            onError("Macao 图像文件不存在：" + imagePath);
+            onError("通用 SAR 图像文件不存在：" + imagePath);
             return;
         }
 
@@ -138,20 +138,20 @@ void MacaoBatchImportNode::executeImport()
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &MacaoBatchImportNode::startMacaoBatchImport,
-            m_workerThread, &MyThread::import_Macao_patch);
+    connect(this, &GenericSARBatchImportNode::startGenericSARBatchImport,
+            m_workerThread, &MyThread::import_GenericSAR_patch);
     connect(m_workerThread, &MyThread::updateProcess,
-            this, &MacaoBatchImportNode::onImportProgress);
+            this, &GenericSARBatchImportNode::onImportProgress);
     connect(m_workerThread, &MyThread::endProcess,
-            this, &MacaoBatchImportNode::onImportFinished);
+            this, &GenericSARBatchImportNode::onImportFinished);
     connect(m_workerThread, &MyThread::errorProcess,
-            this, &MacaoBatchImportNode::onThreadError);
+            this, &GenericSARBatchImportNode::onThreadError);
     connect(m_workerThread, &MyThread::sendModel,
-            this, &MacaoBatchImportNode::onModelUpdated);
+            this, &GenericSARBatchImportNode::onModelUpdated);
 
     m_thread->start();
 
-    Q_EMIT startMacaoBatchImport(
+    Q_EMIT startGenericSARBatchImport(
         projectPath(),
         originalFileList,
         importNameList,
@@ -161,7 +161,7 @@ void MacaoBatchImportNode::executeImport()
     );
 }
 
-QString MacaoBatchImportNode::getImportedFilePath() const
+QString GenericSARBatchImportNode::getImportedFilePath() const
 {
     if (!m_importedFilePaths.isEmpty())
         return m_importedFilePaths.first();
@@ -171,16 +171,16 @@ QString MacaoBatchImportNode::getImportedFilePath() const
         .arg(getOutputNodeName());
 }
 
-QString MacaoBatchImportNode::getOutputNodeName() const
+QString GenericSARBatchImportNode::getOutputNodeName() const
 {
     QString name = m_outputNodeNameEdit->text().trimmed();
     if (name.isEmpty())
-        return "Macao_Batch_Import";
+        return "GenericSAR_Batch_Import";
 
     return name;
 }
 
-QString MacaoBatchImportNode::generateImportName(const QString& imagePath) const
+QString GenericSARBatchImportNode::generateImportName(const QString& imagePath) const
 {
     QFileInfo fileInfo(imagePath);
     QString baseName = fileInfo.baseName();
@@ -192,11 +192,11 @@ QString MacaoBatchImportNode::generateImportName(const QString& imagePath) const
     return baseName;
 }
 
-void MacaoBatchImportNode::onAddFilesClicked()
+void GenericSARBatchImportNode::onAddFilesClicked()
 {
     QStringList files = QFileDialog::getOpenFileNames(
         nullptr,
-        tr("选择 Macao 图像"),
+        tr("选择通用 SAR 图像"),
         QDir::currentPath(),
         tr("Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
     );
@@ -211,7 +211,7 @@ void MacaoBatchImportNode::onAddFilesClicked()
     }
 }
 
-void MacaoBatchImportNode::onRemoveFilesClicked()
+void GenericSARBatchImportNode::onRemoveFilesClicked()
 {
     QList<QListWidgetItem*> selectedItems = m_fileListWidget->selectedItems();
 
@@ -223,13 +223,13 @@ void MacaoBatchImportNode::onRemoveFilesClicked()
     }
 }
 
-void MacaoBatchImportNode::onImportProgress(int progress, const QString& message)
+void GenericSARBatchImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);
     setProgress(progress);
 }
 
-void MacaoBatchImportNode::onImportFinished()
+void GenericSARBatchImportNode::onImportFinished()
 {
     QString outputNodeName = getOutputNodeName();
 
@@ -262,7 +262,7 @@ void MacaoBatchImportNode::onImportFinished()
     }
 }
 
-void MacaoBatchImportNode::onThreadError(const QString& error)
+void GenericSARBatchImportNode::onThreadError(const QString& error)
 {
     onError(error);
 
@@ -281,28 +281,28 @@ void MacaoBatchImportNode::onThreadError(const QString& error)
     }
 }
 
-void MacaoBatchImportNode::setExecutionMode(ExecutionMode mode)
+void GenericSARBatchImportNode::setExecutionMode(ExecutionMode mode)
 {
     ImportNodeBase::setExecutionMode(mode);
 }
 
-void MacaoBatchImportNode::onModelUpdated(QStandardItemModel* model)
+void GenericSARBatchImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
 }
 
-QJsonObject MacaoBatchImportNode::save() const
+QJsonObject GenericSARBatchImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
     QJsonArray pathsArray;
     for (const QString &path : m_imagePaths)
         pathsArray.append(path);
     json["imagePaths"] = pathsArray;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("Macao_Batch_Import");
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("GenericSAR_Batch_Import");
     return json;
 }
 
-void MacaoBatchImportNode::load(QJsonObject const &json)
+void GenericSARBatchImportNode::load(QJsonObject const &json)
 {
     ExecutableNodeDelegateModel::load(json);
     m_imagePaths.clear();
@@ -317,7 +317,7 @@ void MacaoBatchImportNode::load(QJsonObject const &json)
     }
 
     if (m_outputNodeNameEdit)
-        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("Macao_Batch_Import"));
+        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("GenericSAR_Batch_Import"));
 }
 
 } // namespace QtNodes

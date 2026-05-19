@@ -1,5 +1,5 @@
-#ifndef MACAOIMPORTNODE_H
-#define MACAOIMPORTNODE_H
+#ifndef GENERICSARIMPORTNODE_H
+#define GENERICSARIMPORTNODE_H
 
 #include "ImportNodeBase.h"
 #include "MyThread.h"
@@ -18,16 +18,16 @@
 
 namespace QtNodes {
 
-class MacaoImportNode : public ImportNodeBase
+class GenericSARImportNode : public ImportNodeBase
 {
     Q_OBJECT
 
 public:
-    MacaoImportNode();
-    ~MacaoImportNode();
+    GenericSARImportNode();
+    ~GenericSARImportNode();
 
-    QString caption() const override { return QStringLiteral("Macao Import"); }
-    QString name() const override { return QStringLiteral("MacaoImport"); }
+    QString caption() const override { return QStringLiteral("Generic SAR Import"); }
+    QString name() const override { return QStringLiteral("GenericSARImport"); }
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
@@ -59,7 +59,7 @@ private slots:
     void onModelUpdated(QStandardItemModel* model);
 
 signals:
-    void startMacaoImport(QString, QString, QString, QString, QString, QStandardItemModel*);
+    void startGenericSARImport(QString, QString, QString, QString, QString, QStandardItemModel*);
 
 private:
     QLineEdit* m_imageEdit;
@@ -79,4 +79,4 @@ private:
 
 } // namespace QtNodes
 
-#endif // MACAOIMPORTNODE_H
+#endif // GENERICSARIMPORTNODE_H

@@ -74,7 +74,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "TerraSAR-X",       // 第二个
         "COSMO-SkyMed",     // 第三个
         "ALOS-2",            // 第四个
-        "Macao"             // 第五个
+        "Generic SAR"             // 第五个
     };
 
     order.subcategories["Preprocessing"] = QStringList{
@@ -102,9 +102,9 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Batch Import", "ALOS-2 Import"}           // ALOS-2 批量导入
     };
 
-    order.leafItems["Data Import/Macao"] = QList<PaletteOrder::LeafItem>{
-        {"Single Import", "Macao Import"},
-        {"Batch Import", "Macao Batch Import"}
+    order.leafItems["Data Import/Generic SAR"] = QList<PaletteOrder::LeafItem>{
+        {"Single Import", "Generic SAR Import"},
+        {"Batch Import", "Generic SAR Batch Import"}
     };
 
     // Display 类叶子项顺序

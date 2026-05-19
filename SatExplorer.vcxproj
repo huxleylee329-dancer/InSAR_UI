@@ -179,7 +179,7 @@
     <ClCompile Include="import_CSK.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Import_Macao.cpp" />
+    <ClCompile Include="Import_GenericSAR.cpp" />
     <ClCompile Include="import_sentinel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -300,10 +300,10 @@
     <ClCompile Include="ALOS2ImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MacaoImportNode.cpp">
+    <ClCompile Include="GenericSARImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MacaoBatchImportNode.cpp">
+    <ClCompile Include="GenericSARBatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ImageDisplayNode.cpp">
@@ -619,7 +619,7 @@
     <QtMoc Include="include\import_ALOS2.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\Import_Macao.h" />
+    <QtMoc Include="include\Import_GenericSAR.h" />
     <ClInclude Include="include\InSAR_IPC.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -718,10 +718,10 @@
     <QtMoc Include="include\ALOS2ImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\MacaoImportNode.h">
+    <QtMoc Include="include\GenericSARImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\MacaoBatchImportNode.h">
+    <QtMoc Include="include\GenericSARBatchImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\ImageDisplayNode.h">
@@ -812,7 +812,7 @@
     <QtUic Include="ui\ImportCsk.ui">
       <Filter>UI Files</Filter>
     </QtUic>
-    <QtUic Include="ui\ImportMacao.ui" />
+    <QtUic Include="ui\ImportGenericSAR.ui" />
     <QtUic Include="ui\ImportSentinel.ui">
       <Filter>UI Files</Filter>
     </QtUic>

@@ -1,5 +1,5 @@
-#ifndef MACAOBATCHIMPORTNODE_H
-#define MACAOBATCHIMPORTNODE_H
+#ifndef GENERICSARBATCHIMPORTNODE_H
+#define GENERICSARBATCHIMPORTNODE_H
 
 #include "ImportNodeBase.h"
 #include "MyThread.h"
@@ -17,16 +17,16 @@
 
 namespace QtNodes {
 
-class MacaoBatchImportNode : public ImportNodeBase
+class GenericSARBatchImportNode : public ImportNodeBase
 {
     Q_OBJECT
 
 public:
-    MacaoBatchImportNode();
-    ~MacaoBatchImportNode();
+    GenericSARBatchImportNode();
+    ~GenericSARBatchImportNode();
 
-    QString caption() const override { return QStringLiteral("Macao Batch Import"); }
-    QString name() const override { return QStringLiteral("MacaoBatchImport"); }
+    QString caption() const override { return QStringLiteral("Generic SAR Batch Import"); }
+    QString name() const override { return QStringLiteral("GenericSARBatchImport"); }
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
@@ -52,7 +52,7 @@ private slots:
     void onModelUpdated(QStandardItemModel* model);
 
 signals:
-    void startMacaoBatchImport(QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
+    void startGenericSARBatchImport(QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
 
 private:
     QString generateImportName(const QString& imagePath) const;
@@ -70,4 +70,4 @@ private:
 
 } // namespace QtNodes
 
-#endif // MACAOBATCHIMPORTNODE_H
+#endif // GENERICSARBATCHIMPORTNODE_H

@@ -103,7 +103,7 @@ public slots:
 	* @param dst_project                 目标工程
 	* @param copy                        treeview模型
 	*/
-	void import_Macao(
+	void import_GenericSAR(
 		QString xml_filename,
 		QString project_path,
 		QString folder,
@@ -120,7 +120,7 @@ public slots:
 	* @param dst_project                 目标工程
 	* @param copy                        treeview模型
 	*/
-	void import_Macao_patch(
+	void import_GenericSAR_patch(
 		QString savepath,
 		vector<QString> original_file_list,
 		vector<QString> import_namelist,

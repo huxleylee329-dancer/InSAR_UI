@@ -12,8 +12,8 @@
 #include "S1DeburstNode.h"
 #include "S1FrameMergeNode.h"
 #include "S1SwathMergeNode.h"
-#include "MacaoImportNode.h"
-#include "MacaoBatchImportNode.h"
+#include "GenericSARImportNode.h"
+#include "GenericSARBatchImportNode.h"
 #include "ImageDisplayNode.h"
 
 #include <memory>
@@ -67,9 +67,9 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<ALOS2ImportNode>("Data Import/ALOS-2/Batch Import");
 
     
-    // Macao
-    registry->registerModel<MacaoImportNode>("Data Import/Macao/Single Import");
-    registry->registerModel<MacaoBatchImportNode>("Data Import/Macao/Batch Import");
+    // Generic SAR
+    registry->registerModel<GenericSARImportNode>("Data Import/Generic SAR/Single Import");
+    registry->registerModel<GenericSARBatchImportNode>("Data Import/Generic SAR/Batch Import");
 
     // ============================================================================
     // Preprocessing Nodes

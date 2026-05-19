@@ -1,16 +1,16 @@
 #pragma once
 #include <QtWidgets/QWidget>
 #include <qstandarditemmodel.h>
-#include "ui_ImportMacao.h"
+#include "ui_ImportGenericSAR.h"
 #include "MyThread.h"
 
-class Import_Macao : public QWidget
+class Import_GenericSAR : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit Import_Macao(QWidget* parent = Q_NULLPTR);
-    ~Import_Macao();
+    explicit Import_GenericSAR(QWidget* parent = Q_NULLPTR);
+    ~Import_GenericSAR();
 
 public slots:
     void ShowProjectList(QStandardItemModel* model);
@@ -18,11 +18,11 @@ public slots:
     bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist);
 
 private:
-    Ui::ImportMacao* ui;
+    Ui::ImportGenericSAR* ui;
     QString xml_path;
     QString save_path;
     QStandardItemModel* copy;
-    MyThread* import_Macao_thread, *import_Macao_thread2;
+    MyThread* import_GenericSAR_thread, *import_GenericSAR_thread2;
 
 signals:
     void sendCopy(QStandardItemModel* model);

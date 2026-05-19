@@ -91,7 +91,7 @@ private slots:
     void on_actionNew_triggered();
     void on_actionOpen_triggered();
     void on_actionTSX_triggered();
-    void on_actionMacao_triggered();
+    void on_actionGenericSAR_triggered();
     // Import sentinel dialog
     void on_actionSentinel_1_triggered();
     void on_actionCut_triggered();

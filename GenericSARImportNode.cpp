@@ -2,13 +2,13 @@
 #pragma execution_character_set("utf-8")
 #endif
 
-#include "MacaoImportNode.h"
+#include "GenericSARImportNode.h"
 
 #include <QFileInfo>
 
 namespace QtNodes {
 
-MacaoImportNode::MacaoImportNode()
+GenericSARImportNode::GenericSARImportNode()
     : ImportNodeBase()
     , m_imageEdit(nullptr)
     , m_outputNodeNameEdit(nullptr)
@@ -19,7 +19,7 @@ MacaoImportNode::MacaoImportNode()
 {
 }
 
-MacaoImportNode::~MacaoImportNode()
+GenericSARImportNode::~GenericSARImportNode()
 {
     if (m_workerThread)
     {
@@ -43,21 +43,21 @@ MacaoImportNode::~MacaoImportNode()
     }
 }
 
-QWidget* MacaoImportNode::createWidget()
+QWidget* GenericSARImportNode::createWidget()
 {
     auto* widget = new QWidget();
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
-    // Macao图像 + 浏览按钮 [3:5:2]
+    // 通用 SAR 图像 + 浏览按钮 [3:5:2]
     auto* imageRow = new QHBoxLayout();
     imageRow->setStretch(0, 3);
     imageRow->setStretch(1, 5);
     imageRow->setStretch(2, 2);
-    imageRow->addWidget(new QLabel("Macao图像："));
+    imageRow->addWidget(new QLabel("通用 SAR 图像："));
     m_imageEdit = new QLineEdit();
-    m_imageEdit->setPlaceholderText("选择 Macao 图像文件");
+    m_imageEdit->setPlaceholderText("选择通用 SAR 图像文件");
     connect(m_imageEdit, &QLineEdit::textChanged, this, [this](const QString& text) { 
         m_imagePath = text; 
         if (!m_imagePath.isEmpty() && QFileInfo::exists(m_imagePath))
@@ -120,12 +120,12 @@ QWidget* MacaoImportNode::createWidget()
     layout->addLayout(fileNameRow);
 
     connect(browseButton, &QPushButton::clicked,
-            this, &MacaoImportNode::onImageBrowseClicked);
+            this, &GenericSARImportNode::onImageBrowseClicked);
 
     return widget;
 }
 
-void MacaoImportNode::executeImport()
+void GenericSARImportNode::executeImport()
 {
     if (executionState() == ExecutionState::Running)
         return;
@@ -146,13 +146,13 @@ void MacaoImportNode::executeImport()
     m_imagePath = m_imageEdit->text().trimmed();
     if (m_imagePath.isEmpty())
     {
-        onError("请选择一个 Macao 图像文件。");
+        onError("请选择一个 通用 SAR 图像文件。");
         return;
     }
 
     if (!QFileInfo::exists(m_imagePath))
     {
-        onError("Macao 图像文件不存在：" + m_imagePath);
+        onError("通用 SAR 图像文件不存在：" + m_imagePath);
         return;
     }
 
@@ -167,20 +167,20 @@ void MacaoImportNode::executeImport()
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &MacaoImportNode::startMacaoImport,
-            m_workerThread, &MyThread::import_Macao);
+    connect(this, &GenericSARImportNode::startGenericSARImport,
+            m_workerThread, &MyThread::import_GenericSAR);
     connect(m_workerThread, &MyThread::updateProcess,
-            this, &MacaoImportNode::onImportProgress);
+            this, &GenericSARImportNode::onImportProgress);
     connect(m_workerThread, &MyThread::endProcess,
-            this, &MacaoImportNode::onImportFinished);
+            this, &GenericSARImportNode::onImportFinished);
     connect(m_workerThread, &MyThread::errorProcess,
-            this, &MacaoImportNode::onThreadError);
+            this, &GenericSARImportNode::onThreadError);
     connect(m_workerThread, &MyThread::sendModel,
-            this, &MacaoImportNode::onModelUpdated);
+            this, &GenericSARImportNode::onModelUpdated);
 
     m_thread->start();
 
-    Q_EMIT startMacaoImport(
+    Q_EMIT startGenericSARImport(
         m_imagePath,
         projectPath(),
         getOutputNodeName(),
@@ -190,7 +190,7 @@ void MacaoImportNode::executeImport()
     );
 }
 
-QString MacaoImportNode::getImportedFilePath() const
+QString GenericSARImportNode::getImportedFilePath() const
 {
     if (!m_importedFilePath.isEmpty())
         return m_importedFilePath;
@@ -201,17 +201,17 @@ QString MacaoImportNode::getImportedFilePath() const
         .arg(m_outputFileName);
 }
 
-QString MacaoImportNode::getOutputNodeName() const
+QString GenericSARImportNode::getOutputNodeName() const
 {
     QString name = m_outputNodeNameEdit->text().trimmed();
     return name;
 }
 
-void MacaoImportNode::onImageBrowseClicked()
+void GenericSARImportNode::onImageBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
         nullptr,
-        tr("选择 Macao 图像"),
+        tr("选择通用 SAR 图像"),
         QFileInfo(m_imagePath).absolutePath(),
         tr("Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
     );
@@ -225,13 +225,13 @@ void MacaoImportNode::onImageBrowseClicked()
         m_outputFileNameEdit->setText(QFileInfo(filePath).baseName());
 }
 
-void MacaoImportNode::onImportProgress(int progress, const QString& message)
+void GenericSARImportNode::onImportProgress(int progress, const QString& message)
 {
     Q_UNUSED(message);
     setProgress(progress);
 }
 
-void MacaoImportNode::onImportFinished()
+void GenericSARImportNode::onImportFinished()
 {
     m_importedFilePath = QString("%1/%2/%3.h5")
         .arg(projectPath())
@@ -264,7 +264,7 @@ void MacaoImportNode::onImportFinished()
     }
 }
 
-void MacaoImportNode::onThreadError(const QString& error)
+void GenericSARImportNode::onThreadError(const QString& error)
 {
     onError(error);
 
@@ -283,17 +283,17 @@ void MacaoImportNode::onThreadError(const QString& error)
     }
 }
 
-void MacaoImportNode::setExecutionMode(ExecutionMode mode)
+void GenericSARImportNode::setExecutionMode(ExecutionMode mode)
 {
     ImportNodeBase::setExecutionMode(mode);
 }
 
-void MacaoImportNode::onModelUpdated(QStandardItemModel* model)
+void GenericSARImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
 }
 
-QJsonObject MacaoImportNode::save() const
+QJsonObject GenericSARImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
     json["imagePath"] = m_imagePath;
@@ -302,7 +302,7 @@ QJsonObject MacaoImportNode::save() const
     return json;
 }
 
-void MacaoImportNode::load(QJsonObject const &json)
+void GenericSARImportNode::load(QJsonObject const &json)
 {
     ExecutableNodeDelegateModel::load(json);
     m_imagePath = json["imagePath"].toString();
@@ -313,7 +313,7 @@ void MacaoImportNode::load(QJsonObject const &json)
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
 }
 
-unsigned int MacaoImportNode::nPorts(PortType portType) const
+unsigned int GenericSARImportNode::nPorts(PortType portType) const
 {
     // No input ports, two output ports (Port 0: Result, Port 1: Preview)
     if (portType == PortType::In)
@@ -322,7 +322,7 @@ unsigned int MacaoImportNode::nPorts(PortType portType) const
         return 2;
 }
 
-NodeDataType MacaoImportNode::dataType(PortType portType, PortIndex portIndex) const
+NodeDataType GenericSARImportNode::dataType(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::Out)
     {
@@ -334,12 +334,12 @@ NodeDataType MacaoImportNode::dataType(PortType portType, PortIndex portIndex) c
     return NodeDataType();
 }
 
-bool MacaoImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+bool GenericSARImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
 {
     return portType == PortType::Out;
 }
 
-QString MacaoImportNode::portCaption(PortType portType, PortIndex portIndex) const
+QString GenericSARImportNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::Out)
     {
@@ -351,7 +351,7 @@ QString MacaoImportNode::portCaption(PortType portType, PortIndex portIndex) con
     return QString();
 }
 
-bool MacaoImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
+bool GenericSARImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
     // Port 1 is optional
     if (portType == PortType::Out && portIndex == 1)
@@ -360,7 +360,7 @@ bool MacaoImportNode::portIsOptional(PortType portType, PortIndex portIndex) con
     return false;
 }
 
-std::shared_ptr<NodeData> MacaoImportNode::outData(PortIndex port)
+std::shared_ptr<NodeData> GenericSARImportNode::outData(PortIndex port)
 {
     if (port == 0)
         return ImportNodeBase::outData(0);

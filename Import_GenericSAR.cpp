@@ -1,17 +1,17 @@
 ﻿#include "MainWindow.h"
-#include "Import_Macao.h"
+#include "Import_GenericSAR.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <QFile>
 #include <QFileInfo>
 #include <qmessagebox.h>
 
-Import_Macao::Import_Macao(QWidget* parent) :
+Import_GenericSAR::Import_GenericSAR(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::ImportMacao),
+    ui(new Ui::ImportGenericSAR),
     copy(NULL),
-    import_Macao_thread(NULL),
-    import_Macao_thread2(NULL)
+    import_GenericSAR_thread(NULL),
+    import_GenericSAR_thread2(NULL)
 {
     ui->setupUi(this);
     ui->progressBar->setMinimum(0);
@@ -22,10 +22,10 @@ Import_Macao::Import_Macao(QWidget* parent) :
     ui->progressBar_2->setHidden(1);
 }
 
-Import_Macao::~Import_Macao()
+Import_GenericSAR::~Import_GenericSAR()
 {
-    import_Macao_thread = NULL;
-    import_Macao_thread2 = NULL;
+    import_GenericSAR_thread = NULL;
+    import_GenericSAR_thread2 = NULL;
 
     if (copy)
     {
@@ -43,7 +43,7 @@ Import_Macao::~Import_Macao()
     delete ui;
 }
 
-void Import_Macao::ShowProjectList(QStandardItemModel* model)
+void Import_GenericSAR::ShowProjectList(QStandardItemModel* model)
 {
     if (!model) return;
     if (model->rowCount() < 1) return;
@@ -60,7 +60,7 @@ void Import_Macao::ShowProjectList(QStandardItemModel* model)
     this->save_path = model->item(0, 1)->text();
 }
 
-void Import_Macao::on_comboBox_dst_project_currentIndexChanged()
+void Import_GenericSAR::on_comboBox_dst_project_currentIndexChanged()
 {
     if (!copy || ui->comboBox_dst_project->count() == 0) return;
 
@@ -70,10 +70,10 @@ void Import_Macao::on_comboBox_dst_project_currentIndexChanged()
     this->save_path = this->copy->itemFromIndex(pro_path_index)->text();
 }
 
-void Import_Macao::on_button_xml_browse_pressed()
+void Import_GenericSAR::on_button_xml_browse_pressed()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("Import Macao data"),
+        QString::fromLocal8Bit("Import Generic SAR data"),
         this->xml_path,
         "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)");
 
@@ -85,11 +85,11 @@ void Import_Macao::on_button_xml_browse_pressed()
     }
 }
 
-void Import_Macao::on_buttonBox_accepted()
+void Import_GenericSAR::on_buttonBox_accepted()
 {
         if (ui->LineEdit_xml->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入TerrSAR xml文件！"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入图片文件！"));
         return;
     }
     bool bFlag = ui->LineEdit_xml->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
@@ -137,24 +137,24 @@ void Import_Macao::on_buttonBox_accepted()
     }
 
     // Ensure previous threads are released
-    if (import_Macao_thread) {
-        import_Macao_thread->thread()->quit();
-        import_Macao_thread->thread()->wait();
+    if (import_GenericSAR_thread) {
+        import_GenericSAR_thread->thread()->quit();
+        import_GenericSAR_thread->thread()->wait();
     }
 
-    import_Macao_thread = new MyThread;
+    import_GenericSAR_thread = new MyThread;
     QThread* thread = new QThread(this);
-    import_Macao_thread->moveToThread(thread);
+    import_GenericSAR_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &Import_Macao::operate, import_Macao_thread, &MyThread::import_Macao, Qt::QueuedConnection);
-    connect(import_Macao_thread, &MyThread::updateProcess, this, &Import_Macao::updateProcess);
-    connect(thread, &QThread::finished, import_Macao_thread, &MyThread::deleteLater);
+    connect(this, &Import_GenericSAR::operate, import_GenericSAR_thread, &MyThread::import_GenericSAR, Qt::QueuedConnection);
+    connect(import_GenericSAR_thread, &MyThread::updateProcess, this, &Import_GenericSAR::updateProcess);
+    connect(thread, &QThread::finished, import_GenericSAR_thread, &MyThread::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-    connect(import_Macao_thread, &MyThread::endProcess, this, &Import_Macao::endProcess);
-    connect(this, &QWidget::destroyed, this, &Import_Macao::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_Macao::StopThread);// , Qt::QueuedConnection);
-    connect(import_Macao_thread, &MyThread::sendModel, this, &Import_Macao::TransitModel);
+    connect(import_GenericSAR_thread, &MyThread::endProcess, this, &Import_GenericSAR::endProcess);
+    connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);// , Qt::QueuedConnection);
+    connect(import_GenericSAR_thread, &MyThread::sendModel, this, &Import_GenericSAR::TransitModel);
     thread->start();
     emit operate(
         ui->LineEdit_xml->text(),
@@ -167,12 +167,12 @@ void Import_Macao::on_buttonBox_accepted()
     ChangeVision(false);
 }
 
-void Import_Macao::on_buttonBox_rejected()
+void Import_GenericSAR::on_buttonBox_rejected()
 {
     this->close();
 }
 
-void Import_Macao::updateProcess(int value, QString information)
+void Import_GenericSAR::updateProcess(int value, QString information)
 {
     if (!ui->progressBar->isHidden())
     {
@@ -188,18 +188,18 @@ void Import_Macao::updateProcess(int value, QString information)
     }
 }
 
-void Import_Macao::endProcess()
+void Import_GenericSAR::endProcess()
 {
-    if (import_Macao_thread)
+    if (import_GenericSAR_thread)
     {
-        import_Macao_thread->thread()->quit();
-        import_Macao_thread->thread()->wait();
+        import_GenericSAR_thread->thread()->quit();
+        import_GenericSAR_thread->thread()->wait();
 
     }
-    if (import_Macao_thread2)
+    if (import_GenericSAR_thread2)
     {
-        import_Macao_thread2->thread()->quit();
-        import_Macao_thread2->thread()->wait();
+        import_GenericSAR_thread2->thread()->quit();
+        import_GenericSAR_thread2->thread()->wait();
 
     }
     ui->progressBar->hide();
@@ -207,30 +207,30 @@ void Import_Macao::endProcess()
     this->close();
 }
 
-void Import_Macao::StopThread()
+void Import_GenericSAR::StopThread()
 {
-    if (import_Macao_thread != NULL)
-        if (import_Macao_thread->thread()->isRunning())
+    if (import_GenericSAR_thread != NULL)
+        if (import_GenericSAR_thread->thread()->isRunning())
         {
-            import_Macao_thread->thread()->requestInterruption();
-            import_Macao_thread->thread()->quit();
-            import_Macao_thread->thread()->wait();
+            import_GenericSAR_thread->thread()->requestInterruption();
+            import_GenericSAR_thread->thread()->quit();
+            import_GenericSAR_thread->thread()->wait();
         }
-    if (import_Macao_thread2 != NULL)
-        if (import_Macao_thread2->thread()->isRunning())
+    if (import_GenericSAR_thread2 != NULL)
+        if (import_GenericSAR_thread2->thread()->isRunning())
         {
-            import_Macao_thread2->thread()->requestInterruption();
-            import_Macao_thread2->thread()->quit();
-            import_Macao_thread2->thread()->wait();
+            import_GenericSAR_thread2->thread()->requestInterruption();
+            import_GenericSAR_thread2->thread()->quit();
+            import_GenericSAR_thread2->thread()->wait();
         }
 }
 
-void Import_Macao::TransitModel(QStandardItemModel* model)
+void Import_GenericSAR::TransitModel(QStandardItemModel* model)
 {
     emit sendCopy(model);
 }
 
-void Import_Macao::ChangeVision(bool Editable)
+void Import_GenericSAR::ChangeVision(bool Editable)
 {
     if (Editable)
     {
@@ -264,7 +264,7 @@ void Import_Macao::ChangeVision(bool Editable)
     }
 }
 
-void Import_Macao::on_buttonBox_2_accepted()
+void Import_GenericSAR::on_buttonBox_2_accepted()
 {
     //检查导入文件list是否为空
     if (ui->listWidget->count() < 1)
@@ -306,24 +306,24 @@ void Import_Macao::on_buttonBox_2_accepted()
 
 
     // Ensure previous threads are released
-    if (import_Macao_thread2) {
-        import_Macao_thread2->thread()->quit();
-        import_Macao_thread2->thread()->wait();
+    if (import_GenericSAR_thread2) {
+        import_GenericSAR_thread2->thread()->quit();
+        import_GenericSAR_thread2->thread()->wait();
     }
 
-    import_Macao_thread2 = new MyThread;
+    import_GenericSAR_thread2 = new MyThread;
     QThread* thread2 = new QThread(this);
-    import_Macao_thread2->moveToThread(thread2);
+    import_GenericSAR_thread2->moveToThread(thread2);
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Import_Macao::operate2, import_Macao_thread2, &MyThread::import_Macao_patch, Qt::QueuedConnection);
-    connect(import_Macao_thread2, &MyThread::updateProcess, this, &Import_Macao::updateProcess);
-    connect(thread2, &QThread::finished, import_Macao_thread2, &MyThread::deleteLater);
+    connect(this, &Import_GenericSAR::operate2, import_GenericSAR_thread2, &MyThread::import_GenericSAR_patch, Qt::QueuedConnection);
+    connect(import_GenericSAR_thread2, &MyThread::updateProcess, this, &Import_GenericSAR::updateProcess);
+    connect(thread2, &QThread::finished, import_GenericSAR_thread2, &MyThread::deleteLater);
     connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
-    connect(import_Macao_thread2, &MyThread::endProcess, this, &Import_Macao::endProcess);
-    connect(this, &QWidget::destroyed, this, &Import_Macao::StopThread);
-    connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_Macao::StopThread);// , Qt::QueuedConnection);
-    connect(import_Macao_thread2, &MyThread::sendModel, this, &Import_Macao::TransitModel);
+    connect(import_GenericSAR_thread2, &MyThread::endProcess, this, &Import_GenericSAR::endProcess);
+    connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
+    connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);// , Qt::QueuedConnection);
+    connect(import_GenericSAR_thread2, &MyThread::sendModel, this, &Import_GenericSAR::TransitModel);
     thread2->start();
     emit operate2(
         this->save_path, //保存路径
@@ -334,12 +334,12 @@ void Import_Macao::on_buttonBox_2_accepted()
         this->copy);
     ChangeVision(false);
 }
-void Import_Macao::on_buttonBox_2_rejected()
+void Import_GenericSAR::on_buttonBox_2_rejected()
 {
     close();
 }
 
-bool Import_Macao::generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist)
+bool Import_GenericSAR::generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist)
 {
     if (!imageslist) return false;
     import_nameslist.clear();
@@ -363,7 +363,7 @@ bool Import_Macao::generate_name(QListWidget* imageslist, vector<QString>& origi
     return true;
 }
 
-void Import_Macao::on_comboBox_dst_project_2_currentIndexChanged()
+void Import_GenericSAR::on_comboBox_dst_project_2_currentIndexChanged()
 {
     QStandardItem* project = this->copy->findItems(ui->comboBox_dst_project_2->currentText())[0];
     QModelIndex pro_index = this->copy->indexFromItem(project);
@@ -371,10 +371,10 @@ void Import_Macao::on_comboBox_dst_project_2_currentIndexChanged()
     this->save_path = this->copy->itemFromIndex(pro_path_index)->text();
 }
 
-void Import_Macao::on_pushButton_add_pressed()
+void Import_GenericSAR::on_pushButton_add_pressed()
 {
     QStringList filenames = QFileDialog::getOpenFileNames(this,
-    QString::fromLocal8Bit("导入 Macao 数据"),
+    QString::fromLocal8Bit("导入通用 SAR 数据"),
     "",
     "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)");
 
@@ -402,7 +402,7 @@ void Import_Macao::on_pushButton_add_pressed()
     }
 }
 
-void Import_Macao::on_pushButton_remove_pressed()
+void Import_GenericSAR::on_pushButton_remove_pressed()
 {
     if (ui->listWidget->count() >= 1)
     {

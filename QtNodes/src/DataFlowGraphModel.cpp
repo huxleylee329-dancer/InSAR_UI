@@ -2,6 +2,7 @@
 #include "ConnectionIdHash.hpp"
 
 #include <QJsonArray>
+#include <QDebug>
 
 #include <stdexcept>
 
@@ -487,8 +488,8 @@ void DataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
 
         _models[restoredNodeId]->load(internalDataJson);
     } else {
-        throw std::logic_error(std::string("No registered model with name ")
-                               + delegateModelName.toLocal8Bit().data());
+        qCritical() << "Error: No registered model with name" << delegateModelName
+                   << ". Skipping node with ID" << restoredNodeId;
     }
 }
 

@@ -169,10 +169,10 @@
     <ClCompile Include="ALOS2ImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MacaoImportNode.cpp">
+    <ClCompile Include="GenericSARImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MacaoBatchImportNode.cpp">
+    <ClCompile Include="GenericSARBatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ImageDisplayNode.cpp">
@@ -394,7 +394,7 @@
     <ClCompile Include="diff_boxcount.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Import_Macao.cpp">
+    <ClCompile Include="Import_GenericSAR.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="BM3DWrapper.cpp">
@@ -540,10 +540,10 @@
     <QtMoc Include="include\ALOS2ImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\MacaoImportNode.h">
+    <QtMoc Include="include\GenericSARImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\MacaoBatchImportNode.h">
+    <QtMoc Include="include\GenericSARBatchImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\ImageDisplayNode.h">
@@ -744,7 +744,7 @@
     <QtMoc Include="include\TargetDetection.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\Import_Macao.h">
+    <QtMoc Include="include\Import_GenericSAR.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\WorkflowUI.h">
@@ -884,7 +884,7 @@
     <QtUic Include="ui\TargetDetection.ui">
       <Filter>Form Files</Filter>
     </QtUic>
-    <QtUic Include="ui\ImportMacao.ui">
+    <QtUic Include="ui\ImportGenericSAR.ui">
       <Filter>Form Files</Filter>
     </QtUic>
   </ItemGroup>

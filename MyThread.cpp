@@ -384,7 +384,7 @@ void MyThread::import_sentinel_patch(
 	emit endProcess();
 }
 
-	void MyThread::import_Macao(
+	void MyThread::import_GenericSAR(
 	QString xml_filename, 
 	QString project_path,
 	QString folder, 
@@ -483,7 +483,7 @@ void MyThread::import_sentinel_patch(
 		tmp_dir.removeRecursively();
 		return;
 	}
-	ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Macao_SAR");
+	ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
 	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 	{
 		QFile::remove(image_path);
@@ -615,7 +615,7 @@ void MyThread::import_TSX_patch(
 	emit endProcess();
 }
 
-void MyThread::import_Macao_patch(
+void MyThread::import_GenericSAR_patch(
 	QString savepath,
 	vector<QString> original_file_list, 
 	vector<QString> import_namelist,
@@ -709,7 +709,7 @@ void MyThread::import_Macao_patch(
 			tmp_dir.removeRecursively();
 			return;
 		}
-		ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Macao_SAR");
+		ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
 			QFile::remove(image_path);

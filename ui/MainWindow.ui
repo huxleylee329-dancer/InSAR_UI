@@ -131,7 +131,7 @@
      <addaction name="actionSentinel_1"/>
      <addaction name="actionCOSMOS_SkyMed"/>
      <addaction name="actionALOS_2"/>
-     <addaction name="actionMacao"/>
+     <addaction name="actionGenericSAR"/>
     </widget>
     <widget class="QMenu" name="menuSentinel1_Tool">
      <property name="title">
@@ -375,9 +375,9 @@
     <string>流程编辑器</string>
    </property>
   </action>
-  <action name="actionMacao">
+  <action name="actionGenericSAR">
    <property name="text">
-    <string>Macao</string>
+    <string>Generic SAR</string>
    </property>
   </action>
   <action name="actionTheme">
