@@ -23,9 +23,11 @@ public:
     ~MainWindow();
     void Addproject(QString,QString);
     void resizeEvent(QResizeEvent* event);
+    void closeEvent(QCloseEvent* event) override;
 
     // Getters for application-wide components
     InterfaceManager* interfaceManager() const { return m_interfaceManager; }
+    WorkspaceUI* workspaceUI() const { return m_workspaceUI; }
 
 public slots:
     void ShowImage(QModelIndex);
@@ -38,6 +40,7 @@ public slots:
     void open_from_project_file(QString str);
     // Update treeview
     void update_treeview();
+    void RenewTree(QStandardItemModel*);
     // Welcome screen signal handlers
     void onNewProjectFromWelcome();
     void onOpenProjectFromWelcome();
@@ -79,6 +82,9 @@ private:
     // 当前打开的工程文件路径
     QString m_projectPath;
 
+    // 工程是否被修改标记
+    bool m_projectModified = false;
+
     // 保存工作流 JSON 数据（TiXmlText 不复制字符串，需要保持生命周期）
     QByteArray m_workflowBytes;
 
@@ -115,7 +121,6 @@ private slots:
     void on_actionCOSMOS_SkyMed_triggered();
     void on_actionALOS_2_triggered();
     void on_tabWidget_tabCloseRequested(int);
-    void RenewTree(QStandardItemModel*);
     // Switch ColorBar
     void ShowColorBar(int index);
     // Theme switching
@@ -156,4 +161,7 @@ private:
     void addToRecentProjects(const QString& path);
     void updateRecentMenu();
     void openRecentProject();
+
+    // 更新窗口标题（显示工程修改状态）
+    void updateWindowTitle();
 };

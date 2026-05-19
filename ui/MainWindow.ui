@@ -80,7 +80,7 @@
      <x>0</x>
      <y>0</y>
      <width>967</width>
-     <height>22</height>
+     <height>23</height>
     </rect>
    </property>
    <widget class="QMenu" name="File">
@@ -131,7 +131,6 @@
      <addaction name="actionSentinel_1"/>
      <addaction name="actionCOSMOS_SkyMed"/>
      <addaction name="actionALOS_2"/>
-     <addaction name="actionGenericSAR"/>
     </widget>
     <widget class="QMenu" name="menuSentinel1_Tool">
      <property name="title">
@@ -186,14 +185,28 @@
     </property>
     <widget class="QMenu" name="menuImageEnhancement">
      <property name="title">
-      <string>Image Enhancement</string>
+      <string>Enhancement</string>
      </property>
      <addaction name="actionSpeckleDenoise"/>
      <addaction name="actionClutterSuppression"/>
     </widget>
+    <widget class="QMenu" name="menuImport_2">
+     <property name="title">
+      <string>Import</string>
+     </property>
+     <addaction name="actionGenericSAR"/>
+    </widget>
+    <widget class="QMenu" name="menuDectection">
+     <property name="title">
+      <string>Dectection</string>
+     </property>
+     <addaction name="actionTargetDetection"/>
+     <addaction name="actionBatchTargetRecognition"/>
+    </widget>
+    <addaction name="menuImport_2"/>
     <addaction name="menuImageEnhancement"/>
-    <addaction name="actionTargetDetection"/>
-    <addaction name="actionBatchTargetRecognition"/>
+    <addaction name="menuDectection"/>
+    <addaction name="actionEvaluation"/>
    </widget>
    <action name="actionSpeckleDenoise">
     <property name="text">
@@ -218,7 +231,8 @@
    <addaction name="File"/>
    <addaction name="Edit"/>
    <addaction name="View"/>
-   <addaction name="Setting"/>   <addaction name="Process"/>
+   <addaction name="Setting"/>
+   <addaction name="Process"/>
    <addaction name="menuSAR"/>
    <addaction name="menuInSAR"/>
    <addaction name="menuDInSAR"/>
@@ -381,10 +395,15 @@
    </property>
   </action>
   <action name="actionTheme">
- <property name="text">
-  <string>主题</string>
- </property>
-</action>
+   <property name="text">
+    <string>主题</string>
+   </property>
+  </action>
+  <action name="actionEvaluation">
+   <property name="text">
+    <string>Evaluation</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>

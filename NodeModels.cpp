@@ -14,6 +14,7 @@
 #include "S1SwathMergeNode.h"
 #include "GenericSARImportNode.h"
 #include "GenericSARBatchImportNode.h"
+#include "SpeckleDenoiseNode.h"
 #include "ImageDisplayNode.h"
 
 #include <memory>
@@ -79,6 +80,11 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<S1FrameMergeNode>("Preprocessing/Sentinel-1/Frame Merge");
     registry->registerModel<S1SwathMergeNode>("Preprocessing/Sentinel-1/Swath Merge");
 
+
+    // ============================================================================
+    // SAR Enhancement Nodes
+    // ============================================================================
+    registry->registerModel<SpeckleDenoiseNode>("SAR/Enhancement/Speckle Denoise");
 
     // ============================================================================
     // Future Categories (placeholders for upcoming functionality)

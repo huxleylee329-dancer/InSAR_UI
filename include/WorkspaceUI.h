@@ -24,6 +24,9 @@ class WorkspaceUI : public QWidget, public IApplicationInterface
 {
     Q_OBJECT
 
+signals:
+    void projectTreeRefreshed();
+
 public:
     explicit WorkspaceUI(QWidget *parent = nullptr);
     ~WorkspaceUI() override;
@@ -45,6 +48,9 @@ public:
     // Theme management
     void initTheme() override;
     void setTheme(const QString &theme) override;
+
+    // Refresh project tree after import
+    void refreshProjectTree() override;
 
     // Clear interface
     void clear() override;

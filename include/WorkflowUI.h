@@ -79,6 +79,9 @@ public:
     void initTheme() override;
     void setTheme(const QString &theme) override;
 
+    // Refresh project tree after import
+    void refreshProjectTree() override;
+
     // Clear interface
     void clear() override;
 
@@ -134,6 +137,10 @@ private slots:
 
     // Group operations
     void onGroupSelection();
+
+signals:
+    // 工作流被修改信号
+    void workflowModified();
 
 private:
     void setupUi();

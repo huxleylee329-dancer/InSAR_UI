@@ -70,7 +70,7 @@ protected:
 
     // Helper methods
     void onProgressUpdate(int progress, const QString& message);
-    void onImportFinished();
+    virtual void onImportFinished();
     void onError(const QString& error);
 
     // Get project context interface

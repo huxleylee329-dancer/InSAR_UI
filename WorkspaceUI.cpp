@@ -165,6 +165,15 @@ QString WorkspaceUI::projectName() const
     return m_projectName;
 }
 
+void WorkspaceUI::refreshProjectTree()
+{
+    if (m_projectModel && m_treeView) {
+        m_treeView->setModel(m_projectModel);
+        m_treeView->setColumnHidden(1, true);
+    }
+    Q_EMIT projectTreeRefreshed();
+}
+
 void WorkspaceUI::initTheme()
 {
     // Default to light theme

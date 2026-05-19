@@ -89,6 +89,11 @@ public:
     virtual void setTheme(const QString& theme) = 0;
 
     /**
+     * @brief 刷新项目树视图（导入数据后调用）
+     */
+    virtual void refreshProjectTree() = 0;
+
+    /**
      * @brief 清空界面内容（关闭项目时调用）
      */
     virtual void clear() = 0;

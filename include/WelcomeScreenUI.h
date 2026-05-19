@@ -45,6 +45,9 @@ public:
     void initTheme() override;
     void setTheme(const QString& theme) override;
 
+    // Refresh project tree after import (欢迎界面无需操作)
+    void refreshProjectTree() override;
+
     // Clear interface (欢迎界面无需清空操作)
     void clear() override;
 

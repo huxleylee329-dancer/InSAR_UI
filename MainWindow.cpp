@@ -189,6 +189,13 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     connect(m_workspaceUI->treeView(), &TreeView::update, this, &MainWindow::update_treeview);
     connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
     connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::on_tabWidget_tabCloseRequested);
+    connect(m_workspaceUI, &WorkspaceUI::projectTreeRefreshed, this, [this]() {
+        if (!m_projectPath.isEmpty() && this->project) {
+            this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+        }
+        m_projectModified = true;
+        updateWindowTitle();
+    });
     connect(ui.actionQuit, &QAction::triggered, this, &MainWindow::close);
 
     // Add interface switching menu to View
@@ -256,6 +263,10 @@ void MainWindow::Addproject(QString name, QString save_path)
     QString projectFile = save_path + "/" + name + ".insar";
     m_projectPath = projectFile;
     this->project->XMLFile_load(projectFile.toStdString().c_str());
+
+    // 新建工程后，重置修改标记（因为刚保存过）
+    m_projectModified = false;
+    updateWindowTitle();
 }
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
@@ -276,6 +287,30 @@ void MainWindow::resizeEvent(QResizeEvent* event)
         // WorkspaceUI handles its own resizing - native event handling will happen
         // The old ui.tabWidget no longer exists
         return;
+    }
+}
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    if (!m_projectPath.isEmpty() && m_projectModified) {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this, tr("退出确认"),
+            tr("当前工程已修改，是否保存？"),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+
+        if (reply == QMessageBox::Save) {
+            saveWorkflowToProject(m_projectPath);
+            this->project->XMLFile_save(m_projectPath.toStdString().c_str());
+            closeCurrentProject();
+            event->accept();
+        } else if (reply == QMessageBox::Discard) {
+            closeCurrentProject();
+            event->accept();
+        } else {
+            event->ignore();
+        }
+    } else {
+        closeCurrentProject();
+        event->accept();
     }
 }
 void MainWindow::updateProcess(int value, QString information)
@@ -638,6 +673,19 @@ void MainWindow::on_actionOpen_triggered()
     connect(open_Window, &OpenProject::projectOpened, this, &MainWindow::loadWorkflowFromProject);
     open_Window->setAttribute(Qt::WA_DeleteOnClose, true);
 }
+void MainWindow::updateWindowTitle()
+{
+    if (m_projectPath.isEmpty()) {
+        setWindowTitle("SatExplorer");
+    } else {
+        QFileInfo fileInfo(m_projectPath);
+        QString title = QString("SatExplorer - %1").arg(fileInfo.fileName());
+        if (m_projectModified) {
+            title += " *";
+        }
+        setWindowTitle(title);
+    }
+}
 void MainWindow::on_actionSave_triggered()
 {
     if (m_projectPath.isEmpty()) {
@@ -646,6 +694,8 @@ void MainWindow::on_actionSave_triggered()
     }
     saveWorkflowToProject(m_projectPath);
     this->project->XMLFile_save(m_projectPath.toStdString().c_str());
+    m_projectModified = false;
+    updateWindowTitle();
 }
 void MainWindow::closeCurrentProject()
 {
@@ -703,12 +753,14 @@ void MainWindow::closeCurrentProject()
             closeTabWidget->removeTab(0);
     }
 
-    setWindowTitle("SatExplorer");
+    // 重置工程修改标记
+    m_projectModified = false;
+    updateWindowTitle();
 }
 
 void MainWindow::on_actionClose_triggered()
 {
-    if (!m_projectPath.isEmpty()) {
+    if (!m_projectPath.isEmpty() && m_projectModified) {
         QMessageBox::StandardButton reply = QMessageBox::question(
             this, "关闭工程",
             "是否保存当前工程？",
@@ -815,6 +867,10 @@ void MainWindow::loadWorkflowFromProject(const QString& projectFilePath)
     catch (...) {
         QMessageBox::critical(this, "错误", "加载工作流时发生未知异常。");
     }
+
+    // 加载完成，重置修改标记
+    m_projectModified = false;
+    updateWindowTitle();
 }
 void MainWindow::addToRecentProjects(const QString& path)
 {
@@ -1190,6 +1246,9 @@ void MainWindow::RenewTree(QStandardItemModel* copy)
         this->project->XMLFile_load(m_projectPath.toStdString().c_str());
     }
 
+    // 工程树被修改，设置修改标记
+    m_projectModified = true;
+    updateWindowTitle();
 }
 void MainWindow::ShowColorBar(int index)
 {
@@ -1488,6 +1547,12 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     // Create workflow UI (node editor interface)
     // Parent is nullptr - will be managed by InterfaceManager
     m_workflowUI = new WorkflowUI(nullptr);
+
+    // 连接工作流修改信号
+    connect(m_workflowUI, &WorkflowUI::workflowModified, this, [this]() {
+        m_projectModified = true;
+        updateWindowTitle();
+    });
 
     // Get project name from file path
     QString projectName = filePath;

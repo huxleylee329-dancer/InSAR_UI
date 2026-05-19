@@ -306,6 +306,9 @@
     <ClCompile Include="GenericSARBatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SpeckleDenoiseNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ImageDisplayNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -722,6 +725,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\GenericSARBatchImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SpeckleDenoiseNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\ImageDisplayNode.h">

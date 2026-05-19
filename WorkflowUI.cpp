@@ -2,6 +2,9 @@
 #include "DockWidgets.h"
 #include "NodeGroupManager.h"
 #include "NodeModels.h"
+#include "MainWindow.h"
+#include "WorkspaceUI.h"
+#include <QSignalBlocker>
 
 // ADS (Qt Advanced Docking System)
 #include "ads_globals.h"
@@ -62,6 +65,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.topLevel = QStringList{
         "Data Import",    // 第一级分类
         "Preprocessing",  // 第二级分类
+        "SAR",            // SAR处理分类
         "Display",        // 图像显示/预览分类
         "Note",          // 注释节点分类
         "Test"           // 测试节点分类
@@ -79,6 +83,10 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     order.subcategories["Preprocessing"] = QStringList{
         "Sentinel-1"        // Preprocessing 下的第一个子分类
+    };
+
+    order.subcategories["SAR"] = QStringList{
+        "Enhancement"       // SAR 下的第一个子分类
     };
 
     // ===== 3. 叶子项顺序 =====
@@ -118,6 +126,11 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Deburst", "S1 Deburst"},     // Sentinel-1 预处理：去突刺
         {"Frame Merge", "S1 Frame Merge"},  // 帧拼接
         {"Swath Merge", "S1 Swath Merge"}   // 条带拼接
+    };
+
+    // SAR Enhancement 类叶子项顺序
+    order.leafItems["SAR/Enhancement"] = QList<PaletteOrder::LeafItem>{
+        {"Speckle Denoise", "Speckle Denoise"}     // Speckle Denoise节点
     };
 
     // Test 类叶子项顺序
@@ -740,6 +753,9 @@ void WorkflowUI::loadWorkflowFromJson(const QJsonObject& json)
 {
     if (!m_graphModel || json.isEmpty())
         return;
+
+    // 加载期间临时阻塞场景修改信号，避免不必要的"修改"状态闪烁
+    const QSignalBlocker blocker(m_scene);
     onClear();
     m_graphModel->load(json);
 }
@@ -760,6 +776,18 @@ void WorkflowUI::onClear()
     }
 
     m_propertyEditor->clearSelection();
+}
+
+void WorkflowUI::refreshProjectTree()
+{
+    // WorkflowUI 没有项目树视图，委托给 WorkspaceUI 刷新
+    foreach(::QWidget* widget, QApplication::topLevelWidgets()) {
+        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
+        if (mainWin && mainWin->workspaceUI()) {
+            mainWin->workspaceUI()->refreshProjectTree();
+            return;
+        }
+    }
 }
 
 void WorkflowUI::clear()
@@ -812,6 +840,9 @@ void WorkflowUI::onSceneModified(QtNodes::BasicGraphicsScene *)
             m_propertyEditor->clearSelection();
         }
     }
+
+    // 发出工作流被修改信号
+    emit workflowModified();
 }
 
 void WorkflowUI::onPortDataChanged(QtNodes::NodeId nodeId, QtNodes::PortType portType, int portIndex, const QString& fieldKey, const QString& newValue)

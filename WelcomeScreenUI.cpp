@@ -596,6 +596,11 @@ void WelcomeScreenUI::setTheme(const QString& theme)
     updateThemeStyles();
 }
 
+void WelcomeScreenUI::refreshProjectTree()
+{
+    // 欢迎界面无需刷新项目树
+}
+
 void WelcomeScreenUI::clear()
 {
     // 欢迎界面无需清空操作

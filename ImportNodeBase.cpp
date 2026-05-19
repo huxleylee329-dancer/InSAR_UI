@@ -72,7 +72,12 @@ QStandardItemModel* ImportNodeBase::projectModel() const
 QString ImportNodeBase::projectPath() const
 {
     auto iface = getProjectContext();
-    return iface ? iface->projectPath() : QString();
+    if (iface) {
+        QString fullPath = iface->projectPath();
+        if (fullPath.isEmpty()) return QString();
+        return QFileInfo(fullPath).absolutePath();
+    }
+    return QString();
 }
 
 QString ImportNodeBase::projectName() const

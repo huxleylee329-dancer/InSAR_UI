@@ -51,10 +51,12 @@ protected:
     MyThread* workerThread() const override { return m_workerThread; }
     QThread* qThread() const override { return m_thread; }
 
+protected:
+    void onImportFinished() override;
+
 private slots:
     void onImageBrowseClicked();
     void onImportProgress(int progress, const QString& message);
-    void onImportFinished();
     void onThreadError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 

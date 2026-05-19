@@ -3,8 +3,11 @@
 #endif
 
 #include "GenericSARImportNode.h"
+#include "IApplicationInterface.h"
+#include "MainWindow.h"
 
 #include <QFileInfo>
+#include <QApplication>
 
 namespace QtNodes {
 
@@ -195,10 +198,14 @@ QString GenericSARImportNode::getImportedFilePath() const
     if (!m_importedFilePath.isEmpty())
         return m_importedFilePath;
 
-    return QString("%1/%2/%3.h5")
+    QString suffix = QFileInfo(m_imagePath).suffix();
+    if (suffix.isEmpty()) suffix = "h5"; // Fallback
+
+    return QString("%1/%2/%3.%4")
         .arg(projectPath())
         .arg(getOutputNodeName())
-        .arg(m_outputFileName);
+        .arg(m_outputFileName)
+        .arg(suffix);
 }
 
 QString GenericSARImportNode::getOutputNodeName() const
@@ -233,21 +240,31 @@ void GenericSARImportNode::onImportProgress(int progress, const QString& message
 
 void GenericSARImportNode::onImportFinished()
 {
-    m_importedFilePath = QString("%1/%2/%3.h5")
+    QString suffix = QFileInfo(m_imagePath).suffix();
+    if (suffix.isEmpty()) suffix = "h5";
+
+    m_importedFilePath = QString("%1/%2/%3.%4")
         .arg(projectPath())
         .arg(getOutputNodeName())
-        .arg(m_outputFileName);
+        .arg(m_outputFileName)
+        .arg(suffix);
 
-    // 1. Process primary InSAR output (Port 0)
-    ImportNodeBase::onImportFinished();
-
-    // 2. Process independent preview output (Port 1)
+    // Port 0: 输出 ImageInfoData（原图路径），供下游处理节点使用
     if (!m_imagePath.isEmpty())
     {
-        // Pass the original image path as preview info
+        auto outputData = std::make_shared<ImageInfoData>(m_imagePath);
+        setOutputData(0, outputData);
+        Q_EMIT dataUpdated(0);
+    }
+
+    // Port 1: 预览输出
+    if (!m_imagePath.isEmpty())
+    {
         m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
         Q_EMIT dataUpdated(1);
     }
+
+    finishExecution();
 
     if (m_thread)
     {
@@ -290,7 +307,22 @@ void GenericSARImportNode::setExecutionMode(ExecutionMode mode)
 
 void GenericSARImportNode::onModelUpdated(QStandardItemModel* model)
 {
-    Q_UNUSED(model);
+    if (!model) return;
+
+    // 刷新主界面的项目树视图，使导入的文件可见
+    // 采用与菜单导入一致的方式，通过 MainWindow::RenewTree 进行全局刷新
+    foreach(::QWidget* widget, QApplication::topLevelWidgets()) {
+        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
+        if (mainWin) {
+            mainWin->RenewTree(model);
+            return;
+        }
+    }
+
+    // 备选方案：如果找不到 MainWindow，则尝试通过接口刷新
+    if (auto* iface = getProjectContext()) {
+        iface->refreshProjectTree();
+    }
 }
 
 QJsonObject GenericSARImportNode::save() const
@@ -327,7 +359,7 @@ NodeDataType GenericSARImportNode::dataType(PortType portType, PortIndex portInd
     if (portType == PortType::Out)
     {
         if (portIndex == 0)
-            return NodeDataType{"imported_file", "Imported File"};
+            return NodeDataType{"image_info", "Image Info"};
         else if (portIndex == 1)
             return NodeDataType{"image_info", "Image Info"};
     }
