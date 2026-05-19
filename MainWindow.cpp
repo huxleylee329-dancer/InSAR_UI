@@ -133,7 +133,6 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     : QMainWindow(parent)
     , thread(nullptr)
     , Process(nullptr)
-    , model(nullptr)
     , project(nullptr)
     , m_interfaceManager(nullptr)
     , m_workspaceUI(nullptr)
@@ -154,17 +153,17 @@ MainWindow::MainWindow(QString str, QWidget* parent)
 
     // Use WorkspaceUI components - get the authoritative model from WorkspaceUI
     m_workspaceUI->treeView()->init_tree();
-    this->model = m_workspaceUI->treeView()->model;
+    QStandardItemModel* initialModel = m_workspaceUI->treeView()->model;
 
     // Determine initial project name
     QString projectName;
     if (!str.isEmpty()) {
-        projectName = QFileInfo(str).baseName();
+        projectName = QFileInfo(str).fileName();
     }
 
     // Explicitly sync the valid model and context to all interfaces
     if (m_interfaceManager) {
-        m_interfaceManager->setProjectContext(this->model, str, projectName);
+        m_interfaceManager->setProjectContext(initialModel, str, projectName);
     }
 
     m_workspaceUI->tabWidget()->setTabsClosable(true);
@@ -186,13 +185,24 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     
     // Connect signals/slots
     connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
-    connect(m_workspaceUI->treeView(), &TreeView::update, this, &MainWindow::update_treeview);
+    connect(m_workspaceUI->treeView(), &TreeView::update, m_workspaceUI, &WorkspaceUI::refreshProjectTree);
     connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
     connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::on_tabWidget_tabCloseRequested);
     connect(m_workspaceUI, &WorkspaceUI::projectTreeRefreshed, this, [this]() {
         if (!m_projectPath.isEmpty() && this->project) {
             this->project->XMLFile_load(m_projectPath.toStdString().c_str());
         }
+
+        // Enable menus if project has data (Replicates legacy RenewTree logic)
+        QStandardItemModel* currentModel = m_interfaceManager->projectModel();
+        if (currentModel && currentModel->rowCount() > 0)
+        {
+            if (!ui.Process->isEnabled()) ui.Process->setDisabled(0);
+            if (!ui.menuSAR->isEnabled()) ui.menuSAR->setDisabled(0);
+            if (!ui.menuInSAR->isEnabled()) ui.menuInSAR->setDisabled(0);
+            if (!ui.menuDInSAR->isEnabled()) ui.menuDInSAR->setDisabled(0);
+        }
+
         m_projectModified = true;
         updateWindowTitle();
     });
@@ -257,11 +267,11 @@ MainWindow::~MainWindow()
 void MainWindow::Addproject(QString name, QString save_path)
 {
     m_workspaceUI->treeView()->NewProject(name, save_path);
-    RenewTree(m_workspaceUI->treeView()->model);
+    m_workspaceUI->updateProjectModel(m_workspaceUI->treeView()->model);
 
     // 设置工程路径并加载 XML，使后续保存能正常工作
     QString projectFile = save_path + "/" + name + ".insar";
-    m_projectPath = projectFile;
+    updateProjectContext(projectFile);
     this->project->XMLFile_load(projectFile.toStdString().c_str());
 
     // 新建工程后，重置修改标记（因为刚保存过）
@@ -407,7 +417,7 @@ void MainWindow::open_from_project_file(QString str)
     QString filename = str;
     QFileInfo fileinfo = QFileInfo(filename);
     QString abs_path = fileinfo.absolutePath();
-    model = m_workspaceUI->treeView()->model;
+    QStandardItemModel* currentModel = m_workspaceUI->treeView()->model;
 
     int ret = this->project->XMLFile_load(filename.toStdString().c_str());
     if (ret < 0)
@@ -445,8 +455,8 @@ void MainWindow::open_from_project_file(QString str)
                     Project_Path->setText(abs_path.toStdString().c_str());
                     q->Clear(); q->LinkEndChild(new TiXmlText(abs_path.toStdString().c_str()));//Update save path
                 }
-            model->appendRow(Project);
-            model->setItem(model->rowCount() - 1, 1, Project_Path);
+            currentModel->appendRow(Project);
+            currentModel->setItem(currentModel->rowCount() - 1, 1, Project_Path);
             for (p = p->NextSiblingElement(); p != NULL; p = p->NextSiblingElement())
             {
                 // 跳过非 DataNode 元素（如 lastInterface、workflow）
@@ -514,7 +524,7 @@ void MainWindow::open_from_project_file(QString str)
 
             }
             //model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
-            this->RenewTree(model);
+            m_workspaceUI->updateProjectModel(currentModel);
 
             // 加载工作流状态
             loadWorkflowFromProject(str);
@@ -523,26 +533,6 @@ void MainWindow::open_from_project_file(QString str)
     }
     else
         QMessageBox::warning(NULL, "Warning!", "*.Insar is empty!");
-}
-void MainWindow::update_treeview()
-{
-    if (model)
-    {
-        if (model->rowCount() < 1)
-        {
-            ui.Process->setDisabled(1);
-            ui.menuSAR->setDisabled(1);
-            ui.menuInSAR->setDisabled(1);
-            ui.menuDInSAR->setDisabled(1);
-        }
-        else
-        {
-            ui.Process->setDisabled(0);
-            ui.menuSAR->setDisabled(0);
-            ui.menuInSAR->setDisabled(0);
-            ui.menuDInSAR->setDisabled(0);
-        }
-    }
 }
 
 bool MainWindow::eventFilter(QObject* target, QEvent* event)
@@ -579,8 +569,11 @@ void MainWindow::ShowImage(QModelIndex image)
         return;
     }
 
-    QString name = model->index(image.row(), 0, image.parent()).data().toString();
-    QString path = model->index(image.row(), 1, image.parent()).data().toString();
+    QStandardItemModel* currentModel = m_interfaceManager->projectModel();
+    if (!currentModel) return;
+
+    QString name = currentModel->index(image.row(), 0, image.parent()).data().toString();
+    QString path = currentModel->index(image.row(), 1, image.parent()).data().toString();
 
     // 已打开则直接切换到对应tab
     if (CheckTab(image))
@@ -591,7 +584,7 @@ void MainWindow::ShowImage(QModelIndex image)
         return;
     }
 
-    QString type = model->itemFromIndex(model->index(image.row(),0,image.parent()))->toolTip();
+    QString type = currentModel->itemFromIndex(currentModel->index(image.row(),0,image.parent()))->toolTip();
     if (!path.isEmpty())
     {
         QFileInfo fileinfo = QFileInfo(path);
@@ -654,7 +647,7 @@ void MainWindow::on_actionNew_triggered()
 
     NewProject* newpro = new NewProject;
     connect(this, &MainWindow::sendModel, newpro, &NewProject::ReceiveModel);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     newpro->show();
     connect(newpro, &NewProject::sendPath, this, &MainWindow::Addproject);
     newpro->setAttribute(Qt::WA_DeleteOnClose, true);
@@ -668,8 +661,8 @@ void MainWindow::on_actionOpen_triggered()
     OpenProject* open_Window = new OpenProject;
     open_Window->show();
     connect(this, &MainWindow::sendModel, open_Window, &OpenProject::LoadModel);
-    emit sendModel(model);
-    connect(open_Window, &OpenProject::sendModel, this, &MainWindow::RenewTree);
+    emit sendModel(m_interfaceManager->projectModel());
+    connect(open_Window, &OpenProject::sendModel, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     connect(open_Window, &OpenProject::projectOpened, this, &MainWindow::loadWorkflowFromProject);
     open_Window->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -712,11 +705,12 @@ void MainWindow::closeCurrentProject()
     m_workflowBytes.clear();
 
     // 清空主树形视图模型
-    if (model) {
-        model->clear();
-        model->setColumnCount(2);
-        model->setHeaderData(0, Qt::Horizontal, tr("workspace"));
-        model->setHeaderData(1, Qt::Horizontal, tr("Path"));
+    QStandardItemModel* currentModel = m_interfaceManager ? m_interfaceManager->projectModel() : nullptr;
+    if (currentModel) {
+        currentModel->clear();
+        currentModel->setColumnCount(2);
+        currentModel->setHeaderData(0, Qt::Horizontal, tr("workspace"));
+        currentModel->setHeaderData(1, Qt::Horizontal, tr("Path"));
     }
 
     // 清空工作区（通过接口）
@@ -731,13 +725,13 @@ void MainWindow::closeCurrentProject()
 
     // 重置两个界面的工程上下文（通过接口）
     if (m_workspaceUI)
-        m_workspaceUI->setProjectContext(model, QString(), QString());
+        m_workspaceUI->setProjectContext(currentModel, QString(), QString());
     if (m_workflowUI)
-        m_workflowUI->setProjectContext(model, QString(), QString());
+        m_workflowUI->setProjectContext(currentModel, QString(), QString());
 
     // 同步重置 InterfaceManager 的项目上下文
     if (m_interfaceManager) {
-        m_interfaceManager->setProjectContext(model, QString(), QString());
+        m_interfaceManager->setProjectContext(currentModel, QString(), QString());
     }
 
     // 禁用处理菜单（恢复到初始状态）
@@ -818,7 +812,7 @@ void MainWindow::loadWorkflowFromProject(const QString& projectFilePath)
 
     try {
         // 记录当前工程路径
-        m_projectPath = projectFilePath;
+        updateProjectContext(projectFilePath);
 
         // 加载项目 XML 到 this->project，确保后续保存不会写空文件
         if (this->project)
@@ -967,10 +961,10 @@ void MainWindow::on_actionTSX_triggered()
 
     Import_TSX* TSX_win = new Import_TSX;
     connect(this, &MainWindow::sendModel, TSX_win, &Import_TSX::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     TSX_win->show();
 
-    connect(TSX_win, &Import_TSX::sendCopy, this, &MainWindow::RenewTree);
+    connect(TSX_win, &Import_TSX::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     TSX_win->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionGenericSAR_triggered()
@@ -978,47 +972,47 @@ void MainWindow::on_actionGenericSAR_triggered()
 
     Import_GenericSAR* GenericSAR_win = new Import_GenericSAR;
     connect(this, &MainWindow::sendModel, GenericSAR_win, &Import_GenericSAR::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     GenericSAR_win->show();
 
-    connect(GenericSAR_win, &Import_GenericSAR::sendCopy, this, &MainWindow::RenewTree);
+    connect(GenericSAR_win, &Import_GenericSAR::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     GenericSAR_win->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionSentinel_1_triggered()
 {
     import_sentinel* sentinel_wnd = new import_sentinel;
     connect(this, &MainWindow::sendModel, sentinel_wnd, &import_sentinel::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     sentinel_wnd->show();
 
-    connect(sentinel_wnd, &import_sentinel::sendCopy, this, &MainWindow::RenewTree);
+    connect(sentinel_wnd, &import_sentinel::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     sentinel_wnd->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionCut_triggered()
 {
     Cut* cut = new Cut();
     connect(this, &MainWindow::sendModel, cut, &Cut::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     cut->show();
-    connect(cut, &Cut::sendCopy, this, &MainWindow::RenewTree);
+    connect(cut, &Cut::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     cut->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionRegistration_triggered()
 {
     Registration_ui* regis = new Registration_ui();
     connect(this, &MainWindow::sendModel, regis, &Registration_ui::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     regis->show();
-    connect(regis, &Registration_ui::sendCopy, this, &MainWindow::RenewTree);
+    connect(regis, &Registration_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     regis->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionS1_TOPS_BackGeocoding_triggered()
 {
     S1_TOPS_BackGeocoding* backGeocoding = new S1_TOPS_BackGeocoding();
     connect(this, &MainWindow::sendModel, backGeocoding, &S1_TOPS_BackGeocoding::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     backGeocoding->show();
-    connect(backGeocoding, &S1_TOPS_BackGeocoding::sendCopy, this, &MainWindow::RenewTree);
+    connect(backGeocoding, &S1_TOPS_BackGeocoding::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     backGeocoding->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
@@ -1026,9 +1020,9 @@ void MainWindow::on_actionS1_Deburst_triggered()
 {
     S1_Deburst* deburst = new S1_Deburst();
     connect(this, &MainWindow::sendModel, deburst, &S1_Deburst::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     deburst->show();
-    connect(deburst, &S1_Deburst::sendCopy, this, &MainWindow::RenewTree);
+    connect(deburst, &S1_Deburst::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     deburst->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
@@ -1036,9 +1030,9 @@ void MainWindow::on_actionSBAS_deformation_triggered()
 {
     SBAS_time_series_analysis* SBAS_time_series = new SBAS_time_series_analysis();
     connect(this, &MainWindow::sendModel, SBAS_time_series, &SBAS_time_series_analysis::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     SBAS_time_series->show();
-    connect(SBAS_time_series, &SBAS_time_series_analysis::sendCopy, this, &MainWindow::RenewTree);
+    connect(SBAS_time_series, &SBAS_time_series_analysis::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     SBAS_time_series->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
@@ -1046,7 +1040,7 @@ void MainWindow::on_actionDeformation_Preview_triggered()
 {
     Deformation_Average* bl = new Deformation_Average();
     connect(this, &MainWindow::sendModel, bl, &Deformation_Average::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1055,7 +1049,7 @@ void MainWindow::on_actionreference_re_selection_triggered()
 {
     SBAS_reference_reselection* bl = new SBAS_reference_reselection();
     connect(this, &MainWindow::sendModel, bl, &SBAS_reference_reselection::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1064,7 +1058,7 @@ void MainWindow::on_actionExport_KML_triggered()
 {
     Export_KML* bl = new Export_KML();
     connect(this, &MainWindow::sendModel, bl, &Export_KML::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1072,8 +1066,8 @@ void MainWindow::on_actionSpeckleDenoise_triggered()
 {
      SpeckleDenoise* dlg = new SpeckleDenoise();
     connect(this, &MainWindow::sendModel, dlg, &SpeckleDenoise::ShowProjectList);
-    connect(dlg, &SpeckleDenoise::sendCopy, this, &MainWindow::RenewTree);
-    emit sendModel(model);
+    connect(dlg, &SpeckleDenoise::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    emit sendModel(m_interfaceManager->projectModel());
     dlg->show();
     dlg->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1082,8 +1076,8 @@ void MainWindow::on_actionClutterSuppression_triggered()
 {
     ClutterSuppression* dlg = new ClutterSuppression();
     connect(this, &MainWindow::sendModel, dlg, &ClutterSuppression::ShowProjectList);
-    connect(dlg, &ClutterSuppression::sendCopy, this, &MainWindow::RenewTree);
-    emit sendModel(model);
+    connect(dlg, &ClutterSuppression::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    emit sendModel(m_interfaceManager->projectModel());
     dlg->show();
     dlg->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1093,7 +1087,7 @@ void MainWindow::on_actionBatchTargetRecognition_triggered()
 {
     BatchTargetRecognition* dlg = new BatchTargetRecognition();
     connect(this, &MainWindow::sendModel, dlg, &BatchTargetRecognition::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     dlg->show();
     dlg->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1102,7 +1096,7 @@ void MainWindow::on_actionTargetDetection_triggered()
 {
     TargetDetection* dlg = new TargetDetection();
     connect(this, &MainWindow::sendModel, dlg, &TargetDetection::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     dlg->show();
     dlg->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1111,7 +1105,7 @@ void MainWindow::on_actionBaseline_Preview_triggered()
 {
     Baseline* bl = new Baseline();
     connect(this, &MainWindow::sendModel, bl, &Baseline::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     bl->show();
     bl->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1119,7 +1113,7 @@ void MainWindow::on_actionSLC_deramp_triggered()
 {
     SLC_deramp* deramp = new SLC_deramp();
     connect(this, &MainWindow::sendModel, deramp, &SLC_deramp::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     deramp->show();
     deramp->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1127,7 +1121,7 @@ void MainWindow::on_actionBaseline_Formation_triggered()
 {
     Baseline_Formation* BF = new Baseline_Formation();
     connect(this, &MainWindow::sendModel, BF, &Baseline_Formation::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     BF->show();
     BF->setAttribute(Qt::WA_DeleteOnClose, true);
 }
@@ -1135,121 +1129,86 @@ void MainWindow::on_actionInterferometric_Formation_triggered()
 {
     Interferometric_Formation* IF = new Interferometric_Formation();
     connect(this, &MainWindow::sendModel, IF, &Interferometric_Formation::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     IF->show();
-    connect(IF, &Interferometric_Formation::sendCopy, this, &MainWindow::RenewTree);
+    connect(IF, &Interferometric_Formation::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     IF->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionDenoise_triggered()
 {
     Filter_ui *Denoise = new Filter_ui();
     connect(this, &MainWindow::sendModel, Denoise, &Filter_ui::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     Denoise->show();
-    connect(Denoise, &Filter_ui::sendCopy, this, &MainWindow::RenewTree);
+    connect(Denoise, &Filter_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     Denoise->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionUnwrap_triggered()
 {
     Unwrap_ui* unwrap = new Unwrap_ui();
     connect(this, &MainWindow::sendModel, unwrap, &Unwrap_ui::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     unwrap->show();
-    connect(unwrap, &Unwrap_ui::sendCopy, this, &MainWindow::RenewTree);
+    connect(unwrap, &Unwrap_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     unwrap->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionDEM_triggered()
 {
     Dem_ui* Dem = new Dem_ui();
     connect(this, &MainWindow::sendModel, Dem, &Dem_ui::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     Dem->show();
-    connect(Dem, &Dem_ui::sendCopy, this, &MainWindow::RenewTree);
+    connect(Dem, &Dem_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     Dem->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actiongeocode_triggered()
 {
     Geocoding* geocode = new Geocoding();
     connect(this, &MainWindow::sendModel, geocode, &Geocoding::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     geocode->show();
-    connect(geocode, &Geocoding::sendCopy, this, &MainWindow::RenewTree);
+    connect(geocode, &Geocoding::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     geocode->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionS1_swath_merge_triggered()
 {
     S1_swath_merge* swath_merge = new S1_swath_merge();
     connect(this, &MainWindow::sendModel, swath_merge, &S1_swath_merge::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     swath_merge->show();
-    connect(swath_merge, &S1_swath_merge::sendCopy, this, &MainWindow::RenewTree);
+    connect(swath_merge, &S1_swath_merge::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     swath_merge->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionS1_frame_merge_triggered()
 {
     S1_frame_merge* frame_merge = new S1_frame_merge();
     connect(this, &MainWindow::sendModel, frame_merge, &S1_frame_merge::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     frame_merge->show();
-    connect(frame_merge, &S1_frame_merge::sendCopy, this, &MainWindow::RenewTree);
+    connect(frame_merge, &S1_frame_merge::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     frame_merge->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionCOSMOS_SkyMed_triggered()
 {
     import_CSK* csk = new import_CSK;
     connect(this, &MainWindow::sendModel, csk, &import_CSK::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     csk->show();
 
-    connect(csk, &import_CSK::sendCopy, this, &MainWindow::RenewTree);
+    connect(csk, &import_CSK::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     csk->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 void MainWindow::on_actionALOS_2_triggered()
 {
     import_ALOS2* alos2 = new import_ALOS2;
     connect(this, &MainWindow::sendModel, alos2, &import_ALOS2::ShowProjectList);
-    emit sendModel(model);
+    emit sendModel(m_interfaceManager->projectModel());
     alos2->show();
 
-    connect(alos2, &import_ALOS2::sendCopy, this, &MainWindow::RenewTree);
+    connect(alos2, &import_ALOS2::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     alos2->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
-void MainWindow::RenewTree(QStandardItemModel* copy)
-{
-
-    if (m_workspaceUI->treeView()->isHidden())
-    {
-        m_workspaceUI->treeView()->setHidden(0);
-        m_workspaceUI->toolTree()->setHidden(0);
-        m_workspaceUI->tabWidget()->setHidden(0);
-    }
-    if(!ui.Process->isEnabled())
-        ui.Process->setDisabled(0);
-    if (!ui.menuSAR->isEnabled())
-        ui.menuSAR->setDisabled(0);
-    if (!ui.menuInSAR->isEnabled())
-        ui.menuInSAR->setDisabled(0);
-    if (!ui.menuDInSAR->isEnabled())
-        ui.menuDInSAR->setDisabled(0);
-    model = copy;
-
-    m_workspaceUI->treeView()->setModel(copy);
-    m_workspaceUI->treeView()->model = copy;
-    m_workspaceUI->treeView()->setColumnHidden(1, true);
-
-    // 重新加载项目 XML，确保 MyThread 导入的 DataNode 不会丢失
-    // MyThread 用独立 XMLFile 实例写入 DataNode，MainWindow::project 不知道这些变更
-    // 下次保存会用旧数据覆盖磁盘，所以每次导入后必须重新加载
-    if (!m_projectPath.isEmpty() && this->project)
-    {
-        this->project->XMLFile_load(m_projectPath.toStdString().c_str());
-    }
-
-    // 工程树被修改，设置修改标记
-    m_projectModified = true;
-    updateWindowTitle();
-}
 void MainWindow::ShowColorBar(int index)
 {
     // 界面切换到 Workflow 后直接返回
@@ -1311,7 +1270,10 @@ bool MainWindow::CheckTab(QModelIndex image)
 
     int n = activeTabWidget->count();
     int i = 0;
-    QString name = model->index(image.row(), 0, image.parent()).data().toString();
+    QStandardItemModel* currentModel = m_interfaceManager->projectModel();
+    if (!currentModel) return false;
+
+    QString name = currentModel->index(image.row(), 0, image.parent()).data().toString();
     for (i = 0; i < n; i++)
     {
         if (!QString::compare(activeTabWidget->tabText(i), name))
@@ -1562,15 +1524,9 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     }
 
     // Set project context and theme for both interfaces
-    m_workspaceUI->setProjectContext(model, filePath, projectName);
+    updateProjectContext(filePath);
     m_workspaceUI->setTheme(m_currentTheme);
-    m_workflowUI->setProjectContext(model, filePath, projectName);
     m_workflowUI->setTheme(m_currentTheme);
-
-    // 同步项目上下文到 InterfaceManager（作为权威数据源）
-    if (m_interfaceManager) {
-        m_interfaceManager->setProjectContext(model, filePath, projectName);
-    }
 
     // Register interfaces
     m_interfaceManager->registerInterface(m_welcomeUI);     // Register welcome first
@@ -1689,4 +1645,23 @@ void MainWindow::onOpenProjectFromWelcome()
 void MainWindow::onRecentProjectFromWelcome(const QString &filePath)
 {
     open_from_project_file(filePath);
+}
+
+void MainWindow::updateProjectContext(const QString& filePath)
+{
+    m_projectPath = filePath;
+    QString projectName;
+    if (!filePath.isEmpty()) {
+        QFileInfo info(filePath);
+        projectName = info.fileName();
+    }
+
+    QStandardItemModel* model = m_interfaceManager ? m_interfaceManager->projectModel() : nullptr;
+
+    if (m_workspaceUI)
+        m_workspaceUI->setProjectContext(model, m_projectPath, projectName);
+    if (m_workflowUI)
+        m_workflowUI->setProjectContext(model, m_projectPath, projectName);
+    if (m_interfaceManager)
+        m_interfaceManager->setProjectContext(model, m_projectPath, projectName);
 }

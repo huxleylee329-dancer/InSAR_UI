@@ -407,7 +407,9 @@ void MyThread::import_sentinel_patch(
 	int ret=0;
 	QDir dir(project_path);
 	if (!dir.exists(folder))
+	{
 		ret = dir.mkdir(folder);
+	}
 	emit updateProcess(20, QString::fromLocal8Bit("正在导入数据，请耐心等待……"));
 	QFileInfo fileinfo(xml_filename);
     QString suffix = fileinfo.suffix();
@@ -419,6 +421,10 @@ void MyThread::import_sentinel_patch(
         .arg(temp_folder)
         .arg(filename)
         .arg(suffix);
+
+    if (QFile::exists(image_path)) {
+        QFile::remove(image_path);
+    }
 
     ret = QFile::copy(xml_filename, image_path) ? 0 : -1;
 
@@ -432,7 +438,19 @@ void MyThread::import_sentinel_patch(
 	}
 	emit updateProcess(90, QString::fromLocal8Bit("即将完成……"));
 
-	QStandardItem* project = model->findItems(project_name)[0];
+	auto items = model->findItems(project_name);
+	if (items.isEmpty() && !project_name.endsWith(".insar")) {
+		items = model->findItems(project_name + ".insar");
+	}
+	
+	if (items.isEmpty()) {
+		QFile::remove(image_path);
+		QDir tmp_dir(project_path + QString("/") + folder);
+		tmp_dir.removeRecursively();
+		return;
+	}
+	
+	QStandardItem* project = items[0];
 	if (!project) {
 		QFile::remove(image_path);
 		QDir tmp_dir(project_path + QString("/") + folder);
@@ -441,14 +459,28 @@ void MyThread::import_sentinel_patch(
 	}
 	QModelIndex pro_index = model->indexFromItem(project);
 	QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+	
 	QStandardItem* origin = NULL;
 	for (int i = 0; i < project->rowCount(); i++)
 	{
-		if (folder == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
+		QStandardItem* child = project->child(i);
+		QStandardItem* secondCol = project->child(i, 1);
+		
+		// Match folder name, regardless of second column (to be more robust)
+		if (child && child->text() == folder)
 		{
-			origin = project->child(i); break;
+			origin = child;
+			
+			// Ensure second column says "complex-0.0" if it's not already set
+			if (!secondCol) {
+				project->setChild(i, 1, new QStandardItem("complex-0.0"));
+			} else if (secondCol->text() != "complex-0.0") {
+				secondCol->setText("complex-0.0");
+			}
+			break;
 		}
 	}
+	
 	if (!origin)
 	{
 		origin = new QStandardItem(folder);
@@ -458,24 +490,45 @@ void MyThread::import_sentinel_patch(
 		project->setChild(project->rowCount() - 1, 1, Rank);
 	}
 
+	QStandardItem* img = NULL;
+	QStandardItem* img_path = NULL;
+	QString trimmedFilename = filename.trimmed();
+	
+	QList<int> rowsToRemove;
 	for(int i=0;i<origin->rowCount();i++)
 	{
-		if (origin->child(i)->text() == filename)
+		QString itemText = origin->child(i)->text().trimmed();
+		// Match exact filename or filename with any extension
+		if (itemText.compare(trimmedFilename, Qt::CaseInsensitive) == 0 || 
+		    itemText.startsWith(trimmedFilename + ".", Qt::CaseInsensitive))
 		{
-			QFile::remove(image_path);
-			emit errorProcess(QString::fromLocal8Bit("导入失败：文件名已存在！"));
-			return;
+			if (!img) {
+				img = origin->child(i);
+				img_path = origin->child(i, 1);
+			} else {
+				rowsToRemove.prepend(i);
+			}
 		}
 	}
+	
+	foreach(int row, rowsToRemove) {
+		origin->removeRow(row);
+	}
 
-	QStandardItem* img = new QStandardItem(filename);
-	img->setToolTip("complex");
-	QStandardItem* img_path = new QStandardItem(image_path);
-	img->setIcon(QIcon(IMAGEDATA_ICON));
-	origin->appendRow(img);
-	origin->setChild(origin->rowCount() - 1, 1, img_path);
+	if (!img) {
+		img = new QStandardItem(trimmedFilename);
+		img->setToolTip("complex");
+		img_path = new QStandardItem(image_path);
+		img->setIcon(QIcon(IMAGEDATA_ICON));
+		origin->appendRow(img);
+		origin->setChild(origin->rowCount() - 1, 1, img_path);
+	} else {
+		img_path->setText(image_path);
+	}
+	
 	DOC = new XMLFile;
-	ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+	QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(project_name);
+	ret = DOC->XMLFile_load(xmlFileLoadPath.toStdString().c_str());
 	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 	{
 		QFile::remove(image_path);
@@ -483,6 +536,7 @@ void MyThread::import_sentinel_patch(
 		tmp_dir.removeRecursively();
 		return;
 	}
+	
 	ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
 	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 	{
@@ -491,7 +545,8 @@ void MyThread::import_sentinel_patch(
 		tmp_dir.removeRecursively();
 		return;
 	}
-	ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+	
+	ret = DOC->XMLFile_save(xmlFileLoadPath.toStdString().c_str());
 	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 	{
 		QFile::remove(image_path);
@@ -499,6 +554,7 @@ void MyThread::import_sentinel_patch(
 		tmp_dir.removeRecursively();
 		return;
 	}
+	
 	emit sendModel(model);
 	emit endProcess();
 }

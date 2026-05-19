@@ -130,23 +130,26 @@ QWidget* GenericSARImportNode::createWidget()
 
 void GenericSARImportNode::executeImport()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     // Safety check: Ensure project is open
-    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
+    auto* model = projectModel();
+    QString path = projectPath();
+    QString name = projectName();
+
+    if (!model || path.isEmpty() || name.isEmpty())
     {
         onError("未检测到打开的项目，请先打开或新建一个项目。");
         return;
     }
 
-    if (getOutputNodeName().isEmpty())
+    QString outputNodeName = getOutputNodeName();
+    if (outputNodeName.isEmpty())
     {
         onError("目标节点名不能为空！");
         return;
     }
 
     m_imagePath = m_imageEdit->text().trimmed();
+    
     if (m_imagePath.isEmpty())
     {
         onError("请选择一个 通用 SAR 图像文件。");
@@ -160,6 +163,7 @@ void GenericSARImportNode::executeImport()
     }
 
     m_outputFileName = m_outputFileNameEdit->text().trimmed();
+    
     if (m_outputFileName.isEmpty())
     {
         m_outputFileName = QFileInfo(m_imagePath).baseName();
@@ -249,18 +253,18 @@ void GenericSARImportNode::onImportFinished()
         .arg(m_outputFileName)
         .arg(suffix);
 
-    // Port 0: 输出 ImageInfoData（原图路径），供下游处理节点使用
-    if (!m_imagePath.isEmpty())
+    // Port 0: 输出 ImageInfoData（导入后的路径），供下游处理节点使用
+    if (!m_importedFilePath.isEmpty())
     {
-        auto outputData = std::make_shared<ImageInfoData>(m_imagePath);
+        auto outputData = std::make_shared<ImageInfoData>(m_importedFilePath);
         setOutputData(0, outputData);
         Q_EMIT dataUpdated(0);
     }
 
-    // Port 1: 预览输出
-    if (!m_imagePath.isEmpty())
+    // Port 1: 预览输出（保持使用原图路径或也改用导入后的路径，这里改用导入后的更统一）
+    if (!m_importedFilePath.isEmpty())
     {
-        m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
+        m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePath);
         Q_EMIT dataUpdated(1);
     }
 
@@ -309,17 +313,7 @@ void GenericSARImportNode::onModelUpdated(QStandardItemModel* model)
 {
     if (!model) return;
 
-    // 刷新主界面的项目树视图，使导入的文件可见
-    // 采用与菜单导入一致的方式，通过 MainWindow::RenewTree 进行全局刷新
-    foreach(::QWidget* widget, QApplication::topLevelWidgets()) {
-        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
-        if (mainWin) {
-            mainWin->RenewTree(model);
-            return;
-        }
-    }
-
-    // 备选方案：如果找不到 MainWindow，则尝试通过接口刷新
+    // Use the standard application interface to refresh the project tree
     if (auto* iface = getProjectContext()) {
         iface->refreshProjectTree();
     }
@@ -395,9 +389,13 @@ bool GenericSARImportNode::portIsOptional(PortType portType, PortIndex portIndex
 std::shared_ptr<NodeData> GenericSARImportNode::outData(PortIndex port)
 {
     if (port == 0)
+    {
         return ImportNodeBase::outData(0);
+    }
     else if (port == 1)
+    {
         return m_imageInfoData;
+    }
 
     return nullptr;
 }

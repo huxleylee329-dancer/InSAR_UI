@@ -155,7 +155,6 @@ void ImportNodeBase::processAutomatically()
 
 void ImportNodeBase::setExecutionMode(ExecutionMode mode)
 {
-    ExecutionMode oldMode = executionMode();
     ExecutableNodeDelegateModel::setExecutionMode(mode);
     
     // If switching from Manual to Automatic, we could potentially trigger auto-execution
@@ -172,8 +171,9 @@ IApplicationInterface* ImportNodeBase::getProjectContext() const
         while (parent)
         {
             auto* iface = dynamic_cast<IApplicationInterface*>(parent);
-            if (iface)
+            if (iface) {
                 return iface;
+            }
             parent = parent->parentWidget();
         }
     }
@@ -183,7 +183,10 @@ IApplicationInterface* ImportNodeBase::getProjectContext() const
     foreach(::QWidget * widget, QApplication::topLevelWidgets()) {
         MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
         if (mainWin && mainWin->interfaceManager()) {
-            return mainWin->interfaceManager()->currentInterface();
+            auto* iface = mainWin->interfaceManager()->currentInterface();
+            if (iface) {
+                return iface;
+            }
         }
     }
 

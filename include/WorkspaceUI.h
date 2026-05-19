@@ -49,11 +49,18 @@ public:
     void initTheme() override;
     void setTheme(const QString &theme) override;
 
+    // Clear interface
+    void clear() override;
+
+public slots:
     // Refresh project tree after import
     void refreshProjectTree() override;
 
-    // Clear interface
-    void clear() override;
+    /**
+     * @brief Update the project model and refresh the tree view
+     * @param model New data model
+     */
+    void updateProjectModel(QStandardItemModel* model);
 
     //// Getters for components that MainWindow still needs access to
     TreeView* treeView() const;

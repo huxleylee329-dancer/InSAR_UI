@@ -445,9 +445,6 @@ QString S1SwathMergeNode::projectName() const
 
 void S1SwathMergeNode::execute()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     executeProcessing();
 }
 

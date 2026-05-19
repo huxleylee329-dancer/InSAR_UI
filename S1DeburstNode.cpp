@@ -339,9 +339,6 @@ QString S1DeburstNode::projectName() const
 
 void S1DeburstNode::execute()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     executeProcessing();
 }
 

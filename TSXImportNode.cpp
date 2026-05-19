@@ -118,10 +118,6 @@ QWidget* TSXImportNode::createWidget()
 
 void TSXImportNode::executeImport()
 {
-    // If already running, skip
-    if (executionState() == ExecutionState::Running)
-        return;
-
     m_xmlPath = m_xmlEdit->text().trimmed();
     if (m_xmlPath.isEmpty())
     {

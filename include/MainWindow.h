@@ -38,9 +38,6 @@ public slots:
     void Loading(QString Data_path, QString ImageType);
     // Open project when double click project file
     void open_from_project_file(QString str);
-    // Update treeview
-    void update_treeview();
-    void RenewTree(QStandardItemModel*);
     // Welcome screen signal handlers
     void onNewProjectFromWelcome();
     void onOpenProjectFromWelcome();
@@ -68,7 +65,6 @@ private:
     QMenu* m_recentMenu;      // 最近打开子菜单
     QString m_currentTheme;  // Current theme: light, dark, fusion
     XMLFile* project;
-    QStandardItemModel* model;
     // Double click project file to open
     QString double_click_open_project_file;
     bool b_open_throug_dbclk = false;
@@ -87,6 +83,8 @@ private:
 
     // 保存工作流 JSON 数据（TiXmlText 不复制字符串，需要保持生命周期）
     QByteArray m_workflowBytes;
+
+    void updateProjectContext(const QString& filePath);
 
 signals:
     void sendModel(QStandardItemModel*);

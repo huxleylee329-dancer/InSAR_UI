@@ -142,9 +142,6 @@ QWidget* Sentinel1BatchImportNode::createWidget()
 
 void Sentinel1BatchImportNode::executeImport()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     if (m_manifestPaths.isEmpty())
     {
         onError("请至少添加一个清单文件。");

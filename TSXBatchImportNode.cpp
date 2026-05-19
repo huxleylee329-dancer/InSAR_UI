@@ -125,9 +125,6 @@ QWidget* TSXBatchImportNode::createWidget()
 
 void TSXBatchImportNode::executeImport()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     if (m_xmlPaths.isEmpty())
     {
         onError("请至少添加一个 XML 文件。");

@@ -145,9 +145,8 @@ void WorkspaceUI::setProjectContext(QStandardItemModel* model, const QString& pa
     m_projectPath = path;
     m_projectName = name;
 
-    // Note: Don't set model to m_treeView here
-    // because MainWindow already manages ui.treeView's model
-    // and WorkspaceUI's m_treeView is a separate instance
+    // Trigger tree refresh to ensure the view reflects the new model
+    refreshProjectTree();
 }
 
 QStandardItemModel* WorkspaceUI::projectModel() const
@@ -167,11 +166,31 @@ QString WorkspaceUI::projectName() const
 
 void WorkspaceUI::refreshProjectTree()
 {
+    // Ensure project tree components are visible if they were hidden
+    // (Replicates logic from legacy MainWindow::RenewTree)
+    if (m_treeView && m_treeView->isHidden())
+    {
+        m_treeView->show();
+        if (m_toolTree) m_toolTree->show();
+        if (m_tabWidget) m_tabWidget->show();
+    }
+
     if (m_projectModel && m_treeView) {
         m_treeView->setModel(m_projectModel);
+        m_treeView->model = m_projectModel; // Synchronize TreeView's internal pointer
         m_treeView->setColumnHidden(1, true);
     }
     Q_EMIT projectTreeRefreshed();
+}
+
+void WorkspaceUI::updateProjectModel(QStandardItemModel* model)
+{
+    if (!model) return;
+
+    m_projectModel = model;
+
+    // Refresh the view
+    refreshProjectTree();
 }
 
 void WorkspaceUI::initTheme()

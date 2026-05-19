@@ -118,9 +118,6 @@ QWidget* CSKImportNode::createWidget()
 
 void CSKImportNode::executeImport()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     if (m_filePaths.isEmpty())
     {
         onError("请至少添加一个 H5 文件。");

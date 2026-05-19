@@ -51,7 +51,6 @@ QString GraphicsViewStyle::loadThemeFile(const QString &theme)
     QString content = QString::fromUtf8(file.readAll());
     file.close();
 
-    qDebug() << "Loaded QtNodes GraphicsViewStyle theme:" << theme << "Size:" << content.length() << "chars";
     return content;
 }
 

@@ -21,7 +21,6 @@ QString loadStyleSheet(const QString &fileName)
         return QString();
     }
     QString content = QString::fromUtf8(file.readAll());
-    qDebug() << "Loaded stylesheet:" << fileName << "Size:" << content.length() << "chars";
     return content;
 }
 

@@ -181,10 +181,6 @@ QWidget* Sentinel1ImportNode::createWidget()
 
 void Sentinel1ImportNode::executeImport()
 {
-    // If already running, skip
-    if (executionState() == ExecutionState::Running)
-        return;
-
     m_manifestPath = m_manifestEdit->text().trimmed();
     if (m_manifestPath.isEmpty())
     {

@@ -404,9 +404,6 @@ QString S1FrameMergeNode::projectName() const
 
 void S1FrameMergeNode::execute()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     executeProcessing();
 }
 

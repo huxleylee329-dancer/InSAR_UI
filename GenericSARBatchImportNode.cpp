@@ -110,9 +110,6 @@ QWidget* GenericSARBatchImportNode::createWidget()
 
 void GenericSARBatchImportNode::executeImport()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     if (m_imagePaths.isEmpty())
     {
         onError("请至少添加一个 通用 SAR 图像文件。");

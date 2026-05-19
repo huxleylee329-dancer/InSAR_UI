@@ -114,9 +114,6 @@ QWidget* ALOS2ImportNode::createWidget()
 
 void ALOS2ImportNode::executeImport()
 {
-    if (executionState() == ExecutionState::Running)
-        return;
-
     if (m_imgPaths.isEmpty())
     {
         onError("请至少添加一个 IMG 文件。");

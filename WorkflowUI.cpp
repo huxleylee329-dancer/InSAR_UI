@@ -1582,13 +1582,5 @@ void WorkflowUI::cleanupDetailWindow()
 void WorkflowUI::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-
-    qDebug() << "[resizeEvent] WorkflowUI size:" << size()
-             << "DockManager:" << m_dockManager->size();
-
-    qDebug() << "[resizeEvent] Final widget sizes:"
-             << "Left:" << (m_nodesDockWidget ? m_nodesDockWidget->size() : QSize())
-             << "Right:" << (m_propertiesDockWidget ? m_propertiesDockWidget->size() : QSize())
-             << "Canvas:" << (m_canvasDockWidget ? m_canvasDockWidget->size() : QSize());
 }
 

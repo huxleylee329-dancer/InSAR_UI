@@ -4,11 +4,15 @@
 
 #include "SpeckleDenoiseNode.h"
 #include "IApplicationInterface.h"
+#include "MainWindow.h"
+#include "InterfaceManager.h"
+#include "icon_source.h"
 #include "BM3DWrapper.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileInfo>
 #include <QDir>
+#include <QApplication>
 #include <QDateTime>
 #include <QStandardItemModel>
 #include <cmath>
@@ -59,7 +63,7 @@ QString SpeckleDenoiseNode::portCaption(PortType portType, PortIndex portIndex) 
         return "输入图像";
     } else {
         if (portIndex == 0)
-            return "结果 *";
+            return "成果 *";
         else if (portIndex == 1)
             return "预览 ?";
     }
@@ -164,7 +168,10 @@ void SpeckleDenoiseNode::processAutomatically()
 
 bool SpeckleDenoiseNode::isReady() const
 {
-    if (!m_inputData || m_inputData->filePath().isEmpty()) {
+    if (!m_inputData) {
+        return false;
+    }
+    if (m_inputData->filePath().isEmpty()) {
         return false;
     }
 
@@ -237,6 +244,8 @@ void SpeckleDenoiseNode::execute()
 
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
+    
+    finishExecution();
 }
 
 QJsonObject SpeckleDenoiseNode::save() const
@@ -302,7 +311,9 @@ cv::Mat SpeckleDenoiseNode::runBm3dCoreLogic(const cv::Mat& inputGray) const
     double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
 
     cv::Mat imgDenNorm = runBm3dDenoise(imgNorm, sigmaFinal);
-    if (imgDenNorm.empty()) return cv::Mat();
+    if (imgDenNorm.empty()) {
+        return cv::Mat();
+    }
 
     cv::Mat imgDen = imgDenNorm * rangeV + minV;
     cv::Mat imgOut;
@@ -339,16 +350,29 @@ cv::Mat SpeckleDenoiseNode::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaF
 
 IApplicationInterface* SpeckleDenoiseNode::getProjectContext() const
 {
-    if (!_widget)
-        return nullptr;
-
-    QWidget* parent = _widget->parentWidget();
-    while (parent)
+    // 1. Navigate up the widget hierarchy to find the interface (standard way)
+    if (_widget)
     {
-        auto* iface = dynamic_cast<IApplicationInterface*>(parent);
-        if (iface)
-            return iface;
-        parent = parent->parentWidget();
+        QWidget* parent = _widget->parentWidget();
+        while (parent)
+        {
+            auto* iface = dynamic_cast<IApplicationInterface*>(parent);
+            if (iface) {
+                return iface;
+            }
+            parent = parent->parentWidget();
+        }
+    }
+
+    // 2. Fallback: If not found via hierarchy, try via main window
+    foreach(QWidget * widget, QApplication::topLevelWidgets()) {
+        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
+        if (mainWin && mainWin->interfaceManager()) {
+            auto* iface = mainWin->interfaceManager()->currentInterface();
+            if (iface) {
+                return iface;
+            }
+        }
     }
 
     return nullptr;
@@ -387,19 +411,26 @@ bool SpeckleDenoiseNode::saveResultToProject(const cv::Mat& resultImage)
     QString nodeName = m_outputNodeNameEdit->text().trimmed();
     QString projPath = projectPath();
     QString projName = projectName();
-
-    QDir dir(projPath);
+    
+    // If projPath points to the .insar file, get the directory
+    QString projDirStr = projPath;
+    if (projPath.endsWith(".insar", Qt::CaseInsensitive)) {
+        projDirStr = QFileInfo(projPath).absolutePath();
+    }
+    
+    QDir dir(projDirStr);
     if (!dir.exists(nodeName)) {
         if (!dir.mkdir(nodeName)) {
             return false;
         }
     }
 
-    m_outputImagePath = QString("%1/%2/denoised.jpg").arg(projPath, nodeName);
+    m_outputImagePath = QString("%1/%2/denoised.jpg").arg(projDirStr, nodeName);
 
     if (!cv::imwrite(m_outputImagePath.toStdString(), resultImage)) {
         return false;
     }
+    
     if (model) {
         QStandardItem* projectItem = nullptr;
         for (int i = 0; i < model->rowCount(); ++i) {
@@ -422,13 +453,53 @@ bool SpeckleDenoiseNode::saveResultToProject(const cv::Mat& resultImage)
 
             if (!dataNode) {
                 dataNode = new QStandardItem(nodeName);
+                dataNode->setIcon(QIcon(FOLDER_ICON)); // Add folder icon
                 projectItem->appendRow(dataNode);
             }
 
-            QList<QStandardItem*> row;
-            row.append(new QStandardItem("denoised.jpg"));
-            row.append(new QStandardItem(m_outputImagePath));
-            dataNode->appendRow(row);
+            // Check for existing items and remove any duplicates or old standards
+            QStandardItem* fileItem = nullptr;
+            QStandardItem* filePathItem = nullptr;
+            
+            // Collect all indices to remove to ensure only one "denoised" item remains
+            QList<int> rowsToRemove;
+            for (int i = 0; i < dataNode->rowCount(); ++i) {
+                QString itemText = dataNode->child(i, 0)->text().trimmed();
+                if (itemText.compare("denoised", Qt::CaseInsensitive) == 0 || 
+                    itemText.compare("denoised.jpg", Qt::CaseInsensitive) == 0) {
+                    if (!fileItem) {
+                        fileItem = dataNode->child(i, 0);
+                        filePathItem = dataNode->child(i, 1);
+                    } else {
+                        rowsToRemove.prepend(i); // Remove duplicates
+                    }
+                }
+            }
+            
+            foreach(int row, rowsToRemove) {
+                dataNode->removeRow(row);
+            }
+
+            if (!fileItem) {
+                QStandardItem* nameItem = new QStandardItem("denoised");
+                nameItem->setIcon(QIcon(IMAGEDATA_ICON));
+                nameItem->setData(IMAGEDATA_ICON, Qt::UserRole + 10);
+                nameItem->setToolTip("image"); // Use "image" to trigger standard loading logic
+                
+                QStandardItem* pathItem = new QStandardItem(m_outputImagePath);
+                
+                dataNode->appendRow(nameItem);
+                dataNode->setChild(dataNode->rowCount() - 1, 1, pathItem);
+            } else {
+                fileItem->setText("denoised");
+                fileItem->setToolTip("image"); // Set to "image"
+                if (filePathItem) filePathItem->setText(m_outputImagePath);
+            }
+            
+            // Refresh tree
+            if (auto* iface = getProjectContext()) {
+                iface->refreshProjectTree();
+            }
         }
     }
 
