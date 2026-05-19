@@ -1,5 +1,6 @@
 ﻿#include"MyThread.h"
 #include"icon_source.h"
+#include"BM3DWrapper.h"
 #include<Utils.h>
 #include<Deflat.h>
 #include<Filter.h>
@@ -11,6 +12,7 @@
 #include<qcoreapplication.h>
 #include<QFile>
 #include<QFileInfo>
+#include<QDebug>
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
@@ -5639,3 +5641,170 @@ void MyThread::StopProcess()
 	QMutexLocker locker(&lock);
 	this->stop_flag = false;
 }
+
+void MyThread::Speckle_Denoise(
+    QString inputPath,
+    QString outputPath,
+    QString nodeName,
+    QString projectPath,
+    QString projectName,
+    QStandardItemModel* model,
+    bool saveToProject
+)
+{
+    qDebug() << "[MyThread::Speckle_Denoise] ===== START ======";
+    qDebug() << "  inputPath:" << inputPath;
+    qDebug() << "  outputPath:" << outputPath;
+    qDebug() << "  nodeName:" << nodeName;
+    qDebug() << "  projectPath:" << projectPath;
+    qDebug() << "  projectName:" << projectName;
+    qDebug() << "  model:" << (void*)model;
+    qDebug() << "  saveToProject:" << saveToProject;
+
+    emit updateProcess(0, QStringLiteral("加载图像..."));
+
+    cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
+    if (inputGray.empty()) {
+        qDebug() << "[MyThread::Speckle_Denoise] ERROR: Failed to read input image";
+        emit errorProcess(QStringLiteral("无法读取输入图像"));
+        return;
+    }
+    qDebug() << "[MyThread::Speckle_Denoise] Image loaded OK, size:" << inputGray.cols << "x" << inputGray.rows;
+
+    emit updateProcess(20, QStringLiteral("准备BM3D计算..."));
+    
+    // Core logic
+    const double noiseGain = 1.1;
+    cv::Mat imgDouble;
+    inputGray.convertTo(imgDouble, CV_64F);
+    cv::Mat imgLog;
+    cv::log(imgDouble + 1.0, imgLog);
+
+    auto calcMedian = [](const cv::Mat& img) {
+        cv::Mat imgCopy = img.clone();
+        imgCopy = imgCopy.reshape(0, 1);
+        std::sort(imgCopy.begin<double>(), imgCopy.end<double>());
+        int n = imgCopy.total();
+        if (n % 2 == 0) {
+            return (imgCopy.at<double>(n / 2 - 1) + imgCopy.at<double>(n / 2)) / 2.0;
+        } else {
+            return imgCopy.at<double>(n / 2);
+        }
+    };
+
+    double minV = 0.0, maxV = 0.0;
+    cv::minMaxLoc(imgLog, &minV, &maxV);
+    double rangeV = maxV - minV;
+    cv::Mat imgNorm = (imgLog - minV) / rangeV;
+
+    double medianValue = calcMedian(imgLog);
+    cv::Mat absDiff;
+    cv::absdiff(imgLog, medianValue, absDiff);
+    double sigmaEst = calcMedian(absDiff) / 0.6745;
+    double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
+
+    emit updateProcess(40, QStringLiteral("执行BM3D去噪 (可能耗时较长)..."));
+    
+    cv::Mat img8U;
+    imgNorm.convertTo(img8U, CV_8U, 255.0);
+    double sigma8 = sigmaFinal * 255.0;
+    cv::Mat den8U = BM3DWrapper::DenoiseGray(img8U, sigma8);
+    
+    if (den8U.empty()) {
+        emit errorProcess(QStringLiteral("BM3D处理失败"));
+        return;
+    }
+
+    emit updateProcess(80, QStringLiteral("后处理及保存..."));
+    
+    cv::Mat denNorm;
+    den8U.convertTo(denNorm, CV_64F, 1.0 / 255.0);
+    cv::Mat imgDen = denNorm * rangeV + minV;
+    cv::Mat imgOut;
+    cv::exp(imgDen, imgOut);
+    imgOut = imgOut - 1.0;
+
+    double meanInput = cv::mean(imgDouble)[0];
+    double meanOutput = cv::mean(imgOut)[0];
+    if (meanOutput != 0.0) {
+        imgOut = imgOut * (meanInput / meanOutput);
+    }
+
+    cv::min(imgOut, 255.0, imgOut);
+    cv::max(imgOut, 0.0, imgOut);
+
+    cv::Mat output8U;
+    imgOut.convertTo(output8U, CV_8U);
+
+    if (saveToProject) {
+        // Saving logic - consistent with import_GenericSAR: use nodeName as folder
+        QString projDirStr = projectPath;
+        if (projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
+            projDirStr = QFileInfo(projectPath).absolutePath();
+        }
+
+        qDebug() << "[MyThread::Speckle_Denoise] Project directory:" << projDirStr;
+        qDebug() << "[MyThread::Speckle_Denoise] Using node name as folder name (consistent with import):" << nodeName;
+
+        QDir dir(projDirStr);
+        if (!dir.exists(nodeName)) {
+            qDebug() << "[MyThread::Speckle_Denoise] Creating node folder:" << nodeName;
+            dir.mkdir(nodeName);
+        }
+
+        // Consistent with import_GenericSAR pattern: project_path/nodeName/filename
+        QString finalPath = projDirStr + "/" + nodeName + "/" + QFileInfo(inputPath).baseName() + "_denoised.png";
+        qDebug() << "[MyThread::Speckle_Denoise] Saving to filesystem:" << finalPath;
+        cv::imwrite(finalPath.toStdString(), output8U);
+        qDebug() << "[MyThread::Speckle_Denoise] File saved successfully";
+
+        // Update project tree
+        QStandardItem* projectItem = nullptr;
+        for (int i = 0; i < model->rowCount(); ++i) {
+            if (model->item(i, 0)->text() == projectName) {
+                projectItem = model->item(i, 0);
+                break;
+            }
+        }
+
+        if (projectItem) {
+            qDebug() << "[MyThread::Speckle_Denoise] Found project item, looking for node:" << nodeName;
+            QStandardItem* dataNode = nullptr;
+            for (int i = 0; i < projectItem->rowCount(); ++i) {
+                // Find existing node by text
+                if (projectItem->child(i, 0)->text() == nodeName) {
+                    dataNode = projectItem->child(i, 0);
+                    qDebug() << "[MyThread::Speckle_Denoise] Found existing node at index:" << i;
+                    break;
+                }
+            }
+            if (!dataNode) {
+                qDebug() << "[MyThread::Speckle_Denoise] Creating NEW node:" << nodeName;
+                dataNode = new QStandardItem(nodeName);
+                dataNode->setIcon(QIcon(FOLDER_ICON));
+                projectItem->appendRow(dataNode);
+
+                // Add tag like complex-0.0 if needed?
+                // Many processing nodes don't seem to add tags to their folders
+            }
+
+            QStandardItem* nameItem = new QStandardItem(QStringLiteral("denoised"));
+            nameItem->setIcon(QIcon(IMAGEDATA_ICON));
+            nameItem->setToolTip(QStringLiteral("image"));
+            QStandardItem* pathItem = new QStandardItem(finalPath);
+            dataNode->appendRow({nameItem, pathItem});
+            qDebug() << "[MyThread::Speckle_Denoise] Added denoised file to node:" << nodeName;
+        } else {
+            qDebug() << "[MyThread::Speckle_Denoise] ERROR: Could not find project item:" << projectName;
+        }
+    } else {
+        qDebug() << "[MyThread::Speckle_Denoise] Saving to temp path:" << outputPath;
+        cv::imwrite(outputPath.toStdString(), output8U);
+    }
+
+    qDebug() << "[MyThread::Speckle_Denoise] ===== FINISHED ======";
+    emit updateProcess(100, QStringLiteral("完成"));
+    emit sendModel(model);
+    emit endProcess();
+}
+

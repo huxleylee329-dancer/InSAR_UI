@@ -6,10 +6,12 @@
 
 #include "NodeDataTypes.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
+#include "MyThread.h"
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
 #include <QFileInfo>
+#include <QThread>
 #include <opencv2/opencv.hpp>
 
 class IApplicationInterface;
@@ -53,14 +55,26 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+signals:
+    void startSpeckleDenoise(QString inputPath, QString outputPath, QString nodeName, 
+                            QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject);
+
 private Q_SLOTS:
     void onSaveToProjectChanged(int state);
+    void onProgressUpdate(int progress, const QString& message);
+    void onProcessingFinished();
+    void onError(const QString& error);
+    void onModelUpdated(QStandardItemModel* model);
 
 private:
     IApplicationInterface* getProjectContext() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
+    
+    void executeProcessing();
+    QString generateOutputFileName() const;
+
     // UI控件
     QWidget* _widget = nullptr;
     QLabel* m_inputImageLabel = nullptr;
@@ -73,12 +87,9 @@ private:
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
     QString m_outputImagePath;
 
-    // 内部方法
-    QString generateOutputFileName() const;
-    cv::Mat runBm3dCoreLogic(const cv::Mat& inputGray) const;
-    cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
-    bool saveResultToProject(const cv::Mat& resultImage);
-    double calcMedian(const cv::Mat& img) const;
+    // Threading
+    QThread* m_thread = nullptr;
+    MyThread* m_workerThread = nullptr;
 };
 
 } // namespace QtNodes

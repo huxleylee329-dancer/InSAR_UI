@@ -7,7 +7,6 @@
 #include "MainWindow.h"
 #include "InterfaceManager.h"
 #include "icon_source.h"
-#include "BM3DWrapper.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileInfo>
@@ -15,8 +14,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QStandardItemModel>
-#include <cmath>
-#include <algorithm>
+#include <QDebug>
 
 namespace QtNodes {
 
@@ -29,11 +27,32 @@ SpeckleDenoiseNode::SpeckleDenoiseNode()
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
+    , m_thread(nullptr)
+    , m_workerThread(nullptr)
 {
+    setExecutionMode(ExecutionMode::Automatic);
 }
 
 SpeckleDenoiseNode::~SpeckleDenoiseNode()
 {
+    stopExecution();
+
+    if (m_workerThread)
+    {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+
+    if (m_thread)
+    {
+        if (m_thread->isRunning())
+        {
+            m_thread->quit();
+            m_thread->wait();
+        }
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
 }
 
 unsigned int SpeckleDenoiseNode::nPorts(PortType portType) const
@@ -132,7 +151,7 @@ void SpeckleDenoiseNode::createWidget()
     layout->addWidget(m_saveToProjectCheckBox);
 
     auto* nodeNameLayout = new QHBoxLayout();
-    nodeNameLayout->addWidget(new QLabel("目标节点:"));
+    nodeNameLayout->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("输入节点名称");
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
@@ -156,27 +175,53 @@ void SpeckleDenoiseNode::onSaveToProjectChanged(int state)
 
 void SpeckleDenoiseNode::stopExecution()
 {
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
     setState(ExecutionState::Stopped);
 }
 
 void SpeckleDenoiseNode::processAutomatically()
 {
+    qDebug() << "[SpeckleDenoiseNode] processAutomatically called. Current state:"
+             << static_cast<int>(executionState()) << "isReady:" << isReady();
+
+    // CRITICAL: Prevent duplicate execution - check if already processing
+    // m_thread being non-null means execution is in progress
+    if (m_thread || m_workerThread) {
+        qDebug() << "[SpeckleDenoiseNode] SKIP - execution already in progress";
+        return;
+    }
+
     if (isReady()) {
-        execute();
+        // Set placeholder output data BEFORE starting processing
+        // This prevents base class from resetting state to Idle
+        if (!m_outputData) {
+            m_outputData = std::make_shared<ImageInfoData>("");
+            setOutputData(0, m_outputData);
+            setOutputData(1, m_outputData);
+            qDebug() << "[SpeckleDenoiseNode] Set placeholder output data to prevent Idle reset";
+        }
+        executeProcessing();
     }
 }
 
 bool SpeckleDenoiseNode::isReady() const
 {
-    if (!m_inputData) {
-        return false;
-    }
-    if (m_inputData->filePath().isEmpty()) {
+    if (!m_inputData || m_inputData->filePath().isEmpty()) {
         return false;
     }
 
+    // Always require project context (denoise should only run with project open)
+    if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
+    {
+        return false;
+    }
+
+    // If widget was created and save to project is checked, need output node name
     if (m_saveToProjectCheckBox && m_saveToProjectCheckBox->isChecked()) {
-        if (!m_outputNodeNameEdit || m_outputNodeNameEdit->text().trimmed().isEmpty()) {
+        if (m_outputNodeNameEdit && m_outputNodeNameEdit->text().trimmed().isEmpty()) {
             return false;
         }
     }
@@ -186,66 +231,228 @@ bool SpeckleDenoiseNode::isReady() const
 
 void SpeckleDenoiseNode::execute()
 {
+    executeProcessing();
+}
+
+void SpeckleDenoiseNode::executeProcessing()
+{
+    qDebug() << "[SpeckleDenoiseNode] executeProcessing START";
+
+    // CRITICAL: Clean up existing threads FIRST - before any state change
+    // This prevents duplicate execution if setInData is called multiple times
+    if (m_thread || m_workerThread)
+    {
+        qDebug() << "[SpeckleDenoiseNode] Cleaning up existing threads";
+        if (m_thread && m_thread->isRunning())
+        {
+            m_thread->quit();
+            m_thread->wait();
+        }
+        if (m_thread) {
+            m_thread->deleteLater();
+            m_thread = nullptr;
+        }
+        if (m_workerThread) {
+            m_workerThread->deleteLater();
+            m_workerThread = nullptr;
+        }
+        // Disconnect all signals to prevent stale connections
+        disconnect(this, &SpeckleDenoiseNode::startSpeckleDenoise, nullptr, nullptr);
+    }
+
     if (!isReady()) {
+        qDebug() << "[SpeckleDenoiseNode] Not ready, aborting";
         if (m_statusLabel) {
-            m_statusLabel->setText("状态: 未准备好");
+            m_statusLabel->setText("状态：未准备好");
         }
         return;
     }
 
+    setProgress(0);
     if (m_statusLabel) {
-        m_statusLabel->setText("状态: 正在处理...");
+        m_statusLabel->setText("状态：正在初始化...");
     }
 
     QString inputPath = m_inputData->filePath();
-    cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
-    if (inputGray.empty()) {
-        Q_EMIT executionError("无法读取输入图像");
-        setState(ExecutionState::Error);
-        if (m_statusLabel) {
-            m_statusLabel->setText("状态: 读取失败");
-        }
-        return;
-    }
+    QString outputNodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : "Denoise";
+    bool saveToProject = m_saveToProjectCheckBox ? m_saveToProjectCheckBox->isChecked() : true;
+    QString projPath = projectPath();
+    QString projName = projectName();
+    QStandardItemModel* model = projectModel();
+    QString outputPath = QDir::tempPath() + QString("/speckle_denoise_%1.jpg").arg(QDateTime::currentMSecsSinceEpoch());
 
-    cv::Mat resultImage = runBm3dCoreLogic(inputGray);
-    if (resultImage.empty()) {
-        Q_EMIT executionError("图像去噪失败");
-        setState(ExecutionState::Error);
-        if (m_statusLabel) {
-            m_statusLabel->setText("状态: 处理失败");
-        }
-        return;
-    }
+    qDebug() << "[SpeckleDenoiseNode] Starting with params:"
+             << "\n  inputPath:" << inputPath
+             << "\n  outputNodeName:" << outputNodeName
+             << "\n  saveToProject:" << saveToProject
+             << "\n  projPath:" << projPath
+             << "\n  projName:" << projName
+             << "\n  temp outputPath:" << outputPath;
 
-    bool saveSuccess = true;
-    if (m_saveToProjectCheckBox && m_saveToProjectCheckBox->isChecked()) {
-        saveSuccess = saveResultToProject(resultImage);
-        if (!saveSuccess) {
-            Q_EMIT executionError("保存结果到项目失败");
-            setState(ExecutionState::Error);
-            if (m_statusLabel) {
-                m_statusLabel->setText("状态: 保存失败");
-            }
-            return;
+    // Create thread
+    m_thread = new QThread(this);
+    m_workerThread = new MyThread();
+    m_workerThread->moveToThread(m_thread);
+
+    // Connect signals - capture ALL values by value to avoid race conditions
+    connect(m_thread, &QThread::started, [this, inputPath, outputPath, outputNodeName, projPath, projName, model, saveToProject]() {
+        qDebug() << "[SpeckleDenoiseNode] Thread started, emitting startSpeckleDenoise";
+        Q_EMIT startSpeckleDenoise(inputPath, outputPath, outputNodeName, projPath, projName, model, saveToProject);
+    });
+    connect(this, &SpeckleDenoiseNode::startSpeckleDenoise, m_workerThread, &MyThread::Speckle_Denoise, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::UniqueConnection);
+
+    // Start thread
+    m_thread->start();
+    qDebug() << "[SpeckleDenoiseNode] Thread started, worker created";
+    m_outputNodeNameEdit->setEnabled(false);
+    m_saveToProjectCheckBox->setEnabled(false);
+}
+
+void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)
+{
+    setProgress(progress);
+    if (m_statusLabel) {
+        m_statusLabel->setText("状态：" + message);
+    }
+}
+
+void SpeckleDenoiseNode::onProcessingFinished()
+{
+    qDebug() << "[SpeckleDenoiseNode] onProcessingFinished called";
+
+    // Determine the result path
+    if (m_saveToProjectCheckBox->isChecked()) {
+        // Find the saved file path in project
+        QString nodeName = m_outputNodeNameEdit->text().trimmed();
+        QString projDirStr = projectPath();
+        if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
+            projDirStr = QFileInfo(projDirStr).absolutePath();
         }
+        // Consistent with MyThread::Speckle_Denoise and import_GenericSAR: use nodeName as folder
+        m_outputImagePath = projDirStr + "/" + nodeName + "/" + QFileInfo(m_inputData->filePath()).baseName() + "_denoised.png";
+        qDebug() << "[SpeckleDenoiseNode] Output image path (using node folder):" << m_outputImagePath;
     } else {
-        QString tempPath = QDir::tempPath() + QString("/speckle_denoise_%1.jpg")
-            .arg(QDateTime::currentMSecsSinceEpoch());
-        cv::imwrite(tempPath.toStdString(), resultImage);
-        m_outputImagePath = tempPath;
+        // Output path was set in executeProcessing (temp path)
     }
 
     m_outputData = std::make_shared<ImageInfoData>(m_outputImagePath);
+    setOutputData(0, m_outputData);
+    setOutputData(1, m_outputData);
 
     if (m_statusLabel) {
-        m_statusLabel->setText("状态: 完成");
+        m_statusLabel->setText("状态：完成");
     }
+
+    m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_saveToProjectCheckBox->setEnabled(true);
 
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
-    
+
+    // Clean up threads
+    if (m_thread)
+    {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread)
+    {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+
+    qDebug() << "[SpeckleDenoiseNode] Processing finished, calling finishExecution";
     finishExecution();
+}
+
+void SpeckleDenoiseNode::onError(const QString& error)
+{
+    qDebug() << "[SpeckleDenoiseNode] onError called:" << error;
+    Q_EMIT executionError(error);
+    setState(ExecutionState::Error);
+    if (m_statusLabel) {
+        m_statusLabel->setText("状态：错误 - " + error);
+    }
+    m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_saveToProjectCheckBox->setEnabled(true);
+
+    // Clean up threads
+    if (m_thread)
+    {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread)
+    {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+
+    // Clear placeholder output data on error
+    m_outputData.reset();
+    qDebug() << "[SpeckleDenoiseNode] Error handling complete";
+}
+
+void SpeckleDenoiseNode::onModelUpdated(QStandardItemModel* model)
+{
+    Q_UNUSED(model);
+    if (auto* iface = getProjectContext()) {
+        iface->refreshProjectTree();
+    }
+}
+
+QStandardItemModel* SpeckleDenoiseNode::projectModel() const
+{
+    auto iface = getProjectContext();
+    return iface ? iface->projectModel() : nullptr;
+}
+
+QString SpeckleDenoiseNode::projectPath() const
+{
+    auto iface = getProjectContext();
+    return iface ? iface->projectPath() : QString();
+}
+
+QString SpeckleDenoiseNode::projectName() const
+{
+    auto iface = getProjectContext();
+    return iface ? iface->projectName() : QString();
+}
+
+IApplicationInterface* SpeckleDenoiseNode::getProjectContext() const
+{
+    if (_widget)
+    {
+        QWidget* parent = _widget->parentWidget();
+        while (parent)
+        {
+            auto* iface = dynamic_cast<IApplicationInterface*>(parent);
+            if (iface) {
+                return iface;
+            }
+            parent = parent->parentWidget();
+        }
+    }
+
+    foreach(QWidget * widget, QApplication::topLevelWidgets()) {
+        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
+        if (mainWin && mainWin->interfaceManager()) {
+            auto* iface = mainWin->interfaceManager()->currentInterface();
+            if (iface) {
+                return iface;
+            }
+        }
+    }
+
+    return nullptr;
 }
 
 QJsonObject SpeckleDenoiseNode::save() const
@@ -287,237 +494,7 @@ QString SpeckleDenoiseNode::generateOutputFileName() const
 
     QFileInfo fi(m_inputData->filePath());
     QString baseName = fi.completeBaseName();
-    return QString("%1_denoised").arg(baseName);
-}
-
-cv::Mat SpeckleDenoiseNode::runBm3dCoreLogic(const cv::Mat& inputGray) const
-{
-    const double noiseGain = 1.1;
-
-    cv::Mat imgDouble;
-    inputGray.convertTo(imgDouble, CV_64F);
-    cv::Mat imgLog;
-    cv::log(imgDouble + 1.0, imgLog);
-
-    double minV = 0.0, maxV = 0.0;
-    cv::minMaxLoc(imgLog, &minV, &maxV);
-    double rangeV = maxV - minV;
-    cv::Mat imgNorm = (imgLog - minV) / rangeV;
-
-    double medianValue = calcMedian(imgLog);
-    cv::Mat absDiff;
-    cv::absdiff(imgLog, medianValue, absDiff);
-    double sigmaEst = calcMedian(absDiff) / 0.6745;
-    double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
-
-    cv::Mat imgDenNorm = runBm3dDenoise(imgNorm, sigmaFinal);
-    if (imgDenNorm.empty()) {
-        return cv::Mat();
-    }
-
-    cv::Mat imgDen = imgDenNorm * rangeV + minV;
-    cv::Mat imgOut;
-    cv::exp(imgDen, imgOut);
-    imgOut = imgOut - 1.0;
-
-    double meanInput = cv::mean(imgDouble)[0];
-    double meanOutput = cv::mean(imgOut)[0];
-    if (meanOutput != 0.0) {
-        imgOut = imgOut * (meanInput / meanOutput);
-    }
-
-    cv::min(imgOut, 255.0, imgOut);
-    cv::max(imgOut, 0.0, imgOut);
-
-    cv::Mat output8U;
-    imgOut.convertTo(output8U, CV_8U);
-    return output8U;
-}
-
-cv::Mat SpeckleDenoiseNode::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const
-{
-    cv::Mat img8U;
-    imgNorm.convertTo(img8U, CV_8U, 255.0);
-
-    double sigma8 = sigmaFinal * 255.0;
-    cv::Mat den8U = BM3DWrapper::DenoiseGray(img8U, sigma8);
-    if (den8U.empty()) return cv::Mat();
-
-    cv::Mat denNorm;
-    den8U.convertTo(denNorm, CV_64F, 1.0 / 255.0);
-    return denNorm;
-}
-
-IApplicationInterface* SpeckleDenoiseNode::getProjectContext() const
-{
-    // 1. Navigate up the widget hierarchy to find the interface (standard way)
-    if (_widget)
-    {
-        QWidget* parent = _widget->parentWidget();
-        while (parent)
-        {
-            auto* iface = dynamic_cast<IApplicationInterface*>(parent);
-            if (iface) {
-                return iface;
-            }
-            parent = parent->parentWidget();
-        }
-    }
-
-    // 2. Fallback: If not found via hierarchy, try via main window
-    foreach(QWidget * widget, QApplication::topLevelWidgets()) {
-        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
-        if (mainWin && mainWin->interfaceManager()) {
-            auto* iface = mainWin->interfaceManager()->currentInterface();
-            if (iface) {
-                return iface;
-            }
-        }
-    }
-
-    return nullptr;
-}
-
-QStandardItemModel* SpeckleDenoiseNode::projectModel() const
-{
-    auto iface = getProjectContext();
-    return iface ? iface->projectModel() : nullptr;
-}
-
-QString SpeckleDenoiseNode::projectPath() const
-{
-    auto iface = getProjectContext();
-    return iface ? iface->projectPath() : QString();
-}
-
-QString SpeckleDenoiseNode::projectName() const
-{
-    auto iface = getProjectContext();
-    return iface ? iface->projectName() : QString();
-}
-
-bool SpeckleDenoiseNode::saveResultToProject(const cv::Mat& resultImage)
-{
-    if (!m_outputNodeNameEdit || m_outputNodeNameEdit->text().trimmed().isEmpty()) {
-        return false;
-    }
-
-    QStandardItemModel* model = projectModel();
-    if (!model || model->rowCount() == 0) {
-        Q_EMIT executionError("没有打开的项目");
-        return false;
-    }
-
-    QString nodeName = m_outputNodeNameEdit->text().trimmed();
-    QString projPath = projectPath();
-    QString projName = projectName();
-    
-    // If projPath points to the .insar file, get the directory
-    QString projDirStr = projPath;
-    if (projPath.endsWith(".insar", Qt::CaseInsensitive)) {
-        projDirStr = QFileInfo(projPath).absolutePath();
-    }
-    
-    QDir dir(projDirStr);
-    if (!dir.exists(nodeName)) {
-        if (!dir.mkdir(nodeName)) {
-            return false;
-        }
-    }
-
-    m_outputImagePath = QString("%1/%2/denoised.jpg").arg(projDirStr, nodeName);
-
-    if (!cv::imwrite(m_outputImagePath.toStdString(), resultImage)) {
-        return false;
-    }
-    
-    if (model) {
-        QStandardItem* projectItem = nullptr;
-        for (int i = 0; i < model->rowCount(); ++i) {
-            QStandardItem* item = model->item(i, 0);
-            if (item && item->text() == projName) {
-                projectItem = item;
-                break;
-            }
-        }
-
-        if (projectItem) {
-            QStandardItem* dataNode = nullptr;
-            for (int i = 0; i < projectItem->rowCount(); ++i) {
-                QStandardItem* child = projectItem->child(i, 0);
-                if (child && child->text() == nodeName) {
-                    dataNode = child;
-                    break;
-                }
-            }
-
-            if (!dataNode) {
-                dataNode = new QStandardItem(nodeName);
-                dataNode->setIcon(QIcon(FOLDER_ICON)); // Add folder icon
-                projectItem->appendRow(dataNode);
-            }
-
-            // Check for existing items and remove any duplicates or old standards
-            QStandardItem* fileItem = nullptr;
-            QStandardItem* filePathItem = nullptr;
-            
-            // Collect all indices to remove to ensure only one "denoised" item remains
-            QList<int> rowsToRemove;
-            for (int i = 0; i < dataNode->rowCount(); ++i) {
-                QString itemText = dataNode->child(i, 0)->text().trimmed();
-                if (itemText.compare("denoised", Qt::CaseInsensitive) == 0 || 
-                    itemText.compare("denoised.jpg", Qt::CaseInsensitive) == 0) {
-                    if (!fileItem) {
-                        fileItem = dataNode->child(i, 0);
-                        filePathItem = dataNode->child(i, 1);
-                    } else {
-                        rowsToRemove.prepend(i); // Remove duplicates
-                    }
-                }
-            }
-            
-            foreach(int row, rowsToRemove) {
-                dataNode->removeRow(row);
-            }
-
-            if (!fileItem) {
-                QStandardItem* nameItem = new QStandardItem("denoised");
-                nameItem->setIcon(QIcon(IMAGEDATA_ICON));
-                nameItem->setData(IMAGEDATA_ICON, Qt::UserRole + 10);
-                nameItem->setToolTip("image"); // Use "image" to trigger standard loading logic
-                
-                QStandardItem* pathItem = new QStandardItem(m_outputImagePath);
-                
-                dataNode->appendRow(nameItem);
-                dataNode->setChild(dataNode->rowCount() - 1, 1, pathItem);
-            } else {
-                fileItem->setText("denoised");
-                fileItem->setToolTip("image"); // Set to "image"
-                if (filePathItem) filePathItem->setText(m_outputImagePath);
-            }
-            
-            // Refresh tree
-            if (auto* iface = getProjectContext()) {
-                iface->refreshProjectTree();
-            }
-        }
-    }
-
-    return true;
-}
-
-double SpeckleDenoiseNode::calcMedian(const cv::Mat& img) const
-{
-    cv::Mat imgCopy = img.clone();
-    imgCopy = imgCopy.reshape(0, 1);
-    std::sort(imgCopy.begin<double>(), imgCopy.end<double>());
-
-    int n = imgCopy.total();
-    if (n % 2 == 0) {
-        return (imgCopy.at<double>(n / 2 - 1) + imgCopy.at<double>(n / 2)) / 2.0;
-    } else {
-        return imgCopy.at<double>(n / 2);
-    }
+    return QStringLiteral("%1_denoised").arg(baseName);
 }
 
 } // namespace QtNodes
