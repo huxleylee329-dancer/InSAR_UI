@@ -13,21 +13,22 @@
 #include <QFileInfo>
 #include <QThread>
 
+
 class IApplicationInterface;
 class QStandardItemModel;
 
 namespace QtNodes {
 
-class SpeckleDenoiseNode : public ExecutableNodeDelegateModel
+class ClutterSuppressionNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
 
 public:
-    SpeckleDenoiseNode();
-    ~SpeckleDenoiseNode() override;
+    ClutterSuppressionNode();
+    ~ClutterSuppressionNode() override;
 
-    QString caption() const override { return "Speckle Denoise"; }
-    QString name() const override { return "SpeckleDenoise"; }
+    QString caption() const override { return "Clutter Suppression"; }
+    QString name() const override { return "ClutterSuppression"; }
 
     // 端口定义
     unsigned int nPorts(PortType portType) const override;
@@ -55,7 +56,7 @@ public:
     void load(QJsonObject const &json) override;
 
 signals:
-    void startSpeckleDenoise(QString inputPath, QString outputPath, QString nodeName, QString fileName,
+    void startClutterSuppression(QString inputPath, QString outputPath, QString nodeName, QString fileName,
                             QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);
 
 private Q_SLOTS:
@@ -87,9 +88,7 @@ private:
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
     QString m_outputImagePath;
-    QString m_outputNodeName;
     QString m_outputFileName;
-    bool m_saveToProject = true;
 
     // Threading
     QThread* m_thread = nullptr;

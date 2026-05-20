@@ -107,7 +107,9 @@ QWidget* GenericSARImportNode::createWidget()
     nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
+    m_outputNodeNameEdit->setText(m_outputNodeName);
     m_outputNodeNameEdit->setPlaceholderText("手动输入目标节点名称");
+    connect(m_outputNodeNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputNodeName = text; });
     nodeRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeRow);
 
@@ -117,6 +119,7 @@ QWidget* GenericSARImportNode::createWidget()
     fileNameRow->setStretch(1, 7);
     fileNameRow->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
+    m_outputFileNameEdit->setText(m_outputFileName);
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
     connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     fileNameRow->addWidget(m_outputFileNameEdit);
@@ -207,15 +210,14 @@ QString GenericSARImportNode::getImportedFilePath() const
 
     return QString("%1/%2/%3.%4")
         .arg(projectPath())
-        .arg(getOutputNodeName())
+        .arg(m_outputNodeName)
         .arg(m_outputFileName)
         .arg(suffix);
 }
 
 QString GenericSARImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    return name;
+    return m_outputNodeName;
 }
 
 void GenericSARImportNode::onImageBrowseClicked()
@@ -249,7 +251,7 @@ void GenericSARImportNode::onImportFinished()
 
     m_importedFilePath = QString("%1/%2/%3.%4")
         .arg(projectPath())
-        .arg(getOutputNodeName())
+        .arg(m_outputNodeName)
         .arg(m_outputFileName)
         .arg(suffix);
 
@@ -323,7 +325,7 @@ QJsonObject GenericSARImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
     json["imagePath"] = m_imagePath;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputNodeName"] = m_outputNodeName;
     json["outputFileName"] = m_outputFileName;
     return json;
 }
@@ -332,10 +334,11 @@ void GenericSARImportNode::load(QJsonObject const &json)
 {
     ExecutableNodeDelegateModel::load(json);
     m_imagePath = json["imagePath"].toString();
+    m_outputNodeName = json["outputNodeName"].toString();
     m_outputFileName = json["outputFileName"].toString();
 
     if (m_imageEdit) m_imageEdit->setText(m_imagePath);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString());
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
 }
 

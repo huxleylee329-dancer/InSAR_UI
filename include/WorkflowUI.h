@@ -70,10 +70,11 @@ public:
     QString displayName() const override;
 
     // Project context methods
-    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name) override;
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml = nullptr) override;
     QStandardItemModel* projectModel() const override;
     QString projectPath() const override;
     QString projectName() const override;
+    XMLFile* projectXml() const override;
 
     // Theme methods
     void initTheme() override;
@@ -221,6 +222,7 @@ private:
     QStandardItemModel* m_projectModel;
     QString m_projectPath;
     QString m_projectName;
+    XMLFile* m_projectXml = nullptr;
     
     // Theme
     QString m_currentTheme;

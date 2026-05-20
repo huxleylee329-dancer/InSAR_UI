@@ -5650,7 +5650,8 @@ void MyThread::Speckle_Denoise(
     QString projectPath,
     QString projectName,
     QStandardItemModel* model,
-    bool saveToProject
+    bool saveToProject,
+    XMLFile* projectXml
 )
 {
     qDebug() << "[MyThread::Speckle_Denoise] ===== START ======";
@@ -5661,6 +5662,7 @@ void MyThread::Speckle_Denoise(
     qDebug() << "  projectName:" << projectName;
     qDebug() << "  model:" << (void*)model;
     qDebug() << "  saveToProject:" << saveToProject;
+    qDebug() << "  projectXml:" << (void*)projectXml;
 
     emit updateProcess(0, QStringLiteral("加载图像..."));
 
@@ -5807,6 +5809,35 @@ void MyThread::Speckle_Denoise(
             QStandardItem* pathItem = new QStandardItem(finalPath);
             dataNode->appendRow({nameItem, pathItem});
             qDebug() << "[MyThread::Speckle_Denoise] Added denoised file to node:" << nodeName;
+
+            // ===== FIX: Also update XMLFile for persistence =====
+            {
+                qDebug() << "[MyThread::Speckle_Denoise] Updating project XMLFile for persistence...";
+                QString relativePath = "/" + nodeName + "/" + finalFileName;
+
+                // Use a local XMLFile instance to be thread-safe
+                XMLFile localXml;
+                if (!projectPath.isEmpty()) {
+                    localXml.XMLFile_load(projectPath.toStdString().c_str());
+                }
+
+                int result = localXml.XMLFile_add_origin(
+                    nodeName.toStdString().c_str(),
+                    displayName.toStdString().c_str(),
+                    relativePath.toStdString().c_str(),
+                    "SpeckleDenoise"
+                );
+
+                if (result >= 0) {
+                    qDebug() << "[MyThread::Speckle_Denoise] XMLFile entry added successfully";
+                    // Save the XML file to disk to ensure persistence
+                    localXml.XMLFile_save(projectPath.toStdString().c_str());
+                    qDebug() << "[MyThread::Speckle_Denoise] XMLFile saved to disk";
+                } else {
+                    qDebug() << "[MyThread::Speckle_Denoise] WARNING: Failed to add entry to XMLFile";
+                }
+            }
+            // ===== END FIX =====
         } else {
             qDebug() << "[MyThread::Speckle_Denoise] ERROR: Could not find project item:" << projectName;
         }
@@ -5821,3 +5852,202 @@ void MyThread::Speckle_Denoise(
     emit endProcess();
 }
 
+void MyThread::Clutter_Suppression(
+    QString inputPath,
+    QString outputPath,
+    QString nodeName,
+    QString fileName,
+    QString projectPath,
+    QString projectName,
+    QStandardItemModel* model,
+    bool saveToProject,
+    XMLFile* projectXml
+)
+{
+    Q_UNUSED(outputPath);
+    qDebug() << "[MyThread::Clutter_Suppression] ===== START ======";
+    qDebug() << "  inputPath:" << inputPath;
+    qDebug() << "  nodeName:" << nodeName;
+    qDebug() << "  projectPath:" << projectPath;
+    qDebug() << "  projectName:" << projectName;
+    qDebug() << "  saveToProject:" << saveToProject;
+    qDebug() << "  projectXml:" << (void*)projectXml;
+
+    emit updateProcess(0, QStringLiteral("加载图像..."));
+
+    cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
+    if (inputGray.empty()) {
+        qDebug() << "[MyThread::Clutter_Suppression] ERROR: Failed to read input image";
+        emit errorProcess(QStringLiteral("无法读取输入图像"));
+        return;
+    }
+    qDebug() << "[MyThread::Clutter_Suppression] Image loaded OK, size:" << inputGray.cols << "x" << inputGray.rows;
+
+    emit updateProcess(20, QStringLiteral("准备BM3D计算..."));
+
+    const double noiseGain = 1.1;
+    cv::Mat imgDouble;
+    inputGray.convertTo(imgDouble, CV_64F);
+    cv::Mat imgLog;
+    cv::log(imgDouble + 1.0, imgLog);
+
+    auto calcMedian = [](const cv::Mat& img) {
+        cv::Mat imgCopy = img.clone();
+        imgCopy = imgCopy.reshape(0, 1);
+        std::sort(imgCopy.begin<double>(), imgCopy.end<double>());
+        int n = imgCopy.total();
+        if (n % 2 == 0) {
+            return (imgCopy.at<double>(n / 2 - 1) + imgCopy.at<double>(n / 2)) / 2.0;
+        } else {
+            return imgCopy.at<double>(n / 2);
+        }
+    };
+
+    double minV = 0.0, maxV = 0.0;
+    cv::minMaxLoc(imgLog, &minV, &maxV);
+    double rangeV = maxV - minV;
+    if (rangeV == 0.0) {
+        rangeV = 1.0;
+    }
+    cv::Mat imgNorm = (imgLog - minV) / rangeV;
+
+    double medianValue = calcMedian(imgLog);
+    cv::Mat absDiff;
+    cv::absdiff(imgLog, medianValue, absDiff);
+    double sigmaEst = calcMedian(absDiff) / 0.6745;
+    double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
+
+    emit updateProcess(40, QStringLiteral("执行BM3D去杂波 (可能耗时较长)..."));
+
+    cv::Mat img8U;
+    imgNorm.convertTo(img8U, CV_8U, 255.0);
+    double sigma8 = sigmaFinal * 255.0;
+    cv::Mat den8U = BM3DWrapper::DenoiseGray(img8U, sigma8);
+
+    if (den8U.empty()) {
+        emit errorProcess(QStringLiteral("BM3D处理失败"));
+        return;
+    }
+
+    emit updateProcess(80, QStringLiteral("后处理及保存..."));
+
+    cv::Mat denNorm;
+    den8U.convertTo(denNorm, CV_64F, 1.0 / 255.0);
+    cv::Mat imgDen = denNorm * rangeV + minV;
+    cv::Mat imgOut;
+    cv::exp(imgDen, imgOut);
+    imgOut = imgOut - 1.0;
+
+    double meanInput = cv::mean(imgDouble)[0];
+    double meanOutput = cv::mean(imgOut)[0];
+    if (meanOutput != 0.0) {
+        imgOut = imgOut * (meanInput / meanOutput);
+    }
+
+    cv::min(imgOut, 255.0, imgOut);
+    cv::max(imgOut, 0.0, imgOut);
+
+    cv::Mat output8U;
+    imgOut.convertTo(output8U, CV_8U);
+
+    if (saveToProject) {
+        QString projDirStr = projectPath;
+        if (projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
+            projDirStr = QFileInfo(projectPath).absolutePath();
+        }
+
+        qDebug() << "[MyThread::Clutter_Suppression] Project directory:" << projDirStr;
+        qDebug() << "[MyThread::Clutter_Suppression] Using node name as folder:" << nodeName;
+
+        QDir dir(projDirStr);
+        if (!dir.exists(nodeName)) {
+            qDebug() << "[MyThread::Clutter_Suppression] Creating node folder:" << nodeName;
+            dir.mkdir(nodeName);
+        }
+
+        QString finalFileName;
+        if (fileName.isEmpty()) {
+            finalFileName = QFileInfo(inputPath).baseName() + "_clutter.png";
+        } else {
+            if (QFileInfo(fileName).suffix().isEmpty()) {
+                finalFileName = fileName + ".png";
+            } else {
+                finalFileName = fileName;
+            }
+        }
+        QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
+        qDebug() << "[MyThread::Clutter_Suppression] Saving to filesystem:" << finalPath;
+        cv::imwrite(finalPath.toStdString(), output8U);
+        qDebug() << "[MyThread::Clutter_Suppression] File saved successfully";
+
+        QStandardItem* projectItem = nullptr;
+        for (int i = 0; i < model->rowCount(); ++i) {
+            if (model->item(i, 0)->text() == projectName) {
+                projectItem = model->item(i, 0);
+                break;
+            }
+        }
+
+        if (projectItem) {
+            qDebug() << "[MyThread::Clutter_Suppression] Found project item, looking for node:" << nodeName;
+            QStandardItem* dataNode = nullptr;
+            for (int i = 0; i < projectItem->rowCount(); ++i) {
+                if (projectItem->child(i, 0)->text() == nodeName) {
+                    dataNode = projectItem->child(i, 0);
+                    qDebug() << "[MyThread::Clutter_Suppression] Found existing node at index:" << i;
+                    break;
+                }
+            }
+            if (!dataNode) {
+                qDebug() << "[MyThread::Clutter_Suppression] Creating NEW node:" << nodeName;
+                dataNode = new QStandardItem(nodeName);
+                dataNode->setIcon(QIcon(FOLDER_ICON));
+                projectItem->appendRow(dataNode);
+            }
+
+            QString displayName = fileName.isEmpty() ? QStringLiteral("clutter_suppressed") : fileName;
+            QStandardItem* nameItem = new QStandardItem(displayName);
+            nameItem->setIcon(QIcon(IMAGEDATA_ICON));
+            nameItem->setToolTip(QStringLiteral("image"));
+            QStandardItem* pathItem = new QStandardItem(finalPath);
+            dataNode->appendRow({nameItem, pathItem});
+            qDebug() << "[MyThread::Clutter_Suppression] Added clutter-suppressed file to node:" << nodeName;
+
+            // ===== FIX: Also update XMLFile for persistence =====
+            {
+                qDebug() << "[MyThread::Clutter_Suppression] Updating project XMLFile for persistence...";
+                QString relativePath = "/" + nodeName + "/" + finalFileName;
+
+                // Use a local XMLFile instance to be thread-safe
+                XMLFile localXml;
+                if (!projectPath.isEmpty()) {
+                    localXml.XMLFile_load(projectPath.toStdString().c_str());
+                }
+
+                int result = localXml.XMLFile_add_origin(
+                    nodeName.toStdString().c_str(),
+                    displayName.toStdString().c_str(),
+                    relativePath.toStdString().c_str(),
+                    "ClutterSuppression"
+                );
+
+                if (result >= 0) {
+                    qDebug() << "[MyThread::Clutter_Suppression] XMLFile entry added successfully";
+                    // Save the XML file to disk to ensure persistence
+                    localXml.XMLFile_save(projectPath.toStdString().c_str());
+                    qDebug() << "[MyThread::Clutter_Suppression] XMLFile saved to disk";
+                } else {
+                    qDebug() << "[MyThread::Clutter_Suppression] WARNING: Failed to add entry to XMLFile";
+                }
+            }
+            // ===== END FIX =====
+        } else {
+            qDebug() << "[MyThread::Clutter_Suppression] ERROR: Could not find project item:" << projectName;
+        }
+    }
+
+    qDebug() << "[MyThread::Clutter_Suppression] ===== FINISHED ======";
+    emit updateProcess(100, QStringLiteral("完成"));
+    emit sendModel(model);
+    emit endProcess();
+}

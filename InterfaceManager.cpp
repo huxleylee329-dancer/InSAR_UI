@@ -61,7 +61,7 @@ bool InterfaceManager::switchToInterface(const QString &interfaceId)
 
     // 同步项目上下文到新界面
     if (m_projectModel) {
-        newInterface->setProjectContext(m_projectModel, m_projectPath, m_projectName);
+        newInterface->setProjectContext(m_projectModel, m_projectPath, m_projectName, m_projectXml);
     }
 
     // Activate new interface
@@ -172,14 +172,15 @@ void InterfaceManager::addInterfaceToolBars(IApplicationInterface *appInterface)
     }
 }
 
-void InterfaceManager::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+void InterfaceManager::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml)
 {
     m_projectModel = model;
     m_projectPath = path;
     m_projectName = name;
+    m_projectXml = projectXml;
 
     // 同步到当前界面
     if (m_currentInterface) {
-        m_currentInterface->setProjectContext(model, path, name);
+        m_currentInterface->setProjectContext(model, path, name, projectXml);
     }
 }

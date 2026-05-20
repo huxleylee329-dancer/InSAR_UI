@@ -4,6 +4,7 @@
 #include "MyThread.h"
 #include "MainWindow.h"
 #include "InterfaceManager.h"
+#include "WorkspaceUI.h"
 #include <QApplication>
 
 namespace QtNodes {
@@ -186,6 +187,17 @@ IApplicationInterface* ImportNodeBase::getProjectContext() const
             auto* iface = mainWin->interfaceManager()->currentInterface();
             if (iface) {
                 return iface;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+} // namespace QtNodes
+) {
+                    return iface;
+                }
             }
         }
     }

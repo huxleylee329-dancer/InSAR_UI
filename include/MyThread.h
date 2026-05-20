@@ -52,7 +52,8 @@ public slots:
     void Denoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QUnwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
-    void Speckle_Denoise(QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject);
+    void Speckle_Denoise(QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml = nullptr);
+    void Clutter_Suppression(QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml = nullptr);
     void StopProcess();
 
 signals:

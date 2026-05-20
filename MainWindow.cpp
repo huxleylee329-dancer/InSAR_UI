@@ -163,7 +163,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
 
     // Explicitly sync the valid model and context to all interfaces
     if (m_interfaceManager) {
-        m_interfaceManager->setProjectContext(initialModel, str, projectName);
+        m_interfaceManager->setProjectContext(initialModel, str, projectName, this->project);
     }
 
     m_workspaceUI->tabWidget()->setTabsClosable(true);
@@ -308,6 +308,9 @@ void MainWindow::closeEvent(QCloseEvent* event)
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
 
         if (reply == QMessageBox::Save) {
+            if (this->project) {
+                this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+            }
             saveWorkflowToProject(m_projectPath);
             this->project->XMLFile_save(m_projectPath.toStdString().c_str());
             closeCurrentProject();
@@ -572,7 +575,8 @@ void MainWindow::ShowImage(QModelIndex image)
     QStandardItemModel* currentModel = m_interfaceManager->projectModel();
     if (!currentModel) return;
 
-    QString name = currentModel->index(image.row(), 0, image.parent()).data().toString();
+    QString fileName = currentModel->index(image.row(), 0, image.parent()).data().toString();
+    QString nodeName = currentModel->index(image.parent().row(), 0, image.parent().parent()).data().toString();
     QString path = currentModel->index(image.row(), 1, image.parent()).data().toString();
 
     // 已打开则直接切换到对应tab
@@ -589,8 +593,8 @@ void MainWindow::ShowImage(QModelIndex image)
     {
         QFileInfo fileinfo = QFileInfo(path);
         QString bmp = QString("%1/%2.jpg").arg(fileinfo.absolutePath()).arg(fileinfo.baseName());
-        QString path_abs = QString("%1%2%3%4").arg(fileinfo.absolutePath()).arg("/").arg(name).arg(".jpg");
-        this->bmp_name = name;
+        QString path_abs = QString("%1%2%3%4").arg(fileinfo.absolutePath()).arg("/").arg(fileName).arg(".jpg");
+        this->bmp_name = QString("%1-%2").arg(nodeName).arg(fileName);
         this->bmp_path = path_abs;
 
         QFileInfo fileinfo1 = QFileInfo(path_abs);
@@ -685,6 +689,9 @@ void MainWindow::on_actionSave_triggered()
         QMessageBox::warning(this, "提示", "没有打开的工程，无法保存。");
         return;
     }
+    if (this->project) {
+        this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+    }
     saveWorkflowToProject(m_projectPath);
     this->project->XMLFile_save(m_projectPath.toStdString().c_str());
     m_projectModified = false;
@@ -725,13 +732,13 @@ void MainWindow::closeCurrentProject()
 
     // 重置两个界面的工程上下文（通过接口）
     if (m_workspaceUI)
-        m_workspaceUI->setProjectContext(currentModel, QString(), QString());
+        m_workspaceUI->setProjectContext(currentModel, QString(), QString(), nullptr);
     if (m_workflowUI)
-        m_workflowUI->setProjectContext(currentModel, QString(), QString());
+        m_workflowUI->setProjectContext(currentModel, QString(), QString(), nullptr);
 
     // 同步重置 InterfaceManager 的项目上下文
     if (m_interfaceManager) {
-        m_interfaceManager->setProjectContext(currentModel, QString(), QString());
+        m_interfaceManager->setProjectContext(currentModel, QString(), QString(), nullptr);
     }
 
     // 禁用处理菜单（恢复到初始状态）
@@ -761,6 +768,9 @@ void MainWindow::on_actionClose_triggered()
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
 
         if (reply == QMessageBox::Save) {
+            if (this->project) {
+                this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+            }
             saveWorkflowToProject(m_projectPath);
             this->project->XMLFile_save(m_projectPath.toStdString().c_str());
         } else if (reply == QMessageBox::Cancel) {
@@ -1273,10 +1283,13 @@ bool MainWindow::CheckTab(QModelIndex image)
     QStandardItemModel* currentModel = m_interfaceManager->projectModel();
     if (!currentModel) return false;
 
-    QString name = currentModel->index(image.row(), 0, image.parent()).data().toString();
+    QString fileName = currentModel->index(image.row(), 0, image.parent()).data().toString();
+    QString nodeName = currentModel->index(image.parent().row(), 0, image.parent().parent()).data().toString();
+    QString tabId = QString("%1-%2").arg(nodeName).arg(fileName);
+
     for (i = 0; i < n; i++)
     {
-        if (!QString::compare(activeTabWidget->tabText(i), name))
+        if (!QString::compare(activeTabWidget->tabText(i), tabId))
         {
             activeTabWidget->setCurrentIndex(i);
             return true;
@@ -1659,9 +1672,9 @@ void MainWindow::updateProjectContext(const QString& filePath)
     QStandardItemModel* model = m_interfaceManager ? m_interfaceManager->projectModel() : nullptr;
 
     if (m_workspaceUI)
-        m_workspaceUI->setProjectContext(model, m_projectPath, projectName);
+        m_workspaceUI->setProjectContext(model, m_projectPath, projectName, this->project);
     if (m_workflowUI)
-        m_workflowUI->setProjectContext(model, m_projectPath, projectName);
+        m_workflowUI->setProjectContext(model, m_projectPath, projectName, this->project);
     if (m_interfaceManager)
-        m_interfaceManager->setProjectContext(model, m_projectPath, projectName);
+        m_interfaceManager->setProjectContext(model, m_projectPath, projectName, this->project);
 }

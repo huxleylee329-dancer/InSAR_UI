@@ -130,7 +130,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // SAR Enhancement 类叶子项顺序
     order.leafItems["SAR/Enhancement"] = QList<PaletteOrder::LeafItem>{
-        {"Speckle Denoise", "Speckle Denoise"}     // Speckle Denoise节点
+        {"Speckle Denoise", "Speckle Denoise"},     // Speckle Denoise节点
+        {"Clutter Suppression", "Clutter Suppression"}  // Clutter Suppression节点
     };
 
     // Test 类叶子项顺序
@@ -1121,11 +1122,12 @@ void WorkflowUI::onGroupSelection()
 // Project Context
 // ============================================================================
 
-void WorkflowUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+void WorkflowUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml)
 {
     m_projectModel = model;
     m_projectPath = path;
     m_projectName = name;
+    m_projectXml = projectXml;
 
     // Set workflow path for workflow browser
     if (m_workflowBrowser && !path.isEmpty())
@@ -1150,6 +1152,11 @@ QString WorkflowUI::projectPath() const
 QString WorkflowUI::projectName() const
 {
     return m_projectName;
+}
+
+XMLFile* WorkflowUI::projectXml() const
+{
+    return m_projectXml;
 }
 
 // ============================================================================

@@ -228,6 +228,9 @@ tools/
 screenshot/
 .claude/skills/
 docs/
+.antigravitycli/
+code-simplifier-skill/
+code-simplifier.skill
 
 # *.vcxproj
 # *.filters

@@ -139,11 +139,12 @@ void WorkspaceUI::resizeEvent(QResizeEvent* event)
     }
 }
 
-void WorkspaceUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+void WorkspaceUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml)
 {
     m_projectModel = model;
     m_projectPath = path;
     m_projectName = name;
+    m_projectXml = projectXml;
 
     // Trigger tree refresh to ensure the view reflects the new model
     refreshProjectTree();
@@ -162,6 +163,11 @@ QString WorkspaceUI::projectPath() const
 QString WorkspaceUI::projectName() const
 {
     return m_projectName;
+}
+
+XMLFile* WorkspaceUI::projectXml() const
+{
+    return m_projectXml;
 }
 
 void WorkspaceUI::refreshProjectTree()

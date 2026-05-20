@@ -71,6 +71,7 @@ private:
 
     QString m_imagePath;
     QString m_importedFilePath;
+    QString m_outputNodeName;
     QString m_outputFileName;
 
     std::shared_ptr<ImageInfoData> m_imageInfoData;

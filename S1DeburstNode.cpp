@@ -4,6 +4,10 @@
 
 #include "S1DeburstNode.h"
 #include "IApplicationInterface.h"
+#include "MainWindow.h"
+#include "WorkspaceUI.h"
+#include "InterfaceManager.h"
+#include <QApplication>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QJsonObject>
@@ -304,16 +308,36 @@ void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
 
 IApplicationInterface* S1DeburstNode::getProjectContext() const
 {
-    if (!_widget)
-        return nullptr;
-
-    QWidget* parent = _widget->parentWidget();
-    while (parent)
+    // 1. Try parent widget traversal
+    if (_widget)
     {
-        auto* iface = dynamic_cast<IApplicationInterface*>(parent);
-        if (iface)
-            return iface;
-        parent = parent->parentWidget();
+        QWidget* parent = _widget->parentWidget();
+        while (parent)
+        {
+            auto* iface = dynamic_cast<IApplicationInterface*>(parent);
+            if (iface) {
+                return iface;
+            }
+            parent = parent->parentWidget();
+        }
+    }
+
+    // 2. Fallback to MainWindow -> workspaceUI
+    foreach(QWidget * widget, QApplication::topLevelWidgets()) {
+        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
+        if (mainWin) {
+            // Prefer workspaceUI as it's the source of truth for project data
+            if (mainWin->workspaceUI()) {
+                return mainWin->workspaceUI();
+            }
+            // Fallback to interface manager's current interface
+            if (mainWin->interfaceManager()) {
+                auto* iface = mainWin->interfaceManager()->currentInterface();
+                if (iface) {
+                    return iface;
+                }
+            }
+        }
     }
 
     return nullptr;
@@ -387,6 +411,7 @@ void S1DeburstNode::executeProcessing()
     m_workerThread->moveToThread(m_thread);
 
     // Connect signals
+    connect(this, &S1DeburstNode::startDeburst, m_workerThread, &MyThread::S1_Deburst);
     connect(m_thread, &QThread::started, [this, savePath, dstProject, srcNode, dstNode]() {
         Q_EMIT startDeburst(savePath, dstProject, srcNode, dstNode, projectModel());
     });

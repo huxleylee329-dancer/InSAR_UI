@@ -36,10 +36,11 @@ public:
     QString displayName() const override;
 
     // Project context (欢迎界面不管理项目，提供空实现)
-    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name) override;
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml = nullptr) override;
     QStandardItemModel* projectModel() const override;
     QString projectPath() const override;
     QString projectName() const override;
+    XMLFile* projectXml() const override;
 
     // Theme management
     void initTheme() override;

@@ -66,7 +66,7 @@ int UTC2GPS(const char* utc_time, double* gps_time)
 	}
 	second = int(floor(sec));
 	sec = sec - (double)second;
-	tm TM;//¾àÀë90ÄêµÄÊ±²î
+	tm TM;//ï¿½ï¿½ï¿½ï¿½90ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
 	TM.tm_year = year - 1900;
 	TM.tm_mon = month - 1;
 	TM.tm_mday = day;
@@ -161,13 +161,13 @@ int FormatConversion::write_array_to_h5(const char* filename, const char* datase
 	string s = "/"; 
 	s.append(dataset_name);	
 	hid_t dataset_id;
-	if ((H5Lexists(file_id, dataset_name, H5P_DEFAULT)) == 0)//datasetÄ¿Ç°²»´æÔÚ£¬¾Í´´½¨Ò»¸ö
+	if ((H5Lexists(file_id, dataset_name, H5P_DEFAULT)) == 0)//datasetÄ¿Ç°ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½ï¿½Í´ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
 	{
 		hsize_t dims[2];
 		dims[0] = input_array.rows;
 		dims[1] = input_array.cols;
 		hid_t dataspace_id = H5Screate_simple(2, dims, NULL);//H5S
-		if (input_array.type() == CV_16S)//´´½¨ºÍinput_array¶ÔÓ¦ÀàÐÍµÄdataset_id(¶ÔÏó¾ä±ú)//H5D
+		if (input_array.type() == CV_16S)//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½input_arrayï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Íµï¿½dataset_id(ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½)//H5D
 		{
 			dataset_id = H5Dcreate(file_id, s.c_str(), H5T_NATIVE_INT16, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 		}
@@ -196,7 +196,7 @@ int FormatConversion::write_array_to_h5(const char* filename, const char* datase
 			return -1;
 		}
 		herr_t status;
-		if (input_array.type() == CV_16S)//´´½¨ºÍinput_array¶ÔÓ¦ÀàÐÍµÄstatus£¨·µ»Ø×´Ì¬£©
+		if (input_array.type() == CV_16S)//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½input_arrayï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Íµï¿½statusï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×´Ì¬ï¿½ï¿½
 		{
 			status = H5Dwrite(dataset_id, H5T_NATIVE_INT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)input_array.data);
 		}
@@ -229,7 +229,7 @@ int FormatConversion::write_array_to_h5(const char* filename, const char* datase
 		H5Fclose(file_id);
 		
 	}
-	else//datasetÒÑ¾­´æÔÚ
+	else//datasetï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½
 	{
 		fprintf(stderr, "write_array_to_h5(): dataset %s already exists!\n", dataset_name);
 		H5Fclose(file_id);
@@ -237,7 +237,7 @@ int FormatConversion::write_array_to_h5(const char* filename, const char* datase
 	}
 	return 0;
 }
-//doubleºÍintÀàÐÍµÄÐ´ÈëÒÀÀµÓÚarrayÀàÐÍµÄÐ´Èë
+//doubleï¿½ï¿½intï¿½ï¿½ï¿½Íµï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½arrayï¿½ï¿½ï¿½Íµï¿½Ð´ï¿½ï¿½
 int FormatConversion::write_double_to_h5(const char* h5File, const char* datasetName, double data)
 {
 	if (!h5File || !datasetName)
@@ -245,7 +245,7 @@ int FormatConversion::write_double_to_h5(const char* h5File, const char* dataset
 		fprintf(stderr, "write_double_to_h5(): input check failed!\n");
 		return -1;
 	}
-	Mat tmp(1, 1, CV_64F);//MatÎª¾ØÕóÀàÐÍ
+	Mat tmp(1, 1, CV_64F);//MatÎªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	tmp.at<double>(0, 0) = data;
 	int ret = write_array_to_h5(h5File, datasetName, tmp);
 	if (return_check(ret, "write_array_to_h5", error_head)) return -1;
@@ -275,7 +275,7 @@ int FormatConversion::read_array_from_h5(const char* filename, const char* datas
 		fprintf(stderr, "read_array_from_h5(): input check  failed!\n");
 		return -1;
 	}
-	hid_t file_id = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);//´ò¿ªfile
+	hid_t file_id = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);//ï¿½ï¿½file
 	if (file_id < 0)
 	{
 		fprintf(stderr, "read_array_from_h5(): failed to open %s!\n", filename);
@@ -283,14 +283,14 @@ int FormatConversion::read_array_from_h5(const char* filename, const char* datas
 	}
 	string s = "/";
 	s.append(dataset_name);
-	hid_t dataset_id = H5Dopen(file_id, s.c_str(), H5P_DEFAULT);//´ò¿ªdataset
+	hid_t dataset_id = H5Dopen(file_id, s.c_str(), H5P_DEFAULT);//ï¿½ï¿½dataset
 	if (dataset_id < 0)
 	{
 		fprintf(stderr, "read_array_from_h5(): failed to open dataset %s!\n", dataset_name);
 		H5Fclose(file_id);
 		return -1;
 	}
-	hid_t space_id = H5Dget_space(dataset_id);//´ò¿ªdataspace
+	hid_t space_id = H5Dget_space(dataset_id);//ï¿½ï¿½dataspace
 	if (space_id < 0)
 	{
 		fprintf(stderr, "read_array_from_h5(): failed to open dataspace of %s!\n", dataset_name);
@@ -302,7 +302,7 @@ int FormatConversion::read_array_from_h5(const char* filename, const char* datas
 	int ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
 	hid_t type = H5Dget_type(dataset_id);
 	herr_t status;
-	if (H5Tequal(type, H5T_NATIVE_INT16) > 0)//Í¨¹ýdatasetµÄÀàÐÍ´´Ôìout_array
+	if (H5Tequal(type, H5T_NATIVE_INT16) > 0)//Í¨ï¿½ï¿½datasetï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½ï¿½ï¿½out_array
 	{
 		out_array.create(dims[0], dims[1], CV_16S);
 		status = H5Dread(dataset_id, H5T_NATIVE_INT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)out_array.data);
@@ -337,7 +337,7 @@ int FormatConversion::read_array_from_h5(const char* filename, const char* datas
 	H5Tclose(type);
 	return 0;
 }
-//doubleºÍintÀàÐÍµÄ¶Á³öÒÀÀµÓÚarrayÀàÐÍµÄ¶Á³ö
+//doubleï¿½ï¿½intï¿½ï¿½ï¿½ÍµÄ¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½arrayï¿½ï¿½ï¿½ÍµÄ¶ï¿½ï¿½ï¿½
 int FormatConversion::read_double_from_h5(const char* h5File, const char* datasetName, double* data)
 {
 	if (!h5File || !datasetName)
@@ -348,7 +348,7 @@ int FormatConversion::read_double_from_h5(const char* h5File, const char* datase
 	Mat tmp;
 	int ret = read_array_from_h5(h5File, datasetName, tmp);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	if (tmp.type() != CV_64F) tmp.convertTo(tmp, CV_64F);//×ª»»ÀàÐÍÖÁ64F£¨double£©
+	if (tmp.type() != CV_64F) tmp.convertTo(tmp, CV_64F);//×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½64Fï¿½ï¿½doubleï¿½ï¿½
 	*data = tmp.at<double>(0, 0);
 	return 0;
 }
@@ -363,11 +363,11 @@ int FormatConversion::read_int_from_h5(const char* h5File, const char* datasetNa
 	Mat tmp;
 	int ret = read_array_from_h5(h5File, datasetName, tmp);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	if (tmp.type() != CV_32S) tmp.convertTo(tmp, CV_32S);//×ª»»ÀàÐÍÖÁ32S£¨int£©
+	if (tmp.type() != CV_32S) tmp.convertTo(tmp, CV_32S);//×ªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½32Sï¿½ï¿½intï¿½ï¿½
 	*data = tmp.at<int>(0, 0);
 	return 0;
 }
-//¶ÁÈ¡×ÓÊý×é
+//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 int FormatConversion::read_subarray_from_h5(const char* filename, const char* dataset_name, int offset_row, int offset_col, int rows_subarray, int cols_subarray, Mat& out_array)
 {
 	if (filename == NULL ||
@@ -397,7 +397,7 @@ int FormatConversion::read_subarray_from_h5(const char* filename, const char* da
 		return -1;
 	}
 	hid_t dataset_id = H5Dopen(file_id, s.c_str(), H5P_DEFAULT);
-	// ¶ÁÈ¡ÎÄ¼þÖÐdatasetµÄdataspace¿Õ¼ä
+	// ï¿½ï¿½È¡ï¿½Ä¼ï¿½ï¿½ï¿½datasetï¿½ï¿½dataspaceï¿½Õ¼ï¿½
 	hid_t dataspace_id = H5Dget_space(dataset_id);
 	hsize_t dim[2];
 	int ndims = H5Sget_simple_extent_dims(dataspace_id, dim, NULL);
@@ -413,7 +413,7 @@ int FormatConversion::read_subarray_from_h5(const char* filename, const char* da
 		return -1;
 	}
 	hid_t type = H5Dget_type(dataset_id);
-	if (0 < H5Tequal(type, H5T_NATIVE_INT16))//out_arrayÀàÐÍÆ¥ÅädatasetÀàÐÍ
+	if (0 < H5Tequal(type, H5T_NATIVE_INT16))//out_arrayï¿½ï¿½ï¿½ï¿½Æ¥ï¿½ï¿½datasetï¿½ï¿½ï¿½ï¿½
 	{
 		out_array.create(rows_subarray, cols_subarray, CV_16S);
 	}
@@ -434,11 +434,11 @@ int FormatConversion::read_subarray_from_h5(const char* filename, const char* da
 		H5Tclose(type);
 		return -1;
 	}
-	// ¶¨Òå×Ó¼¯ËÄ´ó¼þ£¬²¹³¥£¬¸öÊý£¬¼ä¸ôºÍ¿é´óÐ¡
-	hsize_t count[2];   // ¿éµÄ´óÐ¡
-	hsize_t offset[2];  // ²¹³¥£¬¼´¿ªÊ¼Î»ÖÃ
-	hsize_t stride[2];  // ¼ä¸ô
-	hsize_t block[2];   // ¿éµÄ¸öÊý
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Ó¼ï¿½ï¿½Ä´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ï¿½Ð¡
+	hsize_t count[2];   // ï¿½ï¿½Ä´ï¿½Ð¡
+	hsize_t offset[2];  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Î»ï¿½ï¿½
+	hsize_t stride[2];  // ï¿½ï¿½ï¿½
+	hsize_t block[2];   // ï¿½ï¿½Ä¸ï¿½ï¿½ï¿½
 
 	offset[0] = offset_row;
 	offset[1] = offset_col;
@@ -452,7 +452,7 @@ int FormatConversion::read_subarray_from_h5(const char* filename, const char* da
 	block[0] = 1;
 	block[1] = 1;
 
-	// ´´½¨ÄÚ´æÖÐµÄdataspce¿Õ¼ä
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½ï¿½Ðµï¿½dataspceï¿½Õ¼ï¿½
 	hsize_t dimsm[2];
 	dimsm[0] = rows_subarray;
 	dimsm[1] = cols_subarray;
@@ -514,7 +514,7 @@ int FormatConversion::write_subarray_to_h5(const char* h5_filename, const char* 
 		}		
 	}
 	hid_t dataset_id = H5Dopen(file_id, s.c_str(), H5P_DEFAULT);
-	// ¶ÁÈ¡ÎÄ¼þÖÐdatasetµÄdataspace¿Õ¼ä
+	// ï¿½ï¿½È¡ï¿½Ä¼ï¿½ï¿½ï¿½datasetï¿½ï¿½dataspaceï¿½Õ¼ï¿½
 	hid_t dataspace_id = H5Dget_space(dataset_id);
 	hsize_t dim[2];
 	int ndims = H5Sget_simple_extent_dims(dataspace_id, dim, NULL);
@@ -587,11 +587,11 @@ int FormatConversion::write_subarray_to_h5(const char* h5_filename, const char* 
 		H5Tclose(type);
 		return -1;
 	}
-	// ¶¨Òå×Ó¼¯ËÄ´ó¼þ£¬²¹³¥£¬¸öÊý£¬¼ä¸ôºÍ¿é´óÐ¡
-	hsize_t count[2];   // ¿éµÄ´óÐ¡
-	hsize_t offset[2];  // ²¹³¥£¬¼´¿ªÊ¼Î»ÖÃ
-	hsize_t stride[2];  // ¼ä¸ô
-	hsize_t block[2];   // ¿éµÄ¸öÊý
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Ó¼ï¿½ï¿½Ä´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í¿ï¿½ï¿½Ð¡
+	hsize_t count[2];   // ï¿½ï¿½Ä´ï¿½Ð¡
+	hsize_t offset[2];  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Î»ï¿½ï¿½
+	hsize_t stride[2];  // ï¿½ï¿½ï¿½
+	hsize_t block[2];   // ï¿½ï¿½Ä¸ï¿½ï¿½ï¿½
 
 	offset[0] = offset_row;
 	offset[1] = offset_col;
@@ -605,7 +605,7 @@ int FormatConversion::write_subarray_to_h5(const char* h5_filename, const char* 
 	block[0] = 1;
 	block[1] = 1;
 
-	// ´´½¨ÄÚ´æÖÐµÄdataspce¿Õ¼ä
+	// ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½ï¿½Ðµï¿½dataspceï¿½Õ¼ï¿½
 	hsize_t dimsm[2];
 	dimsm[0] = rows_subarray;
 	dimsm[1] = cols_subarray;
@@ -638,7 +638,7 @@ int FormatConversion::write_subarray_to_h5(const char* h5_filename, const char* 
 	H5Tclose(type);
 	return 0;
 }
-//Ð´Èë×Ö·û´®
+//Ð´ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½
 int FormatConversion::write_str_to_h5(const char* filename, const char* dataset_name, const char* Str)
 {
 	if (filename == NULL ||
@@ -662,9 +662,9 @@ int FormatConversion::write_str_to_h5(const char* filename, const char* dataset_
 		fprintf(stderr, "write_str_to_h5(): failed to open %s !\n", filename);
 		return -1;
 	}
-	filetype = H5Tcopy(H5T_FORTRAN_S1);//¸´ÖÆÒÑÓÐµÄÀàÐÍ£¨fortranÖÐµÄ×Ö·û´®ÀàÐÍ£©,×Ö·û´®Ã»ÓÐint floatÖ®·Ö
-	status = H5Tset_size(filetype, str.length());//ÉèÖÃÊý¾ÝÀàÐÍ´óÐ¡
-	memtype = H5Tcopy(H5T_C_S1);//CÓïÑÔÖÐµÄ×Ö·û´®ÀàÐÍ
+	filetype = H5Tcopy(H5T_FORTRAN_S1);//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ðµï¿½ï¿½ï¿½ï¿½Í£ï¿½fortranï¿½Ðµï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í£ï¿½,ï¿½Ö·ï¿½ï¿½ï¿½Ã»ï¿½ï¿½int floatÖ®ï¿½ï¿½
+	status = H5Tset_size(filetype, str.length());//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Í´ï¿½Ð¡
+	memtype = H5Tcopy(H5T_C_S1);//Cï¿½ï¿½ï¿½ï¿½ï¿½Ðµï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	status = H5Tset_size(memtype, str.length());
 	space_id = H5Screate_simple(1, dims, NULL);
 	if ((H5Lexists(file_id, dataset_name, H5P_DEFAULT)) == 0)
@@ -742,7 +742,7 @@ int FormatConversion::read_str_from_h5(const char* filename, const char* dataset
 	int ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
 	memtype = H5Tcopy(H5T_C_S1);
 	status = H5Tset_size(memtype, sdim);
-	char* rdata = (char*)malloc(dims[0] * sdim * sizeof(char));//·ÖÅäÄÚ´æ
+	char* rdata = (char*)malloc(dims[0] * sdim * sizeof(char));//ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½
 	status = H5Dread(dataset_id, memtype, H5S_ALL, H5S_ALL, H5P_DEFAULT, rdata);
 	if (status < 0)
 	{
@@ -764,7 +764,7 @@ int FormatConversion::read_str_from_h5(const char* filename, const char* dataset
 	H5Fclose(file_id);
 	return 0;
 }
-//slcµÄÐ´ÈëÒ²½èÖúÓÚarrayµÄÐ´Èë
+//slcï¿½ï¿½Ð´ï¿½ï¿½Ò²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½arrayï¿½ï¿½Ð´ï¿½ï¿½
 int FormatConversion::write_slc_to_h5(const char* filename, const ComplexMat& slc)
 {
 	if (filename == NULL ||
@@ -776,9 +776,9 @@ int FormatConversion::write_slc_to_h5(const char* filename, const ComplexMat& sl
 		return -1;
 	}
 	int ret;
-	ret = write_array_to_h5(filename, "s_re", slc.re);//Êµ²¿
+	ret = write_array_to_h5(filename, "s_re", slc.re);//Êµï¿½ï¿½
 	if (return_check(ret, "write_slc_to_h5()", this->error_head)) return -1;
-	ret = write_array_to_h5(filename, "s_im", slc.im);//Ðé²¿
+	ret = write_array_to_h5(filename, "s_im", slc.im);//ï¿½é²¿
 	if (return_check(ret, "write_slc_to_h5()", this->error_head)) return -1;
 	return 0;
 }
@@ -797,7 +797,7 @@ int FormatConversion::read_slc_from_h5(const char* filename, ComplexMat& slc)
 	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 	return 0;
 }
-//¶ÁÈ¡TSX£¨terraSAR-X£©cosÖÐµÄslc
+//ï¿½ï¿½È¡TSXï¿½ï¿½terraSAR-Xï¿½ï¿½cosï¿½Ðµï¿½slc
 int FormatConversion::read_slc_from_TSXcos(const char* filename, ComplexMat& slc)
 {
 	if (filename == NULL)
@@ -805,20 +805,20 @@ int FormatConversion::read_slc_from_TSXcos(const char* filename, ComplexMat& slc
 		fprintf(stderr, "read_slc_from_TSXcos(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//×¢²áÒÑÖªÇý¶¯
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);	//´ò¿ªcosÎÄ¼þ
+	GDALAllRegister();	//×¢ï¿½ï¿½ï¿½ï¿½Öªï¿½ï¿½ï¿½ï¿½
+	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);	//ï¿½ï¿½cosï¿½Ä¼ï¿½
 	if (poDataset == NULL)
 	{
 		fprintf(stderr, "read_slc_from_TSXcos(): failed to open %s!\n", filename);
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//»ñÈ¡²¨¶ÎÊý£¨cosÓ¦Îª1£©
+	int nBand = poDataset->GetRasterCount();	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½cosÓ¦Îª1ï¿½ï¿½
 	int xsize = 0;
 	int ysize = 0;
 	if (nBand == 1)
 	{
-		GDALRasterBand* poBand = poDataset->GetRasterBand(1);	//»ñÈ¡Ö¸Ïò²¨¶Î1µÄÖ¸Õë
+		GDALRasterBand* poBand = poDataset->GetRasterBand(1);	//ï¿½ï¿½È¡Ö¸ï¿½ò²¨¶ï¿½1ï¿½ï¿½Ö¸ï¿½ï¿½
 		xsize = poBand->GetXSize();		//cols
 		ysize = poBand->GetYSize();		//rows
 		if (xsize < 0 || ysize < 0)
@@ -828,9 +828,9 @@ int FormatConversion::read_slc_from_TSXcos(const char* filename, ComplexMat& slc
 			GDALDestroyDriverManager();
 			return -1;
 		}
-		GDALDataType dataType = poBand->GetRasterDataType();	//Êý¾Ý´æ´¢ÀàÐÍ£¬cosÓ¦ÎªGDT_CInt16
+		GDALDataType dataType = poBand->GetRasterDataType();	//ï¿½ï¿½ï¿½Ý´æ´¢ï¿½ï¿½ï¿½Í£ï¿½cosÓ¦ÎªGDT_CInt16
 		int* pbuf = NULL;
-		pbuf = (int*)malloc(sizeof(int) * xsize * ysize);		//·ÖÅäÊý¾ÝÖ¸Õë¿Õ¼ä
+		pbuf = (int*)malloc(sizeof(int) * xsize * ysize);		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½Õ¼ï¿½
 		if (!pbuf)
 		{
 			fprintf(stderr, "read_slc_from_TSXcos(): out of memory!\n");
@@ -838,7 +838,7 @@ int FormatConversion::read_slc_from_TSXcos(const char* filename, ComplexMat& slc
 			GDALDestroyDriverManager();
 			return -1;
 		}
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//¶ÁÈ¡¸´Í¼ÏñÊý¾Ýµ½pbufÖÐ
+		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//ï¿½ï¿½È¡ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½Ýµï¿½pbufï¿½ï¿½
 		int i, j;
 		//ComplexMat CMat;
 		//CMat.re = Mat::zeros(ysize, xsize, CV_64F);
@@ -848,9 +848,9 @@ int FormatConversion::read_slc_from_TSXcos(const char* filename, ComplexMat& slc
 		for (i = 0; i < ysize; i++)
 			for (j = 0; j < xsize; j++)
 			{
-				/*½«Êý¾Ý°´ÕÕÊµ²¿¡¢Ðé²¿¶ÁÈëMatÖÐ
-				ÓÉÓÚcos°´ÕÕ´ó¶Ë´æ´¢£¬RasterIO»á×Ô¶¯×ª»¯ÎªÐ¡¶Ë£¬µ«»áµ¼ÖÂÊµ²¿Ðé²¿Î»ÖÃµßµ¹
-				Òò´Ë¸ß16Î»ÎªÐé²¿£¬µÍ16Î»ÎªÊµ²¿
+				/*ï¿½ï¿½ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½Êµï¿½ï¿½ï¿½ï¿½ï¿½é²¿ï¿½ï¿½ï¿½ï¿½Matï¿½ï¿½
+				ï¿½ï¿½ï¿½ï¿½cosï¿½ï¿½ï¿½Õ´ï¿½Ë´æ´¢ï¿½ï¿½RasterIOï¿½ï¿½ï¿½Ô¶ï¿½×ªï¿½ï¿½ÎªÐ¡ï¿½Ë£ï¿½ï¿½ï¿½ï¿½áµ¼ï¿½ï¿½Êµï¿½ï¿½ï¿½é²¿Î»ï¿½Ãµßµï¿½
+				ï¿½ï¿½Ë¸ï¿½16Î»Îªï¿½é²¿ï¿½ï¿½ï¿½ï¿½16Î»ÎªÊµï¿½ï¿½
 				*/
 				slc.re.ptr<short>(i)[j] = (pbuf[j + i * xsize] << 16) >> 16;
 				slc.im.ptr<short>(i)[j] = (pbuf[j + i * xsize] >> 16);
@@ -874,7 +874,7 @@ int FormatConversion::read_slc_from_TSXcos(const char* filename, ComplexMat& slc
 	return 0;
 }
 //TSX×ªÎªh5
-//´ÓTSXÖÐÌáÈ¡slc¡¢gcpµÈÊý¾Ý£¬ÔÙ°ÑÕâÐ©Êý¾ÝÐ´Èëh5ÖÐ
+//ï¿½ï¿½TSXï¿½ï¿½ï¿½ï¿½È¡slcï¿½ï¿½gcpï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½Ù°ï¿½ï¿½ï¿½Ð©ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½h5ï¿½ï¿½
 int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filename, const char* GEOREF_filename, const char* dst_h5_filename)
 {
 	if (cosar_filename == NULL ||
@@ -887,7 +887,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 		return -1;
 	}
 	/*
-	* ¼ì²éh5ÎÄ¼þÊÇ·ñÒÑ¾­´æÔÚ
+	* ï¿½ï¿½ï¿½h5ï¿½Ä¼ï¿½ï¿½Ç·ï¿½ï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	int ret;
@@ -895,7 +895,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
 
 	/*
-	* Ð´ÈëslcÊý¾Ý£¨cosar_filename->slc£©
+	* Ð´ï¿½ï¿½slcï¿½ï¿½ï¿½Ý£ï¿½cosar_filename->slcï¿½ï¿½
 	*/
 
 	ComplexMat slc;
@@ -911,7 +911,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	slc.im.release();
 
 	/*
-	* Ð´Èë¿ØÖÆµãÊý¾Ý(GEOREF_filename->gcps)
+	* Ð´ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½(GEOREF_filename->gcps)
 	*/
 
 	Mat gcps;
@@ -924,12 +924,12 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	if (return_check(ret, "write_array_to_h5", error_head)) return -1;
 
 	/*
-	* ¸ù¾Ý¿ØÖÆµãÊý¾ÝÄâºÏ¾­Î³¶È¡¢ÏÂÊÓ½ÇÓëÏñËØ×ø±ê£¨ÐÐ¡¢ÁÐ£©Ö®¼äµÄ¶àÏîÊ½¹ØÏµ
+	* ï¿½ï¿½ï¿½Ý¿ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¾ï¿½Î³ï¿½È¡ï¿½ï¿½ï¿½ï¿½Ó½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ê£¨ï¿½Ð¡ï¿½ï¿½Ð£ï¿½Ö®ï¿½ï¿½Ä¶ï¿½ï¿½ï¿½Ê½ï¿½ï¿½Ïµ
 	*/
 
 	double mean_lon, mean_lat, mean_inc, max_lon, max_lat, max_inc, min_lon, min_lat, min_inc;
 	Mat lon, lat, inc, row, col;
-	gcps(cv::Range(0, gcps.rows), cv::Range(0, 1)).copyTo(lon);//°ÑÄâºÏ¾­Î³¶È¡¢ÏÂÊÓ½ÇÓëÏñËØ×ø±ê·Ö³ÉÎåÁÐÊý×é
+	gcps(cv::Range(0, gcps.rows), cv::Range(0, 1)).copyTo(lon);//ï¿½ï¿½ï¿½ï¿½Ï¾ï¿½Î³ï¿½È¡ï¿½ï¿½ï¿½ï¿½Ó½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	gcps(cv::Range(0, gcps.rows), cv::Range(1, 2)).copyTo(lat);
 	gcps(cv::Range(0, gcps.rows), cv::Range(3, 4)).copyTo(row);
 	gcps(cv::Range(0, gcps.rows), cv::Range(4, 5)).copyTo(col);
@@ -946,7 +946,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	row = (row - double(rows) * 0.5) / (double(rows) + 1e-10);
 	col = (col - double(cols) * 0.5) / (double(cols) + 1e-10);
 
-	//ÄâºÏ¾­¶Èlon
+	//ï¿½ï¿½Ï¾ï¿½ï¿½ï¿½lon
 
 	Mat A, B, b, temp, coefficient, error, eye, b_t, a, a_t;
 	double rms;
@@ -958,39 +958,39 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	lon.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
 	row.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
-	temp = row.mul(row);//rowÆ½·½
+	temp = row.mul(row);//rowÆ½ï¿½ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
-	temp = temp.mul(row);//rowÈý´Î·½
+	temp = temp.mul(row);//rowï¿½ï¿½ï¿½Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
-	temp = temp.mul(row);//rowËÄ´Î·½
+	temp = temp.mul(row);//rowï¿½Ä´Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
 
 	col.copyTo(temp);
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
 	temp = temp.mul(row);//col*cow
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
-	temp = temp.mul(row);//col*cowÆ½·½
+	temp = temp.mul(row);//col*cowÆ½ï¿½ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
-	temp = temp.mul(row);//col*cowÈý´Î·½
+	temp = temp.mul(row);//col*cowï¿½ï¿½ï¿½Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
-	temp = temp.mul(row);//col*cowËÄ´Î·½
+	temp = temp.mul(row);//col*cowï¿½Ä´Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
 
 	col.copyTo(temp);
-	temp = temp.mul(col);//colÆ½·½
+	temp = temp.mul(col);//colÆ½ï¿½ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
-	temp = temp.mul(row);//colÆ½·½*row
+	temp = temp.mul(row);//colÆ½ï¿½ï¿½*row
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
-	temp = temp.mul(row); //colÆ½·½*rowÆ½·½
+	temp = temp.mul(row); //colÆ½ï¿½ï¿½*rowÆ½ï¿½ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
-	temp = temp.mul(row); //colÆ½·½*rowÈý´Î·½
+	temp = temp.mul(row); //colÆ½ï¿½ï¿½*rowï¿½ï¿½ï¿½Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
-	temp = temp.mul(row);//colÆ½·½*rowËÄ´Î·½
+	temp = temp.mul(row);//colÆ½ï¿½ï¿½*rowï¿½Ä´Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
 
 	col.copyTo(temp);
 	temp = temp.mul(col);
-	temp = temp.mul(col);//colÈý´Î·½
+	temp = temp.mul(col);//colï¿½ï¿½ï¿½Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
 	temp = temp.mul(row);
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
@@ -1004,7 +1004,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	col.copyTo(temp);
 	temp = temp.mul(col);
 	temp = temp.mul(col);
-	temp = temp.mul(col);//colËÄ´Î·½
+	temp = temp.mul(col);//colï¿½Ä´Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
 	temp = temp.mul(row);
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
@@ -1021,14 +1021,14 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	cv::transpose(a, a_t);
 	A = temp * A;
 	rms = -1.0;
-	if (cv::invert(A, error, cv::DECOMP_LU) > 0)//¾ØÕóÇóÄæ
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	{
 		cv::transpose(b, b_t);
 		error = b_t * b - (b_t * a) * error * (a_t * b);
 		/*error = b_t * (eye - a * error * a_t) * b;*/
 		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
 	}
-	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))//ÇóÏßÐÔÏµÍ³º¯Êý
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÏµÍ³ï¿½ï¿½ï¿½ï¿½
 	{
 		temp.create(1, 32, CV_64F);
 		temp.at<double>(0, 0) = mean_lon;
@@ -1039,12 +1039,12 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 		temp.at<double>(0, 5) = double(cols) + 1e-10;
 		temp.at<double>(0, 31) = rms;
 		cv::transpose(coefficient, coefficient);
-		coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));//²åÈëÏµÊý
+		coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));//ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½
 		ret = write_array_to_h5(dst_h5_filename, "lon_coefficient", temp);
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÎ³¶Èlat
+	//ï¿½ï¿½ï¿½Î³ï¿½ï¿½lat
 
 	lat.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
@@ -1107,7 +1107,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
 
 	cv::transpose(A, temp);
-	B = temp * b;//BÓëlatÓÐ¹Ø
+	B = temp * b;//Bï¿½ï¿½latï¿½Ð¹ï¿½
 	A.copyTo(a);
 	cv::transpose(a, a_t);
 	A = temp * A;
@@ -1135,12 +1135,12 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÏÂÊÓ½Çinc
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½inc
 
 	inc.copyTo(b);
 	A = Mat::ones(inc.rows, 6, CV_64F);
 	col.copyTo(A(cv::Range(0, inc.rows), cv::Range(1, 2)));
-	temp = col.mul(col);//colÆ½·½
+	temp = col.mul(col);//colÆ½ï¿½ï¿½
 	temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(2, 3)));
 	temp = temp.mul(col);
 	temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(3, 4)));
@@ -1175,16 +1175,16 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÐÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 	row.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
 	lon.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
-	temp = lon.mul(lon);//lonÆ½·½
+	temp = lon.mul(lon);//lonÆ½ï¿½ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
-	temp = temp.mul(lon);//lonÈý´Î·½
+	temp = temp.mul(lon);//lonï¿½ï¿½ï¿½Î·ï¿½
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
-	temp = temp.mul(lon);//lonËÄ´Î·½ 
+	temp = temp.mul(lon);//lonï¿½Ä´Î·ï¿½ 
 	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
 
 	lat.copyTo(temp);
@@ -1266,7 +1266,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÁÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 	col.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
@@ -1358,7 +1358,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	}
 
 	/*
-	* Ð´Èë¹ìµÀÊý¾Ý£¨xml->stateVec£©
+	* Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½xml->stateVecï¿½ï¿½
 	*/
 
 	Mat stateVec;
@@ -1370,7 +1370,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
 	/*
-	* Ð´Èë¶àÆÕÀÕÖÐÐÄÆµÂÊ²ÎÊý£¨Dc£©
+	* Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½Ê²ï¿½ï¿½ï¿½ï¿½ï¿½Dcï¿½ï¿½
 	*/
 
 	Mat Dc;
@@ -1380,44 +1380,44 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
 	/*
-	* Ð´ÈëÆäËû¸¨Öú²ÎÊý
+	* Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 	string file_type, sensor, polarization, imaging_mode,
 		lookside, orbit_dir, acquisition_start_time, acquisition_stop_time, process_state;
 	
-	//Êý¾ÝÀàÐÍ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = write_str_to_h5(dst_h5_filename, "file_type", "SLC");
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//ÎÀÐÇÃû³Æ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("mission", sensor);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "sensor", sensor.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//¼«»¯
+	//ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("polLayer", polarization);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "polarization", polarization.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//¹¤×÷Ä£Ê½
+	//ï¿½ï¿½ï¿½ï¿½Ä£Ê½
 	ret = xmldoc.get_str_para("imagingMode", imaging_mode);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "imaging_mode", imaging_mode.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//ÊÓÏò
+	//ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("lookDirection", lookside);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "lookside", lookside.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//¹ìµÀ·½Ïò
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("orbitDirection", orbit_dir);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "orbit_dir", orbit_dir.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
 
-	//´¦ÀíµÈ¼¶
+	//ï¿½ï¿½ï¿½ï¿½ï¿½È¼ï¿½
 	ret = write_str_to_h5(dst_h5_filename, "process_state", "InSAR_0");
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//´¦ÀíÃèÊö
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = write_str_to_h5(dst_h5_filename, "comment", "import from TerraSAR-X Single Look Complex, unprocessed.");
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
 
@@ -1427,21 +1427,21 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 		scene_bottomright_lon, scene_bottomright_lat, azimuth_resolution,
 		range_resolution, azimuth_spacing, range_spacing;
 	Mat tmp = Mat::zeros(1, 1, CV_64F);
-	//¹ìµÀ¸ß¶È,TerraSARÃ»Ìá¹©£¬ÉèÖÃÎª-1
+	//ï¿½ï¿½ï¿½ï¿½ß¶ï¿½,TerraSARÃ»ï¿½á¹©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îª-1
 	tmp.at<double>(0, 0) = -1;
 	ret = write_array_to_h5(dst_h5_filename, "orbit_altitude", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	
 	TiXmlElement* pnode, * pchild;
 
-	//ÅÄÉãÆðÊ¼Ê±¼ä
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Ê±ï¿½ï¿½
 	ret = xmldoc.find_node("start", pnode);
 	if (return_check(ret, "find_node()", error_head)) return -1;
-	ret = xmldoc._find_node(pnode, "timeUTC", pchild);//ÕÒ¸ù½ÚµãÏÂÃæ¶ÔÓ¦Ãû³ÆµÄ×Ó½Úµã
+	ret = xmldoc._find_node(pnode, "timeUTC", pchild);//ï¿½Ò¸ï¿½ï¿½Úµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Æµï¿½ï¿½Ó½Úµï¿½
 	if (return_check(ret, "_find_node()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "acquisition_start_time", pchild->GetText());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//ÅÄÉã½áÊøÊ±¼ä
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
 	ret = xmldoc.find_node("stop", pnode);
 	if (return_check(ret, "find_node()", error_head)) return -1;
 	ret = xmldoc._find_node(pnode, "timeUTC", pchild);
@@ -1449,7 +1449,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	ret = write_str_to_h5(dst_h5_filename, "acquisition_stop_time", pchild->GetText());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
 
-	//ÔØÆµ
+	//ï¿½ï¿½Æµ
 	ret = xmldoc.find_node("instrument", pnode);
 	if (return_check(ret, "find_node()", error_head)) return -1;
 	ret = xmldoc._find_node(pnode, "centerFrequency", pchild);
@@ -1463,19 +1463,19 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	tmp.at<double>(0, 0) = carrier_frequency;
 	ret = write_array_to_h5(dst_h5_filename, "carrier_frequency", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//ÖÐÐÄÏÂÊÓ½Ç
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½
 	ret = xmldoc.get_double_para("incidenceAngle", &incidence_center);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = incidence_center;
 	ret = write_array_to_h5(dst_h5_filename, "incidence_center", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//×î½üÐ±¾à
+	//ï¿½ï¿½ï¿½Ð±ï¿½ï¿½
 	ret = xmldoc.get_double_para("firstPixel", &slant_range_first_pixel);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = slant_range_first_pixel * 299792458.0 / 2;
 	ret = write_array_to_h5(dst_h5_filename, "slant_range_first_pixel", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//×îÔ¶Ð±¾à
+	//ï¿½ï¿½Ô¶Ð±ï¿½ï¿½
 	ret = xmldoc.get_double_para("lastPixel", &slant_range_last_pixel);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = slant_range_last_pixel * 299792458.0 / 2;
@@ -1487,26 +1487,26 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	tmp.at<double>(0, 0) = heading;
 	ret = write_array_to_h5(dst_h5_filename, "heading", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//Âö³åÖØ¸´ÆµÂÊ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½Æµï¿½ï¿½
 	ret = xmldoc.get_double_para("commonPRF", &prf);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = prf;
 	ret = write_array_to_h5(dst_h5_filename, "prf", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//·½Î»Ïò·Ö±æÂÊ
+	//ï¿½ï¿½Î»ï¿½ï¿½Ö±ï¿½ï¿½ï¿½
 	ret = xmldoc.get_double_para("azimuthResolution", &azimuth_resolution);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = azimuth_resolution;
 	ret = write_array_to_h5(dst_h5_filename, "azimuth_resolution", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//¾àÀëÏò·Ö±æÂÊ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ï¿½
 	ret = xmldoc.get_double_para("slantRangeResolution", &range_resolution);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = range_resolution;
 	ret = write_array_to_h5(dst_h5_filename, "range_resolution", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
-	//·½Î»Ïò²ÉÑù¼ä¸ô
+	//ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.find_node("productSpecific", pnode);
 	if (return_check(ret, "find_node()", error_head)) return -1;
 	ret = xmldoc._find_node(pnode, "projectedSpacingAzimuth", pchild);
@@ -1520,7 +1520,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	tmp.at<double>(0, 0) = azimuth_spacing;
 	ret = write_array_to_h5(dst_h5_filename, "azimuth_spacing", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//¾àÀëÏò²ÉÑù¼ä¸ô
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc._find_node(pnode, "commonRSF", pchild);
 	if (return_check(ret, "_find_node()", error_head)) return -1;
 	ret = sscanf(pchild->GetText(), "%lf", &range_spacing);
@@ -1537,13 +1537,13 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 
 	int azimuth_len, range_len;
 	Mat tmp_int = Mat::zeros(1, 1, CV_32S);
-	//·½Î»ÏòÏñËØµãÊý
+	//ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½
 	ret = xmldoc.get_int_para("numberOfRows", &azimuth_len);
 	if (return_check(ret, "get_int_para()", error_head)) return -1;
 	tmp_int.at<int>(0, 0) = azimuth_len;
 	ret = write_array_to_h5(dst_h5_filename, "azimuth_len", tmp_int);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//¾àÀëÏòÏñËØµãÊý
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½
 	ret = xmldoc.get_int_para("numberOfColumns", &range_len);
 	if (return_check(ret, "get_int_para()", error_head)) return -1;
 	tmp_int.at<int>(0, 0) = range_len;
@@ -1591,7 +1591,7 @@ int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filena
 	if (return_check(ret, "TSX2h5()", error_head)) return -1;
 	return 0;
 }
-//ÓÃÀ´ÕÒµ½cosarºÍgeorefËù´¦µÄÎ»ÖÃ
+//ï¿½ï¿½ï¿½ï¿½ï¿½Òµï¿½cosarï¿½ï¿½georefï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î»ï¿½ï¿½
 int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filename, const char* polarization)
 {
 	if (xml_filename == NULL ||
@@ -1602,7 +1602,7 @@ int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filena
 	}
 	string main_xml(xml_filename);
 	std::replace(main_xml.begin(), main_xml.end(), '/', '\\');
-	string folder;//½ØÈ¡ÎÄ¼þ¼ÐµÄÃû³Æ
+	string folder;//ï¿½ï¿½È¡ï¿½Ä¼ï¿½ï¿½Ðµï¿½ï¿½ï¿½ï¿½ï¿½
 	if (main_xml.length() > main_xml.rfind("\\") && main_xml.rfind("\\") >= 0)
 	{
 		folder = main_xml.substr(0, main_xml.rfind("\\"));
@@ -1626,13 +1626,13 @@ int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filena
 	if (return_check(ret, "find_node()", error_head)) return -1;
 	ret = xmldoc._find_node(pRoot, "polLayer", pnode);
 	if (return_check(ret, "_find_node()", error_head)) return -1;
-	if (strcmp(pnode->GetText(), polarization) == 0)//Èç¹ûpollayerÏÂ´æÔÚpolarizationÑ¡Ïî
+	if (strcmp(pnode->GetText(), polarization) == 0)//ï¿½ï¿½ï¿½pollayerï¿½Â´ï¿½ï¿½ï¿½polarizationÑ¡ï¿½ï¿½
 	{
 		ret = xmldoc._find_node(pRoot, "filename", pnode);
 		if (return_check(ret, "_find_node()", error_head)) return -1;
 		COSAR = COSAR + pnode->GetText();
 	}
-	else//Èç¹ûpollayerÏÂÃ»ÓÐpolarizationÑ¡Ïî
+	else//ï¿½ï¿½ï¿½pollayerï¿½ï¿½Ã»ï¿½ï¿½polarizationÑ¡ï¿½ï¿½
 	{
 		pRoot = pRoot->NextSiblingElement();
 		if (pRoot)
@@ -1679,7 +1679,7 @@ int FormatConversion::read_POD(const char* POD_filename, double start_time, doub
 	}
 
 	/*
-	* ¶ÁÈ¡¾«ÃÜ¹ìµÀÊý¾Ý£¨´ÓPODfilename£©
+	* ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ü¹ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½PODfilenameï¿½ï¿½
 	*/
 
 	int ret, numOfstateVec;
@@ -1719,7 +1719,7 @@ int FormatConversion::read_POD(const char* POD_filename, double start_time, doub
 		if (gps_time <= start_time && fabs(gps_time - start_time) <= 100.0) start = true;
 		if (gps_time >= stop_time && fabs(gps_time - stop_time) >= 100.0) stop = true;
 
-		if (start && !stop)//¿ªÊ¼¼ÇÂ¼
+		if (start && !stop)//ï¿½ï¿½Ê¼ï¿½ï¿½Â¼
 		{
 			ret = xmldoc._find_node(pnode, "X", pchild);
 			if (ret < 0)
@@ -1815,7 +1815,7 @@ int FormatConversion::read_POD(const char* POD_filename, double start_time, doub
 	tmp(cv::Range(0, count), cv::Range(0, 7)).copyTo(stateVec);
 
 	/*
-	* Ð´Èë¾«ÃÜ¹ìµÀÊý¾Ý£¨Ð´Èëh5filename£©
+	* Ð´ï¿½ë¾«ï¿½Ü¹ï¿½ï¿½ï¿½ï¿½ï¿½Ý£ï¿½Ð´ï¿½ï¿½h5filenameï¿½ï¿½
 	*/
 
 	ret = write_array_to_h5(dst_h5_filename, "fine_state_vec", stateVec);
@@ -1824,7 +1824,7 @@ int FormatConversion::read_POD(const char* POD_filename, double start_time, doub
 	return 0;
 }
 
-//´ÓAirSat¶ÁÈ¡slc
+//ï¿½ï¿½AirSatï¿½ï¿½È¡slc
 int FormatConversion::read_slc_from_AirSat(
 	const char* filename,
 	const char* xml_filename,
@@ -1844,10 +1844,10 @@ int FormatConversion::read_slc_from_AirSat(
 	//if (return_check(ret, "XMLFile_load()", error_head)) return -1;
 	//
 
-	//// === 1. ´ÓXML¶ÁÈ¡SLCÎ¬¶È²ÎÊý ===
+	//// === 1. ï¿½ï¿½XMLï¿½ï¿½È¡SLCÎ¬ï¿½È²ï¿½ï¿½ï¿½ ===
 	//int linesPerBurst, samplesPerBurst, burst_count;
 	///*
-	//* ¶ÁÈ¡xmlÎÄ¼þÀïµÄburst²ÎÊý
+	//* ï¿½ï¿½È¡xmlï¿½Ä¼ï¿½ï¿½ï¿½ï¿½burstï¿½ï¿½ï¿½ï¿½
 	//*/
 	//ret = xmldoc.get_int_para("Width", &linesPerBurst);
 	//if (return_check(ret, "get_int_para()", error_head)) return -1;
@@ -1862,7 +1862,7 @@ int FormatConversion::read_slc_from_AirSat(
 	//fprintf(stdout, "AirSat XML: Height=%d, Width=%d\n", linesPerBurst, samplesPerBurst);
 	//
 
-	//// === 2. ´ò¿ª¶þ½øÖÆÎÄ¼þ ===
+	//// === 2. ï¿½ò¿ª¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ ===
 	//FILE* fp = NULL;
 	//fopen_s(&fp, filename, "rb");
 	//if (!fp) {
@@ -1871,9 +1871,9 @@ int FormatConversion::read_slc_from_AirSat(
 	//}
 
 
-	//// === 3. ¼ÆËã¶ÁÈ¡×Ü×Ö½ÚÊý ===
+	//// === 3. ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ ===
 	//size_t total_samples = static_cast<size_t>(linesPerBurst) * samplesPerBurst;
-	//size_t total_elements = total_samples * 2; // I/Q½»Ìæ
+	//size_t total_elements = total_samples * 2; // I/Qï¿½ï¿½ï¿½ï¿½
 	//INT16* buf = (INT16*)malloc(total_elements * sizeof(INT16));
 	//if (!buf)
 	//{
@@ -1883,7 +1883,7 @@ int FormatConversion::read_slc_from_AirSat(
 	//}
 
 
-	//// === 4. ´ÓÎÄ¼þÍ·Ö±½Ó¶ÁÍêÕû¸öSLC ===
+	//// === 4. ï¿½ï¿½ï¿½Ä¼ï¿½Í·Ö±ï¿½Ó¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½SLC ===
 	//size_t read_count = fread(buf, sizeof(INT16), total_elements, fp);
 	//fclose(fp);
 
@@ -1896,7 +1896,7 @@ int FormatConversion::read_slc_from_AirSat(
 	//}
 
 
-	//// === 5. Ìî³äComplexMat ===
+	//// === 5. ï¿½ï¿½ï¿½ComplexMat ===
 	//slc.re.create(linesPerBurst, samplesPerBurst, CV_16S);
 	//slc.im.create(linesPerBurst, samplesPerBurst, CV_16S);
 
@@ -1914,7 +1914,7 @@ int FormatConversion::read_slc_from_AirSat(
 	//fprintf(stdout, "%d %d\n", slc.re.at<short>(99, 99), slc.im.at<short>(99, 99));
 
 
-	//// === 6. Êä³ö GCP ÐÐÐÅÏ¢£¨½ö1¸ö burst£©===
+	//// === 6. ï¿½ï¿½ï¿½ GCP ï¿½ï¿½ï¿½ï¿½Ï¢ï¿½ï¿½ï¿½ï¿½1ï¿½ï¿½ burstï¿½ï¿½===
 	//gcps_line = Mat::zeros(1, 2, CV_32S);
 	//gcps_line.at<int>(0, 1) = slc.GetRows();
 
@@ -1927,7 +1927,7 @@ int FormatConversion::read_slc_from_AirSat(
 		fprintf(stderr, "read_slc_from_AirSat(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//×¢²áÒÑÖªÇý¶¯
+	GDALAllRegister();	//×¢ï¿½ï¿½ï¿½ï¿½Öªï¿½ï¿½ï¿½ï¿½
 	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);
 	if (poDataset == NULL)
 	{
@@ -1941,9 +1941,9 @@ int FormatConversion::read_slc_from_AirSat(
 	cout << nBand << endl;
 	if (nBand == 2)
 	{
-		// »ñÈ¡µÚÒ»¸ö²¨¶Î£¨Êµ²¿£©
+		// ï¿½ï¿½È¡ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Î£ï¿½Êµï¿½ï¿½ï¿½ï¿½
 		GDALRasterBand* poBandReal = poDataset->GetRasterBand(1);
-		// »ñÈ¡µÚ¶þ¸ö²¨¶Î£¨Ðé²¿£©
+		// ï¿½ï¿½È¡ï¿½Ú¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î£ï¿½ï¿½é²¿ï¿½ï¿½
 		GDALRasterBand* poBandImag = poDataset->GetRasterBand(2);
 
 		xsize = poBandReal->GetXSize();
@@ -1956,7 +1956,7 @@ int FormatConversion::read_slc_from_AirSat(
 			return -1;
 		}
 
-		// ¼ì²éÁ½¸ö²¨¶Î³ß´çÊÇ·ñÒ»ÖÂ
+		// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î³ß´ï¿½ï¿½Ç·ï¿½Ò»ï¿½ï¿½
 		if (poBandImag->GetXSize() != xsize || poBandImag->GetYSize() != ysize)
 		{
 			fprintf(stderr, "read_slc_from_AirSat(): real and imaginary bands have different sizes!\n");
@@ -1964,7 +1964,7 @@ int FormatConversion::read_slc_from_AirSat(
 			return -1;
 		}
 
-		// ·ÖÅäÄÚ´æ
+		// ï¿½ï¿½ï¿½ï¿½ï¿½Ú´ï¿½
 		short* realBuf = (short*)malloc(sizeof(short) * xsize * ysize);
 		short* imagBuf = (short*)malloc(sizeof(short) * xsize * ysize);
 
@@ -1977,10 +1977,10 @@ int FormatConversion::read_slc_from_AirSat(
 			return -1;
 		}
 
-		// ¶ÁÈ¡Êµ²¿Êý¾Ý
+		// ï¿½ï¿½È¡Êµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		CPLErr err1 = poBandReal->RasterIO(GF_Read, 0, 0, xsize, ysize,
 			realBuf, xsize, ysize, GDT_Int16, 0, 0);
-		// ¶ÁÈ¡Ðé²¿Êý¾Ý
+		// ï¿½ï¿½È¡ï¿½é²¿ï¿½ï¿½ï¿½ï¿½
 		CPLErr err2 = poBandImag->RasterIO(GF_Read, 0, 0, xsize, ysize,
 			imagBuf, xsize, ysize, GDT_Int16, 0, 0);
 
@@ -1993,11 +1993,11 @@ int FormatConversion::read_slc_from_AirSat(
 			return -1;
 		}
 
-		// ´´½¨Êä³ö¾ØÕó
+		// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		slc.re.create(ysize, xsize, CV_16S);
 		slc.im.create(ysize, xsize, CV_16S);
 
-		// ½«Êý¾Ý¸´ÖÆµ½ComplexMatÖÐ
+		// ï¿½ï¿½ï¿½ï¿½ï¿½Ý¸ï¿½ï¿½Æµï¿½ComplexMatï¿½ï¿½
 		for (int i = 0; i < ysize; i++)
 		{
 			for (int j = 0; j < xsize; j++)
@@ -2008,7 +2008,7 @@ int FormatConversion::read_slc_from_AirSat(
 			}
 		}
 
-		// ÊÍ·ÅÄÚ´æ
+		// ï¿½Í·ï¿½ï¿½Ú´ï¿½
 		free(realBuf);
 		free(imagBuf);
 		GDALClose(poDataset);
@@ -2025,7 +2025,7 @@ int FormatConversion::read_slc_from_AirSat(
 	return 0;
 }
 
-//´ÓSentinel¶ÁÈ¡slc
+//ï¿½ï¿½Sentinelï¿½ï¿½È¡slc
 int FormatConversion::read_slc_from_Sentinel(
 	const char* filename,
 	const char* xml_filename,
@@ -2047,7 +2047,7 @@ int FormatConversion::read_slc_from_Sentinel(
 	TiXmlElement* pnode = NULL;
 	int linesPerBurst, samplesPerBurst, burst_count;
 	/*
-	* ¶ÁÈ¡xmlÎÄ¼þÀïµÄburst²ÎÊý
+	* ï¿½ï¿½È¡xmlï¿½Ä¼ï¿½ï¿½ï¿½ï¿½burstï¿½ï¿½ï¿½ï¿½
 	*/
 	ret = xmldoc.get_int_para("linesPerBurst", &linesPerBurst);
 	if (return_check(ret, "get_int_para()", error_head)) return -1;
@@ -2065,7 +2065,7 @@ int FormatConversion::read_slc_from_Sentinel(
 
 
 
-	//Öð¸öburst¶ÁÈ¡ÄÚÈÝ
+	//ï¿½ï¿½ï¿½burstï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 	TiXmlElement* pchild = NULL;
 	ret = xmldoc._find_node(pnode, "burst", pchild);
 	if (ret < 0)
@@ -2075,7 +2075,7 @@ int FormatConversion::read_slc_from_Sentinel(
 	}
 	int64 bytesoffset;
 	FILE* fp = NULL;
-	fopen_s(&fp, filename, "rb");//´ò¿ªÒ»¸ö¶þ½øÖÆÎÄ¼þ£¬ÎÄ¼þ±ØÐë´æÔÚ£¬Ö»ÔÊÐí¶Á
+	fopen_s(&fp, filename, "rb");//ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ú£ï¿½Ö»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	if (!fp)
 	{
 		fprintf(stderr, "read_slc_from_Sentinel(): failed to open %s!\n", filename);
@@ -2145,7 +2145,7 @@ int FormatConversion::sentinel_deburst(const char* xml_filename, ComplexMat& slc
 	}
 
 	/*
-	* ÕÒµ½ËùÓÐÎÞÐ§ÐÐ
+	* ï¿½Òµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð§ï¿½ï¿½
 	*/
 	long firstValidSample;
 	char* ptr;
@@ -2153,7 +2153,7 @@ int FormatConversion::sentinel_deburst(const char* xml_filename, ComplexMat& slc
 	invalideLines = 0;
 	int count = 0;
 	Mat sentinel = Mat::zeros(1, slc.GetRows(), CV_64F);
-	for (int i = 0; i < burst_count; i++)//burst¼äÑ­»·ÅÐ¶Ï 
+	for (int i = 0; i < burst_count; i++)//burstï¿½ï¿½Ñ­ï¿½ï¿½ï¿½Ð¶ï¿½ 
 	{
 		if (!pchild) break;
 		ret = xmldoc._find_node(pchild, "firstValidSample", pnode);
@@ -2170,7 +2170,7 @@ int FormatConversion::sentinel_deburst(const char* xml_filename, ComplexMat& slc
 			sentinel.at<double>(0, count) = -1;
 		}
 		count++;
-		for (int j = 0; j < linesPerBurst - 1; j++)//burstÄÚÃ¿Ò»ÐÐÑ­»·ÅÐ¶Ï
+		for (int j = 0; j < linesPerBurst - 1; j++)//burstï¿½ï¿½Ã¿Ò»ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½Ð¶ï¿½
 		{
 			firstValidSample = strtol(ptr, &ptr, 0);
 			if (firstValidSample < 0)
@@ -2191,7 +2191,7 @@ int FormatConversion::sentinel_deburst(const char* xml_filename, ComplexMat& slc
 	int invalideLine_accu = 0;
 	for (int i = 0; i < slc.GetRows(); i++)
 	{
-		if (sentinel.at<double>(0, i) > -0.5)//¼´²»µÈÓÚ-1£¬¼´²»ÊÇinvalidµÄÐÐ
+		if (sentinel.at<double>(0, i) > -0.5)//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½-1ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½invalidï¿½ï¿½ï¿½ï¿½
 		{
 			sentinel_accu.at<int>(count, 0) = invalideLine_accu;
 			c = slc(cv::Range(i, i + 1), cv::Range(0, samplesPerLine));
@@ -2248,7 +2248,7 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 		return -1;
 	}
 
-	//¶ÁÈ¡¹ìµÀ²ÎÊý
+	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	TiXmlElement* pnode, * pchild, * pchild1;
 	//int numOfstateVec;
 	//ret = xmldoc.find_node("orbitList", pnode);
@@ -2261,32 +2261,32 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 	state_vec.create(numOfstateVec, 7, CV_64F);
 	for (int i = 0; i < numOfstateVec; i++)
 	{
-		cout << "¿ªÊ¼´¦ÀíÊ±¼ä " << i << endl;
+		cout << "ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ " << i << endl;
 		if (!pnode) break;
-		//GPSÊ±¼ä
+		//GPSÊ±ï¿½ï¿½
 		ret = xmldoc._find_node(pnode, "TimeStamp", pchild);
 		ret = UTC2GPS(pchild->GetText(), &time);
-		cout << "Ê±¼ä´¦ÀíÍê±Ï " << i << endl;
-		//Î»ÖÃx
+		cout << "Ê±ï¿½ä´¦ï¿½ï¿½ï¿½ï¿½ï¿½ " << i << endl;
+		//Î»ï¿½ï¿½x
 		ret = xmldoc._find_node(pnode, "xPosition", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &x);
-		//Î»ÖÃy
+		//Î»ï¿½ï¿½y
 		ret = xmldoc._find_node(pnode, "yPosition", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &y);
-		//Î»ÖÃz
+		//Î»ï¿½ï¿½z
 		ret = xmldoc._find_node(pnode, "zPosition", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &z);
-		//ËÙ¶Èx
+		//ï¿½Ù¶ï¿½x
 		ret = xmldoc._find_node(pnode, "xVelocity", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &vx);
-		//ËÙ¶Èy
+		//ï¿½Ù¶ï¿½y
 		ret = xmldoc._find_node(pnode, "yVelocity", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &vy);
-		//ËÙ¶Èz
+		//ï¿½Ù¶ï¿½z
 		ret = xmldoc._find_node(pnode, "zVelocity", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &vz);
 
-		//¸³Öµ
+		//ï¿½ï¿½Öµ
 		state_vec.at<double>(i, 0) = time;
 		state_vec.at<double>(i, 1) = x;
 		state_vec.at<double>(i, 2) = y;
@@ -2298,77 +2298,77 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 	}
 
 	TiXmlElement* imgTimeNode;
-	cout << "ÆäËû²ÎÊý´¦Àí" << endl;
-	//Âö³åÖØ¸´ÆµÂÊ
+	cout << "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" << endl;
+	//ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½Æµï¿½ï¿½
 	ret = xmldoc.get_double_para("Prf", &this->prf);
-	cout << "Âö³åÖØ¸´ÆµÂÊover" << endl;
-	//ÖÐÐÄÆµÂÊ
+	cout << "ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½Æµï¿½ï¿½over" << endl;
+	//ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½
 	ret = xmldoc.get_double_para("RadarCenterFrequency", &this->carrier_frequency);
 	this->carrier_frequency = this->carrier_frequency * 1e9;
-	cout << "ÖÐÐÄÆµÂÊover" << endl;
-	//×î½üÐ±¾à
+	cout << "ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½over" << endl;
+	//ï¿½ï¿½ï¿½Ð±ï¿½ï¿½
 	ret = xmldoc.get_double_para("nearRange", &this->slant_range_first_pixel);
-	cout << "×î½üÐ±¾àover" << endl;
-	//¾àÀë·½Î»²ÉÑù¼ä¸ô/·Ö±æÂÊ
+	cout << "ï¿½ï¿½ï¿½Ð±ï¿½ï¿½over" << endl;
+	//ï¿½ï¿½ï¿½ë·½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½Ö±ï¿½ï¿½ï¿½
 	ret = xmldoc.get_double_para("Widthspace", &this->range_spacing);
 	ret = xmldoc.get_double_para("Heightspace", &this->azimuth_spacing);
-	cout << "¾àÀë·½Î»²ÉÑù¼ä¸ôover" << endl;
-	//ËÄ½Ç¾­Î³¶È
-	// ×óÉÏ½Ç¾­Î³¶È
+	cout << "ï¿½ï¿½ï¿½ë·½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½over" << endl;
+	//ï¿½Ä½Ç¾ï¿½Î³ï¿½ï¿½
+	// ï¿½ï¿½ï¿½Ï½Ç¾ï¿½Î³ï¿½ï¿½
 	ret = xmldoc.find_node("topLeft", pnode);
 	ret = xmldoc._find_node(pnode, "Latitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->topleft_lat);
 	ret = xmldoc._find_node(pnode, "Longitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->topleft_lon);
-	cout << "×óÉÏ½Ç¾­Î³¶Èover" << endl;
+	cout << "ï¿½ï¿½ï¿½Ï½Ç¾ï¿½Î³ï¿½ï¿½over" << endl;
 
-	// ÓÒÉÏ½Ç¾­Î³¶È
+	// ï¿½ï¿½ï¿½Ï½Ç¾ï¿½Î³ï¿½ï¿½
 	ret = xmldoc.find_node("topRight", pnode);
 	ret = xmldoc._find_node(pnode, "Latitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->topright_lat);
 	ret = xmldoc._find_node(pnode, "Longitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->topright_lon);
-	cout << "ÓÒÉÏ½Ç¾­Î³¶Èover" << endl;
+	cout << "ï¿½ï¿½ï¿½Ï½Ç¾ï¿½Î³ï¿½ï¿½over" << endl;
 
-	// ×óÏÂ½Ç¾­Î³¶È
+	// ï¿½ï¿½ï¿½Â½Ç¾ï¿½Î³ï¿½ï¿½
 	ret = xmldoc.find_node("bottomLeft", pnode);
 	ret = xmldoc._find_node(pnode, "Latitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->bottomleft_lat);
 	ret = xmldoc._find_node(pnode, "Longitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->bottomleft_lon);
-	cout << "×óÏÂ½Ç¾­Î³¶Èover" << endl;
+	cout << "ï¿½ï¿½ï¿½Â½Ç¾ï¿½Î³ï¿½ï¿½over" << endl;
 
-	// ÓÒÏÂ½Ç¾­Î³¶È
+	// ï¿½ï¿½ï¿½Â½Ç¾ï¿½Î³ï¿½ï¿½
 	ret = xmldoc.find_node("bottomRight", pnode);
 	ret = xmldoc._find_node(pnode, "Latitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->bottomright_lat);
 	ret = xmldoc._find_node(pnode, "Longitude", pchild);
 	ret = sscanf(pchild->GetText(), "%lf", &this->bottomright_lon);
-	cout << "ÓÒÏÂ½Ç¾­Î³¶Èover" << endl;
+	cout << "ï¿½ï¿½ï¿½Â½Ç¾ï¿½Î³ï¿½ï¿½over" << endl;
 
-	//ÎÀÐÇÃû³Æ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("satellite", this->sensor);
-	cout << "ÎÀÐÇÃû³Æover" << endl;
-	//ÅÄÉãÆðÊ¼Ê±¼ä
-	//ret = xmldoc.get_str_para("start", this->acquisition_start_time);    // ×¢Òâ£º²»ÄÜÓÃ "start" £¬ÒòÎªÓÐÁ½¸ö
+	cout << "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½over" << endl;
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Ê±ï¿½ï¿½
+	//ret = xmldoc.get_str_para("start", this->acquisition_start_time);    // ×¢ï¿½â£ºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ "start" ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.find_node("imagingTime", pnode);
 	ret = xmldoc._find_node(pnode, "start", pnode);
 	//ret = sscanf(pnode->GetText(), "%s", &this->acquisition_start_time);
 	this->acquisition_start_time = pnode->GetText();
-	cout << "ÅÄÉãÆðÊ¼Ê±¼äover " << pnode->GetText() << this->acquisition_start_time.c_str() << endl;
-	//ÅÄÉã½áÊøÊ±¼ä
-	//ret = xmldoc.get_str_para("end", this->acquisition_stop_time);    // ×¢Òâ£º²»ÄÜÓÃ "end" £¬ÒòÎªÓÐÁ½¸ö
+	cout << "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Ê±ï¿½ï¿½over " << pnode->GetText() << this->acquisition_start_time.c_str() << endl;
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
+	//ret = xmldoc.get_str_para("end", this->acquisition_stop_time);    // ×¢ï¿½â£ºï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ "end" ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.find_node("imagingTime", pnode);
 	ret = xmldoc._find_node(pnode, "end", pnode);
 	//ret = sscanf(pnode->GetText(), "%s", &this->acquisition_stop_time);
 	this->acquisition_stop_time = pnode->GetText();
-	cout << "ÅÄÉã½áÊøÊ±¼äover" << endl;
+	cout << "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½over" << endl;
 	
 	
 	//ret = xmldoc.get_double_para("rangeResolution", &this->range_resolution);
 	//ret = xmldoc.get_double_para("azimuthResolution", &this->azimuth_resolution);
 
-	cout << "ÆäËû²ÎÊý´¦ÀíÍê±Ï" << endl;
+	cout << "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" << endl;
 
 
 
@@ -2383,13 +2383,13 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 
 
 
-	// ½« XML ÎÄ¼þÀï»ñµÃµÄÔªËØÐ´Èë h5 ÎÄ¼þÀï
+	// ï¿½ï¿½ XML ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ãµï¿½Ôªï¿½ï¿½Ð´ï¿½ï¿½ h5 ï¿½Ä¼ï¿½ï¿½ï¿½
 	if (!dst_h5)
 	{
 		fprintf(stderr, "write_to_h5(): input check failed!\n");
 		return -1;
 	}
-	cout << "dst_h5 ÎÄ¼þ¶ÁÈ¡" << endl;
+	cout << "dst_h5 ï¿½Ä¼ï¿½ï¿½ï¿½È¡" << endl;
 	// int ret;
 	/*if (!b_initialized)
 	{
@@ -2400,7 +2400,7 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 			return -1;
 		}
 	}
-	cout << "³õÊ¼»¯Íê³É" << endl;*/
+	cout << "ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½" << endl;*/
 	FormatConversion conversion;
 	ret = conversion.creat_new_h5(dst_h5);
 	if (ret < 0)
@@ -2408,29 +2408,29 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 		fprintf(stderr, "write_to_h5(): failed to create %s!\n", dst_h5);
 		return -1;
 	}
-	cout << "ÐÂµÄ h5 ÎÄ¼þ´´½¨Íê³É" << endl;
+	cout << "ï¿½Âµï¿½ h5 ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" << endl;
 	conversion.write_array_to_h5(dst_h5, "state_vec", this->state_vec);
-	cout << "½« state_vec Ð´Èë h5 ÎÄ¼þÀï" << endl;
+	cout << "ï¿½ï¿½ state_vec Ð´ï¿½ï¿½ h5 ï¿½Ä¼ï¿½ï¿½ï¿½" << endl;
 
 	conversion.write_double_to_h5(dst_h5, "azimuth_spacing", this->azimuth_spacing);
 	conversion.write_double_to_h5(dst_h5, "range_spacing", this->range_spacing);
 	conversion.write_double_to_h5(dst_h5, "slant_range_first_pixel", this->slant_range_first_pixel);
 	conversion.write_double_to_h5(dst_h5, "carrier_frequency", this->carrier_frequency);
 	conversion.write_double_to_h5(dst_h5, "prf", this->prf);
-	cout << "½« double Êý¾ÝÐ´Èë h5 ÎÄ¼þÀï" << endl;
+	cout << "ï¿½ï¿½ double ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ h5 ï¿½Ä¼ï¿½ï¿½ï¿½" << endl;
 
 	conversion.write_str_to_h5(dst_h5, "sensor", this->sensor.c_str());
 	cout << this->acquisition_start_time.c_str() << endl;
 	conversion.write_str_to_h5(dst_h5, "acquisition_start_time", this->acquisition_start_time.c_str());
 	conversion.write_str_to_h5(dst_h5, "acquisition_stop_time", this->acquisition_stop_time.c_str());
-	cout << "½« str Êý¾ÝÐ´Èë h5 ÎÄ¼þÀï" << endl;
+	cout << "ï¿½ï¿½ str ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ h5 ï¿½Ä¼ï¿½ï¿½ï¿½" << endl;
 
 	conversion.write_int_to_h5(dst_h5, "azimuth_len", slc.GetRows());
 	conversion.write_int_to_h5(dst_h5, "range_len", slc.GetCols());
-	cout << "½« int Êý¾ÝÐ´Èë h5 ÎÄ¼þÀï" << endl;
+	cout << "ï¿½ï¿½ int ï¿½ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ h5 ï¿½Ä¼ï¿½ï¿½ï¿½" << endl;
 
 	conversion.write_slc_to_h5(dst_h5, slc);
-	cout << "½« slc Ð´Èë h5 ÎÄ¼þÀï" << endl;
+	cout << "ï¿½ï¿½ slc Ð´ï¿½ï¿½ h5 ï¿½Ä¼ï¿½ï¿½ï¿½" << endl;
 
 
 
@@ -2451,7 +2451,7 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 //	}
 //
 //	/*
-//	* ¼ì²éh5ÎÄ¼þÊÇ·ñÒÑ¾­´æÔÚ
+//	* ï¿½ï¿½ï¿½h5ï¿½Ä¼ï¿½ï¿½Ç·ï¿½ï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½
 //	*/
 //
 //	int ret;
@@ -2459,7 +2459,7 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 //	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
 //
 //	/*
-//	* Ð´ÈëslcÊý¾Ý  (ÐèÒª×ö AirSat-02 µÄ¼æÈÝ)
+//	* Ð´ï¿½ï¿½slcï¿½ï¿½ï¿½ï¿½  (ï¿½ï¿½Òªï¿½ï¿½ AirSat-02 ï¿½Ä¼ï¿½ï¿½ï¿½)
 //	*/
 //
 //	ComplexMat slc; Mat gcps_line_index;
@@ -2478,7 +2478,7 @@ int HTHT_reader::AirSat2h5(const char* xml_file, const char* data_file, int numO
 //	return 0;
 //}
 
-// sentinel ×ªÎª h5 (²âÊÔ°æ)
+// sentinel ×ªÎª h5 (ï¿½ï¿½ï¿½Ô°ï¿½)
 int FormatConversion::sentinel2h5_trial(
 	const char* tiff_filename,
 	const char* xml_filename,
@@ -2493,7 +2493,7 @@ int FormatConversion::sentinel2h5_trial(
 	}
 
 	/*
-	* ¼ì²éh5ÎÄ¼þÊÇ·ñÒÑ¾­´æÔÚ
+	* ï¿½ï¿½ï¿½h5ï¿½Ä¼ï¿½ï¿½Ç·ï¿½ï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	int ret;
@@ -2501,12 +2501,12 @@ int FormatConversion::sentinel2h5_trial(
 	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
 
 	/*
-	* Ð´ÈëslcÊý¾Ý  (ÐèÒª×ö AirSat-02 µÄ¼æÈÝ)
+	* Ð´ï¿½ï¿½slcï¿½ï¿½ï¿½ï¿½  (ï¿½ï¿½Òªï¿½ï¿½ AirSat-02 ï¿½Ä¼ï¿½ï¿½ï¿½)
 	*/
 
 	ComplexMat slc; Mat gcps_line_index;
 	int rows, cols;
-	ret = read_slc_from_Sentinel(tiff_filename, xml_filename, slc, gcps_line_index);//ÐèÒªdeburst// gcps_line_index¼ÇÂ¼µÄÊÇÃ¿¸öburstµÄÐÐÊý
+	ret = read_slc_from_Sentinel(tiff_filename, xml_filename, slc, gcps_line_index);//ï¿½ï¿½Òªdeburst// gcps_line_indexï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½ï¿½burstï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	if (return_check(ret, "read_slc_from_Sentinel()", error_head)) return -1;
 	//ret = sentinel_deburst(xml_filename, slc, sentinel);
 	//if (return_check(ret, "sentinel_deburst()", error_head)) return -1;
@@ -2519,7 +2519,7 @@ int FormatConversion::sentinel2h5_trial(
 	slc.im.release();
 
 	/*
-	* Ð´Èë¿ØÖÆµãÊý¾Ý
+	* Ð´ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	Mat gcps;
@@ -2534,11 +2534,11 @@ int FormatConversion::sentinel2h5_trial(
 	for (int i = 0; i < gcps.rows; i++)
 	{
 		int temp_r, xx;
-		temp_r = (int)gcps.at<double>(i, 3);//¶ÁÈ¡ÐÐ
+		temp_r = (int)gcps.at<double>(i, 3);//ï¿½ï¿½È¡ï¿½ï¿½
 		xx = temp_r / linesPerburst;
 		if (xx > 0 && xx < gcps_line_index.cols)
 		{
-			gcps.at<double>(i, 3) = (double)gcps_line_index.at<int>(0, xx);//ÅÐ¶Ï¿ØÖÆµã´¦ÓÚµÚ¼¸¸öburstÖ®ÄÚ²¢¸³ÖµÐÐÊý
+			gcps.at<double>(i, 3) = (double)gcps_line_index.at<int>(0, xx);//ï¿½Ð¶Ï¿ï¿½ï¿½Æµã´¦ï¿½ÚµÚ¼ï¿½ï¿½ï¿½burstÖ®ï¿½Ú²ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½
 		}
 	}
 	ret = write_array_to_h5(dst_h5_filename, "gcps", gcps);
@@ -2564,7 +2564,7 @@ int FormatConversion::sentinel2h5(
 	}
 
 	/*
-	* ¼ì²éh5ÎÄ¼þÊÇ·ñÒÑ¾­´æÔÚ
+	* ï¿½ï¿½ï¿½h5ï¿½Ä¼ï¿½ï¿½Ç·ï¿½ï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	int ret;
@@ -2572,12 +2572,12 @@ int FormatConversion::sentinel2h5(
 	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
 
 	/*
-	* Ð´ÈëslcÊý¾Ý  (ÐèÒª×ö AirSat-02 µÄ¼æÈÝ)
+	* Ð´ï¿½ï¿½slcï¿½ï¿½ï¿½ï¿½  (ï¿½ï¿½Òªï¿½ï¿½ AirSat-02 ï¿½Ä¼ï¿½ï¿½ï¿½)
 	*/
 
 	ComplexMat slc;Mat gcps_line_index;
 	int rows, cols;
-	ret = read_slc_from_Sentinel(tiff_filename, xml_filename, slc, gcps_line_index);//ÐèÒªdeburst// gcps_line_index¼ÇÂ¼µÄÊÇÃ¿¸öburstµÄÐÐÊý
+	ret = read_slc_from_Sentinel(tiff_filename, xml_filename, slc, gcps_line_index);//ï¿½ï¿½Òªdeburst// gcps_line_indexï¿½ï¿½Â¼ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½ï¿½burstï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	if (return_check(ret, "read_slc_from_Sentinel()", error_head)) return -1;
 	//ret = sentinel_deburst(xml_filename, slc, sentinel);
 	//if (return_check(ret, "sentinel_deburst()", error_head)) return -1;
@@ -2590,7 +2590,7 @@ int FormatConversion::sentinel2h5(
 	slc.im.release();
 
 	/*
-	* Ð´Èë¿ØÖÆµãÊý¾Ý
+	* Ð´ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	Mat gcps;
@@ -2605,18 +2605,18 @@ int FormatConversion::sentinel2h5(
 	for (int i = 0; i < gcps.rows; i++)
 	{
 		int temp_r, xx;
-		temp_r = (int)gcps.at<double>(i, 3);//¶ÁÈ¡ÐÐ
+		temp_r = (int)gcps.at<double>(i, 3);//ï¿½ï¿½È¡ï¿½ï¿½
 		xx = temp_r / linesPerburst;
 		if (xx > 0 && xx < gcps_line_index.cols)
 		{
-			gcps.at<double>(i, 3) = (double)gcps_line_index.at<int>(0, xx);//ÅÐ¶Ï¿ØÖÆµã´¦ÓÚµÚ¼¸¸öburstÖ®ÄÚ²¢¸³ÖµÐÐÊý
+			gcps.at<double>(i, 3) = (double)gcps_line_index.at<int>(0, xx);//ï¿½Ð¶Ï¿ï¿½ï¿½Æµã´¦ï¿½ÚµÚ¼ï¿½ï¿½ï¿½burstÖ®ï¿½Ú²ï¿½ï¿½ï¿½Öµï¿½ï¿½ï¿½ï¿½
 		}
 	}
 	ret = write_array_to_h5(dst_h5_filename, "gcps", gcps);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
 	/*
-	* ¸ù¾Ý¿ØÖÆµãÊý¾ÝÄâºÏ¾­Î³¶È¡¢ÏÂÊÓ½ÇÓëÏñËØ×ø±ê£¨ÐÐ¡¢ÁÐ£©Ö®¼äµÄ¶àÏîÊ½¹ØÏµ
+	* ï¿½ï¿½ï¿½Ý¿ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¾ï¿½Î³ï¿½È¡ï¿½ï¿½ï¿½ï¿½Ó½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ê£¨ï¿½Ð¡ï¿½ï¿½Ð£ï¿½Ö®ï¿½ï¿½Ä¶ï¿½ï¿½ï¿½Ê½ï¿½ï¿½Ïµ
 	*/
 
 	double mean_lon, mean_lat, mean_inc, max_lon, max_lat, max_inc, min_lon, min_lat, min_inc;
@@ -2635,10 +2635,10 @@ int FormatConversion::sentinel2h5(
 	lon = (lon - mean_lon) / (max_lon - min_lon + 1e-10);
 	lat = (lat - mean_lat) / (max_lat - min_lat + 1e-10);
 	inc = (inc - mean_inc) / (max_inc - min_inc + 1e-10);
-	row = (row + 1 - double(rows) * 0.5) / (double(rows) + 1e-10);//sentinelÐÐÁÐÆðµãÎª0£¬+1Í³Ò»Îª1.
+	row = (row + 1 - double(rows) * 0.5) / (double(rows) + 1e-10);//sentinelï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îª0ï¿½ï¿½+1Í³Ò»Îª1.
 	col = (col + 1 - double(cols) * 0.5) / (double(cols) + 1e-10);
 	
-	//ÄâºÏ¾­¶È
+	//ï¿½ï¿½Ï¾ï¿½ï¿½ï¿½
 
 	Mat A, B, b, temp, coefficient, error, eye, b_t, a, a_t;
 	double rms;
@@ -2736,7 +2736,7 @@ int FormatConversion::sentinel2h5(
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÎ³¶È
+	//ï¿½ï¿½ï¿½Î³ï¿½ï¿½
 
 	lat.copyTo(b);
 
@@ -2828,7 +2828,7 @@ int FormatConversion::sentinel2h5(
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÏÂÊÓ½Ç
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½
 
 	inc.copyTo(b);
 	A = Mat::ones(inc.rows, 6, CV_64F);
@@ -2868,7 +2868,7 @@ int FormatConversion::sentinel2h5(
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÐÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 	row.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
@@ -2959,7 +2959,7 @@ int FormatConversion::sentinel2h5(
 		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 
-	//ÄâºÏÁÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 	col.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
@@ -3051,7 +3051,7 @@ int FormatConversion::sentinel2h5(
 	}
 
 	/*
-	* Ð´Èë¹ìµÀÊý¾Ý
+	* Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	Mat stateVec;
@@ -3063,7 +3063,7 @@ int FormatConversion::sentinel2h5(
 	
 
 	/*
-	* Ð´Èë¶àÆÕÀÕÖÐÐÄÆµÂÊÊý¾Ý
+	* Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	Mat Dc;
@@ -3073,52 +3073,52 @@ int FormatConversion::sentinel2h5(
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
 	/*
-	* ÆäËû¸¨ÖúÊý¾Ý
+	* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	string file_type, sensor, polarization, imaging_mode,
 		lookside, orbit_dir, acquisition_start_time, acquisition_stop_time, process_state;
 
-	//Êý¾ÝÀàÐÍ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("productType", file_type);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "file_type", file_type.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//ÎÀÐÇÃû³Æ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("missionId", sensor);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "sensor", sensor.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//¼«»¯
+	//ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("polarisation", polarization);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "polarization", polarization.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//¹¤×÷Ä£Ê½
+	//ï¿½ï¿½ï¿½ï¿½Ä£Ê½
 	ret = xmldoc.get_str_para("mode", imaging_mode);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "imaging_mode", imaging_mode.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//ÊÓÏò
+	//ï¿½ï¿½ï¿½ï¿½
 	ret = write_str_to_h5(dst_h5_filename, "lookside", "RIGHT");
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//¹ìµÀ·½Ïò
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("pass", orbit_dir);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "orbit_dir", orbit_dir.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//ÅÄÉãÆðÊ¼Ê±¼ä
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Ê±ï¿½ï¿½
 	ret = xmldoc.get_str_para("startTime", acquisition_start_time);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "acquisition_start_time", acquisition_start_time.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//ÅÄÉã½áÊøÊ±¼ä
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
 	ret = xmldoc.get_str_para("stopTime", acquisition_stop_time);
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "acquisition_stop_time", acquisition_stop_time.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
 
-	//¾«ÃÜ¹ìµÀÊý¾Ý
+	//ï¿½ï¿½ï¿½Ü¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	if (POD_file)
 	{
 		double start_t, end_t;
@@ -3127,10 +3127,10 @@ int FormatConversion::sentinel2h5(
 		read_POD(POD_file, start_t, end_t, dst_h5_filename);
 	}
 
-	//´¦ÀíµÈ¼¶
+	//ï¿½ï¿½ï¿½ï¿½ï¿½È¼ï¿½
 	ret = write_str_to_h5(dst_h5_filename, "process_state", "InSAR_0");
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//´¦ÀíÃèÊö
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = write_str_to_h5(dst_h5_filename, "comment", "import from sentinel1 Single Look Complex, unprocessed.");
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
 
@@ -3141,29 +3141,29 @@ int FormatConversion::sentinel2h5(
 		range_resolution, azimuth_spacing, range_spacing;
 	Mat tmp = Mat::zeros(1, 1, CV_64F);
 
-	//¹ìµÀ¸ß¶È,sentinelÃ»Ìá¹©£¬ÉèÖÃÎª-1
+	//ï¿½ï¿½ï¿½ï¿½ß¶ï¿½,sentinelÃ»ï¿½á¹©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îª-1
 	tmp.at<double>(0, 0) = -1;
 	ret = write_array_to_h5(dst_h5_filename, "orbit_altitude", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//ÔØÆµ
+	//ï¿½ï¿½Æµ
 	ret = xmldoc.get_double_para("radarFrequency", &carrier_frequency);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = carrier_frequency;
 	ret = write_array_to_h5(dst_h5_filename, "carrier_frequency", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//ÖÐÐÄÏÂÊÓ½Ç
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½
 	ret = xmldoc.get_double_para("incidenceAngleMidSwath", &incidence_center);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = incidence_center;
 	ret = write_array_to_h5(dst_h5_filename, "incidence_center", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//×î½üÐ±¾à
+	//ï¿½ï¿½ï¿½Ð±ï¿½ï¿½
 	ret = xmldoc.get_double_para("slantRangeTime", &slant_range_first_pixel);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = slant_range_first_pixel;
 	ret = write_array_to_h5(dst_h5_filename, "slant_range_first_pixel", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//×îÔ¶Ð±¾à£¬sentinelÎ´Ìá¹©£¬ÉèÖÃÎª-1
+	//ï¿½ï¿½Ô¶Ð±ï¿½à£¬sentinelÎ´ï¿½á¹©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îª-1
 	tmp.at<double>(0, 0) = -1;
 	ret = write_array_to_h5(dst_h5_filename, "slant_range_last_pixel", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
@@ -3173,27 +3173,27 @@ int FormatConversion::sentinel2h5(
 	tmp.at<double>(0, 0) = heading;
 	ret = write_array_to_h5(dst_h5_filename, "heading", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//Âö³åÖØ¸´ÆµÂÊ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½Æµï¿½ï¿½
 	ret = xmldoc.get_double_para("prf", &prf);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = prf;
 	ret = write_array_to_h5(dst_h5_filename, "prf", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//·½Î»Ïò·Ö±æÂÊ
+	//ï¿½ï¿½Î»ï¿½ï¿½Ö±ï¿½ï¿½ï¿½
 	tmp.at<double>(0, 0) = 20;
 	ret = write_array_to_h5(dst_h5_filename, "azimuth_resolution", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//¾àÀëÏò·Ö±æÂÊ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ï¿½
 	tmp.at<double>(0, 0) = 5;
 	ret = write_array_to_h5(dst_h5_filename, "range_resolution", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//·½Î»Ïò²ÉÑù¼ä¸ô
+	//ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_double_para("azimuthPixelSpacing", &azimuth_spacing);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = azimuth_spacing;
 	ret = write_array_to_h5(dst_h5_filename, "azimuth_spacing", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//¾àÀëÏò²ÉÑù¼ä¸ô
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_double_para("rangePixelSpacing", &range_spacing);
 	if (return_check(ret, "get_double_para()", error_head)) return -1;
 	tmp.at<double>(0, 0) = range_spacing;
@@ -3203,18 +3203,18 @@ int FormatConversion::sentinel2h5(
 
 	int azimuth_len, range_len;
 	Mat tmp_int = Mat::zeros(1, 1, CV_32S);
-	//·½Î»ÏòÏñËØµãÊý
+	//ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½
 	tmp_int.at<int>(0, 0) = rows;
 	ret = write_array_to_h5(dst_h5_filename, "azimuth_len", tmp_int);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//¾àÀëÏòÏñËØµãÊý
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½
 	tmp_int.at<int>(0, 0) = cols;
 	ret = write_array_to_h5(dst_h5_filename, "range_len", tmp_int);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
 	return 0;
 }
-//ÊäÈësentinel£¨È·ÈÏfilename£¬²¢Í¨¹ý¶ÁÈ¡¹¤¾ß¶ÁÈ¡£©
+//ï¿½ï¿½ï¿½ï¿½sentinelï¿½ï¿½È·ï¿½ï¿½filenameï¿½ï¿½ï¿½ï¿½Í¨ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ß¶ï¿½È¡ï¿½ï¿½
 int FormatConversion::import_sentinel(
 	const char* manifest,
 	const char* subswath_name,
@@ -3309,7 +3309,7 @@ int FormatConversion::import_sentinel(
 	if (return_check(ret, "writeToh5()", error_head)) return -1;
 	return 0;
 }
-//¶Á³öÒ»¸öburst£¨ÕâÀïÃæ°üÀ¨ÁËÌÞ³ýÎÞÐ§ÐÐ£©
+//ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½burstï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Þ³ï¿½ï¿½ï¿½Ð§ï¿½Ð£ï¿½
 int FormatConversion::get_a_burst(
 	TiXmlElement* pnode,
 	XMLFile& xmldoc,
@@ -3375,7 +3375,7 @@ int FormatConversion::get_a_burst(
 	}
 	if (buf) free(buf);
 
-	//ÌÞ³ýÎÞÐ§Êý¾Ý
+	//ï¿½Þ³ï¿½ï¿½ï¿½Ð§ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc._find_node(pnode, "firstValidSample", pchild);
 	if (ret < 0)
 	{
@@ -3429,7 +3429,7 @@ int FormatConversion::get_a_burst(
 	burst = burst(cv::Range(start, end), cv::Range(0, samplesPerBurst));
 	return 0;
 }
-//¶Á³öÒ»¸öburstÊý¾Ý£¨²¢¼ÆËã³öÖØµþÇøÓò£©
+//ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½burstï¿½ï¿½ï¿½Ý£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½ï¿½ï¿½
 int FormatConversion::get_burst_sentinel(
 	int burst_num,
 	const char* xml_file,
@@ -3456,7 +3456,7 @@ int FormatConversion::get_burst_sentinel(
 	int linesPerBurst, samplesPerBurst, burst_count;
 	double azimuthTimeInterval;
 	/*
-	* ¶ÁÈ¡xmlÎÄ¼þÀïµÄburst²ÎÊý
+	* ï¿½ï¿½È¡xmlï¿½Ä¼ï¿½ï¿½ï¿½ï¿½burstï¿½ï¿½ï¿½ï¿½
 	*/
 	ret = xmldoc.get_int_para("linesPerBurst", &linesPerBurst);
 	if (return_check(ret, "get_int_para()", error_head)) return -1;
@@ -3480,7 +3480,7 @@ int FormatConversion::get_burst_sentinel(
 	}
 
 
-	//¶ÁÈ¡burstÄÚÈÝ
+	//ï¿½ï¿½È¡burstï¿½ï¿½ï¿½ï¿½
 	TiXmlElement* pchild = NULL, * pchild2 = NULL;
 	int count = 1;
 	ret = xmldoc._find_node(pnode, "burst", pchild);
@@ -3575,7 +3575,7 @@ int FormatConversion::get_burst_sentinel(
 		free(buf); buf = NULL;
 	}
 
-	//ÌÞ³ýÎÞÐ§Êý¾Ý
+	//ï¿½Þ³ï¿½ï¿½ï¿½Ð§ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc._find_node(pchild, "firstValidSample", pchild2);
 	if (ret < 0)
 	{
@@ -3624,8 +3624,8 @@ int FormatConversion::get_burst_sentinel(
 	end = linesPerBurst - (invalideLines - start);
 	burst = burst(cv::Range(start, end), cv::Range(0, samplesPerBurst));
 
-	//ÇóÈ¡overlapSize
-	if (!pchild->NextSiblingElement()) *overlapSize = -1;//-1±íÊ¾×îºóÒ»¸öburst
+	//ï¿½ï¿½È¡overlapSize
+	if (!pchild->NextSiblingElement()) *overlapSize = -1;//-1ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½Ò»ï¿½ï¿½burst
 	else
 	{
 		pchild = pchild->NextSiblingElement();
@@ -3676,7 +3676,7 @@ int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& th
 	match_wnd2.convertTo(match_wnd2, CV_64F);
 	
 
-	//ÇóÈ¡Æ«ÒÆÁ¿
+	//ï¿½ï¿½È¡Æ«ï¿½ï¿½ï¿½ï¿½
 	Registration regis;
 	//ComplexMat t1, t2;
 	//regis.interp_paddingzero(match_wnd, t1, 8);
@@ -3687,7 +3687,7 @@ int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& th
 	ret = regis.real_coherent(match_wnd, match_wnd2, &offset_row, &offset_col);
 	if (return_check(ret, "real_coherent()", error_head)) return -1;
 
-	//Ë®Æ½°áÒÆthis_burst
+	//Ë®Æ½ï¿½ï¿½ï¿½ï¿½this_burst
 	
 	//if (offset_col > 0)
 	//{
@@ -3714,8 +3714,8 @@ int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& th
 }
 
 int FormatConversion::burst_stitch(
-	ComplexMat& src_burst,//±»Æ´½ÓµÄ
-	ComplexMat& dst_burst,//Æ´½ÓµÄ
+	ComplexMat& src_burst,//ï¿½ï¿½Æ´ï¿½Óµï¿½
+	ComplexMat& dst_burst,//Æ´ï¿½Óµï¿½
 	int overlapSize,
 	const char* stitch_type
 )
@@ -3745,7 +3745,7 @@ int FormatConversion::burst_stitch(
 		{
 			src_burst.re(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_real);
 			src_burst.im(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_imag);
-			cv::vconcat(dst_burst.re, src_lowerpart_real, dst_burst.re);//´¹Ö±Æ´½Ó
+			cv::vconcat(dst_burst.re, src_lowerpart_real, dst_burst.re);//ï¿½ï¿½Ö±Æ´ï¿½ï¿½
 			cv::vconcat(dst_burst.im, src_lowerpart_imag, dst_burst.im);
 		}
 	}
@@ -3792,7 +3792,7 @@ int FormatConversion::burst_stitch(
 	}
 	return 0;
 }
-//´ÓALOS¶ÁÈ¡slc
+//ï¿½ï¿½ALOSï¿½ï¿½È¡slc
 int FormatConversion::read_slc_from_ALOS(const char* img_file, ComplexMat& slc)
 {
 	if (img_file == NULL)
@@ -3810,7 +3810,7 @@ int FormatConversion::read_slc_from_ALOS(const char* img_file, ComplexMat& slc)
 		return -1;
 	}
 	int rows, cols, sarfd_record_length, record_length, sardata_offset;
-	//¼ì²éÊý¾Ý¸ñÊ½
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý¸ï¿½Ê½
 	fseek(fp, 9 - 1, SEEK_SET);
 	if (fread(&sarfd_record_length, 4, 1, fp) != 1)
 	{
@@ -3826,7 +3826,7 @@ int FormatConversion::read_slc_from_ALOS(const char* img_file, ComplexMat& slc)
 		return -1;
 	}
 	char* ptr = NULL;
-	//È·¶¨slcÊý¾Ý³ß´ç
+	//È·ï¿½ï¿½slcï¿½ï¿½ï¿½Ý³ß´ï¿½
 	fseek(fp, 237 - 1, SEEK_SET);
 	fread(buf, 1, 8, fp);
 	rows = strtol(buf, &ptr, 0);
@@ -3836,12 +3836,12 @@ int FormatConversion::read_slc_from_ALOS(const char* img_file, ComplexMat& slc)
 	fseek(fp, sarfd_record_length + 25 - 1, SEEK_SET);
 	fread(&cols, 4, 1, fp);
 	cols = Big2Little32(cols);
-	//¶ÁÈ¡Êý¾ÝÆ«ÒÆÁ¿
+	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½Æ«ï¿½ï¿½ï¿½ï¿½
 	memset(buf, 0, 2048);
 	fseek(fp, 277 - 1, SEEK_SET);
 	fread(buf, 1, 4, fp);
 	sardata_offset = strtol(buf, &ptr, 0);
-	//¶ÁÈ¡Êý¾Ý
+	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 	slc.re.create(rows, cols, CV_32F);
 	slc.im.create(rows, cols, CV_32F);
 	float* p = (float*)malloc(record_length);
@@ -3874,7 +3874,7 @@ int FormatConversion::read_stateVec_from_ALOS(const char* LED_file, Mat& stateVe
 		return -1;
 	}
 
-	//¼ì²éÎÄ¼þ¸ñÊ½
+	//ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ê½
 	int File_descriptor_len = 720;
 	int Data_set_summary_len = 4096;
 	int num_stateVec = 28;
@@ -3897,7 +3897,7 @@ int FormatConversion::read_stateVec_from_ALOS(const char* LED_file, Mat& stateVe
 	
 	stateVec.create(num_stateVec, 7, CV_64F);
 
-	//¼ÆËãGPSÊ±¼ä
+	//ï¿½ï¿½ï¿½ï¿½GPSÊ±ï¿½ï¿½
 	
 	char str[10240];
 	memset(str, 0, 10240);
@@ -3952,7 +3952,7 @@ int FormatConversion::read_conversion_coefficient_from_ALOS(const char* LED_file
 		fprintf(stderr, "read_conversion_coefficient_from_ALOS(): input check failed!\n");
 		return -1;
 	}
-	//¼ì²éÎÄ¼þ
+	//ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
 
 	int ret, record_len, data_set_summary_len, platform_pos_len,
 		attitue_data_len, radiometric_data_len, facility_related_record_len, offset;
@@ -3981,7 +3981,7 @@ int FormatConversion::read_conversion_coefficient_from_ALOS(const char* LED_file
 		return -1;
 	}
 
-	//¼ÆËãÆ«ÒÆÁ¿
+	//ï¿½ï¿½ï¿½ï¿½Æ«ï¿½ï¿½ï¿½ï¿½
 
 	fseek(fp, 187 - 1, SEEK_SET);
 	fread(str, 1, 6, fp);
@@ -4001,9 +4001,9 @@ int FormatConversion::read_conversion_coefficient_from_ALOS(const char* LED_file
 	facility_related_record_len = 0;
 	offset = record_len + data_set_summary_len + platform_pos_len + attitue_data_len + radiometric_data_len;
 
-	//¶ÁÈ¡Êý¾Ý
+	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 	int count0 = 0;
-	while (facility_related_record_len != 5000/*ALOS2Í£Ö¹Ìõ¼þ*/ && count0 < 11/*ALOS1Í£Ö¹Ìõ¼þ*/)
+	while (facility_related_record_len != 5000/*ALOS2Í£Ö¹ï¿½ï¿½ï¿½ï¿½*/ && count0 < 11/*ALOS1Í£Ö¹ï¿½ï¿½ï¿½ï¿½*/)
 	{
 		offset += facility_related_record_len;
 		fseek(fp, offset + 9 - 1, SEEK_SET);
@@ -4074,12 +4074,12 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 		return -1;
 	}
 
-	///////////////////////´´½¨h5ÎÄ¼þ////////////
+	///////////////////////ï¿½ï¿½ï¿½ï¿½h5ï¿½Ä¼ï¿½////////////
 
 	int ret;
 	if (return_check(creat_new_h5(dst_h5), "creat_new_h5()", error_head)) return -1;
 
-	//////////////¶ÁÈ¡slcÊý¾Ý²¢Ð´Èëµ½Ä¿±êÎÄ¼þÖÐ/////////////
+	//////////////ï¿½ï¿½È¡slcï¿½ï¿½ï¿½Ý²ï¿½Ð´ï¿½ëµ½Ä¿ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½/////////////
 
 	ComplexMat slc;
 	ret = read_slc_from_ALOS(IMG_file, slc);
@@ -4092,7 +4092,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	slc.re.release();
 	slc.im.release();
 
-	//////////////¶ÁÈ¡²¢Ð´Èë¹ìµÀÊý¾Ý//////////////////////
+	//////////////ï¿½ï¿½È¡ï¿½ï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½//////////////////////
 
 	Mat stateVec;
 	ret = read_stateVec_from_ALOS(LED_file, stateVec);
@@ -4100,7 +4100,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	ret = write_array_to_h5(dst_h5, "state_vec", stateVec);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
-	////////////¶ÁÈ¡²¢Ð´ÈëÍ¼Ïñ×ø±êÓë¾­Î³×ø±ê×ª»»¹ØÏµ////////////////////
+	////////////ï¿½ï¿½È¡ï¿½ï¿½Ð´ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ë¾­Î³ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½Ïµ////////////////////
 
 	Mat lon_coef, lat_coef, row_coef, col_coef;
 	ret = read_conversion_coefficient_from_ALOS(LED_file, lon_coef, lat_coef, row_coef, col_coef);
@@ -4115,7 +4115,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
 
-	//////////´ò¿ªLEDÎÄ¼þ/////////////
+	//////////ï¿½ï¿½LEDï¿½Ä¼ï¿½/////////////
 
 	FILE* fp = NULL;
 	fopen_s(&fp, LED_file, "rb");
@@ -4125,7 +4125,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 		return -1;
 	}
 
-	///////////¶ÁÈ¡²¢Ð´Èë¶àÆÕÀÕÖÐÐÄÆµÂÊ£¨ALOSÖ»¸øÁË¶àÆÕÀÕÖÐÐÄÆµÂÊÑØ¾àÀëÏòÄâºÏÏµÊý£©/////////
+	///////////ï¿½ï¿½È¡ï¿½ï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½Ê£ï¿½ALOSÖ»ï¿½ï¿½ï¿½Ë¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½Ø¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½ï¿½ï¿½/////////
 
 	char* ptr;
 	Mat tmp = Mat::zeros(1, 1, CV_64F);
@@ -4137,7 +4137,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	tmp.at<double>(0, 0) = strtod(ptr, &ptr);
 	write_array_to_h5(dst_h5, "doppler_coefficient_b", tmp);
 
-	///////////ÏÂÊÓ½ÇÄâºÏÏµÊý//////////////
+	///////////ï¿½ï¿½ï¿½Ó½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½//////////////
 
 	Mat inc_coefficient_r = Mat::zeros(1, 11, CV_64F);
 	fseek(fp, 720 + 1887 - 1, SEEK_SET); memset(str, 0, 2048);
@@ -4155,34 +4155,34 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	inc_coefficient_r.at<double>(0, 9) = strtod(ptr, &ptr) * factor;
 	write_array_to_h5(dst_h5, "inc_coefficient_r", inc_coefficient_r);
 
-	//ÖÐÐÄÏÂÊÓ½Ç
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½
 	fseek(fp, 720 + 485 - 1, SEEK_SET); memset(str, 0, 2048);
 	fread(str, 1, 8, fp);
 	double inc_center;
 	string temp_str = str;
 	sscanf(temp_str.c_str(), "%lf", &inc_center);
 	write_double_to_h5(dst_h5, "inc_center", inc_center);
-	///////////Ð´ÈëÆäËû¸¨Öú²ÎÊý//////////////
+	///////////Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½//////////////
 
 	string file_type, sensor, polarization, imaging_mode,
 		lookside, orbit_dir, acquisition_start_time, acquisition_stop_time, process_state;
 	int record_len, data_set_summary_len, platform_pos_len,
 		attitue_data_len, radiometric_data_len;
 	record_len = 720; data_set_summary_len = 4096; platform_pos_len = 4680; radiometric_data_len = 9860;
-	//Êý¾ÝÀàÐÍ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = write_str_to_h5(dst_h5, "file_type", "SLC");
 	if (return_check(ret, "write_array_to_h5()", error_head))
 	{
 		if (fp) fclose(fp);
 		return -1;
 	}
-	//ÎÀÐÇÃû³Æ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	fseek(fp, 49 - 1, SEEK_SET);
 	memset(str, 0, 2048);
 	fread(str, 1, 3, fp);
 	sensor = str;
 	write_str_to_h5(dst_h5, "sensor", sensor.c_str());
-	//ÅÄÉãÆðÊ¼Ê±¼ä
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Ê±ï¿½ï¿½
 	string year, month, day, hour, minute, second, temp_string;
 	int h, m; double s;
 	fseek(fp, record_len + 69 - 1, SEEK_SET);
@@ -4201,7 +4201,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	tmp.at<double>(0, 0) = strtod(str, &ptr) / 1000;
 	write_array_to_h5(dst_h5, "prf", tmp);
 	double prf = tmp.at<double>(0, 0);
-	//¼«»¯·½Ê½
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê½
 	FILE* fp1 = NULL;
 	fopen_s(&fp1, IMG_file, "rb");
 	if (fp1)
@@ -4218,7 +4218,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 		polarization = r + t;
 		write_str_to_h5(dst_h5, "polarization", polarization.c_str());
 
-		//ÅÄÉãÆðÊ¼Ê±¼ä
+		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Ê±ï¿½ï¿½
 		uint64_t micro;
 		fseek(fp1, 720 + 85 - 1, SEEK_SET);
 		fread(&micro, 8, 1, fp1);
@@ -4240,14 +4240,14 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 
 		secds += (double)(rows - 1) / prf;
 
-		//ÅÄÉã½áÊøÊ±¼ä
+		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
 		memset(str, 0, 2048);
 		sprintf(str, "%lf", secds);
 		second = str;
 		string end_time = year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second;
 		write_str_to_h5(dst_h5, "acquisition_stop_time", end_time.c_str());
 
-		//×óÉÏ½Ç¾­Î³¶È£¨µÚÒ»¸öÏñËØ£©
+		//ï¿½ï¿½ï¿½Ï½Ç¾ï¿½Î³ï¿½È£ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ø£ï¿½
 		int lon_topleft, lat_topleft, lon_bottomright, lat_bottomright, center_lat, center_lon, slant_range_first_pixel;
 		Mat temp = Mat::zeros(1, 1, CV_64F);
 		fseek(fp1, 720 + 193 - 1, SEEK_SET);
@@ -4262,7 +4262,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 		temp.at<double>(0, 0) = (double)lon_topleft / 1e6;
 		write_array_to_h5(dst_h5, "scene_topleft_lon", temp);
 
-		//ÓÒÉÏ½Ç¾­Î³¶È
+		//ï¿½ï¿½ï¿½Ï½Ç¾ï¿½Î³ï¿½ï¿½
 		fseek(fp1, 720 + 201 - 1, SEEK_SET);
 		fread(&lat_bottomright, 4, 1, fp1);
 		lat_bottomright = Big2Little32(lat_bottomright);
@@ -4275,7 +4275,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 		temp.at<double>(0, 0) = (double)lon_bottomright / 1e6;
 		write_array_to_h5(dst_h5, "scene_topright_lon", temp);
 
-		//×î½üÐ±¾à
+		//ï¿½ï¿½ï¿½Ð±ï¿½ï¿½
 		fseek(fp1, 720 + 117 - 1, SEEK_SET);
 		fread(&slant_range_first_pixel, 4, 1, fp1);
 		slant_range_first_pixel = Big2Little32(slant_range_first_pixel);
@@ -4283,20 +4283,20 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 
 		if (fp1) fclose(fp1);
 	}
-	//ÅÄÉãÄ£Ê½
+	//ï¿½ï¿½ï¿½ï¿½Ä£Ê½
 	fseek(fp, 720 + 413 - 1, SEEK_SET);
 	memset(str, 0, 2048);
 	fread(str, 1, 32, fp);
 	if (str[4] == '2')//ALOS2
 	{
 		attitue_data_len = 16384;
-		//ÊÓÏò
+		//ï¿½ï¿½ï¿½ï¿½
 		string filename = IMG_file;
 		filename = filename.substr(filename.find_last_of('\\') + 1);
-		//ÅÄÉãÄ£Ê½
+		//ï¿½ï¿½ï¿½ï¿½Ä£Ê½
 		imaging_mode = filename.substr(29, 3);
 		write_str_to_h5(dst_h5, "imaging_mode", imaging_mode.c_str());
-		if (filename[32] == 'L')//×óÊÓ
+		if (filename[32] == 'L')//ï¿½ï¿½ï¿½ï¿½
 		{
 			lookside = "LEFT";
 		}
@@ -4305,7 +4305,7 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 			lookside = "RIGHT";
 		}
 		
-		//¹ìµÀ·½Ïò
+		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 		if (filename[38] == 'D')
 		{
 			orbit_dir = "Descending";
@@ -4333,13 +4333,13 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	}
 	write_str_to_h5(dst_h5, "lookside", lookside.c_str());
 	write_str_to_h5(dst_h5, "orbit_dir", orbit_dir.c_str());
-	//ÔØÆµ
+	//ï¿½ï¿½Æµ
 	fseek(fp, 720 + 501 - 1, SEEK_SET);
 	memset(str, 0, 2048);
 	fread(str, 1, 16, fp);
 	tmp.at<double>(0, 0) = 3e8 / strtod(str, &ptr);
 	write_array_to_h5(dst_h5, "carrier_frequency", tmp);
-	//ÖÐÐÄÏÂÊÓ½Ç
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½
 	fseek(fp, 720 + 485 - 1, SEEK_SET);
 	memset(str, 0, 2048);
 	fread(str, 1, 8, fp);
@@ -4351,38 +4351,38 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	//fread(str, 1, 16, fp);
 	//tmp.at<double>(0, 0) = strtod(str, &ptr) / 1000;
 	//write_array_to_h5(dst_h5, "prf", tmp);
-	//·½Î»ÏòÏñËØµãÊý
+	//ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½
 	Mat tmp_int = Mat::zeros(1, 1, CV_32S);
 	tmp_int.at<int>(0, 0) = rows;
 	write_array_to_h5(dst_h5, "azimuth_len", tmp_int);
-	//¾àÀëÏòÏñËØµãÊý
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ï¿½ï¿½
 	tmp_int.at<int>(0, 0) = cols;
 	write_array_to_h5(dst_h5, "range_len", tmp_int);
-	//¾àÀëÏò·Ö±æÂÊ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ï¿½
 	int offset = record_len + data_set_summary_len + platform_pos_len + attitue_data_len + radiometric_data_len;
 	fseek(fp, offset + 127 - 1, SEEK_SET);
 	memset(str, 0, 2048);
 	fread(str, 1, 16, fp);
 	tmp.at<double>(0, 0) = strtod(str, &ptr);
 	write_array_to_h5(dst_h5, "range_resolution", tmp);
-	//·½Î»Ïò·Ö±æÂÊ
+	//ï¿½ï¿½Î»ï¿½ï¿½Ö±ï¿½ï¿½ï¿½
 	memset(str, 0, 2048);
 	fread(str, 1, 16, fp);
 	tmp.at<double>(0, 0) = strtod(str, &ptr);
 	write_array_to_h5(dst_h5, "azimuth_resolution", tmp);
-	//·½Î»Ïò²ÉÑù¼ä¸ô
+	//ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	fseek(fp, 720 + 1687 - 1, SEEK_SET);
 	memset(str, 0, 2048);
 	fread(str, 1, 32, fp);
 	tmp.at<double>(0, 0) = strtod(str, &ptr);
 	write_array_to_h5(dst_h5, "azimuth_spacing", tmp);
-	//¾àÀëÏò²ÉÑù¼ä¸ô
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	tmp.at<double>(0, 0) = strtod(ptr, &ptr);
 	write_array_to_h5(dst_h5, "range_spacing", tmp);
 
-	//´¦ÀíµÈ¼¶
+	//ï¿½ï¿½ï¿½ï¿½ï¿½È¼ï¿½
 	ret = write_str_to_h5(dst_h5, "process_state", "InSAR_0");
-	//´¦ÀíÃèÊö
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	int t = attitue_data_len > 10000 ? 2 : 1;
 	char strings[1024]; memset(strings, 0, 1024);
 	sprintf(strings, "import from ALOS%d Single Look Complex, unprocessed.", t);
@@ -4471,8 +4471,22 @@ int XMLFile::XMLFile_add_origin(
 		return -1;
 	}
 	TiXmlElement* DataNode = NULL;
-	TiXmlElement* p = doc.RootElement();
-	int ret = find_node_with_attribute(p, "DataNode", "name", datanode_node, DataNode);
+	// Only search direct children of root for DataNode elements (not recursive)
+	// to avoid matching child elements like <Data_Index>2</Data_Index>
+	TiXmlElement* root = doc.RootElement();
+	for (TiXmlElement* child = root->FirstChildElement(); child != NULL; child = child->NextSiblingElement())
+	{
+		const char* tagName = child->Value();
+		if (tagName && strcmp(tagName, "DataNode") == 0)
+		{
+			const char* attr = child->Attribute("name");
+			if (attr && strcmp(attr, datanode_node) == 0)
+			{
+				DataNode = child;
+				break;
+			}
+		}
+	}
 	if (!DataNode)
 	{
 		DataNode = new TiXmlElement("DataNode");
@@ -4564,8 +4578,22 @@ int XMLFile::XMLFile_add_origin_14(const char* datanode_node, const char* node_n
 	char rank[256];
 	sprintf(rank, "%d-complex-0.0", mode);
 	TiXmlElement* DataNode = NULL;
-	TiXmlElement* p = doc.RootElement();
-	int ret = find_node_with_attribute(p, "DataNode", "name", datanode_node, DataNode);
+	// Only search direct children of root for DataNode elements (not recursive)
+	// to avoid matching child elements like <Data_Index>2</Data_Index>
+	TiXmlElement* root = doc.RootElement();
+	for (TiXmlElement* child = root->FirstChildElement(); child != NULL; child = child->NextSiblingElement())
+	{
+		const char* tagName = child->Value();
+		if (tagName && strcmp(tagName, "DataNode") == 0)
+		{
+			const char* attr = child->Attribute("name");
+			if (attr && strcmp(attr, datanode_node) == 0)
+			{
+				DataNode = child;
+				break;
+			}
+		}
+	}
 	if (!DataNode)
 	{
 		DataNode = new TiXmlElement("DataNode");
@@ -4574,7 +4602,7 @@ int XMLFile::XMLFile_add_origin_14(const char* datanode_node, const char* node_n
 		DataNode->SetAttribute("index", "1");
 		DataNode->SetAttribute("data_count", "1");
 		DataNode->SetAttribute("data_processing", "import");
-		
+
 		DataNode->SetAttribute("rank", rank);
 		TiXmlElement* Data = new TiXmlElement("Data");
 		DataNode->LinkEndChild(Data);
@@ -7558,7 +7586,7 @@ int XMLFile::getIntArray(const char* node_name, Mat& Array, TiXmlElement* rootNo
 int XMLFile::get_gcps_from_TSX(Mat& gcps)
 {
 	/*
-	* ÑéÖ¤¸ù½Úµã
+	* ï¿½ï¿½Ö¤ï¿½ï¿½ï¿½Úµï¿½
 	*/
 	TiXmlElement* pRoot = NULL;
 	pRoot = doc.RootElement();
@@ -7576,7 +7604,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 		return -1;
 	}
 	/*
-	* È·¶¨¿ØÖÆµã¸öÊý
+	* È·ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½
 	*/
 	int n_gcps = 1;
 	TiXmlElement* pnode = NULL;
@@ -7592,7 +7620,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 	}
 	Mat x(n_gcps, 6, CV_64F);
 	/*
-	* ¶ÁÈ¡¿ØÖÆµã
+	* ï¿½ï¿½È¡ï¿½ï¿½ï¿½Æµï¿½
 	*/
 	ret = find_node("gridPoint", pnode);
 	if (return_check(ret, "get_gcps_from_TSX()", error_head)) return -1;
@@ -7601,7 +7629,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 	for (int i = 1; i <= n_gcps; i++)
 	{
 		if (!pnode) break;
-		//¶ÁÈ¡¾­¶È
+		//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 		ret = _find_node(pnode, "lon", pchild);
 		if (ret < 0)
 		{
@@ -7615,7 +7643,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 			fprintf(stderr, "get_gcps_from_TSX(): %s: unkown format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//¶ÁÈ¡Î³¶È
+		//ï¿½ï¿½È¡Î³ï¿½ï¿½
 		ret = _find_node(pnode, "lat", pchild);
 		if (ret < 0)
 		{
@@ -7629,7 +7657,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 			fprintf(stderr, "get_gcps_from_TSX(): %s: unkown format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//¶ÁÈ¡¸ß¶È
+		//ï¿½ï¿½È¡ï¿½ß¶ï¿½
 		ret = _find_node(pnode, "height", pchild);
 		if (ret < 0)
 		{
@@ -7643,7 +7671,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 			fprintf(stderr, "get_gcps_from_TSX(): %s: unkown format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//¶ÁÈ¡ÐÐÊý
+		//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 		ret = _find_node(pnode, "row", pchild);
 		if (ret < 0)
 		{
@@ -7657,7 +7685,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 			fprintf(stderr, "get_gcps_from_TSX(): %s: unkown format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//¶ÁÈ¡ÁÐÊý
+		//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 		ret = _find_node(pnode, "col", pchild);
 		if (ret < 0)
 		{
@@ -7671,7 +7699,7 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 			fprintf(stderr, "get_gcps_from_TSX(): %s: unkown format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//¶ÁÈ¡ÏÂÊÓ½Ç
+		//ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ó½ï¿½
 		ret = _find_node(pnode, "inc", pchild);
 		if (ret < 0)
 		{
@@ -7685,14 +7713,14 @@ int XMLFile::get_gcps_from_TSX(Mat& gcps)
 			fprintf(stderr, "get_gcps_from_TSX(): %s: unkown format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//¸³Öµ
+		//ï¿½ï¿½Öµ
 		x.at<double>(i - 1, 0) = lon;
 		x.at<double>(i - 1, 1) = lat;
 		x.at<double>(i - 1, 2) = height;
 		x.at<double>(i - 1, 3) = row;
 		x.at<double>(i - 1, 4) = col;
 		x.at<double>(i - 1, 5) = inc;
-		//ÏÂÒ»¸ö½Úµã
+		//ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Úµï¿½
 		pnode = pnode->NextSiblingElement();
 	}
 	x.copyTo(gcps);
@@ -7710,7 +7738,7 @@ int XMLFile::get_stateVec_from_TSX(Mat& stateVec)
 	}
 
 	/*
-	* È·¶¨stateVec¸öÊý
+	* È·ï¿½ï¿½stateVecï¿½ï¿½ï¿½ï¿½
 	*/
 
 	TiXmlElement* pnode = NULL;
@@ -7730,7 +7758,7 @@ int XMLFile::get_stateVec_from_TSX(Mat& stateVec)
 	Mat x(numstateVec, 7, CV_64F);
 
 	/*
-	* ÕÒµ½µÚÒ»¸östateVec
+	* ï¿½Òµï¿½ï¿½ï¿½Ò»ï¿½ï¿½stateVec
 	*/
 	ret = _find_node(pRoot, "stateVec", pnode);
 	if (ret < 0)
@@ -7743,7 +7771,7 @@ int XMLFile::get_stateVec_from_TSX(Mat& stateVec)
 	for (int i = 0; i < numstateVec; i++)
 	{
 		if (!pnode) break;
-		//GPSÊ±¼ä
+		//GPSÊ±ï¿½ï¿½
 		ret = _find_node(pnode, "timeUTC", pchild);
 		if (ret < 0)
 		{
@@ -7836,7 +7864,7 @@ int XMLFile::get_stateVec_from_TSX(Mat& stateVec)
 			return -1;
 		}
 
-		//¸³Öµ
+		//ï¿½ï¿½Öµ
 		x.at<double>(i, 0) = GPS_time;
 		x.at<double>(i, 1) = posX;
 		x.at<double>(i, 2) = posY;
@@ -7844,7 +7872,7 @@ int XMLFile::get_stateVec_from_TSX(Mat& stateVec)
 		x.at<double>(i, 4) = velX;
 		x.at<double>(i, 5) = velY;
 		x.at<double>(i, 6) = velZ;
-		//ÏÂÒ»¸ö½Úµã
+		//ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Úµï¿½
 		pnode = pnode->NextSiblingElement();
 	}
 	x.copyTo(stateVec);
@@ -7938,7 +7966,7 @@ int XMLFile::get_gcps_from_AirSat(Mat& gcps)
 int XMLFile::get_gcps_from_sentinel(Mat& gcps)
 {
 	/*
-	* È·¶¨¿ØÖÆµã¸öÊý
+	* È·ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½
 	*/
 	int n_gcps = 1;
 	TiXmlElement* pRoot = doc.RootElement();
@@ -8147,7 +8175,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 	for (int i = 0; i < numOfstateVec; i++)
 	{
 		if (!pnode) break;
-		//GPSÊ±¼ä
+		//GPSÊ±ï¿½ï¿½
 		ret = _find_node(pnode, "time", pchild);
 		if (ret < 0)
 		{
@@ -8156,7 +8184,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 		}
 		ret = conversion.utc2gps(pchild->GetText(), &time);
 		if (return_check(ret, "utc2gps()", error_head)) return -1;
-		//Î»ÖÃx
+		//Î»ï¿½ï¿½x
 		ret = _find_node(pnode, "position", pchild);
 		if (ret < 0)
 		{
@@ -8175,7 +8203,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 			fprintf(stderr, "get_stateVec_from_sentinel(): %s: unknown data format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//Î»ÖÃy
+		//Î»ï¿½ï¿½y
 		ret = _find_node(pchild, "y", pchild1);
 		if (ret < 0)
 		{
@@ -8188,7 +8216,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 			fprintf(stderr, "get_stateVec_from_sentinel(): %s: unknown data format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//Î»ÖÃz
+		//Î»ï¿½ï¿½z
 		ret = _find_node(pchild, "z", pchild1);
 		if (ret < 0)
 		{
@@ -8201,7 +8229,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 			fprintf(stderr, "get_stateVec_from_sentinel(): %s: unknown data format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//ËÙ¶Èx
+		//ï¿½Ù¶ï¿½x
 		ret = _find_node(pnode, "velocity", pchild);
 		if (ret < 0)
 		{
@@ -8220,7 +8248,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 			fprintf(stderr, "get_stateVec_from_sentinel(): %s: unknown data format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//ËÙ¶Èy
+		//ï¿½Ù¶ï¿½y
 		ret = _find_node(pchild, "y", pchild1);
 		if (ret < 0)
 		{
@@ -8233,7 +8261,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 			fprintf(stderr, "get_stateVec_from_sentinel(): %s: unknown data format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		//ËÙ¶Èz
+		//ï¿½Ù¶ï¿½z
 		ret = _find_node(pchild, "z", pchild1);
 		if (ret < 0)
 		{
@@ -8247,7 +8275,7 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 			return -1;
 		}
 
-		//¸³Öµ
+		//ï¿½ï¿½Öµ
 		stateVec.at<double>(i, 0) = time;
 		stateVec.at<double>(i, 1) = x;
 		stateVec.at<double>(i, 2) = y;
@@ -8271,110 +8299,110 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 
 	string tmp_str;;
 	Mat tmp_mat;
-	/*Í¼ÏñÀàÐÍ*/
+	/*Í¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/
 	if (!read_str_from_h5(Input_file, "file_type", tmp_str))
 		write_str_to_h5(Output_file, "file_type", tmp_str.c_str());
-	/*ÎÀÐÇÃû³Æ*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/
 	if (!read_str_from_h5(Input_file, "sensor", tmp_str))
 		write_str_to_h5(Output_file, "sensor", tmp_str.c_str());
-	/*¼«»¯·½Ê½*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê½*/
 	if (!read_str_from_h5(Input_file, "polarization", tmp_str))
 		write_str_to_h5(Output_file, "polarization", tmp_str.c_str());
-	/*ÅÄÉãÄ£Ê½*/
+	/*ï¿½ï¿½ï¿½ï¿½Ä£Ê½*/
 	if (!read_str_from_h5(Input_file, "imaging_mode", tmp_str))
 		write_str_to_h5(Output_file, "imaging_mode", tmp_str.c_str());
-	/*×óÓÒÊÓ*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/
 	if (!read_str_from_h5(Input_file, "lookside", tmp_str))
 		write_str_to_h5(Output_file, "lookside", tmp_str.c_str());
-	/*¹ìµÀ·½Ïò*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/
 	if (!read_str_from_h5(Input_file, "orbit_dir", tmp_str))
 		write_str_to_h5(Output_file, "orbit_dir", tmp_str.c_str());
-	/*×Ó´øºÅ£¨swath£©*/
+	/*ï¿½Ó´ï¿½ï¿½Å£ï¿½swathï¿½ï¿½*/
 	if (!read_str_from_h5(Input_file, "swath", tmp_str))
 		write_str_to_h5(Output_file, "swath", tmp_str.c_str());
-	/*¹ìµÀ¸ß¶È*/
+	/*ï¿½ï¿½ï¿½ï¿½ß¶ï¿½*/
 	if (!read_array_from_h5(Input_file, "orbit_altitude", tmp_mat))
 		write_array_to_h5(Output_file, "orbit_altitude", tmp_mat);
-	/*ÔØÆµ*/
+	/*ï¿½ï¿½Æµ*/
 	if (!read_array_from_h5(Input_file, "carrier_frequency", tmp_mat))
 		write_array_to_h5(Output_file, "carrier_frequency", tmp_mat);
-	/*º½Æ«½Ç*/
+	/*ï¿½ï¿½Æ«ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "heading", tmp_mat))
 		write_array_to_h5(Output_file, "heading", tmp_mat);
-	/*Âö³åÖØ¸´ÆµÂÊ*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½Æµï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "prf", tmp_mat))
 		write_array_to_h5(Output_file, "prf", tmp_mat);
-	/*gcpsÊý¾Ý*/
+	/*gcpsï¿½ï¿½ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "gcps", tmp_mat))
 		write_array_to_h5(Output_file, "gcps", tmp_mat);
-	/*·½Î»Ïò·Ö±æÂÊ*/
+	/*ï¿½ï¿½Î»ï¿½ï¿½Ö±ï¿½ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "azimuth_resolution", tmp_mat))
 		write_array_to_h5(Output_file, "azimuth_resolution", tmp_mat);
-	/*¾àÀëÏò·Ö±æÂÊ*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö±ï¿½ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "range_resolution", tmp_mat))
 		write_array_to_h5(Output_file, "range_resolution", tmp_mat);
-	/*·½Î»Ïò²ÉÑù¼ä¸ô*/
+	/*ï¿½ï¿½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "azimuth_spacing", tmp_mat))
 		write_array_to_h5(Output_file, "azimuth_spacing", tmp_mat);
-	/*¾àÀëÏò²ÉÑù¼ä¸ô*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "range_spacing", tmp_mat))
 		write_array_to_h5(Output_file, "range_spacing", tmp_mat);
-	/*ÎÀÐÇ¹ìµÀ*/
+	/*ï¿½ï¿½ï¿½Ç¹ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "state_vec", tmp_mat))
 		write_array_to_h5(Output_file, "state_vec", tmp_mat);
-	/*¾«ÃÜ¹ìµÀÊý¾Ý*/
+	/*ï¿½ï¿½ï¿½Ü¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "fine_state_vec", tmp_mat))
 		write_array_to_h5(Output_file, "fine_state_vec", tmp_mat);
-	/*ÅÄÉã¿ªÊ¼Ê±¼ä*/
+	/*ï¿½ï¿½ï¿½ã¿ªÊ¼Ê±ï¿½ï¿½*/
 	if (!read_str_from_h5(Input_file, "acquisition_start_time", tmp_str))
 		write_str_to_h5(Output_file, "acquisition_start_time", tmp_str.c_str());
-	/*ÅÄÉã¿ªÊ¼Ê±¼ä*/
+	/*ï¿½ï¿½ï¿½ã¿ªÊ¼Ê±ï¿½ï¿½*/
 	if (!read_str_from_h5(Input_file, "acquisition_stop_time", tmp_str))
 		write_str_to_h5(Output_file, "acquisition_stop_time", tmp_str.c_str());
-	/*¶àÆÕÀÕÖÐÐÄÆµÂÊ*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "doppler_centroid", tmp_mat))
 		write_array_to_h5(Output_file, "doppler_centroid", tmp_mat);
-	/*¶àÆÕÀÕÖÐÐÄÆµÂÊÏµÊýa*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½Ïµï¿½ï¿½a*/
 	if (!read_array_from_h5(Input_file, "doppler_coefficient_a", tmp_mat))
 		write_array_to_h5(Output_file, "doppler_coefficient_a", tmp_mat);
-	/*¶àÆÕÀÕÖÐÐÄÆµÂÊÏµÊýb*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½Ïµï¿½ï¿½b*/
 	if (!read_array_from_h5(Input_file, "doppler_coefficient_b", tmp_mat))
 		write_array_to_h5(Output_file, "doppler_coefficient_b", tmp_mat);
-	/*¾­¶ÈÄâºÏÏµÊý*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "lon_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "lon_coefficient", tmp_mat);
-	/*Î³¶ÈÄâºÏÏµÊý*/
+	/*Î³ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "lat_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "lat_coefficient", tmp_mat);
-	/*ÐÐ×ø±êÄâºÏÏµÊý*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
-	/*ÁÐ×ø±êÄâºÏÏµÊýb*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½b*/
 	if (!read_array_from_h5(Input_file, "col_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "col_coefficient", tmp_mat);
-	/*ÏÂÊÓ½ÇÄâºÏÏµÊý*/
+	/*ï¿½ï¿½ï¿½Ó½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "inc_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "inc_coefficient", tmp_mat);
-	/*ÏÂÊÓ½ÇÄâºÏÏµÊýr*/
+	/*ï¿½ï¿½ï¿½Ó½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½r*/
 	if (!read_array_from_h5(Input_file, "inc_coefficient_r", tmp_mat))
 		write_array_to_h5(Output_file, "inc_coefficient_r", tmp_mat);
-	/*ÐÐ×ø±êÄâºÏÏµÊý*/
+	/*ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ïµï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
-	/*×î½üÐ±¾à*/
+	/*ï¿½ï¿½ï¿½Ð±ï¿½ï¿½*/
 	if (!read_array_from_h5(Input_file, "slant_range_first_pixel", tmp_mat))
 		write_array_to_h5(Output_file, "slant_range_first_pixel", tmp_mat);
-	///*ÐÐÆ«ÒÆÁ¿*/
+	///*ï¿½ï¿½Æ«ï¿½ï¿½ï¿½ï¿½*/
 	//if (!read_array_from_h5(Input_file, "offset_row", tmp_mat))
 	//	write_array_to_h5(Output_file, "offset_row", tmp_mat);
-	///*ÁÐÆ«ÒÆÁ¿*/
+	///*ï¿½ï¿½Æ«ï¿½ï¿½ï¿½ï¿½*/
 	//if (!read_array_from_h5(Input_file, "offset_col", tmp_mat))
 	//	write_array_to_h5(Output_file, "offset_col", tmp_mat);
 	return 0;
 }
 
 /*------------------------------------------------*/
-/*               ÉÚ±øÒ»ºÅÊý¾Ý¶ÁÈ¡¹¤¾ß             */
+/*               ï¿½Ú±ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ý¶ï¿½È¡ï¿½ï¿½ï¿½ï¿½             */
 /*------------------------------------------------*/
 Sentinel1Reader::Sentinel1Reader()
 {
@@ -8440,7 +8468,7 @@ Sentinel1Reader::~Sentinel1Reader()
 
 int Sentinel1Reader::load(const char* xmlfile, const char* tiffFile)
 {
-	if (bXmlLoad) return 0;//Ö»ÔÊÐí¼ÓÔØ1´Î
+	if (bXmlLoad) return 0;//Ö»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½1ï¿½ï¿½
 	this->tiffFile = tiffFile;
 	if (!xmldoc.XMLFile_load(xmlfile)) {
 		bXmlLoad = true;
@@ -8743,7 +8771,7 @@ int Sentinel1Reader::getGeolocationGridPoint()
 		return -1;
 	}
 	/*
-	* È·¶¨¿ØÖÆµã¸öÊý
+	* È·ï¿½ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½ï¿½ï¿½
 	*/
 	int n_gcps = 1;
 	int ret;
@@ -8755,7 +8783,7 @@ int Sentinel1Reader::getGeolocationGridPoint()
 		return -1;
 	}
 	ret = sscanf(pnode->FirstAttribute()->Value(), "%d", &n_gcps);
-	geolocationGridPoint.create(n_gcps, 7, CV_64F);//×îºóÒ»ÐÐÊÇ·½Î»ÏòÊ±¼ä
+	geolocationGridPoint.create(n_gcps, 7, CV_64F);//ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ç·ï¿½Î»ï¿½ï¿½Ê±ï¿½ï¿½
 	TiXmlElement* pchild = NULL;
 	ret = xmldoc._find_node(pnode, "geolocationGridPoint", pchild);
 	double lon, lat, height, row, col, inc, azimuthTime;
@@ -8840,10 +8868,10 @@ int Sentinel1Reader::fitCoordinateConversionCoefficient()
 	lon = (lon - mean_lon) / (max_lon - min_lon + 1e-10);
 	lat = (lat - mean_lat) / (max_lat - min_lat + 1e-10);
 	inc = (inc - mean_inc) / (max_inc - min_inc + 1e-10);
-	row = (row + 1 - double(numberOfSamples) * 0.5) / (double(numberOfSamples) + 1e-10);//sentinelÐÐÁÐÆðµãÎª0£¬+1Í³Ò»Îª1.
+	row = (row + 1 - double(numberOfSamples) * 0.5) / (double(numberOfSamples) + 1e-10);//sentinelï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îª0ï¿½ï¿½+1Í³Ò»Îª1.
 	col = (col + 1 - double(numberOfSamples) * 0.5) / (double(numberOfSamples) + 1e-10);
 
-	//ÄâºÏ¾­¶È
+	//ï¿½ï¿½Ï¾ï¿½ï¿½ï¿½
 
 	Mat A, B, b, temp, coefficient, error, eye, b_t, a, a_t;
 	double rms;
@@ -8935,7 +8963,7 @@ int Sentinel1Reader::fitCoordinateConversionCoefficient()
 		temp.copyTo(lon_coefficient);
 	}
 
-	//ÄâºÏÎ³¶È
+	//ï¿½ï¿½ï¿½Î³ï¿½ï¿½
 
 	lat.copyTo(b);
 
@@ -9026,7 +9054,7 @@ int Sentinel1Reader::fitCoordinateConversionCoefficient()
 		temp.copyTo(lat_coefficient);
 	}
 
-	//ÄâºÏÏÂÊÓ½Ç
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½
 
 	inc.copyTo(b);
 	A = Mat::ones(inc.rows, 6, CV_64F);
@@ -9065,7 +9093,7 @@ int Sentinel1Reader::fitCoordinateConversionCoefficient()
 		temp.copyTo(inc_coefficient);
 	}
 
-	//ÄâºÏÐÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 	row.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
@@ -9155,7 +9183,7 @@ int Sentinel1Reader::fitCoordinateConversionCoefficient()
 		temp.copyTo(row_coefficient);
 	}
 
-	//ÄâºÏÁÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
 	col.copyTo(b);
 	A = Mat::ones(lon.rows, 25, CV_64F);
@@ -9267,31 +9295,31 @@ int Sentinel1Reader::getOrbitList()
 	for (int i = 0; i < numOfstateVec; i++)
 	{
 		if (!pnode) break;
-		//GPSÊ±¼ä
+		//GPSÊ±ï¿½ï¿½
 		ret = xmldoc._find_node(pnode, "time", pchild);
 		ret = UTC2GPS(pchild->GetText(), &time);
-		//Î»ÖÃx
+		//Î»ï¿½ï¿½x
 		ret = xmldoc._find_node(pnode, "position", pchild);
 		ret = xmldoc._find_node(pchild, "x", pchild1);
 		ret = sscanf(pchild1->GetText(), "%lf", &x);
-		//Î»ÖÃy
+		//Î»ï¿½ï¿½y
 		ret = xmldoc._find_node(pchild, "y", pchild1);
 		ret = sscanf(pchild1->GetText(), "%lf", &y);
-		//Î»ÖÃz
+		//Î»ï¿½ï¿½z
 		ret = xmldoc._find_node(pchild, "z", pchild1);
 		ret = sscanf(pchild1->GetText(), "%lf", &z);
-		//ËÙ¶Èx
+		//ï¿½Ù¶ï¿½x
 		ret = xmldoc._find_node(pnode, "velocity", pchild);
 		ret = xmldoc._find_node(pchild, "x", pchild1);
 		ret = sscanf(pchild1->GetText(), "%lf", &vx);
-		//ËÙ¶Èy
+		//ï¿½Ù¶ï¿½y
 		ret = xmldoc._find_node(pchild, "y", pchild1);
 		ret = sscanf(pchild1->GetText(), "%lf", &vy);
-		//ËÙ¶Èz
+		//ï¿½Ù¶ï¿½z
 		ret = xmldoc._find_node(pchild, "z", pchild1);
 		ret = sscanf(pchild1->GetText(), "%lf", &vz);
 
-		//¸³Öµ
+		//ï¿½ï¿½Öµ
 		orbitList.at<double>(i, 0) = time;
 		orbitList.at<double>(i, 1) = x;
 		orbitList.at<double>(i, 2) = y;
@@ -9312,7 +9340,7 @@ int Sentinel1Reader::getPOD(const char* POD_file)
 		return -1;
 	}
 	/*
-	* ¶ÁÈ¡¾«ÃÜ¹ìµÀÊý¾Ý
+	* ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ü¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	*/
 
 	int ret, numOfstateVec;
@@ -9349,7 +9377,7 @@ int Sentinel1Reader::getPOD(const char* POD_file)
 		if (gps_time <= start_time && fabs(gps_time - start_time) <= 100.0) start = true;
 		if (gps_time >= stop_time && fabs(gps_time - stop_time) >= 100.0) stop = true;
 
-		if (start && !stop)//¿ªÊ¼¼ÇÂ¼
+		if (start && !stop)//ï¿½ï¿½Ê¼ï¿½ï¿½Â¼
 		{
 			ret = doc._find_node(pnode, "X", pchild);
 			ret = sscanf(pchild->GetText(), "%lf", &x);
@@ -9440,9 +9468,9 @@ int Sentinel1Reader::prepareData(const char* PODFile)
 	{
 		this->getPOD(PODFile);
 	}
-	//¸üÐÂ¿ØÖÆµã
+	//ï¿½ï¿½ï¿½Â¿ï¿½ï¿½Æµï¿½
 	updateGeolocationGridPoint();
-	//ÄâºÏ×ø±ê×ª»»ÏµÊý
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½Ïµï¿½ï¿½
 	fitCoordinateConversionCoefficient();
 	isDataAvailable = true;
 	return 0;
@@ -9560,7 +9588,7 @@ int Sentinel1Reader::writeToh5(const char* h5File)
 	if(!preciseOrbitList.empty())
 		conversion.write_array_to_h5(h5File, "fine_state_vec", this->preciseOrbitList);
 
-	//Ð´ÈëÍ¼ÏñÊý¾Ý
+	//Ð´ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ComplexMat slc;
 	ret = getSLC(slc);
 	if (return_check(ret, "getSLC()", error_head)) return -1;
@@ -9570,7 +9598,7 @@ int Sentinel1Reader::writeToh5(const char* h5File)
 }
 
 /*------------------------------------------------*/
-/*             ÉÚ±øÒ»ºÅÊý¾Ý/¼ÆËã¶ÁÈ¡¹¤¾ß          */
+/*             ï¿½Ú±ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½          */
 /*------------------------------------------------*/
 
 Sentinel1Utils::Sentinel1Utils(const char* h5File)
@@ -9625,7 +9653,7 @@ int Sentinel1Utils::init()
 		return -1;
 	}
 	int ret; FormatConversion conversion;
-	//¶ÁÈ¡Êý¾Ý
+	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½
 	ret = conversion.read_double_from_h5(h5File.c_str(), "azimuth_spacing", &this->azimuthPixelSpacing);
 	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
 	ret = conversion.read_double_from_h5(h5File.c_str(), "azimuthSteeringRate", &this->azimuthSteeringRate);
@@ -10194,7 +10222,7 @@ int Sentinel1Utils::deburst(const char* outFile)
 		return -1;
 	}
 
-	//´´½¨ÐÂµÄdeburstÎÄ¼þ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½Âµï¿½deburstï¿½Ä¼ï¿½
 
 	FormatConversion conversion;
 	int ret = conversion.creat_new_h5(outFile);
@@ -10236,7 +10264,7 @@ int Sentinel1Utils::deburst(const char* outFile)
 		cv::vconcat(slc.re, tmp2.re, slc.re);
 		cv::vconcat(slc.im, tmp2.im, slc.im);
 	}
-	//ÍùÎÄ¼þÀïÐ´ÈëÎÀÐÇÊý¾ÝºÍ¸¨ÖúÊý¾Ý
+	//ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ð´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÝºÍ¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = conversion.write_slc_to_h5(outFile, slc);
 	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
 	ret = conversion.Copy_para_from_h5_2_h5(this->h5File.c_str(), outFile);
@@ -10524,7 +10552,7 @@ int DigitalElevationModel::getRawDEM(
 	vector<bool> bAlreadyExist;
 	int ret = getSRTMFileName(lonMin, lonMax, latMin, latMax, srtmFileName);
 	if (return_check(ret, "getSRTMFileName()", error_head)) return -1;
-	//ÅÐ¶ÏÎÄ¼þÊÇ·ñÒÑ¾­´æÔÚ
+	//ï¿½Ð¶ï¿½ï¿½Ä¼ï¿½ï¿½Ç·ï¿½ï¿½Ñ¾ï¿½ï¿½ï¿½ï¿½ï¿½
 	for (int i = 0; i < srtmFileName.size(); i++)
 	{
 		string tmp = this->DEMPath + "\\" + srtmFileName[i];
@@ -10532,13 +10560,13 @@ int DigitalElevationModel::getRawDEM(
 		if (-1 != GetFileAttributesA(tmp.c_str()))bAlreadyExist.push_back(true);
 		else bAlreadyExist.push_back(false);
 	}
-	//²»´æÔÚÔòÏÂÔØ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	for (int i = 0; i < srtmFileName.size(); i++)
 	{
 		if (!bAlreadyExist[i])
 		{
 			ret = downloadSRTM(srtmFileName[i].c_str());
-			if (ret < 0)//Î´ÏÂÔØµ½DEMÊý¾Ý,ÔòÒÔ0Ìî³ä
+			if (ret < 0)//Î´ï¿½ï¿½ï¿½Øµï¿½DEMï¿½ï¿½ï¿½ï¿½,ï¿½ï¿½ï¿½ï¿½0ï¿½ï¿½ï¿½
 			{
 				int rows = (latMax - latMin) / latSpacing;
 				int cols = (lonMax - lonMin) / lonSpacing;
@@ -10550,7 +10578,7 @@ int DigitalElevationModel::getRawDEM(
 			}
 		}
 	}
-	//½âÑ¹ÎÄ¼þ
+	//ï¿½ï¿½Ñ¹ï¿½Ä¼ï¿½
 	for (int i = 0; i < srtmFileName.size(); i++)
 	{
 		string folderName = srtmFileName[i];
@@ -10570,7 +10598,7 @@ int DigitalElevationModel::getRawDEM(
 	double lonUpperLeft, lonLowerRight, latUpperLeft, latLowerRight;
 	int total_rows, total_cols;
 
-	//DEMÔÚÒ»¸öSRTM·½¸ñÄÚ
+	//DEMï¿½ï¿½Ò»ï¿½ï¿½SRTMï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	if (srtmFileName.size() == 1)
 	{
 		total_rows = 6000, total_cols = 6000;
@@ -10595,7 +10623,7 @@ int DigitalElevationModel::getRawDEM(
 		endCol = endCol > total_cols ? total_cols : endCol;
 
 		string folderName = srtmFileName[0];
-		folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+		folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 		string path = this->DEMPath + string("\\") + folderName;
 		path = path + string("\\") + folderName + string(".tif");
 		Mat outDEM = Mat::zeros(6000, 6000, CV_16S);
@@ -10606,13 +10634,13 @@ int DigitalElevationModel::getRawDEM(
 		this->lonUpperLeft = lonUpperLeft + (startCol - 1) * lonSpacing;
 		this->latUpperLeft = latUpperLeft - (startRow - 1) * latSpacing;
 	}
-	//DEMÔÚ2¸ö·½¸ñÄÚ
+	//DEMï¿½ï¿½2ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	else if (srtmFileName.size() == 2)
 	{
 		int xx, yy, xx2, yy2;
 		sscanf(srtmFileName[0].c_str(), "srtm_%d_%d.zip", &xx, &yy);
 		sscanf(srtmFileName[1].c_str(), "srtm_%d_%d.zip", &xx2, &yy2);
-		//Í¬Ò»ÁÐ
+		//Í¬Ò»ï¿½ï¿½
 		if (xx == xx2)
 		{
 			total_rows = 6000 * 2; total_cols = 6000;
@@ -10640,7 +10668,7 @@ int DigitalElevationModel::getRawDEM(
 			if (yy < yy2)
 			{
 				string folderName = srtmFileName[0];
-				folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+				folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 				string path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
@@ -10649,7 +10677,7 @@ int DigitalElevationModel::getRawDEM(
 				//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 				folderName = srtmFileName[1];
-				folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+				folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 				path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
@@ -10661,7 +10689,7 @@ int DigitalElevationModel::getRawDEM(
 			else
 			{
 				string folderName = srtmFileName[1];
-				folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+				folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 				string path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
@@ -10670,7 +10698,7 @@ int DigitalElevationModel::getRawDEM(
 				//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 				folderName = srtmFileName[0];
-				folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+				folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 				path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
@@ -10684,11 +10712,11 @@ int DigitalElevationModel::getRawDEM(
 			this->lonUpperLeft = lonUpperLeft + (startCol - 1) * lonSpacing;
 			this->latUpperLeft = latUpperLeft - (startRow - 1) * latSpacing;
 		}
-		//Í¬Ò»ÐÐ
+		//Í¬Ò»ï¿½ï¿½
 		else if(yy == yy2)
 		{
 			total_cols = 6000 * 2; total_rows = 6000;
-			//¿çÔ½-180.0/180.0Ïß
+			//ï¿½ï¿½Ô½-180.0/180.0ï¿½ï¿½
 			if ((xx == 1 && xx2 == 72) || (xx == 72 && xx2 == 1))
 			{
 				latUpperLeft = 60.0 - (yy - 1) * 5.0;
@@ -10713,7 +10741,7 @@ int DigitalElevationModel::getRawDEM(
 				if (xx > xx2)
 				{
 					string folderName = srtmFileName[0];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10722,7 +10750,7 @@ int DigitalElevationModel::getRawDEM(
 					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[1];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10734,7 +10762,7 @@ int DigitalElevationModel::getRawDEM(
 				else
 				{
 					string folderName = srtmFileName[1];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10743,7 +10771,7 @@ int DigitalElevationModel::getRawDEM(
 					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[0];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10783,7 +10811,7 @@ int DigitalElevationModel::getRawDEM(
 				if (xx < xx2)
 				{
 					string folderName = srtmFileName[0];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10792,7 +10820,7 @@ int DigitalElevationModel::getRawDEM(
 					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[1];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10804,7 +10832,7 @@ int DigitalElevationModel::getRawDEM(
 				else
 				{
 					string folderName = srtmFileName[1];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10813,7 +10841,7 @@ int DigitalElevationModel::getRawDEM(
 					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[0];
-					folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+					folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
@@ -10836,7 +10864,7 @@ int DigitalElevationModel::getRawDEM(
 
 		
 	}
-	//DEMÔÚ4¸ö·½¸ñÄÚ
+	//DEMï¿½ï¿½4ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	else if (srtmFileName.size() == 4)
 	{
 		int xx, yy, xx2, yy2, xx3, yy3, xx4, yy4, temp;
@@ -10845,7 +10873,7 @@ int DigitalElevationModel::getRawDEM(
 		sscanf(srtmFileName[2].c_str(), "srtm_%d_%d.zip", &xx3, &yy3);
 		sscanf(srtmFileName[3].c_str(), "srtm_%d_%d.zip", &xx4, &yy4);
 		total_rows = 6000 * 2; total_cols = 6000 * 2;
-		//¿çÔ½-180.0/180.0Ïß
+		//ï¿½ï¿½Ô½-180.0/180.0ï¿½ï¿½
 		if (lonMax * lonMin < 0 && (fabs(lonMin) + fabs(lonMax)) > 180.0)
 		{
 			startRow = (int)((60.0 - latMax) / 5.0) + 1;
@@ -10869,7 +10897,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, startCol, startRow);
 			string folderName(tmpstr);
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			string path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -10883,7 +10911,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, endCol, startRow);
 			folderName = tmpstr;
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -10898,7 +10926,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, startCol, endRow);
 			folderName = tmpstr;
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -10912,7 +10940,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, endCol, endRow);
 			folderName = tmpstr;
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -10964,7 +10992,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, startCol, startRow);
 			string folderName(tmpstr);
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			string path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -10978,7 +11006,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, endCol, startRow);
 			folderName = tmpstr;
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -10993,7 +11021,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, startCol, endRow);
 			folderName = tmpstr;
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -11007,7 +11035,7 @@ int DigitalElevationModel::getRawDEM(
 			else format = "srtm_%d_%d.zip";
 			sprintf(tmpstr, format, endCol, endRow);
 			folderName = tmpstr;
-			folderName = folderName.substr(0, folderName.length() - 4);//È¥µô.zipºó×º
+			folderName = folderName.substr(0, folderName.length() - 4);//È¥ï¿½ï¿½.zipï¿½ï¿½×º
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
@@ -11066,20 +11094,20 @@ int DigitalElevationModel::getElevation(double lon, double lat, double* elevatio
 int DigitalElevationModel::geotiffread(const char* filename, Mat& outDEM)
 {
 	if (!filename) return -1;
-	GDALAllRegister();	//×¢²áÒÑÖªÇý¶¯
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);	//´ò¿ªgeotiffÎÄ¼þ
+	GDALAllRegister();	//×¢ï¿½ï¿½ï¿½ï¿½Öªï¿½ï¿½ï¿½ï¿½
+	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);	//ï¿½ï¿½geotiffï¿½Ä¼ï¿½
 	if (poDataset == NULL)
 	{
 		fprintf(stderr, "geotiffread(): failed to open %s!\n", filename);
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//»ñÈ¡²¨¶ÎÊý£¨geotiffÓ¦Îª1£©
+	int nBand = poDataset->GetRasterCount();	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½geotiffÓ¦Îª1ï¿½ï¿½
 	int xsize = 0;
 	int ysize = 0;
 	if (nBand == 1)
 	{
-		GDALRasterBand* poBand = poDataset->GetRasterBand(1);	//»ñÈ¡Ö¸Ïò²¨¶Î1µÄÖ¸Õë
+		GDALRasterBand* poBand = poDataset->GetRasterBand(1);	//ï¿½ï¿½È¡Ö¸ï¿½ò²¨¶ï¿½1ï¿½ï¿½Ö¸ï¿½ï¿½
 		xsize = poBand->GetXSize();		//cols
 		ysize = poBand->GetYSize();		//rows
 		if (xsize < 0 || ysize < 0)
@@ -11089,9 +11117,9 @@ int DigitalElevationModel::geotiffread(const char* filename, Mat& outDEM)
 			GDALDestroyDriverManager();
 			return -1;
 		}
-		GDALDataType dataType = poBand->GetRasterDataType();	//Êý¾Ý´æ´¢ÀàÐÍ£¬geotiffÓ¦Îª16Î»ÕûÐÍ
+		GDALDataType dataType = poBand->GetRasterDataType();	//ï¿½ï¿½ï¿½Ý´æ´¢ï¿½ï¿½ï¿½Í£ï¿½geotiffÓ¦Îª16Î»ï¿½ï¿½ï¿½ï¿½
 		short* pbuf = NULL;
-		pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//·ÖÅäÊý¾ÝÖ¸Õë¿Õ¼ä
+		pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½Õ¼ï¿½
 		if (!pbuf)
 		{
 			fprintf(stderr, "geotiffread(): out of memory!\n");
@@ -11099,7 +11127,7 @@ int DigitalElevationModel::geotiffread(const char* filename, Mat& outDEM)
 			GDALDestroyDriverManager();
 			return -1;
 		}
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//¶ÁÈ¡¸´Í¼ÏñÊý¾Ýµ½pbufÖÐ
+		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//ï¿½ï¿½È¡ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½Ýµï¿½pbufï¿½ï¿½
 		int i, j;
 		outDEM.create(ysize, xsize, CV_16S);
 		memcpy(outDEM.data, pbuf, sizeof(short) * xsize * ysize);
@@ -11139,13 +11167,13 @@ int DigitalElevationModel::unzip(const char* srcFile, const char* dstPath)
 		return -1;
 	}
 	int ret;
-	//Èç¹ûÄ¿±êÎÄ¼þ¼Ð²»´æÔÚ£¬Ôò´´½¨
+	//ï¿½ï¿½ï¿½Ä¿ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½Ð²ï¿½ï¿½ï¿½ï¿½Ú£ï¿½ï¿½ò´´½ï¿½
 	if (-1 == GetFileAttributesA(dstPath))
 	{
 		ret = _mkdir(dstPath);
 		if (ret < 0)return -1;
 	}
-	//////////////////////////´´½¨²¢µ÷ÓÃunzip.exe½ø³Ì///////////////////////////////
+	//////////////////////////ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½unzip.exeï¿½ï¿½ï¿½ï¿½///////////////////////////////
 	char szFilePath[MAX_PATH + 1] = { 0 };
 	GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
 	string str(szFilePath);
@@ -11161,14 +11189,14 @@ int DigitalElevationModel::unzip(const char* srcFile, const char* dstPath)
 	si.dwFlags = STARTF_USESHOWWINDOW;
 	si.wShowWindow = FALSE;
 	BOOL bRet = ::CreateProcessA(
-		NULL,           // ²»ÔÚ´ËÖ¸¶¨¿ÉÖ´ÐÐÎÄ¼þµÄÎÄ¼þÃû
-		szCommandLine,      // ÃüÁîÐÐ²ÎÊý
-		NULL,           // Ä¬ÈÏ½ø³Ì°²È«ÐÔ
-		NULL,           // Ä¬ÈÏÏß³Ì°²È«ÐÔ
-		FALSE,          // Ö¸¶¨µ±Ç°½ø³ÌÄÚµÄ¾ä±ú²»¿ÉÒÔ±»×Ó½ø³Ì¼Ì³Ð
-		CREATE_NEW_CONSOLE, // ÎªÐÂ½ø³Ì´´½¨Ò»¸öÐÂµÄ¿ØÖÆÌ¨´°¿Ú
-		NULL,           // Ê¹ÓÃ±¾½ø³ÌµÄ»·¾³±äÁ¿
-		NULL,           // Ê¹ÓÃ±¾½ø³ÌµÄÇý¶¯Æ÷ºÍÄ¿Â¼
+		NULL,           // ï¿½ï¿½ï¿½Ú´ï¿½Ö¸ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½
+		szCommandLine,      // ï¿½ï¿½ï¿½ï¿½ï¿½Ð²ï¿½ï¿½ï¿½
+		NULL,           // Ä¬ï¿½Ï½ï¿½ï¿½Ì°ï¿½È«ï¿½ï¿½
+		NULL,           // Ä¬ï¿½ï¿½ï¿½ß³Ì°ï¿½È«ï¿½ï¿½
+		FALSE,          // Ö¸ï¿½ï¿½ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½ÚµÄ¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô±ï¿½ï¿½Ó½ï¿½ï¿½Ì¼Ì³ï¿½
+		CREATE_NEW_CONSOLE, // Îªï¿½Â½ï¿½ï¿½Ì´ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ÂµÄ¿ï¿½ï¿½ï¿½Ì¨ï¿½ï¿½ï¿½ï¿½
+		NULL,           // Ê¹ï¿½Ã±ï¿½ï¿½ï¿½ï¿½ÌµÄ»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		NULL,           // Ê¹ï¿½Ã±ï¿½ï¿½ï¿½ï¿½Ìµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¿Â¼
 		&si,
 		&p_i);
 	if (bRet)
@@ -11285,7 +11313,7 @@ int Sentinel1BackGeocoding::loadData(vector<string>& h5Files)
 	}
 	int ret;
 	this->numOfImages = h5Files.size();
-	//Çå¿ÕÒÑÓÐÊý¾Ý
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	for (int i = 0; i < su.size(); i++)
 	{
 		if (su[i])
@@ -11548,7 +11576,7 @@ int Sentinel1BackGeocoding::computeSlaveOffset(Mat& slaveAzimuthOffset, Mat& sla
 	{
 		for (int j = 0; j < slaveAzimuthOffset.cols; j++)
 		{
-			//·½Î»ÏòÆ«ÒÆÁ¿¼ÆËã
+			//ï¿½ï¿½Î»ï¿½ï¿½Æ«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 			if (masterAzimuth.at<double>(i, j) < -0.5 || slaveAzimuth.at<double>(i, j) < -0.5)
 			{
 				slaveAzimuthOffset.at<double>(i, j) = invalidOffset;
@@ -11557,7 +11585,7 @@ int Sentinel1BackGeocoding::computeSlaveOffset(Mat& slaveAzimuthOffset, Mat& sla
 			{
 				slaveAzimuthOffset.at<double>(i, j) = slaveAzimuth.at<double>(i, j) - masterAzimuth.at<double>(i, j);
 			}
-			//¾àÀëÏòÆ«ÒÆÁ¿¼ÆËã
+			//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 			if (masterRange.at<double>(i, j) < -0.5 || slaveRange.at<double>(i, j) < -0.5)
 			{
 				slaveRangeOffset.at<double>(i, j) = invalidOffset;
@@ -11691,11 +11719,11 @@ int Sentinel1BackGeocoding::performBilinearResampling(
 				mm1 = mm + 1; nn1 = nn + 1;
 				mm1 = mm1 >= rows_slave - 1 ? rows_slave - 1 : mm1;
 				nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
-				//Êµ²¿²åÖµ
+				//Êµï¿½ï¿½ï¿½ï¿½Öµ
 				upper = slave.re.at<double>(mm, nn) + (slave.re.at<double>(mm, nn1) - slave.re.at<double>(mm, nn)) * (jj - (double)nn);
 				lower = slave.re.at<double>(mm1, nn) + (slave.re.at<double>(mm1, nn1) - slave.re.at<double>(mm1, nn)) * (jj - (double)nn);
 				slcResampled.re.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
-				//Ðé²¿²åÖµ
+				//ï¿½é²¿ï¿½ï¿½Öµ
 				upper = slave.im.at<double>(mm, nn) + (slave.im.at<double>(mm, nn1) - slave.im.at<double>(mm, nn)) * (jj - (double)nn);
 				lower = slave.im.at<double>(mm1, nn) + (slave.im.at<double>(mm1, nn1) - slave.im.at<double>(mm1, nn)) * (jj - (double)nn);
 				slcResampled.im.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
@@ -11879,7 +11907,7 @@ orbitStateVectors::orbitStateVectors(Mat& stateVectors, double startTime, double
 	double delta_time = stateVectors.at<double>(1, 0) - stateVectors.at<double>(0, 0);
 	if (fabs(delta_time - 1.0) <= 0.0001)
 	{
-		this->isOrbitUpdated = true;//²»ÓÃÔÙ¸üÐÂ¹ìµÀ
+		this->isOrbitUpdated = true;//ï¿½ï¿½ï¿½ï¿½ï¿½Ù¸ï¿½ï¿½Â¹ï¿½ï¿½
 		this->stateVectors.copyTo(this->newStateVectors);
 	}
 	this->dt = delta_time;
@@ -11895,7 +11923,7 @@ orbitStateVectors::orbitStateVectors(Mat& stateVectors, double startTime, double
 	if (this->stateVectors.type() != CV_64F) this->stateVectors.convertTo(this->stateVectors, CV_64F);
 	if (fabs(delta_time - 1.0) <= 0.0001)
 	{
-		this->isOrbitUpdated = true;//²»ÓÃÔÙ¸üÐÂ¹ìµÀ
+		this->isOrbitUpdated = true;//ï¿½ï¿½ï¿½ï¿½ï¿½Ù¸ï¿½ï¿½Â¹ï¿½ï¿½
 		this->stateVectors.copyTo(this->newStateVectors);
 	}
 	
@@ -12314,7 +12342,7 @@ int CSK_reader::read_data(const char* CSK_data_file)
 	get_array_attribute(dataset, "Far Look Angle", temp);
 	far_look_angle = temp.at<double>(0, 0);
 
-	//ÄâºÏÏÂÊÓ½Ç
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó½ï¿½
 	
 	this->inc_coefficient.create(1, 11, CV_64F); this->inc_coefficient = 0.0;
 	inc_coefficient.at<double>(0, 0) = 0.0;//offset
@@ -12322,7 +12350,7 @@ int CSK_reader::read_data(const char* CSK_data_file)
 	inc_coefficient.at<double>(0, 2) = near_look_angle;
 	inc_coefficient.at<double>(0, 3) = (far_look_angle - near_look_angle) / (double)cols;
 
-	//ÄâºÏ¾­¶È
+	//ï¿½ï¿½Ï¾ï¿½ï¿½ï¿½
 	Mat near_edge_geodetic_coordinates, far_edge_geodetic_coordinates;
 	ret = get_array_attribute(file, "Scene Far Edge Geodetic Coordinates", far_edge_geodetic_coordinates);
 	ret += get_array_attribute(file, "Scene Near Edge Geodetic Coordinates", near_edge_geodetic_coordinates);
@@ -12389,7 +12417,7 @@ int CSK_reader::read_data(const char* CSK_data_file)
 	}
 
 
-	//ÄâºÏÎ³¶È
+	//ï¿½ï¿½ï¿½Î³ï¿½ï¿½
 	lat_coefficient.create(1, 32, CV_64F); lat_coefficient = 0.0;
 	A = Mat::ones(lon.rows, 3, CV_64F);
 	lat.copyTo(b);
@@ -12423,7 +12451,7 @@ int CSK_reader::read_data(const char* CSK_data_file)
 		lat_coefficient.at<double>(0, 11) = coefficient.at<double>(2);
 	}
 
-	//ÄâºÏÐÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	row_coefficient.create(1, 32, CV_64F); row_coefficient = 0.0;
 	A = Mat::ones(lon.rows, 3, CV_64F);
 	row.copyTo(b);
@@ -12458,7 +12486,7 @@ int CSK_reader::read_data(const char* CSK_data_file)
 		row_coefficient.at<double>(0, 11) = coefficient.at<double>(2);
 	}
 
-	//ÄâºÏÁÐ×ø±ê
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	col_coefficient.create(1, 32, CV_64F); col_coefficient = 0.0;
 	A = Mat::ones(lon.rows, 3, CV_64F);
 	col.copyTo(b);
@@ -12679,18 +12707,18 @@ int HTHT_reader::read_slc(const char* data_file, ComplexMat& slc)
 		fprintf(stderr, "read_slc(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//×¢²áÒÑÖªÇý¶¯
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//´ò¿ªtiffÎÄ¼þ
+	GDALAllRegister();	//×¢ï¿½ï¿½ï¿½ï¿½Öªï¿½ï¿½ï¿½ï¿½
+	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//ï¿½ï¿½tiffï¿½Ä¼ï¿½
 	if (poDataset == NULL)
 	{
 		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//»ñÈ¡²¨¶ÎÊý£¨cosÓ¦Îª1£©
+	int nBand = poDataset->GetRasterCount();	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½cosÓ¦Îª1ï¿½ï¿½
 	int xsize = 0;
 	int ysize = 0;
-	//»ñÈ¡Ö¸Ïò²¨¶Î1µÄÖ¸Õë
+	//ï¿½ï¿½È¡Ö¸ï¿½ò²¨¶ï¿½1ï¿½ï¿½Ö¸ï¿½ï¿½
 	GDALRasterBand* poBand = poDataset->GetRasterBand(1);	
 	xsize = poBand->GetXSize();		//cols
 	ysize = poBand->GetYSize();		//rows
@@ -12701,9 +12729,9 @@ int HTHT_reader::read_slc(const char* data_file, ComplexMat& slc)
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	GDALDataType dataType = poBand->GetRasterDataType();	//Êý¾Ý´æ´¢ÀàÐÍ£¬cosÓ¦ÎªGDT_CInt16
+	GDALDataType dataType = poBand->GetRasterDataType();	//ï¿½ï¿½ï¿½Ý´æ´¢ï¿½ï¿½ï¿½Í£ï¿½cosÓ¦ÎªGDT_CInt16
 	short* pbuf = NULL;
-	pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//·ÖÅäÊý¾ÝÖ¸Õë¿Õ¼ä
+	pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½Õ¼ï¿½
 	if (!pbuf)
 	{
 		fprintf(stderr, "read_slc(): out of memory!\n");
@@ -12711,7 +12739,7 @@ int HTHT_reader::read_slc(const char* data_file, ComplexMat& slc)
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//¶ÁÈ¡¸´Í¼ÏñÊý¾Ýµ½pbufÖÐ
+	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//ï¿½ï¿½È¡ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½Ýµï¿½pbufï¿½ï¿½
 	int i, j;
 	slc.re.create(ysize, xsize, CV_16S);
 	slc.im.create(ysize, xsize, CV_16S);
@@ -12722,7 +12750,7 @@ int HTHT_reader::read_slc(const char* data_file, ComplexMat& slc)
 			slc.re.ptr<short>(i)[j] = pbuf[offset];
 			offset++;
 		}
-	//»ñÈ¡Ö¸Ïò²¨¶Î2µÄÖ¸Õë
+	//ï¿½ï¿½È¡Ö¸ï¿½ò²¨¶ï¿½2ï¿½ï¿½Ö¸ï¿½ï¿½
 	poBand = poDataset->GetRasterBand(2);
 	xsize = poBand->GetXSize();		//cols
 	ysize = poBand->GetYSize();		//rows
@@ -12733,8 +12761,8 @@ int HTHT_reader::read_slc(const char* data_file, ComplexMat& slc)
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	dataType = poBand->GetRasterDataType();	//Êý¾Ý´æ´¢ÀàÐÍ£¬cosÓ¦ÎªGDT_CInt16
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//¶ÁÈ¡¸´Í¼ÏñÊý¾Ýµ½pbufÖÐ
+	dataType = poBand->GetRasterDataType();	//ï¿½ï¿½ï¿½Ý´æ´¢ï¿½ï¿½ï¿½Í£ï¿½cosÓ¦ÎªGDT_CInt16
+	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//ï¿½ï¿½È¡ï¿½ï¿½Í¼ï¿½ï¿½ï¿½ï¿½ï¿½Ýµï¿½pbufï¿½ï¿½
 	offset = 0;
 	for (i = 0; i < ysize; i++)
 		for (j = 0; j < xsize; j++)
@@ -12774,7 +12802,7 @@ int HTHT_reader::read_data(const char* xml_file, const char* data_file)
 		return -1;
 	}
 
-	//¶ÁÈ¡¹ìµÀ²ÎÊý
+	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	TiXmlElement* pnode, * pchild, * pchild1;
 	int numOfstateVec;
 	ret = xmldoc.find_node("orbitList", pnode);
@@ -12786,29 +12814,29 @@ int HTHT_reader::read_data(const char* xml_file, const char* data_file)
 	for (int i = 0; i < numOfstateVec; i++)
 	{
 		if (!pnode) break;
-		//GPSÊ±¼ä
+		//GPSÊ±ï¿½ï¿½
 		ret = xmldoc._find_node(pnode, "timeStamp", pchild);
 		ret = UTC2GPS(pchild->GetText(), &time);
-		//Î»ÖÃx
+		//Î»ï¿½ï¿½x
 		ret = xmldoc._find_node(pnode, "xPosition", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &x);
-		//Î»ÖÃy
+		//Î»ï¿½ï¿½y
 		ret = xmldoc._find_node(pnode, "yPosition", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &y);
-		//Î»ÖÃz
+		//Î»ï¿½ï¿½z
 		ret = xmldoc._find_node(pnode, "zPosition", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &z);
-		//ËÙ¶Èx
+		//ï¿½Ù¶ï¿½x
 		ret = xmldoc._find_node(pnode, "xVelocity", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &vx);
-		//ËÙ¶Èy
+		//ï¿½Ù¶ï¿½y
 		ret = xmldoc._find_node(pnode, "yVelocity", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &vy);
-		//ËÙ¶Èz
+		//ï¿½Ù¶ï¿½z
 		ret = xmldoc._find_node(pnode, "zVelocity", pchild);
 		ret = sscanf(pchild->GetText(), "%lf", &vz);
 
-		//¸³Öµ
+		//ï¿½ï¿½Öµ
 		state_vec.at<double>(i, 0) = time;
 		state_vec.at<double>(i, 1) = x;
 		state_vec.at<double>(i, 2) = y;
@@ -12819,25 +12847,25 @@ int HTHT_reader::read_data(const char* xml_file, const char* data_file)
 		pnode = pnode->NextSiblingElement();
 	}
 
-	//ÅÄÉãÆðÊ¼Ê±¼ä
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼Ê±ï¿½ï¿½
 	ret = xmldoc.get_str_para("imagingStartTime", this->acquisition_start_time);
-	//ÅÄÉã½áÊøÊ±¼ä
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½
 	ret = xmldoc.get_str_para("imagingEndTime", this->acquisition_stop_time);
-	//ÎÀÐÇÃû³Æ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	ret = xmldoc.get_str_para("satellite", this->sensor);
-	//Âö³åÖØ¸´ÆµÂÊ
+	//ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½Æµï¿½ï¿½
 	ret = xmldoc.get_double_para("prf", &this->prf);
-	//ÖÐÐÄÆµÂÊ
+	//ï¿½ï¿½ï¿½ï¿½Æµï¿½ï¿½
 	ret = xmldoc.get_double_para("radarCenterFrequency", &this->carrier_frequency);
 	this->carrier_frequency = this->carrier_frequency * 1e9;
-	//×î½üÐ±¾à
+	//ï¿½ï¿½ï¿½Ð±ï¿½ï¿½
 	ret = xmldoc.get_double_para("nearRange", &this->slant_range_first_pixel);
-	//¾àÀë·½Î»²ÉÑù¼ä¸ô/·Ö±æÂÊ
+	//ï¿½ï¿½ï¿½ë·½Î»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½/ï¿½Ö±ï¿½ï¿½ï¿½
 	ret = xmldoc.get_double_para("rangePixelSpacing", &this->range_spacing);
 	ret = xmldoc.get_double_para("azimuthPixelSpacing", &this->azimuth_spacing);
 	ret = xmldoc.get_double_para("rangeResolution", &this->range_resolution);
 	ret = xmldoc.get_double_para("azimuthResolution", &this->azimuth_resolution);
-	//ËÄ½Ç¾­Î³¶È
+	//ï¿½Ä½Ç¾ï¿½Î³ï¿½ï¿½
 	ret = xmldoc.get_double_para("topLeftLat", &this->topleft_lat);
 	ret = xmldoc.get_double_para("topLeftLon", &this->topleft_lon);
 	ret = xmldoc.get_double_para("topRightLat", &this->topright_lat);

@@ -7,6 +7,9 @@
 #include <QString>
 #include <QStandardItemModel>
 
+// Forward declaration for XMLFile
+class XMLFile;
+
 /**
  * @brief 应用界面抽象接口
  *
@@ -56,8 +59,9 @@ public:
      * @param model 项目数据模型
      * @param path 项目文件路径
      * @param name 项目名称
+     * @param projectXml 项目XML对象指针
      */
-    virtual void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name) = 0;
+    virtual void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml = nullptr) = 0;
 
     /**
      * @brief 获取项目数据模型
@@ -76,6 +80,12 @@ public:
      * @return 项目名称
      */
     virtual QString projectName() const = 0;
+
+    /**
+     * @brief 获取项目XML对象
+     * @return XMLFile指针
+     */
+    virtual XMLFile* projectXml() const = 0;
 
     /**
      * @brief 初始化主题（构造时调用）

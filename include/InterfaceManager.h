@@ -79,8 +79,9 @@ public:
      * @param model 项目数据模型
      * @param path 项目文件路径
      * @param name 项目名称
+     * @param projectXml 项目XML对象指针
      */
-    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name);
+    void setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml = nullptr);
 
     /**
      * @brief 获取当前项目模型
@@ -106,6 +107,7 @@ private:
     QStandardItemModel* m_projectModel = nullptr;
     QString m_projectPath;
     QString m_projectName;
+    XMLFile* m_projectXml = nullptr;
 };
 
 #endif // INTERFACEMANAGER_H

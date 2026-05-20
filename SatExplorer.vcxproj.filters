@@ -436,6 +436,9 @@
     <ClCompile Include="QtNodes\src\CardExecutableNodeDelegateModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ClutterSuppressionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\Cut.h">
@@ -772,6 +775,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\QtNodes\internal\CardExecutableNodeDelegateModel.hpp">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ClutterSuppressionNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

@@ -2,7 +2,7 @@
 #pragma execution_character_set("utf-8")
 #endif
 
-#include "SpeckleDenoiseNode.h"
+#include "ClutterSuppressionNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 #include "InterfaceManager.h"
@@ -19,7 +19,7 @@
 
 namespace QtNodes {
 
-SpeckleDenoiseNode::SpeckleDenoiseNode()
+ClutterSuppressionNode::ClutterSuppressionNode()
     : ExecutableNodeDelegateModel()
     , _widget(nullptr)
     , m_inputImageLabel(nullptr)
@@ -29,14 +29,13 @@ SpeckleDenoiseNode::SpeckleDenoiseNode()
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
-    , m_saveToProject(true)
     , m_thread(nullptr)
     , m_workerThread(nullptr)
 {
     setExecutionMode(ExecutionMode::Automatic);
 }
 
-SpeckleDenoiseNode::~SpeckleDenoiseNode()
+ClutterSuppressionNode::~ClutterSuppressionNode()
 {
     stopExecution();
 
@@ -58,7 +57,7 @@ SpeckleDenoiseNode::~SpeckleDenoiseNode()
     }
 }
 
-unsigned int SpeckleDenoiseNode::nPorts(PortType portType) const
+unsigned int ClutterSuppressionNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
         return 1;
@@ -66,20 +65,21 @@ unsigned int SpeckleDenoiseNode::nPorts(PortType portType) const
         return 2;
 }
 
-NodeDataType SpeckleDenoiseNode::dataType(PortType portType, PortIndex portIndex) const
+NodeDataType ClutterSuppressionNode::dataType(PortType portType, PortIndex portIndex) const
 {
+    Q_UNUSED(portType);
     Q_UNUSED(portIndex);
     return NodeDataType{"image_info", "Image Info"};
 }
 
-bool SpeckleDenoiseNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+bool ClutterSuppressionNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
 {
     Q_UNUSED(portType);
     Q_UNUSED(portIndex);
     return true;
 }
 
-QString SpeckleDenoiseNode::portCaption(PortType portType, PortIndex portIndex) const
+QString ClutterSuppressionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
         return "输入图像";
@@ -92,14 +92,14 @@ QString SpeckleDenoiseNode::portCaption(PortType portType, PortIndex portIndex) 
     return QString();
 }
 
-bool SpeckleDenoiseNode::portIsOptional(PortType portType, PortIndex portIndex) const
+bool ClutterSuppressionNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
 }
 
-void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
+void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
@@ -113,31 +113,26 @@ void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
         }
     }
 
-    if (m_inputData && m_outputNodeName.isEmpty()) {
-        m_outputNodeName = generateOutputFileName();
-        if (m_outputNodeNameEdit) {
-            m_outputNodeNameEdit->setText(m_outputNodeName);
-        }
+    if (m_inputData && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty()) {
+        m_outputNodeNameEdit->setText(generateOutputFileName());
     }
 
-    if (m_inputData && m_outputFileName.isEmpty()) {
+    if (m_inputData && m_outputFileNameEdit && m_outputFileNameEdit->text().isEmpty()) {
         QFileInfo fi(m_inputData->filePath());
+        m_outputFileNameEdit->setText(fi.baseName());
         m_outputFileName = fi.baseName();
-        if (m_outputFileNameEdit) {
-            m_outputFileNameEdit->setText(m_outputFileName);
-        }
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
 }
 
-std::shared_ptr<NodeData> SpeckleDenoiseNode::outData(PortIndex port)
+std::shared_ptr<NodeData> ClutterSuppressionNode::outData(PortIndex port)
 {
     Q_UNUSED(port);
     return m_outputData;
 }
 
-QWidget* SpeckleDenoiseNode::embeddedWidget()
+QWidget* ClutterSuppressionNode::embeddedWidget()
 {
     if (!_widget) {
         createWidget();
@@ -145,7 +140,7 @@ QWidget* SpeckleDenoiseNode::embeddedWidget()
     return _widget;
 }
 
-void SpeckleDenoiseNode::createWidget()
+void ClutterSuppressionNode::createWidget()
 {
     _widget = new QWidget();
     _widget->setObjectName("NodeEmbeddedWidget");
@@ -157,18 +152,11 @@ void SpeckleDenoiseNode::createWidget()
 
     m_inputImageLabel = new QLabel("");
     m_inputImageLabel->setWordWrap(true);
-    if (m_inputData && !m_inputData->filePath().isEmpty()) {
-        QFileInfo fi(m_inputData->filePath());
-        m_inputImageLabel->setText(fi.fileName());
-    }
     layout->addWidget(m_inputImageLabel);
 
     m_saveToProjectCheckBox = new QCheckBox("保存到项目树");
-    m_saveToProjectCheckBox->setChecked(m_saveToProject);
-    connect(m_saveToProjectCheckBox, &QCheckBox::stateChanged, this, [this](int state) {
-        m_saveToProject = (state == Qt::Checked);
-        onSaveToProjectChanged(state);
-    });
+    m_saveToProjectCheckBox->setChecked(true);
+    connect(m_saveToProjectCheckBox, &QCheckBox::stateChanged, this, &ClutterSuppressionNode::onSaveToProjectChanged);
     layout->addWidget(m_saveToProjectCheckBox);
 
     auto* nodeNameLayout = new QHBoxLayout();
@@ -176,19 +164,15 @@ void SpeckleDenoiseNode::createWidget()
     nodeNameLayout->setStretch(1, 7);
     nodeNameLayout->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText(m_outputNodeName);
     m_outputNodeNameEdit->setPlaceholderText("输入节点名称");
-    connect(m_outputNodeNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputNodeName = text; });
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
-    // 目标文件名 [3:7]
     auto* fileNameLayout = new QHBoxLayout();
     fileNameLayout->setStretch(0, 3);
     fileNameLayout->setStretch(1, 7);
     fileNameLayout->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
-    m_outputFileNameEdit->setText(m_outputFileName);
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
     connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     fileNameLayout->addWidget(m_outputFileNameEdit);
@@ -200,10 +184,10 @@ void SpeckleDenoiseNode::createWidget()
 
     layout->addStretch();
 
-    onSaveToProjectChanged(m_saveToProject ? Qt::Checked : Qt::Unchecked);
+    onSaveToProjectChanged(m_saveToProjectCheckBox->checkState());
 }
 
-void SpeckleDenoiseNode::onSaveToProjectChanged(int state)
+void ClutterSuppressionNode::onSaveToProjectChanged(int state)
 {
     if (m_outputNodeNameEdit) {
         m_outputNodeNameEdit->setEnabled(state == Qt::Checked);
@@ -213,7 +197,7 @@ void SpeckleDenoiseNode::onSaveToProjectChanged(int state)
     }
 }
 
-void SpeckleDenoiseNode::stopExecution()
+void ClutterSuppressionNode::stopExecution()
 {
     if (m_workerThread)
     {
@@ -222,46 +206,40 @@ void SpeckleDenoiseNode::stopExecution()
     setState(ExecutionState::Stopped);
 }
 
-void SpeckleDenoiseNode::processAutomatically()
+void ClutterSuppressionNode::processAutomatically()
 {
-    qDebug() << "[SpeckleDenoiseNode] processAutomatically called. Current state:"
+    qDebug() << "[ClutterSuppressionNode] processAutomatically called. Current state:"
              << static_cast<int>(executionState()) << "isReady:" << isReady();
 
-    // CRITICAL: Prevent duplicate execution - check if already processing
-    // m_thread being non-null means execution is in progress
     if (m_thread || m_workerThread) {
-        qDebug() << "[SpeckleDenoiseNode] SKIP - execution already in progress";
+        qDebug() << "[ClutterSuppressionNode] SKIP - execution already in progress";
         return;
     }
 
     if (isReady()) {
-        // Set placeholder output data BEFORE starting processing
-        // This prevents base class from resetting state to Idle
         if (!m_outputData) {
             m_outputData = std::make_shared<ImageInfoData>("");
             setOutputData(0, m_outputData);
             setOutputData(1, m_outputData);
-            qDebug() << "[SpeckleDenoiseNode] Set placeholder output data to prevent Idle reset";
+            qDebug() << "[ClutterSuppressionNode] Set placeholder output data to prevent Idle reset";
         }
         executeProcessing();
     }
 }
 
-bool SpeckleDenoiseNode::isReady() const
+bool ClutterSuppressionNode::isReady() const
 {
     if (!m_inputData || m_inputData->filePath().isEmpty()) {
         return false;
     }
 
-    // Always require project context (denoise should only run with project open)
     if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
     {
         return false;
     }
 
-    // Use member variables for readiness check
-    if (m_saveToProject) {
-        if (m_outputNodeName.trimmed().isEmpty()) {
+    if (m_saveToProjectCheckBox && m_saveToProjectCheckBox->isChecked()) {
+        if (m_outputNodeNameEdit && m_outputNodeNameEdit->text().trimmed().isEmpty()) {
             return false;
         }
     }
@@ -269,20 +247,18 @@ bool SpeckleDenoiseNode::isReady() const
     return true;
 }
 
-void SpeckleDenoiseNode::execute()
+void ClutterSuppressionNode::execute()
 {
     executeProcessing();
 }
 
-void SpeckleDenoiseNode::executeProcessing()
+void ClutterSuppressionNode::executeProcessing()
 {
-    qDebug() << "[SpeckleDenoiseNode] executeProcessing START";
+    qDebug() << "[ClutterSuppressionNode] executeProcessing START";
 
-    // CRITICAL: Clean up existing threads FIRST - before any state change
-    // This prevents duplicate execution if setInData is called multiple times
     if (m_thread || m_workerThread)
     {
-        qDebug() << "[SpeckleDenoiseNode] Cleaning up existing threads";
+        qDebug() << "[ClutterSuppressionNode] Cleaning up existing threads";
         if (m_thread && m_thread->isRunning())
         {
             m_thread->quit();
@@ -296,12 +272,11 @@ void SpeckleDenoiseNode::executeProcessing()
             m_workerThread->deleteLater();
             m_workerThread = nullptr;
         }
-        // Disconnect all signals to prevent stale connections
-        disconnect(this, &SpeckleDenoiseNode::startSpeckleDenoise, nullptr, nullptr);
+        disconnect(this, &ClutterSuppressionNode::startClutterSuppression, nullptr, nullptr);
     }
 
     if (!isReady()) {
-        qDebug() << "[SpeckleDenoiseNode] Not ready, aborting";
+        qDebug() << "[ClutterSuppressionNode] Not ready, aborting";
         if (m_statusLabel) {
             m_statusLabel->setText("状态：未准备好");
         }
@@ -314,16 +289,16 @@ void SpeckleDenoiseNode::executeProcessing()
     }
 
     QString inputPath = m_inputData->filePath();
-    QString outputNodeName = m_outputNodeName.trimmed().isEmpty() ? "Denoise" : m_outputNodeName.trimmed();
-    QString outputFileName = m_outputFileName.trimmed();
-    bool saveToProject = m_saveToProject;
+    QString outputNodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : "ClutterSuppression";
+    QString outputFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : QString();
+    bool saveToProject = m_saveToProjectCheckBox ? m_saveToProjectCheckBox->isChecked() : true;
     QString projPath = projectPath();
     QString projName = projectName();
     QStandardItemModel* model = projectModel();
     XMLFile* projectXmlPtr = projectXml();
-    QString outputPath = QDir::tempPath() + QString("/speckle_denoise_%1.jpg").arg(QDateTime::currentMSecsSinceEpoch());
+    QString outputPath = QDir::tempPath() + QString("/clutter_suppression_%1.jpg").arg(QDateTime::currentMSecsSinceEpoch());
 
-    qDebug() << "[SpeckleDenoiseNode] Starting with params:"
+    qDebug() << "[ClutterSuppressionNode] Starting with params:"
              << "\n  inputPath:" << inputPath
              << "\n  outputNodeName:" << outputNodeName
              << "\n  outputFileName:" << outputFileName
@@ -332,31 +307,28 @@ void SpeckleDenoiseNode::executeProcessing()
              << "\n  projName:" << projName
              << "\n  temp outputPath:" << outputPath;
 
-    // Create thread
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
 
-    // Connect signals - capture ALL values by value to avoid race conditions
     connect(m_thread, &QThread::started, [this, inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject, projectXmlPtr]() {
-        qDebug() << "[SpeckleDenoiseNode] Thread started, emitting startSpeckleDenoise";
-        Q_EMIT startSpeckleDenoise(inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject, projectXmlPtr);
+        qDebug() << "[ClutterSuppressionNode] Thread started, emitting startClutterSuppression";
+        Q_EMIT startClutterSuppression(inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject, projectXmlPtr);
     });
-    connect(this, &SpeckleDenoiseNode::startSpeckleDenoise, m_workerThread, &MyThread::Speckle_Denoise, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::UniqueConnection);
+    connect(this, &ClutterSuppressionNode::startClutterSuppression, m_workerThread, &MyThread::Clutter_Suppression, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::errorProcess, this, &ClutterSuppressionNode::onError, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::UniqueConnection);
 
-    // Start thread
     m_thread->start();
-    qDebug() << "[SpeckleDenoiseNode] Thread started, worker created";
+    qDebug() << "[ClutterSuppressionNode] Thread started, worker created";
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
 }
 
-void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)
+void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& message)
 {
     setProgress(progress);
     if (m_statusLabel) {
@@ -364,24 +336,19 @@ void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)
     }
 }
 
-void SpeckleDenoiseNode::onProcessingFinished()
+void ClutterSuppressionNode::onProcessingFinished()
 {
-    qDebug() << "[SpeckleDenoiseNode] onProcessingFinished called";
+    qDebug() << "[ClutterSuppressionNode] onProcessingFinished called";
 
-    // Determine the result path
-    if (m_saveToProject) {
-        // Find the saved file path in project
-        QString nodeName = m_outputNodeName.trimmed();
-        if (nodeName.isEmpty()) nodeName = "Denoise"; // Default consistent with executeProcessing
-
+    if (m_saveToProjectCheckBox->isChecked()) {
+        QString nodeName = m_outputNodeNameEdit->text().trimmed();
         QString projDirStr = projectPath();
         if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
             projDirStr = QFileInfo(projDirStr).absolutePath();
         }
-        // Use user-specified output file name or default to input base name + _denoised.png
         QString finalFileName;
         if (m_outputFileName.isEmpty()) {
-            finalFileName = QFileInfo(m_inputData->filePath()).baseName() + "_denoised.png";
+            finalFileName = QFileInfo(m_inputData->filePath()).baseName() + "_clutter.png";
         } else {
             if (QFileInfo(m_outputFileName).suffix().isEmpty()) {
                 finalFileName = m_outputFileName + ".png";
@@ -389,11 +356,8 @@ void SpeckleDenoiseNode::onProcessingFinished()
                 finalFileName = m_outputFileName;
             }
         }
-        // Consistent with MyThread::Speckle_Denoise and import_GenericSAR: use nodeName as folder
         m_outputImagePath = projDirStr + "/" + nodeName + "/" + finalFileName;
-        qDebug() << "[SpeckleDenoiseNode] Output image path (using node folder):" << m_outputImagePath;
-    } else {
-        // Output path was set in executeProcessing (temp path)
+        qDebug() << "[ClutterSuppressionNode] Output image path:" << m_outputImagePath;
     }
 
     m_outputData = std::make_shared<ImageInfoData>(m_outputImagePath);
@@ -404,14 +368,13 @@ void SpeckleDenoiseNode::onProcessingFinished()
         m_statusLabel->setText("状态：完成");
     }
 
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
-    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
+    m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_outputFileNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_saveToProjectCheckBox->setEnabled(true);
 
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 
-    // Clean up threads
     if (m_thread)
     {
         m_thread->quit();
@@ -425,24 +388,22 @@ void SpeckleDenoiseNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
-    qDebug() << "[SpeckleDenoiseNode] Processing finished, calling finishExecution";
+    qDebug() << "[ClutterSuppressionNode] Processing finished, calling finishExecution";
     finishExecution();
 }
 
-void SpeckleDenoiseNode::onError(const QString& error)
+void ClutterSuppressionNode::onError(const QString& error)
 {
-    qDebug() << "[SpeckleDenoiseNode] onError called:" << error;
+    qDebug() << "[ClutterSuppressionNode] onError called:" << error;
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
     if (m_statusLabel) {
         m_statusLabel->setText("状态：错误 - " + error);
     }
-    
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
-    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
+    m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_outputFileNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_saveToProjectCheckBox->setEnabled(true);
 
-    // Clean up threads
     if (m_thread)
     {
         m_thread->quit();
@@ -456,12 +417,11 @@ void SpeckleDenoiseNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
-    // Clear placeholder output data on error
     m_outputData.reset();
-    qDebug() << "[SpeckleDenoiseNode] Error handling complete";
+    qDebug() << "[ClutterSuppressionNode] Error handling complete";
 }
 
-void SpeckleDenoiseNode::onModelUpdated(QStandardItemModel* model)
+void ClutterSuppressionNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
     if (auto* iface = getProjectContext()) {
@@ -469,30 +429,30 @@ void SpeckleDenoiseNode::onModelUpdated(QStandardItemModel* model)
     }
 }
 
-QStandardItemModel* SpeckleDenoiseNode::projectModel() const
+QStandardItemModel* ClutterSuppressionNode::projectModel() const
 {
     auto iface = getProjectContext();
     return iface ? iface->projectModel() : nullptr;
 }
 
-QString SpeckleDenoiseNode::projectPath() const
+QString ClutterSuppressionNode::projectPath() const
 {
     auto iface = getProjectContext();
     return iface ? iface->projectPath() : QString();
 }
 
-QString SpeckleDenoiseNode::projectName() const
+QString ClutterSuppressionNode::projectName() const
 {
     auto iface = getProjectContext();
     return iface ? iface->projectName() : QString();
 }
 
-XMLFile* SpeckleDenoiseNode::projectXml() const
+XMLFile* ClutterSuppressionNode::projectXml() const
 {
     auto iface = getProjectContext();
     return iface ? iface->projectXml() : nullptr;
 }
-IApplicationInterface* SpeckleDenoiseNode::getProjectContext() const
+IApplicationInterface* ClutterSuppressionNode::getProjectContext() const
 {
     // 1. Try parent widget traversal
     if (_widget)
@@ -529,39 +489,48 @@ IApplicationInterface* SpeckleDenoiseNode::getProjectContext() const
     return nullptr;
 }
 
-QJsonObject SpeckleDenoiseNode::save() const
+QJsonObject ClutterSuppressionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
 
-    modelJson["saveToProject"] = m_saveToProject;
-    modelJson["outputNodeName"] = m_outputNodeName;
-    modelJson["outputFileName"] = m_outputFileName;
+    if (m_saveToProjectCheckBox)
+        modelJson["saveToProject"] = m_saveToProjectCheckBox->isChecked();
+    if (m_outputNodeNameEdit)
+        modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
+    if (m_outputFileNameEdit)
+        modelJson["outputFileName"] = m_outputFileNameEdit->text();
 
     return modelJson;
 }
 
-void SpeckleDenoiseNode::load(QJsonObject const &json)
+void ClutterSuppressionNode::load(QJsonObject const &json)
 {
     ExecutableNodeDelegateModel::load(json);
 
-    m_saveToProject = json["saveToProject"].toBool(true);
-    m_outputNodeName = json["outputNodeName"].toString();
-    m_outputFileName = json["outputFileName"].toString();
-
     if (m_saveToProjectCheckBox) {
-        m_saveToProjectCheckBox->setChecked(m_saveToProject);
+        QJsonValue v = json["saveToProject"];
+        if (!v.isUndefined()) {
+            m_saveToProjectCheckBox->setChecked(v.toBool(true));
+        }
     }
 
     if (m_outputNodeNameEdit) {
-        m_outputNodeNameEdit->setText(m_outputNodeName);
+        QJsonValue v = json["outputNodeName"];
+        if (!v.isUndefined()) {
+            m_outputNodeNameEdit->setText(v.toString());
+        }
     }
 
     if (m_outputFileNameEdit) {
-        m_outputFileNameEdit->setText(m_outputFileName);
+        QJsonValue v = json["outputFileName"];
+        if (!v.isUndefined()) {
+            m_outputFileNameEdit->setText(v.toString());
+            m_outputFileName = v.toString();
+        }
     }
 }
 
-QString SpeckleDenoiseNode::generateOutputFileName() const
+QString ClutterSuppressionNode::generateOutputFileName() const
 {
     if (!m_inputData || m_inputData->filePath().isEmpty()) {
         return QString();
@@ -569,7 +538,7 @@ QString SpeckleDenoiseNode::generateOutputFileName() const
 
     QFileInfo fi(m_inputData->filePath());
     QString baseName = fi.completeBaseName();
-    return QStringLiteral("%1_denoised").arg(baseName);
+    return QStringLiteral("%1_clutter").arg(baseName);
 }
 
 } // namespace QtNodes

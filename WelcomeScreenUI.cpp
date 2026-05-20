@@ -542,12 +542,13 @@ QString WelcomeScreenUI::displayName() const
     return "欢迎界面";
 }
 
-void WelcomeScreenUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name)
+void WelcomeScreenUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml)
 {
     // 欢迎界面不管理项目上下文，空实现
     Q_UNUSED(model);
     Q_UNUSED(path);
     Q_UNUSED(name);
+    Q_UNUSED(projectXml);
 }
 
 QStandardItemModel* WelcomeScreenUI::projectModel() const
@@ -563,6 +564,11 @@ QString WelcomeScreenUI::projectPath() const
 QString WelcomeScreenUI::projectName() const
 {
     return QString();
+}
+
+XMLFile* WelcomeScreenUI::projectXml() const
+{
+    return nullptr;
 }
 
 void WelcomeScreenUI::initTheme()
