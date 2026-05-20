@@ -76,7 +76,6 @@ private:
     void executeProcessing();
 
     // Get project context interface
-    IApplicationInterface* getProjectContext() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;

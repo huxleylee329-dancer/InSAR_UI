@@ -64,6 +64,7 @@ signals:
     void sendBL(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
 
 private:
+    void processBM3DEnhancement(QString tag, QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);
     QMutex lock;
     bool stop_flag;
     int Registration_copy(std::vector<std::string>& SAR_images, std::vector<std::string>& SAR_images_out, cv::Mat& offset_row_out, cv::Mat& offset_col_out, int Master_index, int interp_times, int blocksize);

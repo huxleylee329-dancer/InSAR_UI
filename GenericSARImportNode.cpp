@@ -313,9 +313,7 @@ void GenericSARImportNode::setExecutionMode(ExecutionMode mode)
 
 void GenericSARImportNode::onModelUpdated(QStandardItemModel* model)
 {
-    if (!model) return;
-
-    // Use the standard application interface to refresh the project tree
+    Q_UNUSED(model);
     if (auto* iface = getProjectContext()) {
         iface->refreshProjectTree();
     }

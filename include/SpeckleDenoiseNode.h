@@ -66,7 +66,6 @@ private Q_SLOTS:
     void onModelUpdated(QStandardItemModel* model);
 
 private:
-    IApplicationInterface* getProjectContext() const;
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;

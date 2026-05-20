@@ -7,6 +7,7 @@
 #include "MainWindow.h"
 #include "WorkspaceUI.h"
 #include "InterfaceManager.h"
+#include "NodeUtils.h"
 #include <QApplication>
 #include <QFileInfo>
 #include <QJsonObject>
@@ -371,58 +372,21 @@ void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
     Q_UNUSED(model);
 }
 
-IApplicationInterface* S1FrameMergeNode::getProjectContext() const
-{
-    // 1. Try parent widget traversal
-    if (_widget)
-    {
-        QWidget* parent = _widget->parentWidget();
-        while (parent)
-        {
-            auto* iface = dynamic_cast<IApplicationInterface*>(parent);
-            if (iface) {
-                return iface;
-            }
-            parent = parent->parentWidget();
-        }
-    }
-
-    // 2. Fallback to MainWindow -> workspaceUI
-    foreach(QWidget * widget, QApplication::topLevelWidgets()) {
-        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
-        if (mainWin) {
-            // Prefer workspaceUI as it's the source of truth for project data
-            if (mainWin->workspaceUI()) {
-                return mainWin->workspaceUI();
-            }
-            // Fallback to interface manager's current interface
-            if (mainWin->interfaceManager()) {
-                auto* iface = mainWin->interfaceManager()->currentInterface();
-                if (iface) {
-                    return iface;
-                }
-            }
-        }
-    }
-
-    return nullptr;
-}
-
 QStandardItemModel* S1FrameMergeNode::projectModel() const
 {
-    auto iface = getProjectContext();
+    auto iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectModel() : nullptr;
 }
 
 QString S1FrameMergeNode::projectPath() const
 {
-    auto iface = getProjectContext();
+    auto iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectPath() : QString();
 }
 
 QString S1FrameMergeNode::projectName() const
 {
-    auto iface = getProjectContext();
+    auto iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectName() : QString();
 }
 

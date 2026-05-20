@@ -7,6 +7,7 @@
 #include "MainWindow.h"
 #include "InterfaceManager.h"
 #include "WorkspaceUI.h"
+#include "NodeUtils.h"
 #include "icon_source.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -424,69 +425,33 @@ void ClutterSuppressionNode::onError(const QString& error)
 void ClutterSuppressionNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
-    if (auto* iface = getProjectContext()) {
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
         iface->refreshProjectTree();
     }
 }
 
 QStandardItemModel* ClutterSuppressionNode::projectModel() const
 {
-    auto iface = getProjectContext();
+    auto* iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectModel() : nullptr;
 }
 
 QString ClutterSuppressionNode::projectPath() const
 {
-    auto iface = getProjectContext();
+    auto* iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectPath() : QString();
 }
 
 QString ClutterSuppressionNode::projectName() const
 {
-    auto iface = getProjectContext();
+    auto* iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectName() : QString();
 }
 
 XMLFile* ClutterSuppressionNode::projectXml() const
 {
-    auto iface = getProjectContext();
+    auto* iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectXml() : nullptr;
-}
-IApplicationInterface* ClutterSuppressionNode::getProjectContext() const
-{
-    // 1. Try parent widget traversal
-    if (_widget)
-    {
-        QWidget* parent = _widget->parentWidget();
-        while (parent)
-        {
-            auto* iface = dynamic_cast<IApplicationInterface*>(parent);
-            if (iface) {
-                return iface;
-            }
-            parent = parent->parentWidget();
-        }
-    }
-
-    // 2. Fallback to MainWindow -> workspaceUI
-    foreach(QWidget * widget, QApplication::topLevelWidgets()) {
-        MainWindow* mainWin = qobject_cast<MainWindow*>(widget);
-        if (mainWin) {
-            // Prefer workspaceUI as it's the source of truth for project data
-            if (mainWin->workspaceUI()) {
-                return mainWin->workspaceUI();
-            }
-            // Fallback to interface manager's current interface
-            if (mainWin->interfaceManager()) {
-                auto* iface = mainWin->interfaceManager()->currentInterface();
-                if (iface) {
-                    return iface;
-                }
-            }
-        }
-    }
-
-    return nullptr;
 }
 
 QJsonObject ClutterSuppressionNode::save() const
