@@ -16,7 +16,6 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QStandardItemModel>
-#include <QDebug>
 
 namespace QtNodes {
 
@@ -209,11 +208,7 @@ void ClutterSuppressionNode::stopExecution()
 
 void ClutterSuppressionNode::processAutomatically()
 {
-    qDebug() << "[ClutterSuppressionNode] processAutomatically called. Current state:"
-             << static_cast<int>(executionState()) << "isReady:" << isReady();
-
     if (m_thread || m_workerThread) {
-        qDebug() << "[ClutterSuppressionNode] SKIP - execution already in progress";
         return;
     }
 
@@ -222,7 +217,6 @@ void ClutterSuppressionNode::processAutomatically()
             m_outputData = std::make_shared<ImageInfoData>("");
             setOutputData(0, m_outputData);
             setOutputData(1, m_outputData);
-            qDebug() << "[ClutterSuppressionNode] Set placeholder output data to prevent Idle reset";
         }
         executeProcessing();
     }
@@ -255,11 +249,8 @@ void ClutterSuppressionNode::execute()
 
 void ClutterSuppressionNode::executeProcessing()
 {
-    qDebug() << "[ClutterSuppressionNode] executeProcessing START";
-
     if (m_thread || m_workerThread)
     {
-        qDebug() << "[ClutterSuppressionNode] Cleaning up existing threads";
         if (m_thread && m_thread->isRunning())
         {
             m_thread->quit();
@@ -277,7 +268,6 @@ void ClutterSuppressionNode::executeProcessing()
     }
 
     if (!isReady()) {
-        qDebug() << "[ClutterSuppressionNode] Not ready, aborting";
         if (m_statusLabel) {
             m_statusLabel->setText("状态：未准备好");
         }
@@ -299,21 +289,11 @@ void ClutterSuppressionNode::executeProcessing()
     XMLFile* projectXmlPtr = projectXml();
     QString outputPath = QDir::tempPath() + QString("/clutter_suppression_%1.jpg").arg(QDateTime::currentMSecsSinceEpoch());
 
-    qDebug() << "[ClutterSuppressionNode] Starting with params:"
-             << "\n  inputPath:" << inputPath
-             << "\n  outputNodeName:" << outputNodeName
-             << "\n  outputFileName:" << outputFileName
-             << "\n  saveToProject:" << saveToProject
-             << "\n  projPath:" << projPath
-             << "\n  projName:" << projName
-             << "\n  temp outputPath:" << outputPath;
-
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
 
     connect(m_thread, &QThread::started, [this, inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject, projectXmlPtr]() {
-        qDebug() << "[ClutterSuppressionNode] Thread started, emitting startClutterSuppression";
         Q_EMIT startClutterSuppression(inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject, projectXmlPtr);
     });
     connect(this, &ClutterSuppressionNode::startClutterSuppression, m_workerThread, &MyThread::Clutter_Suppression, Qt::UniqueConnection);
@@ -323,7 +303,6 @@ void ClutterSuppressionNode::executeProcessing()
     connect(m_workerThread, &MyThread::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::UniqueConnection);
 
     m_thread->start();
-    qDebug() << "[ClutterSuppressionNode] Thread started, worker created";
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
@@ -339,8 +318,6 @@ void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& messa
 
 void ClutterSuppressionNode::onProcessingFinished()
 {
-    qDebug() << "[ClutterSuppressionNode] onProcessingFinished called";
-
     if (m_saveToProjectCheckBox->isChecked()) {
         QString nodeName = m_outputNodeNameEdit->text().trimmed();
         QString projDirStr = projectPath();
@@ -358,7 +335,6 @@ void ClutterSuppressionNode::onProcessingFinished()
             }
         }
         m_outputImagePath = projDirStr + "/" + nodeName + "/" + finalFileName;
-        qDebug() << "[ClutterSuppressionNode] Output image path:" << m_outputImagePath;
     }
 
     m_outputData = std::make_shared<ImageInfoData>(m_outputImagePath);
@@ -389,13 +365,11 @@ void ClutterSuppressionNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
-    qDebug() << "[ClutterSuppressionNode] Processing finished, calling finishExecution";
     finishExecution();
 }
 
 void ClutterSuppressionNode::onError(const QString& error)
 {
-    qDebug() << "[ClutterSuppressionNode] onError called:" << error;
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
     if (m_statusLabel) {
@@ -419,7 +393,6 @@ void ClutterSuppressionNode::onError(const QString& error)
     }
 
     m_outputData.reset();
-    qDebug() << "[ClutterSuppressionNode] Error handling complete";
 }
 
 void ClutterSuppressionNode::onModelUpdated(QStandardItemModel* model)

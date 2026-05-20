@@ -12,7 +12,6 @@
 #include<qcoreapplication.h>
 #include<QFile>
 #include<QFileInfo>
-#include<QDebug>
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
@@ -6323,24 +6322,13 @@ void MyThread::processBM3DEnhancement(
     XMLFile* projectXml
 )
 {
-    QString debugPrefix = QString("[%1::%2]").arg("MyThread").arg(tag);
-    qDebug() << debugPrefix << "===== START ======";
-    qDebug() << "  inputPath:" << inputPath;
-    qDebug() << "  outputPath:" << outputPath;
-    qDebug() << "  nodeName:" << nodeName;
-    qDebug() << "  projectPath:" << projectPath;
-    qDebug() << "  projectName:" << projectName;
-    qDebug() << "  saveToProject:" << saveToProject;
-
     emit updateProcess(0, QStringLiteral("加载图像..."));
 
     cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
     if (inputGray.empty()) {
-        qDebug() << debugPrefix << "ERROR: Failed to read input image";
         emit errorProcess(QStringLiteral("无法读取输入图像"));
         return;
     }
-    qDebug() << debugPrefix << "Image loaded OK, size:" << inputGray.cols << "x" << inputGray.rows;
 
     emit updateProcess(20, QStringLiteral("准备BM3D计算..."));
 
@@ -6415,11 +6403,8 @@ void MyThread::processBM3DEnhancement(
             projDirStr = QFileInfo(projectPath).absolutePath();
         }
 
-        qDebug() << debugPrefix << "Project directory:" << projDirStr;
-
         QDir dir(projDirStr);
         if (!dir.exists(nodeName)) {
-            qDebug() << debugPrefix << "Creating node folder:" << nodeName;
             dir.mkdir(nodeName);
         }
 
@@ -6435,7 +6420,6 @@ void MyThread::processBM3DEnhancement(
             }
         }
         QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
-        qDebug() << debugPrefix << "Saving to filesystem:" << finalPath;
         cv::imwrite(finalPath.toStdString(), output8U);
 
         QStandardItem* projectItem = nullptr;
@@ -6502,14 +6486,12 @@ void MyThread::processBM3DEnhancement(
                 dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));
             }
         } else {
-            qDebug() << debugPrefix << "ERROR: Could not find project item:" << projectName;
+            // Error handled silently or via other means
         }
     } else {
-        qDebug() << debugPrefix << "Saving to temp path:" << outputPath;
         cv::imwrite(outputPath.toStdString(), output8U);
     }
 
-    qDebug() << debugPrefix << "===== FINISHED ======";
     emit updateProcess(100, QStringLiteral("完成"));
     emit sendModel(model);
     emit endProcess();
