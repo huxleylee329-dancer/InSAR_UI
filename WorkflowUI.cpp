@@ -63,9 +63,9 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // ===== 1. 顶级分类顺序 =====
     order.topLevel = QStringList{
+        "SAR",            // SAR处理分类
         "Data Import",    // 第一级分类
         "Preprocessing",  // 第二级分类
-        "SAR",            // SAR处理分类
         "Display",        // 图像显示/预览分类
         "Note",          // 注释节点分类
         "Test"           // 测试节点分类
@@ -77,8 +77,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "Sentinel-1",       // Data Import 下的第一个子分类
         "TerraSAR-X",       // 第二个
         "COSMO-SkyMed",     // 第三个
-        "ALOS-2",            // 第四个
-        "Generic SAR"             // 第五个
+        "ALOS-2"            // 第四个
     };
 
     order.subcategories["Preprocessing"] = QStringList{
@@ -86,7 +85,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     };
 
     order.subcategories["SAR"] = QStringList{
-        "Enhancement"       // SAR 下的第一个子分类
+        "Import",           // SAR 下的第一个子分类
+        "Enhancement"       // SAR 下的第二个子分类
     };
 
     // ===== 3. 叶子项顺序 =====
@@ -110,7 +110,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Batch Import", "ALOS-2 Import"}           // ALOS-2 批量导入
     };
 
-    order.leafItems["Data Import/Generic SAR"] = QList<PaletteOrder::LeafItem>{
+    order.leafItems["SAR/Import/Generic SAR"] = QList<PaletteOrder::LeafItem>{
         {"Single Import", "Generic SAR Import"},
         {"Batch Import", "Generic SAR Batch Import"}
     };

@@ -5646,6 +5646,7 @@ void MyThread::Speckle_Denoise(
     QString inputPath,
     QString outputPath,
     QString nodeName,
+    QString fileName,
     QString projectPath,
     QString projectName,
     QStandardItemModel* model,
@@ -5753,7 +5754,18 @@ void MyThread::Speckle_Denoise(
         }
 
         // Consistent with import_GenericSAR pattern: project_path/nodeName/filename
-        QString finalPath = projDirStr + "/" + nodeName + "/" + QFileInfo(inputPath).baseName() + "_denoised.png";
+        QString finalFileName;
+        if (fileName.isEmpty()) {
+            finalFileName = QFileInfo(inputPath).baseName() + "_denoised.png";
+        } else {
+            // Use exact user-specified file name (keep extension if provided)
+            if (QFileInfo(fileName).suffix().isEmpty()) {
+                finalFileName = fileName + ".png";
+            } else {
+                finalFileName = fileName;
+            }
+        }
+        QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
         qDebug() << "[MyThread::Speckle_Denoise] Saving to filesystem:" << finalPath;
         cv::imwrite(finalPath.toStdString(), output8U);
         qDebug() << "[MyThread::Speckle_Denoise] File saved successfully";
@@ -5788,7 +5800,8 @@ void MyThread::Speckle_Denoise(
                 // Many processing nodes don't seem to add tags to their folders
             }
 
-            QStandardItem* nameItem = new QStandardItem(QStringLiteral("denoised"));
+            QString displayName = fileName.isEmpty() ? QStringLiteral("denoised") : fileName;
+            QStandardItem* nameItem = new QStandardItem(displayName);
             nameItem->setIcon(QIcon(IMAGEDATA_ICON));
             nameItem->setToolTip(QStringLiteral("image"));
             QStandardItem* pathItem = new QStandardItem(finalPath);

@@ -165,6 +165,8 @@ void ExecutableNodeDelegateModel::finishExecution()
         return;
     }
 
+    _progress = 100;
+    Q_EMIT progressUpdated(_progress);
     _state = ExecutionState::Completed;
     Q_EMIT executionFinished();
     Q_EMIT executionStateChanged();

@@ -69,8 +69,8 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 
     
     // Generic SAR
-    registry->registerModel<GenericSARImportNode>("Data Import/Generic SAR/Single Import");
-    registry->registerModel<GenericSARBatchImportNode>("Data Import/Generic SAR/Batch Import");
+    registry->registerModel<GenericSARImportNode>("SAR/Import/Generic SAR/Single Import");
+    registry->registerModel<GenericSARBatchImportNode>("SAR/Import/Generic SAR/Batch Import");
 
     // ============================================================================
     // Preprocessing Nodes

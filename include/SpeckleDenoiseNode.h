@@ -56,7 +56,7 @@ public:
     void load(QJsonObject const &json) override;
 
 signals:
-    void startSpeckleDenoise(QString inputPath, QString outputPath, QString nodeName, 
+    void startSpeckleDenoise(QString inputPath, QString outputPath, QString nodeName, QString fileName,
                             QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject);
 
 private Q_SLOTS:
@@ -80,12 +80,14 @@ private:
     QLabel* m_inputImageLabel = nullptr;
     QCheckBox* m_saveToProjectCheckBox = nullptr;
     QLineEdit* m_outputNodeNameEdit = nullptr;
+    QLineEdit* m_outputFileNameEdit = nullptr;
     QLabel* m_statusLabel = nullptr;
 
     // 数据
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
     QString m_outputImagePath;
+    QString m_outputFileName;
 
     // Threading
     QThread* m_thread = nullptr;

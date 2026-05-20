@@ -24,6 +24,7 @@ SpeckleDenoiseNode::SpeckleDenoiseNode()
     , m_inputImageLabel(nullptr)
     , m_saveToProjectCheckBox(nullptr)
     , m_outputNodeNameEdit(nullptr)
+    , m_outputFileNameEdit(nullptr)
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
@@ -114,6 +115,12 @@ void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
         m_outputNodeNameEdit->setText(generateOutputFileName());
     }
 
+    if (m_inputData && m_outputFileNameEdit && m_outputFileNameEdit->text().isEmpty()) {
+        QFileInfo fi(m_inputData->filePath());
+        m_outputFileNameEdit->setText(fi.baseName());
+        m_outputFileName = fi.baseName();
+    }
+
     ExecutableNodeDelegateModel::setInData(data, port);
 }
 
@@ -151,11 +158,24 @@ void SpeckleDenoiseNode::createWidget()
     layout->addWidget(m_saveToProjectCheckBox);
 
     auto* nodeNameLayout = new QHBoxLayout();
+    nodeNameLayout->setStretch(0, 3);
+    nodeNameLayout->setStretch(1, 7);
     nodeNameLayout->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("输入节点名称");
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
+
+    // 目标文件名 [3:7]
+    auto* fileNameLayout = new QHBoxLayout();
+    fileNameLayout->setStretch(0, 3);
+    fileNameLayout->setStretch(1, 7);
+    fileNameLayout->addWidget(new QLabel("目标文件名："));
+    m_outputFileNameEdit = new QLineEdit();
+    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
+    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
+    fileNameLayout->addWidget(m_outputFileNameEdit);
+    layout->addLayout(fileNameLayout);
 
     m_statusLabel = new QLabel();
     m_statusLabel->setStyleSheet("color: gray; font-size: 11px;");
@@ -170,6 +190,9 @@ void SpeckleDenoiseNode::onSaveToProjectChanged(int state)
 {
     if (m_outputNodeNameEdit) {
         m_outputNodeNameEdit->setEnabled(state == Qt::Checked);
+    }
+    if (m_outputFileNameEdit) {
+        m_outputFileNameEdit->setEnabled(state == Qt::Checked);
     }
 }
 
@@ -275,6 +298,7 @@ void SpeckleDenoiseNode::executeProcessing()
 
     QString inputPath = m_inputData->filePath();
     QString outputNodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : "Denoise";
+    QString outputFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : QString();
     bool saveToProject = m_saveToProjectCheckBox ? m_saveToProjectCheckBox->isChecked() : true;
     QString projPath = projectPath();
     QString projName = projectName();
@@ -284,6 +308,7 @@ void SpeckleDenoiseNode::executeProcessing()
     qDebug() << "[SpeckleDenoiseNode] Starting with params:"
              << "\n  inputPath:" << inputPath
              << "\n  outputNodeName:" << outputNodeName
+             << "\n  outputFileName:" << outputFileName
              << "\n  saveToProject:" << saveToProject
              << "\n  projPath:" << projPath
              << "\n  projName:" << projName
@@ -295,9 +320,9 @@ void SpeckleDenoiseNode::executeProcessing()
     m_workerThread->moveToThread(m_thread);
 
     // Connect signals - capture ALL values by value to avoid race conditions
-    connect(m_thread, &QThread::started, [this, inputPath, outputPath, outputNodeName, projPath, projName, model, saveToProject]() {
+    connect(m_thread, &QThread::started, [this, inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject]() {
         qDebug() << "[SpeckleDenoiseNode] Thread started, emitting startSpeckleDenoise";
-        Q_EMIT startSpeckleDenoise(inputPath, outputPath, outputNodeName, projPath, projName, model, saveToProject);
+        Q_EMIT startSpeckleDenoise(inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject);
     });
     connect(this, &SpeckleDenoiseNode::startSpeckleDenoise, m_workerThread, &MyThread::Speckle_Denoise, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::UniqueConnection);
@@ -309,6 +334,7 @@ void SpeckleDenoiseNode::executeProcessing()
     m_thread->start();
     qDebug() << "[SpeckleDenoiseNode] Thread started, worker created";
     m_outputNodeNameEdit->setEnabled(false);
+    m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
 }
 
@@ -332,8 +358,19 @@ void SpeckleDenoiseNode::onProcessingFinished()
         if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
             projDirStr = QFileInfo(projDirStr).absolutePath();
         }
+        // Use user-specified output file name or default to input base name
+        QString finalFileName;
+        if (m_outputFileName.isEmpty()) {
+            finalFileName = QFileInfo(m_inputData->filePath()).baseName() + "_denoised.png";
+        } else {
+            if (QFileInfo(m_outputFileName).suffix().isEmpty()) {
+                finalFileName = m_outputFileName + ".png";
+            } else {
+                finalFileName = m_outputFileName;
+            }
+        }
         // Consistent with MyThread::Speckle_Denoise and import_GenericSAR: use nodeName as folder
-        m_outputImagePath = projDirStr + "/" + nodeName + "/" + QFileInfo(m_inputData->filePath()).baseName() + "_denoised.png";
+        m_outputImagePath = projDirStr + "/" + nodeName + "/" + finalFileName;
         qDebug() << "[SpeckleDenoiseNode] Output image path (using node folder):" << m_outputImagePath;
     } else {
         // Output path was set in executeProcessing (temp path)
@@ -348,6 +385,7 @@ void SpeckleDenoiseNode::onProcessingFinished()
     }
 
     m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_outputFileNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
     m_saveToProjectCheckBox->setEnabled(true);
 
     Q_EMIT dataUpdated(0);
@@ -380,6 +418,7 @@ void SpeckleDenoiseNode::onError(const QString& error)
         m_statusLabel->setText("状态：错误 - " + error);
     }
     m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
+    m_outputFileNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
     m_saveToProjectCheckBox->setEnabled(true);
 
     // Clean up threads
@@ -463,6 +502,8 @@ QJsonObject SpeckleDenoiseNode::save() const
         modelJson["saveToProject"] = m_saveToProjectCheckBox->isChecked();
     if (m_outputNodeNameEdit)
         modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
+    if (m_outputFileNameEdit)
+        modelJson["outputFileName"] = m_outputFileNameEdit->text();
 
     return modelJson;
 }
@@ -482,6 +523,14 @@ void SpeckleDenoiseNode::load(QJsonObject const &json)
         QJsonValue v = json["outputNodeName"];
         if (!v.isUndefined()) {
             m_outputNodeNameEdit->setText(v.toString());
+        }
+    }
+
+    if (m_outputFileNameEdit) {
+        QJsonValue v = json["outputFileName"];
+        if (!v.isUndefined()) {
+            m_outputFileNameEdit->setText(v.toString());
+            m_outputFileName = v.toString();
         }
     }
 }
