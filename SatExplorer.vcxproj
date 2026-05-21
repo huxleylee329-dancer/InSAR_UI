@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -93,6 +93,7 @@
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <PreprocessorDefinitions>NODE_EDITOR_STATIC;ADS_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\onnxruntime-win-x64-1.26.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -110,6 +111,7 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PreprocessorDefinitions>NODE_EDITOR_STATIC;ADS_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -161,6 +163,7 @@
     <ClCompile Include="diff_boxcount.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EvaluationENLNode.cpp" />
     <ClCompile Include="Export_KML.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -617,6 +620,7 @@
     <ClInclude Include="include\BM3DWrapper.h" />
     <ClInclude Include="include\diff_boxcount.h" />
     <ClInclude Include="include\bm3d_wiener.h" />
+    <QtMoc Include="include\EvaluationENLNode.h" />
     <ClInclude Include="include\global_define.h" />
     <ClInclude Include="include\group_3d.h" />
     <ClInclude Include="include\icon_source.h">

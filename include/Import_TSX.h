@@ -12,7 +12,7 @@ public:
     ~Import_TSX();
 public slots:
     void ShowProjectList(QStandardItemModel* );
-    /*Éú³ÉÅúÁ¿µ¼ÈëÎÄ¼şÃû*/
+    /*ç”Ÿæˆæ‰¹é‡å¯¼å…¥æ–‡ä»¶å*/
     bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist,  vector<QString>& import_nameslist);
     void ChangeVision(bool Editable);
 private:
@@ -31,18 +31,18 @@ signals:
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();
-    /*ÅúÁ¿µ¼ÈëÄ¿±ê¹¤³Ì°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥ç›®æ ‡å·¥ç¨‹æŒ‰é’®å“åº”å‡½æ•°*/
     void on_comboBox_dst_project_2_currentIndexChanged();
     void on_button_xml_browse_pressed();
-    /*ÅúÁ¿µ¼ÈëÌí¼Ó°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥æ·»åŠ æŒ‰é’®å“åº”å‡½æ•°*/
     void on_pushButton_add_pressed();
-    /*ÅúÁ¿µ¼ÈëÒÆ³ı°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥ç§»é™¤æŒ‰é’®å“åº”å‡½æ•°*/
     void on_pushButton_remove_pressed();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
-    /*ÅúÁ¿µ¼ÈëÈ·¶¨°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥ç¡®å®šæŒ‰é’®å“åº”å‡½æ•°*/
     void on_buttonBox_2_accepted();
-    /*ÅúÁ¿µ¼ÈëÈ¡Ïû°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥å–æ¶ˆæŒ‰é’®å“åº”å‡½æ•°*/
     void on_buttonBox_2_rejected();
 
     void updateProcess(int, QString);

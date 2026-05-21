@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include "ui_MainWindow.h"
 #include<ColorBar.h>
@@ -118,7 +118,7 @@ private slots:
     void on_actionS1_frame_merge_triggered();
     void on_actionCOSMOS_SkyMed_triggered();
     void on_actionALOS_2_triggered();
-    void on_tabWidget_tabCloseRequested(int);
+    void handleTabCloseRequested(int);
     // Switch ColorBar
     void ShowColorBar(int index);
     // Theme switching

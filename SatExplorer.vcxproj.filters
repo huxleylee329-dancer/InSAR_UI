@@ -442,6 +442,9 @@
     <ClCompile Include="ClutterSuppressionNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EvaluationENLNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\Cut.h">
@@ -784,6 +787,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\ClutterSuppressionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\EvaluationENLNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

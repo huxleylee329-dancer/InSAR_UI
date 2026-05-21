@@ -1,7 +1,3 @@
-﻿#ifdef _MSC_VER
-#pragma execution_character_set("utf-8")
-#endif
-
 #include "SpeckleDenoiseNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
@@ -226,13 +222,9 @@ void SpeckleDenoiseNode::stopExecution()
 
 void SpeckleDenoiseNode::processAutomatically()
 {
-    qDebug() << "[SpeckleDenoiseNode] processAutomatically called. Current state:"
-             << static_cast<int>(executionState()) << "isReady:" << isReady();
-
     // CRITICAL: Prevent duplicate execution - check if already processing
     // m_thread being non-null means execution is in progress
     if (m_thread || m_workerThread) {
-        qDebug() << "[SpeckleDenoiseNode] SKIP - execution already in progress";
         return;
     }
 

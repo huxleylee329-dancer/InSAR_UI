@@ -6,7 +6,7 @@ BasicFeatures extract_basic_features(const cv::Mat& img_gray) {
     BasicFeatures feats = { 0.0, 0.0, 0.0, 0.0 };
     if (img_gray.empty()) return feats;
 
-    // 1. Í¼Ïñ¹éÒ»»¯ 
+    // 1. å›¾åƒå½’ä¸€åŒ– 
     double minVal, maxVal;
     cv::minMaxLoc(img_gray, &minVal, &maxVal);
     cv::Mat img_norm;
@@ -18,7 +18,7 @@ BasicFeatures extract_basic_features(const cv::Mat& img_gray) {
         return feats;
     }
 
-    // 2. ÆµÓòÌØÕ÷ (peak_high_feature)
+    // 2. é¢‘åŸŸç‰¹å¾ (peak_high_feature)
     cv::Mat planes[] = { img_norm.clone(), cv::Mat::zeros(img_norm.size(), CV_32F) };
     cv::Mat complexI;
     cv::merge(planes, 2, complexI);
@@ -39,11 +39,11 @@ BasicFeatures extract_basic_features(const cv::Mat& img_gray) {
     q0.copyTo(tmp); q3.copyTo(q0); tmp.copyTo(q3);
     q1.copyTo(tmp); q2.copyTo(q1); tmp.copyTo(q2);
 
-    // 2.3 ¶ÔÊı³ß¶È±ä»»
+    // 2.3 å¯¹æ•°å°ºåº¦å˜æ¢
     magI += cv::Scalar::all(1);
     cv::log(magI, magI);
 
-    // 2.4 ¼ÆËãÖ±·½Í¼
+    // 2.4 è®¡ç®—ç›´æ–¹å›¾
     double min_mag, max_mag;
     cv::minMaxLoc(magI, &min_mag, &max_mag);
     int histSize = 50;
@@ -52,14 +52,14 @@ BasicFeatures extract_basic_features(const cv::Mat& img_gray) {
     cv::Mat hist;
     cv::calcHist(&magI, 1, 0, cv::Mat(), hist, 1, &histSize, &histRange, true, false);
 
-    // ÃÜ¶È¹éÒ»»¯
+    // å¯†åº¦å½’ä¸€åŒ–
     double sum_hist = cv::sum(hist)[0];
     double bin_width = (max_mag - min_mag) / histSize;
     if (sum_hist > 0 && bin_width > 0) {
         hist /= (sum_hist * bin_width);
     }
 
-    // ÕÒ³ö·åÖµ
+    // æ‰¾å‡ºå³°å€¼
     double minH, maxH;
     cv::Point minP, maxP;
     cv::minMaxLoc(hist, &minH, &maxH, &minP, &maxP);
@@ -68,16 +68,16 @@ BasicFeatures extract_basic_features(const cv::Mat& img_gray) {
 
     feats.fphr = (max_bin_val != 0.0) ? (maxH / max_bin_val) : 0.0;
 
-    // 3. ÎÆÀíÌØÕ÷ (GLCM)
+    // 3. çº¹ç†ç‰¹å¾ (GLCM)
     cv::Mat img_255;
-    // ´ËÊ±µÄ img_norm ÊÇÔ­Í¼Êı¾İ
+    // æ­¤æ—¶çš„ img_norm æ˜¯åŸå›¾æ•°æ®
     img_norm.convertTo(img_255, CV_8U, 255.0);
 
-    // ³õÊ¼»¯ 256x256 µÄ¹²Éú¾ØÕó
+    // åˆå§‹åŒ– 256x256 çš„å…±ç”ŸçŸ©é˜µ
     cv::Mat glcm = cv::Mat::zeros(256, 256, CV_64F);
     int dx = 5, dy = 0;
 
-    // Ìî³ä GLCM
+    // å¡«å…… GLCM
     for (int y = 0; y < img_255.rows; ++y) {
         for (int x = 0; x < img_255.cols - dx; ++x) {
             int i = img_255.at<uchar>(y, x);
@@ -87,11 +87,11 @@ BasicFeatures extract_basic_features(const cv::Mat& img_gray) {
         }
     }
 
-    // GLCM ¹éÒ»»¯
+    // GLCM å½’ä¸€åŒ–
     double glcm_sum = cv::sum(glcm)[0];
     if (glcm_sum > 0) glcm /= glcm_sum;
 
-    // 4. ´Ó GLCM ÌáÈ¡ Contrast, Correlation, ASM
+    // 4. ä» GLCM æå– Contrast, Correlation, ASM
     double contrast = 0.0, asm_val = 0.0;
     double mean_i = 0.0, mean_j = 0.0;
 

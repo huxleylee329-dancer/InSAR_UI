@@ -1,6 +1,3 @@
-﻿#ifdef _MSC_VER
-#pragma execution_character_set("utf-8")
-#endif
 
 #include "QtNodes/internal/ExecutableDataFlowGraphModel.hpp"
 #include "QtNodes/internal/BasicGraphicsScene.hpp"
@@ -116,12 +113,12 @@ void ExecutableDataFlowGraphModel::addConnection(ConnectionId const connectionId
         return;
     }
 
-    // For Manual mode nodes, clear the input data to prevent automatic processing
+    // For Manual mode nodes, clear the input data to prevent automatic processing ONLY if not completed
     if (isExecutableNode(connectionId.outNodeId)) {
         ExecutionMode mode = getNodeExecutionMode(connectionId.outNodeId);
-        if (mode == ExecutionMode::Manual) {
+        auto *execModel = delegateModel<ExecutableNodeDelegateModel>(connectionId.outNodeId);
+        if (mode == ExecutionMode::Manual && execModel && execModel->executionState() != ExecutionState::Completed) {
             // Clear the input port data of the target node to prevent auto-execution
-            // Note: DataFlowGraphModel::addConnection already propagated data if source was completed
             QVariant emptyData{};
             setPortData(connectionId.inNodeId,
                        PortType::In,

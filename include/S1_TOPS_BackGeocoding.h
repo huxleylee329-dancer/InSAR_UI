@@ -29,11 +29,11 @@ signals:
     void operate(int, int, QString, QString, QString, QString, QStandardItemModel*, bool);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*工程选择按钮响应函数*/
+    /*宸ョ▼閫夋嫨鎸夐挳鍝嶅簲鍑芥暟*/
     void on_comboBox_currentIndexChanged();
-    /*数据节点选择按钮响应函数*/
+    /*鏁版嵁鑺傜偣閫夋嫨鎸夐挳鍝嶅簲鍑芥暟*/
     void on_comboBox_2_currentIndexChanged();
-    /*主图像选择按钮响应函数*/
+    /*涓诲浘鍍忛�夋嫨鎸夐挳鍝嶅簲鍑芥暟*/
     void on_comboBox_3_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

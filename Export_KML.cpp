@@ -135,7 +135,7 @@ void Export_KML::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         ui->comboBox_2->clear();
         this->deleteLater();
     }
@@ -157,7 +157,7 @@ void Export_KML::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
         ui->comboBox_2->clear();
         this->deleteLater();
     }
@@ -188,7 +188,7 @@ void Export_KML::on_comboBox_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             ui->comboBox_2->clear();
             return;
         }
@@ -240,7 +240,7 @@ void Export_KML::on_comboBox_2_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             return;
         }
     }
@@ -258,33 +258,33 @@ void Export_KML::on_Export_pressed()
     bool bFlag = false;
     if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÏÂÎ´¼ì²âµ½Êı¾İ£¡ÇëÏÈµ¼ÈëÍ¼Ïñ»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹ä¸‹æœªæ£€æµ‹åˆ°æ•°æ®ï¼è¯·å…ˆå¯¼å…¥å›¾åƒæˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     if (ui->File_path->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÑ¡Ôñ´æ´¢Â·¾¶£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·é€‰æ‹©å­˜å‚¨è·¯å¾„ï¼"));
         return;
     }
     bFlag = ui->File_path->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Â·¾¶ÖĞ²»Ó¦°üº¬ÖĞÎÄ»òÌØÊâ·ûºÅ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è·¯å¾„ä¸­ä¸åº”åŒ…å«ä¸­æ–‡æˆ–ç‰¹æ®Šç¬¦å·ï¼"));
         return;
     }
     if (ui->File_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈëÎÄ¼şÃû£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥æ–‡ä»¶åï¼"));
         return;
     }
     bFlag = ui->File_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎÄ¼şÃûÖĞ²»Ó¦°üº¬ÖĞÎÄ»òÌØÊâ·ûºÅ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ–‡ä»¶åä¸­ä¸åº”åŒ…å«ä¸­æ–‡æˆ–ç‰¹æ®Šç¬¦å·ï¼"));
         return;
     }
     ChangeVision(false);
-    ui->Export->setText(QString::fromLocal8Bit("ÕıÔÚµ¼³ö¡­¡­"));
+    ui->Export->setText(QString::fromLocal8Bit("æ­£åœ¨å¯¼å‡ºâ€¦â€¦"));
     QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
     QString h5_path;
     QString jpg_path;
@@ -354,7 +354,7 @@ void Export_KML::on_Export_pressed()
     /*bFlag = ui->File_path->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Â·¾¶ÖĞ²»Ó¦°üº¬ÖĞÎÄ»òÌØÊâ·ûºÅ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è·¯å¾„ä¸­ä¸åº”åŒ…å«ä¸­æ–‡æˆ–ç‰¹æ®Šç¬¦å·ï¼"));
         return;
     }*/
 }

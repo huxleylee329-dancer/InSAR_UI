@@ -13,7 +13,7 @@ public:
 public slots:
     void errorProcess(QString error_msg);
     void ShowProjectList(QStandardItemModel*);
-    /*Éú³ÉÅúÁ¿µ¼ÈëÎÄ¼şÃû*/
+    /*ç”Ÿæˆæ‰¹é‡å¯¼å…¥æ–‡ä»¶å*/
     bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist,
         vector<QString>& original_nameslist2);
     void ChangeVision(bool Editable);
@@ -29,7 +29,7 @@ signals:
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();
     void on_pushButton_add_pressed();
-    /*ÅúÁ¿µ¼ÈëÒÆ³ı°´Å¥ÏìÓ¦º¯Êı*/
+    /*æ‰¹é‡å¯¼å…¥ç§»é™¤æŒ‰é’®å“åº”å‡½æ•°*/
     void on_pushButton_remove_pressed();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

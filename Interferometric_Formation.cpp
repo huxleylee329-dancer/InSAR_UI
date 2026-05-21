@@ -43,7 +43,7 @@ Interferometric_Formation::~Interferometric_Formation()
 void Interferometric_Formation::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Interferometric_Formation::endProcess()
@@ -135,7 +135,7 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -153,7 +153,7 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¬ÇëÏÈ½øĞĞÅä×¼£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆè¿›è¡Œé…å‡†ï¼"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -168,7 +168,7 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     }
     else
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞÅä×¼ºóÍ¼ÏñÓÃÓÚÉú³É¸ÉÉæÏàÎ»£¬ÇëÏÈ½øĞĞÅä×¼!"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— é…å‡†åå›¾åƒç”¨äºç”Ÿæˆå¹²æ¶‰ç›¸ä½ï¼Œè¯·å…ˆè¿›è¡Œé…å‡†!"));
         this->deleteLater();
     }
     ui->comboBox_3->setCurrentIndex(0);
@@ -290,12 +290,12 @@ void Interferometric_Formation::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈ½øĞĞÅä×¼»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆè¿›è¡Œé…å‡†æˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     if (ui->comboBox_3->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÏÂÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈ½øĞĞÅä×¼»ò¸ü»»½Úµã£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹ä¸‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆè¿›è¡Œé…å‡†æˆ–æ›´æ¢èŠ‚ç‚¹ï¼"));
         return;
     }
     int win_width, win_height;
@@ -313,19 +313,19 @@ void Interferometric_Formation::on_buttonBox_accepted()
     {
         if (ui->win_w->text().isEmpty() || ui->win_h->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë¹À¼ÆÏà¸ÉÏµÊı´°¿Ú²ÎÊı£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥ä¼°è®¡ç›¸å¹²ç³»æ•°çª—å£å‚æ•°ï¼"));
             return;
         }
         win_width = ui->win_w->text().toInt(&bFlag);
         win_height = ui->win_h->text().toInt(&bFlag2);
         if (bFlag == false || bFlag2 == false)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ïà¸ÉÏµÊı´°¿Ú³ß´çÓ¦Îª´óÓÚ0µÄÆæÊı£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›¸å¹²ç³»æ•°çª—å£å°ºå¯¸åº”ä¸ºå¤§äº0çš„å¥‡æ•°ï¼"));
             return;
         }
         else if (win_width <= 0 || win_height <= 0 || win_width % 2 == 0 || win_height % 2 == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ïà¸ÉÏµÊı´°¿Ú³ß´çÓ¦Îª´óÓÚ0µÄÆæÊı£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›¸å¹²ç³»æ•°çª—å£å°ºå¯¸åº”ä¸ºå¤§äº0çš„å¥‡æ•°ï¼"));
             return;
         }
     }
@@ -336,30 +336,30 @@ void Interferometric_Formation::on_buttonBox_accepted()
     }
     if (ui->multilook_az->text().isEmpty() || ui->multilook_rg->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë¶àÊÓ±¶Êı(Ó¦ÎªÕıÕûÊı£¬ÎŞĞèÒª¿ÉÊäÈë1)£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥å¤šè§†å€æ•°(åº”ä¸ºæ­£æ•´æ•°ï¼Œæ— éœ€è¦å¯è¾“å…¥1)ï¼"));
         return;
     }
     int multi_az = ui->multilook_az->text().toInt(&bFlag);
     int multi_rg = ui->multilook_rg->text().toInt(&bFlag2);
     if (bFlag == false || bFlag2 == false)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¶àÊÓ±¶ÊıÓ¦ÎªÕıÕûÊı£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("å¤šè§†å€æ•°åº”ä¸ºæ­£æ•´æ•°ï¼"));
         return;
     }
     else if (multi_az <= 0 || multi_rg <= 0 )
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¶àÊÓ±¶ÊıÓ¦ÎªÕıÕûÊı£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("å¤šè§†å€æ•°åº”ä¸ºæ­£æ•´æ•°ï¼"));
         return;
     }
     if (ui->file_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÇëÊäÈë±£´æ¸ÉÉæÏàÎ»µÄÎÄ¼ş¼ĞÃû³Æ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·è¾“å…¥ä¿å­˜å¹²æ¶‰ç›¸ä½çš„æ–‡ä»¶å¤¹åç§°ï¼"));
         return;
     }
     bFlag = ui->file_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Çë×¢ÒâÎÄ¼ş¼ĞÃû³ÆÓ¦µ±ÎªÊı×Ö¡¢×ÖÄ¸¼°ÏÂ»®ÏßµÄ×éºÏ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯·æ³¨æ„æ–‡ä»¶å¤¹åç§°åº”å½“ä¸ºæ•°å­—ã€å­—æ¯åŠä¸‹åˆ’çº¿çš„ç»„åˆï¼"));
         return;
     }
     Interferometric_Formation_thread = new MyThread;

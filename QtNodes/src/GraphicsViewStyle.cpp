@@ -41,7 +41,8 @@ QString GraphicsViewStyle::loadThemeFile(const QString &theme)
 {
     initResources();
 
-    QString filePath = QString(":/SatExplorer/DefaultStyle_%1.json").arg(theme);
+    QString themeStr = theme.isEmpty() ? "light" : theme;
+    QString filePath = QString(":/SatExplorer/DefaultStyle_%1.json").arg(themeStr);
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
         qWarning() << "Failed to load theme file:" << filePath;

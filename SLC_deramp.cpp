@@ -37,7 +37,7 @@ SLC_deramp::~SLC_deramp()
 void SLC_deramp::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void SLC_deramp::endProcess()
@@ -91,7 +91,7 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         ui->comboBox_dst_node->clear();
         //ui->comboBox_masterImage->clear();
         return;
@@ -114,7 +114,7 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
         ui->comboBox_dst_node->clear();
         //ui->comboBox_masterImage->clear();
         return;
@@ -128,7 +128,7 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     //}
     //if (ui->comboBox_masterImage->count() < 1)
     //{
-    //    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+    //    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
     //    ui->comboBox_masterImage->clear();
     //    return;
     //}
@@ -159,7 +159,7 @@ void SLC_deramp::on_comboBox_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— æ•°æ®ï¼"));
             ui->comboBox_dst_node->clear();
             //ui->comboBox_masterImage->clear();
             return;
@@ -171,7 +171,7 @@ void SLC_deramp::on_comboBox_currentIndexChanged()
         //}
         //if (ui->comboBox_masterImage->count() < 1)
         //{
-        //    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+        //    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
         //    ui->comboBox_masterImage->clear();
         //    return;
         //}
@@ -222,7 +222,7 @@ void SLC_deramp::on_comboBox_dst_node_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÎŞÊı¾İ£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹æ— æ•°æ®ï¼"));
             ui->comboBox_masterImage->clear();
             return;
         }
@@ -243,10 +243,10 @@ void SLC_deramp::on_buttonBox_accepted()
     bool bFlag = false;
     if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÏÂÎ´¼ì²âµ½Êı¾İ£¡ÇëÏÈµ¼ÈëÍ¼Ïñ»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹ä¸‹æœªæ£€æµ‹åˆ°æ•°æ®ï¼è¯·å…ˆå¯¼å…¥å›¾åƒæˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
-    //·ÀÖØÃû¼ì²é
+    //é˜²é‡åæ£€æŸ¥
     QStandardItem* project = this->copy->findItems(ui->comboBox->currentText())[0];
     if (!project) {
         return;
@@ -255,12 +255,12 @@ void SLC_deramp::on_buttonBox_accepted()
     {
         if (ui->lineEdit->text() == project->child(i)->text())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Ä¿±ê½ÚµãÒÑ´æÔÚ£¬ÇëÖØÃüÃû£¡"));
+            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ç›®æ ‡èŠ‚ç‚¹å·²å­˜åœ¨ï¼Œè¯·é‡å‘½åï¼"));
             return;
         }
     }
 
-    //È·¶¨Ö÷Í¼ÏñĞòºÅ
+    //ç¡®å®šä¸»å›¾åƒåºå·
     QString projectFile;
     for (int i = 0; i < copy->rowCount(); i++)
     {

@@ -1,4 +1,4 @@
-﻿#if defined(_MSC_VER)
+#if defined(_MSC_VER)
 #pragma execution_character_set("utf-8")
 #endif
 
@@ -187,7 +187,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
     connect(m_workspaceUI->treeView(), &TreeView::update, m_workspaceUI, &WorkspaceUI::refreshProjectTree);
     connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, &MainWindow::ShowColorBar);
-    connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::on_tabWidget_tabCloseRequested);
+    connect(m_workspaceUI->tabWidget(), &QTabWidget::tabCloseRequested, this, &MainWindow::handleTabCloseRequested);
     connect(m_workspaceUI, &WorkspaceUI::projectTreeRefreshed, this, [this]() {
         if (!m_projectPath.isEmpty() && this->project) {
             this->project->XMLFile_load(m_projectPath.toStdString().c_str());
@@ -1308,7 +1308,7 @@ bool MainWindow::CheckTab(QModelIndex image)
     return false;
 }
 
-void MainWindow::on_tabWidget_tabCloseRequested(int index)
+void MainWindow::handleTabCloseRequested(int index)
 {
     // 界面切换到 Workflow 后直接返回
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")

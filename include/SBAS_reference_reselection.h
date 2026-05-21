@@ -25,9 +25,9 @@ public slots:
     void StopThread();
 private:
     double h5_left, h5_right, h5_top, h5_bottom;
-    /*若已经点击过预览，则禁止再次点击*/
+    /*鑻ュ凡缁忕偣鍑昏繃棰勮锛屽垯绂佹鍐嶆鐐瑰嚮*/
     bool isReselectionPressed;
-    /*是否正在选择参考点*/
+    /*鏄惁姝ｅ湪閫夋嫨鍙傝�冪偣*/
     bool isSBAS_reference_reselection;
     Ui::SbasReferenceReselection* ui;
     QString save_path;

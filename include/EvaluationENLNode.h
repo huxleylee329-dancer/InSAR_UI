@@ -1,8 +1,5 @@
 #pragma once
 
-#ifdef _MSC_VER
-#pragma execution_character_set("utf-8")
-#endif
 
 #include "NodeDataTypes.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
@@ -28,15 +25,16 @@ public:
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
-    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
 
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
 
     QWidget* embeddedWidget() override;
 
-    bool isReady() const override;
+    bool isReady() const;
     void execute() override;
+    void stopExecution() override;
+    void processAutomatically() override;
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;

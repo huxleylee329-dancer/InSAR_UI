@@ -4,12 +4,12 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-// ¶¨ÒåÒ»¸ö½á¹¹ÌåÀ´´æ´¢ÌáÈ¡µ½µÄ 4 ¸ö»ù´¡ÌØÕ÷
+// å®šä¹‰ä¸€ä¸ªç»“æ„ä½“æ¥å­˜å‚¨æå–åˆ°çš„ 4 ä¸ªåŸºç¡€ç‰¹å¾
 struct BasicFeatures {
     double fphr;         // peak_high_feature
-    double correlation;  // Ïà¹ØĞÔ
-    double contrast;     // ¶Ô±È¶È
-    double asm_val;      // ÄÜÁ¿ (ASM)
+    double correlation;  // ç›¸å…³æ€§
+    double contrast;     // å¯¹æ¯”åº¦
+    double asm_val;      // èƒ½é‡ (ASM)
 };
 
 

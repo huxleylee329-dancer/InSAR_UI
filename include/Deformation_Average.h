@@ -21,9 +21,9 @@ public slots:
 
 private:
     double h5_left, h5_right, h5_top, h5_bottom;
-    /*若已经点击过预览，则禁止再次点击*/
+    /*鑻ュ凡缁忕偣鍑昏繃棰勮锛屽垯绂佹鍐嶆鐐瑰嚮*/
     bool isPreviewPressed;
-    /*是否正在裁剪*/
+    /*鏄惁姝ｅ湪瑁佸壀*/
     bool isDeformation_Averageting;
     Ui::DeformationAverage* ui;
     QString save_path;
@@ -33,7 +33,7 @@ private:
 signals:
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*经纬度裁剪下拉框*/
+    /*缁忕含搴﹁鍓笅鎷夋*/
     void on_comboBox_currentIndexChanged();
     void on_comboBox_2_currentIndexChanged();
 

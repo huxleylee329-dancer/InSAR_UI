@@ -22,7 +22,7 @@ private:
     QStandardItemModel* copy;
     MyThread* SBAS_time_series_analysis_thread;
     QString save_path;
-    int method;//1£ºDelaunay_MCF£¬2£ºSNAPHU£¬3£ºMCF
+    int method;//1ï¼šDelaunay_MCFï¼Œ2ï¼šSNAPHUï¼Œ3ï¼šMCF
     int image_number;
     double temporal_thresh;
     double spatial_thresh;

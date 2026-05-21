@@ -2,7 +2,7 @@
 #include <vector>
 #include <cmath>
 
-// ×Ô¶¨ÒåÒ»½×¶àÏîÊ½ÄâºÏ (¶ÔÓ¦ np.polyfit(..., 1))
+// è‡ªå®šä¹‰ä¸€é˜¶å¤šé¡¹å¼æ‹Ÿåˆ (å¯¹åº” np.polyfit(..., 1))
 double polyfit_slope(const std::vector<double>& x, const std::vector<double>& y) {
     int n = x.size();
     if (n == 0) return 0.0;
@@ -18,14 +18,14 @@ double polyfit_slope(const std::vector<double>& x, const std::vector<double>& y)
     double denominator = n * sum_xx - sum_x * sum_x;
     if (denominator == 0.0) return 0.0;
 
-    // ·µ»ØĞ±ÂÊ slope (¼´ coeff[0])
+    // è¿”å›æ–œç‡ slope (å³ coeff[0])
     return (n * sum_xy - sum_x * sum_y) / denominator;
 }
 
 double extract_diffbox_feature(const cv::Mat& img_gray) {
     if (img_gray.empty()) return 0.0;
 
-    // 1. ×ªÎª¸¡µãĞÍ²¢¼ÆËã¼«²î
+    // 1. è½¬ä¸ºæµ®ç‚¹å‹å¹¶è®¡ç®—æå·®
     cv::Mat img_float;
     img_gray.convertTo(img_float, CV_32F);
 
@@ -34,12 +34,12 @@ double extract_diffbox_feature(const cv::Mat& img_gray) {
     double delta = max_val_f - min_val_f;
     if (delta == 0.0) return 0.0;
 
-    // 2. »Ò¶ÈÀ­Éìµ½ 0-255 ²¢×ª»Ø uint8
+    // 2. ç°åº¦æ‹‰ä¼¸åˆ° 0-255 å¹¶è½¬å› uint8
     cv::Mat src = img_float * 255.0 / delta;
     cv::Mat img_;
     src.convertTo(img_, CV_8U);
 
-    // 3. ºĞÎ¬ÊıºËĞÄÂß¼­
+    // 3. ç›’ç»´æ•°æ ¸å¿ƒé€»è¾‘
     int M = std::min(img_.rows, img_.cols);
 
     double min_val, max_gray;
@@ -57,10 +57,10 @@ double extract_diffbox_feature(const cv::Mat& img_gray) {
 
         long long NR = 0;
 
-        // ±éÀúÍ¼ÏñÍø¸ñ
+        // éå†å›¾åƒç½‘æ ¼
         for (int w = 0; w < length; ++w) {
             for (int h = 0; h < length; ++h) {
-                // ÔÚ OpenCV ÖĞ£¬Rect(x, y, width, height)£¬x¶ÔÓ¦ÁĞ(h)£¬y¶ÔÓ¦ĞĞ(w)
+                // åœ¨ OpenCV ä¸­ï¼ŒRect(x, y, width, height)ï¼Œxå¯¹åº”åˆ—(h)ï¼Œyå¯¹åº”è¡Œ(w)
                 cv::Rect roi(h * data, w * data, data, data);
                 cv::Mat grid = img_(roi);
 
@@ -77,7 +77,7 @@ double extract_diffbox_feature(const cv::Mat& img_gray) {
         rlist.push_back(1.0 / r);
     }
 
-    // 4. ¶ÔÊıÓòÏßĞÔÄâºÏ np.polyfit(np.log(rlist), np.log(NRlist), 1)
+    // 4. å¯¹æ•°åŸŸçº¿æ€§æ‹Ÿåˆ np.polyfit(np.log(rlist), np.log(NRlist), 1)
     std::vector<double> log_rlist, log_NRlist;
     for (size_t i = 0; i < rlist.size(); ++i) {
         log_rlist.push_back(std::log(rlist[i]));

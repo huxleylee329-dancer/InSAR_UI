@@ -1,12 +1,9 @@
-﻿#include "Sentinel1ImportNode.h"
+#include "Sentinel1ImportNode.h"
 #include "ImportDataTypes.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
 
-#ifdef _MSC_VER
-#pragma execution_character_set("utf-8")
-#endif
 
 namespace QtNodes {
 

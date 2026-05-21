@@ -31,9 +31,9 @@ signals:
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_currentIndexChanged();
-    /*DEM辅助配准工程选择响应函数*/
+    /*DEM杈呭姪閰嶅噯宸ョ▼閫夋嫨鍝嶅簲鍑芥暟*/
     void on_comboBox_project_currentIndexChanged();
-    /*DEM辅助数据节点工程选择响应函数*/
+    /*DEM杈呭姪鏁版嵁鑺傜偣宸ョ▼閫夋嫨鍝嶅簲鍑芥暟*/
     void on_comboBox_node_currentIndexChanged();
     void on_comboBox_2_currentIndexChanged();
     // void on_masterpushButton_pressed();

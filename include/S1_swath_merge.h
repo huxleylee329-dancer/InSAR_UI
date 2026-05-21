@@ -30,12 +30,12 @@ signals:
     void operate(int index1, int index2, int index3, QString project, QString node1, QString node2, QString node3, QString dstNode, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
-    /*工程选择按钮响应函数*/
+    /*宸ョ▼閫夋嫨鎸夐挳鍝嶅簲鍑芥暟*/
     void on_comboBox_project_currentIndexChanged();
     void on_comboBox_IW1_node_currentIndexChanged();
     void on_comboBox_IW2_node_currentIndexChanged();
     void on_comboBox_IW3_node_currentIndexChanged();
-    /*工程选择按钮响应函数*/
+    /*宸ョ▼閫夋嫨鎸夐挳鍝嶅簲鍑芥暟*/
     //void on_comboBox_project2_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();

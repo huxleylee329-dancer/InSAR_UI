@@ -31,7 +31,7 @@ SBAS_reference_reselection::SBAS_reference_reselection(QWidget* parent) :
 SBAS_reference_reselection::~SBAS_reference_reselection()
 {
     SBAS_reference_reselection_thread = NULL;
-    /*¸Ä±ä¹¤³ÌÎÄ¼şµÄ´¦Àí×´Ì¬ÎªNOT_IN_PROCESS*/
+    /*æ”¹å˜å·¥ç¨‹æ–‡ä»¶çš„å¤„ç†çŠ¶æ€ä¸ºNOT_IN_PROCESS*/
     if (copy)
     {
         for (int i = 0; i < ui->comboBox_project->count(); i++)
@@ -50,7 +50,7 @@ void SBAS_reference_reselection::cancelled()
 {
     isReselectionPressed = false;
     ui->reselection->setDisabled(false);
-    ui->reselection->setText(QString::fromLocal8Bit("²Î¿¼µãÖØÑ¡: row = %1  col = %2 GCPs: %3").arg(this->ref_row).arg(this->ref_col).arg(this->plist.size()));
+    ui->reselection->setText(QString::fromLocal8Bit("å‚è€ƒç‚¹é‡é€‰: row = %1  col = %2 GCPs: %3").arg(this->ref_row).arg(this->ref_col).arg(this->plist.size()));
     ui->reselection->repaint();
 }
 
@@ -67,7 +67,7 @@ void SBAS_reference_reselection::receive_coordinate(int ref_row, int ref_col, QL
 void SBAS_reference_reselection::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1£º%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QString::fromLocal8Bit("%1ï¼š%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 
@@ -121,7 +121,7 @@ void SBAS_reference_reselection::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("ÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥æ•°æ®ï¼"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -134,7 +134,7 @@ void SBAS_reference_reselection::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_srcNode->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("Î´¼ì²âµ½¿É´¦ÀíÊı¾İ£¬ÇëÏÈµ¼ÈëÍ¼ÏñÊı¾İ£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("æœªæ£€æµ‹åˆ°å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆå¯¼å…¥å›¾åƒæ•°æ®ï¼"));
         this->deleteLater();
     }
     ui->comboBox_srcNode->setCurrentIndex(0);
@@ -205,7 +205,7 @@ void SBAS_reference_reselection::on_reselection_pressed()
     if (isReselectionPressed) return;
     isReselectionPressed = true;
     ui->reselection->setDisabled(true);
-    ui->reselection->setText(QString::fromLocal8Bit("ÕıÔÚÖØÑ¡²Î¿¼µã..."));
+    ui->reselection->setText(QString::fromLocal8Bit("æ­£åœ¨é‡é€‰å‚è€ƒç‚¹..."));
     ui->reselection->repaint();
     QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
     QString image_name;
@@ -258,12 +258,12 @@ void SBAS_reference_reselection::on_buttonBox_accepted()
 {
     if (ui->comboBox_project->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã¹¤³ÌÎŞ¿É´¦ÀíÊı¾İ£¬ÇëÏÈ½øĞĞÅä×¼»ò¸ü»»¹¤³Ì£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥å·¥ç¨‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·å…ˆè¿›è¡Œé…å‡†æˆ–æ›´æ¢å·¥ç¨‹ï¼"));
         return;
     }
     if (ui->comboBox_srcNode->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("¸Ã½ÚµãÏÂÎŞ¿É´¦ÀíÊı¾İ£¬Çë¸ü»»½Úµã£¡"));
+        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("è¯¥èŠ‚ç‚¹ä¸‹æ— å¯å¤„ç†æ•°æ®ï¼Œè¯·æ›´æ¢èŠ‚ç‚¹ï¼"));
         return;
     }
 

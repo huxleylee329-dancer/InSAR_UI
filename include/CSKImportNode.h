@@ -1,9 +1,6 @@
 #ifndef CSKIMPORTNODE_H
 #define CSKIMPORTNODE_H
 
-#ifdef _MSC_VER
-#pragma execution_character_set("utf-8")
-#endif
 
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"

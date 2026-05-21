@@ -1,3 +1,4 @@
+
 #include "EvaluationENLNode.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -71,13 +72,6 @@ QString EvaluationENLNode::portCaption(PortType portType, PortIndex portIndex) c
     return QString();
 }
 
-bool EvaluationENLNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    Q_UNUSED(portType);
-    Q_UNUSED(portIndex);
-    return true;
-}
-
 void EvaluationENLNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     if (port == 0) {
@@ -86,7 +80,8 @@ void EvaluationENLNode::setInData(std::shared_ptr<NodeData> data, PortIndex port
         m_filteredData = std::dynamic_pointer_cast<ImageInfoData>(data);
     }
 
-    Q_EMIT dataUpdated(port);
+    // Call base class setInData to correctly update execution state
+    ExecutableNodeDelegateModel::setInData(data, port);
     
     // Auto execute if ready
     if (isReady()) {
@@ -117,7 +112,19 @@ bool EvaluationENLNode::isReady() const
 void EvaluationENLNode::execute()
 {
     calculateAndDisplayENL();
-    setExecutionState(ExecutionState::Completed);
+    setState(ExecutionState::Completed);
+}
+
+void EvaluationENLNode::stopExecution()
+{
+    setState(ExecutionState::Stopped);
+}
+
+void EvaluationENLNode::processAutomatically()
+{
+    if (isReady()) {
+        execute();
+    }
 }
 
 void EvaluationENLNode::onRegionChanged(int index)
@@ -146,14 +153,18 @@ double EvaluationENLNode::calculateENL(const cv::Mat& roiGray) const
 void EvaluationENLNode::calculateAndDisplayENL()
 {
     auto processImage = [this](std::shared_ptr<ImageInfoData> data, QLabel* label) {
-        if (!data || data->filePath().isEmpty()) {
+        if (!data) {
             label->setText("--");
+            return;
+        }
+        if (data->filePath().isEmpty()) {
+            label->setText("Empty Path");
             return;
         }
         
         cv::Mat mat = cv::imread(data->filePath().toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
         if (mat.empty()) {
-            label->setText("--");
+            label->setText("Imread Fail");
             return;
         }
         

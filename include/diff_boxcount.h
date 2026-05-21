@@ -3,7 +3,7 @@
 
 #include <opencv2/opencv.hpp>
 
-// ÌáÈ¡²î·ÖºĞÎ¬Êı (DBC)
+// æå–å·®åˆ†ç›’ç»´æ•° (DBC)
 double extract_diffbox_feature(const cv::Mat& img_gray);
 
 #endif // DIFF_BOXCOUNT_H

@@ -1,4 +1,4 @@
-﻿#include"QtGui"
+#include"QtGui"
 #include<ColorBar.h>
 #include <QtWidgets/QApplication>
 #include"MainWindow.h"
@@ -11,6 +11,11 @@
 #include <QSettings>
 #include <QDialog>
 //#include<QStyleFactory>
+#include <QList>
+#include <QVector>
+#include <QPersistentModelIndex>
+#include <QMetaType>
+#include <QAbstractItemModel>
 
 // Global function to load QSS from file
 QString loadStyleSheet(const QString &fileName)
@@ -53,6 +58,10 @@ void applyTheme(const QString &theme = "light")
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+
+    qRegisterMetaType<QList<QPersistentModelIndex>>("QList<QPersistentModelIndex>");
+    qRegisterMetaType<QVector<int>>("QVector<int>");
+    qRegisterMetaType<QAbstractItemModel::LayoutChangeHint>("QAbstractItemModel::LayoutChangeHint");
 
     // Load theme preference from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);

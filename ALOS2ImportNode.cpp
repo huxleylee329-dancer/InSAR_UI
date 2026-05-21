@@ -1,7 +1,3 @@
-﻿#ifdef _MSC_VER
-#pragma execution_character_set("utf-8")
-#endif
-
 #include "ALOS2ImportNode.h"
 #include <QFile>
 #include <QJsonArray>
