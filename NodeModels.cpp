@@ -18,6 +18,7 @@
 #include "ClutterSuppressionNode.h"
 #include "ImageDisplayNode.h"
 #include "TargetDetectionNode.h"
+#include "EvaluationENLNode.h"
 
 #include <memory>
 
@@ -93,6 +94,12 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // SAR Detection Nodes
     // ============================================================================
     registry->registerModel<TargetDetectionNode>("SAR/Detection/Target Detection");
+
+    // ============================================================================
+    // SAR Evaluation Nodes
+    // ============================================================================
+    registry->registerModel<EvaluationENLNode>("SAR/Evaluation/Evaluation-ENL");
+
 
     // ============================================================================
     // Future Categories (placeholders for upcoming functionality)

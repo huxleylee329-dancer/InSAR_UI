@@ -1,4 +1,4 @@
-﻿#ifdef _MSC_VER
+#ifdef _MSC_VER
 #pragma execution_character_set("utf-8")
 #endif
 
@@ -91,7 +91,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.subcategories["SAR"] = QStringList{
         "Import",           // SAR 下的第一个子分类
         "Enhancement",      // SAR 下的第二个子分类
-        "Detection"         // SAR 下的第三个子分类
+        "Detection",        // SAR 下的第三个子分类
+        "Evaluation"        // SAR 下的第四个子分类
     };
 
     // ===== 3. 叶子项顺序 =====
@@ -142,6 +143,11 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     // SAR Detection 类叶子项顺序
     order.leafItems["SAR/Detection"] = QList<PaletteOrder::LeafItem>{
         {"Target Detection", "Target Detection"}    // 目标检测节点
+    };
+
+    // SAR Evaluation 类叶子项顺序
+    order.leafItems["SAR/Evaluation"] = QList<PaletteOrder::LeafItem>{
+        {"Evaluation-ENL", "Evaluation-ENL"}
     };
 
     // Test 类叶子项顺序
