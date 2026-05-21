@@ -46,6 +46,9 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 signals:
     void startTargetDetection(QString imagePath, QString modelPath, float thresholdValue);
 
@@ -64,7 +67,6 @@ private:
     QLineEdit* m_thresholdEdit = nullptr;
     QLabel* m_resultLabel = nullptr;
     QLabel* m_probabilityLabel = nullptr;
-    QLabel* m_confidenceLabel = nullptr;
     QLabel* m_statusLabel = nullptr;
 
     // Data
@@ -72,6 +74,8 @@ private:
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
     QString m_selectedModelPath;
     float m_thresholdValue = 0.65f;
+    QString m_savedResultText = "--";
+    float m_savedShipProb = 0.0f;
 
     // Threading
     QThread* m_thread = nullptr;

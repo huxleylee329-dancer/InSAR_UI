@@ -20,7 +20,6 @@ TargetDetectionNode::TargetDetectionNode()
     , m_thresholdEdit(nullptr)
     , m_resultLabel(nullptr)
     , m_probabilityLabel(nullptr)
-    , m_confidenceLabel(nullptr)
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
@@ -54,7 +53,9 @@ TargetDetectionNode::~TargetDetectionNode()
 
 unsigned int TargetDetectionNode::nPorts(PortType portType) const
 {
-    return 1;
+    if (portType == PortType::In)
+        return 1;
+    return 0;
 }
 
 NodeDataType TargetDetectionNode::dataType(PortType portType, PortIndex portIndex) const
@@ -175,12 +176,6 @@ void TargetDetectionNode::createWidget()
     probLayout->addWidget(m_probabilityLabel);
     layout->addLayout(probLayout);
 
-    auto* finalConfLayout = new QHBoxLayout();
-    finalConfLayout->addWidget(new QLabel(QString::fromUtf8("\xe7\xbd\xae\xe4\xbf\xa1\xe5\xba\xa6\xef\xbc\x9a")));
-    m_confidenceLabel = new QLabel("--");
-    finalConfLayout->addWidget(m_confidenceLabel);
-    layout->addLayout(finalConfLayout);
-
     // Status label
     m_statusLabel = new QLabel();
     m_statusLabel->setStyleSheet("color: gray; font-size: 11px;");
@@ -256,7 +251,6 @@ void TargetDetectionNode::executeProcessing()
     // Clear previous results
     if (m_resultLabel) m_resultLabel->setText("--");
     if (m_probabilityLabel) m_probabilityLabel->setText("--");
-    if (m_confidenceLabel) m_confidenceLabel->setText("--");
 
     QString inputPath = m_inputData->filePath();
     QString modelPath = m_selectedModelPath;
@@ -293,8 +287,10 @@ void TargetDetectionNode::onDetectionFinished(bool success, float shipProb, QStr
     if (success) {
         if (m_resultLabel) m_resultLabel->setText(resultText);
         if (m_probabilityLabel) m_probabilityLabel->setText(QString::number(shipProb * 100.0f, 'f', 2) + "%");
-        if (m_confidenceLabel) m_confidenceLabel->setText(QString::number(m_thresholdValue, 'f', 2));
         
+        m_savedResultText = resultText;
+        m_savedShipProb = shipProb;
+
         if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe5\xae\x8c\xe6\x88\x90"));
 
         m_outputData = m_inputData;
@@ -354,17 +350,38 @@ QJsonObject TargetDetectionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["thresholdValue"] = m_thresholdValue;
+    modelJson["resultText"] = m_savedResultText;
+    modelJson["shipProb"] = m_savedShipProb;
     return modelJson;
 }
 
 void TargetDetectionNode::load(QJsonObject const &json)
 {
+    // Assign fields first
+    m_thresholdValue = json["thresholdValue"].toDouble(0.65);
+    m_savedResultText = json["resultText"].toString("--");
+    m_savedShipProb = json["shipProb"].toDouble(0.0);
+
+    // Call base class load which will trigger validateAndRestoreOutput()
     ExecutableNodeDelegateModel::load(json);
 
-    m_thresholdValue = json["thresholdValue"].toDouble(0.65);
     if (m_thresholdEdit) {
         m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
     }
+
+    if (executionState() == ExecutionState::Completed) {
+        if (m_resultLabel) m_resultLabel->setText(m_savedResultText);
+        if (m_probabilityLabel) m_probabilityLabel->setText(QString::number(m_savedShipProb * 100.0f, 'f', 2) + "%");
+        if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe5\xae\x8c\xe6\x88\x90"));
+    }
+}
+
+bool TargetDetectionNode::validateAndRestoreOutput()
+{
+    // Target detection does not output a new file, it just displays text results.
+    // If we reach here, it means it was previously marked as Completed.
+    // We can directly return true to restore the state.
+    return true;
 }
 
 } // namespace QtNodes

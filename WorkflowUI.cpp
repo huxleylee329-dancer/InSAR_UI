@@ -1,4 +1,8 @@
-﻿#include "WorkflowUI.h"
+﻿#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
+#include "WorkflowUI.h"
 #include "DockWidgets.h"
 #include "NodeGroupManager.h"
 #include "NodeModels.h"
@@ -86,7 +90,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     order.subcategories["SAR"] = QStringList{
         "Import",           // SAR 下的第一个子分类
-        "Enhancement"       // SAR 下的第二个子分类
+        "Enhancement",      // SAR 下的第二个子分类
+        "Detection"         // SAR 下的第三个子分类
     };
 
     // ===== 3. 叶子项顺序 =====
@@ -132,6 +137,11 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.leafItems["SAR/Enhancement"] = QList<PaletteOrder::LeafItem>{
         {"Speckle Denoise", "Speckle Denoise"},     // Speckle Denoise节点
         {"Clutter Suppression", "Clutter Suppression"}  // Clutter Suppression节点
+    };
+
+    // SAR Detection 类叶子项顺序
+    order.leafItems["SAR/Detection"] = QList<PaletteOrder::LeafItem>{
+        {"Target Detection", "Target Detection"}    // 目标检测节点
     };
 
     // Test 类叶子项顺序
