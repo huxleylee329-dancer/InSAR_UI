@@ -19,6 +19,7 @@
 #include "ImageDisplayNode.h"
 #include "TargetDetectionNode.h"
 #include "EvaluationENLNode.h"
+#include "EvaluationSCRNode.h"
 
 #include <memory>
 
@@ -99,9 +100,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // SAR Evaluation Nodes
     // ============================================================================
     registry->registerModel<EvaluationENLNode>("SAR/Evaluation/Evaluation-ENL");
-
-
-    // ============================================================================
+    registry->registerModel<EvaluationSCRNode>("SAR/Evaluation/Evaluation-SCR");
     // Future Categories (placeholders for upcoming functionality)
     // ============================================================================
 

@@ -164,6 +164,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="EvaluationENLNode.cpp" />
+    <ClCompile Include="EvaluationSCRNode.cpp" />
     <ClCompile Include="Export_KML.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -621,6 +622,7 @@
     <ClInclude Include="include\diff_boxcount.h" />
     <ClInclude Include="include\bm3d_wiener.h" />
     <QtMoc Include="include\EvaluationENLNode.h" />
+    <QtMoc Include="include\EvaluationSCRNode.h" />
     <ClInclude Include="include\global_define.h" />
     <ClInclude Include="include\group_3d.h" />
     <ClInclude Include="include\icon_source.h">
