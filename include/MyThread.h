@@ -54,6 +54,7 @@ public slots:
     void QDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void Speckle_Denoise(QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml = nullptr);
     void Clutter_Suppression(QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml = nullptr);
+    void Target_Detection(QString imagePath, QString modelPath, float thresholdValue);
     void StopProcess();
 
 signals:
@@ -62,6 +63,7 @@ signals:
     void errorProcess(QString error_msg);
     void sendModel(QStandardItemModel* model);
     void sendBL(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
+    void sendTargetDetectionResult(bool success, float shipProb, QString resultText, QString errorMsg);
 
 private:
     void processBM3DEnhancement(QString tag, QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);

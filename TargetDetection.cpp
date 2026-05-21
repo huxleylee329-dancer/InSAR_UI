@@ -235,10 +235,14 @@ void TargetDetection::on_runDetectionButton_clicked()
 
     float shipProb = 0.0f;
     QString resultText;
+    QString errorMsg;
 
-    bool ok = runSingleDetection(imagePath, modelPath, thresholdValue, shipProb, resultText);
+    bool ok = runDetectionTask(imagePath, modelPath, thresholdValue, shipProb, resultText, errorMsg);
     if (!ok)
+    {
+        QMessageBox::warning(this, "Detection Error", errorMsg);
         return;
+    }
 
     ui->ResultIndexlabel->setText(resultText);
     ui->confidenceIndexlabel->setText(QString::number(shipProb * 100.0f, 'f', 2) + "%");
@@ -246,16 +250,17 @@ void TargetDetection::on_runDetectionButton_clicked()
 }
 
 
-bool TargetDetection::runSingleDetection(const QString& imagePath,
+bool TargetDetection::runDetectionTask(const QString& imagePath,
                                          const QString& modelPath,
                                          float thresholdValue,
                                          float& shipProb,
-                                         QString& resultText)
+                                         QString& resultText,
+                                         QString& errorMsg)
 {
     cv::Mat img = cv::imread(imagePath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
     if (img.empty())
     {
-        QMessageBox::warning(this, "Warning", "Failed to read image.");
+        errorMsg = "Failed to read image.";
         return false;
     }
 
@@ -309,12 +314,12 @@ bool TargetDetection::runSingleDetection(const QString& imagePath,
     }
     catch (const Ort::Exception& e)
     {
-        QMessageBox::warning(this, "ONNX Runtime Error", e.what());
+        errorMsg = QString("ONNX Runtime Error: ") + e.what();
         return false;
     }
     catch (const std::exception& e)
     {
-        QMessageBox::warning(this, "Detection Error", e.what());
+        errorMsg = QString("Detection Error: ") + e.what();
         return false;
     }
 }

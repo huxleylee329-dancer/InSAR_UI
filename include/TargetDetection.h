@@ -13,6 +13,13 @@ public:
     explicit TargetDetection(QWidget *parent = Q_NULLPTR);
     ~TargetDetection();
 
+    static bool runDetectionTask(const QString& imagePath,
+                                 const QString& modelPath,
+                                 float thresholdValue,
+                                 float& shipProb,
+                                 QString& resultText,
+                                 QString& errorMsg);
+
 public slots:
     void ShowProjectList(QStandardItemModel* model);
     
@@ -29,11 +36,6 @@ private:
     QString selectedModelPath() const;
     float threshold() const;
     void showPreviewImage(const QString& imagePath);
-    bool runSingleDetection(const QString& imagePath,
-                            const QString& modelPath,
-                            float thresholdValue,
-                            float& shipProb,
-                            QString& resultText);
 
     Ui::TargetDetection* ui;
     QStandardItemModel* copy;
