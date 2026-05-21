@@ -46,8 +46,9 @@
 ### Coding Standards
 - **C++ Version:** Use C++11/14 for most of the codebase.
 - **C++17 Exception:** ONLY `TargetDetection.cpp` and `BatchTargetRecognition.cpp` should have C++17 enabled (required by ONNX Runtime). Do NOT enable C++17 for the entire project.
-- **Encoding:** Files containing Chinese characters/comments MUST use **UTF-8 with BOM** encoding.
+- **Encoding / MSVC C2001 Errors:** NEVER use raw Chinese string literals in `.cpp`/`.h` files (e.g., `new QLabel("中文")`). Due to MSVC codepage issues, this will cause `C2001` or `C2146` compilation errors. **ALWAYS** convert Chinese strings to their UTF-8 hex escape sequence (e.g., `QString::fromUtf8("\xe4\xb8\xad\xe6\x96\x87")`).
 - **Simplicity First:** Prefer minimal, surgical changes. Avoid over-engineering or speculative abstractions.
+- **Path Hardcoding:** When modifying `.vcxproj` or encountering `C2011`/`C2039` errors during compilation, immediately check `SatExplorer.vcxproj` for hardcoded absolute paths (like `D:\SRC\InSAR_UI\`) and replace them with correct relative paths.
 
 ### UI & Resources
 - **Stylesheets:** Themes (Light/Dark) are managed via QSS files in `resources/stylesheets/`.

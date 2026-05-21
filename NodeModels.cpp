@@ -17,6 +17,7 @@
 #include "SpeckleDenoiseNode.h"
 #include "ClutterSuppressionNode.h"
 #include "ImageDisplayNode.h"
+#include "TargetDetectionNode.h"
 
 #include <memory>
 
@@ -87,6 +88,11 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // ============================================================================
     registry->registerModel<SpeckleDenoiseNode>("SAR/Enhancement/Speckle Denoise");
     registry->registerModel<ClutterSuppressionNode>("SAR/Enhancement/Clutter Suppression");
+
+    // ============================================================================
+    // SAR Detection Nodes
+    // ============================================================================
+    registry->registerModel<TargetDetectionNode>("SAR/Detection/Target Detection");
 
     // ============================================================================
     // Future Categories (placeholders for upcoming functionality)

@@ -7,7 +7,8 @@
 #include<Registration.h>
 #include<Unwrap.h>
 #include<Dem.h>
-#include"SBAS.h"
+#include "SBAS.h"
+#include "TargetDetection.h"
 #include<QMessageBox>
 #include<qcoreapplication.h>
 #include<QFile>
@@ -6526,4 +6527,40 @@ void MyThread::Clutter_Suppression(
 {
     processBM3DEnhancement("ClutterSuppression", inputPath, outputPath, nodeName, fileName, projectPath, projectName, model, saveToProject, projectXml);
 }
+
+
+void MyThread::Target_Detection(QString imagePath, QString modelPath, float thresholdValue)
+{
+    lock.lock();
+    stop_flag = false;
+    lock.unlock();
+
+    emit updateProcess(0, "正在初始化目标检测...");
+
+    float shipProb = 0.0f;
+    QString resultText;
+    QString errorMsg;
+
+    emit updateProcess(50, "正在运行推理...");
+    bool ok = TargetDetection::runDetectionTask(imagePath, modelPath, thresholdValue, shipProb, resultText, errorMsg);
+
+    lock.lock();
+    if (stop_flag) {
+        emit errorProcess("目标检测已停止");
+        lock.unlock();
+        return;
+    }
+    lock.unlock();
+
+    if (!ok) {
+        emit errorProcess(errorMsg);
+        emit sendTargetDetectionResult(false, 0.0f, "", errorMsg);
+        return;
+    }
+
+    emit updateProcess(100, "目标检测完成");
+    emit sendTargetDetectionResult(true, shipProb, resultText, "");
+    emit endProcess();
+}
+
 
