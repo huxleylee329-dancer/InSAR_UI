@@ -96,6 +96,12 @@ public:
     /// Default implementation does nothing (parameters are read-only)
     virtual void setParameter(const QString& paramName, const QString& value);
 
+    /// Set whether the node is currently being restored from a project
+    void setRestoring(bool restoring) { _isRestoring = restoring; }
+
+    /// Check if the node is currently being restored from a project
+    bool isRestoring() const { return _isRestoring; }
+
 public Q_SLOTS:
     void start();
 
@@ -122,6 +128,10 @@ Q_SIGNALS:
 
     void executionStateChanged();
 
+public:
+    /// Trigger update on the NodeGraphicsObject when progress/state changes
+    void triggerVisualUpdate();
+
 protected:
     virtual void execute() = 0;
 
@@ -146,8 +156,10 @@ protected:
 protected:
     void setState(ExecutionState state);
 
-    /// Trigger update on the NodeGraphicsObject when progress/state changes
-    void triggerVisualUpdate();
+    /// 验证并恢复输出数据
+    /// 子类实现：根据保存的参数验证输出文件是否存在
+    /// 返回true表示验证成功且已恢复output数据，返回false表示文件不存在或无法恢复
+    virtual bool validateAndRestoreOutput() { return false; }
 
 protected:
     ExecutionMode _mode;
@@ -164,6 +176,7 @@ protected:
     // Scene pointer for visual updates (non-owning reference)
     // Lifetime is managed externally, this class only stores the reference
     BasicGraphicsScene *_scene = nullptr;
+    bool _isRestoring = false;
 };
 
 } // namespace QtNodes

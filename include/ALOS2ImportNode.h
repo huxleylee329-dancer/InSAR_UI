@@ -6,6 +6,7 @@
 #endif
 
 #include "ImportNodeBase.h"
+#include "ImportDataTypes.h"
 #include "MyThread.h"
 #include <QWidget>
 #include <QListWidget>
@@ -55,6 +56,9 @@ protected:
     QString generateOutputFileName(const QString& imgPath) const;
     QString generateLEDPath(const QString& imgPath) const;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 private slots:
     void onAddFilesClicked();
     void onRemoveFilesClicked();
@@ -78,6 +82,7 @@ private:
     // State
     QStringList m_imgPaths;      // IMG file paths
     QStringList m_importedFilePaths;
+    QString m_outputNodeName;
 
     // Worker thread
     MyThread* m_workerThread;

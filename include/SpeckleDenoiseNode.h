@@ -54,6 +54,9 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 signals:
     void startSpeckleDenoise(QString inputPath, QString outputPath, QString nodeName, QString fileName,
                             QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);

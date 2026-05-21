@@ -1,4 +1,6 @@
 ﻿#include "Sentinel1ImportNode.h"
+#include "ImportDataTypes.h"
+#include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
 
@@ -100,6 +102,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     m_subswathCombo->addItem("iw1");
     m_subswathCombo->addItem("iw2");
     m_subswathCombo->addItem("iw3");
+    m_subswathCombo->setCurrentText(m_subswath);
     subswathLayout->addWidget(m_subswathCombo);
     layout->addLayout(subswathLayout);
 
@@ -112,6 +115,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     m_polarizationCombo = new QComboBox();
     m_polarizationCombo->addItem("vv");
     m_polarizationCombo->addItem("vh");
+    m_polarizationCombo->setCurrentText(m_polarization);
     polLayout->addWidget(m_polarizationCombo);
     layout->addLayout(polLayout);
 
@@ -135,6 +139,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputNodeNameEdit->setText(m_outputNodeName);
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
@@ -394,36 +399,61 @@ QJsonObject Sentinel1ImportNode::save() const
     QJsonObject json = ExecutableNodeDelegateModel::save();
     json["manifestPath"] = m_manifestPath;
     json["podPath"] = m_podPath;
-    json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : "iw1";
-    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "vv";
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
+    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     json["outputFileName"] = m_outputFileName;
     return json;
 }
 
 void Sentinel1ImportNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_manifestPath = json["manifestPath"].toString();
     m_podPath = json["podPath"].toString();
+    m_outputNodeName = json["outputNodeName"].toString();
     m_outputFileName = json["outputFileName"].toString();
+    m_subswath = json["subswath"].toString("iw1");
+    m_polarization = json["polarization"].toString("vv");
+
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_manifestEdit) m_manifestEdit->setText(m_manifestPath);
     if (m_podEdit) m_podEdit->setText(m_podPath);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString());
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
 
-    QString subswath = json["subswath"].toString("iw1");
     if (m_subswathCombo) {
-        int idx = m_subswathCombo->findText(subswath);
+        int idx = m_subswathCombo->findText(m_subswath);
         if (idx >= 0) m_subswathCombo->setCurrentIndex(idx);
     }
 
-    QString pol = json["polarization"].toString("vv");
     if (m_polarizationCombo) {
-        int idx = m_polarizationCombo->findText(pol);
+        int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
+}
+
+bool Sentinel1ImportNode::validateAndRestoreOutput()
+{
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString fileName = m_outputFileName;
+    if (fileName.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + nodeName + "/" + fileName + ".h5";
+
+    if (QFile::exists(outputPath)) {
+        m_importedFilePath = outputPath;
+        auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+        setOutputData(0, outputData);
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

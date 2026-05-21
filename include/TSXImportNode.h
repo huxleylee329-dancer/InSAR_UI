@@ -51,6 +51,9 @@ protected:
     // Helper methods
     QString generateOutputFileName() const;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 private slots:
     void onXmlBrowseClicked();
     void onImportProgress(int progress, const QString& message);
@@ -72,6 +75,7 @@ private:
     // State
     QString m_xmlPath;
     QString m_importedFilePath;
+    QString m_outputNodeName;
     QString m_outputFileName;
 
     // Worker thread

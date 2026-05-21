@@ -3,6 +3,7 @@
 #endif
 
 #include "GenericSARBatchImportNode.h"
+#include <QFile>
 #include <QJsonArray>
 
 #include <QDir>
@@ -295,17 +296,21 @@ QJsonObject GenericSARBatchImportNode::save() const
     for (const QString &path : m_imagePaths)
         pathsArray.append(path);
     json["imagePaths"] = pathsArray;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("GenericSAR_Batch_Import");
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     return json;
 }
 
 void GenericSARBatchImportNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_imagePaths.clear();
     QJsonArray pathsArray = json["imagePaths"].toArray();
     for (const QJsonValue &val : pathsArray)
         m_imagePaths.append(val.toString());
+
+    m_outputNodeName = json["outputNodeName"].toString("GenericSAR_Batch_Import");
+
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_fileListWidget) {
         m_fileListWidget->clear();
@@ -314,7 +319,35 @@ void GenericSARBatchImportNode::load(QJsonObject const &json)
     }
 
     if (m_outputNodeNameEdit)
-        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("GenericSAR_Batch_Import"));
+        m_outputNodeNameEdit->setText(m_outputNodeName);
+}
+
+bool GenericSARBatchImportNode::validateAndRestoreOutput()
+{
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + nodeName + "/";
+
+    QDir dir(outputPath);
+    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
+        m_importedFilePaths.clear();
+        for (const QString &imagePath : m_imagePaths) {
+            QFileInfo fi(imagePath);
+            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            if (QFile::exists(importedPath)) {
+                m_importedFilePaths.append(importedPath);
+            }
+        }
+        if (!m_importedFilePaths.isEmpty()) {
+            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+            setOutputData(0, outputData);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

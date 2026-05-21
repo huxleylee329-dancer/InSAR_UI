@@ -11,6 +11,7 @@
 #include "icon_source.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QFile>
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>
@@ -155,7 +156,7 @@ void ClutterSuppressionNode::createWidget()
     layout->addWidget(m_inputImageLabel);
 
     m_saveToProjectCheckBox = new QCheckBox("保存到项目树");
-    m_saveToProjectCheckBox->setChecked(true);
+    m_saveToProjectCheckBox->setChecked(m_saveToProject);
     connect(m_saveToProjectCheckBox, &QCheckBox::stateChanged, this, &ClutterSuppressionNode::onSaveToProjectChanged);
     layout->addWidget(m_saveToProjectCheckBox);
 
@@ -165,6 +166,7 @@ void ClutterSuppressionNode::createWidget()
     nodeNameLayout->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("输入节点名称");
+    m_outputNodeNameEdit->setText(m_outputNodeName);
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
@@ -174,6 +176,7 @@ void ClutterSuppressionNode::createWidget()
     fileNameLayout->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputFileNameEdit->setText(m_outputFileName);
     connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
     fileNameLayout->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameLayout);
@@ -431,40 +434,43 @@ QJsonObject ClutterSuppressionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
 
-    if (m_saveToProjectCheckBox)
-        modelJson["saveToProject"] = m_saveToProjectCheckBox->isChecked();
-    if (m_outputNodeNameEdit)
-        modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
-    if (m_outputFileNameEdit)
-        modelJson["outputFileName"] = m_outputFileNameEdit->text();
+    bool saveToProject = m_saveToProjectCheckBox ? m_saveToProjectCheckBox->isChecked() : m_saveToProject;
+    QString nodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
+    QString fileName = m_outputFileNameEdit ? m_outputFileNameEdit->text() : m_outputFileName;
+
+    modelJson["saveToProject"] = saveToProject;
+    modelJson["outputNodeName"] = nodeName;
+    modelJson["outputFileName"] = fileName;
 
     return modelJson;
 }
 
 void ClutterSuppressionNode::load(QJsonObject const &json)
 {
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
+    QJsonValue v = json["saveToProject"];
+    if (!v.isUndefined()) {
+        m_saveToProject = v.toBool(true);
+    }
+    v = json["outputNodeName"];
+    if (!v.isUndefined()) {
+        m_outputNodeName = v.toString();
+    }
+    v = json["outputFileName"];
+    if (!v.isUndefined()) {
+        m_outputFileName = v.toString();
+    }
+
     ExecutableNodeDelegateModel::load(json);
 
     if (m_saveToProjectCheckBox) {
-        QJsonValue v = json["saveToProject"];
-        if (!v.isUndefined()) {
-            m_saveToProjectCheckBox->setChecked(v.toBool(true));
-        }
+        m_saveToProjectCheckBox->setChecked(m_saveToProject);
     }
-
     if (m_outputNodeNameEdit) {
-        QJsonValue v = json["outputNodeName"];
-        if (!v.isUndefined()) {
-            m_outputNodeNameEdit->setText(v.toString());
-        }
+        m_outputNodeNameEdit->setText(m_outputNodeName);
     }
-
     if (m_outputFileNameEdit) {
-        QJsonValue v = json["outputFileName"];
-        if (!v.isUndefined()) {
-            m_outputFileNameEdit->setText(v.toString());
-            m_outputFileName = v.toString();
-        }
+        m_outputFileNameEdit->setText(m_outputFileName);
     }
 }
 
@@ -477,6 +483,45 @@ QString ClutterSuppressionNode::generateOutputFileName() const
     QFileInfo fi(m_inputData->filePath());
     QString baseName = fi.completeBaseName();
     return QStringLiteral("%1_clutter").arg(baseName);
+}
+
+bool ClutterSuppressionNode::validateAndRestoreOutput()
+{
+    if (!m_saveToProject)
+        return false;
+
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString projDirStr = projectPath();
+    if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
+        projDirStr = QFileInfo(projDirStr).absolutePath();
+    }
+
+    QString finalFileName;
+    if (m_outputFileName.isEmpty()) {
+        // 需要输入数据才能计算默认文件名，返回false让用户手动执行
+        return false;
+    } else {
+        if (QFileInfo(m_outputFileName).suffix().isEmpty()) {
+            finalFileName = m_outputFileName + ".png";
+        } else {
+            finalFileName = m_outputFileName;
+        }
+    }
+
+    QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
+
+    if (QFile::exists(outputPath)) {
+        m_outputImagePath = outputPath;
+        m_outputData = std::make_shared<ImageInfoData>(outputPath);
+        setOutputData(0, m_outputData);
+        setOutputData(1, m_outputData);
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

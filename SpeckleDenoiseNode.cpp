@@ -11,6 +11,7 @@
 #include "icon_source.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QFile>
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>
@@ -508,11 +509,12 @@ QJsonObject SpeckleDenoiseNode::save() const
 
 void SpeckleDenoiseNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
-
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_saveToProject = json["saveToProject"].toBool(true);
     m_outputNodeName = json["outputNodeName"].toString();
     m_outputFileName = json["outputFileName"].toString();
+
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_saveToProjectCheckBox) {
         m_saveToProjectCheckBox->setChecked(m_saveToProject);
@@ -536,6 +538,45 @@ QString SpeckleDenoiseNode::generateOutputFileName() const
     QFileInfo fi(m_inputData->filePath());
     QString baseName = fi.completeBaseName();
     return QStringLiteral("%1_denoised").arg(baseName);
+}
+
+bool SpeckleDenoiseNode::validateAndRestoreOutput()
+{
+    if (!m_saveToProject)
+        return false;
+
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString projDirStr = projectPath();
+    if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
+        projDirStr = QFileInfo(projDirStr).absolutePath();
+    }
+
+    QString finalFileName;
+    if (m_outputFileName.isEmpty()) {
+        // 需要输入数据才能计算默认文件名，返回false让用户手动执行
+        return false;
+    } else {
+        if (QFileInfo(m_outputFileName).suffix().isEmpty()) {
+            finalFileName = m_outputFileName + ".png";
+        } else {
+            finalFileName = m_outputFileName;
+        }
+    }
+
+    QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
+
+    if (QFile::exists(outputPath)) {
+        m_outputImagePath = outputPath;
+        m_outputData = std::make_shared<ImageInfoData>(outputPath);
+        setOutputData(0, m_outputData);
+        setOutputData(1, m_outputData);
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

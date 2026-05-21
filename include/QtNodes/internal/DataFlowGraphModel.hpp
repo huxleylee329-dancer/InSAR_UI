@@ -97,14 +97,14 @@ public:
 Q_SIGNALS:
     void inPortDataWasSet(NodeId const, PortType const, PortIndex const);
 
-private:
+protected:
     NodeId newNodeId() override { return _nextNodeId++; }
 
     void sendConnectionCreation(ConnectionId const connectionId);
 
     void sendConnectionDeletion(ConnectionId const connectionId);
 
-private Q_SLOTS:
+protected Q_SLOTS:
     /**
    * Fuction is called in three cases:
    *
@@ -120,7 +120,7 @@ private Q_SLOTS:
     /// Function is called after detaching a connection.
     void propagateEmptyDataTo(NodeId const nodeId, PortIndex const portIndex);
 
-private:
+protected:
     std::shared_ptr<NodeDelegateModelRegistry> _registry;
 
     NodeId _nextNodeId;

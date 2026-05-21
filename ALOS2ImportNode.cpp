@@ -3,6 +3,7 @@
 #endif
 
 #include "ALOS2ImportNode.h"
+#include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
@@ -98,7 +99,7 @@ QWidget* ALOS2ImportNode::createWidget()
     nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("ALOS2_Batch_Import");
+    m_outputNodeNameEdit->setText(m_outputNodeName.isEmpty() ? "ALOS2_Batch_Import" : m_outputNodeName);
     nodeRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nodeRow);
 
@@ -351,17 +352,21 @@ QJsonObject ALOS2ImportNode::save() const
     for (const QString &path : m_imgPaths)
         pathsArray.append(path);
     json["imgPaths"] = pathsArray;
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("ALOS2_Batch_Import");
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     return json;
 }
 
 void ALOS2ImportNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_imgPaths.clear();
     QJsonArray pathsArray = json["imgPaths"].toArray();
     for (const QJsonValue &val : pathsArray)
         m_imgPaths.append(val.toString());
+
+    m_outputNodeName = json["outputNodeName"].toString("ALOS2_Batch_Import");
+
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_fileListWidget) {
         m_fileListWidget->clear();
@@ -370,7 +375,37 @@ void ALOS2ImportNode::load(QJsonObject const &json)
     }
 
     if (m_outputNodeNameEdit)
-        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("ALOS2_Batch_Import"));
+        m_outputNodeNameEdit->setText(m_outputNodeName);
+}
+
+bool ALOS2ImportNode::validateAndRestoreOutput()
+{
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + nodeName + "/";
+
+    QDir dir(outputPath);
+    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
+        // 批量导入：构建所有已导入文件的路径
+        QStringList importedFiles;
+        for (const QString &path : m_imgPaths) {
+            QFileInfo fi(path);
+            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            if (QFile::exists(importedPath)) {
+                importedFiles.append(importedPath);
+            }
+        }
+        if (!importedFiles.isEmpty()) {
+            m_importedFilePaths = importedFiles;
+            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+            setOutputData(0, outputData);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

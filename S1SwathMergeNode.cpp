@@ -9,6 +9,7 @@
 #include "InterfaceManager.h"
 #include "NodeUtils.h"
 #include <QApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonObject>
 #include <QJsonValue>
@@ -107,8 +108,8 @@ QJsonObject S1SwathMergeNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
 
-    if (m_outputNodeNameEdit)
-        modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
+    QString nodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
+    modelJson["outputNodeName"] = nodeName;
 
     if (m_indexSpins[0])
         modelJson["index1"] = m_indexSpins[0]->value();
@@ -122,14 +123,17 @@ QJsonObject S1SwathMergeNode::save() const
 
 void S1SwathMergeNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
-
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     QJsonValue vName = json["outputNodeName"];
     if (!vName.isUndefined())
     {
-        if (m_outputNodeNameEdit)
-            m_outputNodeNameEdit->setText(vName.toString());
+        m_outputNodeName = vName.toString();
     }
+
+    ExecutableNodeDelegateModel::load(json);
+
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setText(m_outputNodeName);
 
     QJsonValue v1 = json["index1"];
     if (!v1.isUndefined())
@@ -268,6 +272,7 @@ void S1SwathMergeNode::createWidget()
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("不要输入中文字符");
+    m_outputNodeNameEdit->setText(m_outputNodeName);
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
@@ -499,6 +504,24 @@ void S1SwathMergeNode::executeProcessing()
     // Start thread
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
+}
+
+bool S1SwathMergeNode::validateAndRestoreOutput()
+{
+    QString dstNode = m_outputNodeName.trimmed();
+    if (dstNode.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + dstNode + "/";
+
+    QDir dir(outputPath);
+    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
+        m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+        setOutputData(0, m_outputData);
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

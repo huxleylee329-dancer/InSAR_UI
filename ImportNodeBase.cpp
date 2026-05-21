@@ -14,8 +14,9 @@ ImportNodeBase::ImportNodeBase()
     : ExecutableNodeDelegateModel()
     , m_stopRequested(false)
 {
-    // Set default execution mode
-    setExecutionMode(ExecutionMode::Automatic);
+    // Set default execution mode to Manual for import nodes
+    // These nodes require user selection and shouldn't trigger the workflow automatically
+    setExecutionMode(ExecutionMode::Manual);
 }
 
 unsigned int ImportNodeBase::nPorts(PortType portType) const
@@ -124,10 +125,15 @@ void ImportNodeBase::onError(const QString& error)
 
 void ImportNodeBase::execute()
 {
+    // 防止重复执行：如果已经在运行中，直接返回
+    if (workerThread() != nullptr || qThread() != nullptr) {
+        return;
+    }
+
     m_stopRequested = false;
     setProgress(0);
     setState(ExecutionState::Running);
-    
+
     // Call the legacy executeImport() method
     executeImport();
 }

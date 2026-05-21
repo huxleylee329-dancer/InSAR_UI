@@ -20,8 +20,18 @@ public:
     /// Set the scene pointer after construction
     void setScene(BasicGraphicsScene *scene) { _scene = scene; }
 
+    /// Set whether the model is currently being restored from a project
+    void setRestoring(bool restoring) { _isRestoring = restoring; }
+
+    /// Check if the model is currently being restored from a project
+    bool isRestoring() const { return _isRestoring; }
+
 public:
     NodeId addNode(QString const nodeType = QString()) override;
+
+    void load(QJsonObject const &json) override;
+
+    void loadNode(QJsonObject const &nodeJson) override;
 
     void addConnection(ConnectionId const connectionId) override;
 
@@ -36,6 +46,7 @@ private Q_SLOTS:
 
 private:
     BasicGraphicsScene *_scene = nullptr;
+    bool _isRestoring = false;
 };
 
 } // namespace QtNodes

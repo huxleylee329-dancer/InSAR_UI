@@ -2,6 +2,7 @@
 #define GENERICSARBATCHIMPORTNODE_H
 
 #include "ImportNodeBase.h"
+#include "ImportDataTypes.h"
 #include "MyThread.h"
 
 #include <QWidget>
@@ -43,6 +44,9 @@ protected:
     MyThread* workerThread() const override { return m_workerThread; }
     QThread* qThread() const override { return m_thread; }
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 private slots:
     void onAddFilesClicked();
     void onRemoveFilesClicked();
@@ -63,6 +67,7 @@ private:
 
     QStringList m_imagePaths;
     QStringList m_importedFilePaths;
+    QString m_outputNodeName;
 
     MyThread* m_workerThread;
     QThread* m_thread;

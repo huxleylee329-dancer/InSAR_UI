@@ -50,6 +50,9 @@ public:
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 private:
     // UI elements
     QComboBox* m_projectCombo;
@@ -60,6 +63,7 @@ private:
     // Input data storage
     std::shared_ptr<ImportedFileData> m_inputs[2];
     std::shared_ptr<ImportedFileData> m_outputData;
+    QString m_outputNodeName;
 
     // Worker thread
     MyThread* m_workerThread;

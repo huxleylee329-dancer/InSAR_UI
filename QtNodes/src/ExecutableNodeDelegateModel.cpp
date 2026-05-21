@@ -1,3 +1,7 @@
+﻿#ifdef _MSC_VER
+#pragma execution_character_set("utf-8")
+#endif
+
 #include "ExecutableNodeDelegateModel.hpp"
 #include "NodeGraphicsObject.hpp"
 #include "BasicGraphicsScene.hpp"
@@ -49,54 +53,59 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
         // Data changed
         _inputData[portIndex] = nodeData;
 
+        // Skip state changes and auto-execution during restoration
+        if (_isRestoring) {
+            return;
+        }
+
         if (_mode == ExecutionMode::Manual) {
             // In Manual mode, any input change invalidates previous result
             invalidateExecution();
         }
-    }
 
-    if (_mode == ExecutionMode::Automatic) {
-        // For automatic mode: set running state and zero progress before execution
-        _state = ExecutionState::Running;
-        _progress = 0;
-        Q_EMIT executionStateChanged();
-        triggerVisualUpdate();
-
-        // Let subclass do the automatic processing (sets output data if inputs are complete)
-        processAutomatically();
-
-        // Check if we have any non-empty output data after processing
-        // Special case: node with zero output ports (pure display) always completes after processing
-        unsigned int outPortCount = nPorts(PortType::Out);
-        bool shouldComplete = false;
-
-        if (outPortCount == 0) {
-            // No output ports - this is a display node, complete after processing
-            shouldComplete = true;
-        } else {
-            // Has output ports - check if we have at least one non-empty output
-            bool hasOutput = false;
-            for (auto const &pair : _outputData) {
-                if (pair.second != nullptr) {
-                    hasOutput = true;
-                    break;
-                }
-            }
-            shouldComplete = hasOutput;
-        }
-
-        if (shouldComplete) {
-            _progress = 100;
-            _state = ExecutionState::Completed;
-        } else {
+        if (_mode == ExecutionMode::Automatic) {
+            // For automatic mode: set running state and zero progress before execution
+            _state = ExecutionState::Running;
             _progress = 0;
-            _state = ExecutionState::Idle;
-        }
+            Q_EMIT executionStateChanged();
+            triggerVisualUpdate();
 
-        Q_EMIT progressUpdated(_progress);
-        Q_EMIT executionStateChanged();
-        Q_EMIT computingFinished();
-        triggerVisualUpdate();
+            // Let subclass do the automatic processing (sets output data if inputs are complete)
+            processAutomatically();
+
+            // Check if we have any non-empty output data after processing
+            // Special case: node with zero output ports (pure display) always completes after processing
+            unsigned int outPortCount = nPorts(PortType::Out);
+            bool shouldComplete = false;
+
+            if (outPortCount == 0) {
+                // No output ports - this is a display node, complete after processing
+                shouldComplete = true;
+            } else {
+                // Has output ports - check if we have at least one non-empty output
+                bool hasOutput = false;
+                for (auto const &pair : _outputData) {
+                    if (pair.second != nullptr) {
+                        hasOutput = true;
+                        break;
+                    }
+                }
+                shouldComplete = hasOutput;
+            }
+
+            if (shouldComplete) {
+                _progress = 100;
+                _state = ExecutionState::Completed;
+            } else {
+                _progress = 0;
+                _state = ExecutionState::Idle;
+            }
+
+            Q_EMIT progressUpdated(_progress);
+            Q_EMIT executionStateChanged();
+            Q_EMIT computingFinished();
+            triggerVisualUpdate();
+        }
     }
 }
 
@@ -245,6 +254,7 @@ QJsonObject ExecutableNodeDelegateModel::save() const
     QJsonObject modelJson = NodeDelegateModel::save();
 
     modelJson["execution-mode"] = static_cast<int>(_mode);
+    modelJson["execution-state"] = static_cast<int>(_state);
 
     return modelJson;
 }
@@ -256,6 +266,26 @@ void ExecutableNodeDelegateModel::load(QJsonObject const &json)
     QJsonValue v = json["execution-mode"];
     if (!v.isUndefined()) {
         _mode = static_cast<ExecutionMode>(v.toInt());
+    }
+
+    // 恢复状态：只有当保存的是Completed状态且验证通过才恢复
+    QJsonValue stateValue = json["execution-state"];
+    if (!stateValue.isUndefined()) {
+        ExecutionState savedState = static_cast<ExecutionState>(stateValue.toInt());
+        if (savedState == ExecutionState::Completed) {
+            // 调用子类验证输出数据
+            if (validateAndRestoreOutput()) {
+                _state = ExecutionState::Completed;
+                _progress = 100;
+                // 发送信号通知UI更新状态显示
+                Q_EMIT progressUpdated(_progress);
+                Q_EMIT executionStateChanged();
+                triggerVisualUpdate();
+            }
+            // 否则保持Idle状态
+        }
+        // 其他状态（Running/Error/Stopped）都重置为Idle
+        // 因为重新打开工程时，这些瞬态没有意义
     }
 }
 

@@ -55,6 +55,9 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 signals:
     void startClutterSuppression(QString inputPath, QString outputPath, QString nodeName, QString fileName,
                             QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);
@@ -87,7 +90,9 @@ private:
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
     QString m_outputImagePath;
+    QString m_outputNodeName;
     QString m_outputFileName;
+    bool m_saveToProject = true;
 
     // Threading
     QThread* m_thread = nullptr;

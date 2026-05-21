@@ -3,8 +3,10 @@
 #endif
 
 #include "Sentinel1BatchImportNode.h"
+#include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
+#include <QDir>
 #include <QRegularExpression>
 
 namespace QtNodes {
@@ -345,17 +347,21 @@ QJsonObject Sentinel1BatchImportNode::save() const
     json["manifestPaths"] = pathsArray;
     json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : "iw1";
     json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "vv";
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("S1_Batch_Import");
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     return json;
 }
 
 void Sentinel1BatchImportNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_manifestPaths.clear();
     QJsonArray pathsArray = json["manifestPaths"].toArray();
     for (const QJsonValue &val : pathsArray)
         m_manifestPaths.append(val.toString());
+
+    m_outputNodeName = json["outputNodeName"].toString("S1_Batch_Import");
+
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_fileListWidget) {
         m_fileListWidget->clear();
@@ -364,7 +370,7 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
     }
 
     if (m_outputNodeNameEdit)
-        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("S1_Batch_Import"));
+        m_outputNodeNameEdit->setText(m_outputNodeName);
 
     QString subswath = json["subswath"].toString("iw1");
     if (m_subswathCombo) {
@@ -377,6 +383,34 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
         int idx = m_polarizationCombo->findText(pol);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
+}
+
+bool Sentinel1BatchImportNode::validateAndRestoreOutput()
+{
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + nodeName + "/";
+
+    QDir dir(outputPath);
+    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
+        m_importedFilePaths.clear();
+        for (const QString &manifestPath : m_manifestPaths) {
+            QFileInfo fi(manifestPath);
+            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            if (QFile::exists(importedPath)) {
+                m_importedFilePaths.append(importedPath);
+            }
+        }
+        if (!m_importedFilePaths.isEmpty()) {
+            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+            setOutputData(0, outputData);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

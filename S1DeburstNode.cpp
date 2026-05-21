@@ -9,6 +9,7 @@
 #include "InterfaceManager.h"
 #include "NodeUtils.h"
 #include <QApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QJsonObject>
@@ -105,22 +106,25 @@ QJsonObject S1DeburstNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
 
-    if (m_outputNodeNameEdit)
-        modelJson["outputNodeName"] = m_outputNodeNameEdit->text();
+    QString nodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
+    modelJson["outputNodeName"] = nodeName;
 
     return modelJson;
 }
 
 void S1DeburstNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
-
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     QJsonValue v = json["outputNodeName"];
     if (!v.isUndefined())
     {
-        if (m_outputNodeNameEdit)
-            m_outputNodeNameEdit->setText(v.toString());
+        m_outputNodeName = v.toString();
     }
+
+    ExecutableNodeDelegateModel::load(json);
+
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setText(m_outputNodeName);
 }
 
 void S1DeburstNode::createWidget()
@@ -168,6 +172,7 @@ void S1DeburstNode::createWidget()
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("不要输入中文字符");
+    m_outputNodeNameEdit->setText(m_outputNodeName);
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
@@ -389,6 +394,25 @@ void S1DeburstNode::executeProcessing()
     // Start thread
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
+}
+
+bool S1DeburstNode::validateAndRestoreOutput()
+{
+    QString dstNode = m_outputNodeName.trimmed();
+    if (dstNode.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + dstNode + "/";
+
+    // 检查目录是否存在且不为空
+    QDir dir(outputPath);
+    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
+        m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+        setOutputData(0, m_outputData);
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

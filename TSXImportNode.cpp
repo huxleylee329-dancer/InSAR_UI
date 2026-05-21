@@ -3,6 +3,8 @@
 #endif
 
 #include "TSXImportNode.h"
+#include "ImportDataTypes.h"
+#include <QFile>
 #include <QFileInfo>
 
 namespace QtNodes {
@@ -296,19 +298,22 @@ QJsonObject TSXImportNode::save() const
     QJsonObject json = ExecutableNodeDelegateModel::save();
     json["xmlPath"] = m_xmlPath;
     json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "HH";
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QString();
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     json["outputFileName"] = m_outputFileName;
     return json;
 }
 
 void TSXImportNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_xmlPath = json["xmlPath"].toString();
+    m_outputNodeName = json["outputNodeName"].toString();
     m_outputFileName = json["outputFileName"].toString();
 
+    ExecutableNodeDelegateModel::load(json);
+
     if (m_xmlEdit) m_xmlEdit->setText(m_xmlPath);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(json["outputNodeName"].toString());
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
 
     QString pol = json["polarization"].toString("HH");
@@ -316,6 +321,28 @@ void TSXImportNode::load(QJsonObject const &json)
         int idx = m_polarizationCombo->findText(pol);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
+}
+
+bool TSXImportNode::validateAndRestoreOutput()
+{
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString fileName = m_outputFileName;
+    if (fileName.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + nodeName + "/" + fileName + ".h5";
+
+    if (QFile::exists(outputPath)) {
+        m_importedFilePath = outputPath;
+        auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+        setOutputData(0, outputData);
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

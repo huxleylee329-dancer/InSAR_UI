@@ -52,6 +52,9 @@ protected:
     QString generateOutputFileName() const;
     QString getOutputFileName() const;  // 获取输出文件名（优先使用用户输入，否则自动生成）
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 private slots:
     void onManifestBrowseClicked();
     void onPodBrowseClicked();
@@ -77,7 +80,10 @@ private:
     QString m_manifestPath;
     QString m_podPath;
     QString m_importedFilePath;
+    QString m_outputNodeName;
     QString m_outputFileName;
+    QString m_subswath = "iw1";
+    QString m_polarization = "vv";
 
     // Worker thread
     MyThread* m_workerThread;

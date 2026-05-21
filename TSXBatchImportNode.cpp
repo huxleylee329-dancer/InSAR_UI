@@ -3,8 +3,10 @@
 #endif
 
 #include "TSXBatchImportNode.h"
+#include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
+#include <QDir>
 
 namespace QtNodes {
 
@@ -327,17 +329,21 @@ QJsonObject TSXBatchImportNode::save() const
         pathsArray.append(path);
     json["xmlPaths"] = pathsArray;
     json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "HH";
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : QStringLiteral("TSX_Batch_Import");
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     return json;
 }
 
 void TSXBatchImportNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_xmlPaths.clear();
     QJsonArray pathsArray = json["xmlPaths"].toArray();
     for (const QJsonValue &val : pathsArray)
         m_xmlPaths.append(val.toString());
+
+    m_outputNodeName = json["outputNodeName"].toString("TSX_Batch_Import");
+
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_fileListWidget) {
         m_fileListWidget->clear();
@@ -346,13 +352,41 @@ void TSXBatchImportNode::load(QJsonObject const &json)
     }
 
     if (m_outputNodeNameEdit)
-        m_outputNodeNameEdit->setText(json["outputNodeName"].toString("TSX_Batch_Import"));
+        m_outputNodeNameEdit->setText(m_outputNodeName);
 
     QString pol = json["polarization"].toString("HH");
     if (m_polarizationCombo) {
         int idx = m_polarizationCombo->findText(pol);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
+}
+
+bool TSXBatchImportNode::validateAndRestoreOutput()
+{
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString outputPath = projectPath() + "/" + nodeName + "/";
+
+    QDir dir(outputPath);
+    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
+        m_importedFilePaths.clear();
+        for (const QString &xmlPath : m_xmlPaths) {
+            QFileInfo fi(xmlPath);
+            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            if (QFile::exists(importedPath)) {
+                m_importedFilePaths.append(importedPath);
+            }
+        }
+        if (!m_importedFilePaths.isEmpty()) {
+            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+            setOutputData(0, outputData);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

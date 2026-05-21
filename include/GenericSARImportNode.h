@@ -53,6 +53,7 @@ protected:
 
 protected:
     void onImportFinished() override;
+    bool validateAndRestoreOutput() override;
 
 private slots:
     void onImageBrowseClicked();

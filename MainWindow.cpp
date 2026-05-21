@@ -312,6 +312,9 @@ void MainWindow::closeEvent(QCloseEvent* event)
                 this->project->XMLFile_load(m_projectPath.toStdString().c_str());
             }
             saveWorkflowToProject(m_projectPath);
+            if (m_interfaceManager && this->project) {
+                m_interfaceManager->saveLastInterfaceToProject(this->project);
+            }
             this->project->XMLFile_save(m_projectPath.toStdString().c_str());
             closeCurrentProject();
             event->accept();
@@ -693,6 +696,9 @@ void MainWindow::on_actionSave_triggered()
         this->project->XMLFile_load(m_projectPath.toStdString().c_str());
     }
     saveWorkflowToProject(m_projectPath);
+    if (m_interfaceManager && this->project) {
+        m_interfaceManager->saveLastInterfaceToProject(this->project);
+    }
     this->project->XMLFile_save(m_projectPath.toStdString().c_str());
     m_projectModified = false;
     updateWindowTitle();
@@ -772,6 +778,9 @@ void MainWindow::on_actionClose_triggered()
                 this->project->XMLFile_load(m_projectPath.toStdString().c_str());
             }
             saveWorkflowToProject(m_projectPath);
+            if (m_interfaceManager && this->project) {
+                m_interfaceManager->saveLastInterfaceToProject(this->project);
+            }
             this->project->XMLFile_save(m_projectPath.toStdString().c_str());
         } else if (reply == QMessageBox::Cancel) {
             return;
@@ -1615,6 +1624,8 @@ void MainWindow::switchToWorkspace()
         // Save to project
         if (project) {
             m_interfaceManager->saveLastInterfaceToProject(project);
+            m_projectModified = true;
+            updateWindowTitle();
         }
     }
 }
@@ -1626,6 +1637,8 @@ void MainWindow::switchToWorkflow()
         // Save to project
         if (project) {
             m_interfaceManager->saveLastInterfaceToProject(project);
+            m_projectModified = true;
+            updateWindowTitle();
         }
     }
 }

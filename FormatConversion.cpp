@@ -4528,6 +4528,29 @@ int XMLFile::XMLFile_add_origin(
 	}
 	else
 	{
+		// 检查是否已存在相同名称和路径的数据条目，避免重复添加
+		bool duplicateExists = false;
+		for (TiXmlNode* childNode = DataNode->FirstChild(); childNode; childNode = childNode->NextSibling()) {
+			TiXmlElement* childElem = childNode->ToElement();
+			if (childElem && strcmp(childElem->Value(), "Data") == 0) {
+				TiXmlNode* nameEl = childElem->FirstChildElement("Data_Name");
+				TiXmlNode* pathEl = childElem->FirstChildElement("Data_Path");
+				if (nameEl && pathEl) {
+					const char* existingName = nameEl->GetText();
+					const char* existingPath = pathEl->GetText();
+					if (existingName && existingPath &&
+						strcmp(existingName, node_name) == 0 &&
+						strcmp(existingPath, node_path) == 0) {
+						duplicateExists = true;
+						break;
+					}
+				}
+			}
+		}
+		if (duplicateExists) {
+			return 0;  // 已存在相同数据，跳过添加
+		}
+
 		data_node_count = atoi(DataNode->Attribute("data_count")) + 1;
 		string tmp;
 		tmp = int2str(data_node_count);
@@ -4636,6 +4659,29 @@ int XMLFile::XMLFile_add_origin_14(const char* datanode_node, const char* node_n
 	}
 	else
 	{
+		// 检查是否已存在相同名称和路径的数据条目，避免重复添加
+		bool duplicateExists = false;
+		for (TiXmlNode* childNode = DataNode->FirstChild(); childNode; childNode = childNode->NextSibling()) {
+			TiXmlElement* childElem = childNode->ToElement();
+			if (childElem && strcmp(childElem->Value(), "Data") == 0) {
+				TiXmlNode* nameEl = childElem->FirstChildElement("Data_Name");
+				TiXmlNode* pathEl = childElem->FirstChildElement("Data_Path");
+				if (nameEl && pathEl) {
+					const char* existingName = nameEl->GetText();
+					const char* existingPath = pathEl->GetText();
+					if (existingName && existingPath &&
+						strcmp(existingName, node_name) == 0 &&
+						strcmp(existingPath, node_path) == 0) {
+						duplicateExists = true;
+						break;
+					}
+				}
+			}
+		}
+		if (duplicateExists) {
+			return 0;  // 已存在相同数据，跳过添加
+		}
+
 		data_node_count = atoi(DataNode->Attribute("data_count")) + 1;
 		string tmp;
 		tmp = int2str(data_node_count);

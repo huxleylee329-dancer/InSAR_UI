@@ -6,6 +6,7 @@
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QApplication>
 
@@ -330,10 +331,12 @@ QJsonObject GenericSARImportNode::save() const
 
 void GenericSARImportNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
+    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
     m_imagePath = json["imagePath"].toString();
     m_outputNodeName = json["outputNodeName"].toString();
     m_outputFileName = json["outputFileName"].toString();
+
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_imageEdit) m_imageEdit->setText(m_imagePath);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -399,6 +402,39 @@ std::shared_ptr<NodeData> GenericSARImportNode::outData(PortIndex port)
     }
 
     return nullptr;
+}
+
+bool GenericSARImportNode::validateAndRestoreOutput()
+{
+    QString nodeName = m_outputNodeName.trimmed();
+    if (nodeName.isEmpty())
+        return false;
+
+    QString projDirStr = projectPath();
+
+    QString suffix = QFileInfo(m_imagePath).suffix();
+    if (suffix.isEmpty()) suffix = "h5";
+
+    QString finalFileName = m_outputFileName;
+    if (finalFileName.isEmpty()) {
+        finalFileName = QFileInfo(m_imagePath).baseName();
+    }
+
+    QString outputPath = QString("%1/%2/%3.%4")
+        .arg(projDirStr)
+        .arg(nodeName)
+        .arg(finalFileName)
+        .arg(suffix);
+
+    if (QFile::exists(outputPath)) {
+        m_importedFilePath = outputPath;
+        auto outputData = std::make_shared<ImageInfoData>(outputPath);
+        setOutputData(0, outputData);
+        m_imageInfoData = outputData;
+        return true;
+    }
+
+    return false;
 }
 
 } // namespace QtNodes

@@ -2,6 +2,7 @@
 #define SENTINEL1BATCHIMPORTNODE_H
 
 #include "ImportNodeBase.h"
+#include "ImportDataTypes.h"
 #include "MyThread.h"
 #include <QWidget>
 #include <QListWidget>
@@ -51,6 +52,9 @@ protected:
     // Helper methods
     QString generateImportName(const QString& manifestPath) const;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 private slots:
     void onAddFilesClicked();
     void onRemoveFilesClicked();
@@ -73,6 +77,7 @@ private:
     // State
     QStringList m_manifestPaths;
     QStringList m_importedFilePaths;
+    QString m_outputNodeName;
 
     // Worker thread
     MyThread* m_workerThread;
