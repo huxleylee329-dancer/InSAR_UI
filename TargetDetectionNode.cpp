@@ -176,6 +176,17 @@ void TargetDetectionNode::createWidget()
     m_resultsTable->setMinimumHeight(100);
     layout->addWidget(m_resultsTable);
 
+    if (!m_savedResults.isEmpty()) {
+        m_resultsTable->setRowCount(0);
+        for (const auto& res : m_savedResults) {
+            int row = m_resultsTable->rowCount();
+            m_resultsTable->insertRow(row);
+            m_resultsTable->setItem(row, 0, new QTableWidgetItem(res.fileName));
+            m_resultsTable->setItem(row, 1, new QTableWidgetItem(res.resultText));
+            m_resultsTable->setItem(row, 2, new QTableWidgetItem(res.probability));
+        }
+    }
+
     // Status label
     m_statusLabel = new QLabel();
     m_statusLabel->setStyleSheet("color: gray; font-size: 11px;");
@@ -252,6 +263,7 @@ void TargetDetectionNode::executeProcessing()
     if (m_resultsTable) {
         m_resultsTable->setRowCount(0);
     }
+    m_savedResults.clear();
 
     QStringList inputPaths = m_inputData->filePaths();
     QString modelPath = m_selectedModelPath;
@@ -286,11 +298,14 @@ void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)
 
 void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg)
 {
-    if (m_resultsTable && m_inputData && imageIndex < m_inputData->filePaths().size()) {
+    QString fileName = "";
+    if (m_inputData && imageIndex < m_inputData->filePaths().size()) {
+        fileName = QFileInfo(m_inputData->filePaths()[imageIndex]).fileName();
+    }
+
+    if (m_resultsTable && !fileName.isEmpty()) {
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
-        
-        QString fileName = QFileInfo(m_inputData->filePaths()[imageIndex]).fileName();
         m_resultsTable->setItem(row, 0, new QTableWidgetItem(fileName));
         
         if (success) {
@@ -300,6 +315,19 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
             m_resultsTable->setItem(row, 1, new QTableWidgetItem("Error"));
             m_resultsTable->setItem(row, 2, new QTableWidgetItem(errorMsg));
         }
+    }
+    
+    if (!fileName.isEmpty()) {
+        DetectionResult res;
+        res.fileName = fileName;
+        if (success) {
+            res.resultText = resultText;
+            res.probability = QString::number(shipProb * 100.0f, 'f', 2) + "%";
+        } else {
+            res.resultText = "Error";
+            res.probability = errorMsg;
+        }
+        m_savedResults.append(res);
     }
     
     // We only finish execution if this is the last image.
@@ -361,8 +389,27 @@ QJsonObject TargetDetectionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["thresholdValue"] = m_thresholdValue;
-    modelJson["resultText"] = m_savedResultText;
-    modelJson["shipProb"] = m_savedShipProb;
+
+    QJsonArray resultsArray;
+    if (m_resultsTable) {
+        for (int row = 0; row < m_resultsTable->rowCount(); ++row) {
+            QJsonObject resultObj;
+            resultObj["fileName"] = m_resultsTable->item(row, 0) ? m_resultsTable->item(row, 0)->text() : "";
+            resultObj["resultText"] = m_resultsTable->item(row, 1) ? m_resultsTable->item(row, 1)->text() : "";
+            resultObj["probability"] = m_resultsTable->item(row, 2) ? m_resultsTable->item(row, 2)->text() : "";
+            resultsArray.append(resultObj);
+        }
+    } else {
+        for (const auto& res : m_savedResults) {
+            QJsonObject resultObj;
+            resultObj["fileName"] = res.fileName;
+            resultObj["resultText"] = res.resultText;
+            resultObj["probability"] = res.probability;
+            resultsArray.append(resultObj);
+        }
+    }
+    modelJson["results"] = resultsArray;
+
     return modelJson;
 }
 
@@ -370,8 +417,27 @@ void TargetDetectionNode::load(QJsonObject const &json)
 {
     // Assign fields first
     m_thresholdValue = json["thresholdValue"].toDouble(0.65);
-    m_savedResultText = json["resultText"].toString("--");
-    m_savedShipProb = json["shipProb"].toDouble(0.0);
+
+    m_savedResults.clear();
+    if (json.contains("results") && json["results"].isArray()) {
+        QJsonArray resultsArray = json["results"].toArray();
+        for (int i = 0; i < resultsArray.size(); ++i) {
+            QJsonObject resultObj = resultsArray[i].toObject();
+            DetectionResult res;
+            res.fileName = resultObj["fileName"].toString();
+            res.resultText = resultObj["resultText"].toString();
+            res.probability = resultObj["probability"].toString();
+            m_savedResults.append(res);
+        }
+    } else if (json.contains("resultText")) {
+        DetectionResult res;
+        res.fileName = "Unknown";
+        res.resultText = json["resultText"].toString("--");
+        res.probability = QString::number(json["shipProb"].toDouble(0.0) * 100.0f, 'f', 2) + "%";
+        if (res.resultText != "--") {
+            m_savedResults.append(res);
+        }
+    }
 
     // Call base class load which will trigger validateAndRestoreOutput()
     ExecutableNodeDelegateModel::load(json);
@@ -380,8 +446,18 @@ void TargetDetectionNode::load(QJsonObject const &json)
         m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
     }
 
+    if (m_resultsTable) {
+        m_resultsTable->setRowCount(0);
+        for (const auto& res : m_savedResults) {
+            int row = m_resultsTable->rowCount();
+            m_resultsTable->insertRow(row);
+            m_resultsTable->setItem(row, 0, new QTableWidgetItem(res.fileName));
+            m_resultsTable->setItem(row, 1, new QTableWidgetItem(res.resultText));
+            m_resultsTable->setItem(row, 2, new QTableWidgetItem(res.probability));
+        }
+    }
+
     if (executionState() == ExecutionState::Completed) {
-        // Not saving individual result for table now.
         if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：完成"));
     }
 }

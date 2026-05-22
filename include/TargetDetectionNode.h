@@ -10,6 +10,8 @@
 #include <QThread>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonObject>
 
 class IApplicationInterface;
 
@@ -73,8 +75,13 @@ private:
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
     QString m_selectedModelPath;
     float m_thresholdValue = 0.65f;
-    QString m_savedResultText = "--";
-    float m_savedShipProb = 0.0f;
+
+    struct DetectionResult {
+        QString fileName;
+        QString resultText;
+        QString probability;
+    };
+    QList<DetectionResult> m_savedResults;
 
     // Threading
     QThread* m_thread = nullptr;
