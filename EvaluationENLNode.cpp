@@ -28,14 +28,19 @@ void EvaluationENLNode::createWidget()
     roiLayout->addWidget(m_regionComboBox);
     mainLayout->addWidget(roiGroup);
 
-    auto* resultGroup = new QGroupBox("ENL结果");
-    auto* formLayout = new QFormLayout(resultGroup);
+    auto* resultGroup = new QGroupBox("ENL/EPI结果");
+    auto* tableLayout = new QVBoxLayout(resultGroup);
     
-    m_originalEnlLabel = new QLabel("--");
-    m_filteredEnlLabel = new QLabel("--");
-    
-    formLayout->addRow("原图ENL：", m_originalEnlLabel);
-    formLayout->addRow("滤波后ENL：", m_filteredEnlLabel);
+    m_resultsTable = new QTableWidget();
+    m_resultsTable->setColumnCount(4);
+    m_resultsTable->setHorizontalHeaderLabels({QString::fromUtf8("\xe5\x9b\xbe\xe5\x83\x8f"), "原图ENL", "滤波后ENL", "EPI"});
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_resultsTable->setMinimumHeight(150);
+    tableLayout->addWidget(m_resultsTable);
+
     mainLayout->addWidget(resultGroup);
 
     m_widget->setMinimumWidth(200);
@@ -105,8 +110,8 @@ QWidget* EvaluationENLNode::embeddedWidget()
 
 bool EvaluationENLNode::isReady() const
 {
-    return (m_originalData != nullptr && !m_originalData->filePath().isEmpty()) || 
-           (m_filteredData != nullptr && !m_filteredData->filePath().isEmpty());
+    return (m_originalData != nullptr && !m_originalData->filePaths().isEmpty()) && 
+           (m_filteredData != nullptr && !m_filteredData->filePaths().isEmpty());
 }
 
 void EvaluationENLNode::execute()
@@ -150,36 +155,82 @@ double EvaluationENLNode::calculateENL(const cv::Mat& roiGray) const
     return (mean * mean) / (stddev * stddev);
 }
 
+double EvaluationENLNode::calculateEPI(const cv::Mat& orig, const cv::Mat& filtered) const
+{
+    if (orig.empty() || filtered.empty()) return 0.0;
+    cv::Mat lapOrig, lapFilt;
+    cv::Laplacian(orig, lapOrig, CV_64F);
+    cv::Laplacian(filtered, lapFilt, CV_64F);
+    double sumOrig = cv::sum(cv::abs(lapOrig))[0];
+    double sumFilt = cv::sum(cv::abs(lapFilt))[0];
+    if (sumOrig == 0) return 0.0;
+    return sumFilt / sumOrig;
+}
+
 void EvaluationENLNode::calculateAndDisplayENL()
 {
-    auto processImage = [this](std::shared_ptr<ImageInfoData> data, QLabel* label) {
-        if (!data) {
-            label->setText("--");
-            return;
-        }
-        if (data->filePath().isEmpty()) {
-            label->setText("Empty Path");
-            return;
-        }
-        
-        cv::Mat mat = cv::imread(data->filePath().toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
-        if (mat.empty()) {
-            label->setText("Imread Fail");
-            return;
-        }
-        
-        cv::Rect roi(0, 0, mat.cols, mat.rows);
-        if (m_regionComboBox->currentIndex() == 1) { // 中间区域
-            roi = cv::Rect(mat.cols / 4, mat.rows / 4, mat.cols / 2, mat.rows / 2);
-        }
-        
-        cv::Mat roiMat = mat(roi);
-        double enl = calculateENL(roiMat);
-        label->setText(QString::number(enl, 'f', 4));
-    };
+    if (m_resultsTable) m_resultsTable->setRowCount(0);
 
-    processImage(m_originalData, m_originalEnlLabel);
-    processImage(m_filteredData, m_filteredEnlLabel);
+    if (!m_originalData || !m_filteredData || m_originalData->filePaths().isEmpty() || m_filteredData->filePaths().isEmpty()) {
+        return;
+    }
+    
+    QStringList origPaths = m_originalData->filePaths();
+    QStringList filtPaths = m_filteredData->filePaths();
+    
+    if (origPaths.size() != filtPaths.size()) {
+        QMessageBox::warning(nullptr, QString::fromUtf8("\xe8\xad\xa6\xe5\x91\x8a"), QString::fromUtf8("\xe5\x8e\x9f\xe5\x9b\xbe\xe5\x92\x8c\xe6\xbb\xa4\xe6\xb3\xa2\xe5\x90\x8e\xe5\x9b\xbe\xe5\x83\x8f\xe7\x9a\x84\xe6\x95\xb0\xe9\x87\x8f\xe4\xb8\x8d\xe4\xb8\x80\xe8\x87\xb4\xef\xbc\x8c\xe6\x97\xa0\xe6\xb3\x95\xe8\xbf\x9b\xe8\xa1\x8c\xe6\x89\xb9\xe9\x87\x8f\xe8\xaf\x84\xe4\xbc\xb0\xef\xbc\x81"));
+        return;
+    }
+    
+    double totalOrigEnl = 0.0;
+    double totalFiltEnl = 0.0;
+    double totalEPI = 0.0;
+    int count = origPaths.size();
+    int validCount = 0;
+    
+    for (int i = 0; i < count; ++i) {
+        cv::Mat origMat = cv::imread(origPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+        cv::Mat filtMat = cv::imread(filtPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+        
+        if (origMat.empty() || filtMat.empty()) continue;
+        
+        cv::Rect roiOrig(0, 0, origMat.cols, origMat.rows);
+        cv::Rect roiFilt(0, 0, filtMat.cols, filtMat.rows);
+        
+        if (m_regionComboBox->currentIndex() == 1) { // 中间区域
+            roiOrig = cv::Rect(origMat.cols / 4, origMat.rows / 4, origMat.cols / 2, origMat.rows / 2);
+            roiFilt = cv::Rect(filtMat.cols / 4, filtMat.rows / 4, filtMat.cols / 2, filtMat.rows / 2);
+        }
+        
+        double origEnl = calculateENL(origMat(roiOrig));
+        double filtEnl = calculateENL(filtMat(roiFilt));
+        double epi = calculateEPI(origMat(roiOrig), filtMat(roiFilt));
+        
+        totalOrigEnl += origEnl;
+        totalFiltEnl += filtEnl;
+        totalEPI += epi;
+        validCount++;
+        
+        int row = m_resultsTable->rowCount();
+        m_resultsTable->insertRow(row);
+        m_resultsTable->setItem(row, 0, new QTableWidgetItem(QFileInfo(filtPaths[i]).fileName()));
+        m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(origEnl, 'f', 4)));
+        m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(filtEnl, 'f', 4)));
+        m_resultsTable->setItem(row, 3, new QTableWidgetItem(QString::number(epi, 'f', 4)));
+    }
+    
+    if (validCount > 1) {
+        int row = m_resultsTable->rowCount();
+        m_resultsTable->insertRow(row);
+        
+        auto* avgItem = new QTableWidgetItem(QString::fromUtf8("\xe5\xb9\xb3\xe5\x9d\x87\xe5\x80\xbc"));
+        avgItem->setFont(QFont("", -1, QFont::Bold));
+        m_resultsTable->setItem(row, 0, avgItem);
+        m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(totalOrigEnl / validCount, 'f', 4)));
+        m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(totalFiltEnl / validCount, 'f', 4)));
+        m_resultsTable->setItem(row, 3, new QTableWidgetItem(QString::number(totalEPI / validCount, 'f', 4)));
+    }
 }
 
 QJsonObject EvaluationENLNode::save() const

@@ -1,4 +1,4 @@
-﻿#include"MyThread.h"
+#include"MyThread.h"
 #include"icon_source.h"
 #include"BM3DWrapper.h"
 #include<Utils.h>
@@ -6310,7 +6310,7 @@ void MyThread::StopProcess()
 	this->stop_flag = false;
 }
 
-void MyThread::processBM3DEnhancement(
+bool MyThread::processBM3DEnhancement(
     QString tag,
     QString inputPath,
     QString outputPath,
@@ -6320,15 +6320,16 @@ void MyThread::processBM3DEnhancement(
     QString projectName,
     QStandardItemModel* model,
     bool saveToProject,
-    XMLFile* projectXml
+    XMLFile* projectXml,
+    QString& outError
 )
 {
     emit updateProcess(0, QStringLiteral("加载图像..."));
 
     cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
     if (inputGray.empty()) {
-        emit errorProcess(QStringLiteral("无法读取输入图像"));
-        return;
+        outError = QStringLiteral("无法读取输入图像");
+        return false;
     }
 
     emit updateProcess(20, QStringLiteral("准备BM3D计算..."));
@@ -6373,8 +6374,8 @@ void MyThread::processBM3DEnhancement(
     cv::Mat den8U = BM3DWrapper::DenoiseGray(img8U, sigma8);
 
     if (den8U.empty()) {
-        emit errorProcess(QStringLiteral("BM3D处理失败"));
-        return;
+        outError = QStringLiteral("BM3D处理失败");
+        return false;
     }
 
     emit updateProcess(80, QStringLiteral("后处理及保存..."));
@@ -6399,6 +6400,11 @@ void MyThread::processBM3DEnhancement(
     imgOut.convertTo(output8U, CV_8U);
 
     if (saveToProject) {
+        if (!model) {
+            outError = QStringLiteral("Project model is null");
+            return false;
+        }
+
         QString projDirStr = projectPath;
         if (projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
             projDirStr = QFileInfo(projectPath).absolutePath();
@@ -6423,143 +6429,215 @@ void MyThread::processBM3DEnhancement(
         QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
         cv::imwrite(finalPath.toStdString(), output8U);
 
-        QStandardItem* projectItem = nullptr;
-        for (int i = 0; i < model->rowCount(); ++i) {
-            if (model->item(i, 0)->text() == projectName) {
-                projectItem = model->item(i, 0);
+        QStandardItem* projectItem = model->findItems(projectName).isEmpty() ? nullptr : model->findItems(projectName).first();
+        if (!projectItem) {
+            outError = QStringLiteral("未找到目标工程");
+            return false;
+        }
+
+        QStandardItem* dataNode = nullptr;
+        for (int i = 0; i < projectItem->rowCount(); ++i) {
+            if (projectItem->child(i, 0)->text() == nodeName) {
+                dataNode = projectItem->child(i, 0);
+                break;
+            }
+        }
+        if (!dataNode) {
+            dataNode = new QStandardItem(nodeName);
+            dataNode->setIcon(QIcon(FOLDER_ICON));
+            projectItem->appendRow(dataNode);
+        }
+
+        QString defaultDisplay = (tag == "SpeckleDenoise") ? QStringLiteral("denoised") : QStringLiteral("clutter_suppressed");
+        QString displayName = fileName.isEmpty() ? defaultDisplay : fileName;
+        
+        QStandardItem* item_img = NULL;
+        for (int j = 0; j < dataNode->rowCount(); j++)
+        {
+            if (dataNode->child(j, 0)->text() == displayName)
+            {
+                item_img = dataNode->child(j, 0);
                 break;
             }
         }
 
-        if (projectItem) {
-            QStandardItem* dataNode = nullptr;
-            for (int i = 0; i < projectItem->rowCount(); ++i) {
-                if (projectItem->child(i, 0)->text() == nodeName) {
-                    dataNode = projectItem->child(i, 0);
-                    break;
-                }
-            }
-            if (!dataNode) {
-                dataNode = new QStandardItem(nodeName);
-                dataNode->setIcon(QIcon(FOLDER_ICON));
-                projectItem->appendRow(dataNode);
-            }
+        if (!item_img)
+        {
+            QStandardItem* nameItem = new QStandardItem(displayName);
+            nameItem->setIcon(QIcon(IMAGEDATA_ICON));
+            nameItem->setToolTip(QStringLiteral("image"));
+            QStandardItem* pathItem = new QStandardItem(finalPath);
+            dataNode->appendRow({ nameItem, pathItem });
 
-            QString defaultDisplay = (tag == "SpeckleDenoise") ? QStringLiteral("denoised") : QStringLiteral("clutter_suppressed");
-            QString displayName = fileName.isEmpty() ? defaultDisplay : fileName;
-            
-            QStandardItem* item_img = NULL;
-            for (int j = 0; j < dataNode->rowCount(); j++)
+            // Update XML for persistence
             {
-                if (dataNode->child(j, 0)->text() == displayName)
-                {
-                    item_img = dataNode->child(j, 0);
-                    break;
+                QString relativePath = "/" + nodeName + "/" + finalFileName;
+                XMLFile localXml;
+                if (!projectPath.isEmpty()) {
+                    localXml.XMLFile_load(projectPath.toStdString().c_str());
                 }
+                localXml.XMLFile_add_origin(
+                    nodeName.toStdString().c_str(),
+                    displayName.toStdString().c_str(),
+                    relativePath.toStdString().c_str(),
+                    tag.toStdString().c_str()
+                );
+                localXml.XMLFile_save(projectPath.toStdString().c_str());
             }
-
-            if (!item_img)
-            {
-                QStandardItem* nameItem = new QStandardItem(displayName);
-                nameItem->setIcon(QIcon(IMAGEDATA_ICON));
-                nameItem->setToolTip(QStringLiteral("image"));
-                QStandardItem* pathItem = new QStandardItem(finalPath);
-                dataNode->appendRow({ nameItem, pathItem });
-
-                // Update XML for persistence
-                {
-                    QString relativePath = "/" + nodeName + "/" + finalFileName;
-                    XMLFile localXml;
-                    if (!projectPath.isEmpty()) {
-                        localXml.XMLFile_load(projectPath.toStdString().c_str());
-                    }
-                    localXml.XMLFile_add_origin(
-                        nodeName.toStdString().c_str(),
-                        displayName.toStdString().c_str(),
-                        relativePath.toStdString().c_str(),
-                        tag.toStdString().c_str()
-                    );
-                    localXml.XMLFile_save(projectPath.toStdString().c_str());
-                }
-            }
-            else
-            {
-                dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));
-            }
-        } else {
-            // Error handled silently or via other means
+        }
+        else
+        {
+            dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));
         }
     } else {
         cv::imwrite(outputPath.toStdString(), output8U);
     }
 
-    emit updateProcess(100, QStringLiteral("完成"));
-    emit sendModel(model);
-    emit endProcess();
+    emit updateProcess(100, QStringLiteral("处理完成"));
+    return true;
 }
 
 void MyThread::Speckle_Denoise(
-    QString inputPath,
-    QString outputPath,
+    QStringList inputPaths,
+    QStringList outputPaths,
     QString nodeName,
-    QString fileName,
+    QStringList fileNames,
     QString projectPath,
     QString projectName,
     QStandardItemModel* model,
     bool saveToProject,
     XMLFile* projectXml
 )
-{
-    processBM3DEnhancement("SpeckleDenoise", inputPath, outputPath, nodeName, fileName, projectPath, projectName, model, saveToProject, projectXml);
-}
-
-void MyThread::Clutter_Suppression(
-    QString inputPath,
-    QString outputPath,
-    QString nodeName,
-    QString fileName,
-    QString projectPath,
-    QString projectName,
-    QStandardItemModel* model,
-    bool saveToProject,
-    XMLFile* projectXml
-)
-{
-    processBM3DEnhancement("ClutterSuppression", inputPath, outputPath, nodeName, fileName, projectPath, projectName, model, saveToProject, projectXml);
-}
-
-
-void MyThread::Target_Detection(QString imagePath, QString modelPath, float thresholdValue)
 {
     lock.lock();
     stop_flag = false;
     lock.unlock();
 
-    emit updateProcess(0, "正在初始化目标检测...");
-
-    float shipProb = 0.0f;
-    QString resultText;
-    QString errorMsg;
-
-    emit updateProcess(50, "正在运行推理...");
-    bool ok = TargetDetection::runDetectionTask(imagePath, modelPath, thresholdValue, shipProb, resultText, errorMsg);
-
-    lock.lock();
-    if (stop_flag) {
-        emit errorProcess("目标检测已停止");
+    for (int i = 0; i < inputPaths.size(); ++i) {
+        lock.lock();
+        if (stop_flag) {
+            lock.unlock();
+            break;
+        }
         lock.unlock();
-        return;
+
+        QString outError;
+        bool ok = processBM3DEnhancement(
+            "SpeckleDenoise", inputPaths[i], outputPaths[i], nodeName,
+            fileNames.isEmpty() ? QString() : fileNames[i],
+            projectPath, projectName, model, saveToProject, projectXml, outError
+        );
+
+        if (!ok) {
+            bool skip = false;
+            QString msg = QString("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(inputPaths[i]).fileName(), outError);
+            emit askUserError(msg, &skip);
+            if (!skip) {
+                emit errorProcess(QString("批处理在 %1 处停止").arg(QFileInfo(inputPaths[i]).fileName()));
+                return;
+            }
+        }
+        
+        int overallProgress = (i + 1) * 100 / inputPaths.size();
+        emit updateProcess(overallProgress, QString("批处理进度: %1/%2").arg(i + 1).arg(inputPaths.size()));
     }
+    
+    emit sendModel(model);
+    emit endProcess();
+}
+
+void MyThread::Clutter_Suppression(
+    QStringList inputPaths,
+    QStringList outputPaths,
+    QString nodeName,
+    QStringList fileNames,
+    QString projectPath,
+    QString projectName,
+    QStandardItemModel* model,
+    bool saveToProject,
+    XMLFile* projectXml
+)
+{
+    lock.lock();
+    stop_flag = false;
     lock.unlock();
 
-    if (!ok) {
-        emit errorProcess(errorMsg);
-        emit sendTargetDetectionResult(false, 0.0f, "", errorMsg);
-        return;
+    for (int i = 0; i < inputPaths.size(); ++i) {
+        lock.lock();
+        if (stop_flag) {
+            lock.unlock();
+            break;
+        }
+        lock.unlock();
+
+        QString outError;
+        bool ok = processBM3DEnhancement(
+            "ClutterSuppression", inputPaths[i], outputPaths[i], nodeName,
+            fileNames.isEmpty() ? QString() : fileNames[i],
+            projectPath, projectName, model, saveToProject, projectXml, outError
+        );
+
+        if (!ok) {
+            bool skip = false;
+            QString msg = QString("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(inputPaths[i]).fileName(), outError);
+            emit askUserError(msg, &skip);
+            if (!skip) {
+                emit errorProcess(QString("批处理在 %1 处停止").arg(QFileInfo(inputPaths[i]).fileName()));
+                return;
+            }
+        }
+        
+        int overallProgress = (i + 1) * 100 / inputPaths.size();
+        emit updateProcess(overallProgress, QString("批处理进度: %1/%2").arg(i + 1).arg(inputPaths.size()));
+    }
+
+    emit sendModel(model);
+    emit endProcess();
+}
+
+
+void MyThread::Target_Detection(QStringList imagePaths, QString modelPath, float thresholdValue)
+{
+    lock.lock();
+    stop_flag = false;
+    lock.unlock();
+
+    for (int i = 0; i < imagePaths.size(); ++i) {
+        lock.lock();
+        if (stop_flag) {
+            emit errorProcess("目标检测已停止");
+            lock.unlock();
+            break;
+        }
+        lock.unlock();
+
+        QString msg = QString("正在运行推理 %1/%2...").arg(i + 1).arg(imagePaths.size());
+        int overallProgress = i * 100 / imagePaths.size();
+        emit updateProcess(overallProgress, msg);
+
+        float shipProb = 0.0f;
+        QString resultText;
+        QString errorMsg;
+
+        bool ok = TargetDetection::runDetectionTask(imagePaths[i], modelPath, thresholdValue, shipProb, resultText, errorMsg);
+
+        if (!ok) {
+            bool skip = false;
+            QString errMsg = QString("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(imagePaths[i]).fileName(), errorMsg);
+            emit askUserError(errMsg, &skip);
+            if (!skip) {
+                emit errorProcess(QString("批处理在 %1 处停止").arg(QFileInfo(imagePaths[i]).fileName()));
+                emit sendTargetDetectionResult(i, false, 0.0f, "", errorMsg);
+                return;
+            }
+            emit sendTargetDetectionResult(i, false, 0.0f, "", errorMsg);
+            continue;
+        }
+
+        emit sendTargetDetectionResult(i, true, shipProb, resultText, "");
     }
 
     emit updateProcess(100, "目标检测完成");
-    emit sendTargetDetectionResult(true, shipProb, resultText, "");
     emit endProcess();
 }
 

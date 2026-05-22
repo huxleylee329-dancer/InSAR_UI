@@ -278,28 +278,40 @@ void ClutterSuppressionNode::executeProcessing()
         m_statusLabel->setText("状态：正在初始化...");
     }
 
-    QString inputPath = m_inputData->filePath();
+    QStringList inputPaths = m_inputData->filePaths();
     QString outputNodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : "ClutterSuppression";
-    QString outputFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : QString();
+    QString baseFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : QString();
     bool saveToProject = m_saveToProjectCheckBox ? m_saveToProjectCheckBox->isChecked() : true;
     QString projPath = projectPath();
     QString projName = projectName();
     QStandardItemModel* model = projectModel();
     XMLFile* projectXmlPtr = projectXml();
-    QString outputPath = QDir::tempPath() + QString("/clutter_suppression_%1.jpg").arg(QDateTime::currentMSecsSinceEpoch());
+    
+    QStringList outputPaths;
+    QStringList fileNames;
+    for (int i = 0; i < inputPaths.size(); ++i) {
+        outputPaths.append(QDir::tempPath() + QString("/clutter_suppression_%1_%2.jpg").arg(i).arg(QDateTime::currentMSecsSinceEpoch()));
+        if (inputPaths.size() == 1) {
+            fileNames.append(baseFileName);
+        } else {
+            QString name = baseFileName.isEmpty() ? QFileInfo(inputPaths[i]).baseName() + "_clutter" : QString("%1_%2").arg(baseFileName).arg(i+1);
+            fileNames.append(name);
+        }
+    }
 
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
 
-    connect(m_thread, &QThread::started, [this, inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject, projectXmlPtr]() {
-        Q_EMIT startClutterSuppression(inputPath, outputPath, outputNodeName, outputFileName, projPath, projName, model, saveToProject, projectXmlPtr);
+    connect(m_thread, &QThread::started, [this, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr]() {
+        Q_EMIT startClutterSuppression(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
     });
     connect(this, &ClutterSuppressionNode::startClutterSuppression, m_workerThread, &MyThread::Clutter_Suppression, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::errorProcess, this, &ClutterSuppressionNode::onError, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::BlockingQueuedConnection);
 
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
@@ -317,26 +329,32 @@ void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& messa
 
 void ClutterSuppressionNode::onProcessingFinished()
 {
+    m_outputImagePaths.clear();
     if (m_saveToProjectCheckBox->isChecked()) {
         QString nodeName = m_outputNodeNameEdit->text().trimmed();
         QString projDirStr = projectPath();
         if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
             projDirStr = QFileInfo(projDirStr).absolutePath();
         }
-        QString finalFileName;
-        if (m_outputFileName.isEmpty()) {
-            finalFileName = QFileInfo(m_inputData->filePath()).baseName() + "_clutter.png";
-        } else {
-            if (QFileInfo(m_outputFileName).suffix().isEmpty()) {
-                finalFileName = m_outputFileName + ".png";
+        QStringList inputPaths = m_inputData->filePaths();
+        QString baseFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : QString();
+        for (int i = 0; i < inputPaths.size(); ++i) {
+            QString finalFileName;
+            if (inputPaths.size() == 1) {
+                if (baseFileName.isEmpty()) {
+                    finalFileName = QFileInfo(inputPaths[i]).baseName() + "_clutter.png";
+                } else {
+                    finalFileName = baseFileName.endsWith(".png") ? baseFileName : baseFileName + ".png";
+                }
             } else {
-                finalFileName = m_outputFileName;
+                QString name = baseFileName.isEmpty() ? QFileInfo(inputPaths[i]).baseName() + "_clutter" : QString("%1_%2").arg(baseFileName).arg(i+1);
+                finalFileName = name + ".png";
             }
+            m_outputImagePaths.append(projDirStr + "/" + nodeName + "/" + finalFileName);
         }
-        m_outputImagePath = projDirStr + "/" + nodeName + "/" + finalFileName;
     }
 
-    m_outputData = std::make_shared<ImageInfoData>(m_outputImagePath);
+    m_outputData = std::make_shared<ImageInfoData>(m_outputImagePaths);
     setOutputData(0, m_outputData);
     setOutputData(1, m_outputData);
 
@@ -472,13 +490,24 @@ void ClutterSuppressionNode::load(QJsonObject const &json)
 
 QString ClutterSuppressionNode::generateOutputFileName() const
 {
-    if (!m_inputData || m_inputData->filePath().isEmpty()) {
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         return QString();
     }
 
-    QFileInfo fi(m_inputData->filePath());
+    QFileInfo fi(m_inputData->filePaths().first());
     QString baseName = fi.completeBaseName();
     return QStringLiteral("%1_clutter").arg(baseName);
+}
+
+void ClutterSuppressionNode::onAskUserError(const QString& message, bool* skip)
+{
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        nullptr,
+        QString::fromUtf8("\xe9\x94\x99\xe8\xaf\xaf"), // 错误
+        message,
+        QMessageBox::Yes | QMessageBox::No
+    );
+    *skip = (reply == QMessageBox::Yes);
 }
 
 bool ClutterSuppressionNode::validateAndRestoreOutput()
@@ -510,8 +539,7 @@ bool ClutterSuppressionNode::validateAndRestoreOutput()
     QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
 
     if (QFile::exists(outputPath)) {
-        m_outputImagePath = outputPath;
-        m_outputData = std::make_shared<ImageInfoData>(outputPath);
+        m_outputData = std::make_shared<ImageInfoData>(QStringList() << outputPath);
         setOutputData(0, m_outputData);
         setOutputData(1, m_outputData);
         return true;

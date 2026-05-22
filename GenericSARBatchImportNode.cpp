@@ -240,6 +240,9 @@ void GenericSARBatchImportNode::onImportFinished()
         m_importedFilePaths.append(filePath);
     }
 
+    m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+    Q_EMIT dataUpdated(0);
+
     ImportNodeBase::onImportFinished();
 
     if (m_thread)
@@ -299,7 +302,8 @@ QJsonObject GenericSARBatchImportNode::save() const
 
 void GenericSARBatchImportNode::load(QJsonObject const &json)
 {
-    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
+    ImportNodeBase::load(json);
+
     m_imagePaths.clear();
     QJsonArray pathsArray = json["imagePaths"].toArray();
     for (const QJsonValue &val : pathsArray)
@@ -307,16 +311,36 @@ void GenericSARBatchImportNode::load(QJsonObject const &json)
 
     m_outputNodeName = json["outputNodeName"].toString("GenericSAR_Batch_Import");
 
-    ExecutableNodeDelegateModel::load(json);
-
     if (m_fileListWidget) {
         m_fileListWidget->clear();
-        for (const QString &path : m_imagePaths)
-            m_fileListWidget->addItem(QFileInfo(path).fileName());
+        for (const QString& file : m_imagePaths) {
+            m_fileListWidget->addItem(QFileInfo(file).fileName());
+        }
     }
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
+}
+
+unsigned int GenericSARBatchImportNode::nPorts(PortType portType) const
+{
+    if (portType == PortType::Out)
+        return 1;
+    return 0;
+}
+
+NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    if (portType == PortType::Out)
+        return ImageInfoData().type();
+    return NodeDataType();
+}
+
+std::shared_ptr<NodeData> GenericSARBatchImportNode::outData(PortIndex port)
+{
+    Q_UNUSED(port);
+    return m_imageInfoData;
 }
 
 bool GenericSARBatchImportNode::validateAndRestoreOutput()
@@ -331,15 +355,15 @@ bool GenericSARBatchImportNode::validateAndRestoreOutput()
     if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
         m_importedFilePaths.clear();
         for (const QString &imagePath : m_imagePaths) {
-            QFileInfo fi(imagePath);
-            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            QString importName = generateImportName(imagePath);
+            QString importedPath = outputPath + importName + ".h5";
             if (QFile::exists(importedPath)) {
                 m_importedFilePaths.append(importedPath);
             }
         }
         if (!m_importedFilePaths.isEmpty()) {
-            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
-            setOutputData(0, outputData);
+            m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+            Q_EMIT dataUpdated(0);
             return true;
         }
     }

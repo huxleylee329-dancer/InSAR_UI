@@ -16,8 +16,9 @@ ImageDisplayNode::ImageDisplayNode()
     : m_widget(nullptr)
     , m_layout(nullptr)
     , m_infoLabel(nullptr)
-    , m_imageView(nullptr)
     , m_errorLabel(nullptr)
+    , m_prevButton(nullptr)
+    , m_nextButton(nullptr)
 {
     connect(&m_watcher, &QFutureWatcher<LoadedImage>::finished, this, &ImageDisplayNode::onImageLoaded);
 }
@@ -54,15 +55,11 @@ void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portI
 {
     auto imageInfo = std::dynamic_pointer_cast<ImageInfoData>(data);
     m_inputData = imageInfo;
+    m_currentIndex = 0;
 
-    if (imageInfo && !imageInfo->filePath().isEmpty())
+    if (imageInfo && !imageInfo->filePaths().isEmpty())
     {
-        updateInfo(tr("正在加载..."));
-        clearError();
-        
-        // Start async loading
-        QFuture<LoadedImage> future = QtConcurrent::run(loadImageTask, imageInfo->filePath(), imageInfo->allMetadata());
-        m_watcher.setFuture(future);
+        loadImageAtIndex();
     }
     else
     {
@@ -70,6 +67,48 @@ void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portI
         if (m_imageView && m_imageView->scene()) {
             m_imageView->scene()->clear();
         }
+        if (m_prevButton) m_prevButton->hide();
+        if (m_nextButton) m_nextButton->hide();
+    }
+}
+
+void ImageDisplayNode::loadImageAtIndex()
+{
+    if (!m_inputData || m_currentIndex < 0 || m_currentIndex >= m_inputData->filePaths().size()) return;
+
+    QString filePath = m_inputData->filePaths().at(m_currentIndex);
+    int total = m_inputData->filePaths().size();
+    
+    QString prefix = "";
+    if (total > 1) {
+        prefix = QString("Image %1 / %2: ").arg(m_currentIndex + 1).arg(total);
+        if (m_prevButton) m_prevButton->setVisible(m_currentIndex > 0);
+        if (m_nextButton) m_nextButton->setVisible(m_currentIndex < total - 1);
+    } else {
+        if (m_prevButton) m_prevButton->hide();
+        if (m_nextButton) m_nextButton->hide();
+    }
+
+    updateInfo(prefix + tr("正在加载..."));
+    clearError();
+    
+    QFuture<LoadedImage> future = QtConcurrent::run(loadImageTask, filePath, m_inputData->allMetadata());
+    m_watcher.setFuture(future);
+}
+
+void ImageDisplayNode::onPrevClicked()
+{
+    if (m_currentIndex > 0) {
+        m_currentIndex--;
+        loadImageAtIndex();
+    }
+}
+
+void ImageDisplayNode::onNextClicked()
+{
+    if (m_inputData && m_currentIndex < m_inputData->filePaths().size() - 1) {
+        m_currentIndex++;
+        loadImageAtIndex();
     }
 }
 
@@ -82,9 +121,31 @@ QWidget* ImageDisplayNode::embeddedWidget()
         m_layout->setContentsMargins(4, 4, 4, 4);
         m_layout->setSpacing(2);
 
+        QHBoxLayout* headerLayout = new QHBoxLayout();
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        headerLayout->setSpacing(4);
+
+        m_prevButton = new QPushButton("<");
+        m_prevButton->setFixedSize(20, 20);
+        m_prevButton->setStyleSheet("border: none; background-color: rgba(0,0,0,50%); color: white; border-radius: 2px;");
+        m_prevButton->hide();
+        connect(m_prevButton, &QPushButton::clicked, this, &ImageDisplayNode::onPrevClicked);
+
         m_infoLabel = new QLabel(tr("等待输入..."));
         m_infoLabel->setStyleSheet("color: #FFFFFF; font-size: 11px; font-weight: bold; background-color: rgba(0, 0, 0, 50%); padding: 2px; border-radius: 2px;");
-        m_layout->addWidget(m_infoLabel);
+        m_infoLabel->setAlignment(Qt::AlignCenter);
+        
+        m_nextButton = new QPushButton(">");
+        m_nextButton->setFixedSize(20, 20);
+        m_nextButton->setStyleSheet("border: none; background-color: rgba(0,0,0,50%); color: white; border-radius: 2px;");
+        m_nextButton->hide();
+        connect(m_nextButton, &QPushButton::clicked, this, &ImageDisplayNode::onNextClicked);
+
+        headerLayout->addWidget(m_prevButton);
+        headerLayout->addWidget(m_infoLabel, 1);
+        headerLayout->addWidget(m_nextButton);
+
+        m_layout->addLayout(headerLayout);
 
         m_imageView = new ImageView();
         m_imageView->setMinimumSize(200, 150);
@@ -117,7 +178,12 @@ void ImageDisplayNode::onImageLoaded()
     if (m_currentImage.success)
     {
         clearError();
-        updateInfo(m_currentImage.info);
+        
+        QString prefix = "";
+        if (m_inputData && m_inputData->filePaths().size() > 1) {
+            prefix = QString("Image %1 / %2: ").arg(m_currentIndex + 1).arg(m_inputData->filePaths().size());
+        }
+        updateInfo(prefix + m_currentImage.info);
 
         if (m_imageView && m_imageView->scene())
         {

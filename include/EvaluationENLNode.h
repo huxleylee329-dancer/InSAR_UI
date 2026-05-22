@@ -5,8 +5,10 @@
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include <QWidget>
 #include <QComboBox>
-#include <QLabel>
 #include <opencv2/opencv.hpp>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QMessageBox>
 
 namespace QtNodes {
 
@@ -46,11 +48,11 @@ private:
     void createWidget();
     void calculateAndDisplayENL();
     double calculateENL(const cv::Mat& roiGray) const;
+    double calculateEPI(const cv::Mat& orig, const cv::Mat& filtered) const;
 
     QWidget* m_widget = nullptr;
     QComboBox* m_regionComboBox = nullptr;
-    QLabel* m_originalEnlLabel = nullptr;
-    QLabel* m_filteredEnlLabel = nullptr;
+    QTableWidget* m_resultsTable = nullptr;
 
     std::shared_ptr<ImageInfoData> m_originalData = nullptr;
     std::shared_ptr<ImageInfoData> m_filteredData = nullptr;

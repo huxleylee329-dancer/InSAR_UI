@@ -8,6 +8,8 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QThread>
+#include <QTableWidget>
+#include <QHeaderView>
 
 class IApplicationInterface;
 
@@ -47,12 +49,13 @@ protected:
     bool validateAndRestoreOutput() override;
 
 signals:
-    void startTargetDetection(QString imagePath, QString modelPath, float thresholdValue);
+    void startTargetDetection(QStringList imagePaths, QString modelPath, float thresholdValue);
 
 private Q_SLOTS:
     void onProgressUpdate(int progress, const QString& message);
-    void onDetectionFinished(bool success, float shipProb, QString resultText, QString errorMsg);
+    void onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg);
     void onError(const QString& error);
+    void onAskUserError(const QString& message, bool* skip);
 
 private:
     void executeProcessing();
@@ -62,8 +65,7 @@ private:
     QLabel* m_inputImageLabel = nullptr;
     QComboBox* m_modelComboBox = nullptr;
     QLineEdit* m_thresholdEdit = nullptr;
-    QLabel* m_resultLabel = nullptr;
-    QLabel* m_probabilityLabel = nullptr;
+    QTableWidget* m_resultsTable = nullptr;
     QLabel* m_statusLabel = nullptr;
 
     // Data

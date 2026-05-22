@@ -8,8 +8,10 @@
 #include <QWidget>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QFutureWatcher>
 #include <QPixmap>
+#include <QPushButton>
 #include <memory>
 
 namespace QtNodes {
@@ -47,8 +49,11 @@ public:
 private slots:
     void onImageLoaded();
     void onWidgetResized();
+    void onPrevClicked();
+    void onNextClicked();
 
 private:
+    void loadImageAtIndex();
     void setError(const QString& message);
     void clearError();
     void updateInfo(const QString& info);
@@ -70,8 +75,12 @@ private:
     ImageView* m_imageView;
     QLabel* m_errorLabel;
 
-    std::weak_ptr<ImageInfoData> m_inputData;
+    std::shared_ptr<ImageInfoData> m_inputData;
     QFutureWatcher<LoadedImage> m_watcher;
+    
+    int m_currentIndex = 0;
+    QPushButton* m_prevButton;
+    QPushButton* m_nextButton;
     
     LoadedImage m_currentImage;
 };
