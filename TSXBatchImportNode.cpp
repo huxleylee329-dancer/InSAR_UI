@@ -1,5 +1,6 @@
 
 #include "TSXBatchImportNode.h"
+#include "IApplicationInterface.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
@@ -84,10 +85,23 @@ QWidget* TSXBatchImportNode::createWidget()
     projectRow->addWidget(new QLabel("目标工程："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
-    if (!projectName().isEmpty())
-    {
-        m_projectCombo->addItem(projectName());
+
+    // Populate project list from model (Align with Workspace behavior)
+    QStandardItemModel* model = projectModel();
+    if (model && model->rowCount() > 0) {
+        for (int i = 0; i < model->rowCount(); ++i) {
+            auto item = model->item(i, 0);
+            if (item) {
+                m_projectCombo->addItem(item->text());
+            }
+        }
+        // Set current project as default selection
+        int index = m_projectCombo->findText(projectName());
+        if (index >= 0) m_projectCombo->setCurrentIndex(index);
+    } else {
+        m_projectCombo->addItem("未打开项目");
     }
+
     projectRow->addWidget(m_projectCombo);
     configLayout->addLayout(projectRow);
 
@@ -124,17 +138,28 @@ QWidget* TSXBatchImportNode::createWidget()
 
 void TSXBatchImportNode::executeImport()
 {
+    // Safety check: Ensure project is open
+    auto* model = projectModel();
+    QString path = projectPath();
+    QString name = projectName();
+
+    if (!model || path.isEmpty() || name.isEmpty())
+    {
+        onError("未检测到打开的项目，请先打开或新建一个项目。");
+        return;
+    }
+
     if (m_xmlPaths.isEmpty())
     {
         onError("请至少添加一个 XML 文件。");
         return;
     }
 
-    for (const QString& path : m_xmlPaths)
+    for (const QString& xmlPath : m_xmlPaths)
     {
-        if (!QFileInfo::exists(path))
+        if (!QFileInfo::exists(xmlPath))
         {
-            onError("XML 文件不存在：" + path);
+            onError("XML 文件不存在：" + xmlPath);
             return;
         }
     }
@@ -316,6 +341,9 @@ void TSXBatchImportNode::setExecutionMode(ExecutionMode mode)
 void TSXBatchImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+    if (auto* iface = getProjectContext()) {
+        iface->refreshProjectTree();
+    }
 }
 
 QJsonObject TSXBatchImportNode::save() const

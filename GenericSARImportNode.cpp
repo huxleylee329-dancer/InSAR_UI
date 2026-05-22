@@ -231,9 +231,20 @@ void GenericSARImportNode::onImageBrowseClicked()
         return;
 
     m_imageEdit->setText(filePath);
+    m_imagePath = filePath;
 
     if (m_outputFileNameEdit->text().trimmed().isEmpty())
         m_outputFileNameEdit->setText(QFileInfo(filePath).baseName());
+
+    m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
+    setOutputData(1, m_imageInfoData);
+    
+    m_importedFilePath.clear();
+    setOutputData(0, nullptr);
+    setState(ExecutionState::Idle);
+    
+    Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
 }
 
 void GenericSARImportNode::onImportProgress(int progress, const QString& message)
@@ -265,6 +276,7 @@ void GenericSARImportNode::onImportFinished()
     if (!m_importedFilePath.isEmpty())
     {
         m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePath);
+        setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     }
 
@@ -425,10 +437,15 @@ bool GenericSARImportNode::validateAndRestoreOutput()
 
     if (QFile::exists(outputPath)) {
         m_importedFilePath = outputPath;
-        auto outputData = std::make_shared<ImageInfoData>(outputPath);
-        setOutputData(0, outputData);
-        m_imageInfoData = outputData;
-        return true;
+        if (!m_importedFilePath.isEmpty()) {
+            auto outputData = std::make_shared<ImageInfoData>(m_importedFilePath);
+            setOutputData(0, outputData);
+            m_imageInfoData = outputData;
+            setOutputData(1, outputData);
+            Q_EMIT dataUpdated(0);
+            Q_EMIT dataUpdated(1);
+            return true;
+        }
     }
 
     return false;

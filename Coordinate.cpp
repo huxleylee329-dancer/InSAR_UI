@@ -12,9 +12,9 @@ Coordinate::Coordinate(QWidget* parent) :
     QColor backColor = qRgb(255, 255, 255);  
     image.fill(backColor);//对画布进行填充
     this->setFixedSize(wnd_width,wnd_height);
-    this->setWindowTitle(QString::fromLocal8Bit("基线预览"));
+    this->setWindowTitle(QStringLiteral("基线预览"));
     mChart = new QChart();
-    mChart->setTitle(QString::fromLocal8Bit("小基线集时空基线组合"));
+    mChart->setTitle(QStringLiteral("小基线集时空基线组合"));
     mChartView = new QChartView(mChart, this);
     mChart = mChartView->chart();   //关联
     mAxisX = new QValueAxis();
@@ -119,8 +119,8 @@ void Coordinate::Paint(QList<double> temporal_baseline, QList<double> spatial_ba
         
         
     }
-    painter.drawText(pointx + width, pointy - 10, QString::fromLocal8Bit("时间(天)"));
-    painter.drawText(pointx + width /2, pointy + 80, QString::fromLocal8Bit("时空基线分布"));
+    painter.drawText(pointx + width, pointy - 10, QStringLiteral("时间(天)"));
+    painter.drawText(pointx + width /2, pointy + 80, QStringLiteral("时空基线分布"));
     //y轴刻度线
     int y_count = 30;//y轴刻度间隔
     for (int i = 0; i < y_count; i++)
@@ -132,7 +132,7 @@ void Coordinate::Paint(QList<double> temporal_baseline, QList<double> spatial_ba
         painter.drawText(pointx - 40, pointy - i * height / y_count,
             QString::number(int(spatial_min+i*deltaY)));
     }
-    painter.drawText(pointx -20, pointy - height - 10, QString::fromLocal8Bit("空间基线(米)"));
+    painter.drawText(pointx -20, pointy - height - 10, QStringLiteral("空间基线(米)"));
 }
 
 Coordinate::~Coordinate()
@@ -178,8 +178,8 @@ void Coordinate::Paint2(
     double pad_space = (Max_space - Min_space) / 10;
     mAxisX->setRange(Min_time - pad_time, Max_time + pad_time);
     mAxisY->setRange(Min_space - pad_space, Max_space + pad_space);
-    mAxisX->setTitleText(QString::fromLocal8Bit("时间基线/（天）"));
-    mAxisY->setTitleText(QString::fromLocal8Bit("空间基线/（米）"));
+    mAxisX->setTitleText(QStringLiteral("时间基线/（天）"));
+    mAxisY->setTitleText(QStringLiteral("空间基线/（米）"));
 
     for (int i = 0; i < temporal_baseline.size(); i++)
     {

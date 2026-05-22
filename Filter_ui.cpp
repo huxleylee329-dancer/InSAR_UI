@@ -53,7 +53,7 @@ Filter_ui::~Filter_ui()
 void Filter_ui::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Filter_ui::endProcess()
@@ -158,7 +158,7 @@ void Filter_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -170,7 +170,7 @@ void Filter_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据，请先生成干涉相位！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先生成干涉相位！"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -222,31 +222,31 @@ void Filter_ui::on_buttonBox_accepted()
     bool bFlag3 = false;
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先生成干涉数据或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先生成干涉数据或更换工程！"));
         return;
     }
     if (this->method == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请选择滤波方法!"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请选择滤波方法!"));
         return;
     }
     else if (ui->SlopButton->isChecked())
     {
         if (ui->Slop_win->text().isEmpty() || ui->Prefilter_win->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入预滤波及斜坡窗口滤波的尺寸（奇数）!"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入预滤波及斜坡窗口滤波的尺寸（奇数）!"));
             return;
         }
         int slop = ui->Slop_win->text().toInt(&bFlag);
         int pre = ui->Prefilter_win->text().toInt(&bFlag2);
         if (bFlag == false || bFlag2 == false)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("预滤波及斜坡窗口滤波的尺寸应为奇数!"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("预滤波及斜坡窗口滤波的尺寸应为奇数!"));
             return;
         }
         else if (slop <= 0 || pre <= 0 || slop % 2 == 0 || pre % 2 == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("预滤波及斜坡窗口滤波的尺寸应为奇数!"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("预滤波及斜坡窗口滤波的尺寸应为奇数!"));
             return;
         }
     }
@@ -254,7 +254,7 @@ void Filter_ui::on_buttonBox_accepted()
     {
         if (ui->Goldstein_win->text().isEmpty() || ui->alpha->text().isEmpty() || ui->n_pad->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入Goldstein滤波所需参数!其中窗口尺寸及补零窗口应为2的正整次幂（如64,16），alpha应为0-1的小数。"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入Goldstein滤波所需参数!其中窗口尺寸及补零窗口应为2的正整次幂（如64,16），alpha应为0-1的小数。"));
             return;
         }
         int goldstein = ui->Goldstein_win->text().toInt(&bFlag);
@@ -262,22 +262,22 @@ void Filter_ui::on_buttonBox_accepted()
         double a = ui->alpha->text().toDouble(&bFlag3);
         if (!(bFlag & bFlag2 & bFlag3))
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请确认输入参数是否规范（窗口尺寸及补零窗口应为2的正整次幂（如64,16），alpha应为0-1的小数）"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请确认输入参数是否规范（窗口尺寸及补零窗口应为2的正整次幂（如64,16），alpha应为0-1的小数）"));
             return;
         }
         else if ((goldstein & (goldstein - 1)) != 0 || (pad & (pad - 1)) != 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请确认窗口尺寸及补零窗口为2的正整次幂（如64,16）"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请确认窗口尺寸及补零窗口为2的正整次幂（如64,16）"));
             return;
         }
         else if (goldstein == 1 || pad == 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("窗口尺寸及补零尺寸不应为1"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("窗口尺寸及补零尺寸不应为1"));
             return;
         }
         else if (a < 0 || a >1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请确保alpha在0-1区间，alpha越大，滤波程度越高，适用于噪声更强的图像。"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请确保alpha在0-1区间，alpha越大，滤波程度越高，适用于噪声更强的图像。"));
             return;
         }
 
@@ -288,13 +288,13 @@ void Filter_ui::on_buttonBox_accepted()
     }
     if (ui->file_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入保存滤波相位的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入保存滤波相位的文件夹名称！"));
         return;
     }
     bFlag = ui->file_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
     Filter_thread = new MyThread;

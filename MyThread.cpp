@@ -13,6 +13,7 @@
 #include<qcoreapplication.h>
 #include<QFile>
 #include<QFileInfo>
+#include<QDebug>
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
@@ -92,7 +93,7 @@ void MyThread::import_sentinel(
 	QString temp_folder = QString("/") + folder + QString("/");
 	QString relative_path = temp_folder + filename + ".h5";
 	QString h5_path = QString("%1%2%3.h5").arg(project_path).arg(temp_folder).arg(filename);
-	emit updateProcess(20, QString::fromLocal8Bit("正在导入数据，请耐心等待……"));
+	emit updateProcess(20, QStringLiteral("正在导入数据，请耐心等待……"));
 	FormatConversion conversion;
 	ret = conversion.import_sentinel(manifest_file.toStdString().c_str(),
 		subswath.toStdString().c_str(),
@@ -107,7 +108,7 @@ void MyThread::import_sentinel(
 		tmp_dir.removeRecursively();
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("即将完成……"));
+	emit updateProcess(90, QStringLiteral("即将完成……"));
 
 	QStandardItem* project = model->findItems(project_name)[0];
 	if (!project) {
@@ -207,6 +208,7 @@ void MyThread::import_sentinel_patch(
 		model == NULL
 		)
 	{
+		emit endProcess();
 		return;
 	}
 	int ret;
@@ -218,7 +220,7 @@ void MyThread::import_sentinel_patch(
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+	emit updateProcess(process, QStringLiteral("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		if (!stop_flag) break;
@@ -311,7 +313,7 @@ void MyThread::import_sentinel_patch(
 			origin->setChild(img->row(), 1, new QStandardItem(h5_path));
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+		emit updateProcess(process, QStringLiteral("正在导入..."));
 	}
 	
 	emit sendModel(model);
@@ -346,7 +348,7 @@ void MyThread::import_sentinel_patch(
 	QString temp_folder = QString("/") + folder + QString("/");
 	QString relative_path = temp_folder + filename + ".h5";
 	QString h5_path = QString("%1%2%3.h5").arg(project_path).arg(temp_folder).arg(filename);
-	emit updateProcess(20, QString::fromLocal8Bit("正在导入数据，请耐心等待……"));
+	emit updateProcess(20, QStringLiteral("正在导入数据，请耐心等待……"));
 	FormatConversion conversion;
 	ret = conversion.TSX2h5(xml_filename.toStdString().c_str(), 
 		h5_path.toStdString().c_str(),
@@ -358,7 +360,7 @@ void MyThread::import_sentinel_patch(
 		tmp_dir.removeRecursively();
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("即将完成……"));
+	emit updateProcess(90, QStringLiteral("即将完成……"));
 
 	QStandardItem* project = model->findItems(project_name)[0];
 	if (!project) {
@@ -463,7 +465,7 @@ void MyThread::import_sentinel_patch(
 	{
 		ret = dir.mkdir(folder);
 	}
-	emit updateProcess(20, QString::fromLocal8Bit("正在导入数据，请耐心等待……"));
+	emit updateProcess(20, QStringLiteral("正在导入数据，请耐心等待……"));
 	QFileInfo fileinfo(xml_filename);
     QString suffix = fileinfo.suffix();
 
@@ -489,7 +491,7 @@ void MyThread::import_sentinel_patch(
 		tmp_dir.removeRecursively();
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("即将完成……"));
+	emit updateProcess(90, QStringLiteral("即将完成……"));
 
 	auto items = model->findItems(project_name);
 	if (items.isEmpty() && !project_name.endsWith(".insar")) {
@@ -629,6 +631,7 @@ void MyThread::import_TSX_patch(
 		model == NULL
 		)
 	{
+		emit endProcess();
 		return;
 	}
 
@@ -640,7 +643,7 @@ void MyThread::import_TSX_patch(
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+	emit updateProcess(process, QStringLiteral("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		if (!stop_flag) break;
@@ -733,7 +736,7 @@ void MyThread::import_TSX_patch(
 			origin->setChild(img->row(), 1, new QStandardItem(h5_path));
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+		emit updateProcess(process, QStringLiteral("正在导入..."));
 	}
 	
 	emit sendModel(model);
@@ -742,13 +745,21 @@ void MyThread::import_TSX_patch(
 
 void MyThread::import_GenericSAR_patch(
 	QString savepath,
-	vector<QString> original_file_list, 
+	vector<QString> original_file_list,
 	vector<QString> import_namelist,
 	QString dst_node,
 	QString dst_project,
 	QStandardItemModel* model
 )
 {
+	qDebug() << "[MyThread::import_GenericSAR_patch] ===== 函数开始 =====";
+	qDebug() << "[MyThread::import_GenericSAR_patch] savepath: " << savepath;
+	qDebug() << "[MyThread::import_GenericSAR_patch] dst_node: " << dst_node;
+	qDebug() << "[MyThread::import_GenericSAR_patch] dst_project: " << dst_project;
+	qDebug() << "[MyThread::import_GenericSAR_patch] model: " << model;
+	qDebug() << "[MyThread::import_GenericSAR_patch] original_file_list 数量: " << original_file_list.size();
+	qDebug() << "[MyThread::import_GenericSAR_patch] import_namelist 数量: " << import_namelist.size();
+
 	if (savepath.isEmpty() ||
 		dst_node.isEmpty() ||
 		dst_project.isEmpty() ||
@@ -757,17 +768,31 @@ void MyThread::import_GenericSAR_patch(
 		model == NULL
 		)
 	{
+		qDebug() << "[MyThread::import_GenericSAR_patch] 错误: 参数检查失败！";
+		qDebug() << "  savepath.isEmpty()=" << savepath.isEmpty();
+		qDebug() << "  dst_node.isEmpty()=" << dst_node.isEmpty();
+		qDebug() << "  dst_project.isEmpty()=" << dst_project.isEmpty();
+		qDebug() << "  original_file_list.empty()=" << original_file_list.empty();
+		qDebug() << "  import_namelist.empty()=" << import_namelist.empty();
+		qDebug() << "  model == NULL=" << (model == NULL);
+		emit endProcess();
 		return;
 	}
 
+	qDebug() << "[MyThread::import_GenericSAR_patch] 参数检查通过";
 	int ret=0;
 	QDir dir(savepath);
+	qDebug() << "[MyThread::import_GenericSAR_patch] 检查目录: " << savepath + "/" + dst_node;
 	if (!dir.exists(dst_node))
+	{
 		ret = dir.mkdir(dst_node);
+		qDebug() << "[MyThread::import_GenericSAR_patch] 创建目录结果: " << ret;
+	}
 	int n_images = original_file_list.size();
 	int process = 2;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+	emit updateProcess(process, QStringLiteral("正在导入..."));
+	qDebug() << "[MyThread::import_GenericSAR_patch] 开始循环处理 " << n_images << " 个文件";
 	for (int i = 0; i < n_images; i++)
 	{
 		if (!stop_flag) break;
@@ -775,6 +800,9 @@ void MyThread::import_GenericSAR_patch(
         QString image_filename = original_file_list[i];
         QFileInfo fileinfo(image_filename);
         QString suffix = fileinfo.suffix();
+
+		qDebug() << "[MyThread::import_GenericSAR_patch] 处理文件 " << i+1 << "/" << n_images
+				 << ": " << filename << " 源文件: " << image_filename;
 
         QString temp_folder = QString("/") + dst_node + QString("/");
         QString relative_path = temp_folder + filename + "." + suffix;
@@ -784,21 +812,38 @@ void MyThread::import_GenericSAR_patch(
             .arg(filename)
             .arg(suffix);
 
-        ret = QFile::copy(image_filename, image_path) ? 0 : -1;
+		qDebug() << "[MyThread::import_GenericSAR_patch] 复制文件: " << image_filename << " -> " << image_path;
+		if (QFile::exists(image_path))
+		{
+			qDebug() << "[MyThread::import_GenericSAR_patch] 文件已存在，跳过复制";
+			ret = 0;
+		}
+		else
+		{
+			ret = QFile::copy(image_filename, image_path) ? 0 : -1;
+			qDebug() << "[MyThread::import_GenericSAR_patch] 复制结果: " << (ret == 0 ? "成功" : "失败");
+		}
 
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			qDebug() << "[MyThread::import_GenericSAR_patch] 复制失败或被中断，清理并返回";
 			QFile::remove(image_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
+			emit errorProcess(QStringLiteral("文件复制失败"));
 			return;
 		}
 
-		QStandardItem* project = model->findItems(dst_project)[0];
+		qDebug() << "[MyThread::import_GenericSAR_patch] 在 model 中查找项目: " << dst_project;
+		QList<QStandardItem*> foundItems = model->findItems(dst_project);
+		qDebug() << "[MyThread::import_GenericSAR_patch] findItems 找到 " << foundItems.size() << " 个匹配项";
+		QStandardItem* project = foundItems[0];
 		if (!project) {
+			qDebug() << "[MyThread::import_GenericSAR_patch] 错误: 找不到项目节点！";
 			QFile::remove(image_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
+			emit errorProcess(QStringLiteral("找不到项目节点"));
 			return;
 		}
 		QModelIndex pro_index = model->indexFromItem(project);
@@ -843,6 +888,7 @@ void MyThread::import_GenericSAR_patch(
 				QFile::remove(image_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
+				emit errorProcess(QStringLiteral("加载项目XML失败"));
 				return;
 			}
 			ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
@@ -851,6 +897,7 @@ void MyThread::import_GenericSAR_patch(
 				QFile::remove(image_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
+				emit errorProcess(QStringLiteral("添加origin节点失败"));
 				return;
 			}
 			ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
@@ -859,6 +906,7 @@ void MyThread::import_GenericSAR_patch(
 				QFile::remove(image_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
+				emit errorProcess(QStringLiteral("保存项目XML失败"));
 				return;
 			}
 		}
@@ -867,11 +915,13 @@ void MyThread::import_GenericSAR_patch(
 			origin->setChild(img->row(), 1, new QStandardItem(image_path));
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+		emit updateProcess(process, QStringLiteral("正在导入..."));
 	}
-	
+
+	qDebug() << "[MyThread::import_GenericSAR_patch] 循环处理完成，发送 sendModel 和 endProcess";
 	emit sendModel(model);
 	emit endProcess();
+	qDebug() << "[MyThread::import_GenericSAR_patch] ===== 函数正常结束 =====";
 }
 
 void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_list, vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model)
@@ -884,6 +934,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 		model == NULL
 		)
 	{
+		emit endProcess();
 		return;
 	}
 
@@ -895,7 +946,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+	emit updateProcess(process, QStringLiteral("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		if (!stop_flag) break;
@@ -986,7 +1037,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 			origin->setChild(img->row(), 1, new QStandardItem(h5_path));
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+		emit updateProcess(process, QStringLiteral("正在导入..."));
 	}
 
 	emit sendModel(model);
@@ -1012,6 +1063,7 @@ void MyThread::import_ALOS2_patch(
 		model == NULL
 		)
 	{
+		emit endProcess();
 		return;
 	}
 
@@ -1023,7 +1075,7 @@ void MyThread::import_ALOS2_patch(
 	int process = 2;
 	FormatConversion conversion;
 	DOC = new XMLFile;
-	emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+	emit updateProcess(process, QStringLiteral("正在导入..."));
 	for (int i = 0; i < n_images; i++)
 	{
 		if (!stop_flag) break;
@@ -1098,7 +1150,7 @@ void MyThread::import_ALOS2_patch(
 			return;
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QString::fromLocal8Bit("正在导入..."));
+		emit updateProcess(process, QStringLiteral("正在导入..."));
 	}
 
 	emit sendModel(model);
@@ -1119,9 +1171,9 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		ComplexMat SLC64;
 		FormatConversion FC;
-		emit updateProcess(10, QString::fromLocal8Bit("准备数据……"));
+		emit updateProcess(10, QStringLiteral("准备数据……"));
 		FC.read_slc_from_h5(h5_path.toStdString().c_str(), SLC64);
-		emit updateProcess(40, QString::fromLocal8Bit("准备图像文件……"));
+		emit updateProcess(40, QStringLiteral("准备图像文件……"));
 		util.saveSLC(bmp_path.toStdString().c_str(), /*65*/65, SLC64);
 		if (QThread::currentThread()->isInterruptionRequested())
 		{
@@ -1131,13 +1183,13 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		}
 		if (SLC64.GetCols() * SLC64.GetRows() > 25e6)
 		{
-			emit updateProcess(80, QString::fromLocal8Bit("降采样处理……"));
+			emit updateProcess(80, QStringLiteral("降采样处理……"));
 			int down_sample_times = (int)sqrt(floor(double(SLC64.GetCols() * SLC64.GetRows()) / 25e6));
 			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(SLC64.GetRows() / down_sample_times),
 				(int)(SLC64.GetCols() / down_sample_times));
 		}
 
-		emit updateProcess(90, QString::fromLocal8Bit("写入图像文件……"));
+		emit updateProcess(90, QStringLiteral("写入图像文件……"));
 		//if (!ret)
 		//{
 		//	fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -1151,20 +1203,20 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat phase;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("读取数据……"));
+		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "phase", phase);
-		emit updateProcess(50, QString::fromLocal8Bit("格式转换……"));
+		emit updateProcess(50, QStringLiteral("格式转换……"));
 		ret = util.savephase(bmp_path.toStdString().c_str(), "jet", phase);
 
 		if (phase.rows * phase.cols > 25e6)
 		{
-			emit updateProcess(80, QString::fromLocal8Bit("降采样处理……"));
+			emit updateProcess(80, QStringLiteral("降采样处理……"));
 			int down_sample_times = (int)sqrt(floor(double(phase.rows * phase.cols) / 25e6));
 			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(phase.rows / down_sample_times),
 				(int)(phase.cols / down_sample_times));
 		}
 
-		emit updateProcess(90, QString::fromLocal8Bit("写入图像文件……"));
+		emit updateProcess(90, QStringLiteral("写入图像文件……"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -1178,20 +1230,20 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat coherence;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("读取数据……"));
+		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "coherence", coherence);
-		emit updateProcess(50, QString::fromLocal8Bit("格式转换……"));
+		emit updateProcess(50, QStringLiteral("格式转换……"));
 		ret = util.savephase(bmp_path.toStdString().c_str(), "gray", coherence);
 
 		if (coherence.rows * coherence.cols > 25e6)
 		{
-			emit updateProcess(80, QString::fromLocal8Bit("降采样处理……"));
+			emit updateProcess(80, QStringLiteral("降采样处理……"));
 			int down_sample_times = (int)sqrt(floor(double(coherence.rows * coherence.cols) / 25e6));
 			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(coherence.rows / down_sample_times),
 				(int)(coherence.cols / down_sample_times));
 		}
 
-		emit updateProcess(90, QString::fromLocal8Bit("写入图像文件……"));
+		emit updateProcess(90, QStringLiteral("写入图像文件……"));
 		
 		if (!ret)
 		{
@@ -1205,11 +1257,11 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat phase;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("读取数据……"));
+		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "dem", phase);
-		emit updateProcess(50, QString::fromLocal8Bit("格式转换……"));
+		emit updateProcess(50, QStringLiteral("格式转换……"));
 		ret = util.savephase(bmp_path.toStdString().c_str(), "jet", phase);
-		emit updateProcess(90, QString::fromLocal8Bit("写入bmp文件……"));
+		emit updateProcess(90, QStringLiteral("写入bmp文件……"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -1222,11 +1274,11 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		Utils util;
 		Mat phase;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("读取数据……"));
+		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "amplitude", phase);
-		emit updateProcess(50, QString::fromLocal8Bit("格式转换……"));
+		emit updateProcess(50, QStringLiteral("格式转换……"));
 		ret = util.saveAmplitude(bmp_path.toStdString().c_str(), phase);
-		emit updateProcess(90, QString::fromLocal8Bit("写入bmp文件……"));
+		emit updateProcess(90, QStringLiteral("写入bmp文件……"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -1240,13 +1292,13 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 
 		Mat defomation_velocity, mask;
 		Mat image;
-		emit updateProcess(20, QString::fromLocal8Bit("读取数据……"));
+		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
 		ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "mask", mask);
-		emit updateProcess(50, QString::fromLocal8Bit("格式转换……"));
+		emit updateProcess(50, QStringLiteral("格式转换……"));
 		if(ret == 0) util.savephase_white(bmp_path.toStdString().c_str(), "jet", defomation_velocity, mask);
 		else util.savephase(bmp_path.toStdString().c_str(), "jet", defomation_velocity);
-		emit updateProcess(90, QString::fromLocal8Bit("写入图像文件……"));
+		emit updateProcess(90, QStringLiteral("写入图像文件……"));
 		if (!ret)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
@@ -1269,7 +1321,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
 		src_node == NULL ||
 		dst_node == NULL)
 	{
-		//QMessageBox::warning(NULL, QString::fromLocal8Bit("警告!"), QString::fromLocal8Bit("缺少处理所需参数，请检查是否填写完整！"));
+		//QMessageBox::warning(NULL, QStringLiteral("警告!"), QStringLiteral("缺少处理所需参数，请检查是否填写完整！"));
 		return;
 	}
 	DOC = new XMLFile;
@@ -1323,7 +1375,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
     }
     int image_number = project->child(src_node_index, 0)->rowCount();
 
-    emit updateProcess(10, QString::fromLocal8Bit("正在读取图片信息……"));
+    emit updateProcess(10, QStringLiteral("正在读取图片信息……"));
     QByteArray file_abs_path = QString("%1/%2").arg(save_path).arg(project_name).toLocal8Bit();
     DOC->XMLFile_load(file_abs_path.data());
 	
@@ -1401,7 +1453,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
             Images_Cut->setChild(item_img->row(), 1, new QStandardItem(full_cut_path));
         }
 		
-       emit updateProcess(10 + i * 90 / (image_number), QString::fromLocal8Bit("正在裁剪第%1个文件").arg(i+1));
+       emit updateProcess(10 + i * 90 / (image_number), QStringLiteral("正在裁剪第%1个文件").arg(i+1));
     }
 	DOC->XMLFile_save(file_abs_path.data());
 	emit sendModel(model);
@@ -1583,7 +1635,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 		project->setChild(insert, 1, Images_Cut_Rank);
 	}
 	
-	emit updateProcess(10, QString::fromLocal8Bit("正在读取图片信息……"));
+	emit updateProcess(10, QStringLiteral("正在读取图片信息……"));
 
 	
 	
@@ -1669,7 +1721,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 		}
 		
 
-		emit updateProcess(10 + i * 90 / (image_number), QString::fromLocal8Bit("正在裁剪第%1个文件").arg(i + 1));
+		emit updateProcess(10 + i * 90 / (image_number), QStringLiteral("正在裁剪第%1个文件").arg(i + 1));
 	}
 
 	DOC->XMLFile_save(file_abs_path.data());
@@ -1685,7 +1737,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
 		Cut_name.isEmpty() ||
 		file_name.isEmpty())
 	{
-		//QMessageBox::warning(NULL, QString::fromLocal8Bit("警告!"), QString::fromLocal8Bit("缺少处理所需参数，请检查是否填写完整！"));
+		//QMessageBox::warning(NULL, QStringLiteral("警告!"), QStringLiteral("缺少处理所需参数，请检查是否填写完整！"));
 		return;
 	}
 	QStandardItem* project = model->findItems(project_name)[0];
@@ -1719,7 +1771,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
 			break;
         }
     }
-	emit updateProcess(10, QString::fromLocal8Bit("开始进行配准……"));
+	emit updateProcess(10, QStringLiteral("开始进行配准……"));
 	Mat offset_row_out, offset_col_out;
     int ret = Registration_copy(SAR_images, SAR_images_regis, offset_row_out, offset_col_out, index, interp_times, block_size);
     if (ret<0 || QThread::currentThread()->isInterruptionRequested())
@@ -1787,7 +1839,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
     /*添加图像到model中并复制h5参数*/
     vector<int> Row_offset;
     vector<int> Col_offset;
-	emit updateProcess(90, QString::fromLocal8Bit("写入辅助参数……"));
+	emit updateProcess(90, QStringLiteral("写入辅助参数……"));
     for (int i = 0; i < image_number; i++)
     {
 		if (QThread::currentThread()->isInterruptionRequested())
@@ -1873,7 +1925,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
     }
     /*写入XML*/
     XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("写入工程文件……"));
+	emit updateProcess(95, QStringLiteral("写入工程文件……"));
 	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
     for (int i = 0; i < image_number; i++)
     {
@@ -1950,7 +2002,7 @@ void MyThread::DEMAssistCoregistration(
 	}
 	if (SAR_images.size() < 2) return;
 
-	emit updateProcess(10, QString::fromLocal8Bit("开始进行配准……"));
+	emit updateProcess(10, QStringLiteral("开始进行配准……"));
 	masterIndex = masterIndex < 1 ? 1 : masterIndex;
 	masterIndex = masterIndex > images_number ? images_number : masterIndex;
 
@@ -2043,7 +2095,7 @@ void MyThread::DEMAssistCoregistration(
 		conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
 		conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
 		count++;
-		emit updateProcess(10 + double(count) / double(images_number - 1) * 80, QString::fromLocal8Bit("正在处理..."));
+		emit updateProcess(10 + double(count) / double(images_number - 1) * 80, QStringLiteral("正在处理..."));
 	}
 
 
@@ -2117,7 +2169,7 @@ void MyThread::DEMAssistCoregistration(
 	}
 	/*写入XML*/
 	XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("写入工程文件……"));
+	emit updateProcess(95, QStringLiteral("写入工程文件……"));
 	xmlfile.XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
 	for (int i = 0; i < images_number; i++)
 	{
@@ -2180,7 +2232,7 @@ void MyThread::S1_Deburst(
 			}
 		}
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("开始burst拼接……"));
+	emit updateProcess(10, QStringLiteral("开始burst拼接……"));
 	//burst拼接
 	for (int i = 1; i <= SAR_images.size(); i++)
 	{
@@ -2189,7 +2241,7 @@ void MyThread::S1_Deburst(
 		if (ret < 0) return;
 		ret = su.deburst(SAR_images_deburst[i - 1].c_str());
 		if (ret < 0) return;
-		emit updateProcess(10.0 + 80.0 / SAR_images.size() * i, QString::fromLocal8Bit("burst拼接进度%1……").arg(10.0 + 80.0 / SAR_images.size() * i));
+		emit updateProcess(10.0 + 80.0 / SAR_images.size() * i, QStringLiteral("burst拼接进度%1……").arg(10.0 + 80.0 / SAR_images.size() * i));
 	}
 	/*建立deburst根节点*/
 	QStandardItem* deburst = NULL;
@@ -2223,7 +2275,7 @@ void MyThread::S1_Deburst(
 	
 	/*写入XML*/
 	XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("写入工程文件……"));
+	emit updateProcess(95, QStringLiteral("写入工程文件……"));
 	xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
 	for (int i = 0; i < SAR_images_deburst.size(); i++)
 	{
@@ -2310,7 +2362,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 			}
 		}
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("开始后向地理编码配准……"));
+	emit updateProcess(10, QStringLiteral("开始后向地理编码配准……"));
 
 	//外部DEM文件夹
 	QString appPath = QCoreApplication::applicationDirPath();
@@ -2439,7 +2491,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 			outDir.removeRecursively();
 			return;
 		}
-		emit updateProcess(10.0 + 50.0 / burstCount * (i + 1), QString::fromLocal8Bit("后向地理编码配准……"));
+		emit updateProcess(10.0 + 50.0 / burstCount * (i + 1), QStringLiteral("后向地理编码配准……"));
 	}
 
 	if (b_ESD)
@@ -2594,7 +2646,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 			offset_row += linesPerBurst;
 			backgeocoding.isMasterRgAzComputed = false;
 
-			emit updateProcess(60 + 30 / burstCount * (i + 1), QString::fromLocal8Bit("增强谱分集校正……"));
+			emit updateProcess(60 + 30 / burstCount * (i + 1), QStringLiteral("增强谱分集校正……"));
 		}
 	}
 
@@ -2614,7 +2666,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 			cv::vconcat(slc.im, tmp.im, slc.im);
 		}
 		conversion.write_slc_to_h5(backgeocoding.outFiles[i].c_str(), slc);
-		emit updateProcess(90 + 10 / burstCount * (i + 1), QString::fromLocal8Bit("deburst……"));
+		emit updateProcess(90 + 10 / burstCount * (i + 1), QStringLiteral("deburst……"));
 	}
 
 	/*建立配准根节点*/
@@ -2657,7 +2709,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 	offset_row = 0;
 	int offset_col = 0;
 	/*添加图像到model中并复制h5参数*/
-	//emit updateProcess(90, QString::fromLocal8Bit("写入辅助参数……"));
+	//emit updateProcess(90, QStringLiteral("写入辅助参数……"));
 	for (int i = 0; i < images_number; i++)
 	{
 		QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
@@ -2697,7 +2749,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 	}
 	/*写入XML*/
 	XMLFile xmlfile;
-	//emit updateProcess(95, QString::fromLocal8Bit("写入工程文件……"));
+	//emit updateProcess(95, QStringLiteral("写入工程文件……"));
 	xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
 	for (int i = 0; i < images_number; i++)
 	{
@@ -2761,7 +2813,7 @@ void MyThread::SLC_deramp(
 		SAR_images_deramp.push_back(QString("%1/%2/%3_deramp.h5").arg(save_path).arg(dst_node)
 			.arg(origin_name).toStdString());
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("开始计算……"));
+	emit updateProcess(10, QStringLiteral("开始计算……"));
 	int ret;
 	QDir dir(save_path);
 	if (!dir.exists(dst_node))dir.mkdir(dst_node);
@@ -2876,12 +2928,12 @@ void MyThread::SLC_deramp(
 			deramp->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
 		}
 
-		emit updateProcess(process, QString::fromLocal8Bit("进度..."));
+		emit updateProcess(process, QStringLiteral("进度..."));
 	}
 
 	/*写入XML*/
 	XMLFile xmlfile;
-	emit updateProcess(95, QString::fromLocal8Bit("写入工程文件……"));
+	emit updateProcess(95, QStringLiteral("写入工程文件……"));
 	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 	for (int i = 0; i < image_number; i++)
 	{
@@ -2933,7 +2985,7 @@ void MyThread::Baseline_Formation(
 	{
 		SAR_images.push_back(image->child(i, 1)->text().toStdString());
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("开始基线估计……"));
+	emit updateProcess(10, QStringLiteral("开始基线估计……"));
 	FormatConversion FC;
 	/*获取主星参数*/
 	Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
@@ -2991,7 +3043,7 @@ void MyThread::Baseline_Formation(
 				offset_row, offset_col, Rows, Cols, interp_interval, interp_interval_slave, &V_baseline, &H_baseline, &sigma_V, &sigma_H);
 			spatial_baseline.push_back(V_baseline);
 		}
-		emit updateProcess(20 + (i + 1) * 80 / image_number, QString::fromLocal8Bit("正在计算时空基线……"));
+		emit updateProcess(20 + (i + 1) * 80 / image_number, QStringLiteral("正在计算时空基线……"));
 	}
 	
 	emit sendBL(temporal_baseline, spatial_baseline, masterIndex);
@@ -3023,7 +3075,7 @@ void MyThread::SBAS_time_series(
 	{
 		if (!csv.mkpath(csv.absolutePath()))
 		{
-			QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("创建csv文件失败，请检查路径是否正确!"));
+			QMessageBox::warning(NULL, "Warning!", QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
 			return;
 		}
 	}
@@ -3031,7 +3083,7 @@ void MyThread::SBAS_time_series(
 	QTextStream in(&csv_file);;
 	if (!csv_file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
 	{	
-		QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("创建csv文件失败，请检查路径是否正确!"));
+		QMessageBox::warning(NULL, "Warning!", QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
 		return;
 	}
 
@@ -3064,7 +3116,7 @@ void MyThread::SBAS_time_series(
 	string appPath = QCoreApplication::applicationDirPath().toStdString();
 	std::replace(appPath.begin(), appPath.end(), '/', '\\');
 	/*干涉相位生成*/
-	emit updateProcess(10, QString::fromLocal8Bit("差分干涉相位生成……"));
+	emit updateProcess(10, QStringLiteral("差分干涉相位生成……"));
 	Mat temporal, spatial, formation_matrix, spatial_baseline, temporal_baseline;
 	util.spatialTemporalBaselineEstimation(SAR_images, 1, temporal, spatial);
 	sbas.get_formation_matrix(spatial, temporal, spatial_thresh, temporal_thresh_low, temporal_thresh / 365.0,
@@ -3148,7 +3200,7 @@ void MyThread::SBAS_time_series(
 				nodes[j].b_unwrapped = false;
 			}
 			int process = double(i + 1) / phaseFiles.size() * 100.0 * 0.5;
-			emit updateProcess(10 + process, QString::fromLocal8Bit("相位解缠中……"));
+			emit updateProcess(10 + process, QStringLiteral("相位解缠中……"));
 		}
 	}
 	else
@@ -3176,11 +3228,11 @@ void MyThread::SBAS_time_series(
 			//phase2 = phase2 - phase2.at<double>(0, 0);
 			conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase2);
 			int process = double(i + 1) / phaseFiles.size() * 100.0 * 0.5;
-			emit updateProcess(10 + process, QString::fromLocal8Bit("相位解缠中……"));
+			emit updateProcess(10 + process, QStringLiteral("相位解缠中……"));
 		}
 	}
 	/*第一次轨道精炼和重去平*/
-	emit updateProcess(65, QString::fromLocal8Bit("轨道精炼和重去平……"));
+	emit updateProcess(65, QStringLiteral("轨道精炼和重去平……"));
 	//根据参考点进行相位校正，参考点默认为最左上角的点
 	int ref_i = 0, ref_j = 0;
 	bool b_break = false;
@@ -3268,7 +3320,7 @@ void MyThread::SBAS_time_series(
 	count = 0;
 	Mat coh_variation(1, M, CV_64F); coh_variation = 0.0;
 	
-	emit updateProcess(70, QString::fromLocal8Bit("时间序列分析……"));
+	emit updateProcess(70, QStringLiteral("时间序列分析……"));
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < phase.rows; i++)
 	{
@@ -3316,7 +3368,7 @@ void MyThread::SBAS_time_series(
 			}
 		}
 	}
-	emit updateProcess(75, QString::fromLocal8Bit("第二次轨道精炼和重去平……"));
+	emit updateProcess(75, QStringLiteral("第二次轨道精炼和重去平……"));
 	
 	for (int i = 0; i < phaseFiles.size(); i++)
 	{
@@ -3411,7 +3463,7 @@ void MyThread::SBAS_time_series(
 
 	
 	//保存时序分析结果
-	emit updateProcess(80, QString::fromLocal8Bit("结果筛选……"));
+	emit updateProcess(80, QStringLiteral("结果筛选……"));
 	Mat out_mask, mask_count_map;
 	mask.copyTo(out_mask);
 	mask.copyTo(mask_count_map);
@@ -3486,7 +3538,7 @@ void MyThread::SBAS_time_series(
 		}
 	}
 	csv_file.close();
-	emit updateProcess(95, QString::fromLocal8Bit("结果保存……"));
+	emit updateProcess(95, QStringLiteral("结果保存……"));
 	Mat mapped_lat, mapped_lon;
 	double max_def, min_def;
 	
@@ -3669,7 +3721,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 	
 	Mat coherence, phase;
 	/*轨道精炼和重去平*/
-	emit updateProcess(10, QString::fromLocal8Bit("轨道精炼和重去平……"));
+	emit updateProcess(10, QStringLiteral("轨道精炼和重去平……"));
 	for (int i = 0; i < phaseFiles.size(); i++)
 	{
 		conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
@@ -3740,7 +3792,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 	cv::hconcat(B1, c, BMc);
 	count = 0;
 	
-	emit updateProcess(30, QString::fromLocal8Bit("时间序列分析……"));
+	emit updateProcess(30, QStringLiteral("时间序列分析……"));
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < phase.rows; i++)
 	{
@@ -3802,7 +3854,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 
 
 	//保存时序分析结果
-	emit updateProcess(80, QString::fromLocal8Bit("结果筛选……"));
+	emit updateProcess(80, QStringLiteral("结果筛选……"));
 	int nr, nc;
 	nr = mask.rows; nc = mask.cols;
 	int valide_count = cv::countNonZero(mask);
@@ -3836,7 +3888,7 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 			}
 		}
 	}
-	emit updateProcess(95, QString::fromLocal8Bit("结果保存……"));
+	emit updateProcess(95, QStringLiteral("结果保存……"));
 	time_series = time_series / 4 / PI * wavelength;
 	double max_def, min_def;
 	Mat Max(1, 1, CV_64F), Min(1, 1, CV_64F);
@@ -3905,7 +3957,7 @@ void MyThread::Geocoding(
 			break;
 		}
 	}
-	emit updateProcess(2, QString::fromLocal8Bit("正在地理编码……"));
+	emit updateProcess(2, QStringLiteral("正在地理编码……"));
 	FormatConversion conversion; Utils util;
 	QString geocode_Rank_level;
 	int ret;
@@ -3978,7 +4030,7 @@ void MyThread::Geocoding(
 				lon_new.copyTo(mapped_lat);
 			}
 		}
-		emit updateProcess(20, QString::fromLocal8Bit("正在地理编码……"));
+		emit updateProcess(20, QStringLiteral("正在地理编码……"));
 		double lat_north, lat_south, lon_west, lon_east;
 		for (int i = 0; i < input_files.size(); i++)
 		{
@@ -4039,7 +4091,7 @@ void MyThread::Geocoding(
 			}
 			int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
 
-			emit updateProcess(process, QString::fromLocal8Bit("正在地理编码……"));
+			emit updateProcess(process, QStringLiteral("正在地理编码……"));
 		}
 	}
 	//SAR图像地理编码
@@ -4125,7 +4177,7 @@ void MyThread::Geocoding(
 			lon_new.copyTo(mapped_lat);
 		}
 
-		emit updateProcess(20, QString::fromLocal8Bit("正在地理编码……"));
+		emit updateProcess(20, QStringLiteral("正在地理编码……"));
 		double lat_north, lat_south, lon_west, lon_east;
 		for (int i = 0; i < input_files.size(); i++)
 		{
@@ -4141,7 +4193,7 @@ void MyThread::Geocoding(
 			ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
 			ret = conversion.write_array_to_h5(output_files[i].c_str(), "amplitude", mapped_amplitude);
 			int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
-			emit updateProcess(process, QString::fromLocal8Bit("正在地理编码……"));
+			emit updateProcess(process, QStringLiteral("正在地理编码……"));
 		}
 	}
 	/*建立地理编码根节点*/
@@ -4210,7 +4262,7 @@ void MyThread::Geocoding(
 		}
 	}
 	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-	emit updateProcess(100, QString::fromLocal8Bit("完成……"));
+	emit updateProcess(100, QStringLiteral("完成……"));
 	emit endProcess();
 }
 
@@ -4251,7 +4303,7 @@ void MyThread::S1_swath_merge(
 			continue;
 		}
 	}
-	emit updateProcess(30, QString::fromLocal8Bit("正在拼接……"));
+	emit updateProcess(30, QStringLiteral("正在拼接……"));
 	int ret;
 	FormatConversion conversion; Utils util;
 	Mat merged_phase;
@@ -4260,11 +4312,11 @@ void MyThread::S1_swath_merge(
 		merged_h5.toStdString().c_str());
 	if (ret < 0)
 	{
-		emit errorProcess(QString::fromLocal8Bit("输入不符合要求，请重试！"));
+		emit errorProcess(QStringLiteral("输入不符合要求，请重试！"));
 		//emit endProcess();
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("正在拼接……"));
+	emit updateProcess(90, QStringLiteral("正在拼接……"));
 	/*建立子带拼接根节点*/
 	QStandardItem* swath_merge = NULL;
 	for (int i = 0; i < project->rowCount(); i++)
@@ -4317,7 +4369,7 @@ void MyThread::S1_swath_merge(
 	{
 		swath_merge->setChild(item_img->row(), 1, new QStandardItem(merged_h5));
 	}
-	emit updateProcess(100, QString::fromLocal8Bit("完成……"));
+	emit updateProcess(100, QStringLiteral("完成……"));
 	emit endProcess();
 }
 
@@ -4358,7 +4410,7 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	QFileInfo fileinfo1(IW1_h5);
 	QFileInfo fileinfo2(IW1_h5);
 	QString filename = fileinfo1.baseName() + "_" + fileinfo2.baseName();
-	emit updateProcess(30, QString::fromLocal8Bit("正在拼接……"));
+	emit updateProcess(30, QStringLiteral("正在拼接……"));
 	int ret;
 	FormatConversion conversion; Utils util;
 	Mat merged_phase;
@@ -4367,10 +4419,10 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	ret = util.S1_frame_merge(IW1_h5.toStdString().c_str(), IW2_h5.toStdString().c_str(), merged_h5.toStdString().c_str());
 	if (ret < 0)
 	{
-		emit errorProcess(QString::fromLocal8Bit("输入不符合要求，请重试！"));
+		emit errorProcess(QStringLiteral("输入不符合要求，请重试！"));
 		return;
 	}
-	emit updateProcess(90, QString::fromLocal8Bit("正在拼接……"));
+	emit updateProcess(90, QStringLiteral("正在拼接……"));
 	/*建立子带拼接根节点*/
 	
 	if (!b_dstNode_existed)
@@ -4414,7 +4466,7 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	{
 		frame_merge->setChild(item_img->row(), 1, new QStandardItem(merged_h5));
 	}
-	emit updateProcess(100, QString::fromLocal8Bit("完成……"));
+	emit updateProcess(100, QStringLiteral("完成……"));
 	emit endProcess();
 }
 
@@ -4446,7 +4498,7 @@ void MyThread::Baseline_Estimate(int index, QString project_name, QString dst_no
 	{
 		SAR_images.push_back(image->child(i, 1)->text().toStdString());			
 	}
-	emit updateProcess(10, QString::fromLocal8Bit("开始进行基线估计……"));
+	emit updateProcess(10, QStringLiteral("开始进行基线估计……"));
 	FormatConversion FC;
 	/*获取主星参数*/
 	Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
@@ -4512,7 +4564,7 @@ void MyThread::Baseline_Estimate(int index, QString project_name, QString dst_no
 			cc.at<double>(0, i) = V_baseline;
 			cc.at<double>(1, i) = delta;
 		}
-		emit updateProcess(20 + (i + 1) * 80 / image_number, QString::fromLocal8Bit("正在计算时空基线……"));
+		emit updateProcess(20 + (i + 1) * 80 / image_number, QStringLiteral("正在计算时空基线……"));
 	}
 	//util.cvmat2bin("E:\\working_dir\\papers\\multibaseline_polarimetric\\beijing\\baseline_distribution.bin", cc);
 	emit sendBL(temporal_baseline, spatial_baseline, index);
@@ -4587,7 +4639,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 		project->setChild(insert, 1, interferometric_phase_Rank);
 	}
 	
-	emit updateProcess(2, QString::fromLocal8Bit("开始处理……"));
+	emit updateProcess(2, QStringLiteral("开始处理……"));
 
 	ComplexMat Master;
 	int ret = FC.read_slc_from_h5(master_path.toStdString().c_str(), Master);
@@ -4801,7 +4853,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 				}
 				ret = FC.write_array_to_h5(h5_path.toStdString().c_str(), "coherence", coherence);
 			}
-			emit updateProcess(10 + pair * 80 / (count - 1), QString::fromLocal8Bit("生成第1%幅干涉图……").arg(pair));
+			emit updateProcess(10 + pair * 80 / (count - 1), QStringLiteral("生成第1%幅干涉图……").arg(pair));
 			pair++;
 
 
@@ -4846,7 +4898,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 	QList<QString> filter_name;
 	QList<QString> relative_filter_path;
 	QList<QString> absolute_filter_path;
-	emit updateProcess(10, QString::fromLocal8Bit("准备数据……"));
+	emit updateProcess(10, QStringLiteral("准备数据……"));
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == node_name)
@@ -4923,7 +4975,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			emit updateProcess(10+i*80/image_number, QString::fromLocal8Bit("第%1幅图像滤波中……").arg(i+1));
+			emit updateProcess(10+i*80/image_number, QStringLiteral("第%1幅图像滤波中……").arg(i+1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_filter;
@@ -5004,7 +5056,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("第%1幅图像滤波中……").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_filter;
@@ -5086,7 +5138,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("第%1幅图像滤波中……").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_filter;
@@ -5196,7 +5248,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 	QList<QString> unwrap_name;
 	QList<QString> relative_unwrap_path;
 	QList<QString> absolute_unwrap_path;
-	emit updateProcess(10, QString::fromLocal8Bit("准备数据……"));
+	emit updateProcess(10, QStringLiteral("准备数据……"));
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == node_name)
@@ -5284,7 +5336,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("第%1幅图像解缠中……").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
 			Mat phase;
 			ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
@@ -5361,7 +5413,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("第%1幅图像解缠中……").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
 			Mat phase;
 			ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
@@ -5442,7 +5494,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("第%1幅图像解缠中……").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
 			Mat phase;
 			ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
@@ -5521,7 +5573,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("第%1幅图像解缠中……").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
 			Mat phase;
 			ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_unwrap;
@@ -5630,7 +5682,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 	QList<QString> dem_name;
 	QList<QString> relative_dem_path;
 	QList<QString> absolute_dem_path;
-	emit updateProcess(10, QString::fromLocal8Bit("准备数据……"));
+	emit updateProcess(10, QStringLiteral("准备数据……"));
 	for (int i = 0; i < project->rowCount(); i++)
 	{
 		if (project->child(i, 0)->text() == node_name)
@@ -5713,7 +5765,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 			{
 				return;
 			}
-			emit updateProcess(10 + i * 80 / image_number, QString::fromLocal8Bit("第%1幅图像解析高程中……").arg(i + 1));
+			emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解析高程中……").arg(i + 1));
 			Mat phase;
 			int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
 			Mat phase_dem;
@@ -5902,7 +5954,7 @@ int MyThread::Registration_copy(
 		}
 		
 		//分块读取并计算偏移量
-		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 0.5), QString::fromLocal8Bit("第%1对图像处理中……").arg(ii + 1));
+		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 0.5), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
 		int mm, nn;
 		mm = images_rows.at<int>(ii, 0) / blocksize;
 		nn = images_cols.at<int>(ii, 0) / blocksize;
@@ -6214,7 +6266,7 @@ int MyThread::Registration_copy(
 
 		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
-		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 1.0), QString::fromLocal8Bit("第%1对图像处理中……").arg(ii + 1));
+		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 1.0), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
 	}
 	return 0;
 }

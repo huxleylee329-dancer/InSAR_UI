@@ -46,7 +46,7 @@ Unwrap_ui::~Unwrap_ui()
 void Unwrap_ui::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Unwrap_ui::endProcess()
@@ -133,7 +133,7 @@ void Unwrap_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -146,7 +146,7 @@ void Unwrap_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据，请确保已经生成过干涉相位或已完成滤波！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请确保已经生成过干涉相位或已完成滤波！"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -197,7 +197,7 @@ void Unwrap_ui::on_buttonBox_accepted()
     bool bFlag = false;
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先进行滤波或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先进行滤波或更换工程！"));
         return;
     }
     if (ui->SPDButton->isChecked())
@@ -217,36 +217,36 @@ void Unwrap_ui::on_buttonBox_accepted()
         this->method = 4;
         if (ui->coherence_threshold->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入0-1的相干系数阈值!"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入0-1的相干系数阈值!"));
             return;
         }
        
         double threshold = ui->coherence_threshold->text().toDouble(&bFlag);
         if (!bFlag)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请确认相干系数阈值为小数!"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请确认相干系数阈值为小数!"));
             return;
         }
         else if (threshold < 0 || threshold >1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请确认相干系数阈值在0-1!"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请确认相干系数阈值在0-1!"));
             return;
         }
     } 
     if (this->method == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请选择解缠方法!"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请选择解缠方法!"));
         return;
     }
     if (ui->file_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入保存解缠相位的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入保存解缠相位的文件夹名称！"));
         return;
     }
     bFlag = ui->file_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
     Unwrap_thread = new MyThread;

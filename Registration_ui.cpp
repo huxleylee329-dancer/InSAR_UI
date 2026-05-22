@@ -60,13 +60,13 @@ void Registration_ui::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -170,7 +170,7 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
         return;
     }
@@ -197,7 +197,7 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据！"));
         this->deleteLater();
         return;
     }
@@ -209,7 +209,7 @@ void Registration_ui::ShowProjectList(QStandardItemModel *model)
     ui->comboBox_masterIndex2->clear();
     if (node->rowCount() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("节点无数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("节点无数据！"));
         this->deleteLater();
         return;
     }
@@ -231,7 +231,7 @@ void Registration_ui::on_comboBox_currentIndexChanged()
         int count = project->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
             this->deleteLater();
             return;
         }
@@ -249,7 +249,7 @@ void Registration_ui::on_comboBox_currentIndexChanged()
         }
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无满足需求的数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无满足需求的数据！"));
             this->deleteLater();
             return;
         }
@@ -259,7 +259,7 @@ void Registration_ui::on_comboBox_currentIndexChanged()
         count = node->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             this->deleteLater();
             return;
         }
@@ -280,7 +280,7 @@ void Registration_ui::on_comboBox_project_currentIndexChanged()
         int count = project->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
             this->deleteLater();
             return;
         }
@@ -298,7 +298,7 @@ void Registration_ui::on_comboBox_project_currentIndexChanged()
         }
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无满足需求的数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无满足需求的数据！"));
             this->deleteLater();
             return;
         }
@@ -308,7 +308,7 @@ void Registration_ui::on_comboBox_project_currentIndexChanged()
         count = node->rowCount();
         if (count < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             this->deleteLater();
             return;
         }
@@ -340,7 +340,7 @@ void Registration_ui::on_comboBox_node_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             this->deleteLater();
             return;
         }
@@ -374,7 +374,7 @@ void Registration_ui::on_comboBox_2_currentIndexChanged()
         
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             this->deleteLater();
             return;
         }
@@ -393,18 +393,18 @@ void Registration_ui::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先进行裁剪或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先进行裁剪或更换工程！"));
         return;
     }
     if (ui->fileedit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入存放配准文件的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入存放配准文件的文件夹名称！"));
         return;
     }
     bool bFlag = ui->fileedit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
     int index = ui->comboBox_masterIndex->currentIndex() + 1;
@@ -443,18 +443,18 @@ void Registration_ui::on_buttonBox_2_accepted()
 {
     if (ui->comboBox_node->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
         return;
     }
     if (ui->lineEdit_dstNode->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入目标节点名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入目标节点名！"));
         return;
     }
     bool bFlag = ui->lineEdit_dstNode->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
 
@@ -473,7 +473,7 @@ void Registration_ui::on_buttonBox_2_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，且和配准数据级别不同，请重命名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和配准数据级别不同，请重命名！"));
         return;
     }
 

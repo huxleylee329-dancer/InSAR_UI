@@ -33,7 +33,7 @@ void EvaluationENLNode::createWidget()
     
     m_resultsTable = new QTableWidget();
     m_resultsTable->setColumnCount(4);
-    m_resultsTable->setHorizontalHeaderLabels({QString::fromUtf8("\xe5\x9b\xbe\xe5\x83\x8f"), "原图ENL", "滤波后ENL", "EPI"});
+    m_resultsTable->setHorizontalHeaderLabels({QStringLiteral("图像"), "原图ENL", "滤波后ENL", "EPI"});
     m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -179,7 +179,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
     QStringList filtPaths = m_filteredData->filePaths();
     
     if (origPaths.size() != filtPaths.size()) {
-        QMessageBox::warning(nullptr, QString::fromUtf8("\xe8\xad\xa6\xe5\x91\x8a"), QString::fromUtf8("\xe5\x8e\x9f\xe5\x9b\xbe\xe5\x92\x8c\xe6\xbb\xa4\xe6\xb3\xa2\xe5\x90\x8e\xe5\x9b\xbe\xe5\x83\x8f\xe7\x9a\x84\xe6\x95\xb0\xe9\x87\x8f\xe4\xb8\x8d\xe4\xb8\x80\xe8\x87\xb4\xef\xbc\x8c\xe6\x97\xa0\xe6\xb3\x95\xe8\xbf\x9b\xe8\xa1\x8c\xe6\x89\xb9\xe9\x87\x8f\xe8\xaf\x84\xe4\xbc\xb0\xef\xbc\x81"));
+        QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("原图和滤波后图像的数量不一致，无法进行批量评估！"));
         return;
     }
     
@@ -224,7 +224,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
         
-        auto* avgItem = new QTableWidgetItem(QString::fromUtf8("\xe5\xb9\xb3\xe5\x9d\x87\xe5\x80\xbc"));
+        auto* avgItem = new QTableWidgetItem(QStringLiteral("平均值"));
         avgItem->setFont(QFont("", -1, QFont::Bold));
         m_resultsTable->setItem(row, 0, avgItem);
         m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(totalOrigEnl / validCount, 'f', 4)));

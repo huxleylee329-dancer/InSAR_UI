@@ -61,7 +61,7 @@ SBAS_time_series_analysis::~SBAS_time_series_analysis()
 void SBAS_time_series_analysis::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void SBAS_time_series_analysis::endProcess()
@@ -119,7 +119,7 @@ void SBAS_time_series_analysis::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         ui->comboBox_srcNode->clear();
         return;
     }
@@ -141,7 +141,7 @@ void SBAS_time_series_analysis::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
         ui->comboBox_srcNode->clear();
         return;
     }
@@ -171,7 +171,7 @@ void SBAS_time_series_analysis::on_comboBox_project_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
             ui->comboBox_srcNode->clear();
             return;
         }
@@ -246,7 +246,7 @@ void SBAS_time_series_analysis::on_comboBox_srcNode_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             return;
         }
     }
@@ -255,7 +255,7 @@ void SBAS_time_series_analysis::on_comboBox_srcNode_currentIndexChanged()
 void SBAS_time_series_analysis::on_buttonbrowse_triggered()
 {
     QString save_path = QFileDialog::getSaveFileName(this,
-        QString::fromLocal8Bit("csv另存为"),
+        QStringLiteral("csv另存为"),
         "/",
         "*.csv");
     ui->csv_path->setText(save_path);
@@ -266,7 +266,7 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     bool bFlag = false;
     if (copy->item(ui->comboBox_project->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程下未检测到数据！请先导入图像或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
     }
     //防重名检查
@@ -279,19 +279,19 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     {
         if (ui->lineEdit_dstNode->text() == project->child(i)->text())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，请重命名！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，请重命名！"));
             return;
         }
     }
     if (ui->csv_path->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入新建工程名称（该名称应为数字、字母及下划线的组合）！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入新建工程名称（该名称应为数字、字母及下划线的组合）！"));
         return;
     }
     bFlag = ui->csv_path->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意工程名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意工程名称应当为数字、字母及下划线的组合！"));
         return;
     }
     if (ui->radioButton_MCF->isChecked())

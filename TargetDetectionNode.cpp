@@ -76,9 +76,9 @@ bool TargetDetectionNode::portCaptionVisible(PortType portType, PortIndex portIn
 QString TargetDetectionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        return QString::fromUtf8("\xe8\xbe\x93\xe5\x85\xa5\xe5\x9b\xbe\xe5\x83\x8f");
+        return QStringLiteral("输入图像");
     } else {
-        return QString::fromUtf8("\xe5\x8e\x9f\xe5\x9b\xbe\xe8\xbe\x93\xe5\x87\xba");
+        return QStringLiteral("原图输出");
     }
 }
 
@@ -134,7 +134,7 @@ void TargetDetectionNode::createWidget()
 
     // Model Selection
     auto* modelLayout = new QHBoxLayout();
-    modelLayout->addWidget(new QLabel(QString::fromUtf8("\xe6\xa8\xa1\xe5\x9e\x8b\xe9\x80\x89\xe6\x8b\xa9\xef\xbc\x9a")));
+    modelLayout->addWidget(new QLabel(QStringLiteral("模型选择：")));
     m_modelComboBox = new QComboBox();
     m_modelComboBox->addItem("SAR Ship Model 0429", QDir::currentPath() + "/sar_ship_model0429.onnx");
     m_selectedModelPath = m_modelComboBox->currentData().toString();
@@ -146,7 +146,7 @@ void TargetDetectionNode::createWidget()
 
     // Confidence
     auto* confLayout = new QHBoxLayout();
-    confLayout->addWidget(new QLabel(QString::fromUtf8("\xe7\xbd\xae\xe4\xbf\xa1\xe5\xba\xa6\xef\xbc\x9a")));
+    confLayout->addWidget(new QLabel(QStringLiteral("置信度：")));
     m_thresholdEdit = new QLineEdit();
     m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
     connect(m_thresholdEdit, &QLineEdit::textChanged, this, [this](const QString& text) { 
@@ -164,11 +164,11 @@ void TargetDetectionNode::createWidget()
     layout->addWidget(line);
 
     // Output Results Labels
-    layout->addWidget(new QLabel(QString::fromUtf8("\xe6\xa3\x80\xe6\x9f\xa5\xe7\xbb\x93\xe6\x9e\x9c\xef\xbc\x9a")));
+    layout->addWidget(new QLabel(QStringLiteral("检查结果：")));
 
     m_resultsTable = new QTableWidget();
     m_resultsTable->setColumnCount(3);
-    m_resultsTable->setHorizontalHeaderLabels({QString::fromUtf8("\xe5\x9b\xbe\xe5\x83\x8f"), QString::fromUtf8("\xe7\xbb\x93\xe6\x9e\x9c"), QString::fromUtf8("\xe6\xa6\x82\xe7\x8e\x87")});
+    m_resultsTable->setHorizontalHeaderLabels({QStringLiteral("图像"), QStringLiteral("结果"), QStringLiteral("概率")});
     m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -241,12 +241,12 @@ void TargetDetectionNode::executeProcessing()
     }
 
     if (!isReady()) {
-        if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe6\x9c\xaa\xe5\x87\x86\xe5\xa4\x87\xe5\xa5\xbd"));
+        if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：未准备好"));
         return;
     }
 
     setProgress(0);
-    if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe6\xad\xa3\xe5\x9c\xa8\xe5\x88\x9d\xe5\xa7\x8b\xe5\x8c\x96..."));
+    if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：正在初始化..."));
     
     // Clear previous results
     if (m_resultsTable) {
@@ -280,7 +280,7 @@ void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)
 {
     setProgress(progress);
     if (m_statusLabel) {
-        m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a") + message);
+        m_statusLabel->setText(QStringLiteral("状态：") + message);
     }
 }
 
@@ -304,7 +304,7 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
     
     // We only finish execution if this is the last image.
     if (m_inputData && imageIndex == m_inputData->filePaths().size() - 1) {
-        if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe5\xae\x8c\xe6\x88\x90"));
+        if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：完成"));
 
         m_outputData = m_inputData;
         setOutputData(0, m_outputData);
@@ -335,7 +335,7 @@ void TargetDetectionNode::onError(const QString& error)
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
     if (m_statusLabel) {
-        m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe9\x94\x99\xe8\xaf\xaf - ") + error);
+        m_statusLabel->setText(QStringLiteral("状态：错误 - ") + error);
     }
     
     if (m_modelComboBox) m_modelComboBox->setEnabled(true);
@@ -382,7 +382,7 @@ void TargetDetectionNode::load(QJsonObject const &json)
 
     if (executionState() == ExecutionState::Completed) {
         // Not saving individual result for table now.
-        if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe5\xae\x8c\xe6\x88\x90"));
+        if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：完成"));
     }
 }
 
@@ -390,7 +390,7 @@ void TargetDetectionNode::onAskUserError(const QString& message, bool* skip)
 {
     QMessageBox::StandardButton reply = QMessageBox::question(
         nullptr,
-        QString::fromUtf8("\xe9\x94\x99\xe8\xaf\xaf"), // 错误
+        QStringLiteral("错误"), // 错误
         message,
         QMessageBox::Yes | QMessageBox::No
     );

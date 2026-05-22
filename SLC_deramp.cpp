@@ -37,7 +37,7 @@ SLC_deramp::~SLC_deramp()
 void SLC_deramp::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void SLC_deramp::endProcess()
@@ -91,7 +91,7 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         ui->comboBox_dst_node->clear();
         //ui->comboBox_masterImage->clear();
         return;
@@ -114,7 +114,7 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
         ui->comboBox_dst_node->clear();
         //ui->comboBox_masterImage->clear();
         return;
@@ -128,7 +128,7 @@ void SLC_deramp::ShowProjectList(QStandardItemModel* model)
     //}
     //if (ui->comboBox_masterImage->count() < 1)
     //{
-    //    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+    //    QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
     //    ui->comboBox_masterImage->clear();
     //    return;
     //}
@@ -159,7 +159,7 @@ void SLC_deramp::on_comboBox_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
             ui->comboBox_dst_node->clear();
             //ui->comboBox_masterImage->clear();
             return;
@@ -171,7 +171,7 @@ void SLC_deramp::on_comboBox_currentIndexChanged()
         //}
         //if (ui->comboBox_masterImage->count() < 1)
         //{
-        //    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+        //    QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
         //    ui->comboBox_masterImage->clear();
         //    return;
         //}
@@ -222,7 +222,7 @@ void SLC_deramp::on_comboBox_dst_node_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             ui->comboBox_masterImage->clear();
             return;
         }
@@ -243,7 +243,7 @@ void SLC_deramp::on_buttonBox_accepted()
     bool bFlag = false;
     if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程下未检测到数据！请先导入图像或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
     }
     //防重名检查
@@ -255,7 +255,7 @@ void SLC_deramp::on_buttonBox_accepted()
     {
         if (ui->lineEdit->text() == project->child(i)->text())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，请重命名！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，请重命名！"));
             return;
         }
     }

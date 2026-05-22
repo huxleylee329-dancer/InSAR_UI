@@ -67,24 +67,24 @@ void NewProject::on_buttonBox_accepted()
 {
     if (ui->NamelineEdit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入新建工程名称（该名称应为数字、字母及下划线的组合）！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入新建工程名称（该名称应为数字、字母及下划线的组合）！"));
         return;
     }
     bool bFlag = ui->NamelineEdit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意工程名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意工程名称应当为数字、字母及下划线的组合！"));
         return;
     }
     if (ui->savelineEdit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请浏览或输入保存工程路径！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请浏览或输入保存工程路径！"));
         return;
     }
     bFlag = ui->savelineEdit->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意工程路径不应包含中文或特殊字符！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意工程路径不应包含中文或特殊字符！"));
         return;
     }
 

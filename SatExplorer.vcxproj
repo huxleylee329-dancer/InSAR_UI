@@ -516,11 +516,13 @@
   <ItemGroup>
     <QtRcc Include="ADS\ads.qrc">
       <Filter>ADS</Filter>
+      <InitFuncName>ads</InitFuncName>
     </QtRcc>
   </ItemGroup>
   <ItemGroup>
     <QtRcc Include="resources\SatExplorer.qrc">
       <Filter>Resources</Filter>
+      <InitFuncName>SatExplorer</InitFuncName>
     </QtRcc>
   </ItemGroup>
   <ItemGroup>

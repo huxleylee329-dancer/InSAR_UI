@@ -50,8 +50,6 @@
 #include <algorithm>
 #include <memory>
 #include <QToolButton>
-#include <QHBoxLayout>
-#include <QPainter>
 
 // ============================================================================
 // Node Palette Full Order Configuration

@@ -18,7 +18,7 @@ reselection_view_Window::reselection_view_Window(QWidget* parent)
     ButtonBox = new QDialogButtonBox(Qt::Horizontal);
     View = new reselection_view();
     setWindowIcon(QIcon(APP_ICON));
-    setWindowTitle(QString::fromLocal8Bit("SBAS参考点重选"));
+    setWindowTitle(QStringLiteral("SBAS参考点重选"));
 
     MoveButton = new QPushButton();
     MoveButton->setIcon(QIcon(HAND_ICON));
@@ -47,7 +47,7 @@ reselection_view_Window::reselection_view_Window(QWidget* parent)
     GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
 
     status_label = new QLabel();
-    status_label->setText(QString::fromLocal8Bit("             ...未选中任何操作"));
+    status_label->setText(QStringLiteral("             ...未选中任何操作"));
 
     MoveButton->installEventFilter(this);
     ScaledButton->installEventFilter(this);
@@ -55,8 +55,8 @@ reselection_view_Window::reselection_view_Window(QWidget* parent)
     GCPsButton->installEventFilter(this);
     GCPsDeleteButton->installEventFilter(this);
     /*页面初始化布局*/
-    ButtonBox->addButton(QString::fromLocal8Bit("确定"), QDialogButtonBox::AcceptRole);
-    ButtonBox->addButton(QString::fromLocal8Bit("取消"), QDialogButtonBox::RejectRole);
+    ButtonBox->addButton(QStringLiteral("确定"), QDialogButtonBox::AcceptRole);
+    ButtonBox->addButton(QStringLiteral("取消"), QDialogButtonBox::RejectRole);
     connect(ButtonBox, &QDialogButtonBox::accepted, View, &reselection_view::GetOffset);
     connect(ButtonBox, &QDialogButtonBox::rejected, this, &reselection_view_Window::Close);
     connect(View, &reselection_view::send_coordinate, this, &reselection_view_Window::receive_coordinate);
@@ -122,7 +122,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...平移"));
+            status_label->setText(QStringLiteral("             ...平移"));
             View->SetState(Move_State);
             View->viewport()->setCursor(QCursor(Qt::PointingHandCursor));
         }
@@ -136,7 +136,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...缩放"));
+            status_label->setText(QStringLiteral("             ...缩放"));
             View->SetState(Scaled_State);
             View->viewport()->setCursor(QCursor(View->Cursor_up));
         }
@@ -150,7 +150,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(128,128,128)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...参考点选择"));
+            status_label->setText(QStringLiteral("             ...参考点选择"));
             View->SetState(Check_State);
             View->viewport()->setCursor(QCursor(Qt::CrossCursor));
         }
@@ -164,7 +164,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(128,128,128)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
-            status_label->setText(QString::fromLocal8Bit("             ...添加重去平和轨道精炼控制点"));
+            status_label->setText(QStringLiteral("             ...添加重去平和轨道精炼控制点"));
             View->SetState(GCPs_state);
             View->viewport()->setCursor(QCursor(Qt::PointingHandCursor));
         }
@@ -178,7 +178,7 @@ bool reselection_view_Window::eventFilter(QObject* obj, QEvent* e)
             SelectButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
             GCPsDeleteButton->setStyleSheet("QPushButton {background-color: rgb(128,128,128)}");
-            status_label->setText(QString::fromLocal8Bit("             ...剔除重去平和轨道精炼控制点"));
+            status_label->setText(QStringLiteral("             ...剔除重去平和轨道精炼控制点"));
             View->SetState(GCPs_delete);
             View->viewport()->setCursor(QCursor(Qt::ArrowCursor));
         }
@@ -470,7 +470,7 @@ void reselection_view::GetOffset()
 
     if (mPath == NULL)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("无形变文件"));
+        QMessageBox::warning(NULL, QStringLiteral("警告"), QStringLiteral("无形变文件"));
         return;
     }
     FormatConversion FC;
@@ -502,7 +502,7 @@ void reselection_view::GetOffset()
     }
     if (!b_break)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("未选中参考点，请重试！"));
+        QMessageBox::warning(NULL, QStringLiteral("警告"), QStringLiteral("未选中参考点，请重试！"));
         return;
     }
     QList<QPoint> plist;

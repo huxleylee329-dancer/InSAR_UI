@@ -42,7 +42,7 @@ S1_TOPS_BackGeocoding::~S1_TOPS_BackGeocoding()
 void S1_TOPS_BackGeocoding::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void S1_TOPS_BackGeocoding::endProcess()
@@ -131,7 +131,7 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
     
     if (ui->comboBox->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
         return;
     }
@@ -152,7 +152,7 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据！"));
         this->deleteLater();
         return;
     }
@@ -210,7 +210,7 @@ void S1_TOPS_BackGeocoding::on_comboBox_currentIndexChanged()
         }
         if (ui->comboBox_2->count() == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据！"));
             this->deleteLater();
             return;
         }
@@ -297,18 +297,18 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据！"));
         return;
     }
     if (ui->fileedit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入存放后向地理编码处理结果文件的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入存放后向地理编码处理结果文件的文件夹名称！"));
         return;
     }
     bool bFlag = ui->fileedit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
     int index = ui->comboBox_3->currentIndex() + 1;
@@ -316,12 +316,12 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
     if (image_number < 2) return;
     if (!bFlag || index < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("主图像序号应为正整数！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("主图像序号应为正整数！"));
         return;
     }
     else if (index > image_number)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("主图像索引超出范围，请确认该数字不超过节点下总图像数量！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("主图像索引超出范围，请确认该数字不超过节点下总图像数量！"));
         return;
     }
 

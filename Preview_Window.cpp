@@ -30,8 +30,8 @@ Preview_Window::Preview_Window(QWidget* parent)
     ScaledButton->installEventFilter(this);
     CutButton->installEventFilter(this);
     /*页面初始化布局*/
-    ButtonBox->addButton(QString::fromLocal8Bit("确定"), QDialogButtonBox::AcceptRole);
-    ButtonBox->addButton(QString::fromLocal8Bit("取消"), QDialogButtonBox::RejectRole);
+    ButtonBox->addButton(QStringLiteral("确定"), QDialogButtonBox::AcceptRole);
+    ButtonBox->addButton(QStringLiteral("取消"), QDialogButtonBox::RejectRole);
     connect(ButtonBox, &QDialogButtonBox::accepted, View, &Preview::GetOffset);
     connect(ButtonBox, &QDialogButtonBox::rejected, this, &Preview_Window::Close);
     connect(View, &Preview::Parent_Close, this, &Preview_Window::Close);
@@ -342,7 +342,7 @@ void Preview::GetOffset()
     QPoint left_top, Qpoint, right_bottom;
     if (mStart == mEnd)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("请按住鼠标左键框选感兴趣区域进行裁剪"));
+        QMessageBox::warning(NULL, QStringLiteral("警告"), QStringLiteral("请按住鼠标左键框选感兴趣区域进行裁剪"));
         return;
     }
     if (mStart.x() > mEnd.x())

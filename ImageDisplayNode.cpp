@@ -67,8 +67,8 @@ void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portI
         if (m_imageView && m_imageView->scene()) {
             m_imageView->scene()->clear();
         }
-        if (m_prevButton) m_prevButton->hide();
-        if (m_nextButton) m_nextButton->hide();
+        if (m_prevButton) m_prevButton->setEnabled(false);
+        if (m_nextButton) m_nextButton->setEnabled(false);
     }
 }
 
@@ -82,12 +82,9 @@ void ImageDisplayNode::loadImageAtIndex()
     QString prefix = "";
     if (total > 1) {
         prefix = QString("Image %1 / %2: ").arg(m_currentIndex + 1).arg(total);
-        if (m_prevButton) m_prevButton->setVisible(m_currentIndex > 0);
-        if (m_nextButton) m_nextButton->setVisible(m_currentIndex < total - 1);
-    } else {
-        if (m_prevButton) m_prevButton->hide();
-        if (m_nextButton) m_nextButton->hide();
     }
+    if (m_prevButton) m_prevButton->setEnabled(m_currentIndex > 0);
+    if (m_nextButton) m_nextButton->setEnabled(m_currentIndex < total - 1);
 
     updateInfo(prefix + tr("正在加载..."));
     clearError();
@@ -119,53 +116,63 @@ QWidget* ImageDisplayNode::embeddedWidget()
         m_widget = new QWidget();
         m_layout = new QVBoxLayout(m_widget);
         m_layout->setContentsMargins(4, 4, 4, 4);
-        m_layout->setSpacing(2);
+        m_layout->setSpacing(4);
 
-        QHBoxLayout* headerLayout = new QHBoxLayout();
-        headerLayout->setContentsMargins(0, 0, 0, 0);
-        headerLayout->setSpacing(4);
+        QWidget* topBar = new QWidget();
+        QHBoxLayout* topLayout = new QHBoxLayout(topBar);
+        topLayout->setContentsMargins(0, 0, 0, 0);
+        topLayout->setSpacing(4);
 
         m_prevButton = new QPushButton("<");
         m_prevButton->setFixedSize(20, 20);
-        m_prevButton->setStyleSheet("border: none; background-color: rgba(0,0,0,50%); color: white; border-radius: 2px;");
-        m_prevButton->hide();
+        m_prevButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        m_prevButton->setStyleSheet(
+            "QPushButton { min-width: 20px; max-width: 20px; min-height: 20px; max-height: 20px; padding: 0px; margin: 0px; border: none; background-color: rgba(0,0,0,60%); color: white; border-radius: 3px; font-weight: bold; }"
+            "QPushButton:hover:!disabled { background-color: rgba(0,0,0,85%); }"
+            "QPushButton:disabled { background-color: rgba(0,0,0,20%); color: rgba(255,255,255,30%); }"
+        );
+        m_prevButton->setEnabled(false);
         connect(m_prevButton, &QPushButton::clicked, this, &ImageDisplayNode::onPrevClicked);
 
         m_infoLabel = new QLabel(tr("等待输入..."));
+        m_infoLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         m_infoLabel->setStyleSheet("color: #FFFFFF; font-size: 11px; font-weight: bold; background-color: rgba(0, 0, 0, 50%); padding: 2px; border-radius: 2px;");
         m_infoLabel->setAlignment(Qt::AlignCenter);
-        
+
         m_nextButton = new QPushButton(">");
         m_nextButton->setFixedSize(20, 20);
-        m_nextButton->setStyleSheet("border: none; background-color: rgba(0,0,0,50%); color: white; border-radius: 2px;");
-        m_nextButton->hide();
+        m_nextButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        m_nextButton->setStyleSheet(
+            "QPushButton { min-width: 20px; max-width: 20px; min-height: 20px; max-height: 20px; padding: 0px; margin: 0px; border: none; background-color: rgba(0,0,0,60%); color: white; border-radius: 3px; font-weight: bold; }"
+            "QPushButton:hover:!disabled { background-color: rgba(0,0,0,85%); }"
+            "QPushButton:disabled { background-color: rgba(0,0,0,20%); color: rgba(255,255,255,30%); }"
+        );
+        m_nextButton->setEnabled(false);
         connect(m_nextButton, &QPushButton::clicked, this, &ImageDisplayNode::onNextClicked);
 
-        headerLayout->addWidget(m_prevButton);
-        headerLayout->addWidget(m_infoLabel, 1);
-        headerLayout->addWidget(m_nextButton);
-
-        m_layout->addLayout(headerLayout);
+        topLayout->addWidget(m_prevButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        topLayout->addWidget(m_infoLabel, 1);
+        topLayout->addWidget(m_nextButton, 0, Qt::AlignRight | Qt::AlignVCenter);
 
         m_imageView = new ImageView();
         m_imageView->setMinimumSize(200, 150);
         m_imageView->setBackgroundBrush(Qt::black);
         m_imageView->setFrameStyle(QFrame::NoFrame);
-        
-        // Initialize scene
+
         auto* scene = new QGraphicsScene(m_imageView);
         m_imageView->setScene(scene);
-        
-        m_layout->addWidget(m_imageView, 1);
 
         m_errorLabel = new QLabel();
         m_errorLabel->setStyleSheet("color: #FF5555; font-weight: bold;");
         m_errorLabel->setAlignment(Qt::AlignCenter);
         m_errorLabel->setWordWrap(true);
         m_errorLabel->hide();
+
+        m_layout->addWidget(topBar);
+        m_layout->addWidget(m_imageView, 1);
         m_layout->addWidget(m_errorLabel);
 
-        m_widget->setMinimumSize(220, 200);
+        m_widget->setMinimumSize(250, 200);
         m_widget->installEventFilter(this);
     }
     return m_widget;

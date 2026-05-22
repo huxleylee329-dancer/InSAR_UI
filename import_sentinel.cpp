@@ -37,8 +37,8 @@ import_sentinel::import_sentinel(QWidget* parent) :
     ui->ComboBox_polarization_2->addItem("vv");
     ui->ComboBox_polarization_2->addItem("vh");
     ui->ComboBox_polarization_2->setCurrentIndex(0);
-    ui->lineEdit_dst_node->setPlaceholderText(QString::fromLocal8Bit("不要输入中文字符"));
-    ui->lineEdit_dst_node_2->setPlaceholderText(QString::fromLocal8Bit("不要输入中文字符"));
+    ui->lineEdit_dst_node->setPlaceholderText(QStringLiteral("不要输入中文字符"));
+    ui->lineEdit_dst_node_2->setPlaceholderText(QStringLiteral("不要输入中文字符"));
     old_path = "C:\\";
     date = "";
 }
@@ -159,13 +159,13 @@ void import_sentinel::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -255,7 +255,7 @@ void import_sentinel::on_pushButton_add_pressed()
 {
     bool isWarning = 0;
     QString dirname = QFileDialog::getExistingDirectory(this,
-        QString::fromLocal8Bit("导入哨兵数据"),
+        QStringLiteral("导入哨兵数据"),
         "/",
         QFileDialog::ShowDirsOnly);
     QDir* FileDir = new QDir(dirname);
@@ -295,7 +295,7 @@ void import_sentinel::on_pushButton_add_pressed()
     }
     if (isWarning)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("注意"), QString::fromLocal8Bit("检测到您试图重复添加相同数据，已将其忽略。"));
+        QMessageBox::warning(NULL, QStringLiteral("注意"), QStringLiteral("检测到您试图重复添加相同数据，已将其忽略。"));
     }
     for (int i = 0; i < ui->listWidget->count(); i++)
     {
@@ -378,13 +378,13 @@ void import_sentinel::on_buttonBox_2_accepted()
     //检查导入文件list是否为空
     if (ui->listWidget->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("导入图像文件为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("导入图像文件为空！"));
         return;
     }
     //检查目标节点名
     if (ui->lineEdit_dst_node_2->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点名为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点名为空！"));
         return;
     }
     //防重名检查
@@ -402,7 +402,7 @@ void import_sentinel::on_buttonBox_2_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，且和导入数据级别不同，请重命名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         return;
     }
 
@@ -448,17 +448,17 @@ void import_sentinel::on_buttonBox_accepted()
 {
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点为空！"));
         return;
     }
     if (ui->lineEdit_manifest_file->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("输入图像文件为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("输入图像文件为空！"));
         return;
     }
     if (ui->LineEdit_dst_filename->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("导入图像文件名为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("导入图像文件名为空！"));
         return;
     }
     //防重名检查
@@ -477,7 +477,7 @@ void import_sentinel::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，且和导入数据级别不同，请重命名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         return;
     }
 

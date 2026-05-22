@@ -45,7 +45,7 @@ void Deformation_Average::cancelled()
 {
     isPreviewPressed = false;
     ui->Preview->setDisabled(false);
-    ui->Preview->setText(QString::fromLocal8Bit("查看"));
+    ui->Preview->setText(QStringLiteral("查看"));
     ui->Preview->repaint();
 }
 
@@ -74,7 +74,7 @@ void Deformation_Average::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -87,7 +87,7 @@ void Deformation_Average::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据，请先导入图像数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先导入图像数据！"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -154,7 +154,7 @@ void Deformation_Average::on_Preview_pressed()
     if (isPreviewPressed) return;
     isPreviewPressed = true;
     ui->Preview->setDisabled(true);
-    ui->Preview->setText(QString::fromLocal8Bit("正在查看..."));
+    ui->Preview->setText(QStringLiteral("正在查看..."));
     ui->Preview->repaint();
     QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
     QString image_name;

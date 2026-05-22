@@ -53,7 +53,7 @@ Mould::Mould(QWidget* parent) :
     project_path = "c:/";
     sensor_name = "TSX";//卫星名暂定为TerraSAR-X,可修改
     this->setWindowIcon(QIcon(APP_ICON));
-    this->setWindowTitle(QString::fromLocal8Bit("DEM模板参数设置"));
+    this->setWindowTitle(QStringLiteral("DEM模板参数设置"));
     connect(ui->buttonBox, &QDialogButtonBox::accepted, this, &Mould::accepted);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Mould::rejected);
     connect(ui->browse, &QPushButton::clicked, this, &Mould::Browse_Savepath);
@@ -180,7 +180,7 @@ void Mould::accepted()
 
     ui->progressBar->setHidden(false);
     ui->progressBar->setValue(1);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("开始处理……"));
+    ui->progressBar->setFormat(QStringLiteral("开始处理……"));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     this->operate(m_pCurIPC, callback_para);
@@ -212,7 +212,7 @@ void Mould::rejected()
 
 void Mould::Browse_Savepath()
 {
-    QString path = QFileDialog::getExistingDirectory(this, QString::fromLocal8Bit("请选择保存路径"), "");
+    QString path = QFileDialog::getExistingDirectory(this, QStringLiteral("请选择保存路径"), "");
     ui->project_path->setText(path);
     project_path = path;
 }
@@ -222,7 +222,7 @@ void Mould::Browse_Savepath()
 void Mould::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 

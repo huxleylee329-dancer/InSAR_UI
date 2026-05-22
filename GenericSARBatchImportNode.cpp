@@ -1,7 +1,10 @@
 
 #include "GenericSARBatchImportNode.h"
+#include "IApplicationInterface.h"
 #include <QFile>
 #include <QJsonArray>
+#include <QDebug>
+#include "FormatConversion.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -80,8 +83,23 @@ QWidget* GenericSARBatchImportNode::createWidget()
     projectRow->addWidget(new QLabel("项目名称："));
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
-    if (!projectName().isEmpty())
-        m_projectCombo->addItem(projectName());
+
+    // Populate project list from model (Align with Workspace behavior)
+    QStandardItemModel* model = projectModel();
+    if (model && model->rowCount() > 0) {
+        for (int i = 0; i < model->rowCount(); ++i) {
+            auto item = model->item(i, 0);
+            if (item) {
+                m_projectCombo->addItem(item->text());
+            }
+        }
+        // Set current project as default selection
+        int index = m_projectCombo->findText(projectName());
+        if (index >= 0) m_projectCombo->setCurrentIndex(index);
+    } else {
+        m_projectCombo->addItem("未打开项目");
+    }
+
     projectRow->addWidget(m_projectCombo);
     configLayout->addLayout(projectRow);
 
@@ -108,6 +126,17 @@ QWidget* GenericSARBatchImportNode::createWidget()
 
 void GenericSARBatchImportNode::executeImport()
 {
+    // Safety check: Ensure project is open
+    auto* model = projectModel();
+    QString path = projectPath();
+    QString name = projectName();
+
+    if (!model || path.isEmpty() || name.isEmpty())
+    {
+        onError("未检测到打开的项目，请先打开或新建一个项目。");
+        return;
+    }
+
     if (m_imagePaths.isEmpty())
     {
         onError("请至少添加一个 通用 SAR 图像文件。");
@@ -126,7 +155,8 @@ void GenericSARBatchImportNode::executeImport()
         }
 
         originalFileList.push_back(imagePath);
-        importNameList.push_back(generateImportName(imagePath));
+        QString importName = generateImportName(imagePath);
+        importNameList.push_back(importName);
     }
 
     m_thread = new QThread(this);
@@ -196,13 +226,33 @@ void GenericSARBatchImportNode::onAddFilesClicked()
         tr("Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)")
     );
 
+    bool changed = false;
     for (const QString& file : files)
     {
         if (!file.isEmpty() && !m_imagePaths.contains(file))
         {
             m_imagePaths.append(file);
             m_fileListWidget->addItem(QFileInfo(file).fileName());
+            changed = true;
         }
+    }
+
+    if (changed)
+    {
+        if (!m_imagePaths.isEmpty()) {
+            m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePaths);
+            setOutputData(1, m_imageInfoData);
+        } else {
+            m_imageInfoData.reset();
+            setOutputData(1, nullptr);
+        }
+        
+        m_importedFilePaths.clear();
+        setOutputData(0, nullptr);
+        setState(ExecutionState::Idle);
+        
+        Q_EMIT dataUpdated(0);
+        Q_EMIT dataUpdated(1);
     }
 }
 
@@ -210,11 +260,84 @@ void GenericSARBatchImportNode::onRemoveFilesClicked()
 {
     QList<QListWidgetItem*> selectedItems = m_fileListWidget->selectedItems();
 
+    bool changed = false;
     for (QListWidgetItem* item : selectedItems)
     {
         int row = m_fileListWidget->row(item);
+        QString filePath = m_imagePaths.at(row);
+        
+        // --- 从工程树和XML中同步移除文件 ---
+        QString importName = generateImportName(filePath);
+        QString suffix = QFileInfo(filePath).suffix();
+        QString importedPath = QString("%1/%2/%3.%4")
+            .arg(projectPath())
+            .arg(getOutputNodeName())
+            .arg(importName)
+            .arg(suffix);
+
+        QStandardItemModel* model = projectModel();
+        if (model && !projectPath().isEmpty() && !projectName().isEmpty()) {
+            QList<QStandardItem*> projItems = model->findItems(projectName());
+            if (!projItems.isEmpty()) {
+                QStandardItem* projItem = projItems.first();
+                for (int i = 0; i < projItem->rowCount(); ++i) {
+                    QStandardItem* nodeItem = projItem->child(i);
+                    if (nodeItem && nodeItem->text() == getOutputNodeName()) {
+                        for (int j = 0; j < nodeItem->rowCount(); ++j) {
+                            QStandardItem* pathItem = nodeItem->child(j, 1);
+                            if (pathItem && pathItem->text() == importedPath) {
+                                QStandardItem* fileItem = nodeItem->child(j, 0);
+                                QString fileName = fileItem ? fileItem->text() : "";
+                                
+                                XMLFile xml;
+                                QString xmlPath = projectPath() + "/" + projectName();
+                                if (xml.XMLFile_load(xmlPath.toStdString().c_str()) >= 0) {
+                                    xml.XMLFile_remove_node(getOutputNodeName().toStdString().c_str(), 
+                                                          fileName.toStdString().c_str(), 
+                                                          importedPath.toStdString().c_str());
+                                    xml.XMLFile_save(xmlPath.toStdString().c_str());
+                                }
+                                
+                                if (QFile::exists(importedPath)) {
+                                    QFile::remove(importedPath);
+                                }
+                                
+                                nodeItem->removeRow(j);
+                                
+                                if (auto* iface = getProjectContext()) {
+                                    iface->refreshProjectTree();
+                                }
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        // --- 结束移除 ---
+
         m_imagePaths.removeAt(row);
         delete item;
+        changed = true;
+    }
+
+    if (changed)
+    {
+        if (!m_imagePaths.isEmpty()) {
+            m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePaths);
+            setOutputData(1, m_imageInfoData);
+        } else {
+            m_imageInfoData.reset();
+            setOutputData(1, nullptr);
+        }
+        
+        m_importedFilePaths.clear();
+        setOutputData(0, nullptr);
+        setState(ExecutionState::Idle);
+        
+        Q_EMIT dataUpdated(0);
+        Q_EMIT dataUpdated(1);
     }
 }
 
@@ -232,18 +355,25 @@ void GenericSARBatchImportNode::onImportFinished()
     for (const QString& imagePath : m_imagePaths)
     {
         QString importName = generateImportName(imagePath);
-        QString filePath = QString("%1/%2/%3.h5")
+        QString suffix = QFileInfo(imagePath).suffix();
+        QString filePath = QString("%1/%2/%3.%4")
             .arg(projectPath())
             .arg(outputNodeName)
-            .arg(importName);
+            .arg(importName)
+            .arg(suffix);
 
         m_importedFilePaths.append(filePath);
     }
 
-    m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+    auto outputData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+    setOutputData(0, outputData);
     Q_EMIT dataUpdated(0);
 
-    ImportNodeBase::onImportFinished();
+    m_imageInfoData = outputData;
+    setOutputData(1, m_imageInfoData);
+    Q_EMIT dataUpdated(1);
+
+    finishExecution();
 
     if (m_thread)
     {
@@ -287,6 +417,9 @@ void GenericSARBatchImportNode::setExecutionMode(ExecutionMode mode)
 void GenericSARBatchImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+    if (auto* iface = getProjectContext()) {
+        iface->refreshProjectTree();
+    }
 }
 
 QJsonObject GenericSARBatchImportNode::save() const
@@ -302,14 +435,20 @@ QJsonObject GenericSARBatchImportNode::save() const
 
 void GenericSARBatchImportNode::load(QJsonObject const &json)
 {
-    ImportNodeBase::load(json);
-
     m_imagePaths.clear();
     QJsonArray pathsArray = json["imagePaths"].toArray();
     for (const QJsonValue &val : pathsArray)
         m_imagePaths.append(val.toString());
 
     m_outputNodeName = json["outputNodeName"].toString("GenericSAR_Batch_Import");
+
+    if (!m_imagePaths.isEmpty()) {
+        m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePaths);
+    } else {
+        m_imageInfoData.reset();
+    }
+
+    ImportNodeBase::load(json);
 
     if (m_fileListWidget) {
         m_fileListWidget->clear();
@@ -320,12 +459,14 @@ void GenericSARBatchImportNode::load(QJsonObject const &json)
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
+
+    Q_EMIT dataUpdated(1);
 }
 
 unsigned int GenericSARBatchImportNode::nPorts(PortType portType) const
 {
     if (portType == PortType::Out)
-        return 1;
+        return 2;
     return 0;
 }
 
@@ -333,37 +474,85 @@ NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex po
 {
     Q_UNUSED(portIndex);
     if (portType == PortType::Out)
-        return ImageInfoData().type();
+    {
+        if (portIndex == 0)
+            return NodeDataType{"image_info", "Image Info"};
+        else if (portIndex == 1)
+            return NodeDataType{"image_info", "Image Info"};
+    }
     return NodeDataType();
+}
+
+bool GenericSARBatchImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out;
+}
+
+QString GenericSARBatchImportNode::portCaption(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out)
+    {
+        if (portIndex == 0)
+            return tr("成果 *");
+        else if (portIndex == 1)
+            return tr("预览 ?");
+    }
+    return QString();
+}
+
+bool GenericSARBatchImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out && portIndex == 1)
+        return true;
+
+    return false;
 }
 
 std::shared_ptr<NodeData> GenericSARBatchImportNode::outData(PortIndex port)
 {
-    Q_UNUSED(port);
-    return m_imageInfoData;
+    if (port == 0)
+    {
+        return ImportNodeBase::outData(0);
+    }
+    else if (port == 1)
+    {
+        return m_imageInfoData;
+    }
+    return nullptr;
 }
 
 bool GenericSARBatchImportNode::validateAndRestoreOutput()
 {
     QString nodeName = m_outputNodeName.trimmed();
-    if (nodeName.isEmpty())
+
+    if (nodeName.isEmpty()) {
         return false;
+    }
 
     QString outputPath = projectPath() + "/" + nodeName + "/";
 
     QDir dir(outputPath);
-    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
+    bool dirExists = dir.exists();
+    int fileCount = dirExists ? dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() : 0;
+
+    if (dirExists && fileCount > 0) {
         m_importedFilePaths.clear();
         for (const QString &imagePath : m_imagePaths) {
             QString importName = generateImportName(imagePath);
-            QString importedPath = outputPath + importName + ".h5";
-            if (QFile::exists(importedPath)) {
+            QString suffix = QFileInfo(imagePath).suffix();
+            QString importedPath = outputPath + importName + "." + suffix;
+            bool fileExists = QFile::exists(importedPath);
+            if (fileExists) {
                 m_importedFilePaths.append(importedPath);
             }
         }
         if (!m_importedFilePaths.isEmpty()) {
-            m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+            auto outputData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+            setOutputData(0, outputData);
+            m_imageInfoData = outputData;
+            setOutputData(1, outputData);
             Q_EMIT dataUpdated(0);
+            Q_EMIT dataUpdated(1);
             return true;
         }
     }

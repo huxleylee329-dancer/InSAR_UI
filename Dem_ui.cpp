@@ -43,7 +43,7 @@ Dem_ui::~Dem_ui()
 void Dem_ui::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Dem_ui::endProcess()
@@ -126,7 +126,7 @@ void Dem_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -138,7 +138,7 @@ void Dem_ui::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据，请先进行解缠！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先进行解缠！"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -188,7 +188,7 @@ void Dem_ui::on_buttonBox_accepted()
     bool bFlag = false;
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先进行解缠或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先进行解缠或更换工程！"));
         return;
     }
     if (ui->NewtonButton->isChecked()) 
@@ -196,35 +196,35 @@ void Dem_ui::on_buttonBox_accepted()
         this->method = 1;
         if (ui->times->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入牛顿法的迭代次数！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入牛顿法的迭代次数！"));
             return;
         }
         int times = ui->times->text().toInt(&bFlag);
         if (!bFlag)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("迭代次数应为正整数！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("迭代次数应为正整数！"));
             return;
         }
         else if(times<=0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("迭代次数应为正整数！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("迭代次数应为正整数！"));
             return;
         }
     }
     if (this->method == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请选择Dem方法!"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请选择Dem方法!"));
         return;
     }
     if (ui->file_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入保存DEM数据的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入保存DEM数据的文件夹名称！"));
         return;
     }
     bFlag = ui->file_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
     

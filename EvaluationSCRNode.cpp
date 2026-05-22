@@ -20,24 +20,24 @@ void EvaluationSCRNode::createWidget()
     auto* mainLayout = new QVBoxLayout(m_widget);
     mainLayout->setContentsMargins(5, 5, 5, 5);
 
-    auto* roiGroup = new QGroupBox(QString::fromUtf8("\xe5\x8c\xba\xe5\x9f\x9f\xe9\x80\x89\xe6\x8b\xa9")); // 区域选择
+    auto* roiGroup = new QGroupBox(QStringLiteral("区域选择")); // 区域选择
     auto* roiLayout = new QVBoxLayout(roiGroup);
     m_regionComboBox = new QComboBox();
-    m_regionComboBox->addItem(QString::fromUtf8("\xe4\xb8\xad\xe5\xbf\x83\xe7\x9b\xae\xe6\xa0\x87/\xe5\x91\xa8\xe5\x9b\xb4\xe6\x9d\x82\xe6\xb3\xa2")); // 中心目标/周围杂波
-    m_regionComboBox->addItem(QString::fromUtf8("\xe5\xb7\xa6\xe5\x8d\x8a\xe7\x9b\xae\xe6\xa0\x87/\xe5\x8f\xb3\xe5\x8d\x8a\xe6\x9d\x82\xe6\xb3\xa2")); // 左半目标/右半杂波
+    m_regionComboBox->addItem(QStringLiteral("中心目标/周围杂波")); // 中心目标/周围杂波
+    m_regionComboBox->addItem(QStringLiteral("左半目标/右半杂波")); // 左半目标/右半杂波
     roiLayout->addWidget(m_regionComboBox);
     mainLayout->addWidget(roiGroup);
 
-    auto* resultGroup = new QGroupBox(QString::fromUtf8("SCR\xe7\xbb\x93\xe6\x9e\x9c")); // SCR结果
+    auto* resultGroup = new QGroupBox(QStringLiteral("SCR结果")); // SCR结果
     auto* formLayout = new QFormLayout(resultGroup);
     
     m_originalScrLabel = new QLabel("--");
     m_filteredScrLabel = new QLabel("--");
     m_improvementLabel = new QLabel("--");
     
-    formLayout->addRow(QString::fromUtf8("\xe5\x8e\x9f\xe5\x9b\xbeSCR\xef\xbc\x9a"), m_originalScrLabel); // 原图SCR：
-    formLayout->addRow(QString::fromUtf8("\xe6\xbb\xa4\xe6\xb3\xa2\xe5\x90\x8eSCR\xef\xbc\x9a"), m_filteredScrLabel); // 滤波后SCR：
-    formLayout->addRow(QString::fromUtf8("\xe6\x80\xa7\xe8\x83\xbd\xe6\x8f\x90\xe5\x8d\x87\xef\xbc\x9a"), m_improvementLabel); // 性能提升：
+    formLayout->addRow(QStringLiteral("原图SCR："), m_originalScrLabel); // 原图SCR：
+    formLayout->addRow(QStringLiteral("滤波后SCR："), m_filteredScrLabel); // 滤波后SCR：
+    formLayout->addRow(QStringLiteral("性能提升："), m_improvementLabel); // 性能提升：
     mainLayout->addWidget(resultGroup);
 
     m_widget->setMinimumWidth(200);
@@ -68,8 +68,8 @@ bool EvaluationSCRNode::portCaptionVisible(PortType portType, PortIndex portInde
 QString EvaluationSCRNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QString::fromUtf8("\xe5\x8e\x9f\xe5\x9b\xbe"); // 原图
-        if (portIndex == 1) return QString::fromUtf8("\xe6\xbb\xa4\xe6\xb3\xa2\xe5\x90\x8e\xe5\x9b\xbe\xe5\x83\x8f"); // 滤波后图像
+        if (portIndex == 0) return QStringLiteral("原图"); // 原图
+        if (portIndex == 1) return QStringLiteral("滤波后图像"); // 滤波后图像
     }
     return QString();
 }

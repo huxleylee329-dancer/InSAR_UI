@@ -135,7 +135,7 @@ void Export_KML::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         ui->comboBox_2->clear();
         this->deleteLater();
     }
@@ -157,7 +157,7 @@ void Export_KML::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
         ui->comboBox_2->clear();
         this->deleteLater();
     }
@@ -188,7 +188,7 @@ void Export_KML::on_comboBox_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
             ui->comboBox_2->clear();
             return;
         }
@@ -240,7 +240,7 @@ void Export_KML::on_comboBox_2_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             return;
         }
     }
@@ -258,33 +258,33 @@ void Export_KML::on_Export_pressed()
     bool bFlag = false;
     if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程下未检测到数据！请先导入图像或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
     }
     if (ui->File_path->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请选择存储路径！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请选择存储路径！"));
         return;
     }
     bFlag = ui->File_path->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("路径中不应包含中文或特殊符号！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("路径中不应包含中文或特殊符号！"));
         return;
     }
     if (ui->File_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入文件名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入文件名！"));
         return;
     }
     bFlag = ui->File_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("文件名中不应包含中文或特殊符号！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("文件名中不应包含中文或特殊符号！"));
         return;
     }
     ChangeVision(false);
-    ui->Export->setText(QString::fromLocal8Bit("正在导出……"));
+    ui->Export->setText(QStringLiteral("正在导出……"));
     QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
     QString h5_path;
     QString jpg_path;
@@ -354,7 +354,7 @@ void Export_KML::on_Export_pressed()
     /*bFlag = ui->File_path->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("路径中不应包含中文或特殊符号！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("路径中不应包含中文或特殊符号！"));
         return;
     }*/
 }

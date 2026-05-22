@@ -1,4 +1,4 @@
-﻿#include "treeview.h"
+#include "treeview.h"
 #include"icon_source.h"
 #include "icon_utils.h"
 #include<qmessagebox.h>
@@ -53,7 +53,7 @@ void TreeView::init_tree()
 
 void TreeView::init_mould()
 {
-    model->setHeaderData(0, Qt::Horizontal, QString::fromLocal8Bit("template"));
+    model->setHeaderData(0, Qt::Horizontal, QString("template"));
     QStandardItem* InSAR = new QStandardItem("InSAR");
     InSAR->setIcon(QIcon(TEMPLATE_FOLDER));
     QStandardItem* DInSAR = new QStandardItem("DInSAR");
@@ -159,7 +159,7 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
         if (!parentIndex.isValid())
         {
             QMenu* menu = new QMenu(this);
-            QAction* unload = new QAction(QString::fromLocal8Bit("卸载工程"));
+            QAction* unload = new QAction(QStringLiteral("卸载工程"));
             menu->addAction(unload);
             connect(unload, SIGNAL(triggered()), this, SLOT(Unload()));
             menu->exec(this->mapToGlobal(point));
@@ -167,7 +167,7 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
         else if (!parentIndex.parent().isValid())
         {
             QMenu* menu = new QMenu(this);
-            QAction* node_delete = new QAction(QString::fromLocal8Bit("删除节点"));
+            QAction* node_delete = new QAction(QStringLiteral("删除节点"));
             node_delete->setIcon(QIcon(EXPORT_ICON));
             menu->addAction(node_delete);
             connect(node_delete, &QAction::triggered, this, &TreeView::DeleteNode);
@@ -176,8 +176,8 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
         else
         {
             QMenu* menu = new QMenu(this);
-            QAction* image_saveas = new QAction(QString::fromLocal8Bit("另存为"));
-            QAction* image_delete = new QAction(QString::fromLocal8Bit("删除"));
+            QAction* image_saveas = new QAction(QStringLiteral("另存为"));
+            QAction* image_delete = new QAction(QStringLiteral("删除"));
             image_saveas->setIcon(QIcon(EXPORT_ICON));
             image_delete->setIcon(QIcon(EXPORT_ICON));
             menu->addAction(image_saveas);
@@ -198,7 +198,7 @@ void TreeView::Delete()
         !imageIndex.parent().isValid() ||
         !imageIndex.parent().parent().isValid())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请选择具体图像数据删除！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请选择具体图像数据删除！"));
         return;
     }
 
@@ -227,7 +227,7 @@ void TreeView::Delete()
     }
     else
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该数据正在处理中，无法删除！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该数据正在处理中，无法删除！"));
     }
 }
 
@@ -240,7 +240,7 @@ void TreeView::Unload()
     }
     else
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程正在处理中，无法卸载！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程正在处理中，无法卸载！"));
     }
 }
 
@@ -257,7 +257,7 @@ void TreeView::Import()
         if (!path.isEmpty())
         {
             QString dirname = QFileDialog::getSaveFileName(this,
-                QString::fromLocal8Bit("图像另存为"),
+                QStringLiteral("图像另存为"),
                 "/",
                 "*.jpg");
             QFileInfo fileinfo = QFileInfo(dirname);
@@ -270,7 +270,7 @@ void TreeView::Import()
                 mTreeProcess = new QProgressDialog("Loading Image...", "Cancel", 0, 100);
                 mTreeProcess->setFixedSize(450, 100);
                 mTreeProcess->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
-                mTreeProcess->setWindowTitle(QString::fromLocal8Bit("保存进度"));
+                mTreeProcess->setWindowTitle(QStringLiteral("保存进度"));
                 mTreeProcess->setCancelButton(false);
                 //this->Process->setAutoClose(true);
                 mTreeProcess->setValue(0);
@@ -351,14 +351,14 @@ void TreeView::DeleteNode()
 
     if (!nodeIndex.isValid() || !nodeIndex.parent().isValid() || nodeIndex.parent().parent().isValid())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无法删除！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无法删除！"));
         return;
     }
 
     QStandardItem* node = model->itemFromIndex(nodeIndex);
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无法删除！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无法删除！"));
         return;
     }
 

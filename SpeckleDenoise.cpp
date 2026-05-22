@@ -420,7 +420,7 @@ void SpeckleDenoise::on_runFilterButton_clicked()
         QMessageBox::information(
             this,
             "Info",
-        QString::fromLocal8Bit("该结果文件已存在：\n%1").arg(expectedPath)
+        QStringLiteral("该结果文件已存在：\n%1").arg(expectedPath)
 
         );
         return;

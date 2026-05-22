@@ -66,7 +66,7 @@ void ElidingLabelPrivate::elideText(int Width)
 	}
     QFontMetrics fm = _this->fontMetrics();
     QString  str = fm.elidedText(Text, ElideMode, Width - _this->margin() * 2 - _this->indent());
-    if (str == QString::fromUtf8("\xE2\x80\xA6"))
+    if (str == QStringLiteral("…"))
     {
     	str = Text.at(0);
     }
@@ -173,7 +173,7 @@ QSize CElidingLabel::minimumSizeHint() const
         return QLabel::minimumSizeHint();
     }
     const QFontMetrics  &fm = fontMetrics();
-    QString ellipsis = QString::fromUtf8("\xE2\x80\xA6");
+    QString ellipsis = QStringLiteral("…");
     #if (QT_VERSION >= QT_VERSION_CHECK(5, 11, 0))
         QSize size(fm.horizontalAdvance(d->Text.left(2) + ellipsis), fm.height());
     #else

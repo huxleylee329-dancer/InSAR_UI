@@ -629,7 +629,7 @@ void MainWindow::ShowImage(QModelIndex image)
                 this->Process = new QProgressDialog("Loading Image...", "Cancel", 0, 100);
                 Process->setFixedSize(450, 100);
                 Process->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
-                Process->setWindowTitle(QString::fromLocal8Bit("Loading Result"));
+                Process->setWindowTitle(QStringLiteral("Loading Result"));
                 Process->setCancelButton(false);
                 //this->Process->setAutoClose(true);
                 this->Process->setValue(0);
@@ -1367,9 +1367,9 @@ void MainWindow::applyMenuIcons(bool isDark)
     QMenu* viewMenu = ui.menubar->findChild<QMenu*>("View");
     if (viewMenu) {
         for (QAction* action : viewMenu->actions()) {
-            if (action->text().contains(QString::fromUtf8("工作区")))
+            if (action->text().contains(QStringLiteral("工作区")))
                 action->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", color));
-            else if (action->text().contains(QString::fromUtf8("工作流")))
+            else if (action->text().contains(QStringLiteral("工作流")))
                 action->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", color));
         }
     }
@@ -1434,7 +1434,7 @@ void MainWindow::setTheme(const QString &theme)
     QMenu* settingsMenu = ui.Setting;
     QList<QMenu*> submenus = settingsMenu->findChildren<QMenu*>();
     for (QMenu* submenu : submenus) {
-        if (submenu->title().contains(QString::fromUtf8("主题"))) {
+        if (submenu->title().contains(QStringLiteral("主题"))) {
             updateThemeCheckState(submenu, theme);
             break;
         }
@@ -1474,18 +1474,18 @@ void MainWindow::setupThemeMenu()
     QMenu* settingsMenu = ui.Setting;
 
     // Create Theme submenu under Settings
-    QMenu* themeMenu = settingsMenu->addMenu(QString::fromUtf8("主题"));
+    QMenu* themeMenu = settingsMenu->addMenu(QStringLiteral("主题"));
 
     // Create theme actions with checkable property
-    QAction* lightAction = themeMenu->addAction(QString::fromUtf8("浅色主题"));
+    QAction* lightAction = themeMenu->addAction(QStringLiteral("浅色主题"));
     lightAction->setCheckable(true);
     lightAction->setData("light");
 
-    QAction* darkAction = themeMenu->addAction(QString::fromUtf8("深色主题"));
+    QAction* darkAction = themeMenu->addAction(QStringLiteral("深色主题"));
     darkAction->setCheckable(true);
     darkAction->setData("dark");
 
-    QAction* fusionAction = themeMenu->addAction(QString::fromUtf8("Fusion主题"));
+    QAction* fusionAction = themeMenu->addAction(QStringLiteral("Fusion主题"));
     fusionAction->setCheckable(true);
     fusionAction->setData("fusion");
 
@@ -1584,14 +1584,14 @@ void MainWindow::setupInterfaceSwitchingMenu()
     interfaceGroup->setExclusive(true);
 
     // Add workspace action
-    QAction* workspaceAction = viewMenu->addAction(QString::fromUtf8("工作区界面"));
+    QAction* workspaceAction = viewMenu->addAction(QStringLiteral("工作区界面"));
     workspaceAction->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", themeIconColor(m_currentTheme == "dark")));
     workspaceAction->setCheckable(true);
     interfaceGroup->addAction(workspaceAction);
     connect(workspaceAction, &QAction::triggered, this, &MainWindow::switchToWorkspace);
 
     // Add workflow action
-    QAction* workflowAction = viewMenu->addAction(QString::fromUtf8("工作流界面"));
+    QAction* workflowAction = viewMenu->addAction(QStringLiteral("工作流界面"));
     workflowAction->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", themeIconColor(m_currentTheme == "dark")));
     workflowAction->setCheckable(true);
     interfaceGroup->addAction(workflowAction);
@@ -1609,9 +1609,9 @@ void MainWindow::updateInterfaceMenuCheckState()
     QList<QAction*> actions = viewMenu->actions();
 
     for (QAction* action : actions) {
-        if (action->text().contains(QString::fromUtf8("工作区"))) {
+        if (action->text().contains(QStringLiteral("工作区"))) {
             action->setChecked(currentId == "workspace");
-        } else if (action->text().contains(QString::fromUtf8("工作流"))) {
+        } else if (action->text().contains(QStringLiteral("工作流"))) {
             action->setChecked(currentId == "workflow");
         }
     }
@@ -1658,9 +1658,9 @@ void MainWindow::onOpenProjectFromWelcome()
     // Show file dialog to open project
     QString filePath = QFileDialog::getOpenFileName(
         this,
-        QString::fromUtf8("打开项目"),
+        QStringLiteral("打开项目"),
         QDir::currentPath(),
-        QString::fromUtf8("InSAR Project (*.Insar);;All Files (*)")
+        QStringLiteral("InSAR Project (*.Insar);;All Files (*)")
     );
 
     if (!filePath.isEmpty()) {

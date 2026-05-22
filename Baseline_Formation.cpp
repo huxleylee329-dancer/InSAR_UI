@@ -33,7 +33,7 @@ Baseline_Formation::~Baseline_Formation()
 void Baseline_Formation::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Baseline_Formation::endProcess()
@@ -99,7 +99,7 @@ void Baseline_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         ui->comboBox_dst_node->clear();
         ui->comboBox_masterImage->clear();
         return;
@@ -124,7 +124,7 @@ void Baseline_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (!node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
         ui->comboBox_dst_node->clear();
         ui->comboBox_masterImage->clear();
         return;
@@ -138,7 +138,7 @@ void Baseline_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_masterImage->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
         ui->comboBox_masterImage->clear();
         return;
     }
@@ -171,7 +171,7 @@ void Baseline_Formation::on_comboBox_currentIndexChanged()
         }
         if (!isnodefound)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无数据！"));
             ui->comboBox_dst_node->clear();
             ui->comboBox_masterImage->clear();
             return;
@@ -182,7 +182,7 @@ void Baseline_Formation::on_comboBox_currentIndexChanged()
         }
         if (ui->comboBox_masterImage->count() < 1)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             ui->comboBox_masterImage->clear();
             return;
         }
@@ -237,7 +237,7 @@ void Baseline_Formation::on_comboBox_dst_node_currentIndexChanged()
 
         if (!node)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点无数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
             ui->comboBox_masterImage->clear();
             return;
         }
@@ -256,26 +256,26 @@ void Baseline_Formation::on_buttonBox_accepted()
     bool bFlag = false;
     if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程下未检测到数据！请先导入图像或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
     }
     int ret;
     ret = sscanf(ui->lineEdit_spatial_thresh->text().toStdString().c_str(), "%lf", &spatial_thresh);
     if (ret != 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入合法空间基线阈值！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入合法空间基线阈值！"));
         return;
     }
     ret = sscanf(ui->lineEdit_temporal_thresh->text().toStdString().c_str(), "%lf", &temporal_thresh);
     if (ret != 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入合法时间基线阈值！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入合法时间基线阈值！"));
         return;
     }
     ret = sscanf(ui->lineEdit_temporal_thresh_low->text().toStdString().c_str(), "%lf", &temporal_thresh_low);
     if (ret != 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入合法时间基线阈值！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入合法时间基线阈值！"));
         return;
     }
     int index = ui->comboBox_masterImage->currentIndex() + 1;/*= ui->Index_edit->text().toUInt(&bFlag)*/;

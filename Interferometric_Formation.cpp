@@ -43,7 +43,7 @@ Interferometric_Formation::~Interferometric_Formation()
 void Interferometric_Formation::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void Interferometric_Formation::endProcess()
@@ -135,7 +135,7 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -153,7 +153,7 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据，请先进行配准！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先进行配准！"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -168,7 +168,7 @@ void Interferometric_Formation::ShowProjectList(QStandardItemModel* model)
     }
     else
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无配准后图像用于生成干涉相位，请先进行配准!"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无配准后图像用于生成干涉相位，请先进行配准!"));
         this->deleteLater();
     }
     ui->comboBox_3->setCurrentIndex(0);
@@ -290,12 +290,12 @@ void Interferometric_Formation::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先进行配准或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先进行配准或更换工程！"));
         return;
     }
     if (ui->comboBox_3->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点下无可处理数据，请先进行配准或更换节点！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点下无可处理数据，请先进行配准或更换节点！"));
         return;
     }
     int win_width, win_height;
@@ -313,19 +313,19 @@ void Interferometric_Formation::on_buttonBox_accepted()
     {
         if (ui->win_w->text().isEmpty() || ui->win_h->text().isEmpty())
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入估计相干系数窗口参数！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入估计相干系数窗口参数！"));
             return;
         }
         win_width = ui->win_w->text().toInt(&bFlag);
         win_height = ui->win_h->text().toInt(&bFlag2);
         if (bFlag == false || bFlag2 == false)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("相干系数窗口尺寸应为大于0的奇数！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("相干系数窗口尺寸应为大于0的奇数！"));
             return;
         }
         else if (win_width <= 0 || win_height <= 0 || win_width % 2 == 0 || win_height % 2 == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("相干系数窗口尺寸应为大于0的奇数！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("相干系数窗口尺寸应为大于0的奇数！"));
             return;
         }
     }
@@ -336,30 +336,30 @@ void Interferometric_Formation::on_buttonBox_accepted()
     }
     if (ui->multilook_az->text().isEmpty() || ui->multilook_rg->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入多视倍数(应为正整数，无需要可输入1)！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入多视倍数(应为正整数，无需要可输入1)！"));
         return;
     }
     int multi_az = ui->multilook_az->text().toInt(&bFlag);
     int multi_rg = ui->multilook_rg->text().toInt(&bFlag2);
     if (bFlag == false || bFlag2 == false)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("多视倍数应为正整数！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("多视倍数应为正整数！"));
         return;
     }
     else if (multi_az <= 0 || multi_rg <= 0 )
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("多视倍数应为正整数！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("多视倍数应为正整数！"));
         return;
     }
     if (ui->file_name->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入保存干涉相位的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入保存干涉相位的文件夹名称！"));
         return;
     }
     bFlag = ui->file_name->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
     Interferometric_Formation_thread = new MyThread;

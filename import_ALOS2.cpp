@@ -117,7 +117,7 @@ void import_ALOS2::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -196,7 +196,7 @@ void import_ALOS2::on_comboBox_dst_project_currentIndexChanged()
 void import_ALOS2::on_pushButton_add_pressed()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("导入ALOS2数据"),
+        QStringLiteral("导入ALOS2数据"),
         "",
         "");
     ui->listWidget->addItem(filename);
@@ -233,13 +233,13 @@ void import_ALOS2::on_buttonBox_accepted()
     //检查导入文件list是否为空
     if (ui->listWidget->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("导入图像文件为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("导入图像文件为空！"));
         return;
     }
     //检查目标节点名
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点名为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点名为空！"));
         return;
     }
 
@@ -259,7 +259,7 @@ void import_ALOS2::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，且和导入数据级别不同，请重命名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         return;
     }
 
@@ -268,7 +268,7 @@ void import_ALOS2::on_buttonBox_accepted()
     vector<QString> import_namelist;
     if (!generate_name(ui->listWidget, original_namelist, import_namelist, original_namelist2))
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("输入IMG数据不合法，或者同级目录下没有LED文件！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("输入IMG数据不合法，或者同级目录下没有LED文件！"));
         return;
     }
 

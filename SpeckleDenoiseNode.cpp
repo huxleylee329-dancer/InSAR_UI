@@ -553,7 +553,7 @@ void SpeckleDenoiseNode::onAskUserError(const QString& message, bool* skip)
 {
     QMessageBox::StandardButton reply = QMessageBox::question(
         nullptr,
-        QString::fromUtf8("\xe9\x94\x99\xe8\xaf\xaf"), // 错误
+        QStringLiteral("错误"), // 错误
         message,
         QMessageBox::Yes | QMessageBox::No
     );

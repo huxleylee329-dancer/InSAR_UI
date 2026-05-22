@@ -15,14 +15,14 @@ Deformation_Preview_Window::Deformation_Preview_Window(QWidget* parent)
     ButtonBox = new QDialogButtonBox(Qt::Horizontal);
     View = new Deformation_Preview();
     setWindowIcon(QIcon(APP_ICON));
-    setWindowTitle(QString::fromLocal8Bit("SBAS形变时间序列查看"));
+    setWindowTitle(QStringLiteral("SBAS形变时间序列查看"));
     Methods = new QButtonGroup;
-    AbsoluteButton = new QRadioButton(QString::fromLocal8Bit("绝对形变序列"));
+    AbsoluteButton = new QRadioButton(QStringLiteral("绝对形变序列"));
     AbsoluteButton->setMinimumHeight(50);
     AbsoluteButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
     AbsoluteButton->setChecked(true);
 
-    RelativeButton = new QRadioButton(QString::fromLocal8Bit("相对形变序列"));
+    RelativeButton = new QRadioButton(QStringLiteral("相对形变序列"));
     RelativeButton->setMinimumHeight(50);
     RelativeButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
 
@@ -33,13 +33,13 @@ Deformation_Preview_Window::Deformation_Preview_Window(QWidget* parent)
     Methods->addButton(RelativeButton);
 
     ChoosePoint = new QButtonGroup;
-    FirstPointButton = new QRadioButton(QString::fromLocal8Bit("选择观测点"));
+    FirstPointButton = new QRadioButton(QStringLiteral("选择观测点"));
     FirstPointButton->setMinimumHeight(50);
     FirstPointButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
     FirstPointButton->setChecked(true);
     FirstPointButton->hide();
 
-    SecondPointButton = new QRadioButton(QString::fromLocal8Bit("选择参考点"));
+    SecondPointButton = new QRadioButton(QStringLiteral("选择参考点"));
     SecondPointButton->setMinimumHeight(50);
     SecondPointButton->setStyleSheet("QPushButton {background-color: rgb(240,240,240)}");
     SecondPointButton->hide();
@@ -70,8 +70,8 @@ Deformation_Preview_Window::Deformation_Preview_Window(QWidget* parent)
     ScaledButton->installEventFilter(this);
     CutButton->installEventFilter(this);
     /*页面初始化布局*/
-    ButtonBox->addButton(QString::fromLocal8Bit("确定"), QDialogButtonBox::AcceptRole);
-    ButtonBox->addButton(QString::fromLocal8Bit("取消"), QDialogButtonBox::RejectRole);
+    ButtonBox->addButton(QStringLiteral("确定"), QDialogButtonBox::AcceptRole);
+    ButtonBox->addButton(QStringLiteral("取消"), QDialogButtonBox::RejectRole);
     connect(ButtonBox, &QDialogButtonBox::accepted, View, &Deformation_Preview::GetOffset);
     connect(ButtonBox, &QDialogButtonBox::rejected, this, &Deformation_Preview_Window::Close);
 
@@ -553,14 +553,14 @@ void Deformation_Preview::GetOffset()
 
     if (mPath == NULL)
     {
-        QMessageBox::warning(NULL, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("无形变文件"));
+        QMessageBox::warning(NULL, QStringLiteral("警告"), QStringLiteral("无形变文件"));
         return;
     }
     if (mMethod == AbsoluteResult)
     {
         if (!mFirstIsChecked)
         {
-            QMessageBox::warning(NULL, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("请选择想要估计的点"));
+            QMessageBox::warning(NULL, QStringLiteral("警告"), QStringLiteral("请选择想要估计的点"));
             return;
         }
         else
@@ -603,7 +603,7 @@ void Deformation_Preview::GetOffset()
                 }
             Result /= count;
             //Result = -Result;
-            Deformation_Chart* map = new Deformation_Chart(QString::fromLocal8Bit("绝对形变时间序列"));
+            Deformation_Chart* map = new Deformation_Chart(QStringLiteral("绝对形变时间序列"));
             map->SetMinMax(Min_def, Max_def);
             map->SetData(Times_Series, Result);
             map->show();
@@ -614,7 +614,7 @@ void Deformation_Preview::GetOffset()
     {
         if (mFirstIsChecked == false || mSecondIsChecked == false)
         {
-            QMessageBox::warning(NULL, QString::fromLocal8Bit("警告"), QString::fromLocal8Bit("请选择参考点与观测点"));
+            QMessageBox::warning(NULL, QStringLiteral("警告"), QStringLiteral("请选择参考点与观测点"));
             return;
         }
         else
@@ -683,7 +683,7 @@ void Deformation_Preview::GetOffset()
             Result /= count;
             Result2 /= count2;
             Result = Result - Result2;
-            Deformation_Chart* map = new Deformation_Chart(QString::fromLocal8Bit("相对形变时间序列"));
+            Deformation_Chart* map = new Deformation_Chart(QStringLiteral("相对形变时间序列"));
             map->SetMinMax(Min_def, Max_def);
             map->SetData(Times_Series, Result);
             map->show();
@@ -699,9 +699,9 @@ Deformation_Chart::Deformation_Chart(QWidget* parent) :
     QWidget(parent)
 {
     this->resize(QSize(400, 400));
-    this->setWindowTitle(QString::fromLocal8Bit(""));
+    this->setWindowTitle(QStringLiteral(""));
     mChart = new QChart();
-    mChart->setTitle(QString::fromLocal8Bit("时空基线"));
+    mChart->setTitle(QStringLiteral("时空基线"));
     mChartView = new QChartView(mChart, this);
     mChart = mChartView->chart();   //关联
     mAxisX = new QValueAxis();
@@ -716,7 +716,7 @@ Deformation_Chart::Deformation_Chart(QWidget* parent) :
 Deformation_Chart::Deformation_Chart(QString Title)
 {
     this->resize(QSize(400, 400));
-    this->setWindowTitle(QString::fromLocal8Bit("形变预览"));
+    this->setWindowTitle(QStringLiteral("形变预览"));
     this->setWindowIcon(QIcon(APP_ICON));
     mChart = new QChart();
     mChart->legend()->hide();
@@ -783,8 +783,8 @@ void Deformation_Chart::Paint(QList<double> temporal_baseline, QList<double> spa
     mAxisX->setLabelFormat("%.2f");
     mAxisY->setRange(MinDefomation, MaxDeformation);
     mAxisY->setLabelFormat("%.2f");
-    mAxisX->setTitleText(QString::fromLocal8Bit("时间基线（天）"));
-    mAxisY->setTitleText(QString::fromLocal8Bit("形变（米）"));
+    mAxisX->setTitleText(QStringLiteral("时间基线（天）"));
+    mAxisY->setTitleText(QStringLiteral("形变（米）"));
     /*for (int i = 0; i < temporal_baseline.size(); i++)
     {
         QLineSeries* mLine = new QLineSeries();

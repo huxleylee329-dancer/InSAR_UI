@@ -31,7 +31,7 @@ int ColorBar::SetData(QString Data_path, QString Type)
     if (Data_path == NULL ||
         Type == NULL)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到数据,请确保数据没有被删除或移动"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到数据,请确保数据没有被删除或移动"));
         return -1;
     }
     if (Type == "phase" ||

@@ -41,7 +41,7 @@ S1_Deburst::~S1_Deburst()
 void S1_Deburst::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 void S1_Deburst::endProcess()
@@ -127,7 +127,7 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
 
     if (ui->comboBox->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
         return;
     }
@@ -148,7 +148,7 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_2->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据！"));
         this->deleteLater();
         return;
     }
@@ -183,7 +183,7 @@ void S1_Deburst::on_comboBox_currentIndexChanged()
         }
         if (ui->comboBox_2->count() == 0)
         {
-            QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据！"));
+            QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据！"));
             this->deleteLater();
             return;
         }
@@ -201,18 +201,18 @@ void S1_Deburst::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据！"));
         return;
     }
     if (ui->fileedit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入存放burst拼接处理结果文件的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入存放burst拼接处理结果文件的文件夹名称！"));
         return;
     }
     bool bFlag = ui->fileedit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
 

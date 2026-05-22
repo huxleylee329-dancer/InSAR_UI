@@ -50,7 +50,7 @@ void SBAS_reference_reselection::cancelled()
 {
     isReselectionPressed = false;
     ui->reselection->setDisabled(false);
-    ui->reselection->setText(QString::fromLocal8Bit("参考点重选: row = %1  col = %2 GCPs: %3").arg(this->ref_row).arg(this->ref_col).arg(this->plist.size()));
+    ui->reselection->setText(QStringLiteral("参考点重选: row = %1  col = %2 GCPs: %3").arg(this->ref_row).arg(this->ref_col).arg(this->plist.size()));
     ui->reselection->repaint();
 }
 
@@ -67,7 +67,7 @@ void SBAS_reference_reselection::receive_coordinate(int ref_row, int ref_col, QL
 void SBAS_reference_reselection::updateProcess(int value, QString information)
 {
     ui->progressBar->setValue(value);
-    ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+    ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 
@@ -121,7 +121,7 @@ void SBAS_reference_reselection::ShowProjectList(QStandardItemModel* model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -134,7 +134,7 @@ void SBAS_reference_reselection::ShowProjectList(QStandardItemModel* model)
     }
     if (ui->comboBox_srcNode->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据，请先导入图像数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先导入图像数据！"));
         this->deleteLater();
     }
     ui->comboBox_srcNode->setCurrentIndex(0);
@@ -205,7 +205,7 @@ void SBAS_reference_reselection::on_reselection_pressed()
     if (isReselectionPressed) return;
     isReselectionPressed = true;
     ui->reselection->setDisabled(true);
-    ui->reselection->setText(QString::fromLocal8Bit("正在重选参考点..."));
+    ui->reselection->setText(QStringLiteral("正在重选参考点..."));
     ui->reselection->repaint();
     QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
     QString image_name;
@@ -258,12 +258,12 @@ void SBAS_reference_reselection::on_buttonBox_accepted()
 {
     if (ui->comboBox_project->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先进行配准或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先进行配准或更换工程！"));
         return;
     }
     if (ui->comboBox_srcNode->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该节点下无可处理数据，请更换节点！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点下无可处理数据，请更换节点！"));
         return;
     }
 

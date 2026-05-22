@@ -4,9 +4,9 @@ Baseline_Preview::Baseline_Preview(QWidget* parent) :
     QWidget(parent)
 {
     this->resize(QSize(400, 400));
-    this->setWindowTitle(QString::fromLocal8Bit("基线预览"));
+    this->setWindowTitle(QStringLiteral("基线预览"));
     mChart = new QChart();
-    mChart->setTitle(QString::fromLocal8Bit("时空基线"));
+    mChart->setTitle(QStringLiteral("时空基线"));
     mChartView = new QChartView(mChart, this);
     mChart = mChartView->chart();   //关联
     mAxisX = new QValueAxis();
@@ -49,8 +49,8 @@ void Baseline_Preview::Paint(QList<double> temporal_baseline, QList<double> spat
     double pad_space = (Max_space - Min_space) / 10;
     mAxisX->setRange(Min_time - pad_time, Max_time + pad_time);
     mAxisY->setRange(Min_space - pad_space, Max_space + pad_space);
-    mAxisX->setTitleText(QString::fromLocal8Bit("时间基线/（天）"));
-    mAxisY->setTitleText(QString::fromLocal8Bit("空间基线/（米）"));
+    mAxisX->setTitleText(QStringLiteral("时间基线/（天）"));
+    mAxisY->setTitleText(QStringLiteral("空间基线/（米）"));
     for (int i = 0; i < temporal_baseline.size(); i++)
     {
         if (i == index - 1)

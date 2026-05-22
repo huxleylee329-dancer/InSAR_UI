@@ -192,7 +192,7 @@ void MyPage::createCtrl()
     {
     case Import:
     {
-        Name = new QLabel(QString::fromLocal8Bit("导入数据"), Bar);
+        Name = new QLabel(QStringLiteral("导入数据"), Bar);
         //Name->adjustSize();
 
         Content = new QWidget(this);
@@ -217,19 +217,19 @@ void MyPage::createCtrl()
     }
     case Cut:
     {
-        Name = new QLabel(QString::fromLocal8Bit("处理区域中心坐标"), Bar);
+        Name = new QLabel(QStringLiteral("处理区域中心坐标"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QLabel* lon_label = new QLabel(QString::fromLocal8Bit("经度(°)："));
+        QLabel* lon_label = new QLabel(QStringLiteral("经度(°)："));
         lon_label->adjustSize();
-        QLabel* lat_label = new QLabel(QString::fromLocal8Bit("纬度(°)："));
+        QLabel* lat_label = new QLabel(QStringLiteral("纬度(°)："));
         lat_label->adjustSize();
-        QLabel* height_label = new QLabel(QString::fromLocal8Bit("高度(m)："));
+        QLabel* height_label = new QLabel(QStringLiteral("高度(m)："));
         height_label->adjustSize();
-        QLabel* width_label = new QLabel(QString::fromLocal8Bit("宽度(m)："));
+        QLabel* width_label = new QLabel(QStringLiteral("宽度(m)："));
         width_label->adjustSize();
         lon = new QLineEdit;
         lon->adjustSize();
@@ -257,22 +257,22 @@ void MyPage::createCtrl()
     }
     case Regis:
     {
-        Name = new QLabel(QString::fromLocal8Bit("图像配准"), Bar);
+        Name = new QLabel(QStringLiteral("图像配准"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        //QLabel* index_label = new QLabel(QString::fromLocal8Bit("主图像序号(1-n)："));
+        //QLabel* index_label = new QLabel(QStringLiteral("主图像序号(1-n)："));
         //index_label->adjustSize();
         //Index = new QLineEdit;
         //Index->adjustSize();
-        QLabel* interp_label = new QLabel(QString::fromLocal8Bit("插值倍数(2^n)："));
+        QLabel* interp_label = new QLabel(QStringLiteral("插值倍数(2^n)："));
         interp_label->adjustSize();
         Interp = new QLineEdit;
         Interp->adjustSize();
         Interp->setPlaceholderText("8");
-        QLabel* block_label = new QLabel(QString::fromLocal8Bit("子块尺寸(2^n)："));
+        QLabel* block_label = new QLabel(QStringLiteral("子块尺寸(2^n)："));
         block_label->adjustSize();
         Block = new QLineEdit;
         Block->adjustSize();
@@ -290,29 +290,29 @@ void MyPage::createCtrl()
     }
     case IF:
     {
-        Name = new QLabel(QString::fromLocal8Bit("干涉相位生成"), Bar);
+        Name = new QLabel(QStringLiteral("干涉相位生成"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        //QLabel* IFindex_label = new QLabel(QString::fromLocal8Bit("主图像序号(1-n)："));
+        //QLabel* IFindex_label = new QLabel(QStringLiteral("主图像序号(1-n)："));
         //IFindex_label->adjustSize();
         //IF_index = new  QLineEdit;
         //IF_index->adjustSize();
-        //IsDeflat = new QCheckBox(QString::fromLocal8Bit("是否去平地"));
+        //IsDeflat = new QCheckBox(QStringLiteral("是否去平地"));
         //IsDeflat->adjustSize();
-        //Istopo = new QCheckBox(QString::fromLocal8Bit("是否去地形"));
+        //Istopo = new QCheckBox(QStringLiteral("是否去地形"));
         //Istopo->adjustSize();
-        Iscoh = new QCheckBox(QString::fromLocal8Bit("是否计算相干系数"));
+        Iscoh = new QCheckBox(QStringLiteral("是否计算相干系数"));
         Iscoh->adjustSize();
         Iscoh->setChecked(true);
-        win_h_abel = new QLabel(QString::fromLocal8Bit("相干系数估计窗口高度："));
+        win_h_abel = new QLabel(QStringLiteral("相干系数估计窗口高度："));
         win_h_abel->adjustSize();
         win_h = new QLineEdit;
         win_h->adjustSize();
         win_h->setPlaceholderText("3");
-        win_w_label = new QLabel(QString::fromLocal8Bit("相干系数估计窗口宽度："));
+        win_w_label = new QLabel(QStringLiteral("相干系数估计窗口宽度："));
         win_w_label->adjustSize();
         win_w = new QLineEdit;
         win_w->adjustSize();
@@ -321,12 +321,12 @@ void MyPage::createCtrl()
         //win_h->hide();
         //win_w_label->hide();
         //win_w->hide();
-        QLabel* Multi_az_label = new QLabel(QString::fromLocal8Bit("多视倍数(方位向)："));
+        QLabel* Multi_az_label = new QLabel(QStringLiteral("多视倍数(方位向)："));
         Multi_az_label->adjustSize();
         multi_az = new  QLineEdit;
         multi_az->adjustSize();
         multi_az->setPlaceholderText("1");
-        QLabel* Multi_rg_label = new QLabel(QString::fromLocal8Bit("多视倍数(距离向)："));
+        QLabel* Multi_rg_label = new QLabel(QStringLiteral("多视倍数(距离向)："));
         Multi_rg_label->adjustSize();
         multi_rg = new  QLineEdit;
         multi_rg->adjustSize();
@@ -350,33 +350,33 @@ void MyPage::createCtrl()
     }
     case Denoise:
     {
-        Name = new QLabel(QString::fromLocal8Bit("相位滤波"), Bar);
+        Name = new QLabel(QStringLiteral("相位滤波"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QGroupBox* Denoise_box = new QGroupBox(QString::fromLocal8Bit("滤波方法"));
-        Slop_button = new QRadioButton(QString::fromLocal8Bit("斜坡自适应"));
+        QGroupBox* Denoise_box = new QGroupBox(QStringLiteral("滤波方法"));
+        Slop_button = new QRadioButton(QStringLiteral("斜坡自适应"));
         Slop_button->adjustSize();
-        Goldstein_button = new QRadioButton(QString::fromLocal8Bit("Goldstein滤波"));
+        Goldstein_button = new QRadioButton(QStringLiteral("Goldstein滤波"));
         Goldstein_button->adjustSize();
         Goldstein_button->setChecked(true);
-        DL_button = new QRadioButton(QString::fromLocal8Bit("深度学习滤波"));
+        DL_button = new QRadioButton(QStringLiteral("深度学习滤波"));
         DL_button->adjustSize();
         QHBoxLayout* Box_Layout = new QHBoxLayout;
         Box_Layout->addWidget(Slop_button);
         Box_Layout->addWidget(Goldstein_button);
         Box_Layout->addWidget(DL_button);
         Denoise_box->setLayout(Box_Layout);
-        Slop_label = new QLabel(QString::fromLocal8Bit("斜坡自适应窗口尺寸："));
+        Slop_label = new QLabel(QStringLiteral("斜坡自适应窗口尺寸："));
         Slop_label->adjustSize();
         Slop_label->hide();
         Slop_win = new QLineEdit;
         Slop_win->adjustSize();
         Slop_win->setPlaceholderText("11");
         Slop_win->hide();
-        Pre_label = new QLabel(QString::fromLocal8Bit("预滤波窗口尺寸："));
+        Pre_label = new QLabel(QStringLiteral("预滤波窗口尺寸："));
         Pre_label->adjustSize();
         Pre_label->hide();
         Pre_win = new QLineEdit;
@@ -388,10 +388,10 @@ void MyPage::createCtrl()
         Slop_layout->addWidget(Slop_win);
         Slop_layout->addWidget(Pre_label);
         Slop_layout->addWidget(Pre_win);
-        Goldstein_label = new QLabel(QString::fromLocal8Bit("Goldstein滤波窗尺寸："));
+        Goldstein_label = new QLabel(QStringLiteral("Goldstein滤波窗尺寸："));
         Goldstein_label->adjustSize();
         //Goldstein_label->hide();
-        Goldstein_pad_label = new QLabel(QString::fromLocal8Bit("Goldstein滤波补零尺寸："));
+        Goldstein_pad_label = new QLabel(QStringLiteral("Goldstein滤波补零尺寸："));
         Goldstein_pad_label->adjustSize();
         //Goldstein_pad_label->hide();
         Goldstein_win = new QLineEdit;
@@ -402,7 +402,7 @@ void MyPage::createCtrl()
         Goldstein_pad_win->adjustSize();
         Goldstein_pad_win->setPlaceholderText("8");
         //Goldstein_pad_win->hide();
-        alpha_label = new QLabel(QString::fromLocal8Bit("alpha："));
+        alpha_label = new QLabel(QStringLiteral("alpha："));
         alpha_label, adjustSize();
         //alpha_label->hide();
         alpha = new QLineEdit;
@@ -425,21 +425,21 @@ void MyPage::createCtrl()
     }
     case Unwrap:
     {
-        Name = new QLabel(QString::fromLocal8Bit("相位解缠"), Bar);
+        Name = new QLabel(QStringLiteral("相位解缠"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QGroupBox* Unwrap_box = new QGroupBox(QString::fromLocal8Bit("解缠方法"));
-        SPD = new QRadioButton(QString::fromLocal8Bit("质量图法"));
+        QGroupBox* Unwrap_box = new QGroupBox(QStringLiteral("解缠方法"));
+        SPD = new QRadioButton(QStringLiteral("质量图法"));
         SPD->adjustSize();
-        MCF = new QRadioButton(QString::fromLocal8Bit("最小费用流"));
+        MCF = new QRadioButton(QStringLiteral("最小费用流"));
         MCF->adjustSize();
         MCF->setChecked(true);
-        SNAPHU = new QRadioButton(QString::fromLocal8Bit("SNAPHU"));
+        SNAPHU = new QRadioButton(QStringLiteral("SNAPHU"));
         SNAPHU->adjustSize();
-        Q_M = new QRadioButton(QString::fromLocal8Bit("综合法"));
+        Q_M = new QRadioButton(QStringLiteral("综合法"));
         Q_M->adjustSize();
         QHBoxLayout* Box_Layout = new QHBoxLayout;
         Box_Layout->addWidget(SPD);
@@ -447,7 +447,7 @@ void MyPage::createCtrl()
         Box_Layout->addWidget(SNAPHU);
         Box_Layout->addWidget(Q_M);
         Unwrap_box->setLayout(Box_Layout);
-        threshold_label = new QLabel(QString::fromLocal8Bit("相干系数阈值："));
+        threshold_label = new QLabel(QStringLiteral("相干系数阈值："));
         threshold_label->adjustSize();
         threshold_label->hide();
         threshold = new QLineEdit;
@@ -465,20 +465,20 @@ void MyPage::createCtrl()
     }
     case Dem:
     {
-        Name = new QLabel(QString::fromLocal8Bit("高程反演"), Bar);
+        Name = new QLabel(QStringLiteral("高程反演"), Bar);
         Name->adjustSize();
 
         Content = new QWidget(this);
         Content->setStyleSheet("background: rgb(218, 222, 225)");
         QGridLayout* Layout = new QGridLayout;
-        QGroupBox* DEM_box = new QGroupBox(QString::fromLocal8Bit("DEM方法"));
-        Newton = new QRadioButton(QString::fromLocal8Bit("牛顿法"));
+        QGroupBox* DEM_box = new QGroupBox(QStringLiteral("DEM方法"));
+        Newton = new QRadioButton(QStringLiteral("牛顿法"));
         Newton->adjustSize();
         Newton->setChecked(true);
         QHBoxLayout* Box_Layout = new QHBoxLayout;
         Box_Layout->addWidget(Newton);
         DEM_box->setLayout(Box_Layout);
-        times_label = new QLabel(QString::fromLocal8Bit("迭代次数："));
+        times_label = new QLabel(QStringLiteral("迭代次数："));
         times_label->adjustSize();
         times_label->hide();
         iteration_times= new QLineEdit;
@@ -657,7 +657,7 @@ void MyPage::DEM_Settings()
 void MyPage::addimage()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("加入原始数据"),
+        QStringLiteral("加入原始数据"),
         "",
         "file(*)");
     Import_list->addItem(filename);

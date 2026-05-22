@@ -16,6 +16,7 @@
 #include <QPersistentModelIndex>
 #include <QMetaType>
 #include <QAbstractItemModel>
+#include <vector>
 
 // Global function to load QSS from file
 QString loadStyleSheet(const QString &fileName)
@@ -62,6 +63,7 @@ int main(int argc, char *argv[])
     qRegisterMetaType<QList<QPersistentModelIndex>>("QList<QPersistentModelIndex>");
     qRegisterMetaType<QVector<int>>("QVector<int>");
     qRegisterMetaType<QAbstractItemModel::LayoutChangeHint>("QAbstractItemModel::LayoutChangeHint");
+    qRegisterMetaType<std::vector<QString>>("std::vector<QString>");
 
     // Load theme preference from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);

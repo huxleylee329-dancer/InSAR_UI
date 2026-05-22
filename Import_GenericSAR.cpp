@@ -73,7 +73,7 @@ void Import_GenericSAR::on_comboBox_dst_project_currentIndexChanged()
 void Import_GenericSAR::on_button_xml_browse_pressed()
 {
     QString filename = QFileDialog::getOpenFileName(this,
-        QString::fromLocal8Bit("Import Generic SAR data"),
+        QStringLiteral("Import Generic SAR data"),
         this->xml_path,
         "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)");
 
@@ -89,30 +89,30 @@ void Import_GenericSAR::on_buttonBox_accepted()
 {
         if (ui->LineEdit_xml->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入图片文件！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入图片文件！"));
         return;
     }
     bool bFlag = ui->LineEdit_xml->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意路径中应当仅包含数字、字母及下划线！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意路径中应当仅包含数字、字母及下划线！"));
         return;
     }
     if (ui->LineEdit_dst_filename->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入想要保存的图片名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入想要保存的图片名称！"));
         return;
     }
     bFlag = ui->LineEdit_dst_filename->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意图像名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意图像名称应当为数字、字母及下划线的组合！"));
         return;
     }
 
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点名为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点名为空！"));
         return;
     }
 
@@ -132,7 +132,7 @@ void Import_GenericSAR::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，且和导入数据级别不同，请重命名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         return;
     }
 
@@ -177,13 +177,13 @@ void Import_GenericSAR::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
 }
@@ -269,13 +269,13 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
     //检查导入文件list是否为空
     if (ui->listWidget->count() < 1)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("导入图像文件为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("导入图像文件为空！"));
         return;
     }
     //检查目标节点名
     if (ui->lineEdit_dst_node_2->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点名为空！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点名为空！"));
         return;
     }
     
@@ -295,7 +295,7 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
     }
     if (same_name_node)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("目标节点已存在，且和导入数据级别不同，请重命名！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         return;
     }
 
@@ -374,7 +374,7 @@ void Import_GenericSAR::on_comboBox_dst_project_2_currentIndexChanged()
 void Import_GenericSAR::on_pushButton_add_pressed()
 {
     QStringList filenames = QFileDialog::getOpenFileNames(this,
-    QString::fromLocal8Bit("导入通用 SAR 数据"),
+    QStringLiteral("导入通用 SAR 数据"),
     "",
     "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff)");
 

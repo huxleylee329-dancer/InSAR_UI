@@ -49,13 +49,13 @@ void Cut::updateProcess(int value, QString information)
     if (!ui->progressBar->isHidden())
     {
         ui->progressBar->setValue(value);
-        ui->progressBar->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
     else if (!ui->progressBar_2->isHidden())
     {
         ui->progressBar_2->setValue(value);
-        ui->progressBar_2->setFormat(QString::fromLocal8Bit("%1：%2%").arg(information).arg(value));
+        ui->progressBar_2->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
         ui->progressBar_2->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     }
    
@@ -69,7 +69,7 @@ void Cut::endProcess()
     isPreviewPressed = false;
     isCutting = false;
     ui->Preview->setDisabled(false);
-    ui->Preview->setText(QString::fromLocal8Bit("预览"));
+    ui->Preview->setText(QStringLiteral("预览"));
     ui->Preview->repaint();
     ui->buttonBox_2->setDisabled(false);
     ui->comboBox_3->setDisabled(false);
@@ -110,22 +110,22 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
 
     if (ui->comboBox_4->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先配准再进行框选裁剪或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先配准再进行框选裁剪或更换工程！"));
         return;
     }
     if (ui->lineEdit_2->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入存放裁剪文件的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入存放裁剪文件的文件夹名称！"));
         return;
     }
     bool bFlag = ui->lineEdit_2->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
 
-    ui->Preview->setText(QString::fromLocal8Bit("正在裁剪..."));
+    ui->Preview->setText(QStringLiteral("正在裁剪..."));
     ui->Preview->repaint();
     ui->buttonBox_2->setDisabled(true);
     ui->comboBox_3->setDisabled(true);
@@ -157,7 +157,7 @@ void Cut::cancelled()
     if (isCutting) return;//由于预览子窗口在点击确定或者关闭之后都会发送destroy消息，为了区分，设置是否正在裁剪标志。
     isPreviewPressed = false;
     ui->Preview->setDisabled(false);
-    ui->Preview->setText(QString::fromLocal8Bit("预览"));
+    ui->Preview->setText(QStringLiteral("预览"));
     ui->Preview->repaint();
 }
 
@@ -187,7 +187,7 @@ void Cut::ShowProjectList(QStandardItemModel *model)
     }
     if (count == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("无可处理数据，请先导入数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
         this->deleteLater();
     }
     QModelIndex pro_index = model->indexFromItem(project);
@@ -207,7 +207,7 @@ void Cut::ShowProjectList(QStandardItemModel *model)
     }
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("未检测到可处理数据，请先导入图像数据！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到可处理数据，请先导入图像数据！"));
         this->deleteLater();
     }
     ui->comboBox_2->setCurrentIndex(0);
@@ -323,38 +323,38 @@ void Cut::on_buttonBox_accepted()
 {
     if (ui->comboBox_2->count() == 0)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("该工程无可处理数据，请先导入数据或更换工程！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先导入数据或更换工程！"));
         return;
     }
     if (ui->lineEdit->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请输入存放裁剪文件的文件夹名称！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入存放裁剪文件的文件夹名称！"));
         return;
     }
     bool bFlag = ui->lineEdit->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请注意文件夹名称应当为数字、字母及下划线的组合！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
     if (ui->lon->text().isEmpty() || ui->lat->text().isEmpty() ||
         ui->Height->text().isEmpty() || ui->Width->text().isEmpty())
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请确保输入参数完整！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("请确保输入参数完整！"));
         return;
     }
     ui->lon->text().toDouble(&bFlag);
     bool bFlag2 = ui->lat->text().toDouble(&bFlag2);
     if (bFlag ==false || bFlag2 == false)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("经纬度应为小数！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("经纬度应为小数！"));
         return;
     }
     ui->Height->text().toDouble(&bFlag);
     ui->Width->text().toDouble(&bFlag2);
     if (bFlag == false || bFlag2 == false)
     {
-        QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("高度与宽度应为小数！"));
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("高度与宽度应为小数！"));
         return;
     }
     ui->progressBar->setHidden(0);
@@ -396,7 +396,7 @@ void Cut::on_Preview_pressed()
     if (isPreviewPressed) return;
     isPreviewPressed = true;
     ui->Preview->setDisabled(true);
-    ui->Preview->setText(QString::fromLocal8Bit("正在加载预览图..."));
+    ui->Preview->setText(QStringLiteral("正在加载预览图..."));
     ui->Preview->repaint();
     QStandardItem* project = copy->findItems(ui->comboBox_3->currentText())[0];
     QString image_name;
@@ -450,7 +450,7 @@ void Cut::on_Preview_pressed()
 
 void Cut::on_buttonBox_2_accepted()
 {
-    QMessageBox::warning(NULL, "Warning!", QString::fromLocal8Bit("请预览并选择裁剪区域！"));
+    QMessageBox::warning(NULL, "Warning!", QStringLiteral("请预览并选择裁剪区域！"));
 }
 
 void Cut::on_buttonBox_2_rejected()
