@@ -54,7 +54,7 @@ protected:
     bool validateAndRestoreOutput() override;
 
 signals:
-    void startSpeckleDenoise(QString inputPath, QString outputPath, QString nodeName, QString fileName,
+    void startSpeckleDenoise(QStringList inputPaths, QStringList outputPaths, QString nodeName, QStringList fileNames,
                             QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);
 
 private Q_SLOTS:
@@ -63,6 +63,7 @@ private Q_SLOTS:
     void onProcessingFinished();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
+    void onAskUserError(const QString& message, bool* skip);
 
 private:
     QStandardItemModel* projectModel() const;
@@ -84,7 +85,7 @@ private:
     // 数据
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
-    QString m_outputImagePath;
+    QStringList m_outputImagePaths;
     QString m_outputNodeName;
     QString m_outputFileName;
     bool m_saveToProject = true;

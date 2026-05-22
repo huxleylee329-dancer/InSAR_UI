@@ -86,15 +86,20 @@ class ImageInfoData : public NodeData
 public:
     ImageInfoData() = default;
     explicit ImageInfoData(const QString& filePath, const QMap<QString, QString>& metadata = {})
-        : _filePath(filePath), _metadata(metadata) {}
+        : _filePaths(QStringList() << filePath), _metadata(metadata) {}
+    explicit ImageInfoData(const QStringList& filePaths, const QMap<QString, QString>& metadata = {})
+        : _filePaths(filePaths), _metadata(metadata) {}
 
     NodeDataType type() const override
     {
         return NodeDataType{"image_info", "Image Info"};
     }
 
-    QString filePath() const { return _filePath; }
-    void setFilePath(const QString& path) { _filePath = path; }
+    QString filePath() const { return _filePaths.isEmpty() ? QString() : _filePaths.first(); }
+    void setFilePath(const QString& path) { _filePaths = QStringList() << path; }
+    
+    QStringList filePaths() const { return _filePaths; }
+    void setFilePaths(const QStringList& paths) { _filePaths = paths; }
 
     QString getMetadata(const QString& key) const { return _metadata.value(key); }
     void setMetadata(const QString& key, const QString& value) { _metadata[key] = value; }
@@ -108,18 +113,19 @@ public:
 
     QString getSummary() const override
     {
-        if (_filePath.isEmpty()) return "No File";
-        return QFileInfo(_filePath).fileName();
+        if (_filePaths.isEmpty()) return "No File";
+        if (_filePaths.size() > 1) return QString("%1 Images").arg(_filePaths.size());
+        return QFileInfo(_filePaths.first()).fileName();
     }
 
     QVector<DataField> getFields() const override
     {
         QVector<DataField> fields;
-        if (!_filePath.isEmpty()) {
+        if (!_filePaths.isEmpty()) {
             DataField pathField;
             pathField.key = "Path";
-            pathField.value = _filePath;
-            pathField.editType = FieldEditType::Path;
+            pathField.value = _filePaths.size() == 1 ? _filePaths.first() : QString("%1 files").arg(_filePaths.size());
+            pathField.editType = _filePaths.size() == 1 ? FieldEditType::Path : FieldEditType::None;
             pathField.pathFilter = "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.h5);;All Files (*)";
             fields.append(pathField);
         }
@@ -132,14 +138,14 @@ public:
     bool setField(const QString& key, const QString& value) override
     {
         if (key == "Path") {
-            _filePath = value;
+            _filePaths = QStringList() << value;
             return true;
         }
         return false;
     }
 
 private:
-    QString _filePath;
+    QStringList _filePaths;
     QMap<QString, QString> _metadata;
 };
 

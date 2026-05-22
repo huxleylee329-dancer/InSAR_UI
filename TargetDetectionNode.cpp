@@ -4,8 +4,14 @@
 #include <QHBoxLayout>
 #include <QFileInfo>
 #include <QDir>
+#include <QMessageBox>
 #include <QApplication>
 #include <QDebug>
+#include <QLabel>
+#include <QComboBox>
+#include <QLineEdit>
+#include <QTableWidget>
+#include <QHeaderView>
 
 namespace QtNodes {
 
@@ -15,8 +21,7 @@ TargetDetectionNode::TargetDetectionNode()
     , m_inputImageLabel(nullptr)
     , m_modelComboBox(nullptr)
     , m_thresholdEdit(nullptr)
-    , m_resultLabel(nullptr)
-    , m_probabilityLabel(nullptr)
+    , m_resultsTable(nullptr)
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
@@ -161,17 +166,15 @@ void TargetDetectionNode::createWidget()
     // Output Results Labels
     layout->addWidget(new QLabel(QString::fromUtf8("\xe6\xa3\x80\xe6\x9f\xa5\xe7\xbb\x93\xe6\x9e\x9c\xef\xbc\x9a")));
 
-    auto* resultLayout = new QHBoxLayout();
-    resultLayout->addWidget(new QLabel(QString::fromUtf8("\xe7\xbb\x93\xe6\x9e\x9c\xef\xbc\x9a")));
-    m_resultLabel = new QLabel("--");
-    resultLayout->addWidget(m_resultLabel);
-    layout->addLayout(resultLayout);
-
-    auto* probLayout = new QHBoxLayout();
-    probLayout->addWidget(new QLabel(QString::fromUtf8("\xe7\x9b\xae\xe6\xa0\x87\xe5\x90\x8e\xe9\xaa\x8c\xe6\xa6\x82\xe7\x8e\x87\xef\xbc\x9a")));
-    m_probabilityLabel = new QLabel("--");
-    probLayout->addWidget(m_probabilityLabel);
-    layout->addLayout(probLayout);
+    m_resultsTable = new QTableWidget();
+    m_resultsTable->setColumnCount(3);
+    m_resultsTable->setHorizontalHeaderLabels({QString::fromUtf8("\xe5\x9b\xbe\xe5\x83\x8f"), QString::fromUtf8("\xe7\xbb\x93\xe6\x9e\x9c"), QString::fromUtf8("\xe6\xa6\x82\xe7\x8e\x87")});
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_resultsTable->setMinimumHeight(100);
+    layout->addWidget(m_resultsTable);
 
     // Status label
     m_statusLabel = new QLabel();
@@ -203,7 +206,7 @@ void TargetDetectionNode::processAutomatically()
 
 bool TargetDetectionNode::isReady() const
 {
-    if (!m_inputData || m_inputData->filePath().isEmpty()) {
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         return false;
     }
     if (m_selectedModelPath.isEmpty()) {
@@ -246,10 +249,11 @@ void TargetDetectionNode::executeProcessing()
     if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe6\xad\xa3\xe5\x9c\xa8\xe5\x88\x9d\xe5\xa7\x8b\xe5\x8c\x96..."));
     
     // Clear previous results
-    if (m_resultLabel) m_resultLabel->setText("--");
-    if (m_probabilityLabel) m_probabilityLabel->setText("--");
+    if (m_resultsTable) {
+        m_resultsTable->setRowCount(0);
+    }
 
-    QString inputPath = m_inputData->filePath();
+    QStringList inputPaths = m_inputData->filePaths();
     QString modelPath = m_selectedModelPath;
     float thresholdValue = m_thresholdValue;
 
@@ -257,13 +261,14 @@ void TargetDetectionNode::executeProcessing()
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
 
-    connect(m_thread, &QThread::started, [this, inputPath, modelPath, thresholdValue]() {
-        Q_EMIT startTargetDetection(inputPath, modelPath, thresholdValue);
+    connect(m_thread, &QThread::started, [this, inputPaths, modelPath, thresholdValue]() {
+        Q_EMIT startTargetDetection(inputPaths, modelPath, thresholdValue);
     });
     connect(this, &TargetDetectionNode::startTargetDetection, m_workerThread, &MyThread::Target_Detection, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::updateProcess, this, &TargetDetectionNode::onProgressUpdate, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::sendTargetDetectionResult, this, &TargetDetectionNode::onDetectionFinished, Qt::UniqueConnection);
     connect(m_workerThread, &MyThread::errorProcess, this, &TargetDetectionNode::onError, Qt::UniqueConnection);
+    connect(m_workerThread, &MyThread::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::BlockingQueuedConnection);
 
     m_thread->start();
     
@@ -279,15 +284,26 @@ void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)
     }
 }
 
-void TargetDetectionNode::onDetectionFinished(bool success, float shipProb, QString resultText, QString errorMsg)
+void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg)
 {
-    if (success) {
-        if (m_resultLabel) m_resultLabel->setText(resultText);
-        if (m_probabilityLabel) m_probabilityLabel->setText(QString::number(shipProb * 100.0f, 'f', 2) + "%");
+    if (m_resultsTable && m_inputData && imageIndex < m_inputData->filePaths().size()) {
+        int row = m_resultsTable->rowCount();
+        m_resultsTable->insertRow(row);
         
-        m_savedResultText = resultText;
-        m_savedShipProb = shipProb;
-
+        QString fileName = QFileInfo(m_inputData->filePaths()[imageIndex]).fileName();
+        m_resultsTable->setItem(row, 0, new QTableWidgetItem(fileName));
+        
+        if (success) {
+            m_resultsTable->setItem(row, 1, new QTableWidgetItem(resultText));
+            m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(shipProb * 100.0f, 'f', 2) + "%"));
+        } else {
+            m_resultsTable->setItem(row, 1, new QTableWidgetItem("Error"));
+            m_resultsTable->setItem(row, 2, new QTableWidgetItem(errorMsg));
+        }
+    }
+    
+    // We only finish execution if this is the last image.
+    if (m_inputData && imageIndex == m_inputData->filePaths().size() - 1) {
         if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe5\xae\x8c\xe6\x88\x90"));
 
         m_outputData = m_inputData;
@@ -295,24 +311,22 @@ void TargetDetectionNode::onDetectionFinished(bool success, float shipProb, QStr
         Q_EMIT dataUpdated(0);
         
         finishExecution();
-    } else {
-        onError(errorMsg);
-    }
 
-    if (m_modelComboBox) m_modelComboBox->setEnabled(true);
-    if (m_thresholdEdit) m_thresholdEdit->setEnabled(true);
+        if (m_modelComboBox) m_modelComboBox->setEnabled(true);
+        if (m_thresholdEdit) m_thresholdEdit->setEnabled(true);
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
+        if (m_thread)
+        {
+            m_thread->quit();
+            m_thread->wait();
+            m_thread->deleteLater();
+            m_thread = nullptr;
+        }
+        if (m_workerThread)
+        {
+            m_workerThread->deleteLater();
+            m_workerThread = nullptr;
+        }
     }
 }
 
@@ -367,10 +381,20 @@ void TargetDetectionNode::load(QJsonObject const &json)
     }
 
     if (executionState() == ExecutionState::Completed) {
-        if (m_resultLabel) m_resultLabel->setText(m_savedResultText);
-        if (m_probabilityLabel) m_probabilityLabel->setText(QString::number(m_savedShipProb * 100.0f, 'f', 2) + "%");
+        // Not saving individual result for table now.
         if (m_statusLabel) m_statusLabel->setText(QString::fromUtf8("\xe7\x8a\xb6\xe6\x80\x81\xef\xbc\x9a\xe5\xae\x8c\xe6\x88\x90"));
     }
+}
+
+void TargetDetectionNode::onAskUserError(const QString& message, bool* skip)
+{
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        nullptr,
+        QString::fromUtf8("\xe9\x94\x99\xe8\xaf\xaf"), // 错误
+        message,
+        QMessageBox::Yes | QMessageBox::No
+    );
+    *skip = (reply == QMessageBox::Yes);
 }
 
 bool TargetDetectionNode::validateAndRestoreOutput()
