@@ -164,12 +164,31 @@ void S1DeburstNode::createWidget()
     layout->addLayout(dataNodeLayout);
 
     // 目标节点名 [1:1]
+    auto invalidateNodeData = [this]() {
+        if (m_outputData) m_outputData.reset();
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
+
     auto* nodeNameLayout = new QHBoxLayout();
     QLabel* nodeNameLabel = new QLabel("目标节点名");
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("不要输入中文字符");
     m_outputNodeNameEdit->setText(m_outputNodeName);
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 

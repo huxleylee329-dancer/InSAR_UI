@@ -1,4 +1,4 @@
-﻿
+
 #pragma once
 #include <QtGui> 
 #include<qtreeview.h>
@@ -42,6 +42,7 @@ private slots:
     void Delete();
     /*卸载工程响应函数*/
     void Unload();
+    void CleanOrphanedFiles();
     void StopThread();
     void DeleteNode();
  }; 

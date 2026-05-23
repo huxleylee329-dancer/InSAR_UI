@@ -151,9 +151,28 @@ void ClutterSuppressionNode::createWidget()
     m_inputImageLabel->setWordWrap(true);
     layout->addWidget(m_inputImageLabel);
 
+    auto invalidateNodeData = [this]() {
+        if (m_outputData) m_outputData.reset();
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
+
     m_saveToProjectCheckBox = new QCheckBox("保存到项目树");
     m_saveToProjectCheckBox->setChecked(m_saveToProject);
-    connect(m_saveToProjectCheckBox, &QCheckBox::stateChanged, this, &ClutterSuppressionNode::onSaveToProjectChanged);
+    connect(m_saveToProjectCheckBox, &QCheckBox::stateChanged, this, [this, invalidateNodeData](int state) {
+        bool newState = (state == Qt::Checked);
+        if (m_saveToProject != newState) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_saveToProjectCheckBox);
+                m_saveToProjectCheckBox->setChecked(m_saveToProject);
+                return;
+            }
+            m_saveToProject = newState;
+            onSaveToProjectChanged(state);
+            invalidateNodeData();
+        }
+    });
     layout->addWidget(m_saveToProjectCheckBox);
 
     auto* nodeNameLayout = new QHBoxLayout();
@@ -163,6 +182,18 @@ void ClutterSuppressionNode::createWidget()
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("输入节点名称");
     m_outputNodeNameEdit->setText(m_outputNodeName);
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
@@ -173,7 +204,17 @@ void ClutterSuppressionNode::createWidget()
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
     m_outputFileNameEdit->setText(m_outputFileName);
-    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
+    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputFileNameEdit->text();
+        if (m_outputFileName != text) {
+            if (!confirmParameterChange()) {
+                m_outputFileNameEdit->setText(m_outputFileName);
+                return;
+            }
+            m_outputFileName = text;
+            invalidateNodeData();
+        }
+    });
     fileNameLayout->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameLayout);
 

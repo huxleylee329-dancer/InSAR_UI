@@ -1,6 +1,7 @@
 
 #include "Sentinel1BatchImportNode.h"
 #include "IApplicationInterface.h"
+#include "NodeUtils.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
@@ -56,6 +57,12 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
 
+    auto invalidateNodeData = [this]() {
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
+
     // Top section: file list (8:2 stretch)
     auto* topSection = new QHBoxLayout();
     topSection->setStretch(0, 8);
@@ -93,6 +100,17 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     m_subswathCombo->addItem("iw1");
     m_subswathCombo->addItem("iw2");
     m_subswathCombo->addItem("iw3");
+    connect(m_subswathCombo, &QComboBox::currentTextChanged, this, [this, invalidateNodeData](const QString& text) {
+        if (m_subswath != text) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_subswathCombo);
+                m_subswathCombo->setCurrentText(m_subswath);
+                return;
+            }
+            m_subswath = text;
+            invalidateNodeData();
+        }
+    });
     subswathRow->addWidget(m_subswathCombo);
     configLayout->addLayout(subswathRow);
 
@@ -104,6 +122,17 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     m_polarizationCombo = new QComboBox();
     m_polarizationCombo->addItem("vv");
     m_polarizationCombo->addItem("vh");
+    connect(m_polarizationCombo, &QComboBox::currentTextChanged, this, [this, invalidateNodeData](const QString& text) {
+        if (m_polarization != text) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_polarizationCombo);
+                m_polarizationCombo->setCurrentText(m_polarization);
+                return;
+            }
+            m_polarization = text;
+            invalidateNodeData();
+        }
+    });
     polRow->addWidget(m_polarizationCombo);
     configLayout->addLayout(polRow);
 
@@ -140,7 +169,19 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     nameRow->setStretch(1, 7);
     nameRow->addWidget(new QLabel("目标节点名："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("S1_Batch_Import");
+    m_outputNodeNameEdit->setText(m_outputNodeName);
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nameRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nameRow);
 
@@ -284,6 +325,10 @@ void Sentinel1BatchImportNode::onAddFilesClicked()
         {
             m_manifestPaths.append(file);
             m_fileListWidget->addItem(QFileInfo(file).fileName());
+            
+            int outCount = nPorts(PortType::Out);
+            for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+            invalidateExecution();
         }
     }
 }
@@ -291,11 +336,16 @@ void Sentinel1BatchImportNode::onAddFilesClicked()
 void Sentinel1BatchImportNode::onRemoveFilesClicked()
 {
     QList<QListWidgetItem*> selectedItems = m_fileListWidget->selectedItems();
-    for (QListWidgetItem* item : selectedItems)
-    {
-        int row = m_fileListWidget->row(item);
-        m_manifestPaths.removeAt(row);
-        delete item;
+    if (!selectedItems.isEmpty()) {
+        for (QListWidgetItem* item : selectedItems)
+        {
+            int row = m_fileListWidget->row(item);
+            m_manifestPaths.removeAt(row);
+            delete item;
+        }
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
     }
 }
 
@@ -371,9 +421,9 @@ QJsonObject Sentinel1BatchImportNode::save() const
     for (const QString &path : m_manifestPaths)
         pathsArray.append(path);
     json["manifestPaths"] = pathsArray;
-    json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : "iw1";
-    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "vv";
-    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
+    json["subswath"] = m_subswath;
+    json["polarization"] = m_polarization;
+    json["outputNodeName"] = m_outputNodeName;
     return json;
 }
 
@@ -398,15 +448,15 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
 
-    QString subswath = json["subswath"].toString("iw1");
+    m_subswath = json["subswath"].toString("iw1");
     if (m_subswathCombo) {
-        int idx = m_subswathCombo->findText(subswath);
+        int idx = m_subswathCombo->findText(m_subswath);
         if (idx >= 0) m_subswathCombo->setCurrentIndex(idx);
     }
 
-    QString pol = json["polarization"].toString("vv");
+    m_polarization = json["polarization"].toString("vv");
     if (m_polarizationCombo) {
-        int idx = m_polarizationCombo->findText(pol);
+        int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
 }

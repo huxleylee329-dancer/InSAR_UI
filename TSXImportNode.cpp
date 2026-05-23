@@ -1,6 +1,7 @@
 
 #include "TSXImportNode.h"
 #include "ImportDataTypes.h"
+#include "NodeUtils.h"
 #include <QFile>
 #include <QFileInfo>
 
@@ -55,11 +56,27 @@ QWidget* TSXImportNode::createWidget()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
+    auto invalidateNodeData = [this]() {
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
+
     // XML file row: Label:LineEdit:Button
     auto* xmlRow = new QHBoxLayout();
     xmlRow->addWidget(new QLabel("TSX/TDX图像（.xml）："));
     m_xmlEdit = new QLineEdit();
-    connect(m_xmlEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_xmlPath = text; });
+    connect(m_xmlEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+        QString text = m_xmlEdit->text();
+        if (m_xmlPath != text) {
+            if (!confirmParameterChange()) {
+                m_xmlEdit->setText(m_xmlPath);
+                return;
+            }
+            m_xmlPath = text; 
+            invalidateNodeData();
+        }
+    });
     QPushButton* xmlBrowse = new QPushButton("浏览...");
     xmlRow->addWidget(m_xmlEdit);
     xmlRow->addWidget(xmlBrowse);
@@ -85,6 +102,18 @@ QWidget* TSXImportNode::createWidget()
     nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeRow);
 
@@ -94,7 +123,17 @@ QWidget* TSXImportNode::createWidget()
     filenameRow->setStretch(1, 7);
     filenameRow->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
-    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
+    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+        QString text = m_outputFileNameEdit->text();
+        if (m_outputFileName != text) {
+            if (!confirmParameterChange()) {
+                m_outputFileNameEdit->setText(m_outputFileName);
+                return;
+            }
+            m_outputFileName = text; 
+            invalidateNodeData();
+        }
+    });
     filenameRow->addWidget(m_outputFileNameEdit);
     layout->addLayout(filenameRow);
 
@@ -106,6 +145,17 @@ QWidget* TSXImportNode::createWidget()
     m_polarizationCombo = new QComboBox();
     m_polarizationCombo->addItem("HH");
     m_polarizationCombo->addItem("VV");
+    connect(m_polarizationCombo, &QComboBox::currentTextChanged, this, [this, invalidateNodeData](const QString& text) {
+        if (m_polarization != text) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_polarizationCombo);
+                m_polarizationCombo->setCurrentText(m_polarization);
+                return;
+            }
+            m_polarization = text;
+            invalidateNodeData();
+        }
+    });
     polRow->addWidget(m_polarizationCombo);
     layout->addLayout(polRow);
 
@@ -294,7 +344,7 @@ QJsonObject TSXImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
     json["xmlPath"] = m_xmlPath;
-    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "HH";
+    json["polarization"] = m_polarization;
     json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     json["outputFileName"] = m_outputFileName;
     return json;
@@ -313,9 +363,9 @@ void TSXImportNode::load(QJsonObject const &json)
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
 
-    QString pol = json["polarization"].toString("HH");
+    m_polarization = json["polarization"].toString("HH");
     if (m_polarizationCombo) {
-        int idx = m_polarizationCombo->findText(pol);
+        int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
 }

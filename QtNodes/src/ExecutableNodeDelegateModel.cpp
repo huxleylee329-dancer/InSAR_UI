@@ -2,6 +2,7 @@
 #include "ExecutableNodeDelegateModel.hpp"
 #include "NodeGraphicsObject.hpp"
 #include "BasicGraphicsScene.hpp"
+#include <QMessageBox>
 
 namespace QtNodes {
 
@@ -221,6 +222,32 @@ void ExecutableNodeDelegateModel::invalidateExecution()
     Q_EMIT progressUpdated(_progress);
     Q_EMIT executionStateChanged();
     triggerVisualUpdate();
+}
+
+bool ExecutableNodeDelegateModel::confirmParameterChange()
+{
+    bool hasData = false;
+    for (auto const &pair : _outputData) {
+        if (pair.second != nullptr) {
+            hasData = true;
+            break;
+        }
+    }
+
+    if (_state == ExecutionState::Completed || hasData) {
+        auto reply = QMessageBox::question(nullptr, tr("确认修改"),
+            tr("修改该参数将导致本节点及所有下游节点重置。\n\n"
+               "说明：\n"
+               "- 未修改名称的节点，其旧文件将被覆盖。\n"
+               "- 修改名称的节点将生成新文件夹，但旧文件夹会成为孤立文件，可通过【清除孤立文件】功能移除。\n\n"
+               "是否确认修改？"),
+            QMessageBox::Yes | QMessageBox::No);
+        
+        if (reply == QMessageBox::No) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::shared_ptr<NodeData> ExecutableNodeDelegateModel::getInputData(PortIndex portIndex)

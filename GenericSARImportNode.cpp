@@ -2,6 +2,7 @@
 #include "GenericSARImportNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
+#include "NodeUtils.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -51,6 +52,11 @@ QWidget* GenericSARImportNode::createWidget()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
+    auto invalidateNodeData = [this]() {
+        setOutputData(0, nullptr);
+        invalidateExecution();
+    };
+
     // 通用 SAR 图像 + 浏览按钮 [3:5:2]
     auto* imageRow = new QHBoxLayout();
     imageRow->setStretch(0, 3);
@@ -59,12 +65,20 @@ QWidget* GenericSARImportNode::createWidget()
     imageRow->addWidget(new QLabel("通用 SAR 图像："));
     m_imageEdit = new QLineEdit();
     m_imageEdit->setPlaceholderText("选择通用 SAR 图像文件");
-    connect(m_imageEdit, &QLineEdit::textChanged, this, [this](const QString& text) { 
-        m_imagePath = text; 
-        if (!m_imagePath.isEmpty() && QFileInfo::exists(m_imagePath))
-        {
-            m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
-            Q_EMIT dataUpdated(1);
+    connect(m_imageEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+        QString text = m_imageEdit->text();
+        if (m_imagePath != text) {
+            if (!confirmParameterChange()) {
+                m_imageEdit->setText(m_imagePath);
+                return;
+            }
+            m_imagePath = text; 
+            invalidateNodeData();
+            if (!m_imagePath.isEmpty() && QFileInfo::exists(m_imagePath))
+            {
+                m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
+                Q_EMIT dataUpdated(1);
+            }
         }
     });
     QPushButton* browseButton = new QPushButton("浏览...");
@@ -107,7 +121,18 @@ QWidget* GenericSARImportNode::createWidget()
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
     m_outputNodeNameEdit->setPlaceholderText("手动输入目标节点名称");
-    connect(m_outputNodeNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputNodeName = text; });
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeRow);
 
@@ -119,7 +144,17 @@ QWidget* GenericSARImportNode::createWidget()
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
-    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
+    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+        QString text = m_outputFileNameEdit->text();
+        if (m_outputFileName != text) {
+            if (!confirmParameterChange()) {
+                m_outputFileNameEdit->setText(m_outputFileName);
+                return;
+            }
+            m_outputFileName = text; 
+            invalidateNodeData();
+        }
+    });
     fileNameRow->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameRow);
 

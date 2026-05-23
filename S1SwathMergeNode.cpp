@@ -108,11 +108,11 @@ QJsonObject S1SwathMergeNode::save() const
     modelJson["outputNodeName"] = nodeName;
 
     if (m_indexSpins[0])
-        modelJson["index1"] = m_indexSpins[0]->value();
+        modelJson["index1"] = m_index1;
     if (m_indexSpins[1])
-        modelJson["index2"] = m_indexSpins[1]->value();
+        modelJson["index2"] = m_index2;
     if (m_indexSpins[2])
-        modelJson["index3"] = m_indexSpins[2]->value();
+        modelJson["index3"] = m_index3;
 
     return modelJson;
 }
@@ -134,22 +134,25 @@ void S1SwathMergeNode::load(QJsonObject const &json)
     QJsonValue v1 = json["index1"];
     if (!v1.isUndefined())
     {
+        m_index1 = v1.toInt();
         if (m_indexSpins[0])
-            m_indexSpins[0]->setValue(v1.toInt());
+            m_indexSpins[0]->setValue(m_index1);
     }
 
     QJsonValue v2 = json["index2"];
     if (!v2.isUndefined())
     {
+        m_index2 = v2.toInt();
         if (m_indexSpins[1])
-            m_indexSpins[1]->setValue(v2.toInt());
+            m_indexSpins[1]->setValue(m_index2);
     }
 
     QJsonValue v3 = json["index3"];
     if (!v3.isUndefined())
     {
+        m_index3 = v3.toInt();
         if (m_indexSpins[2])
-            m_indexSpins[2]->setValue(v3.toInt());
+            m_indexSpins[2]->setValue(m_index3);
     }
 }
 
@@ -161,6 +164,13 @@ void S1SwathMergeNode::createWidget()
     auto* layout = new QVBoxLayout(_widget);
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(6);
+
+    auto invalidateNodeData = [this]() {
+        if (m_outputData) m_outputData.reset();
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
 
     // 选择工程
     auto* projectLayout = new QHBoxLayout();
@@ -198,7 +208,18 @@ void S1SwathMergeNode::createWidget()
     m_indexSpins[0] = new QSpinBox();
     m_indexSpins[0]->setMinimum(1);
     m_indexSpins[0]->setMaximum(100);
-    m_indexSpins[0]->setValue(1);
+    m_indexSpins[0]->setValue(m_index1);
+    connect(m_indexSpins[0], &QSpinBox::editingFinished, this, [this, invalidateNodeData]() {
+        int val = m_indexSpins[0]->value();
+        if (m_index1 != val) {
+            if (!confirmParameterChange()) {
+                m_indexSpins[0]->setValue(m_index1);
+                return;
+            }
+            m_index1 = val;
+            invalidateNodeData();
+        }
+    });
     index1Layout->addWidget(m_indexSpins[0]);
     layout->addLayout(index1Layout);
 
@@ -228,7 +249,18 @@ void S1SwathMergeNode::createWidget()
     m_indexSpins[1] = new QSpinBox();
     m_indexSpins[1]->setMinimum(1);
     m_indexSpins[1]->setMaximum(100);
-    m_indexSpins[1]->setValue(1);
+    m_indexSpins[1]->setValue(m_index2);
+    connect(m_indexSpins[1], &QSpinBox::editingFinished, this, [this, invalidateNodeData]() {
+        int val = m_indexSpins[1]->value();
+        if (m_index2 != val) {
+            if (!confirmParameterChange()) {
+                m_indexSpins[1]->setValue(m_index2);
+                return;
+            }
+            m_index2 = val;
+            invalidateNodeData();
+        }
+    });
     index2Layout->addWidget(m_indexSpins[1]);
     layout->addLayout(index2Layout);
 
@@ -258,7 +290,18 @@ void S1SwathMergeNode::createWidget()
     m_indexSpins[2] = new QSpinBox();
     m_indexSpins[2]->setMinimum(1);
     m_indexSpins[2]->setMaximum(100);
-    m_indexSpins[2]->setValue(1);
+    m_indexSpins[2]->setValue(m_index3);
+    connect(m_indexSpins[2], &QSpinBox::editingFinished, this, [this, invalidateNodeData]() {
+        int val = m_indexSpins[2]->value();
+        if (m_index3 != val) {
+            if (!confirmParameterChange()) {
+                m_indexSpins[2]->setValue(m_index3);
+                return;
+            }
+            m_index3 = val;
+            invalidateNodeData();
+        }
+    });
     index3Layout->addWidget(m_indexSpins[2]);
     layout->addLayout(index3Layout);
 
@@ -269,6 +312,18 @@ void S1SwathMergeNode::createWidget()
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("不要输入中文字符");
     m_outputNodeNameEdit->setText(m_outputNodeName);
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
@@ -469,9 +524,9 @@ void S1SwathMergeNode::executeProcessing()
     setState(ExecutionState::Running);
 
     // Prepare processing
-    int index1 = m_indexSpins[0]->value();
-    int index2 = m_indexSpins[1]->value();
-    int index3 = m_indexSpins[2]->value();
+    int index1 = m_index1;
+    int index2 = m_index2;
+    int index3 = m_index3;
     QString project = projectName();
     QString node1 = m_inputs[0]->nodeName();
     QString node2 = m_inputs[1]->nodeName();

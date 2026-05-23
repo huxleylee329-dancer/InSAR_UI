@@ -76,6 +76,7 @@ private:
     QStringList m_xmlPaths;
     QStringList m_importedFilePaths;
     QString m_outputNodeName;
+    QString m_polarization = "HH";
 
     // Worker thread
     MyThread* m_workerThread;

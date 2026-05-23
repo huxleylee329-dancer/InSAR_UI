@@ -77,6 +77,7 @@ private:
     QString m_importedFilePath;
     QString m_outputNodeName;
     QString m_outputFileName;
+    QString m_polarization = "HH";
 
     // Worker thread
     MyThread* m_workerThread;

@@ -8,6 +8,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include "NodeUtils.h"
 
 namespace QtNodes {
 
@@ -51,6 +52,11 @@ QWidget* GenericSARBatchImportNode::createWidget()
     auto* mainLayout = new QVBoxLayout(widget);
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
+
+    auto invalidateNodeData = [this]() {
+        setOutputData(0, nullptr);
+        invalidateExecution();
+    };
 
     // Top section: file list (8:2 stretch)
     auto* topSection = new QHBoxLayout();
@@ -110,6 +116,18 @@ QWidget* GenericSARBatchImportNode::createWidget()
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("GenericSAR_Batch_Import");
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nodeRow);
 

@@ -78,6 +78,8 @@ private:
     QStringList m_manifestPaths;
     QStringList m_importedFilePaths;
     QString m_outputNodeName;
+    QString m_subswath = "iw1";
+    QString m_polarization = "vv";
 
     // Worker thread
     MyThread* m_workerThread;

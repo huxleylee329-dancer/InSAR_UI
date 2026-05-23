@@ -1,4 +1,5 @@
 #include "ALOS2ImportNode.h"
+#include "NodeUtils.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
@@ -51,6 +52,12 @@ QWidget* ALOS2ImportNode::createWidget()
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
 
+    auto invalidateNodeData = [this]() {
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
+
     // Top section: file list (8:2 stretch) - stretch 4
     auto* topSection = new QHBoxLayout();
     topSection->setStretch(0, 8);
@@ -96,6 +103,18 @@ QWidget* ALOS2ImportNode::createWidget()
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName.isEmpty() ? "ALOS2_Batch_Import" : m_outputNodeName);
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nodeRow);
 
@@ -258,6 +277,10 @@ void ALOS2ImportNode::onAddFilesClicked()
         {
             m_imgPaths.append(file);
             m_fileListWidget->addItem(QFileInfo(file).fileName());
+            
+            int outCount = nPorts(PortType::Out);
+            for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+            invalidateExecution();
         }
     }
 }
@@ -265,11 +288,16 @@ void ALOS2ImportNode::onAddFilesClicked()
 void ALOS2ImportNode::onRemoveFilesClicked()
 {
     QList<QListWidgetItem*> selectedItems = m_fileListWidget->selectedItems();
-    for (QListWidgetItem* item : selectedItems)
-    {
-        int row = m_fileListWidget->row(item);
-        m_imgPaths.removeAt(row);
-        delete item;
+    if (!selectedItems.isEmpty()) {
+        for (QListWidgetItem* item : selectedItems)
+        {
+            int row = m_fileListWidget->row(item);
+            m_imgPaths.removeAt(row);
+            delete item;
+        }
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
     }
 }
 

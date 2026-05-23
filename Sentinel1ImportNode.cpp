@@ -1,5 +1,6 @@
 #include "Sentinel1ImportNode.h"
 #include "ImportDataTypes.h"
+#include "NodeUtils.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -59,6 +60,12 @@ QWidget* Sentinel1ImportNode::createWidget()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
+    auto invalidateNodeData = [this]() {
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
+
     // 哨兵图像文件（.safe） + 浏览按钮 [3:5:2]
     auto* manifestLayout = new QHBoxLayout();
     manifestLayout->setStretch(0, 3);
@@ -68,7 +75,24 @@ QWidget* Sentinel1ImportNode::createWidget()
     manifestLayout->addWidget(manifestLabel);
     m_manifestEdit = new QLineEdit();
     m_manifestEdit->setPlaceholderText("选择 .safe 目录中的 manifest 文件");
-    connect(m_manifestEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_manifestPath = text; });
+    connect(m_manifestEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+        QString text = m_manifestEdit->text();
+        if (m_manifestPath != text) {
+            if (!confirmParameterChange()) {
+                m_manifestEdit->setText(m_manifestPath);
+                return;
+            }
+            m_manifestPath = text; 
+            QString autoName = generateOutputFileName();
+            if (!autoName.isEmpty() && m_outputNodeNameEdit->text().isEmpty()) {
+                m_outputNodeNameEdit->setText(autoName);
+            }
+            if (!autoName.isEmpty() && m_outputFileNameEdit->text().isEmpty()) {
+                m_outputFileNameEdit->setText(autoName);
+            }
+            invalidateNodeData();
+        }
+    });
     manifestLayout->addWidget(m_manifestEdit);
     QPushButton* manifestBrowse = new QPushButton("浏览...");
     manifestLayout->addWidget(manifestBrowse);
@@ -83,7 +107,17 @@ QWidget* Sentinel1ImportNode::createWidget()
     podLayout->addWidget(podLabel);
     m_podEdit = new QLineEdit();
     m_podEdit->setPlaceholderText("可选，留空则不使用精轨文件");
-    connect(m_podEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_podPath = text; });
+    connect(m_podEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+        QString text = m_podEdit->text();
+        if (m_podPath != text) {
+            if (!confirmParameterChange()) {
+                m_podEdit->setText(m_podPath);
+                return;
+            }
+            m_podPath = text; 
+            invalidateNodeData();
+        }
+    });
     podLayout->addWidget(m_podEdit);
     QPushButton* podBrowse = new QPushButton("浏览...");
     podLayout->addWidget(podBrowse);
@@ -100,6 +134,17 @@ QWidget* Sentinel1ImportNode::createWidget()
     m_subswathCombo->addItem("iw2");
     m_subswathCombo->addItem("iw3");
     m_subswathCombo->setCurrentText(m_subswath);
+    connect(m_subswathCombo, &QComboBox::currentTextChanged, this, [this, invalidateNodeData](const QString& text) {
+        if (m_subswath != text) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_subswathCombo);
+                m_subswathCombo->setCurrentText(m_subswath);
+                return;
+            }
+            m_subswath = text;
+            invalidateNodeData();
+        }
+    });
     subswathLayout->addWidget(m_subswathCombo);
     layout->addLayout(subswathLayout);
 
@@ -113,6 +158,17 @@ QWidget* Sentinel1ImportNode::createWidget()
     m_polarizationCombo->addItem("vv");
     m_polarizationCombo->addItem("vh");
     m_polarizationCombo->setCurrentText(m_polarization);
+    connect(m_polarizationCombo, &QComboBox::currentTextChanged, this, [this, invalidateNodeData](const QString& text) {
+        if (m_polarization != text) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_polarizationCombo);
+                m_polarizationCombo->setCurrentText(m_polarization);
+                return;
+            }
+            m_polarization = text;
+            invalidateNodeData();
+        }
+    });
     polLayout->addWidget(m_polarizationCombo);
     layout->addLayout(polLayout);
 
@@ -137,6 +193,18 @@ QWidget* Sentinel1ImportNode::createWidget()
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
     m_outputNodeNameEdit->setText(m_outputNodeName);
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
@@ -148,7 +216,17 @@ QWidget* Sentinel1ImportNode::createWidget()
     fileNameLayout->addWidget(fileNameLabel);
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
-    connect(m_outputFileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) { m_outputFileName = text; });
+    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+        QString text = m_outputFileNameEdit->text();
+        if (m_outputFileName != text) {
+            if (!confirmParameterChange()) {
+                m_outputFileNameEdit->setText(m_outputFileName);
+                return;
+            }
+            m_outputFileName = text; 
+            invalidateNodeData();
+        }
+    });
     fileNameLayout->addWidget(m_outputFileNameEdit);
     layout->addLayout(fileNameLayout);
 
@@ -158,19 +236,6 @@ QWidget* Sentinel1ImportNode::createWidget()
     // Connect signals
     connect(manifestBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onManifestBrowseClicked);
     connect(podBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onPodBrowseClicked);
-    connect(m_manifestEdit, &QLineEdit::textChanged, this, [this]() {
-        QString autoName = generateOutputFileName();
-        if (!autoName.isEmpty() && m_outputNodeNameEdit->text().isEmpty()) {
-            m_outputNodeNameEdit->setText(autoName);
-        }
-        if (!autoName.isEmpty() && m_outputFileNameEdit->text().isEmpty()) {
-            m_outputFileNameEdit->setText(autoName);
-        }
-        // Invalidate execution when input changes (if in manual mode)
-        if (executionMode() == ExecutionMode::Manual) {
-            invalidateExecution();
-        }
-    });
 
     // Set project name if available
     QString currentProject = projectName();

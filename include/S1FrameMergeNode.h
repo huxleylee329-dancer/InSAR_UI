@@ -64,6 +64,8 @@ private:
     std::shared_ptr<ImportedFileData> m_inputs[2];
     std::shared_ptr<ImportedFileData> m_outputData;
     QString m_outputNodeName;
+    int m_index1 = 1;
+    int m_index2 = 1;
 
     // Worker thread
     MyThread* m_workerThread;

@@ -9,6 +9,8 @@
 #include<QDebug>
 #include<QDir>
 #include<QFile>
+#include<QFileInfo>
+#include<QSet>
 #include<FormatConversion.h>
 
 // Icons now use SVG currentColor - automatically follows widget color property
@@ -160,8 +162,11 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
         {
             QMenu* menu = new QMenu(this);
             QAction* unload = new QAction(QStringLiteral("卸载工程"));
+            QAction* cleanOrphaned = new QAction(QStringLiteral("清除孤立文件"));
             menu->addAction(unload);
+            menu->addAction(cleanOrphaned);
             connect(unload, SIGNAL(triggered()), this, SLOT(Unload()));
+            connect(cleanOrphaned, SIGNAL(triggered()), this, SLOT(CleanOrphanedFiles()));
             menu->exec(this->mapToGlobal(point));
         }
         else if (!parentIndex.parent().isValid())
@@ -241,6 +246,77 @@ void TreeView::Unload()
     else
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程正在处理中，无法卸载！"));
+    }
+}
+
+void TreeView::CleanOrphanedFiles()
+{
+    if (!this->currentIndex().isValid()) return;
+    
+    QStandardItem* projItem = model->itemFromIndex(this->currentIndex());
+    if (!projItem) return;
+    
+    QString projectName = projItem->text();
+    // Get project path from column 1 of the SAME row (not always row 0)
+    QModelIndex projIndex = this->currentIndex();
+    QModelIndex pathIndex = projIndex.sibling(projIndex.row(), 1);
+    QStandardItem* pathItem = model->itemFromIndex(pathIndex);
+    if (!pathItem) return;
+    QString projectPath = pathItem->text();
+    
+    // Get all active node folder names from the project tree
+    QStringList activeNodeNames;
+    qDebug() << "[CleanOrphanedFiles] Project:" << projectName << "Path:" << projectPath;
+    qDebug() << "[CleanOrphanedFiles] Active DataNodes in Tree:";
+    for (int i = 0; i < projItem->rowCount(); ++i) {
+        QStandardItem* nodeItem = projItem->child(i, 0);
+        if (nodeItem) {
+            activeNodeNames.append(nodeItem->text());
+            qDebug() << "  - " << nodeItem->text();
+        }
+    }
+    
+    QDir rootDir(projectPath);
+    if (!rootDir.exists()) {
+        qDebug() << "[CleanOrphanedFiles] Root dir does not exist!";
+        return;
+    }
+    
+    QStringList allDirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QStringList orphanedDirs;
+    
+    qDebug() << "[CleanOrphanedFiles] Scanning disk directories:";
+    for (const QString& dirName : allDirs) {
+        if (dirName == "temp" || dirName == "logs") {
+            qDebug() << "  - " << dirName << "(Skipped system dir)";
+            continue;
+        }
+        if (!activeNodeNames.contains(dirName)) {
+            orphanedDirs.append(dirName);
+            qDebug() << "  - " << dirName << "(ORPHANED!)";
+        } else {
+            qDebug() << "  - " << dirName << "(Active)";
+        }
+    }
+    
+    if (orphanedDirs.isEmpty()) {
+        QMessageBox::information(nullptr, QStringLiteral("提示"), QStringLiteral("未发现孤立文件夹。"));
+        return;
+    }
+    
+    QString msg = QStringLiteral("发现以下孤立文件夹：\n");
+    for (const QString& dirName : orphanedDirs) {
+        msg += "- " + dirName + "\n";
+    }
+    msg += QStringLiteral("\n是否确认删除它们？(此操作不可逆)");
+    
+    auto reply = QMessageBox::question(nullptr, QStringLiteral("确认删除"), msg, QMessageBox::Yes | QMessageBox::No);
+    if (reply == QMessageBox::Yes) {
+        for (const QString& dirName : orphanedDirs) {
+            QDir dir(projectPath + "/" + dirName);
+            dir.removeRecursively();
+        }
+        QMessageBox::information(nullptr, QStringLiteral("完成"), QStringLiteral("孤立文件夹已清理完毕。"));
     }
 }
 

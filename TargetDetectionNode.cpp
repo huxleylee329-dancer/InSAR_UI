@@ -146,8 +146,26 @@ void TargetDetectionNode::createWidget()
     m_modelComboBox = new QComboBox();
     m_modelComboBox->addItem("SAR Ship Model 0429", QDir::currentPath() + "/sar_ship_model0429.onnx");
     m_selectedModelPath = m_modelComboBox->currentData().toString();
-    connect(m_modelComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
-        m_selectedModelPath = m_modelComboBox->currentData().toString();
+    // Helper to invalidate node state when parameters change
+    auto invalidateNodeData = [this]() {
+        if (m_outputData) m_outputData.reset();
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
+
+    connect(m_modelComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int) {
+        QString newPath = m_modelComboBox->currentData().toString();
+        if (m_selectedModelPath != newPath) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_modelComboBox);
+                int oldIndex = m_modelComboBox->findData(m_selectedModelPath);
+                if (oldIndex >= 0) m_modelComboBox->setCurrentIndex(oldIndex);
+                return;
+            }
+            m_selectedModelPath = newPath;
+            invalidateNodeData();
+        }
     });
     modelLayout->addWidget(m_modelComboBox);
     layout->addLayout(modelLayout);
@@ -157,10 +175,19 @@ void TargetDetectionNode::createWidget()
     confLayout->addWidget(new QLabel(QStringLiteral("置信度：")));
     m_thresholdEdit = new QLineEdit();
     m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
-    connect(m_thresholdEdit, &QLineEdit::textChanged, this, [this](const QString& text) { 
+    connect(m_thresholdEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
         bool ok;
-        float val = text.toFloat(&ok);
-        if (ok) m_thresholdValue = val;
+        float val = m_thresholdEdit->text().toFloat(&ok);
+        if (ok && m_thresholdValue != val) {
+            if (!confirmParameterChange()) {
+                m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
+                return;
+            }
+            m_thresholdValue = val;
+            invalidateNodeData();
+        } else if (!ok) {
+            m_thresholdEdit->setText(QString::number(m_thresholdValue, 'f', 2));
+        }
     });
     confLayout->addWidget(m_thresholdEdit);
     layout->addLayout(confLayout);

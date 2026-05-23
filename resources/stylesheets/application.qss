@@ -28,6 +28,22 @@ QMenuBar::item:selected {
 }
 
 /* Checked menu item styling */
+QMenu {
+    background-color: white;
+    color: #333333;
+    border: 1px solid #CCCCCC;
+}
+
+QMenu::item {
+    padding: 6px 24px;
+    background-color: transparent;
+}
+
+QMenu::item:selected {
+    background-color: #005FAC;
+    color: white;
+}
+
 QMenu::item:checked {
     background-color: #005FAC;
     color: white;

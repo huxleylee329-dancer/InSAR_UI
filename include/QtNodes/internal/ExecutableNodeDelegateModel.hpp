@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "NodeDelegateModel.hpp"
 #include "Export.hpp"
@@ -145,9 +145,11 @@ protected:
     /// Call this after you've set output data in automatic mode
     void completeAutomaticExecution();
 
-    /// Invalidate current execution result (reset to Idle, progress 0)
     /// Call this when input or source data changes in Manual mode
     void invalidateExecution();
+
+    /// Check if parameter change should proceed. Prompts user if node already has data.
+    bool confirmParameterChange();
 
     /// Check if node is in Pending state (ports connected but no data, or multi-port not all have data)
     /// Port with no connection is considered Idle, not Pending

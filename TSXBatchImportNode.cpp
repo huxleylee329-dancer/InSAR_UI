@@ -1,6 +1,7 @@
 
 #include "TSXBatchImportNode.h"
 #include "IApplicationInterface.h"
+#include "NodeUtils.h"
 #include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
@@ -53,6 +54,12 @@ QWidget* TSXBatchImportNode::createWidget()
     auto* mainLayout = new QVBoxLayout(widget);
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
+
+    auto invalidateNodeData = [this]() {
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    };
 
     // Top section: file list (8:2 stretch) - stretch 4
     auto* topSection = new QHBoxLayout();
@@ -112,6 +119,18 @@ QWidget* TSXBatchImportNode::createWidget()
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText("TSX_Batch_Import");
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_outputNodeNameEdit->text();
+        if (m_outputNodeName != text) {
+            if (!confirmParameterChange()) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+                return;
+            }
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
     nodeRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nodeRow);
 
@@ -123,6 +142,17 @@ QWidget* TSXBatchImportNode::createWidget()
     m_polarizationCombo = new QComboBox();
     m_polarizationCombo->addItem("HH");
     m_polarizationCombo->addItem("VV");
+    connect(m_polarizationCombo, &QComboBox::currentTextChanged, this, [this, invalidateNodeData](const QString& text) {
+        if (m_polarization != text) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_polarizationCombo);
+                m_polarizationCombo->setCurrentText(m_polarization);
+                return;
+            }
+            m_polarization = text;
+            invalidateNodeData();
+        }
+    });
     polRow->addWidget(m_polarizationCombo);
     configLayout->addLayout(polRow);
 
@@ -261,6 +291,10 @@ void TSXBatchImportNode::onAddFilesClicked()
         {
             m_xmlPaths.append(file);
             m_fileListWidget->addItem(QFileInfo(file).fileName());
+            
+            int outCount = nPorts(PortType::Out);
+            for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+            invalidateExecution();
         }
     }
 }
@@ -268,11 +302,16 @@ void TSXBatchImportNode::onAddFilesClicked()
 void TSXBatchImportNode::onRemoveFilesClicked()
 {
     QList<QListWidgetItem*> selectedItems = m_fileListWidget->selectedItems();
-    for (QListWidgetItem* item : selectedItems)
-    {
-        int row = m_fileListWidget->row(item);
-        m_xmlPaths.removeAt(row);
-        delete item;
+    if (!selectedItems.isEmpty()) {
+        for (QListWidgetItem* item : selectedItems)
+        {
+            int row = m_fileListWidget->row(item);
+            m_xmlPaths.removeAt(row);
+            delete item;
+        }
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
     }
 }
 
@@ -353,7 +392,7 @@ QJsonObject TSXBatchImportNode::save() const
     for (const QString &path : m_xmlPaths)
         pathsArray.append(path);
     json["xmlPaths"] = pathsArray;
-    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : "HH";
+    json["polarization"] = m_polarization;
     json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     return json;
 }
@@ -379,9 +418,9 @@ void TSXBatchImportNode::load(QJsonObject const &json)
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
 
-    QString pol = json["polarization"].toString("HH");
+    m_polarization = json["polarization"].toString("HH");
     if (m_polarizationCombo) {
-        int idx = m_polarizationCombo->findText(pol);
+        int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
 }
