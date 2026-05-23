@@ -233,12 +233,8 @@ QRectF ExecutableNodeGeometry::boundingRect(NodeId const nodeId) const
 
 QRectF ExecutableNodeGeometry::leftEarRect(NodeId const nodeId) const
 {
-    // Get current execution mode to determine dynamic width
-    int earWidth = EAR_WIDTH_AUTOMATIC;
-    auto *delegateModel = getExecutableDelegate(nodeId);
-    if (delegateModel != nullptr && delegateModel->executionMode() == ExecutionMode::Manual) {
-        earWidth = EAR_WIDTH_MANUAL;
-    }
+    // Always use the wider ear width to fit both the mode icon and the start/stop button
+    int earWidth = EAR_WIDTH_MANUAL;
 
     // Left ear is at top-left, protruding upward by EAR_OFFSET
     double x = 0;
@@ -285,9 +281,8 @@ bool ExecutableNodeGeometry::hitTestModeButton(NodeId const nodeId, QPointF cons
 
 bool ExecutableNodeGeometry::hitTestStartButton(NodeId const nodeId, QPointF const point) const
 {
-    // Only respond to button clicks in Manual mode
     auto *delegateModel = getExecutableDelegate(nodeId);
-    if (delegateModel == nullptr || delegateModel->executionMode() != ExecutionMode::Manual) {
+    if (delegateModel == nullptr) {
         return false;
     }
 
@@ -324,9 +319,8 @@ bool ExecutableNodeGeometry::hitTestCardModeButton(NodeId const nodeId, QPointF 
 
 bool ExecutableNodeGeometry::hitTestCardStartButton(NodeId const nodeId, QPointF const point) const
 {
-    // Only respond to button clicks in Manual mode
     auto *delegateModel = getExecutableDelegate(nodeId);
-    if (delegateModel == nullptr || delegateModel->executionMode() != ExecutionMode::Manual) {
+    if (delegateModel == nullptr) {
         return false;
     }
     

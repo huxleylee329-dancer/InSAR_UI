@@ -28,6 +28,8 @@ SpeckleDenoiseNode::SpeckleDenoiseNode()
     , m_inputData(nullptr)
     , m_outputData(nullptr)
     , m_saveToProject(true)
+    , m_outputNodeName("Denoise")
+    , m_outputFileName("{InputName}_denoised")
     , m_thread(nullptr)
     , m_workerThread(nullptr)
 {
@@ -119,8 +121,7 @@ void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
     }
 
     if (m_inputData && m_outputFileName.isEmpty()) {
-        QFileInfo fi(m_inputData->filePath());
-        m_outputFileName = fi.baseName();
+        m_outputFileName = "{InputName}_denoised";
         if (m_outputFileNameEdit) {
             m_outputFileNameEdit->setText(m_outputFileName);
         }
@@ -207,14 +208,14 @@ void SpeckleDenoiseNode::createWidget()
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
-    // 目标文件名 [3:7]
+    // 目标文件名 [3:7] -> 输出名规则
     auto* fileNameLayout = new QHBoxLayout();
     fileNameLayout->setStretch(0, 3);
     fileNameLayout->setStretch(1, 7);
-    fileNameLayout->addWidget(new QLabel("目标文件名："));
+    fileNameLayout->addWidget(new QLabel("输出名规则："));
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
-    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputFileNameEdit->setPlaceholderText("支持 {InputName} 变量");
     connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
@@ -357,13 +358,38 @@ void SpeckleDenoiseNode::executeProcessing()
     QStringList fileNames;
     for (int i = 0; i < inputPaths.size(); ++i) {
         outputPaths.append(QDir::tempPath() + QString("/speckle_denoise_%1_%2.jpg").arg(i).arg(QDateTime::currentMSecsSinceEpoch()));
-        if (inputPaths.size() == 1) {
-            fileNames.append(baseFileName);
+        
+        QString originalName = QFileInfo(inputPaths[i]).baseName();
+        QString name = baseFileName;
+        
+        // Normalize full-width brackets (common typo in Chinese IME)
+        name.replace(QString::fromUtf8("｛InputName｝"), "{InputName}");
+        name.replace(QString::fromUtf8("｛InputName}"), "{InputName}");
+        name.replace(QString::fromUtf8("{InputName｝"), "{InputName}");
+        
+        if (name.contains("{InputName}", Qt::CaseInsensitive)) {
+            // Replace macro case-insensitively
+            // First normalize to standard case if user typed {inputName}
+            name.replace("{InputName}", "{InputName}", Qt::CaseInsensitive);
+            name.replace("{InputName}", originalName);
         } else {
-            QString name = baseFileName.isEmpty() ? QFileInfo(inputPaths[i]).baseName() + "_denoised" : QString("%1_%2").arg(baseFileName).arg(i+1);
-            fileNames.append(name);
+            // Fallback if macro is deleted
+            if (inputPaths.size() > 1) {
+                name = QString("%1_%2").arg(baseFileName).arg(i + 1);
+            }
         }
+        
+        // Failsafe for empty name
+        if (name.trimmed().isEmpty()) {
+            name = originalName + "_denoised";
+        }
+        
+        fileNames.append(name);
     }
+    
+    // Store the resolved names and paths to member variables so onProcessingFinished can use them
+    m_savedOutputFiles = fileNames;
+    m_outputImagePaths = outputPaths;
 
     qDebug() << "[SpeckleDenoiseNode] Starting with params:"
              << "\n  inputPaths:" << inputPaths
@@ -411,37 +437,29 @@ void SpeckleDenoiseNode::onProcessingFinished()
 {
     qDebug() << "[SpeckleDenoiseNode] onProcessingFinished called";
 
-    m_outputImagePaths.clear();
     // Determine the result path
     if (m_saveToProject) {
+        m_outputImagePaths.clear(); // Only clear temp paths if we are saving to project
+        
         // Find the saved file path in project
         QString nodeName = m_outputNodeName.trimmed();
         if (nodeName.isEmpty()) nodeName = "Denoise"; // Default consistent with executeProcessing
-
+        
         QString projDirStr = projectPath();
         if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
             projDirStr = QFileInfo(projDirStr).absolutePath();
         }
         
-        QStringList inputPaths = m_inputData->filePaths();
-        QString baseFileName = m_outputFileName.trimmed();
-        for (int i = 0; i < inputPaths.size(); ++i) {
-            QString finalFileName;
-            if (inputPaths.size() == 1) {
-                if (baseFileName.isEmpty()) {
-                    finalFileName = QFileInfo(inputPaths[i]).baseName() + "_denoised.png";
-                } else {
-                    finalFileName = baseFileName.endsWith(".png") ? baseFileName : baseFileName + ".png";
-                }
-            } else {
-                QString name = baseFileName.isEmpty() ? QFileInfo(inputPaths[i]).baseName() + "_denoised" : QString("%1_%2").arg(baseFileName).arg(i+1);
-                finalFileName = name + ".png";
+        for (int i = 0; i < m_savedOutputFiles.size(); ++i) {
+            QString finalFileName = m_savedOutputFiles[i];
+            if (!finalFileName.endsWith(".png", Qt::CaseInsensitive)) {
+                finalFileName += ".png";
             }
             m_outputImagePaths.append(projDirStr + "/" + nodeName + "/" + finalFileName);
         }
         qDebug() << "[SpeckleDenoiseNode] Output image paths (using node folder):" << m_outputImagePaths;
     } else {
-        // Output path was set in executeProcessing (temp path)
+        qDebug() << "[SpeckleDenoiseNode] Output image paths (using temp folder):" << m_outputImagePaths;
     }
 
     m_outputData = std::make_shared<ImageInfoData>(m_outputImagePaths);

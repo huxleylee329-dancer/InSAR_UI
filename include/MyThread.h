@@ -67,7 +67,7 @@ signals:
     void askUserError(QString error_msg, bool* skip);
 
 private:
-    bool processBM3DEnhancement(QString tag, QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml, QString& outError);
+    bool processBM3DEnhancement(QString tag, QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml, QString& outError, int baseProgress = 0, int progressStep = 100);
     QMutex lock;
     bool stop_flag;
     int Registration_copy(std::vector<std::string>& SAR_images, std::vector<std::string>& SAR_images_out, cv::Mat& offset_row_out, cv::Mat& offset_col_out, int Master_index, int interp_times, int blocksize);

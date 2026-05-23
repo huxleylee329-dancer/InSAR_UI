@@ -15,6 +15,9 @@
 #include "NodeConnectionInteraction.hpp"
 #include "StyleCollection.hpp"
 #include "UndoCommands.hpp"
+#include "ExecutableNodeGeometry.hpp"
+#include "ExecutableNodeDelegateModel.hpp"
+#include "DataFlowGraphModel.hpp"
 
 namespace QtNodes {
 
@@ -364,6 +367,26 @@ void NodeGraphicsObject::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
         setCursor(QCursor(Qt::SizeFDiagCursor));
     } else {
         setCursor(QCursor());
+    }
+
+    auto *execGeo = dynamic_cast<ExecutableNodeGeometry*>(&geometry);
+    if (execGeo) {
+        if (execGeo->hitTestStartButton(_nodeId, pos) || execGeo->hitTestCardStartButton(_nodeId, pos)) {
+            auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+            if (dfModel) {
+                auto *delegateModel = dfModel->delegateModel<NodeDelegateModel>(_nodeId);
+                auto *execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
+                if (execModel) {
+                    if (execModel->executionState() == ExecutionState::Completed) {
+                        setToolTip("Re-run");
+                    } else {
+                        setToolTip("Run");
+                    }
+                }
+            }
+        } else {
+            setToolTip("");
+        }
     }
 
     event->accept();

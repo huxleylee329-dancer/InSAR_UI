@@ -332,10 +332,8 @@ void ExecutableNodePainter::drawLeftEar(QPainter *painter, NodeGraphicsObject &n
     double radius = 3.0;
     painter->drawRoundedRect(earRect, radius, radius);
 
-    // Draw mode icon - different layout based on mode
-    // In Automatic mode: entire left area is used for icon (no button reserved)
-    // In Manual mode: leave space on right for start/stop button
-    int rightMargin = (mode == ExecutionMode::Automatic) ? 4 : 24;
+    // Always leave space on right for start/stop button in all modes
+    int rightMargin = 24;
     QRectF iconArea = earRect.adjusted(8, 4, -rightMargin, -4);
     QPixmap const &pixmap = (mode == ExecutionMode::Automatic) ? _pixmapAutomatic : _pixmapManual;
 
@@ -345,11 +343,9 @@ void ExecutableNodePainter::drawLeftEar(QPainter *painter, NodeGraphicsObject &n
     QPoint topLeft = QPoint(static_cast<int>(left), static_cast<int>(top));
     painter->drawPixmap(topLeft, pixmap);
 
-    // Draw start/stop button icon - only visible in Manual mode
-    if (mode == ExecutionMode::Manual) {
-        QRectF buttonRect = earRect.adjusted(static_cast<int>(earRect.width()) - 22, 3, -3, -3);
-        drawStartButton(painter, buttonRect, state);
-    }
+    // Draw start/stop button icon - always visible
+    QRectF buttonRect = earRect.adjusted(static_cast<int>(earRect.width()) - 22, 3, -3, -3);
+    drawStartButton(painter, buttonRect, state);
 }
 
 void ExecutableNodePainter::drawRightEar(QPainter *painter, NodeGraphicsObject &ngo,
@@ -417,7 +413,14 @@ void ExecutableNodePainter::drawStartButton(QPainter *painter, QRectF rect, Exec
     double dx = (rect.width() - pixmap.width()) / 2.0;
     double dy = (rect.height() - pixmap.height()) / 2.0;
     QPoint topLeft = QPoint(static_cast<int>(rect.left() + dx), static_cast<int>(rect.top() + dy));
+
+    if (state == ExecutionState::Completed) {
+        painter->setOpacity(0.5);
+    }
     painter->drawPixmap(topLeft, pixmap);
+    if (state == ExecutionState::Completed) {
+        painter->setOpacity(1.0);
+    }
 }
 
 void ExecutableNodePainter::drawCardLayout(QPainter *painter, NodeGraphicsObject &ngo,
@@ -637,12 +640,17 @@ void ExecutableNodePainter::drawCardHeaderButtons(QPainter *painter, QRectF boun
     painter->drawPixmap(QPoint(static_cast<int>(eyeLeft), static_cast<int>(eyeTop)), _pixmapEye);
     currentRight = eyeLeft - 16;
 
-    // Draw play/stop button if manual - with better spacing
-    if (mode == ExecutionMode::Manual) {
-        QPixmap const &pixmap = (state == ExecutionState::Running) ? _pixmapStop : _pixmapPlay;
-        double buttonLeft = currentRight - pixmap.width();
-        double buttonTop = bounds.top() + (bounds.height() - pixmap.height()) / 2.0;
-        painter->drawPixmap(QPoint(static_cast<int>(buttonLeft), static_cast<int>(buttonTop)), pixmap);
+    // Draw play/stop button - always visible, with better spacing
+    QPixmap const &pixmap = (state == ExecutionState::Running) ? _pixmapStop : _pixmapPlay;
+    double buttonLeft = currentRight - pixmap.width();
+    double buttonTop = bounds.top() + (bounds.height() - pixmap.height()) / 2.0;
+    
+    if (state == ExecutionState::Completed) {
+        painter->setOpacity(0.5);
+    }
+    painter->drawPixmap(QPoint(static_cast<int>(buttonLeft), static_cast<int>(buttonTop)), pixmap);
+    if (state == ExecutionState::Completed) {
+        painter->setOpacity(1.0);
     }
 }
 

@@ -181,6 +181,8 @@ void EvaluationSCRNode::processAutomatically()
 {
     if (isReady()) {
         execute();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 

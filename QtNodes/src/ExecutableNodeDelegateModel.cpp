@@ -3,6 +3,7 @@
 #include "NodeGraphicsObject.hpp"
 #include "BasicGraphicsScene.hpp"
 #include <QMessageBox>
+#include "DataFlowGraphModel.hpp"
 
 namespace QtNodes {
 
@@ -70,6 +71,15 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
 
             // Let subclass do the automatic processing (sets output data if inputs are complete)
             processAutomatically();
+
+            // CRITICAL FIX: If the subclass explicitly changed its state (e.g. to Idle, Error)
+            // or if it launched an asynchronous thread and is still Running,
+            // we MUST NOT override its state with default completion logic!
+            if (_state != ExecutionState::Running) {
+                Q_EMIT executionStateChanged();
+                triggerVisualUpdate();
+                return;
+            }
 
             // Check if we have any non-empty output data after processing
             // Special case: node with zero output ports (pure display) always completes after processing
@@ -218,10 +228,8 @@ void ExecutableNodeDelegateModel::invalidateExecution()
     }
 
     _progress = 0;
-    _state = ExecutionState::Idle;
     Q_EMIT progressUpdated(_progress);
-    Q_EMIT executionStateChanged();
-    triggerVisualUpdate();
+    setState(ExecutionState::Idle);
 }
 
 bool ExecutableNodeDelegateModel::confirmParameterChange()
@@ -315,9 +323,32 @@ void ExecutableNodeDelegateModel::load(QJsonObject const &json)
 
 void ExecutableNodeDelegateModel::setState(ExecutionState state)
 {
+    if (_state == state) {
+        return;
+    }
+    
     _state = state;
     Q_EMIT executionStateChanged();
     triggerVisualUpdate();
+
+    // Dirty propagation: if this node becomes Idle, all downstream nodes should also become Idle
+    if (state == ExecutionState::Idle && _scene != nullptr) {
+        auto &graphModel = _scene->graphModel();
+        auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&graphModel);
+        if (dfModel) {
+            unsigned int outCount = nPorts(PortType::Out);
+            for (PortIndex idx = 0; idx < outCount; ++idx) {
+                auto connected = dfModel->connections(_nodeId, PortType::Out, idx);
+                for (auto const &cn : connected) {
+                    auto *downstreamDelegate = dfModel->delegateModel<NodeDelegateModel>(cn.inNodeId);
+                    auto *downstreamExec = dynamic_cast<ExecutableNodeDelegateModel*>(downstreamDelegate);
+                    if (downstreamExec) {
+                        downstreamExec->setState(ExecutionState::Idle);
+                    }
+                }
+            }
+        }
+    }
 }
 
 bool ExecutableNodeDelegateModel::isPending() const

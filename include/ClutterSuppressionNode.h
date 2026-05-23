@@ -89,6 +89,7 @@ private:
     QStringList m_outputImagePaths;
     QString m_outputNodeName;
     QString m_outputFileName;
+    QStringList m_savedOutputFiles;
     bool m_saveToProject = true;
 
     // Threading

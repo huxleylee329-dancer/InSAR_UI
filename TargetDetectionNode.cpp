@@ -100,6 +100,21 @@ void TargetDetectionNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
             m_inputImageLabel->setText(fi.fileName());
         } else {
             m_inputImageLabel->setText("");
+            // Clear UI results when disconnected
+            if (m_resultLabel) m_resultLabel->setText("--");
+            if (m_probabilityLabel) m_probabilityLabel->setText("--");
+            if (m_summaryLabel) {
+                m_summaryLabel->setText("--");
+                m_summaryLabel->hide();
+            }
+            if (m_resultsTable) {
+                m_resultsTable->setRowCount(0);
+                m_resultsTable->hide();
+            }
+            if (m_expandLabel) m_expandLabel->hide();
+            QWidget* singleView = _widget ? _widget->findChild<QWidget*>("SingleResultView") : nullptr;
+            if (singleView) singleView->show();
+            m_savedResults.clear();
         }
     }
 
@@ -327,6 +342,8 @@ void TargetDetectionNode::processAutomatically()
 
     if (isReady()) {
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 
@@ -368,6 +385,7 @@ void TargetDetectionNode::executeProcessing()
 
     if (!isReady()) {
         if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：未准备好"));
+        setState(ExecutionState::Idle); // Explicitly state we are idle so base class won't overwrite
         return;
     }
 

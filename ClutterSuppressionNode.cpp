@@ -26,6 +26,9 @@ ClutterSuppressionNode::ClutterSuppressionNode()
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
+    , m_saveToProject(true)
+    , m_outputNodeName("ClutterSuppression")
+    , m_outputFileName("{InputName}_clutter")
     , m_thread(nullptr)
     , m_workerThread(nullptr)
 {
@@ -110,14 +113,18 @@ void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex
         }
     }
 
-    if (m_inputData && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty()) {
-        m_outputNodeNameEdit->setText(generateOutputFileName());
+    if (m_inputData && m_outputNodeName.isEmpty()) {
+        m_outputNodeName = generateOutputFileName();
+        if (m_outputNodeNameEdit) {
+            m_outputNodeNameEdit->setText(m_outputNodeName);
+        }
     }
 
-    if (m_inputData && m_outputFileNameEdit && m_outputFileNameEdit->text().isEmpty()) {
-        QFileInfo fi(m_inputData->filePath());
-        m_outputFileNameEdit->setText(fi.baseName());
-        m_outputFileName = fi.baseName();
+    if (m_inputData && m_outputFileName.isEmpty()) {
+        m_outputFileName = "{InputName}_clutter";
+        if (m_outputFileNameEdit) {
+            m_outputFileNameEdit->setText(m_outputFileName);
+        }
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
@@ -180,8 +187,8 @@ void ClutterSuppressionNode::createWidget()
     nodeNameLayout->setStretch(1, 7);
     nodeNameLayout->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("输入节点名称");
     m_outputNodeNameEdit->setText(m_outputNodeName);
+    m_outputNodeNameEdit->setPlaceholderText("输入节点名称");
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
         if (m_outputNodeName != text) {
@@ -200,10 +207,10 @@ void ClutterSuppressionNode::createWidget()
     auto* fileNameLayout = new QHBoxLayout();
     fileNameLayout->setStretch(0, 3);
     fileNameLayout->setStretch(1, 7);
-    fileNameLayout->addWidget(new QLabel("目标文件名："));
+    fileNameLayout->addWidget(new QLabel("输出名规则："));
     m_outputFileNameEdit = new QLineEdit();
-    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
     m_outputFileNameEdit->setText(m_outputFileName);
+    m_outputFileNameEdit->setPlaceholderText("支持 {InputName} 变量");
     connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
@@ -224,7 +231,7 @@ void ClutterSuppressionNode::createWidget()
 
     layout->addStretch();
 
-    onSaveToProjectChanged(m_saveToProjectCheckBox->checkState());
+    onSaveToProjectChanged(m_saveToProject ? Qt::Checked : Qt::Unchecked);
 }
 
 void ClutterSuppressionNode::onSaveToProjectChanged(int state)
@@ -273,8 +280,8 @@ bool ClutterSuppressionNode::isReady() const
         return false;
     }
 
-    if (m_saveToProjectCheckBox && m_saveToProjectCheckBox->isChecked()) {
-        if (m_outputNodeNameEdit && m_outputNodeNameEdit->text().trimmed().isEmpty()) {
+    if (m_saveToProject) {
+        if (m_outputNodeName.trimmed().isEmpty()) {
             return false;
         }
     }
@@ -320,9 +327,9 @@ void ClutterSuppressionNode::executeProcessing()
     }
 
     QStringList inputPaths = m_inputData->filePaths();
-    QString outputNodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : "ClutterSuppression";
-    QString baseFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : QString();
-    bool saveToProject = m_saveToProjectCheckBox ? m_saveToProjectCheckBox->isChecked() : true;
+    QString outputNodeName = m_outputNodeName.trimmed().isEmpty() ? "ClutterSuppression" : m_outputNodeName.trimmed();
+    QString baseFileName = m_outputFileName.trimmed();
+    bool saveToProject = m_saveToProject;
     QString projPath = projectPath();
     QString projName = projectName();
     QStandardItemModel* model = projectModel();
@@ -332,13 +339,32 @@ void ClutterSuppressionNode::executeProcessing()
     QStringList fileNames;
     for (int i = 0; i < inputPaths.size(); ++i) {
         outputPaths.append(QDir::tempPath() + QString("/clutter_suppression_%1_%2.jpg").arg(i).arg(QDateTime::currentMSecsSinceEpoch()));
-        if (inputPaths.size() == 1) {
-            fileNames.append(baseFileName);
+        
+        QString originalName = QFileInfo(inputPaths[i]).baseName();
+        QString name = baseFileName;
+        
+        name.replace(QString::fromUtf8("｛InputName｝"), "{InputName}");
+        name.replace(QString::fromUtf8("｛InputName}"), "{InputName}");
+        name.replace(QString::fromUtf8("{InputName｝"), "{InputName}");
+        
+        if (name.contains("{InputName}", Qt::CaseInsensitive)) {
+            name.replace("{InputName}", "{InputName}", Qt::CaseInsensitive);
+            name.replace("{InputName}", originalName);
         } else {
-            QString name = baseFileName.isEmpty() ? QFileInfo(inputPaths[i]).baseName() + "_clutter" : QString("%1_%2").arg(baseFileName).arg(i+1);
-            fileNames.append(name);
+            if (inputPaths.size() > 1) {
+                name = QString("%1_%2").arg(baseFileName).arg(i + 1);
+            }
         }
+        
+        if (name.trimmed().isEmpty()) {
+            name = originalName + "_clutter";
+        }
+        
+        fileNames.append(name);
     }
+    
+    m_savedOutputFiles = fileNames;
+    m_outputImagePaths = outputPaths;
 
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
@@ -370,26 +396,21 @@ void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& messa
 
 void ClutterSuppressionNode::onProcessingFinished()
 {
-    m_outputImagePaths.clear();
-    if (m_saveToProjectCheckBox->isChecked()) {
-        QString nodeName = m_outputNodeNameEdit->text().trimmed();
+    if (m_saveToProject) {
+        m_outputImagePaths.clear();
+        
+        QString nodeName = m_outputNodeName.trimmed();
+        if (nodeName.isEmpty()) nodeName = "ClutterSuppression";
+        
         QString projDirStr = projectPath();
         if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
             projDirStr = QFileInfo(projDirStr).absolutePath();
         }
-        QStringList inputPaths = m_inputData->filePaths();
-        QString baseFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : QString();
-        for (int i = 0; i < inputPaths.size(); ++i) {
-            QString finalFileName;
-            if (inputPaths.size() == 1) {
-                if (baseFileName.isEmpty()) {
-                    finalFileName = QFileInfo(inputPaths[i]).baseName() + "_clutter.png";
-                } else {
-                    finalFileName = baseFileName.endsWith(".png") ? baseFileName : baseFileName + ".png";
-                }
-            } else {
-                QString name = baseFileName.isEmpty() ? QFileInfo(inputPaths[i]).baseName() + "_clutter" : QString("%1_%2").arg(baseFileName).arg(i+1);
-                finalFileName = name + ".png";
+        
+        for (int i = 0; i < m_savedOutputFiles.size(); ++i) {
+            QString finalFileName = m_savedOutputFiles[i];
+            if (!finalFileName.endsWith(".png", Qt::CaseInsensitive)) {
+                finalFileName += ".png";
             }
             m_outputImagePaths.append(projDirStr + "/" + nodeName + "/" + finalFileName);
         }
@@ -403,9 +424,9 @@ void ClutterSuppressionNode::onProcessingFinished()
         m_statusLabel->setText("状态：完成");
     }
 
-    m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
-    m_outputFileNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
-    m_saveToProjectCheckBox->setEnabled(true);
+    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
+    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
 
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
@@ -433,9 +454,9 @@ void ClutterSuppressionNode::onError(const QString& error)
     if (m_statusLabel) {
         m_statusLabel->setText("状态：错误 - " + error);
     }
-    m_outputNodeNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
-    m_outputFileNameEdit->setEnabled(m_saveToProjectCheckBox->isChecked());
-    m_saveToProjectCheckBox->setEnabled(true);
+    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
+    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
 
     if (m_thread)
     {
@@ -489,13 +510,17 @@ QJsonObject ClutterSuppressionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
 
-    bool saveToProject = m_saveToProjectCheckBox ? m_saveToProjectCheckBox->isChecked() : m_saveToProject;
-    QString nodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
-    QString fileName = m_outputFileNameEdit ? m_outputFileNameEdit->text() : m_outputFileName;
+    modelJson["saveToProject"] = m_saveToProject;
+    modelJson["outputNodeName"] = m_outputNodeName;
+    modelJson["outputFileName"] = m_outputFileName;
 
-    modelJson["saveToProject"] = saveToProject;
-    modelJson["outputNodeName"] = nodeName;
-    modelJson["outputFileName"] = fileName;
+    QJsonArray outputFiles;
+    if (m_outputData) {
+        for (const QString& path : m_outputData->filePaths()) {
+            outputFiles.append(QFileInfo(path).fileName());
+        }
+    }
+    modelJson["outputFiles"] = outputFiles;
 
     return modelJson;
 }
@@ -503,17 +528,16 @@ QJsonObject ClutterSuppressionNode::save() const
 void ClutterSuppressionNode::load(QJsonObject const &json)
 {
     // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
-    QJsonValue v = json["saveToProject"];
-    if (!v.isUndefined()) {
-        m_saveToProject = v.toBool(true);
-    }
-    v = json["outputNodeName"];
-    if (!v.isUndefined()) {
-        m_outputNodeName = v.toString();
-    }
-    v = json["outputFileName"];
-    if (!v.isUndefined()) {
-        m_outputFileName = v.toString();
+    m_saveToProject = json["saveToProject"].toBool(true);
+    m_outputNodeName = json["outputNodeName"].toString();
+    m_outputFileName = json["outputFileName"].toString();
+
+    m_savedOutputFiles.clear();
+    if (json.contains("outputFiles")) {
+        QJsonArray arr = json["outputFiles"].toArray();
+        for (int i = 0; i < arr.size(); ++i) {
+            m_savedOutputFiles.append(arr[i].toString());
+        }
     }
 
     ExecutableNodeDelegateModel::load(json);
@@ -565,9 +589,25 @@ bool ClutterSuppressionNode::validateAndRestoreOutput()
         projDirStr = QFileInfo(projDirStr).absolutePath();
     }
 
+    if (!m_savedOutputFiles.isEmpty()) {
+        QStringList validPaths;
+        for (const QString& fileName : m_savedOutputFiles) {
+            QString outputPath = projDirStr + "/" + nodeName + "/" + fileName;
+            if (QFile::exists(outputPath)) {
+                validPaths.append(outputPath);
+            }
+        }
+
+        if (!validPaths.isEmpty() && validPaths.size() == m_savedOutputFiles.size()) {
+            m_outputData = std::make_shared<ImageInfoData>(validPaths);
+            setOutputData(0, m_outputData);
+            setOutputData(1, m_outputData);
+            return true;
+        }
+    }
+
     QString finalFileName;
     if (m_outputFileName.isEmpty()) {
-        // 需要输入数据才能计算默认文件名，返回false让用户手动执行
         return false;
     } else {
         if (QFileInfo(m_outputFileName).suffix().isEmpty()) {

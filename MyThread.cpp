@@ -6373,10 +6373,12 @@ bool MyThread::processBM3DEnhancement(
     QStandardItemModel* model,
     bool saveToProject,
     XMLFile* projectXml,
-    QString& outError
+    QString& outError,
+    int baseProgress,
+    int progressStep
 )
 {
-    emit updateProcess(0, QStringLiteral("加载图像..."));
+    emit updateProcess(baseProgress + progressStep * 0.0, QStringLiteral("加载图像..."));
 
     cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
     if (inputGray.empty()) {
@@ -6384,7 +6386,7 @@ bool MyThread::processBM3DEnhancement(
         return false;
     }
 
-    emit updateProcess(20, QStringLiteral("准备BM3D计算..."));
+    emit updateProcess(baseProgress + progressStep * 0.2, QStringLiteral("准备BM3D计算..."));
 
     const double noiseGain = 1.1;
     cv::Mat imgDouble;
@@ -6418,7 +6420,7 @@ bool MyThread::processBM3DEnhancement(
     double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
 
     QString processMsg = (tag == "SpeckleDenoise") ? QStringLiteral("执行BM3D去噪 (可能耗时较长)...") : QStringLiteral("执行BM3D去杂波 (可能耗时较长)...");
-    emit updateProcess(40, processMsg);
+    emit updateProcess(baseProgress + progressStep * 0.4, processMsg);
 
     cv::Mat img8U;
     imgNorm.convertTo(img8U, CV_8U, 255.0);
@@ -6430,7 +6432,7 @@ bool MyThread::processBM3DEnhancement(
         return false;
     }
 
-    emit updateProcess(80, QStringLiteral("后处理及保存..."));
+    emit updateProcess(baseProgress + progressStep * 0.8, QStringLiteral("后处理及保存..."));
 
     cv::Mat denNorm;
     den8U.convertTo(denNorm, CV_64F, 1.0 / 255.0);
@@ -6573,11 +6575,13 @@ void MyThread::Speckle_Denoise(
         }
         lock.unlock();
 
+        int baseProgress = i * 100 / inputPaths.size();
+        int progressStep = 100 / inputPaths.size();
         QString outError;
         bool ok = processBM3DEnhancement(
             "SpeckleDenoise", inputPaths[i], outputPaths[i], nodeName,
             fileNames.isEmpty() ? QString() : fileNames[i],
-            projectPath, projectName, model, saveToProject, projectXml, outError
+            projectPath, projectName, model, saveToProject, projectXml, outError, baseProgress, progressStep
         );
 
         if (!ok) {
@@ -6622,11 +6626,13 @@ void MyThread::Clutter_Suppression(
         }
         lock.unlock();
 
+        int baseProgress = i * 100 / inputPaths.size();
+        int progressStep = 100 / inputPaths.size();
         QString outError;
         bool ok = processBM3DEnhancement(
             "ClutterSuppression", inputPaths[i], outputPaths[i], nodeName,
             fileNames.isEmpty() ? QString() : fileNames[i],
-            projectPath, projectName, model, saveToProject, projectXml, outError
+            projectPath, projectName, model, saveToProject, projectXml, outError, baseProgress, progressStep
         );
 
         if (!ok) {
