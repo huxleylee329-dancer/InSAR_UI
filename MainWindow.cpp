@@ -1597,6 +1597,13 @@ void MainWindow::setupInterfaceSwitchingMenu()
     interfaceGroup->addAction(workflowAction);
     connect(workflowAction, &QAction::triggered, this, &MainWindow::switchToWorkflow);
 
+    viewMenu->addSeparator();
+    if (m_workflowUI) {
+        for (QAction* action : m_workflowUI->getViewActions()) {
+            viewMenu->addAction(action);
+        }
+    }
+
     updateInterfaceMenuCheckState();
 }
 
@@ -1613,6 +1620,13 @@ void MainWindow::updateInterfaceMenuCheckState()
             action->setChecked(currentId == "workspace");
         } else if (action->text().contains(QStringLiteral("工作流"))) {
             action->setChecked(currentId == "workflow");
+        }
+    }
+
+    if (m_workflowUI) {
+        bool isWorkflow = (currentId == "workflow");
+        for (QAction* action : m_workflowUI->getViewActions()) {
+            action->setVisible(isWorkflow);
         }
     }
 }

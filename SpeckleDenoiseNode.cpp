@@ -513,6 +513,14 @@ QJsonObject SpeckleDenoiseNode::save() const
     modelJson["outputNodeName"] = m_outputNodeName;
     modelJson["outputFileName"] = m_outputFileName;
 
+    QJsonArray outputFiles;
+    if (m_outputData) {
+        for (const QString& path : m_outputData->filePaths()) {
+            outputFiles.append(QFileInfo(path).fileName());
+        }
+    }
+    modelJson["outputFiles"] = outputFiles;
+
     return modelJson;
 }
 
@@ -522,6 +530,14 @@ void SpeckleDenoiseNode::load(QJsonObject const &json)
     m_saveToProject = json["saveToProject"].toBool(true);
     m_outputNodeName = json["outputNodeName"].toString();
     m_outputFileName = json["outputFileName"].toString();
+
+    m_savedOutputFiles.clear();
+    if (json.contains("outputFiles")) {
+        QJsonArray arr = json["outputFiles"].toArray();
+        for (int i = 0; i < arr.size(); ++i) {
+            m_savedOutputFiles.append(arr[i].toString());
+        }
+    }
 
     ExecutableNodeDelegateModel::load(json);
 
@@ -574,9 +590,26 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
         projDirStr = QFileInfo(projDirStr).absolutePath();
     }
 
+    if (!m_savedOutputFiles.isEmpty()) {
+        QStringList validPaths;
+        for (const QString& fileName : m_savedOutputFiles) {
+            QString outputPath = projDirStr + "/" + nodeName + "/" + fileName;
+            if (QFile::exists(outputPath)) {
+                validPaths.append(outputPath);
+            }
+        }
+
+        if (!validPaths.isEmpty() && validPaths.size() == m_savedOutputFiles.size()) {
+            m_outputData = std::make_shared<ImageInfoData>(validPaths);
+            setOutputData(0, m_outputData);
+            setOutputData(1, m_outputData);
+            return true;
+        }
+    }
+
+    // Fallback for older project files
     QString finalFileName;
     if (m_outputFileName.isEmpty()) {
-        // 需要输入数据才能计算默认文件名，返回false让用户手动执行
         return false;
     } else {
         if (QFileInfo(m_outputFileName).suffix().isEmpty()) {

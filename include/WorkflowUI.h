@@ -1,4 +1,4 @@
-﻿#ifndef WORKFLOWUI_H
+#ifndef WORKFLOWUI_H
 #define WORKFLOWUI_H
 
 #include "IApplicationInterface.h"
@@ -94,6 +94,9 @@ public:
     // 工作流状态保存/恢复（供项目 save/load 使用）
     QJsonObject saveWorkflowToJson() const;
     void loadWorkflowFromJson(const QJsonObject& json);
+
+    // 获取面板显示/隐藏的Action（供主窗口添加到视图菜单）
+    QList<QAction*> getViewActions() const;
 
 private slots:
     // File operations

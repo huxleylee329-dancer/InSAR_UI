@@ -40,6 +40,9 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+protected:
+    bool validateAndRestoreOutput() override;
+
 private slots:
     void onRegionChanged(int index);
 

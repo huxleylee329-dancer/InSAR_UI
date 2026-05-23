@@ -6,6 +6,7 @@
 #include <QFormLayout>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QJsonArray>
 
 namespace QtNodes {
 
@@ -347,6 +348,25 @@ QJsonObject EvaluationENLNode::save() const
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["regionIndex"] = m_regionComboBox->currentIndex();
     modelJson["isExpanded"] = m_isExpanded;
+
+    QJsonArray resultsArray;
+    if (m_resultsTable) {
+        for (int row = 0; row < m_resultsTable->rowCount(); ++row) {
+            QJsonObject rowObj;
+            rowObj["col0"] = m_resultsTable->item(row, 0) ? m_resultsTable->item(row, 0)->text() : "";
+            rowObj["col1"] = m_resultsTable->item(row, 1) ? m_resultsTable->item(row, 1)->text() : "";
+            rowObj["col2"] = m_resultsTable->item(row, 2) ? m_resultsTable->item(row, 2)->text() : "";
+            rowObj["col3"] = m_resultsTable->item(row, 3) ? m_resultsTable->item(row, 3)->text() : "";
+            resultsArray.append(rowObj);
+        }
+    }
+    modelJson["results"] = resultsArray;
+
+    if (m_originalEnlLabel) modelJson["origEnl"] = m_originalEnlLabel->text();
+    if (m_filteredEnlLabel) modelJson["filtEnl"] = m_filteredEnlLabel->text();
+    if (m_epiLabel) modelJson["epi"] = m_epiLabel->text();
+    if (m_summaryLabel && !m_summaryLabel->isHidden()) modelJson["summary"] = m_summaryLabel->text();
+
     return modelJson;
 }
 
@@ -356,8 +376,78 @@ void EvaluationENLNode::load(QJsonObject const &json)
         m_regionComboBox->setCurrentIndex(json["regionIndex"].toInt());
     }
     m_isExpanded = json["isExpanded"].toBool(false);
+
+    if (json.contains("results") && m_resultsTable) {
+        QJsonArray resultsArray = json["results"].toArray();
+        m_resultsTable->setRowCount(0);
+        for (int i = 0; i < resultsArray.size(); ++i) {
+            QJsonObject rowObj = resultsArray[i].toObject();
+            int row = m_resultsTable->rowCount();
+            m_resultsTable->insertRow(row);
+            
+            QString col0Text = rowObj["col0"].toString();
+            if (col0Text == QStringLiteral("平均值")) {
+                auto* avgItem = new QTableWidgetItem(col0Text);
+                avgItem->setFont(QFont("", -1, QFont::Bold));
+                m_resultsTable->setItem(row, 0, avgItem);
+            } else {
+                m_resultsTable->setItem(row, 0, new QTableWidgetItem(col0Text));
+            }
+            m_resultsTable->setItem(row, 1, new QTableWidgetItem(rowObj["col1"].toString()));
+            m_resultsTable->setItem(row, 2, new QTableWidgetItem(rowObj["col2"].toString()));
+            m_resultsTable->setItem(row, 3, new QTableWidgetItem(rowObj["col3"].toString()));
+        }
+    }
+
+    if (json.contains("origEnl") && m_originalEnlLabel) m_originalEnlLabel->setText(json["origEnl"].toString());
+    if (json.contains("filtEnl") && m_filteredEnlLabel) m_filteredEnlLabel->setText(json["filtEnl"].toString());
+    if (json.contains("epi") && m_epiLabel) m_epiLabel->setText(json["epi"].toString());
     
+    if (json.contains("summary") && m_summaryLabel) {
+        m_summaryLabel->setText(json["summary"].toString());
+    }
+
     ExecutableNodeDelegateModel::load(json);
+
+    if (json.contains("results")) {
+        QJsonArray resultsArray = json["results"].toArray();
+        int totalCount = resultsArray.size();
+        if (totalCount > 0 && resultsArray.last().toObject()["col0"].toString() == QStringLiteral("平均值")) {
+            totalCount--;
+        }
+        
+        QWidget* singleView = m_widget ? m_widget->findChild<QWidget*>("SingleResultView") : nullptr;
+        if (totalCount == 1) {
+            if (singleView) singleView->show();
+            if (m_summaryLabel) m_summaryLabel->hide();
+            if (m_expandLabel) m_expandLabel->hide();
+            if (m_resultsTable) m_resultsTable->hide();
+        } else if (totalCount > 1) {
+            if (singleView) singleView->hide();
+            if (m_summaryLabel) m_summaryLabel->show();
+            if (m_expandLabel) m_expandLabel->show();
+            
+            if (m_isExpanded) {
+                if (m_resultsTable) m_resultsTable->show();
+                if (m_expandLabel) m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>"));
+            } else {
+                if (m_resultsTable) m_resultsTable->hide();
+                if (m_expandLabel) m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+            }
+        }
+        
+        if (m_widget) {
+            m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
+            m_widget->resize(0, 0);
+            m_widget->adjustSize();
+            Q_EMIT embeddedWidgetSizeUpdated();
+        }
+    }
+}
+
+bool EvaluationENLNode::validateAndRestoreOutput()
+{
+    return true;
 }
 
 } // namespace QtNodes

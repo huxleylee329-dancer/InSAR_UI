@@ -437,6 +437,10 @@ void WorkflowUI::setupSceneInternal()
     // Pass palette order to control display order
     m_nodeLibrary->setPaletteOrder(getPaletteFullOrder());
 
+    // 默认关闭 Workflows 和 Queue 标签页
+    if (m_workflowsDockWidget) m_workflowsDockWidget->closeDockWidget();
+    if (m_queueDockWidget) m_queueDockWidget->closeDockWidget();
+
     // After everything is added, do a delayed layout adjustment
     QTimer::singleShot(10, this, [this]() {
         // Force dock manager to update layout
@@ -770,6 +774,16 @@ void WorkflowUI::loadWorkflowFromJson(const QJsonObject& json)
     const QSignalBlocker blocker(m_scene);
     onClear();
     m_graphModel->load(json);
+}
+
+QList<QAction*> WorkflowUI::getViewActions() const
+{
+    QList<QAction*> actions;
+    if (m_nodesDockWidget) actions.append(m_nodesDockWidget->toggleViewAction());
+    if (m_workflowsDockWidget) actions.append(m_workflowsDockWidget->toggleViewAction());
+    if (m_propertiesDockWidget) actions.append(m_propertiesDockWidget->toggleViewAction());
+    if (m_queueDockWidget) actions.append(m_queueDockWidget->toggleViewAction());
+    return actions;
 }
 
 // ============================================================================
