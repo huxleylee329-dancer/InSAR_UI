@@ -67,8 +67,14 @@ void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portI
         if (m_imageView && m_imageView->scene()) {
             m_imageView->scene()->clear();
         }
-        if (m_prevButton) m_prevButton->setEnabled(false);
-        if (m_nextButton) m_nextButton->setEnabled(false);
+        if (m_prevButton) {
+            m_prevButton->setEnabled(false);
+            m_prevButton->hide();
+        }
+        if (m_nextButton) {
+            m_nextButton->setEnabled(false);
+            m_nextButton->hide();
+        }
     }
 }
 
@@ -83,8 +89,14 @@ void ImageDisplayNode::loadImageAtIndex()
     if (total > 1) {
         prefix = QString("Image %1 / %2: ").arg(m_currentIndex + 1).arg(total);
     }
-    if (m_prevButton) m_prevButton->setEnabled(m_currentIndex > 0);
-    if (m_nextButton) m_nextButton->setEnabled(m_currentIndex < total - 1);
+    if (m_prevButton) {
+        m_prevButton->setVisible(total > 1);
+        m_prevButton->setEnabled(m_currentIndex > 0);
+    }
+    if (m_nextButton) {
+        m_nextButton->setVisible(total > 1);
+        m_nextButton->setEnabled(m_currentIndex < total - 1);
+    }
 
     updateInfo(prefix + tr("正在加载..."));
     clearError();
@@ -132,6 +144,7 @@ QWidget* ImageDisplayNode::embeddedWidget()
             "QPushButton:disabled { background-color: rgba(0,0,0,20%); color: rgba(255,255,255,30%); }"
         );
         m_prevButton->setEnabled(false);
+        m_prevButton->hide();
         connect(m_prevButton, &QPushButton::clicked, this, &ImageDisplayNode::onPrevClicked);
 
         m_infoLabel = new QLabel(tr("等待输入..."));
@@ -148,6 +161,7 @@ QWidget* ImageDisplayNode::embeddedWidget()
             "QPushButton:disabled { background-color: rgba(0,0,0,20%); color: rgba(255,255,255,30%); }"
         );
         m_nextButton->setEnabled(false);
+        m_nextButton->hide();
         connect(m_nextButton, &QPushButton::clicked, this, &ImageDisplayNode::onNextClicked);
 
         topLayout->addWidget(m_prevButton, 0, Qt::AlignLeft | Qt::AlignVCenter);

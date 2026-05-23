@@ -6,6 +6,8 @@
 #include <QLabel>
 #include <QComboBox>
 #include <opencv2/opencv.hpp>
+#include <QTableWidget>
+#include <QHeaderView>
 
 namespace QtNodes {
 
@@ -49,9 +51,15 @@ private:
     QWidget* m_widget = nullptr;
     QComboBox* m_regionComboBox = nullptr;
 
+    QWidget* m_simpleResultWidget = nullptr;
     QLabel* m_originalScrLabel = nullptr;
     QLabel* m_filteredScrLabel = nullptr;
     QLabel* m_improvementLabel = nullptr;
+    QLabel* m_summaryLabel = nullptr;
+    QLabel* m_expandLabel = nullptr;
+    bool m_isExpanded = false;
+
+    QTableWidget* m_resultsTable = nullptr;
 
     std::shared_ptr<ImageInfoData> m_originalData = nullptr;
     std::shared_ptr<ImageInfoData> m_filteredData = nullptr;

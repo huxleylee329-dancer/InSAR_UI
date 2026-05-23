@@ -47,6 +47,12 @@ void ExecutableDataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
                     onOutPortDataUpdated(restoredNodeId, portIndex);
                 });
 
+        connect(model.get(),
+                &NodeDelegateModel::embeddedWidgetSizeUpdated,
+                [restoredNodeId, this]() {
+                    Q_EMIT nodeUpdated(restoredNodeId);
+                });
+
         auto *execModel = dynamic_cast<ExecutableNodeDelegateModel*>(model.get());
         if (execModel) {
             execModel->setRestoring(_isRestoring);

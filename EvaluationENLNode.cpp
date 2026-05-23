@@ -19,6 +19,7 @@ void EvaluationENLNode::createWidget()
     m_widget = new QWidget();
     auto* mainLayout = new QVBoxLayout(m_widget);
     mainLayout->setContentsMargins(5, 5, 5, 5);
+    mainLayout->setSizeConstraint(QLayout::SetFixedSize);
 
     auto* roiGroup = new QGroupBox("区域选择");
     auto* roiLayout = new QVBoxLayout(roiGroup);
@@ -30,16 +31,69 @@ void EvaluationENLNode::createWidget()
 
     auto* resultGroup = new QGroupBox("ENL/EPI结果");
     auto* tableLayout = new QVBoxLayout(resultGroup);
+    tableLayout->setContentsMargins(5, 5, 5, 5);
+    tableLayout->setSpacing(2);
+
+    m_simpleResultWidget = new QWidget();
+    auto* simpleLayout = new QVBoxLayout(m_simpleResultWidget);
+    simpleLayout->setContentsMargins(0, 0, 0, 0);
+    simpleLayout->setSpacing(2);
+
+    QWidget* singleResultView = new QWidget();
+    singleResultView->setObjectName("SingleResultView");
+    auto* singleLayout = new QFormLayout(singleResultView);
+    singleLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_originalEnlLabel = new QLabel("--");
+    m_filteredEnlLabel = new QLabel("--");
+    m_epiLabel = new QLabel("--");
+
+    singleLayout->addRow(QStringLiteral("原图ENL："), m_originalEnlLabel);
+    singleLayout->addRow(QStringLiteral("滤波后ENL："), m_filteredEnlLabel);
+    singleLayout->addRow(QStringLiteral("EPI："), m_epiLabel);
+
+    simpleLayout->addWidget(singleResultView);
+
+    m_summaryLabel = new QLabel("--");
+    m_summaryLabel->hide();
+    simpleLayout->addWidget(m_summaryLabel);
+
+    tableLayout->addWidget(m_simpleResultWidget);
+
+    m_expandLabel = new QLabel();
+    m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+    m_expandLabel->setTextFormat(Qt::RichText);
+    m_expandLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_expandLabel->setOpenExternalLinks(false);
+    m_expandLabel->hide();
+    tableLayout->addWidget(m_expandLabel);
     
     m_resultsTable = new QTableWidget();
     m_resultsTable->setColumnCount(4);
     m_resultsTable->setHorizontalHeaderLabels({QStringLiteral("图像"), "原图ENL", "滤波后ENL", "EPI"});
     m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    // m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_resultsTable->setMinimumHeight(150);
+    m_resultsTable->setVisible(false);
     tableLayout->addWidget(m_resultsTable);
+
+    connect(m_expandLabel, &QLabel::linkActivated, this, [this](const QString &link) {
+        if (link == "#expand") {
+            m_isExpanded = !m_isExpanded;
+            m_resultsTable->setVisible(m_isExpanded);
+            m_expandLabel->setText(m_isExpanded ? 
+                QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>") : 
+                QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+            if (m_widget) {
+                m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
+                m_widget->resize(0, 0);
+                m_widget->adjustSize();
+                Q_EMIT embeddedWidgetSizeUpdated();
+            }
+        }
+    });
 
     mainLayout->addWidget(resultGroup);
 
@@ -170,8 +224,17 @@ double EvaluationENLNode::calculateEPI(const cv::Mat& orig, const cv::Mat& filte
 void EvaluationENLNode::calculateAndDisplayENL()
 {
     if (m_resultsTable) m_resultsTable->setRowCount(0);
+    if (m_originalEnlLabel) m_originalEnlLabel->setText("--");
+    if (m_filteredEnlLabel) m_filteredEnlLabel->setText("--");
+    if (m_epiLabel) m_epiLabel->setText("--");
+    if (m_summaryLabel) m_summaryLabel->setText("--");
 
     if (!m_originalData || !m_filteredData || m_originalData->filePaths().isEmpty() || m_filteredData->filePaths().isEmpty()) {
+        QWidget* singleView = m_widget ? m_widget->findChild<QWidget*>("SingleResultView") : nullptr;
+        if (singleView) singleView->show();
+        if (m_summaryLabel) m_summaryLabel->hide();
+        if (m_expandLabel) m_expandLabel->hide();
+        if (m_resultsTable) m_resultsTable->hide();
         return;
     }
     
@@ -179,6 +242,12 @@ void EvaluationENLNode::calculateAndDisplayENL()
     QStringList filtPaths = m_filteredData->filePaths();
     
     if (origPaths.size() != filtPaths.size()) {
+        QWidget* singleView = m_widget ? m_widget->findChild<QWidget*>("SingleResultView") : nullptr;
+        if (singleView) singleView->hide();
+        m_summaryLabel->setText(QStringLiteral("错误：输入数量不一致 (原图: %1, 滤波: %2)").arg(origPaths.size()).arg(filtPaths.size()));
+        m_summaryLabel->show();
+        m_expandLabel->hide();
+        m_resultsTable->hide();
         QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("原图和滤波后图像的数量不一致，无法进行批量评估！"));
         return;
     }
@@ -231,21 +300,64 @@ void EvaluationENLNode::calculateAndDisplayENL()
         m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(totalFiltEnl / validCount, 'f', 4)));
         m_resultsTable->setItem(row, 3, new QTableWidgetItem(QString::number(totalEPI / validCount, 'f', 4)));
     }
+    
+    QWidget* singleView = m_widget ? m_widget->findChild<QWidget*>("SingleResultView") : nullptr;
+
+    if (validCount > 0) {
+        if (count == 1) { // use count to determine if batch
+            if (singleView) singleView->show();
+            if (m_originalEnlLabel) m_originalEnlLabel->setText(QString::number(totalOrigEnl / validCount, 'f', 4));
+            if (m_filteredEnlLabel) m_filteredEnlLabel->setText(QString::number(totalFiltEnl / validCount, 'f', 4));
+            if (m_epiLabel) m_epiLabel->setText(QString::number(totalEPI / validCount, 'f', 4));
+            m_summaryLabel->hide();
+            m_expandLabel->hide();
+            m_resultsTable->hide();
+        } else {
+            if (singleView) singleView->hide();
+            m_summaryLabel->setText(QStringLiteral("评估完成：共处理 %1 对图像").arg(validCount));
+            m_summaryLabel->show();
+            m_expandLabel->show();
+            
+            if (m_isExpanded) {
+                m_resultsTable->show();
+                m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>"));
+            } else {
+                m_resultsTable->hide();
+                m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+            }
+        }
+    } else {
+        if (singleView) singleView->hide();
+        m_summaryLabel->setText(QStringLiteral("错误：无法读取全部 %1 对图像，请检查路径。").arg(count));
+        m_summaryLabel->show();
+        m_expandLabel->hide();
+        m_resultsTable->hide();
+    }
+    
+    if (m_widget) {
+        m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
+        m_widget->resize(0, 0);
+        m_widget->adjustSize();
+        Q_EMIT embeddedWidgetSizeUpdated();
+    }
 }
 
 QJsonObject EvaluationENLNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["regionIndex"] = m_regionComboBox->currentIndex();
+    modelJson["isExpanded"] = m_isExpanded;
     return modelJson;
 }
 
 void EvaluationENLNode::load(QJsonObject const &json)
 {
-    ExecutableNodeDelegateModel::load(json);
     if (json.contains("regionIndex")) {
         m_regionComboBox->setCurrentIndex(json["regionIndex"].toInt());
     }
+    m_isExpanded = json["isExpanded"].toBool(false);
+    
+    ExecutableNodeDelegateModel::load(json);
 }
 
 } // namespace QtNodes

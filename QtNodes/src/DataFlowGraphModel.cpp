@@ -71,6 +71,12 @@ NodeId DataFlowGraphModel::addNode(QString const nodeType)
                 });
 
         connect(model.get(),
+                &NodeDelegateModel::embeddedWidgetSizeUpdated,
+                [newId, this]() {
+                    Q_EMIT nodeUpdated(newId);
+                });
+
+        connect(model.get(),
                 &NodeDelegateModel::portsAboutToBeDeleted,
                 this,
                 [newId, this](PortType const portType, PortIndex const first, PortIndex const last) {
@@ -475,6 +481,12 @@ void DataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
                 &NodeDelegateModel::dataUpdated,
                 [restoredNodeId, this](PortIndex const portIndex) {
                     onOutPortDataUpdated(restoredNodeId, portIndex);
+                });
+
+        connect(model.get(),
+                &NodeDelegateModel::embeddedWidgetSizeUpdated,
+                [restoredNodeId, this]() {
+                    Q_EMIT nodeUpdated(restoredNodeId);
                 });
 
         _models[restoredNodeId] = std::move(model);

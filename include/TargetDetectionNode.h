@@ -10,6 +10,7 @@
 #include <QThread>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QPushButton>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -67,6 +68,14 @@ private:
     QLabel* m_inputImageLabel = nullptr;
     QComboBox* m_modelComboBox = nullptr;
     QLineEdit* m_thresholdEdit = nullptr;
+
+    QWidget* m_simpleResultWidget = nullptr;
+    QLabel* m_resultLabel = nullptr;
+    QLabel* m_probabilityLabel = nullptr;
+    QLabel* m_summaryLabel = nullptr;
+    QLabel* m_expandLabel = nullptr;
+    bool m_isExpanded = false;
+
     QTableWidget* m_resultsTable = nullptr;
     QLabel* m_statusLabel = nullptr;
 

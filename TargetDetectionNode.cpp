@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QPushButton>
 
 namespace QtNodes {
 
@@ -21,6 +22,12 @@ TargetDetectionNode::TargetDetectionNode()
     , m_inputImageLabel(nullptr)
     , m_modelComboBox(nullptr)
     , m_thresholdEdit(nullptr)
+    , m_simpleResultWidget(nullptr)
+    , m_resultLabel(nullptr)
+    , m_probabilityLabel(nullptr)
+    , m_summaryLabel(nullptr)
+    , m_expandLabel(nullptr)
+    , m_isExpanded(false)
     , m_resultsTable(nullptr)
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
@@ -122,6 +129,7 @@ void TargetDetectionNode::createWidget()
     auto* layout = new QVBoxLayout(_widget);
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
+    layout->setSizeConstraint(QLayout::SetFixedSize);
 
     // Input image label
     m_inputImageLabel = new QLabel("");
@@ -166,15 +174,71 @@ void TargetDetectionNode::createWidget()
     // Output Results Labels
     layout->addWidget(new QLabel(QStringLiteral("检查结果：")));
 
+    m_simpleResultWidget = new QWidget();
+    auto* simpleLayout = new QVBoxLayout(m_simpleResultWidget);
+    simpleLayout->setContentsMargins(0, 0, 0, 0);
+    simpleLayout->setSpacing(2);
+
+    QWidget* singleResultView = new QWidget();
+    singleResultView->setObjectName("SingleResultView");
+    auto* singleLayout = new QVBoxLayout(singleResultView);
+    singleLayout->setContentsMargins(0, 0, 0, 0);
+    singleLayout->setSpacing(2);
+
+    auto* resultRowLayout = new QHBoxLayout();
+    resultRowLayout->addWidget(new QLabel(QStringLiteral("结果：")));
+    m_resultLabel = new QLabel("--");
+    resultRowLayout->addWidget(m_resultLabel);
+    singleLayout->addLayout(resultRowLayout);
+
+    auto* probRowLayout = new QHBoxLayout();
+    probRowLayout->addWidget(new QLabel(QStringLiteral("概率：")));
+    m_probabilityLabel = new QLabel("--");
+    probRowLayout->addWidget(m_probabilityLabel);
+    singleLayout->addLayout(probRowLayout);
+    
+    simpleLayout->addWidget(singleResultView);
+
+    m_summaryLabel = new QLabel("--");
+    m_summaryLabel->hide();
+    simpleLayout->addWidget(m_summaryLabel);
+    
+    layout->addWidget(m_simpleResultWidget);
+
+    m_expandLabel = new QLabel();
+    m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+    m_expandLabel->setTextFormat(Qt::RichText);
+    m_expandLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_expandLabel->setOpenExternalLinks(false);
+    m_expandLabel->hide(); // Hidden by default, only shown if multiple images
+    layout->addWidget(m_expandLabel);
+
     m_resultsTable = new QTableWidget();
     m_resultsTable->setColumnCount(3);
     m_resultsTable->setHorizontalHeaderLabels({QStringLiteral("图像"), QStringLiteral("结果"), QStringLiteral("概率")});
     m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    // m_resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_resultsTable->setMinimumHeight(100);
+    m_resultsTable->setVisible(false); // Hidden by default
     layout->addWidget(m_resultsTable);
+
+    connect(m_expandLabel, &QLabel::linkActivated, this, [this](const QString &link) {
+        if (link == "#expand") {
+            m_isExpanded = !m_isExpanded;
+            m_resultsTable->setVisible(m_isExpanded);
+            m_expandLabel->setText(m_isExpanded ? 
+                QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>") : 
+                QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+            if (_widget) {
+                _widget->setFixedWidth(!m_resultsTable->isHidden() ? 350 : 260);
+                _widget->resize(0, 0);
+                _widget->adjustSize();
+                Q_EMIT embeddedWidgetSizeUpdated();
+            }
+        }
+    });
 
     if (!m_savedResults.isEmpty()) {
         m_resultsTable->setRowCount(0);
@@ -184,6 +248,30 @@ void TargetDetectionNode::createWidget()
             m_resultsTable->setItem(row, 0, new QTableWidgetItem(res.fileName));
             m_resultsTable->setItem(row, 1, new QTableWidgetItem(res.resultText));
             m_resultsTable->setItem(row, 2, new QTableWidgetItem(res.probability));
+        }
+        
+        int totalCount = m_savedResults.size();
+        if (totalCount > 0) {
+            if (totalCount == 1) {
+                if (singleResultView) singleResultView->show();
+                m_resultLabel->setText(m_savedResults[0].resultText);
+                m_probabilityLabel->setText(m_savedResults[0].probability);
+                m_summaryLabel->hide();
+                m_expandLabel->hide();
+            } else {
+                if (singleResultView) singleResultView->hide();
+                m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
+                m_summaryLabel->show();
+                m_expandLabel->show();
+            }
+            
+            if (m_isExpanded) {
+                m_resultsTable->show();
+                m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>"));
+            } else {
+                m_resultsTable->hide();
+                m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+            }
         }
     }
 
@@ -263,6 +351,10 @@ void TargetDetectionNode::executeProcessing()
     if (m_resultsTable) {
         m_resultsTable->setRowCount(0);
     }
+    if (m_resultLabel) m_resultLabel->setText("--");
+    if (m_probabilityLabel) m_probabilityLabel->setText("--");
+    if (m_summaryLabel) m_summaryLabel->setText("--");
+    
     m_savedResults.clear();
 
     QStringList inputPaths = m_inputData->filePaths();
@@ -333,6 +425,33 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
     // We only finish execution if this is the last image.
     if (m_inputData && imageIndex == m_inputData->filePaths().size() - 1) {
         if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：完成"));
+        
+        int totalCount = m_inputData->filePaths().size();
+        QWidget* singleView = _widget ? _widget->findChild<QWidget*>("SingleResultView") : nullptr;
+        
+        if (totalCount == 1) {
+            if (singleView) singleView->show();
+            if (m_resultLabel) m_resultLabel->setText(success ? resultText : "Error");
+            if (m_probabilityLabel) m_probabilityLabel->setText(success ? QString::number(shipProb * 100.0f, 'f', 2) + "%" : errorMsg);
+            if (m_summaryLabel) m_summaryLabel->hide();
+            if (m_expandLabel) m_expandLabel->hide();
+        } else {
+            if (singleView) singleView->hide();
+            if (m_summaryLabel) {
+                m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
+                m_summaryLabel->show();
+            }
+            if (m_expandLabel) {
+                m_expandLabel->show();
+            }
+        }
+        
+        if (_widget) {
+            _widget->setFixedWidth(!m_resultsTable->isHidden() ? 350 : 260);
+            _widget->resize(0, 0);
+            _widget->adjustSize();
+            Q_EMIT embeddedWidgetSizeUpdated();
+        }
 
         m_outputData = m_inputData;
         setOutputData(0, m_outputData);
@@ -389,6 +508,7 @@ QJsonObject TargetDetectionNode::save() const
 {
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["thresholdValue"] = m_thresholdValue;
+    modelJson["isExpanded"] = m_isExpanded;
 
     QJsonArray resultsArray;
     if (m_resultsTable) {
@@ -417,6 +537,7 @@ void TargetDetectionNode::load(QJsonObject const &json)
 {
     // Assign fields first
     m_thresholdValue = json["thresholdValue"].toDouble(0.65);
+    m_isExpanded = json["isExpanded"].toBool(false);
 
     m_savedResults.clear();
     if (json.contains("results") && json["results"].isArray()) {
@@ -454,6 +575,39 @@ void TargetDetectionNode::load(QJsonObject const &json)
             m_resultsTable->setItem(row, 0, new QTableWidgetItem(res.fileName));
             m_resultsTable->setItem(row, 1, new QTableWidgetItem(res.resultText));
             m_resultsTable->setItem(row, 2, new QTableWidgetItem(res.probability));
+        }
+        
+        int totalCount = m_savedResults.size();
+        if (totalCount > 0) {
+            QWidget* singleView = _widget ? _widget->findChild<QWidget*>("SingleResultView") : nullptr;
+            if (totalCount == 1) {
+                if (singleView) singleView->show();
+                if (m_resultLabel) m_resultLabel->setText(m_savedResults[0].resultText);
+                if (m_probabilityLabel) m_probabilityLabel->setText(m_savedResults[0].probability);
+                if (m_summaryLabel) m_summaryLabel->hide();
+                if (m_expandLabel) m_expandLabel->hide();
+            } else {
+                if (singleView) singleView->hide();
+                if (m_summaryLabel) {
+                    m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
+                    m_summaryLabel->show();
+                }
+                if (m_expandLabel) m_expandLabel->show();
+            }
+            
+            if (m_isExpanded) {
+                m_resultsTable->show();
+                if (m_expandLabel) m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>"));
+            } else {
+                m_resultsTable->hide();
+                if (m_expandLabel) m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+            }
+            if (_widget) {
+                _widget->setFixedWidth(!m_resultsTable->isHidden() ? 350 : 260);
+                _widget->resize(0, 0);
+                _widget->adjustSize();
+                Q_EMIT embeddedWidgetSizeUpdated();
+            }
         }
     }
 

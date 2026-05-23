@@ -5,6 +5,7 @@
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include <QWidget>
 #include <QComboBox>
+#include <QLabel>
 #include <opencv2/opencv.hpp>
 #include <QTableWidget>
 #include <QHeaderView>
@@ -52,6 +53,15 @@ private:
 
     QWidget* m_widget = nullptr;
     QComboBox* m_regionComboBox = nullptr;
+
+    QWidget* m_simpleResultWidget = nullptr;
+    QLabel* m_originalEnlLabel = nullptr;
+    QLabel* m_filteredEnlLabel = nullptr;
+    QLabel* m_epiLabel = nullptr;
+    QLabel* m_summaryLabel = nullptr;
+    QLabel* m_expandLabel = nullptr;
+    bool m_isExpanded = false;
+
     QTableWidget* m_resultsTable = nullptr;
 
     std::shared_ptr<ImageInfoData> m_originalData = nullptr;
