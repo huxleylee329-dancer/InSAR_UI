@@ -1,5 +1,6 @@
-﻿#include "MainWindow.h"
 #include "Import_GenericSAR.h"
+#include "icon_source.h"
+#include <QThreadPool>
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <QFile>
@@ -24,9 +25,6 @@ Import_GenericSAR::Import_GenericSAR(QWidget* parent) :
 
 Import_GenericSAR::~Import_GenericSAR()
 {
-    import_GenericSAR_thread = NULL;
-    import_GenericSAR_thread2 = NULL;
-
     if (copy)
     {
         for (int i = 0; i < ui->comboBox_dst_project->count(); i++)
@@ -136,27 +134,11 @@ void Import_GenericSAR::on_buttonBox_accepted()
         return;
     }
 
-    // Ensure previous threads are released
     if (import_GenericSAR_thread) {
-        import_GenericSAR_thread->thread()->quit();
-        import_GenericSAR_thread->thread()->wait();
+        import_GenericSAR_thread->stop();
     }
 
-    import_GenericSAR_thread = new MyThread;
-    QThread* thread = new QThread(this);
-    import_GenericSAR_thread->moveToThread(thread);
-    ui->progressBar->setValue(0);
-    ui->progressBar->show();
-    connect(this, &Import_GenericSAR::operate, import_GenericSAR_thread, &MyThread::import_GenericSAR, Qt::QueuedConnection);
-    connect(import_GenericSAR_thread, &MyThread::updateProcess, this, &Import_GenericSAR::updateProcess);
-    connect(thread, &QThread::finished, import_GenericSAR_thread, &MyThread::deleteLater);
-    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-    connect(import_GenericSAR_thread, &MyThread::endProcess, this, &Import_GenericSAR::endProcess);
-    connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);// , Qt::QueuedConnection);
-    connect(import_GenericSAR_thread, &MyThread::sendModel, this, &Import_GenericSAR::TransitModel);
-    thread->start();
-    emit operate(
+    import_GenericSAR_thread = new GenericSARImportTask(
         ui->LineEdit_xml->text(),
         this->save_path,
         ui->lineEdit_dst_node->text(),
@@ -164,6 +146,17 @@ void Import_GenericSAR::on_buttonBox_accepted()
         ui->comboBox_dst_project->currentText(),
         this->copy
     );
+    import_GenericSAR_thread->setAutoDelete(true);
+
+    ui->progressBar->setValue(0);
+    ui->progressBar->show();
+    connect(import_GenericSAR_thread, &GenericSARImportTask::updateProcess, this, &Import_GenericSAR::updateProcess);
+    connect(import_GenericSAR_thread, &GenericSARImportTask::endProcess, this, &Import_GenericSAR::endProcess);
+    connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);
+    connect(import_GenericSAR_thread, &GenericSARImportTask::sendModel, this, &Import_GenericSAR::TransitModel);
+    
+    QThreadPool::globalInstance()->start(import_GenericSAR_thread);
     ChangeVision(false);
 }
 
@@ -190,18 +183,6 @@ void Import_GenericSAR::updateProcess(int value, QString information)
 
 void Import_GenericSAR::endProcess()
 {
-    if (import_GenericSAR_thread)
-    {
-        import_GenericSAR_thread->thread()->quit();
-        import_GenericSAR_thread->thread()->wait();
-
-    }
-    if (import_GenericSAR_thread2)
-    {
-        import_GenericSAR_thread2->thread()->quit();
-        import_GenericSAR_thread2->thread()->wait();
-
-    }
     ui->progressBar->hide();
     ui->progressBar_2->hide();
     this->close();
@@ -209,20 +190,12 @@ void Import_GenericSAR::endProcess()
 
 void Import_GenericSAR::StopThread()
 {
-    if (import_GenericSAR_thread != NULL)
-        if (import_GenericSAR_thread->thread()->isRunning())
-        {
-            import_GenericSAR_thread->thread()->requestInterruption();
-            import_GenericSAR_thread->thread()->quit();
-            import_GenericSAR_thread->thread()->wait();
-        }
-    if (import_GenericSAR_thread2 != NULL)
-        if (import_GenericSAR_thread2->thread()->isRunning())
-        {
-            import_GenericSAR_thread2->thread()->requestInterruption();
-            import_GenericSAR_thread2->thread()->quit();
-            import_GenericSAR_thread2->thread()->wait();
-        }
+    if (import_GenericSAR_thread) {
+        import_GenericSAR_thread->stop();
+    }
+    if (import_GenericSAR_thread2) {
+        import_GenericSAR_thread2->stop();
+    }
 }
 
 void Import_GenericSAR::TransitModel(QStandardItemModel* model)
@@ -307,31 +280,29 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
 
     // Ensure previous threads are released
     if (import_GenericSAR_thread2) {
-        import_GenericSAR_thread2->thread()->quit();
-        import_GenericSAR_thread2->thread()->wait();
+        import_GenericSAR_thread2->stop();
     }
 
-    import_GenericSAR_thread2 = new MyThread;
-    QThread* thread2 = new QThread(this);
-    import_GenericSAR_thread2->moveToThread(thread2);
-    ui->progressBar_2->setValue(0);
-    ui->progressBar_2->show();
-    connect(this, &Import_GenericSAR::operate2, import_GenericSAR_thread2, &MyThread::import_GenericSAR_patch, Qt::QueuedConnection);
-    connect(import_GenericSAR_thread2, &MyThread::updateProcess, this, &Import_GenericSAR::updateProcess);
-    connect(thread2, &QThread::finished, import_GenericSAR_thread2, &MyThread::deleteLater);
-    connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
-    connect(import_GenericSAR_thread2, &MyThread::endProcess, this, &Import_GenericSAR::endProcess);
-    connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
-    connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);// , Qt::QueuedConnection);
-    connect(import_GenericSAR_thread2, &MyThread::sendModel, this, &Import_GenericSAR::TransitModel);
-    thread2->start();
-    emit operate2(
+    import_GenericSAR_thread2 = new GenericSARBatchImportTask(
         this->save_path, //保存路径
         original_namelist,//原始文件名
         import_namelist, //导入文件名b    
         ui->lineEdit_dst_node_2->text(), //导入节点名
         ui->comboBox_dst_project_2->currentText(), //导入工程名
-        this->copy);
+        this->copy
+    );
+    import_GenericSAR_thread2->setAutoDelete(true);
+
+    ui->progressBar_2->setValue(0);
+    ui->progressBar_2->show();
+    
+    connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::updateProcess, this, &Import_GenericSAR::updateProcess);
+    connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::endProcess, this, &Import_GenericSAR::endProcess);
+    connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
+    connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);
+    connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::sendModel, this, &Import_GenericSAR::TransitModel);
+    
+    QThreadPool::globalInstance()->start(import_GenericSAR_thread2);
     ChangeVision(false);
 }
 void Import_GenericSAR::on_buttonBox_2_rejected()

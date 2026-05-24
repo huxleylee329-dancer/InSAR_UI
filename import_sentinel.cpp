@@ -1,4 +1,4 @@
-﻿#include"MainWindow.h"
+#include"MainWindow.h"
 #include"import_sentinel.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
@@ -72,21 +72,21 @@ bool import_sentinel::generate_name(QListWidget* imageslist, vector<QString>& or
         QFileInfo fileinfo = QFileInfo(imageslist->item(i)->text());
         QString tmp = fileinfo.baseName();
         QString filename = imageslist->item(i)->text();
-        XMLFile xmldoc;
-        int ret = xmldoc.XMLFile_load(filename.toStdString().c_str());
+        XMLFile* xmldoc = new XMLFile();
+        int ret = xmldoc->XMLFile_load(filename.toStdString().c_str());
         if (ret < 0)
         {
             import_nameslist.push_back(tmp);
             continue;
         }
         TiXmlElement* root = NULL, * pnode = NULL;
-        ret = xmldoc.find_node("dataObjectSection", root);
+        ret = xmldoc->find_node("dataObjectSection", root);
         if (ret < 0)
         {
             import_nameslist.push_back(tmp);
             continue;
         }
-        ret = xmldoc._find_node(root, "dataObject", pnode);
+        ret = xmldoc->_find_node(root, "dataObject", pnode);
         if (ret < 0)
         {
             import_nameslist.push_back(tmp);
@@ -327,21 +327,21 @@ void import_sentinel::on_browse_Button_pressed()
     {
         ui->lineEdit_manifest_file->setText(filename);
         //QFileInfo fileinfo = QFileInfo(filename);
-        XMLFile xmldoc;
-        int ret = xmldoc.XMLFile_load(filename.toStdString().c_str());
+        XMLFile* xmldoc = new XMLFile();
+        int ret = xmldoc->XMLFile_load(filename.toStdString().c_str());
         if (ret < 0)
         {
             ui->LineEdit_dst_filename->setText(ui->ComboBox_subswath->currentText() + ui->ComboBox_polarization->currentText());
             return;
         }
         TiXmlElement* root = NULL, * pnode = NULL;
-        ret = xmldoc.find_node("dataObjectSection", root);
+        ret = xmldoc->find_node("dataObjectSection", root);
         if (ret < 0)
         {
             ui->LineEdit_dst_filename->setText(ui->ComboBox_subswath->currentText() + ui->ComboBox_polarization->currentText());
             return;
         }
-        ret = xmldoc._find_node(root, "dataObject", pnode);
+        ret = xmldoc->_find_node(root, "dataObject", pnode);
         if (ret < 0)
         {
             ui->LineEdit_dst_filename->setText(ui->ComboBox_subswath->currentText() + ui->ComboBox_polarization->currentText());

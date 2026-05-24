@@ -79,10 +79,10 @@ void TreeView::NewProject(QString name, QString save_path)
     model->setRowCount(model->rowCount() + 1);
     model->setItem(model->rowCount()-1, 0, item0);
     model->setItem(model->rowCount() - 1, 1, item1_path);
-    XMLFile xml;
+    XMLFile* xml = new XMLFile();
     QFileInfo info = QFileInfo(save_path);
     QString path = info.absoluteFilePath();
-    xml.XMLFile_creat_new_project(path.toStdString().c_str(),QString("%1.insar").arg(name).toStdString().c_str(), "1.0");
+    xml->XMLFile_creat_new_project(path.toStdString().c_str(),QString("%1.insar").arg(name).toStdString().c_str(), "1.0");
 
 }
 
@@ -218,10 +218,10 @@ void TreeView::Delete()
         QModelIndex PathIndex = NameIndex.sibling(0, 1);
         QString path = model->itemFromIndex(PathIndex)->text();
         QString name = model->itemFromIndex(NameIndex)->text();
-        XMLFile xml;
-        xml.XMLFile_load((Project_path+"/"+ Project_name).toStdString().c_str());
-        xml.XMLFile_remove_node(DataNode_name.toStdString().c_str(), name.toStdString().c_str(), path.toStdString().c_str());
-        xml.XMLFile_save((Project_path + "/" + Project_name).toStdString().c_str());
+        XMLFile* xml = new XMLFile();
+        xml->XMLFile_load((Project_path+"/"+ Project_name).toStdString().c_str());
+        xml->XMLFile_remove_node(DataNode_name.toStdString().c_str(), name.toStdString().c_str(), path.toStdString().c_str());
+        xml->XMLFile_save((Project_path + "/" + Project_name).toStdString().c_str());
         if (QFile::exists(path))
         {
             QFile::remove(path);

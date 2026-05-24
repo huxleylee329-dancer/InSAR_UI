@@ -29,8 +29,6 @@ public slots:
     void import_sentinel_patch(std::vector<QString> original_namelist, std::vector<QString> import_namelist, QString subswath, QString polarization, QString savepath, QString dst_node, QString dst_project, QStandardItemModel* model);
     void import_TSX(QString polarization, QString xml_filename, QString project_path, QString folder, QString filename, QString project_name, QStandardItemModel* model);
     void import_TSX_patch(QString polarization, QString savepath, std::vector<QString> original_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
-    void import_GenericSAR(QString xml_filename, QString project_path, QString folder, QString filename, QString project_name, QStandardItemModel* model);
-    void import_GenericSAR_patch(QString savepath, std::vector<QString> original_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
     void import_CSK_patch(QString savepath, std::vector<QString> original_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
     void import_ALOS2_patch(QString savepath, std::vector<QString> IMG_file_list, std::vector<QString> LED_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
     void ShowImage(QString h5_path, QString bmp_path, QString type);
@@ -52,9 +50,6 @@ public slots:
     void Denoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QUnwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
-    void Speckle_Denoise(QStringList inputPaths, QStringList outputPaths, QString nodeName, QStringList fileNames, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml = nullptr);
-    void Clutter_Suppression(QStringList inputPaths, QStringList outputPaths, QString nodeName, QStringList fileNames, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml = nullptr);
-    void Target_Detection(QStringList imagePaths, QString modelPath, float thresholdValue);
     void StopProcess();
 
 signals:
@@ -63,11 +58,9 @@ signals:
     void errorProcess(QString error_msg);
     void sendModel(QStandardItemModel* model);
     void sendBL(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
-    void sendTargetDetectionResult(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg);
     void askUserError(QString error_msg, bool* skip);
 
 private:
-    bool processBM3DEnhancement(QString tag, QString inputPath, QString outputPath, QString nodeName, QString fileName, QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml, QString& outError, int baseProgress = 0, int progressStep = 100);
     QMutex lock;
     bool stop_flag;
     int Registration_copy(std::vector<std::string>& SAR_images, std::vector<std::string>& SAR_images_out, cv::Mat& offset_row_out, cv::Mat& offset_col_out, int Master_index, int interp_times, int blocksize);

@@ -439,180 +439,6 @@ void MyThread::import_sentinel_patch(
 	emit endProcess();
 }
 
-	void MyThread::import_GenericSAR(
-	QString xml_filename, 
-	QString project_path,
-	QString folder, 
-	QString filename,
-	QString project_name,
-	QStandardItemModel* model
-)
-{
-	if (xml_filename.isEmpty() ||
-		folder.isEmpty() ||
-		project_path.isEmpty() ||
-		filename.isEmpty() ||
-		project_name.isEmpty() ||
-		model == NULL
-		)
-	{
-		return;
-	}
-
-	int ret=0;
-	QDir dir(project_path);
-	if (!dir.exists(folder))
-	{
-		ret = dir.mkdir(folder);
-	}
-	emit updateProcess(20, QStringLiteral("正在导入数据，请耐心等待……"));
-	QFileInfo fileinfo(xml_filename);
-    QString suffix = fileinfo.suffix();
-
-    QString temp_folder = QString("/") + folder + QString("/");
-    QString relative_path = temp_folder + filename + "." + suffix;
-    QString image_path = QString("%1%2%3.%4")
-        .arg(project_path)
-        .arg(temp_folder)
-        .arg(filename)
-        .arg(suffix);
-
-    if (QFile::exists(image_path)) {
-        QFile::remove(image_path);
-    }
-
-    ret = QFile::copy(xml_filename, image_path) ? 0 : -1;
-
-
-	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-	{
-		QFile::remove(image_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	emit updateProcess(90, QStringLiteral("即将完成……"));
-
-	auto items = model->findItems(project_name);
-	if (items.isEmpty() && !project_name.endsWith(".insar")) {
-		items = model->findItems(project_name + ".insar");
-	}
-	
-	if (items.isEmpty()) {
-		QFile::remove(image_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	
-	QStandardItem* project = items[0];
-	if (!project) {
-		QFile::remove(image_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	QModelIndex pro_index = model->indexFromItem(project);
-	QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-	
-	QStandardItem* origin = NULL;
-	for (int i = 0; i < project->rowCount(); i++)
-	{
-		QStandardItem* child = project->child(i);
-		QStandardItem* secondCol = project->child(i, 1);
-		
-		// Match folder name, regardless of second column (to be more robust)
-		if (child && child->text() == folder)
-		{
-			origin = child;
-			
-			// Ensure second column says "complex-0.0" if it's not already set
-			if (!secondCol) {
-				project->setChild(i, 1, new QStandardItem("complex-0.0"));
-			} else if (secondCol->text() != "complex-0.0") {
-				secondCol->setText("complex-0.0");
-			}
-			break;
-		}
-	}
-	
-	if (!origin)
-	{
-		origin = new QStandardItem(folder);
-		origin->setIcon(QIcon(FOLDER_ICON));
-		project->appendRow(origin);
-		QStandardItem* Rank = new QStandardItem("complex-0.0");
-		project->setChild(project->rowCount() - 1, 1, Rank);
-	}
-
-	QStandardItem* img = NULL;
-	QStandardItem* img_path = NULL;
-	QString trimmedFilename = filename.trimmed();
-	
-	QList<int> rowsToRemove;
-	for(int i=0;i<origin->rowCount();i++)
-	{
-		QString itemText = origin->child(i)->text().trimmed();
-		// Match exact filename or filename with any extension
-		if (itemText.compare(trimmedFilename, Qt::CaseInsensitive) == 0 || 
-		    itemText.startsWith(trimmedFilename + ".", Qt::CaseInsensitive))
-		{
-			if (!img) {
-				img = origin->child(i);
-				img_path = origin->child(i, 1);
-			} else {
-				rowsToRemove.prepend(i);
-			}
-		}
-	}
-	
-	foreach(int row, rowsToRemove) {
-		origin->removeRow(row);
-	}
-
-	if (!img) {
-		img = new QStandardItem(trimmedFilename);
-		img->setToolTip("complex");
-		img_path = new QStandardItem(image_path);
-		img->setIcon(QIcon(IMAGEDATA_ICON));
-		origin->appendRow(img);
-		origin->setChild(origin->rowCount() - 1, 1, img_path);
-	} else {
-		img_path->setText(image_path);
-	}
-	
-	DOC = new XMLFile;
-	QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(project_name);
-	ret = DOC->XMLFile_load(xmlFileLoadPath.toStdString().c_str());
-	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-	{
-		QFile::remove(image_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	
-	ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
-	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-	{
-		QFile::remove(image_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	
-	ret = DOC->XMLFile_save(xmlFileLoadPath.toStdString().c_str());
-	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-	{
-		QFile::remove(image_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	
-	emit sendModel(model);
-	emit endProcess();
-}
 void MyThread::import_TSX_patch(
 	QString polarization,
 	QString savepath,
@@ -741,182 +567,6 @@ void MyThread::import_TSX_patch(
 	
 	emit sendModel(model);
 	emit endProcess();
-}
-
-void MyThread::import_GenericSAR_patch(
-	QString savepath,
-	vector<QString> original_file_list,
-	vector<QString> import_namelist,
-	QString dst_node,
-	QString dst_project,
-	QStandardItemModel* model
-)
-{
-
-
-
-
-
-
-
-
-	if (savepath.isEmpty() ||
-		dst_node.isEmpty() ||
-		dst_project.isEmpty() ||
-		original_file_list.empty() ||
-		import_namelist.empty() ||
-		model == NULL
-		)
-	{
-
-
-
-
-
-
-
-		emit endProcess();
-		return;
-	}
-
-	int ret=0;
-	QDir dir(savepath);
-
-	if (!dir.exists(dst_node))
-	{
-		ret = dir.mkdir(dst_node);
-
-	}
-	int n_images = original_file_list.size();
-	int process = 2;
-	DOC = new XMLFile;
-	emit updateProcess(process, QStringLiteral("正在导入..."));
-
-	for (int i = 0; i < n_images; i++)
-	{
-		if (!stop_flag) break;
-		QString filename = import_namelist[i];
-        QString image_filename = original_file_list[i];
-        QFileInfo fileinfo(image_filename);
-        QString suffix = fileinfo.suffix();
-
-
-
-        QString temp_folder = QString("/") + dst_node + QString("/");
-        QString relative_path = temp_folder + filename + "." + suffix;
-        QString image_path = QString("%1%2%3.%4")
-            .arg(savepath)
-            .arg(temp_folder)
-            .arg(filename)
-            .arg(suffix);
-
-		if (QFile::exists(image_path))
-		{
-
-			ret = 0;
-		}
-		else
-		{
-			ret = QFile::copy(image_filename, image_path) ? 0 : -1;
-
-		}
-
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-		{
-
-			QFile::remove(image_path);
-			QDir tmp_dir(savepath + QString("/") + dst_node);
-			tmp_dir.removeRecursively();
-			emit errorProcess(QStringLiteral("文件复制失败"));
-			return;
-		}
-
-		QList<QStandardItem*> foundItems = model->findItems(dst_project);
-
-		QStandardItem* project = foundItems[0];
-		if (!project) {
-
-			QFile::remove(image_path);
-			QDir tmp_dir(savepath + QString("/") + dst_node);
-			tmp_dir.removeRecursively();
-			emit errorProcess(QStringLiteral("找不到项目节点"));
-			return;
-		}
-		QModelIndex pro_index = model->indexFromItem(project);
-		QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-		QStandardItem* origin = NULL;
-		for (int i = 0; i < project->rowCount(); i++)
-		{
-			if (dst_node == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
-			{
-				origin = project->child(i); break;
-			}
-		}
-		if (!origin)
-		{
-			origin = new QStandardItem(dst_node);
-			origin->setIcon(QIcon(FOLDER_ICON));
-			project->appendRow(origin);
-			QStandardItem* Rank = new QStandardItem("complex-0.0");
-			project->setChild(project->rowCount() - 1, 1, Rank);
-		}
-		QStandardItem* img = NULL;
-		for (int j = 0; j < origin->rowCount(); j++)
-		{
-			if (origin->child(j)->text() == filename)
-			{
-				img = origin->child(j);
-				break;
-			}
-		}
-		if (!img)
-		{
-			img = new QStandardItem(filename);
-			img->setToolTip("complex");
-			QStandardItem* img_path = new QStandardItem(image_path);
-			img->setIcon(QIcon(IMAGEDATA_ICON));
-			origin->appendRow(img);
-			origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-			ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-			{
-				QFile::remove(image_path);
-				QDir tmp_dir(savepath + QString("/") + dst_node);
-				tmp_dir.removeRecursively();
-				emit errorProcess(QStringLiteral("加载项目XML失败"));
-				return;
-			}
-			ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
-			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-			{
-				QFile::remove(image_path);
-				QDir tmp_dir(savepath + QString("/") + dst_node);
-				tmp_dir.removeRecursively();
-				emit errorProcess(QStringLiteral("添加origin节点失败"));
-				return;
-			}
-			ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-			{
-				QFile::remove(image_path);
-				QDir tmp_dir(savepath + QString("/") + dst_node);
-				tmp_dir.removeRecursively();
-				emit errorProcess(QStringLiteral("保存项目XML失败"));
-				return;
-			}
-		}
-		else
-		{
-			origin->setChild(img->row(), 1, new QStandardItem(image_path));
-		}
-		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QStringLiteral("正在导入..."));
-	}
-
-	emit sendModel(model);
-	emit endProcess();
-
 }
 
 void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_list, vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model)
@@ -1919,9 +1569,9 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
         }
     }
     /*写入XML*/
-    XMLFile xmlfile;
+    XMLFile* xmlfile = new XMLFile();
 	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
+	xmlfile->XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
     for (int i = 0; i < image_number; i++)
     {
 		if (QThread::currentThread()->isInterruptionRequested())
@@ -1934,12 +1584,12 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
         // Note: XMLFile_add_regis implementation might handle this, but for safety and UI consistency, 
         // we already checked the UI side. The XML side should ideally also be checked if possible,
         // but here we follow the pattern of the UI check.
-        xmlfile.XMLFile_add_regis(file_name.toStdString().c_str(), (origin.at(i) + "_regis").toStdString().c_str(), relativePath.toStdString().c_str(),
+        xmlfile->XMLFile_add_regis(file_name.toStdString().c_str(), (origin.at(i) + "_regis").toStdString().c_str(), relativePath.toStdString().c_str(),
             Row_offset.at(i), Col_offset.at(i), index, interp_times, block_size,
             temporal_baseline.toStdString().c_str(), B_effect.toStdString().c_str(), B_parallel.toStdString().c_str());
         
     }
-	xmlfile.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+	xmlfile->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
     emit sendModel(model);
 	emit endProcess();
 }
@@ -2163,9 +1813,9 @@ void MyThread::DEMAssistCoregistration(
 		B_effect += "0 ";
 	}
 	/*写入XML*/
-	XMLFile xmlfile;
+	XMLFile* xmlfile = new XMLFile();
 	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile.XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
+	xmlfile->XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
 	for (int i = 0; i < images_number; i++)
 	{
 		if (QThread::currentThread()->isInterruptionRequested())
@@ -2173,13 +1823,13 @@ void MyThread::DEMAssistCoregistration(
 			return;
 		}
 		QString relativePath = QString("/%1/%2").arg(dstNode).arg(origin.at(i) + "_regis.h5");
-		xmlfile.XMLFile_add_regis(dstNode.toStdString().c_str(), (origin.at(i) + "_regis").toStdString().c_str(), 
+		xmlfile->XMLFile_add_regis(dstNode.toStdString().c_str(), (origin.at(i) + "_regis").toStdString().c_str(), 
 			relativePath.toStdString().c_str(),
 			Row_offset.at<int>(i, 0), Col_offset.at<int>(i, 0), masterIndex, -1, -1,
 			temporal_baseline.toStdString().c_str(), B_effect.toStdString().c_str(), B_parallel.toStdString().c_str());
 
 	}
-	xmlfile.XMLFile_save((QString(savepath) + "/" + project_name).toStdString().c_str());
+	xmlfile->XMLFile_save((QString(savepath) + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
 	emit endProcess();
 
@@ -2269,9 +1919,9 @@ void MyThread::S1_Deburst(
 	}
 	
 	/*写入XML*/
-	XMLFile xmlfile;
+	XMLFile* xmlfile = new XMLFile();
 	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
+	xmlfile->XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
 	for (int i = 0; i < SAR_images_deburst.size(); i++)
 	{
 		QFileInfo fileinfo = QFileInfo(QString(SAR_images_deburst.at(i).c_str()));
@@ -2301,11 +1951,11 @@ void MyThread::S1_Deburst(
 		}
 
 		QString relativePath = QString("/%1/%2").arg(dstNode).arg(origin.at(i) + "_deburst.h5");
-		ret = xmlfile.XMLFile_add_S1_Deburst(dstNode.toStdString().c_str(), (origin.at(i) + "_deburst").toStdString().c_str(),
+		ret = xmlfile->XMLFile_add_S1_Deburst(dstNode.toStdString().c_str(), (origin.at(i) + "_deburst").toStdString().c_str(),
 			relativePath.toStdString().c_str());
 
 	}
-	xmlfile.XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
+	xmlfile->XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
 	emit sendModel(model);
 	emit endProcess();
 }
@@ -2743,17 +2393,17 @@ void MyThread::S1_TOPS_BackGeocoding(
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
 	}
 	/*写入XML*/
-	XMLFile xmlfile;
+	XMLFile* xmlfile = new XMLFile();
 	//emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
+	xmlfile->XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
 	for (int i = 0; i < images_number; i++)
 	{
 		QString relativePath = QString("/%1/%2").arg(dstNode).arg(origin.at(i) + "_regis.h5");
-		ret = xmlfile.XMLFile_add_backgeocoding(dstNode.toStdString().c_str(), (origin.at(i) + "_regis").toStdString().c_str(),
+		ret = xmlfile->XMLFile_add_backgeocoding(dstNode.toStdString().c_str(), (origin.at(i) + "_regis").toStdString().c_str(),
 			relativePath.toStdString().c_str(), masterIndex);
 
 	}
-	xmlfile.XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
+	xmlfile->XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
 	emit sendModel(model);
 	emit endProcess();
 }
@@ -2927,17 +2577,17 @@ void MyThread::SLC_deramp(
 	}
 
 	/*写入XML*/
-	XMLFile xmlfile;
+	XMLFile* xmlfile = new XMLFile();
 	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
+	xmlfile->XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 	for (int i = 0; i < image_number; i++)
 	{
 		QString relativePath = QString("/%1/%2").arg(dst_node).arg(origin.at(i) + "_deramp.h5");
-		ret = xmlfile.XMLFile_add_SLC_deramp(dst_node.toStdString().c_str(), (origin.at(i) + "_deramp").toStdString().c_str(),
+		ret = xmlfile->XMLFile_add_SLC_deramp(dst_node.toStdString().c_str(), (origin.at(i) + "_deramp").toStdString().c_str(),
 			relativePath.toStdString().c_str(), masterIndex);
 
 	}
-	xmlfile.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+	xmlfile->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
 
 	emit endProcess();
@@ -3642,11 +3292,11 @@ void MyThread::SBAS_time_series(
 		SBAS_series->setChild(SBAS_series->rowCount() - 1, 1, SBAS_series_name_path);
 
 		/*写入XML*/
-		XMLFile xmlfile;
-		xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
+		XMLFile* xmlfile = new XMLFile();
+		xmlfile->XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 		QString relativePath = QString("/%1/SBAS_time_series.h5").arg(dstNode);
-		xmlfile.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
-		xmlfile.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+		xmlfile->XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
+		xmlfile->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	}
 	else
 	{
@@ -4099,15 +3749,15 @@ void MyThread::Geocoding(
 
 		QString project_xmlfile = save_path + "/" + project_name;
 		TiXmlElement* pnode = NULL, * pchild = NULL;
-		XMLFile xmldoc;
-		xmldoc.XMLFile_load(project_xmlfile.toStdString().c_str());
-		xmldoc.find_node("DataNode", pnode);
+		XMLFile* xmldoc = new XMLFile();
+		xmldoc->XMLFile_load(project_xmlfile.toStdString().c_str());
+		xmldoc->find_node("DataNode", pnode);
 		while (pnode)
 		{
 			if (0 == strcmp(pnode->Attribute("name"), srcNode.toStdString().c_str())) break;
 			pnode = pnode->NextSiblingElement();
 		}
-		xmldoc._find_node(pnode, "master_image", pchild);
+		xmldoc->_find_node(pnode, "master_image", pchild);
 		int masterIndex = 1;
 		if (pchild) ret = sscanf(pchild->GetText(), "%d", &masterIndex);
 
@@ -4212,9 +3862,9 @@ void MyThread::Geocoding(
 		project->setChild(project->rowCount() - 1, 1, geocode_Rank);
 	}
 
-	XMLFile xml;
+	XMLFile* xml = new XMLFile();
 	QString xml_path = save_path + "/" + project_name;
-	xml.XMLFile_load(xml_path.toStdString().c_str());
+	xml->XMLFile_load(xml_path.toStdString().c_str());
 	for (int i = 0; i < input_files.size(); i++)
 	{
 		QFileInfo fileinfo = QFileInfo(QString(output_files.at(i).c_str()));
@@ -4248,7 +3898,7 @@ void MyThread::Geocoding(
 			geocode->appendRow(geocode_images_name);
 			geocode->setChild(geocode->rowCount() - 1, 1, geocode_images_path);
 
-			xml.XMLFile_add_geocoding(dstNode.toStdString().c_str(), geocode_name.toStdString().c_str(),
+			xml->XMLFile_add_geocoding(dstNode.toStdString().c_str(), geocode_name.toStdString().c_str(),
 				("/" + dstNode + "/" + geocode_name + ".h5").toStdString().c_str(), geocode_Rank_level.toStdString().c_str());
 		}
 		else
@@ -4256,7 +3906,7 @@ void MyThread::Geocoding(
 			geocode->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
 		}
 	}
-	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit updateProcess(100, QStringLiteral("完成……"));
 	emit endProcess();
 }
@@ -4352,13 +4002,13 @@ void MyThread::S1_swath_merge(
 		swath_merge->appendRow(swath_merge_images_name);
 		swath_merge->setChild(swath_merge->rowCount() - 1, 1, swath_merge_images_path);
 
-		XMLFile xml;
+		XMLFile* xml = new XMLFile();
 		QString xml_path = save_path + "/" + project_name;
-		xml.XMLFile_load(xml_path.toStdString().c_str());
+		xml->XMLFile_load(xml_path.toStdString().c_str());
 		QString relative_path = "/" + dstNode + "/merged_phase.h5";
-		xml.XMLFile_add_interferometric_phase(dstNode.toStdString().c_str(), "merged_phase",
+		xml->XMLFile_add_interferometric_phase(dstNode.toStdString().c_str(), "merged_phase",
 			relative_path.toStdString().c_str(), "unknown", "phase-1.0", 0, 0, 0, 0, 0, 0, 0, 0, 0);
-		xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+		xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	}
 	else
 	{
@@ -4449,13 +4099,13 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 		frame_merge->appendRow(frame_merge_images_name);
 		frame_merge->setChild(frame_merge->rowCount() - 1, 1, frame_merge_images_path);
 
-		XMLFile xml;
+		XMLFile* xml = new XMLFile();
 		QString xml_path = save_path + "/" + project_name;
-		xml.XMLFile_load(xml_path.toStdString().c_str());
+		xml->XMLFile_load(xml_path.toStdString().c_str());
 		QString relative_path = "/" + dstNode + "/" + filename + ".h5";
 
-		xml.XMLFile_add_origin(dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
-		xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+		xml->XMLFile_add_origin(dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
+		xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	}
 	else
 	{
@@ -4697,9 +4347,9 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 		}
 	}
 	
-	XMLFile xml;
+	XMLFile* xml = new XMLFile();
 	QString xml_path = save_path + "/" + project_name;
-	xml.XMLFile_load(xml_path.toStdString().c_str());
+	xml->XMLFile_load(xml_path.toStdString().c_str());
 	
 	int count = origin_node->rowCount();
 	int pair = 1;
@@ -4800,7 +4450,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 				interferometric_phase->appendRow(interferometric_phase_name);
 				interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, interferometric_phase_path);
 
-				xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), phase_name.toStdString().c_str(),
+				xml->XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), phase_name.toStdString().c_str(),
 					("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "phase-1.0", offset_row, offset_col,
 					isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
 			}
@@ -4838,7 +4488,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 					interferometric_phase->appendRow(coherence_name);
 					interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, coherence_path);
 
-					xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), coh_name.toStdString().c_str(),
+					xml->XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), coh_name.toStdString().c_str(),
 						("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "coherence-1.0", offset_row, offset_col,
 						isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
 				}
@@ -4856,7 +4506,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 
 		}
 	}
-	xml.XMLFile_save(xml_path.toStdString().c_str());
+	xml->XMLFile_save(xml_path.toStdString().c_str());
 	emit sendModel(model);
 	emit endProcess();
 }
@@ -4958,8 +4608,8 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 	int image_number = phase_name.size();
 	Filter filter;
 	FormatConversion FC;
-	XMLFile xml;
-	xml.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
+	XMLFile* xml = new XMLFile();
+	xml->XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 	if (method == 1)
 	{
 		int pre_win = para.at(0);
@@ -5010,7 +4660,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
 				relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "Slope", slop_win, pre_win,
 				0, 0, 0, "", "", "");
 
@@ -5092,7 +4742,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
 				relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "Goldstein", 0, 0,
 				goldstein_win, n_pad, alpha, "", "", "");
 
@@ -5175,7 +4825,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
 				relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "DL", 0, 0,
 				0, 0, 0, dl_path.toStdString().c_str(), model_path.toStdString().c_str(), tmp_path.toStdString().c_str());
 
@@ -5209,7 +4859,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 	{
 		return;
 	}
-	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
 	emit endProcess();
 }
@@ -5320,9 +4970,9 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 	Unwrap unwrap;
 	FormatConversion FC;
 	Utils util;
-	XMLFile xml;
+	XMLFile* xml = new XMLFile();
 	int ret = 0;
-	xml.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
+	xml->XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 	if (method == 1)
 	{
 		for (int i = 0; i < image_number; i++)
@@ -5371,7 +5021,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "SPD_Guided", 0);
 
 			/*工程树*/
@@ -5452,7 +5102,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "MCF", 0);
 
 			/*工程树*/
@@ -5530,7 +5180,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "Snaphu", 0);
 
 			/*工程树*/
@@ -5609,7 +5259,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
 				relative_unwrap_path.at(i).toStdString().c_str(), offset_row, offset_col, "QualityGuided_MCF", 0);
 
 			/*工程树*/
@@ -5642,7 +5292,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 	{
 		
 	}
-	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
 	emit endProcess();
 }
@@ -5750,8 +5400,8 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 	Dem dem;
 	FormatConversion FC;
 	Utils util;
-	XMLFile xml;
-	xml.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
+	XMLFile* xml = new XMLFile();
+	xml->XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
 	if (method == 1)
 	{
 		for (int i = 0; i < image_number; i++)
@@ -5797,7 +5447,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 			int offset_row = tmp_int.at<int>(0, 0);
 			ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
 			int offset_col = tmp_int.at<int>(0, 0);
-			xml.XMLFile_add_dem(file_name.toStdString().c_str(), dem_name.at(i).toStdString().c_str(),
+			xml->XMLFile_add_dem(file_name.toStdString().c_str(), dem_name.at(i).toStdString().c_str(),
 				relative_dem_path.at(i).toStdString().c_str(), offset_row, offset_col, "Iteration", times);
 
 			/*工程树*/
@@ -5830,7 +5480,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 	{
 
 	}
-	xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
 	emit endProcess();
 }
@@ -6356,342 +6006,4 @@ void MyThread::StopProcess()
 	QMutexLocker locker(&lock);
 	this->stop_flag = false;
 }
-
-bool MyThread::processBM3DEnhancement(
-    QString tag,
-    QString inputPath,
-    QString outputPath,
-    QString nodeName,
-    QString fileName,
-    QString projectPath,
-    QString projectName,
-    QStandardItemModel* model,
-    bool saveToProject,
-    XMLFile* projectXml,
-    QString& outError,
-    int baseProgress,
-    int progressStep
-)
-{
-    emit updateProcess(baseProgress + progressStep * 0.0, QStringLiteral("加载图像..."));
-
-    cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
-    if (inputGray.empty()) {
-        outError = QStringLiteral("无法读取输入图像");
-        return false;
-    }
-
-    emit updateProcess(baseProgress + progressStep * 0.2, QStringLiteral("准备BM3D计算..."));
-
-    const double noiseGain = 1.1;
-    cv::Mat imgDouble;
-    inputGray.convertTo(imgDouble, CV_64F);
-    cv::Mat imgLog;
-    cv::log(imgDouble + 1.0, imgLog);
-
-    auto calcMedian = [](const cv::Mat& img) {
-        cv::Mat imgCopy = img.clone();
-        imgCopy = imgCopy.reshape(0, 1);
-        std::sort(imgCopy.begin<double>(), imgCopy.end<double>());
-        int n = imgCopy.total();
-        if (n % 2 == 0 && n > 0) {
-            return (imgCopy.at<double>(n / 2 - 1) + imgCopy.at<double>(n / 2)) / 2.0;
-        } else if (n > 0) {
-            return imgCopy.at<double>(n / 2);
-        }
-        return 0.0;
-    };
-
-    double minV = 0.0, maxV = 0.0;
-    cv::minMaxLoc(imgLog, &minV, &maxV);
-    double rangeV = maxV - minV;
-    if (rangeV <= 0.0) rangeV = 1.0;
-    cv::Mat imgNorm = (imgLog - minV) / rangeV;
-
-    double medianValue = calcMedian(imgLog);
-    cv::Mat absDiff;
-    cv::absdiff(imgLog, medianValue, absDiff);
-    double sigmaEst = calcMedian(absDiff) / 0.6745;
-    double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
-
-    QString processMsg = (tag == "SpeckleDenoise") ? QStringLiteral("执行BM3D去噪 (可能耗时较长)...") : QStringLiteral("执行BM3D去杂波 (可能耗时较长)...");
-    emit updateProcess(baseProgress + progressStep * 0.4, processMsg);
-
-    cv::Mat img8U;
-    imgNorm.convertTo(img8U, CV_8U, 255.0);
-    double sigma8 = sigmaFinal * 255.0;
-    cv::Mat den8U = BM3DWrapper::DenoiseGray(img8U, sigma8);
-
-    if (den8U.empty()) {
-        outError = QStringLiteral("BM3D处理失败");
-        return false;
-    }
-
-    emit updateProcess(baseProgress + progressStep * 0.8, QStringLiteral("后处理及保存..."));
-
-    cv::Mat denNorm;
-    den8U.convertTo(denNorm, CV_64F, 1.0 / 255.0);
-    cv::Mat imgDen = denNorm * rangeV + minV;
-    cv::Mat imgOut;
-    cv::exp(imgDen, imgOut);
-    imgOut = imgOut - 1.0;
-
-    double meanInput = cv::mean(imgDouble)[0];
-    double meanOutput = cv::mean(imgOut)[0];
-    if (meanOutput != 0.0) {
-        imgOut = imgOut * (meanInput / meanOutput);
-    }
-
-    cv::min(imgOut, 255.0, imgOut);
-    cv::max(imgOut, 0.0, imgOut);
-
-    cv::Mat output8U;
-    imgOut.convertTo(output8U, CV_8U);
-
-    if (saveToProject) {
-        if (!model) {
-            outError = QStringLiteral("Project model is null");
-            return false;
-        }
-
-        QString projDirStr = projectPath;
-        if (projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
-            projDirStr = QFileInfo(projectPath).absolutePath();
-        }
-
-        QDir dir(projDirStr);
-        if (!dir.exists(nodeName)) {
-            dir.mkdir(nodeName);
-        }
-
-        QString suffix = (tag == "SpeckleDenoise") ? "_denoised.png" : "_clutter.png";
-        QString finalFileName;
-        if (fileName.isEmpty()) {
-            finalFileName = QFileInfo(inputPath).baseName() + suffix;
-        } else {
-            if (QFileInfo(fileName).suffix().isEmpty()) {
-                finalFileName = fileName + ".png";
-            } else {
-                finalFileName = fileName;
-            }
-        }
-        QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
-        cv::imwrite(finalPath.toStdString(), output8U);
-
-        QStandardItem* projectItem = model->findItems(projectName).isEmpty() ? nullptr : model->findItems(projectName).first();
-        if (!projectItem) {
-            outError = QStringLiteral("未找到目标工程");
-            return false;
-        }
-
-        QStandardItem* dataNode = nullptr;
-        for (int i = 0; i < projectItem->rowCount(); ++i) {
-            if (projectItem->child(i, 0)->text() == nodeName) {
-                dataNode = projectItem->child(i, 0);
-                break;
-            }
-        }
-        if (!dataNode) {
-            dataNode = new QStandardItem(nodeName);
-            dataNode->setIcon(QIcon(FOLDER_ICON));
-            projectItem->appendRow(dataNode);
-        }
-
-        QString defaultDisplay = (tag == "SpeckleDenoise") ? QStringLiteral("denoised") : QStringLiteral("clutter_suppressed");
-        QString displayName = fileName.isEmpty() ? defaultDisplay : fileName;
-        
-        QStandardItem* item_img = NULL;
-        for (int j = 0; j < dataNode->rowCount(); j++)
-        {
-            if (dataNode->child(j, 0)->text() == displayName)
-            {
-                item_img = dataNode->child(j, 0);
-                break;
-            }
-        }
-
-        if (!item_img)
-        {
-            QStandardItem* nameItem = new QStandardItem(displayName);
-            nameItem->setIcon(QIcon(IMAGEDATA_ICON));
-            nameItem->setToolTip(QStringLiteral("image"));
-            QStandardItem* pathItem = new QStandardItem(finalPath);
-            dataNode->appendRow({ nameItem, pathItem });
-
-            // Update XML for persistence
-            {
-                QString relativePath = "/" + nodeName + "/" + finalFileName;
-                XMLFile localXml;
-                if (!projectPath.isEmpty()) {
-                    localXml.XMLFile_load(projectPath.toStdString().c_str());
-                }
-                localXml.XMLFile_add_origin(
-                    nodeName.toStdString().c_str(),
-                    displayName.toStdString().c_str(),
-                    relativePath.toStdString().c_str(),
-                    tag.toStdString().c_str()
-                );
-                localXml.XMLFile_save(projectPath.toStdString().c_str());
-            }
-        }
-        else
-        {
-            dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));
-        }
-    } else {
-        cv::imwrite(outputPath.toStdString(), output8U);
-    }
-
-    emit updateProcess(100, QStringLiteral("处理完成"));
-    return true;
-}
-
-void MyThread::Speckle_Denoise(
-    QStringList inputPaths,
-    QStringList outputPaths,
-    QString nodeName,
-    QStringList fileNames,
-    QString projectPath,
-    QString projectName,
-    QStandardItemModel* model,
-    bool saveToProject,
-    XMLFile* projectXml
-)
-{
-    lock.lock();
-    stop_flag = false;
-    lock.unlock();
-
-    for (int i = 0; i < inputPaths.size(); ++i) {
-        lock.lock();
-        if (stop_flag) {
-            lock.unlock();
-            break;
-        }
-        lock.unlock();
-
-        int baseProgress = i * 100 / inputPaths.size();
-        int progressStep = 100 / inputPaths.size();
-        QString outError;
-        bool ok = processBM3DEnhancement(
-            "SpeckleDenoise", inputPaths[i], outputPaths[i], nodeName,
-            fileNames.isEmpty() ? QString() : fileNames[i],
-            projectPath, projectName, model, saveToProject, projectXml, outError, baseProgress, progressStep
-        );
-
-        if (!ok) {
-            bool skip = false;
-            QString msg = QString("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(inputPaths[i]).fileName(), outError);
-            emit askUserError(msg, &skip);
-            if (!skip) {
-                emit errorProcess(QString("批处理在 %1 处停止").arg(QFileInfo(inputPaths[i]).fileName()));
-                return;
-            }
-        }
-        
-        int overallProgress = (i + 1) * 100 / inputPaths.size();
-        emit updateProcess(overallProgress, QString("批处理进度: %1/%2").arg(i + 1).arg(inputPaths.size()));
-    }
-    
-    emit sendModel(model);
-    emit endProcess();
-}
-
-void MyThread::Clutter_Suppression(
-    QStringList inputPaths,
-    QStringList outputPaths,
-    QString nodeName,
-    QStringList fileNames,
-    QString projectPath,
-    QString projectName,
-    QStandardItemModel* model,
-    bool saveToProject,
-    XMLFile* projectXml
-)
-{
-    lock.lock();
-    stop_flag = false;
-    lock.unlock();
-
-    for (int i = 0; i < inputPaths.size(); ++i) {
-        lock.lock();
-        if (stop_flag) {
-            lock.unlock();
-            break;
-        }
-        lock.unlock();
-
-        int baseProgress = i * 100 / inputPaths.size();
-        int progressStep = 100 / inputPaths.size();
-        QString outError;
-        bool ok = processBM3DEnhancement(
-            "ClutterSuppression", inputPaths[i], outputPaths[i], nodeName,
-            fileNames.isEmpty() ? QString() : fileNames[i],
-            projectPath, projectName, model, saveToProject, projectXml, outError, baseProgress, progressStep
-        );
-
-        if (!ok) {
-            bool skip = false;
-            QString msg = QString("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(inputPaths[i]).fileName(), outError);
-            emit askUserError(msg, &skip);
-            if (!skip) {
-                emit errorProcess(QString("批处理在 %1 处停止").arg(QFileInfo(inputPaths[i]).fileName()));
-                return;
-            }
-        }
-        
-        int overallProgress = (i + 1) * 100 / inputPaths.size();
-        emit updateProcess(overallProgress, QString("批处理进度: %1/%2").arg(i + 1).arg(inputPaths.size()));
-    }
-
-    emit sendModel(model);
-    emit endProcess();
-}
-
-
-void MyThread::Target_Detection(QStringList imagePaths, QString modelPath, float thresholdValue)
-{
-    lock.lock();
-    stop_flag = false;
-    lock.unlock();
-
-    for (int i = 0; i < imagePaths.size(); ++i) {
-        lock.lock();
-        if (stop_flag) {
-            emit errorProcess("目标检测已停止");
-            lock.unlock();
-            break;
-        }
-        lock.unlock();
-
-        QString msg = QString("正在运行推理 %1/%2...").arg(i + 1).arg(imagePaths.size());
-        int overallProgress = i * 100 / imagePaths.size();
-        emit updateProcess(overallProgress, msg);
-
-        float shipProb = 0.0f;
-        QString resultText;
-        QString errorMsg;
-
-        bool ok = TargetDetection::runDetectionTask(imagePaths[i], modelPath, thresholdValue, shipProb, resultText, errorMsg);
-
-        if (!ok) {
-            bool skip = false;
-            QString errMsg = QString("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(imagePaths[i]).fileName(), errorMsg);
-            emit askUserError(errMsg, &skip);
-            if (!skip) {
-                emit errorProcess(QString("批处理在 %1 处停止").arg(QFileInfo(imagePaths[i]).fileName()));
-                emit sendTargetDetectionResult(i, false, 0.0f, "", errorMsg);
-                return;
-            }
-            emit sendTargetDetectionResult(i, false, 0.0f, "", errorMsg);
-            continue;
-        }
-
-        emit sendTargetDetectionResult(i, true, shipProb, resultText, "");
-    }
-
-    emit updateProcess(100, "目标检测完成");
-    emit endProcess();
-}
-
 

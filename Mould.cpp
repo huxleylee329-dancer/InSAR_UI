@@ -1,4 +1,4 @@
-﻿#include<Mould.h>
+#include<Mould.h>
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
@@ -457,11 +457,11 @@ void Mould::add_project()
     /*---------------------------------------*/
     /*             新建xml工程文件           */
     /*---------------------------------------*/
-    XMLFile xml;
+    XMLFile* xml = new XMLFile();
     QFileInfo info = QFileInfo(project_path);
     QString path = info.absoluteFilePath();
     QString xml_file = project_path + "/" + project_name + "/" + project_name + ".insar";
-    xml.XMLFile_creat_new_project((path + "/" + project_name).toStdString().c_str(), QString("%1.insar").arg(project_name).toStdString().c_str(), "1.0");
+    xml->XMLFile_creat_new_project((path + "/" + project_name).toStdString().c_str(), QString("%1.insar").arg(project_name).toStdString().c_str(), "1.0");
     
     //导入数据
     DOC = new XMLFile;

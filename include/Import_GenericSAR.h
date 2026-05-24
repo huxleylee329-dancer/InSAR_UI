@@ -2,7 +2,8 @@
 #include <QtWidgets/QWidget>
 #include <qstandarditemmodel.h>
 #include "ui_ImportGenericSAR.h"
-#include "MyThread.h"
+#include <QPointer>
+#include "GenericSARImportTask.h"
 
 class Import_GenericSAR : public QWidget
 {
@@ -22,12 +23,12 @@ private:
     QString xml_path;
     QString save_path;
     QStandardItemModel* copy;
-    MyThread* import_GenericSAR_thread, *import_GenericSAR_thread2;
+    QPointer<GenericSARImportTask> import_GenericSAR_thread;
+    QPointer<GenericSARBatchImportTask> import_GenericSAR_thread2;
 
 signals:
     void sendCopy(QStandardItemModel* model);
-    void operate(QString, QString, QString, QString, QString, QStandardItemModel*);
-    void operate2(QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
+
 
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();

@@ -650,13 +650,13 @@ bool SpeckleDenoise::registerFilteredImage(const QString& outputNodeName,
 
     QString relativePath = "/" + outputNodeName + "/" + outputImageName + ".jpg";
 
-    XMLFile xml;
-    if (xml.XMLFile_load((save_path + "/" + project_name).toStdString().c_str()) < 0)
+    XMLFile* xml = new XMLFile();
+    if (xml->XMLFile_load((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
         return false;
     }
 
-    if (xml.XMLFile_add_origin(outputNodeName.toStdString().c_str(),
+    if (xml->XMLFile_add_origin(outputNodeName.toStdString().c_str(),
                                outputImageName.toStdString().c_str(),
                                relativePath.toStdString().c_str(),
                                "SpeckleDenoise") < 0)
@@ -664,7 +664,7 @@ bool SpeckleDenoise::registerFilteredImage(const QString& outputNodeName,
         return false;
     }
 
-    if (xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str()) < 0)
+    if (xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
         return false;
     }
@@ -755,14 +755,14 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
         return;
     }
 
-    XMLFile xml;
-    if (xml.XMLFile_load((save_path + "/" + project_name).toStdString().c_str()) < 0)
+    XMLFile* xml = new XMLFile();
+    if (xml->XMLFile_load((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
         QMessageBox::warning(this, "Warning!", "Failed to load project XML.");
         return;
     }
 
-    if (xml.XMLFile_remove_node(outputNodeName.toStdString().c_str(),
+    if (xml->XMLFile_remove_node(outputNodeName.toStdString().c_str(),
                                 outputImageName.toStdString().c_str(),
                                 outputPath.toStdString().c_str()) < 0)
     {
@@ -770,7 +770,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
         return;
     }
 
-    if (xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str()) < 0)
+    if (xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
         QMessageBox::warning(this, "Warning!", "Failed to save project XML.");
         return;

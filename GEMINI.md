@@ -72,3 +72,6 @@
 - `QtNodes/`: Custom integration of the node editor library.
 - `ADS/`: Advanced Docking System library source.
 - `BM3D_cpp/`: Speckle denoising algorithm implementation.
+
+### File Editing Safety & UTF-8 Encoding
+**CRITICAL:** When programmatically modifying source files in this project (which are typically UTF-8), **NEVER** use PowerShell commands like `Get-Content` and `Set-Content` to perform text replacement or manipulation. PowerShell's default code page (GBK) will parse the raw UTF-8 bytes containing Chinese characters incorrectly, turning them into garbage (e.g. `错?`, `停?`), and resave them as corrupted UTF-8, which triggers `C2001: 常量中有换行符` during MSVC compilation. **ALWAYS** use the built-in `replace_file_content` / `multi_replace_file_content` tools, or write a dedicated Python script (e.g. using `open(file, 'r', encoding='utf-8-sig')` and `open(file, 'w', encoding='utf-8')`) to ensure character encoding is strictly preserved.

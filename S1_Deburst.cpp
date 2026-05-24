@@ -97,7 +97,7 @@ void S1_Deburst::ChangeVision(bool Editable)
 
 void S1_Deburst::ShowProjectList(QStandardItemModel* model)
 {
-    XMLFile xmldoc; QStandardItem* project = NULL;
+    XMLFile* xmldoc = new XMLFile(); QStandardItem* project = NULL;
     TiXmlElement* pnode = NULL, * pchild = NULL;
     int ret, count = 0;
     this->copy = model;
@@ -105,13 +105,13 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
     {
         
         QString tmpProjectFile = copy->item(i, 1)->text() + "/" + copy->item(i, 0)->text();
-        ret = xmldoc.XMLFile_load(tmpProjectFile.toStdString().c_str());
+        ret = xmldoc->XMLFile_load(tmpProjectFile.toStdString().c_str());
         if (ret < 0) return;
-        ret = xmldoc.find_node("DataNode", pnode);
+        ret = xmldoc->find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc._find_node(pnode, "Sensor", pchild);
+            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 ui->comboBox->addItem(copy->item(i, 0)->text());
@@ -133,13 +133,13 @@ void S1_Deburst::ShowProjectList(QStandardItemModel* model)
     }
     ui->comboBox_2->clear();
     //工程文件
-    ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
+    ret = xmldoc->XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
-    ret = xmldoc.find_node("DataNode", pnode);
+    ret = xmldoc->find_node("DataNode", pnode);
     if (ret < 0) return;
     while (pnode)
     {
-        ret = xmldoc._find_node(pnode, "Sensor", pchild);
+        ret = xmldoc->_find_node(pnode, "Sensor", pchild);
         if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
         {
             ui->comboBox_2->addItem(pnode->Attribute("name"));
@@ -166,15 +166,15 @@ void S1_Deburst::on_comboBox_currentIndexChanged()
         ui->comboBox_2->clear();
 
         this->projectFile = this->save_path + "/" + project->text();
-        XMLFile xmldoc;
-        int ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
+        XMLFile* xmldoc = new XMLFile();
+        int ret = xmldoc->XMLFile_load(this->projectFile.toStdString().c_str());
         if (ret < 0) return;
         TiXmlElement* pnode = NULL, * pchild = NULL;
-        ret = xmldoc.find_node("DataNode", pnode);
+        ret = xmldoc->find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc._find_node(pnode, "Sensor", pchild);
+            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 ui->comboBox_2->addItem(pnode->Attribute("name"));

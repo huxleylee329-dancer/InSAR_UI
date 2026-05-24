@@ -1,3 +1,4 @@
+#include <memory>
 #include "GenericSARImportTask.h"
 #include <QFile>
 #include <QFileInfo>
@@ -164,8 +165,7 @@ void GenericSARImportTask::run()
 		img_path->setText(image_path);
 	}
 	
-	XMLFile localXml;
-	XMLFile* DOC = &localXml;
+	XMLFile* DOC = new XMLFile();
 	QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(m_projectName);
 	ret = DOC->XMLFile_load(xmlFileLoadPath.toStdString().c_str());
 	if (ret < 0 || m_stopFlag)
@@ -264,13 +264,12 @@ void GenericSARBatchImportTask::run()
 	}
 	int n_images = m_originalFileList.size();
 	int process = 2;
-	XMLFile localXml;
-	XMLFile* DOC = &localXml;
 	emit updateProcess(process, QStringLiteral("正在导入..."));
 
 	for (int i = 0; i < n_images; i++)
 	{
 		if (m_stopFlag) break;
+		XMLFile* DOC = new XMLFile();
 		QString filename = m_importNamelist[i];
         QString image_filename = m_originalFileList[i];
         QFileInfo fileinfo(image_filename);

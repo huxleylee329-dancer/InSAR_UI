@@ -289,13 +289,13 @@ void GenericSARBatchImportNode::onRemoveFilesClicked()
                                 QStandardItem* fileItem = nodeItem->child(j, 0);
                                 QString fileName = fileItem ? fileItem->text() : "";
                                 
-                                XMLFile xml;
+                                XMLFile* xml = new XMLFile();
                                 QString xmlPath = projectPath() + "/" + projectName();
-                                if (xml.XMLFile_load(xmlPath.toStdString().c_str()) >= 0) {
-                                    xml.XMLFile_remove_node(getOutputNodeName().toStdString().c_str(), 
+                                if (xml->XMLFile_load(xmlPath.toStdString().c_str()) >= 0) {
+                                    xml->XMLFile_remove_node(getOutputNodeName().toStdString().c_str(), 
                                                           fileName.toStdString().c_str(), 
                                                           importedPath.toStdString().c_str());
-                                    xml.XMLFile_save(xmlPath.toStdString().c_str());
+                                    xml->XMLFile_save(xmlPath.toStdString().c_str());
                                 }
                                 
                                 if (QFile::exists(importedPath)) {
