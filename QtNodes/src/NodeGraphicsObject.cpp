@@ -371,19 +371,37 @@ void NodeGraphicsObject::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
 
     auto *execGeo = dynamic_cast<ExecutableNodeGeometry*>(&geometry);
     if (execGeo) {
+        auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+        ExecutableNodeDelegateModel* execModel = nullptr;
+        if (dfModel) {
+            auto *delegateModel = dfModel->delegateModel<NodeDelegateModel>(_nodeId);
+            execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
+        }
+
         if (execGeo->hitTestStartButton(_nodeId, pos) || execGeo->hitTestCardStartButton(_nodeId, pos)) {
-            auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
-            if (dfModel) {
-                auto *delegateModel = dfModel->delegateModel<NodeDelegateModel>(_nodeId);
-                auto *execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
-                if (execModel) {
-                    if (execModel->executionState() == ExecutionState::Completed) {
-                        setToolTip("Re-run");
-                    } else {
-                        setToolTip("Run");
-                    }
+            if (execModel) {
+                if (execModel->executionState() == ExecutionState::Completed) {
+                    setToolTip("Re-run");
+                } else if (execModel->executionState() == ExecutionState::Running) {
+                    setToolTip("Stop");
+                } else {
+                    setToolTip("Run");
                 }
+            } else {
+                setToolTip("Run");
             }
+        } else if (execGeo->hitTestModeButton(_nodeId, pos) || execGeo->hitTestCardModeButton(_nodeId, pos)) {
+            if (execModel) {
+                if (execModel->executionMode() == ExecutionMode::Automatic) {
+                    setToolTip("Auto Mode");
+                } else {
+                    setToolTip("Manual Mode");
+                }
+            } else {
+                setToolTip("Mode");
+            }
+        } else if (execGeo->hitTestDetailButton(_nodeId, pos) || execGeo->hitTestCardDetailButton(_nodeId, pos)) {
+            setToolTip("Detail View");
         } else {
             setToolTip("");
         }

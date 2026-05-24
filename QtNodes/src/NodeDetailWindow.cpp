@@ -1,4 +1,4 @@
-﻿#include "QtNodes/internal/NodeDetailWindow.hpp"
+#include "QtNodes/internal/NodeDetailWindow.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -13,6 +13,8 @@
 #include <QStyle>
 #include <QSize>
 #include <QDebug>
+#include <QFileInfo>
+#include "ImageView.h"
 
 namespace QtNodes {
 
@@ -626,7 +628,61 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
 
     // ===== PROCESSING INFO SECTION =====
     QString infoLabelTemplate = isDark ? STYLE_INFO_LABEL_TEMPLATE_DARK : STYLE_INFO_LABEL_TEMPLATE;
-    if (_processingInfo.empty()) {
+    
+    _previewImagePaths = snapshot.previewImagePaths;
+    _currentPreviewIndex = 0;
+    
+    bool hasPreviewImage = !_previewImagePaths.isEmpty() && QFileInfo::exists(_previewImagePaths.first());
+    
+    if (hasPreviewImage) {
+        _imageView = new ImageView();
+        _imageView->setMinimumHeight(300); // Ensure the image has some vertical space
+        _processingLayout->addWidget(_imageView);
+        
+        QHBoxLayout* navLayout = new QHBoxLayout();
+        
+        QString btnStyle = isDark ? 
+            "QPushButton { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0px; margin: 0px; border: none; background: #4B5563; border-radius: 12px; font-weight: bold; color: #F3F4F6; }"
+            "QPushButton:hover:!disabled { background: #6B7280; }"
+            "QPushButton:pressed { background: #374151; }"
+            "QPushButton:disabled { background: #374151; color: #9CA3AF; }"
+            :
+            "QPushButton { min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; padding: 0px; margin: 0px; border: none; background: #E5E7EB; border-radius: 12px; font-weight: bold; color: #374151; }"
+            "QPushButton:hover:!disabled { background: #D1D5DB; }"
+            "QPushButton:pressed { background: #9CA3AF; }"
+            "QPushButton:disabled { background: #F3F4F6; color: #9CA3AF; }";
+            
+        _prevButton = new QPushButton("<");
+        _prevButton->setFixedSize(24, 24);
+        _prevButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        _prevButton->setStyleSheet(btnStyle);
+        
+        _imageNameLabel = new QLabel();
+        _imageNameLabel->setAlignment(Qt::AlignCenter);
+        
+        _nextButton = new QPushButton(">");
+        _nextButton->setFixedSize(24, 24);
+        _nextButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        _nextButton->setStyleSheet(btnStyle);
+        
+        navLayout->addWidget(_prevButton);
+        navLayout->addWidget(_imageNameLabel, 1);
+        navLayout->addWidget(_nextButton);
+        
+        _processingLayout->addLayout(navLayout);
+        
+        connect(_prevButton, &QPushButton::clicked, this, &NodeDetailWindow::onPrevPreviewClicked);
+        connect(_nextButton, &QPushButton::clicked, this, &NodeDetailWindow::onNextPreviewClicked);
+        
+        if (_previewImagePaths.size() <= 1) {
+            _prevButton->hide();
+            _nextButton->hide();
+        }
+        
+        updatePreviewImage();
+    }
+    
+    if (_processingInfo.empty() && !hasPreviewImage) {
         // Empty state with info icon
         QFrame* emptyFrame = new QFrame();
         emptyFrame->setObjectName("ProcessingEmpty");
@@ -652,7 +708,7 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         emptyLayout->addWidget(noContentLabel);
 
         _processingLayout->addWidget( emptyFrame);
-    } else {
+    } else if (!_processingInfo.empty()) {
         for (size_t i = 0; i < _processingInfo.size(); ++i) {
             auto* infoLabel = new QLabel(_processingInfo[i]);
             infoLabel->setWordWrap(true);
@@ -786,6 +842,51 @@ QString NodeDetailWindow::getThemeStylesheet(QWidget* parent)
         .arg(columnSeparator)
         .arg(portCard)
         .arg(outputCard);
+}
+
+void NodeDetailWindow::updatePreviewImage()
+{
+    if (_previewImagePaths.isEmpty() || _currentPreviewIndex < 0 || _currentPreviewIndex >= _previewImagePaths.size())
+        return;
+
+    QString currentPath = _previewImagePaths[_currentPreviewIndex];
+    if (QFileInfo::exists(currentPath)) {
+        QGraphicsScene* scene = _imageView->scene();
+        if (!scene) {
+            scene = new QGraphicsScene(_imageView);
+            _imageView->setScene(scene);
+        } else {
+            scene->clear();
+        }
+        
+        QPixmap pixmap(currentPath);
+        scene->addPixmap(pixmap);
+        
+        QFileInfo fi(currentPath);
+        _imageNameLabel->setText(QString("%1 (%2 / %3)")
+            .arg(fi.fileName())
+            .arg(_currentPreviewIndex + 1)
+            .arg(_previewImagePaths.size()));
+            
+        _prevButton->setEnabled(_currentPreviewIndex > 0);
+        _nextButton->setEnabled(_currentPreviewIndex < _previewImagePaths.size() - 1);
+    }
+}
+
+void NodeDetailWindow::onPrevPreviewClicked()
+{
+    if (_currentPreviewIndex > 0) {
+        _currentPreviewIndex--;
+        updatePreviewImage();
+    }
+}
+
+void NodeDetailWindow::onNextPreviewClicked()
+{
+    if (_currentPreviewIndex < _previewImagePaths.size() - 1) {
+        _currentPreviewIndex++;
+        updatePreviewImage();
+    }
 }
 
 } // namespace QtNodes

@@ -208,6 +208,17 @@ QString GenericSARBatchImportNode::getOutputNodeName() const
     return name;
 }
 
+QStringList GenericSARBatchImportNode::previewImagePaths() const
+{
+    QStringList existingPaths;
+    for (const QString& path : m_importedFilePaths) {
+        if (QFileInfo::exists(path)) {
+            existingPaths << path;
+        }
+    }
+    return existingPaths;
+}
+
 QString GenericSARBatchImportNode::generateImportName(const QString& imagePath) const
 {
     QFileInfo fileInfo(imagePath);

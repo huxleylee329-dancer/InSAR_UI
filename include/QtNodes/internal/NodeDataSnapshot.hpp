@@ -45,6 +45,9 @@ struct NODE_EDITOR_PUBLIC NodeDataSnapshot
     /// Processing/intermediate information
     std::vector<QString> processingInfo;
 
+    /// Path to a preview image (e.g. from Generic SAR Import)
+    QStringList previewImagePaths;
+
     /// Helper to convert state to string
     static QString stateToString(int state)
     {

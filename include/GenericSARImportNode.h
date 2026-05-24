@@ -46,6 +46,7 @@ protected:
     void executeImport() override;
     QString getImportedFilePath() const override;
     QString getOutputNodeName() const override;
+    QStringList previewImagePaths() const override;
 
     // Threading
     GenericSARImportTask* m_task = nullptr;

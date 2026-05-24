@@ -104,6 +104,9 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     // No need to duplicate them in processingInfo area
     snapshot.processingInfo.clear();
 
+    // Capture preview image path
+    snapshot.previewImagePaths = model->previewImagePaths();
+
     return snapshot;
 }
 

@@ -245,6 +245,14 @@ QString GenericSARImportNode::getOutputNodeName() const
     return m_outputNodeName;
 }
 
+QStringList GenericSARImportNode::previewImagePaths() const
+{
+    if (!m_importedFilePath.isEmpty() && QFileInfo::exists(m_importedFilePath)) {
+        return QStringList() << m_importedFilePath;
+    }
+    return QStringList();
+}
+
 void GenericSARImportNode::onImageBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(

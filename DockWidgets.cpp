@@ -1,4 +1,4 @@
-﻿#include "include/DockWidgets.h"
+#include "include/DockWidgets.h"
 #include "include/NodeTreeWidget.h"
 #include "include/PaletteOrder.h"
 #include "NodeModels.h"
@@ -1023,11 +1023,12 @@ void PropertyEditor::generateProcessingSection()
     QString infoBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.6)";
     QString noInfoTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
 
-    if (m_nodeData.processingInfo.isEmpty()) {
+    if (m_nodeData.processingInfo.isEmpty() && m_nodeData.previewImagePaths.isEmpty()) {
         QLabel* noInfoLabel = new QLabel("No processing info available");
         noInfoLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noInfoTextColor));
         contentLayout->addWidget(noInfoLabel);
     } else {
+        // Output standard processing info
         for (const QString& info : m_nodeData.processingInfo) {
             QLabel* infoLabel = new QLabel(info);
             infoLabel->setWordWrap(true);
@@ -1041,6 +1042,35 @@ void PropertyEditor::generateProcessingSection()
                 "}"
             ).arg(infoTextColor).arg(infoBg));
             contentLayout->addWidget(infoLabel);
+        }
+        
+        // Output image list if preview image paths are available
+        if (!m_nodeData.previewImagePaths.isEmpty()) {
+            QLabel* successLabel = new QLabel(QObject::tr("✅ Imported successfully: %1 files").arg(m_nodeData.previewImagePaths.size()));
+            successLabel->setStyleSheet(QString(
+                "QLabel {"
+                "  color: %1;"
+                "  font-weight: bold;"
+                "  margin-top: 4px;"
+                "  margin-bottom: 2px;"
+                "}"
+            ).arg(infoTextColor));
+            contentLayout->addWidget(successLabel);
+            
+            for (const QString& path : m_nodeData.previewImagePaths) {
+                QFileInfo fi(path);
+                QLabel* fileLabel = new QLabel("  - " + fi.fileName());
+                fileLabel->setStyleSheet(QString(
+                    "QLabel {"
+                    "  color: %1;"
+                    "  background-color: %2;"
+                    "  padding: 4px 10px;"
+                    "  border-radius: 2px;"
+                    "  border-left: 2px solid #10B981;" // Greenish border for files
+                    "}"
+                ).arg(infoTextColor).arg(infoBg));
+                contentLayout->addWidget(fileLabel);
+            }
         }
     }
     // 不再添加 stretch，区域按实际内容大小排列
@@ -1650,6 +1680,7 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         // Processing info is cleared (no status/mode info since shown in Basic Info section)
         // This section is reserved for future use (e.g., processing logs, messages, etc.)
         m_nodeData.processingInfo.clear();
+        m_nodeData.previewImagePaths = execModel->previewImagePaths();
     } else {
         // Non-executable node - just capture port metadata
         int inputPortCount = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::InPortCount).toInt();
@@ -1693,6 +1724,7 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         m_nodeData.progress = 0;
         // Processing info is cleared (reserved for future use)
         m_nodeData.processingInfo.clear();
+        m_nodeData.previewImagePaths.clear();
     }
 }
 

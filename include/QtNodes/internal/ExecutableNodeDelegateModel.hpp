@@ -67,6 +67,9 @@ public:
     /// Mark whether this node uses external layout (ears + progress bar painted outside)
     virtual bool useExternalLayout() const { return true; }
 
+    /// Return an image path to be displayed in the detail view preview section
+    virtual QStringList previewImagePaths() const { return QStringList(); }
+
     /// Set the nodeId and scene for visual updates (called when node is created)
     void setNodeContext(NodeId nodeId, BasicGraphicsScene *scene);
 

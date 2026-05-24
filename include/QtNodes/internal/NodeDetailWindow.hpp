@@ -11,6 +11,8 @@
 #include <QtWidgets/QFrame>
 #include "QtNodes/internal/NodeDataSnapshot.hpp"
 
+class ImageView;
+
 namespace QtNodes {
 
 struct ParameterInfo;
@@ -68,6 +70,21 @@ private:
     std::vector<QString> _processingInfo;
     std::vector<PortDataInfo> _outputPorts;
 
+    // Multi-image preview state
+    QStringList _previewImagePaths;
+    int _currentPreviewIndex = 0;
+    ImageView* _imageView = nullptr;
+    QLabel* _imageNameLabel = nullptr;
+    QPushButton* _prevButton = nullptr;
+    QPushButton* _nextButton = nullptr;
+
+    void updatePreviewImage();
+
+private Q_SLOTS:
+    void onPrevPreviewClicked();
+    void onNextPreviewClicked();
+
+private:
     // Style constants - following ui2.md Section 135-168
     static constexpr char const* STYLE_WINDOW_LIGHT =
         "NodeDetailWindow {"

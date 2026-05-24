@@ -1,4 +1,4 @@
-﻿#ifndef DOCKWIDGETS_H
+#ifndef DOCKWIDGETS_H
 #define DOCKWIDGETS_H
 
 #include <QWidget>
@@ -234,6 +234,7 @@ private:
         QVector<PortDataInfo> outputPorts;
         QVector<QtNodes::ParameterInfo> parameters;  // 控件参数（可编辑）
         QVector<QString> processingInfo;
+        QStringList previewImagePaths;
     };
     NodeData m_nodeData;
 };
