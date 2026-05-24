@@ -563,14 +563,29 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
     _titleText->setText(snapshot.nodeName);
     _titleState->setText(QString("(%1)").arg(NodeDataSnapshot::stateToString(snapshot.state)));
 
+    int oldIndex = _currentPreviewIndex;
+
     // Clear previous data
     clearData();
 
     // Store data
+    _previewImagePaths = snapshot.previewImagePaths;
+    _detectionResults = snapshot.detectionResults;
     _inputPorts = snapshot.inputPorts;
     _parameters = snapshot.parameters;
     _processingInfo = snapshot.processingInfo;
     _outputPorts = snapshot.outputPorts;
+    _tableHeaders = snapshot.detailTableHeaders;
+    _supportsRoiSelection = snapshot.supportsRoiSelection;
+    _hasCustomRoi = snapshot.hasCustomRoi;
+    _customRoi = snapshot.customRoi;
+
+    // Restore index if within bounds
+    if (oldIndex >= 0 && oldIndex < _previewImagePaths.size()) {
+        _currentPreviewIndex = oldIndex;
+    } else {
+        _currentPreviewIndex = 0;
+    }
 
     // ===== INPUT SECTION: Port Data + Node Parameters =====
     bool hasInputContent = false;
@@ -632,7 +647,13 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
     
     _previewImagePaths = snapshot.previewImagePaths;
     _detectionResults = snapshot.detectionResults;
-    _currentPreviewIndex = 0;
+    
+    // Restore index if within bounds
+    if (oldIndex >= 0 && oldIndex < _previewImagePaths.size()) {
+        _currentPreviewIndex = oldIndex;
+    } else {
+        _currentPreviewIndex = 0;
+    }
     
     bool hasPreviewImage = !_previewImagePaths.isEmpty() && QFileInfo::exists(_previewImagePaths.first());
     
@@ -640,6 +661,34 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         _imageView = new ImageView();
         _imageView->setMinimumHeight(300); // Ensure the image has some vertical space
         _processingLayout->addWidget(_imageView);
+        
+        if (_supportsRoiSelection) {
+            _roiToolbar = new QWidget();
+            auto* roiLayout = new QHBoxLayout(_roiToolbar);
+            roiLayout->setContentsMargins(5, 5, 5, 5);
+            
+            _roiEnableCheckbox = new QCheckBox(QStringLiteral("启用框选区域"));
+            _roiEnableCheckbox->setChecked(_hasCustomRoi);
+            _imageView->setRoiSelectionEnabled(_hasCustomRoi);
+            if (_hasCustomRoi) {
+                _imageView->setRoiRect(_customRoi);
+            }
+            
+            connect(_roiEnableCheckbox, &QCheckBox::toggled, this, &NodeDetailWindow::onRoiToggled);
+            
+            auto* clearRoiBtn = new QPushButton(QStringLiteral("清除框选"));
+            connect(clearRoiBtn, &QPushButton::clicked, this, &NodeDetailWindow::onRoiCleared);
+            
+            roiLayout->addWidget(_roiEnableCheckbox);
+            roiLayout->addWidget(clearRoiBtn);
+            roiLayout->addStretch();
+            
+            _processingLayout->addWidget(_roiToolbar);
+            
+            connect(_imageView, &ImageView::roiSelected, this, [this](const QRectF& rect) {
+                emit roiSelectionChanged(rect, _currentPreviewIndex);
+            });
+        }
         
         QHBoxLayout* navLayout = new QHBoxLayout();
         
@@ -684,25 +733,26 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         bool hasDetectionResults = !_detectionResults.isEmpty() && _detectionResults.size() == _previewImagePaths.size();
         
         if (hasDetectionResults) {
-            // Add overlay label above the navigation layout (under the image)
-            _imageOverlayLabel = new QLabel();
-            _imageOverlayLabel->setAlignment(Qt::AlignCenter);
-            _imageOverlayLabel->setWordWrap(true);
-            
-            QString overlayStyle = isDark ? 
-                "QLabel { background-color: #374151; color: #F9FAFB; border-radius: 6px; padding: 6px; font-size: 14px; margin: 4px 0px; }" :
-                "QLabel { background-color: #F3F4F6; color: #111827; border-radius: 6px; padding: 6px; font-size: 14px; margin: 4px 0px; border: 1px solid #E5E7EB; }";
-            _imageOverlayLabel->setStyleSheet(overlayStyle);
-            
-            _processingLayout->insertWidget(_processingLayout->indexOf(_imageView) + 1, _imageOverlayLabel);
-            
             // Add results table
             _resultsTable = new QTableWidget();
-            _resultsTable->setColumnCount(3);
-            _resultsTable->setHorizontalHeaderLabels({"文件名", "检测结果", "置信度"});
-            _resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-            _resultsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-            _resultsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+            
+            if (!_tableHeaders.isEmpty()) {
+                _resultsTable->setColumnCount(_tableHeaders.size());
+                _resultsTable->setHorizontalHeaderLabels(_tableHeaders);
+                // First column stretch, others resize to contents
+                _resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+                for(int c=1; c<_tableHeaders.size(); ++c) {
+                    _resultsTable->horizontalHeader()->setSectionResizeMode(c, QHeaderView::ResizeToContents);
+                }
+            } else {
+                // Fallback for older nodes
+                _resultsTable->setColumnCount(3);
+                _resultsTable->setHorizontalHeaderLabels({QStringLiteral("文件名"), QStringLiteral("检测结果"), QStringLiteral("置信度")});
+                _resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+                _resultsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+                _resultsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+            }
+            
             _resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
             _resultsTable->setSelectionMode(QAbstractItemView::SingleSelection);
             _resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -725,19 +775,13 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             _resultsTable->setRowCount(_detectionResults.size());
             for (int i = 0; i < _detectionResults.size(); ++i) {
                 const auto& rowData = _detectionResults[i];
-                if (rowData.size() >= 3) {
-                    _resultsTable->setItem(i, 0, new QTableWidgetItem(rowData[0]));
-                    
-                    auto* resultItem = new QTableWidgetItem(rowData[1]);
-                    resultItem->setTextAlignment(Qt::AlignCenter);
-                    if (rowData[1].toLower() == "ship") {
-                        resultItem->setForeground(QBrush(QColor(isDark ? "#34D399" : "#10B981"))); // Green
+                for(int c=0; c<rowData.size() && c<_resultsTable->columnCount(); ++c) {
+                    auto* item = new QTableWidgetItem(rowData[c]);
+                    if (c > 0) item->setTextAlignment(Qt::AlignCenter);
+                    if (c == 1 && rowData[c].toLower() == "ship") {
+                        item->setForeground(QBrush(QColor(isDark ? "#34D399" : "#10B981"))); // Green
                     }
-                    _resultsTable->setItem(i, 1, resultItem);
-                    
-                    auto* probItem = new QTableWidgetItem(rowData[2]);
-                    probItem->setTextAlignment(Qt::AlignCenter);
-                    _resultsTable->setItem(i, 2, probItem);
+                    _resultsTable->setItem(i, c, item);
                 }
             }
             
@@ -805,36 +849,48 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
 
 void NodeDetailWindow::clearData()
 {
-    // Clear input section
-    while (_inputLayout->count() > 0) {
-        auto* item = _inputLayout->takeAt(_inputLayout->count() - 1);
-        if (item->widget()) {
-            item->widget()->deleteLater();
+    std::function<void(QLayout*)> clearLayout = [&](QLayout* layout) {
+        if (!layout) return;
+        while (QLayoutItem* item = layout->takeAt(0)) {
+            if (QLayout* childLayout = item->layout()) {
+                clearLayout(childLayout);
+                delete childLayout;
+            } else {
+                if (QWidget* widget = item->widget()) {
+                    widget->deleteLater();
+                }
+                delete item;
+            }
         }
-        delete item;
-    }
+    };
+
+    // Clear input section
+    clearLayout(_inputLayout);
     _inputPorts.clear();
     _parameters.clear();
 
     // Clear processing section
-    while (_processingLayout->count() > 0) {
-        auto* item = _processingLayout->takeAt(_processingLayout->count() - 1);
-        if (item->widget()) {
-            item->widget()->deleteLater();
-        }
-        delete item;
-    }
+    clearLayout(_processingLayout);
     _processingInfo.clear();
 
     // Clear output section (widgets + stretch spacer)
-    while (_outputLayout->count() > 0) {
-        auto* item = _outputLayout->takeAt(_outputLayout->count() - 1);
-        if (item->widget()) {
-            item->widget()->deleteLater();
-        }
-        delete item;
-    }
+    clearLayout(_outputLayout);
     _outputPorts.clear();
+    
+    _previewImagePaths.clear();
+    _detectionResults.clear();
+    _tableHeaders.clear();
+    _supportsRoiSelection = false;
+    _hasCustomRoi = false;
+    _customRoi = QRectF();
+    _roiToolbar = nullptr;
+    _roiEnableCheckbox = nullptr;
+    _imageView = nullptr;
+    _imageNameLabel = nullptr;
+    _prevButton = nullptr;
+    _nextButton = nullptr;
+    _imageOverlayLabel = nullptr;
+    _resultsTable = nullptr;
 }
 
 // ============================================================================
@@ -921,43 +977,26 @@ void NodeDetailWindow::updatePreviewImage()
 
     QString currentPath = _previewImagePaths[_currentPreviewIndex];
     if (QFileInfo::exists(currentPath)) {
-        QGraphicsScene* scene = _imageView->scene();
-        if (!scene) {
-            scene = new QGraphicsScene(_imageView);
-            _imageView->setScene(scene);
-        } else {
-            scene->clear();
+        if (_imageView) {
+            _imageView->loadImage(currentPath);
         }
         
-        QPixmap pixmap(currentPath);
-        scene->addPixmap(pixmap);
-        
         QFileInfo fi(currentPath);
-        _imageNameLabel->setText(QString("%1 (%2 / %3)")
-            .arg(fi.fileName())
-            .arg(_currentPreviewIndex + 1)
-            .arg(_previewImagePaths.size()));
+        if (_imageNameLabel) {
+            _imageNameLabel->setText(QString("%1 (%2 / %3)")
+                .arg(fi.fileName())
+                .arg(_currentPreviewIndex + 1)
+                .arg(_previewImagePaths.size()));
+        }
             
-        _prevButton->setEnabled(_currentPreviewIndex > 0);
-        _nextButton->setEnabled(_currentPreviewIndex < _previewImagePaths.size() - 1);
+        if (_prevButton) _prevButton->setEnabled(_currentPreviewIndex > 0);
+        if (_nextButton) _nextButton->setEnabled(_currentPreviewIndex < _previewImagePaths.size() - 1);
         
-        // Update overlay and sync table
-        if (_imageOverlayLabel && _resultsTable && _currentPreviewIndex < _detectionResults.size()) {
-            const auto& rowData = _detectionResults[_currentPreviewIndex];
-            if (rowData.size() >= 3) {
-                QString result = rowData[1];
-                QString prob = rowData[2];
-                bool isDark = isDarkTheme(this);
-                QString color = (result.toLower() == "ship") ? (isDark ? "#34D399" : "#10B981") : (isDark ? "#F87171" : "#EF4444"); // Green for ship, red for no ship
-                
-                _imageOverlayLabel->setText(QString(
-                    "检测结果: <b style='color: %1;'>%2</b> &nbsp;&nbsp;|&nbsp;&nbsp; 置信度: <b>%3</b>"
-                ).arg(color, result, prob));
-                
-                _resultsTable->blockSignals(true);
-                _resultsTable->selectRow(_currentPreviewIndex);
-                _resultsTable->blockSignals(false);
-            }
+        // Sync table selection
+        if (_resultsTable && _currentPreviewIndex < _resultsTable->rowCount()) {
+            _resultsTable->blockSignals(true);
+            _resultsTable->selectRow(_currentPreviewIndex);
+            _resultsTable->blockSignals(false);
         }
     }
 }
@@ -987,6 +1026,21 @@ void NodeDetailWindow::onTableSelectionChanged()
             updatePreviewImage();
         }
     }
+}
+
+void NodeDetailWindow::onRoiToggled(bool checked)
+{
+    if (_imageView) {
+        _imageView->setRoiSelectionEnabled(checked);
+    }
+}
+
+void NodeDetailWindow::onRoiCleared()
+{
+    if (_imageView) {
+        _imageView->clearRoi();
+    }
+    emit roiCleared();
 }
 
 } // namespace QtNodes

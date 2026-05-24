@@ -70,7 +70,17 @@ public:
     /// Return an image path to be displayed in the detail view preview section
     virtual QStringList previewImagePaths() const { return QStringList(); }
 
-    /// Return detection results for display in the detail view
+    // ROI Selection Interface (for detail view)
+    virtual bool supportsRoiSelection() const { return false; }
+    virtual void processRoiSelection(const QRectF& sceneRect, int imageIndex) {}
+    virtual void clearRoiSelection() {}
+    virtual bool hasCustomRoi() const { return false; }
+    virtual QRectF customRoi() const { return QRectF(); }
+    
+    // Detail View UI Customization
+    virtual QStringList detailTableHeaders() const { return {}; }
+    
+    // Data extraction for detail view (e.g., target detection results)
     virtual QList<QStringList> detectionResults() const { return {}; }
 
     /// Set the nodeId and scene for visual updates (called when node is created)

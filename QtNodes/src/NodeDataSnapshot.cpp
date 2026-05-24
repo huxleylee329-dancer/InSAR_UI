@@ -109,6 +109,10 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     
     // Capture detection results
     snapshot.detectionResults = model->detectionResults();
+    snapshot.supportsRoiSelection = model->supportsRoiSelection();
+    snapshot.detailTableHeaders = model->detailTableHeaders();
+    snapshot.hasCustomRoi = model->hasCustomRoi();
+    snapshot.customRoi = model->customRoi();
 
     return snapshot;
 }

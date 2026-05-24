@@ -1591,6 +1591,20 @@ void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::Execu
         _animationController->startCloseAnimation(ngo, _detailWindow, _detailOverlay);
     });
 
+    // Connect ROI signals
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::roiSelectionChanged, [execModel](QRectF rect, int index) {
+        execModel->processRoiSelection(rect, index);
+    });
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::roiCleared, [execModel]() {
+        execModel->clearRoiSelection();
+    });
+    connect(execModel, &QtNodes::NodeDelegateModel::dataUpdated, _detailWindow, [this, execModel, ngo]() {
+        if (_detailWindow) {
+            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
+            _detailWindow->loadData(newSnapshot);
+        }
+    });
+
     // Start the open animation sequence
     _animationController->startOpenAnimation(ngo, _detailWindow, _detailOverlay);
 }

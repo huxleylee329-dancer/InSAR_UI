@@ -48,6 +48,10 @@ struct NODE_EDITOR_PUBLIC NodeDataSnapshot
     /// Path to a preview image (e.g. from Generic SAR Import)
     QStringList previewImagePaths;
     QList<QStringList> detectionResults;
+    bool supportsRoiSelection;
+    QStringList detailTableHeaders;
+    bool hasCustomRoi;
+    QRectF customRoi;
 
     /// Helper to convert state to string
     static QString stateToString(int state)

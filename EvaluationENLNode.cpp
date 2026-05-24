@@ -261,6 +261,8 @@ void EvaluationENLNode::calculateAndDisplayENL()
     int count = origPaths.size();
     int validCount = 0;
     
+    m_savedResults.clear();
+    
     for (int i = 0; i < count; ++i) {
         cv::Mat origMat = cv::imread(origPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
         cv::Mat filtMat = cv::imread(filtPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
@@ -270,9 +272,21 @@ void EvaluationENLNode::calculateAndDisplayENL()
         cv::Rect roiOrig(0, 0, origMat.cols, origMat.rows);
         cv::Rect roiFilt(0, 0, filtMat.cols, filtMat.rows);
         
-        if (m_regionComboBox->currentIndex() == 1) { // 中间区域
+        if (m_hasCustomRoi) {
+            roiOrig = m_customRoi;
+            roiFilt = m_customRoi;
+            
+            // Ensure ROI is within bounds
+            roiOrig &= cv::Rect(0, 0, origMat.cols, origMat.rows);
+            roiFilt &= cv::Rect(0, 0, filtMat.cols, filtMat.rows);
+        } else if (m_regionComboBox->currentIndex() == 1) { // 中间区域
             roiOrig = cv::Rect(origMat.cols / 4, origMat.rows / 4, origMat.cols / 2, origMat.rows / 2);
             roiFilt = cv::Rect(filtMat.cols / 4, filtMat.rows / 4, filtMat.cols / 2, filtMat.rows / 2);
+        }
+        
+        // Prevent empty ROI crash
+        if (roiOrig.width <= 0 || roiOrig.height <= 0 || roiFilt.width <= 0 || roiFilt.height <= 0) {
+            continue;
         }
         
         double origEnl = calculateENL(origMat(roiOrig));
@@ -290,6 +304,14 @@ void EvaluationENLNode::calculateAndDisplayENL()
         m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(origEnl, 'f', 4)));
         m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(filtEnl, 'f', 4)));
         m_resultsTable->setItem(row, 3, new QTableWidgetItem(QString::number(epi, 'f', 4)));
+        
+        // Save for detail view
+        m_savedResults.append({
+            QFileInfo(filtPaths[i]).fileName(),
+            QString::number(origEnl, 'f', 4),
+            QString::number(filtEnl, 'f', 4),
+            QString::number(epi, 'f', 4)
+        });
     }
     
     if (validCount > 1) {
@@ -352,6 +374,48 @@ void EvaluationENLNode::calculateAndDisplayENL()
         m_widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }
+    
+    // Notify detail view of new data
+    Q_EMIT dataUpdated(0);
+}
+
+void EvaluationENLNode::processRoiSelection(const QRectF& sceneRect, int imageIndex)
+{
+    m_hasCustomRoi = true;
+    m_customRoi = cv::Rect(sceneRect.x(), sceneRect.y(), sceneRect.width(), sceneRect.height());
+    
+    // Force combobox back to "全部" visual state so user knows it's custom
+    m_regionComboBox->blockSignals(true);
+    m_regionComboBox->setCurrentIndex(0);
+    m_regionComboBox->blockSignals(false);
+    
+    calculateAndDisplayENL();
+}
+
+void EvaluationENLNode::clearRoiSelection()
+{
+    m_hasCustomRoi = false;
+    calculateAndDisplayENL();
+}
+
+QStringList EvaluationENLNode::detailTableHeaders() const
+{
+    return {QStringLiteral("图像"), QStringLiteral("原图ENL"), QStringLiteral("滤波后ENL"), QStringLiteral("EPI")};
+}
+
+QList<QStringList> EvaluationENLNode::detectionResults() const
+{
+    return m_savedResults;
+}
+
+QStringList EvaluationENLNode::previewImagePaths() const
+{
+    if (m_filteredData) {
+        return m_filteredData->filePaths();
+    } else if (m_originalData) {
+        return m_originalData->filePaths();
+    }
+    return QStringList();
 }
 
 QJsonObject EvaluationENLNode::save() const

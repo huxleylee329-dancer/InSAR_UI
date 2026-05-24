@@ -11,6 +11,7 @@
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QHeaderView>
+#include <QtWidgets/QCheckBox>
 #include "QtNodes/internal/NodeDataSnapshot.hpp"
 
 class ImageView;
@@ -38,8 +39,11 @@ public:
 Q_SIGNALS:
     /// Emitted when close button is clicked (triggers reverse animation)
     void closeRequested();
+    void requestReload();
+    void roiSelectionChanged(QRectF rect, int imageIndex);
+    void roiCleared();
 
-private:
+protected:
     void setupUI();
     QWidget* createTitleBar();
     QWidget* createInputSection();
@@ -74,14 +78,24 @@ private:
 
     // Multi-image preview state
     QStringList _previewImagePaths;
+    // Detection & Table View
     QList<QStringList> _detectionResults;
+    QStringList _tableHeaders;
+    QTableWidget* _resultsTable;
+    QLabel* _imageOverlayLabel;
+    
+    // ROI View
+    bool _supportsRoiSelection;
+    bool _hasCustomRoi;
+    QRectF _customRoi;
+    QWidget* _roiToolbar;
+    QCheckBox* _roiEnableCheckbox;
+    
     int _currentPreviewIndex = 0;
     ImageView* _imageView = nullptr;
-    QLabel* _imageOverlayLabel = nullptr;
     QLabel* _imageNameLabel = nullptr;
     QPushButton* _prevButton = nullptr;
     QPushButton* _nextButton = nullptr;
-    QTableWidget* _resultsTable = nullptr;
 
     void updatePreviewImage();
 
@@ -89,6 +103,8 @@ private Q_SLOTS:
     void onPrevPreviewClicked();
     void onNextPreviewClicked();
     void onTableSelectionChanged();
+    void onRoiToggled(bool checked);
+    void onRoiCleared();
 
 private:
     // Style constants - following ui2.md Section 135-168

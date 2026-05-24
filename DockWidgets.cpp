@@ -1046,15 +1046,29 @@ void PropertyEditor::generateProcessingSection()
         
         // Output detection results or image list
         if (!m_nodeData.detectionResults.isEmpty()) {
-            int detectedCount = 0;
-            for (const auto& row : m_nodeData.detectionResults) {
-                if (row.size() >= 2 && row[1].toLower() == "ship") {
-                    detectedCount++;
+            QLabel* successLabel = nullptr;
+            
+            if (m_nodeData.caption.contains("Target", Qt::CaseInsensitive) || 
+                m_nodeData.caption.contains("目标", Qt::CaseInsensitive)) {
+                int detectedCount = 0;
+                for (const auto& row : m_nodeData.detectionResults) {
+                    if (row.size() >= 2 && row[1].toLower() == "ship") {
+                        detectedCount++;
+                    }
                 }
+                successLabel = new QLabel(QObject::tr("✅ 处理完成：共处理 %1 张图像，发现目标 %2 个")
+                    .arg(m_nodeData.detectionResults.size())
+                    .arg(detectedCount));
+            } else if (m_nodeData.caption.contains("Evaluation", Qt::CaseInsensitive) || 
+                       m_nodeData.caption.contains("评估", Qt::CaseInsensitive) ||
+                       m_nodeData.caption.contains("ENL", Qt::CaseInsensitive)) {
+                successLabel = new QLabel(QObject::tr("✅ 评估完成：共处理 %1 对图像")
+                    .arg(m_nodeData.detectionResults.size()));
+            } else {
+                successLabel = new QLabel(QObject::tr("✅ 处理完成：共产生 %1 条结果")
+                    .arg(m_nodeData.detectionResults.size()));
             }
-            QLabel* successLabel = new QLabel(QObject::tr("✅ 处理完成：共处理 %1 张图像，发现目标 %2 个")
-                .arg(m_nodeData.detectionResults.size())
-                .arg(detectedCount));
+            
             successLabel->setStyleSheet(QString(
                 "QLabel {"
                 "  color: %1;"
