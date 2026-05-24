@@ -23,7 +23,7 @@ public:
      //File_Path file_path[10];
      void mouseDoubleClickEvent(QMouseEvent* event);
 public slots:
-
+    void CleanOrphanedFiles();
     void slotCustomContextMenu(const QPoint&);
 
 private:
@@ -42,7 +42,6 @@ private slots:
     void Delete();
     /*卸载工程响应函数*/
     void Unload();
-    void CleanOrphanedFiles();
     void StopThread();
     void DeleteNode();
  }; 

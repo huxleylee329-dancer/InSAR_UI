@@ -251,14 +251,23 @@ void TreeView::Unload()
 
 void TreeView::CleanOrphanedFiles()
 {
-    if (!this->currentIndex().isValid()) return;
+    QModelIndex projIndex = this->currentIndex();
+    if (!projIndex.isValid()) {
+        projIndex = model->index(0, 0);
+        if (!projIndex.isValid()) {
+            QMessageBox::warning(nullptr, QStringLiteral("提示"), QStringLiteral("没有打开的工程。"));
+            return;
+        }
+    } else {
+        while (projIndex.parent().isValid()) {
+            projIndex = projIndex.parent();
+        }
+    }
     
-    QStandardItem* projItem = model->itemFromIndex(this->currentIndex());
+    QStandardItem* projItem = model->itemFromIndex(projIndex);
     if (!projItem) return;
     
     QString projectName = projItem->text();
-    // Get project path from column 1 of the SAME row (not always row 0)
-    QModelIndex projIndex = this->currentIndex();
     QModelIndex pathIndex = projIndex.sibling(projIndex.row(), 1);
     QStandardItem* pathItem = model->itemFromIndex(pathIndex);
     if (!pathItem) return;
@@ -266,6 +275,7 @@ void TreeView::CleanOrphanedFiles()
     
     // Get all active node folder names from the project tree
     QStringList activeNodeNames;
+    QSet<QString> activeFiles;
     qDebug() << "[CleanOrphanedFiles] Project:" << projectName << "Path:" << projectPath;
     qDebug() << "[CleanOrphanedFiles] Active DataNodes in Tree:";
     for (int i = 0; i < projItem->rowCount(); ++i) {
@@ -273,6 +283,12 @@ void TreeView::CleanOrphanedFiles()
         if (nodeItem) {
             activeNodeNames.append(nodeItem->text());
             qDebug() << "  - " << nodeItem->text();
+            for (int j = 0; j < nodeItem->rowCount(); ++j) {
+                QStandardItem* pathItem = nodeItem->child(j, 1);
+                if (pathItem && !pathItem->text().isEmpty()) {
+                    activeFiles.insert(QDir::cleanPath(pathItem->text()));
+                }
+            }
         }
     }
     
@@ -284,6 +300,7 @@ void TreeView::CleanOrphanedFiles()
     
     QStringList allDirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
     QStringList orphanedDirs;
+    QStringList orphanedFiles;
     
     qDebug() << "[CleanOrphanedFiles] Scanning disk directories:";
     for (const QString& dirName : allDirs) {
@@ -296,17 +313,35 @@ void TreeView::CleanOrphanedFiles()
             qDebug() << "  - " << dirName << "(ORPHANED!)";
         } else {
             qDebug() << "  - " << dirName << "(Active)";
+            QDir activeDir(projectPath + "/" + dirName);
+            QStringList filesInDir = activeDir.entryList(QDir::Files | QDir::NoDotAndDotDot);
+            for (const QString& fileName : filesInDir) {
+                QString absFilePath = QDir::cleanPath(activeDir.absoluteFilePath(fileName));
+                if (!activeFiles.contains(absFilePath)) {
+                    orphanedFiles.append(absFilePath);
+                    qDebug() << "    -> File: " << fileName << "(ORPHANED!)";
+                }
+            }
         }
     }
     
-    if (orphanedDirs.isEmpty()) {
-        QMessageBox::information(nullptr, QStringLiteral("提示"), QStringLiteral("未发现孤立文件夹。"));
+    if (orphanedDirs.isEmpty() && orphanedFiles.isEmpty()) {
+        QMessageBox::information(nullptr, QStringLiteral("提示"), QStringLiteral("未发现孤立文件夹或孤立文件。"));
         return;
     }
     
-    QString msg = QStringLiteral("发现以下孤立文件夹：\n");
-    for (const QString& dirName : orphanedDirs) {
-        msg += "- " + dirName + "\n";
+    QString msg = QStringLiteral("发现以下孤立项：\n");
+    if (!orphanedDirs.isEmpty()) {
+        msg += QStringLiteral("【孤立文件夹】\n");
+        for (const QString& dirName : orphanedDirs) {
+            msg += "- " + dirName + "\n";
+        }
+    }
+    if (!orphanedFiles.isEmpty()) {
+        msg += QStringLiteral("【孤立文件】\n");
+        for (const QString& filePath : orphanedFiles) {
+            msg += "- " + QFileInfo(filePath).fileName() + QStringLiteral(" (位于节点 ") + QFileInfo(QFileInfo(filePath).path()).fileName() + ")\n";
+        }
     }
     msg += QStringLiteral("\n是否确认删除它们？(此操作不可逆)");
     
@@ -316,7 +351,10 @@ void TreeView::CleanOrphanedFiles()
             QDir dir(projectPath + "/" + dirName);
             dir.removeRecursively();
         }
-        QMessageBox::information(nullptr, QStringLiteral("完成"), QStringLiteral("孤立文件夹已清理完毕。"));
+        for (const QString& filePath : orphanedFiles) {
+            QFile::remove(filePath);
+        }
+        QMessageBox::information(nullptr, QStringLiteral("完成"), QStringLiteral("孤立项已清理完毕。"));
     }
 }
 

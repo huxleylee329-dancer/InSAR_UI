@@ -198,6 +198,9 @@ void GenericSARImportNode::executeImport()
     QString resolvedFileName = m_outputFileName;
     resolvedFileName.replace("{InputName}", QFileInfo(m_imagePath).baseName());
 
+    // 清理旧数据，防止更换文件重新执行时导致历史记录累积
+    NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+
     m_task = new GenericSARImportTask(
         m_imagePath,
         projectPath(),

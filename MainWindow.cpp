@@ -795,6 +795,14 @@ void MainWindow::on_actionClose_triggered()
         updateInterfaceMenuCheckState();
     }
 }
+
+void MainWindow::on_actionCleanOrphanedFiles_triggered()
+{
+    if (m_workspaceUI && m_workspaceUI->treeView()) {
+        m_workspaceUI->treeView()->CleanOrphanedFiles();
+    }
+}
+
 void MainWindow::saveWorkflowToProject(const QString& projectFilePath)
 {
     if (!m_workflowUI || !this->project)

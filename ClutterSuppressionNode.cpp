@@ -346,6 +346,9 @@ void ClutterSuppressionNode::executeProcessing()
     m_savedOutputFiles = fileNames;
     m_outputImagePaths = outputPaths;
 
+    // 清理旧数据，防止反复执行导致数据累加
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
+
     m_task = new ClutterSuppressionTask(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
 
     connect(m_task, &ClutterSuppressionTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);

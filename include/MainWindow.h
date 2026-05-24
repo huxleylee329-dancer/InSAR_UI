@@ -139,6 +139,7 @@ private slots:
     void on_actionSave_triggered();
     // 关闭工程
     void on_actionClose_triggered();
+    void on_actionCleanOrphanedFiles_triggered();
 private:
     void setupThemeMenu();
     void setTheme(const QString &theme);

@@ -58,6 +58,7 @@
     <property name="title">
      <string>编辑</string>
     </property>
+    <addaction name="actionCleanOrphanedFiles"/>
    </widget>
    <widget class="QMenu" name="View">
     <property name="title">
@@ -358,6 +359,11 @@
   <action name="actionEvaluation">
    <property name="text">
     <string>Evaluation</string>
+   </property>
+  </action>
+  <action name="actionCleanOrphanedFiles">
+   <property name="text">
+    <string>清除孤立文件</string>
    </property>
   </action>
  </widget>

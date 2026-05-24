@@ -165,6 +165,9 @@ void GenericSARBatchImportNode::executeImport()
         importNameList.push_back(importName);
     }
 
+    // 清理旧数据，防止批量导入时反复执行导致数据累加
+    NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+
     m_task = new GenericSARBatchImportTask(
         projectPath(),
         originalFileList,
