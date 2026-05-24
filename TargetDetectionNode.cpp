@@ -307,6 +307,23 @@ void TargetDetectionNode::createWidget()
     layout->addStretch();
 }
 
+QStringList TargetDetectionNode::previewImagePaths() const
+{
+    if (m_inputData) {
+        return m_inputData->filePaths();
+    }
+    return QStringList();
+}
+
+QList<QStringList> TargetDetectionNode::detectionResults() const
+{
+    QList<QStringList> res;
+    for (const auto& r : m_savedResults) {
+        res.append(QStringList() << r.fileName << r.resultText << r.probability);
+    }
+    return res;
+}
+
 void TargetDetectionNode::stopExecution()
 {
     if (m_task)

@@ -47,6 +47,7 @@ struct NODE_EDITOR_PUBLIC NodeDataSnapshot
 
     /// Path to a preview image (e.g. from Generic SAR Import)
     QStringList previewImagePaths;
+    QList<QStringList> detectionResults;
 
     /// Helper to convert state to string
     static QString stateToString(int state)

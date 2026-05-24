@@ -39,6 +39,9 @@ public:
 
     QWidget* embeddedWidget() override;
     void createWidget();
+    
+    QStringList previewImagePaths() const override;
+    QList<QStringList> detectionResults() const override;
 
     bool isReady() const;
     void execute() override;

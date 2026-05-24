@@ -40,6 +40,7 @@ public:
     // 嵌入Widget
     QWidget* embeddedWidget() override;
     void createWidget();
+    QStringList previewImagePaths() const override;
 
     // 执行
     bool isReady() const;

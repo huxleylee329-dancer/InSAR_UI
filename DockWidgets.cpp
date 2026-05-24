@@ -1023,7 +1023,7 @@ void PropertyEditor::generateProcessingSection()
     QString infoBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.6)";
     QString noInfoTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
 
-    if (m_nodeData.processingInfo.isEmpty() && m_nodeData.previewImagePaths.isEmpty()) {
+    if (m_nodeData.processingInfo.isEmpty() && m_nodeData.previewImagePaths.isEmpty() && m_nodeData.detectionResults.isEmpty()) {
         QLabel* noInfoLabel = new QLabel("No processing info available");
         noInfoLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noInfoTextColor));
         contentLayout->addWidget(noInfoLabel);
@@ -1044,9 +1044,46 @@ void PropertyEditor::generateProcessingSection()
             contentLayout->addWidget(infoLabel);
         }
         
-        // Output image list if preview image paths are available
-        if (!m_nodeData.previewImagePaths.isEmpty()) {
-            QLabel* successLabel = new QLabel(QObject::tr("✅ Imported successfully: %1 files").arg(m_nodeData.previewImagePaths.size()));
+        // Output detection results or image list
+        if (!m_nodeData.detectionResults.isEmpty()) {
+            int detectedCount = 0;
+            for (const auto& row : m_nodeData.detectionResults) {
+                if (row.size() >= 2 && row[1].toLower() == "ship") {
+                    detectedCount++;
+                }
+            }
+            QLabel* successLabel = new QLabel(QObject::tr("✅ 处理完成：共处理 %1 张图像，发现目标 %2 个")
+                .arg(m_nodeData.detectionResults.size())
+                .arg(detectedCount));
+            successLabel->setStyleSheet(QString(
+                "QLabel {"
+                "  color: %1;"
+                "  font-weight: bold;"
+                "  margin-top: 4px;"
+                "  margin-bottom: 2px;"
+                "}"
+            ).arg(infoTextColor));
+            contentLayout->addWidget(successLabel);
+            
+            for (const auto& row : m_nodeData.detectionResults) {
+                if (row.size() >= 3) {
+                    QString colorHex = (row[1].toLower() == "ship") ? "#10B981" : "#6B7280";
+                    QLabel* fileLabel = new QLabel(QString("  - %1 [%2, %3]").arg(row[0], row[1], row[2]));
+                    fileLabel->setStyleSheet(QString(
+                        "QLabel {"
+                        "  color: %1;"
+                        "  background-color: %2;"
+                        "  padding: 4px 10px;"
+                        "  border-radius: 2px;"
+                        "  border-left: 2px solid %3;"
+                        "}"
+                    ).arg(infoTextColor, infoBg, colorHex));
+                    contentLayout->addWidget(fileLabel);
+                }
+            }
+        }
+        else if (!m_nodeData.previewImagePaths.isEmpty()) {
+            QLabel* successLabel = new QLabel(QObject::tr("✅ 成功输出文件：共 %1 个").arg(m_nodeData.previewImagePaths.size()));
             successLabel->setStyleSheet(QString(
                 "QLabel {"
                 "  color: %1;"
@@ -1681,6 +1718,7 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         // This section is reserved for future use (e.g., processing logs, messages, etc.)
         m_nodeData.processingInfo.clear();
         m_nodeData.previewImagePaths = execModel->previewImagePaths();
+        m_nodeData.detectionResults = execModel->detectionResults();
     } else {
         // Non-executable node - just capture port metadata
         int inputPortCount = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::InPortCount).toInt();
@@ -1725,6 +1763,7 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         // Processing info is cleared (reserved for future use)
         m_nodeData.processingInfo.clear();
         m_nodeData.previewImagePaths.clear();
+        m_nodeData.detectionResults.clear();
     }
 }
 

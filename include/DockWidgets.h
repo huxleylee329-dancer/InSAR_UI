@@ -235,6 +235,7 @@ private:
         QVector<QtNodes::ParameterInfo> parameters;  // 控件参数（可编辑）
         QVector<QString> processingInfo;
         QStringList previewImagePaths;
+        QList<QStringList> detectionResults;
     };
     NodeData m_nodeData;
 };

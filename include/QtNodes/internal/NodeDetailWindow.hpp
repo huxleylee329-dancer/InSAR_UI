@@ -9,6 +9,8 @@
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QFrame>
+#include <QtWidgets/QTableWidget>
+#include <QtWidgets/QHeaderView>
 #include "QtNodes/internal/NodeDataSnapshot.hpp"
 
 class ImageView;
@@ -72,17 +74,21 @@ private:
 
     // Multi-image preview state
     QStringList _previewImagePaths;
+    QList<QStringList> _detectionResults;
     int _currentPreviewIndex = 0;
     ImageView* _imageView = nullptr;
+    QLabel* _imageOverlayLabel = nullptr;
     QLabel* _imageNameLabel = nullptr;
     QPushButton* _prevButton = nullptr;
     QPushButton* _nextButton = nullptr;
+    QTableWidget* _resultsTable = nullptr;
 
     void updatePreviewImage();
 
 private Q_SLOTS:
     void onPrevPreviewClicked();
     void onNextPreviewClicked();
+    void onTableSelectionChanged();
 
 private:
     // Style constants - following ui2.md Section 135-168

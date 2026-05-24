@@ -229,6 +229,17 @@ void SpeckleDenoiseNode::createWidget()
     onSaveToProjectChanged(m_saveToProject ? Qt::Checked : Qt::Unchecked);
 }
 
+QStringList SpeckleDenoiseNode::previewImagePaths() const
+{
+    QStringList validPaths;
+    for (const QString& path : m_outputImagePaths) {
+        if (QFileInfo::exists(path)) {
+            validPaths << path;
+        }
+    }
+    return validPaths;
+}
+
 void SpeckleDenoiseNode::onSaveToProjectChanged(int state)
 {
     if (m_outputNodeNameEdit) {
@@ -596,6 +607,7 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
         }
 
         if (!validPaths.isEmpty() && validPaths.size() == m_savedOutputFiles.size()) {
+            m_outputImagePaths = validPaths;
             m_outputData = std::make_shared<ImageInfoData>(validPaths);
             setOutputData(0, m_outputData);
             setOutputData(1, m_outputData);
@@ -623,6 +635,8 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
     QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
 
     if (QFile::exists(outputPath)) {
+        m_outputImagePaths.clear();
+        m_outputImagePaths.append(outputPath);
         m_outputData = std::make_shared<ImageInfoData>(QStringList() << outputPath);
         setOutputData(0, m_outputData);
         setOutputData(1, m_outputData);
@@ -633,4 +647,3 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
 }
 
 } // namespace QtNodes
-

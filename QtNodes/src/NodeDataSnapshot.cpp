@@ -106,6 +106,9 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
 
     // Capture preview image path
     snapshot.previewImagePaths = model->previewImagePaths();
+    
+    // Capture detection results
+    snapshot.detectionResults = model->detectionResults();
 
     return snapshot;
 }

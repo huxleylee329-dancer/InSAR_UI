@@ -15,6 +15,7 @@
 #include <QDebug>
 #include <QFileInfo>
 #include "ImageView.h"
+#include "QtNodes/internal/StyleCollection.hpp"
 
 namespace QtNodes {
 
@@ -630,6 +631,7 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
     QString infoLabelTemplate = isDark ? STYLE_INFO_LABEL_TEMPLATE_DARK : STYLE_INFO_LABEL_TEMPLATE;
     
     _previewImagePaths = snapshot.previewImagePaths;
+    _detectionResults = snapshot.detectionResults;
     _currentPreviewIndex = 0;
     
     bool hasPreviewImage = !_previewImagePaths.isEmpty() && QFileInfo::exists(_previewImagePaths.first());
@@ -677,6 +679,74 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         if (_previewImagePaths.size() <= 1) {
             _prevButton->hide();
             _nextButton->hide();
+        }
+        
+        bool hasDetectionResults = !_detectionResults.isEmpty() && _detectionResults.size() == _previewImagePaths.size();
+        
+        if (hasDetectionResults) {
+            // Add overlay label above the navigation layout (under the image)
+            _imageOverlayLabel = new QLabel();
+            _imageOverlayLabel->setAlignment(Qt::AlignCenter);
+            _imageOverlayLabel->setWordWrap(true);
+            
+            QString overlayStyle = isDark ? 
+                "QLabel { background-color: #374151; color: #F9FAFB; border-radius: 6px; padding: 6px; font-size: 14px; margin: 4px 0px; }" :
+                "QLabel { background-color: #F3F4F6; color: #111827; border-radius: 6px; padding: 6px; font-size: 14px; margin: 4px 0px; border: 1px solid #E5E7EB; }";
+            _imageOverlayLabel->setStyleSheet(overlayStyle);
+            
+            _processingLayout->insertWidget(_processingLayout->indexOf(_imageView) + 1, _imageOverlayLabel);
+            
+            // Add results table
+            _resultsTable = new QTableWidget();
+            _resultsTable->setColumnCount(3);
+            _resultsTable->setHorizontalHeaderLabels({"文件名", "检测结果", "置信度"});
+            _resultsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+            _resultsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+            _resultsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+            _resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+            _resultsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+            _resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+            _resultsTable->verticalHeader()->setVisible(false);
+            _resultsTable->setAlternatingRowColors(true);
+            _resultsTable->setShowGrid(false);
+            
+            QString tableStyle = isDark ? 
+                "QTableWidget { background-color: #1F2937; alternate-background-color: #374151; border: 1px solid #4B5563; border-radius: 4px; color: #F3F4F6; }"
+                "QTableWidget::item { padding: 4px 8px; }"
+                "QTableWidget::item:selected { background-color: #3B82F6; color: white; }"
+                "QHeaderView::section { background-color: #111827; padding: 6px; border: none; border-bottom: 1px solid #4B5563; font-weight: bold; color: #D1D5DB; font-size: 13px; }" :
+                "QTableWidget { background-color: #FFFFFF; alternate-background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 4px; color: #1F2937; }"
+                "QTableWidget::item { padding: 4px 8px; }"
+                "QTableWidget::item:selected { background-color: #EFF6FF; color: #1D4ED8; }"
+                "QHeaderView::section { background-color: #F3F4F6; padding: 6px; border: none; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #4B5563; font-size: 13px; }";
+            _resultsTable->setStyleSheet(tableStyle);
+            
+            // Populate table
+            _resultsTable->setRowCount(_detectionResults.size());
+            for (int i = 0; i < _detectionResults.size(); ++i) {
+                const auto& rowData = _detectionResults[i];
+                if (rowData.size() >= 3) {
+                    _resultsTable->setItem(i, 0, new QTableWidgetItem(rowData[0]));
+                    
+                    auto* resultItem = new QTableWidgetItem(rowData[1]);
+                    resultItem->setTextAlignment(Qt::AlignCenter);
+                    if (rowData[1].toLower() == "ship") {
+                        resultItem->setForeground(QBrush(QColor(isDark ? "#34D399" : "#10B981"))); // Green
+                    }
+                    _resultsTable->setItem(i, 1, resultItem);
+                    
+                    auto* probItem = new QTableWidgetItem(rowData[2]);
+                    probItem->setTextAlignment(Qt::AlignCenter);
+                    _resultsTable->setItem(i, 2, probItem);
+                }
+            }
+            
+            connect(_resultsTable, &QTableWidget::itemSelectionChanged, this, &NodeDetailWindow::onTableSelectionChanged);
+            _processingLayout->addWidget(_resultsTable);
+            
+            // Adjust proportions
+            _imageView->setMinimumHeight(250);
+            _resultsTable->setMinimumHeight(200);
         }
         
         updatePreviewImage();
@@ -870,6 +940,25 @@ void NodeDetailWindow::updatePreviewImage()
             
         _prevButton->setEnabled(_currentPreviewIndex > 0);
         _nextButton->setEnabled(_currentPreviewIndex < _previewImagePaths.size() - 1);
+        
+        // Update overlay and sync table
+        if (_imageOverlayLabel && _resultsTable && _currentPreviewIndex < _detectionResults.size()) {
+            const auto& rowData = _detectionResults[_currentPreviewIndex];
+            if (rowData.size() >= 3) {
+                QString result = rowData[1];
+                QString prob = rowData[2];
+                bool isDark = isDarkTheme(this);
+                QString color = (result.toLower() == "ship") ? (isDark ? "#34D399" : "#10B981") : (isDark ? "#F87171" : "#EF4444"); // Green for ship, red for no ship
+                
+                _imageOverlayLabel->setText(QString(
+                    "检测结果: <b style='color: %1;'>%2</b> &nbsp;&nbsp;|&nbsp;&nbsp; 置信度: <b>%3</b>"
+                ).arg(color, result, prob));
+                
+                _resultsTable->blockSignals(true);
+                _resultsTable->selectRow(_currentPreviewIndex);
+                _resultsTable->blockSignals(false);
+            }
+        }
     }
 }
 
@@ -886,6 +975,17 @@ void NodeDetailWindow::onNextPreviewClicked()
     if (_currentPreviewIndex < _previewImagePaths.size() - 1) {
         _currentPreviewIndex++;
         updatePreviewImage();
+    }
+}
+
+void NodeDetailWindow::onTableSelectionChanged()
+{
+    if (_resultsTable) {
+        int row = _resultsTable->currentRow();
+        if (row >= 0 && row < _previewImagePaths.size()) {
+            _currentPreviewIndex = row;
+            updatePreviewImage();
+        }
     }
 }
 

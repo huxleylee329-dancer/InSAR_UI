@@ -70,6 +70,9 @@ public:
     /// Return an image path to be displayed in the detail view preview section
     virtual QStringList previewImagePaths() const { return QStringList(); }
 
+    /// Return detection results for display in the detail view
+    virtual QList<QStringList> detectionResults() const { return {}; }
+
     /// Set the nodeId and scene for visual updates (called when node is created)
     void setNodeContext(NodeId nodeId, BasicGraphicsScene *scene);
 
