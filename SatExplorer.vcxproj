@@ -307,18 +307,22 @@
     <ClCompile Include="GenericSARImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GenericSARImportTask.cpp" />
     <ClCompile Include="GenericSARBatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SpeckleDenoiseNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SpeckleDenoiseTask.cpp" />
     <ClCompile Include="TargetDetectionNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TargetDetectionTask.cpp" />
     <ClCompile Include="ClutterSuppressionNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ClutterSuppressionTask.cpp" />
     <ClCompile Include="ImageDisplayNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -738,18 +742,22 @@
     <QtMoc Include="include\GenericSARImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\GenericSARImportTask.h" />
     <QtMoc Include="include\GenericSARBatchImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SpeckleDenoiseNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\SpeckleDenoiseTask.h" />
     <QtMoc Include="include\TargetDetectionNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\TargetDetectionTask.h" />
     <QtMoc Include="include\ClutterSuppressionNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\ClutterSuppressionTask.h" />
     <QtMoc Include="include\ImageDisplayNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>

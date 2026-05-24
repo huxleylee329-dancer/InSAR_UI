@@ -4,7 +4,7 @@
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
-#include "MyThread.h"
+#include "GenericSARImportTask.h"
 
 #include <QWidget>
 #include <QListWidget>
@@ -15,7 +15,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileDialog>
-#include <QThread>
+#include <QThreadPool>
 
 namespace QtNodes {
 
@@ -49,8 +49,10 @@ protected:
     QString getOutputNodeName() const override;
 
     // Thread accessors
-    MyThread* workerThread() const override { return m_workerThread; }
-    QThread* qThread() const override { return m_thread; }
+    GenericSARBatchImportTask* m_task = nullptr;
+    MyThread* workerThread() const override { return nullptr; }
+    QThread* qThread() const override { return nullptr; }
+    void stopExecution() override;
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -63,8 +65,7 @@ private slots:
     void onThreadError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 
-signals:
-    void startGenericSARBatchImport(QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
+
 
 private:
     QString generateImportName(const QString& imagePath) const;
@@ -79,8 +80,7 @@ private:
 
     std::shared_ptr<ImageInfoData> m_imageInfoData;
 
-    MyThread* m_workerThread;
-    QThread* m_thread;
+
 };
 
 } // namespace QtNodes

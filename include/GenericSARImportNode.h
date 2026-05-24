@@ -2,7 +2,7 @@
 #define GENERICSARIMPORTNODE_H
 
 #include "ImportNodeBase.h"
-#include "MyThread.h"
+#include "GenericSARImportTask.h"
 #include "NodeDataTypes.h"
 
 #include <QWidget>
@@ -47,9 +47,11 @@ protected:
     QString getImportedFilePath() const override;
     QString getOutputNodeName() const override;
 
-    // Thread accessors
-    MyThread* workerThread() const override { return m_workerThread; }
-    QThread* qThread() const override { return m_thread; }
+    // Threading
+    GenericSARImportTask* m_task = nullptr;
+    MyThread* workerThread() const override { return nullptr; }
+    QThread* qThread() const override { return nullptr; }
+    void stopExecution() override;
 
 protected:
     void onImportFinished() override;

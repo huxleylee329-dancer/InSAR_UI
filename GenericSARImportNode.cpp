@@ -16,33 +16,16 @@ GenericSARImportNode::GenericSARImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_outputFileNameEdit(nullptr)
     , m_projectCombo(nullptr)
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
+    , m_task(nullptr)
 {
     m_outputFileName = "{InputName}";
 }
 
 GenericSARImportNode::~GenericSARImportNode()
 {
-    if (m_workerThread)
+    if (m_task)
     {
-        if (m_thread && m_thread->isRunning())
-            m_workerThread->StopProcess();
-
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-
-        m_thread->deleteLater();
-        m_thread = nullptr;
+        m_task->stop();
     }
 }
 
@@ -177,6 +160,11 @@ void GenericSARImportNode::executeImport()
         onError("未检测到打开的项目，请先打开或新建一个项目。");
         return;
     }
+    
+    if (m_task)
+    {
+        return;
+    }
 
     QString outputNodeName = getOutputNodeName();
     if (outputNodeName.isEmpty())
@@ -210,24 +198,7 @@ void GenericSARImportNode::executeImport()
     QString resolvedFileName = m_outputFileName;
     resolvedFileName.replace("{InputName}", QFileInfo(m_imagePath).baseName());
 
-    m_thread = new QThread(this);
-    m_workerThread = new MyThread();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(this, &GenericSARImportNode::startGenericSARImport,
-            m_workerThread, &MyThread::import_GenericSAR);
-    connect(m_workerThread, &MyThread::updateProcess,
-            this, &GenericSARImportNode::onImportProgress);
-    connect(m_workerThread, &MyThread::endProcess,
-            this, &GenericSARImportNode::onImportFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
-            this, &GenericSARImportNode::onThreadError);
-    connect(m_workerThread, &MyThread::sendModel,
-            this, &GenericSARImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    Q_EMIT startGenericSARImport(
+    m_task = new GenericSARImportTask(
         m_imagePath,
         projectPath(),
         getOutputNodeName(),
@@ -235,6 +206,17 @@ void GenericSARImportNode::executeImport()
         projectName(),
         projectModel()
     );
+
+    connect(m_task, &GenericSARImportTask::updateProcess,
+            this, &GenericSARImportNode::onImportProgress, Qt::QueuedConnection);
+    connect(m_task, &GenericSARImportTask::endProcess,
+            this, &GenericSARImportNode::onImportFinished, Qt::QueuedConnection);
+    connect(m_task, &GenericSARImportTask::errorProcess,
+            this, &GenericSARImportNode::onThreadError, Qt::QueuedConnection);
+    connect(m_task, &GenericSARImportTask::sendModel,
+            this, &GenericSARImportNode::onModelUpdated, Qt::QueuedConnection);
+
+    QThreadPool::globalInstance()->start(m_task);
 }
 
 QString GenericSARImportNode::getImportedFilePath() const
@@ -295,6 +277,12 @@ void GenericSARImportNode::onImportProgress(int progress, const QString& message
     setProgress(progress);
 }
 
+void GenericSARImportNode::stopExecution()
+{
+    ImportNodeBase::stopExecution();
+    if (m_task) m_task->stop();
+}
+
 void GenericSARImportNode::onImportFinished()
 {
     QString suffix = QFileInfo(m_imagePath).suffix();
@@ -317,7 +305,7 @@ void GenericSARImportNode::onImportFinished()
         Q_EMIT dataUpdated(0);
     }
 
-    // Port 1: 预览输出（保持使用原图路径或也改用导入后的路径，这里改用导入后的更统一）
+    // Port 1: 预览输出（保持使用导入后的路径更统一）
     if (!m_importedFilePath.isEmpty())
     {
         m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePath);
@@ -327,38 +315,14 @@ void GenericSARImportNode::onImportFinished()
 
     finishExecution();
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 }
 
 void GenericSARImportNode::onThreadError(const QString& error)
 {
     onError(error);
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 }
 
 void GenericSARImportNode::setExecutionMode(ExecutionMode mode)

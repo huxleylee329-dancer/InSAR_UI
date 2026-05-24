@@ -29,8 +29,7 @@ ClutterSuppressionNode::ClutterSuppressionNode()
     , m_saveToProject(true)
     , m_outputNodeName("ClutterSuppression")
     , m_outputFileName("{InputName}_clutter")
-    , m_thread(nullptr)
-    , m_workerThread(nullptr)
+    , m_task(nullptr)
 {
     setExecutionMode(ExecutionMode::Automatic);
 }
@@ -39,22 +38,7 @@ ClutterSuppressionNode::~ClutterSuppressionNode()
 {
     stopExecution();
 
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
 
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
 }
 
 unsigned int ClutterSuppressionNode::nPorts(PortType portType) const
@@ -252,16 +236,16 @@ void ClutterSuppressionNode::onSaveToProjectChanged(int state)
 
 void ClutterSuppressionNode::stopExecution()
 {
-    if (m_workerThread)
+    if (m_task)
     {
-        m_workerThread->StopProcess();
+        m_task->stop();
     }
     setState(ExecutionState::Stopped);
 }
 
 void ClutterSuppressionNode::processAutomatically()
 {
-    if (m_thread || m_workerThread) {
+    if (m_task) {
         return;
     }
 
@@ -304,22 +288,10 @@ void ClutterSuppressionNode::execute()
 
 void ClutterSuppressionNode::executeProcessing()
 {
-    if (m_thread || m_workerThread)
+    if (m_task)
     {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        if (m_thread) {
-            m_thread->deleteLater();
-            m_thread = nullptr;
-        }
-        if (m_workerThread) {
-            m_workerThread->deleteLater();
-            m_workerThread = nullptr;
-        }
-        disconnect(this, &ClutterSuppressionNode::startClutterSuppression, nullptr, nullptr);
+        m_task->stop();
+        m_task = nullptr;
     }
 
     if (!isReady()) {
@@ -374,21 +346,15 @@ void ClutterSuppressionNode::executeProcessing()
     m_savedOutputFiles = fileNames;
     m_outputImagePaths = outputPaths;
 
-    m_thread = new QThread(this);
-    m_workerThread = new MyThread();
-    m_workerThread->moveToThread(m_thread);
+    m_task = new ClutterSuppressionTask(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
 
-    connect(m_thread, &QThread::started, [this, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr]() {
-        Q_EMIT startClutterSuppression(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
-    });
-    connect(this, &ClutterSuppressionNode::startClutterSuppression, m_workerThread, &MyThread::Clutter_Suppression, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::errorProcess, this, &ClutterSuppressionNode::onError, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &ClutterSuppressionTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(m_task, &ClutterSuppressionTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(m_task, &ClutterSuppressionTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
+    connect(m_task, &ClutterSuppressionTask::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::QueuedConnection);
+    connect(m_task, &ClutterSuppressionTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::BlockingQueuedConnection);
 
-    m_thread->start();
+    QThreadPool::globalInstance()->start(m_task);
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
@@ -439,18 +405,7 @@ void ClutterSuppressionNode::onProcessingFinished()
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 
     finishExecution();
 }
@@ -466,18 +421,7 @@ void ClutterSuppressionNode::onError(const QString& error)
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 
     m_outputData.reset();
 }

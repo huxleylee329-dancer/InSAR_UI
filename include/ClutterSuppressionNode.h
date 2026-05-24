@@ -2,12 +2,12 @@
 
 #include "NodeDataTypes.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
-#include "MyThread.h"
+#include "ClutterSuppressionTask.h"
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
 #include <QFileInfo>
-#include <QThread>
+#include <QThreadPool>
 
 
 class IApplicationInterface;
@@ -54,9 +54,7 @@ public:
 protected:
     bool validateAndRestoreOutput() override;
 
-signals:
-    void startClutterSuppression(QStringList inputPaths, QStringList outputPaths, QString nodeName, QStringList fileNames,
-                            QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);
+
 
 private Q_SLOTS:
     void onSaveToProjectChanged(int state);
@@ -93,8 +91,7 @@ private:
     bool m_saveToProject = true;
 
     // Threading
-    QThread* m_thread = nullptr;
-    MyThread* m_workerThread = nullptr;
+    ClutterSuppressionTask* m_task = nullptr;
 };
 
 } // namespace QtNodes

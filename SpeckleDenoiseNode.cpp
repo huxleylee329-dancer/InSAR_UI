@@ -30,8 +30,7 @@ SpeckleDenoiseNode::SpeckleDenoiseNode()
     , m_saveToProject(true)
     , m_outputNodeName("Denoise")
     , m_outputFileName("{InputName}_denoised")
-    , m_thread(nullptr)
-    , m_workerThread(nullptr)
+    , m_task(nullptr)
 {
     setExecutionMode(ExecutionMode::Automatic);
 }
@@ -40,22 +39,7 @@ SpeckleDenoiseNode::~SpeckleDenoiseNode()
 {
     stopExecution();
 
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
 
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
 }
 
 unsigned int SpeckleDenoiseNode::nPorts(PortType portType) const
@@ -257,9 +241,9 @@ void SpeckleDenoiseNode::onSaveToProjectChanged(int state)
 
 void SpeckleDenoiseNode::stopExecution()
 {
-    if (m_workerThread)
+    if (m_task)
     {
-        m_workerThread->StopProcess();
+        m_task->stop();
     }
     setState(ExecutionState::Stopped);
 }
@@ -268,7 +252,7 @@ void SpeckleDenoiseNode::processAutomatically()
 {
     // CRITICAL: Prevent duplicate execution - check if already processing
     // m_thread being non-null means execution is in progress
-    if (m_thread || m_workerThread) {
+    if (m_task) {
         return;
     }
 
@@ -320,24 +304,10 @@ void SpeckleDenoiseNode::executeProcessing()
 
     // CRITICAL: Clean up existing threads FIRST - before any state change
     // This prevents duplicate execution if setInData is called multiple times
-    if (m_thread || m_workerThread)
+    if (m_task)
     {
-
-        if (m_thread && m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        if (m_thread) {
-            m_thread->deleteLater();
-            m_thread = nullptr;
-        }
-        if (m_workerThread) {
-            m_workerThread->deleteLater();
-            m_workerThread = nullptr;
-        }
-        // Disconnect all signals to prevent stale connections
-        disconnect(this, &SpeckleDenoiseNode::startSpeckleDenoise, nullptr, nullptr);
+        m_task->stop();
+        m_task = nullptr;
     }
 
     if (!isReady()) {
@@ -401,25 +371,15 @@ void SpeckleDenoiseNode::executeProcessing()
 
 
 
-    // Create thread
-    m_thread = new QThread(this);
-    m_workerThread = new MyThread();
-    m_workerThread->moveToThread(m_thread);
+    m_task = new SpeckleDenoiseTask(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
 
-    // Connect signals - capture ALL values by value to avoid race conditions
-    connect(m_thread, &QThread::started, [this, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr]() {
+    connect(m_task, &SpeckleDenoiseTask::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(m_task, &SpeckleDenoiseTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(m_task, &SpeckleDenoiseTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
+    connect(m_task, &SpeckleDenoiseTask::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::QueuedConnection);
+    connect(m_task, &SpeckleDenoiseTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::BlockingQueuedConnection);
 
-        Q_EMIT startSpeckleDenoise(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
-    });
-    connect(this, &SpeckleDenoiseNode::startSpeckleDenoise, m_workerThread, &MyThread::Speckle_Denoise, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::BlockingQueuedConnection);
-
-    // Start thread
-    m_thread->start();
+    QThreadPool::globalInstance()->start(m_task);
 
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
@@ -478,19 +438,7 @@ void SpeckleDenoiseNode::onProcessingFinished()
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 
-    // Clean up threads
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 
     finishExecution();
 }
@@ -508,19 +456,7 @@ void SpeckleDenoiseNode::onError(const QString& error)
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
 
-    // Clean up threads
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 
     // Clear placeholder output data on error
     m_outputData.reset();

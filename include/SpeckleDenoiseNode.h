@@ -2,12 +2,12 @@
 
 #include "NodeDataTypes.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
-#include "MyThread.h"
+#include "SpeckleDenoiseTask.h"
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
 #include <QFileInfo>
-#include <QThread>
+#include <QThreadPool>
 
 class IApplicationInterface;
 class QStandardItemModel;
@@ -53,9 +53,7 @@ public:
 protected:
     bool validateAndRestoreOutput() override;
 
-signals:
-    void startSpeckleDenoise(QStringList inputPaths, QStringList outputPaths, QString nodeName, QStringList fileNames,
-                            QString projectPath, QString projectName, QStandardItemModel* model, bool saveToProject, XMLFile* projectXml);
+
 
 private Q_SLOTS:
     void onSaveToProjectChanged(int state);
@@ -92,8 +90,7 @@ private:
     bool m_saveToProject = true;
 
     // Threading
-    QThread* m_thread = nullptr;
-    MyThread* m_workerThread = nullptr;
+    SpeckleDenoiseTask* m_task = nullptr;
 };
 
 } // namespace QtNodes

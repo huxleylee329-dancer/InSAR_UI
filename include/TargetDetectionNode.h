@@ -3,11 +3,11 @@
 
 #include "NodeDataTypes.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
-#include "MyThread.h"
+#include "TargetDetectionTask.h"
 #include <QLineEdit>
 #include <QLabel>
 #include <QComboBox>
-#include <QThread>
+#include <QThreadPool>
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QPushButton>
@@ -51,9 +51,6 @@ public:
 protected:
     bool validateAndRestoreOutput() override;
 
-signals:
-    void startTargetDetection(QStringList imagePaths, QString modelPath, float thresholdValue);
-
 private Q_SLOTS:
     void onProgressUpdate(int progress, const QString& message);
     void onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg);
@@ -93,8 +90,7 @@ private:
     QList<DetectionResult> m_savedResults;
 
     // Threading
-    QThread* m_thread = nullptr;
-    MyThread* m_workerThread = nullptr;
+    TargetDetectionTask* m_task = nullptr;
 };
 
 } // namespace QtNodes

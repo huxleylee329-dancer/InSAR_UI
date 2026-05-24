@@ -17,32 +17,15 @@ GenericSARBatchImportNode::GenericSARBatchImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
     , m_projectCombo(nullptr)
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
+    , m_task(nullptr)
 {
 }
 
 GenericSARBatchImportNode::~GenericSARBatchImportNode()
 {
-    if (m_workerThread)
+    if (m_task)
     {
-        if (m_thread && m_thread->isRunning())
-            m_workerThread->StopProcess();
-
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-
-        m_thread->deleteLater();
-        m_thread = nullptr;
+        m_task->stop();
     }
 }
 
@@ -161,6 +144,11 @@ void GenericSARBatchImportNode::executeImport()
         return;
     }
 
+    if (m_task)
+    {
+        return;
+    }
+
     std::vector<QString> originalFileList;
     std::vector<QString> importNameList;
 
@@ -177,24 +165,7 @@ void GenericSARBatchImportNode::executeImport()
         importNameList.push_back(importName);
     }
 
-    m_thread = new QThread(this);
-    m_workerThread = new MyThread();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(this, &GenericSARBatchImportNode::startGenericSARBatchImport,
-            m_workerThread, &MyThread::import_GenericSAR_patch);
-    connect(m_workerThread, &MyThread::updateProcess,
-            this, &GenericSARBatchImportNode::onImportProgress);
-    connect(m_workerThread, &MyThread::endProcess,
-            this, &GenericSARBatchImportNode::onImportFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
-            this, &GenericSARBatchImportNode::onThreadError);
-    connect(m_workerThread, &MyThread::sendModel,
-            this, &GenericSARBatchImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    Q_EMIT startGenericSARBatchImport(
+    m_task = new GenericSARBatchImportTask(
         projectPath(),
         originalFileList,
         importNameList,
@@ -202,6 +173,17 @@ void GenericSARBatchImportNode::executeImport()
         projectName(),
         projectModel()
     );
+
+    connect(m_task, &GenericSARBatchImportTask::updateProcess,
+            this, &GenericSARBatchImportNode::onImportProgress, Qt::QueuedConnection);
+    connect(m_task, &GenericSARBatchImportTask::endProcess,
+            this, &GenericSARBatchImportNode::onImportFinished, Qt::QueuedConnection);
+    connect(m_task, &GenericSARBatchImportTask::errorProcess,
+            this, &GenericSARBatchImportNode::onThreadError, Qt::QueuedConnection);
+    connect(m_task, &GenericSARBatchImportTask::sendModel,
+            this, &GenericSARBatchImportNode::onModelUpdated, Qt::QueuedConnection);
+
+    QThreadPool::globalInstance()->start(m_task);
 }
 
 QString GenericSARBatchImportNode::getImportedFilePath() const
@@ -365,6 +347,12 @@ void GenericSARBatchImportNode::onImportProgress(int progress, const QString& me
     setProgress(progress);
 }
 
+void GenericSARBatchImportNode::stopExecution()
+{
+    ImportNodeBase::stopExecution();
+    if (m_task) m_task->stop();
+}
+
 void GenericSARBatchImportNode::onImportFinished()
 {
     QString outputNodeName = getOutputNodeName();
@@ -375,10 +363,7 @@ void GenericSARBatchImportNode::onImportFinished()
         QString importName = generateImportName(imagePath);
         QString suffix = QFileInfo(imagePath).suffix();
         QString filePath = QString("%1/%2/%3.%4")
-            .arg(projectPath())
-            .arg(outputNodeName)
-            .arg(importName)
-            .arg(suffix);
+            .arg(projectPath(), outputNodeName, importName, suffix);
 
         m_importedFilePaths.append(filePath);
     }
@@ -393,38 +378,14 @@ void GenericSARBatchImportNode::onImportFinished()
 
     finishExecution();
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 }
 
 void GenericSARBatchImportNode::onThreadError(const QString& error)
 {
     onError(error);
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 }
 
 void GenericSARBatchImportNode::setExecutionMode(ExecutionMode mode)

@@ -32,8 +32,7 @@ TargetDetectionNode::TargetDetectionNode()
     , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
-    , m_thread(nullptr)
-    , m_workerThread(nullptr)
+    , m_task(nullptr)
 {
     setExecutionMode(ExecutionMode::Automatic);
 }
@@ -41,23 +40,6 @@ TargetDetectionNode::TargetDetectionNode()
 TargetDetectionNode::~TargetDetectionNode()
 {
     stopExecution();
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
 }
 
 unsigned int TargetDetectionNode::nPorts(PortType portType) const
@@ -327,16 +309,16 @@ void TargetDetectionNode::createWidget()
 
 void TargetDetectionNode::stopExecution()
 {
-    if (m_workerThread)
+    if (m_task)
     {
-        m_workerThread->StopProcess();
+        m_task->stop();
     }
     setState(ExecutionState::Stopped);
 }
 
 void TargetDetectionNode::processAutomatically()
 {
-    if (m_thread || m_workerThread) {
+    if (m_task) {
         return;
     }
 
@@ -365,22 +347,10 @@ void TargetDetectionNode::execute()
 
 void TargetDetectionNode::executeProcessing()
 {
-    if (m_thread || m_workerThread)
+    if (m_task)
     {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        if (m_thread) {
-            m_thread->deleteLater();
-            m_thread = nullptr;
-        }
-        if (m_workerThread) {
-            m_workerThread->deleteLater();
-            m_workerThread = nullptr;
-        }
-        disconnect(this, &TargetDetectionNode::startTargetDetection, nullptr, nullptr);
+        m_task->stop();
+        m_task = nullptr; // Note: QThreadPool auto-deletes the task when it finishes.
     }
 
     if (!isReady()) {
@@ -406,20 +376,14 @@ void TargetDetectionNode::executeProcessing()
     QString modelPath = m_selectedModelPath;
     float thresholdValue = m_thresholdValue;
 
-    m_thread = new QThread(this);
-    m_workerThread = new MyThread();
-    m_workerThread->moveToThread(m_thread);
+    m_task = new TargetDetectionTask(inputPaths, modelPath, thresholdValue);
 
-    connect(m_thread, &QThread::started, [this, inputPaths, modelPath, thresholdValue]() {
-        Q_EMIT startTargetDetection(inputPaths, modelPath, thresholdValue);
-    });
-    connect(this, &TargetDetectionNode::startTargetDetection, m_workerThread, &MyThread::Target_Detection, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::updateProcess, this, &TargetDetectionNode::onProgressUpdate, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::sendTargetDetectionResult, this, &TargetDetectionNode::onDetectionFinished, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::errorProcess, this, &TargetDetectionNode::onError, Qt::UniqueConnection);
-    connect(m_workerThread, &MyThread::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &TargetDetectionTask::updateProcess, this, &TargetDetectionNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::sendTargetDetectionResult, this, &TargetDetectionNode::onDetectionFinished, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::errorProcess, this, &TargetDetectionNode::onError, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::BlockingQueuedConnection);
 
-    m_thread->start();
+    QThreadPool::globalInstance()->start(m_task);
     
     if (m_modelComboBox) m_modelComboBox->setEnabled(false);
     if (m_thresholdEdit) m_thresholdEdit->setEnabled(false);
@@ -507,18 +471,7 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
         if (m_modelComboBox) m_modelComboBox->setEnabled(true);
         if (m_thresholdEdit) m_thresholdEdit->setEnabled(true);
 
-        if (m_thread)
-        {
-            m_thread->quit();
-            m_thread->wait();
-            m_thread->deleteLater();
-            m_thread = nullptr;
-        }
-        if (m_workerThread)
-        {
-            m_workerThread->deleteLater();
-            m_workerThread = nullptr;
-        }
+        m_task = nullptr;
     }
 }
 
@@ -533,18 +486,7 @@ void TargetDetectionNode::onError(const QString& error)
     if (m_modelComboBox) m_modelComboBox->setEnabled(true);
     if (m_thresholdEdit) m_thresholdEdit->setEnabled(true);
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_task = nullptr;
 
     m_outputData.reset();
 }

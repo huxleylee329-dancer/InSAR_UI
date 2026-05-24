@@ -448,6 +448,18 @@
     <ClCompile Include="EvaluationSCRNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TargetDetectionTask.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SpeckleDenoiseTask.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClutterSuppressionTask.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GenericSARImportTask.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\Cut.h">
@@ -796,6 +808,18 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\EvaluationSCRNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TargetDetectionTask.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SpeckleDenoiseTask.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ClutterSuppressionTask.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GenericSARImportTask.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
