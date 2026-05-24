@@ -104,6 +104,12 @@ void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
 
+    if (!m_inputData || m_inputData->filePath().isEmpty()) {
+        m_outputData.reset();
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+    }
+
     if (m_inputImageLabel) {
         if (m_inputData && !m_inputData->filePath().isEmpty()) {
             QFileInfo fi(m_inputData->filePath());
@@ -273,9 +279,11 @@ void SpeckleDenoiseNode::processAutomatically()
             m_outputData = std::make_shared<ImageInfoData>("");
             setOutputData(0, m_outputData);
             setOutputData(1, m_outputData);
-            qDebug() << "[SpeckleDenoiseNode] Set placeholder output data to prevent Idle reset";
+
         }
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 
@@ -308,13 +316,13 @@ void SpeckleDenoiseNode::execute()
 
 void SpeckleDenoiseNode::executeProcessing()
 {
-    qDebug() << "[SpeckleDenoiseNode] executeProcessing START";
+
 
     // CRITICAL: Clean up existing threads FIRST - before any state change
     // This prevents duplicate execution if setInData is called multiple times
     if (m_thread || m_workerThread)
     {
-        qDebug() << "[SpeckleDenoiseNode] Cleaning up existing threads";
+
         if (m_thread && m_thread->isRunning())
         {
             m_thread->quit();
@@ -333,7 +341,7 @@ void SpeckleDenoiseNode::executeProcessing()
     }
 
     if (!isReady()) {
-        qDebug() << "[SpeckleDenoiseNode] Not ready, aborting";
+
         if (m_statusLabel) {
             m_statusLabel->setText("状态：未准备好");
         }
@@ -391,14 +399,7 @@ void SpeckleDenoiseNode::executeProcessing()
     m_savedOutputFiles = fileNames;
     m_outputImagePaths = outputPaths;
 
-    qDebug() << "[SpeckleDenoiseNode] Starting with params:"
-             << "\n  inputPaths:" << inputPaths
-             << "\n  outputNodeName:" << outputNodeName
-             << "\n  baseFileName:" << baseFileName
-             << "\n  saveToProject:" << saveToProject
-             << "\n  projPath:" << projPath
-             << "\n  projName:" << projName
-             << "\n  temp outputPaths count:" << outputPaths.size();
+
 
     // Create thread
     m_thread = new QThread(this);
@@ -407,7 +408,7 @@ void SpeckleDenoiseNode::executeProcessing()
 
     // Connect signals - capture ALL values by value to avoid race conditions
     connect(m_thread, &QThread::started, [this, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr]() {
-        qDebug() << "[SpeckleDenoiseNode] Thread started, emitting startSpeckleDenoise";
+
         Q_EMIT startSpeckleDenoise(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
     });
     connect(this, &SpeckleDenoiseNode::startSpeckleDenoise, m_workerThread, &MyThread::Speckle_Denoise, Qt::UniqueConnection);
@@ -419,7 +420,7 @@ void SpeckleDenoiseNode::executeProcessing()
 
     // Start thread
     m_thread->start();
-    qDebug() << "[SpeckleDenoiseNode] Thread started, worker created";
+
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
@@ -435,7 +436,7 @@ void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)
 
 void SpeckleDenoiseNode::onProcessingFinished()
 {
-    qDebug() << "[SpeckleDenoiseNode] onProcessingFinished called";
+
 
     // Determine the result path
     if (m_saveToProject) {
@@ -457,9 +458,9 @@ void SpeckleDenoiseNode::onProcessingFinished()
             }
             m_outputImagePaths.append(projDirStr + "/" + nodeName + "/" + finalFileName);
         }
-        qDebug() << "[SpeckleDenoiseNode] Output image paths (using node folder):" << m_outputImagePaths;
+
     } else {
-        qDebug() << "[SpeckleDenoiseNode] Output image paths (using temp folder):" << m_outputImagePaths;
+
     }
 
     m_outputData = std::make_shared<ImageInfoData>(m_outputImagePaths);
@@ -491,13 +492,12 @@ void SpeckleDenoiseNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
-    qDebug() << "[SpeckleDenoiseNode] Processing finished, calling finishExecution";
     finishExecution();
 }
 
 void SpeckleDenoiseNode::onError(const QString& error)
 {
-    qDebug() << "[SpeckleDenoiseNode] onError called:" << error;
+
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
     if (m_statusLabel) {
@@ -524,7 +524,7 @@ void SpeckleDenoiseNode::onError(const QString& error)
 
     // Clear placeholder output data on error
     m_outputData.reset();
-    qDebug() << "[SpeckleDenoiseNode] Error handling complete";
+
 }
 
 void SpeckleDenoiseNode::onModelUpdated(QStandardItemModel* model)
@@ -648,7 +648,11 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
     if (!m_savedOutputFiles.isEmpty()) {
         QStringList validPaths;
         for (const QString& fileName : m_savedOutputFiles) {
-            QString outputPath = projDirStr + "/" + nodeName + "/" + fileName;
+            QString finalFileName = fileName;
+            if (!finalFileName.endsWith(".png", Qt::CaseInsensitive)) {
+                finalFileName += ".png";
+            }
+            QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
             if (QFile::exists(outputPath)) {
                 validPaths.append(outputPath);
             }
@@ -667,10 +671,15 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
     if (m_outputFileName.isEmpty()) {
         return false;
     } else {
-        if (QFileInfo(m_outputFileName).suffix().isEmpty()) {
-            finalFileName = m_outputFileName + ".png";
+        QString resolvedFileName = m_outputFileName;
+        if (m_inputData && !m_inputData->filePaths().isEmpty()) {
+            QString originalName = QFileInfo(m_inputData->filePaths().first()).baseName();
+            resolvedFileName.replace("{InputName}", originalName, Qt::CaseInsensitive);
+        }
+        if (QFileInfo(resolvedFileName).suffix().isEmpty()) {
+            finalFileName = resolvedFileName + ".png";
         } else {
-            finalFileName = m_outputFileName;
+            finalFileName = resolvedFileName;
         }
     }
 

@@ -752,13 +752,13 @@ void MyThread::import_GenericSAR_patch(
 	QStandardItemModel* model
 )
 {
-	qDebug() << "[MyThread::import_GenericSAR_patch] ===== 函数开始 =====";
-	qDebug() << "[MyThread::import_GenericSAR_patch] savepath: " << savepath;
-	qDebug() << "[MyThread::import_GenericSAR_patch] dst_node: " << dst_node;
-	qDebug() << "[MyThread::import_GenericSAR_patch] dst_project: " << dst_project;
-	qDebug() << "[MyThread::import_GenericSAR_patch] model: " << model;
-	qDebug() << "[MyThread::import_GenericSAR_patch] original_file_list 数量: " << original_file_list.size();
-	qDebug() << "[MyThread::import_GenericSAR_patch] import_namelist 数量: " << import_namelist.size();
+
+
+
+
+
+
+
 
 	if (savepath.isEmpty() ||
 		dst_node.isEmpty() ||
@@ -768,31 +768,30 @@ void MyThread::import_GenericSAR_patch(
 		model == NULL
 		)
 	{
-		qDebug() << "[MyThread::import_GenericSAR_patch] 错误: 参数检查失败！";
-		qDebug() << "  savepath.isEmpty()=" << savepath.isEmpty();
-		qDebug() << "  dst_node.isEmpty()=" << dst_node.isEmpty();
-		qDebug() << "  dst_project.isEmpty()=" << dst_project.isEmpty();
-		qDebug() << "  original_file_list.empty()=" << original_file_list.empty();
-		qDebug() << "  import_namelist.empty()=" << import_namelist.empty();
-		qDebug() << "  model == NULL=" << (model == NULL);
+
+
+
+
+
+
+
 		emit endProcess();
 		return;
 	}
 
-	qDebug() << "[MyThread::import_GenericSAR_patch] 参数检查通过";
 	int ret=0;
 	QDir dir(savepath);
-	qDebug() << "[MyThread::import_GenericSAR_patch] 检查目录: " << savepath + "/" + dst_node;
+
 	if (!dir.exists(dst_node))
 	{
 		ret = dir.mkdir(dst_node);
-		qDebug() << "[MyThread::import_GenericSAR_patch] 创建目录结果: " << ret;
+
 	}
 	int n_images = original_file_list.size();
 	int process = 2;
 	DOC = new XMLFile;
 	emit updateProcess(process, QStringLiteral("正在导入..."));
-	qDebug() << "[MyThread::import_GenericSAR_patch] 开始循环处理 " << n_images << " 个文件";
+
 	for (int i = 0; i < n_images; i++)
 	{
 		if (!stop_flag) break;
@@ -801,8 +800,7 @@ void MyThread::import_GenericSAR_patch(
         QFileInfo fileinfo(image_filename);
         QString suffix = fileinfo.suffix();
 
-		qDebug() << "[MyThread::import_GenericSAR_patch] 处理文件 " << i+1 << "/" << n_images
-				 << ": " << filename << " 源文件: " << image_filename;
+
 
         QString temp_folder = QString("/") + dst_node + QString("/");
         QString relative_path = temp_folder + filename + "." + suffix;
@@ -812,21 +810,20 @@ void MyThread::import_GenericSAR_patch(
             .arg(filename)
             .arg(suffix);
 
-		qDebug() << "[MyThread::import_GenericSAR_patch] 复制文件: " << image_filename << " -> " << image_path;
 		if (QFile::exists(image_path))
 		{
-			qDebug() << "[MyThread::import_GenericSAR_patch] 文件已存在，跳过复制";
+
 			ret = 0;
 		}
 		else
 		{
 			ret = QFile::copy(image_filename, image_path) ? 0 : -1;
-			qDebug() << "[MyThread::import_GenericSAR_patch] 复制结果: " << (ret == 0 ? "成功" : "失败");
+
 		}
 
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
-			qDebug() << "[MyThread::import_GenericSAR_patch] 复制失败或被中断，清理并返回";
+
 			QFile::remove(image_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
@@ -834,12 +831,11 @@ void MyThread::import_GenericSAR_patch(
 			return;
 		}
 
-		qDebug() << "[MyThread::import_GenericSAR_patch] 在 model 中查找项目: " << dst_project;
 		QList<QStandardItem*> foundItems = model->findItems(dst_project);
-		qDebug() << "[MyThread::import_GenericSAR_patch] findItems 找到 " << foundItems.size() << " 个匹配项";
+
 		QStandardItem* project = foundItems[0];
 		if (!project) {
-			qDebug() << "[MyThread::import_GenericSAR_patch] 错误: 找不到项目节点！";
+
 			QFile::remove(image_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
@@ -918,10 +914,9 @@ void MyThread::import_GenericSAR_patch(
 		emit updateProcess(process, QStringLiteral("正在导入..."));
 	}
 
-	qDebug() << "[MyThread::import_GenericSAR_patch] 循环处理完成，发送 sendModel 和 endProcess";
 	emit sendModel(model);
 	emit endProcess();
-	qDebug() << "[MyThread::import_GenericSAR_patch] ===== 函数正常结束 =====";
+
 }
 
 void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_list, vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model)

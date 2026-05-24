@@ -1,4 +1,5 @@
 #include "EvaluationSCRNode.h"
+#include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -250,9 +251,9 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
     }
 
     auto getScr = [this](const QString& path) -> double {
-        if (path.isEmpty()) return -1.0;
+        if (path.isEmpty()) return -9999.0;
         cv::Mat mat = cv::imread(path.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
-        if (mat.empty()) return -1.0;
+        if (mat.empty()) return -9999.0;
         
         cv::Rect targetRect;
         cv::Rect clutterRect;
@@ -269,7 +270,7 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         targetRect &= bounds;
         clutterRect &= bounds;
         
-        if (targetRect.width < 2 || targetRect.height < 2 || clutterRect.width < 2 || clutterRect.height < 2) return -1.0;
+        if (targetRect.width < 2 || targetRect.height < 2 || clutterRect.width < 2 || clutterRect.height < 2) return -9999.0;
         
         cv::Mat targetMat = mat(targetRect);
         cv::Mat clutterMat = mat(clutterRect);
@@ -291,20 +292,21 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         double origScr = getScr(origPath);
         double filtScr = getScr(filtPath);
 
-        QString origScrStr = origScr >= 0.0 ? QString::number(origScr, 'f', 4) : "--";
-        QString filtScrStr = filtScr >= 0.0 ? QString::number(filtScr, 'f', 4) : "--";
+        QString origScrStr = origScr > -9000.0 ? QString::number(origScr, 'f', 4) : "--";
+        QString filtScrStr = filtScr > -9000.0 ? QString::number(filtScr, 'f', 4) : "--";
         QString impStr = "--";
 
-        if (origScr >= 0.0) {
+        if (origScr > -9000.0) {
             totalOrigScr += origScr;
             validOrigCount++;
         }
-        if (filtScr >= 0.0) {
+        if (filtScr > -9000.0) {
             totalFiltScr += filtScr;
             validFiltCount++;
         }
-        if (origScr >= 0.0 && filtScr >= 0.0 && origScr > 1e-12) {
-            double imp = ((filtScr - origScr) / origScr) * 100.0;
+        if (origScr > -9000.0 && filtScr > -9000.0) {
+            double denom = std::abs(origScr) < 1e-12 ? 1e-12 : std::abs(origScr);
+            double imp = ((filtScr - origScr) / denom) * 100.0;
             impStr = QString::number(imp, 'f', 2);
             totalImp += imp;
             validImpCount++;
@@ -358,7 +360,14 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         }
     } else {
         if (singleView) singleView->hide();
-        m_summaryLabel->setText(QStringLiteral("错误：无法读取全部 %1 对图像，请检查路径。").arg(maxCount));
+        QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
+        if (maxCount > 0) {
+            QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
+            QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
+            if (getScr(origPath) < -9000.0) errorMsg += QString("原图失败: %1\n").arg(origPath);
+            if (getScr(filtPath) < -9000.0) errorMsg += QString("滤波图失败: %1").arg(filtPath);
+        }
+        m_summaryLabel->setText(errorMsg.arg(maxCount));
         m_summaryLabel->show();
         m_expandLabel->hide();
         m_resultsTable->hide();

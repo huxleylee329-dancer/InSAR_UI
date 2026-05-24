@@ -331,7 +331,16 @@ void EvaluationENLNode::calculateAndDisplayENL()
         }
     } else {
         if (singleView) singleView->hide();
-        m_summaryLabel->setText(QStringLiteral("错误：无法读取全部 %1 对图像，请检查路径。").arg(count));
+        QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
+        if (count > 0) {
+            QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
+            QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
+            if (origPath == "空路径" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                errorMsg += QString("原图失败: %1\n").arg(origPath);
+            if (filtPath == "空路径" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                errorMsg += QString("滤波图失败: %1").arg(filtPath);
+        }
+        m_summaryLabel->setText(errorMsg.arg(count));
         m_summaryLabel->show();
         m_expandLabel->hide();
         m_resultsTable->hide();

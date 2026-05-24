@@ -104,6 +104,12 @@ void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
 
+    if (!m_inputData || m_inputData->filePath().isEmpty()) {
+        m_outputData.reset();
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+    }
+
     if (m_inputImageLabel) {
         if (m_inputData && !m_inputData->filePath().isEmpty()) {
             QFileInfo fi(m_inputData->filePath());
@@ -266,6 +272,8 @@ void ClutterSuppressionNode::processAutomatically()
             setOutputData(1, m_outputData);
         }
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 
@@ -592,7 +600,11 @@ bool ClutterSuppressionNode::validateAndRestoreOutput()
     if (!m_savedOutputFiles.isEmpty()) {
         QStringList validPaths;
         for (const QString& fileName : m_savedOutputFiles) {
-            QString outputPath = projDirStr + "/" + nodeName + "/" + fileName;
+            QString finalFileName = fileName;
+            if (!finalFileName.endsWith(".png", Qt::CaseInsensitive)) {
+                finalFileName += ".png";
+            }
+            QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
             if (QFile::exists(outputPath)) {
                 validPaths.append(outputPath);
             }
@@ -610,10 +622,15 @@ bool ClutterSuppressionNode::validateAndRestoreOutput()
     if (m_outputFileName.isEmpty()) {
         return false;
     } else {
-        if (QFileInfo(m_outputFileName).suffix().isEmpty()) {
-            finalFileName = m_outputFileName + ".png";
+        QString resolvedFileName = m_outputFileName;
+        if (m_inputData && !m_inputData->filePaths().isEmpty()) {
+            QString originalName = QFileInfo(m_inputData->filePaths().first()).baseName();
+            resolvedFileName.replace("{InputName}", originalName, Qt::CaseInsensitive);
+        }
+        if (QFileInfo(resolvedFileName).suffix().isEmpty()) {
+            finalFileName = resolvedFileName + ".png";
         } else {
-            finalFileName = m_outputFileName;
+            finalFileName = resolvedFileName;
         }
     }
 

@@ -7,6 +7,7 @@
 #include <QPixmap>
 #include <QFileInfo>
 #include <QDir>
+#include <QDebug>
 #include <opencv2/opencv.hpp>
 #include <onnxruntime_cxx_api.h>
 
@@ -257,7 +258,7 @@ bool TargetDetection::runDetectionTask(const QString& imagePath,
                                          QString& resultText,
                                          QString& errorMsg)
 {
-    cv::Mat img = cv::imread(imagePath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+    cv::Mat img = cv::imread(imagePath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE | cv::IMREAD_ANYDEPTH);
     if (img.empty())
     {
         errorMsg = "Failed to read image.";
@@ -306,8 +307,17 @@ bool TargetDetection::runDetectionTask(const QString& imagePath,
             2
         );
 
+        auto type_info = outputTensors[1].GetTensorTypeAndShapeInfo();
+        size_t elem_count = type_info.GetElementCount();
         float* probArr = outputTensors[1].GetTensorMutableData<float>();
-        shipProb = probArr[1];
+        
+        if (elem_count >= 2) {
+            shipProb = probArr[1];
+        } else if (elem_count == 1) {
+            shipProb = probArr[0];
+        } else {
+            shipProb = 0.0f;
+        }
 
         resultText = shipProb >= thresholdValue ? "Ship" : "Sea";
         return true;
