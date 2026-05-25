@@ -4,6 +4,9 @@
 #include <QHBoxLayout>
 #include <QGroupBox>
 #include <QFormLayout>
+#include <QFileInfo>
+#include <QDebug>
+#include <opencv2/opencv.hpp>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QJsonArray>
@@ -13,6 +16,7 @@ namespace QtNodes {
 
 EvaluationSCRNode::EvaluationSCRNode()
 {
+    m_detailTableHeaders = QStringList() << QStringLiteral("文件名") << QStringLiteral("原图SCR") << QStringLiteral("滤波后SCR") << QStringLiteral("性能提升");
     createWidget();
 }
 
@@ -228,6 +232,7 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
     if (m_filteredScrLabel) m_filteredScrLabel->setText("--");
     if (m_improvementLabel) m_improvementLabel->setText("--");
     if (m_summaryLabel) m_summaryLabel->setText("--");
+    m_detectionResults.clear();
 
     int maxCount = 0;
     QStringList origPaths;
@@ -258,7 +263,10 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         cv::Rect targetRect;
         cv::Rect clutterRect;
 
-        if (m_regionComboBox->currentIndex() == 0) { // 中心目标/周围杂波
+        if (m_hasTargetRoi && m_hasClutterRoi) {
+            targetRect = cv::Rect(m_targetRoi.x(), m_targetRoi.y(), m_targetRoi.width(), m_targetRoi.height());
+            clutterRect = cv::Rect(m_clutterRoi.x(), m_clutterRoi.y(), m_clutterRoi.width(), m_clutterRoi.height());
+        } else if (m_regionComboBox->currentIndex() == 0) { // 中心目标/周围杂波
             targetRect = cv::Rect(mat.cols / 4, mat.rows / 4, mat.cols / 2, mat.rows / 2);
             clutterRect = cv::Rect(0, 0, mat.cols / 4, mat.rows / 4);
         } else { // 左半目标/右半杂波
@@ -270,12 +278,15 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         targetRect &= bounds;
         clutterRect &= bounds;
         
-        if (targetRect.width < 2 || targetRect.height < 2 || clutterRect.width < 2 || clutterRect.height < 2) return -9999.0;
+        if (targetRect.width < 2 || targetRect.height < 2 || clutterRect.width < 2 || clutterRect.height < 2) {
+            return -9999.0;
+        }
         
         cv::Mat targetMat = mat(targetRect);
         cv::Mat clutterMat = mat(clutterRect);
         
-        return calculateScr(targetMat, clutterMat);
+        double finalScr = calculateScr(targetMat, clutterMat);
+        return finalScr;
     };
 
     double totalOrigScr = 0.0;
@@ -284,6 +295,8 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
     int validOrigCount = 0;
     int validFiltCount = 0;
     int validImpCount = 0;
+    
+    m_detectionResults.clear();
 
     for (int i = 0; i < maxCount; ++i) {
         QString origPath = i < origPaths.size() ? origPaths[i] : "";
@@ -304,12 +317,14 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
             totalFiltScr += filtScr;
             validFiltCount++;
         }
-        if (origScr > -9000.0 && filtScr > -9000.0) {
-            double denom = std::abs(origScr) < 1e-12 ? 1e-12 : std::abs(origScr);
-            double imp = ((filtScr - origScr) / denom) * 100.0;
-            impStr = QString::number(imp, 'f', 2);
+        
+        double imp = 0.0;
+        impStr = "--";
+        if (origScr > -9000.0 && filtScr > -9000.0 && origScr != 0) {
+            imp = (filtScr - origScr) / std::abs(origScr) * 100.0;
             totalImp += imp;
             validImpCount++;
+            impStr = QString::number(imp, 'f', 2);
         }
 
         QString fileName = origPath.isEmpty() ? QFileInfo(filtPath).fileName() : QFileInfo(origPath).fileName();
@@ -320,9 +335,15 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         m_resultsTable->setItem(row, 1, new QTableWidgetItem(origScrStr));
         m_resultsTable->setItem(row, 2, new QTableWidgetItem(filtScrStr));
         m_resultsTable->setItem(row, 3, new QTableWidgetItem(impStr));
+        
+        m_detectionResults.append(QStringList() << fileName << origScrStr << filtScrStr << impStr);
     }
 
     if (maxCount > 1) {
+        QString origStr = validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--";
+        QString filtStr = validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--";
+        QString impStr = validImpCount > 0 ? QString::number(totalImp / validImpCount, 'f', 2) : "--";
+
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
         
@@ -338,12 +359,15 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
     if (validOrigCount > 0 && validFiltCount > 0) {
         if (maxCount <= 1) {
             if (singleView) singleView->show();
-            if (m_originalScrLabel) m_originalScrLabel->setText(validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--");
-            if (m_filteredScrLabel) m_filteredScrLabel->setText(validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--");
-            if (m_improvementLabel && validImpCount > 0) m_improvementLabel->setText(QString::number(totalImp / validImpCount, 'f', 2) + "%");
-            m_summaryLabel->hide();
-            m_expandLabel->hide();
-            m_resultsTable->hide();
+            QString origStr = validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--";
+            QString filtStr = validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--";
+            QString impStr = validImpCount > 0 ? QString::number(totalImp / validImpCount, 'f', 2) : "--";
+            if (m_originalScrLabel) m_originalScrLabel->setText(origStr);
+            if (m_filteredScrLabel) m_filteredScrLabel->setText(filtStr);
+            if (m_improvementLabel && validImpCount > 0) m_improvementLabel->setText(impStr + "%");
+            if (m_summaryLabel) {
+                m_summaryLabel->setText(QString("平均提升: %1").arg(impStr));
+            }
         } else {
             if (singleView) singleView->hide();
             m_summaryLabel->setText(QStringLiteral("评估完成：共处理 %1 对图像").arg(maxCount));
@@ -356,6 +380,13 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
             } else {
                 m_resultsTable->hide();
                 m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+            }
+            
+            QString origStr = validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--";
+            QString filtStr = validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--";
+            QString impStr = validImpCount > 0 ? QString::number(totalImp / validImpCount, 'f', 2) : "--";
+            if (m_summaryLabel) {
+                m_summaryLabel->setText(QString("所有图像平均提升: %1%").arg(impStr));
             }
         }
     } else {
@@ -372,6 +403,9 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         m_expandLabel->hide();
         m_resultsTable->hide();
     }
+    
+    // Trigger visual update for detail view table and processing info
+    triggerVisualUpdate();
 
     if (m_widget) {
         m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
@@ -386,6 +420,21 @@ QJsonObject EvaluationSCRNode::save() const
     QJsonObject modelJson = ExecutableNodeDelegateModel::save();
     modelJson["regionIndex"] = m_regionComboBox->currentIndex();
     modelJson["isExpanded"] = m_isExpanded;
+    
+    modelJson["hasTargetRoi"] = m_hasTargetRoi;
+    if (m_hasTargetRoi) {
+        QJsonObject tr;
+        tr["x"] = m_targetRoi.x(); tr["y"] = m_targetRoi.y();
+        tr["w"] = m_targetRoi.width(); tr["h"] = m_targetRoi.height();
+        modelJson["targetRoi"] = tr;
+    }
+    modelJson["hasClutterRoi"] = m_hasClutterRoi;
+    if (m_hasClutterRoi) {
+        QJsonObject cr;
+        cr["x"] = m_clutterRoi.x(); cr["y"] = m_clutterRoi.y();
+        cr["w"] = m_clutterRoi.width(); cr["h"] = m_clutterRoi.height();
+        modelJson["clutterRoi"] = cr;
+    }
 
     QJsonArray resultsArray;
     if (m_resultsTable) {
@@ -415,6 +464,18 @@ void EvaluationSCRNode::load(QJsonObject const &json)
     }
     m_isExpanded = json["isExpanded"].toBool(false);
 
+    m_hasTargetRoi = json["hasTargetRoi"].toBool(false);
+    if (m_hasTargetRoi && json.contains("targetRoi")) {
+        QJsonObject tr = json["targetRoi"].toObject();
+        m_targetRoi = QRectF(tr["x"].toDouble(), tr["y"].toDouble(), tr["w"].toDouble(), tr["h"].toDouble());
+    }
+    
+    m_hasClutterRoi = json["hasClutterRoi"].toBool(false);
+    if (m_hasClutterRoi && json.contains("clutterRoi")) {
+        QJsonObject cr = json["clutterRoi"].toObject();
+        m_clutterRoi = QRectF(cr["x"].toDouble(), cr["y"].toDouble(), cr["w"].toDouble(), cr["h"].toDouble());
+    }
+
     if (json.contains("results") && m_resultsTable) {
         QJsonArray resultsArray = json["results"].toArray();
         m_resultsTable->setRowCount(0);
@@ -435,20 +496,7 @@ void EvaluationSCRNode::load(QJsonObject const &json)
             m_resultsTable->setItem(row, 2, new QTableWidgetItem(rowObj["col2"].toString()));
             m_resultsTable->setItem(row, 3, new QTableWidgetItem(rowObj["col3"].toString()));
         }
-    }
-
-    if (json.contains("origScr") && m_originalScrLabel) m_originalScrLabel->setText(json["origScr"].toString());
-    if (json.contains("filtScr") && m_filteredScrLabel) m_filteredScrLabel->setText(json["filtScr"].toString());
-    if (json.contains("imp") && m_improvementLabel) m_improvementLabel->setText(json["imp"].toString());
-    
-    if (json.contains("summary") && m_summaryLabel) {
-        m_summaryLabel->setText(json["summary"].toString());
-    }
-
-    ExecutableNodeDelegateModel::load(json);
-
-    if (json.contains("results")) {
-        QJsonArray resultsArray = json["results"].toArray();
+        
         int totalCount = resultsArray.size();
         if (totalCount > 0 && resultsArray.last().toObject()["col0"].toString() == QStringLiteral("平均值")) {
             totalCount--;
@@ -481,11 +529,61 @@ void EvaluationSCRNode::load(QJsonObject const &json)
             Q_EMIT embeddedWidgetSizeUpdated();
         }
     }
+
+    if (json.contains("origScr") && m_originalScrLabel) m_originalScrLabel->setText(json["origScr"].toString());
+    if (json.contains("filtScr") && m_filteredScrLabel) m_filteredScrLabel->setText(json["filtScr"].toString());
+    if (json.contains("imp") && m_improvementLabel) m_improvementLabel->setText(json["imp"].toString());
+    
+    if (json.contains("summary") && m_summaryLabel) {
+        m_summaryLabel->setText(json["summary"].toString());
+    }
+}
+
+QStringList EvaluationSCRNode::previewImagePaths() const
+{
+    if (m_originalData) {
+        return m_originalData->filePaths();
+    } else if (m_filteredData) {
+        return m_filteredData->filePaths();
+    }
+    return QStringList();
 }
 
 bool EvaluationSCRNode::validateAndRestoreOutput()
 {
     return true;
+}
+
+void EvaluationSCRNode::processTargetRoiSelection(const QRectF& sceneRect, int imageIndex)
+{
+    m_hasTargetRoi = true;
+    m_targetRoi = sceneRect;
+    calculateAndDisplaySCR();
+    triggerVisualUpdate();
+}
+
+void EvaluationSCRNode::processClutterRoiSelection(const QRectF& sceneRect, int imageIndex)
+{
+    m_hasClutterRoi = true;
+    m_clutterRoi = sceneRect;
+    calculateAndDisplaySCR();
+    triggerVisualUpdate();
+}
+
+void EvaluationSCRNode::clearTargetRoiSelection()
+{
+    m_hasTargetRoi = false;
+    m_targetRoi = QRectF();
+    calculateAndDisplaySCR();
+    triggerVisualUpdate();
+}
+
+void EvaluationSCRNode::clearClutterRoiSelection()
+{
+    m_hasClutterRoi = false;
+    m_clutterRoi = QRectF();
+    calculateAndDisplaySCR();
+    triggerVisualUpdate();
 }
 
 } // namespace QtNodes

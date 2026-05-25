@@ -10,9 +10,11 @@
 ImageView::ImageView(QWidget* parent) :
 	QGraphicsView(parent),
 	isMousePressed(false),
-	m_roiSelectionEnabled(false),
+	m_roiSelectionMode(RoiSelectionMode::None),
 	m_isDrawingRoi(false),
-	m_roiRectItem(nullptr)
+	m_roiRectItem(nullptr),
+	m_targetRectItem(nullptr),
+	m_clutterRectItem(nullptr)
 {
 	setDragMode(QGraphicsView::ScrollHandDrag);
 	this->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -23,14 +25,13 @@ ImageView::~ImageView()
     delete(this->scene());
 }
 
-void ImageView::setRoiSelectionEnabled(bool enabled)
+void ImageView::setRoiSelectionMode(RoiSelectionMode mode)
 {
-	m_roiSelectionEnabled = enabled;
-	if (enabled) {
+	m_roiSelectionMode = mode;
+	if (mode != RoiSelectionMode::None) {
 		setDragMode(QGraphicsView::NoDrag);
 	} else {
 		setDragMode(QGraphicsView::ScrollHandDrag);
-		clearRoi();
 	}
 }
 
@@ -42,7 +43,29 @@ void ImageView::clearRoi()
 		delete m_roiRectItem;
 		m_roiRectItem = nullptr;
 	}
-	m_isDrawingRoi = false;
+	if (m_roiSelectionMode == RoiSelectionMode::Single) m_isDrawingRoi = false;
+}
+
+void ImageView::clearTargetRoi()
+{
+	m_storedTargetRoi = QRectF();
+	if (m_targetRectItem && scene()) {
+		scene()->removeItem(m_targetRectItem);
+		delete m_targetRectItem;
+		m_targetRectItem = nullptr;
+	}
+	if (m_roiSelectionMode == RoiSelectionMode::Target) m_isDrawingRoi = false;
+}
+
+void ImageView::clearClutterRoi()
+{
+	m_storedClutterRoi = QRectF();
+	if (m_clutterRectItem && scene()) {
+		scene()->removeItem(m_clutterRectItem);
+		delete m_clutterRectItem;
+		m_clutterRectItem = nullptr;
+	}
+	if (m_roiSelectionMode == RoiSelectionMode::Clutter) m_isDrawingRoi = false;
 }
 
 void ImageView::setRoiRect(const QRectF& rect)
@@ -61,21 +84,56 @@ void ImageView::setRoiRect(const QRectF& rect)
 	m_roiRectItem->setRect(rect);
 }
 
+void ImageView::setTargetRoiRect(const QRectF& rect)
+{
+	m_storedTargetRoi = rect;
+	if (rect.isNull() || !scene()) return;
+	
+	if (!m_targetRectItem) {
+		m_targetRectItem = new QGraphicsRectItem();
+		QPen pen(Qt::red);
+		pen.setWidth(2);
+		pen.setCosmetic(true);
+		m_targetRectItem->setPen(pen);
+		scene()->addItem(m_targetRectItem);
+	}
+	m_targetRectItem->setRect(rect);
+}
+
+void ImageView::setClutterRoiRect(const QRectF& rect)
+{
+	m_storedClutterRoi = rect;
+	if (rect.isNull() || !scene()) return;
+	
+	if (!m_clutterRectItem) {
+		m_clutterRectItem = new QGraphicsRectItem();
+		QPen pen(Qt::green);
+		pen.setWidth(2);
+		pen.setCosmetic(true);
+		m_clutterRectItem->setPen(pen);
+		scene()->addItem(m_clutterRectItem);
+	}
+	m_clutterRectItem->setRect(rect);
+}
+
 void ImageView::loadImage(const QString& path)
 {
 	if (!scene()) {
 		setScene(new QGraphicsScene(this));
 	}
 	scene()->clear();
-	m_roiRectItem = nullptr; // scene()->clear() deletes all items
+	m_roiRectItem = nullptr;
+	m_targetRectItem = nullptr;
+	m_clutterRectItem = nullptr;
 	
 	QPixmap pixmap(path);
 	scene()->addPixmap(pixmap);
 	
-	if (m_roiSelectionEnabled && !m_storedRoi.isNull()) {
-		setRoiRect(m_storedRoi);
-	}
+	if (!m_storedRoi.isNull()) setRoiRect(m_storedRoi);
+	if (!m_storedTargetRoi.isNull()) setTargetRoiRect(m_storedTargetRoi);
+	if (!m_storedClutterRoi.isNull()) setClutterRoiRect(m_storedClutterRoi);
 }
+
 void ImageView::wheelEvent(QWheelEvent* event)
 {
 	if (event->orientation() == Qt::Vertical)
@@ -95,24 +153,32 @@ void ImageView::wheelEvent(QWheelEvent* event)
 		event->ignore();
 }
 
-
-
 void ImageView::mousePressEvent(QMouseEvent* event)
 {
-	if (m_roiSelectionEnabled && event->button() == Qt::LeftButton) {
+	if (m_roiSelectionMode != RoiSelectionMode::None && event->button() == Qt::LeftButton) {
 		if (scene()) {
 			m_roiStartPos = mapToScene(event->pos());
 			m_isDrawingRoi = true;
 			
-			if (!m_roiRectItem) {
-				m_roiRectItem = new QGraphicsRectItem();
-				QPen pen(Qt::red);
+			QGraphicsRectItem** activeRectItem = &m_roiRectItem;
+			QColor rectColor = Qt::red;
+			
+			if (m_roiSelectionMode == RoiSelectionMode::Target) {
+				activeRectItem = &m_targetRectItem;
+			} else if (m_roiSelectionMode == RoiSelectionMode::Clutter) {
+				activeRectItem = &m_clutterRectItem;
+				rectColor = Qt::green;
+			}
+			
+			if (!*activeRectItem) {
+				*activeRectItem = new QGraphicsRectItem();
+				QPen pen(rectColor);
 				pen.setWidth(2);
 				pen.setCosmetic(true); // Don't scale the line width
-				m_roiRectItem->setPen(pen);
-				scene()->addItem(m_roiRectItem);
+				(*activeRectItem)->setPen(pen);
+				scene()->addItem(*activeRectItem);
 			}
-			m_roiRectItem->setRect(QRectF(m_roiStartPos, m_roiStartPos));
+			(*activeRectItem)->setRect(QRectF(m_roiStartPos, m_roiStartPos));
 		}
 		return;
 	}
@@ -130,13 +196,21 @@ void ImageView::mousePressEvent(QMouseEvent* event)
 
 void ImageView::mouseMoveEvent(QMouseEvent* event)
 {
-	if (m_roiSelectionEnabled && m_isDrawingRoi && m_roiRectItem) {
+	if (m_roiSelectionMode != RoiSelectionMode::None && m_isDrawingRoi) {
 		QPointF currentPos = mapToScene(event->pos());
 		QRectF rect(qMin(m_roiStartPos.x(), currentPos.x()),
 					qMin(m_roiStartPos.y(), currentPos.y()),
 					qAbs(currentPos.x() - m_roiStartPos.x()),
 					qAbs(currentPos.y() - m_roiStartPos.y()));
-		m_roiRectItem->setRect(rect);
+					
+		QGraphicsRectItem* activeRectItem = nullptr;
+		if (m_roiSelectionMode == RoiSelectionMode::Single) activeRectItem = m_roiRectItem;
+		else if (m_roiSelectionMode == RoiSelectionMode::Target) activeRectItem = m_targetRectItem;
+		else if (m_roiSelectionMode == RoiSelectionMode::Clutter) activeRectItem = m_clutterRectItem;
+		
+		if (activeRectItem) {
+			activeRectItem->setRect(rect);
+		}
 		return;
 	}
 
@@ -155,11 +229,18 @@ void ImageView::mouseMoveEvent(QMouseEvent* event)
 
 void ImageView::mouseReleaseEvent(QMouseEvent* event)
 {
-	if (m_roiSelectionEnabled && event->button() == Qt::LeftButton && m_isDrawingRoi) {
+	if (m_roiSelectionMode != RoiSelectionMode::None && event->button() == Qt::LeftButton && m_isDrawingRoi) {
 		m_isDrawingRoi = false;
-		if (m_roiRectItem) {
+		
+		if (m_roiSelectionMode == RoiSelectionMode::Single && m_roiRectItem) {
 			m_storedRoi = m_roiRectItem->rect();
 			emit roiSelected(m_storedRoi);
+		} else if (m_roiSelectionMode == RoiSelectionMode::Target && m_targetRectItem) {
+			m_storedTargetRoi = m_targetRectItem->rect();
+			emit targetRoiSelected(m_storedTargetRoi);
+		} else if (m_roiSelectionMode == RoiSelectionMode::Clutter && m_clutterRectItem) {
+			m_storedClutterRoi = m_clutterRectItem->rect();
+			emit clutterRoiSelected(m_storedClutterRoi);
 		}
 		return;
 	}

@@ -1,4 +1,4 @@
-﻿#include "QtNodes/internal/NodeDetailAnimationController.hpp"
+#include "QtNodes/internal/NodeDetailAnimationController.hpp"
 #include "QtNodes/internal/NodeGraphicsObject.hpp"
 #include "QtNodes/internal/NodeDetailWindow.hpp"
 #include "QtNodes/internal/NodeDetailOverlay.hpp"
@@ -292,6 +292,7 @@ void NodeDetailAnimationController::onCloseAnimationCompleted()
     // Select the node after closing
     if (_node) {
         _node->setSelected(true);
+        _node->moveConnections(); // Ensure connections snap to any new resized port positions
     }
 
     _isAnimating = false;

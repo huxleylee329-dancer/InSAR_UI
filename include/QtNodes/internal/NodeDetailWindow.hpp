@@ -12,6 +12,7 @@
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QHeaderView>
 #include <QtWidgets/QCheckBox>
+#include <QtWidgets/QRadioButton>
 #include "QtNodes/internal/NodeDataSnapshot.hpp"
 
 class ImageView;
@@ -33,6 +34,9 @@ public:
     /// Load data into the detail window (static snapshot)
     void loadData(const NodeDataSnapshot& snapshot);
 
+    // Update only the detection/SCR results table without full layout refresh
+    void updateTableData(const NodeDataSnapshot& snapshot);
+
     /// Clear all displayed data
     void clearData();
 
@@ -42,6 +46,12 @@ Q_SIGNALS:
     void requestReload();
     void roiSelectionChanged(QRectF rect, int imageIndex);
     void roiCleared();
+    
+    // Dual ROI signals
+    void targetRoiSelectionChanged(QRectF rect, int imageIndex);
+    void clutterRoiSelectionChanged(QRectF rect, int imageIndex);
+    void targetRoiCleared();
+    void clutterRoiCleared();
 
 protected:
     void setupUI();
@@ -50,6 +60,7 @@ protected:
     QWidget* createProcessingSection();
     QWidget* createOutputSection();
     QWidget* createFooter();
+    void updateLayoutVisibility();
     void renderPortCard(QVBoxLayout* layout, const PortDataInfo& info, bool isOutput, QWidget* parent = nullptr);
     void renderParameterCard(QVBoxLayout* layout, const ParameterInfo& param, QWidget* parent = nullptr);
     QWidget* createColumnSeparator();
@@ -66,6 +77,8 @@ protected:
     QWidget* _processingWidget;
     QWidget* _outputWidget;
     QWidget* _footerWidget;
+    QWidget* _leftSeparator = nullptr;
+    QWidget* _rightSeparator = nullptr;
     QVBoxLayout* _inputLayout;
     QVBoxLayout* _processingLayout;
     QVBoxLayout* _outputLayout;
@@ -91,6 +104,15 @@ protected:
     QWidget* _roiToolbar;
     QCheckBox* _roiEnableCheckbox;
     
+    // Dual ROI View
+    bool _supportsTwoRois;
+    bool _hasTargetRoi;
+    QRectF _targetRoi;
+    bool _hasClutterRoi;
+    QRectF _clutterRoi;
+    QRadioButton* _targetRoiRadio = nullptr;
+    QRadioButton* _clutterRoiRadio = nullptr;
+    
     int _currentPreviewIndex = 0;
     ImageView* _imageView = nullptr;
     QLabel* _imageNameLabel = nullptr;
@@ -105,6 +127,12 @@ private Q_SLOTS:
     void onTableSelectionChanged();
     void onRoiToggled(bool checked);
     void onRoiCleared();
+    
+    // Dual ROI slots
+    void onTargetRoiToggled(bool checked);
+    void onClutterRoiToggled(bool checked);
+    void onTargetRoiCleared();
+    void onClutterRoiCleared();
 
 private:
     // Style constants - following ui2.md Section 135-168
@@ -290,7 +318,6 @@ private:
         "  border-radius: 4px;"
         "  font-weight: 500;"
         "  font-size: 12px;"
-        "  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);"
         "}"
         "QPushButton:hover { background-color: #1F2937; }"
         "QPushButton:pressed { background-color: #111827; }";
@@ -388,7 +415,7 @@ private:
     // Font sizes
     static constexpr int FONT_SIZE_INFO = 9;         // Info label
 
-    static constexpr int SECTION_MIN_WIDTH = 270;
+    static constexpr int SECTION_MIN_WIDTH = 290;
     static constexpr int CONTENT_MAX_HEIGHT = 450;
 
     /// Theme detection

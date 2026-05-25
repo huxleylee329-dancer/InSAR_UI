@@ -3,6 +3,8 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QRadioButton>
+#include <QButtonGroup>
 #include <QScrollArea>
 #include <QFrame>
 #include <QFont>
@@ -65,17 +67,19 @@ void NodeDetailWindow::setupUI()
 
     // Create three sections with separators
     _inputWidget = createInputSection();
-    contentLayout->addWidget(_inputWidget, 0, Qt::AlignTop);  // 顶部对齐
+    contentLayout->addWidget(_inputWidget);
 
-    contentLayout->addWidget(createColumnSeparator());
+    _leftSeparator = createColumnSeparator();
+    contentLayout->addWidget(_leftSeparator);
 
     _processingWidget = createProcessingSection();
     contentLayout->addWidget(_processingWidget, 1);  // 中间列stretch填充
 
-    contentLayout->addWidget(createColumnSeparator());
+    _rightSeparator = createColumnSeparator();
+    contentLayout->addWidget(_rightSeparator);
 
     _outputWidget = createOutputSection();
-    contentLayout->addWidget(_outputWidget, 0, Qt::AlignTop);  // 顶部对齐
+    contentLayout->addWidget(_outputWidget);
 
     mainLayout->addLayout(contentLayout);
 
@@ -200,7 +204,7 @@ QWidget* NodeDetailWindow::createInputSection()
     auto* container = new QFrame();
     container->setObjectName("DetailCard");
     container->setMinimumWidth(SECTION_MIN_WIDTH);
-    container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);  // 不扩展
+    container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     auto* layout = new QVBoxLayout(container);
     layout->setContentsMargins(6, 6, 6, 6);
@@ -271,7 +275,7 @@ QWidget* NodeDetailWindow::createOutputSection()
     auto* container = new QFrame();
     container->setObjectName("DetailCard");
     container->setMinimumWidth(SECTION_MIN_WIDTH);
-    container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);  // 不扩展
+    container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     auto* layout = new QVBoxLayout(container);
     layout->setContentsMargins(6, 6, 6, 6);
@@ -579,6 +583,11 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
     _supportsRoiSelection = snapshot.supportsRoiSelection;
     _hasCustomRoi = snapshot.hasCustomRoi;
     _customRoi = snapshot.customRoi;
+    _supportsTwoRois = snapshot.supportsTwoRois;
+    _hasTargetRoi = snapshot.hasTargetRoi;
+    _targetRoi = snapshot.targetRoi;
+    _hasClutterRoi = snapshot.hasClutterRoi;
+    _clutterRoi = snapshot.clutterRoi;
 
     // Restore index if within bounds
     if (oldIndex >= 0 && oldIndex < _previewImagePaths.size()) {
@@ -586,6 +595,8 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
     } else {
         _currentPreviewIndex = 0;
     }
+    
+    updateLayoutVisibility();
 
     // ===== INPUT SECTION: Port Data + Node Parameters =====
     bool hasInputContent = false;
@@ -641,6 +652,7 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         noContentLabel->setAlignment(Qt::AlignCenter);
         _inputLayout->addWidget( noContentLabel);
     }
+    _inputLayout->addStretch(1);
 
     // ===== PROCESSING INFO SECTION =====
     QString infoLabelTemplate = isDark ? STYLE_INFO_LABEL_TEMPLATE_DARK : STYLE_INFO_LABEL_TEMPLATE;
@@ -662,7 +674,49 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         _imageView->setMinimumHeight(300); // Ensure the image has some vertical space
         _processingLayout->addWidget(_imageView);
         
-        if (_supportsRoiSelection) {
+        // First load the image so the view is ready
+        updatePreviewImage();
+        
+        if (_supportsTwoRois) {
+            _roiToolbar = new QWidget();
+            auto* roiLayout = new QHBoxLayout(_roiToolbar);
+            roiLayout->setContentsMargins(5, 5, 5, 5);
+            
+            _targetRoiRadio = new QRadioButton(QStringLiteral("绘制目标区域"));
+            _clutterRoiRadio = new QRadioButton(QStringLiteral("绘制杂波区域"));
+            auto* noneRadio = new QRadioButton(QStringLiteral("停止绘制"));
+            noneRadio->setChecked(true);
+            
+            if (_hasTargetRoi) _imageView->setTargetRoiRect(_targetRoi);
+            if (_hasClutterRoi) _imageView->setClutterRoiRect(_clutterRoi);
+            
+            connect(_targetRoiRadio, &QRadioButton::toggled, this, &NodeDetailWindow::onTargetRoiToggled);
+            connect(_clutterRoiRadio, &QRadioButton::toggled, this, &NodeDetailWindow::onClutterRoiToggled);
+            
+            auto* clearTargetBtn = new QPushButton(QStringLiteral("清除目标框"));
+            auto* clearClutterBtn = new QPushButton(QStringLiteral("清除杂波框"));
+            connect(clearTargetBtn, &QPushButton::clicked, this, &NodeDetailWindow::onTargetRoiCleared);
+            connect(clearClutterBtn, &QPushButton::clicked, this, &NodeDetailWindow::onClutterRoiCleared);
+            
+            roiLayout->addWidget(_targetRoiRadio);
+            roiLayout->addWidget(clearTargetBtn);
+            roiLayout->addSpacing(10);
+            roiLayout->addWidget(_clutterRoiRadio);
+            roiLayout->addWidget(clearClutterBtn);
+            roiLayout->addSpacing(10);
+            roiLayout->addWidget(noneRadio);
+            roiLayout->addStretch();
+            
+            _processingLayout->addWidget(_roiToolbar);
+            
+            connect(_imageView, &ImageView::targetRoiSelected, this, [this](const QRectF& rect) {
+                emit targetRoiSelectionChanged(rect, _currentPreviewIndex);
+            });
+            connect(_imageView, &ImageView::clutterRoiSelected, this, [this](const QRectF& rect) {
+                emit clutterRoiSelectionChanged(rect, _currentPreviewIndex);
+            });
+        }
+        else if (_supportsRoiSelection) {
             _roiToolbar = new QWidget();
             auto* roiLayout = new QHBoxLayout(_roiToolbar);
             roiLayout->setContentsMargins(5, 5, 5, 5);
@@ -730,7 +784,7 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             _nextButton->hide();
         }
         
-        bool hasDetectionResults = !_detectionResults.isEmpty() && _detectionResults.size() == _previewImagePaths.size();
+        bool hasDetectionResults = !_detectionResults.isEmpty() && (_detectionResults.size() >= _previewImagePaths.size());
         
         if (hasDetectionResults) {
             // Add results table
@@ -790,10 +844,13 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             
             // Adjust proportions
             _imageView->setMinimumHeight(250);
-            _resultsTable->setMinimumHeight(200);
+            
+            // Dynamic table height based on rows
+            int tableHeight = 35 + (_detectionResults.size() * 32) + 2;
+            _resultsTable->setMinimumHeight(qMin(tableHeight, 250));
+            _resultsTable->setMaximumHeight(qMin(tableHeight, 250));
         }
         
-        updatePreviewImage();
     }
     
     if (_processingInfo.empty() && !hasPreviewImage) {
@@ -830,6 +887,7 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             _processingLayout->addWidget( infoLabel);
         }
     }
+    _processingLayout->addStretch(1);
 
     // ===== OUTPUT SECTION =====
     if (_outputPorts.empty()) {
@@ -844,7 +902,32 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             renderPortCard(_outputLayout, port, true, this);
         }
     }
+    _outputLayout->addStretch(1);
 
+}
+
+void NodeDetailWindow::updateTableData(const NodeDataSnapshot& snapshot)
+{
+    _detectionResults = snapshot.detectionResults;
+    if (!_resultsTable) return;
+    
+    // Clear old contents but keep headers
+    _resultsTable->setRowCount(0);
+    _resultsTable->setRowCount(_detectionResults.size());
+    
+    bool isDark = isDarkTheme(this);
+    
+    for (int i = 0; i < _detectionResults.size(); ++i) {
+        const auto& rowData = _detectionResults[i];
+        for (int c = 0; c < rowData.size() && c < _resultsTable->columnCount(); ++c) {
+            auto* item = new QTableWidgetItem(rowData[c]);
+            if (c > 0) item->setTextAlignment(Qt::AlignCenter);
+            if (c == 1 && rowData[c].toLower() == "ship") {
+                item->setForeground(QBrush(QColor(isDark ? "#34D399" : "#10B981"))); // Green
+            }
+            _resultsTable->setItem(i, c, item);
+        }
+    }
 }
 
 void NodeDetailWindow::clearData()
@@ -857,6 +940,7 @@ void NodeDetailWindow::clearData()
                 delete childLayout;
             } else {
                 if (QWidget* widget = item->widget()) {
+                    widget->hide();
                     widget->deleteLater();
                 }
                 delete item;
@@ -885,12 +969,28 @@ void NodeDetailWindow::clearData()
     _customRoi = QRectF();
     _roiToolbar = nullptr;
     _roiEnableCheckbox = nullptr;
+    _targetRoiRadio = nullptr;
+    _clutterRoiRadio = nullptr;
     _imageView = nullptr;
     _imageNameLabel = nullptr;
     _prevButton = nullptr;
     _nextButton = nullptr;
     _imageOverlayLabel = nullptr;
     _resultsTable = nullptr;
+    
+    updateLayoutVisibility();
+}
+
+void NodeDetailWindow::updateLayoutVisibility()
+{
+    bool hasInput = !_inputPorts.empty() || !_parameters.empty();
+    bool hasOutput = !_outputPorts.empty();
+    
+    if (_inputWidget) _inputWidget->setVisible(hasInput);
+    if (_leftSeparator) _leftSeparator->setVisible(hasInput);
+    
+    if (_outputWidget) _outputWidget->setVisible(hasOutput);
+    if (_rightSeparator) _rightSeparator->setVisible(hasOutput);
 }
 
 // ============================================================================
@@ -954,7 +1054,7 @@ QString NodeDetailWindow::getThemeStylesheet(QWidget* parent)
     QString outputCard = isDark ? STYLE_OUTPUT_CARD_DARK : STYLE_OUTPUT_CARD_LIGHT;
 
     // Combine all styles
-    return QString("%1%2%3%4%5%6%7%8%9%10%11%12")
+    return QString("%1%2%3%4%5%6%7%8%9%10%11%12%13")
         .arg(windowBg)
         .arg(titleBar)
         .arg(titleText)
@@ -1041,6 +1141,40 @@ void NodeDetailWindow::onRoiCleared()
         _imageView->clearRoi();
     }
     emit roiCleared();
+}
+
+void NodeDetailWindow::onTargetRoiToggled(bool checked)
+{
+    if (_imageView && checked) {
+        _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::Target);
+    } else if (_imageView && !checked && _imageView->roiSelectionMode() == ImageView::RoiSelectionMode::Target) {
+        _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::None);
+    }
+}
+
+void NodeDetailWindow::onClutterRoiToggled(bool checked)
+{
+    if (_imageView && checked) {
+        _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::Clutter);
+    } else if (_imageView && !checked && _imageView->roiSelectionMode() == ImageView::RoiSelectionMode::Clutter) {
+        _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::None);
+    }
+}
+
+void NodeDetailWindow::onTargetRoiCleared()
+{
+    if (_imageView) {
+        _imageView->clearTargetRoi();
+    }
+    emit targetRoiCleared();
+}
+
+void NodeDetailWindow::onClutterRoiCleared()
+{
+    if (_imageView) {
+        _imageView->clearClutterRoi();
+    }
+    emit clutterRoiCleared();
 }
 
 } // namespace QtNodes

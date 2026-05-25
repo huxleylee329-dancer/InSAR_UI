@@ -99,10 +99,8 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     // Capture node parameters (same as PropertyEditor)
     snapshot.parameters = model->getParameters();
 
-    // Processing info - leave empty for future processing logs/messages
-    // State and Mode are already displayed in window title (e.g., "Node Name (State)")
-    // No need to duplicate them in processingInfo area
-    snapshot.processingInfo.clear();
+    // Processing info for detail view middle column
+    snapshot.processingInfo = model->processingInfo();
 
     // Capture preview image path
     snapshot.previewImagePaths = model->previewImagePaths();
@@ -113,6 +111,12 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     snapshot.detailTableHeaders = model->detailTableHeaders();
     snapshot.hasCustomRoi = model->hasCustomRoi();
     snapshot.customRoi = model->customRoi();
+    
+    snapshot.supportsTwoRois = model->supportsTwoRois();
+    snapshot.hasTargetRoi = model->hasTargetRoi();
+    snapshot.targetRoi = model->targetRoi();
+    snapshot.hasClutterRoi = model->hasClutterRoi();
+    snapshot.clutterRoi = model->clutterRoi();
 
     return snapshot;
 }

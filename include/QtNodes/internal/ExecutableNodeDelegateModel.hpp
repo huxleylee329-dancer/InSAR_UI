@@ -77,11 +77,25 @@ public:
     virtual bool hasCustomRoi() const { return false; }
     virtual QRectF customRoi() const { return QRectF(); }
     
+    // Dual ROI Selection Interface (e.g., Target & Clutter)
+    virtual bool supportsTwoRois() const { return false; }
+    virtual void processTargetRoiSelection(const QRectF& sceneRect, int imageIndex) {}
+    virtual void processClutterRoiSelection(const QRectF& sceneRect, int imageIndex) {}
+    virtual void clearTargetRoiSelection() {}
+    virtual void clearClutterRoiSelection() {}
+    virtual bool hasTargetRoi() const { return false; }
+    virtual QRectF targetRoi() const { return QRectF(); }
+    virtual bool hasClutterRoi() const { return false; }
+    virtual QRectF clutterRoi() const { return QRectF(); }
+    
     // Detail View UI Customization
     virtual QStringList detailTableHeaders() const { return {}; }
     
     // Data extraction for detail view (e.g., target detection results)
     virtual QList<QStringList> detectionResults() const { return {}; }
+    
+    // Processing Info extraction for detail view middle column
+    virtual std::vector<QString> processingInfo() const { return {}; }
 
     /// Set the nodeId and scene for visual updates (called when node is created)
     void setNodeContext(NodeId nodeId, BasicGraphicsScene *scene);

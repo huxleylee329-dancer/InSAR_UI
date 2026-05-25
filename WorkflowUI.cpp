@@ -1598,10 +1598,40 @@ void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::Execu
     connect(_detailWindow, &QtNodes::NodeDetailWindow::roiCleared, [execModel]() {
         execModel->clearRoiSelection();
     });
+    
+    // Connect dual ROI signals
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::targetRoiSelectionChanged, [this, execModel, ngo](QRectF rect, int index) {
+        execModel->processTargetRoiSelection(rect, index);
+        if (_detailWindow) {
+            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
+            _detailWindow->updateTableData(newSnapshot);
+        }
+    });
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::targetRoiCleared, [this, execModel, ngo]() {
+        execModel->clearTargetRoiSelection();
+        if (_detailWindow) {
+            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
+            _detailWindow->updateTableData(newSnapshot);
+        }
+    });
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::clutterRoiSelectionChanged, [this, execModel, ngo](QRectF rect, int index) {
+        execModel->processClutterRoiSelection(rect, index);
+        if (_detailWindow) {
+            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
+            _detailWindow->updateTableData(newSnapshot);
+        }
+    });
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::clutterRoiCleared, [this, execModel, ngo]() {
+        execModel->clearClutterRoiSelection();
+        if (_detailWindow) {
+            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
+            _detailWindow->updateTableData(newSnapshot);
+        }
+    });
     connect(execModel, &QtNodes::NodeDelegateModel::dataUpdated, _detailWindow, [this, execModel, ngo]() {
         if (_detailWindow) {
             QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
-            _detailWindow->loadData(newSnapshot);
+            _detailWindow->updateTableData(newSnapshot);
         }
     });
 

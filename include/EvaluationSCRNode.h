@@ -40,8 +40,23 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
-protected:
     bool validateAndRestoreOutput() override;
+
+    // Dual ROI overrides for detail view
+    bool supportsTwoRois() const override { return true; }
+    void processTargetRoiSelection(const QRectF& sceneRect, int imageIndex) override;
+    void processClutterRoiSelection(const QRectF& sceneRect, int imageIndex) override;
+    void clearTargetRoiSelection() override;
+    void clearClutterRoiSelection() override;
+    bool hasTargetRoi() const override { return m_hasTargetRoi; }
+    QRectF targetRoi() const override { return m_targetRoi; }
+    bool hasClutterRoi() const override { return m_hasClutterRoi; }
+    QRectF clutterRoi() const override { return m_clutterRoi; }
+    
+    QStringList previewImagePaths() const override;
+    
+    QStringList detailTableHeaders() const override { return m_detailTableHeaders; }
+    QList<QStringList> detectionResults() const override { return m_detectionResults; }
 
 private slots:
     void onRegionChanged(int index);
@@ -66,6 +81,15 @@ private:
 
     std::shared_ptr<ImageInfoData> m_originalData = nullptr;
     std::shared_ptr<ImageInfoData> m_filteredData = nullptr;
+    
+    // Custom ROI state
+    bool m_hasTargetRoi = false;
+    QRectF m_targetRoi;
+    bool m_hasClutterRoi = false;
+    QRectF m_clutterRoi;
+    
+    QStringList m_detailTableHeaders;
+    QList<QStringList> m_detectionResults;
 };
 
 } // namespace QtNodes

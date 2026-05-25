@@ -52,6 +52,13 @@ struct NODE_EDITOR_PUBLIC NodeDataSnapshot
     QStringList detailTableHeaders;
     bool hasCustomRoi;
     QRectF customRoi;
+    
+    // Dual ROI support (e.g. for Target/Clutter)
+    bool supportsTwoRois;
+    bool hasTargetRoi;
+    QRectF targetRoi;
+    bool hasClutterRoi;
+    QRectF clutterRoi;
 
     /// Helper to convert state to string
     static QString stateToString(int state)

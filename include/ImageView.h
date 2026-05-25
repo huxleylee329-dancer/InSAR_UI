@@ -9,14 +9,34 @@ public:
 	explicit ImageView(QWidget* parent = Q_NULLPTR);
 	~ImageView();
 	
-	void setRoiSelectionEnabled(bool enabled);
-	bool isRoiSelectionEnabled() const { return m_roiSelectionEnabled; }
+	enum class RoiSelectionMode {
+		None,
+		Single,
+		Target,
+		Clutter
+	};
+
+	void setRoiSelectionMode(RoiSelectionMode mode);
+	RoiSelectionMode roiSelectionMode() const { return m_roiSelectionMode; }
+	
+	// Backward compatibility
+	void setRoiSelectionEnabled(bool enabled) { setRoiSelectionMode(enabled ? RoiSelectionMode::Single : RoiSelectionMode::None); }
+	bool isRoiSelectionEnabled() const { return m_roiSelectionMode == RoiSelectionMode::Single; }
+	
 	void clearRoi();
+	void clearTargetRoi();
+	void clearClutterRoi();
+	
 	void setRoiRect(const QRectF& rect);
+	void setTargetRoiRect(const QRectF& rect);
+	void setClutterRoiRect(const QRectF& rect);
+	
 	void loadImage(const QString& path);
 
 signals:
 	void roiSelected(const QRectF& rect);
+	void targetRoiSelected(const QRectF& rect);
+	void clutterRoiSelected(const QRectF& rect);
 
 protected:
 	void wheelEvent(QWheelEvent* event) override;
@@ -29,9 +49,15 @@ private:
 	QPointF posAnchor;//view鼠标坐标，用于拖拽，由于拖拽过程中有抖动，故不转化为scene坐标
 	bool isMousePressed;
 	
-	bool m_roiSelectionEnabled;
+	RoiSelectionMode m_roiSelectionMode;
 	bool m_isDrawingRoi;
+	
 	QGraphicsRectItem* m_roiRectItem;
+	QGraphicsRectItem* m_targetRectItem;
+	QGraphicsRectItem* m_clutterRectItem;
+	
 	QPointF m_roiStartPos;
 	QRectF m_storedRoi;
+	QRectF m_storedTargetRoi;
+	QRectF m_storedClutterRoi;
 };
