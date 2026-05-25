@@ -42,6 +42,25 @@ TargetDetectionNode::~TargetDetectionNode()
     stopExecution();
 }
 
+void TargetDetectionNode::collapseDetailedList()
+{
+    if (m_isExpanded) {
+        m_isExpanded = false;
+        if (m_resultsTable) {
+            m_resultsTable->setVisible(false);
+        }
+        if (m_expandLabel) {
+            m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+        }
+        if (_widget) {
+            _widget->setFixedWidth(260); // Default width
+            _widget->resize(0, 0);
+            _widget->adjustSize();
+            Q_EMIT embeddedWidgetSizeUpdated();
+        }
+    }
+}
+
 unsigned int TargetDetectionNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)

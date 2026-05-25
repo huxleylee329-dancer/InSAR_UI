@@ -349,8 +349,8 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
     QString primaryTextColor = isDark ? "#F9FAFB" : "#1A1C1C";
     QString secondaryTextColor = isDark ? "#9CA3AF" : "#6B7280";
     QString tertiaryTextColor = isDark ? "#D1D5DB" : "#374151";
-    QString indexColor = isOutput ? (isDark ? "#60A5FA" : "#3B82F6") : secondaryTextColor;
-    QString portNameColor = isOutput ? (isDark ? "#60A5FA" : "#1D4ED8") : primaryTextColor;
+    QString indexColor = secondaryTextColor;
+    QString portNameColor = isDark ? "#60A5FA" : "#1D4ED8";
 
     // Header row: Port name + Status badge
     QHBoxLayout* headerLayout = new QHBoxLayout();
@@ -359,12 +359,12 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
     // Port name with optional index
     QString headerText;
     if (info.showIndex) {
-        headerText = QString("<span style='font-weight: %1; font-size: 12px; color: %2; text-transform: none;'>%3</span> "
-                             "<span style='color: %4; font-size: 11px;'>[%5]</span>")
-            .arg(isOutput ? "700" : "600").arg(portNameColor).arg(info.name).arg(indexColor).arg(info.index);
+        headerText = QString("<span style='font-weight: 600; font-size: 12px; color: %1; text-transform: none;'>%2</span> "
+                             "<span style='color: %3; font-size: 11px;'>[%4]</span>")
+            .arg(portNameColor).arg(info.name).arg(indexColor).arg(info.index);
     } else {
-        headerText = QString("<span style='font-weight: %1; font-size: 12px; color: %2; text-transform: none;'>%3</span>")
-            .arg(isOutput ? "700" : "600").arg(portNameColor).arg(info.name);
+        headerText = QString("<span style='font-weight: 600; font-size: 12px; color: %1; text-transform: none;'>%2</span>")
+            .arg(portNameColor).arg(info.name);
     }
     QLabel* nameLabel = new QLabel(headerText);
     headerLayout->addWidget(nameLabel);
@@ -396,6 +396,25 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
         cardLayout->addLayout(typeLayout);
     }
 
+    // Extract Path field and remove redundant File fields
+    QString pathValue;
+    QVector<DataField> remainingFields;
+    bool useSmartFileLayout = false;
+    
+    if (!info.fields.isEmpty()) {
+        for (const auto& field : info.fields) {
+            if (field.key == "Path" && !field.value.isEmpty()) {
+                pathValue = field.value;
+                useSmartFileLayout = true;
+            } else if ((field.key == "File" || field.key == "FileName") && field.value == info.summary) {
+                // Ignore redundant File field
+                useSmartFileLayout = true;
+            } else {
+                remainingFields.append(field);
+            }
+        }
+    }
+
     // Summary (preview area)
     if (!info.summary.isEmpty()) {
         QString displaySummary = info.summary;
@@ -403,40 +422,66 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
             displaySummary = displaySummary.left(60) + "...";
         }
 
-        // Preview section with label (HTML design has separate label)
-        QWidget* previewContainer = new QWidget();
-        QVBoxLayout* previewLayout = new QVBoxLayout(previewContainer);
-        previewLayout->setContentsMargins(0, 0, 0, 0);
-        previewLayout->setSpacing(4);
+        QWidget* summaryContainer = new QWidget();
+        QVBoxLayout* summaryLayout = new QVBoxLayout(summaryContainer);
+        summaryLayout->setContentsMargins(0, 0, 0, 0);
+        summaryLayout->setSpacing(2);
 
-        // Preview label
-        QLabel* previewLabel = new QLabel(QObject::tr("Preview"));
-        previewLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: 500; text-transform: none;").arg(secondaryTextColor));
-        previewLayout->addWidget(previewLabel);
+        if (useSmartFileLayout) {
+            // Smart Layout for File/Path
+            QLabel* nameLabel = new QLabel(displaySummary);
+            nameLabel->setStyleSheet(QString(
+                "color: %1;"
+                "font-size: 13px;"
+                "font-weight: 600;"
+                "text-transform: none;"
+            ).arg(primaryTextColor));
+            nameLabel->setWordWrap(true);
+            summaryLayout->addWidget(nameLabel);
 
-        // Preview value
-        QLabel* valueLabel = new QLabel(displaySummary);
-        QString previewBg = isDark ? "#1F2937" : "#F9FAFB";
-        QString previewBorder = isDark ? "#374151" : "#E5E7EB";
-        valueLabel->setStyleSheet(QString(
-            "QLabel {"
-            "   color: %1;"
-            "   font-size: 12px;"
-            "   font-family: monospace;"
-            "   background-color: %2;"
-            "   border: 1px solid %3;"
-            "   padding: 5px 6px;"
-            "   border-radius: 4px;"
-            "}"
-        ).arg(tertiaryTextColor).arg(previewBg).arg(previewBorder));
-        valueLabel->setWordWrap(true);
-        previewLayout->addWidget(valueLabel);
+            if (!pathValue.isEmpty()) {
+                QLabel* pathLabel = new QLabel();
+                pathLabel->setStyleSheet(QString(
+                    "color: %1;"
+                    "font-size: 11px;"
+                    "text-transform: none;"
+                ).arg(secondaryTextColor));
+                
+                pathLabel->setToolTip(pathValue);
+                QStringList pathLines = pathValue.split("\n", Qt::SkipEmptyParts);
+                QString displayPath;
+                for (int i = 0; i < pathLines.size(); ++i) {
+                    QString displayLine = pathLines[i];
+                    if (displayLine.length() > 60) {
+                        displayLine = displayLine.left(25) + "..." + displayLine.right(30);
+                    }
+                    if (i > 0) displayPath += "\n";
+                    displayPath += displayLine;
+                }
+                pathLabel->setText(displayPath);
+                summaryLayout->addWidget(pathLabel);
+            }
+        } else {
+            // Standard Layout without the heavy border
+            QLabel* summaryLabel = new QLabel(QObject::tr("Summary"));
+            summaryLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: 500; text-transform: none;").arg(secondaryTextColor));
+            summaryLayout->addWidget(summaryLabel);
 
-        cardLayout->addWidget(previewContainer);
+            QLabel* valueLabel = new QLabel(displaySummary);
+            valueLabel->setStyleSheet(QString(
+                "color: %1;"
+                "font-size: 12px;"
+                "text-transform: none;"
+            ).arg(tertiaryTextColor));
+            valueLabel->setWordWrap(true);
+            summaryLayout->addWidget(valueLabel);
+        }
+
+        cardLayout->addWidget(summaryContainer);
     }
 
     // Fields section
-    if (!info.fields.isEmpty()) {
+    if (!remainingFields.isEmpty()) {
         // Separator
         QFrame* separator = new QFrame();
         separator->setFrameShape(QFrame::HLine);
@@ -444,7 +489,7 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
         separator->setFixedHeight(1);
         cardLayout->addWidget(separator);
 
-        for (const auto& field : info.fields) {
+        for (const auto& field : remainingFields) {
             QHBoxLayout* fieldLayout = new QHBoxLayout();
             fieldLayout->setSpacing(6);
 
@@ -604,11 +649,6 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
 
     // Input ports first
     if (!_inputPorts.empty()) {
-        QLabel* portsLabel = new QLabel(QObject::tr("Port Data"));
-        portsLabel->setStyleSheet(QString(
-            "color: %1; font-weight: bold; font-size: 11px; margin-bottom: 4px;"
-        ).arg(sectionTextColor));
-        _inputLayout->addWidget( portsLabel);
 
         for (size_t i = 0; i < _inputPorts.size(); ++i) {
             renderPortCard(_inputLayout, _inputPorts[i], false, this);
@@ -671,40 +711,94 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
     
     if (hasPreviewImage) {
         _imageView = new ImageView();
+        _imageView->setStyleSheet(QString("border: 1px solid %1; border-radius: 4px;")
+            .arg(isDarkTheme(this) ? "#4B5563" : "#E5E7EB"));
         _imageView->setMinimumHeight(300); // Ensure the image has some vertical space
         _processingLayout->addWidget(_imageView);
         
-        // First load the image so the view is ready
-        updatePreviewImage();
+        // View will be loaded at the end of section creation
         
+        bool isDark = isDarkTheme(this);
+        QString toggleBtnStyle = QString(
+            "QPushButton {"
+            "  padding: 4px 10px;"
+            "  border: 1px solid %1;"
+            "  border-radius: 4px;"
+            "  background-color: %2;"
+            "  color: %3;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: %4;"
+            "}"
+            "QPushButton:checked {"
+            "  background-color: #3B82F6;"
+            "  border-color: #3B82F6;"
+            "  color: white;"
+            "  font-weight: bold;"
+            "}")
+            .arg(isDark ? "#4B5563" : "#D1D5DB")
+            .arg(isDark ? "#374151" : "#F9FAFB")
+            .arg(isDark ? "#F9FAFB" : "#374151")
+            .arg(isDark ? "#4B5563" : "#F3F4F6");
+            
+        QString clearBtnStyle = QString(
+            "QPushButton {"
+            "  padding: 4px 8px;"
+            "  border: 1px solid %1;"
+            "  border-radius: 4px;"
+            "  background-color: %2;"
+            "  color: #EF4444;"
+            "}"
+            "QPushButton:hover {"
+            "  background-color: %3;"
+            "}")
+            .arg(isDark ? "#4B5563" : "#D1D5DB")
+            .arg(isDark ? "#1F2937" : "#FFFFFF")
+            .arg(isDark ? "#7F1D1D" : "#FEE2E2");
+
         if (_supportsTwoRois) {
             _roiToolbar = new QWidget();
             auto* roiLayout = new QHBoxLayout(_roiToolbar);
             roiLayout->setContentsMargins(5, 5, 5, 5);
+            roiLayout->setSpacing(5);
             
-            _targetRoiRadio = new QRadioButton(QStringLiteral("绘制目标区域"));
-            _clutterRoiRadio = new QRadioButton(QStringLiteral("绘制杂波区域"));
-            auto* noneRadio = new QRadioButton(QStringLiteral("停止绘制"));
-            noneRadio->setChecked(true);
+            _targetRoiBtn = new QPushButton(QStringLiteral("绘制目标区域"));
+            _targetRoiBtn->setCheckable(true);
+            _targetRoiBtn->setStyleSheet(toggleBtnStyle);
+            
+            _clutterRoiBtn = new QPushButton(QStringLiteral("绘制杂波区域"));
+            _clutterRoiBtn->setCheckable(true);
+            _clutterRoiBtn->setStyleSheet(toggleBtnStyle);
             
             if (_hasTargetRoi) _imageView->setTargetRoiRect(_targetRoi);
             if (_hasClutterRoi) _imageView->setClutterRoiRect(_clutterRoi);
             
-            connect(_targetRoiRadio, &QRadioButton::toggled, this, &NodeDetailWindow::onTargetRoiToggled);
-            connect(_clutterRoiRadio, &QRadioButton::toggled, this, &NodeDetailWindow::onClutterRoiToggled);
+            connect(_targetRoiBtn, &QPushButton::toggled, this, &NodeDetailWindow::onTargetRoiToggled);
+            connect(_clutterRoiBtn, &QPushButton::toggled, this, &NodeDetailWindow::onClutterRoiToggled);
             
-            auto* clearTargetBtn = new QPushButton(QStringLiteral("清除目标框"));
-            auto* clearClutterBtn = new QPushButton(QStringLiteral("清除杂波框"));
+            auto* clearTargetBtn = new QPushButton(QStringLiteral("✖ 清除"));
+            clearTargetBtn->setStyleSheet(clearBtnStyle);
+            clearTargetBtn->setFixedWidth(60);
+            
+            auto* clearClutterBtn = new QPushButton(QStringLiteral("✖ 清除"));
+            clearClutterBtn->setStyleSheet(clearBtnStyle);
+            clearClutterBtn->setFixedWidth(60);
+            
             connect(clearTargetBtn, &QPushButton::clicked, this, &NodeDetailWindow::onTargetRoiCleared);
             connect(clearClutterBtn, &QPushButton::clicked, this, &NodeDetailWindow::onClutterRoiCleared);
             
-            roiLayout->addWidget(_targetRoiRadio);
+            roiLayout->addWidget(_targetRoiBtn);
             roiLayout->addWidget(clearTargetBtn);
-            roiLayout->addSpacing(10);
-            roiLayout->addWidget(_clutterRoiRadio);
+            
+            QFrame* vLine = new QFrame();
+            vLine->setFrameShape(QFrame::VLine);
+            vLine->setFrameShadow(QFrame::Sunken);
+            vLine->setStyleSheet(isDark ? "background-color: #4B5563;" : "background-color: #D1D5DB;");
+            roiLayout->addWidget(vLine);
+            
+            roiLayout->addWidget(_clutterRoiBtn);
             roiLayout->addWidget(clearClutterBtn);
-            roiLayout->addSpacing(10);
-            roiLayout->addWidget(noneRadio);
+            
             roiLayout->addStretch();
             
             _processingLayout->addWidget(_roiToolbar);
@@ -721,19 +815,24 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             auto* roiLayout = new QHBoxLayout(_roiToolbar);
             roiLayout->setContentsMargins(5, 5, 5, 5);
             
-            _roiEnableCheckbox = new QCheckBox(QStringLiteral("启用框选区域"));
-            _roiEnableCheckbox->setChecked(_hasCustomRoi);
+            _roiEnableBtn = new QPushButton(QStringLiteral("绘制框选区域"));
+            _roiEnableBtn->setCheckable(true);
+            _roiEnableBtn->setStyleSheet(toggleBtnStyle);
+            _roiEnableBtn->setChecked(_hasCustomRoi);
+            
             _imageView->setRoiSelectionEnabled(_hasCustomRoi);
             if (_hasCustomRoi) {
                 _imageView->setRoiRect(_customRoi);
             }
             
-            connect(_roiEnableCheckbox, &QCheckBox::toggled, this, &NodeDetailWindow::onRoiToggled);
+            connect(_roiEnableBtn, &QPushButton::toggled, this, &NodeDetailWindow::onRoiToggled);
             
-            auto* clearRoiBtn = new QPushButton(QStringLiteral("清除框选"));
+            auto* clearRoiBtn = new QPushButton(QStringLiteral("✖ 清除"));
+            clearRoiBtn->setStyleSheet(clearBtnStyle);
+            clearRoiBtn->setFixedWidth(60);
             connect(clearRoiBtn, &QPushButton::clicked, this, &NodeDetailWindow::onRoiCleared);
             
-            roiLayout->addWidget(_roiEnableCheckbox);
+            roiLayout->addWidget(_roiEnableBtn);
             roiLayout->addWidget(clearRoiBtn);
             roiLayout->addStretch();
             
@@ -846,11 +945,23 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             _imageView->setMinimumHeight(250);
             
             // Dynamic table height based on rows
-            int tableHeight = 35 + (_detectionResults.size() * 32) + 2;
-            _resultsTable->setMinimumHeight(qMin(tableHeight, 250));
-            _resultsTable->setMaximumHeight(qMin(tableHeight, 250));
+            int tableHeight = 35 + (_detectionResults.size() * 32) + 15;
+            int minTableHeight = 140;
+            int maxTableHeight = 400;
+            int finalHeight = qBound(minTableHeight, tableHeight, maxTableHeight);
+            
+            _resultsTable->setMinimumHeight(finalHeight);
+            _resultsTable->setMaximumHeight(finalHeight);
+            
+            if (tableHeight <= maxTableHeight) {
+                _resultsTable->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            } else {
+                _resultsTable->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+            }
         }
         
+        // Initialize preview image and sync all newly created UI elements
+        updatePreviewImage();
     }
     
     if (_processingInfo.empty() && !hasPreviewImage) {
@@ -898,6 +1009,7 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         noContentLabel->setAlignment(Qt::AlignCenter);
         _outputLayout->addWidget( noContentLabel);
     } else {
+
         for (const auto& port : _outputPorts) {
             renderPortCard(_outputLayout, port, true, this);
         }
@@ -968,9 +1080,9 @@ void NodeDetailWindow::clearData()
     _hasCustomRoi = false;
     _customRoi = QRectF();
     _roiToolbar = nullptr;
-    _roiEnableCheckbox = nullptr;
-    _targetRoiRadio = nullptr;
-    _clutterRoiRadio = nullptr;
+    _roiEnableBtn = nullptr;
+    _targetRoiBtn = nullptr;
+    _clutterRoiBtn = nullptr;
     _imageView = nullptr;
     _imageNameLabel = nullptr;
     _prevButton = nullptr;
@@ -1145,6 +1257,12 @@ void NodeDetailWindow::onRoiCleared()
 
 void NodeDetailWindow::onTargetRoiToggled(bool checked)
 {
+    if (checked && _clutterRoiBtn && _clutterRoiBtn->isChecked()) {
+        _clutterRoiBtn->blockSignals(true);
+        _clutterRoiBtn->setChecked(false);
+        _clutterRoiBtn->blockSignals(false);
+    }
+    
     if (_imageView && checked) {
         _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::Target);
     } else if (_imageView && !checked && _imageView->roiSelectionMode() == ImageView::RoiSelectionMode::Target) {
@@ -1154,6 +1272,12 @@ void NodeDetailWindow::onTargetRoiToggled(bool checked)
 
 void NodeDetailWindow::onClutterRoiToggled(bool checked)
 {
+    if (checked && _targetRoiBtn && _targetRoiBtn->isChecked()) {
+        _targetRoiBtn->blockSignals(true);
+        _targetRoiBtn->setChecked(false);
+        _targetRoiBtn->blockSignals(false);
+    }
+    
     if (_imageView && checked) {
         _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::Clutter);
     } else if (_imageView && !checked && _imageView->roiSelectionMode() == ImageView::RoiSelectionMode::Clutter) {

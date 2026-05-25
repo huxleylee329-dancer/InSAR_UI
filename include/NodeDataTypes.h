@@ -124,7 +124,21 @@ public:
         if (!_filePaths.isEmpty()) {
             DataField pathField;
             pathField.key = "Path";
-            pathField.value = _filePaths.size() == 1 ? _filePaths.first() : QString("%1 files").arg(_filePaths.size());
+            if (_filePaths.size() == 1) {
+                pathField.value = _filePaths.first();
+            } else {
+                if (_filePaths.size() <= 4) {
+                    pathField.value = _filePaths.join("\n");
+                } else {
+                    QStringList preview;
+                    preview << _filePaths[0];
+                    preview << _filePaths[1];
+                    preview << QString("... (共 %1 个文件) ...").arg(_filePaths.size());
+                    preview << _filePaths[_filePaths.size() - 2];
+                    preview << _filePaths.last();
+                    pathField.value = preview.join("\n");
+                }
+            }
             pathField.editType = _filePaths.size() == 1 ? FieldEditType::Path : FieldEditType::None;
             pathField.pathFilter = "Images (*.jpg *.jpeg *.png *.bmp *.tif *.tiff *.h5);;All Files (*)";
             fields.append(pathField);

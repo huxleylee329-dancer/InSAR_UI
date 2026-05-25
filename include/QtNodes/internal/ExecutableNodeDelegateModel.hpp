@@ -162,6 +162,8 @@ public:
     /// Trigger update on the NodeGraphicsObject when progress/state changes
     void triggerVisualUpdate();
 
+    virtual void collapseDetailedList() {}
+
 protected:
     virtual void execute() = 0;
 

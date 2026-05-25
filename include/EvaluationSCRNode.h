@@ -36,6 +36,7 @@ public:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    void collapseDetailedList() override;
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;

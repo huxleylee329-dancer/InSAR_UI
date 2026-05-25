@@ -1565,6 +1565,10 @@ bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)
 
 void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::ExecutableNodeDelegateModel* execModel)
 {
+    if (execModel) {
+        execModel->collapseDetailedList();
+    }
+
     // Capture snapshot of node data
     QtNodes::NodeDataSnapshot snapshot = QtNodes::captureNodeData(
         execModel, m_scene, ngo->nodeId());

@@ -92,13 +92,13 @@
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <PreprocessorDefinitions>NODE_EDITOR_STATIC;ADS_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\onnxruntime-win-x64-1.26.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\Microsoft.ML.OnnxRuntime.1.25.1\build\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\onnxruntime-win-x64-1.26.0\lib;D:\SRC\opencv\build\x64\vc15\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\Microsoft.ML.OnnxRuntime.1.25.1\runtimes\win-x64\native;D:\SRC\opencv\build\x64\vc15\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>onnxruntime.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>

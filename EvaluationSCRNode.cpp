@@ -171,6 +171,25 @@ bool EvaluationSCRNode::isReady() const
            (m_filteredData != nullptr && !m_filteredData->filePaths().isEmpty());
 }
 
+void EvaluationSCRNode::collapseDetailedList()
+{
+    if (m_isExpanded) {
+        m_isExpanded = false;
+        if (m_resultsTable) {
+            m_resultsTable->setVisible(false);
+        }
+        if (m_expandLabel) {
+            m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
+        }
+        if (m_widget) {
+            m_widget->setFixedWidth(200);
+            m_widget->resize(0, 0);
+            m_widget->adjustSize();
+            Q_EMIT embeddedWidgetSizeUpdated();
+        }
+    }
+}
+
 void EvaluationSCRNode::execute()
 {
     calculateAndDisplaySCR();

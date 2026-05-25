@@ -102,7 +102,7 @@ protected:
     bool _hasCustomRoi;
     QRectF _customRoi;
     QWidget* _roiToolbar;
-    QCheckBox* _roiEnableCheckbox;
+    QPushButton* _roiEnableBtn = nullptr;
     
     // Dual ROI View
     bool _supportsTwoRois;
@@ -110,8 +110,8 @@ protected:
     QRectF _targetRoi;
     bool _hasClutterRoi;
     QRectF _clutterRoi;
-    QRadioButton* _targetRoiRadio = nullptr;
-    QRadioButton* _clutterRoiRadio = nullptr;
+    QPushButton* _targetRoiBtn = nullptr;
+    QPushButton* _clutterRoiBtn = nullptr;
     
     int _currentPreviewIndex = 0;
     ImageView* _imageView = nullptr;
@@ -213,18 +213,18 @@ private:
         "  border-color: #60A5FA;"
         "}";
 
-    // Output port card (same style as input, just special blue border)
+    // Output port card (same style as input, unified border color)
     static constexpr char const* STYLE_OUTPUT_CARD_LIGHT =
         "#OutputCard {"
         "  background-color: #FFFFFF;"
-        "  border: 1px solid #BFDBFE;"
+        "  border: 1px solid #E5E7EB;"
         "  border-radius: 4px;"
         "}";
 
     static constexpr char const* STYLE_OUTPUT_CARD_DARK =
         "#OutputCard {"
         "  background-color: #374151;"
-        "  border: 1px solid #3B82F6;"
+        "  border: 1px solid #4B5563;"
         "  border-radius: 4px;"
         "}";
 
@@ -415,7 +415,7 @@ private:
     // Font sizes
     static constexpr int FONT_SIZE_INFO = 9;         // Info label
 
-    static constexpr int SECTION_MIN_WIDTH = 290;
+    static constexpr int SECTION_MIN_WIDTH = 340;
     static constexpr int CONTENT_MAX_HEIGHT = 450;
 
     /// Theme detection
