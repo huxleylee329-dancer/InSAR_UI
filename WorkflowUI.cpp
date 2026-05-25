@@ -50,6 +50,8 @@
 #include <algorithm>
 #include <memory>
 #include <QToolButton>
+#include <QStyle>
+#include <QLayout>
 
 // ============================================================================
 // Node Palette Full Order Configuration
@@ -1455,7 +1457,7 @@ void WorkflowUI::setTheme(const QString &theme)
         m_dockManager->setStyleSheet(adsStyle);
     }
 
-    // Apply background color to all node embedded widgets
+    // Update background color and layout for all node embedded widgets
     if (m_scene) {
         std::unordered_set<QtNodes::NodeId> nodeIds = m_graphModel->allNodeIds();
         for (QtNodes::NodeId nodeId : nodeIds) {
@@ -1463,15 +1465,19 @@ void WorkflowUI::setTheme(const QString &theme)
             QVariant widgetVar = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Widget);
             QWidget* widget = qobject_cast<QWidget*>(widgetVar.value<QObject*>());
             if (widget) {
-                QString bgColor;
-                if (theme == "light") {
-                    bgColor = "#F9F9F9";
-                } else if (theme == "dark") {
-                    bgColor = "#2b2b2b";
-                } else {  // fusion
-                    bgColor = "white";
+                // Remove hardcoded inline style that breaks QSS
+                widget->setStyleSheet("");
+                
+                // Force widget to recalculate size hint after QSS application
+                widget->style()->unpolish(widget);
+                widget->style()->polish(widget);
+                if (widget->layout()) {
+                    widget->layout()->invalidate();
                 }
-                widget->setStyleSheet(QString("background-color: %1;").arg(bgColor));
+                widget->updateGeometry();
+                
+                // Notify graph model that node needs layout update
+                m_graphModel->nodeUpdated(nodeId);
             }
         }
     }
@@ -1497,6 +1503,7 @@ void WorkflowUI::setTheme(const QString &theme)
             m_propertyEditor->setProperty("theme-background", QColor(240, 240, 240));
         }
         // Refresh property panel to apply theme changes
+        m_propertyEditor->updateThemeStyles();
         m_propertyEditor->refreshCurrentNode();
     }
 }

@@ -160,6 +160,8 @@ public:
     void clearSelection();
 
     void refreshCurrentNode();  // Refresh properties of currently selected node
+    
+    void updateThemeStyles(); // Refresh static UI elements when theme changes
 
     QtNodes::NodeId currentNodeId() const { return m_currentNodeId; }
 

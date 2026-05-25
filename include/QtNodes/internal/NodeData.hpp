@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <memory>
 
@@ -28,7 +28,8 @@ enum class FieldEditType
     None,       // 不可编辑
     Text,       // 文本输入
     Number,     // 数字输入（支持 double）
-    Path        // 文件路径选择
+    Path,       // 文件路径选择
+    Boolean     // 布尔开关
 };
 
 /**

@@ -553,17 +553,19 @@ void PropertyEditor::createCollapsibleSection(CollapsibleSection& section, const
 
     // Create header with glass effect
     section.header = new QWidget();
-    QString headerBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
-    QString headerBorder = darkTheme ? "rgba(148, 163, 184, 0.2)" : "rgba(148, 163, 184, 0.15)";
+    QString headerBg = darkTheme ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.9)";
+    QString headerBorder = darkTheme ? "rgba(255, 255, 255, 0.15)" : "rgba(148, 163, 184, 0.4)";
     QString headerTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
-
-    section.header->setStyleSheet(QString(
-        "QWidget {"
+    section.container->setObjectName("CollapsibleContainer");
+    section.container->setStyleSheet(QString(
+        "#CollapsibleContainer {"
         "  background-color: %1;"
         "  border: 1px solid %2;"
         "  border-radius: 6px;"
         "}"
     ).arg(headerBg).arg(headerBorder));
+
+    section.header->setStyleSheet("QWidget { background-color: transparent; border: none; }");
 
     QHBoxLayout* headerLayout = new QHBoxLayout(section.header);
     headerLayout->setContentsMargins(10, 10, 10, 10);
@@ -589,7 +591,7 @@ void PropertyEditor::createCollapsibleSection(CollapsibleSection& section, const
     });
 
     section.titleLabel = new QLabel(title);
-    section.titleLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(headerTextColor));
+    section.titleLabel->setStyleSheet(QString("font-weight: bold; font-size: 11px; color: %1;").arg(headerTextColor));
 
     headerLayout->addWidget(section.toggleButton);
     headerLayout->addWidget(section.titleLabel);
@@ -723,6 +725,52 @@ void PropertyEditor::clearSelection()
     m_noSelectionLabel->show();
 }
 
+void PropertyEditor::updateThemeStyles()
+{
+    bool darkTheme = isDarkTheme();
+
+    // 1. Update no selection label
+    if (m_noSelectionLabel) {
+        QString noSelectionTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+        m_noSelectionLabel->setStyleSheet(QString("color: %1;").arg(noSelectionTextColor));
+    }
+
+    // Lambda to update a collapsible section
+    auto updateSectionTheme = [darkTheme](CollapsibleSection& section) {
+        if (!section.container || !section.toggleButton || !section.titleLabel) return;
+        
+        QString headerBg = darkTheme ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.9)";
+        QString headerBorder = darkTheme ? "rgba(255, 255, 255, 0.15)" : "rgba(148, 163, 184, 0.4)";
+        QString headerTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
+        QString toggleButtonColor = darkTheme ? "#94A3B8" : "#3B82F6";
+        
+        section.container->setStyleSheet(QString(
+            "#CollapsibleContainer {"
+            "  background-color: %1;"
+            "  border: 1px solid %2;"
+            "  border-radius: 6px;"
+            "}"
+        ).arg(headerBg).arg(headerBorder));
+        
+        section.toggleButton->setStyleSheet(QString(
+            "QToolButton {"
+            "  border: none;"
+            "  background: transparent;"
+            "  color: %1;"
+            "}"
+            "QToolButton:hover {"
+            "  color: %2;"
+            "}"
+        ).arg(toggleButtonColor).arg(darkTheme ? "#FFFFFF" : "#60A5FA"));
+        
+        section.titleLabel->setStyleSheet(QString("font-weight: bold; font-size: 11px; color: %1;").arg(headerTextColor));
+    };
+
+    updateSectionTheme(m_inputSection);
+    updateSectionTheme(m_processingSection);
+    updateSectionTheme(m_outputSection);
+}
+
 void PropertyEditor::refreshCurrentNode()
 {
     // Only refresh if there's a currently selected node
@@ -774,33 +822,29 @@ void PropertyEditor::generateBasicInfoSection()
 {
     bool darkTheme = isDarkTheme();
 
-    // Create basic info container with glass effect
+    // Create basic info container
     QWidget* basicInfoWidget = new QWidget();
-    basicInfoWidget->setStyleSheet(QString(
-        "QWidget {"
-        "  background-color: %1;"
-        "  border-radius: 8px;"
-        "}"
-    ).arg(darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)"));
+    basicInfoWidget->setStyleSheet("QWidget { background-color: transparent; }");
 
     QVBoxLayout* basicInfoLayout = new QVBoxLayout(basicInfoWidget);
-    basicInfoLayout->setContentsMargins(12, 12, 12, 12);
-    basicInfoLayout->setSpacing(8);
+    basicInfoLayout->setContentsMargins(6, 4, 6, 4);
+    basicInfoLayout->setSpacing(6);
 
     QString primaryTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
-    QString secondaryTextColor = darkTheme ? "#94A3B8" : "#334155";
+    QString secondaryTextColor = darkTheme ? "#94A3B8" : "#64748B";
+    QString tertiaryTextColor = darkTheme ? "#FFFFFF" : "#334155";
     QString inputBgColor = darkTheme ? "rgba(64, 64, 64, 0.8)" : "rgba(255, 255, 255, 0.9)";
     QString inputBorderColor = darkTheme ? "rgba(148, 163, 184, 0.3)" : "#CBD5E1";
 
     // Caption - 使用横向布局在一行显示
     QHBoxLayout* captionLayout = new QHBoxLayout();
-    captionLayout->setSpacing(4);
+    captionLayout->setSpacing(6);
 
     QLabel* captionLabel = new QLabel("Caption:");
-    captionLabel->setStyleSheet(QString("font-weight: bold; color: %1;").arg(primaryTextColor));
+    captionLabel->setStyleSheet(QString("font-weight: bold; font-size: 11px; color: %1;").arg(primaryTextColor));
 
     QLabel* captionValueLabel = new QLabel(m_nodeData.caption);
-    captionValueLabel->setStyleSheet(QString("color: %1;").arg(primaryTextColor));
+    captionValueLabel->setStyleSheet(QString("font-size: 11px; color: %1;").arg(tertiaryTextColor));
     captionValueLabel->setWordWrap(true);
 
     captionLayout->addWidget(captionLabel);
@@ -810,10 +854,10 @@ void PropertyEditor::generateBasicInfoSection()
 
     // Position
     QHBoxLayout* posLayout = new QHBoxLayout();
-    posLayout->setSpacing(12);
+    posLayout->setSpacing(6);
 
     QLabel* xLabel = new QLabel("X:");
-    xLabel->setStyleSheet(QString("font-weight: bold; color: %1; min-width: 20px;").arg(primaryTextColor));
+    xLabel->setStyleSheet(QString("font-weight: normal; font-size: 11px; color: %1; min-width: 20px;").arg(secondaryTextColor));
     m_xSpinBox = new QDoubleSpinBox();
     m_xSpinBox->setRange(-1e6, 1e6);
     m_xSpinBox->setDecimals(2);
@@ -824,20 +868,22 @@ void PropertyEditor::generateBasicInfoSection()
         "  border: 1px solid %2;"
         "  border-radius: 4px;"
         "  padding: 4px;"
+        "  font-size: 11px;"
         "  color: %3;"
         "}"
         "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
         "  border: none;"
         "  width: 16px;"
         "}"
-    ).arg(inputBgColor).arg(inputBorderColor).arg(primaryTextColor));
+    ).arg(inputBgColor).arg(inputBorderColor).arg(tertiaryTextColor));
     connect(m_xSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, &PropertyEditor::onPropertyValueChanged);
     posLayout->addWidget(xLabel);
     posLayout->addWidget(m_xSpinBox);
+    posLayout->addSpacing(16);
 
     QLabel* yLabel = new QLabel("Y:");
-    yLabel->setStyleSheet(QString("font-weight: bold; color: %1; min-width: 20px;").arg(primaryTextColor));
+    yLabel->setStyleSheet(QString("font-weight: normal; font-size: 11px; color: %1; min-width: 20px;").arg(secondaryTextColor));
     m_ySpinBox = new QDoubleSpinBox();
     m_ySpinBox->setRange(-1e6, 1e6);
     m_ySpinBox->setDecimals(2);
@@ -848,6 +894,7 @@ void PropertyEditor::generateBasicInfoSection()
         "  border: 1px solid %2;"
         "  border-radius: 4px;"
         "  padding: 4px;"
+        "  font-size: 11px;"
         "  color: %3;"
         "}"
         "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
@@ -859,6 +906,7 @@ void PropertyEditor::generateBasicInfoSection()
             this, &PropertyEditor::onPropertyValueChanged);
     posLayout->addWidget(yLabel);
     posLayout->addWidget(m_ySpinBox);
+    posLayout->addStretch();
 
     basicInfoLayout->addLayout(posLayout);
 
@@ -971,9 +1019,7 @@ void PropertyEditor::generateInputSection()
 
     // Display input ports (from connected upstream nodes)
     if (!m_nodeData.inputPorts.isEmpty()) {
-        QLabel* portsLabel = new QLabel("Port Data");
-        portsLabel->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px; margin-bottom: 4px;").arg(sectionTextColor));
-        contentLayout->addWidget(portsLabel);
+
 
         for (const PortDataInfo& info : m_nodeData.inputPorts) {
             // Input ports are generally not editable (data comes from connected nodes)
@@ -1022,10 +1068,12 @@ void PropertyEditor::generateProcessingSection()
     QString infoTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
     QString infoBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.6)";
     QString noInfoTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
+    QString primaryTextColor = darkTheme ? "#FFFFFF" : "#1E3A8A";
+    QString tertiaryTextColor = darkTheme ? "#FFFFFF" : "#334155";
 
     if (m_nodeData.processingInfo.isEmpty() && m_nodeData.previewImagePaths.isEmpty() && m_nodeData.detectionResults.isEmpty()) {
         QLabel* noInfoLabel = new QLabel("No processing info available");
-        noInfoLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noInfoTextColor));
+        noInfoLabel->setStyleSheet(QString("color: %1; font-style: italic; font-size: 11px;").arg(noInfoTextColor));
         contentLayout->addWidget(noInfoLabel);
     } else {
         // Output standard processing info
@@ -1035,12 +1083,10 @@ void PropertyEditor::generateProcessingSection()
             infoLabel->setStyleSheet(QString(
                 "QLabel {"
                 "  color: %1;"
-                "  background-color: %2;"
-                "  padding: 8px 10px;"
-                "  border-radius: 4px;"
-                "  border-left: 3px solid #3B82F6;"
+                "  font-size: 11px;"
+                "  padding: 2px 0px;"
                 "}"
-            ).arg(infoTextColor).arg(infoBg));
+            ).arg(tertiaryTextColor));
             contentLayout->addWidget(infoLabel);
         }
         
@@ -1056,16 +1102,16 @@ void PropertyEditor::generateProcessingSection()
                         detectedCount++;
                     }
                 }
-                successLabel = new QLabel(QObject::tr("✅ 处理完成：共处理 %1 张图像，发现目标 %2 个")
+                successLabel = new QLabel(QObject::tr("处理完成：共处理 %1 张图像，发现目标 %2 个")
                     .arg(m_nodeData.detectionResults.size())
                     .arg(detectedCount));
             } else if (m_nodeData.caption.contains("Evaluation", Qt::CaseInsensitive) || 
                        m_nodeData.caption.contains("评估", Qt::CaseInsensitive) ||
                        m_nodeData.caption.contains("ENL", Qt::CaseInsensitive)) {
-                successLabel = new QLabel(QObject::tr("✅ 评估完成：共处理 %1 对图像")
+                successLabel = new QLabel(QObject::tr("评估完成：共处理 %1 对图像")
                     .arg(m_nodeData.detectionResults.size()));
             } else {
-                successLabel = new QLabel(QObject::tr("✅ 处理完成：共产生 %1 条结果")
+                successLabel = new QLabel(QObject::tr("处理完成：共产生 %1 条结果")
                     .arg(m_nodeData.detectionResults.size()));
             }
             
@@ -1073,53 +1119,50 @@ void PropertyEditor::generateProcessingSection()
                 "QLabel {"
                 "  color: %1;"
                 "  font-weight: bold;"
+                "  font-size: 11px;"
                 "  margin-top: 4px;"
                 "  margin-bottom: 2px;"
                 "}"
-            ).arg(infoTextColor));
+            ).arg(primaryTextColor));
             contentLayout->addWidget(successLabel);
             
             for (const auto& row : m_nodeData.detectionResults) {
                 if (row.size() >= 3) {
-                    QString colorHex = (row[1].toLower() == "ship") ? "#10B981" : "#6B7280";
-                    QLabel* fileLabel = new QLabel(QString("  - %1 [%2, %3]").arg(row[0], row[1], row[2]));
+                    QLabel* fileLabel = new QLabel(QString("%1 [%2, %3]").arg(row[0], row[1], row[2]));
                     fileLabel->setStyleSheet(QString(
                         "QLabel {"
                         "  color: %1;"
-                        "  background-color: %2;"
-                        "  padding: 4px 10px;"
-                        "  border-radius: 2px;"
-                        "  border-left: 2px solid %3;"
+                        "  font-size: 11px;"
+                        "  padding: 2px 0px;"
                         "}"
-                    ).arg(infoTextColor, infoBg, colorHex));
+                    ).arg(tertiaryTextColor));
                     contentLayout->addWidget(fileLabel);
                 }
             }
         }
         else if (!m_nodeData.previewImagePaths.isEmpty()) {
-            QLabel* successLabel = new QLabel(QObject::tr("✅ 成功输出文件：共 %1 个").arg(m_nodeData.previewImagePaths.size()));
+            QLabel* successLabel = new QLabel(QObject::tr("成功输出文件：共 %1 个").arg(m_nodeData.previewImagePaths.size()));
             successLabel->setStyleSheet(QString(
                 "QLabel {"
                 "  color: %1;"
                 "  font-weight: bold;"
+                "  font-size: 11px;"
                 "  margin-top: 4px;"
                 "  margin-bottom: 2px;"
                 "}"
-            ).arg(infoTextColor));
+            ).arg(primaryTextColor));
             contentLayout->addWidget(successLabel);
             
             for (const QString& path : m_nodeData.previewImagePaths) {
                 QFileInfo fi(path);
-                QLabel* fileLabel = new QLabel("  - " + fi.fileName());
+                QLabel* fileLabel = new QLabel(fi.fileName());
                 fileLabel->setStyleSheet(QString(
                     "QLabel {"
                     "  color: %1;"
-                    "  background-color: %2;"
-                    "  padding: 4px 10px;"
-                    "  border-radius: 2px;"
-                    "  border-left: 2px solid #10B981;" // Greenish border for files
+                    "  font-size: 11px;"
+                    "  padding: 2px 0px;"
                     "}"
-                ).arg(infoTextColor).arg(infoBg));
+                ).arg(tertiaryTextColor));
                 contentLayout->addWidget(fileLabel);
             }
         }
@@ -1157,23 +1200,13 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
 {
     bool darkTheme = isDarkTheme();
 
-    // Create card with glass effect
+    // Create container without glass effect
     QFrame* card = new QFrame();
-    card->setFrameShape(QFrame::StyledPanel);
-
-    QString cardBg = darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)";
-    QString cardBorder = darkTheme ? "rgba(148, 163, 184, 0.3)" : "rgba(148, 163, 184, 0.3)";
-
-    card->setStyleSheet(QString(
-        "QFrame {"
-        "   background-color: %1;"
-        "   border: 1px solid %2;"
-        "   border-radius: 8px;"
-        "}"
-    ).arg(cardBg).arg(cardBorder));
+    card->setFrameShape(QFrame::NoFrame);
+    card->setStyleSheet("QFrame { background-color: transparent; border: none; }");
 
     QVBoxLayout* cardLayout = new QVBoxLayout(card);
-    cardLayout->setContentsMargins(10, 10, 10, 10);
+    cardLayout->setContentsMargins(6, 4, 6, 4);
     cardLayout->setSpacing(6);
 
     // Text colors based on theme
@@ -1184,31 +1217,27 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
     // Port name with optional index
     QString headerText;
     if (info.showIndex) {
-        headerText = QString("<b>%1</b> <span style='color: %2;'>[%3]</span>")
-            .arg(info.name).arg(secondaryTextColor).arg(info.index);
+        headerText = QString("<span style='font-weight: bold; font-size: 11px; color: %1;'>%2</span> <span style='color: %3; font-size: 11px;'>[%4]</span>")
+            .arg(primaryTextColor).arg(info.name).arg(secondaryTextColor).arg(info.index);
     } else {
-        headerText = QString("<b>%1</b>").arg(info.name);
+        headerText = QString("<span style='font-weight: bold; font-size: 11px; color: %1;'>%2</span>")
+            .arg(primaryTextColor).arg(info.name);
     }
     QLabel* nameLabel = new QLabel(headerText);
-    nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(primaryTextColor));
+    nameLabel->setToolTip(QString("Type: %1").arg(info.dataType));
     cardLayout->addWidget(nameLabel);
-
-    // Data type
-    QLabel* typeLabel = new QLabel(QString("Type: %1").arg(info.dataType));
-    typeLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
-    cardLayout->addWidget(typeLabel);
 
     // Check if summary and fields are redundant
     bool showSummary = !info.summary.isEmpty();
     if (showSummary && !info.fields.isEmpty()) {
-        // If fields has only one field and its value is similar to summary, skip summary
-        if (info.fields.size() == 1) {
-            const auto& firstField = info.fields.first();
-            // Compare summary with field value (case-insensitive, trimmed)
-            QString summaryTrimmed = info.summary.trimmed().toLower();
-            QString valueTrimmed = firstField.value.trimmed().toLower();
-            if (summaryTrimmed == valueTrimmed) {
+        QString summaryTrimmed = info.summary.trimmed().toLower();
+        for (const auto& field : info.fields) {
+            QString valueTrimmed = field.value.trimmed().toLower();
+            // Replace backslashes with forward slashes for easier path comparison
+            valueTrimmed.replace("\\", "/");
+            if (valueTrimmed == summaryTrimmed || valueTrimmed.endsWith("/" + summaryTrimmed)) {
                 showSummary = false;
+                break;
             }
         }
     }
@@ -1216,23 +1245,9 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
     // Summary (if exists and not redundant)
     if (showSummary) {
         QString displaySummary = info.summary;
-        // Truncate long values
-        if (displaySummary.length() > 60) {
-            displaySummary = displaySummary.left(60) + "...";
-        }
 
         QLabel* summaryLabel = new QLabel(displaySummary);
-        QString summaryBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
-        summaryLabel->setStyleSheet(QString(
-            "QLabel {"
-            "   color: %1;"
-            "   font-size: 11px;"
-            "   background-color: %2;"
-            "   padding: 6px 8px;"
-            "   border-radius: 4px;"
-            "   border-left: 3px solid #3B82F6;"
-            "}"
-        ).arg(tertiaryTextColor).arg(summaryBg));
+        summaryLabel->setStyleSheet(QString("font-size: 11px; text-decoration: underline; color: %1; padding: 2px 0px;").arg(tertiaryTextColor));
         summaryLabel->setWordWrap(true);
         cardLayout->addWidget(summaryLabel);
     }
@@ -1244,41 +1259,45 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
             QHBoxLayout* fieldLayout = new QHBoxLayout();
             fieldLayout->setSpacing(6);
 
-            QLabel* keyLabel = new QLabel(field.key + ":");
-            keyLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
-            keyLabel->setMinimumWidth(60);
-            fieldLayout->addWidget(keyLabel);
+            if (field.key.compare("Path", Qt::CaseInsensitive) != 0) {
+                QLabel* keyLabel = new QLabel(field.key + ":");
+                keyLabel->setStyleSheet(QString("font-weight: normal; font-size: 11px; color: %1;").arg(secondaryTextColor));
+                fieldLayout->addWidget(keyLabel);
+            }
 
             // 根据编辑类型和 isEditable 创建不同的控件
             if (!isEditable || field.editType == QtNodes::FieldEditType::None) {
                 // 只读标签
                 QString displayValue = field.value;
-                if (displayValue.length() > 50) {
-                    displayValue = displayValue.left(50) + "...";
+                if (displayValue.contains('\n')) {
+                    QWidget* multiLineWidget = new QWidget();
+                    QVBoxLayout* multiLineLayout = new QVBoxLayout(multiLineWidget);
+                    multiLineLayout->setContentsMargins(0, 0, 0, 0);
+                    multiLineLayout->setSpacing(6);
+                    
+                    QStringList lines = displayValue.split('\n');
+                    for (const QString& line : lines) {
+                        QLabel* lineLabel = new QLabel(line);
+                        lineLabel->setStyleSheet(QString("font-size: 11px; color: %1; padding: 2px 0px;").arg(tertiaryTextColor));
+                        lineLabel->setWordWrap(true);
+                        multiLineLayout->addWidget(lineLabel);
+                    }
+                    fieldLayout->addWidget(multiLineWidget, 1);
+                } else {
+                    QLabel* valueLabel = new QLabel(displayValue);
+                    valueLabel->setStyleSheet(QString("font-size: 11px; color: %1; padding: 2px 0px;").arg(tertiaryTextColor));
+                    valueLabel->setWordWrap(true);
+                    fieldLayout->addWidget(valueLabel, 1);
                 }
-                QLabel* valueLabel = new QLabel(displayValue);
-                valueLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(tertiaryTextColor));
-                valueLabel->setWordWrap(true);
-                fieldLayout->addWidget(valueLabel);
             }
-            else if (field.editType == QtNodes::FieldEditType::Text) {
-                // 只读标签
-                QString displayValue = field.value;
-                if (displayValue.length() > 50) {
-                    displayValue = displayValue.left(50) + "...";
-                }
-                QLabel* valueLabel = new QLabel(displayValue);
-                valueLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(tertiaryTextColor));
-                valueLabel->setWordWrap(true);
-                fieldLayout->addWidget(valueLabel);
-            }
+
             else if (field.editType == QtNodes::FieldEditType::Text) {
                 // 文本编辑框
                 QLineEdit* lineEdit = new QLineEdit(field.value);
                 lineEdit->setStyleSheet(QString(
                     "QLineEdit {"
                     "   color: %1;"
-                    "   font-size: 10px;"
+                    "   font-size: 11px;"
                     "   background-color: rgba(255, 255, 255, 0.1);"
                     "   border: 1px solid rgba(148, 163, 184, 0.3);"
                     "   border-radius: 4px;"
@@ -1297,7 +1316,7 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
                     }
                 });
 
-                fieldLayout->addWidget(lineEdit);
+                fieldLayout->addWidget(lineEdit, 1);
             }
             else if (field.editType == QtNodes::FieldEditType::Number) {
                 // 数字编辑框
@@ -1308,7 +1327,7 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
                 spinBox->setStyleSheet(QString(
                     "QDoubleSpinBox {"
                     "   color: %1;"
-                    "   font-size: 10px;"
+                    "   font-size: 11px;"
                     "   background-color: rgba(255, 255, 255, 0.1);"
                     "   border: 1px solid rgba(148, 163, 184, 0.3);"
                     "   border-radius: 4px;"
@@ -1323,18 +1342,18 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
                     emit portDataChanged(m_currentNodeId, info.portType, info.index, field.key, newValue);
                 });
 
-                fieldLayout->addWidget(spinBox);
+                fieldLayout->addWidget(spinBox, 1);
             }
             else if (field.editType == QtNodes::FieldEditType::Path) {
                 // 文件路径选择
                 QHBoxLayout* pathLayout = new QHBoxLayout();
-                pathLayout->setSpacing(4);
+                pathLayout->setSpacing(6);
 
                 QLineEdit* lineEdit = new QLineEdit(field.value);
                 lineEdit->setStyleSheet(QString(
                     "QLineEdit {"
                     "   color: %1;"
-                    "   font-size: 10px;"
+                    "   font-size: 11px;"
                     "   background-color: rgba(255, 255, 255, 0.1);"
                     "   border: 1px solid rgba(148, 163, 184, 0.3);"
                     "   border-radius: 4px;"
@@ -1344,13 +1363,12 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
 
                 QToolButton* browseBtn = new QToolButton();
                 browseBtn->setText("...");
+                browseBtn->setFixedWidth(24);
                 browseBtn->setStyleSheet(QString(
                     "QToolButton {"
                     "   background-color: rgba(59, 130, 246, 0.3);"
                     "   border: 1px solid rgba(59, 130, 246, 0.5);"
                     "   border-radius: 4px;"
-                    "   min-width: 24px;"
-                    "   max-width: 24px;"
                     "}"
                     "QToolButton:hover {"
                     "   background-color: rgba(59, 130, 246, 0.5);"
@@ -1380,7 +1398,7 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
 
                 pathLayout->addWidget(lineEdit, 1);
                 pathLayout->addWidget(browseBtn);
-                fieldLayout->addLayout(pathLayout);
+                fieldLayout->addLayout(pathLayout, 1);
             }
 
             cardLayout->addLayout(fieldLayout);
@@ -1403,23 +1421,13 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
 {
     bool darkTheme = isDarkTheme();
 
-    // Create card with glass effect
+    // Create container without glass effect
     QFrame* card = new QFrame();
-    card->setFrameShape(QFrame::StyledPanel);
+    card->setFrameShape(QFrame::NoFrame);
+    card->setStyleSheet("QFrame { background-color: transparent; border: none; }");
 
-    QString cardBg = darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(255, 255, 255, 0.7)";
-    QString cardBorder = darkTheme ? "rgba(148, 163, 184, 0.3)" : "rgba(148, 163, 184, 0.3)";
-
-    card->setStyleSheet(QString(
-        "QFrame {"
-        "   background-color: %1;"
-        "   border: 1px solid %2;"
-        "   border-radius: 8px;"
-        "}"
-    ).arg(cardBg).arg(cardBorder));
-
-    QVBoxLayout* cardLayout = new QVBoxLayout(card);
-    cardLayout->setContentsMargins(10, 10, 10, 10);
+    QHBoxLayout* cardLayout = new QHBoxLayout(card);
+    cardLayout->setContentsMargins(6, 4, 6, 4);
     cardLayout->setSpacing(6);
 
     // Text colors based on theme
@@ -1429,13 +1437,9 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
 
     // Parameter name with bold styling
     QLabel* nameLabel = new QLabel(QString("<b>%1</b>").arg(param.name));
-    nameLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(primaryTextColor));
+    nameLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(primaryTextColor));
+    nameLabel->setToolTip(QString("Type: %1").arg(param.dataType));
     cardLayout->addWidget(nameLabel);
-
-    // Data type
-    QLabel* typeLabel = new QLabel(QString("Type: %1").arg(param.dataType));
-    typeLabel->setStyleSheet(QString("color: %1; font-size: 10px;").arg(secondaryTextColor));
-    cardLayout->addWidget(typeLabel);
 
     // Create editable control based on editType
     if (param.editType == QtNodes::FieldEditType::Text) {
@@ -1513,13 +1517,12 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
 
         QToolButton* browseBtn = new QToolButton();
         browseBtn->setText("...");
+        browseBtn->setFixedWidth(24);
         browseBtn->setStyleSheet(QString(
             "QToolButton {"
             "   background-color: rgba(59, 130, 246, 0.3);"
             "   border: 1px solid rgba(59, 130, 246, 0.5);"
             "   border-radius: 4px;"
-            "   min-width: 24px;"
-            "   max-width: 24px;"
             "}"
             "QToolButton:hover {"
             "   background-color: rgba(59, 130, 246, 0.5);"
@@ -1552,13 +1555,42 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
 
         pathLayout->addWidget(edit, 1);
         pathLayout->addWidget(browseBtn);
-        cardLayout->addLayout(pathLayout);
+        cardLayout->addLayout(pathLayout, 1);
+    } else if (param.editType == QtNodes::FieldEditType::Boolean) {
+        QPushButton* toggleBtn = new QPushButton(param.value.toLower() == "true" ? "开" : "关");
+        toggleBtn->setCheckable(true);
+        toggleBtn->setChecked(param.value.toLower() == "true");
+        toggleBtn->setFixedWidth(40);
+        toggleBtn->setStyleSheet(QString(
+            "QPushButton {"
+            "  border: 1px solid %1;"
+            "  border-radius: 4px;"
+            "  background-color: %2;"
+            "  color: %3;"
+            "  padding: 2px 0px;"
+            "  font-size: 11px;"
+            "}"
+            "QPushButton:checked {"
+            "  background-color: #3B82F6;"
+            "  border-color: #3B82F6;"
+            "  color: white;"
+            "  font-weight: bold;"
+            "}"
+        ).arg(darkTheme ? "#4B5563" : "#D1D5DB")
+         .arg(darkTheme ? "#374151" : "#F9FAFB")
+         .arg(darkTheme ? "#F9FAFB" : "#374151"));
+
+        connect(toggleBtn, &QPushButton::toggled, this, [this, toggleBtn, param](bool checked) {
+            toggleBtn->setText(checked ? "开" : "关");
+            QString newValue = checked ? "true" : "false";
+            emit propertyChanged(m_currentNodeId, param.name, newValue);
+        });
+        
+        cardLayout->addWidget(toggleBtn);
+        cardLayout->addStretch();
     } else {
         // Read-only display
         QString displayValue = param.value;
-        if (displayValue.length() > 60) {
-            displayValue = displayValue.left(60) + "...";
-        }
 
         QLabel* valueLabel = new QLabel(displayValue);
         QString valueBg = darkTheme ? "rgba(64, 64, 64, 0.6)" : "rgba(241, 245, 249, 0.5)";
@@ -1664,13 +1696,11 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
                 // Use dataType name as port name (e.g., "In Data")
                 auto portDataType = execModel->dataType(QtNodes::PortType::In, i);
                 info.name = portDataType.name;
-                // No custom caption: show index only if there are multiple ports
-                info.showIndex = (inputPortCount > 1);
             } else {
-                // Has custom caption: use it directly, no index needed
+                // Has custom caption: use it directly
                 info.name = caption;
-                info.showIndex = false;
             }
+            info.showIndex = (inputPortCount > 1);
             info.dataType = "";
             info.summary = "";
             info.fields = {};
@@ -1700,13 +1730,11 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
                 // Use dataType name as port name (e.g., "Out Data")
                 auto portDataType = execModel->dataType(QtNodes::PortType::Out, i);
                 info.name = portDataType.name;
-                // No custom caption: show index only if there are multiple ports
-                info.showIndex = (outputPortCount > 1);
             } else {
-                // Has custom caption: use it directly, no index needed
+                // Has custom caption: use it directly
                 info.name = caption;
-                info.showIndex = false;
             }
+            info.showIndex = (outputPortCount > 1);
             info.dataType = "";
             info.summary = "";
             info.fields = {};
