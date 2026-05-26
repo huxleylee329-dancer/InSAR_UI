@@ -66,13 +66,10 @@ QWidget* Sentinel1ImportNode::createWidget()
         invalidateExecution();
     };
 
-    // 哨兵图像文件（.safe） + 浏览按钮 [3:5:2]
+    // 哨兵图像文件（.safe） + 浏览按钮 [3:7:0]
     auto* manifestLayout = new QHBoxLayout();
-    manifestLayout->setStretch(0, 3);
-    manifestLayout->setStretch(1, 5);
-    manifestLayout->setStretch(2, 2);
     QLabel* manifestLabel = new QLabel("哨兵图像文件（.safe）");
-    manifestLayout->addWidget(manifestLabel);
+    manifestLayout->addWidget(manifestLabel, 3);
     m_manifestEdit = new QLineEdit();
     m_manifestEdit->setPlaceholderText("选择 .safe 目录中的 manifest 文件");
     connect(m_manifestEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
@@ -93,18 +90,15 @@ QWidget* Sentinel1ImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    manifestLayout->addWidget(m_manifestEdit);
+    manifestLayout->addWidget(m_manifestEdit, 7);
     QPushButton* manifestBrowse = new QPushButton("浏览...");
-    manifestLayout->addWidget(manifestBrowse);
+    manifestLayout->addWidget(manifestBrowse, 0);
     layout->addLayout(manifestLayout);
 
-    // 精轨文件（可空缺） + 浏览按钮 [3:5:2]
+    // 精轨文件（可空缺） + 浏览按钮 [3:7:0]
     auto* podLayout = new QHBoxLayout();
-    podLayout->setStretch(0, 3);
-    podLayout->setStretch(1, 5);
-    podLayout->setStretch(2, 2);
     QLabel* podLabel = new QLabel("精轨文件（可空缺）");
-    podLayout->addWidget(podLabel);
+    podLayout->addWidget(podLabel, 3);
     m_podEdit = new QLineEdit();
     m_podEdit->setPlaceholderText("可选，留空则不使用精轨文件");
     connect(m_podEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
@@ -118,17 +112,15 @@ QWidget* Sentinel1ImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    podLayout->addWidget(m_podEdit);
+    podLayout->addWidget(m_podEdit, 7);
     QPushButton* podBrowse = new QPushButton("浏览...");
-    podLayout->addWidget(podBrowse);
+    podLayout->addWidget(podBrowse, 0);
     layout->addLayout(podLayout);
 
     // 子带选择（subswath） [3:7]
     auto* subswathLayout = new QHBoxLayout();
-    subswathLayout->setStretch(0, 3);
-    subswathLayout->setStretch(1, 7);
     QLabel* subswathLabel = new QLabel("子带选择（subswath）");
-    subswathLayout->addWidget(subswathLabel);
+    subswathLayout->addWidget(subswathLabel, 3);
     m_subswathCombo = new QComboBox();
     m_subswathCombo->addItem("iw1");
     m_subswathCombo->addItem("iw2");
@@ -145,15 +137,13 @@ QWidget* Sentinel1ImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    subswathLayout->addWidget(m_subswathCombo);
+    subswathLayout->addWidget(m_subswathCombo, 7);
     layout->addLayout(subswathLayout);
 
     // 极化方式选择 [3:7]
     auto* polLayout = new QHBoxLayout();
-    polLayout->setStretch(0, 3);
-    polLayout->setStretch(1, 7);
     QLabel* polLabel = new QLabel("极化方式选择");
-    polLayout->addWidget(polLabel);
+    polLayout->addWidget(polLabel, 3);
     m_polarizationCombo = new QComboBox();
     m_polarizationCombo->addItem("vv");
     m_polarizationCombo->addItem("vh");
@@ -169,27 +159,23 @@ QWidget* Sentinel1ImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    polLayout->addWidget(m_polarizationCombo);
+    polLayout->addWidget(m_polarizationCombo, 7);
     layout->addLayout(polLayout);
 
     // 目标工程 [3:7]
     auto* projectLayout = new QHBoxLayout();
-    projectLayout->setStretch(0, 3);
-    projectLayout->setStretch(1, 7);
     QLabel* projectLabel = new QLabel("目标工程");
-    projectLayout->addWidget(projectLabel);
+    projectLayout->addWidget(projectLabel, 3);
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
     m_projectCombo->setPlaceholderText("当前打开的项目");
-    projectLayout->addWidget(m_projectCombo);
+    projectLayout->addWidget(m_projectCombo, 7);
     layout->addLayout(projectLayout);
 
     // 目标节点名 [3:7]
     auto* nodeNameLayout = new QHBoxLayout();
-    nodeNameLayout->setStretch(0, 3);
-    nodeNameLayout->setStretch(1, 7);
     QLabel* nodeNameLabel = new QLabel("目标节点名");
-    nodeNameLayout->addWidget(nodeNameLabel);
+    nodeNameLayout->addWidget(nodeNameLabel, 3);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
     m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -205,15 +191,13 @@ QWidget* Sentinel1ImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    nodeNameLayout->addWidget(m_outputNodeNameEdit);
+    nodeNameLayout->addWidget(m_outputNodeNameEdit, 7);
     layout->addLayout(nodeNameLayout);
 
     // 目标文件名 [3:7]
     auto* fileNameLayout = new QHBoxLayout();
-    fileNameLayout->setStretch(0, 3);
-    fileNameLayout->setStretch(1, 7);
     QLabel* fileNameLabel = new QLabel("目标文件名");
-    fileNameLayout->addWidget(fileNameLabel);
+    fileNameLayout->addWidget(fileNameLabel, 3);
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
     connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
@@ -227,7 +211,7 @@ QWidget* Sentinel1ImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    fileNameLayout->addWidget(m_outputFileNameEdit);
+    fileNameLayout->addWidget(m_outputFileNameEdit, 7);
     layout->addLayout(fileNameLayout);
 
     // Bottom spacer

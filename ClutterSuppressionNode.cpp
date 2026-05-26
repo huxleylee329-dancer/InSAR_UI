@@ -216,7 +216,7 @@ void ClutterSuppressionNode::createWidget()
     layout->addLayout(fileNameLayout);
 
     m_statusLabel = new QLabel();
-    m_statusLabel->setStyleSheet("color: gray; font-size: 11px;");
+    m_statusLabel->setObjectName("NodeStatusLabel");
     layout->addWidget(m_statusLabel);
 
     layout->addStretch();
@@ -308,6 +308,7 @@ void ClutterSuppressionNode::executeProcessing()
     if (!isReady()) {
         if (m_statusLabel) {
             m_statusLabel->setText("状态：未准备好");
+            m_statusLabel->setStyleSheet("");
         }
         return;
     }
@@ -315,6 +316,7 @@ void ClutterSuppressionNode::executeProcessing()
     setProgress(0);
     if (m_statusLabel) {
         m_statusLabel->setText("状态：正在初始化...");
+        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
     }
 
     QStringList inputPaths = m_inputData->filePaths();
@@ -379,6 +381,7 @@ void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& messa
     setProgress(progress);
     if (m_statusLabel) {
         m_statusLabel->setText("状态：" + message);
+        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
     }
 }
 
@@ -410,6 +413,7 @@ void ClutterSuppressionNode::onProcessingFinished()
 
     if (m_statusLabel) {
         m_statusLabel->setText("状态：完成");
+        m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
     }
 
     if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
@@ -430,6 +434,7 @@ void ClutterSuppressionNode::onError(const QString& error)
     setState(ExecutionState::Error);
     if (m_statusLabel) {
         m_statusLabel->setText("状态：错误 - " + error);
+        m_statusLabel->setStyleSheet("color: #EF4444; font-style: italic;");
     }
     if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);

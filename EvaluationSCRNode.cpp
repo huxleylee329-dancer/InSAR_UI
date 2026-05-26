@@ -23,13 +23,16 @@ EvaluationSCRNode::EvaluationSCRNode()
 void EvaluationSCRNode::createWidget()
 {
     m_widget = new QWidget();
+    m_widget->setFixedWidth(200);
     auto* mainLayout = new QVBoxLayout(m_widget);
     mainLayout->setContentsMargins(5, 5, 5, 5);
-    mainLayout->setSizeConstraint(QLayout::SetFixedSize);
 
     auto* roiGroup = new QGroupBox(QStringLiteral("区域选择")); // 区域选择
+    roiGroup->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto* roiLayout = new QVBoxLayout(roiGroup);
+    roiLayout->setContentsMargins(6, 0, 6, 6);
     m_regionComboBox = new QComboBox();
+    m_regionComboBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_regionComboBox->addItem(QStringLiteral("中心目标/周围杂波")); // 中心目标/周围杂波
     m_regionComboBox->addItem(QStringLiteral("左半目标/右半杂波")); // 左半目标/右半杂波
     roiLayout->addWidget(m_regionComboBox);
@@ -48,7 +51,7 @@ void EvaluationSCRNode::createWidget()
     QWidget* singleResultView = new QWidget();
     singleResultView->setObjectName("SingleResultView");
     auto* singleLayout = new QFormLayout(singleResultView);
-    singleLayout->setContentsMargins(0, 0, 0, 0);
+    singleLayout->setContentsMargins(10, 4, 10, 4);
 
     m_originalScrLabel = new QLabel("--");
     m_filteredScrLabel = new QLabel("--");
@@ -61,6 +64,7 @@ void EvaluationSCRNode::createWidget()
     simpleLayout->addWidget(singleResultView);
 
     m_summaryLabel = new QLabel("--");
+    m_summaryLabel->setWordWrap(true);
     m_summaryLabel->hide();
     simpleLayout->addWidget(m_summaryLabel);
 
@@ -94,16 +98,11 @@ void EvaluationSCRNode::createWidget()
             m_expandLabel->setText(m_isExpanded ? 
                 QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>") : 
                 QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
-            if (m_widget) {
-                m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
-                m_widget->resize(0, 0);
-                m_widget->adjustSize();
-                Q_EMIT embeddedWidgetSizeUpdated();
-            }
+            updateWidgetSize();
         }
     });
 
-    m_widget->setMinimumWidth(200);
+    // Width is locked via setFixedWidth in widget creation above
 
     connect(m_regionComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EvaluationSCRNode::onRegionChanged);
@@ -181,12 +180,7 @@ void EvaluationSCRNode::collapseDetailedList()
         if (m_expandLabel) {
             m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
         }
-        if (m_widget) {
-            m_widget->setFixedWidth(200);
-            m_widget->resize(0, 0);
-            m_widget->adjustSize();
-            Q_EMIT embeddedWidgetSizeUpdated();
-        }
+        updateWidgetSize();
     }
 }
 
@@ -215,6 +209,8 @@ void EvaluationSCRNode::onRegionChanged(int index)
     Q_UNUSED(index);
     if (isReady()) {
         execute();
+    } else {
+        updateWidgetSize();
     }
 }
 
@@ -271,6 +267,7 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         if (m_summaryLabel) m_summaryLabel->hide();
         if (m_expandLabel) m_expandLabel->hide();
         if (m_resultsTable) m_resultsTable->hide();
+        updateWidgetSize();
         return;
     }
 
@@ -384,9 +381,9 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
             if (m_originalScrLabel) m_originalScrLabel->setText(origStr);
             if (m_filteredScrLabel) m_filteredScrLabel->setText(filtStr);
             if (m_improvementLabel && validImpCount > 0) m_improvementLabel->setText(impStr + "%");
-            if (m_summaryLabel) {
-                m_summaryLabel->setText(QString("平均提升: %1").arg(impStr));
-            }
+            if (m_summaryLabel) m_summaryLabel->hide();
+            if (m_expandLabel) m_expandLabel->hide();
+            if (m_resultsTable) m_resultsTable->hide();
         } else {
             if (singleView) singleView->hide();
             m_summaryLabel->setText(QStringLiteral("评估完成：共处理 %1 对图像").arg(maxCount));
@@ -426,9 +423,14 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
     // Trigger visual update for detail view table and processing info
     triggerVisualUpdate();
 
+    updateWidgetSize();
+}
+
+void EvaluationSCRNode::updateWidgetSize()
+{
     if (m_widget) {
-        m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
-        m_widget->resize(0, 0);
+        int targetWidth = (m_resultsTable && !m_resultsTable->isHidden()) ? 450 : 200;
+        m_widget->setFixedWidth(targetWidth);
         m_widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }
@@ -541,12 +543,7 @@ void EvaluationSCRNode::load(QJsonObject const &json)
             }
         }
         
-        if (m_widget) {
-            m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
-            m_widget->resize(0, 0);
-            m_widget->adjustSize();
-            Q_EMIT embeddedWidgetSizeUpdated();
-        }
+        updateWidgetSize();
     }
 
     if (json.contains("origScr") && m_originalScrLabel) m_originalScrLabel->setText(json["origScr"].toString());

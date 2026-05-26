@@ -51,6 +51,7 @@ private slots:
 private:
     void createWidget();
     void calculateAndDisplayENL();
+    void updateWidgetSize();
     double calculateENL(const cv::Mat& roiGray) const;
     double calculateEPI(const cv::Mat& orig, const cv::Mat& filtered) const;
 

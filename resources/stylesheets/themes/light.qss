@@ -87,52 +87,101 @@ QWidget#NodeEmbeddedWidget {
 }
 
 /* All controls inside node embedded widget */
-QWidget#NodeEmbeddedWidget * QLabel {
+QWidget#NodeEmbeddedWidget QLabel {
     color: #333333;
 }
 
-QWidget#NodeEmbeddedWidget * QLineEdit {
+QWidget#NodeEmbeddedWidget QLineEdit {
     background-color: white;
     color: #333333;
     border: 1px solid #CCCCCC;
     border-radius: 0;
+    padding: 2px 5px;
+    min-height: 16px;
+    max-height: 16px;
 }
 
-QWidget#NodeEmbeddedWidget * QComboBox {
+QWidget#NodeEmbeddedWidget QComboBox {
     background-color: white;
     color: #333333;
     border: 1px solid #CCCCCC;
     border-radius: 0;
+    padding: 2px 5px;
+    min-height: 16px;
+    max-height: 16px;
 }
 
-QWidget#NodeEmbeddedWidget * QComboBox QAbstractItemView {
+QWidget#NodeEmbeddedWidget QComboBox QAbstractItemView {
     background-color: white;
     color: #333333;
 }
 
-QWidget#NodeEmbeddedWidget * QListWidget {
+QWidget#NodeEmbeddedWidget QListWidget {
     background-color: white;
     color: #333333;
 }
 
-QWidget#NodeEmbeddedWidget * QProgressBar {
+QTableView, QTableWidget {
+    background-color: white;
+    color: #333333;
+    gridline-color: #CCCCCC;
+    border: 1px solid #CCCCCC;
+    alternate-background-color: #F9FAFB;
+}
+
+QTableView::viewport, QTableWidget::viewport {
+    background-color: white;
+}
+
+QLabel#NodeStatusLabel {
+    color: #6B7280;
+    font-style: italic;
+}
+
+QTableView::item:selected, QTableWidget::item:selected {
+    background-color: #005FAC;
+    color: white;
+}
+
+QHeaderView {
+    background-color: #F3F4F6;
+    border: none;
+}
+
+QHeaderView::section {
+    background-color: #F3F4F6;
+    color: #4B5563;
+    border: 1px solid #E5E7EB;
+    padding: 4px;
+}
+
+QTableCornerButton::section {
+    background-color: #F3F4F6;
+    border: 1px solid #E5E7EB;
+}
+
+QWidget#NodeEmbeddedWidget QProgressBar {
     background-color: white;
     color: #333333;
     border-radius: 0;
 }
 
 /* QPushButton in nodes - flat style */
-QWidget#NodeEmbeddedWidget * QPushButton {
+QWidget#NodeEmbeddedWidget QPushButton {
     background-color: #005FAC;
     color: #FFFFFF;
     border: none;
     border-radius: 0;
+    padding: 2px 8px;
+    min-height: 16px;
+    max-height: 16px;
+    min-width: 40px;
 }
 
-QWidget#NodeEmbeddedWidget * QPushButton:hover {
+QWidget#NodeEmbeddedWidget QPushButton:hover {
     background-color: #107EBC;
 }
 
-QWidget#NodeEmbeddedWidget * QPushButton:pressed {
+QWidget#NodeEmbeddedWidget QPushButton:pressed {
     background-color: #003F8C;
 }

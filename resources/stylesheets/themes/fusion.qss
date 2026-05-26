@@ -213,62 +213,72 @@ QWidget#NodeEmbeddedWidget {
 }
 
 /* All controls inside node embedded widget */
-QWidget#NodeEmbeddedWidget * QLabel {
+QWidget#NodeEmbeddedWidget QLabel {
     color: #333333;
 }
 
-QWidget#NodeEmbeddedWidget * QLineEdit {
+QWidget#NodeEmbeddedWidget QLineEdit {
     background-color: white;
     color: #333333;
     border: 1px solid #E0E0E0;
     border-radius: 2px;
+    padding: 2px 5px;
+    min-height: 16px;
+    max-height: 16px;
 }
 
-QWidget#NodeEmbeddedWidget * QLineEdit:focus {
+QWidget#NodeEmbeddedWidget QLineEdit:focus {
     border-color: #005FAC;
     border-width: 2px;
 }
 
-QWidget#NodeEmbeddedWidget * QComboBox {
+QWidget#NodeEmbeddedWidget QComboBox {
     background-color: white;
     color: #333333;
     border: 1px solid #E0E0E0;
     border-radius: 2px;
+    padding: 2px 5px;
+    min-height: 16px;
+    max-height: 16px;
 }
 
-QWidget#NodeEmbeddedWidget * QComboBox QAbstractItemView {
+QWidget#NodeEmbeddedWidget QComboBox QAbstractItemView {
     background-color: white;
     color: #333333;
 }
 
-QWidget#NodeEmbeddedWidget * QListWidget {
+QWidget#NodeEmbeddedWidget QListWidget {
     background-color: white;
     color: #333333;
 }
 
-QWidget#NodeEmbeddedWidget * QProgressBar {
+QWidget#NodeEmbeddedWidget QProgressBar {
     background-color: white;
     color: #333333;
     border-radius: 2px;
 }
 
-QWidget#NodeEmbeddedWidget * QProgressBar::chunk {
+QWidget#NodeEmbeddedWidget QProgressBar::chunk {
     background-color: #005FAC;
     border-radius: 2px;
 }
 
 /* QPushButton in nodes - flat style */
-QWidget#NodeEmbeddedWidget * QPushButton {
+QWidget#NodeEmbeddedWidget QPushButton {
     background-color: #005FAC;
     color: #FFFFFF;
     border: none;
     border-radius: 2px;
+    padding: 2px 8px;
+    min-height: 16px;
+    max-height: 16px;
+    min-width: 40px;
 }
 
-QWidget#NodeEmbeddedWidget * QPushButton:hover {
+QWidget#NodeEmbeddedWidget QPushButton:hover {
     background-color: #107EBC;
 }
 
-QWidget#NodeEmbeddedWidget * QPushButton:pressed {
+QWidget#NodeEmbeddedWidget QPushButton:pressed {
     background-color: #003F8C;
 }

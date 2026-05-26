@@ -18,13 +18,16 @@ EvaluationENLNode::EvaluationENLNode()
 void EvaluationENLNode::createWidget()
 {
     m_widget = new QWidget();
+    m_widget->setFixedWidth(200);
     auto* mainLayout = new QVBoxLayout(m_widget);
     mainLayout->setContentsMargins(5, 5, 5, 5);
-    mainLayout->setSizeConstraint(QLayout::SetFixedSize);
 
     auto* roiGroup = new QGroupBox("区域选择");
+    roiGroup->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     auto* roiLayout = new QVBoxLayout(roiGroup);
+    roiLayout->setContentsMargins(6, 0, 6, 6);
     m_regionComboBox = new QComboBox();
+    m_regionComboBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_regionComboBox->addItem("全部");
     m_regionComboBox->addItem("中间区域");
     roiLayout->addWidget(m_regionComboBox);
@@ -43,7 +46,7 @@ void EvaluationENLNode::createWidget()
     QWidget* singleResultView = new QWidget();
     singleResultView->setObjectName("SingleResultView");
     auto* singleLayout = new QFormLayout(singleResultView);
-    singleLayout->setContentsMargins(0, 0, 0, 0);
+    singleLayout->setContentsMargins(10, 4, 10, 4);
 
     m_originalEnlLabel = new QLabel("--");
     m_filteredEnlLabel = new QLabel("--");
@@ -56,6 +59,7 @@ void EvaluationENLNode::createWidget()
     simpleLayout->addWidget(singleResultView);
 
     m_summaryLabel = new QLabel("--");
+    m_summaryLabel->setWordWrap(true);
     m_summaryLabel->hide();
     simpleLayout->addWidget(m_summaryLabel);
 
@@ -87,18 +91,13 @@ void EvaluationENLNode::createWidget()
             m_expandLabel->setText(m_isExpanded ? 
                 QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▲ 收起详细列表</a>") : 
                 QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
-            if (m_widget) {
-                m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
-                m_widget->resize(0, 0);
-                m_widget->adjustSize();
-                Q_EMIT embeddedWidgetSizeUpdated();
-            }
+            updateWidgetSize();
         }
     });
 
     mainLayout->addWidget(resultGroup);
 
-    m_widget->setMinimumWidth(200);
+    // Width is locked via setFixedWidth in widget creation above
 
     connect(m_regionComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EvaluationENLNode::onRegionChanged);
@@ -179,12 +178,7 @@ void EvaluationENLNode::collapseDetailedList()
         if (m_expandLabel) {
             m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
         }
-        if (m_widget) {
-            m_widget->setFixedWidth(200);
-            m_widget->resize(0, 0);
-            m_widget->adjustSize();
-            Q_EMIT embeddedWidgetSizeUpdated();
-        }
+        updateWidgetSize();
     }
 }
 
@@ -213,6 +207,8 @@ void EvaluationENLNode::onRegionChanged(int index)
     Q_UNUSED(index);
     if (isReady()) {
         execute();
+    } else {
+        updateWidgetSize();
     }
 }
 
@@ -257,6 +253,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
         if (m_summaryLabel) m_summaryLabel->hide();
         if (m_expandLabel) m_expandLabel->hide();
         if (m_resultsTable) m_resultsTable->hide();
+        updateWidgetSize();
         return;
     }
     
@@ -271,6 +268,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
         m_expandLabel->hide();
         m_resultsTable->hide();
         QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("原图和滤波后图像的数量不一致，无法进行批量评估！"));
+        updateWidgetSize();
         return;
     }
     
@@ -387,12 +385,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
         m_resultsTable->hide();
     }
     
-    if (m_widget) {
-        m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
-        m_widget->resize(0, 0);
-        m_widget->adjustSize();
-        Q_EMIT embeddedWidgetSizeUpdated();
-    }
+    updateWidgetSize();
     
     // Notify detail view of new data
     Q_EMIT dataUpdated(0);
@@ -530,18 +523,23 @@ void EvaluationENLNode::load(QJsonObject const &json)
             }
         }
         
-        if (m_widget) {
-            m_widget->setFixedWidth(!m_resultsTable->isHidden() ? 450 : 200);
-            m_widget->resize(0, 0);
-            m_widget->adjustSize();
-            Q_EMIT embeddedWidgetSizeUpdated();
-        }
+        updateWidgetSize();
     }
 }
 
 bool EvaluationENLNode::validateAndRestoreOutput()
 {
     return true;
+}
+
+void EvaluationENLNode::updateWidgetSize()
+{
+    if (m_widget) {
+        int targetWidth = (m_resultsTable && !m_resultsTable->isHidden()) ? 450 : 200;
+        m_widget->setFixedWidth(targetWidth);
+        m_widget->adjustSize();
+        Q_EMIT embeddedWidgetSizeUpdated();
+    }
 }
 
 } // namespace QtNodes

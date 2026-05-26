@@ -915,13 +915,19 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             
             QString tableStyle = isDark ? 
                 "QTableWidget { background-color: #1F2937; alternate-background-color: #374151; border: 1px solid #4B5563; border-radius: 4px; color: #F3F4F6; }"
+                "QTableWidget::viewport { background-color: #1F2937; }"
                 "QTableWidget::item { padding: 4px 8px; }"
                 "QTableWidget::item:selected { background-color: #3B82F6; color: white; }"
-                "QHeaderView::section { background-color: #111827; padding: 6px; border: none; border-bottom: 1px solid #4B5563; font-weight: bold; color: #D1D5DB; font-size: 13px; }" :
+                "QHeaderView { background-color: #111827; border: none; }"
+                "QHeaderView::section { background-color: #111827; padding: 6px; border: none; border-bottom: 1px solid #4B5563; font-weight: bold; color: #D1D5DB; font-size: 13px; }"
+                "QTableCornerButton::section { background-color: #111827; border: none; }" :
                 "QTableWidget { background-color: #FFFFFF; alternate-background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 4px; color: #1F2937; }"
+                "QTableWidget::viewport { background-color: #FFFFFF; }"
                 "QTableWidget::item { padding: 4px 8px; }"
                 "QTableWidget::item:selected { background-color: #EFF6FF; color: #1D4ED8; }"
-                "QHeaderView::section { background-color: #F3F4F6; padding: 6px; border: none; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #4B5563; font-size: 13px; }";
+                "QHeaderView { background-color: #F3F4F6; border: none; }"
+                "QHeaderView::section { background-color: #F3F4F6; padding: 6px; border: none; border-bottom: 1px solid #E5E7EB; font-weight: bold; color: #4B5563; font-size: 13px; }"
+                "QTableCornerButton::section { background-color: #F3F4F6; border: none; }";
             _resultsTable->setStyleSheet(tableStyle);
             
             // Populate table
@@ -1109,18 +1115,19 @@ void NodeDetailWindow::updateLayoutVisibility()
 // Theme Detection Helper Functions
 // ============================================================================
 
-bool NodeDetailWindow::isDarkTheme(QWidget* parent)
+bool NodeDetailWindow::isDarkTheme(QWidget* widget)
 {
-    if (!parent) return false;
-
-    // Check parent window's background color
-    QVariant bgColor = parent->property("theme-background");
-    if (bgColor.isValid()) {
-        QColor color = bgColor.value<QColor>();
-        // Dark theme: dark background colors
-        if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
-            return true;
+    while (widget) {
+        QVariant bgColor = widget->property("theme-background");
+        if (bgColor.isValid()) {
+            QColor color = bgColor.value<QColor>();
+            // Dark theme: dark background colors
+            if (color.red() < 100 && color.green() < 100 && color.blue() < 100) {
+                return true;
+            }
+            return false; // Found property but it's light
         }
+        widget = widget->parentWidget();
     }
 
     return false;

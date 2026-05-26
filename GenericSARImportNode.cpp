@@ -41,12 +41,9 @@ QWidget* GenericSARImportNode::createWidget()
         invalidateExecution();
     };
 
-    // 通用 SAR 图像 + 浏览按钮 [3:5:2]
+    // 通用 SAR 图像 + 浏览按钮 [3:7:0]
     auto* imageRow = new QHBoxLayout();
-    imageRow->setStretch(0, 3);
-    imageRow->setStretch(1, 5);
-    imageRow->setStretch(2, 2);
-    imageRow->addWidget(new QLabel("通用 SAR 图像："));
+    imageRow->addWidget(new QLabel("通用 SAR 图像："), 3);
     m_imageEdit = new QLineEdit();
     m_imageEdit->setPlaceholderText("选择通用 SAR 图像文件");
     connect(m_imageEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
@@ -66,15 +63,13 @@ QWidget* GenericSARImportNode::createWidget()
         }
     });
     QPushButton* browseButton = new QPushButton("浏览...");
-    imageRow->addWidget(m_imageEdit);
-    imageRow->addWidget(browseButton);
+    imageRow->addWidget(m_imageEdit, 7);
+    imageRow->addWidget(browseButton, 0);
     layout->addLayout(imageRow);
 
     // 项目名称 [3:7]
     auto* projectRow = new QHBoxLayout();
-    projectRow->setStretch(0, 3);
-    projectRow->setStretch(1, 7);
-    projectRow->addWidget(new QLabel("项目名称："));
+    projectRow->addWidget(new QLabel("项目名称："), 3);
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
     
@@ -94,14 +89,12 @@ QWidget* GenericSARImportNode::createWidget()
         m_projectCombo->addItem("未打开项目");
     }
 
-    projectRow->addWidget(m_projectCombo);
+    projectRow->addWidget(m_projectCombo, 7);
     layout->addLayout(projectRow);
 
     // 目标节点 [3:7]
     auto* nodeRow = new QHBoxLayout();
-    nodeRow->setStretch(0, 3);
-    nodeRow->setStretch(1, 7);
-    nodeRow->addWidget(new QLabel("目标节点："));
+    nodeRow->addWidget(new QLabel("目标节点："), 3);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
     m_outputNodeNameEdit->setPlaceholderText("手动输入目标节点名称");
@@ -117,14 +110,12 @@ QWidget* GenericSARImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    nodeRow->addWidget(m_outputNodeNameEdit);
+    nodeRow->addWidget(m_outputNodeNameEdit, 7);
     layout->addLayout(nodeRow);
 
     // 目标文件名 [3:7]
     auto* fileNameRow = new QHBoxLayout();
-    fileNameRow->setStretch(0, 3);
-    fileNameRow->setStretch(1, 7);
-    fileNameRow->addWidget(new QLabel("目标文件名："));
+    fileNameRow->addWidget(new QLabel("目标文件名："), 3);
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
@@ -139,7 +130,7 @@ QWidget* GenericSARImportNode::createWidget()
             invalidateNodeData();
         }
     });
-    fileNameRow->addWidget(m_outputFileNameEdit);
+    fileNameRow->addWidget(m_outputFileNameEdit, 7);
     layout->addLayout(fileNameRow);
 
     connect(browseButton, &QPushButton::clicked,

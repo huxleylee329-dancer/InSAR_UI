@@ -320,7 +320,7 @@ void TargetDetectionNode::createWidget()
 
     // Status label
     m_statusLabel = new QLabel();
-    m_statusLabel->setStyleSheet("color: gray; font-size: 11px;");
+    m_statusLabel->setObjectName("NodeStatusLabel");
     layout->addWidget(m_statusLabel);
 
     layout->addStretch();
@@ -390,13 +390,19 @@ void TargetDetectionNode::executeProcessing()
     }
 
     if (!isReady()) {
-        if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：未准备好"));
+        if (m_statusLabel) {
+            m_statusLabel->setText(QStringLiteral("状态：未准备好"));
+            m_statusLabel->setStyleSheet("");
+        }
         setState(ExecutionState::Idle); // Explicitly state we are idle so base class won't overwrite
         return;
     }
 
     setProgress(0);
-    if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：正在初始化..."));
+    if (m_statusLabel) {
+        m_statusLabel->setText(QStringLiteral("状态：正在初始化..."));
+        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
+    }
     
     // Clear previous results
     if (m_resultsTable) {
@@ -430,6 +436,7 @@ void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)
     setProgress(progress);
     if (m_statusLabel) {
         m_statusLabel->setText(QStringLiteral("状态：") + message);
+        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
     }
 }
 
@@ -469,7 +476,10 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
     
     // We only finish execution if this is the last image.
     if (m_inputData && imageIndex == m_inputData->filePaths().size() - 1) {
-        if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：完成"));
+        if (m_statusLabel) {
+            m_statusLabel->setText(QStringLiteral("状态：完成"));
+            m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
+        }
         
         int totalCount = m_inputData->filePaths().size();
         QWidget* singleView = _widget ? _widget->findChild<QWidget*>("SingleResultView") : nullptr;
@@ -517,6 +527,7 @@ void TargetDetectionNode::onError(const QString& error)
     setState(ExecutionState::Error);
     if (m_statusLabel) {
         m_statusLabel->setText(QStringLiteral("状态：错误 - ") + error);
+        m_statusLabel->setStyleSheet("color: #EF4444; font-style: italic;");
     }
     
     if (m_modelComboBox) m_modelComboBox->setEnabled(true);
@@ -635,7 +646,10 @@ void TargetDetectionNode::load(QJsonObject const &json)
     }
 
     if (executionState() == ExecutionState::Completed) {
-        if (m_statusLabel) m_statusLabel->setText(QStringLiteral("状态：完成"));
+        if (m_statusLabel) {
+            m_statusLabel->setText(QStringLiteral("状态：完成"));
+            m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
+        }
     }
 }
 

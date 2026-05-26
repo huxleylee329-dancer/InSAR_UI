@@ -50,7 +50,7 @@
 #include <algorithm>
 #include <memory>
 #include <QToolButton>
-#include <QStyle>
+#include <QPointer>
 #include <QLayout>
 
 // ============================================================================
@@ -1464,21 +1464,20 @@ void WorkflowUI::setTheme(const QString &theme)
             // Get embedded widget from graph model
             QVariant widgetVar = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Widget);
             QWidget* widget = qobject_cast<QWidget*>(widgetVar.value<QObject*>());
-            if (widget) {
-                // Remove hardcoded inline style that breaks QSS
-                widget->setStyleSheet("");
-                
-                // Force widget to recalculate size hint after QSS application
-                widget->style()->unpolish(widget);
-                widget->style()->polish(widget);
-                if (widget->layout()) {
-                    widget->layout()->invalidate();
-                }
-                widget->updateGeometry();
-                
-                // Notify graph model that node needs layout update
-                m_graphModel->nodeUpdated(nodeId);
+            if (!widget) continue;
+            
+            // Remove hardcoded inline style that breaks QSS
+            widget->setStyleSheet("");
+            
+            // Force widget to recalculate size hint after QSS application
+            ads::internal::repolishStyle(widget);
+            if (widget->layout()) {
+                widget->layout()->invalidate();
             }
+            widget->updateGeometry();
+            
+            // Notify graph model that node needs layout update
+            m_graphModel->nodeUpdated(nodeId);
         }
     }
 
@@ -1493,15 +1492,23 @@ void WorkflowUI::setTheme(const QString &theme)
         m_view->update();
     }
 
-    // Set theme-background property for PropertyEditor to detect theme
+    // Set theme-background property for PropertyEditor, View, and WorkflowUI to detect theme
+    QColor themeBgColor;
+    if (theme == "dark") {
+        themeBgColor = QColor(43, 64, 75);
+    } else if (theme == "light") {
+        themeBgColor = QColor(241, 245, 249);
+    } else {  // fusion
+        themeBgColor = QColor(240, 240, 240);
+    }
+    
+    this->setProperty("theme-background", themeBgColor);
+    if (m_view) {
+        m_view->setProperty("theme-background", themeBgColor);
+    }
+
     if (m_propertyEditor) {
-        if (theme == "dark") {
-            m_propertyEditor->setProperty("theme-background", QColor(43, 64, 75));
-        } else if (theme == "light") {
-            m_propertyEditor->setProperty("theme-background", QColor(241, 245, 249));
-        } else {  // fusion
-            m_propertyEditor->setProperty("theme-background", QColor(240, 240, 240));
-        }
+        m_propertyEditor->setProperty("theme-background", themeBgColor);
         // Refresh property panel to apply theme changes
         m_propertyEditor->updateThemeStyles();
         m_propertyEditor->refreshCurrentNode();
@@ -1572,9 +1579,9 @@ bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)
 
 void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::ExecutableNodeDelegateModel* execModel)
 {
-    if (execModel) {
-        execModel->collapseDetailedList();
-    }
+    if (!execModel || !ngo) return;
+    
+    execModel->collapseDetailedList();
 
     // Capture snapshot of node data
     QtNodes::NodeDataSnapshot snapshot = QtNodes::captureNodeData(
@@ -1597,51 +1604,54 @@ void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::Execu
     connect(_animationController, &QtNodes::NodeDetailAnimationController::closeAnimationCompleted,
             this, &WorkflowUI::cleanupDetailWindow);
 
+    QPointer<QtNodes::NodeGraphicsObject> ngoPtr(ngo);
+
     // Connect close button to trigger reverse animation
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::closeRequested, [this, ngo]() {
-        _animationController->startCloseAnimation(ngo, _detailWindow, _detailOverlay);
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::closeRequested, this, [this, ngoPtr]() {
+        if (ngoPtr) {
+            _animationController->startCloseAnimation(ngoPtr.data(), _detailWindow, _detailOverlay);
+        } else {
+            cleanupDetailWindow();
+        }
     });
 
     // Connect ROI signals
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::roiSelectionChanged, [execModel](QRectF rect, int index) {
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::roiSelectionChanged, execModel, [execModel](QRectF rect, int index) {
         execModel->processRoiSelection(rect, index);
     });
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::roiCleared, [execModel]() {
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::roiCleared, execModel, [execModel]() {
         execModel->clearRoiSelection();
     });
     
+    auto updateSnapshot = [this, execModel, ngoPtr]() {
+        if (_detailWindow && ngoPtr) {
+            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngoPtr->nodeId());
+            _detailWindow->updateTableData(newSnapshot);
+        }
+    };
+
     // Connect dual ROI signals
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::targetRoiSelectionChanged, [this, execModel, ngo](QRectF rect, int index) {
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::targetRoiSelectionChanged, execModel, [execModel, updateSnapshot](QRectF rect, int index) {
         execModel->processTargetRoiSelection(rect, index);
-        if (_detailWindow) {
-            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
-            _detailWindow->updateTableData(newSnapshot);
-        }
+        updateSnapshot();
     });
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::targetRoiCleared, [this, execModel, ngo]() {
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::targetRoiCleared, execModel, [execModel, updateSnapshot]() {
         execModel->clearTargetRoiSelection();
-        if (_detailWindow) {
-            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
-            _detailWindow->updateTableData(newSnapshot);
-        }
+        updateSnapshot();
     });
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::clutterRoiSelectionChanged, [this, execModel, ngo](QRectF rect, int index) {
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::clutterRoiSelectionChanged, execModel, [execModel, updateSnapshot](QRectF rect, int index) {
         execModel->processClutterRoiSelection(rect, index);
-        if (_detailWindow) {
-            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
-            _detailWindow->updateTableData(newSnapshot);
-        }
+        updateSnapshot();
     });
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::clutterRoiCleared, [this, execModel, ngo]() {
+    connect(_detailWindow, &QtNodes::NodeDetailWindow::clutterRoiCleared, execModel, [execModel, updateSnapshot]() {
         execModel->clearClutterRoiSelection();
-        if (_detailWindow) {
-            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
-            _detailWindow->updateTableData(newSnapshot);
-        }
+        updateSnapshot();
     });
-    connect(execModel, &QtNodes::NodeDelegateModel::dataUpdated, _detailWindow, [this, execModel, ngo]() {
-        if (_detailWindow) {
-            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngo->nodeId());
+    
+    // Centralized UI refresh triggered by dataUpdated
+    connect(execModel, &QtNodes::NodeDelegateModel::dataUpdated, _detailWindow, [this, execModel, ngoPtr]() {
+        if (_detailWindow && ngoPtr) {
+            QtNodes::NodeDataSnapshot newSnapshot = QtNodes::captureNodeData(execModel, m_scene, ngoPtr->nodeId());
             _detailWindow->updateTableData(newSnapshot);
         }
     });

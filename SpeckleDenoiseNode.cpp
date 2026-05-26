@@ -325,6 +325,7 @@ void SpeckleDenoiseNode::executeProcessing()
 
         if (m_statusLabel) {
             m_statusLabel->setText("状态：未准备好");
+            m_statusLabel->setStyleSheet("");
         }
         return;
     }
@@ -332,6 +333,7 @@ void SpeckleDenoiseNode::executeProcessing()
     setProgress(0);
     if (m_statusLabel) {
         m_statusLabel->setText("状态：正在初始化...");
+        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
     }
 
     QStringList inputPaths = m_inputData->filePaths();
@@ -403,6 +405,7 @@ void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)
     setProgress(progress);
     if (m_statusLabel) {
         m_statusLabel->setText("状态：" + message);
+        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
     }
 }
 
@@ -441,6 +444,7 @@ void SpeckleDenoiseNode::onProcessingFinished()
 
     if (m_statusLabel) {
         m_statusLabel->setText("状态：完成");
+        m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
     }
 
     if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
@@ -462,6 +466,7 @@ void SpeckleDenoiseNode::onError(const QString& error)
     setState(ExecutionState::Error);
     if (m_statusLabel) {
         m_statusLabel->setText("状态：错误 - " + error);
+        m_statusLabel->setStyleSheet("color: #EF4444; font-style: italic;");
     }
     
     if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);

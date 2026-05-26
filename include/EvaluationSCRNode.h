@@ -65,6 +65,7 @@ private slots:
 private:
     void createWidget();
     void calculateAndDisplaySCR();
+    void updateWidgetSize();
     double calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray) const;
 
     QWidget* m_widget = nullptr;
