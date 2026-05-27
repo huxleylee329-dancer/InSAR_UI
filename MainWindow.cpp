@@ -64,6 +64,7 @@ extern void applyTheme(const QString &theme);
 #include"ClutterSuppression.h"
 #include"BatchTargetRecognition.h"
 #include"TargetDetection.h"
+#include "InSARLogManager.h"
 //#include<Mould.h>
 
 // Qt related headers
@@ -1715,7 +1716,14 @@ void MainWindow::updateProjectContext(const QString& filePath)
         m_workflowUI->setProjectContext(model, m_projectPath, projectName, this->project);
     if (m_interfaceManager)
         m_interfaceManager->setProjectContext(model, m_projectPath, projectName, this->project);
-        
+
+    if (!filePath.isEmpty()) {
+        QFileInfo info(filePath);
+        InSARLogManager::instance().setProjectDirectory(info.absolutePath());
+    } else {
+        InSARLogManager::instance().setProjectDirectory("");
+    }
+
     updateFileMenuState();
 }
 

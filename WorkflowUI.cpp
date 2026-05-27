@@ -68,7 +68,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "Data Import",    // 第一级分类
         "Preprocessing",  // 第二级分类
         "Display",        // 图像显示/预览分类
-        "Note",          // 注释节点分类
+        "Information",    // 信息/工具节点分类
         "Test"           // 测试节点分类
     };
 
@@ -157,9 +157,10 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Card Math (Concat)", "Card Math (Concat)"} // CardSimpleMathNode (卡片样式)
     };
 
-    // Note 类叶子项顺序（直接挂在顶级分类下）
-    order.leafItems["Note"] = QList<PaletteOrder::LeafItem>{
-        {"Note", "Note"}          // NoteNode - 文本注释节点
+    // Information 类叶子项顺序（直接挂在顶级分类下）
+    order.leafItems["Information"] = QList<PaletteOrder::LeafItem>{
+        {"Note", "Note"},          // NoteNode - 文本注释节点
+        {"Logger", "Logger"}       // LoggerNode - 日志记录节点
     };
 
     return order;

@@ -7,6 +7,7 @@
 #include "StyleCollection.hpp"
 #include "DataFlowGraphModel.hpp"
 #include "ImageDisplayNode.h"
+#include "LoggerNode.h"
 
 #include <QPainter>
 #include <QStyle>
@@ -127,9 +128,14 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
     // Check if this is an executable node
     auto *execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
     if (!execModel) {
-        if (delegateModel->name() == QStringLiteral("ImageDisplay")) {
-            auto* imgNode = dynamic_cast<ImageDisplayNode*>(delegateModel);
-            bool hasImage = imgNode ? imgNode->hasLoadedImage() : false;
+        if (delegateModel->name() == QStringLiteral("ImageDisplay") || delegateModel->name() == QStringLiteral("LoggerNode")) {
+            bool isCompleted = false;
+            
+            if (auto* imgNode = dynamic_cast<ImageDisplayNode*>(delegateModel)) {
+                isCompleted = imgNode->hasLoadedImage();
+            } else if (auto* logNode = dynamic_cast<LoggerNode*>(delegateModel)) {
+                isCompleted = logNode->hasLoadedLogs();
+            }
             
             auto &scene = *ngo.nodeScene();
             auto &geo = scene.nodeGeometry();
@@ -142,7 +148,7 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
             }
 
             ExecutionMode mode = ExecutionMode::Automatic;
-            ExecutionState state = hasImage ? ExecutionState::Completed : ExecutionState::Idle;
+            ExecutionState state = isCompleted ? ExecutionState::Completed : ExecutionState::Idle;
 
             QSize size = geo.size(nodeId);
             QRectF boundary(0, 0, size.width(), size.height());

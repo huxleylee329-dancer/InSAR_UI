@@ -14,6 +14,10 @@
 #include <QDateTime>
 #include <QStandardItemModel>
 #include <QDebug>
+#include <QMenu>
+#include <QMessageBox>
+
+#include "InSARLogManager.h"
 
 namespace QtNodes {
 
@@ -301,7 +305,7 @@ void SpeckleDenoiseNode::execute()
 
 void SpeckleDenoiseNode::executeProcessing()
 {
-
+    InSARLogManager::LogInfo("SpeckleDenoiseNode", "开始执行斑点噪声去除处理...");
 
     // CRITICAL: Clean up existing threads FIRST - before any state change
     // This prevents duplicate execution if setInData is called multiple times
@@ -453,7 +457,7 @@ void SpeckleDenoiseNode::onProcessingFinished()
 
 void SpeckleDenoiseNode::onError(const QString& error)
 {
-
+    InSARLogManager::LogError("SpeckleDenoiseNode", error);
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
     if (m_statusLabel) {

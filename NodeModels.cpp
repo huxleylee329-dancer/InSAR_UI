@@ -20,6 +20,7 @@
 #include "TargetDetectionNode.h"
 #include "EvaluationENLNode.h"
 #include "EvaluationSCRNode.h"
+#include "LoggerNode.h"
 
 #include <memory>
 
@@ -34,7 +35,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerTestNodeModels()
     auto registry = std::make_shared<NodeDelegateModelRegistry>();
 
     // Register Note node (layout management tool)
-    registry->registerModel<NoteNode>("Note");
+    registry->registerModel<NoteNode>("Information");
 
 #ifdef ENABLE_TEST_NODES
     // Register test nodes in a "Test" category
@@ -140,8 +141,9 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<CardSimpleDisplayNode>("Test");
 #endif
 
-    // Register Note node (layout management tool)
-    registry->registerModel<NoteNode>("Note");
+    // Information Nodes
+    registry->registerModel<NoteNode>("Information");
+    registry->registerModel<LoggerNode>("Information");
 
     // Display Nodes
     registry->registerModel<ImageDisplayNode>("Display");

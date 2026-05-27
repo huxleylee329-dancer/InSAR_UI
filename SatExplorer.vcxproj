@@ -280,6 +280,12 @@
     <ClCompile Include="NodeModels.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="LoggerNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="InSARLogManager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="TestNodes.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -759,6 +765,12 @@
     </QtMoc>
     <QtMoc Include="include\ClutterSuppressionTask.h" />
     <QtMoc Include="include\ImageDisplayNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\LoggerNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\InSARLogManager.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\NodeTreeWidget.h">
