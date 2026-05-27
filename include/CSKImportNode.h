@@ -73,7 +73,6 @@ private:
     QComboBox* m_projectCombo;  // Target project dropdown (read-only)
     QPushButton* m_importButton;  // Kept for compatibility, not used in UI
     QPushButton* m_stopButton;  // Kept for compatibility, not used in UI
-    QLabel* m_statusLabel;  // Kept for compatibility, not used in UI
 
     // State
     QStringList m_filePaths;

@@ -80,7 +80,6 @@ private:
     QCheckBox* m_saveToProjectCheckBox = nullptr;
     QLineEdit* m_outputNodeNameEdit = nullptr;
     QLineEdit* m_outputFileNameEdit = nullptr;
-    QLabel* m_statusLabel = nullptr;
 
     // 数据
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;
