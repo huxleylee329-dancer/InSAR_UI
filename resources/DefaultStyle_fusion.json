@@ -13,7 +13,7 @@
     "GradientColor3": "#1a5a8f",
     "ShadowColor": [80, 80, 80],
     "FontColor" : "#333333",
-    "FontColorFaded" : "#888888",
+    "FontColorFaded" : "#5E5E5E",
     "ConnectionPointColor": "#4a9acf",
     "FilledConnectionPointColor": "#4a9acf",
     "ErrorColor": "#d63031",

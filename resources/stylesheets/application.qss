@@ -63,8 +63,8 @@ QMenu::item:selected:disabled {
 }
 
 QMenu::item:checked {
-    background-color: #005FAC;
-    color: white;
+    background-color: #E6F0FA;
+    color: #005FAC;
 }
 
 QToolBar {

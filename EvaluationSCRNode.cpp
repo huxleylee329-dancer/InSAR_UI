@@ -17,7 +17,20 @@ namespace QtNodes {
 EvaluationSCRNode::EvaluationSCRNode()
 {
     m_detailTableHeaders = QStringList() << QStringLiteral("文件名") << QStringLiteral("原图SCR") << QStringLiteral("滤波后SCR") << QStringLiteral("性能提升");
+    m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
+    m_watcher = new QFutureWatcher<SCRResultData>(this);
+    connect(m_watcher, &QFutureWatcher<SCRResultData>::finished, this, &EvaluationSCRNode::onEvaluationFinished);
     createWidget();
+}
+
+EvaluationSCRNode::~EvaluationSCRNode()
+{
+    if (m_stopFlagPtr) {
+        *m_stopFlagPtr = true;
+    }
+    if (m_watcher) {
+        m_watcher->waitForFinished();
+    }
 }
 
 void EvaluationSCRNode::createWidget()
@@ -190,11 +203,13 @@ void EvaluationSCRNode::collapseDetailedList()
 void EvaluationSCRNode::execute()
 {
     calculateAndDisplaySCR();
-    setState(ExecutionState::Completed);
 }
 
 void EvaluationSCRNode::stopExecution()
 {
+    if (m_stopFlagPtr) {
+        *m_stopFlagPtr = true;
+    }
     setState(ExecutionState::Stopped);
 }
 
@@ -217,7 +232,7 @@ void EvaluationSCRNode::onRegionChanged(int index)
     }
 }
 
-double EvaluationSCRNode::calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray) const
+double EvaluationSCRNode::calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray)
 {
     if (targetGray.empty() || clutterGray.empty()) return 0.0;
     
@@ -245,6 +260,13 @@ double EvaluationSCRNode::calculateScr(const cv::Mat& targetGray, const cv::Mat&
 
 void EvaluationSCRNode::calculateAndDisplaySCR()
 {
+    if (m_stopFlagPtr) {
+        *m_stopFlagPtr = true;
+    }
+    if (m_watcher) {
+        m_watcher->waitForFinished();
+    }
+
     if (m_resultsTable) m_resultsTable->setRowCount(0);
     if (m_originalScrLabel) m_originalScrLabel->setText("--");
     if (m_filteredScrLabel) m_filteredScrLabel->setText("--");
@@ -271,97 +293,145 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         if (m_expandLabel) m_expandLabel->hide();
         if (m_resultsTable) m_resultsTable->hide();
         updateWidgetSize();
+        setState(ExecutionState::Idle);
         return;
     }
 
-    auto getScr = [this](const QString& path) -> double {
-        if (path.isEmpty()) return -9999.0;
-        cv::Mat mat = cv::imread(path.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
-        if (mat.empty()) return -9999.0;
-        
-        cv::Rect targetRect;
-        cv::Rect clutterRect;
+    setState(ExecutionState::Running);
+    m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
 
-        if (m_hasTargetRoi && m_hasClutterRoi) {
-            targetRect = cv::Rect(m_targetRoi.x(), m_targetRoi.y(), m_targetRoi.width(), m_targetRoi.height());
-            clutterRect = cv::Rect(m_clutterRoi.x(), m_clutterRoi.y(), m_clutterRoi.width(), m_clutterRoi.height());
-        } else if (m_regionComboBox->currentIndex() == 0) { // 中心目标/周围杂波
-            targetRect = cv::Rect(mat.cols / 4, mat.rows / 4, mat.cols / 2, mat.rows / 2);
-            clutterRect = cv::Rect(0, 0, mat.cols / 4, mat.rows / 4);
-        } else { // 左半目标/右半杂波
-            targetRect = cv::Rect(0, 0, mat.cols / 2, mat.rows);
-            clutterRect = cv::Rect(mat.cols / 2, 0, mat.cols / 2, mat.rows);
-        }
-        
-        cv::Rect bounds(0, 0, mat.cols, mat.rows);
-        targetRect &= bounds;
-        clutterRect &= bounds;
-        
-        if (targetRect.width < 2 || targetRect.height < 2 || clutterRect.width < 2 || clutterRect.height < 2) {
-            return -9999.0;
-        }
-        
-        cv::Mat targetMat = mat(targetRect);
-        cv::Mat clutterMat = mat(clutterRect);
-        
-        double finalScr = calculateScr(targetMat, clutterMat);
-        return finalScr;
-    };
+    bool hasTargetRoi = m_hasTargetRoi;
+    QRectF targetRoi = m_targetRoi;
+    bool hasClutterRoi = m_hasClutterRoi;
+    QRectF clutterRoi = m_clutterRoi;
+    int regionIndex = m_regionComboBox->currentIndex();
+    auto stopFlagPtr = m_stopFlagPtr;
 
-    double totalOrigScr = 0.0;
-    double totalFiltScr = 0.0;
-    double totalImp = 0.0;
-    int validOrigCount = 0;
-    int validFiltCount = 0;
-    int validImpCount = 0;
+    QFuture<SCRResultData> future = QtConcurrent::run([=]() -> SCRResultData {
+        SCRResultData data;
+        data.totalCount = maxCount;
+
+        auto getScrLocal = [=](const QString& path) -> double {
+            if (path.isEmpty()) return -9999.0;
+            cv::Mat mat = cv::imread(path.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+            if (mat.empty()) return -9999.0;
+            
+            cv::Rect targetRect;
+            cv::Rect clutterRect;
+
+            if (hasTargetRoi && hasClutterRoi) {
+                targetRect = cv::Rect(targetRoi.x(), targetRoi.y(), targetRoi.width(), targetRoi.height());
+                clutterRect = cv::Rect(clutterRoi.x(), clutterRoi.y(), clutterRoi.width(), clutterRoi.height());
+            } else if (regionIndex == 0) { // 中心目标/周围杂波
+                targetRect = cv::Rect(mat.cols / 4, mat.rows / 4, mat.cols / 2, mat.rows / 2);
+                clutterRect = cv::Rect(0, 0, mat.cols / 4, mat.rows / 4);
+            } else { // 左半目标/右半杂波
+                targetRect = cv::Rect(0, 0, mat.cols / 2, mat.rows);
+                clutterRect = cv::Rect(mat.cols / 2, 0, mat.cols / 2, mat.rows);
+            }
+            
+            cv::Rect bounds(0, 0, mat.cols, mat.rows);
+            targetRect &= bounds;
+            clutterRect &= bounds;
+            
+            if (targetRect.width < 2 || targetRect.height < 2 || clutterRect.width < 2 || clutterRect.height < 2) {
+                return -9999.0;
+            }
+            
+            cv::Mat targetMat = mat(targetRect);
+            cv::Mat clutterMat = mat(clutterRect);
+            
+            double finalScr = calculateScr(targetMat, clutterMat);
+            return finalScr;
+        };
+
+        for (int i = 0; i < maxCount; ++i) {
+            if (*stopFlagPtr) {
+                data.isCancelled = true;
+                break;
+            }
+
+            QString origPath = i < origPaths.size() ? origPaths[i] : "";
+            QString filtPath = i < filtPaths.size() ? filtPaths[i] : "";
+
+            double origScr = getScrLocal(origPath);
+            double filtScr = getScrLocal(filtPath);
+
+            SCRSingleResult singleRes;
+            singleRes.fileName = origPath.isEmpty() ? QFileInfo(filtPath).fileName() : QFileInfo(origPath).fileName();
+            singleRes.origScr = origScr > -9000.0 ? QString::number(origScr, 'f', 4) : "--";
+            singleRes.filtScr = filtScr > -9000.0 ? QString::number(filtScr, 'f', 4) : "--";
+            singleRes.imp = "--";
+            singleRes.success = true;
+
+            if (origScr > -9000.0) {
+                data.totalOrigScr += origScr;
+                data.validOrigCount++;
+            }
+            if (filtScr > -9000.0) {
+                data.totalFiltScr += filtScr;
+                data.validFiltCount++;
+            }
+            
+            if (origScr > -9000.0 && filtScr > -9000.0 && origScr != 0) {
+                double imp = (filtScr - origScr) / std::abs(origScr) * 100.0;
+                data.totalImp += imp;
+                data.validImpCount++;
+                singleRes.imp = QString::number(imp, 'f', 2);
+            }
+
+            data.results.append(singleRes);
+        }
+
+        if (!(data.validOrigCount > 0 && data.validFiltCount > 0)) {
+            QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
+            if (maxCount > 0) {
+                QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
+                QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
+                if (origPath == "空路径" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                    errorMsg += QString("原图失败: %1\n").arg(origPath);
+                if (filtPath == "空路径" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                    errorMsg += QString("滤波图失败: %1").arg(filtPath);
+            }
+            data.errorMsg = errorMsg.arg(maxCount);
+        }
+
+        return data;
+    });
+
+    m_watcher->setFuture(future);
+}
+
+void EvaluationSCRNode::onEvaluationFinished()
+{
+    if (!m_watcher) return;
     
+    SCRResultData data = m_watcher->result();
+    if (data.isCancelled) {
+        setState(ExecutionState::Stopped);
+        return;
+    }
+    
+    if (m_resultsTable) m_resultsTable->setRowCount(0);
     m_detectionResults.clear();
 
-    for (int i = 0; i < maxCount; ++i) {
-        QString origPath = i < origPaths.size() ? origPaths[i] : "";
-        QString filtPath = i < filtPaths.size() ? filtPaths[i] : "";
-
-        double origScr = getScr(origPath);
-        double filtScr = getScr(filtPath);
-
-        QString origScrStr = origScr > -9000.0 ? QString::number(origScr, 'f', 4) : "--";
-        QString filtScrStr = filtScr > -9000.0 ? QString::number(filtScr, 'f', 4) : "--";
-        QString impStr = "--";
-
-        if (origScr > -9000.0) {
-            totalOrigScr += origScr;
-            validOrigCount++;
-        }
-        if (filtScr > -9000.0) {
-            totalFiltScr += filtScr;
-            validFiltCount++;
-        }
-        
-        double imp = 0.0;
-        impStr = "--";
-        if (origScr > -9000.0 && filtScr > -9000.0 && origScr != 0) {
-            imp = (filtScr - origScr) / std::abs(origScr) * 100.0;
-            totalImp += imp;
-            validImpCount++;
-            impStr = QString::number(imp, 'f', 2);
-        }
-
-        QString fileName = origPath.isEmpty() ? QFileInfo(filtPath).fileName() : QFileInfo(origPath).fileName();
-
+    int count = data.results.size();
+    for (int i = 0; i < count; ++i) {
+        const auto& singleRes = data.results[i];
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
-        m_resultsTable->setItem(row, 0, new QTableWidgetItem(fileName));
-        m_resultsTable->setItem(row, 1, new QTableWidgetItem(origScrStr));
-        m_resultsTable->setItem(row, 2, new QTableWidgetItem(filtScrStr));
-        m_resultsTable->setItem(row, 3, new QTableWidgetItem(impStr));
+        m_resultsTable->setItem(row, 0, new QTableWidgetItem(singleRes.fileName));
+        m_resultsTable->setItem(row, 1, new QTableWidgetItem(singleRes.origScr));
+        m_resultsTable->setItem(row, 2, new QTableWidgetItem(singleRes.filtScr));
+        m_resultsTable->setItem(row, 3, new QTableWidgetItem(singleRes.imp));
         
-        m_detectionResults.append(QStringList() << fileName << origScrStr << filtScrStr << impStr);
+        m_detectionResults.append(QStringList() << singleRes.fileName << singleRes.origScr << singleRes.filtScr << singleRes.imp);
     }
 
-    if (maxCount > 1) {
-        QString origStr = validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--";
-        QString filtStr = validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--";
-        QString impStr = validImpCount > 0 ? QString::number(totalImp / validImpCount, 'f', 2) : "--";
+    if (data.totalCount > 1) {
+        QString origStr = data.validOrigCount > 0 ? QString::number(data.totalOrigScr / data.validOrigCount, 'f', 4) : "--";
+        QString filtStr = data.validFiltCount > 0 ? QString::number(data.totalFiltScr / data.validFiltCount, 'f', 4) : "--";
+        QString impStr = data.validImpCount > 0 ? QString::number(data.totalImp / data.validImpCount, 'f', 2) : "--";
 
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
@@ -369,27 +439,27 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         auto* avgItem = new QTableWidgetItem(QStringLiteral("平均值"));
         avgItem->setFont(QFont("", -1, QFont::Bold));
         m_resultsTable->setItem(row, 0, avgItem);
-        m_resultsTable->setItem(row, 1, new QTableWidgetItem(validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--"));
-        m_resultsTable->setItem(row, 2, new QTableWidgetItem(validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--"));
-        m_resultsTable->setItem(row, 3, new QTableWidgetItem(validImpCount > 0 ? QString::number(totalImp / validImpCount, 'f', 2) : "--"));
+        m_resultsTable->setItem(row, 1, new QTableWidgetItem(origStr));
+        m_resultsTable->setItem(row, 2, new QTableWidgetItem(filtStr));
+        m_resultsTable->setItem(row, 3, new QTableWidgetItem(impStr));
     }
 
     QWidget* singleView = m_widget ? m_widget->findChild<QWidget*>("SingleResultView") : nullptr;
-    if (validOrigCount > 0 && validFiltCount > 0) {
-        if (maxCount <= 1) {
+    if (data.validOrigCount > 0 && data.validFiltCount > 0) {
+        if (data.totalCount <= 1) {
             if (singleView) singleView->show();
-            QString origStr = validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--";
-            QString filtStr = validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--";
-            QString impStr = validImpCount > 0 ? QString::number(totalImp / validImpCount, 'f', 2) : "--";
+            QString origStr = data.validOrigCount > 0 ? QString::number(data.totalOrigScr / data.validOrigCount, 'f', 4) : "--";
+            QString filtStr = data.validFiltCount > 0 ? QString::number(data.totalFiltScr / data.validFiltCount, 'f', 4) : "--";
+            QString impStr = data.validImpCount > 0 ? QString::number(data.totalImp / data.validImpCount, 'f', 2) : "--";
             if (m_originalScrLabel) m_originalScrLabel->setText(origStr);
             if (m_filteredScrLabel) m_filteredScrLabel->setText(filtStr);
-            if (m_improvementLabel && validImpCount > 0) m_improvementLabel->setText(impStr + "%");
+            if (m_improvementLabel && data.validImpCount > 0) m_improvementLabel->setText(impStr + "%");
             if (m_summaryLabel) m_summaryLabel->hide();
             if (m_expandLabel) m_expandLabel->hide();
             if (m_resultsTable) m_resultsTable->hide();
         } else {
             if (singleView) singleView->hide();
-            m_summaryLabel->setText(QStringLiteral("评估完成：共处理 %1 对图像").arg(maxCount));
+            m_summaryLabel->setText(QStringLiteral("评估完成：共处理 %1 对图像").arg(data.totalCount));
             m_summaryLabel->show();
             m_expandLabel->show();
             
@@ -401,29 +471,21 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
                 m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
             }
             
-            QString origStr = validOrigCount > 0 ? QString::number(totalOrigScr / validOrigCount, 'f', 4) : "--";
-            QString filtStr = validFiltCount > 0 ? QString::number(totalFiltScr / validFiltCount, 'f', 4) : "--";
-            QString impStr = validImpCount > 0 ? QString::number(totalImp / validImpCount, 'f', 2) : "--";
+            QString impStr = data.validImpCount > 0 ? QString::number(data.totalImp / data.validImpCount, 'f', 2) : "--";
             if (m_summaryLabel) {
                 m_summaryLabel->setText(QString("所有图像平均提升: %1%").arg(impStr));
             }
         }
+        finishExecution();
     } else {
         if (singleView) singleView->hide();
-        QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
-        if (maxCount > 0) {
-            QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
-            QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
-            if (getScr(origPath) < -9000.0) errorMsg += QString("原图失败: %1\n").arg(origPath);
-            if (getScr(filtPath) < -9000.0) errorMsg += QString("滤波图失败: %1").arg(filtPath);
-        }
-        m_summaryLabel->setText(errorMsg.arg(maxCount));
+        m_summaryLabel->setText(data.errorMsg);
         m_summaryLabel->show();
         m_expandLabel->hide();
         m_resultsTable->hide();
+        setState(ExecutionState::Error);
     }
     
-    // Trigger visual update for detail view table and processing info
     triggerVisualUpdate();
 
     updateWidgetSize();

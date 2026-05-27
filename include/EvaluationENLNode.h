@@ -9,8 +9,31 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QMessageBox>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrent>
+#include <memory>
+#include <atomic>
 
 namespace QtNodes {
+
+struct ENLSingleResult {
+    QString fileName;
+    QString origEnl;
+    QString filtEnl;
+    QString epi;
+    bool success = false;
+};
+
+struct ENLResultData {
+    QList<ENLSingleResult> results;
+    double avgOrigEnl = 0.0;
+    double avgFiltEnl = 0.0;
+    double avgEpi = 0.0;
+    int validCount = 0;
+    int totalCount = 0;
+    QString errorMsg;
+    bool isCancelled = false;
+};
 
 class EvaluationENLNode : public ExecutableNodeDelegateModel
 {
@@ -18,7 +41,7 @@ class EvaluationENLNode : public ExecutableNodeDelegateModel
 
 public:
     EvaluationENLNode();
-    ~EvaluationENLNode() override = default;
+    ~EvaluationENLNode() override;
 
     QString caption() const override { return "Evaluation-ENL"; }
     QString name() const override { return "EvaluationENL"; }
@@ -47,13 +70,14 @@ protected:
 
 private slots:
     void onRegionChanged(int index);
+    void onEvaluationFinished();
 
 private:
     void createWidget();
     void calculateAndDisplayENL();
     void updateWidgetSize();
-    double calculateENL(const cv::Mat& roiGray) const;
-    double calculateEPI(const cv::Mat& orig, const cv::Mat& filtered) const;
+    static double calculateENL(const cv::Mat& roiGray);
+    static double calculateEPI(const cv::Mat& orig, const cv::Mat& filtered);
 
     // Detail View ROI and Table interfaces
     bool supportsRoiSelection() const override { return true; }
@@ -84,6 +108,10 @@ private:
     bool m_hasCustomRoi = false;
     cv::Rect m_customRoi;
     QList<QStringList> m_savedResults;
+
+    // Async support
+    QFutureWatcher<ENLResultData>* m_watcher = nullptr;
+    std::shared_ptr<std::atomic<bool>> m_stopFlagPtr;
 };
 
 } // namespace QtNodes

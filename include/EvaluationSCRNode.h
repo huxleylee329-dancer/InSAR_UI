@@ -8,8 +8,33 @@
 #include <opencv2/opencv.hpp>
 #include <QTableWidget>
 #include <QHeaderView>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrent>
+#include <memory>
+#include <atomic>
 
 namespace QtNodes {
+
+struct SCRSingleResult {
+    QString fileName;
+    QString origScr;
+    QString filtScr;
+    QString imp;
+    bool success = false;
+};
+
+struct SCRResultData {
+    QList<SCRSingleResult> results;
+    double totalOrigScr = 0.0;
+    double totalFiltScr = 0.0;
+    double totalImp = 0.0;
+    int validOrigCount = 0;
+    int validFiltCount = 0;
+    int validImpCount = 0;
+    int totalCount = 0;
+    QString errorMsg;
+    bool isCancelled = false;
+};
 
 class EvaluationSCRNode : public ExecutableNodeDelegateModel
 {
@@ -17,7 +42,7 @@ class EvaluationSCRNode : public ExecutableNodeDelegateModel
 
 public:
     EvaluationSCRNode();
-    ~EvaluationSCRNode() override = default;
+    ~EvaluationSCRNode() override;
 
     QString caption() const override { return "Evaluation-SCR"; }
     QString name() const override { return "EvaluationSCR"; }
@@ -61,12 +86,13 @@ public:
 
 private slots:
     void onRegionChanged(int index);
+    void onEvaluationFinished();
 
 private:
     void createWidget();
     void calculateAndDisplaySCR();
     void updateWidgetSize();
-    double calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray) const;
+    static double calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray);
 
     QWidget* m_widget = nullptr;
     QComboBox* m_regionComboBox = nullptr;
@@ -92,6 +118,10 @@ private:
     
     QStringList m_detailTableHeaders;
     QList<QStringList> m_detectionResults;
+
+    // Async support
+    QFutureWatcher<SCRResultData>* m_watcher = nullptr;
+    std::shared_ptr<std::atomic<bool>> m_stopFlagPtr;
 };
 
 } // namespace QtNodes

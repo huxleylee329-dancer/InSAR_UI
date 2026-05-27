@@ -100,7 +100,7 @@ QMenu::item:selected:disabled {
 }
 
 QMenu::item:checked {
-    background-color: #005FAC;
+    background-color: #1b3252;
     color: white;
 }
 

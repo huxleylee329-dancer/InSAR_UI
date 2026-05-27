@@ -61,8 +61,8 @@
 - **Node UI Sizing (CRITICAL):** Do NOT rely on Qt's dynamic layout size calculation (`adjustSize()` without fixed bounds) for embedded node widgets. The underlying `QGraphicsProxyWidget` in the `QtNodes` framework has a severe layout synchronization bug that causes the node's bounding rect to expand infinitely while the internal widget collapses. You MUST explicitly use `m_widget->setFixedWidth(...)` during `createWidget()` and dynamically update it when expanding/collapsing node UI elements (e.g., in `updateWidgetSize()`). Never use `setMinimumWidth` or size policies as a substitute for explicit fixed widths.
 
 ### Threading & Safety
-- **Worker Tasks:** Always use `MyThread` for processing tasks. Do not perform heavy computations on the GUI thread.
-- **Thread Safety:** Use `QMutex` and check `stop_flag` within processing loops to support task cancellation.
+- **Worker Tasks:** Always use `MyThread` for heavy, long-running processing tasks (e.g. data import, geocoding, coregistration). For light-to-medium weight computations confined within a specific node (e.g. image metrics calculation, node-local batch statistics), prefer using `QtConcurrent::run` + `QFutureWatcher` to prevent bloating the global `MyThread` class. Do not perform heavy computations on the GUI thread.
+- **Thread Safety:** Use `QMutex` and check `stop_flag` (or `m_stopFlag`) within processing loops to support task cancellation.
 
 ---
 

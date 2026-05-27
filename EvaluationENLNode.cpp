@@ -12,7 +12,20 @@ namespace QtNodes {
 
 EvaluationENLNode::EvaluationENLNode()
 {
+    m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
+    m_watcher = new QFutureWatcher<ENLResultData>(this);
+    connect(m_watcher, &QFutureWatcher<ENLResultData>::finished, this, &EvaluationENLNode::onEvaluationFinished);
     createWidget();
+}
+
+EvaluationENLNode::~EvaluationENLNode()
+{
+    if (m_stopFlagPtr) {
+        *m_stopFlagPtr = true;
+    }
+    if (m_watcher) {
+        m_watcher->waitForFinished();
+    }
 }
 
 void EvaluationENLNode::createWidget()
@@ -188,11 +201,13 @@ void EvaluationENLNode::collapseDetailedList()
 void EvaluationENLNode::execute()
 {
     calculateAndDisplayENL();
-    setState(ExecutionState::Completed);
 }
 
 void EvaluationENLNode::stopExecution()
 {
+    if (m_stopFlagPtr) {
+        *m_stopFlagPtr = true;
+    }
     setState(ExecutionState::Stopped);
 }
 
@@ -215,7 +230,7 @@ void EvaluationENLNode::onRegionChanged(int index)
     }
 }
 
-double EvaluationENLNode::calculateENL(const cv::Mat& roiGray) const
+double EvaluationENLNode::calculateENL(const cv::Mat& roiGray)
 {
     if (roiGray.empty()) return 0.0;
     
@@ -230,7 +245,7 @@ double EvaluationENLNode::calculateENL(const cv::Mat& roiGray) const
     return (mean * mean) / (stddev * stddev);
 }
 
-double EvaluationENLNode::calculateEPI(const cv::Mat& orig, const cv::Mat& filtered) const
+double EvaluationENLNode::calculateEPI(const cv::Mat& orig, const cv::Mat& filtered)
 {
     if (orig.empty() || filtered.empty()) return 0.0;
     cv::Mat lapOrig, lapFilt;
@@ -244,6 +259,13 @@ double EvaluationENLNode::calculateEPI(const cv::Mat& orig, const cv::Mat& filte
 
 void EvaluationENLNode::calculateAndDisplayENL()
 {
+    if (m_stopFlagPtr) {
+        *m_stopFlagPtr = true;
+    }
+    if (m_watcher) {
+        m_watcher->waitForFinished();
+    }
+
     if (m_resultsTable) m_resultsTable->setRowCount(0);
     if (m_originalEnlLabel) m_originalEnlLabel->setText("--");
     if (m_filteredEnlLabel) m_filteredEnlLabel->setText("--");
@@ -257,6 +279,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
         if (m_expandLabel) m_expandLabel->hide();
         if (m_resultsTable) m_resultsTable->hide();
         updateWidgetSize();
+        setState(ExecutionState::Idle);
         return;
     }
     
@@ -272,94 +295,161 @@ void EvaluationENLNode::calculateAndDisplayENL()
         m_resultsTable->hide();
         QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("原图和滤波后图像的数量不一致，无法进行批量评估！"));
         updateWidgetSize();
+        setState(ExecutionState::Error);
+        return;
+    }
+
+    setState(ExecutionState::Running);
+    m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
+
+    bool hasCustomRoi = m_hasCustomRoi;
+    cv::Rect customRoi = m_customRoi;
+    int regionIndex = m_regionComboBox->currentIndex();
+    auto stopFlagPtr = m_stopFlagPtr;
+
+    QFuture<ENLResultData> future = QtConcurrent::run([=]() -> ENLResultData {
+        ENLResultData data;
+        data.totalCount = origPaths.size();
+        
+        double totalOrigEnl = 0.0;
+        double totalFiltEnl = 0.0;
+        double totalEPI = 0.0;
+        
+        for (int i = 0; i < data.totalCount; ++i) {
+            if (*stopFlagPtr) {
+                data.isCancelled = true;
+                break;
+            }
+            
+            cv::Mat origMat = cv::imread(origPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+            cv::Mat filtMat = cv::imread(filtPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
+            
+            ENLSingleResult singleRes;
+            singleRes.fileName = QFileInfo(filtPaths[i]).fileName();
+            singleRes.success = false;
+            
+            if (origMat.empty() || filtMat.empty()) {
+                data.results.append(singleRes);
+                continue;
+            }
+            
+            cv::Rect roiOrig(0, 0, origMat.cols, origMat.rows);
+            cv::Rect roiFilt(0, 0, filtMat.cols, filtMat.rows);
+            
+            if (hasCustomRoi) {
+                roiOrig = customRoi;
+                roiFilt = customRoi;
+                roiOrig &= cv::Rect(0, 0, origMat.cols, origMat.rows);
+                roiFilt &= cv::Rect(0, 0, filtMat.cols, filtMat.rows);
+            } else if (regionIndex == 1) { // 中间区域
+                roiOrig = cv::Rect(origMat.cols / 4, origMat.rows / 4, origMat.cols / 2, origMat.rows / 2);
+                roiFilt = cv::Rect(filtMat.cols / 4, filtMat.rows / 4, filtMat.cols / 2, filtMat.rows / 2);
+            }
+            
+            if (roiOrig.width <= 0 || roiOrig.height <= 0 || roiFilt.width <= 0 || roiFilt.height <= 0) {
+                data.results.append(singleRes);
+                continue;
+            }
+            
+            double origEnl = calculateENL(origMat(roiOrig));
+            double filtEnl = calculateENL(filtMat(roiFilt));
+            double epi = calculateEPI(origMat(roiOrig), filtMat(roiFilt));
+            
+            totalOrigEnl += origEnl;
+            totalFiltEnl += filtEnl;
+            totalEPI += epi;
+            
+            singleRes.origEnl = QString::number(origEnl, 'f', 4);
+            singleRes.filtEnl = QString::number(filtEnl, 'f', 4);
+            singleRes.epi = QString::number(epi, 'f', 4);
+            singleRes.success = true;
+            
+            data.results.append(singleRes);
+            data.validCount++;
+        }
+        
+        if (data.validCount > 0) {
+            data.avgOrigEnl = totalOrigEnl / data.validCount;
+            data.avgFiltEnl = totalFiltEnl / data.validCount;
+            data.avgEpi = totalEPI / data.validCount;
+        } else {
+            QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
+            if (data.totalCount > 0) {
+                QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
+                QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
+                if (origPath == "空路径" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                    errorMsg += QString("原图失败: %1\n").arg(origPath);
+                if (filtPath == "空路径" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                    errorMsg += QString("滤波图失败: %1").arg(filtPath);
+            }
+            data.errorMsg = errorMsg.arg(data.totalCount);
+        }
+        
+        return data;
+    });
+
+    m_watcher->setFuture(future);
+}
+
+void EvaluationENLNode::onEvaluationFinished()
+{
+    if (!m_watcher) return;
+    
+    ENLResultData data = m_watcher->result();
+    if (data.isCancelled) {
+        setState(ExecutionState::Stopped);
         return;
     }
     
-    double totalOrigEnl = 0.0;
-    double totalFiltEnl = 0.0;
-    double totalEPI = 0.0;
-    int count = origPaths.size();
-    int validCount = 0;
-    
     m_savedResults.clear();
+    if (m_resultsTable) m_resultsTable->setRowCount(0);
     
+    int count = data.results.size();
     for (int i = 0; i < count; ++i) {
-        cv::Mat origMat = cv::imread(origPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
-        cv::Mat filtMat = cv::imread(filtPaths[i].toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE);
-        
-        if (origMat.empty() || filtMat.empty()) continue;
-        
-        cv::Rect roiOrig(0, 0, origMat.cols, origMat.rows);
-        cv::Rect roiFilt(0, 0, filtMat.cols, filtMat.rows);
-        
-        if (m_hasCustomRoi) {
-            roiOrig = m_customRoi;
-            roiFilt = m_customRoi;
-            
-            // Ensure ROI is within bounds
-            roiOrig &= cv::Rect(0, 0, origMat.cols, origMat.rows);
-            roiFilt &= cv::Rect(0, 0, filtMat.cols, filtMat.rows);
-        } else if (m_regionComboBox->currentIndex() == 1) { // 中间区域
-            roiOrig = cv::Rect(origMat.cols / 4, origMat.rows / 4, origMat.cols / 2, origMat.rows / 2);
-            roiFilt = cv::Rect(filtMat.cols / 4, filtMat.rows / 4, filtMat.cols / 2, filtMat.rows / 2);
-        }
-        
-        // Prevent empty ROI crash
-        if (roiOrig.width <= 0 || roiOrig.height <= 0 || roiFilt.width <= 0 || roiFilt.height <= 0) {
-            continue;
-        }
-        
-        double origEnl = calculateENL(origMat(roiOrig));
-        double filtEnl = calculateENL(filtMat(roiFilt));
-        double epi = calculateEPI(origMat(roiOrig), filtMat(roiFilt));
-        
-        totalOrigEnl += origEnl;
-        totalFiltEnl += filtEnl;
-        totalEPI += epi;
-        validCount++;
+        const auto& singleRes = data.results[i];
+        if (!singleRes.success) continue;
         
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
-        m_resultsTable->setItem(row, 0, new QTableWidgetItem(QFileInfo(filtPaths[i]).fileName()));
-        m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(origEnl, 'f', 4)));
-        m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(filtEnl, 'f', 4)));
-        m_resultsTable->setItem(row, 3, new QTableWidgetItem(QString::number(epi, 'f', 4)));
+        m_resultsTable->setItem(row, 0, new QTableWidgetItem(singleRes.fileName));
+        m_resultsTable->setItem(row, 1, new QTableWidgetItem(singleRes.origEnl));
+        m_resultsTable->setItem(row, 2, new QTableWidgetItem(singleRes.filtEnl));
+        m_resultsTable->setItem(row, 3, new QTableWidgetItem(singleRes.epi));
         
-        // Save for detail view
         m_savedResults.append({
-            QFileInfo(filtPaths[i]).fileName(),
-            QString::number(origEnl, 'f', 4),
-            QString::number(filtEnl, 'f', 4),
-            QString::number(epi, 'f', 4)
+            singleRes.fileName,
+            singleRes.origEnl,
+            singleRes.filtEnl,
+            singleRes.epi
         });
     }
     
-    if (validCount > 1) {
+    if (data.validCount > 1) {
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
         
         auto* avgItem = new QTableWidgetItem(QStringLiteral("平均值"));
         avgItem->setFont(QFont("", -1, QFont::Bold));
         m_resultsTable->setItem(row, 0, avgItem);
-        m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(totalOrigEnl / validCount, 'f', 4)));
-        m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(totalFiltEnl / validCount, 'f', 4)));
-        m_resultsTable->setItem(row, 3, new QTableWidgetItem(QString::number(totalEPI / validCount, 'f', 4)));
+        m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(data.avgOrigEnl, 'f', 4)));
+        m_resultsTable->setItem(row, 2, new QTableWidgetItem(QString::number(data.avgFiltEnl, 'f', 4)));
+        m_resultsTable->setItem(row, 3, new QTableWidgetItem(QString::number(data.avgEpi, 'f', 4)));
     }
     
     QWidget* singleView = m_widget ? m_widget->findChild<QWidget*>("SingleResultView") : nullptr;
-
-    if (validCount > 0) {
-        if (count == 1) { // use count to determine if batch
+    
+    if (data.validCount > 0) {
+        if (data.totalCount == 1) {
             if (singleView) singleView->show();
-            if (m_originalEnlLabel) m_originalEnlLabel->setText(QString::number(totalOrigEnl / validCount, 'f', 4));
-            if (m_filteredEnlLabel) m_filteredEnlLabel->setText(QString::number(totalFiltEnl / validCount, 'f', 4));
-            if (m_epiLabel) m_epiLabel->setText(QString::number(totalEPI / validCount, 'f', 4));
+            if (m_originalEnlLabel) m_originalEnlLabel->setText(QString::number(data.avgOrigEnl, 'f', 4));
+            if (m_filteredEnlLabel) m_filteredEnlLabel->setText(QString::number(data.avgFiltEnl, 'f', 4));
+            if (m_epiLabel) m_epiLabel->setText(QString::number(data.avgEpi, 'f', 4));
             m_summaryLabel->hide();
             m_expandLabel->hide();
             m_resultsTable->hide();
         } else {
             if (singleView) singleView->hide();
-            m_summaryLabel->setText(QStringLiteral("评估完成：共处理 %1 对图像").arg(validCount));
+            m_summaryLabel->setText(QStringLiteral("评估完成：共处理 %1 对图像").arg(data.validCount));
             m_summaryLabel->show();
             m_expandLabel->show();
             
@@ -371,28 +461,21 @@ void EvaluationENLNode::calculateAndDisplayENL()
                 m_expandLabel->setText(QStringLiteral("<a href=\"#expand\" style=\"color: #0078D7; text-decoration: none;\">▼ 展开详细列表</a>"));
             }
         }
+        finishExecution();
     } else {
         if (singleView) singleView->hide();
-        QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
-        if (count > 0) {
-            QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
-            QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
-            if (origPath == "空路径" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
-                errorMsg += QString("原图失败: %1\n").arg(origPath);
-            if (filtPath == "空路径" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
-                errorMsg += QString("滤波图失败: %1").arg(filtPath);
-        }
-        m_summaryLabel->setText(errorMsg.arg(count));
+        m_summaryLabel->setText(data.errorMsg);
         m_summaryLabel->show();
         m_expandLabel->hide();
         m_resultsTable->hide();
+        setState(ExecutionState::Error);
     }
     
     updateWidgetSize();
     
-    // Notify detail view of new data
     Q_EMIT dataUpdated(0);
 }
+
 
 void EvaluationENLNode::processRoiSelection(const QRectF& sceneRect, int imageIndex)
 {
