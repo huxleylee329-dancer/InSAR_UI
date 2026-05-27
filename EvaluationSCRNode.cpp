@@ -489,6 +489,8 @@ void EvaluationSCRNode::onEvaluationFinished()
     triggerVisualUpdate();
 
     updateWidgetSize();
+
+    Q_EMIT dataUpdated(0);
 }
 
 void EvaluationSCRNode::updateWidgetSize()
