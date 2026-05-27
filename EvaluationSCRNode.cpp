@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "EvaluationSCRNode.h"
 #include <QMessageBox>
 #include <QVBoxLayout>

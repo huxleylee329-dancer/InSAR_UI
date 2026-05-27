@@ -1,4 +1,5 @@
-﻿#include <ColorBar.h>
+#include "InSARLogManager.h"
+#include <ColorBar.h>
 
 ColorBar::ColorBar(QWidget* parent) : QLabel(parent)
 {
@@ -31,6 +32,7 @@ int ColorBar::SetData(QString Data_path, QString Type)
     if (Data_path == NULL ||
         Type == NULL)
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("未检测到数据,请确保数据没有被删除或移动"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到数据,请确保数据没有被删除或移动"));
         return -1;
     }

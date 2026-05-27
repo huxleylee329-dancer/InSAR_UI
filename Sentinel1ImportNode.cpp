@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "Sentinel1ImportNode.h"
 #include "ImportDataTypes.h"
 #include "NodeUtils.h"

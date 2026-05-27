@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "S1DeburstNode.h"
 #include "IApplicationInterface.h"
@@ -376,6 +377,7 @@ void S1DeburstNode::setExecutionMode(ExecutionMode mode)
 
 void S1DeburstNode::executeProcessing()
 {
+	InSARLogManager::LogInfo("S1DeburstNode", "executeProcessing started.");
     if (!validateInputs())
         return;
 
@@ -410,6 +412,7 @@ void S1DeburstNode::executeProcessing()
     // Start thread
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
+	InSARLogManager::LogInfo("S1DeburstNode", "executeProcessing completed.");
 }
 
 bool S1DeburstNode::validateAndRestoreOutput()

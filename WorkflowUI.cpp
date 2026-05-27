@@ -53,6 +53,7 @@
 #include <QPointer>
 #include <QLayout>
 
+#include "InSARLogManager.h"
 // ============================================================================
 // Node Palette Full Order Configuration
 // ============================================================================
@@ -718,6 +719,7 @@ void WorkflowUI::onExport()
     }
     else
     {
+        InSARLogManager::LogWarning("UI", "Cannot export file: " + filePath);
         QMessageBox::warning(this, "Error", "Cannot export file: " + filePath);
     }
 }
@@ -731,6 +733,7 @@ void WorkflowUI::onImport()
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly))
     {
+        InSARLogManager::LogWarning("UI", "Cannot open file: " + filePath);
         QMessageBox::warning(this, "Error", "Cannot open file: " + filePath);
         return;
     }
@@ -741,6 +744,7 @@ void WorkflowUI::onImport()
     QJsonDocument doc(QJsonDocument::fromJson(data));
     if (!doc.isObject())
     {
+        InSARLogManager::LogWarning("UI", "Invalid file format");
         QMessageBox::warning(this, "Error", "Invalid file format");
         return;
     }
@@ -753,6 +757,7 @@ void WorkflowUI::onImport()
     }
     else
     {
+        InSARLogManager::LogWarning("UI", "Cannot import file: " + filePath);
         QMessageBox::warning(this, "Error", "Cannot import file: " + filePath);
     }
 }
@@ -949,6 +954,7 @@ void WorkflowUI::onWorkflowLoadRequested(const QString &filePath)
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly))
     {
+        InSARLogManager::LogWarning("UI", "Cannot open file: " + filePath);
         QMessageBox::warning(this, "Error", "Cannot open file: " + filePath);
         return;
     }
@@ -959,6 +965,7 @@ void WorkflowUI::onWorkflowLoadRequested(const QString &filePath)
     QJsonDocument doc(QJsonDocument::fromJson(data));
     if (!doc.isObject())
     {
+        InSARLogManager::LogWarning("UI", "Invalid file format");
         QMessageBox::warning(this, "Error", "Invalid file format");
         return;
     }
@@ -971,6 +978,7 @@ void WorkflowUI::onWorkflowLoadRequested(const QString &filePath)
     }
     else
     {
+        InSARLogManager::LogWarning("UI", "Cannot load workflow: " + filePath);
         QMessageBox::warning(this, "Error", "Cannot load workflow: " + filePath);
     }
 }

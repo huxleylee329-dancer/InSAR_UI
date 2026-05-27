@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <qmessagebox.h>
 
+#include "InSARLogManager.h"
 Import_GenericSAR::Import_GenericSAR(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::ImportGenericSAR),
@@ -87,29 +88,34 @@ void Import_GenericSAR::on_buttonBox_accepted()
 {
         if (ui->LineEdit_xml->text().isEmpty())
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("请输入图片文件！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入图片文件！"));
         return;
     }
     bool bFlag = ui->LineEdit_xml->text().contains(QRegularExpression("^[\\n\\w:.\\()-/]+$"));
     if (!bFlag)
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("请注意路径中应当仅包含数字、字母及下划线！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意路径中应当仅包含数字、字母及下划线！"));
         return;
     }
     if (ui->LineEdit_dst_filename->text().isEmpty())
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("请输入想要保存的图片名称！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入想要保存的图片名称！"));
         return;
     }
     bFlag = ui->LineEdit_dst_filename->text().contains(QRegularExpression("^\\w+$"));
     if (!bFlag)
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("请注意图像名称应当为数字、字母及下划线的组合！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意图像名称应当为数字、字母及下划线的组合！"));
         return;
     }
 
     if (ui->lineEdit_dst_node->text().isEmpty())
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("目标节点名为空！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点名为空！"));
         return;
     }
@@ -130,6 +136,7 @@ void Import_GenericSAR::on_buttonBox_accepted()
     }
     if (same_name_node)
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         return;
     }
@@ -242,12 +249,14 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
     //检查导入文件list是否为空
     if (ui->listWidget->count() < 1)
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("导入图像文件为空！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("导入图像文件为空！"));
         return;
     }
     //检查目标节点名
     if (ui->lineEdit_dst_node_2->text().isEmpty())
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("目标节点名为空！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点名为空！"));
         return;
     }
@@ -268,6 +277,7 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
     }
     if (same_name_node)
     {
+        InSARLogManager::LogWarning("UI", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
         return;
     }

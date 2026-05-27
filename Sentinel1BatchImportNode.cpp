@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "Sentinel1BatchImportNode.h"
 #include "IApplicationInterface.h"

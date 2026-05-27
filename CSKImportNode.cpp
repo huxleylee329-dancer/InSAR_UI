@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "CSKImportNode.h"
 #include "NodeUtils.h"

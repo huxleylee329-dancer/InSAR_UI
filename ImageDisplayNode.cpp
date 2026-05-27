@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "ImageDisplayNode.h"
 #include "FormatConversion.h"

@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "TSXImportNode.h"
 #include "ImportDataTypes.h"

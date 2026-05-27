@@ -14,6 +14,7 @@
 #include<QFile>
 #include<QFileInfo>
 #include<QDebug>
+#include "InSARLogManager.h"
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
@@ -103,6 +104,7 @@ void MyThread::import_sentinel(
 	);
 	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 	{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 		QFile::remove(h5_path);
 		QDir tmp_dir(project_path + QString("/") + folder);
 		tmp_dir.removeRecursively();
@@ -157,6 +159,7 @@ void MyThread::import_sentinel(
 		ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(project_path + QString("/") + folder);
 			tmp_dir.removeRecursively();
@@ -165,6 +168,7 @@ void MyThread::import_sentinel(
 		ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(project_path + QString("/") + folder);
 			tmp_dir.removeRecursively();
@@ -173,6 +177,7 @@ void MyThread::import_sentinel(
 		ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(project_path + QString("/") + folder);
 			tmp_dir.removeRecursively();
@@ -184,6 +189,7 @@ void MyThread::import_sentinel(
 		origin->setChild(img->row(), 1, new QStandardItem(h5_path));
 	}
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -208,6 +214,7 @@ void MyThread::import_sentinel_patch(
 		model == NULL
 		)
 	{
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 		return;
 	}
@@ -235,6 +242,7 @@ void MyThread::import_sentinel_patch(
 		);
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
@@ -286,6 +294,7 @@ void MyThread::import_sentinel_patch(
 			ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -294,6 +303,7 @@ void MyThread::import_sentinel_patch(
 			ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -302,6 +312,7 @@ void MyThread::import_sentinel_patch(
 			ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -317,6 +328,7 @@ void MyThread::import_sentinel_patch(
 	}
 	
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -355,6 +367,7 @@ void MyThread::import_sentinel_patch(
 		polarization.toStdString().c_str());
 	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 	{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 		QFile::remove(h5_path);
 		QDir tmp_dir(project_path + QString("/") + folder);
 		tmp_dir.removeRecursively();
@@ -409,6 +422,7 @@ void MyThread::import_sentinel_patch(
 		ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(project_path + QString("/") + folder);
 			tmp_dir.removeRecursively();
@@ -417,6 +431,7 @@ void MyThread::import_sentinel_patch(
 		ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(project_path + QString("/") + folder);
 			tmp_dir.removeRecursively();
@@ -425,6 +440,7 @@ void MyThread::import_sentinel_patch(
 		ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(project_path + QString("/") + folder);
 			tmp_dir.removeRecursively();
@@ -436,6 +452,7 @@ void MyThread::import_sentinel_patch(
 		origin->setChild(img->row(), 1, new QStandardItem(h5_path));
 	}
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -457,6 +474,7 @@ void MyThread::import_TSX_patch(
 		model == NULL
 		)
 	{
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 		return;
 	}
@@ -483,6 +501,7 @@ void MyThread::import_TSX_patch(
 			polarization.toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
@@ -535,6 +554,7 @@ void MyThread::import_TSX_patch(
 			ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -543,6 +563,7 @@ void MyThread::import_TSX_patch(
 			ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -551,6 +572,7 @@ void MyThread::import_TSX_patch(
 			ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -566,6 +588,7 @@ void MyThread::import_TSX_patch(
 	}
 	
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -579,6 +602,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 		model == NULL
 		)
 	{
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 		return;
 	}
@@ -605,6 +629,8 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 		ret += csk_reader.write_to_h5(h5_path.toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+			InSARLogManager::LogError("MyThread", "unknown format!");
 			emit errorProcess("unknown format!");
 			return;
 		}
@@ -655,6 +681,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 			ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -663,6 +690,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 			ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "CSG-2");
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -671,6 +699,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 			ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 			{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 				QFile::remove(h5_path);
 				QDir tmp_dir(savepath + QString("/") + dst_node);
 				tmp_dir.removeRecursively();
@@ -686,6 +715,7 @@ void MyThread::import_CSK_patch(QString savepath, vector<QString> original_file_
 	}
 
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -708,6 +738,7 @@ void MyThread::import_ALOS2_patch(
 		model == NULL
 		)
 	{
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 		return;
 	}
@@ -734,6 +765,8 @@ void MyThread::import_ALOS2_patch(
 			h5_path.toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+			InSARLogManager::LogError("MyThread", "unknown format!");
 			emit errorProcess("unknown format!");
 			return;
 		}
@@ -773,6 +806,7 @@ void MyThread::import_ALOS2_patch(
 		ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
@@ -781,6 +815,7 @@ void MyThread::import_ALOS2_patch(
 		ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "ALOS2");
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
@@ -789,6 +824,7 @@ void MyThread::import_ALOS2_patch(
 		ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
 		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
 		{
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 			QFile::remove(h5_path);
 			QDir tmp_dir(savepath + QString("/") + dst_node);
 			tmp_dir.removeRecursively();
@@ -799,6 +835,7 @@ void MyThread::import_ALOS2_patch(
 	}
 
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -822,7 +859,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		util.saveSLC(bmp_path.toStdString().c_str(), /*65*/65, SLC64);
 		if (QThread::currentThread()->isInterruptionRequested())
 		{
-			//emit endProcess();
+			//InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));emit endProcess();
 			QFile::remove(bmp_path.toStdString().c_str());
 			return;
 		}
@@ -840,6 +877,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		//	fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
 		//}
 		cv::waitKey(1000);
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 	}
 	else if (type == "phase")
@@ -866,6 +904,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
 		}
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 
 	}
@@ -894,6 +933,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
 		}
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 	}
 	else if (type == "dem")
@@ -911,6 +951,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
 		}
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 	}
 	else if (type == "amplitude")
@@ -928,6 +969,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
 		}
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 	}
 	else if (type == "SBAS")
@@ -948,6 +990,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		{
 			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
 		}
+		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
 	}
 	else
@@ -1102,6 +1145,7 @@ void MyThread::Cut(QList<double> para, QString save_path, QString project_name, 
     }
 	DOC->XMLFile_save(file_abs_path.data());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 
 }
@@ -1371,6 +1415,7 @@ void MyThread::Cut2(double h5_left, double h5_right, double h5_top, double h5_bo
 
 	DOC->XMLFile_save(file_abs_path.data());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -1421,6 +1466,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
     int ret = Registration_copy(SAR_images, SAR_images_regis, offset_row_out, offset_col_out, index, interp_times, block_size);
     if (ret<0 || QThread::currentThread()->isInterruptionRequested())
     {
+			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
 		return;
     }
     /*建立配准根节点*/
@@ -1591,6 +1637,7 @@ void MyThread::Regis(QList<int> para, QString save_path, QString project_name, Q
     }
 	xmlfile->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
     emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -1831,6 +1878,7 @@ void MyThread::DEMAssistCoregistration(
 	}
 	xmlfile->XMLFile_save((QString(savepath) + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 
 }
@@ -1957,6 +2005,7 @@ void MyThread::S1_Deburst(
 	}
 	xmlfile->XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -2405,6 +2454,7 @@ void MyThread::S1_TOPS_BackGeocoding(
 	}
 	xmlfile->XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -2590,6 +2640,8 @@ void MyThread::SLC_deramp(
 	xmlfile->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
 
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
+
 	emit endProcess();
 	
 
@@ -2692,6 +2744,7 @@ void MyThread::Baseline_Formation(
 	}
 	
 	emit sendBL(temporal_baseline, spatial_baseline, masterIndex);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -2720,6 +2773,7 @@ void MyThread::SBAS_time_series(
 	{
 		if (!csv.mkpath(csv.absolutePath()))
 		{
+			InSARLogManager::LogWarning("UI", QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
 			QMessageBox::warning(NULL, "Warning!", QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
 			return;
 		}
@@ -2728,6 +2782,7 @@ void MyThread::SBAS_time_series(
 	QTextStream in(&csv_file);;
 	if (!csv_file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
 	{	
+		InSARLogManager::LogWarning("UI", QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
 		QMessageBox::warning(NULL, "Warning!", QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
 		return;
 	}
@@ -3305,6 +3360,7 @@ void MyThread::SBAS_time_series(
 		std::replace(times_series_h5.begin(), times_series_h5.end(), '/', '\\');
 	}
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 
 }
@@ -3552,6 +3608,8 @@ void MyThread::SBAS_reference_reselection(QString project_name, QString srcNode,
 	v = v / 4 / PI * wavelength;
 	conversion.write_subarray_to_h5(times_series_h5.c_str(), "defomation_velocity", v, 0, 0, v.rows, v.cols);
 	conversion.write_subarray_to_h5(times_series_h5.c_str(), "residue_topography", z, 0, 0, v.rows, v.cols);
+
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 
 	emit endProcess();
 }
@@ -3908,6 +3966,7 @@ void MyThread::Geocoding(
 	}
 	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit updateProcess(100, QStringLiteral("完成……"));
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -3957,8 +4016,9 @@ void MyThread::S1_swath_merge(
 		merged_h5.toStdString().c_str());
 	if (ret < 0)
 	{
+		InSARLogManager::LogError("MyThread", QStringLiteral("输入不符合要求，请重试！"));
 		emit errorProcess(QStringLiteral("输入不符合要求，请重试！"));
-		//emit endProcess();
+		//InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));emit endProcess();
 		return;
 	}
 	emit updateProcess(90, QStringLiteral("正在拼接……"));
@@ -4015,6 +4075,7 @@ void MyThread::S1_swath_merge(
 		swath_merge->setChild(item_img->row(), 1, new QStandardItem(merged_h5));
 	}
 	emit updateProcess(100, QStringLiteral("完成……"));
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -4064,6 +4125,7 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 	ret = util.S1_frame_merge(IW1_h5.toStdString().c_str(), IW2_h5.toStdString().c_str(), merged_h5.toStdString().c_str());
 	if (ret < 0)
 	{
+		InSARLogManager::LogError("MyThread", QStringLiteral("输入不符合要求，请重试！"));
 		emit errorProcess(QStringLiteral("输入不符合要求，请重试！"));
 		return;
 	}
@@ -4112,6 +4174,7 @@ void MyThread::S1_frame_merge(int index1, int index2, QString project_name, QStr
 		frame_merge->setChild(item_img->row(), 1, new QStandardItem(merged_h5));
 	}
 	emit updateProcess(100, QStringLiteral("完成……"));
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -4213,6 +4276,7 @@ void MyThread::Baseline_Estimate(int index, QString project_name, QString dst_no
 	}
 	//util.cvmat2bin("E:\\working_dir\\papers\\multibaseline_polarimetric\\beijing\\baseline_distribution.bin", cc);
 	emit sendBL(temporal_baseline, spatial_baseline, index);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -4508,6 +4572,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 	}
 	xml->XMLFile_save(xml_path.toStdString().c_str());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -4861,6 +4926,7 @@ void MyThread::Denoise(QList<int> para, double alpha, QString save_path, QString
 	}
 	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -5294,6 +5360,7 @@ void MyThread::QUnwrap(int method, double coherence_threshold, QString save_path
 	}
 	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
@@ -5482,6 +5549,7 @@ void MyThread::QDem(int method, int times, QString save_path, QString project_na
 	}
 	xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
+	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 

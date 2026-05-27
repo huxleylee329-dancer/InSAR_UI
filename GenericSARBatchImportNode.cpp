@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "GenericSARBatchImportNode.h"
 #include "IApplicationInterface.h"

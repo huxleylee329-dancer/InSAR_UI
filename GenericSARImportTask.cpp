@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include <memory>
 #include "GenericSARImportTask.h"
 #include <QFile>
@@ -295,6 +296,7 @@ void GenericSARBatchImportTask::run()
 			QFile::remove(image_path);
 			QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
 			tmp_dir.removeRecursively();
+			InSARLogManager::LogError("MyThread", QStringLiteral("文件复制失败"));
 			emit errorProcess(QStringLiteral("文件复制失败"));
 			return;
 		}
@@ -308,6 +310,7 @@ void GenericSARBatchImportTask::run()
 			QFile::remove(image_path);
 			QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
 			tmp_dir.removeRecursively();
+			InSARLogManager::LogError("MyThread", QStringLiteral("找不到项目节点"));
 			emit errorProcess(QStringLiteral("找不到项目节点"));
 			return;
 		}
@@ -373,6 +376,7 @@ void GenericSARBatchImportTask::run()
 				QFile::remove(image_path);
 				QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
 				tmp_dir.removeRecursively();
+				InSARLogManager::LogError("MyThread", QStringLiteral("加载项目XML失败"));
 				emit errorProcess(QStringLiteral("加载项目XML失败"));
 				return;
 			}
@@ -382,6 +386,7 @@ void GenericSARBatchImportTask::run()
 				QFile::remove(image_path);
 				QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
 				tmp_dir.removeRecursively();
+				InSARLogManager::LogError("MyThread", QStringLiteral("添加origin节点失败"));
 				emit errorProcess(QStringLiteral("添加origin节点失败"));
 				return;
 			}
@@ -391,6 +396,7 @@ void GenericSARBatchImportTask::run()
 				QFile::remove(image_path);
 				QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
 				tmp_dir.removeRecursively();
+				InSARLogManager::LogError("MyThread", QStringLiteral("保存项目XML失败"));
 				emit errorProcess(QStringLiteral("保存项目XML失败"));
 				return;
 			}

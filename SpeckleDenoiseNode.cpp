@@ -305,8 +305,8 @@ void SpeckleDenoiseNode::execute()
 
 void SpeckleDenoiseNode::executeProcessing()
 {
-    InSARLogManager::LogInfo("SpeckleDenoiseNode", "开始执行斑点噪声去除处理...");
-
+	InSARLogManager::LogInfo("SpeckleDenoiseNode", "executeProcessing started.");
+ 
     // CRITICAL: Clean up existing threads FIRST - before any state change
     // This prevents duplicate execution if setInData is called multiple times
     if (m_task)
@@ -392,6 +392,7 @@ void SpeckleDenoiseNode::executeProcessing()
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
+	InSARLogManager::LogInfo("SpeckleDenoiseNode", "executeProcessing completed.");
 }
 
 void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)

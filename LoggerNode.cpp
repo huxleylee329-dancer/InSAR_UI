@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "LoggerNode.h"
 #include <QHBoxLayout>
 #include <QScrollBar>

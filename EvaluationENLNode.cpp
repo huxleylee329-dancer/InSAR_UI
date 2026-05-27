@@ -8,6 +8,7 @@
 #include <QJsonValue>
 #include <QJsonArray>
 
+#include "InSARLogManager.h"
 namespace QtNodes {
 
 EvaluationENLNode::EvaluationENLNode()
@@ -293,6 +294,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
         m_summaryLabel->show();
         m_expandLabel->hide();
         m_resultsTable->hide();
+        InSARLogManager::LogWarning("UI", QStringLiteral("原图和滤波后图像的数量不一致，无法进行批量评估！"));
         QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("原图和滤波后图像的数量不一致，无法进行批量评估！"));
         updateWidgetSize();
         setState(ExecutionState::Error);

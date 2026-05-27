@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include <memory>
 #include "SpeckleDenoiseTask.h"
 #include "icon_source.h"
@@ -61,6 +62,7 @@ void SpeckleDenoiseTask::run()
             QString msg = QStringLiteral("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(m_inputPaths[i]).fileName(), outError);
             emit askUserError(msg, &skip);
             if (!skip) {
+                InSARLogManager::LogError("MyThread", QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
                 emit errorProcess(QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
                 return;
             }

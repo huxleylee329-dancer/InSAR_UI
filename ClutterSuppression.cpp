@@ -12,6 +12,7 @@
 #include "BM3DWrapper.h"
 
 
+#include "InSARLogManager.h"
 ClutterSuppression::ClutterSuppression(QWidget* parent)
     : QWidget(parent),
       ui(new Ui::ClutterSuppression),
@@ -107,6 +108,7 @@ void ClutterSuppression::on_loadImageButton_clicked()
 
     if (!originalPixmap.load(input_image_path))
     {
+        InSARLogManager::LogWarning("UI", "Failed to load input image.");
         QMessageBox::warning(this, "Warning!", "Failed to load input image.");
         return;
     }
@@ -114,6 +116,7 @@ void ClutterSuppression::on_loadImageButton_clicked()
     originalGrayMat = cv::imread(input_image_path.toStdString(), cv::IMREAD_GRAYSCALE);
     if (originalGrayMat.empty())
     {
+        InSARLogManager::LogWarning("UI", "Failed to load input image as grayscale.");
         QMessageBox::warning(this, "Warning!", "Failed to load input image as grayscale.");
         return;
     }
@@ -838,6 +841,7 @@ void ClutterSuppression::on_runFilterButton_clicked()
     cv::Mat inputGray = cv::imread(input_image_path.toStdString(), cv::IMREAD_GRAYSCALE);
     if (inputGray.empty())
     {
+        InSARLogManager::LogWarning("UI", "Failed to read input image.");
         QMessageBox::warning(this, "Warning!", "Failed to read input image.");
         return;
     }
@@ -845,6 +849,7 @@ void ClutterSuppression::on_runFilterButton_clicked()
     cv::Mat filteredImage = runClutterSuppressionCoreLogic(inputGray);
     if (filteredImage.empty())
     {
+        InSARLogManager::LogWarning("UI", "Clutter suppression failed.");
         QMessageBox::warning(this, "Warning!", "Clutter suppression failed.");
         return;
     }
@@ -869,12 +874,14 @@ void ClutterSuppression::on_runFilterButton_clicked()
     QString outputImageName;
     if (!saveFilteredImage(filteredImage, outputPath, outputImageName))
     {
+        InSARLogManager::LogWarning("UI", "Failed to save filtered image.");
         QMessageBox::warning(this, "Warning!", "Failed to save filtered image.");
         return;
     }
 
     if (!registerFilteredImage(outputNodeName, outputImageName, outputPath))
     {
+        InSARLogManager::LogWarning("UI", "Failed to register filtered image.");
         QMessageBox::warning(this, "Warning!", "Failed to register filtered image.");
         return;
     }
@@ -886,6 +893,7 @@ void ClutterSuppression::on_runFilterButton_clicked()
 
     if (!filteredPixmap.load(outputPath))
     {
+        InSARLogManager::LogWarning("UI", "Failed to load filtered result image.");
         QMessageBox::warning(this, "Warning!", "Failed to load filtered result image.");
         return;
     }
@@ -1013,6 +1021,7 @@ void ClutterSuppression::on_deleteFilterButton_clicked()
 {
     if (!copy)
     {
+        InSARLogManager::LogWarning("UI", "Project model is invalid.");
         QMessageBox::warning(this, "Warning!", "Project model is invalid.");
         return;
     }
@@ -1020,6 +1029,7 @@ void ClutterSuppression::on_deleteFilterButton_clicked()
     QString outputNodeName = ui->NodeWindowSpinBox->text();
     if (outputNodeName.isEmpty())
     {
+        InSARLogManager::LogWarning("UI", "Please input output node name.");
         QMessageBox::warning(this, "Warning!", "Please input output node name.");
         return;
     }
@@ -1044,6 +1054,7 @@ void ClutterSuppression::on_deleteFilterButton_clicked()
     QStandardItem* project = copy->item(projectIndex, 0);
     if (!project)
     {
+        InSARLogManager::LogWarning("UI", "Project item not found.");
         QMessageBox::warning(this, "Warning!", "Project item not found.");
         return;
     }
@@ -1085,6 +1096,7 @@ void ClutterSuppression::on_deleteFilterButton_clicked()
     XMLFile* xml = new XMLFile();
     if (xml->XMLFile_load((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
+        InSARLogManager::LogWarning("UI", "Failed to load project XML.");
         QMessageBox::warning(this, "Warning!", "Failed to load project XML.");
         return;
     }
@@ -1093,12 +1105,14 @@ void ClutterSuppression::on_deleteFilterButton_clicked()
                                 outputImageName.toStdString().c_str(),
                                 outputPath.toStdString().c_str()) < 0)
     {
+        InSARLogManager::LogWarning("UI", "Failed to remove node from project XML.");
         QMessageBox::warning(this, "Warning!", "Failed to remove node from project XML.");
         return;
     }
 
     if (xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
+        InSARLogManager::LogWarning("UI", "Failed to save project XML.");
         QMessageBox::warning(this, "Warning!", "Failed to save project XML.");
         return;
     }
@@ -1107,6 +1121,7 @@ void ClutterSuppression::on_deleteFilterButton_clicked()
     {
         if (!QFile::remove(outputPath))
         {
+            InSARLogManager::LogWarning("UI", "Failed to delete filtered image file.");
             QMessageBox::warning(this, "Warning!", "Failed to delete filtered image file.");
             return;
         }

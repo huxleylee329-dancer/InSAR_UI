@@ -12,6 +12,7 @@
 #include <onnxruntime_cxx_api.h>
 
 
+#include "InSARLogManager.h"
 TargetDetection::TargetDetection(QWidget* parent)
     : QWidget(parent),
       ui(new Ui::TargetDetection),
@@ -51,6 +52,7 @@ void TargetDetection::ShowProjectList(QStandardItemModel* model)
 {
     if (model == nullptr || model->rowCount() == 0)
     {
+        InSARLogManager::LogWarning("UI", "Please import or open project data first");
         QMessageBox::warning(this, "Warning!", "Please import or open project data first");
         this->deleteLater();
         return;
@@ -144,12 +146,14 @@ void TargetDetection::on_loadImageButton_clicked()
 
     if (imagePath.isEmpty())
     {
+        InSARLogManager::LogWarning("UI", "Please select an input image.");
         QMessageBox::warning(this, "Warning", "Please select an input image.");
         return;
     }
 
     if (!QFileInfo::exists(imagePath))
     {
+        InSARLogManager::LogWarning("UI", "Image file does not exist:\n" + imagePath);
         QMessageBox::warning(this, "Warning", "Image file does not exist:\n" + imagePath);
         return;
     }
@@ -216,18 +220,21 @@ void TargetDetection::on_runDetectionButton_clicked()
 
     if (imagePath.isEmpty())
     {
+        InSARLogManager::LogWarning("UI", "Please select an input image.");
         QMessageBox::warning(this, "Warning", "Please select an input image.");
         return;
     }
 
     if (!QFileInfo::exists(imagePath))
     {
+        InSARLogManager::LogWarning("UI", "Image file does not exist:\n" + imagePath);
         QMessageBox::warning(this, "Warning", "Image file does not exist:\n" + imagePath);
         return;
     }
 
     if (modelPath.isEmpty() || !QFileInfo::exists(modelPath))
     {
+        InSARLogManager::LogWarning("UI", "Model file does not exist:\n" + modelPath);
         QMessageBox::warning(this, "Warning", "Model file does not exist:\n" + modelPath);
         return;
     }
@@ -241,6 +248,7 @@ void TargetDetection::on_runDetectionButton_clicked()
     bool ok = runDetectionTask(imagePath, modelPath, thresholdValue, shipProb, resultText, errorMsg);
     if (!ok)
     {
+        InSARLogManager::LogWarning("UI", errorMsg);
         QMessageBox::warning(this, "Detection Error", errorMsg);
         return;
     }

@@ -18,6 +18,7 @@
 
 
 
+#include "InSARLogManager.h"
 BatchTargetRecognition::BatchTargetRecognition(QWidget* parent)
     : QWidget(parent),
       ui(new Ui::BatchTargetRecognition),
@@ -113,6 +114,7 @@ void BatchTargetRecognition::on_runDetectionButton_clicked()
     QString modelPath = selectedModelPath();
     if (modelPath.isEmpty() || !QFileInfo::exists(modelPath))
     {
+        InSARLogManager::LogWarning("UI", "Model file does not exist:\n" + modelPath);
         QMessageBox::warning(this, "Warning", "Model file does not exist:\n" + modelPath);
         return;
     }
@@ -169,6 +171,7 @@ void BatchTargetRecognition::on_exportResultButton_clicked()
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
     {
+        InSARLogManager::LogWarning("UI", "Failed to create result file.");
         QMessageBox::warning(this, "Warning", "Failed to create result file.");
         return;
     }
@@ -199,6 +202,7 @@ void BatchTargetRecognition::on_resultTableWidget_cellClicked(int row, int colum
 
     if (item.imagePath.isEmpty() || !QFileInfo::exists(item.imagePath))
     {
+        InSARLogManager::LogWarning("UI", "Image file does not exist:\n" + item.imagePath);
         QMessageBox::warning(this, "Warning", "Image file does not exist:\n" + item.imagePath);
         return;
     }
@@ -415,6 +419,7 @@ bool BatchTargetRecognition::runSingleDetection(const QString& imagePath,
     cv::Mat img = cv::imread(imagePath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE | cv::IMREAD_ANYDEPTH);
     if (img.empty())
     {
+        InSARLogManager::LogWarning("UI", "Failed to read image.");
         QMessageBox::warning(this, "Warning", "Failed to read image.");
         return false;
     }
@@ -478,11 +483,13 @@ bool BatchTargetRecognition::runSingleDetection(const QString& imagePath,
     }
     catch (const Ort::Exception& e)
     {
+        InSARLogManager::LogWarning("UI", e.what());
         QMessageBox::warning(this, "ONNX Runtime Error", e.what());
         return false;
     }
     catch (const std::exception& e)
     {
+        InSARLogManager::LogWarning("UI", e.what());
         QMessageBox::warning(this, "Detection Error", e.what());
         return false;
     }

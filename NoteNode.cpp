@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "include/NoteNode.h"
 
 #include <QTextEdit>

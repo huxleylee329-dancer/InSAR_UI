@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "S1SwathMergeNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
@@ -517,6 +518,7 @@ void S1SwathMergeNode::setExecutionMode(ExecutionMode mode)
 
 void S1SwathMergeNode::executeProcessing()
 {
+	InSARLogManager::LogInfo("S1SwathMergeNode", "executeProcessing started.");
     if (!validateInputs())
         return;
 
@@ -555,6 +557,7 @@ void S1SwathMergeNode::executeProcessing()
     // Start thread
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
+	InSARLogManager::LogInfo("S1SwathMergeNode", "executeProcessing completed.");
 }
 
 bool S1SwathMergeNode::validateAndRestoreOutput()

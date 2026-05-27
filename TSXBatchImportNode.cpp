@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "TSXBatchImportNode.h"
 #include "IApplicationInterface.h"

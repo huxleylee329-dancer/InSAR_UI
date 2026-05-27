@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "S1FrameMergeNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
@@ -464,6 +465,7 @@ void S1FrameMergeNode::setExecutionMode(ExecutionMode mode)
 
 void S1FrameMergeNode::executeProcessing()
 {
+	InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing started.");
     if (!validateInputs())
         return;
 
@@ -500,6 +502,7 @@ void S1FrameMergeNode::executeProcessing()
     // Start thread
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
+	InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing completed.");
 }
 
 bool S1FrameMergeNode::validateAndRestoreOutput()

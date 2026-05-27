@@ -12,6 +12,7 @@
 #include <vector>
 #include "BM3DWrapper.h"
 
+#include "InSARLogManager.h"
 SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     : QWidget(parent),
       ui(new Ui::SpeckleDenoise),
@@ -69,6 +70,7 @@ void SpeckleDenoise::ShowProjectList(QStandardItemModel* model)
 {
     if (model == nullptr || model->rowCount() == 0)
     {
+        InSARLogManager::LogWarning("UI", "Please import or open project data first");
         QMessageBox::warning(this, "Warning!", "Please import or open project data first");
         this->deleteLater();
         return;
@@ -247,6 +249,7 @@ void SpeckleDenoise::on_loadImageButton_clicked()
 {
     if (input_image_path.isEmpty() || !QFile::exists(input_image_path))
     {
+        InSARLogManager::LogWarning("UI", "Please select a valid input image.");
         QMessageBox::warning(this, "Warning!", "Please select a valid input image.");
         return;
     }
@@ -255,6 +258,7 @@ void SpeckleDenoise::on_loadImageButton_clicked()
     originalGrayMat = cv::imread(input_image_path.toStdString(), cv::IMREAD_GRAYSCALE);
     if (originalGrayMat.empty())
     {
+        InSARLogManager::LogWarning("UI", "Failed to load input image as grayscale.");
         QMessageBox::warning(this, "Warning!", "Failed to load input image as grayscale.");
         return;
     }
@@ -274,6 +278,7 @@ void SpeckleDenoise::on_loadImageButton_clicked()
 
     if (originalPixmap.isNull())
     {
+        InSARLogManager::LogWarning("UI", "Failed to load input image.");
         QMessageBox::warning(this, "Warning!", "Failed to load input image.");
         return;
     }
@@ -338,6 +343,7 @@ void SpeckleDenoise::on_startRoiButton_clicked()
 {
     if (originalPixmap.isNull())
     {
+        InSARLogManager::LogWarning("UI", "Please load an image first.");
         QMessageBox::warning(this, "Warning!", "Please load an image first.");
         return;
     }
@@ -376,6 +382,7 @@ void SpeckleDenoise::on_runFilterButton_clicked()
    
     if (input_image_path.isEmpty() || !QFile::exists(input_image_path))
     {
+        InSARLogManager::LogWarning("UI", "Please load an input image first.");
         QMessageBox::warning(this, "Warning!", "Please load an input image first.");
         ui->FilterProgressBar->show();
         ui->FilterProgressBar->setRange(0, 0);
@@ -385,6 +392,7 @@ void SpeckleDenoise::on_runFilterButton_clicked()
     QString outputNodeName = ui->NodeWindowSpinBox->text();
     if (outputNodeName.isEmpty())
     {
+        InSARLogManager::LogWarning("UI", "Please input output node name.");
         QMessageBox::warning(this, "Warning!", "Please input output node name.");
         ui->FilterProgressBar->show();
         ui->FilterProgressBar->setRange(0, 0);
@@ -394,6 +402,7 @@ void SpeckleDenoise::on_runFilterButton_clicked()
     cv::Mat inputGray = cv::imread(input_image_path.toStdString(), cv::IMREAD_GRAYSCALE);
     if (inputGray.empty())
     {
+        InSARLogManager::LogWarning("UI", "Failed to read input image.");
         QMessageBox::warning(this, "Warning!", "Failed to read input image.");
         ui->FilterProgressBar->show();
         ui->FilterProgressBar->setRange(0, 0);
@@ -403,6 +412,7 @@ void SpeckleDenoise::on_runFilterButton_clicked()
     cv::Mat filteredImage = runBm3dCoreLogic(inputGray);
     if (filteredImage.empty())
     {
+        InSARLogManager::LogWarning("UI", "Speckle denoise failed.");
         QMessageBox::warning(this, "Warning!", "Speckle denoise failed.");
         ui->FilterProgressBar->show();
         ui->FilterProgressBar->setRange(0, 0);
@@ -430,12 +440,14 @@ void SpeckleDenoise::on_runFilterButton_clicked()
     QString outputImageName;
     if (!saveFilteredImage(filteredImage, outputPath, outputImageName))
     {
+        InSARLogManager::LogWarning("UI", "Failed to save filtered image.");
         QMessageBox::warning(this, "Warning!", "Failed to save filtered image.");
         return;
     }
 
     if (!registerFilteredImage(outputNodeName, outputImageName, outputPath))
     {
+        InSARLogManager::LogWarning("UI", "Failed to register filtered image.");
         QMessageBox::warning(this, "Warning!", "Failed to register filtered image.");
         return;
     }
@@ -686,6 +698,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
 {
     if (!copy)
     {
+        InSARLogManager::LogWarning("UI", "Project model is invalid.");
         QMessageBox::warning(this, "Warning!", "Project model is invalid.");
         return;
     }
@@ -693,12 +706,14 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     QString outputNodeName = ui->NodeWindowSpinBox->text();
     if (outputNodeName.isEmpty())
     {
+        InSARLogManager::LogWarning("UI", "Please input output node name.");
         QMessageBox::warning(this, "Warning!", "Please input output node name.");
         return;
     }
 
     if (input_image_name.isEmpty())
     {
+        InSARLogManager::LogWarning("UI", "Please select an input image first.");
         QMessageBox::warning(this, "Warning!", "Please select an input image first.");
         return;
     }
@@ -710,6 +725,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     int projectIndex = ui->projectComboBox->currentIndex();
     if (projectIndex < 0)
     {
+        InSARLogManager::LogWarning("UI", "Invalid project selection.");
         QMessageBox::warning(this, "Warning!", "Invalid project selection.");
         return;
     }
@@ -717,6 +733,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     QStandardItem* project = copy->item(projectIndex, 0);
     if (!project)
     {
+        InSARLogManager::LogWarning("UI", "Project item not found.");
         QMessageBox::warning(this, "Warning!", "Project item not found.");
         return;
     }
@@ -758,6 +775,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     XMLFile* xml = new XMLFile();
     if (xml->XMLFile_load((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
+        InSARLogManager::LogWarning("UI", "Failed to load project XML.");
         QMessageBox::warning(this, "Warning!", "Failed to load project XML.");
         return;
     }
@@ -766,12 +784,14 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
                                 outputImageName.toStdString().c_str(),
                                 outputPath.toStdString().c_str()) < 0)
     {
+        InSARLogManager::LogWarning("UI", "Failed to remove node from project XML.");
         QMessageBox::warning(this, "Warning!", "Failed to remove node from project XML.");
         return;
     }
 
     if (xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
+        InSARLogManager::LogWarning("UI", "Failed to save project XML.");
         QMessageBox::warning(this, "Warning!", "Failed to save project XML.");
         return;
     }
@@ -780,6 +800,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     {
         if (!QFile::remove(outputPath))
         {
+            InSARLogManager::LogWarning("UI", "Failed to delete filtered image file.");
             QMessageBox::warning(this, "Warning!", "Failed to delete filtered image file.");
             return;
         }
@@ -883,12 +904,14 @@ void SpeckleDenoise::on_calculateEnlButton_clicked()
         currentRoiImageRect.width() < 2 ||
         currentRoiImageRect.height() < 2)
     {
+        InSARLogManager::LogWarning("UI", "Please select a valid ROI first.");
         QMessageBox::warning(this, "Warning!", "Please select a valid ROI first.");
         return;
     }
 
     if (originalGrayMat.empty())
     {
+        InSARLogManager::LogWarning("UI", "Original image is not loaded.");
         QMessageBox::warning(this, "Warning!", "Original image is not loaded.");
         return;
     }

@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "ClutterSuppressionNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
@@ -293,6 +294,7 @@ void ClutterSuppressionNode::execute()
 
 void ClutterSuppressionNode::executeProcessing()
 {
+	InSARLogManager::LogInfo("ClutterSuppressionNode", "executeProcessing started.");
     if (m_task)
     {
         m_task->stop();
@@ -368,6 +370,7 @@ void ClutterSuppressionNode::executeProcessing()
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
+	InSARLogManager::LogInfo("ClutterSuppressionNode", "executeProcessing completed.");
 }
 
 void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& message)

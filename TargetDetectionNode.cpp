@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 
 #include "TargetDetectionNode.h"
 #include <QVBoxLayout>
@@ -368,6 +369,7 @@ void TargetDetectionNode::execute()
 
 void TargetDetectionNode::executeProcessing()
 {
+	InSARLogManager::LogInfo("TargetDetectionNode", "executeProcessing started.");
     if (m_task)
     {
         m_task->stop();
@@ -406,6 +408,7 @@ void TargetDetectionNode::executeProcessing()
     
     if (m_modelComboBox) m_modelComboBox->setEnabled(false);
     if (m_thresholdEdit) m_thresholdEdit->setEnabled(false);
+	InSARLogManager::LogInfo("TargetDetectionNode", "executeProcessing completed.");
 }
 
 void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)

@@ -1,3 +1,4 @@
+#include "InSARLogManager.h"
 #include "TargetDetectionTask.h"
 #include "TargetDetection.h"
 #include <QFileInfo>
@@ -24,6 +25,7 @@ void TargetDetectionTask::run()
     for (int i = 0; i < m_imagePaths.size(); ++i) {
         m_lock.lock();
         if (m_stopFlag) {
+            InSARLogManager::LogError("MyThread", QStringLiteral("目标检测已停止"));
             emit errorProcess(QStringLiteral("目标检测已停止"));
             m_lock.unlock();
             break;
@@ -48,6 +50,7 @@ void TargetDetectionTask::run()
             emit askUserError(errMsg, &skip);
             
             if (!skip) {
+                InSARLogManager::LogError("MyThread", QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_imagePaths[i]).fileName()));
                 emit errorProcess(QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_imagePaths[i]).fileName()));
                 emit sendTargetDetectionResult(i, false, 0.0f, "", errorMsg);
                 return;
