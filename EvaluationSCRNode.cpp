@@ -23,24 +23,27 @@ EvaluationSCRNode::EvaluationSCRNode()
 void EvaluationSCRNode::createWidget()
 {
     m_widget = new QWidget();
-    m_widget->setFixedWidth(200);
+    m_widget->setFixedWidth(240);
     auto* mainLayout = new QVBoxLayout(m_widget);
-    mainLayout->setContentsMargins(5, 5, 5, 5);
+    mainLayout->setContentsMargins(8, 8, 8, 8);
+    mainLayout->setSizeConstraint(QLayout::SetFixedSize);
 
-    auto* roiGroup = new QGroupBox(QStringLiteral("区域选择")); // 区域选择
-    roiGroup->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    auto* roiLayout = new QVBoxLayout(roiGroup);
-    roiLayout->setContentsMargins(6, 0, 6, 6);
+    mainLayout->addWidget(new QLabel(QStringLiteral("区域选择：")));
     m_regionComboBox = new QComboBox();
-    m_regionComboBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_regionComboBox->addItem(QStringLiteral("中心目标/周围杂波")); // 中心目标/周围杂波
-    m_regionComboBox->addItem(QStringLiteral("左半目标/右半杂波")); // 左半目标/右半杂波
-    roiLayout->addWidget(m_regionComboBox);
-    mainLayout->addWidget(roiGroup);
+    m_regionComboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_regionComboBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_regionComboBox->addItem(QStringLiteral("中心目标/周围杂波"));
+    m_regionComboBox->addItem(QStringLiteral("左半目标/右半杂波"));
+    mainLayout->addWidget(m_regionComboBox);
 
-    auto* resultGroup = new QGroupBox(QStringLiteral("SCR结果")); // SCR结果
-    auto* tableLayout = new QVBoxLayout(resultGroup);
-    tableLayout->setContentsMargins(5, 5, 5, 5);
+    QFrame* line = new QFrame();
+    line->setFrameShape(QFrame::HLine);
+    line->setFrameShadow(QFrame::Sunken);
+    mainLayout->addWidget(line);
+
+    mainLayout->addWidget(new QLabel(QStringLiteral("SCR结果：")));
+    auto* tableLayout = new QVBoxLayout();
+    tableLayout->setContentsMargins(0, 0, 0, 0);
     tableLayout->setSpacing(2);
 
     m_simpleResultWidget = new QWidget();
@@ -64,7 +67,8 @@ void EvaluationSCRNode::createWidget()
     simpleLayout->addWidget(singleResultView);
 
     m_summaryLabel = new QLabel("--");
-    m_summaryLabel->setWordWrap(true);
+    m_summaryLabel->setWordWrap(false);
+    m_summaryLabel->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Preferred);
     m_summaryLabel->hide();
     simpleLayout->addWidget(m_summaryLabel);
 
@@ -88,8 +92,7 @@ void EvaluationSCRNode::createWidget()
     m_resultsTable->setMinimumHeight(150);
     m_resultsTable->setVisible(false);
     tableLayout->addWidget(m_resultsTable);
-
-    mainLayout->addWidget(resultGroup);
+    mainLayout->addLayout(tableLayout);
 
     connect(m_expandLabel, &QLabel::linkActivated, this, [this](const QString &link) {
         if (link == "#expand") {
@@ -429,8 +432,9 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
 void EvaluationSCRNode::updateWidgetSize()
 {
     if (m_widget) {
-        int targetWidth = (m_resultsTable && !m_resultsTable->isHidden()) ? 450 : 200;
+        int targetWidth = (m_resultsTable && !m_resultsTable->isHidden()) ? 450 : 240;
         m_widget->setFixedWidth(targetWidth);
+        m_widget->resize(0, 0);
         m_widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }

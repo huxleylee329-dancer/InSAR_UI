@@ -22,9 +22,18 @@ QMenuBar::item {
     padding: 4px 12px;
 }
 
-QMenuBar::item:selected {
+QMenuBar::item:selected:enabled {
     background-color: #005FAC;
     color: white;
+}
+
+QMenuBar::item:selected:disabled {
+    background-color: transparent;
+    color: #999999;
+}
+
+QMenuBar::item:disabled {
+    color: #999999;
 }
 
 /* Checked menu item styling */
@@ -39,9 +48,18 @@ QMenu::item {
     background-color: transparent;
 }
 
-QMenu::item:selected {
+QMenu::item:disabled {
+    color: #999999;
+}
+
+QMenu::item:selected:enabled {
     background-color: #005FAC;
     color: white;
+}
+
+QMenu::item:selected:disabled {
+    background-color: transparent;
+    color: #999999;
 }
 
 QMenu::item:checked {

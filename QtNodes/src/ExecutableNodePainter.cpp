@@ -6,6 +6,7 @@
 #include "NodeStyle.hpp"
 #include "StyleCollection.hpp"
 #include "DataFlowGraphModel.hpp"
+#include "ImageDisplayNode.h"
 
 #include <QPainter>
 #include <QStyle>
@@ -126,6 +127,127 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
     // Check if this is an executable node
     auto *execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
     if (!execModel) {
+        if (delegateModel->name() == QStringLiteral("ImageDisplay")) {
+            auto* imgNode = dynamic_cast<ImageDisplayNode*>(delegateModel);
+            bool hasImage = imgNode ? imgNode->hasLoadedImage() : false;
+            
+            auto &scene = *ngo.nodeScene();
+            auto &geo = scene.nodeGeometry();
+            bool isSelected = ngo.isSelected();
+            painter->setRenderHint(QPainter::Antialiasing);
+
+            ::QWidget* context = nullptr;
+            if (!ngo.nodeScene()->views().isEmpty()) {
+                context = (QWidget*)ngo.nodeScene()->views().first();
+            }
+
+            ExecutionMode mode = ExecutionMode::Automatic;
+            ExecutionState state = hasImage ? ExecutionState::Completed : ExecutionState::Idle;
+
+            QSize size = geo.size(nodeId);
+            QRectF boundary(0, 0, size.width(), size.height());
+            double const radius = 3.0;
+
+            auto &nodeStyle = StyleCollection::nodeStyle();
+            QPen pen(nodeStyle.SelectedBoundaryColor, 1.0);
+            QPen normalPen(nodeStyle.NormalBoundaryColor, 1.0);
+            painter->setPen(isSelected ? pen : normalPen);
+
+            QLinearGradient gradient(QPointF(0, 0), QPointF(0, boundary.height()));
+            if (mode == ExecutionMode::Automatic && state == ExecutionState::Idle) {
+                gradient.setColorAt(0.0, nodeStyle.GradientColor0);
+                gradient.setColorAt(0.3, nodeStyle.GradientColor1);
+                gradient.setColorAt(0.7, nodeStyle.GradientColor2);
+                gradient.setColorAt(1.0, nodeStyle.GradientColor3);
+            } else {
+                QColor startColor = gradientStartColor(mode, state, context);
+                QColor endColor = gradientEndColor(mode, state, context);
+                if (state == ExecutionState::Completed) {
+                    if (isDarkTheme(context)) {
+                        startColor = startColor.lighter(106);
+                        endColor = endColor.lighter(106);
+                    } else {
+                        startColor = startColor.darker(108);
+                        endColor = endColor.darker(108);
+                    }
+                }
+                gradient.setColorAt(0.0, startColor);
+                gradient.setColorAt(0.3, startColor);
+                gradient.setColorAt(0.7, endColor);
+                gradient.setColorAt(1.0, endColor);
+            }
+            painter->setBrush(gradient);
+
+            painter->drawRoundedRect(boundary, radius, radius);
+
+            // Draw text background for caption exactly like ExecutableNodePainter
+            {
+                painter->save();
+                painter->setPen(Qt::NoPen);
+                painter->setBrush(QColor(0, 0, 0, 70));
+
+                if (graphModel.nodeData(nodeId, NodeRole::CaptionVisible).toBool()) {
+                    QString const name = graphModel.nodeData(nodeId, NodeRole::Caption).toString();
+                    QPointF baseline = geo.captionPosition(nodeId);
+
+                    QFont f = painter->font();
+                    f.setBold(true);
+                    QFontMetrics fm(f);
+
+                    QRectF bounds = fm.boundingRect(name);
+                    double ascent = fm.ascent();
+                    QPointF topLeft(baseline.x(), baseline.y() - ascent);
+                    bounds.moveTopLeft(topLeft);
+
+                    painter->drawRoundedRect(bounds.adjusted(-2, -2, 2, 2), 2.0, 2.0);
+                }
+                painter->restore();
+            }
+
+            {
+                painter->save();
+                painter->setPen(Qt::NoPen);
+                painter->setBrush(QColor(0, 0, 0, 55));
+                QFontMetrics fm(painter->font());
+
+                for (PortType portType : {PortType::Out, PortType::In}) {
+                    unsigned int n = graphModel.nodeData<unsigned int>(nodeId,
+                                      (portType == PortType::Out)
+                                          ? NodeRole::OutPortCount
+                                          : NodeRole::InPortCount);
+
+                    for (PortIndex portIndex = 0; portIndex < n; ++portIndex) {
+                        QString s;
+
+                        if (graphModel.portData<bool>(nodeId, portType, portIndex, PortRole::CaptionVisible)) {
+                            s = graphModel.portData<QString>(nodeId, portType, portIndex, PortRole::Caption);
+                        } else {
+                            auto portData = graphModel.portData(nodeId, portType, portIndex, PortRole::DataType);
+                            s = portData.value<NodeDataType>().name;
+                        }
+
+                        if (!s.isEmpty()) {
+                            QPointF baseline = geo.portTextPosition(nodeId, portType, portIndex);
+                            QRectF bounds = fm.boundingRect(s);
+                            double ascent = fm.ascent();
+                            QPointF topLeft(baseline.x(), baseline.y() - ascent);
+                            bounds.moveTopLeft(topLeft);
+                            painter->drawRoundedRect(bounds.adjusted(-1, -1, 1, 1), 1.0, 1.0);
+                        }
+                    }
+                }
+                painter->restore();
+            }
+
+            // Draw standard node elements using _defaultPainter
+            _defaultPainter.drawNodeCaption(painter, ngo);
+            _defaultPainter.drawConnectionPoints(painter, ngo);
+            _defaultPainter.drawFilledConnectionPoints(painter, ngo);
+            _defaultPainter.drawEntryLabels(painter, ngo);
+            _defaultPainter.drawResizeRect(painter, ngo);
+            return;
+        }
+        
         // Fall back to default painting for non-executable nodes
         _defaultPainter.paint(painter, ngo);
         return;

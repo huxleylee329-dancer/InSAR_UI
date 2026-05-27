@@ -32,9 +32,11 @@ GenericSARBatchImportNode::~GenericSARBatchImportNode()
 QWidget* GenericSARBatchImportNode::createWidget()
 {
     auto* widget = new QWidget();
+    widget->setFixedWidth(300);
     auto* mainLayout = new QVBoxLayout(widget);
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(6);
+    mainLayout->setSizeConstraint(QLayout::SetFixedSize);
 
     auto invalidateNodeData = [this]() {
         setOutputData(0, nullptr);
@@ -71,6 +73,7 @@ QWidget* GenericSARBatchImportNode::createWidget()
     projectRow->setStretch(1, 7);
     projectRow->addWidget(new QLabel("项目名称："));
     m_projectCombo = new QComboBox();
+    m_projectCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_projectCombo->setEditable(false);
 
     // Populate project list from model (Align with Workspace behavior)

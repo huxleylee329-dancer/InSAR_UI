@@ -29,7 +29,6 @@ TargetDetectionNode::TargetDetectionNode()
     , m_expandLabel(nullptr)
     , m_isExpanded(false)
     , m_resultsTable(nullptr)
-    , m_statusLabel(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
     , m_task(nullptr)
@@ -95,28 +94,30 @@ void TargetDetectionNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
 
-    if (m_inputImageLabel) {
-        if (m_inputData && !m_inputData->filePath().isEmpty()) {
+    if (m_inputData && !m_inputData->filePath().isEmpty()) {
+        if (m_inputImageLabel) {
             QFileInfo fi(m_inputData->filePath());
             m_inputImageLabel->setText(fi.fileName());
-        } else {
-            m_inputImageLabel->setText("");
-            // Clear UI results when disconnected
-            if (m_resultLabel) m_resultLabel->setText("--");
-            if (m_probabilityLabel) m_probabilityLabel->setText("--");
-            if (m_summaryLabel) {
-                m_summaryLabel->setText("--");
-                m_summaryLabel->hide();
-            }
-            if (m_resultsTable) {
-                m_resultsTable->setRowCount(0);
-                m_resultsTable->hide();
-            }
-            if (m_expandLabel) m_expandLabel->hide();
-            QWidget* singleView = _widget ? _widget->findChild<QWidget*>("SingleResultView") : nullptr;
-            if (singleView) singleView->show();
-            m_savedResults.clear();
         }
+    } else {
+        if (m_inputImageLabel) {
+            m_inputImageLabel->setText("");
+        }
+        // Clear UI results when disconnected
+        if (m_resultLabel) m_resultLabel->setText("--");
+        if (m_probabilityLabel) m_probabilityLabel->setText("--");
+        if (m_summaryLabel) {
+            m_summaryLabel->setText("--");
+            m_summaryLabel->hide();
+        }
+        if (m_resultsTable) {
+            m_resultsTable->setRowCount(0);
+            m_resultsTable->hide();
+        }
+        if (m_expandLabel) m_expandLabel->hide();
+        QWidget* singleView = _widget ? _widget->findChild<QWidget*>("SingleResultView") : nullptr;
+        if (singleView) singleView->show();
+        m_savedResults.clear();
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
@@ -146,15 +147,6 @@ void TargetDetectionNode::createWidget()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
     layout->setSizeConstraint(QLayout::SetFixedSize);
-
-    // Input image label
-    m_inputImageLabel = new QLabel("");
-    m_inputImageLabel->setWordWrap(true);
-    if (m_inputData && !m_inputData->filePath().isEmpty()) {
-        QFileInfo fi(m_inputData->filePath());
-        m_inputImageLabel->setText(fi.fileName());
-    }
-    layout->addWidget(m_inputImageLabel);
 
     // Model Selection
     auto* modelLayout = new QHBoxLayout();
@@ -317,13 +309,6 @@ void TargetDetectionNode::createWidget()
             }
         }
     }
-
-    // Status label
-    m_statusLabel = new QLabel();
-    m_statusLabel->setObjectName("NodeStatusLabel");
-    layout->addWidget(m_statusLabel);
-
-    layout->addStretch();
 }
 
 QStringList TargetDetectionNode::previewImagePaths() const
@@ -390,19 +375,11 @@ void TargetDetectionNode::executeProcessing()
     }
 
     if (!isReady()) {
-        if (m_statusLabel) {
-            m_statusLabel->setText(QStringLiteral("状态：未准备好"));
-            m_statusLabel->setStyleSheet("");
-        }
         setState(ExecutionState::Idle); // Explicitly state we are idle so base class won't overwrite
         return;
     }
 
     setProgress(0);
-    if (m_statusLabel) {
-        m_statusLabel->setText(QStringLiteral("状态：正在初始化..."));
-        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
-    }
     
     // Clear previous results
     if (m_resultsTable) {
@@ -434,10 +411,6 @@ void TargetDetectionNode::executeProcessing()
 void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)
 {
     setProgress(progress);
-    if (m_statusLabel) {
-        m_statusLabel->setText(QStringLiteral("状态：") + message);
-        m_statusLabel->setStyleSheet("color: #3B82F6; font-style: italic;");
-    }
 }
 
 void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg)
@@ -476,10 +449,6 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
     
     // We only finish execution if this is the last image.
     if (m_inputData && imageIndex == m_inputData->filePaths().size() - 1) {
-        if (m_statusLabel) {
-            m_statusLabel->setText(QStringLiteral("状态：完成"));
-            m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
-        }
         
         int totalCount = m_inputData->filePaths().size();
         QWidget* singleView = _widget ? _widget->findChild<QWidget*>("SingleResultView") : nullptr;
@@ -525,10 +494,6 @@ void TargetDetectionNode::onError(const QString& error)
 {
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
-    if (m_statusLabel) {
-        m_statusLabel->setText(QStringLiteral("状态：错误 - ") + error);
-        m_statusLabel->setStyleSheet("color: #EF4444; font-style: italic;");
-    }
     
     if (m_modelComboBox) m_modelComboBox->setEnabled(true);
     if (m_thresholdEdit) m_thresholdEdit->setEnabled(true);
@@ -646,10 +611,7 @@ void TargetDetectionNode::load(QJsonObject const &json)
     }
 
     if (executionState() == ExecutionState::Completed) {
-        if (m_statusLabel) {
-            m_statusLabel->setText(QStringLiteral("状态：完成"));
-            m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
-        }
+        // Status label removed
     }
 }
 

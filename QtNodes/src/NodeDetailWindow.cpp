@@ -316,8 +316,15 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
     if (!isOutput) {
         QWidget* connector = new QWidget();
         connector->setFixedSize(8, 8);
-        QString connectorColor = isDark ? "#6B7280" : "#94A3B8";
-        QString connectorBorder = isDark ? "#4B5563" : "#64748B";
+        QString connectorColor;
+        QString connectorBorder;
+        if (info.isConnected) {
+            connectorColor = "#3B82F6";
+            connectorBorder = "#2563EB";
+        } else {
+            connectorColor = isDark ? "#6B7280" : "#94A3B8";
+            connectorBorder = isDark ? "#4B5563" : "#64748B";
+        }
         connector->setStyleSheet(QString(
             "background-color: %1; border: 1px solid %2; border-radius: 4px;"
         ).arg(connectorColor).arg(connectorBorder));
@@ -525,9 +532,18 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
     if (isOutput) {
         QWidget* connector = new QWidget();
         connector->setFixedSize(8, 8);
-        connector->setStyleSheet(
-            "background-color: #3B82F6; border: 1px solid #2563EB; border-radius: 4px;"
-        );
+        QString connectorColor;
+        QString connectorBorder;
+        if (info.isConnected) {
+            connectorColor = "#3B82F6";
+            connectorBorder = "#2563EB";
+        } else {
+            connectorColor = isDark ? "#6B7280" : "#94A3B8";
+            connectorBorder = isDark ? "#4B5563" : "#64748B";
+        }
+        connector->setStyleSheet(QString(
+            "background-color: %1; border: 1px solid %2; border-radius: 4px;"
+        ).arg(connectorColor).arg(connectorBorder));
 
         auto* connectorWrapper = new QWidget();
         connectorWrapper->setFixedWidth(14);

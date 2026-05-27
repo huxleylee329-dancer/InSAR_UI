@@ -40,6 +40,7 @@ public:
 
     QWidget *embeddedWidget() override;
     bool resizable() const override { return true; }
+    bool hasLoadedImage() const { return m_currentImage.success; }
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
@@ -57,6 +58,7 @@ private:
     void setError(const QString& message);
     void clearError();
     void updateInfo(const QString& info);
+    void updateNodeStyle();
 
     struct LoadedImage {
         QPixmap pixmap;

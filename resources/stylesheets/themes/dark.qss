@@ -59,9 +59,18 @@ QMenuBar::item {
     color: #FFFFFF;
 }
 
-QMenuBar::item:selected {
+QMenuBar::item:disabled {
+    color: #7A7A7A;
+}
+
+QMenuBar::item:selected:enabled {
     background-color: #005FAC;
     color: white;
+}
+
+QMenuBar::item:selected:disabled {
+    background-color: transparent;
+    color: #7A7A7A;
 }
 
 QMenu {
@@ -75,9 +84,19 @@ QMenu::item {
     padding: 4px 20px;
 }
 
-QMenu::item:selected {
+QMenu::item:disabled {
+    color: #7A7A7A;
+    background-color: transparent;
+}
+
+QMenu::item:selected:enabled {
     background-color: #005FAC;
     color: white;
+}
+
+QMenu::item:selected:disabled {
+    background-color: transparent;
+    color: #7A7A7A;
 }
 
 QMenu::item:checked {
@@ -94,8 +113,16 @@ QToolBar QToolButton {
     color: #FFFFFF;
 }
 
-QToolBar QToolButton:hover {
+QToolBar QToolButton:disabled {
+    color: #7A7A7A;
+}
+
+QToolBar QToolButton:hover:enabled {
     color: #FFFFFF;
+}
+
+QToolBar QToolButton:hover:disabled {
+    color: #7A7A7A;
 }
 
 QPushButton {

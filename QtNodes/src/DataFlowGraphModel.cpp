@@ -218,7 +218,7 @@ QVariant DataFlowGraphModel::nodeData(NodeId nodeId, NodeRole role) const
         break;
 
     case NodeRole::Style: {
-        auto style = StyleCollection::nodeStyle();
+        auto style = model->nodeStyle();
         result = style.toJson().toVariantMap();
     } break;
 

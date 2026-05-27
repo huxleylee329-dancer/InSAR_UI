@@ -144,14 +144,6 @@ void SpeckleDenoiseNode::createWidget()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
-    m_inputImageLabel = new QLabel("");
-    m_inputImageLabel->setWordWrap(true);
-    if (m_inputData && !m_inputData->filePath().isEmpty()) {
-        QFileInfo fi(m_inputData->filePath());
-        m_inputImageLabel->setText(fi.fileName());
-    }
-    layout->addWidget(m_inputImageLabel);
-
     auto invalidateNodeData = [this]() {
         if (m_outputData) m_outputData.reset();
         int outCount = nPorts(PortType::Out);
@@ -223,8 +215,6 @@ void SpeckleDenoiseNode::createWidget()
     m_statusLabel = new QLabel();
     m_statusLabel->setStyleSheet("color: gray; font-size: 11px;");
     layout->addWidget(m_statusLabel);
-
-    layout->addStretch();
 
     onSaveToProjectChanged(m_saveToProject ? Qt::Checked : Qt::Unchecked);
 }
@@ -443,8 +433,10 @@ void SpeckleDenoiseNode::onProcessingFinished()
     setOutputData(1, m_outputData);
 
     if (m_statusLabel) {
+        bool isDark = qApp->palette().color(QPalette::Window).lightness() < 128;
+        QString colorStr = isDark ? "#60A5FA" : "#2563EB";
         m_statusLabel->setText("状态：完成");
-        m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
+        m_statusLabel->setStyleSheet(QString("color: %1;").arg(colorStr));
     }
 
     if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);

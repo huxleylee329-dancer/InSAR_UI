@@ -1,9 +1,15 @@
 
 #include "ImageDisplayNode.h"
 #include "FormatConversion.h"
+#include <QtNodes/internal/StyleCollection.hpp>
+#include <QtNodes/internal/ExecutableNodePainter.hpp>
+#include <QApplication>
+#include <QPalette>
 
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsProxyWidget>
+#include <QGraphicsView>
 #include <QtConcurrent/QtConcurrent>
 #include <QFileInfo>
 #include <QDebug>
@@ -75,6 +81,7 @@ void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portI
             m_nextButton->setEnabled(false);
             m_nextButton->hide();
         }
+        updateNodeStyle();
     }
 }
 
@@ -126,11 +133,13 @@ QWidget* ImageDisplayNode::embeddedWidget()
     if (!m_widget)
     {
         m_widget = new QWidget();
+        m_widget->setObjectName(QStringLiteral("NodeEmbeddedWidget"));
         m_layout = new QVBoxLayout(m_widget);
         m_layout->setContentsMargins(4, 4, 4, 4);
         m_layout->setSpacing(4);
 
         QWidget* topBar = new QWidget();
+        topBar->setObjectName(QStringLiteral("NodeEmbeddedWidget"));
         QHBoxLayout* topLayout = new QHBoxLayout(topBar);
         topLayout->setContentsMargins(0, 0, 0, 0);
         topLayout->setSpacing(4);
@@ -170,7 +179,11 @@ QWidget* ImageDisplayNode::embeddedWidget()
 
         m_imageView = new ImageView();
         m_imageView->setMinimumSize(200, 150);
-        m_imageView->setBackgroundBrush(Qt::black);
+        m_imageView->setStyleSheet(QStringLiteral("background: #3A3A3A; border: none;"));
+        if (m_imageView->viewport()) {
+            m_imageView->viewport()->setStyleSheet(QStringLiteral("background: #3A3A3A;"));
+        }
+        m_imageView->setBackgroundBrush(QColor(58, 58, 58));
         m_imageView->setFrameStyle(QFrame::NoFrame);
 
         auto* scene = new QGraphicsScene(m_imageView);
@@ -212,6 +225,7 @@ void ImageDisplayNode::onImageLoaded()
             auto* item = m_imageView->scene()->addPixmap(m_currentImage.pixmap);
             m_imageView->fitInView(item, Qt::KeepAspectRatio);
         }
+        updateNodeStyle();
     }
     else
     {
@@ -220,6 +234,7 @@ void ImageDisplayNode::onImageLoaded()
         {
             m_imageView->scene()->clear();
         }
+        updateNodeStyle();
     }
 }
 
@@ -322,6 +337,11 @@ void ImageDisplayNode::updateInfo(const QString& info)
     {
         m_infoLabel->setText(info);
     }
+}
+
+void ImageDisplayNode::updateNodeStyle()
+{
+    Q_EMIT embeddedWidgetSizeUpdated();
 }
 
 QJsonObject ImageDisplayNode::save() const

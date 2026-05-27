@@ -226,6 +226,8 @@ MainWindow::MainWindow(QString str, QWidget* parent)
         // Open project file (loadWorkflowFromProject inside handles interface switching)
         this->open_from_project_file(str);
     }
+    
+    updateFileMenuState();
 }
 MainWindow::~MainWindow()
 
@@ -763,6 +765,7 @@ void MainWindow::closeCurrentProject()
     // 重置工程修改标记
     m_projectModified = false;
     updateWindowTitle();
+    updateFileMenuState();
 }
 
 void MainWindow::on_actionClose_triggered()
@@ -883,7 +886,7 @@ void MainWindow::loadWorkflowFromProject(const QString& projectFilePath)
         addToRecentProjects(projectFilePath);
     }
     catch (const std::exception& e) {
-        QMessageBox::critical(this, "错误", QString("加载工作流失败：") + QString::fromLocal8Bit(e.what()));
+        QMessageBox::critical(this, "错误", QString("加载工作流失败：") + QString::fromUtf8(e.what()));
     }
     catch (...) {
         QMessageBox::critical(this, "错误", "加载工作流时发生未知异常。");
@@ -977,7 +980,7 @@ void MainWindow::openRecentProject()
         open_from_project_file(filePath);
     }
     catch (const std::exception& e) {
-        QMessageBox::critical(this, "错误", QString("加载项目失败：") + QString::fromLocal8Bit(e.what()));
+        QMessageBox::critical(this, "错误", QString("加载项目失败：") + QString::fromUtf8(e.what()));
     }
     catch (...) {
         QMessageBox::critical(this, "错误", "加载项目时发生未知异常。");
@@ -1712,4 +1715,29 @@ void MainWindow::updateProjectContext(const QString& filePath)
         m_workflowUI->setProjectContext(model, m_projectPath, projectName, this->project);
     if (m_interfaceManager)
         m_interfaceManager->setProjectContext(model, m_projectPath, projectName, this->project);
+        
+    updateFileMenuState();
+}
+
+void MainWindow::updateFileMenuState()
+{
+    bool isProjectOpen = !m_projectPath.isEmpty();
+    ui.actionNew->setEnabled(true);
+    ui.actionOpen->setEnabled(true);
+    ui.actionSave->setEnabled(isProjectOpen);
+    ui.actionSave_as->setEnabled(isProjectOpen);
+    ui.actionSave_all->setEnabled(isProjectOpen);
+    ui.actionClose->setEnabled(isProjectOpen);
+    ui.actionQuit->setEnabled(true);
+
+    // 编辑菜单状态更新
+    ui.Edit->setEnabled(isProjectOpen);
+
+    // 处理菜单安全加固：若无工程打开，强制置灰（若有工程，则保持由数据刷新逻辑控制）
+    if (!isProjectOpen) {
+        ui.Process->setEnabled(false);
+        ui.menuSAR->setEnabled(false);
+        ui.menuInSAR->setEnabled(false);
+        ui.menuDInSAR->setEnabled(false);
+    }
 }

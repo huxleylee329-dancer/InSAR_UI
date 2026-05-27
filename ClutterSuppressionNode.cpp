@@ -144,10 +144,6 @@ void ClutterSuppressionNode::createWidget()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
-    m_inputImageLabel = new QLabel("");
-    m_inputImageLabel->setWordWrap(true);
-    layout->addWidget(m_inputImageLabel);
-
     auto invalidateNodeData = [this]() {
         if (m_outputData) m_outputData.reset();
         int outCount = nPorts(PortType::Out);
@@ -218,8 +214,6 @@ void ClutterSuppressionNode::createWidget()
     m_statusLabel = new QLabel();
     m_statusLabel->setObjectName("NodeStatusLabel");
     layout->addWidget(m_statusLabel);
-
-    layout->addStretch();
 
     onSaveToProjectChanged(m_saveToProject ? Qt::Checked : Qt::Unchecked);
 }
@@ -412,8 +406,10 @@ void ClutterSuppressionNode::onProcessingFinished()
     setOutputData(1, m_outputData);
 
     if (m_statusLabel) {
+        bool isDark = qApp->palette().color(QPalette::Window).lightness() < 128;
+        QString colorStr = isDark ? "#60A5FA" : "#2563EB";
         m_statusLabel->setText("状态：完成");
-        m_statusLabel->setStyleSheet("color: #10B981; font-style: italic;");
+        m_statusLabel->setStyleSheet(QString("color: %1;").arg(colorStr));
     }
 
     if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);

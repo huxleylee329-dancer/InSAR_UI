@@ -78,7 +78,6 @@ private:
     bool m_isExpanded = false;
 
     QTableWidget* m_resultsTable = nullptr;
-    QLabel* m_statusLabel = nullptr;
 
     // Data
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;

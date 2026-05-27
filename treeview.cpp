@@ -448,7 +448,7 @@ static bool RemoveDataNodeFromProjectXml(const QString& projectFile, const QStri
         TiXmlElement* next = node->NextSiblingElement("DataNode");
         const char* name = node->Attribute("name");
 
-        if (name && dataNodeName == QString::fromLocal8Bit(name))
+        if (name && dataNodeName == QString::fromUtf8(name))
         {
             root->RemoveChild(node);
             return doc.SaveFile();

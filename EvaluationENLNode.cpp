@@ -18,24 +18,27 @@ EvaluationENLNode::EvaluationENLNode()
 void EvaluationENLNode::createWidget()
 {
     m_widget = new QWidget();
-    m_widget->setFixedWidth(200);
+    m_widget->setFixedWidth(180);
     auto* mainLayout = new QVBoxLayout(m_widget);
-    mainLayout->setContentsMargins(5, 5, 5, 5);
+    mainLayout->setContentsMargins(8, 8, 8, 8);
+    mainLayout->setSizeConstraint(QLayout::SetFixedSize);
 
-    auto* roiGroup = new QGroupBox("区域选择");
-    roiGroup->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    auto* roiLayout = new QVBoxLayout(roiGroup);
-    roiLayout->setContentsMargins(6, 0, 6, 6);
+    mainLayout->addWidget(new QLabel(QStringLiteral("区域选择：")));
     m_regionComboBox = new QComboBox();
-    m_regionComboBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_regionComboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_regionComboBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_regionComboBox->addItem("全部");
     m_regionComboBox->addItem("中间区域");
-    roiLayout->addWidget(m_regionComboBox);
-    mainLayout->addWidget(roiGroup);
+    mainLayout->addWidget(m_regionComboBox);
 
-    auto* resultGroup = new QGroupBox("ENL/EPI结果");
-    auto* tableLayout = new QVBoxLayout(resultGroup);
-    tableLayout->setContentsMargins(5, 5, 5, 5);
+    QFrame* line = new QFrame();
+    line->setFrameShape(QFrame::HLine);
+    line->setFrameShadow(QFrame::Sunken);
+    mainLayout->addWidget(line);
+
+    mainLayout->addWidget(new QLabel(QStringLiteral("ENL/EPI结果：")));
+    auto* tableLayout = new QVBoxLayout();
+    tableLayout->setContentsMargins(0, 0, 0, 0);
     tableLayout->setSpacing(2);
 
     m_simpleResultWidget = new QWidget();
@@ -59,7 +62,8 @@ void EvaluationENLNode::createWidget()
     simpleLayout->addWidget(singleResultView);
 
     m_summaryLabel = new QLabel("--");
-    m_summaryLabel->setWordWrap(true);
+    m_summaryLabel->setWordWrap(false);
+    m_summaryLabel->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Preferred);
     m_summaryLabel->hide();
     simpleLayout->addWidget(m_summaryLabel);
 
@@ -94,8 +98,7 @@ void EvaluationENLNode::createWidget()
             updateWidgetSize();
         }
     });
-
-    mainLayout->addWidget(resultGroup);
+    mainLayout->addLayout(tableLayout);
 
     // Width is locked via setFixedWidth in widget creation above
 
@@ -535,8 +538,9 @@ bool EvaluationENLNode::validateAndRestoreOutput()
 void EvaluationENLNode::updateWidgetSize()
 {
     if (m_widget) {
-        int targetWidth = (m_resultsTable && !m_resultsTable->isHidden()) ? 450 : 200;
+        int targetWidth = (m_resultsTable && !m_resultsTable->isHidden()) ? 450 : 180;
         m_widget->setFixedWidth(targetWidth);
+        m_widget->resize(0, 0);
         m_widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }

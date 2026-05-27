@@ -58,6 +58,7 @@
 ### Workflow & Nodes
 - **Node Registration:** New nodes for the Workflow Editor must be registered in `NodeModels.cpp` within `registerInSARNodeModels()`.
 - **Node State:** Nodes should support execution states (Idle, Running, Completed, Stopped, Error) with appropriate color coding defined in the UI rules.
+- **Node UI Sizing (CRITICAL):** Do NOT rely on Qt's dynamic layout size calculation (`adjustSize()` without fixed bounds) for embedded node widgets. The underlying `QGraphicsProxyWidget` in the `QtNodes` framework has a severe layout synchronization bug that causes the node's bounding rect to expand infinitely while the internal widget collapses. You MUST explicitly use `m_widget->setFixedWidth(...)` during `createWidget()` and dynamically update it when expanding/collapsing node UI elements (e.g., in `updateWidgetSize()`). Never use `setMinimumWidth` or size policies as a substitute for explicit fixed widths.
 
 ### Threading & Safety
 - **Worker Tasks:** Always use `MyThread` for processing tasks. Do not perform heavy computations on the GUI thread.

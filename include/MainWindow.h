@@ -163,4 +163,7 @@ private:
 
     // 更新窗口标题（显示工程修改状态）
     void updateWindowTitle();
+
+    // 更新“文件”菜单项状态
+    void updateFileMenuState();
 };
