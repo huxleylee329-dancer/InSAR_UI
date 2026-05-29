@@ -171,6 +171,22 @@ void ALOS2ImportNode::executeImport()
 
     QString outputNodeName = getOutputNodeName();
 
+    QStringList pathsToCheck;
+    for (const QString& importName : importNameList) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    }
+
+    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
+    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+        setState(ExecutionState::Idle);
+        return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
+
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
@@ -199,15 +215,16 @@ void ALOS2ImportNode::executeImport()
     );
 }
 
-QString ALOS2ImportNode::getImportedFilePath() const
+QStringList ALOS2ImportNode::getImportedFilePaths() const
 {
-    if (!m_importedFilePaths.isEmpty())
-    {
-        return m_importedFilePaths.first();
-    }
+    return m_importedFilePaths;
+}
 
-    QString outputNodeName = getOutputNodeName();
-    return QString("%1/%2/").arg(projectPath()).arg(outputNodeName);
+NodeDataType ALOS2ImportNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out)
+        return NodeDataType{"imported_file", "Imported Files"};
+    return NodeDataType();
 }
 
 QString ALOS2ImportNode::getOutputNodeName() const
@@ -415,15 +432,15 @@ bool ALOS2ImportNode::validateAndRestoreOutput()
         // 批量导入：构建所有已导入文件的路径
         QStringList importedFiles;
         for (const QString &path : m_imgPaths) {
-            QFileInfo fi(path);
-            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            QString importName = generateOutputFileName(path);
+            QString importedPath = outputPath + importName + ".h5";
             if (QFile::exists(importedPath)) {
                 importedFiles.append(importedPath);
             }
         }
         if (!importedFiles.isEmpty()) {
             m_importedFilePaths = importedFiles;
-            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+            auto outputData = std::make_shared<ImportedFileData>(importedFiles, nodeName);
             setOutputData(0, outputData);
             return true;
         }

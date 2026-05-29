@@ -33,3 +33,18 @@ When `FormatConversion.dll` is fixed and recompiled (specifically aligning the T
    XMLFile* DOC = localXml.get();
    ```
 4. Test thoroughly (especially "Delete Node", "New Project", and "Batch Import") to ensure no assertions are thrown when the objects are properly cleaned up.
+
+### 2. Sentinel-1 Import Progress Bar Enhancement
+
+**Status:** Hardcoded jumps (20% -> 90%)
+**Affected Files:** 
+- `Sentinel1ImportHelper.cpp`
+- `FormatConversion.dll`
+
+**Background:**
+Currently, the Sentinel-1 single import task (`Sentinel1ImportNode`) updates its progress bar using hardcoded jumps. It jumps to 20% before calling the `FormatConversion::import_sentinel` DLL function, blocks for a significant amount of time without any real-time progress feedback during the heavy extraction and conversion process, and then jumps to 90% once the DLL function returns successfully.
+
+**Future Action Required:**
+1. Modify the `FormatConversion.dll` source code to accept a progress callback function pointer in its export parameters for `import_sentinel` (and related functions).
+2. Inside the DLL's processing loop, periodically invoke this callback to report the real-time processing percentage (e.g., based on bytes processed or swaths extracted).
+3. Update `Sentinel1ImportHelper::importSentinel` to pass a static member function or lambda that bridges the DLL's callback to `Q_EMIT worker->updateProcess(progress, message)` so that the UI progress bar updates smoothly.

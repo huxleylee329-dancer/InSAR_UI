@@ -334,14 +334,10 @@ void SpeckleDenoiseNode::executeProcessing()
         QString name = baseFileName;
         
         // Normalize full-width brackets (common typo in Chinese IME)
-        name.replace(QString::fromUtf8("｛InputName｝"), "{InputName}");
-        name.replace(QString::fromUtf8("｛InputName}"), "{InputName}");
-        name.replace(QString::fromUtf8("{InputName｝"), "{InputName}");
+        QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+        name.replace(re, "{InputName}");
         
-        if (name.contains("{InputName}", Qt::CaseInsensitive)) {
-            // Replace macro case-insensitively
-            // First normalize to standard case if user typed {inputName}
-            name.replace("{InputName}", "{InputName}", Qt::CaseInsensitive);
+        if (name.contains("{InputName}")) {
             name.replace("{InputName}", originalName);
         } else {
             // Fallback if macro is deleted
@@ -597,7 +593,8 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
         QString resolvedFileName = m_outputFileName;
         if (m_inputData && !m_inputData->filePaths().isEmpty()) {
             QString originalName = QFileInfo(m_inputData->filePaths().first()).baseName();
-            resolvedFileName.replace("{InputName}", originalName, Qt::CaseInsensitive);
+            QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+            resolvedFileName.replace(re, originalName);
         }
         if (QFileInfo(resolvedFileName).suffix().isEmpty()) {
             finalFileName = resolvedFileName + ".png";

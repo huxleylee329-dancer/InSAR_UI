@@ -200,6 +200,20 @@ void TSXImportNode::executeImport()
         return;
     }
 
+    QString outputNodeName = getOutputNodeName();
+    QString outputPath = projectPath() + "/" + outputNodeName + "/" + m_outputFileName + ".h5";
+    QString previewPath = projectPath() + "/" + outputNodeName + "/" + m_outputFileName + ".jpg";
+
+    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
+    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+        setState(ExecutionState::Idle);
+        return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
+
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
@@ -218,7 +232,7 @@ void TSXImportNode::executeImport()
     m_thread->start();
 
     QString polarization = m_polarizationCombo->currentText();
-    QString outputNodeName = getOutputNodeName();
+    outputNodeName = getOutputNodeName();
 
     Q_EMIT startTSXImport(
         polarization,
@@ -231,14 +245,16 @@ void TSXImportNode::executeImport()
     );
 }
 
-QString TSXImportNode::getImportedFilePath() const
+QStringList TSXImportNode::getImportedFilePaths() const
 {
-    if (m_importedFilePath.isEmpty())
-    {
+    QStringList paths;
+    if (!m_importedFilePath.isEmpty()) {
+        paths.append(m_importedFilePath);
+    } else {
         QString outputNodeName = getOutputNodeName();
-        return QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(m_outputFileName);
+        paths.append(QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(m_outputFileName));
     }
-    return m_importedFilePath;
+    return paths;
 }
 
 QString TSXImportNode::getOutputNodeName() const

@@ -55,7 +55,9 @@ public:
 protected:
     // Subclass must override these (legacy interface)
     virtual void executeImport() = 0;
-    virtual QString getImportedFilePath() const = 0;
+    
+    // Subclasses must implement this to provide the generated file paths
+    virtual QStringList getImportedFilePaths() const = 0;
     virtual QString getOutputNodeName() const;
     virtual QWidget* createWidget() = 0;
 

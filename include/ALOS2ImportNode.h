@@ -42,8 +42,9 @@ protected:
     // ImportNodeBase interface
     QWidget* createWidget() override;
     void executeImport() override;
-    QString getImportedFilePath() const override;
+    QStringList getImportedFilePaths() const override;
     QString getOutputNodeName() const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
 
     // Thread accessors
     MyThread* workerThread() const override { return m_workerThread; }

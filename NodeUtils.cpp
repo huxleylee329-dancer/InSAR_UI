@@ -2,6 +2,8 @@
 #include <QWidget>
 #include <QApplication>
 #include <QFileInfo>
+#include <QMessageBox>
+#include <QDir>
 #include "include/IApplicationInterface.h"
 #include "include/MainWindow.h"
 #include "include/WorkspaceUI.h"
@@ -117,6 +119,85 @@ void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldN
         }
         xml.XMLFile_save(xmlPath.toStdString().c_str());
     }
+}
+
+OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QString& nodeName, const QStringList& filePaths, QWidget* parent)
+{
+    bool hasConflict = false;
+    QStringList conflictDetails;
+
+    // 1. Check if node exists in the project tree
+    if (iface && !nodeName.isEmpty()) {
+        QStandardItemModel* model = iface->projectModel();
+        QString projName = iface->projectName();
+        if (model && !projName.isEmpty()) {
+            QList<QStandardItem*> projItems = model->findItems(projName);
+            if (projItems.isEmpty()) {
+                for (int r = 0; r < model->rowCount(); ++r) {
+                    QStandardItem* item = model->item(r, 0);
+                    if (item) projItems.append(item);
+                }
+            }
+            for (QStandardItem* projItem : projItems) {
+                for (int i = 0; i < projItem->rowCount(); ++i) {
+                    QStandardItem* nodeItem = projItem->child(i, 0);
+                    if (nodeItem && nodeItem->text() == nodeName) {
+                        hasConflict = true;
+                        conflictDetails.append("- 已存在同名节点: " + nodeName);
+                        break;
+                    }
+                }
+                if (hasConflict) break;
+            }
+        }
+    }
+
+    // 2. Check if physical files exist
+    QStringList existingFiles;
+    bool allFilesExist = !filePaths.isEmpty();
+    for (const QString& path : filePaths) {
+        if (QFile::exists(path)) {
+            existingFiles.append(QFileInfo(path).fileName());
+        } else {
+            allFilesExist = false;
+        }
+    }
+    
+    if (!existingFiles.isEmpty()) {
+        hasConflict = true;
+        conflictDetails.append("- 已存在同名文件:\n    " + existingFiles.join("\n    "));
+    }
+
+    // 3. Prompt user if conflicts were found
+    if (hasConflict) {
+        QMessageBox msgBox(parent);
+        msgBox.setWindowTitle("冲突处理");
+        msgBox.setIcon(QMessageBox::Warning);
+        
+        QString msg = "检测到冲突：\n\n" + conflictDetails.join("\n\n") + 
+                      "\n\n请选择后续操作：\n";
+        msgBox.setText(msg);
+
+        QPushButton* overwriteBtn = msgBox.addButton("重新运行并覆盖", QMessageBox::AcceptRole);
+        QPushButton* loadBtn = nullptr;
+        if (allFilesExist) {
+            loadBtn = msgBox.addButton("加载已存在文件", QMessageBox::AcceptRole);
+        }
+        QPushButton* cancelBtn = msgBox.addButton("取消", QMessageBox::RejectRole);
+
+        msgBox.setDefaultButton(cancelBtn);
+        msgBox.exec();
+
+        if (msgBox.clickedButton() == overwriteBtn) {
+            return OverwriteResult::Overwrite;
+        } else if (loadBtn && msgBox.clickedButton() == loadBtn) {
+            return OverwriteResult::LoadExisting;
+        } else {
+            return OverwriteResult::Cancel;
+        }
+    }
+
+    return OverwriteResult::NoConflict;
 }
 
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type)

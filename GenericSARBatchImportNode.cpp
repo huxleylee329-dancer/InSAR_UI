@@ -169,6 +169,24 @@ void GenericSARBatchImportNode::executeImport()
         importNameList.push_back(importName);
     }
 
+    QStringList pathsToCheck;
+    for (size_t i = 0; i < importNameList.size(); ++i) {
+        QString suffix = QFileInfo(originalFileList[i]).suffix();
+        if (suffix.isEmpty()) suffix = "h5";
+        pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + importNameList[i] + "." + suffix);
+        pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + importNameList[i] + ".jpg");
+    }
+
+    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), getOutputNodeName(), pathsToCheck, nullptr);
+    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+        setState(ExecutionState::Idle);
+        return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
+
     // 清理旧数据，防止批量导入时反复执行导致数据累加
     NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
 
@@ -193,14 +211,9 @@ void GenericSARBatchImportNode::executeImport()
     QThreadPool::globalInstance()->start(m_task);
 }
 
-QString GenericSARBatchImportNode::getImportedFilePath() const
+QStringList GenericSARBatchImportNode::getImportedFilePaths() const
 {
-    if (!m_importedFilePaths.isEmpty())
-        return m_importedFilePaths.first();
-
-    return QString("%1/%2/")
-        .arg(projectPath())
-        .arg(getOutputNodeName());
+    return m_importedFilePaths;
 }
 
 QString GenericSARBatchImportNode::getOutputNodeName() const
@@ -386,11 +399,11 @@ void GenericSARBatchImportNode::onImportFinished()
         m_importedFilePaths.append(filePath);
     }
 
-    auto outputData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+    auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, outputNodeName);
     setOutputData(0, outputData);
     Q_EMIT dataUpdated(0);
 
-    m_imageInfoData = outputData;
+    m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
     setOutputData(1, m_imageInfoData);
     Q_EMIT dataUpdated(1);
 
@@ -473,7 +486,7 @@ NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex po
     if (portType == PortType::Out)
     {
         if (portIndex == 0)
-            return NodeDataType{"image_info", "Image Info"};
+            return NodeDataType{"imported_file", "Imported Files"};
         else if (portIndex == 1)
             return NodeDataType{"image_info", "Image Info"};
     }
@@ -544,10 +557,10 @@ bool GenericSARBatchImportNode::validateAndRestoreOutput()
             }
         }
         if (!m_importedFilePaths.isEmpty()) {
-            auto outputData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+            auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
             setOutputData(0, outputData);
-            m_imageInfoData = outputData;
-            setOutputData(1, outputData);
+            m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+            setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(0);
             Q_EMIT dataUpdated(1);
             return true;

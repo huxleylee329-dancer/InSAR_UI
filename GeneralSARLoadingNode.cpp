@@ -2,6 +2,7 @@
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 #include "NodeUtils.h"
+#include "ImportDataTypes.h"
 #include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
@@ -247,7 +248,8 @@ void GeneralSARLoadingNode::executeImport()
     }
 
     m_selectedImageInfoData = std::make_shared<ImageInfoData>(validPaths);
-    setOutputData(0, m_selectedImageInfoData);
+    auto outputData = std::make_shared<ImportedFileData>(validPaths, m_loadingNodeName);
+    setOutputData(0, outputData);
     setOutputData(1, m_selectedImageInfoData);
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
@@ -255,12 +257,9 @@ void GeneralSARLoadingNode::executeImport()
     finishExecution();
 }
 
-QString GeneralSARLoadingNode::getImportedFilePath() const
+QStringList GeneralSARLoadingNode::getImportedFilePaths() const
 {
-    if (!m_checkedFilePaths.isEmpty()) {
-        return m_checkedFilePaths.first();
-    }
-    return QString();
+    return m_checkedFilePaths;
 }
 
 QString GeneralSARLoadingNode::getOutputNodeName() const
@@ -325,7 +324,8 @@ NodeDataType GeneralSARLoadingNode::dataType(PortType portType, PortIndex portIn
 {
     Q_UNUSED(portIndex);
     if (portType == PortType::Out) {
-        return NodeDataType{"image_info", "Image Info"};
+        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
     }
     return NodeDataType();
 }
@@ -376,10 +376,10 @@ bool GeneralSARLoadingNode::validateAndRestoreOutput()
         }
     }
 
-    auto outputData = std::make_shared<ImageInfoData>(m_checkedFilePaths);
-    m_selectedImageInfoData = outputData;
-    setOutputData(0, outputData);
-    setOutputData(1, outputData);
+    m_selectedImageInfoData = std::make_shared<ImageInfoData>(m_checkedFilePaths);
+    auto importedData = std::make_shared<ImportedFileData>(m_checkedFilePaths, m_loadingNodeName);
+    setOutputData(0, importedData);
+    setOutputData(1, m_selectedImageInfoData);
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
     return true;

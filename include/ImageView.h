@@ -32,6 +32,7 @@ public:
 	void setClutterRoiRect(const QRectF& rect);
 	
 	void loadImage(const QString& path);
+	void fitImage();
 
 signals:
 	void roiSelected(const QRectF& rect);
@@ -43,6 +44,7 @@ protected:
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
+	void resizeEvent(QResizeEvent* event) override;
 	
 private:
 	QPointF sceneMousePos;//scene鼠标滑轮滚动时的中心坐标，用于鼠标中心缩放
@@ -60,4 +62,5 @@ private:
 	QRectF m_storedRoi;
 	QRectF m_storedTargetRoi;
 	QRectF m_storedClutterRoi;
+	bool m_needsFit;
 };

@@ -289,6 +289,20 @@ void Sentinel1ImportNode::executeImport()
         return;
     }
 
+    QString outputNodeName = getOutputNodeName();
+    QString outputPath = projectPath() + "/" + outputNodeName + "/" + resolvedFileName + ".h5";
+    QString previewPath = projectPath() + "/" + outputNodeName + "/" + resolvedFileName + ".jpg";
+
+    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
+    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+        setState(ExecutionState::Idle);
+        return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
+
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
@@ -308,7 +322,7 @@ void Sentinel1ImportNode::executeImport()
 
     QString subswath = m_subswathCombo->currentText();
     QString polarization = m_polarizationCombo->currentText();
-    QString outputNodeName = getOutputNodeName();
+    outputNodeName = getOutputNodeName();
 
     Q_EMIT startImport(
         m_podPath,
@@ -326,9 +340,8 @@ void Sentinel1ImportNode::executeImport()
 QString Sentinel1ImportNode::resolveInputName(const QString& name) const
 {
     QString resolved = name;
-    resolved.replace(QString::fromUtf8("\uFF5BInputName\uFF5D"), "{InputName}");
-    resolved.replace(QString::fromUtf8("\uFF5BInputName}"), "{InputName}");
-    resolved.replace(QString::fromUtf8("{InputName\uFF5D"), "{InputName}");
+    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+    resolved.replace(re, "{InputName}");
 
     if (resolved.contains("{InputName}", Qt::CaseInsensitive)) {
         QString baseInputName;
@@ -348,11 +361,12 @@ QString Sentinel1ImportNode::resolveInputName(const QString& name) const
     }
     return resolved;
 }
-
-QString Sentinel1ImportNode::getImportedFilePath() const
+QStringList Sentinel1ImportNode::getImportedFilePaths() const
 {
-    if (m_importedFilePath.isEmpty())
-    {
+    QStringList paths;
+    if (!m_importedFilePath.isEmpty()) {
+        paths.append(m_importedFilePath);
+    } else {
         QString outputNodeName = getOutputNodeName();
         QString fileName = getOutputFileName();
         if (fileName.isEmpty()) {
@@ -360,9 +374,9 @@ QString Sentinel1ImportNode::getImportedFilePath() const
             QString pol = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
             fileName = subswath + "_" + pol;
         }
-        return QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(fileName);
+        paths.append(QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(fileName));
     }
-    return m_importedFilePath;
+    return paths;
 }
 
 QString Sentinel1ImportNode::getOutputNodeName() const
@@ -406,10 +420,10 @@ QString Sentinel1ImportNode::getOutputFileName() const
 QString Sentinel1ImportNode::generateOutputFileName() const
 {
     QFileInfo fileInfo(m_manifestPath);
-    QString fileName = fileInfo.fileName();
+    QString dirName = fileInfo.dir().dirName();
 
     QRegularExpression dateRegex(R"(\d{8})");
-    QRegularExpressionMatch match = dateRegex.match(fileName);
+    QRegularExpressionMatch match = dateRegex.match(dirName);
     if (match.hasMatch())
     {
         QString date = match.captured(0);
@@ -449,6 +463,7 @@ void Sentinel1ImportNode::updateAvailableParameters(const QString& manifestPath)
 
     // Update subswath combo
     if (m_subswathCombo) {
+        QSignalBlocker blocker(m_subswathCombo);
         QString currentSub = m_subswathCombo->currentText();
         m_subswathCombo->clear();
         QStringList subList = subswaths.values();
@@ -461,6 +476,7 @@ void Sentinel1ImportNode::updateAvailableParameters(const QString& manifestPath)
 
     // Update polarization combo
     if (m_polarizationCombo) {
+        QSignalBlocker blocker(m_polarizationCombo);
         QString currentPol = m_polarizationCombo->currentText();
         m_polarizationCombo->clear();
         QStringList polList = polarizations.values();
@@ -523,7 +539,7 @@ void Sentinel1ImportNode::onImportProgress(int progress, const QString& message)
 
 void Sentinel1ImportNode::onImportFinished()
 {
-    QString outputPath = projectPath() + "/" + getOutputNodeName() + "/" + m_outputFileName + ".h5";
+    QString outputPath = projectPath() + "/" + getOutputNodeName() + "/" + getOutputFileName() + ".h5";
     m_importedFilePath = outputPath;
 
     ImportNodeBase::onImportFinished();

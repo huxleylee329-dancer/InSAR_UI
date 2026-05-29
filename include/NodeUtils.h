@@ -25,6 +25,25 @@ IApplicationInterface* getProjectContext(QWidget* widget);
  */
 void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldNodeName);
 
+enum class OverwriteResult {
+    NoConflict,
+    Overwrite,
+    LoadExisting,
+    Cancel
+};
+
+/**
+ * @brief Checks if a node with the given name exists in the project tree,
+ *        and if any of the physical files exist on disk.
+ *        If so, prompts the user for confirmation to overwrite/delete or load existing.
+ * @param iface  Project context (IApplicationInterface*)
+ * @param nodeName  The node name to check in the project tree
+ * @param filePaths  List of physical file paths to check for existence
+ * @param parent  Optional parent widget for the QMessageBox
+ * @return OverwriteResult indicating the user's choice
+ */
+OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QString& nodeName, const QStringList& filePaths, QWidget* parent = nullptr);
+
 /**
  * @brief 从 H5 科学数据文件中提取幅值并生成 JPG 预览图（自动进行超大图降采样）
  * @param h5Path H5文件路径

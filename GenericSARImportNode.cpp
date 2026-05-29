@@ -188,7 +188,23 @@ void GenericSARImportNode::executeImport()
     }
 
     QString resolvedFileName = m_outputFileName;
-    resolvedFileName.replace("{InputName}", QFileInfo(m_imagePath).baseName());
+    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+    resolvedFileName.replace(re, QFileInfo(m_imagePath).baseName());
+
+    QString suffix = QFileInfo(m_imagePath).suffix();
+    if (suffix.isEmpty()) suffix = "h5";
+    QString outputPath = QString("%1/%2/%3.%4").arg(projectPath()).arg(outputNodeName).arg(resolvedFileName).arg(suffix);
+    QString previewPath = QString("%1/%2/%3.jpg").arg(projectPath()).arg(outputNodeName).arg(resolvedFileName);
+
+    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
+    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+        setState(ExecutionState::Idle);
+        return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
 
     // 清理旧数据，防止更换文件重新执行时导致历史记录累积
     NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
@@ -213,23 +229,26 @@ void GenericSARImportNode::executeImport()
 
     QThreadPool::globalInstance()->start(m_task);
 }
-
-QString GenericSARImportNode::getImportedFilePath() const
+QStringList GenericSARImportNode::getImportedFilePaths() const
 {
-    if (!m_importedFilePath.isEmpty())
-        return m_importedFilePath;
+    QStringList paths;
+    if (!m_importedFilePath.isEmpty()) {
+        paths.append(m_importedFilePath);
+    } else {
+        QString suffix = QFileInfo(m_imagePath).suffix();
+        if (suffix.isEmpty()) suffix = "h5"; // Fallback
 
-    QString suffix = QFileInfo(m_imagePath).suffix();
-    if (suffix.isEmpty()) suffix = "h5"; // Fallback
+        QString resolvedFileName = m_outputFileName;
+        QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+        resolvedFileName.replace(re, QFileInfo(m_imagePath).baseName());
 
-    QString resolvedFileName = m_outputFileName;
-    resolvedFileName.replace("{InputName}", QFileInfo(m_imagePath).baseName());
-
-    return QString("%1/%2/%3.%4")
-        .arg(projectPath())
-        .arg(m_outputNodeName)
-        .arg(resolvedFileName)
-        .arg(suffix);
+        paths.append(QString("%1/%2/%3.%4")
+            .arg(projectPath())
+            .arg(m_outputNodeName)
+            .arg(resolvedFileName)
+            .arg(suffix));
+    }
+    return paths;
 }
 
 QString GenericSARImportNode::getOutputNodeName() const
@@ -292,7 +311,8 @@ void GenericSARImportNode::onImportFinished()
     if (suffix.isEmpty()) suffix = "h5";
 
     QString resolvedFileName = m_outputFileName;
-    resolvedFileName.replace("{InputName}", QFileInfo(m_imagePath).baseName());
+    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+    resolvedFileName.replace(re, QFileInfo(m_imagePath).baseName());
 
     m_importedFilePath = QString("%1/%2/%3.%4")
         .arg(projectPath())
@@ -440,7 +460,8 @@ bool GenericSARImportNode::validateAndRestoreOutput()
     if (finalFileName.isEmpty()) {
         finalFileName = QFileInfo(m_imagePath).baseName();
     } else {
-        finalFileName.replace("{InputName}", QFileInfo(m_imagePath).baseName());
+        QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+        finalFileName.replace(re, QFileInfo(m_imagePath).baseName());
     }
 
     QString outputPath = QString("%1/%2/%3.%4")

@@ -425,8 +425,8 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
     // Summary (preview area)
     if (!info.summary.isEmpty()) {
         QString displaySummary = info.summary;
-        if (displaySummary.length() > 60) {
-            displaySummary = displaySummary.left(60) + "...";
+        if (displaySummary.length() > 45) {
+            displaySummary = displaySummary.left(20) + "..." + displaySummary.right(20);
         }
 
         QWidget* summaryContainer = new QWidget();
@@ -455,12 +455,13 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
                 ).arg(secondaryTextColor));
                 
                 pathLabel->setToolTip(pathValue);
+                pathLabel->setWordWrap(true);
                 QStringList pathLines = pathValue.split("\n", Qt::SkipEmptyParts);
                 QString displayPath;
                 for (int i = 0; i < pathLines.size(); ++i) {
                     QString displayLine = pathLines[i];
-                    if (displayLine.length() > 60) {
-                        displayLine = displayLine.left(25) + "..." + displayLine.right(30);
+                    if (displayLine.length() > 45) {
+                        displayLine = displayLine.left(15) + "..." + displayLine.right(25);
                     }
                     if (i > 0) displayPath += "\n";
                     displayPath += displayLine;
@@ -1214,12 +1215,18 @@ void NodeDetailWindow::updatePreviewImage()
     if (QFileInfo::exists(currentPath)) {
         if (_imageView) {
             _imageView->loadImage(currentPath);
+            _imageView->fitImage(); // Call fitImage to ensure it fits the view
         }
         
         QFileInfo fi(currentPath);
         if (_imageNameLabel) {
+            QString fileName = fi.fileName();
+            // Elide long filenames to prevent horizontal scrollbar in the Detail Window
+            if (fileName.length() > 45) {
+                fileName = fileName.left(20) + "..." + fileName.right(20);
+            }
             _imageNameLabel->setText(QString("%1 (%2 / %3)")
-                .arg(fi.fileName())
+                .arg(fileName)
                 .arg(_currentPreviewIndex + 1)
                 .arg(_previewImagePaths.size()));
         }

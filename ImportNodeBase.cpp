@@ -1,4 +1,4 @@
-﻿#include "ImportNodeBase.h"
+#include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
 #include "IApplicationInterface.h"
 #include "MyThread.h"
@@ -104,12 +104,12 @@ void ImportNodeBase::onProgressUpdate(int progress, const QString& message)
 
 void ImportNodeBase::onImportFinished()
 {
-    QString filePath = getImportedFilePath();
+    QStringList filePaths = getImportedFilePaths();
     QString nodeName = getOutputNodeName();
 
-    if (!filePath.isEmpty() && !nodeName.isEmpty())
+    if (!filePaths.isEmpty() && !nodeName.isEmpty())
     {
-        auto outputData = std::make_shared<ImportedFileData>(filePath, nodeName);
+        auto outputData = std::make_shared<ImportedFileData>(filePaths, nodeName);
         setOutputData(0, outputData);
         Q_EMIT dataUpdated(0);
     }

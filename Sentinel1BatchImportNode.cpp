@@ -247,6 +247,22 @@ void Sentinel1BatchImportNode::executeImport()
 
     QString outputNodeName = getOutputNodeName();
 
+    QStringList pathsToCheck;
+    for (const QString& importName : importNameList) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    }
+
+    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
+    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+        setState(ExecutionState::Idle);
+        return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
+
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
@@ -279,15 +295,9 @@ void Sentinel1BatchImportNode::executeImport()
     );
 }
 
-QString Sentinel1BatchImportNode::getImportedFilePath() const
+QStringList Sentinel1BatchImportNode::getImportedFilePaths() const
 {
-    if (!m_importedFilePaths.isEmpty())
-    {
-        return m_importedFilePaths.first();
-    }
-
-    QString outputNodeName = getOutputNodeName();
-    return QString("%1/%2/").arg(projectPath()).arg(outputNodeName);
+    return m_importedFilePaths;
 }
 
 QString Sentinel1BatchImportNode::getOutputNodeName() const
@@ -324,10 +334,10 @@ QStringList Sentinel1BatchImportNode::previewImagePaths() const
 QString Sentinel1BatchImportNode::generateImportName(const QString& manifestPath) const
 {
     QFileInfo fileInfo(manifestPath);
-    QString fileName = fileInfo.fileName();
+    QString dirName = fileInfo.dir().dirName();
 
     QRegularExpression dateRegex(R"(\d{8})");
-    QRegularExpressionMatch match = dateRegex.match(fileName);
+    QRegularExpressionMatch match = dateRegex.match(dirName);
     if (match.hasMatch())
     {
         QString date = match.captured(0);
@@ -370,6 +380,7 @@ void Sentinel1BatchImportNode::updateAvailableParameters()
 
     // Update subswath combo
     if (m_subswathCombo) {
+        QSignalBlocker blocker(m_subswathCombo);
         QString currentSub = m_subswathCombo->currentText();
         m_subswathCombo->clear();
         QStringList subList = subswaths.values();
@@ -382,6 +393,7 @@ void Sentinel1BatchImportNode::updateAvailableParameters()
 
     // Update polarization combo
     if (m_polarizationCombo) {
+        QSignalBlocker blocker(m_polarizationCombo);
         QString currentPol = m_polarizationCombo->currentText();
         m_polarizationCombo->clear();
         QStringList polList = polarizations.values();
@@ -408,7 +420,8 @@ void Sentinel1BatchImportNode::onAddFilesClicked()
         if (!m_manifestPaths.contains(file))
         {
             m_manifestPaths.append(file);
-            m_fileListWidget->addItem(QFileInfo(file).fileName());
+            QFileInfo fi(file);
+            m_fileListWidget->addItem(fi.dir().dirName() + "/" + fi.fileName());
             added = true;
             
             int outCount = nPorts(PortType::Out);
@@ -641,8 +654,10 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
 
     if (m_fileListWidget) {
         m_fileListWidget->clear();
-        for (const QString &path : m_manifestPaths)
-            m_fileListWidget->addItem(QFileInfo(path).fileName());
+        for (const QString &path : m_manifestPaths) {
+            QFileInfo fi(path);
+            m_fileListWidget->addItem(fi.dir().dirName() + "/" + fi.fileName());
+        }
     }
 
     if (m_outputNodeNameEdit)
@@ -673,14 +688,14 @@ bool Sentinel1BatchImportNode::validateAndRestoreOutput()
     if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
         m_importedFilePaths.clear();
         for (const QString &manifestPath : m_manifestPaths) {
-            QFileInfo fi(manifestPath);
-            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            QString importName = generateImportName(manifestPath);
+            QString importedPath = outputPath + importName + ".h5";
             if (QFile::exists(importedPath)) {
                 m_importedFilePaths.append(importedPath);
             }
         }
         if (!m_importedFilePaths.isEmpty()) {
-            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+            auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
             setOutputData(0, outputData);
             Q_EMIT dataUpdated(0);
 
@@ -715,7 +730,7 @@ NodeDataType Sentinel1BatchImportNode::dataType(PortType portType, PortIndex por
     if (portType == PortType::Out)
     {
         if (portIndex == 0)
-            return NodeDataType{"imported_file", "Imported File"};
+            return NodeDataType{"imported_file", "Imported Files"};
         else if (portIndex == 1)
             return NodeDataType{"image_info", "Image Info"};
     }

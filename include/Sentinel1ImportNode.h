@@ -49,7 +49,7 @@ protected:
     // ImportNodeBase interface
     QWidget* createWidget() override;
     void executeImport() override;
-    QString getImportedFilePath() const override;
+    QStringList getImportedFilePaths() const override;
     QString getOutputNodeName() const override;
     QStringList previewImagePaths() const override;
 

@@ -14,7 +14,8 @@ ImageView::ImageView(QWidget* parent) :
 	m_isDrawingRoi(false),
 	m_roiRectItem(nullptr),
 	m_targetRectItem(nullptr),
-	m_clutterRectItem(nullptr)
+	m_clutterRectItem(nullptr),
+	m_needsFit(false)
 {
 	setDragMode(QGraphicsView::ScrollHandDrag);
 	this->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -132,6 +133,26 @@ void ImageView::loadImage(const QString& path)
 	if (!m_storedRoi.isNull()) setRoiRect(m_storedRoi);
 	if (!m_storedTargetRoi.isNull()) setTargetRoiRect(m_storedTargetRoi);
 	if (!m_storedClutterRoi.isNull()) setClutterRoiRect(m_storedClutterRoi);
+	
+	scene()->setSceneRect(pixmap.rect());
+	m_needsFit = true;
+	viewport()->update();
+}
+
+void ImageView::fitImage()
+{
+	if (scene() && !scene()->sceneRect().isEmpty()) {
+		fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
+		m_needsFit = false;
+	}
+}
+
+void ImageView::resizeEvent(QResizeEvent* event)
+{
+	QGraphicsView::resizeEvent(event);
+	if (m_needsFit) {
+		fitImage();
+	}
 }
 
 void ImageView::wheelEvent(QWheelEvent* event)

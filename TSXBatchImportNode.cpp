@@ -213,6 +213,22 @@ void TSXBatchImportNode::executeImport()
     QString polarization = m_polarizationCombo->currentText();
     QString outputNodeName = getOutputNodeName();
 
+    QStringList pathsToCheck;
+    for (const QString& importName : importNameList) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    }
+
+    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
+    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+        setState(ExecutionState::Idle);
+        return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
+
     m_thread = new QThread(this);
     m_workerThread = new MyThread();
     m_workerThread->moveToThread(m_thread);
@@ -241,15 +257,9 @@ void TSXBatchImportNode::executeImport()
     );
 }
 
-QString TSXBatchImportNode::getImportedFilePath() const
+QStringList TSXBatchImportNode::getImportedFilePaths() const
 {
-    if (!m_importedFilePaths.isEmpty())
-    {
-        return m_importedFilePaths.first();
-    }
-
-    QString outputNodeName = getOutputNodeName();
-    return QString("%1/%2/").arg(projectPath()).arg(outputNodeName);
+    return m_importedFilePaths;
 }
 
 QString TSXBatchImportNode::getOutputNodeName() const
@@ -438,14 +448,14 @@ bool TSXBatchImportNode::validateAndRestoreOutput()
     if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
         m_importedFilePaths.clear();
         for (const QString &xmlPath : m_xmlPaths) {
-            QFileInfo fi(xmlPath);
-            QString importedPath = outputPath + fi.completeBaseName() + ".h5";
+            QString importName = generateOutputFileName(xmlPath);
+            QString importedPath = outputPath + importName + ".h5";
             if (QFile::exists(importedPath)) {
                 m_importedFilePaths.append(importedPath);
             }
         }
         if (!m_importedFilePaths.isEmpty()) {
-            auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
+            auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
             setOutputData(0, outputData);
             return true;
         }
