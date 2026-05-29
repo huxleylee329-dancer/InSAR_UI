@@ -6,7 +6,6 @@
 #include <QMenuBar>  
 #include <QStatusBar> 
 #include <QFileDialog>
-#include<QDebug>
 #include<QDir>
 #include<QFile>
 #include<QFileInfo>
@@ -119,16 +118,6 @@ void TreeView::updateTreeIcons(const QString &theme)
  QList<QStandardItem*> TreeView::returnTheItems()
  {
     return model->findItems("*", Qt::MatchWildcard | Qt::MatchRecursive);
- }
-
-void TreeView::iterateOverItems()
- {
-    QList<QStandardItem*> list = returnTheItems();
-
-     foreach(QStandardItem * item, list) {
-         qDebug() << item->text();
-
-	}
  }
 
 void TreeView::mouseDoubleClickEvent(QMouseEvent * event)
@@ -276,13 +265,10 @@ void TreeView::CleanOrphanedFiles()
     // Get all active node folder names from the project tree
     QStringList activeNodeNames;
     QSet<QString> activeFiles;
-    qDebug() << "[CleanOrphanedFiles] Project:" << projectName << "Path:" << projectPath;
-    qDebug() << "[CleanOrphanedFiles] Active DataNodes in Tree:";
     for (int i = 0; i < projItem->rowCount(); ++i) {
         QStandardItem* nodeItem = projItem->child(i, 0);
         if (nodeItem) {
             activeNodeNames.append(nodeItem->text());
-            qDebug() << "  - " << nodeItem->text();
             for (int j = 0; j < nodeItem->rowCount(); ++j) {
                 QStandardItem* pathItem = nodeItem->child(j, 1);
                 if (pathItem && !pathItem->text().isEmpty()) {
@@ -294,7 +280,6 @@ void TreeView::CleanOrphanedFiles()
     
     QDir rootDir(projectPath);
     if (!rootDir.exists()) {
-        qDebug() << "[CleanOrphanedFiles] Root dir does not exist!";
         return;
     }
     
@@ -302,24 +287,26 @@ void TreeView::CleanOrphanedFiles()
     QStringList orphanedDirs;
     QStringList orphanedFiles;
     
-    qDebug() << "[CleanOrphanedFiles] Scanning disk directories:";
     for (const QString& dirName : allDirs) {
         if (dirName == "temp" || dirName == "logs") {
-            qDebug() << "  - " << dirName << "(Skipped system dir)";
             continue;
         }
         if (!activeNodeNames.contains(dirName)) {
             orphanedDirs.append(dirName);
-            qDebug() << "  - " << dirName << "(ORPHANED!)";
         } else {
-            qDebug() << "  - " << dirName << "(Active)";
             QDir activeDir(projectPath + "/" + dirName);
             QStringList filesInDir = activeDir.entryList(QDir::Files | QDir::NoDotAndDotDot);
             for (const QString& fileName : filesInDir) {
                 QString absFilePath = QDir::cleanPath(activeDir.absoluteFilePath(fileName));
                 if (!activeFiles.contains(absFilePath)) {
+                    // Check if it is a preview JPG whose corresponding H5 file is active
+                    if (absFilePath.endsWith(".jpg", Qt::CaseInsensitive)) {
+                        QString correspondingH5 = absFilePath.left(absFilePath.length() - 4) + ".h5";
+                        if (activeFiles.contains(correspondingH5)) {
+                            continue; // Valid preview file, keep it!
+                        }
+                    }
                     orphanedFiles.append(absFilePath);
-                    qDebug() << "    -> File: " << fileName << "(ORPHANED!)";
                 }
             }
         }

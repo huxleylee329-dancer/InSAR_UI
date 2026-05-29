@@ -291,7 +291,9 @@ void BasicGraphicsScene::onNodePositionUpdated(NodeId const nodeId)
         QPointF newPos = _graphModel.nodeData(nodeId, NodeRole::Position).value<QPointF>();
         node->setPos(newPos);
         node->update();
-        _nodeDrag = true;
+        if (mouseGrabberItem() == node) {
+            _nodeDrag = true;
+        }
     }
 }
 

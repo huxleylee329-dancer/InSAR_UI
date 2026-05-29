@@ -372,12 +372,6 @@ void WorkflowUI::setupSceneInternal()
             this, &WorkflowUI::onNodeDropped);
 
 
-    // Connect background click signal to clear property panel
-    connect(m_view, &PaletteGraphicsView::backgroundClicked,
-            this, [this]() {
-                m_propertyEditor->clearSelection();
-            });
-
     // Setup ADS Dock Manager with dock widgets
     m_dockManager->setParent(this);
 
@@ -484,17 +478,14 @@ void WorkflowUI::setupSceneInternal()
         }
     });
 
-    // Connect to scene selection changes for property panel
-    connect(m_scene, &QtNodes::BasicGraphicsScene::nodeSelected, this, [this](QtNodes::NodeId nodeId) {
-        m_propertyEditor->setSelectedNode(nodeId);
-    });
-
-    // Connect to node clicked to update property panel
-    // Use the clicked node ID directly instead of checking selectedNodes()
-    // This ensures the property panel updates even when selection state is inconsistent
-    connect(m_scene, &QtNodes::BasicGraphicsScene::nodeClicked, this, [this](QtNodes::NodeId nodeId) {
-        if (nodeId != QtNodes::InvalidNodeId) {
-            m_propertyEditor->setSelectedNode(nodeId);
+    // 统一监听场景选择变更信号，同步更新属性面板
+    connect(m_scene, &QGraphicsScene::selectionChanged, this, [this]() {
+        auto selectedNodes = m_scene->selectedNodes();
+        if (selectedNodes.size() == 1) {
+            m_propertyEditor->setSelectedNode(selectedNodes[0]);
+        } else if (selectedNodes.empty() && _detailWindow) {
+            // 当详细窗口处于打开或动画过程中时，节点隐藏会导致选择清空，此时不应清空属性面板
+            return;
         } else {
             m_propertyEditor->clearSelection();
         }

@@ -294,8 +294,9 @@ void NodeGraphicsObject::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
         }
     } else {
         auto diff = event->pos() - event->lastPos();
-
-        nodeScene()->undoStack().push(new MoveNodeCommand(nodeScene(), diff));
+        if (diff.x() != 0.0 || diff.y() != 0.0) {
+            nodeScene()->undoStack().push(new MoveNodeCommand(nodeScene(), diff));
+        }
 
         event->accept();
     }

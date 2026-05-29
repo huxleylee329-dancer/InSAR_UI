@@ -615,20 +615,27 @@ QJsonObject Sentinel1ImportNode::save() const
 
 void Sentinel1ImportNode::load(QJsonObject const &json)
 {
-    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
+    // 先赋值字段
     m_manifestPath = json["manifestPath"].toString();
     m_podPath = json["podPath"].toString();
     m_outputNodeName = json["outputNodeName"].toString();
+    if (m_outputNodeName.isEmpty()) {
+        m_outputNodeName = "S1_Import";
+    }
     m_outputFileName = json["outputFileName"].toString();
+    if (m_outputFileName.isEmpty()) {
+        m_outputFileName = "{InputName}";
+    }
     m_subswath = json["subswath"].toString("iw1");
+    if (m_subswath.isEmpty()) {
+        m_subswath = "iw1";
+    }
     m_polarization = json["polarization"].toString("vv");
-
-    ExecutableNodeDelegateModel::load(json);
-
-    if (!m_manifestPath.isEmpty()) {
-        updateAvailableParameters(m_manifestPath);
+    if (m_polarization.isEmpty()) {
+        m_polarization = "vv";
     }
 
+    // 同步 UI 控件到最新反序列化的值，防止基类 load() 触发的 validateAndRestoreOutput() 读到旧的 UI 控件值
     if (m_manifestEdit) m_manifestEdit->setText(m_manifestPath);
     if (m_podEdit) m_podEdit->setText(m_podPath);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -642,6 +649,12 @@ void Sentinel1ImportNode::load(QJsonObject const &json)
     if (m_polarizationCombo) {
         int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
+    }
+
+    ExecutableNodeDelegateModel::load(json);
+
+    if (!m_manifestPath.isEmpty()) {
+        updateAvailableParameters(m_manifestPath);
     }
 }
 

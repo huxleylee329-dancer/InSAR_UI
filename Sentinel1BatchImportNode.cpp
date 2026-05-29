@@ -22,6 +22,7 @@ Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     , m_projectCombo(nullptr)
     , m_manifestPaths()
     , m_importedFilePaths()
+    , m_outputNodeName("S1_Batch_Import")
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
@@ -632,26 +633,34 @@ QJsonObject Sentinel1BatchImportNode::save() const
     for (const QString &path : m_manifestPaths)
         pathsArray.append(path);
     json["manifestPaths"] = pathsArray;
-    json["subswath"] = m_subswath;
-    json["polarization"] = m_polarization;
-    json["outputNodeName"] = m_outputNodeName;
+    json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
+    json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
+    json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName;
     return json;
 }
 
 void Sentinel1BatchImportNode::load(QJsonObject const &json)
 {
-    // 先赋值字段，再调用基类 load()（因为基类 load 会调用 validateAndRestoreOutput()）
+    // 先赋值字段
     m_manifestPaths.clear();
     QJsonArray pathsArray = json["manifestPaths"].toArray();
     for (const QJsonValue &val : pathsArray)
         m_manifestPaths.append(val.toString());
 
     m_outputNodeName = json["outputNodeName"].toString("S1_Batch_Import");
+    if (m_outputNodeName.isEmpty()) {
+        m_outputNodeName = "S1_Batch_Import";
+    }
+    m_subswath = json["subswath"].toString("iw1");
+    if (m_subswath.isEmpty()) {
+        m_subswath = "iw1";
+    }
+    m_polarization = json["polarization"].toString("vv");
+    if (m_polarization.isEmpty()) {
+        m_polarization = "vv";
+    }
 
-    ExecutableNodeDelegateModel::load(json);
-
-    updateAvailableParameters();
-
+    // 同步 UI 控件到最新反序列化的值，防止基类 load() 触发的 validateAndRestoreOutput() 读到旧的 UI 控件值
     if (m_fileListWidget) {
         m_fileListWidget->clear();
         for (const QString &path : m_manifestPaths) {
@@ -663,17 +672,19 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
 
-    m_subswath = json["subswath"].toString("iw1");
     if (m_subswathCombo) {
         int idx = m_subswathCombo->findText(m_subswath);
         if (idx >= 0) m_subswathCombo->setCurrentIndex(idx);
     }
 
-    m_polarization = json["polarization"].toString("vv");
     if (m_polarizationCombo) {
         int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
+
+    ExecutableNodeDelegateModel::load(json);
+
+    updateAvailableParameters();
 }
 
 bool Sentinel1BatchImportNode::validateAndRestoreOutput()

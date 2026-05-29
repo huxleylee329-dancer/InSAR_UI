@@ -11,7 +11,6 @@ class TreeView :public QTreeView
     Q_OBJECT;
 public:
      TreeView(QWidget* parent = Q_NULLPTR);
-     void iterateOverItems();
      void NewProject(QString, QString);
      void init_tree();
      void init_mould();

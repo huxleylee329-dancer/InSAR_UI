@@ -270,11 +270,13 @@ bool DataFlowGraphModel::setNodeData(NodeId nodeId, NodeRole role, QVariant valu
     case NodeRole::Type:
         break;
     case NodeRole::Position: {
-        _nodeGeometryData[nodeId].pos = value.value<QPointF>();
-
-        Q_EMIT nodePositionUpdated(nodeId);
-
-        result = true;
+        QPointF newPos = value.value<QPointF>();
+        auto it = _nodeGeometryData.find(nodeId);
+        if (it == _nodeGeometryData.end() || it->second.pos != newPos) {
+            _nodeGeometryData[nodeId].pos = newPos;
+            Q_EMIT nodePositionUpdated(nodeId);
+            result = true;
+        }
     } break;
 
     case NodeRole::Size: {

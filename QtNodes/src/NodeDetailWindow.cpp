@@ -439,7 +439,7 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
             QLabel* nameLabel = new QLabel(displaySummary);
             nameLabel->setStyleSheet(QString(
                 "color: %1;"
-                "font-size: 13px;"
+                "font-size: 11px;"
                 "font-weight: 600;"
                 "text-transform: none;"
             ).arg(primaryTextColor));
