@@ -3,6 +3,7 @@
 
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
+#include "NodeDataTypes.h"
 #include "MyThread.h"
 #include <QWidget>
 #include <QListWidget>
@@ -35,6 +36,13 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+    unsigned int nPorts(PortType portType) const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
@@ -44,6 +52,7 @@ protected:
     void executeImport() override;
     QString getImportedFilePath() const override;
     QString getOutputNodeName() const override;
+    QStringList previewImagePaths() const override;
 
     // Thread accessors
     MyThread* workerThread() const override { return m_workerThread; }
@@ -51,6 +60,7 @@ protected:
 
     // Helper methods
     QString generateImportName(const QString& manifestPath) const;
+    void updateAvailableParameters();
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -84,6 +94,8 @@ private:
     // Worker thread
     MyThread* m_workerThread;
     QThread* m_thread;
+
+    std::shared_ptr<ImageInfoData> m_imageInfoData;
 };
 
 } // namespace QtNodes

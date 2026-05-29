@@ -1,10 +1,12 @@
 #include "InSARLogManager.h"
 #include "Sentinel1ImportNode.h"
+#include "IApplicationInterface.h"
 #include "ImportDataTypes.h"
 #include "NodeUtils.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QSet>
 
 
 namespace QtNodes {
@@ -21,7 +23,8 @@ Sentinel1ImportNode::Sentinel1ImportNode()
     , m_manifestPath()
     , m_podPath()
     , m_importedFilePath()
-    , m_outputFileName()
+    , m_outputNodeName("{InputName}")
+    , m_outputFileName("{InputName}")
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
@@ -57,9 +60,11 @@ Sentinel1ImportNode::~Sentinel1ImportNode()
 QWidget* Sentinel1ImportNode::createWidget()
 {
     auto* widget = new QWidget();
+    widget->setFixedWidth(300);
     auto* layout = new QVBoxLayout(widget);
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
+    layout->setSizeConstraint(QLayout::SetFixedSize);
 
     auto invalidateNodeData = [this]() {
         int outCount = nPorts(PortType::Out);
@@ -81,6 +86,9 @@ QWidget* Sentinel1ImportNode::createWidget()
                 return;
             }
             m_manifestPath = text; 
+            
+            updateAvailableParameters(m_manifestPath);
+
             QString autoName = generateOutputFileName();
             if (!autoName.isEmpty() && m_outputNodeNameEdit->text().isEmpty()) {
                 m_outputNodeNameEdit->setText(autoName);
@@ -123,6 +131,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     QLabel* subswathLabel = new QLabel("子带选择（subswath）");
     subswathLayout->addWidget(subswathLabel, 3);
     m_subswathCombo = new QComboBox();
+    m_subswathCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_subswathCombo->addItem("iw1");
     m_subswathCombo->addItem("iw2");
     m_subswathCombo->addItem("iw3");
@@ -146,6 +155,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     QLabel* polLabel = new QLabel("极化方式选择");
     polLayout->addWidget(polLabel, 3);
     m_polarizationCombo = new QComboBox();
+    m_polarizationCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_polarizationCombo->addItem("vv");
     m_polarizationCombo->addItem("vh");
     m_polarizationCombo->setCurrentText(m_polarization);
@@ -163,22 +173,22 @@ QWidget* Sentinel1ImportNode::createWidget()
     polLayout->addWidget(m_polarizationCombo, 7);
     layout->addLayout(polLayout);
 
-    // 目标工程 [3:7]
+    // 项目名称 [3:7]
     auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("目标工程");
+    QLabel* projectLabel = new QLabel("项目名称：");
     projectLayout->addWidget(projectLabel, 3);
     m_projectCombo = new QComboBox();
+    m_projectCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     m_projectCombo->setEditable(false);
-    m_projectCombo->setPlaceholderText("当前打开的项目");
     projectLayout->addWidget(m_projectCombo, 7);
     layout->addLayout(projectLayout);
 
-    // 目标节点名 [3:7]
+    // 目标节点 [3:7]
     auto* nodeNameLayout = new QHBoxLayout();
-    QLabel* nodeNameLabel = new QLabel("目标节点名");
+    QLabel* nodeNameLabel = new QLabel("目标节点");
     nodeNameLayout->addWidget(nodeNameLabel, 3);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputNodeNameEdit->setPlaceholderText("支持 {InputName} 变量");
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -187,7 +197,7 @@ QWidget* Sentinel1ImportNode::createWidget()
                 m_outputNodeNameEdit->setText(m_outputNodeName);
                 return;
             }
-            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), resolveInputName(m_outputNodeName));
             m_outputNodeName = text;
             invalidateNodeData();
         }
@@ -200,7 +210,8 @@ QWidget* Sentinel1ImportNode::createWidget()
     QLabel* fileNameLabel = new QLabel("目标文件名");
     fileNameLayout->addWidget(fileNameLabel, 3);
     m_outputFileNameEdit = new QLineEdit();
-    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputFileNameEdit->setText(m_outputFileName);
+    m_outputFileNameEdit->setPlaceholderText("支持 {InputName} 变量");
     connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
@@ -222,10 +233,22 @@ QWidget* Sentinel1ImportNode::createWidget()
     connect(manifestBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onManifestBrowseClicked);
     connect(podBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onPodBrowseClicked);
 
-    // Set project name if available
-    QString currentProject = projectName();
-    if (!currentProject.isEmpty()) {
-        m_projectCombo->addItem(currentProject);
+    // 从项目模型动态填充项目列表 (对齐 Workspace 与 Generic SAR 行为)
+    QStandardItemModel* model = projectModel();
+    if (model && model->rowCount() > 0) {
+        for (int i = 0; i < model->rowCount(); ++i) {
+            auto item = model->item(i, 0);
+            if (item) {
+                m_projectCombo->addItem(item->text());
+            }
+        }
+        // 默认选中当前活动项目
+        int index = m_projectCombo->findText(projectName());
+        if (index >= 0) {
+            m_projectCombo->setCurrentIndex(index);
+        }
+    } else {
+        m_projectCombo->addItem("未打开项目");
     }
 
     return widget;
@@ -253,8 +276,14 @@ void Sentinel1ImportNode::executeImport()
         return;
     }
 
-    m_outputFileName = getOutputFileName();
+    m_outputFileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : m_outputFileName.trimmed();
     if (m_outputFileName.isEmpty())
+    {
+        m_outputFileName = "{InputName}";
+    }
+
+    QString resolvedFileName = getOutputFileName();
+    if (resolvedFileName.isEmpty())
     {
         onError("无法从清单文件生成输出文件名");
         return;
@@ -288,10 +317,36 @@ void Sentinel1ImportNode::executeImport()
         polarization,
         projectPath(),
         outputNodeName,
-        m_outputFileName,
+        resolvedFileName,
         projectName(),
         projectModel()
     );
+}
+
+QString Sentinel1ImportNode::resolveInputName(const QString& name) const
+{
+    QString resolved = name;
+    resolved.replace(QString::fromUtf8("\uFF5BInputName\uFF5D"), "{InputName}");
+    resolved.replace(QString::fromUtf8("\uFF5BInputName}"), "{InputName}");
+    resolved.replace(QString::fromUtf8("{InputName\uFF5D"), "{InputName}");
+
+    if (resolved.contains("{InputName}", Qt::CaseInsensitive)) {
+        QString baseInputName;
+        if (!m_manifestPath.isEmpty()) {
+            QFileInfo fi(m_manifestPath);
+            QString parentDirName = QFileInfo(fi.absolutePath()).fileName();
+            if (parentDirName.endsWith(".SAFE", Qt::CaseInsensitive)) {
+                baseInputName = parentDirName.left(parentDirName.length() - 5);
+            } else {
+                baseInputName = parentDirName;
+            }
+        }
+        if (baseInputName.isEmpty()) {
+            baseInputName = "S1_Image";
+        }
+        resolved.replace("{InputName}", baseInputName, Qt::CaseInsensitive);
+    }
+    return resolved;
 }
 
 QString Sentinel1ImportNode::getImportedFilePath() const
@@ -299,31 +354,53 @@ QString Sentinel1ImportNode::getImportedFilePath() const
     if (m_importedFilePath.isEmpty())
     {
         QString outputNodeName = getOutputNodeName();
-        QString subswath = m_subswathCombo->currentText();
-        QString pol = m_polarizationCombo->currentText();
-        return QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(subswath + "_" + pol);
+        QString fileName = getOutputFileName();
+        if (fileName.isEmpty()) {
+            QString subswath = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
+            QString pol = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
+            fileName = subswath + "_" + pol;
+        }
+        return QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(fileName);
     }
     return m_importedFilePath;
 }
 
 QString Sentinel1ImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
+    QString name = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName.trimmed();
     if (name.isEmpty())
     {
-        return generateOutputFileName();
+        return "S1_Import";
     }
-    return name;
+    return resolveInputName(name);
+}
+
+QStringList Sentinel1ImportNode::previewImagePaths() const
+{
+    if (!m_importedFilePath.isEmpty()) {
+        QFileInfo fi(m_importedFilePath);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        
+        // 自愈：如果 JPG 丢失了，但 H5 还存在，则静默重建
+        if (!QFileInfo::exists(jpgPath) && QFileInfo::exists(m_importedFilePath)) {
+            NodeUtils::generateJpgPreviewFromH5(m_importedFilePath, jpgPath, "complex");
+        }
+        
+        if (QFileInfo::exists(jpgPath)) {
+            return QStringList() << jpgPath;
+        }
+    }
+    return QStringList();
 }
 
 QString Sentinel1ImportNode::getOutputFileName() const
 {
-    QString fileName = m_outputFileNameEdit->text().trimmed();
+    QString fileName = m_outputFileNameEdit ? m_outputFileNameEdit->text().trimmed() : m_outputFileName.trimmed();
     if (fileName.isEmpty())
     {
         return generateOutputFileName();
     }
-    return fileName;
+    return resolveInputName(fileName);
 }
 
 QString Sentinel1ImportNode::generateOutputFileName() const
@@ -344,18 +421,72 @@ QString Sentinel1ImportNode::generateOutputFileName() const
     return QString();
 }
 
+void Sentinel1ImportNode::updateAvailableParameters(const QString& manifestPath)
+{
+    if (manifestPath.isEmpty() || !QFileInfo::exists(manifestPath))
+        return;
+
+    QFile file(manifestPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+
+    QString content = QString::fromUtf8(file.readAll());
+    file.close();
+
+    QSet<QString> subswaths;
+    QSet<QString> polarizations;
+
+    QRegularExpression rx(R"(s1[ab]-(iw[1-3])-slc-(vv|vh|hh|hv)-)");
+    QRegularExpressionMatchIterator i = rx.globalMatch(content);
+    while (i.hasNext()) {
+        QRegularExpressionMatch match = i.next();
+        subswaths.insert(match.captured(1).toLower());
+        polarizations.insert(match.captured(2).toLower());
+    }
+
+    if (subswaths.isEmpty() || polarizations.isEmpty())
+        return;
+
+    // Update subswath combo
+    if (m_subswathCombo) {
+        QString currentSub = m_subswathCombo->currentText();
+        m_subswathCombo->clear();
+        QStringList subList = subswaths.values();
+        subList.sort();
+        m_subswathCombo->addItems(subList);
+        int subIndex = m_subswathCombo->findText(currentSub);
+        if (subIndex >= 0) m_subswathCombo->setCurrentIndex(subIndex);
+        else m_subswath = m_subswathCombo->currentText();
+    }
+
+    // Update polarization combo
+    if (m_polarizationCombo) {
+        QString currentPol = m_polarizationCombo->currentText();
+        m_polarizationCombo->clear();
+        QStringList polList = polarizations.values();
+        polList.sort();
+        m_polarizationCombo->addItems(polList);
+        int polIndex = m_polarizationCombo->findText(currentPol);
+        if (polIndex >= 0) m_polarizationCombo->setCurrentIndex(polIndex);
+        else m_polarization = m_polarizationCombo->currentText();
+    }
+}
+
 void Sentinel1ImportNode::onManifestBrowseClicked()
 {
     QString filePath = QFileDialog::getOpenFileName(
         nullptr,
         tr("选择哨兵一号清单文件"),
         QFileInfo(m_manifestPath).absolutePath(),
-        tr("清单文件 (*.manifest);;所有文件 (*)")
+        tr("清单文件 (manifest.safe);;所有文件 (*)")
     );
 
     if (!filePath.isEmpty())
     {
         m_manifestEdit->setText(filePath);
+        m_manifestPath = filePath;
+
+        updateAvailableParameters(filePath);
 
         QString autoName = generateOutputFileName();
         if (!autoName.isEmpty() && m_outputNodeNameEdit->text().isEmpty())
@@ -396,6 +527,16 @@ void Sentinel1ImportNode::onImportFinished()
     m_importedFilePath = outputPath;
 
     ImportNodeBase::onImportFinished();
+
+    // 双路输出：Port 1 预览输出
+    if (!m_importedFilePath.isEmpty())
+    {
+        QFileInfo fi(m_importedFilePath);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+        setOutputData(1, m_imageInfoData);
+        Q_EMIT dataUpdated(1);
+    }
 
     if (m_thread) {
         m_thread->quit();
@@ -439,6 +580,9 @@ void Sentinel1ImportNode::setExecutionMode(ExecutionMode mode)
 void Sentinel1ImportNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+    if (auto* iface = getProjectContext()) {
+        iface->refreshProjectTree();
+    }
 }
 
 QJsonObject Sentinel1ImportNode::save() const
@@ -465,6 +609,10 @@ void Sentinel1ImportNode::load(QJsonObject const &json)
 
     ExecutableNodeDelegateModel::load(json);
 
+    if (!m_manifestPath.isEmpty()) {
+        updateAvailableParameters(m_manifestPath);
+    }
+
     if (m_manifestEdit) m_manifestEdit->setText(m_manifestPath);
     if (m_podEdit) m_podEdit->setText(m_podPath);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -483,11 +631,11 @@ void Sentinel1ImportNode::load(QJsonObject const &json)
 
 bool Sentinel1ImportNode::validateAndRestoreOutput()
 {
-    QString nodeName = m_outputNodeName.trimmed();
+    QString nodeName = getOutputNodeName();
     if (nodeName.isEmpty())
         return false;
 
-    QString fileName = m_outputFileName;
+    QString fileName = getOutputFileName();
     if (fileName.isEmpty())
         return false;
 
@@ -497,10 +645,76 @@ bool Sentinel1ImportNode::validateAndRestoreOutput()
         m_importedFilePath = outputPath;
         auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
         setOutputData(0, outputData);
+        Q_EMIT dataUpdated(0);
+
+        // 双路输出：Port 1 预览输出
+        QFileInfo fi(outputPath);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+        setOutputData(1, m_imageInfoData);
+        Q_EMIT dataUpdated(1);
+
         return true;
     }
 
     return false;
+}
+
+unsigned int Sentinel1ImportNode::nPorts(PortType portType) const
+{
+    if (portType == PortType::In)
+        return 0;
+    else
+        return 2;
+}
+
+NodeDataType Sentinel1ImportNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out)
+    {
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "Imported File"};
+        else if (portIndex == 1)
+            return NodeDataType{"image_info", "Image Info"};
+    }
+    return NodeDataType();
+}
+
+bool Sentinel1ImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out;
+}
+
+QString Sentinel1ImportNode::portCaption(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out)
+    {
+        if (portIndex == 0)
+            return tr("成果 *");
+        else if (portIndex == 1)
+            return tr("预览 ?");
+    }
+    return QString();
+}
+
+bool Sentinel1ImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out && portIndex == 1)
+        return true;
+    return false;
+}
+
+std::shared_ptr<NodeData> Sentinel1ImportNode::outData(PortIndex port)
+{
+    if (port == 0)
+    {
+        return ImportNodeBase::outData(0);
+    }
+    else if (port == 1)
+    {
+        return m_imageInfoData;
+    }
+    return nullptr;
 }
 
 } // namespace QtNodes

@@ -15,6 +15,8 @@
 #include<QFileInfo>
 #include<QDebug>
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
+#include "Sentinel1ImportHelper.h"
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
@@ -75,122 +77,18 @@ void MyThread::import_sentinel(
 	QStandardItemModel* model
 )
 {
-	if (manifest_file.isEmpty() ||
-		subswath.isEmpty() ||
-		polarization.isEmpty() ||
-		folder.isEmpty() ||
-		project_path.isEmpty()||
-		filename.isEmpty()||
-		project_name.isEmpty()||
-		model == NULL
-		)
-	{
-		return;
-	}
-	int ret;
-	QDir dir(project_path);
-	if (!dir.exists(folder))
-		ret = dir.mkdir(folder);
-	QString temp_folder = QString("/") + folder + QString("/");
-	QString relative_path = temp_folder + filename + ".h5";
-	QString h5_path = QString("%1%2%3.h5").arg(project_path).arg(temp_folder).arg(filename);
-	emit updateProcess(20, QStringLiteral("正在导入数据，请耐心等待……"));
-	FormatConversion conversion;
-	ret = conversion.import_sentinel(manifest_file.toStdString().c_str(),
-		subswath.toStdString().c_str(),
-		polarization.toStdString().c_str(),
-		h5_path.toStdString().c_str(),
-		PODFile.toStdString().c_str()
+	Sentinel1ImportHelper::importSentinel(
+		this,
+		PODFile,
+		manifest_file,
+		subswath,
+		polarization,
+		project_path,
+		folder,
+		filename,
+		project_name,
+		model
 	);
-	if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-	{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-		QFile::remove(h5_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	emit updateProcess(90, QStringLiteral("即将完成……"));
-
-	QStandardItem* project = model->findItems(project_name)[0];
-	if (!project) {
-		QFile::remove(h5_path);
-		QDir tmp_dir(project_path + QString("/") + folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	QModelIndex pro_index = model->indexFromItem(project);
-	QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-	QStandardItem* origin = NULL;
-	for (int i = 0; i < project->rowCount(); i++)
-	{
-		if (folder == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
-		{
-			origin = project->child(i); break;
-		}
-	}
-	if (!origin)
-	{
-		origin = new QStandardItem(folder);
-		origin->setIcon(QIcon(FOLDER_ICON));
-		project->appendRow(origin);
-		QStandardItem* Rank = new QStandardItem("complex-0.0");
-		project->setChild(project->rowCount() - 1, 1, Rank);
-	}
-	QStandardItem* img = NULL;
-	for (int i = 0; i < origin->rowCount(); i++)
-	{
-		if (origin->child(i)->text() == filename)
-		{
-			img = origin->child(i);
-			break;
-		}
-	}
-	if (!img)
-	{
-		img = new QStandardItem(filename);
-		img->setToolTip("complex");
-		QStandardItem* img_path = new QStandardItem(h5_path);
-		img->setIcon(QIcon(IMAGEDATA_ICON));
-		origin->appendRow(img);
-		origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-		DOC = new XMLFile;
-		ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-		{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-			QFile::remove(h5_path);
-			QDir tmp_dir(project_path + QString("/") + folder);
-			tmp_dir.removeRecursively();
-			return;
-		}
-		ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-		{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-			QFile::remove(h5_path);
-			QDir tmp_dir(project_path + QString("/") + folder);
-			tmp_dir.removeRecursively();
-			return;
-		}
-		ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-		{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-			QFile::remove(h5_path);
-			QDir tmp_dir(project_path + QString("/") + folder);
-			tmp_dir.removeRecursively();
-			return;
-		}
-	}
-	else
-	{
-		origin->setChild(img->row(), 1, new QStandardItem(h5_path));
-	}
-	emit sendModel(model);
-	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
-	emit endProcess();
 }
 
 void MyThread::import_sentinel_patch(
@@ -204,132 +102,17 @@ void MyThread::import_sentinel_patch(
 	QStandardItemModel* model
 )
 {
-	if (original_filelist.size() != import_namelist .size()||
-		import_namelist.size() < 1 ||
-		subswath.isEmpty() ||
-		polarization.isEmpty() ||
-		dst_node.isEmpty() ||
-		dst_project.isEmpty() ||
-		savepath.isEmpty() ||
-		model == NULL
-		)
-	{
-		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
-		emit endProcess();
-		return;
-	}
-	int ret;
-	QDir dir(savepath);
-	if (!dir.exists(dst_node))
-		ret = dir.mkdir(dst_node);
-	QString temp_folder = QString("/") + dst_node + QString("/");
-	int n_images = original_filelist.size();
-	int process = 2;
-	FormatConversion conversion;
-	DOC = new XMLFile;
-	emit updateProcess(process, QStringLiteral("正在导入..."));
-	for (int i = 0; i < n_images; i++)
-	{
-		if (!stop_flag) break;
-		QString filename = import_namelist[i];
-		QString manifest_file = original_filelist[i];
-		QString relative_path = temp_folder + filename + ".h5";
-		QString h5_path = QString("%1%2%3.h5").arg(savepath).arg(temp_folder).arg(filename);
-		ret = conversion.import_sentinel(manifest_file.toStdString().c_str(),
-			subswath.toStdString().c_str(),
-			polarization.toStdString().c_str(),
-			h5_path.toStdString().c_str()
-		);
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-		{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-			QFile::remove(h5_path);
-			QDir tmp_dir(savepath + QString("/") + dst_node);
-			tmp_dir.removeRecursively();
-			return;
-		}
-		QStandardItem* project = model->findItems(dst_project)[0];
-		if (!project) {
-			QFile::remove(h5_path);
-			QDir tmp_dir(savepath + QString("/") + dst_node);
-			tmp_dir.removeRecursively();
-			return;
-		}
-		QModelIndex pro_index = model->indexFromItem(project);
-		QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-		QStandardItem* origin = NULL;
-		for (int i = 0; i < project->rowCount(); i++)
-		{
-			if (dst_node == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
-			{
-				origin = project->child(i); break;
-			}
-		}
-		if (!origin)
-		{
-			origin = new QStandardItem(dst_node);
-			origin->setIcon(QIcon(FOLDER_ICON));
-			project->appendRow(origin);
-			QStandardItem* Rank = new QStandardItem("complex-0.0");
-			project->setChild(project->rowCount() - 1, 1, Rank);
-		}
-		QStandardItem* img = NULL;
-		for (int j = 0; j < origin->rowCount(); j++)
-		{
-			if (origin->child(j)->text() == filename)
-			{
-				img = origin->child(j);
-				break;
-			}
-		}
-		if (!img)
-		{
-			img = new QStandardItem(filename);
-			img->setToolTip("complex");
-			QStandardItem* img_path = new QStandardItem(h5_path);
-			img->setIcon(QIcon(IMAGEDATA_ICON));
-			origin->appendRow(img);
-			origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-			ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-			{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-				QFile::remove(h5_path);
-				QDir tmp_dir(savepath + QString("/") + dst_node);
-				tmp_dir.removeRecursively();
-				return;
-			}
-			ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
-			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-			{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-				QFile::remove(h5_path);
-				QDir tmp_dir(savepath + QString("/") + dst_node);
-				tmp_dir.removeRecursively();
-				return;
-			}
-			ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-			if (ret < 0 || QThread::currentThread()->isInterruptionRequested())
-			{
-			InSARLogManager::LogError("MyThread", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-				QFile::remove(h5_path);
-				QDir tmp_dir(savepath + QString("/") + dst_node);
-				tmp_dir.removeRecursively();
-				return;
-			}
-		}
-		else
-		{
-			origin->setChild(img->row(), 1, new QStandardItem(h5_path));
-		}
-		process = double(i + 1) / double(n_images) * 100.0;
-		emit updateProcess(process, QStringLiteral("正在导入..."));
-	}
-	
-	emit sendModel(model);
-	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
-	emit endProcess();
+	Sentinel1ImportHelper::importSentinelPatch(
+		this,
+		original_filelist,
+		import_namelist,
+		subswath,
+		polarization,
+		savepath,
+		dst_node,
+		dst_project,
+		model
+	);
 }
 
 	void MyThread::import_TSX(
@@ -841,72 +624,25 @@ void MyThread::import_ALOS2_patch(
 
 void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 {
-	if (h5_path == NULL ||
-		bmp_path == NULL ||
-		type == NULL)
+	if (h5_path.isEmpty() || bmp_path.isEmpty() || type.isEmpty())
 	{
 		return;
 	}
 
-	if (type == "complex")
+	if (type == "complex" || type == "phase")
 	{
-		Utils util;
-		ComplexMat SLC64;
-		FormatConversion FC;
-		emit updateProcess(10, QStringLiteral("准备数据……"));
-		FC.read_slc_from_h5(h5_path.toStdString().c_str(), SLC64);
-		emit updateProcess(40, QStringLiteral("准备图像文件……"));
-		util.saveSLC(bmp_path.toStdString().c_str(), /*65*/65, SLC64);
-		if (QThread::currentThread()->isInterruptionRequested())
+		emit updateProcess(20, QStringLiteral("正在生成图像预览……"));
+		bool success = NodeUtils::generateJpgPreviewFromH5(h5_path, bmp_path, type);
+		if (!success || QThread::currentThread()->isInterruptionRequested())
 		{
-			//InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));emit endProcess();
-			QFile::remove(bmp_path.toStdString().c_str());
+			QFile::remove(bmp_path);
+			emit endProcess();
 			return;
 		}
-		if (SLC64.GetCols() * SLC64.GetRows() > 25e6)
-		{
-			emit updateProcess(80, QStringLiteral("降采样处理……"));
-			int down_sample_times = (int)sqrt(floor(double(SLC64.GetCols() * SLC64.GetRows()) / 25e6));
-			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(SLC64.GetRows() / down_sample_times),
-				(int)(SLC64.GetCols() / down_sample_times));
-		}
-
 		emit updateProcess(90, QStringLiteral("写入图像文件……"));
-		//if (!ret)
-		//{
-		//	fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
-		//}
-		cv::waitKey(1000);
+		cv::waitKey(500);
 		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 		emit endProcess();
-	}
-	else if (type == "phase")
-	{
-		FormatConversion FC;
-		Utils util;
-		Mat phase;
-		Mat image;
-		emit updateProcess(20, QStringLiteral("读取数据……"));
-		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "phase", phase);
-		emit updateProcess(50, QStringLiteral("格式转换……"));
-		ret = util.savephase(bmp_path.toStdString().c_str(), "jet", phase);
-
-		if (phase.rows * phase.cols > 25e6)
-		{
-			emit updateProcess(80, QStringLiteral("降采样处理……"));
-			int down_sample_times = (int)sqrt(floor(double(phase.rows * phase.cols) / 25e6));
-			util.resampling(bmp_path.toStdString().c_str(), bmp_path.toStdString().c_str(), (int)(phase.rows / down_sample_times),
-				(int)(phase.cols / down_sample_times));
-		}
-
-		emit updateProcess(90, QStringLiteral("写入图像文件……"));
-		if (!ret)
-		{
-			fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", bmp_path.toStdString().c_str());
-		}
-		InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
-		emit endProcess();
-
 	}
 	else if (type == "coherence")
 	{
@@ -6073,5 +5809,11 @@ void MyThread::StopProcess()
 {
 	QMutexLocker locker(&lock);
 	this->stop_flag = false;
+}
+
+bool MyThread::isStopRequested()
+{
+	QMutexLocker locker(&lock);
+	return !stop_flag;
 }
 

@@ -277,6 +277,9 @@ void MainWindow::Addproject(QString name, QString save_path)
     updateProjectContext(projectFile);
     this->project->XMLFile_load(projectFile.toStdString().c_str());
 
+    // 添加到最近打开列表
+    addToRecentProjects(projectFile);
+
     // 新建工程后，重置修改标记（因为刚保存过）
     m_projectModified = false;
     updateWindowTitle();
@@ -703,6 +706,10 @@ void MainWindow::on_actionSave_triggered()
         m_interfaceManager->saveLastInterfaceToProject(this->project);
     }
     this->project->XMLFile_save(m_projectPath.toStdString().c_str());
+
+    // 添加或更新到最近打开列表
+    addToRecentProjects(m_projectPath);
+
     m_projectModified = false;
     updateWindowTitle();
 }

@@ -25,4 +25,13 @@ IApplicationInterface* getProjectContext(QWidget* widget);
  */
 void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldNodeName);
 
+/**
+ * @brief 从 H5 科学数据文件中提取幅值并生成 JPG 预览图（自动进行超大图降采样）
+ * @param h5Path H5文件路径
+ * @param jpgPath 输出JPG路径
+ * @param type 数据类型，支持 "complex"（复数SLC）和 "phase"（相位）
+ * @return 是否生成成功
+ */
+bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type = "complex");
+
 } // namespace NodeUtils

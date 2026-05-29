@@ -51,6 +51,7 @@ public slots:
     void QUnwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void StopProcess();
+    bool isStopRequested();
 
 signals:
     void updateProcess(int progress, QString message);

@@ -208,6 +208,9 @@
     <ClCompile Include="MyThread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Sentinel1ImportHelper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="NewProject.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -804,6 +807,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\ImportDataTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Sentinel1ImportHelper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="include\QtNodes\internal\Definitions.hpp">

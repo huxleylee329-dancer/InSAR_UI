@@ -1,8 +1,9 @@
-﻿#ifndef SENTINEL1IMPORTNODE_H
+#ifndef SENTINEL1IMPORTNODE_H
 #define SENTINEL1IMPORTNODE_H
 
 #include "ImportNodeBase.h"
 #include "MyThread.h"
+#include "NodeDataTypes.h"
 #include <QWidget>
 #include <QLineEdit>
 #include <QComboBox>
@@ -34,6 +35,13 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+    unsigned int nPorts(PortType portType) const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
@@ -43,6 +51,7 @@ protected:
     void executeImport() override;
     QString getImportedFilePath() const override;
     QString getOutputNodeName() const override;
+    QStringList previewImagePaths() const override;
 
     // Thread accessors
     MyThread* workerThread() const override { return m_workerThread; }
@@ -51,6 +60,8 @@ protected:
     // Helper methods
     QString generateOutputFileName() const;
     QString getOutputFileName() const;  // 获取输出文件名（优先使用用户输入，否则自动生成）
+    QString resolveInputName(const QString& name) const;
+    void updateAvailableParameters(const QString& manifestPath);
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -88,6 +99,8 @@ private:
     // Worker thread
     MyThread* m_workerThread;
     QThread* m_thread;
+
+    std::shared_ptr<ImageInfoData> m_imageInfoData;
 };
 
 } // namespace QtNodes

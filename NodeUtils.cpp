@@ -7,6 +7,8 @@
 #include "include/WorkspaceUI.h"
 #include "include/InterfaceManager.h"
 #include "include/FormatConversion.h"
+#include <Utils.h>
+#include <cmath>
 
 namespace NodeUtils {
 
@@ -115,6 +117,57 @@ void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldN
         }
         xml.XMLFile_save(xmlPath.toStdString().c_str());
     }
+}
+
+bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type)
+{
+    if (h5Path.isEmpty() || jpgPath.isEmpty())
+        return false;
+
+    if (type == "complex")
+    {
+        Utils util;
+        ComplexMat SLC64;
+        FormatConversion FC;
+        
+        if (FC.read_slc_from_h5(h5Path.toLocal8Bit().constData(), SLC64) != 0)
+            return false;
+            
+        util.saveSLC(jpgPath.toLocal8Bit().constData(), 65, SLC64);
+        
+        if (SLC64.GetCols() * SLC64.GetRows() > 25e6)
+        {
+            int down_sample_times = (int)std::sqrt(std::floor(double(SLC64.GetCols() * SLC64.GetRows()) / 25e6));
+            if (down_sample_times > 1) {
+                util.resampling(jpgPath.toLocal8Bit().constData(), jpgPath.toLocal8Bit().constData(),
+                    (int)(SLC64.GetRows() / down_sample_times),
+                    (int)(SLC64.GetCols() / down_sample_times));
+            }
+        }
+        return true;
+    }
+    else if (type == "phase")
+    {
+        FormatConversion FC;
+        Utils util;
+        cv::Mat phase;
+        
+        if (FC.read_array_from_h5(h5Path.toLocal8Bit().constData(), "phase", phase) != 0)
+            return false;
+            
+        int ret = util.savephase(jpgPath.toLocal8Bit().constData(), "jet", phase);
+        if (ret && phase.rows * phase.cols > 25e6)
+        {
+            int down_sample_times = (int)std::sqrt(std::floor(double(phase.rows * phase.cols) / 25e6));
+            if (down_sample_times > 1) {
+                util.resampling(jpgPath.toLocal8Bit().constData(), jpgPath.toLocal8Bit().constData(),
+                    (int)(phase.rows / down_sample_times),
+                    (int)(phase.cols / down_sample_times));
+            }
+        }
+        return ret != 0;
+    }
+    return false;
 }
 
 } // namespace NodeUtils
