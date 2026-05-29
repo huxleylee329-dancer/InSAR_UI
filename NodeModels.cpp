@@ -14,6 +14,7 @@
 #include "S1SwathMergeNode.h"
 #include "GenericSARImportNode.h"
 #include "GenericSARBatchImportNode.h"
+#include "GeneralSARLoadingNode.h"
 #include "SpeckleDenoiseNode.h"
 #include "ClutterSuppressionNode.h"
 #include "ImageDisplayNode.h"
@@ -76,6 +77,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // Generic SAR
     registry->registerModel<GenericSARImportNode>("SAR/Import/Generic SAR/Single Import");
     registry->registerModel<GenericSARBatchImportNode>("SAR/Import/Generic SAR/Batch Import");
+    registry->registerModel<GeneralSARLoadingNode>("SAR/Import/General SAR Loading");
 
     // ============================================================================
     // Preprocessing Nodes

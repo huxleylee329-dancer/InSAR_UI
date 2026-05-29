@@ -114,9 +114,10 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Batch Import", "ALOS-2 Import"}           // ALOS-2 批量导入
     };
 
-    order.leafItems["SAR/Import/Generic SAR"] = QList<PaletteOrder::LeafItem>{
+    order.leafItems["SAR/Import"] = QList<PaletteOrder::LeafItem>{
         {"Single Import", "Generic SAR Import"},
-        {"Batch Import", "Generic SAR Batch Import"}
+        {"Batch Import", "Generic SAR Batch Import"},
+        {"Imported Re-loading", "General SAR Loading"}
     };
 
     // Display 类叶子项顺序
@@ -145,7 +146,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // SAR Evaluation 类叶子项顺序
     order.leafItems["SAR/Evaluation"] = QList<PaletteOrder::LeafItem>{
-        {"Evaluation-ENL", "Evaluation-ENL"}
+        {"Evaluation-ENL", "Evaluation-ENL"},
+        {"Evaluation-SCR", "Evaluation-SCR"}
     };
 
     // Test 类叶子项顺序

@@ -181,6 +181,9 @@
     <ClCompile Include="GenericSARBatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GeneralSARLoadingNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="SpeckleDenoiseNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -466,6 +469,12 @@
     <ClCompile Include="GenericSARImportTask.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="NodeTreeWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NodeUtils.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="include\Cut.h">
@@ -577,6 +586,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\GenericSARBatchImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GeneralSARLoadingNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SpeckleDenoiseNode.h">
