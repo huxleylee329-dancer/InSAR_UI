@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QTimer>
 
 namespace QtNodes {
 
@@ -192,9 +193,7 @@ void S1SwathMergeNode::createWidget()
     if (m_inputs[0])
     {
         QString nodeName = m_inputs[0]->nodeName();
-        QString filePath = m_inputs[0]->filePath();
-        QFileInfo fileInfo(filePath);
-        m_dataNodeCombo[0]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+        m_dataNodeCombo[0]->addItem(nodeName);
     }
     else
     {
@@ -233,9 +232,7 @@ void S1SwathMergeNode::createWidget()
     if (m_inputs[1])
     {
         QString nodeName = m_inputs[1]->nodeName();
-        QString filePath = m_inputs[1]->filePath();
-        QFileInfo fileInfo(filePath);
-        m_dataNodeCombo[1]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+        m_dataNodeCombo[1]->addItem(nodeName);
     }
     else
     {
@@ -274,9 +271,7 @@ void S1SwathMergeNode::createWidget()
     if (m_inputs[2])
     {
         QString nodeName = m_inputs[2]->nodeName();
-        QString filePath = m_inputs[2]->filePath();
-        QFileInfo fileInfo(filePath);
-        m_dataNodeCombo[2]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+        m_dataNodeCombo[2]->addItem(nodeName);
     }
     else
     {
@@ -357,9 +352,7 @@ void S1SwathMergeNode::updateLabels()
             if (m_inputs[i])
             {
                 QString nodeName = m_inputs[i]->nodeName();
-                QString filePath = m_inputs[i]->filePath();
-                QFileInfo fileInfo(filePath);
-                m_dataNodeCombo[i]->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+                m_dataNodeCombo[i]->addItem(nodeName);
             }
             else
             {
@@ -439,6 +432,7 @@ void S1SwathMergeNode::onProcessingFinished()
     m_outputNodeNameEdit->setEnabled(true);
 
     // Notify base class that we're finished
+    setState(ExecutionState::Running);
     setProgress(100);
     finishExecution();
     Q_EMIT dataUpdated(0);
@@ -468,6 +462,10 @@ void S1SwathMergeNode::onError(const QString& error)
 void S1SwathMergeNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+    auto iface = NodeUtils::getProjectContext(_widget);
+    if (iface) {
+        iface->refreshProjectTree();
+    }
 }
 
 QStandardItemModel* S1SwathMergeNode::projectModel() const
@@ -479,7 +477,14 @@ QStandardItemModel* S1SwathMergeNode::projectModel() const
 QString S1SwathMergeNode::projectPath() const
 {
     auto iface = NodeUtils::getProjectContext(_widget);
-    return iface ? iface->projectPath() : QString();
+    if (iface) {
+        QString fullPath = iface->projectPath();
+        if (fullPath.endsWith(".insar", Qt::CaseInsensitive)) {
+            return QFileInfo(fullPath).absolutePath();
+        }
+        return fullPath;
+    }
+    return QString();
 }
 
 QString S1SwathMergeNode::projectName() const
@@ -558,6 +563,14 @@ void S1SwathMergeNode::executeProcessing()
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
 	InSARLogManager::LogInfo("S1SwathMergeNode", "executeProcessing completed.");
+
+    // 在下一个事件循环中强行将状态重置为 Running，防止基类 setInData 在 Automatic 模式下将其强行设为 Idle
+    QTimer::singleShot(0, this, [this]() {
+        if (m_thread && m_thread->isRunning())
+        {
+            setState(ExecutionState::Running);
+        }
+    });
 }
 
 bool S1SwathMergeNode::validateAndRestoreOutput()

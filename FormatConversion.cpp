@@ -5372,6 +5372,11 @@ int XMLFile::XMLFile_add_backgeocoding(const char* dataNode, const char* dataNam
 		fprintf(stderr, "XMLFile_add_backgeocoding(): input check failed!\n");
 		return -1;
 	}
+	if (!doc.RootElement())
+	{
+		fprintf(stderr, "XMLFile_add_backgeocoding(): doc.RootElement() is NULL!\n");
+		return -1;
+	}
 	TiXmlElement* DataNode = NULL;
 	int ret = find_node_with_attribute(doc.RootElement(), "DataNode", "name", dataNode, DataNode);
 	string tmp;
@@ -5380,7 +5385,7 @@ int XMLFile::XMLFile_add_backgeocoding(const char* dataNode, const char* dataNam
 		DataNode = new TiXmlElement("DataNode");
 		DataNode->SetAttribute("name", dataNode);
 		int index = 1;
-		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
+		TiXmlElement* root = doc.RootElement()->FirstChildElement() ? doc.RootElement()->FirstChildElement()->NextSiblingElement() : NULL;
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
 			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
@@ -5449,7 +5454,7 @@ int XMLFile::XMLFile_add_backgeocoding(const char* dataNode, const char* dataNam
 		TiXmlElement* p = NULL;
 		tmp = int2str(index);
 		DataNode->SetAttribute("data_count", tmp.c_str());
-		TiXmlElement* LastNode = DataNode->LastChild()->ToElement();
+		TiXmlElement* LastNode = DataNode->LastChild() ? DataNode->LastChild()->ToElement() : NULL;
 
 		TiXmlElement* Data = new TiXmlElement("Data");
 
@@ -5476,7 +5481,14 @@ int XMLFile::XMLFile_add_backgeocoding(const char* dataNode, const char* dataNam
 		tmp = int2str(0);
 		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
 		Data->LinkEndChild(Col_Offset);
-		DataNode->InsertBeforeChild(LastNode, *Data);
+		if (LastNode)
+		{
+			DataNode->InsertBeforeChild(LastNode, *Data);
+		}
+		else
+		{
+			DataNode->LinkEndChild(Data);
+		}
 	}
 	return 0;
 }

@@ -6,6 +6,7 @@
 #include<qdebug.h>
 #include<QScrollBar>
 #include<QGraphicsRectItem>
+#include<QGraphicsPixmapItem>
 
 ImageView::ImageView(QWidget* parent) :
 	QGraphicsView(parent),
@@ -144,6 +145,7 @@ void ImageView::fitImage()
 	if (scene() && !scene()->sceneRect().isEmpty()) {
 		fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
 		m_needsFit = false;
+		updateTransformationMode();
 	}
 }
 
@@ -167,6 +169,7 @@ void ImageView::wheelEvent(QWheelEvent* event)
 			this->centerOn(sceneMousePos);
 			sceneMousePos = this->mapToScene(event->pos());
 		}
+		updateTransformationMode();
 		this->viewport()->update();
 		event->accept();
 	}
@@ -272,3 +275,20 @@ void ImageView::mouseReleaseEvent(QMouseEvent* event)
 		isMousePressed = false;
 	}
 }
+
+void ImageView::updateTransformationMode()
+{
+	if (!scene()) return;
+
+	double currentScale = transform().m11();
+	Qt::TransformationMode mode = (currentScale < 0.95) ? Qt::SmoothTransformation : Qt::FastTransformation;
+
+	QList<QGraphicsItem*> allItems = scene()->items();
+	for (QGraphicsItem* item : allItems) {
+		QGraphicsPixmapItem* pixmapItem = qgraphicsitem_cast<QGraphicsPixmapItem*>(item);
+		if (pixmapItem) {
+			pixmapItem->setTransformationMode(mode);
+		}
+	}
+}
+

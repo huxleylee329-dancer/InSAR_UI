@@ -3,6 +3,7 @@
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
+#include<QThread>
 //#include<Utils.h>
 #include<FormatConversion.h>
 #include<qmessagebox.h>
@@ -326,17 +327,17 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
     }
 
 
-    S1_TOPS_BackGeocoding_thread = new MyThread;
+    S1_TOPS_BackGeocoding_thread = new S1TopsBackGeocodingWorker;
     S1_TOPS_BackGeocoding_thread->moveToThread(new QThread(this));
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &S1_TOPS_BackGeocoding::operate, S1_TOPS_BackGeocoding_thread, &MyThread::S1_TOPS_BackGeocoding, Qt::QueuedConnection);
-    connect(S1_TOPS_BackGeocoding_thread, &MyThread::updateProcess, this, &S1_TOPS_BackGeocoding::updateProcess);
-    connect(S1_TOPS_BackGeocoding_thread->thread(), &QThread::finished, S1_TOPS_BackGeocoding_thread, &MyThread::deleteLater);
-    connect(S1_TOPS_BackGeocoding_thread, &MyThread::endProcess, this, &S1_TOPS_BackGeocoding::endProcess);
+    connect(this, &S1_TOPS_BackGeocoding::operate, S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding, Qt::QueuedConnection);
+    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1_TOPS_BackGeocoding::updateProcess);
+    connect(S1_TOPS_BackGeocoding_thread->thread(), &QThread::finished, S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::deleteLater);
+    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::endProcess, this, &S1_TOPS_BackGeocoding::endProcess);
     connect(this, &QWidget::destroyed, this, &S1_TOPS_BackGeocoding::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_TOPS_BackGeocoding::StopThread);// , Qt::QueuedConnection);
-    connect(S1_TOPS_BackGeocoding_thread, &MyThread::sendModel, this, &S1_TOPS_BackGeocoding::TransitModel);
+    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::sendModel, this, &S1_TOPS_BackGeocoding::TransitModel);
     S1_TOPS_BackGeocoding_thread->thread()->start();
     ChangeVision(false);
     emit operate(this->image_number, 

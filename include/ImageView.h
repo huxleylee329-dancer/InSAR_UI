@@ -63,4 +63,6 @@ private:
 	QRectF m_storedTargetRoi;
 	QRectF m_storedClutterRoi;
 	bool m_needsFit;
+
+	void updateTransformationMode();
 };

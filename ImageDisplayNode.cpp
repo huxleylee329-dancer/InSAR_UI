@@ -291,12 +291,21 @@ ImageDisplayNode::LoadedImage ImageDisplayNode::loadImageTask(QString filePath, 
         cv::cvtColor(mat, displayMat, cv::COLOR_BGR2RGB);
     } else {
         // Grayscale or single channel (e.g. 16-bit)
-        double min, max;
-        cv::minMaxLoc(mat, &min, &max);
-        if (max > min) {
-            mat.convertTo(displayMat, CV_8U, 255.0 / (max - min), -min * 255.0 / (max - min));
-        } else {
+        bool isH5 = filePath.toLower().endsWith(".h5");
+        bool is8Bit = (mat.depth() == CV_8U);
+
+        // 如果是已有的 8 位灰度图且不是 H5（如导出的 JPG 预览图），则不进行 Min-Max 拉伸，防止噪点被二次放大
+        if (is8Bit && !isH5) {
             mat.convertTo(displayMat, CV_8U);
+        } else {
+            // 对 H5 原始浮点数据或 16位/浮点等高动态图像进行 Min-Max 线性拉伸
+            double min, max;
+            cv::minMaxLoc(mat, &min, &max);
+            if (max > min) {
+                mat.convertTo(displayMat, CV_8U, 255.0 / (max - min), -min * 255.0 / (max - min));
+            } else {
+                mat.convertTo(displayMat, CV_8U);
+            }
         }
     }
 

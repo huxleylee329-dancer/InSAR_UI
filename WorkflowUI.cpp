@@ -130,7 +130,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.leafItems["Preprocessing/Sentinel-1"] = QList<PaletteOrder::LeafItem>{
         {"Deburst", "S1 Deburst"},     // Sentinel-1 预处理：去突刺
         {"Frame Merge", "S1 Frame Merge"},  // 帧拼接
-        {"Swath Merge", "S1 Swath Merge"}   // 条带拼接
+        {"Swath Merge", "S1 Swath Merge"},   // 条带拼接
+        {"TOPS Back-Geocoding", "S1 TOPS Back-Geocoding"} // 后向地理编码/配准
     };
 
     // SAR Enhancement 类叶子项顺序

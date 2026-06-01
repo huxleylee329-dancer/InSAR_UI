@@ -12,6 +12,7 @@
 #include <QRegularExpression>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QTimer>
 
 namespace QtNodes {
 
@@ -153,9 +154,7 @@ void S1DeburstNode::createWidget()
     if (m_inputData)
     {
         QString nodeName = m_inputData->nodeName();
-        QString filePath = m_inputData->filePath();
-        QFileInfo fileInfo(filePath);
-        m_dataNodeCombo->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+        m_dataNodeCombo->addItem(nodeName);
     }
     else
     {
@@ -220,9 +219,7 @@ void S1DeburstNode::updateLabels()
         if (m_inputData)
         {
             QString nodeName = m_inputData->nodeName();
-            QString filePath = m_inputData->filePath();
-            QFileInfo fileInfo(filePath);
-            m_dataNodeCombo->addItem(QString("%1 (%2)").arg(nodeName).arg(fileInfo.fileName()));
+            m_dataNodeCombo->addItem(nodeName);
         }
         else
         {
@@ -298,6 +295,7 @@ void S1DeburstNode::onProcessingFinished()
     m_outputNodeNameEdit->setEnabled(true);
 
     // Notify base class that we're finished
+    setState(ExecutionState::Running);
     setProgress(100);
     finishExecution();
     Q_EMIT dataUpdated(0);
@@ -327,6 +325,10 @@ void S1DeburstNode::onError(const QString& error)
 void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
+    auto iface = NodeUtils::getProjectContext(_widget);
+    if (iface) {
+        iface->refreshProjectTree();
+    }
 }
 
 QStandardItemModel* S1DeburstNode::projectModel() const
@@ -338,7 +340,14 @@ QStandardItemModel* S1DeburstNode::projectModel() const
 QString S1DeburstNode::projectPath() const
 {
     auto iface = NodeUtils::getProjectContext(_widget);
-    return iface ? iface->projectPath() : QString();
+    if (iface) {
+        QString fullPath = iface->projectPath();
+        if (fullPath.endsWith(".insar", Qt::CaseInsensitive)) {
+            return QFileInfo(fullPath).absolutePath();
+        }
+        return fullPath;
+    }
+    return QString();
 }
 
 QString S1DeburstNode::projectName() const
@@ -413,6 +422,14 @@ void S1DeburstNode::executeProcessing()
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
 	InSARLogManager::LogInfo("S1DeburstNode", "executeProcessing completed.");
+
+    // 在下一个事件循环中强行将状态重置为 Running，防止基类 setInData 在 Automatic 模式下将其强行设为 Idle
+    QTimer::singleShot(0, this, [this]() {
+        if (m_thread && m_thread->isRunning())
+        {
+            setState(ExecutionState::Running);
+        }
+    });
 }
 
 bool S1DeburstNode::validateAndRestoreOutput()

@@ -2,7 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_S1TopsBackGeocoding.h"
-#include"MyThread.h"
+#include "S1TopsBackGeocodingWorker.h"
 
 class S1_TOPS_BackGeocoding : public QWidget
 {
@@ -20,7 +20,7 @@ public slots:
 private:
     Ui::S1TopsBackGeocoding* ui;
     QStandardItemModel* copy;
-    MyThread* S1_TOPS_BackGeocoding_thread;
+    S1TopsBackGeocodingWorker* S1_TOPS_BackGeocoding_thread;
     QString save_path;
     QString projectFile;
     int image_number;

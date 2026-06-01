@@ -202,6 +202,12 @@
     <ClCompile Include="S1DeburstNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="S1TopsBackGeocodingWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="S1TopsBackGeocodingNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="S1FrameMergeNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -682,6 +688,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1DeburstNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1TopsBackGeocodingWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1TopsBackGeocodingNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1FrameMergeNode.h">
