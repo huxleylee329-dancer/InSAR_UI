@@ -344,6 +344,9 @@
     <ClCompile Include="S1DeburstWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="S1FrameMergeWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="S1TopsBackGeocodingWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -807,6 +810,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1DeburstWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1FrameMergeWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1TopsBackGeocodingWorker.h">

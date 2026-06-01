@@ -232,6 +232,8 @@ void S1_Deburst::on_buttonBox_accepted()
     connect(this, &QWidget::destroyed, this, &S1_Deburst::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_Deburst::StopThread);
     connect(S1_Deburst_worker, &S1DeburstWorker::sendModel, this, &S1_Deburst::TransitModel);
+    // 接收 sendResults，完成 Workspace UI 路径的 XML 写入
+    connect(S1_Deburst_worker, &S1DeburstWorker::sendResults, this, &S1_Deburst::handleResults);
     m_thread->start();
     ChangeVision(false);
     emit operate(this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->fileedit->text(), this->copy);
@@ -240,4 +242,31 @@ void S1_Deburst::on_buttonBox_accepted()
 void S1_Deburst::on_buttonBox_rejected()
 {
     this->close();
+}
+
+void S1_Deburst::handleResults(
+    const QString& dstNode,
+    const QStringList& deburstH5Paths,
+    const QStringList& originNames)
+{
+    // Workspace UI 路径的 XML 写入：直接对本地 .insar 文件进行 load/save
+    if (save_path.isEmpty() || projectFile.isEmpty())
+        return;
+
+    XMLFile* xmlfile = new XMLFile();
+    if (xmlfile->XMLFile_load(projectFile.toStdString().c_str()) < 0)
+    {
+        delete xmlfile;
+        return;
+    }
+    for (int i = 0; i < deburstH5Paths.size() && i < originNames.size(); i++)
+    {
+        QString relativePath = QString("/%1/%2").arg(dstNode).arg(originNames.at(i) + "_deburst.h5");
+        xmlfile->XMLFile_add_S1_Deburst(
+            dstNode.toStdString().c_str(),
+            (originNames.at(i) + "_deburst").toStdString().c_str(),
+            relativePath.toStdString().c_str());
+    }
+    xmlfile->XMLFile_save(projectFile.toStdString().c_str());
+    delete xmlfile;
 }

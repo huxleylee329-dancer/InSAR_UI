@@ -2,7 +2,7 @@
 #define S1FRAMEMERGENODE_H
 
 #include "ImportDataTypes.h"
-#include "MyThread.h"
+#include "NodeDataTypes.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
@@ -16,10 +16,14 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFileInfo>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrent>
 #include <memory>
 
 // Forward declarations
 class IApplicationInterface;
+class S1FrameMergeWorker;
+class XMLFile;
 
 namespace QtNodes {
 
@@ -41,6 +45,9 @@ public:
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
     ::QWidget* embeddedWidget() override;
 
     QJsonObject save() const override;
@@ -49,6 +56,7 @@ public:
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
+    QStringList previewImagePaths() const override;
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -63,13 +71,15 @@ private:
     // Input data storage
     std::shared_ptr<ImportedFileData> m_inputs[2];
     std::shared_ptr<ImportedFileData> m_outputData;
+    std::shared_ptr<ImageInfoData> m_imageInfoData;
     QString m_outputNodeName;
     int m_index1 = 1;
     int m_index2 = 1;
 
     // Worker thread
-    MyThread* m_workerThread;
+    S1FrameMergeWorker* m_worker;
     QThread* m_thread;
+    QFutureWatcher<void> m_remedyWatcher;
 
     // Helper methods
     void createWidget();
@@ -86,6 +96,7 @@ private:
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
+    XMLFile* projectXml() const;
 
     // Executable interface implementation
     void execute() override;

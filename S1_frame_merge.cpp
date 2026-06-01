@@ -2,12 +2,16 @@
 #include"ui_S1FrameMerge.h"
 #include"icon_source.h"
 #include"FormatConversion.h"
+#include"S1FrameMergeWorker.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include<QThread>
+#include<QDialogButtonBox>
+#include<QRegularExpression>
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #else
@@ -21,6 +25,7 @@ S1_frame_merge::S1_frame_merge(QWidget* parent) :
     ui->progressBar->setMinimum(0);
     ui->progressBar->setMaximum(100);
     ui->progressBar->setHidden(1);
+    S1_frame_merge_worker = nullptr;
 }
 S1_frame_merge::~S1_frame_merge()
 {
@@ -33,7 +38,7 @@ S1_frame_merge::~S1_frame_merge()
         }
     }
     emit sendCopy(copy);
-    S1_frame_merge_thread = NULL;
+    S1_frame_merge_worker = nullptr;
 }
 
 void S1_frame_merge::updateProcess(int value, QString information)
@@ -47,11 +52,11 @@ void S1_frame_merge::updateProcess(int value, QString information)
 }
 void S1_frame_merge::endProcess()
 {
-    if (S1_frame_merge_thread)
+    if (S1_frame_merge_worker)
     {
-        S1_frame_merge_thread->thread()->quit();
-        S1_frame_merge_thread->thread()->wait();
-        S1_frame_merge_thread = NULL;
+        S1_frame_merge_worker->thread()->quit();
+        S1_frame_merge_worker->thread()->wait();
+        S1_frame_merge_worker = nullptr;
     }
     ui->progressBar->hide();
     this->close();
@@ -59,11 +64,11 @@ void S1_frame_merge::endProcess()
 void S1_frame_merge::errorProcess(QString error_msg)
 {
     QMessageBox::warning(NULL, "Error", error_msg);
-    if (S1_frame_merge_thread)
+    if (S1_frame_merge_worker)
     {
-        S1_frame_merge_thread->thread()->quit();
-        S1_frame_merge_thread->thread()->wait();
-        S1_frame_merge_thread = NULL;
+        S1_frame_merge_worker->thread()->quit();
+        S1_frame_merge_worker->thread()->wait();
+        S1_frame_merge_worker = nullptr;
     }
     ui->progressBar->hide();
     ChangeVision(true);
@@ -71,24 +76,24 @@ void S1_frame_merge::errorProcess(QString error_msg)
 }
 void S1_frame_merge::endThread()
 {
-    if (S1_frame_merge_thread)
+    if (S1_frame_merge_worker)
     {
-        S1_frame_merge_thread->thread()->quit();
-        S1_frame_merge_thread->thread()->wait();
-        S1_frame_merge_thread = NULL;
+        S1_frame_merge_worker->thread()->quit();
+        S1_frame_merge_worker->thread()->wait();
+        S1_frame_merge_worker = nullptr;
     }
 }
 void S1_frame_merge::StopThread()
 {
-    if (S1_frame_merge_thread != NULL)
+    if (S1_frame_merge_worker != nullptr)
     {
-        if (S1_frame_merge_thread->thread()->isRunning())
+        if (S1_frame_merge_worker->thread()->isRunning())
         {
-            S1_frame_merge_thread->thread()->requestInterruption();
-            S1_frame_merge_thread->thread()->quit();
-            S1_frame_merge_thread->thread()->wait();
+            S1_frame_merge_worker->thread()->requestInterruption();
+            S1_frame_merge_worker->thread()->quit();
+            S1_frame_merge_worker->thread()->wait();
         }
-        S1_frame_merge_thread = NULL;
+        S1_frame_merge_worker = nullptr;
     }
 
 }
@@ -365,19 +370,23 @@ void S1_frame_merge::on_buttonBox_accepted()
     }
 
 
-    S1_frame_merge_thread = new MyThread;
-    S1_frame_merge_thread->moveToThread(new QThread(this));
+    S1_frame_merge_worker = new S1FrameMergeWorker();
+    QThread* thread = new QThread(this);
+    S1_frame_merge_worker->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &S1_frame_merge::operate, S1_frame_merge_thread, &MyThread::S1_frame_merge, Qt::QueuedConnection);
-    connect(S1_frame_merge_thread, &MyThread::updateProcess, this, &S1_frame_merge::updateProcess);
-    connect(S1_frame_merge_thread->thread(), &QThread::finished, S1_frame_merge_thread, &MyThread::deleteLater);
-    connect(S1_frame_merge_thread, &MyThread::endProcess, this, &S1_frame_merge::endProcess);
-    connect(S1_frame_merge_thread, &MyThread::errorProcess, this, &S1_frame_merge::errorProcess);
+    connect(this, &S1_frame_merge::operate, S1_frame_merge_worker, &S1FrameMergeWorker::S1_frame_merge, Qt::QueuedConnection);
+    connect(S1_frame_merge_worker, &S1FrameMergeWorker::updateProcess, this, &S1_frame_merge::updateProcess);
+    connect(thread, &QThread::finished, S1_frame_merge_worker, &S1FrameMergeWorker::deleteLater);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+    connect(S1_frame_merge_worker, &S1FrameMergeWorker::endProcess, this, &S1_frame_merge::endProcess);
+    connect(S1_frame_merge_worker, &S1FrameMergeWorker::errorProcess, this, &S1_frame_merge::errorProcess);
     connect(this, &QWidget::destroyed, this, &S1_frame_merge::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_frame_merge::StopThread);// , Qt::QueuedConnection);
-    connect(S1_frame_merge_thread, &MyThread::sendModel, this, &S1_frame_merge::TransitModel);
-    S1_frame_merge_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_frame_merge::StopThread);
+    connect(S1_frame_merge_worker, &S1FrameMergeWorker::sendModel, this, &S1_frame_merge::TransitModel);
+    // 接收 sendResult，完成 Workspace UI 路径的 XML 写入
+    connect(S1_frame_merge_worker, &S1FrameMergeWorker::sendResult, this, &S1_frame_merge::handleResult);
+    thread->start();
     ChangeVision(false);
     operate(
         ui->comboBox_data1->currentIndex() + 1,
@@ -393,4 +402,29 @@ void S1_frame_merge::on_buttonBox_accepted()
 void S1_frame_merge::on_buttonBox_rejected()
 {
     this->close();
+}
+
+void S1_frame_merge::handleResult(
+    const QString& dstNode,
+    const QString& filename,
+    const QString& savePath,
+    const QString& projectName)
+{
+    // Workspace UI 路径的 XML 写入：直接对本地 .insar 文件操作
+    if (savePath.isEmpty() || projectName.isEmpty())
+        return;
+
+    QString xml_path = savePath + "/" + projectName;
+    QString relative_path = "/" + dstNode + "/" + filename + ".h5";
+
+    XMLFile xml;
+    if (xml.XMLFile_load(xml_path.toStdString().c_str()) == 0)
+    {
+        xml.XMLFile_add_origin(
+            dstNode.toStdString().c_str(),
+            filename.toStdString().c_str(),
+            relative_path.toStdString().c_str(),
+            "sentinel");
+        xml.XMLFile_save(xml_path.toStdString().c_str());
+    }
 }

@@ -398,6 +398,152 @@ void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
     }
 }
 
+void S1DeburstNode::onResultsReceived(
+    const QString& dstNode,
+    const QStringList& deburstH5Paths,
+    const QStringList& originNames)
+{
+    // 用全局 XML 句柄 + 原生 TinyXML 写入，绕过外部 DLL 接口（SOP 避坑经验 #9）
+    // 注意：此槽通过 Qt 信号队列触发，运行在 UI 线程事件循环中，可安全访问 projectXml()
+    XMLFile* xml = projectXml();
+    if (!xml)
+    {
+        InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: projectXml() is null, skipping XML write.");
+        return;
+    }
+
+    TiXmlElement* root = nullptr;
+    xml->get_root(root);
+    if (!root)
+    {
+        InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: XML root is null, skipping XML write.");
+        return;
+    }
+
+    bool xmlModified = false;
+    for (int i = 0; i < deburstH5Paths.size(); i++)
+    {
+        QFileInfo fileinfo(deburstH5Paths.at(i));
+        QString relativePath = QString("/%1/%2").arg(dstNode).arg(fileinfo.fileName());
+
+        // 查找或新建 DataNode
+        TiXmlElement* dataNodeElem = nullptr;
+        for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement())
+        {
+            const char* nameAttr = p->Attribute("name");
+            if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode)
+            {
+                dataNodeElem = p;
+                break;
+            }
+        }
+
+        if (!dataNodeElem)
+        {
+            // 新建 DataNode，插入到 complex-0.0/complex-1.0 之后的第一个非同级节点前
+            dataNodeElem = new TiXmlElement("DataNode");
+            dataNodeElem->SetAttribute("name", dstNode.toStdString().c_str());
+            dataNodeElem->SetAttribute("data_count", "1");
+            dataNodeElem->SetAttribute("data_processing", "deburst");
+            dataNodeElem->SetAttribute("rank", "complex-1.0");
+
+            int index = 1;
+            TiXmlElement* root_child = root->FirstChildElement();
+            if (root_child) root_child = root_child->NextSiblingElement(); // skip project_info
+
+            TiXmlElement* insertBeforeNode = nullptr;
+            for (TiXmlElement* p = root_child; p != nullptr; p = p->NextSiblingElement(), index++)
+            {
+                const char* rankAttr = p->Attribute("rank");
+                if (rankAttr && (strcmp(rankAttr, "complex-0.0") == 0 || strcmp(rankAttr, "complex-1.0") == 0))
+                    continue;
+                else { insertBeforeNode = p; break; }
+            }
+            dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
+
+            TiXmlElement* dataElem = new TiXmlElement("Data");
+            TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
+            dataNameNode->LinkEndChild(new TiXmlText(fileinfo.baseName().toStdString().c_str()));
+            dataElem->LinkEndChild(dataNameNode);
+            TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
+            dataRankNode->LinkEndChild(new TiXmlText("complex-1.0"));
+            dataElem->LinkEndChild(dataRankNode);
+            TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
+            dataIndexNode->LinkEndChild(new TiXmlText("1"));
+            dataElem->LinkEndChild(dataIndexNode);
+            TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
+            dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
+            dataElem->LinkEndChild(dataPathNode);
+            dataNodeElem->LinkEndChild(dataElem);
+
+            TiXmlElement* paramsElem = new TiXmlElement("Data_Processing_Parameters");
+            TiXmlElement* nillElem  = new TiXmlElement("nill");
+            nillElem->LinkEndChild(new TiXmlText("0"));
+            paramsElem->LinkEndChild(nillElem);
+            dataNodeElem->LinkEndChild(paramsElem);
+
+            if (insertBeforeNode)
+            {
+                root->InsertBeforeChild(insertBeforeNode, *dataNodeElem);
+                delete dataNodeElem;
+                for (TiXmlElement* p = insertBeforeNode; p != nullptr; p = p->NextSiblingElement())
+                {
+                    index++;
+                    p->SetAttribute("index", QString::number(index).toStdString().c_str());
+                }
+            }
+            else
+            {
+                root->LinkEndChild(dataNodeElem);
+            }
+            xmlModified = true;
+        }
+        else
+        {
+            // DataNode 已存在，追加 Data 子节点
+            const char* countAttr = dataNodeElem->Attribute("data_count");
+            int count = countAttr ? QString(countAttr).toInt() : 0;
+            count++;
+            dataNodeElem->SetAttribute("data_count", QString::number(count).toStdString().c_str());
+
+            TiXmlElement* lastChildNode = dataNodeElem->LastChild() ? dataNodeElem->LastChild()->ToElement() : nullptr;
+
+            TiXmlElement* dataElem = new TiXmlElement("Data");
+            TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
+            dataNameNode->LinkEndChild(new TiXmlText(fileinfo.baseName().toStdString().c_str()));
+            dataElem->LinkEndChild(dataNameNode);
+            TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
+            dataRankNode->LinkEndChild(new TiXmlText("complex-1.0"));
+            dataElem->LinkEndChild(dataRankNode);
+            TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
+            dataIndexNode->LinkEndChild(new TiXmlText(QString::number(count).toStdString().c_str()));
+            dataElem->LinkEndChild(dataIndexNode);
+            TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
+            dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
+            dataElem->LinkEndChild(dataPathNode);
+
+            if (lastChildNode)
+            {
+                dataNodeElem->InsertBeforeChild(lastChildNode, *dataElem);
+                delete dataElem;
+            }
+            else
+            {
+                dataNodeElem->LinkEndChild(dataElem);
+            }
+            xmlModified = true;
+        }
+    }
+
+    if (xmlModified)
+    {
+        // 通过全局句柄落盘，与主工程统一的内存镜像一致，不会被主工程覆盖（SOP 避坑经验 #9 §1）
+        QString xmlPath = projectPath() + "/" + projectName();
+        xml->XMLFile_save(xmlPath.toStdString().c_str());
+        InSARLogManager::LogInfo("S1DeburstNode", "onResultsReceived: XML saved via native TinyXML.");
+    }
+}
+
 QStandardItemModel* S1DeburstNode::projectModel() const
 {
     auto iface = NodeUtils::getProjectContext(_widget);
@@ -518,6 +664,8 @@ void S1DeburstNode::executeProcessing()
     connect(m_worker, &S1DeburstWorker::endProcess, this, &S1DeburstNode::onProcessingFinished);
     connect(m_worker, &S1DeburstWorker::errorProcess, this, &S1DeburstNode::onError);
     connect(m_worker, &S1DeburstWorker::sendModel, this, &S1DeburstNode::onModelUpdated);
+    // sendResults: Worker 完成后回传路径列表，由 Node 端用原生 TinyXML 写 XML（SOP 避坑经验 #9）
+    connect(m_worker, &S1DeburstWorker::sendResults, this, &S1DeburstNode::onResultsReceived);
     connect(m_worker, &S1DeburstWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 

@@ -37,4 +37,5 @@ private slots:
     void on_comboBox_2_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
+    void handleResults(const QString& dstNode, const QStringList& deburstH5Paths, const QStringList& originNames);
 };

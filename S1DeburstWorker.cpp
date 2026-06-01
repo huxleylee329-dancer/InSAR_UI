@@ -10,6 +10,7 @@
 #include <QIcon>
 #include <vector>
 #include <string>
+#include <QStringList>
 
 S1DeburstWorker::S1DeburstWorker(QObject* parent)
     : QObject(parent)
@@ -143,20 +144,26 @@ void S1DeburstWorker::S1_Deburst(
         project->setChild(insert, 1, deburst_Rank);
     }
     
-    /*写入XML*/
-    XMLFile* xmlfile = new XMLFile();
-    emit updateProcess(95, QStringLiteral("写入工程文件……"));
-    xmlfile->XMLFile_load((savePath + "/" + dstProject).toStdString().c_str());
+    // 更新内存树模型（QStandardItemModel），并收集输出路径列表
+    // XML 落盘由 Node 端用原生 TinyXML 完成，绕过外部 DLL 接口（SOP 避坑经验 #9）
+    emit updateProcess(92, QStringLiteral("更新项目树……"));
+
+    QStringList deburstH5Paths;
+    QStringList originNames;
+
     for (size_t i = 0; i < SAR_images_deburst.size(); i++)
     {
         QFileInfo fileinfo = QFileInfo(QString(SAR_images_deburst.at(i).c_str()));
         QString deburst_name = fileinfo.baseName();
+        deburstH5Paths.append(fileinfo.absoluteFilePath());
+        originNames.append(origin.at(i));
+
         QStandardItem* item_img = nullptr;
         for (int j = 0; j < deburst->rowCount(); j++)
         {
             if (deburst->child(j, 0)->text() == deburst_name)
             {
-				item_img = deburst->child(j, 0);
+                item_img = deburst->child(j, 0);
                 break;
             }
         }
@@ -174,15 +181,11 @@ void S1DeburstWorker::S1_Deburst(
         {
             deburst->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
         }
-
-        QString relativePath = QString("/%1/%2").arg(dstNode).arg(origin.at(i) + "_deburst.h5");
-        ret = xmlfile->XMLFile_add_S1_Deburst(dstNode.toStdString().c_str(), (origin.at(i) + "_deburst").toStdString().c_str(),
-            relativePath.toStdString().c_str());
     }
-    xmlfile->XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
-    delete xmlfile;
 
     emit sendModel(model);
+    // 回传 H5 路径列表和 origin 名称列表，由 Node 端用原生 TinyXML 写入 XML
+    emit sendResults(dstNode, deburstH5Paths, originNames);
     InSARLogManager::LogInfo("S1DeburstWorker", "S1_Deburst finished successfully.");
     emit endProcess();
 }

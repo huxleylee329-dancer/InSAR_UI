@@ -1,16 +1,23 @@
 #include "InSARLogManager.h"
 #include "S1FrameMergeNode.h"
+#include "S1FrameMergeWorker.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 #include "WorkspaceUI.h"
 #include "InterfaceManager.h"
 #include "NodeUtils.h"
+#include "icon_source.h"
+#include "tinyxml.h"
 #include <QApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QFileInfoList>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QTimer>
+#include <QtConcurrent/QtConcurrentRun>
+#include <QFutureWatcher>
 
 namespace QtNodes {
 
@@ -22,23 +29,16 @@ S1FrameMergeNode::S1FrameMergeNode()
     , m_outputNodeNameEdit(nullptr)
     , m_inputs{nullptr, nullptr}
     , m_outputData(nullptr)
-    , m_workerThread(nullptr)
+    , m_imageInfoData(nullptr)
+    , m_worker(nullptr)
     , m_thread(nullptr)
 {
 }
 
 S1FrameMergeNode::~S1FrameMergeNode()
 {
-    // Clean up worker thread
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_remedyWatcher.cancel();
+    m_remedyWatcher.waitForFinished();
 
     if (m_thread)
     {
@@ -50,29 +50,64 @@ S1FrameMergeNode::~S1FrameMergeNode()
         m_thread->deleteLater();
         m_thread = nullptr;
     }
+    else if (m_worker)
+    {
+        m_worker->deleteLater();
+    }
+    m_worker = nullptr;
 }
 
 unsigned int S1FrameMergeNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 2;  // Two input ports
+        return 2;
     else
-        return 1;  // One output port
+        return 2;
 }
 
 NodeDataType S1FrameMergeNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
-    if (portType == PortType::Out)
+    if (portType == PortType::In)
+        return NodeDataType{"imported_file", "S1 Frame Data"};
+
+    if (portIndex == 0)
         return NodeDataType{"imported_file", "S1 Merged Frame"};
-    // Input ports accept ImportedFileData
-    return NodeDataType{"imported_file", "S1 Frame Data"};
+    else
+        return NodeDataType{"image_info", "Image Info"};
 }
 
 std::shared_ptr<NodeData> S1FrameMergeNode::outData(PortIndex port)
 {
-    Q_UNUSED(port);
-    return m_outputData;
+    if (port == 0)
+        return m_outputData;
+    else
+        return m_imageInfoData;
+}
+
+bool S1FrameMergeNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    return portType == PortType::Out;
+}
+
+QString S1FrameMergeNode::portCaption(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out)
+    {
+        if (portIndex == 0)
+            return tr("成果 *");
+        else if (portIndex == 1)
+            return tr("预览 ?");
+    }
+    Q_UNUSED(portIndex);
+    return QString();
+}
+
+bool S1FrameMergeNode::portIsOptional(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out && portIndex == 1)
+        return true;
+    return false;
 }
 
 void S1FrameMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
@@ -85,7 +120,8 @@ void S1FrameMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         // Generate default output name if both inputs connected and name not set
         if (m_inputs[0] && m_inputs[1] && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty())
         {
-            m_outputNodeNameEdit->setText(generateDefaultOutputName());
+            m_outputNodeName = generateDefaultOutputName();
+            m_outputNodeNameEdit->setText(m_outputNodeName);
         }
     }
 
@@ -109,10 +145,8 @@ QJsonObject S1FrameMergeNode::save() const
     QString nodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     modelJson["outputNodeName"] = nodeName;
 
-    if (m_indexSpins[0])
-        modelJson["index1"] = m_index1;
-    if (m_indexSpins[1])
-        modelJson["index2"] = m_index2;
+    modelJson["index1"] = m_index1;
+    modelJson["index2"] = m_index2;
 
     return modelJson;
 }
@@ -148,11 +182,11 @@ void S1FrameMergeNode::load(QJsonObject const &json)
     }
 }
 
-    void S1FrameMergeNode::createWidget()
+void S1FrameMergeNode::createWidget()
 {
     _widget = new QWidget();
     _widget->setObjectName("NodeEmbeddedWidget");
-    _widget->setMinimumWidth(280);
+    _widget->setFixedWidth(300);
     auto* layout = new QVBoxLayout(_widget);
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(6);
@@ -167,6 +201,7 @@ void S1FrameMergeNode::load(QJsonObject const &json)
     // 选择工程
     auto* projectLayout = new QHBoxLayout();
     QLabel* projectLabel = new QLabel("选择工程");
+    projectLabel->setFixedWidth(85);
     projectLayout->addWidget(projectLabel);
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
@@ -177,6 +212,7 @@ void S1FrameMergeNode::load(QJsonObject const &json)
     // 数据节点 1 [1:1]
     auto* dataNode1Layout = new QHBoxLayout();
     QLabel* dataNode1Label = new QLabel("数据节点 1");
+    dataNode1Label->setFixedWidth(85);
     dataNode1Layout->addWidget(dataNode1Label);
     m_dataNodeCombo[0] = new QComboBox();
     m_dataNodeCombo[0]->setEditable(false);
@@ -194,7 +230,9 @@ void S1FrameMergeNode::load(QJsonObject const &json)
 
     // Image Index 1
     auto* index1Layout = new QHBoxLayout();
-    index1Layout->addWidget(new QLabel("Image Index 1:"));
+    QLabel* index1Label = new QLabel("Image Index 1:");
+    index1Label->setFixedWidth(85);
+    index1Layout->addWidget(index1Label);
     m_indexSpins[0] = new QSpinBox();
     m_indexSpins[0]->setMinimum(1);
     m_indexSpins[0]->setMaximum(100);
@@ -216,6 +254,7 @@ void S1FrameMergeNode::load(QJsonObject const &json)
     // 数据节点 2 [1:1]
     auto* dataNode2Layout = new QHBoxLayout();
     QLabel* dataNode2Label = new QLabel("数据节点 2");
+    dataNode2Label->setFixedWidth(85);
     dataNode2Layout->addWidget(dataNode2Label);
     m_dataNodeCombo[1] = new QComboBox();
     m_dataNodeCombo[1]->setEditable(false);
@@ -233,7 +272,9 @@ void S1FrameMergeNode::load(QJsonObject const &json)
 
     // Image Index 2
     auto* index2Layout = new QHBoxLayout();
-    index2Layout->addWidget(new QLabel("Image Index 2:"));
+    QLabel* index2Label = new QLabel("Image Index 2:");
+    index2Label->setFixedWidth(85);
+    index2Layout->addWidget(index2Label);
     m_indexSpins[1] = new QSpinBox();
     m_indexSpins[1]->setMinimum(1);
     m_indexSpins[1]->setMaximum(100);
@@ -255,9 +296,10 @@ void S1FrameMergeNode::load(QJsonObject const &json)
     // 目标节点名
     auto* nodeNameLayout = new QHBoxLayout();
     QLabel* nodeNameLabel = new QLabel("目标节点名");
+    nodeNameLabel->setFixedWidth(85);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("不要输入中文字符");
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -276,6 +318,9 @@ void S1FrameMergeNode::load(QJsonObject const &json)
 
     // Bottom spacer
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+
+    // 自愈与刷新
+    updateLabels();
 }
 
 void S1FrameMergeNode::updateLabels()
@@ -355,33 +400,28 @@ void S1FrameMergeNode::onProgressUpdate(int progress, const QString& message)
 
 void S1FrameMergeNode::onProcessingFinished()
 {
-    // Create output data
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text();
+    QString dstNode = m_outputNodeNameEdit && !m_outputNodeNameEdit->text().isEmpty()
+        ? m_outputNodeNameEdit->text()
+        : (m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName);
+    m_outputNodeName = dstNode;
     QString outputPath = projectPath() + "/" + dstNode + "/";
     m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+    setOutputData(0, m_outputData);
+    validateAndRestoreOutput();
 
-    // Clean up thread
     if (m_thread)
     {
         m_thread->quit();
         m_thread->wait();
-        m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_worker = nullptr;
 
-    // Update UI
-    m_outputNodeNameEdit->setEnabled(true);
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setEnabled(true);
 
-    // Notify base class that we're finished
-    setState(ExecutionState::Running);
+    setState(ExecutionState::Completed);
     setProgress(100);
     finishExecution();
     Q_EMIT dataUpdated(0);
@@ -394,18 +434,15 @@ void S1FrameMergeNode::onError(const QString& error)
     {
         m_thread->quit();
         m_thread->wait();
-        m_thread->deleteLater();
         m_thread = nullptr;
     }
 
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    m_worker = nullptr;
 
-    m_outputNodeNameEdit->setEnabled(true);
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setEnabled(true);
     setState(ExecutionState::Error);
+    InSARLogManager::LogError("S1FrameMergeNode", "Error during frame merge: " + error);
 }
 
 void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
@@ -442,6 +479,12 @@ QString S1FrameMergeNode::projectName() const
     return iface ? iface->projectName() : QString();
 }
 
+XMLFile* S1FrameMergeNode::projectXml() const
+{
+    auto iface = NodeUtils::getProjectContext(_widget);
+    return iface ? iface->projectXml() : nullptr;
+}
+
 void S1FrameMergeNode::execute()
 {
     executeProcessing();
@@ -449,9 +492,11 @@ void S1FrameMergeNode::execute()
 
 void S1FrameMergeNode::stopExecution()
 {
-    if (m_workerThread)
+    if (m_thread && m_thread->isRunning())
     {
-        m_workerThread->StopProcess();
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
     }
 }
 
@@ -472,17 +517,98 @@ void S1FrameMergeNode::setExecutionMode(ExecutionMode mode)
 
 void S1FrameMergeNode::executeProcessing()
 {
-	InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing started.");
+    InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing started.");
     if (!validateInputs())
         return;
+
+    // Prepare processing
+    QString dstNode = m_outputNodeNameEdit && !m_outputNodeNameEdit->text().isEmpty()
+        ? m_outputNodeNameEdit->text()
+        : (m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName);
+    m_outputNodeName = dstNode;
+    if (m_outputNodeNameEdit && m_outputNodeNameEdit->text() != dstNode)
+        m_outputNodeNameEdit->setText(dstNode);
+    QString savePath = projectPath();
+    QString dstProject = projectName();
+    QString outputPath = savePath + "/" + dstNode + "/";
+
+    QStringList pathsToCheck;
+    QStandardItemModel* model = projectModel();
+    if (model)
+    {
+        QString h5Path1;
+        QString h5Path2;
+        QList<QStandardItem*> foundProjects = model->findItems(dstProject);
+        if (!foundProjects.isEmpty())
+        {
+            QStandardItem* projectItem = foundProjects.first();
+            for (int i = 0; i < projectItem->rowCount(); ++i)
+            {
+                QStandardItem* nodeItem = projectItem->child(i, 0);
+                if (!nodeItem)
+                    continue;
+                if (nodeItem->text() == m_inputs[0]->nodeName() && nodeItem->rowCount() >= m_index1)
+                    h5Path1 = nodeItem->child(m_index1 - 1, 1)->text();
+                if (nodeItem->text() == m_inputs[1]->nodeName() && nodeItem->rowCount() >= m_index2)
+                    h5Path2 = nodeItem->child(m_index2 - 1, 1)->text();
+            }
+        }
+        if (!h5Path1.isEmpty() && !h5Path2.isEmpty())
+        {
+            QString outputBaseName = QFileInfo(h5Path1).baseName() + "_" + QFileInfo(h5Path2).baseName();
+            pathsToCheck.append(outputPath + outputBaseName + ".h5");
+            pathsToCheck.append(outputPath + outputBaseName + ".jpg");
+        }
+    }
+
+    // 覆盖/复用安全拦截检测
+    if (!pathsToCheck.isEmpty())
+    {
+        auto ctx = NodeUtils::getProjectContext(_widget);
+        NodeUtils::OverwriteResult overwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, dstNode, pathsToCheck);
+        if (overwriteResult == NodeUtils::OverwriteResult::Cancel)
+        {
+            setState(ExecutionState::Idle);
+            return;
+        }
+        else if (overwriteResult == NodeUtils::OverwriteResult::LoadExisting)
+        {
+            m_outputNodeName = dstNode;
+            if (validateAndRestoreOutput())
+            {
+                setState(ExecutionState::Completed);
+                setProgress(100);
+                finishExecution();
+                Q_EMIT dataUpdated(0);
+                Q_EMIT dataUpdated(1);
+                return;
+            }
+            else
+            {
+                setState(ExecutionState::Error);
+                return;
+            }
+        }
+        else if (overwriteResult == NodeUtils::OverwriteResult::Overwrite)
+        {
+            QDir outputDir(outputPath);
+            if (outputDir.exists())
+            {
+                QFileInfoList entries = outputDir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries);
+                for (const QFileInfo& entry : entries)
+                {
+                    if (entry.isDir())
+                        QDir(entry.absoluteFilePath()).removeRecursively();
+                    else
+                        QFile::remove(entry.absoluteFilePath());
+                }
+            }
+        }
+    }
 
     setProgress(0);
     setState(ExecutionState::Running);
 
-    // Prepare processing
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text();
     QString project = projectName();
     QString node1 = m_inputs[0]->nodeName();
     QString node2 = m_inputs[1]->nodeName();
@@ -491,25 +617,26 @@ void S1FrameMergeNode::executeProcessing()
 
     // Create thread
     m_thread = new QThread();
-    m_workerThread = new MyThread();
-    m_workerThread->moveToThread(m_thread);
+    m_worker = new S1FrameMergeWorker();
+    m_worker->moveToThread(m_thread);
 
     // Connect signals
-    connect(this, &S1FrameMergeNode::startFrameMerge, m_workerThread, &MyThread::S1_frame_merge);
+    connect(this, &S1FrameMergeNode::startFrameMerge, m_worker, &S1FrameMergeWorker::S1_frame_merge);
     connect(m_thread, &QThread::started, [this, index1, index2, project, node1, node2, dstNode]() {
         Q_EMIT startFrameMerge(index1, index2, project, node1, node2, dstNode, projectModel());
     });
-    connect(m_workerThread, &MyThread::updateProcess, this, &S1FrameMergeNode::onProgressUpdate);
-    connect(m_workerThread, &MyThread::endProcess, this, &S1FrameMergeNode::onProcessingFinished);
-    connect(m_workerThread, &MyThread::errorProcess, this, &S1FrameMergeNode::onError);
-    connect(m_workerThread, &MyThread::sendModel, this, &S1FrameMergeNode::onModelUpdated);
-    connect(m_workerThread, &MyThread::destroyed, m_thread, &QThread::quit);
+    connect(m_worker, &S1FrameMergeWorker::updateProcess, this, &S1FrameMergeNode::onProgressUpdate);
+    connect(m_worker, &S1FrameMergeWorker::endProcess, this, &S1FrameMergeNode::onProcessingFinished);
+    connect(m_worker, &S1FrameMergeWorker::errorProcess, this, &S1FrameMergeNode::onError);
+    connect(m_worker, &S1FrameMergeWorker::sendModel, this, &S1FrameMergeNode::onModelUpdated);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread
     m_thread->start();
-    m_outputNodeNameEdit->setEnabled(false);
-	InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing completed.");
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setEnabled(false);
+    InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing completed.");
 
     // 在下一个事件循环中强行将状态重置为 Running，防止基类 setInData 在 Automatic 模式下将其强行设为 Idle
     QTimer::singleShot(0, this, [this]() {
@@ -529,13 +656,298 @@ bool S1FrameMergeNode::validateAndRestoreOutput()
     QString outputPath = projectPath() + "/" + dstNode + "/";
 
     QDir dir(outputPath);
-    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
-        m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
-        setOutputData(0, m_outputData);
-        return true;
+    if (dir.exists()) {
+        QStringList filters;
+        filters << "*.h5";
+        QStringList h5Files = dir.entryList(filters, QDir::Files);
+
+        if (!h5Files.isEmpty()) {
+            // 恢复 Port 0 数据
+            m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+            setOutputData(0, m_outputData);
+            Q_EMIT dataUpdated(0);
+
+            QStringList existingJpgPaths;
+            QStringList missingH5s;
+            QStringList missingJpgs;
+            QStringList allJpgPaths;
+
+            for (const QString& h5File : h5Files) {
+                QString h5Path = dir.absoluteFilePath(h5File);
+                QFileInfo fi(h5Path);
+                QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+                allJpgPaths.append(jpgPath);
+
+                if (QFile::exists(jpgPath)) {
+                    existingJpgPaths.append(jpgPath);
+                } else {
+                    missingH5s.append(h5Path);
+                    missingJpgs.append(jpgPath);
+                }
+            }
+
+            if (!existingJpgPaths.isEmpty()) {
+                m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgPaths);
+                setOutputData(1, m_imageInfoData);
+                Q_EMIT dataUpdated(1);
+            } else {
+                m_imageInfoData.reset();
+                setOutputData(1, nullptr);
+                Q_EMIT dataUpdated(1);
+            }
+
+            if (!missingH5s.isEmpty() && !m_remedyWatcher.isRunning()) {
+                m_remedyWatcher.disconnect();
+
+                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
+                    QStringList restoredJpgPaths;
+                    for (const QString& path : allJpgPaths) {
+                        if (QFile::exists(path))
+                            restoredJpgPaths.append(path);
+                    }
+                    if (!restoredJpgPaths.isEmpty()) {
+                        m_imageInfoData = std::make_shared<ImageInfoData>(restoredJpgPaths);
+                        setOutputData(1, m_imageInfoData);
+                    } else {
+                        m_imageInfoData.reset();
+                        setOutputData(1, nullptr);
+                    }
+                    Q_EMIT dataUpdated(1);
+                });
+
+                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+                    for (int i = 0; i < missingH5s.size(); ++i) {
+                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+                    }
+                });
+                m_remedyWatcher.setFuture(future);
+            }
+
+            // 恢复左侧树标准项目模型 (Standard Item Model Tree View)
+            QStandardItemModel* projModelPtr = projectModel();
+            if (projModelPtr) {
+                QList<QStandardItem*> foundProjects = projModelPtr->findItems(projectName());
+                if (!foundProjects.isEmpty()) {
+                    QStandardItem* projectItem = foundProjects.first();
+
+                    // Find or create the frame_merge root item
+                    QStandardItem* frameMergeItem = nullptr;
+                    for (int i = 0; i < projectItem->rowCount(); i++) {
+                        if (projectItem->child(i, 0)->text() == dstNode) {
+                            frameMergeItem = projectItem->child(i, 0);
+                            break;
+                        }
+                    }
+
+                    if (!frameMergeItem) {
+                        frameMergeItem = new QStandardItem(dstNode);
+                        frameMergeItem->setToolTip(projectName());
+                        int insert = 0;
+                        for (; insert < projectItem->rowCount(); insert++) {
+                            if (projectItem->child(insert, 1)->text().compare("complex-0.0") == 0)
+                                continue;
+                            else
+                                break;
+                        }
+                        frameMergeItem->setIcon(QIcon(FOLDER_ICON));
+                        projectItem->insertRow(insert, frameMergeItem);
+                        QStandardItem* frameMergeRank = new QStandardItem("complex-0.0");
+                        projectItem->setChild(insert, 1, frameMergeRank);
+                    }
+
+                    // Complete child image nodes
+                    for (const QString& h5File : h5Files) {
+                        QString h5Path = dir.absoluteFilePath(h5File);
+                        QFileInfo fileinfo(h5Path);
+                        QString filename = fileinfo.baseName();
+
+                        QStandardItem* item_img = nullptr;
+                        for (int j = 0; j < frameMergeItem->rowCount(); j++) {
+                            if (frameMergeItem->child(j, 0)->text() == filename) {
+                                item_img = frameMergeItem->child(j, 0);
+                                break;
+                            }
+                        }
+
+                        if (!item_img) {
+                            QStandardItem* img_name = new QStandardItem(filename);
+                            img_name->setToolTip("complex");
+                            QStandardItem* img_path = new QStandardItem(h5Path);
+                            img_name->setIcon(QIcon(IMAGEDATA_ICON));
+                            frameMergeItem->appendRow(img_name);
+                            frameMergeItem->setChild(frameMergeItem->rowCount() - 1, 1, img_path);
+                        } else {
+                            frameMergeItem->setChild(item_img->row(), 1, new QStandardItem(h5Path));
+                        }
+                    }
+                }
+            }
+
+            // XML 工程文件自愈修复 (EXE端原生 TinyXML 实现)
+            XMLFile* xml = projectXml();
+            if (xml) {
+                bool xmlModified = false;
+                TiXmlElement* root = nullptr;
+                xml->get_root(root);
+                if (root) {
+                    TiXmlElement* dataNodeElem = nullptr;
+                    for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
+                        const char* nameAttr = p->Attribute("name");
+                        if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode) {
+                            dataNodeElem = p;
+                            break;
+                        }
+                    }
+
+                    if (!dataNodeElem) {
+                        dataNodeElem = new TiXmlElement("DataNode");
+                        dataNodeElem->SetAttribute("name", dstNode.toStdString().c_str());
+                        dataNodeElem->SetAttribute("data_count", "0");
+                        dataNodeElem->SetAttribute("data_processing", "sentinel");
+                        dataNodeElem->SetAttribute("rank", "complex-0.0");
+
+                        int index = 1;
+                        TiXmlElement* root_child = root->FirstChildElement();
+                        if (root_child) {
+                            root_child = root_child->NextSiblingElement(); // skip project_info
+                        }
+
+                        TiXmlElement* insertBeforeNode = nullptr;
+                        for (TiXmlElement* p = root_child; p != nullptr; p = p->NextSiblingElement(), index++) {
+                            const char* rankAttr = p->Attribute("rank");
+                            if (rankAttr && strcmp(rankAttr, "complex-0.0") == 0) {
+                                continue;
+                            } else {
+                                insertBeforeNode = p;
+                                break;
+                            }
+                        }
+                        dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
+
+                        if (insertBeforeNode) {
+                            root->InsertBeforeChild(insertBeforeNode, *dataNodeElem);
+                            delete dataNodeElem;
+                            dataNodeElem = nullptr;
+                            for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
+                                const char* nameAttr = p->Attribute("name");
+                                if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode) {
+                                    dataNodeElem = p;
+                                    break;
+                                }
+                            }
+                        } else {
+                            root->LinkEndChild(dataNodeElem);
+                        }
+                        xmlModified = true;
+                    }
+
+                    TiXmlElement* paramsElem = dataNodeElem->FirstChildElement("Data_Processing_Parameters");
+                    if (!paramsElem) {
+                        paramsElem = new TiXmlElement("Data_Processing_Parameters");
+                        dataNodeElem->LinkEndChild(paramsElem);
+                        xmlModified = true;
+                    }
+                    if (!paramsElem->FirstChildElement("Sensor")) {
+                        TiXmlElement* sensorElem = new TiXmlElement("Sensor");
+                        sensorElem->LinkEndChild(new TiXmlText("sentinel"));
+                        paramsElem->LinkEndChild(sensorElem);
+                        xmlModified = true;
+                    }
+
+                    int dataCount = 0;
+                    for (TiXmlElement* p = dataNodeElem->FirstChildElement("Data"); p != nullptr; p = p->NextSiblingElement("Data")) {
+                        dataCount++;
+                    }
+
+                    for (const QString& h5File : h5Files) {
+                        QString h5Path = dir.absoluteFilePath(h5File);
+                        QFileInfo fileinfo(h5Path);
+                        QString relativePath = QString("/%1/%2").arg(dstNode).arg(fileinfo.fileName());
+
+                        bool dataExists = false;
+                        for (TiXmlElement* p = dataNodeElem->FirstChildElement("Data"); p != nullptr; p = p->NextSiblingElement("Data")) {
+                            TiXmlElement* nameElem = p->FirstChildElement("Data_Name");
+                            if (nameElem && nameElem->GetText() && QString(nameElem->GetText()) == fileinfo.baseName()) {
+                                dataExists = true;
+                                break;
+                            }
+                        }
+                        if (dataExists)
+                            continue;
+
+                        dataCount++;
+                        TiXmlElement* dataElem = new TiXmlElement("Data");
+
+                        TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
+                        dataNameNode->LinkEndChild(new TiXmlText(fileinfo.baseName().toStdString().c_str()));
+                        dataElem->LinkEndChild(dataNameNode);
+
+                        TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
+                        dataRankNode->LinkEndChild(new TiXmlText("complex-0.0"));
+                        dataElem->LinkEndChild(dataRankNode);
+
+                        TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
+                        dataIndexNode->LinkEndChild(new TiXmlText(QString::number(dataCount).toStdString().c_str()));
+                        dataElem->LinkEndChild(dataIndexNode);
+
+                        TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
+                        dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
+                        dataElem->LinkEndChild(dataPathNode);
+
+                        TiXmlElement* dataParamsElem = new TiXmlElement("Data_Processing_Parameters");
+                        TiXmlElement* nillElem = new TiXmlElement("nill");
+                        nillElem->LinkEndChild(new TiXmlText("0"));
+                        dataParamsElem->LinkEndChild(nillElem);
+                        dataElem->LinkEndChild(dataParamsElem);
+
+                        dataNodeElem->LinkEndChild(dataElem);
+                        xmlModified = true;
+                    }
+
+                    dataNodeElem->SetAttribute("data_count", QString::number(dataCount).toStdString().c_str());
+                }
+                if (xmlModified) {
+                    QString xmlPath = projectPath() + "/" + projectName();
+                    xml->XMLFile_save(xmlPath.toStdString().c_str());
+                }
+            }
+
+            // 刷新左侧树视图
+            auto iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                iface->refreshProjectTree();
+            }
+
+            return true;
+        }
     }
 
     return false;
+}
+
+QStringList S1FrameMergeNode::previewImagePaths() const
+{
+    QStringList existingPaths;
+    QString dstNode = m_outputNodeName.trimmed();
+    if (dstNode.isEmpty())
+        return existingPaths;
+
+    QString outputPath = projectPath() + "/" + dstNode + "/";
+    QDir dir(outputPath);
+    if (dir.exists()) {
+        QStringList filters;
+        filters << "*.h5";
+        QStringList h5Files = dir.entryList(filters, QDir::Files);
+        for (const QString& h5File : h5Files) {
+            QString h5Path = dir.absoluteFilePath(h5File);
+            QFileInfo fi(h5Path);
+            QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+            if (QFile::exists(jpgPath)) {
+                existingPaths.append(jpgPath);
+            }
+        }
+    }
+    return existingPaths;
 }
 
 } // namespace QtNodes
