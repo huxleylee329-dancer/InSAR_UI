@@ -2,7 +2,8 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_S1Deburst.h"
-#include"MyThread.h"
+#include "S1DeburstWorker.h"
+#include <QThread>
 
 class S1_Deburst : public QWidget
 {
@@ -20,7 +21,8 @@ public slots:
 private:
     Ui::S1Deburst* ui;
     QStandardItemModel* copy;
-    MyThread* S1_Deburst_thread;
+    S1DeburstWorker* S1_Deburst_worker;
+    QThread* m_thread;
     QString save_path;
     QString projectFile;
     int image_number;

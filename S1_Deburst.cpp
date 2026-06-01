@@ -23,6 +23,8 @@ S1_Deburst::S1_Deburst(QWidget* parent) :
     ui->progressBar->setMinimum(0);
     ui->progressBar->setMaximum(100);
     ui->progressBar->setHidden(1);
+    S1_Deburst_worker = nullptr;
+    m_thread = nullptr;
 }
 S1_Deburst::~S1_Deburst()
 {
@@ -35,7 +37,8 @@ S1_Deburst::~S1_Deburst()
         }
     }
     emit sendCopy(copy);
-    S1_Deburst_thread = NULL;
+    S1_Deburst_worker = nullptr;
+    m_thread = nullptr;
 }
 
 void S1_Deburst::updateProcess(int value, QString information)
@@ -46,28 +49,28 @@ void S1_Deburst::updateProcess(int value, QString information)
 }
 void S1_Deburst::endProcess()
 {
-    S1_Deburst_thread->thread()->quit();
-    S1_Deburst_thread->thread()->wait();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
     ui->progressBar->hide();
     this->close();
 }
 void S1_Deburst::endThread()
 {
-    S1_Deburst_thread->thread()->quit();
-    S1_Deburst_thread->thread()->wait();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 void S1_Deburst::StopThread()
 {
-    if (S1_Deburst_thread != NULL)
+    if (m_thread && m_thread->isRunning())
     {
-        if (S1_Deburst_thread->thread()->isRunning())
-        {
-            S1_Deburst_thread->thread()->requestInterruption();
-            S1_Deburst_thread->thread()->quit();
-            S1_Deburst_thread->thread()->wait();
-        }
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
     }
-
 }
 void S1_Deburst::TransitModel(QStandardItemModel* model)
 {
@@ -217,18 +220,19 @@ void S1_Deburst::on_buttonBox_accepted()
     }
 
 
-    S1_Deburst_thread = new MyThread;
-    S1_Deburst_thread->moveToThread(new QThread(this));
+    S1_Deburst_worker = new S1DeburstWorker;
+    m_thread = new QThread(this);
+    S1_Deburst_worker->moveToThread(m_thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &S1_Deburst::operate, S1_Deburst_thread, &MyThread::S1_Deburst, Qt::QueuedConnection);
-    connect(S1_Deburst_thread, &MyThread::updateProcess, this, &S1_Deburst::updateProcess);
-    connect(S1_Deburst_thread->thread(), &QThread::finished, S1_Deburst_thread, &MyThread::deleteLater);
-    connect(S1_Deburst_thread, &MyThread::endProcess, this, &S1_Deburst::endProcess);
+    connect(this, &S1_Deburst::operate, S1_Deburst_worker, &S1DeburstWorker::S1_Deburst, Qt::QueuedConnection);
+    connect(S1_Deburst_worker, &S1DeburstWorker::updateProcess, this, &S1_Deburst::updateProcess);
+    connect(m_thread, &QThread::finished, S1_Deburst_worker, &S1DeburstWorker::deleteLater);
+    connect(S1_Deburst_worker, &S1DeburstWorker::endProcess, this, &S1_Deburst::endProcess);
     connect(this, &QWidget::destroyed, this, &S1_Deburst::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_Deburst::StopThread);// , Qt::QueuedConnection);
-    connect(S1_Deburst_thread, &MyThread::sendModel, this, &S1_Deburst::TransitModel);
-    S1_Deburst_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_Deburst::StopThread);
+    connect(S1_Deburst_worker, &S1DeburstWorker::sendModel, this, &S1_Deburst::TransitModel);
+    m_thread->start();
     ChangeVision(false);
     emit operate(this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->fileedit->text(), this->copy);
 }

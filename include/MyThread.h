@@ -36,7 +36,6 @@ public slots:
     void Cut2(double h5_left, double h5_right, double h5_top, double h5_bottom, QString save_path, QString project_name, QString node_name, QString file, QStandardItemModel* model);
     void Regis(QList<int> para, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void DEMAssistCoregistration(int masterIndex, QString savepath, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
-    void S1_Deburst(QString savePath, QString dstProject, QString srcNode, QString dstNode, QStandardItemModel* model);
     void SLC_deramp(int masterIndex, QString project_name, QString src_node, QString dst_node, QStandardItemModel* model);
     void Baseline_Formation(int masterIndex, QString project_name, QString src_node, QStandardItemModel* model);
     void SBAS_time_series(double temporal_thresh_low, double temporal_thresh, double spatial_thresh, int multilook_rg, int multilook_az, int unwrap_method, double alpha, double coherence_thresh, double temporal_coherence_thresh, double refinement_coh_thresh, double refinemen_def_thresh, QString project, QString srcNode, QString dstNode, QString csv_path, QStandardItemModel* model);

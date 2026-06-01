@@ -223,6 +223,7 @@ void S1TopsBackGeocodingNode::createWidget()
     // 选择工程
     auto* projectLayout = new QHBoxLayout();
     QLabel* projectLabel = new QLabel("选择工程");
+    projectLabel->setFixedWidth(80);
     projectLayout->addWidget(projectLabel);
     m_projectCombo = new QComboBox();
     m_projectCombo->setEditable(false);
@@ -233,6 +234,7 @@ void S1TopsBackGeocodingNode::createWidget()
     // 数据节点
     auto* dataNodeLayout = new QHBoxLayout();
     QLabel* dataNodeLabel = new QLabel("数据节点");
+    dataNodeLabel->setFixedWidth(80);
     dataNodeLayout->addWidget(dataNodeLabel);
     m_dataNodeCombo = new QComboBox();
     m_dataNodeCombo->setEditable(false);
@@ -274,6 +276,7 @@ void S1TopsBackGeocodingNode::createWidget()
     // 主图像选择 (Master Image)
     auto* masterImageLayout = new QHBoxLayout();
     QLabel* masterImageLabel = new QLabel("主图像选择");
+    masterImageLabel->setFixedWidth(80);
     masterImageLayout->addWidget(masterImageLabel);
     m_masterImageCombo = new QComboBox();
     m_masterImageCombo->setEditable(false);
@@ -320,6 +323,7 @@ void S1TopsBackGeocodingNode::createWidget()
     // 目标节点名
     auto* nodeNameLayout = new QHBoxLayout();
     QLabel* nodeNameLabel = new QLabel("目标节点名");
+    nodeNameLabel->setFixedWidth(80);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
