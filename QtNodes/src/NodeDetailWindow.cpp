@@ -62,8 +62,8 @@ void NodeDetailWindow::setupUI()
 
     // Content area with 3 columns
     auto* contentLayout = new QHBoxLayout();
-    contentLayout->setSpacing(16);
-    contentLayout->setContentsMargins(16, 16, 16, 16);
+    contentLayout->setSpacing(10);
+    contentLayout->setContentsMargins(12, 12, 12, 12);
 
     // Create three sections with separators
     _inputWidget = createInputSection();
@@ -87,7 +87,7 @@ void NodeDetailWindow::setupUI()
     _footerWidget = createFooter();
     mainLayout->addWidget(_footerWidget);
 
-    setMinimumWidth(900);
+    setMinimumWidth(DETAIL_WINDOW_MIN_WIDTH);
     setMinimumHeight(550);
 }
 
@@ -203,7 +203,8 @@ QWidget* NodeDetailWindow::createInputSection()
 
     auto* container = new QFrame();
     container->setObjectName("DetailCard");
-    container->setMinimumWidth(SECTION_MIN_WIDTH);
+    container->setMinimumWidth(SIDE_SECTION_MIN_WIDTH);
+    container->setMaximumWidth(SIDE_SECTION_MAX_WIDTH);
     container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     auto* layout = new QVBoxLayout(container);
@@ -217,6 +218,7 @@ QWidget* NodeDetailWindow::createInputSection()
 
     auto* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     scrollArea->setStyleSheet(STYLE_SCROLL_AREA);
 
@@ -238,9 +240,9 @@ QWidget* NodeDetailWindow::createProcessingSection()
 
     auto* container = new QFrame();
     container->setObjectName("MiddleColumn");
-    container->setMinimumWidth(SECTION_MIN_WIDTH);
+    container->setMinimumWidth(PROCESSING_SECTION_MIN_WIDTH);
     container->setStyleSheet(isDark ? STYLE_MIDDLE_COLUMN_DARK : STYLE_MIDDLE_COLUMN_LIGHT);
-    container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     auto* layout = new QVBoxLayout(container);
     layout->setContentsMargins(6, 6, 6, 6);
@@ -253,6 +255,7 @@ QWidget* NodeDetailWindow::createProcessingSection()
 
     auto* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     scrollArea->setStyleSheet(STYLE_SCROLL_AREA);
 
@@ -274,7 +277,8 @@ QWidget* NodeDetailWindow::createOutputSection()
 
     auto* container = new QFrame();
     container->setObjectName("DetailCard");
-    container->setMinimumWidth(SECTION_MIN_WIDTH);
+    container->setMinimumWidth(SIDE_SECTION_MIN_WIDTH);
+    container->setMaximumWidth(SIDE_SECTION_MAX_WIDTH);
     container->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     auto* layout = new QVBoxLayout(container);
@@ -288,6 +292,7 @@ QWidget* NodeDetailWindow::createOutputSection()
 
     auto* scrollArea = new QScrollArea();
     scrollArea->setWidgetResizable(true);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     scrollArea->setStyleSheet(STYLE_SCROLL_AREA);
 
@@ -730,19 +735,19 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
         _imageView = new ImageView();
         _imageView->setStyleSheet(QString("border: 1px solid %1; border-radius: 4px;")
             .arg(isDarkTheme(this) ? "#4B5563" : "#E5E7EB"));
-        _imageView->setMinimumHeight(300); // Ensure the image has some vertical space
-        _processingLayout->addWidget(_imageView);
-        
-        // View will be loaded at the end of section creation
-        
+        _imageView->setMinimumHeight(240);
+        _imageView->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+
         bool isDark = isDarkTheme(this);
         QString toggleBtnStyle = QString(
             "QPushButton {"
-            "  padding: 4px 10px;"
+            "  padding: 2px 8px;"
+            "  font-size: 12px;"
             "  border: 1px solid %1;"
             "  border-radius: 4px;"
             "  background-color: %2;"
             "  color: %3;"
+            "  min-width: 0px;"
             "}"
             "QPushButton:hover {"
             "  background-color: %4;"
@@ -760,11 +765,13 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             
         QString clearBtnStyle = QString(
             "QPushButton {"
-            "  padding: 4px 8px;"
+            "  padding: 2px 6px;"
+            "  font-size: 12px;"
             "  border: 1px solid %1;"
             "  border-radius: 4px;"
             "  background-color: %2;"
             "  color: #EF4444;"
+            "  min-width: 0px;"
             "}"
             "QPushButton:hover {"
             "  background-color: %3;"
@@ -773,53 +780,92 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
             .arg(isDark ? "#1F2937" : "#FFFFFF")
             .arg(isDark ? "#7F1D1D" : "#FEE2E2");
 
-        if (_supportsTwoRois) {
-            _roiToolbar = new QWidget();
-            auto* roiLayout = new QHBoxLayout(_roiToolbar);
-            roiLayout->setContentsMargins(5, 5, 5, 5);
-            roiLayout->setSpacing(5);
-            
-            _targetRoiBtn = new QPushButton(QStringLiteral("绘制目标区域"));
-            _targetRoiBtn->setCheckable(true);
-            _targetRoiBtn->setStyleSheet(toggleBtnStyle);
-            
-            _clutterRoiBtn = new QPushButton(QStringLiteral("绘制杂波区域"));
-            _clutterRoiBtn->setCheckable(true);
-            _clutterRoiBtn->setStyleSheet(toggleBtnStyle);
-            
-            if (_hasTargetRoi) _imageView->setTargetRoiRect(_targetRoi);
-            if (_hasClutterRoi) _imageView->setClutterRoiRect(_clutterRoi);
-            
-            connect(_targetRoiBtn, &QPushButton::toggled, this, &NodeDetailWindow::onTargetRoiToggled);
-            connect(_clutterRoiBtn, &QPushButton::toggled, this, &NodeDetailWindow::onClutterRoiToggled);
-            
-            auto* clearTargetBtn = new QPushButton(QStringLiteral("✖ 清除"));
-            clearTargetBtn->setStyleSheet(clearBtnStyle);
-            clearTargetBtn->setFixedWidth(60);
-            
-            auto* clearClutterBtn = new QPushButton(QStringLiteral("✖ 清除"));
-            clearClutterBtn->setStyleSheet(clearBtnStyle);
-            clearClutterBtn->setFixedWidth(60);
-            
-            connect(clearTargetBtn, &QPushButton::clicked, this, &NodeDetailWindow::onTargetRoiCleared);
-            connect(clearClutterBtn, &QPushButton::clicked, this, &NodeDetailWindow::onClutterRoiCleared);
-            
-            roiLayout->addWidget(_targetRoiBtn);
-            roiLayout->addWidget(clearTargetBtn);
-            
+        _roiToolbar = new QWidget();
+        auto* roiLayout = new QHBoxLayout(_roiToolbar);
+        roiLayout->setContentsMargins(0, 2, 0, 2);
+        roiLayout->setSpacing(4);
+
+        _moveModeBtn = new QPushButton(QStringLiteral("移动"));
+        _moveModeBtn->setCheckable(true);
+        _moveModeBtn->setChecked(!_hasCustomRoi && !_hasTargetRoi && !_hasClutterRoi);
+        _moveModeBtn->setStyleSheet(toggleBtnStyle);
+        connect(_moveModeBtn, &QPushButton::clicked, this, &NodeDetailWindow::onMoveModeClicked);
+
+        _zoomInBtn = new QPushButton(QStringLiteral("放大"));
+        _zoomInBtn->setStyleSheet(toggleBtnStyle);
+        connect(_zoomInBtn, &QPushButton::clicked, this, &NodeDetailWindow::onZoomInClicked);
+
+        _zoomOutBtn = new QPushButton(QStringLiteral("缩小"));
+        _zoomOutBtn->setStyleSheet(toggleBtnStyle);
+        connect(_zoomOutBtn, &QPushButton::clicked, this, &NodeDetailWindow::onZoomOutClicked);
+
+        _fitImageBtn = new QPushButton(QStringLiteral("适应"));
+        _fitImageBtn->setStyleSheet(toggleBtnStyle);
+        connect(_fitImageBtn, &QPushButton::clicked, this, &NodeDetailWindow::onFitImageClicked);
+
+        roiLayout->addWidget(_moveModeBtn);
+        roiLayout->addWidget(_zoomInBtn);
+        roiLayout->addWidget(_zoomOutBtn);
+        roiLayout->addWidget(_fitImageBtn);
+
+        if (_supportsRoiSelection || _supportsTwoRois) {
             QFrame* vLine = new QFrame();
             vLine->setFrameShape(QFrame::VLine);
             vLine->setFrameShadow(QFrame::Sunken);
             vLine->setStyleSheet(isDark ? "background-color: #4B5563;" : "background-color: #D1D5DB;");
             roiLayout->addWidget(vLine);
-            
+        }
+
+        if (_supportsRoiSelection) {
+            _roiEnableBtn = new QPushButton(QStringLiteral("框选"));
+            _roiEnableBtn->setCheckable(true);
+            _roiEnableBtn->setStyleSheet(toggleBtnStyle);
+            _roiEnableBtn->setChecked(_hasCustomRoi);
+            _imageView->setRoiSelectionEnabled(_hasCustomRoi);
+            if (_hasCustomRoi) {
+                _imageView->setRoiRect(_customRoi);
+            }
+            connect(_roiEnableBtn, &QPushButton::toggled, this, &NodeDetailWindow::onRoiToggled);
+
+            auto* clearRoiBtn = new QPushButton(QStringLiteral("清除"));
+            clearRoiBtn->setStyleSheet(clearBtnStyle);
+            connect(clearRoiBtn, &QPushButton::clicked, this, &NodeDetailWindow::onRoiCleared);
+
+            roiLayout->addWidget(_roiEnableBtn);
+            roiLayout->addWidget(clearRoiBtn);
+
+            connect(_imageView, &ImageView::roiSelected, this, [this](const QRectF& rect) {
+                emit roiSelectionChanged(rect, _currentPreviewIndex);
+            });
+        } else if (_supportsTwoRois) {
+            _targetRoiBtn = new QPushButton(QStringLiteral("目标区域"));
+            _targetRoiBtn->setCheckable(true);
+            _targetRoiBtn->setStyleSheet(toggleBtnStyle);
+
+            _clutterRoiBtn = new QPushButton(QStringLiteral("杂波区域"));
+            _clutterRoiBtn->setCheckable(true);
+            _clutterRoiBtn->setStyleSheet(toggleBtnStyle);
+
+            if (_hasTargetRoi) _imageView->setTargetRoiRect(_targetRoi);
+            if (_hasClutterRoi) _imageView->setClutterRoiRect(_clutterRoi);
+
+            connect(_targetRoiBtn, &QPushButton::toggled, this, &NodeDetailWindow::onTargetRoiToggled);
+            connect(_clutterRoiBtn, &QPushButton::toggled, this, &NodeDetailWindow::onClutterRoiToggled);
+
+            auto* clearTargetBtn = new QPushButton(QStringLiteral("清除"));
+            clearTargetBtn->setStyleSheet(clearBtnStyle);
+
+            auto* clearClutterBtn = new QPushButton(QStringLiteral("清除"));
+            clearClutterBtn->setStyleSheet(clearBtnStyle);
+
+            connect(clearTargetBtn, &QPushButton::clicked, this, &NodeDetailWindow::onTargetRoiCleared);
+            connect(clearClutterBtn, &QPushButton::clicked, this, &NodeDetailWindow::onClutterRoiCleared);
+
+            roiLayout->addWidget(_targetRoiBtn);
+            roiLayout->addWidget(clearTargetBtn);
             roiLayout->addWidget(_clutterRoiBtn);
             roiLayout->addWidget(clearClutterBtn);
-            
-            roiLayout->addStretch();
-            
-            _processingLayout->addWidget(_roiToolbar);
-            
+
             connect(_imageView, &ImageView::targetRoiSelected, this, [this](const QRectF& rect) {
                 emit targetRoiSelectionChanged(rect, _currentPreviewIndex);
             });
@@ -827,39 +873,11 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
                 emit clutterRoiSelectionChanged(rect, _currentPreviewIndex);
             });
         }
-        else if (_supportsRoiSelection) {
-            _roiToolbar = new QWidget();
-            auto* roiLayout = new QHBoxLayout(_roiToolbar);
-            roiLayout->setContentsMargins(5, 5, 5, 5);
-            
-            _roiEnableBtn = new QPushButton(QStringLiteral("绘制框选区域"));
-            _roiEnableBtn->setCheckable(true);
-            _roiEnableBtn->setStyleSheet(toggleBtnStyle);
-            _roiEnableBtn->setChecked(_hasCustomRoi);
-            
-            _imageView->setRoiSelectionEnabled(_hasCustomRoi);
-            if (_hasCustomRoi) {
-                _imageView->setRoiRect(_customRoi);
-            }
-            
-            connect(_roiEnableBtn, &QPushButton::toggled, this, &NodeDetailWindow::onRoiToggled);
-            
-            auto* clearRoiBtn = new QPushButton(QStringLiteral("✖ 清除"));
-            clearRoiBtn->setStyleSheet(clearBtnStyle);
-            clearRoiBtn->setFixedWidth(60);
-            connect(clearRoiBtn, &QPushButton::clicked, this, &NodeDetailWindow::onRoiCleared);
-            
-            roiLayout->addWidget(_roiEnableBtn);
-            roiLayout->addWidget(clearRoiBtn);
-            roiLayout->addStretch();
-            
-            _processingLayout->addWidget(_roiToolbar);
-            
-            connect(_imageView, &ImageView::roiSelected, this, [this](const QRectF& rect) {
-                emit roiSelectionChanged(rect, _currentPreviewIndex);
-            });
-        }
-        
+
+        roiLayout->addStretch();
+        _processingLayout->addWidget(_roiToolbar);
+        _processingLayout->addWidget(_imageView);
+
         QHBoxLayout* navLayout = new QHBoxLayout();
         
         QString btnStyle = isDark ? 
@@ -1014,12 +1032,29 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
 
         _processingLayout->addWidget( emptyFrame);
     } else if (!_processingInfo.empty()) {
+        QFrame* infoContainer = new QFrame();
+        infoContainer->setObjectName("ProcessingInfoContainer");
+        
+        QString containerStyle = isDark ? 
+            "QFrame#ProcessingInfoContainer { background-color: #374151; border-radius: 4px; }" :
+            "QFrame#ProcessingInfoContainer { background-color: #F9FAFB; border-radius: 4px; }";
+        infoContainer->setStyleSheet(containerStyle);
+        
+        QVBoxLayout* containerLayout = new QVBoxLayout(infoContainer);
+        containerLayout->setContentsMargins(10, 8, 10, 8);
+        containerLayout->setSpacing(6);
+        
         for (size_t i = 0; i < _processingInfo.size(); ++i) {
             auto* infoLabel = new QLabel(_processingInfo[i]);
             infoLabel->setWordWrap(true);
-            infoLabel->setStyleSheet(QString(infoLabelTemplate).arg(11));
-            _processingLayout->addWidget( infoLabel);
+            QString labelStyle = isDark ? 
+                "QLabel { color: #F3F4F6; font-size: 11px; background: transparent; border: none; padding: 0px; }" :
+                "QLabel { color: #374151; font-size: 11px; background: transparent; border: none; padding: 0px; }";
+            infoLabel->setStyleSheet(labelStyle);
+            containerLayout->addWidget(infoLabel);
         }
+        
+        _processingLayout->addWidget(infoContainer);
     }
     _processingLayout->addStretch(1);
 
@@ -1104,6 +1139,10 @@ void NodeDetailWindow::clearData()
     _customRoi = QRectF();
     _roiToolbar = nullptr;
     _roiEnableBtn = nullptr;
+    _moveModeBtn = nullptr;
+    _zoomInBtn = nullptr;
+    _zoomOutBtn = nullptr;
+    _fitImageBtn = nullptr;
     _targetRoiBtn = nullptr;
     _clutterRoiBtn = nullptr;
     _imageView = nullptr;
@@ -1222,8 +1261,8 @@ void NodeDetailWindow::updatePreviewImage()
         if (_imageNameLabel) {
             QString fileName = fi.fileName();
             // Elide long filenames to prevent horizontal scrollbar in the Detail Window
-            if (fileName.length() > 45) {
-                fileName = fileName.left(20) + "..." + fileName.right(20);
+            if (fileName.length() > 30) {
+                fileName = fileName.left(12) + "..." + fileName.right(12);
             }
             _imageNameLabel->setText(QString("%1 (%2 / %3)")
                 .arg(fileName)
@@ -1270,8 +1309,57 @@ void NodeDetailWindow::onTableSelectionChanged()
     }
 }
 
+void NodeDetailWindow::onMoveModeClicked()
+{
+    if (_roiEnableBtn && _roiEnableBtn->isChecked()) {
+        _roiEnableBtn->blockSignals(true);
+        _roiEnableBtn->setChecked(false);
+        _roiEnableBtn->blockSignals(false);
+    }
+    if (_targetRoiBtn && _targetRoiBtn->isChecked()) {
+        _targetRoiBtn->blockSignals(true);
+        _targetRoiBtn->setChecked(false);
+        _targetRoiBtn->blockSignals(false);
+    }
+    if (_clutterRoiBtn && _clutterRoiBtn->isChecked()) {
+        _clutterRoiBtn->blockSignals(true);
+        _clutterRoiBtn->setChecked(false);
+        _clutterRoiBtn->blockSignals(false);
+    }
+    if (_moveModeBtn) {
+        _moveModeBtn->setChecked(true);
+    }
+    if (_imageView) {
+        _imageView->setMoveMode();
+    }
+}
+
+void NodeDetailWindow::onZoomInClicked()
+{
+    if (_imageView) {
+        _imageView->zoomIn();
+    }
+}
+
+void NodeDetailWindow::onZoomOutClicked()
+{
+    if (_imageView) {
+        _imageView->zoomOut();
+    }
+}
+
+void NodeDetailWindow::onFitImageClicked()
+{
+    if (_imageView) {
+        _imageView->fitImage();
+    }
+}
+
 void NodeDetailWindow::onRoiToggled(bool checked)
 {
+    if (_moveModeBtn) {
+        _moveModeBtn->setChecked(!checked);
+    }
     if (_imageView) {
         _imageView->setRoiSelectionEnabled(checked);
     }
@@ -1281,6 +1369,15 @@ void NodeDetailWindow::onRoiCleared()
 {
     if (_imageView) {
         _imageView->clearRoi();
+        _imageView->setMoveMode();
+    }
+    if (_roiEnableBtn) {
+        _roiEnableBtn->blockSignals(true);
+        _roiEnableBtn->setChecked(false);
+        _roiEnableBtn->blockSignals(false);
+    }
+    if (_moveModeBtn) {
+        _moveModeBtn->setChecked(true);
     }
     emit roiCleared();
 }
@@ -1293,6 +1390,10 @@ void NodeDetailWindow::onTargetRoiToggled(bool checked)
         _clutterRoiBtn->blockSignals(false);
     }
     
+    if (_moveModeBtn) {
+        _moveModeBtn->setChecked(!checked);
+    }
+
     if (_imageView && checked) {
         _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::Target);
     } else if (_imageView && !checked && _imageView->roiSelectionMode() == ImageView::RoiSelectionMode::Target) {
@@ -1308,6 +1409,10 @@ void NodeDetailWindow::onClutterRoiToggled(bool checked)
         _targetRoiBtn->blockSignals(false);
     }
     
+    if (_moveModeBtn) {
+        _moveModeBtn->setChecked(!checked);
+    }
+
     if (_imageView && checked) {
         _imageView->setRoiSelectionMode(ImageView::RoiSelectionMode::Clutter);
     } else if (_imageView && !checked && _imageView->roiSelectionMode() == ImageView::RoiSelectionMode::Clutter) {
@@ -1319,6 +1424,15 @@ void NodeDetailWindow::onTargetRoiCleared()
 {
     if (_imageView) {
         _imageView->clearTargetRoi();
+        _imageView->setMoveMode();
+    }
+    if (_targetRoiBtn) {
+        _targetRoiBtn->blockSignals(true);
+        _targetRoiBtn->setChecked(false);
+        _targetRoiBtn->blockSignals(false);
+    }
+    if (_moveModeBtn) {
+        _moveModeBtn->setChecked(true);
     }
     emit targetRoiCleared();
 }
@@ -1327,6 +1441,15 @@ void NodeDetailWindow::onClutterRoiCleared()
 {
     if (_imageView) {
         _imageView->clearClutterRoi();
+        _imageView->setMoveMode();
+    }
+    if (_clutterRoiBtn) {
+        _clutterRoiBtn->blockSignals(true);
+        _clutterRoiBtn->setChecked(false);
+        _clutterRoiBtn->blockSignals(false);
+    }
+    if (_moveModeBtn) {
+        _moveModeBtn->setChecked(true);
     }
     emit clutterRoiCleared();
 }

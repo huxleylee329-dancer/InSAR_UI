@@ -4,6 +4,7 @@
 #include <QtNodes/NodeData>
 #include <QString>
 #include <QFileInfo>
+#include <QDir>
 
 namespace QtNodes {
 
@@ -88,10 +89,39 @@ public:
                 }
                 fields.append({"Total Size", sizeStr, FieldEditType::None});
             } else {
-                // 单文件显示
                 QFileInfo fi(_filePaths.first());
-                fields.append({"File", fi.fileName(), FieldEditType::None});
-                fields.append({"Size", QString::number(fi.size() / 1024.0, 'f', 2) + " KB", FieldEditType::None});
+                if (fi.isDir()) {
+                    QDir dir(fi.absoluteFilePath());
+                    QFileInfoList files = dir.entryInfoList(QDir::Files, QDir::Name);
+                    int h5Count = 0;
+                    int previewCount = 0;
+                    qint64 totalSize = 0;
+                    for (const QFileInfo& fileInfo : files) {
+                        QString suffix = fileInfo.suffix().toLower();
+                        if (suffix == "h5") {
+                            ++h5Count;
+                            totalSize += fileInfo.size();
+                        } else if (suffix == "jpg" || suffix == "jpeg" || suffix == "png" || suffix == "bmp") {
+                            ++previewCount;
+                        }
+                    }
+
+                    QString sizeStr;
+                    double sizeMB = totalSize / (1024.0 * 1024.0);
+                    if (sizeMB > 1024.0) {
+                        sizeStr = QString::number(sizeMB / 1024.0, 'f', 2) + " GB";
+                    } else {
+                        sizeStr = QString::number(sizeMB, 'f', 2) + " MB";
+                    }
+
+                    fields.append({"Folder", fi.fileName(), FieldEditType::None});
+                    fields.append({"H5 Files", QString::number(h5Count), FieldEditType::None});
+                    fields.append({"Previews", QString::number(previewCount), FieldEditType::None});
+                    fields.append({"Total Size", sizeStr, FieldEditType::None});
+                } else {
+                    fields.append({"File", fi.fileName(), FieldEditType::None});
+                    fields.append({"Size", QString::number(fi.size() / 1024.0, 'f', 2) + " KB", FieldEditType::None});
+                }
             }
 
             // 可编辑：节点名称

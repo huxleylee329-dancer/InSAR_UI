@@ -1,9 +1,9 @@
-﻿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<FormatConversion.h>
 #include "ui_Cut.h"
-#include"MyThread.h"
-#include"Preview_Window.h"
+#include "CutWorker.h"
+#include "Preview_Window.h"
 #include"ImageView.h"
 #include<Qtgui>
 
@@ -33,7 +33,7 @@ private:
     bool isCutting;
     Ui::Cut* ui;
     QString save_path;
-    MyThread* Cut_thread;
+    CutWorker* Cut_thread;
     int image_number;
     void writeXML();
     void ChangeVision(bool Editable);

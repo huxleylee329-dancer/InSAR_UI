@@ -84,7 +84,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     };
 
     order.subcategories["Preprocessing"] = QStringList{
-        "Sentinel-1"        // Preprocessing 下的第一个子分类
+        "Sentinel-1",        // Preprocessing 下的第一个子分类
+        "Region Crop"
     };
 
     order.subcategories["SAR"] = QStringList{
@@ -128,6 +129,10 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
 
     // Preprocessing 类叶子项顺序
+    order.leafItems["Preprocessing/Region Crop"] = QList<PaletteOrder::LeafItem>{
+        {"AOI Crop", "AOI Crop"}
+    };
+
     order.leafItems["Preprocessing/Sentinel-1"] = QList<PaletteOrder::LeafItem>{
         {"Deburst", "S1 Deburst"},     // Sentinel-1 预处理：去突刺
         {"Frame Merge", "S1 Frame Merge"},  // 帧拼接
@@ -1590,6 +1595,9 @@ void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::Execu
 {
     if (!execModel || !ngo) return;
     
+    // Ignore duplicate clicks if detail window is already open or opening
+    if (_detailWindow || _animationController) return;
+    
     execModel->collapseDetailedList();
 
     // Capture snapshot of node data
@@ -1615,10 +1623,14 @@ void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::Execu
 
     QPointer<QtNodes::NodeGraphicsObject> ngoPtr(ngo);
 
+    auto* window = _detailWindow;
+    auto* overlay = _detailOverlay;
+    auto* controller = _animationController;
+
     // Connect close button to trigger reverse animation
-    connect(_detailWindow, &QtNodes::NodeDetailWindow::closeRequested, this, [this, ngoPtr]() {
-        if (ngoPtr) {
-            _animationController->startCloseAnimation(ngoPtr.data(), _detailWindow, _detailOverlay);
+    connect(window, &QtNodes::NodeDetailWindow::closeRequested, this, [this, ngoPtr, window, overlay, controller]() {
+        if (ngoPtr && controller) {
+            controller->startCloseAnimation(ngoPtr.data(), window, overlay);
         } else {
             cleanupDetailWindow();
         }

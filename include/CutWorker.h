@@ -1,0 +1,44 @@
+#pragma once
+
+#include <QObject>
+#include <QList>
+#include <QString>
+#include <QStandardItemModel>
+
+class CutWorker : public QObject
+{
+    Q_OBJECT
+public:
+    explicit CutWorker(QObject* parent = nullptr);
+    ~CutWorker();
+
+public slots:
+    /**
+     * @brief Coordinate-based AOI crop
+     */
+    void Cut(QList<double> para,
+             QString save_path,
+             QString project_name,
+             QString src_node,
+             QString dst_node,
+             QStandardItemModel* model);
+
+    /**
+     * @brief Normalized ratio-based AOI crop (used by box-selection and auto-center)
+     */
+    void Cut2(double h5_left,
+              double h5_right,
+              double h5_top,
+              double h5_bottom,
+              QString save_path,
+              QString project_name,
+              QString src_node,
+              QString dst_node,
+              QStandardItemModel* model);
+
+signals:
+    void updateProcess(int progress, QString message);
+    void endProcess();
+    void errorProcess(QString error);
+    void sendModel(QStandardItemModel* model);
+};

@@ -24,6 +24,7 @@
 #include "EvaluationSCRNode.h"
 #include "LoggerNode.h"
 #include "CoregistrationNode.h"
+#include "CutNode.h"
 
 #include <memory>
 
@@ -112,7 +113,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // ============================================================================
 
     // Preprocessing nodes (to be implemented)
-    // registry->registerModel<CutNode>("Preprocessing/Region Crop/AOI Crop");
+    registry->registerModel<CutNode>("Preprocessing/Region Crop/AOI Crop");
     // registry->registerModel<Cut2Node>("Preprocessing/Region Crop/Frame Crop");
     // registry->registerModel<FilterNode>("Preprocessing/Filter/Goldstein");
     // registry->registerModel<UnwrapNode>("Preprocessing/Phase Unwrapping/SNAPHU");

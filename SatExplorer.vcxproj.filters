@@ -202,6 +202,12 @@
     <ClCompile Include="ImageDisplayNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CutWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CutNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="CSKImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -634,6 +640,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\InSARLogManager.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\CutWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\CutNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\CSKImportNode.h">

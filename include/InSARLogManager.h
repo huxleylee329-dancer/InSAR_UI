@@ -15,6 +15,7 @@ struct LogEntry {
     QString timestamp;
     QString rawLine;
 };
+Q_DECLARE_METATYPE(LogEntry)
 
 class InSARLogManager : public QObject
 {

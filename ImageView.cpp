@@ -144,9 +144,35 @@ void ImageView::fitImage()
 {
 	if (scene() && !scene()->sceneRect().isEmpty()) {
 		fitInView(scene()->sceneRect(), Qt::KeepAspectRatio);
-		m_needsFit = false;
+		if (viewport() && viewport()->width() > 50 && viewport()->height() > 50) {
+			m_needsFit = false;
+		}
 		updateTransformationMode();
 	}
+}
+
+void ImageView::zoomIn()
+{
+	zoomBy(1.25);
+}
+
+void ImageView::zoomOut()
+{
+	zoomBy(0.8);
+}
+
+void ImageView::zoomBy(double factor)
+{
+	if (scene() && !scene()->sceneRect().isEmpty() && factor > 0.0) {
+		scale(factor, factor);
+		updateTransformationMode();
+		viewport()->update();
+	}
+}
+
+void ImageView::setMoveMode()
+{
+	setRoiSelectionMode(RoiSelectionMode::None);
 }
 
 void ImageView::resizeEvent(QResizeEvent* event)

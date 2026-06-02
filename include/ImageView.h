@@ -33,6 +33,10 @@ public:
 	
 	void loadImage(const QString& path);
 	void fitImage();
+	void zoomIn();
+	void zoomOut();
+	void zoomBy(double factor);
+	void setMoveMode();
 
 signals:
 	void roiSelected(const QRectF& rect);

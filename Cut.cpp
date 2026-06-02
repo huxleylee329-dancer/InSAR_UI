@@ -1,10 +1,11 @@
-﻿#include"Cut.h"
+#include"Cut.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
 #include<qmessagebox.h>
 #include<Utils.h>
+#include <QThread>
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #endif
@@ -134,17 +135,18 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
     ui->progressBar_2->setHidden(0);
     ui->progressBar_2->setMinimum(0);
     ui->progressBar_2->setMaximum(100);
-    Cut_thread = new MyThread;
+    Cut_thread = new CutWorker;
     Cut_thread->moveToThread(new QThread(this));
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Cut::operate2, Cut_thread, &MyThread::Cut2, Qt::QueuedConnection);
-    connect(Cut_thread, &MyThread::updateProcess, this, &Cut::updateProcess);
-    connect(Cut_thread->thread(), &QThread::finished, Cut_thread, &MyThread::deleteLater);
-    connect(Cut_thread, &MyThread::endProcess, this, &Cut::endProcess);
+    connect(this, &Cut::operate2, Cut_thread, &CutWorker::Cut2, Qt::QueuedConnection);
+    connect(Cut_thread, &CutWorker::updateProcess, this, &Cut::updateProcess);
+    connect(Cut_thread->thread(), &QThread::finished, Cut_thread, &QObject::deleteLater);
+    connect(Cut_thread->thread(), &QThread::finished, Cut_thread->thread(), &QObject::deleteLater);
+    connect(Cut_thread, &CutWorker::endProcess, this, &Cut::endProcess);
     connect(this, &QWidget::destroyed, this, &Cut::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Cut::StopThread);// , Qt::QueuedConnection);
-    connect(Cut_thread, &MyThread::sendModel, this, &Cut::TransitModel);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Cut::StopThread);
+    connect(Cut_thread, &CutWorker::sendModel, this, &Cut::TransitModel);
     Cut_thread->thread()->start();
     ChangeVision(false);
     
@@ -360,9 +362,8 @@ void Cut::on_buttonBox_accepted()
     ui->progressBar->setHidden(0);
     ui->progressBar->setMinimum(0);
     ui->progressBar->setMaximum(100);
-    Cut_thread = new MyThread;
+    Cut_thread = new CutWorker;
     Cut_thread->moveToThread(new QThread(this));
-    //this->Process->setAutoClose(true);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
     QList<double> para;
@@ -370,14 +371,14 @@ void Cut::on_buttonBox_accepted()
     para.push_back(ui->lat->text().toDouble());
     para.push_back(ui->Width->text().toDouble());
     para.push_back(ui->Height->text().toDouble());
-   //this->thread()->msleep(1);
-    connect(this, &Cut::operate, Cut_thread, &MyThread::Cut, Qt::QueuedConnection);
-    connect(Cut_thread, &MyThread::updateProcess, this, &Cut::updateProcess);
-    connect(Cut_thread->thread(), &QThread::finished, Cut_thread, &MyThread::deleteLater);
-    connect(Cut_thread, &MyThread::endProcess, this, &Cut::endProcess);
+    connect(this, &Cut::operate, Cut_thread, &CutWorker::Cut, Qt::QueuedConnection);
+    connect(Cut_thread, &CutWorker::updateProcess, this, &Cut::updateProcess);
+    connect(Cut_thread->thread(), &QThread::finished, Cut_thread, &QObject::deleteLater);
+    connect(Cut_thread->thread(), &QThread::finished, Cut_thread->thread(), &QObject::deleteLater);
+    connect(Cut_thread, &CutWorker::endProcess, this, &Cut::endProcess);
     connect(this, &QWidget::destroyed, this, &Cut::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Cut::StopThread);// , Qt::QueuedConnection);
-    connect(Cut_thread, &MyThread::sendModel, this, &Cut::TransitModel);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Cut::StopThread);
+    connect(Cut_thread, &CutWorker::sendModel, this, &Cut::TransitModel);
     Cut_thread->thread()->start();
     ChangeVision(false);
     //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);

@@ -103,7 +103,11 @@ protected:
     QRectF _customRoi;
     QWidget* _roiToolbar;
     QPushButton* _roiEnableBtn = nullptr;
-    
+    QPushButton* _moveModeBtn = nullptr;
+    QPushButton* _zoomInBtn = nullptr;
+    QPushButton* _zoomOutBtn = nullptr;
+    QPushButton* _fitImageBtn = nullptr;
+
     // Dual ROI View
     bool _supportsTwoRois;
     bool _hasTargetRoi;
@@ -125,6 +129,10 @@ private Q_SLOTS:
     void onPrevPreviewClicked();
     void onNextPreviewClicked();
     void onTableSelectionChanged();
+    void onMoveModeClicked();
+    void onZoomInClicked();
+    void onZoomOutClicked();
+    void onFitImageClicked();
     void onRoiToggled(bool checked);
     void onRoiCleared();
     
@@ -415,7 +423,10 @@ private:
     // Font sizes
     static constexpr int FONT_SIZE_INFO = 9;         // Info label
 
-    static constexpr int SECTION_MIN_WIDTH = 340;
+    static constexpr int SIDE_SECTION_MIN_WIDTH = 240;
+    static constexpr int SIDE_SECTION_MAX_WIDTH = 320;
+    static constexpr int PROCESSING_SECTION_MIN_WIDTH = 560;
+    static constexpr int DETAIL_WINDOW_MIN_WIDTH = 1100;
     static constexpr int CONTENT_MAX_HEIGHT = 450;
 
     /// Theme detection
