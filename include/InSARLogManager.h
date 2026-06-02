@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
+#include <QMetaType>
 
 struct LogEntry {
     int level; // 0: Info, 1: Warning, 2: Error

@@ -54,12 +54,21 @@ LoggerNode::~LoggerNode()
 QJsonObject LoggerNode::save() const
 {
     QJsonObject modelJson = NodeDelegateModel::save();
+    if (m_widget) {
+        modelJson["widget_width"] = m_widget->width();
+        modelJson["widget_height"] = m_widget->height();
+    }
     return modelJson;
 }
 
 void LoggerNode::load(QJsonObject const &p)
 {
-    // No specific persistent data needed
+    if (m_widget && p.contains("widget_width") && p.contains("widget_height")) {
+        int w = p["widget_width"].toInt();
+        int h = p["widget_height"].toInt();
+        m_widget->resize(w, h);
+        Q_EMIT embeddedWidgetSizeUpdated();
+    }
 }
 
 void LoggerNode::loadExistingLogs()

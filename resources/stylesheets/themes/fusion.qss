@@ -113,6 +113,11 @@ QTreeView::item:selected {
     color: white;
 }
 
+QTreeView::item:selected:hover {
+    background-color: #004b87;
+    color: white;
+}
+
 QTreeWidget {
     border: none;
     alternate-background-color: #F9F9F9;

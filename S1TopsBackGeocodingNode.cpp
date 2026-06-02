@@ -530,6 +530,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
     m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
 
     // 生成预览图
+    QStringList h5Paths;
     QStringList jpgPaths;
     QStandardItemModel* model = projectModel();
     if (model)
@@ -551,8 +552,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
                             QString origin_name = childItem->text();
                             QString h5Path = outputPath + origin_name + "_regis.h5";
                             QString jpgPath = outputPath + origin_name + "_regis.jpg";
-                            // 静默生成预览图
-                            NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "complex");
+                            h5Paths.append(h5Path);
                             jpgPaths.append(jpgPath);
                         }
                     }
@@ -560,19 +560,6 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
                 }
             }
         }
-    }
-
-    if (!jpgPaths.isEmpty())
-    {
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-    else
-    {
-        m_imageInfoData.reset();
-        setOutputData(1, nullptr);
-        Q_EMIT dataUpdated(1);
     }
 
     // Clean up thread
@@ -590,17 +577,57 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
-    // Update UI
-    m_outputNodeNameEdit->setEnabled(true);
-    if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
-    if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-    if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
+    if (!h5Paths.isEmpty())
+    {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+        m_remedyWatcher.disconnect();
 
-    // Notify base class that we're finished
-    setState(ExecutionState::Running);
-    setProgress(100);
-    finishExecution();
-    Q_EMIT dataUpdated(0);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+
+            // Update UI
+            m_outputNodeNameEdit->setEnabled(true);
+            if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
+            if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
+            if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
+
+            // Notify base class that we're finished
+            setState(ExecutionState::Running);
+            setProgress(100);
+            InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
+            finishExecution();
+            Q_EMIT dataUpdated(0);
+        });
+
+        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths]() {
+            for (int i = 0; i < h5Paths.size(); ++i) {
+                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], "complex");
+            }
+        });
+        m_remedyWatcher.setFuture(future);
+    }
+    else
+    {
+        m_imageInfoData.reset();
+        setOutputData(1, nullptr);
+        Q_EMIT dataUpdated(1);
+
+        // Update UI
+        m_outputNodeNameEdit->setEnabled(true);
+        if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
+        if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
+        if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
+
+        // Notify base class that we're finished
+        setState(ExecutionState::Running);
+        setProgress(100);
+        InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
+        finishExecution();
+        Q_EMIT dataUpdated(0);
+    }
 }
 
 void S1TopsBackGeocodingNode::onError(const QString& error)
@@ -766,6 +793,9 @@ void S1TopsBackGeocodingNode::executeProcessing()
         return;
     }
 
+    // 清理旧数据，防止反复执行导致UI Tree数据累加
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+
     setProgress(0);
     setState(ExecutionState::Running);
 
@@ -822,7 +852,6 @@ void S1TopsBackGeocodingNode::executeProcessing()
     if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(false);
     if (m_masterImageCombo) m_masterImageCombo->setEnabled(false);
     if (m_esdCheckBox) m_esdCheckBox->setEnabled(false);
-    InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
 
     // 在下一个事件循环中强行将状态重置为 Running，防止基类 setInData 在 Automatic 模式下将其强行设为 Idle
     QTimer::singleShot(0, this, [this]() {

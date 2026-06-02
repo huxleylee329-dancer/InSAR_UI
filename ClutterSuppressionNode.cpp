@@ -355,7 +355,6 @@ void ClutterSuppressionNode::executeProcessing()
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
-	InSARLogManager::LogInfo("ClutterSuppressionNode", "executeProcessing completed.");
 }
 
 void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& message)
@@ -399,6 +398,7 @@ void ClutterSuppressionNode::onProcessingFinished()
 
     m_task = nullptr;
 
+    InSARLogManager::LogInfo("ClutterSuppressionNode", "executeProcessing completed.");
     finishExecution();
 }
 
