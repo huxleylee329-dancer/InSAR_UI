@@ -319,10 +319,7 @@ QStringList Sentinel1BatchImportNode::previewImagePaths() const
             QFileInfo fi(h5Path);
             QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
             
-            // 自愈：如果 JPG 丢失了，但 H5 还存在，则静默重建
-            if (!QFileInfo::exists(jpgPath)) {
-                NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "complex");
-            }
+            // 自愈已被移至 validateAndRestoreOutput 中异步执行
             
             if (QFileInfo::exists(jpgPath)) {
                 existingPaths << jpgPath;
@@ -711,15 +708,43 @@ bool Sentinel1BatchImportNode::validateAndRestoreOutput()
             Q_EMIT dataUpdated(0);
 
             // 双路输出：Port 1 预览输出
-            QStringList jpgPaths;
+            QStringList missingH5s;
+            QStringList missingJpgs;
+            QStringList allJpgPaths;
+
             for (const QString& h5Path : m_importedFilePaths) {
                 QFileInfo fi(h5Path);
                 QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-                jpgPaths.append(jpgPath);
+                allJpgPaths.append(jpgPath);
+                
+                if (!QFileInfo::exists(jpgPath)) {
+                    missingH5s.append(h5Path);
+                    missingJpgs.append(jpgPath);
+                }
             }
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
+
+            if (!missingH5s.isEmpty()) {
+                m_remedyWatcher.cancel();
+                m_remedyWatcher.waitForFinished();
+                m_remedyWatcher.disconnect();
+
+                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
+                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+                    setOutputData(1, m_imageInfoData);
+                    Q_EMIT dataUpdated(1);
+                });
+
+                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+                    for (int i = 0; i < missingH5s.size(); ++i) {
+                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+                    }
+                });
+                m_remedyWatcher.setFuture(future);
+            } else {
+                m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+                setOutputData(1, m_imageInfoData);
+                Q_EMIT dataUpdated(1);
+            }
 
             return true;
         }

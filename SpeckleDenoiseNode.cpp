@@ -374,7 +374,6 @@ void SpeckleDenoiseNode::executeProcessing()
     m_outputNodeNameEdit->setEnabled(false);
     m_outputFileNameEdit->setEnabled(false);
     m_saveToProjectCheckBox->setEnabled(false);
-	InSARLogManager::LogInfo("SpeckleDenoiseNode", "executeProcessing completed.");
 }
 
 void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)
@@ -425,6 +424,7 @@ void SpeckleDenoiseNode::onProcessingFinished()
 
     m_task = nullptr;
 
+    InSARLogManager::LogInfo("SpeckleDenoiseNode", "executeProcessing completed.");
     finishExecution();
 }
 

@@ -423,6 +423,7 @@ void S1FrameMergeNode::onProcessingFinished()
 
     setState(ExecutionState::Completed);
     setProgress(100);
+    InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing completed.");
     finishExecution();
     Q_EMIT dataUpdated(0);
 }
@@ -636,7 +637,6 @@ void S1FrameMergeNode::executeProcessing()
     m_thread->start();
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setEnabled(false);
-    InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing completed.");
 
     // 在下一个事件循环中强行将状态重置为 Running，防止基类 setInData 在 Automatic 模式下将其强行设为 Idle
     QTimer::singleShot(0, this, [this]() {

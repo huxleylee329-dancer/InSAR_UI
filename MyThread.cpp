@@ -2909,7 +2909,14 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 	
 	XMLFile* xml = new XMLFile();
 	QString xml_path = save_path + "/" + project_name;
-	xml->XMLFile_load(xml_path.toStdString().c_str());
+	if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
+		xml_path += ".Insar";
+	}
+	if (xml->XMLFile_load(xml_path.toStdString().c_str()) != 0) {
+		InSARLogManager::LogError("MyThread", "Failed to load project XML file: " + xml_path);
+		delete xml;
+		return;
+	}
 	
 	int count = origin_node->rowCount();
 	int pair = 1;
@@ -3067,6 +3074,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 		}
 	}
 	xml->XMLFile_save(xml_path.toStdString().c_str());
+	delete xml;
 	emit sendModel(model);
 	InSARLogManager::LogInfo("MyThread", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();

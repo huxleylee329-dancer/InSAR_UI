@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
+#include <QMetaType>
 
 struct LogEntry {
     int level; // 0: Info, 1: Warning, 2: Error
@@ -49,5 +50,7 @@ private:
     QString m_logFilePath;
     QMutex m_mutex;
 };
+
+Q_DECLARE_METATYPE(LogEntry)
 
 #endif // INSARLOGMANAGER_H

@@ -408,7 +408,6 @@ void TargetDetectionNode::executeProcessing()
     
     if (m_modelComboBox) m_modelComboBox->setEnabled(false);
     if (m_thresholdEdit) m_thresholdEdit->setEnabled(false);
-	InSARLogManager::LogInfo("TargetDetectionNode", "executeProcessing completed.");
 }
 
 void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)
@@ -484,6 +483,7 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
         setOutputData(0, m_outputData);
         Q_EMIT dataUpdated(0);
         
+        InSARLogManager::LogInfo("TargetDetectionNode", "executeProcessing completed.");
         finishExecution();
 
         if (m_modelComboBox) m_modelComboBox->setEnabled(true);

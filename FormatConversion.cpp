@@ -4728,6 +4728,12 @@ int XMLFile::XMLFile_add_origin_14(const char* datanode_node, const char* node_n
 
 
 
+static const char* safe_rank(TiXmlElement* el) {
+	if (!el) return "";
+	const char* r = el->Attribute("rank");
+	return r ? r : "";
+}
+
 int XMLFile::XMLFile_add_cut(
 	const char* datanode_name,
 	int master_index,
@@ -4762,10 +4768,10 @@ int XMLFile::XMLFile_add_cut(
 		tmp = root->Value();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			int i = strcmp(root->Attribute("rank"), "import") == 0;
-			int j = strcmp(root->Attribute("rank"), "cut") == 0;
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0)
+			int i = strcmp(safe_rank(root), "import") == 0;
+			int j = strcmp(safe_rank(root), "cut") == 0;
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0)
 				continue;
 			else
 				break;
@@ -4929,7 +4935,7 @@ int XMLFile::XMLFile_add_cut_14(
 		{
 			int ret, mode;
 			double level;
-			ret = sscanf(root->Attribute("rank"), "%d-complex-%lf", &mode, &level);
+			ret = sscanf(safe_rank(root), "%d-complex-%lf", &mode, &level);
 			if (ret == 0 && level <= 1.0) continue;
 			else break;
 		}
@@ -5080,9 +5086,9 @@ int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name,
 		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-2.0") == 0)
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0 ||
+				strcmp(safe_rank(root), "complex-2.0") == 0)
 				continue;
 			else
 				break;
@@ -5239,7 +5245,7 @@ int XMLFile::XMLFile_add_regis14(
 		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			ret = sscanf(root->Attribute("rank"), "%d-complex-%lf", &mode2, &level);
+			ret = sscanf(safe_rank(root), "%d-complex-%lf", &mode2, &level);
 			if (ret == 2 && level <= 2.0) continue;
 			else break;
 		}
@@ -5388,9 +5394,9 @@ int XMLFile::XMLFile_add_backgeocoding(const char* dataNode, const char* dataNam
 		TiXmlElement* root = doc.RootElement()->FirstChildElement() ? doc.RootElement()->FirstChildElement()->NextSiblingElement() : NULL;
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-2.0") == 0)
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0 ||
+				strcmp(safe_rank(root), "complex-2.0") == 0)
 				continue;
 			else
 				break;
@@ -5514,10 +5520,10 @@ int XMLFile::XMLFile_add_SLC_deramp(const char* dataNode, const char* dataName, 
 		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-2.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-3.0") == 0
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0 ||
+				strcmp(safe_rank(root), "complex-2.0") == 0 ||
+				strcmp(safe_rank(root), "complex-3.0") == 0
 				)
 				continue;
 			else
@@ -5643,7 +5649,7 @@ int XMLFile::XMLFile_add_SLC_deramp_14(
 		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			string rank2 = root->Attribute("rank");
+			string rank2 = safe_rank(root);
 			int mode2; double level2;
 			ret = sscanf(rank2.c_str(), "%d-complex-%lf", &mode2, &level2);
 			if (ret == 2 && level2 <= 3.0) continue;
@@ -5758,14 +5764,14 @@ int XMLFile::XMLFile_add_SBAS(const char* dataNode, const char* dataName, const 
 	TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
 	for (; root != NULL; root = root->NextSiblingElement(), index++)
 	{
-		if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-			strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-			strcmp(root->Attribute("rank"), "complex-3.0") == 0 ||
-			strcmp(root->Attribute("rank"), "phase-1.0") == 0 ||
-			strcmp(root->Attribute("rank"), "phase-2.0") == 0 ||
-			strcmp(root->Attribute("rank"), "phase-3.0") == 0 ||
-			strcmp(root->Attribute("rank"), "dem-1.0") == 0 ||
-			strcmp(root->Attribute("rank"), "SBAS-1.0") == 0
+		if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+			strcmp(safe_rank(root), "complex-1.0") == 0 ||
+			strcmp(safe_rank(root), "complex-3.0") == 0 ||
+			strcmp(safe_rank(root), "phase-1.0") == 0 ||
+			strcmp(safe_rank(root), "phase-2.0") == 0 ||
+			strcmp(safe_rank(root), "phase-3.0") == 0 ||
+			strcmp(safe_rank(root), "dem-1.0") == 0 ||
+			strcmp(safe_rank(root), "SBAS-1.0") == 0
 			)
 			continue;
 		else
@@ -5846,8 +5852,8 @@ int XMLFile::XMLFile_add_S1_Deburst(const char* dataNode, const char* dataName, 
 		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0)
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0)
 				continue;
 			else
 				break;
@@ -6080,8 +6086,8 @@ int XMLFile::XMLFile_add_interferometric_phase_14(
 		{
 			int ret2, ret3;
 			int mode2, mode3; double level2, level3;
-			ret2 = sscanf(root->Attribute("rank"), "%d-complex-%lf", &mode2, &level2);
-			ret3 = sscanf(root->Attribute("rank"), "%d-phase-%lf", &mode3, &level3);
+			ret2 = sscanf(safe_rank(root), "%d-complex-%lf", &mode2, &level2);
+			ret3 = sscanf(safe_rank(root), "%d-phase-%lf", &mode3, &level3);
 			if ((ret3 == 2 && level3 <= 1.0) || ret2 == 2) continue;
 			else
 				break;
@@ -6207,17 +6213,23 @@ int XMLFile::XMLFile_add_interferometric_phase(const char* datanode_name, const 
 		DataNode = new TiXmlElement("DataNode");
 		DataNode->SetAttribute("name", datanode_name);
 		int index = 1;
-		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
-		tmp = root->Value();
+		TiXmlElement* root = doc.RootElement()->FirstChildElement();
+		if (root) root = root->NextSiblingElement();
+		
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-2.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-1.0") == 0)
-				continue;
-			else
+			const char* rankAttr = safe_rank(root);
+			if (rankAttr != NULL) {
+				if (strcmp(rankAttr, "complex-0.0") == 0 ||
+					strcmp(rankAttr, "complex-1.0") == 0 ||
+					strcmp(rankAttr, "complex-2.0") == 0 ||
+					strcmp(rankAttr, "phase-1.0") == 0)
+					continue;
+				else
+					break;
+			} else {
 				break;
+			}
 		}
 		string index_str = int2str(index);
 		DataNode->SetAttribute("index", index_str.c_str());
@@ -6385,8 +6397,8 @@ int XMLFile::XMLFile_add_denoise_14(
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
 			int ret2, mode2, ret3, mode3; double level2, level3;
-			ret2 = sscanf(root->Attribute("rank"), "%d-complex-%lf", &mode2, &level2);
-			ret3 = sscanf(root->Attribute("rank"), "%d-phase-%lf", &mode3, &level3);
+			ret2 = sscanf(safe_rank(root), "%d-complex-%lf", &mode2, &level2);
+			ret3 = sscanf(safe_rank(root), "%d-phase-%lf", &mode3, &level3);
 			if ((ret2 == 2) || (ret3 == 2 && level3 <= 2.0))
 			{
 				continue;
@@ -6561,11 +6573,11 @@ int XMLFile::XMLFile_add_denoise(const char* datanode_name, const char* node_nam
 		tmp = root->Value();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-2.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-2.0") == 0)
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0 ||
+				strcmp(safe_rank(root), "complex-2.0") == 0 ||
+				strcmp(safe_rank(root), "phase-1.0") == 0 ||
+				strcmp(safe_rank(root), "phase-2.0") == 0)
 				continue;
 			else
 				break;
@@ -6734,12 +6746,12 @@ int XMLFile::XMLFile_add_unwrap(const char* datanode_name, const char* node_name
 		tmp = root->Value();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-2.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-2.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-3.0") == 0)
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0 ||
+				strcmp(safe_rank(root), "complex-2.0") == 0 ||
+				strcmp(safe_rank(root), "phase-1.0") == 0 ||
+				strcmp(safe_rank(root), "phase-2.0") == 0 ||
+				strcmp(safe_rank(root), "phase-3.0") == 0)
 				continue;
 			else
 				break;
@@ -6882,8 +6894,8 @@ int XMLFile::XMLFile_add_unwrap_14(
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
 			int ret2, ret3, mode2, mode3; double level2, level3;
-			ret2 = sscanf(root->Attribute("rank"), "%d-complex-%lf", &mode2, &level2);
-			ret3 = sscanf(root->Attribute("rank"), "%d-phase-%lf", &mode3, &level3);
+			ret2 = sscanf(safe_rank(root), "%d-complex-%lf", &mode2, &level2);
+			ret3 = sscanf(safe_rank(root), "%d-phase-%lf", &mode3, &level3);
 			if (ret2 == 2 || ret3 == 2) continue;
 			else break;
 		}
@@ -7013,13 +7025,13 @@ int XMLFile::XMLFile_add_dem(const char* datanode_name, const char* node_name, c
 		tmp = root->Value();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
-			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "complex-2.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-1.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-2.0") == 0 ||
-				strcmp(root->Attribute("rank"), "phase-3.0") == 0 ||
-				strcmp(root->Attribute("rank"), "dem-1.0") == 0)
+			if (strcmp(safe_rank(root), "complex-0.0") == 0 ||
+				strcmp(safe_rank(root), "complex-1.0") == 0 ||
+				strcmp(safe_rank(root), "complex-2.0") == 0 ||
+				strcmp(safe_rank(root), "phase-1.0") == 0 ||
+				strcmp(safe_rank(root), "phase-2.0") == 0 ||
+				strcmp(safe_rank(root), "phase-3.0") == 0 ||
+				strcmp(safe_rank(root), "dem-1.0") == 0)
 				continue;
 			else
 				break;
@@ -7162,9 +7174,9 @@ int XMLFile::XMLFile_add_dem_14(
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
 			int ret1, ret2, ret3, mode1, mode2, mode3; double level;
-			ret1 = sscanf(root->Attribute("rank"), "%d-complex-%lf", &mode1, &level);
-			ret2 = sscanf(root->Attribute("rank"), "%d-phase-%lf", &mode2, &level);
-			ret3 = sscanf(root->Attribute("rank"), "%d-dem-%lf", &mode3, &level);
+			ret1 = sscanf(safe_rank(root), "%d-complex-%lf", &mode1, &level);
+			ret2 = sscanf(safe_rank(root), "%d-phase-%lf", &mode2, &level);
+			ret3 = sscanf(safe_rank(root), "%d-dem-%lf", &mode3, &level);
 			if (ret1 == 2 || ret2 == 2 || (ret3 == 2 && level <= 1.0)) continue;
 			else break;
 		}
@@ -7369,6 +7381,11 @@ int XMLFile::XMLFile_load(const char* xmlFileName)
 		fprintf(stderr, "XMLFile_load(): can't load XML file %s!\n", xmlFileName);
 		return -1;
 	}
+	if (doc.RootElement() == NULL)
+	{
+		fprintf(stderr, "XMLFile_load(): loaded XML file is empty %s!\n", xmlFileName);
+		return -1;
+	}
 	return 0;
 }
 
@@ -7439,14 +7456,15 @@ int XMLFile::find_node_with_attribute(TiXmlElement* pRoot, const char* node_name
 {
 	if (node_name == NULL ||
 		attribute_name == NULL ||
-		attribute_value == NULL)
+		attribute_value == NULL ||
+		pRoot == NULL)
 	{
 		fprintf(stderr, "find_node_with_attribute(): input check failed!\n");
 		return -1;
 	}
 	const char* value = pRoot->Value();
 	const char* attribute = pRoot->Attribute(attribute_name);
-	if (strcmp(value, node_name) == 0 && strcmp(attribute, attribute_value) == 0)
+	if (value != NULL && attribute != NULL && strcmp(value, node_name) == 0 && strcmp(attribute, attribute_value) == 0)
 	{
 		pnode = pRoot;
 		return 0;
@@ -7479,7 +7497,7 @@ int XMLFile::find_node_with_attribute(
 	TiXmlElement* pRoot = doc.RootElement();
 	const char* value = pRoot->Value();
 	const char* attribute = pRoot->Attribute(attribute_name);
-	if (strcmp(value, node_name) == 0 && strcmp(attribute, attribute_value) == 0)
+	if (value != NULL && attribute != NULL && strcmp(value, node_name) == 0 && strcmp(attribute, attribute_value) == 0)
 	{
 		pnode = pRoot;
 		return 0;

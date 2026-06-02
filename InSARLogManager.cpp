@@ -13,6 +13,8 @@ InSARLogManager::InSARLogManager()
 {
     // Default log file location
     m_logFilePath = QCoreApplication::applicationDirPath() + "/SatExplorer.log";
+
+    qRegisterMetaType<LogEntry>("LogEntry");
 }
 
 InSARLogManager::~InSARLogManager()

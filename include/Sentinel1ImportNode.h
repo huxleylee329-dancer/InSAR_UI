@@ -13,6 +13,8 @@
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrent>
 #include <QThread>
 
 namespace QtNodes {
@@ -100,6 +102,7 @@ private:
     MyThread* m_workerThread;
     QThread* m_thread;
 
+    QFutureWatcher<void> m_remedyWatcher;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
 };
 

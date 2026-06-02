@@ -204,3 +204,7 @@
          - **核心算子结果**：当算子计算出重要科学数据或校正参数时，予以记录（如 ESD 计算出的方位向偏差量 `offset_a`）。
          - **数据存盘与回传**：在 H5 参数回写完毕、XML 序列化落盘前，以及向 UI 发送 `sendResults` 信号的节点，分别记录成功日志。
          - **异常与出错**：在任何参数检验不通过、文件读写失败的 `emit errorProcess` 出口前，同步调用 `LogError` 记录精准的错误原因和上下文环境。
+
+14. **工作流节点“覆盖(Overwrite)”重运行的数据累加与 UI 树重复子节点问题避坑**：
+    - **现象与根源**：在执行如 `S1TopsBackGeocodingNode` 等节点时，如果用户在生成同名输出时选择“覆盖(Overwrite)”以重新运行任务，物理文件确实会被重新生成并覆盖。但是，由于底层 Worker 在保存结果到工程 XML 时通常使用**追加(Append)**逻辑（例如在查找到现有的 `DataNode` 时继续向其下 `LinkEndChild(Data)`），如果在重新启动 Worker 前没有清空该节点，XML 内会累积指向同一批文件的多个 `Data` 条目。这会导致在执行完毕调用 `refreshProjectTree()` 刷新 UI 树时，Workspace UI 树里出现名字完全一样的重复子节点。
+    - **避坑对策**：在节点主线程的 `executeProcessing()` 逻辑中，当 `checkAndPromptOverwrite()` 的返回结果为 `OverwriteResult::Overwrite`（即用户同意覆盖重写，或默认放行）且**即将进入** `setState(ExecutionState::Running)` 启动 Worker 之前，**必须显式调用** `NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);`。这能确保在重运行的后台线程启动前，旧的树节点和对应的 XML 记录已被彻底清理。当 Worker 完成并追加 XML 时，就是在一张“白纸”上建立全新的单一节点，从而完美杜绝了数据累加与 UI 树节点的重影 Bug。

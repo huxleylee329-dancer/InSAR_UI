@@ -395,10 +395,7 @@ QStringList Sentinel1ImportNode::previewImagePaths() const
         QFileInfo fi(m_importedFilePath);
         QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
         
-        // 自愈：如果 JPG 丢失了，但 H5 还存在，则静默重建
-        if (!QFileInfo::exists(jpgPath) && QFileInfo::exists(m_importedFilePath)) {
-            NodeUtils::generateJpgPreviewFromH5(m_importedFilePath, jpgPath, "complex");
-        }
+        // 自愈已被移至 validateAndRestoreOutput 中异步执行
         
         if (QFileInfo::exists(jpgPath)) {
             return QStringList() << jpgPath;
@@ -679,9 +676,28 @@ bool Sentinel1ImportNode::validateAndRestoreOutput()
         // 双路输出：Port 1 预览输出
         QFileInfo fi(outputPath);
         QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
+        
+        if (!QFileInfo::exists(jpgPath)) {
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+            m_remedyWatcher.disconnect();
+
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPath]() {
+                m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+                setOutputData(1, m_imageInfoData);
+                Q_EMIT dataUpdated(1);
+            });
+
+            QString capturedH5 = outputPath;
+            QFuture<void> future = QtConcurrent::run([capturedH5, jpgPath]() {
+                NodeUtils::generateJpgPreviewFromH5(capturedH5, jpgPath, "complex");
+            });
+            m_remedyWatcher.setFuture(future);
+        } else {
+            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+        }
 
         return true;
     }
