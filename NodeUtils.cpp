@@ -233,20 +233,50 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
         Utils util;
         cv::Mat phase;
         
-        if (FC.read_array_from_h5(h5Path.toLocal8Bit().constData(), "phase", phase) != 0)
+        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", phase) != 0)
             return false;
             
-        int ret = util.savephase(jpgPath.toLocal8Bit().constData(), "jet", phase);
-        if (ret && phase.rows * phase.cols > 25e6)
+        if (phase.type() != CV_64F)
+        {
+            phase.convertTo(phase, CV_64F);
+        }
+        phase = phase.clone();
+            
+        int ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
+        
+        if (ret != 0)
+        {
+            qDebug() << "NodeUtils::generateJpgPreviewFromH5 warning: util.savephase failed (-1). Falling back to custom OpenCV rendering...";
+            // 1. Normalize phase from [-pi, pi] to [0, 255]
+            cv::Mat phase_normalized;
+            phase_normalized = (phase + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
+            
+            // 2. Convert to CV_8UC1 (saturating cast)
+            phase_normalized.convertTo(phase_normalized, CV_8U);
+            
+            // 3. Apply colormap
+            cv::Mat color_image;
+            cv::applyColorMap(phase_normalized, color_image, cv::COLORMAP_JET);
+            
+            // 4. Save using cv::imwrite
+            bool success_write = cv::imwrite(jpgPath.toStdString(), color_image);
+            if (!success_write)
+            {
+                qDebug() << "NodeUtils::generateJpgPreviewFromH5 error: fallback cv::imwrite failed.";
+            }
+            ret = success_write ? 0 : -1;
+        }
+
+        if (ret == 0 && phase.rows * phase.cols > 25e6)
         {
             int down_sample_times = (int)std::sqrt(std::floor(double(phase.rows * phase.cols) / 25e6));
             if (down_sample_times > 1) {
-                util.resampling(jpgPath.toLocal8Bit().constData(), jpgPath.toLocal8Bit().constData(),
+                util.resampling(jpgPath.toStdString().c_str(), jpgPath.toStdString().c_str(),
                     (int)(phase.rows / down_sample_times),
                     (int)(phase.cols / down_sample_times));
             }
         }
-        return ret != 0;
+        return ret == 0;
     }
     return false;
 }

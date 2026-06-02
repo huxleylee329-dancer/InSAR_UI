@@ -103,23 +103,17 @@ bool CutNode::portIsOptional(PortType portType, PortIndex portIndex) const
 
 void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    qDebug() << "[CutNode] setInData called on port" << port
-             << "data exists:" << (data != nullptr)
-             << "summary:" << (data ? data->getSummary() : "null");
-    Q_UNUSED(port);
+        Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-        qDebug() << "[CutNode] setInData: input data is empty, resetting outputs";
-        m_outputData.reset();
+                m_outputData.reset();
         m_previewData.reset();
         setOutputData(0, nullptr);
         setOutputData(1, nullptr);
     } else {
-        qDebug() << "[CutNode] setInData: input filePaths:" << m_inputData->filePaths();
-        if (!isRestoring()) {
-            qDebug() << "[CutNode] setInData: not restoring, extracting center lon/lat";
-            m_boxSelected = false;
+                if (!isRestoring()) {
+                        m_boxSelected = false;
             // 从第一个H5文件的gcps自动提取中心经纬度作为默认值
             QStringList h5Paths = resolvedInputH5Paths();
             if (!h5Paths.isEmpty()) {
@@ -132,16 +126,13 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
                     m_lon = cv::mean(lon)[0];
                     m_lat = cv::mean(lat)[0];
                     m_coordsSet = true;
-                    qDebug() << "[CutNode] setInData: extracted center lon:" << m_lon << "lat:" << m_lat;
-                    if (m_lonEdit) m_lonEdit->setText(QString::number(m_lon, 'f', 6));
+                                        if (m_lonEdit) m_lonEdit->setText(QString::number(m_lon, 'f', 6));
                     if (m_latEdit) m_latEdit->setText(QString::number(m_lat, 'f', 6));
                 } else {
-                    qDebug() << "[CutNode] setInData: failed to read gcps from H5 file:" << h5Paths.first();
-                }
+                                    }
             }
         } else {
-            qDebug() << "[CutNode] setInData: isRestoring() is true, skipping center extraction";
-        }
+                    }
     }
 
     updateLabels();
@@ -150,15 +141,10 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
 std::shared_ptr<NodeData> CutNode::outData(PortIndex port)
 {
-    qDebug() << "[CutNode] outData() called for port" << port;
-    if (port == 0) {
-        qDebug() << "[CutNode]   outData(0): returning m_outputData, exists:" << (m_outputData != nullptr)
-                 << "summary:" << (m_outputData ? m_outputData->getSummary() : "null");
-        return m_outputData;
+        if (port == 0) {
+                return m_outputData;
     } else {
-        qDebug() << "[CutNode]   outData(1): returning m_previewData, exists:" << (m_previewData != nullptr)
-                 << "summary:" << (m_previewData ? m_previewData->getSummary() : "null");
-        return m_previewData;
+                return m_previewData;
     }
 }
 
@@ -181,8 +167,7 @@ void CutNode::createWidget()
     layout->setSpacing(6);
 
     auto invalidateNodeData = [this]() {
-        qDebug() << "[CutNode] invalidateNodeData called! Resetting m_outputData and m_previewData to nullptr";
-        if (m_outputData) m_outputData.reset();
+                if (m_outputData) m_outputData.reset();
         if (m_previewData) m_previewData.reset();
         setOutputData(0, nullptr);
         setOutputData(1, nullptr);
@@ -642,10 +627,8 @@ void CutNode::onProcessingFinished()
         projDir = QFileInfo(projDir).absolutePath();
     }
 
-    qDebug() << "[CutNode] onProcessingFinished, m_outputPaths.size() =" << m_outputPaths.size();
-    for (const QString& p : m_outputPaths)
-        qDebug() << "[CutNode]   outputPath:" << p << "exists:" << QFile::exists(p);
-
+        for (const QString& p : m_outputPaths)
+        
     // Set outputs
     m_outputData = std::make_shared<ImportedFileData>(m_outputPaths, dstNodeName);
     setOutputData(0, m_outputData);
@@ -666,14 +649,12 @@ void CutNode::onProcessingFinished()
         }
     }
 
-    qDebug() << "[CutNode] JPG missing:" << missingH5s.size() << "of" << m_outputPaths.size();
-
+    
     if (!missingH5s.isEmpty()) {
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
                 bool ok = NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                qDebug() << "[CutNode] JPG gen" << missingH5s[i] << "->" << missingJpgs[i] << (ok ? "OK" : "FAILED");
-            }
+                            }
         });
         auto* watcher = new QFutureWatcher<void>(this);
         connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPaths]() {
@@ -747,10 +728,7 @@ void CutNode::onModelUpdated(QStandardItemModel* model)
 
 bool CutNode::validateAndRestoreOutput()
 {
-    qDebug() << "[CutNode] validateAndRestoreOutput: m_outputPaths=" << m_outputPaths.size()
-             << "m_savedOutputFileNames=" << m_savedOutputFileNames.size()
-             << "projDir=" << projectPath();
-    QString nodeName = m_outputNodeName.trimmed();
+        QString nodeName = m_outputNodeName.trimmed();
     if (nodeName.isEmpty()) return false;
 
     QString projDir = projectPath();
@@ -763,8 +741,7 @@ bool CutNode::validateAndRestoreOutput()
 
     if (!m_outputPaths.isEmpty()) {
         // m_outputPaths已有完整路径（执行后保存的），直接使用
-        qDebug() << "[CutNode] validateAndRestoreOutput: using m_outputPaths:" << m_outputPaths;
-        for (const QString& path : m_outputPaths) {
+                for (const QString& path : m_outputPaths) {
             QString outPath = path;
             if (!outPath.endsWith(".h5", Qt::CaseInsensitive)) outPath += ".h5";
             expectedH5Paths.append(outPath);
@@ -784,14 +761,12 @@ bool CutNode::validateAndRestoreOutput()
             expectedJpgPaths.append(projDir + "/" + nodeName + "/" + outBase + ".jpg");
         }
     } else {
-        qDebug() << "[CutNode] validateAndRestoreOutput: no path source available, returning false";
-        return false;
+                return false;
     }
 
     // Verify files exist
     for (const QString& path : expectedH5Paths) {
-        qDebug() << "[CutNode] validateAndRestoreOutput: checking" << path << "exists:" << QFile::exists(path);
-        if (!QFile::exists(path)) return false;
+                if (!QFile::exists(path)) return false;
     }
 
     m_outputPaths = expectedH5Paths;
@@ -807,37 +782,30 @@ bool CutNode::validateAndRestoreOutput()
     }
 
     if (!missingH5s.isEmpty()) {
-        qDebug() << "[CutNode] validateAndRestoreOutput: JPG previews missing, starting background thread for" << missingH5s.size() << "previews";
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
                 bool ok = NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                qDebug() << "[CutNode] validateAndRestoreOutput: generated JPG" << missingJpgs[i] << "OK:" << ok;
-            }
+                            }
         });
         auto* watcher = new QFutureWatcher<void>(this);
         connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, expectedJpgPaths]() {
-            qDebug() << "[CutNode] validateAndRestoreOutput: background preview generation finished, setting m_previewData";
-            watcher->deleteLater();
+                        watcher->deleteLater();
             m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
             setOutputData(1, m_previewData);
-            qDebug() << "[CutNode] validateAndRestoreOutput: emitted dataUpdated(1), summary:" << m_previewData->getSummary();
-            Q_EMIT dataUpdated(1);
+                        Q_EMIT dataUpdated(1);
         });
         watcher->setFuture(future);
     } else {
-        qDebug() << "[CutNode] validateAndRestoreOutput: all JPG previews exist, setting m_previewData directly";
-        m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
+                m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
         setOutputData(1, m_previewData);
         Q_EMIT dataUpdated(1);
     }
 
-    qDebug() << "[CutNode] validateAndRestoreOutput: setting m_outputData, summary:" << nodeName;
-    m_outputData = std::make_shared<ImportedFileData>(expectedH5Paths, nodeName);
+        m_outputData = std::make_shared<ImportedFileData>(expectedH5Paths, nodeName);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 
-    qDebug() << "[CutNode] validateAndRestoreOutput: output data structures populated, proceeding to tree and xml restoration";
-
+    
     // Rebuild project tree node
     QStandardItemModel* projModelPtr = projectModel();
     if (projModelPtr) {
@@ -1045,8 +1013,7 @@ bool CutNode::validateAndRestoreOutput()
 
     updateLabels();
     updateWidgetSize();
-    qDebug() << "[CutNode] validateAndRestoreOutput: finished successfully, returning true";
-    return true;
+        return true;
 }
 
 QStandardItemModel* CutNode::projectModel() const
@@ -1186,12 +1153,7 @@ void CutNode::processRoiSelection(const QRectF& sceneRect, int imageIndex)
     double top = qBound(0.0, rect.top() / image.height(), 1.0);
     double bottom = qBound(0.0, rect.bottom() / image.height(), 1.0);
 
-    qDebug() << "[CutNode] processRoiSelection:"
-             << "sceneRect=" << sceneRect
-             << "previewImage=" << previews.at(imageIndex)
-             << "previewSize=" << image.width() << "x" << image.height()
-             << "normalized: L=" << left << "R=" << right << "T=" << top << "B=" << bottom;
-
+    
     onBoxSelected(left, right, top, bottom);
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
@@ -1316,22 +1278,19 @@ QJsonObject CutNode::save() const
 
 void CutNode::load(QJsonObject const &json)
 {
-    qDebug() << "[CutNode] load() called";
-    // 先恢复CutNode自己的参数，因为基类load()会调用validateAndRestoreOutput()
+        // 先恢复CutNode自己的参数，因为基类load()会调用validateAndRestoreOutput()
     m_mode = json["mode"].toInt(0);
     m_lon = json["lon"].toDouble(0.0);
     m_lat = json["lat"].toDouble(0.0);
     m_width = json["width"].toDouble(1000.0);
     m_height = json["height"].toDouble(1000.0);
-    qDebug() << "[CutNode] load() read basic: mode=" << m_mode << "lon=" << m_lon << "lat=" << m_lat << "width=" << m_width << "height=" << m_height;
-
+    
     m_left = json["left"].toDouble(0.25);
     m_right = json["right"].toDouble(0.75);
     m_top = json["top"].toDouble(0.25);
     m_bottom = json["bottom"].toDouble(0.75);
     m_boxSelected = json["boxSelected"].toBool(false);
-    qDebug() << "[CutNode] load() read spinboxes: left=" << m_left << "right=" << m_right << "top=" << m_top << "bottom=" << m_bottom << "boxSelected=" << m_boxSelected;
-
+    
     m_saveToProject = json["saveToProject"].toBool(true);
     m_outputNodeName = json["outputNodeName"].toString("AOI_Crop");
 
@@ -1342,8 +1301,7 @@ void CutNode::load(QJsonObject const &json)
     }
     if (!m_savedOutputFileNames.isEmpty()) {
         QString projDir = projectPath();
-        qDebug() << "[CutNode] load() restoring paths: m_savedOutputFileNames=" << m_savedOutputFileNames << "projDir=" << projDir;
-        if (projDir.endsWith(".insar", Qt::CaseInsensitive)) {
+                if (projDir.endsWith(".insar", Qt::CaseInsensitive)) {
             projDir = QFileInfo(projDir).absolutePath();
         }
         if (!projDir.isEmpty()) {
@@ -1355,13 +1313,8 @@ void CutNode::load(QJsonObject const &json)
     }
 
     // 基类load()会调用validateAndRestoreOutput()
-    qDebug() << "[CutNode] load() before base: m_outputPaths=" << m_outputPaths.size()
-             << "m_savedOutputFileNames=" << m_savedOutputFileNames.size()
-             << "m_boxSelected=" << m_boxSelected
-             << "projDir=" << projectPath();
-    ExecutableNodeDelegateModel::load(json);
-    qDebug() << "[CutNode] load() after base: state=" << static_cast<int>(executionState());
-    if (_widget) {
+        ExecutableNodeDelegateModel::load(json);
+        if (_widget) {
         // 阻塞信号，避免setCurrentIndex、setValue等触发onModeChanged/invalidateExecution/invalidateNodeData
         QSignalBlocker b1(m_modeCombo);
         QSignalBlocker b2(m_saveToProjectCheckBox);

@@ -14,6 +14,7 @@
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 #include "icon_utils.h"
+#include <QDebug>
 
 // Windows DWM 标题栏主题支持
 #ifdef Q_OS_WIN
@@ -594,6 +595,7 @@ void MainWindow::ShowImage(QModelIndex image)
 
     if (path.isEmpty() || !QFileInfo(path).exists())
     {
+        qDebug() << "MainWindow::ShowImage early return: path is empty or H5 file does not exist. path:" << path;
         return;
     }
 
@@ -608,7 +610,8 @@ void MainWindow::ShowImage(QModelIndex image)
 
         QFileInfo fileinfo1 = QFileInfo(path_abs);
         QDir dir(fileinfo1.absolutePath());
-        if (dir.exists(fileinfo1.baseName() + ".jpg"))
+        bool exists = dir.exists(fileinfo1.baseName() + ".jpg");
+        if (exists)
         {
             mData_path = path;
             mType = type;
@@ -620,7 +623,6 @@ void MainWindow::ShowImage(QModelIndex image)
             QStringList imageFormats = {"jpg","jpeg","png","bmp","tif","tiff"};
             if (imageFormats.contains(suffix))
             {
-                // Generic SAR等直接导入的普通图片，跳过HDF5读取，直接加载
                 this->bmp_path = path;
                 mData_path = path;
                 mType = type;

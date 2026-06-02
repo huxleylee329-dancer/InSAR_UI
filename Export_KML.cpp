@@ -311,6 +311,10 @@ void Export_KML::on_Export_pressed()
     Rows = deformation_velocity.rows/*12252*/;
     Cols = deformation_velocity.cols/*24463*/;
     ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "mask", mask);
+    if (deformation_velocity.type() != CV_64F)
+    {
+        deformation_velocity.convertTo(deformation_velocity, CV_64F);
+    }
     util.savephase_white(jpg_path.toStdString().c_str(), "jet", deformation_velocity, mask);
     if (QThread::currentThread()->isInterruptionRequested())
     {

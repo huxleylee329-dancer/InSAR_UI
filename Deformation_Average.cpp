@@ -185,6 +185,10 @@ void Deformation_Average::on_Preview_pressed()
         Mat image;
         int ret = FC.read_array_from_h5(image_path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
         ret = FC.read_array_from_h5(image_path.toStdString().c_str(), "mask", mask);
+        if (defomation_velocity.type() != CV_64F)
+        {
+            defomation_velocity.convertTo(defomation_velocity, CV_64F);
+        }
         util.savephase_white(jpg_path.toStdString().c_str(), "jet", defomation_velocity, mask);
         if (QThread::currentThread()->isInterruptionRequested())
         {

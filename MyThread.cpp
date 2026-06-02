@@ -1,4 +1,4 @@
-﻿#include"MyThread.h"
+#include"MyThread.h"
 #include"icon_source.h"
 #include"BM3DWrapper.h"
 #include<Utils.h>
@@ -626,6 +626,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 {
 	if (h5_path.isEmpty() || bmp_path.isEmpty() || type.isEmpty())
 	{
+		qDebug() << "MyThread::ShowImage error: one or more inputs are empty.";
 		return;
 	}
 
@@ -635,6 +636,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		bool success = NodeUtils::generateJpgPreviewFromH5(h5_path, bmp_path, type);
 		if (!success || QThread::currentThread()->isInterruptionRequested())
 		{
+			qDebug() << "MyThread::ShowImage error: generateJpgPreviewFromH5 failed or thread interrupted. Removing bmp_path.";
 			QFile::remove(bmp_path);
 			emit endProcess();
 			return;
@@ -653,6 +655,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "coherence", coherence);
 		emit updateProcess(50, QStringLiteral("格式转换……"));
+		if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
 		ret = util.savephase(bmp_path.toStdString().c_str(), "gray", coherence);
 
 		if (coherence.rows * coherence.cols > 25e6)
@@ -681,6 +684,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "dem", phase);
 		emit updateProcess(50, QStringLiteral("格式转换……"));
+		if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
 		ret = util.savephase(bmp_path.toStdString().c_str(), "jet", phase);
 		emit updateProcess(90, QStringLiteral("写入bmp文件……"));
 		if (!ret)
@@ -699,6 +703,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		emit updateProcess(20, QStringLiteral("读取数据……"));
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "amplitude", phase);
 		emit updateProcess(50, QStringLiteral("格式转换……"));
+		if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
 		ret = util.saveAmplitude(bmp_path.toStdString().c_str(), phase);
 		emit updateProcess(90, QStringLiteral("写入bmp文件……"));
 		if (!ret)
@@ -719,6 +724,7 @@ void MyThread::ShowImage(QString h5_path, QString bmp_path, QString type)
 		int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
 		ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "mask", mask);
 		emit updateProcess(50, QStringLiteral("格式转换……"));
+		if (defomation_velocity.type() != CV_64F) defomation_velocity.convertTo(defomation_velocity, CV_64F);
 		if(ret == 0) util.savephase_white(bmp_path.toStdString().c_str(), "jet", defomation_velocity, mask);
 		else util.savephase(bmp_path.toStdString().c_str(), "jet", defomation_velocity);
 		emit updateProcess(90, QStringLiteral("写入图像文件……"));
@@ -2648,7 +2654,7 @@ void MyThread::Interferometric(bool isdeflat, bool istopo_removal, bool iscohere
 				}
 				ret = FC.write_array_to_h5(h5_path.toStdString().c_str(), "coherence", coherence);
 			}
-			emit updateProcess(10 + pair * 80 / (count - 1), QStringLiteral("生成第1%幅干涉图……").arg(pair));
+			emit updateProcess(10 + pair * 80 / (count - 1), QStringLiteral("生成第%1幅干涉图……").arg(pair));
 			pair++;
 
 
