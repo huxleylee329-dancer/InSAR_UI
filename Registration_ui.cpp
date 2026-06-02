@@ -410,7 +410,7 @@ void Registration_ui::on_buttonBox_accepted()
     int index = ui->comboBox_masterIndex->currentIndex() + 1;
     int interp = ui->comboBox_interptimes->currentText().toInt(&bFlag);
     int block_size = ui->comboBox_blocksize->currentText().toInt(&bFlag);
-    Registration_thread = new MyThread;
+    Registration_thread = new CoregistrationWorker;
     Registration_thread->moveToThread(new QThread(this));
     //this->Process->setAutoClose(true);
     ui->progressBar->setValue(0);
@@ -421,13 +421,13 @@ void Registration_ui::on_buttonBox_accepted()
     para.push_back(block_size);
     para.push_back(this->image_number);
     //this->thread()->msleep(1);
-    connect(this, &Registration_ui::operate, Registration_thread, &MyThread::Regis, Qt::QueuedConnection);
-    connect(Registration_thread, &MyThread::updateProcess, this, &Registration_ui::updateProcess);
-    connect(Registration_thread->thread(), &QThread::finished, Registration_thread, &MyThread::deleteLater);
-    connect(Registration_thread, &MyThread::endProcess, this, &Registration_ui::endProcess);
+    connect(this, &Registration_ui::operate, Registration_thread, &CoregistrationWorker::Regis, Qt::QueuedConnection);
+    connect(Registration_thread, &CoregistrationWorker::updateProcess, this, &Registration_ui::updateProcess);
+    connect(Registration_thread->thread(), &QThread::finished, Registration_thread, &CoregistrationWorker::deleteLater);
+    connect(Registration_thread, &CoregistrationWorker::endProcess, this, &Registration_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Registration_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Registration_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Registration_thread, &MyThread::sendModel, this, &Registration_ui::TransitModel);
+    connect(Registration_thread, &CoregistrationWorker::sendModel, this, &Registration_ui::TransitModel);
     Registration_thread->thread()->start();
     ChangeVision(false);
     //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);
@@ -478,17 +478,17 @@ void Registration_ui::on_buttonBox_2_accepted()
     }
 
     int index = ui->comboBox_masterIndex2->currentIndex() + 1;
-    Registration_thread = new MyThread;
+    Registration_thread = new CoregistrationWorker;
     Registration_thread->moveToThread(new QThread(this));
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Registration_ui::operate2, Registration_thread, &MyThread::DEMAssistCoregistration, Qt::QueuedConnection);
-    connect(Registration_thread, &MyThread::updateProcess, this, &Registration_ui::updateProcess);
-    connect(Registration_thread->thread(), &QThread::finished, Registration_thread, &MyThread::deleteLater);
-    connect(Registration_thread, &MyThread::endProcess, this, &Registration_ui::endProcess);
+    connect(this, &Registration_ui::operate2, Registration_thread, &CoregistrationWorker::DEMAssistCoregistration, Qt::QueuedConnection);
+    connect(Registration_thread, &CoregistrationWorker::updateProcess, this, &Registration_ui::updateProcess);
+    connect(Registration_thread->thread(), &QThread::finished, Registration_thread, &CoregistrationWorker::deleteLater);
+    connect(Registration_thread, &CoregistrationWorker::endProcess, this, &Registration_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Registration_ui::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Registration_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Registration_thread, &MyThread::sendModel, this, &Registration_ui::TransitModel);
+    connect(Registration_thread, &CoregistrationWorker::sendModel, this, &Registration_ui::TransitModel);
     Registration_thread->thread()->start();
     ChangeVision(false);
     emit operate2(index, this->save_path, ui->comboBox_project->currentText(),

@@ -23,6 +23,7 @@
 #include "EvaluationENLNode.h"
 #include "EvaluationSCRNode.h"
 #include "LoggerNode.h"
+#include "CoregistrationNode.h"
 
 #include <memory>
 
@@ -95,6 +96,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // ============================================================================
     registry->registerModel<SpeckleDenoiseNode>("SAR/Enhancement/Speckle Denoise");
     registry->registerModel<ClutterSuppressionNode>("SAR/Enhancement/Clutter Suppression");
+    registry->registerModel<CoregistrationNode>("InSAR");
 
     // ============================================================================
     // SAR Detection Nodes

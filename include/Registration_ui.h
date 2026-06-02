@@ -2,7 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_Registration.h"
-#include"MyThread.h"
+#include "CoregistrationWorker.h"
 
 class Registration_ui : public QWidget
 {
@@ -20,7 +20,7 @@ public slots:
 private:
     Ui::Registration* ui;
     QStandardItemModel* copy;
-    MyThread* Registration_thread;
+    CoregistrationWorker* Registration_thread;
     QString save_path;
     QString projectFile;
     int image_number;

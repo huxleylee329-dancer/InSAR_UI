@@ -68,6 +68,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "SAR",            // SAR处理分类
         "Data Import",    // 第一级分类
         "Preprocessing",  // 第二级分类
+        "InSAR",          // InSAR分类
         "Display",        // 图像显示/预览分类
         "Information",    // 信息/工具节点分类
         "Test"           // 测试节点分类
@@ -149,6 +150,11 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.leafItems["SAR/Evaluation"] = QList<PaletteOrder::LeafItem>{
         {"Evaluation-ENL", "Evaluation-ENL"},
         {"Evaluation-SCR", "Evaluation-SCR"}
+    };
+
+    // InSAR 类叶子项顺序
+    order.leafItems["InSAR"] = QList<PaletteOrder::LeafItem>{
+        {"Coregistration", "Coregistration"}
     };
 
     // Test 类叶子项顺序

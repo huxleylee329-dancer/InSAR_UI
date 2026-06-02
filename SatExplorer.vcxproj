@@ -326,6 +326,12 @@
     <ClCompile Include="SpeckleDenoiseNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="CoregistrationNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CoregistrationWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="SpeckleDenoiseTask.cpp" />
     <ClCompile Include="TargetDetectionNode.cpp">
       <Filter>Source Files</Filter>
@@ -783,6 +789,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SpeckleDenoiseNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\CoregistrationNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\CoregistrationWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SpeckleDenoiseTask.h" />
