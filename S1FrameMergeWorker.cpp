@@ -29,7 +29,7 @@ void S1FrameMergeWorker::S1_frame_merge(
     QStandardItemModel* model
 )
 {
-    InSARLogManager::LogInfo("S1FrameMergeWorker", "S1_frame_merge started.");
+    InSARLogManager::LogInfo("S1FrameMergeWorker", QString("S1_frame_merge started. Project: %1").arg(project_name));
     if (!model) {
         emit errorProcess(QStringLiteral("项目模型为空"));
         return;
@@ -46,6 +46,7 @@ void S1FrameMergeWorker::S1_frame_merge(
     if (!dir.exists(dstNode)) {
         dir.mkdir(dstNode);
     }
+    InSARLogManager::LogInfo("S1FrameMergeWorker", QString("Starting frame merge. Source Nodes: %1 & %2, Destination Node: %3").arg(srcNode1).arg(srcNode2).arg(dstNode));
 
     // 确定相邻单视复图像文件
     QString IW1_h5, IW2_h5;
@@ -74,10 +75,12 @@ void S1FrameMergeWorker::S1_frame_merge(
         return;
     }
 
+    InSARLogManager::LogInfo("S1FrameMergeWorker", QString("Selected images for merge: IW1=%1, IW2=%2").arg(IW1_h5).arg(IW2_h5));
     QFileInfo fileinfo1(IW1_h5);
     QFileInfo fileinfo2(IW2_h5);
     QString filename = fileinfo1.baseName() + "_" + fileinfo2.baseName();
     emit updateProcess(30, QStringLiteral("正在拼接……"));
+    InSARLogManager::LogInfo("S1FrameMergeWorker", QString("Merging frames into: %1").arg(filename + ".h5"));
     
     int ret;
     Utils util;
@@ -91,6 +94,7 @@ void S1FrameMergeWorker::S1_frame_merge(
         return;
     }
 
+    InSARLogManager::LogInfo("S1FrameMergeWorker", "Frames merged successfully. Generating preview image...");
     // 拼接成功后，生成 JPG 预览图（在后台线程中执行）
     QString bmp_path = save_path + "/" + dstNode + "/" + filename + ".jpg";
     NodeUtils::generateJpgPreviewFromH5(merged_h5, bmp_path, "complex");
@@ -132,10 +136,13 @@ void S1FrameMergeWorker::S1_frame_merge(
         frame_merge->setChild(item_img->row(), 1, new QStandardItem(merged_h5));
     }
 
+    InSARLogManager::LogInfo("S1FrameMergeWorker", "Updating project tree model with merged frame output...");
+
     // XML 落盘由调用方完成，绕过外部 DLL 接口（SOP 避坑经验 #9）
     emit sendResult(dstNode, filename, save_path, project_name);
 
     emit updateProcess(100, QStringLiteral("完成……"));
+    InSARLogManager::LogInfo("S1FrameMergeWorker", "Model and merged result successfully emitted to Node UI.");
     InSARLogManager::LogInfo("S1FrameMergeWorker", "S1_frame_merge completed successfully.");
     emit sendModel(model);
     emit endProcess();

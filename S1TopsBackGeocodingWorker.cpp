@@ -99,6 +99,8 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		return;
 	}
 	emit updateProcess(10, QStringLiteral("开始后向地理编码配准……"));
+	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Starting S1 TOPS Back-Geocoding. Total images: %1, Master Index: %2, ESD Enabled: %3")
+		.arg(images_number).arg(masterIndex).arg(b_ESD ? "True" : "False"));
 
 	//外部DEM文件夹
 	QString appPath = QCoreApplication::applicationDirPath();
@@ -137,6 +139,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Failed to write master SLC to H5 file.");
 		return;
 	}
+	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Successfully loaded Master SLC data and set DEM path.");
 	tmp.re = 0.0; tmp.im = 0.0;
 	for (int i = 0; i < backgeocoding.numOfImages; i++)
 	{
@@ -190,6 +193,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	int burstCount = backgeocoding.su[masterIndex - 1]->burstCount;
 	for (int i = 0; i < burstCount; i++)
 	{
+		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Registration: processing burst %1/%2...").arg(i + 1).arg(burstCount));
 		ret = backgeocoding.su[masterIndex - 1]->computeImageGeoBoundry(&lonMin, &lonMax, &latMin, &latMax, i + 1);
 		if (ret < 0) {
 			emit errorProcess("Failed to compute master image geo boundary.");
@@ -268,6 +272,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 
 	if (b_ESD)
 	{
+		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Starting Enhanced Spectral Diversity (ESD) correction...");
 		cv::Mat overlap_phase(cv::sum(overlapMat)[0], samplesPerBurst, CV_64F);
 		cv::Mat phase; int count_sum = 0;
 		ComplexMat overlap_master_up, overlap_slave_up, overlap_master_down, overlap_slave_down;
@@ -345,6 +350,8 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			double offset = out_x.at<double>(p.x);
 			double offset_a = offset / (2 * 3.1415926535 * 4500) * 486;
 			conversion.write_double_to_h5(backgeocoding.outFiles[j].c_str(), "offset_a", offset_a);
+			InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Slave image %1 (index %2) ESD azimuth offset calculated: %3")
+				.arg(origin[j]).arg(j + 1).arg(offset_a));
 		}
 
 		offset_row = 0;
@@ -415,9 +422,12 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	}
 
 	//deburst
+	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Starting Deburst processing for %1 images...").arg(backgeocoding.numOfImages));
 	ComplexMat slc;
 	for (int i = 0; i < backgeocoding.numOfImages; i++)
 	{
+		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Debursting image %1/%2: %3")
+			.arg(i + 1).arg(backgeocoding.numOfImages).arg(origin[i]));
 		conversion.read_slc_from_h5(backgeocoding.outFiles[i].c_str(), slaveSLC);
 		conversion.creat_new_h5(backgeocoding.outFiles[i].c_str());
 		slc = slaveSLC(cv::Range(backgeocoding.start.at<int>(0, 0), backgeocoding.end.at<int>(0, 0)),
@@ -510,6 +520,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", rows);
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
 	}
+	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration parameters copied successfully to H5 files.");
 	/*写入XML*/
 	XMLFile* xmlfile = new XMLFile();
 	if (xmlfile->XMLFile_load((savePath + "/" + dstProject).toStdString().c_str()) >= 0)
@@ -651,6 +662,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			}
 		}
 		xmlfile->XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
+		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration results successfully saved in project XML file.");
 	}
 	else
 	{

@@ -7,9 +7,14 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include "FormatConversion.h"
+
 S1_swath_merge::S1_swath_merge(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::S1SwathMerge)
+    ui(new Ui::S1SwathMerge),
+    copy(nullptr),
+    S1_swath_merge_worker(nullptr),
+    S1_swath_merge_thread(nullptr)
 {
     ui->setupUi(this);
     ui->progressBar->setMinimum(0);
@@ -27,7 +32,22 @@ S1_swath_merge::~S1_swath_merge()
         }
     }
     emit sendCopy(copy);
-    S1_swath_merge_thread = NULL;
+
+    if (S1_swath_merge_thread)
+    {
+        if (S1_swath_merge_thread->isRunning())
+        {
+            S1_swath_merge_thread->quit();
+            S1_swath_merge_thread->wait();
+        }
+        S1_swath_merge_thread->deleteLater();
+        S1_swath_merge_thread = nullptr;
+    }
+    else if (S1_swath_merge_worker)
+    {
+        S1_swath_merge_worker->deleteLater();
+    }
+    S1_swath_merge_worker = nullptr;
 }
 
 void S1_swath_merge::updateProcess(int value, QString information)
@@ -43,10 +63,11 @@ void S1_swath_merge::endProcess()
 {
     if (S1_swath_merge_thread)
     {
-        S1_swath_merge_thread->thread()->quit();
-        S1_swath_merge_thread->thread()->wait();
-        S1_swath_merge_thread = NULL;
+        S1_swath_merge_thread->quit();
+        S1_swath_merge_thread->wait();
+        S1_swath_merge_thread = nullptr;
     }
+    S1_swath_merge_worker = nullptr;
     ui->progressBar->hide();
     this->close();
 }
@@ -55,10 +76,11 @@ void S1_swath_merge::errorProcess(QString error_msg)
     QMessageBox::warning(NULL, "Error", error_msg);
     if (S1_swath_merge_thread)
     {
-        S1_swath_merge_thread->thread()->quit();
-        S1_swath_merge_thread->thread()->wait();
-        S1_swath_merge_thread = NULL;
+        S1_swath_merge_thread->quit();
+        S1_swath_merge_thread->wait();
+        S1_swath_merge_thread = nullptr;
     }
+    S1_swath_merge_worker = nullptr;
     ui->progressBar->hide();
     ChangeVision(true);
 }
@@ -66,24 +88,25 @@ void S1_swath_merge::endThread()
 {
     if (S1_swath_merge_thread)
     {
-        S1_swath_merge_thread->thread()->quit();
-        S1_swath_merge_thread->thread()->wait();
-        S1_swath_merge_thread = NULL;
+        S1_swath_merge_thread->quit();
+        S1_swath_merge_thread->wait();
+        S1_swath_merge_thread = nullptr;
     }
+    S1_swath_merge_worker = nullptr;
 }
 void S1_swath_merge::StopThread()
 {
-    if (S1_swath_merge_thread != NULL)
+    if (S1_swath_merge_thread != nullptr)
     {
-        if (S1_swath_merge_thread->thread()->isRunning())
+        if (S1_swath_merge_thread->isRunning())
         {
-            S1_swath_merge_thread->thread()->requestInterruption();
-            S1_swath_merge_thread->thread()->quit();
-            S1_swath_merge_thread->thread()->wait();
+            S1_swath_merge_thread->requestInterruption();
+            S1_swath_merge_thread->quit();
+            S1_swath_merge_thread->wait();
         }
-        S1_swath_merge_thread = NULL;
+        S1_swath_merge_thread = nullptr;
     }
-
+    S1_swath_merge_worker = nullptr;
 }
 void S1_swath_merge::TransitModel(QStandardItemModel* model)
 {
@@ -381,19 +404,22 @@ void S1_swath_merge::on_buttonBox_accepted()
     }
 
 
-    S1_swath_merge_thread = new MyThread;
-    S1_swath_merge_thread->moveToThread(new QThread(this));
+    S1_swath_merge_worker = new S1SwathMergeWorker();
+    S1_swath_merge_thread = new QThread(this);
+    S1_swath_merge_worker->moveToThread(S1_swath_merge_thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &S1_swath_merge::operate, S1_swath_merge_thread, &MyThread::S1_swath_merge, Qt::QueuedConnection);
-    connect(S1_swath_merge_thread, &MyThread::updateProcess, this, &S1_swath_merge::updateProcess);
-    connect(S1_swath_merge_thread->thread(), &QThread::finished, S1_swath_merge_thread, &MyThread::deleteLater);
-    connect(S1_swath_merge_thread, &MyThread::endProcess, this, &S1_swath_merge::endProcess);
-    connect(S1_swath_merge_thread, &MyThread::errorProcess, this, &S1_swath_merge::errorProcess);
+    connect(this, &S1_swath_merge::operate, S1_swath_merge_worker, &S1SwathMergeWorker::S1_swath_merge, Qt::QueuedConnection);
+    connect(S1_swath_merge_worker, &S1SwathMergeWorker::updateProcess, this, &S1_swath_merge::updateProcess);
+    connect(S1_swath_merge_thread, &QThread::finished, S1_swath_merge_worker, &QObject::deleteLater);
+    connect(S1_swath_merge_thread, &QThread::finished, S1_swath_merge_thread, &QObject::deleteLater);
+    connect(S1_swath_merge_worker, &S1SwathMergeWorker::endProcess, this, &S1_swath_merge::endProcess);
+    connect(S1_swath_merge_worker, &S1SwathMergeWorker::errorProcess, this, &S1_swath_merge::errorProcess);
     connect(this, &QWidget::destroyed, this, &S1_swath_merge::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_swath_merge::StopThread);// , Qt::QueuedConnection);
-    connect(S1_swath_merge_thread, &MyThread::sendModel, this, &S1_swath_merge::TransitModel);
-    S1_swath_merge_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_swath_merge::StopThread);
+    connect(S1_swath_merge_worker, &S1SwathMergeWorker::sendModel, this, &S1_swath_merge::TransitModel);
+    connect(S1_swath_merge_worker, &S1SwathMergeWorker::sendResult, this, &S1_swath_merge::handleResult);
+    S1_swath_merge_thread->start();
     ChangeVision(false);
     operate(
         ui->comboBox_IW1_data->currentIndex() + 1,
@@ -411,4 +437,25 @@ void S1_swath_merge::on_buttonBox_accepted()
 void S1_swath_merge::on_buttonBox_rejected()
 {
     this->close();
+}
+
+void S1_swath_merge::handleResult(
+    const QString& dstNode,
+    const QString& filename,
+    const QString& savePath,
+    const QString& projectName)
+{
+    if (savePath.isEmpty() || projectName.isEmpty())
+        return;
+
+    QString xml_path = savePath + "/" + projectName;
+    QString relative_path = "/" + dstNode + "/" + filename + ".h5";
+
+    XMLFile xml;
+    if (xml.XMLFile_load(xml_path.toStdString().c_str()) == 0)
+    {
+        xml.XMLFile_add_interferometric_phase(dstNode.toStdString().c_str(), filename.toStdString().c_str(),
+            relative_path.toStdString().c_str(), "unknown", "phase-1.0", 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        xml.XMLFile_save(xml_path.toStdString().c_str());
+    }
 }

@@ -220,6 +220,9 @@
     <ClCompile Include="S1SwathMergeNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="S1SwathMergeWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Sentinel1BatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -712,6 +715,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1SwathMergeNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\S1SwathMergeWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\Sentinel1BatchImportNode.h">

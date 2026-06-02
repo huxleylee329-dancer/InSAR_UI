@@ -29,7 +29,7 @@ void S1DeburstWorker::S1_Deburst(
     QStandardItemModel* model
 )
 {
-    InSARLogManager::LogInfo("S1DeburstWorker", "S1_Deburst started.");
+    InSARLogManager::LogInfo("S1DeburstWorker", QString("S1_Deburst started. Project: %1, Save Path: %2").arg(dstProject).arg(savePath));
     if (savePath.isEmpty() || dstProject.isEmpty() || dstNode.isEmpty() || srcNode.isEmpty() || !model)
     {
         emit errorProcess(QStringLiteral("参数错误"));
@@ -79,6 +79,8 @@ void S1DeburstWorker::S1_Deburst(
     }
 
     emit updateProcess(10, QStringLiteral("开始burst拼接……"));
+    InSARLogManager::LogInfo("S1DeburstWorker", QString("Starting burst splicing. Total images: %1, Source Node: %2, Destination Node: %3")
+        .arg(SAR_images.size()).arg(srcNode).arg(dstNode));
     // burst拼接
     for (size_t i = 1; i <= SAR_images.size(); i++)
     {
@@ -87,6 +89,8 @@ void S1DeburstWorker::S1_Deburst(
             emit errorProcess(QStringLiteral("用户取消操作"));
             return;
         }
+        InSARLogManager::LogInfo("S1DeburstWorker", QString("Processing image %1/%2: %3")
+            .arg(i).arg(SAR_images.size()).arg(origin[i - 1]));
         Sentinel1Utils su(SAR_images[i - 1].c_str());
         ret = su.init();
         if (ret < 0) {
@@ -98,6 +102,7 @@ void S1DeburstWorker::S1_Deburst(
             emit errorProcess(QStringLiteral("deburst 拼接失败"));
             return;
         }
+        InSARLogManager::LogInfo("S1DeburstWorker", QString("Debursting image %1/%2 finished successfully.").arg(i).arg(SAR_images.size()));
         
         // 拼接成功后，立刻生成 JPG 预览图（在后台线程中执行）
         QString h5Path = QString::fromStdString(SAR_images_deburst[i - 1]);
@@ -147,6 +152,7 @@ void S1DeburstWorker::S1_Deburst(
     // 更新内存树模型（QStandardItemModel），并收集输出路径列表
     // XML 落盘由 Node 端用原生 TinyXML 完成，绕过外部 DLL 接口（SOP 避坑经验 #9）
     emit updateProcess(92, QStringLiteral("更新项目树……"));
+    InSARLogManager::LogInfo("S1DeburstWorker", "Updating project tree model and generating output path lists...");
 
     QStringList deburstH5Paths;
     QStringList originNames;
@@ -186,6 +192,7 @@ void S1DeburstWorker::S1_Deburst(
     emit sendModel(model);
     // 回传 H5 路径列表和 origin 名称列表，由 Node 端用原生 TinyXML 写入 XML
     emit sendResults(dstNode, deburstH5Paths, originNames);
+    InSARLogManager::LogInfo("S1DeburstWorker", "Model and result lists successfully emitted to Node UI.");
     InSARLogManager::LogInfo("S1DeburstWorker", "S1_Deburst finished successfully.");
     emit endProcess();
 }

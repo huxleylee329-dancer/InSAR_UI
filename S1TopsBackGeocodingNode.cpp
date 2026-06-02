@@ -407,44 +407,28 @@ void S1TopsBackGeocodingNode::updateMasterImageCombo()
         return;
     }
     
-    qDebug() << "[BackGeocoding debug] updateMasterImageCombo start.";
-    qDebug() << "[BackGeocoding debug] input nodeName:" << m_inputData->nodeName();
-    qDebug() << "[BackGeocoding debug] projectName:" << projectName();
-    qDebug() << "[BackGeocoding debug] projectPath:" << projectPath();
-    
     QStandardItemModel* model = projectModel();
     if (!model) {
-        qDebug() << "[BackGeocoding debug] projectModel is null!";
         m_masterImageCombo->blockSignals(false);
         return;
     }
     
     QList<QStandardItem*> foundProjects = model->findItems(projectName());
     if (foundProjects.isEmpty()) {
-        qDebug() << "[BackGeocoding debug] Cannot find project item for project name:" << projectName();
-        for (int k = 0; k < model->rowCount(); ++k) {
-            if (model->item(k)) {
-                qDebug() << "[BackGeocoding debug] Available project in model:" << model->item(k)->text();
-            }
-        }
         m_masterImageCombo->blockSignals(false);
         return;
     }
     
     QStandardItem* projectItem = foundProjects.first();
     QString srcNode = m_inputData->nodeName();
-    qDebug() << "[BackGeocoding debug] Found projectItem. Children count:" << projectItem->rowCount();
     
     QStringList imageNames;
-    bool foundSrcNode = false;
     for (int i = 0; i < projectItem->rowCount(); ++i)
     {
         QStandardItem* nodeItem = projectItem->child(i, 0);
         if (nodeItem) {
-            qDebug() << "[BackGeocoding debug] child node" << i << ":" << nodeItem->text();
             if (nodeItem->text() == srcNode)
             {
-                foundSrcNode = true;
                 for (int j = 0; j < nodeItem->rowCount(); ++j)
                 {
                     QStandardItem* imgItem = nodeItem->child(j, 0);
@@ -455,15 +439,6 @@ void S1TopsBackGeocodingNode::updateMasterImageCombo()
                 }
                 break;
             }
-        }
-    }
-    
-    if (!foundSrcNode) {
-        qDebug() << "[BackGeocoding debug] FAILED to find srcNode:" << srcNode << "in project children.";
-    } else {
-        qDebug() << "[BackGeocoding debug] Successfully found srcNode. Images count:" << imageNames.size();
-        for (const QString& name : imageNames) {
-            qDebug() << "[BackGeocoding debug] -> Image:" << name;
         }
     }
     
@@ -807,24 +782,14 @@ void S1TopsBackGeocodingNode::executeProcessing()
             {
                 QStandardItem* nodeItem = projectItem->child(i, 0);
                 if (nodeItem) {
-                    qDebug() << "[BackGeocoding debug] executeProcessing: child" << i << "is" << nodeItem->text();
                     if (nodeItem->text() == srcNode)
                     {
                         images_number = nodeItem->rowCount();
-                        qDebug() << "[BackGeocoding debug] executeProcessing: found target node" << srcNode << "with rowCount:" << images_number;
                         break;
                     }
                 }
             }
         }
-        else
-        {
-            qDebug() << "[BackGeocoding debug] executeProcessing: FAILED to find project" << dstProject << "in model.";
-        }
-    }
-    else
-    {
-        qDebug() << "[BackGeocoding debug] executeProcessing: projectModel is null!";
     }
 
     if (images_number < 2)

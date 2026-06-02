@@ -2,7 +2,8 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_S1SwathMerge.h"
-#include"MyThread.h"
+#include "S1SwathMergeWorker.h"
+#include <QThread>
 
 class S1_swath_merge : public QWidget
 {
@@ -18,10 +19,12 @@ public slots:
     void endThread();
     void StopThread();
     void TransitModel(QStandardItemModel*);
+    void handleResult(const QString& dstNode, const QString& filename, const QString& savePath, const QString& projectName);
 private:
     Ui::S1SwathMerge* ui;
     QStandardItemModel* copy;
-    MyThread* S1_swath_merge_thread;
+    S1SwathMergeWorker* S1_swath_merge_worker;
+    QThread* S1_swath_merge_thread;
     QString save_path;
     QString projectFile;
     int image_number;

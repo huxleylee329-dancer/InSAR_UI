@@ -2,7 +2,8 @@
 #define S1SWATHMERGENODE_H
 
 #include "ImportDataTypes.h"
-#include "MyThread.h"
+#include "NodeDataTypes.h"
+#include "S1SwathMergeWorker.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
@@ -16,10 +17,11 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <memory>
 
-// Forward declarations
 class IApplicationInterface;
+class XMLFile;
 
 namespace QtNodes {
 
@@ -43,12 +45,16 @@ public:
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     ::QWidget* embeddedWidget() override;
 
-    QJsonObject save() const override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
 
+    QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
+    QStringList previewImagePaths() const override;
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -63,14 +69,16 @@ private:
     // Input data storage
     std::shared_ptr<ImportedFileData> m_inputs[3];
     std::shared_ptr<ImportedFileData> m_outputData;
+    std::shared_ptr<ImageInfoData> m_imageInfoData;
     QString m_outputNodeName;
     int m_index1 = 1;
     int m_index2 = 1;
     int m_index3 = 1;
 
     // Worker thread
-    MyThread* m_workerThread;
+    S1SwathMergeWorker* m_worker;
     QThread* m_thread;
+    QFutureWatcher<void> m_remedyWatcher;
 
     // Helper methods
     void createWidget();
@@ -87,6 +95,7 @@ private:
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
+    XMLFile* projectXml() const;
 
     // Executable interface implementation
     void execute() override;
