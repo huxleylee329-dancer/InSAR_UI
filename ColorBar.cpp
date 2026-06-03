@@ -90,6 +90,7 @@ void ColorBar::paintEvent(QPaintEvent* event)
     
     
     if (mType == "phase" ||
+        mType == "coherence" ||
         mType == "SBAS"  ||
         mType == "dem"
         )

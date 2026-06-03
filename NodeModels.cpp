@@ -25,6 +25,7 @@
 #include "LoggerNode.h"
 #include "CoregistrationNode.h"
 #include "CutNode.h"
+#include "InterferometricFormationNode.h"
 
 #include <memory>
 
@@ -98,6 +99,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<SpeckleDenoiseNode>("SAR/Enhancement/Speckle Denoise");
     registry->registerModel<ClutterSuppressionNode>("SAR/Enhancement/Clutter Suppression");
     registry->registerModel<CoregistrationNode>("InSAR");
+    registry->registerModel<InterferometricFormationNode>("InSAR");
 
     // ============================================================================
     // SAR Detection Nodes

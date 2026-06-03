@@ -227,13 +227,13 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
         }
         return true;
     }
-    else if (type == "phase")
+    else if (type == "phase" || type == "coherence")
     {
         FormatConversion FC;
         Utils util;
         cv::Mat phase;
         
-        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", phase) != 0)
+        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), type.toStdString().c_str(), phase) != 0)
             return false;
             
         if (phase.type() != CV_64F)
@@ -242,14 +242,25 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
         }
         phase = phase.clone();
             
-        int ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
+        int ret = -1;
+        if (type == "phase")
+        {
+            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
+        }
         
         if (ret != 0)
         {
-            qDebug() << "NodeUtils::generateJpgPreviewFromH5 warning: util.savephase failed (-1). Falling back to custom OpenCV rendering...";
-            // 1. Normalize phase from [-pi, pi] to [0, 255]
+            qDebug() << "NodeUtils::generateJpgPreviewFromH5 warning: fallback OpenCV rendering for type:" << type;
+            // 1. Normalize
             cv::Mat phase_normalized;
-            phase_normalized = (phase + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
+            if (type == "coherence")
+            {
+                phase_normalized = phase * 255.0;
+            }
+            else
+            {
+                phase_normalized = (phase + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
+            }
             
             // 2. Convert to CV_8UC1 (saturating cast)
             phase_normalized.convertTo(phase_normalized, CV_8U);

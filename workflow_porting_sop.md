@@ -208,3 +208,10 @@
 14. **工作流节点“覆盖(Overwrite)”重运行的数据累加与 UI 树重复子节点问题避坑**：
     - **现象与根源**：在执行如 `S1TopsBackGeocodingNode` 等节点时，如果用户在生成同名输出时选择“覆盖(Overwrite)”以重新运行任务，物理文件确实会被重新生成并覆盖。但是，由于底层 Worker 在保存结果到工程 XML 时通常使用**追加(Append)**逻辑（例如在查找到现有的 `DataNode` 时继续向其下 `LinkEndChild(Data)`），如果在重新启动 Worker 前没有清空该节点，XML 内会累积指向同一批文件的多个 `Data` 条目。这会导致在执行完毕调用 `refreshProjectTree()` 刷新 UI 树时，Workspace UI 树里出现名字完全一样的重复子节点。
     - **避坑对策**：在节点主线程的 `executeProcessing()` 逻辑中，当 `checkAndPromptOverwrite()` 的返回结果为 `OverwriteResult::Overwrite`（即用户同意覆盖重写，或默认放行）且**即将进入** `setState(ExecutionState::Running)` 启动 Worker 之前，**必须显式调用** `NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);`。这能确保在重运行的后台线程启动前，旧的树节点和对应的 XML 记录已被彻底清理。当 Worker 完成并追加 XML 时，就是在一张“白纸”上建立全新的单一节点，从而完美杜绝了数据累加与 UI 树节点的重影 Bug。
+
+15. **工作流工程加载阶段状态恢复 (validateAndRestoreOutput) 的独立性与自闭性规范 (Load-Time State Restoration Autonomy)**：
+    - **现象与根源**：在重新打开工程（工程加载流程 `loadWorkflowFromProject` -> 触发节点 `load`）时，工作流需要自动恢复已完成（Completed）算子的状态及输出端口数据。然而，在此阶段，底层 `QtNodes` 框架尚未实例化完节点的输入连接，导致 `m_inputData` 依然处于空指针（`nullptr`）状态，且项目树模型 `projectModel()` 等 UI 上层组件也可能处于断开或尚未就绪状态。如果 `validateAndRestoreOutput()` 的恢复逻辑依赖于 `m_inputData` 的参数（例如输入节点名称、输入文件列表等）或试图去遍历查询未加载完的项目树模型，就会触发校验失败，导致已完成的节点状态丢失，退回 `Idle` 甚至 `Error` 状态。
+    - **避坑与设计规范**：
+      1. **高自闭性（Self-containment）逻辑**：`validateAndRestoreOutput()` 的执行必须具备强自闭性，即**不能依赖任何输入端口数据 (`m_inputData`) 或动态项目模型遍历**。应直接依赖节点内已被成功反序列化的基础配置字段（如 `m_outputNodeName`，因为反序列化已经在 `load` 极早期完成）和 `projectPath()` 接口。
+      2. **物理文件/路径直扫**：通过物理磁盘路径（如拼接 `projectPath() + "/" + m_outputNodeName`）并使用 `QDir::entryList` 进行直观的物理文件扫描（例如匹配 `*.h5`），来验证输出文件是否完整存在。如果存在，即代表该节点已经计算完成。
+      3. **加载顺序控制（重要）**：在重写节点的 `load(const QJsonObject& json)` 时，**必须在调用基类 `ExecutableNodeDelegateModel::load(json)` 之前，完成所有当前节点自身特有参数的解析与赋值**。这是因为基类 `load()` 的内部实现会直接同步触发 `validateAndRestoreOutput()`。如果在调用基类 `load()` 时特有参数（如 `m_outputNodeName`）尚未被赋值，`validateAndRestoreOutput()` 将由于读到空值而直接返回失败，最终导致节点无法在工程加载时自动点亮绿色 `Completed` 状态。

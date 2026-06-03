@@ -338,6 +338,12 @@
     <ClCompile Include="CoregistrationWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="InterferometricFormationNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="InterferometricFormationWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="SpeckleDenoiseTask.cpp" />
     <ClCompile Include="TargetDetectionNode.cpp">
       <Filter>Source Files</Filter>
@@ -807,6 +813,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\CoregistrationWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\InterferometricFormationNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\InterferometricFormationWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SpeckleDenoiseTask.h" />

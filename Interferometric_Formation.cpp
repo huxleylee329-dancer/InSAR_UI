@@ -1,5 +1,6 @@
 #include"Interferometric_Formation.h"
 #include"icon_source.h"
+#include"InterferometricFormationWorker.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
@@ -15,7 +16,9 @@
 //#include<FormatConversion.h>
 Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::InterferometricFormation)
+    ui(new Ui::InterferometricFormation),
+    Interferometric_Formation_worker(nullptr),
+    Interferometric_Formation_thread(nullptr)
 {
     ui->setupUi(this);
     ui->progressBar->setMinimum(0);
@@ -29,7 +32,8 @@ Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
 }
 Interferometric_Formation::~Interferometric_Formation()
 {
-    Interferometric_Formation_thread = NULL;
+    Interferometric_Formation_worker = nullptr;
+    Interferometric_Formation_thread = nullptr;
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
@@ -48,26 +52,31 @@ void Interferometric_Formation::updateProcess(int value, QString information)
 }
 void Interferometric_Formation::endProcess()
 {
-    Interferometric_Formation_thread->thread()->quit();
-    Interferometric_Formation_thread->thread()->wait();
+    if (Interferometric_Formation_thread) {
+        Interferometric_Formation_thread->quit();
+        Interferometric_Formation_thread->wait();
+    }
     ui->progressBar->hide();
     this->close();
 }
 void Interferometric_Formation::endThread()
 {
-    Interferometric_Formation_thread->thread()->quit();
-    Interferometric_Formation_thread->thread()->wait();
+    if (Interferometric_Formation_thread) {
+        Interferometric_Formation_thread->quit();
+        Interferometric_Formation_thread->wait();
+    }
 }
 void Interferometric_Formation::StopThread()
 {
-    if(Interferometric_Formation_thread != NULL)
-        if (Interferometric_Formation_thread->thread()->isRunning())
+    if (Interferometric_Formation_thread != nullptr)
+    {
+        if (Interferometric_Formation_thread->isRunning())
         {
-            Interferometric_Formation_thread->thread()->requestInterruption();
-            Interferometric_Formation_thread->thread()->quit();
-            Interferometric_Formation_thread->thread()->wait();
+            Interferometric_Formation_thread->requestInterruption();
+            Interferometric_Formation_thread->quit();
+            Interferometric_Formation_thread->wait();
         }
-   
+    }
 }
 void Interferometric_Formation::TransitModel(QStandardItemModel* model)
 {
@@ -362,30 +371,29 @@ void Interferometric_Formation::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
-    Interferometric_Formation_thread = new MyThread;
-    Interferometric_Formation_thread->moveToThread(new QThread(this));
-    //this->Process->setAutoClose(true);
+    Interferometric_Formation_thread = new QThread(this);
+    Interferometric_Formation_worker = new InterferometricFormationWorker();
+    Interferometric_Formation_worker->moveToThread(Interferometric_Formation_thread);
+    
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    QList<int> para;
-    //.push_back(ui->indexedit->text().toInt());
-    //para.push_back(ui->interpedit->text().toInt());
-    //para.push_back(ui->blockedit->text().toInt());
-    //para.push_back(this->image_number);
-    //this->thread()->msleep(1);
-    connect(this, &Interferometric_Formation::operate, Interferometric_Formation_thread, &MyThread::Interferometric, Qt::QueuedConnection);
-    connect(Interferometric_Formation_thread, &MyThread::updateProcess, this, &Interferometric_Formation::updateProcess);
-    connect(Interferometric_Formation_thread->thread(), &QThread::finished, Interferometric_Formation_thread, &MyThread::deleteLater);
-    connect(Interferometric_Formation_thread, &MyThread::endProcess, this, &Interferometric_Formation::endProcess);
+
+    connect(this, &Interferometric_Formation::operate, Interferometric_Formation_worker, &InterferometricFormationWorker::Interferometric);
+    connect(Interferometric_Formation_worker, &InterferometricFormationWorker::updateProcess, this, &Interferometric_Formation::updateProcess);
+    connect(Interferometric_Formation_worker, &InterferometricFormationWorker::endProcess, this, &Interferometric_Formation::endProcess);
     connect(this, &QWidget::destroyed, this, &Interferometric_Formation::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Interferometric_Formation::StopThread);// , Qt::QueuedConnection);
-    connect(Interferometric_Formation_thread, &MyThread::sendModel, this, &Interferometric_Formation::TransitModel);
-    Interferometric_Formation_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Interferometric_Formation::StopThread);
+    connect(Interferometric_Formation_worker, &InterferometricFormationWorker::sendModel, this, &Interferometric_Formation::TransitModel);
+    
+    connect(Interferometric_Formation_thread, &QThread::finished, Interferometric_Formation_worker, &QObject::deleteLater);
+    connect(Interferometric_Formation_thread, &QThread::finished, Interferometric_Formation_thread, &QObject::deleteLater);
+    
+    Interferometric_Formation_thread->start();
     ChangeVision(false);
-    //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);
-    emit operate(ui->Isdeflat->isChecked(),ui->Istopo_removal->isChecked(),ui->iscoherence->isChecked(),
-        ui->comboBox_3->currentIndex(),win_width, win_height, ui->multilook_rg->text().toInt(),
-        ui->multilook_az->text().toInt(),this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(),
+    
+    emit operate(ui->Isdeflat->isChecked(), ui->Istopo_removal->isChecked(), ui->iscoherence->isChecked(),
+        ui->comboBox_3->currentIndex(), win_width, win_height, ui->multilook_rg->text().toInt(),
+        ui->multilook_az->text().toInt(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(),
         ui->file_name->text(), this->copy);
 }
 

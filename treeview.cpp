@@ -265,12 +265,18 @@ void TreeView::CleanOrphanedFiles()
     // Get all active node folder names from the project tree
     QStringList activeNodeNames;
     QSet<QString> activeFiles;
+    QSet<QString> activeNodeItemKeys;
     for (int i = 0; i < projItem->rowCount(); ++i) {
         QStandardItem* nodeItem = projItem->child(i, 0);
         if (nodeItem) {
-            activeNodeNames.append(nodeItem->text());
+            QString nodeName = nodeItem->text();
+            activeNodeNames.append(nodeName);
             for (int j = 0; j < nodeItem->rowCount(); ++j) {
+                QStandardItem* nameItem = nodeItem->child(j, 0);
                 QStandardItem* pathItem = nodeItem->child(j, 1);
+                if (nameItem) {
+                    activeNodeItemKeys.insert(nodeName + "/" + nameItem->text());
+                }
                 if (pathItem && !pathItem->text().isEmpty()) {
                     activeFiles.insert(QDir::cleanPath(pathItem->text()));
                 }
@@ -299,10 +305,11 @@ void TreeView::CleanOrphanedFiles()
             for (const QString& fileName : filesInDir) {
                 QString absFilePath = QDir::cleanPath(activeDir.absoluteFilePath(fileName));
                 if (!activeFiles.contains(absFilePath)) {
-                    // Check if it is a preview JPG whose corresponding H5 file is active
+                    // Check if it is a preview JPG whose corresponding tree item is active
                     if (absFilePath.endsWith(".jpg", Qt::CaseInsensitive)) {
-                        QString correspondingH5 = absFilePath.left(absFilePath.length() - 4) + ".h5";
-                        if (activeFiles.contains(correspondingH5)) {
+                        QString baseJpgName = QFileInfo(absFilePath).baseName();
+                        QString itemKey = dirName + "/" + baseJpgName;
+                        if (activeNodeItemKeys.contains(itemKey)) {
                             continue; // Valid preview file, keep it!
                         }
                     }

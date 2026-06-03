@@ -38,7 +38,6 @@ public slots:
     void SBAS_reference_reselection(QString project, QString srcNode, int ref_row, int ref_col, QList<QPoint> GCPs, QStandardItemModel* model);
     void Geocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
     void Baseline_Estimate(int index, QString project_name, QString dst_node, const QStandardItemModel* model);
-    void Interferometric(bool isdeflat, bool istopo_removal, bool iscoherence, int master_index, int win_width, int win_height, int multilook_rg, int multilook_az, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void Denoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QUnwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);

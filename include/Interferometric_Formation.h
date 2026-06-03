@@ -2,7 +2,9 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_InterferometricFormation.h"
-#include"MyThread.h"
+#include <QThread>
+
+class InterferometricFormationWorker;
 
 class Interferometric_Formation : public QWidget
 {
@@ -20,7 +22,8 @@ public slots:
 private:
     Ui::InterferometricFormation* ui;
     QStandardItemModel* copy;
-    MyThread* Interferometric_Formation_thread;
+    InterferometricFormationWorker* Interferometric_Formation_worker;
+    QThread* Interferometric_Formation_thread;
     QString save_path;
     int image_number;
     void ChangeVision(bool Editable);
