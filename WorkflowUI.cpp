@@ -163,6 +163,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Interferometric Formation", "Interferometric Formation"},
         {"Denoise", "Denoise"},
         {"Phase Unwrapping", "Phase Unwrapping"},
+        {"DEM Generation", "DEM Generation"},
         {"Baseline Preview", "Baseline Preview"}
     };
 

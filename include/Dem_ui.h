@@ -2,7 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_Dem.h"
-#include"MyThread.h"
+#include "DemWorker.h"
 
 class Dem_ui : public QWidget
 {
@@ -20,7 +20,7 @@ public slots:
 private:
     Ui::Dem* ui;
     QStandardItemModel* copy;
-    MyThread* Dem_thread;
+    DemWorker* Dem_thread;
     QString save_path;
     int method;
     int image_number;

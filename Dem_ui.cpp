@@ -3,6 +3,7 @@
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
+#include<QThread>
 //#include<Utils.h>
 //#include<FormatConversion.h>
 #include<qmessagebox.h>
@@ -228,7 +229,7 @@ void Dem_ui::on_buttonBox_accepted()
         return;
     }
     
-    Dem_thread = new MyThread;
+    Dem_thread = new DemWorker;
     Dem_thread->moveToThread(new QThread(this));
     //this->Process->setAutoClose(true);
     ui->progressBar->setValue(0);
@@ -237,13 +238,13 @@ void Dem_ui::on_buttonBox_accepted()
     para.push_back(this->method);
     // para.push_back(this->image_number);
      //this->thread()->msleep(1);
-    connect(this, &Dem_ui::operate, Dem_thread, &MyThread::QDem, Qt::QueuedConnection);
-    connect(Dem_thread, &MyThread::updateProcess, this, &Dem_ui::updateProcess);
-    connect(Dem_thread->thread(), &QThread::finished, Dem_thread, &MyThread::deleteLater);
-    connect(Dem_thread, &MyThread::endProcess, this, &Dem_ui::endProcess);
+    connect(this, &Dem_ui::operate, Dem_thread, &DemWorker::Dem, Qt::QueuedConnection);
+    connect(Dem_thread, &DemWorker::updateProcess, this, &Dem_ui::updateProcess);
+    connect(Dem_thread->thread(), &QThread::finished, Dem_thread, &DemWorker::deleteLater);
+    connect(Dem_thread, &DemWorker::endProcess, this, &Dem_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Dem_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Dem_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Dem_thread, &MyThread::sendModel, this, &Dem_ui::TransitModel);
+    connect(Dem_thread, &DemWorker::sendModel, this, &Dem_ui::TransitModel);
     Dem_thread->thread()->start();
     ChangeVision(false);
     emit operate(this->method, ui->times->text().toInt(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->file_name->text(), this->copy);
