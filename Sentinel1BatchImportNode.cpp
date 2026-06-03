@@ -562,6 +562,10 @@ void Sentinel1BatchImportNode::onImportFinished()
             m_importedFilePaths.append(filePath);
         }
     }
+    qDebug() << "[Sentinel1BatchImportNode] onImportFinished. manifestPaths size:" << m_manifestPaths.size() << "importedFilePaths size:" << m_importedFilePaths.size();
+    for (int i = 0; i < m_importedFilePaths.size(); ++i) {
+        qDebug() << "  importedFilePath" << i << ":" << m_importedFilePaths[i];
+    }
 
     ImportNodeBase::onImportFinished();
 
@@ -691,6 +695,7 @@ bool Sentinel1BatchImportNode::validateAndRestoreOutput()
         return false;
 
     QString outputPath = projectPath() + "/" + nodeName + "/";
+    qDebug() << "[Sentinel1BatchImportNode] validateAndRestoreOutput. nodeName:" << nodeName << "manifestPaths size:" << m_manifestPaths.size() << "outputPath:" << outputPath;
 
     QDir dir(outputPath);
     if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
@@ -698,10 +703,13 @@ bool Sentinel1BatchImportNode::validateAndRestoreOutput()
         for (const QString &manifestPath : m_manifestPaths) {
             QString importName = generateImportName(manifestPath);
             QString importedPath = outputPath + importName + ".h5";
-            if (QFile::exists(importedPath)) {
+            bool exists = QFile::exists(importedPath);
+            qDebug() << "  Checking manifest:" << manifestPath << "-> expected H5:" << importedPath << "exists:" << exists;
+            if (exists) {
                 m_importedFilePaths.append(importedPath);
             }
         }
+        qDebug() << "  m_importedFilePaths size:" << m_importedFilePaths.size();
         if (!m_importedFilePaths.isEmpty()) {
             auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
             setOutputData(0, outputData);

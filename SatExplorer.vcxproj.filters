@@ -196,6 +196,12 @@
     <ClCompile Include="CoregistrationWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BaselineWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BaselinePreviewNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="InterferometricFormationNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -634,6 +640,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\CoregistrationWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\BaselineWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\BaselinePreviewNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\InterferometricFormationNode.h">

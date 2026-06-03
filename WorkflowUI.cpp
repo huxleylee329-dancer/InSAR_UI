@@ -160,7 +160,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     // InSAR 类叶子项顺序
     order.leafItems["InSAR"] = QList<PaletteOrder::LeafItem>{
         {"Coregistration", "Coregistration"},
-        {"Interferometric Formation", "Interferometric Formation"}
+        {"Interferometric Formation", "Interferometric Formation"},
+        {"Baseline Preview", "Baseline Preview"}
     };
 
     // Test 类叶子项顺序

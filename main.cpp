@@ -64,6 +64,7 @@ int main(int argc, char *argv[])
     qRegisterMetaType<QVector<int>>("QVector<int>");
     qRegisterMetaType<QAbstractItemModel::LayoutChangeHint>("QAbstractItemModel::LayoutChangeHint");
     qRegisterMetaType<std::vector<QString>>("std::vector<QString>");
+    qRegisterMetaType<QList<double>>("QList<double>");
 
     // Load theme preference from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);

@@ -215,3 +215,84 @@
       1. **高自闭性（Self-containment）逻辑**：`validateAndRestoreOutput()` 的执行必须具备强自闭性，即**不能依赖任何输入端口数据 (`m_inputData`) 或动态项目模型遍历**。应直接依赖节点内已被成功反序列化的基础配置字段（如 `m_outputNodeName`，因为反序列化已经在 `load` 极早期完成）和 `projectPath()` 接口。
       2. **物理文件/路径直扫**：通过物理磁盘路径（如拼接 `projectPath() + "/" + m_outputNodeName`）并使用 `QDir::entryList` 进行直观的物理文件扫描（例如匹配 `*.h5`），来验证输出文件是否完整存在。如果存在，即代表该节点已经计算完成。
       3. **加载顺序控制（重要）**：在重写节点的 `load(const QJsonObject& json)` 时，**必须在调用基类 `ExecutableNodeDelegateModel::load(json)` 之前，完成所有当前节点自身特有参数的解析与赋值**。这是因为基类 `load()` 的内部实现会直接同步触发 `validateAndRestoreOutput()`。如果在调用基类 `load()` 时特有参数（如 `m_outputNodeName`）尚未被赋值，`validateAndRestoreOutput()` 将由于读到空值而直接返回失败，最终导致节点无法在工程加载时自动点亮绿色 `Completed` 状态。
+
+16. **头文件全局命名空间污染引起的“clog”等标识符冲突避坑（Namespace Pollution Conflict）**：
+    - **现象与根源**：如果项目中某些公共头文件（如 `Coordinate.h`、`ComplexMat.h`）在全局作用域编写了 `using namespace std;`，那么在其后被引入的任何 C/C++ 标准库头文件（或包含这些头文件的第三方库头文件，如 OpenCV via `Utils.h`）都极易在编译时产生严重的标识符冲突。最典型的是，`<complex.h>` 中定义的 `clog` 函数会与 `<iostream>` 中定义的标准输出流 `std::clog` 产生二义性冲突，导致 MSVC 编译器报错 `C2872: “clog”: 不明确的符号`。
+    - **避坑对策**：
+      1. **引入顺序防御**：在 `.cpp` 实现文件（如 `Baseline.cpp`）的最前端，**优先包含所有的标准库头文件、Qt 框架头文件以及包含第三方库接口的公共头文件（例如 `Utils.h` 等）**，然后再包含项目内的自定义业务头文件（如 `Coordinate.h` 等）。这能保证标准头文件在没有被 `using namespace std;` 污染的纯净命名空间下最先被编译完成。
+      2. **源头杜绝（推荐）**：强烈禁止在任何 `.h` 头文件的全局作用域中书写 `using namespace` 语句，所有命名空间应在头文件中使用显式前缀限制（如 `std::string`、`std::vector`），仅允许在 `.cpp` 文件的私有实现内使用 `using namespace` 语句。
+
+17. **无物理产出之可视化/预览节点的状态持久化与零负载恢复规范（Zero-I/O Visualizer State Persistence）**：
+    - **现象与根源**：基线预览（`BaselinePreviewNode`）等可视化或评估节点与配准等计算算子不同，它们不产生任何实际的物理目录和落盘成果文件，也不往项目 XML 树上添加节点。如果仅通过 `validateAndRestoreOutput()` 去做物理文件扫描校验，在工程加载阶段将由于没有磁盘物理文件而触发校验失败，使得节点无法恢复为 `Completed`（已完成）状态，强迫用户每次打开工程时都必须重新运行。
+    - **避坑与设计规范**：
+      1. **状态与数据内存缓存**：对此类纯可视化节点，必须在类内增加数据缓存（如 `m_temporalBaselines` 和 `m_spatialBaselines` 的 QList）。
+      2. **重写 `save`/`load` 双向序列化**：在节点 `save()` 时，将已计算出的预览核心结果（如时空基线数据列表、所选主星索引）直接以 `QJsonArray` 的形式序列化写入节点的 JSON 配置树中；在 `load()` 时同步还原解析，将配置写回内存缓存。
+      3. **零磁盘 I/O 还原验证**：在 `validateAndRestoreOutput()` 内，直接检测内存缓存是否存在且有效。如果缓存完好，则直接在内存中构建对应的输出数据对象（如包裹 JSON 字符串的 `BaselineData`），直接标记 `Completed` 和 `100%` 进度，以“零磁盘 I/O 损耗”的速度瞬间复原算子状态，确保用户重新进入工作流工程后，无需重新运行即可直接点击按钮秒开图表。
+
+18. **工作流节点尺寸动态改变时的 UI 边界刷新同步规范 (Dynamic Layout Size Synchronization)**：
+    - **现象与根源**：在工作流中，如果某些节点需要在执行完成后动态展开额外的展示元素（如 `BaselinePreviewNode` 在计算完后，状态标签文本从 1 行拓展为 3 行），这会导致内嵌 `QWidget` 整体布局的物理高度发生改变。然而，`QtNodes` 框架的后台代理 `QGraphicsProxyWidget` 并不会自动监听和计算它的包围盒，导致外层节点的矩形框仍然保持原来的尺寸，使得新增的元素或底部的按钮被挤出节点卡片边界之外（被裁剪或悬浮在框外）。
+    - **避坑与设计规范**：
+      1. **实现专属尺寸更新函数**：在节点中实现 `void updateWidgetSize()`，在此函数中强制限制宽度并重新排版计算尺寸。
+      2. **发射尺寸刷新信号**：在此函数最后务必调用 `Q_EMIT embeddedWidgetSizeUpdated();`，以通知 `QtNodes` 框架重绘当前节点的物理包围盒：
+         ```cpp
+         void MyNode::updateWidgetSize() {
+             if (_widget) {
+                 _widget->setFixedWidth(300); // 严格锁宽
+                 _widget->adjustSize();       // 刷新 Layout 的实际几何大小
+                 Q_EMIT embeddedWidgetSizeUpdated(); // 发射框架同步刷新信号
+             }
+         }
+         ```
+      3. **状态变化时主动调用**：在任何更新 QLabel 文本（`updateLabels()`）、载入 JSON 数据（`load()`）或计算成功（`onProcessingFinished()`）的地方，尾部强制触发此同步。
+
+19. **无显示 QWidget 的离线高保真图表导出与等比缩放排版规范 (Offscreen Chart Export & Element Scaling)**：
+    - **现象与根源**：为了在详情视图（Detail View）中静态展示如基线时空图表等复杂的科学绘图，需要在不渲染出屏幕的情况下离线导出图表图片。由于 `QWidget` 和 `QChart` 未经历 `show()` 或实际窗口渲染，它们的布局尺寸默认处于 `0x0` 状态，直接使用 `scene()->render()` 会产生空白或错位的白色底板。此外，即便提升了离线导出的分辨率（如 `1920x1440`），若不显式等比缩放文字和线段大小，在高清画布上所有的轴标题、刻度和折线会显得极其微小和纤细，导致用户依然看不清楚。
+    - **避坑与设计规范**：
+      1. **强制几何重排**：在开始渲染前，必须对 `QChart` 进行显式尺寸重置，并指定图形场景（`QGraphicsScene`）的边界投影坐标：
+         ```cpp
+         preview->chart()->resize(QSizeF(1920, 1440));
+         preview->chart()->scene()->setSceneRect(0, 0, 1920, 1440);
+         ```
+      2. **文字与线段等比缩放**：离线大图渲染时，应通过 API 遍历调整图表内部的字体大小、折线宽度与散点标记：
+         - 图表大标题字号设为 `32pt` (Bold)，坐标轴标题字号设为 `22pt` (Bold)，标签刻度字号设为 `18pt`。
+         - 将折线宽度（`QLineSeries`）乘以 `2.5` 倍（利用 `pen.setWidthF`），将散点标记（`QScatterSeries`）尺寸乘以 `2.0` 倍。
+      3. **无损压缩保存**：使用 `pixmap.save(path, "JPG", 100);` 指定质量为 `100` 以关闭有损压缩，避免文字与网格线边缘出现大量 JPEG 模糊杂点。
+
+20. **零/弱上下文节点中的工程路径多层级安全回溯机制 (Robust Project Path Backtracking)**：
+    - **现象与根源**：工作流加载（`load`）或反序列化状态恢复（`validateAndRestoreOutput`）在极早期发生，此时节点的内嵌 UI 小部件（`_widget`）尚未被 parent 挂载在主窗口或工作流场景中，传入 `NodeUtils::getProjectContext(_widget)` 时因为 widget 为 `nullptr` 或无父级树直接返回 `nullptr`，造成节点无法顺利推导出工程所在的物理根目录。
+    - **避坑与设计规范**：
+      1. **实施主备层级多级回溯**：在解析工程根路径的方法中，切勿只依赖 widget 的上下文遍历，应优先回溯主界面环境。
+      2. **顶层窗口主动搜寻兜底**：若局部上下文返回空指针，应通过 `QApplication::topLevelWidgets()` 搜索当前活跃的 `MainWindow` 实例，提取 `workspaceUI()` 或者 `interfaceManager()` 来作为主要数据源，确保在无 widget 挂载的特殊阶段亦能精准取回工程文件路径：
+         ```cpp
+         QString MyNode::projectPath() const {
+             IApplicationInterface* iface = nullptr;
+             if (_widget) iface = NodeUtils::getProjectContext(_widget);
+             if (!iface) {
+                 for (QWidget* w : QApplication::topLevelWidgets()) {
+                     if (auto* mainWin = qobject_cast<MainWindow*>(w)) {
+                         if (mainWin->workspaceUI()) { iface = mainWin->workspaceUI(); break; }
+                         if (mainWin->interfaceManager()) { iface = mainWin->interfaceManager()->currentInterface(); if (iface) break; }
+                     }
+                 }
+             }
+             // ... 路径处理逻辑
+         }
+         ```
+
+21. **C++前置声明对隐式向上转型造成的编译器二义性冲突避坑 (Typecasting Forward-Declaration Resolution)**：
+    - **现象与根源**：在头文件（例如 `MainWindow.h`）中，为了防止多重包含死锁（Circular Header Inclusions），通常会使用前置声明（如 `class WorkspaceUI;`）。如果在其它业务类的实现文件（`.cpp`）里，直接将该前置声明的指针赋值给父类接口指针（如将 `WorkspaceUI*` 赋值给 `IApplicationInterface*`），而未引入该子类的具体头文件，MSVC 编译器将报错：`C2440: “=”: 无法从“WorkspaceUI *”转换为“IApplicationInterface *”，指向的类型不相关`。这是因为编译器虽然知道这两个类的存在，但不知道它们之间存在继承结构。
+    - **避坑对策**：在任何需要执行转型（Upcast）或使用成员方法的 `.cpp` 实现文件头部，**必须包含该子类的具体实现头文件（如 `#include "WorkspaceUI.h"`）**。这能向编译器充分暴露其继承机制，消除转换的二义性并顺利通过编译。
+
+22. **QSS 样式表特定选择器优先级覆盖导致禁用态（Disabled）外观失效避坑 (QSS Specificity vs. Disabled State)**：
+    - **现象与根源**：当在节点内嵌 `QWidget` 中通过 `setEnabled(false)` 动态禁用输入框（`QLineEdit`/`QComboBox`）或标签（`QLabel`）时，它们的外观看起来与启用状态没有任何区别。这是因为样式表中定义了非常具体的选择器（如 `QWidget#NodeEmbeddedWidget QLineEdit`），其包含 ID 选择器因而具有极高优先级，彻底覆盖了通用的 `QLineEdit:disabled` 全局声明。
+    - **避坑对策**：在各主题样式表（如 `dark.qss`, `light.qss`, `fusion.qss`）中，凡是为 `#NodeEmbeddedWidget` 定义了子控件样式的地方，必须同步显式定义其对应的 `:disabled` 状态样式（例如 `QWidget#NodeEmbeddedWidget QLineEdit:disabled`, `QWidget#NodeEmbeddedWidget QLabel:disabled`），并配置明显的灰色前景色/暗色背景色以确保视觉引导。
+
+23. **工作流参数变动无法触发项目脏标记与退出保存提示避坑 (Workflow Parameter Change Dirty State Propagation)**：
+    - **现象与根源**：工作流场景仅在节点增删、连线变动或位置更新时才向主窗口发出 `modified` 信号以更新 `m_projectModified`。当用户在节点内嵌面板中修改文本框、复选框等核心参数时，节点状态由 `Completed` 重置为 `Idle`，但因为场景没有发生拓扑级修改，所以不会标记项目为“已修改”。这导致用户退出程序或关闭项目时，不会有任何提示保存的弹窗，所有修改过的参数被直接遗弃。
+    - **避坑对策**：
+      1. 在框架级的 `ExecutableNodeDelegateModel::invalidateExecution()` 方法尾部，当节点的运行状态被无效化重置为 `Idle` 时，显式发送场景修改信号：`if (_scene) Q_EMIT _scene->modified(_scene);`。
+      2. 在节点局部的 `invalidateNodeData` 参数修改回调 lambda 中，也需显式加上 `if (_scene) Q_EMIT _scene->modified(_scene);`。这可确保即便节点原先已处于 `Idle` 状态时参数再次被修改，也能成功将脏状态广播至 `MainWindow`，让退出保存提示 100% 触发。
+
+24. **多实例节点临时及预览图片路径冲突与重写覆盖避坑 (Offscreen Render Path Collision in Multi-instance Nodes)**：
+    - **现象与根源**：如果在工作流中放置了两个或多个相同类型的节点（例如两组独立的基线预览算子），若其离线渲染/生成的临时图片或成果路径采用硬编码的文件名（例如 `.temp/baseline_preview.jpg`），则后运行 of 节点产生的输出会强行覆盖掉先运行节点的输出，导致界面预览出现错乱，且在 `.temp` 下无法区分各个节点的预览图。
+    - **避坑对策**：在拼接预览图或临时文件路径时，切忌使用固定的静态文件名，必须将节点唯一的标识 ID（`_nodeId`）融合进文件名中（如 `dir + "/.temp/baseline_preview_" + QString::number(_nodeId) + ".jpg"`）。由于 `_nodeId` 在工作流中是绝对唯一且随工程持久化保存的，这能从根本上保证多个节点实例的输出数据处于完全隔离的沙盒路径中，绝不发生相互冲突。

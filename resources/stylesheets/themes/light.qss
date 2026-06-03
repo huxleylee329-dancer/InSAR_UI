@@ -96,6 +96,10 @@ QWidget#NodeEmbeddedWidget QLabel {
     color: #333333;
 }
 
+QWidget#NodeEmbeddedWidget QLabel:disabled {
+    color: #999999;
+}
+
 QWidget#NodeEmbeddedWidget QLineEdit {
     background-color: white;
     color: #333333;
@@ -106,6 +110,12 @@ QWidget#NodeEmbeddedWidget QLineEdit {
     max-height: 16px;
 }
 
+QWidget#NodeEmbeddedWidget QLineEdit:disabled {
+    background-color: #F5F5F5;
+    color: #999999;
+    border-color: #DDDDDD;
+}
+
 QWidget#NodeEmbeddedWidget QComboBox {
     background-color: white;
     color: #333333;
@@ -114,6 +124,12 @@ QWidget#NodeEmbeddedWidget QComboBox {
     padding: 2px 5px;
     min-height: 16px;
     max-height: 16px;
+}
+
+QWidget#NodeEmbeddedWidget QComboBox:disabled {
+    background-color: #F5F5F5;
+    color: #999999;
+    border-color: #DDDDDD;
 }
 
 QWidget#NodeEmbeddedWidget QComboBox QAbstractItemView {

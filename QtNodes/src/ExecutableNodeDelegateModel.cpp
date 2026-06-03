@@ -230,6 +230,10 @@ void ExecutableNodeDelegateModel::invalidateExecution()
     _progress = 0;
     Q_EMIT progressUpdated(_progress);
     setState(ExecutionState::Idle);
+
+    if (_scene) {
+        Q_EMIT _scene->modified(_scene);
+    }
 }
 
 bool ExecutableNodeDelegateModel::confirmParameterChange()

@@ -1,20 +1,15 @@
-﻿#include"Baseline.h"
-#include"ui_Baseline.h"
-#include"Coordinate.h"
-#include"icon_source.h"
-#include<qdialog.h>
-#include<qcheckbox.h>
-#include<qscrollarea.h>
-#include<Utils.h>
-//#include<FormatConversion.h>
-#include<qmessagebox.h>
-#include<QFile>
-#include<QDir>
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#endif
-//#include<FormatConversion.h>
+#include <complex>
+#include <QFile>
+#include <QDir>
+#include <qdialog.h>
+#include <qcheckbox.h>
+#include <qscrollarea.h>
+#include <qmessagebox.h>
+#include <Utils.h>
+#include "Baseline.h"
+#include "ui_Baseline.h"
+#include "Coordinate.h"
+#include "icon_source.h"
 
 Baseline::Baseline(QWidget* parent) :
     QWidget(parent),
@@ -33,7 +28,8 @@ Baseline::~Baseline()
             copy->findItems(ui->comboBox->currentText())[0]->setStatusTip(NOT_IN_PROCESS);
     }
     emit sendCopy(copy);
-    Baseline_thread = NULL;
+    m_worker = nullptr;
+    m_thread = nullptr;
 }
 
 void Baseline::updateProcess(int value, QString information)
@@ -44,26 +40,28 @@ void Baseline::updateProcess(int value, QString information)
 }
 void Baseline::endProcess()
 {
-    Baseline_thread->thread()->quit();
-    Baseline_thread->thread()->wait();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
     ui->progressBar->hide();
     this->close();
 }
 void Baseline::endThread()
 {
-    Baseline_thread->thread()->quit();
-    Baseline_thread->thread()->wait();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 void Baseline::StopThread()
 {
-    if (Baseline_thread != NULL)
-        if (Baseline_thread->thread()->isRunning())
-        {
-            Baseline_thread->thread()->requestInterruption();
-            Baseline_thread->thread()->quit();
-            Baseline_thread->thread()->wait();
-        }
-
+    if (m_thread && m_thread->isRunning())
+    {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 void Baseline::Paint_Baseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index)
 {
@@ -254,31 +252,62 @@ void Baseline::on_comboBox_dst_node_currentIndexChanged()
 
 void Baseline::on_buttonBox_accepted()
 {
-    bool bFlag = false;
     if(copy->item(ui->comboBox->currentIndex(),0)->rowCount()==0)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程下未检测到数据！请先导入图像或更换工程！"));
         return;
     }
-    int index = ui->comboBox_masterImage->currentIndex() + 1;/*= ui->Index_edit->text().toUInt(&bFlag)*/;
+    int index = ui->comboBox_masterImage->currentIndex() + 1;
     this->image_number = ui->comboBox_masterImage->count();
-    Baseline_thread = new MyThread;
-    Baseline_thread->moveToThread(new QThread(this));
+
+    // Prepare file paths list from the model
+    QString project_name = ui->comboBox->currentText();
+    QString dst_node = ui->comboBox_dst_node->currentText();
+    QStandardItem* project = copy->findItems(project_name)[0];
+    QStandardItem* node = nullptr;
+    if (project) {
+        for (int i = 0; i < project->rowCount(); i++) {
+            if (project->child(i, 0)->text() == dst_node) {
+                node = project->child(i, 0);
+                break;
+            }
+        }
+    }
+    if (!node || node->rowCount() == 0) {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("该节点无数据！"));
+        return;
+    }
+    QStringList filePaths;
+    for (int i = 0; i < node->rowCount(); i++) {
+        filePaths.append(node->child(i, 1)->text());
+    }
+
+    m_thread = new QThread(this);
+    m_worker = new BaselineWorker();
+    m_worker->moveToThread(m_thread);
+
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    QList<int> para;
-    para.push_back(this->method);
-    connect(this, &Baseline::operate, Baseline_thread, &MyThread::Baseline_Estimate, Qt::QueuedConnection);
-    connect(Baseline_thread, &MyThread::updateProcess, this, &Baseline::updateProcess);
-    connect(Baseline_thread->thread(), &QThread::finished, Baseline_thread, &MyThread::deleteLater);
-    connect(Baseline_thread, &MyThread::sendBL, this, &Baseline::Paint_Baseline);
-    connect(Baseline_thread, &MyThread::endProcess, this, &Baseline::endProcess);
+
+    connect(m_thread, &QThread::started, m_worker, [this, index, filePaths]() {
+        m_worker->Baseline_Estimate(index, filePaths);
+    });
+    connect(m_worker, &BaselineWorker::updateProcess, this, &Baseline::updateProcess);
+    connect(m_worker, &BaselineWorker::sendBL, this, &Baseline::Paint_Baseline);
+    connect(m_worker, &BaselineWorker::endProcess, this, &Baseline::endProcess);
+    connect(m_worker, &BaselineWorker::errorProcess, this, [this](QString err) {
+        QMessageBox::warning(this, "Error", err);
+        endProcess();
+    });
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
+    
+    // Connect stop trigger
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Baseline::StopThread);
     connect(this, &QWidget::destroyed, this, &Baseline::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Baseline::StopThread);// , Qt::QueuedConnection);
-    Baseline_thread->thread()->start();
+
+    m_thread->start();
     ChangeVision(false);
-    emit operate(index, ui->comboBox->currentText(), ui->comboBox_dst_node->currentText(), this->copy);
-   
 }
 
 void Baseline::on_buttonBox_rejected()

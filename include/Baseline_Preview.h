@@ -15,6 +15,7 @@ public:
 	Baseline_Preview(QWidget* parent = Q_NULLPTR);
 	~Baseline_Preview();
 	void resizeEvent(QResizeEvent* event);
+	QChart* chart() const { return mChart; }
 public slots:
 	void Paint(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
 protected:

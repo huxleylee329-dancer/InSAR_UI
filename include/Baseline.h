@@ -1,9 +1,11 @@
 #pragma once
+#include <complex>
 #include<Baseline_Preview.h>
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_Baseline.h"
-#include"MyThread.h"
+#include "BaselineWorker.h"
+#include <QThread>
 
 class Baseline : public QWidget
 {
@@ -21,7 +23,8 @@ public slots:
 private:
     Ui::Baseline* ui;
     QStandardItemModel* copy;
-    MyThread* Baseline_thread;
+    BaselineWorker* m_worker;
+    QThread* m_thread;
     QString save_path;
     int method;
     int image_number;

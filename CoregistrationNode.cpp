@@ -90,6 +90,12 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
 {
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+    qDebug() << "[CoregistrationNode] setInData called. NodeName:" << (m_inputData ? m_inputData->nodeName() : "None") << "Files count:" << (m_inputData ? m_inputData->filePaths().size() : 0);
+    if (m_inputData) {
+        for (int i = 0; i < m_inputData->filePaths().size(); ++i) {
+            qDebug() << "  File" << i << ":" << m_inputData->filePaths()[i];
+        }
+    }
 
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         m_outputData.reset();
@@ -448,6 +454,10 @@ void CoregistrationNode::executeProcessing()
     setProgress(0);
 
     QStringList inputPaths = m_inputData->filePaths();
+    qDebug() << "[CoregistrationNode] executeProcessing. inputPaths size:" << inputPaths.size();
+    for (int i = 0; i < inputPaths.size(); ++i) {
+        qDebug() << "  inputPath" << i << ":" << inputPaths[i];
+    }
     QString projDir = getRealSavePath();
     QString projName = projectName();
     QString nodeName = m_outputNodeName.trimmed();
@@ -727,6 +737,11 @@ bool CoregistrationNode::validateAndRestoreOutput()
     QString projDir = getRealSavePath();
     if (projDir.isEmpty()) return false;
 
+    qDebug() << "[CoregistrationNode] validateAndRestoreOutput. nodeName:" << nodeName << "m_savedOutputFiles size:" << m_savedOutputFiles.size();
+    if (m_inputData) {
+        qDebug() << "  m_inputData files size:" << m_inputData->filePaths().size();
+    }
+
     // Determine expected files
     QStringList expectedH5Paths;
     QStringList expectedJpgPaths;
@@ -752,8 +767,11 @@ bool CoregistrationNode::validateAndRestoreOutput()
     }
 
     // Verify all H5 files exist
+    qDebug() << "[CoregistrationNode] Verifying expectedH5Paths. Size:" << expectedH5Paths.size();
     for (const QString& path : expectedH5Paths) {
-        if (!QFile::exists(path)) return false;
+        bool exists = QFile::exists(path);
+        qDebug() << "  Path:" << path << "exists:" << exists;
+        if (!exists) return false;
     }
 
     m_outputImagePaths = expectedH5Paths;

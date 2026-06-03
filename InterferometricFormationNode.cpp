@@ -238,6 +238,9 @@ void InterferometricFormationNode::createWidget()
         setOutputData(0, nullptr);
         setOutputData(1, nullptr);
         invalidateExecution();
+        if (_scene) {
+            Q_EMIT _scene->modified(_scene);
+        }
     };
 
     // 1. 选择工程
