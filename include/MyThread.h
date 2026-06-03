@@ -37,7 +37,6 @@ public slots:
     void SBAS_time_series(double temporal_thresh_low, double temporal_thresh, double spatial_thresh, int multilook_rg, int multilook_az, int unwrap_method, double alpha, double coherence_thresh, double temporal_coherence_thresh, double refinement_coh_thresh, double refinemen_def_thresh, QString project, QString srcNode, QString dstNode, QString csv_path, QStandardItemModel* model);
     void SBAS_reference_reselection(QString project, QString srcNode, int ref_row, int ref_col, QList<QPoint> GCPs, QStandardItemModel* model);
     void Geocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
-    void QUnwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void QDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
     void StopProcess();
     bool isStopRequested();

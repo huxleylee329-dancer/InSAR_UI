@@ -162,6 +162,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Coregistration", "Coregistration"},
         {"Interferometric Formation", "Interferometric Formation"},
         {"Denoise", "Denoise"},
+        {"Phase Unwrapping", "Phase Unwrapping"},
         {"Baseline Preview", "Baseline Preview"}
     };
 

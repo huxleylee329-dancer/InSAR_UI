@@ -28,6 +28,7 @@
 #include "InterferometricFormationNode.h"
 #include "BaselinePreviewNode.h"
 #include "DenoiseNode.h"
+#include "UnwrapNode.h"
 
 #include <memory>
 
@@ -103,6 +104,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<CoregistrationNode>("InSAR");
     registry->registerModel<InterferometricFormationNode>("InSAR");
     registry->registerModel<DenoiseNode>("InSAR");
+    registry->registerModel<UnwrapNode>("InSAR");
     registry->registerModel<BaselinePreviewNode>("InSAR");
 
     // ============================================================================

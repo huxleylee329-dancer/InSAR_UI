@@ -121,7 +121,7 @@ void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, Por
         setOutputData(1, nullptr);
     }
 
-    updateMasterImageCombo();
+    updateLabels();
 
     if (m_inputData && m_outputNodeName.isEmpty()) {
         m_outputNodeName = generateDefaultOutputName();

@@ -1,8 +1,10 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
-#include<qstandarditemmodel.h>
+#include <qstandarditemmodel.h>
 #include "ui_Unwrap.h"
-#include"MyThread.h"
+#include <QThread>
+
+class UnwrapWorker;
 
 class Unwrap_ui : public QWidget
 {
@@ -20,7 +22,8 @@ public slots:
 private:
     Ui::Unwrap* ui;
     QStandardItemModel* copy;
-    MyThread* Unwrap_thread;
+    UnwrapWorker* Unwrap_worker;
+    QThread* m_thread;
     QString save_path;
     int method;
     int image_number;

@@ -1,21 +1,19 @@
 #include"Unwrap_ui.h"
+#include"UnwrapWorker.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
-//#include<Utils.h>
 #include<FormatConversion.h>
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#endif
-//#include<FormatConversion.h>
+
 Unwrap_ui::Unwrap_ui(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::Unwrap)
+    ui(new Ui::Unwrap),
+    Unwrap_worker(nullptr),
+    m_thread(nullptr)
 {
     ui->setupUi(this);
     ui->ct_label->setHidden(1);
@@ -40,7 +38,8 @@ Unwrap_ui::~Unwrap_ui()
         }
     }
     emit sendCopy(copy);
-    Unwrap_thread = NULL;
+    Unwrap_worker = nullptr;
+    m_thread = nullptr;
 }
 
 void Unwrap_ui::updateProcess(int value, QString information)
@@ -51,26 +50,30 @@ void Unwrap_ui::updateProcess(int value, QString information)
 }
 void Unwrap_ui::endProcess()
 {
-    Unwrap_thread->thread()->quit();
-    Unwrap_thread->thread()->wait();
+    if (m_thread)
+    {
+        m_thread->quit();
+        m_thread->wait();
+    }
     ui->progressBar->hide();
     this->close();
 }
 void Unwrap_ui::endThread()
 {
-    Unwrap_thread->thread()->quit();
-    Unwrap_thread->thread()->wait();
+    if (m_thread)
+    {
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 void Unwrap_ui::StopThread()
 {
-    if (Unwrap_thread != NULL)
-        if (Unwrap_thread->thread()->isRunning())
-        {
-            Unwrap_thread->thread()->requestInterruption();
-            Unwrap_thread->thread()->quit();
-            Unwrap_thread->thread()->wait();
-        }
-
+    if (m_thread && m_thread->isRunning())
+    {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 void Unwrap_ui::TransitModel(QStandardItemModel* model)
 {
@@ -249,25 +252,23 @@ void Unwrap_ui::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
-    Unwrap_thread = new MyThread;
-    Unwrap_thread->moveToThread(new QThread(this));
-    //this->Process->setAutoClose(true);
+    m_thread = new QThread(this);
+    Unwrap_worker = new UnwrapWorker();
+    Unwrap_worker->moveToThread(m_thread);
+
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    QList<int> para;
-    para.push_back(this->method);
-    // para.push_back(this->image_number);
-     //this->thread()->msleep(1);
-    connect(this, &Unwrap_ui::operate, Unwrap_thread, &MyThread::QUnwrap, Qt::QueuedConnection);
-    connect(Unwrap_thread, &MyThread::updateProcess, this, &Unwrap_ui::updateProcess);
-    connect(Unwrap_thread->thread(), &QThread::finished, Unwrap_thread, &MyThread::deleteLater);
-    connect(Unwrap_thread, &MyThread::endProcess, this, &Unwrap_ui::endProcess);
+
+    connect(this, &Unwrap_ui::operate, Unwrap_worker, &UnwrapWorker::Unwrap, Qt::QueuedConnection);
+    connect(Unwrap_worker, &UnwrapWorker::updateProcess, this, &Unwrap_ui::updateProcess);
+    connect(m_thread, &QThread::finished, Unwrap_worker, &QObject::deleteLater);
+    connect(Unwrap_worker, &UnwrapWorker::endProcess, this, &Unwrap_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Unwrap_ui::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Unwrap_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Unwrap_thread, &MyThread::sendModel, this, &Unwrap_ui::TransitModel);
-    Unwrap_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Unwrap_ui::StopThread);
+    connect(Unwrap_worker, &UnwrapWorker::sendModel, this, &Unwrap_ui::TransitModel);
+    
+    m_thread->start();
     ChangeVision(false);
-    //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);
     emit operate(this->method, ui->coherence_threshold->text().toDouble(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->file_name->text(), this->copy);
 }
 

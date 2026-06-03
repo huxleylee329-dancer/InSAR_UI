@@ -356,6 +356,12 @@
     <ClCompile Include="DenoiseWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="UnwrapNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UnwrapWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="SpeckleDenoiseTask.cpp" />
     <ClCompile Include="TargetDetectionNode.cpp">
       <Filter>Source Files</Filter>
@@ -843,6 +849,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\DenoiseWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\UnwrapNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\UnwrapWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SpeckleDenoiseTask.h" />
