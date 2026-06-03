@@ -2,7 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_Filter.h"
-#include"MyThread.h"
+#include "DenoiseWorker.h"
 
 class Filter_ui : public QWidget
 {
@@ -20,7 +20,7 @@ public slots:
 private:
     Ui::Filter* ui;
     QStandardItemModel* copy;
-    MyThread* Filter_thread;
+    DenoiseWorker* Filter_thread;
     QString save_path;
     int method;
     int image_number;

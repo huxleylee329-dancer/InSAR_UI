@@ -208,6 +208,12 @@
     <ClCompile Include="InterferometricFormationWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DenoiseNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DenoiseWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="TargetDetectionNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -652,6 +658,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\InterferometricFormationWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DenoiseNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DenoiseWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\TargetDetectionNode.h">

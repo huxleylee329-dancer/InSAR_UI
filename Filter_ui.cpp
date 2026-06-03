@@ -3,6 +3,7 @@
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
+#include <QThread>
 //#include<Utils.h>
 //#include<FormatConversion.h>
 #include<qmessagebox.h>
@@ -297,7 +298,7 @@ void Filter_ui::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
-    Filter_thread = new MyThread;
+    Filter_thread = new DenoiseWorker;
     Filter_thread->moveToThread(new QThread(this));
     //this->Process->setAutoClose(true);
     ui->progressBar->setValue(0);
@@ -311,13 +312,13 @@ void Filter_ui::on_buttonBox_accepted()
     para.push_back(this->method);
    // para.push_back(this->image_number);
     //this->thread()->msleep(1);
-    connect(this, &Filter_ui::operate, Filter_thread, &MyThread::Denoise, Qt::QueuedConnection);
-    connect(Filter_thread, &MyThread::updateProcess, this, &Filter_ui::updateProcess);
-    connect(Filter_thread->thread(), &QThread::finished, Filter_thread, &MyThread::deleteLater);
-    connect(Filter_thread, &MyThread::endProcess, this, &Filter_ui::endProcess);
+    connect(this, &Filter_ui::operate, Filter_thread, &DenoiseWorker::Denoise, Qt::QueuedConnection);
+    connect(Filter_thread, &DenoiseWorker::updateProcess, this, &Filter_ui::updateProcess);
+    connect(Filter_thread->thread(), &QThread::finished, Filter_thread, &DenoiseWorker::deleteLater);
+    connect(Filter_thread, &DenoiseWorker::endProcess, this, &Filter_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Filter_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Filter_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Filter_thread, &MyThread::sendModel, this, &Filter_ui::TransitModel);
+    connect(Filter_thread, &DenoiseWorker::sendModel, this, &Filter_ui::TransitModel);
     Filter_thread->thread()->start();
     ChangeVision(false);
     //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);

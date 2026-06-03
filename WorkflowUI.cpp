@@ -161,6 +161,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.leafItems["InSAR"] = QList<PaletteOrder::LeafItem>{
         {"Coregistration", "Coregistration"},
         {"Interferometric Formation", "Interferometric Formation"},
+        {"Denoise", "Denoise"},
         {"Baseline Preview", "Baseline Preview"}
     };
 
