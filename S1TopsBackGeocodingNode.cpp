@@ -527,7 +527,6 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
     QString outputPath = projectPath() + "/" + dstNode + "/";
-    m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
 
     // 生成预览图
     QStringList h5Paths;
@@ -561,6 +560,23 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
             }
         }
     }
+
+    if (h5Paths.isEmpty())
+    {
+        QDir dir(outputPath);
+        if (dir.exists()) {
+            QStringList filters;
+            filters << "*_regis.h5";
+            QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
+            h5Files.sort();
+            for (const QString& h5File : h5Files) {
+                h5Paths.append(dir.absoluteFilePath(h5File));
+            }
+        }
+    }
+
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    setOutputData(0, m_outputData);
 
     // Clean up thread
     if (m_thread)
@@ -879,7 +895,12 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
         QStringList h5Files = dir.entryList(filters, QDir::Files);
 
         if (!h5Files.isEmpty()) {
-            m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+            QStringList h5Paths;
+            for (const QString& h5File : h5Files) {
+                h5Paths.append(dir.absoluteFilePath(h5File));
+            }
+            h5Paths.sort();
+            m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
             Q_EMIT dataUpdated(0);
 

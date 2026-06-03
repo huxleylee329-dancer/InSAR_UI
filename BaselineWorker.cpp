@@ -29,7 +29,6 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
     }
 
     InSARLogManager::LogInfo("BaselineWorker", QString("Starting Baseline Estimate. Master Index: %1, Image Count: %2").arg(index).arg(filePaths.size()));
-    qDebug() << "[BaselineWorker] Baseline_Estimate started. Master Index:" << index << "Image Count:" << filePaths.size();
 
     Utils util;
     vector<cv::String> SAR_images;
@@ -94,7 +93,6 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
         if (QThread::currentThread()->isInterruptionRequested())
         {
             InSARLogManager::LogInfo("BaselineWorker", "Baseline Estimate interrupted by user.");
-            qDebug() << "[BaselineWorker] Baseline Estimate interrupted by user.";
             return;
         }
 
@@ -103,8 +101,6 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
         {
             temporal_baseline.push_back(0);
             spatial_baseline.push_back(0);
-            qDebug() << QString("[BaselineWorker] Master Image %1/%2: %3. (Baseline = 0)")
-                        .arg(i + 1).arg(image_number).arg(QFileInfo(filePaths.at(i)).fileName());
         }
         else
         {
@@ -134,9 +130,6 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
                 spatial_baseline.push_back(V_baseline);
                 cc.at<double>(0, i) = V_baseline;
                 cc.at<double>(1, i) = delta;
-
-                qDebug() << QString("[BaselineWorker] Slave Image %1/%2: %3. Temporal: %4 days, Spatial: %5 m")
-                            .arg(i + 1).arg(image_number).arg(QFileInfo(filePaths.at(i)).fileName()).arg(delta).arg(V_baseline);
             }
             catch (const std::exception& e) {
                 emit errorProcess(QStringLiteral("处理从图像 %1 失败: ").arg(filePaths.at(i)) + QString::fromStdString(e.what()));
@@ -150,7 +143,6 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
         emit updateProcess(20 + (i + 1) * 80 / image_number, QStringLiteral("正在计算时空基线……"));
     }
 
-    qDebug() << "[BaselineWorker] Baseline_Estimate completed successfully.";
     emit sendBL(temporal_baseline, spatial_baseline, index);
     InSARLogManager::LogInfo("BaselineWorker", "Baseline Estimate task completed successfully.");
     emit endProcess();

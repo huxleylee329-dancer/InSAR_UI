@@ -405,7 +405,20 @@ void S1FrameMergeNode::onProcessingFinished()
         : (m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName);
     m_outputNodeName = dstNode;
     QString outputPath = projectPath() + "/" + dstNode + "/";
-    m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+
+    QStringList h5Paths;
+    QDir dir(outputPath);
+    if (dir.exists()) {
+        QStringList filters;
+        filters << "*.h5";
+        QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
+        h5Files.sort();
+        for (const QString& h5File : h5Files) {
+            h5Paths.append(dir.absoluteFilePath(h5File));
+        }
+    }
+
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
     validateAndRestoreOutput();
 
@@ -663,7 +676,12 @@ bool S1FrameMergeNode::validateAndRestoreOutput()
 
         if (!h5Files.isEmpty()) {
             // 恢复 Port 0 数据
-            m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+            QStringList h5Paths;
+            for (const QString& h5File : h5Files) {
+                h5Paths.append(dir.absoluteFilePath(h5File));
+            }
+            h5Paths.sort();
+            m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
             Q_EMIT dataUpdated(0);
 

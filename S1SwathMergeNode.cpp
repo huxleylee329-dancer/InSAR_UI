@@ -677,7 +677,12 @@ bool S1SwathMergeNode::validateAndRestoreOutput()
 
         if (!h5Files.isEmpty()) {
             // 恢复 Port 0 数据
-            m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+            QStringList h5Paths;
+            for (const QString& h5File : h5Files) {
+                h5Paths.append(dir.absoluteFilePath(h5File));
+            }
+            h5Paths.sort();
+            m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
             Q_EMIT dataUpdated(0);
 

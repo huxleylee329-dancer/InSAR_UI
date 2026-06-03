@@ -88,7 +88,6 @@ private:
     void showChart();
     void generateStaticPreviewJpg();
     QString projectPath() const;
-    QStringList getResolvedInputPaths() const;
 
     // Executable interface implementation
     void execute() override;

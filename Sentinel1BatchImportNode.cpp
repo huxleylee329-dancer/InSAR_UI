@@ -527,8 +527,7 @@ void Sentinel1BatchImportNode::onRemoveFilesClicked()
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
 
-            QString outputPath = projectPath() + "/" + getOutputNodeName() + "/";
-            auto outputData = std::make_shared<ImportedFileData>(outputPath, getOutputNodeName());
+            auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, getOutputNodeName());
             setOutputData(0, outputData);
             Q_EMIT dataUpdated(0);
         } else {
@@ -562,11 +561,6 @@ void Sentinel1BatchImportNode::onImportFinished()
             m_importedFilePaths.append(filePath);
         }
     }
-    qDebug() << "[Sentinel1BatchImportNode] onImportFinished. manifestPaths size:" << m_manifestPaths.size() << "importedFilePaths size:" << m_importedFilePaths.size();
-    for (int i = 0; i < m_importedFilePaths.size(); ++i) {
-        qDebug() << "  importedFilePath" << i << ":" << m_importedFilePaths[i];
-    }
-
     ImportNodeBase::onImportFinished();
 
     // 双路输出：Port 1 预览输出
@@ -695,8 +689,6 @@ bool Sentinel1BatchImportNode::validateAndRestoreOutput()
         return false;
 
     QString outputPath = projectPath() + "/" + nodeName + "/";
-    qDebug() << "[Sentinel1BatchImportNode] validateAndRestoreOutput. nodeName:" << nodeName << "manifestPaths size:" << m_manifestPaths.size() << "outputPath:" << outputPath;
-
     QDir dir(outputPath);
     if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
         m_importedFilePaths.clear();
@@ -704,12 +696,10 @@ bool Sentinel1BatchImportNode::validateAndRestoreOutput()
             QString importName = generateImportName(manifestPath);
             QString importedPath = outputPath + importName + ".h5";
             bool exists = QFile::exists(importedPath);
-            qDebug() << "  Checking manifest:" << manifestPath << "-> expected H5:" << importedPath << "exists:" << exists;
             if (exists) {
                 m_importedFilePaths.append(importedPath);
             }
         }
-        qDebug() << "  m_importedFilePaths size:" << m_importedFilePaths.size();
         if (!m_importedFilePaths.isEmpty()) {
             auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
             setOutputData(0, outputData);

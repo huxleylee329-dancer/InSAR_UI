@@ -310,27 +310,33 @@ void S1DeburstNode::onProgressUpdate(int progress, const QString& message)
 
 void S1DeburstNode::onProcessingFinished()
 {
-    // Create output data
     QString dstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
     QString outputPath = projectPath() + "/" + dstNode + "/";
-    m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
-    setOutputData(0, m_outputData);
 
-    // 收集生成的预览图
-    QStringList jpgPaths;
+    QStringList h5Paths;
     QDir dir(outputPath);
     if (dir.exists()) {
         QStringList filters;
         filters << "*_deburst.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
+        QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
+        h5Files.sort();
         for (const QString& h5File : h5Files) {
-            QFileInfo fi(dir.absoluteFilePath(h5File));
-            QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-            if (QFile::exists(jpgPath)) {
-                jpgPaths.append(jpgPath);
-            }
+            h5Paths.append(dir.absoluteFilePath(h5File));
+        }
+    }
+
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    setOutputData(0, m_outputData);
+
+    // 收集生成的预览图
+    QStringList jpgPaths;
+    for (const QString& h5Path : h5Paths) {
+        QFileInfo fi(h5Path);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        if (QFile::exists(jpgPath)) {
+            jpgPaths.append(jpgPath);
         }
     }
 
@@ -700,7 +706,12 @@ bool S1DeburstNode::validateAndRestoreOutput()
 
         if (!h5Files.isEmpty()) {
             // 恢复 Port 0 数据
-            m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+            QStringList h5Paths;
+            for (const QString& h5File : h5Files) {
+                h5Paths.append(dir.absoluteFilePath(h5File));
+            }
+            h5Paths.sort();
+            m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
             Q_EMIT dataUpdated(0);
 

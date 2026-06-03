@@ -86,11 +86,7 @@ void BaselinePreviewNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
     
-    QStringList filePaths = getResolvedInputPaths();
-    qDebug() << "[BaselinePreviewNode] setInData called. NodeName:" << (m_inputData ? m_inputData->nodeName() : "None") << "Files count:" << filePaths.size();
-    for (int i = 0; i < filePaths.size(); ++i) {
-        qDebug() << "  File" << i << ":" << filePaths[i];
-    }
+    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
 
     if (filePaths.isEmpty()) {
         m_outputData.reset();
@@ -167,7 +163,7 @@ void BaselinePreviewNode::createWidget()
 
     // Row 6: Show Chart Button
     QHBoxLayout* btnLayout = new QHBoxLayout();
-    m_showChartBtn = new QPushButton(QStringLiteral("显示基线图"));
+    m_showChartBtn = new QPushButton(QStringLiteral("查看基线图"));
     m_showChartBtn->setEnabled(false); // Disabled until run completes
     QFont btnFont = m_showChartBtn->font();
     btnFont.setBold(true);
@@ -228,7 +224,7 @@ void BaselinePreviewNode::updateLabels()
                 if (qAbs(s) > qAbs(maxSpat)) maxSpat = s;
             }
             QString masterName = QStringLiteral("未知");
-            QStringList filePaths = getResolvedInputPaths();
+            QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
             if (m_inputData && m_masterIndex >= 1 && m_masterIndex <= filePaths.size()) {
                 masterName = QFileInfo(filePaths.at(m_masterIndex - 1)).fileName();
             }
@@ -269,7 +265,7 @@ void BaselinePreviewNode::updateMasterImageCombo()
         // Add guidance item
         m_masterImageCombo->addItem(QStringLiteral("请选择主图像..."));
 
-        QStringList filePaths = getResolvedInputPaths();
+        QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
         if (m_inputData && !filePaths.isEmpty()) {
             for (const QString& path : filePaths) {
                 m_masterImageCombo->addItem(QFileInfo(path).fileName());
@@ -301,7 +297,7 @@ void BaselinePreviewNode::updateMasterImageCombo()
 
 bool BaselinePreviewNode::validateInputs() const
 {
-    QStringList filePaths = getResolvedInputPaths();
+    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
     if (filePaths.isEmpty()) {
         return false;
     }
@@ -313,7 +309,6 @@ bool BaselinePreviewNode::validateInputs() const
 
 void BaselinePreviewNode::execute()
 {
-    qDebug() << "[BaselinePreviewNode] execute() called.";
     if (!validateInputs()) {
         onError(QStringLiteral("参数校验未通过，请连接输入并正确选择主图像！"));
         return;
@@ -323,7 +318,6 @@ void BaselinePreviewNode::execute()
 
 void BaselinePreviewNode::executeProcessing()
 {
-    qDebug() << "[BaselinePreviewNode] executeProcessing() starts. finalMasterIndex:" << (m_useDefaultMaster ? 1 : m_masterIndex);
     stopExecution();
 
     m_thread = new QThread(this);
@@ -331,7 +325,7 @@ void BaselinePreviewNode::executeProcessing()
     m_worker->moveToThread(m_thread);
 
     int finalMasterIndex = m_useDefaultMaster ? 1 : m_masterIndex;
-    QStringList filePaths = getResolvedInputPaths();
+    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
 
     connect(m_thread, &QThread::started, m_worker, [this, finalMasterIndex, filePaths]() {
         m_worker->Baseline_Estimate(finalMasterIndex, filePaths);
@@ -392,7 +386,6 @@ void BaselinePreviewNode::onError(const QString& error)
 
 void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, QList<double> spatial_baseline, int index)
 {
-    qDebug() << "[BaselinePreviewNode] onProcessingFinished() called. index:" << index << "temporal_baseline count:" << temporal_baseline.size();
     m_temporalBaselines = temporal_baseline;
     m_spatialBaselines = spatial_baseline;
     m_masterIndex = index;
@@ -426,7 +419,6 @@ void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, 
 
 void BaselinePreviewNode::showChart()
 {
-    qDebug() << "[BaselinePreviewNode] showChart() called. Index:" << m_masterIndex << "Count:" << m_temporalBaselines.size();
     if (m_temporalBaselines.isEmpty() || m_spatialBaselines.isEmpty()) {
         QMessageBox::warning(nullptr, "Warning", QStringLiteral("没有可用的基线计算数据，请先运行节点！"));
         return;
@@ -439,10 +431,8 @@ void BaselinePreviewNode::showChart()
 
 bool BaselinePreviewNode::validateAndRestoreOutput()
 {
-    qDebug() << "[BaselinePreviewNode] validateAndRestoreOutput() called. Cached baselines size:" << m_temporalBaselines.size();
     // High self-containment check: check if we have cached baseline lists loaded from load()
     if (!m_temporalBaselines.isEmpty() && !m_spatialBaselines.isEmpty() && m_masterIndex >= 1) {
-        qDebug() << "[BaselinePreviewNode] validateAndRestoreOutput() successfully restored output.";
 
         // Regenerate static JPG if it is missing
         QString dir = projectPath();
@@ -479,7 +469,6 @@ bool BaselinePreviewNode::validateAndRestoreOutput()
 
 QJsonObject BaselinePreviewNode::save() const
 {
-    qDebug() << "[BaselinePreviewNode] save() called. m_useDefaultMaster:" << m_useDefaultMaster << "m_masterIndex:" << m_masterIndex << "baselines cached:" << m_temporalBaselines.size();
     QJsonObject root = ExecutableNodeDelegateModel::save();
     root["useDefaultMaster"] = m_useDefaultMaster;
     root["masterIndex"] = m_masterIndex;
@@ -498,7 +487,6 @@ QJsonObject BaselinePreviewNode::save() const
 
 void BaselinePreviewNode::load(QJsonObject const& json)
 {
-    qDebug() << "[BaselinePreviewNode] load() called.";
     m_useDefaultMaster = json["useDefaultMaster"].toBool(true);
     m_masterIndex = json["masterIndex"].toInt(1);
 
@@ -524,7 +512,6 @@ void BaselinePreviewNode::load(QJsonObject const& json)
 
     updateMasterImageCombo();
     updateLabels();
-    qDebug() << "[BaselinePreviewNode] load() completed. useDefaultMaster:" << m_useDefaultMaster << "masterIndex:" << m_masterIndex << "baselines loaded:" << m_temporalBaselines.size();
 }
 
 QStringList BaselinePreviewNode::previewImagePaths() const
@@ -609,7 +596,6 @@ void BaselinePreviewNode::generateStaticPreviewJpg()
         QString jpgPath = tempDir + "/baseline_preview_" + QString::number(_nodeId) + ".jpg";
         // Save with 100% quality to avoid JPEG compression artifacts
         pixmap.save(jpgPath, "JPG", 100);
-        qDebug() << "[BaselinePreviewNode] Saved offscreen baseline chart image to:" << jpgPath;
     }
 
     delete preview;
@@ -647,26 +633,6 @@ QString BaselinePreviewNode::projectPath() const
         return fullPath;
     }
     return QString();
-}
-
-QStringList BaselinePreviewNode::getResolvedInputPaths() const
-{
-    if (!m_inputData) return QStringList();
-    QStringList paths = m_inputData->filePaths();
-    if (paths.size() == 1 && QFileInfo(paths.first()).isDir()) {
-        QString dirPath = paths.first();
-        QDir dir(dirPath);
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoDotAndDotDot);
-        QStringList resolvedPaths;
-        for (const QString& file : h5Files) {
-            resolvedPaths.append(dir.absoluteFilePath(file));
-        }
-        resolvedPaths.sort();
-        return resolvedPaths;
-    }
-    return paths;
 }
 
 } // namespace QtNodes

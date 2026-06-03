@@ -677,7 +677,6 @@ void InterferometricFormationNode::onProcessingFinished()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
     QString outputPath = projectPath() + "/" + dstNode + "/";
-    m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
 
     // Scan output directory for H5 results and generate JPG previews
     QStringList h5Paths;
@@ -744,6 +743,27 @@ void InterferometricFormationNode::onProcessingFinished()
             }
         }
     }
+
+    QStringList uniqueH5Paths = h5Paths;
+    uniqueH5Paths.removeDuplicates();
+    uniqueH5Paths.sort();
+
+    if (uniqueH5Paths.isEmpty())
+    {
+        QDir dir(outputPath);
+        if (dir.exists()) {
+            QStringList filters;
+            filters << "*.h5";
+            QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
+            h5Files.sort();
+            for (const QString& h5File : h5Files) {
+                uniqueH5Paths.append(dir.absoluteFilePath(h5File));
+            }
+        }
+    }
+
+    m_outputData = std::make_shared<ImportedFileData>(uniqueH5Paths, dstNode);
+    setOutputData(0, m_outputData);
 
     // Clean up thread
     if (m_thread)
@@ -1088,7 +1108,14 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
         }
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(outputPath, dstNode);
+    QStringList uniqueH5Paths;
+    for (const QString& h5File : h5Files) {
+        uniqueH5Paths.append(dir.absoluteFilePath(h5File));
+    }
+    uniqueH5Paths.sort();
+    uniqueH5Paths.removeDuplicates();
+
+    m_outputData = std::make_shared<ImportedFileData>(uniqueH5Paths, dstNode);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 

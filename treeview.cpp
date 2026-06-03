@@ -294,7 +294,7 @@ void TreeView::CleanOrphanedFiles()
     QStringList orphanedFiles;
     
     for (const QString& dirName : allDirs) {
-        if (dirName == "temp" || dirName == "logs") {
+        if (dirName == "temp" || dirName == ".temp" || dirName == "logs") {
             continue;
         }
         if (!activeNodeNames.contains(dirName)) {
