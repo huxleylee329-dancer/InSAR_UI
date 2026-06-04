@@ -411,16 +411,18 @@ void MainWindow::Loading(QString Data_path, QString ImageType)
     int ret = Color_Label->SetData(Data_path, ImageType);
     if(ret == 0)
     {
-        QPoint globalpos = TabChild->mapToGlobal(QPoint(0, 0));
-        Color_Label->move(globalpos.x(), globalpos.y());
+        Color_Label->move(0, 0);
         Color_Label->show();
         mExist_Color.append(true);
+        if (m_workspaceUI) m_workspaceUI->addExistColor(true);
     }
     else
     {
         mExist_Color.append(false);
+        if (m_workspaceUI) m_workspaceUI->addExistColor(false);
     }
     mColors.append(Color_Label);
+    if (m_workspaceUI) m_workspaceUI->addColor(Color_Label);
 }
 void MainWindow::open_from_project_file(QString str)
 {
@@ -558,7 +560,7 @@ bool MainWindow::eventFilter(QObject* target, QEvent* event)
         if (event->type() == QEvent::Resize || event->type() == QEvent::Move)
         {
             if (mColors.size() && activeTabWidget->currentIndex() >= 0)
-                mColors.at(activeTabWidget->currentIndex())->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+                mColors.at(activeTabWidget->currentIndex())->move(0, 0);
         }
     }
     if (isWorkspace && target == this)
@@ -566,7 +568,7 @@ bool MainWindow::eventFilter(QObject* target, QEvent* event)
         if (event->type() == QEvent::Move)
         {
             if (mColors.size() && activeTabWidget->currentIndex() >= 0)
-                mColors.at(activeTabWidget->currentIndex())->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+                mColors.at(activeTabWidget->currentIndex())->move(0, 0);
         }
     }
     return false;
@@ -742,6 +744,12 @@ void MainWindow::closeCurrentProject()
     if (m_workspaceUI) {
         m_workspaceUI->clear();
     }
+
+    // 清空 MainWindow 中的颜色列表，避免悬空指针
+    mColors.clear();
+    mExist_Color.clear();
+    ColorBar_Before = -1;
+    TabCount_Before = -1;
 
     // 清空流程编辑器（通过接口）
     if (m_workflowUI) {
@@ -1266,8 +1274,8 @@ void MainWindow::ShowColorBar(int index)
             if (mExist_Color.at(index))
             {
 
-                mColors.at(index)->resize(activeTabWidget->currentWidget()->width() / 5, activeTabWidget->currentWidget()->height() / 3);
-                mColors.at(index)->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+                mColors.at(index)->resize(activeTabWidget->currentWidget()->width() / 8, activeTabWidget->currentWidget()->height() / 3);
+                mColors.at(index)->move(0, 0);
                 mColors.at(index)->raise();
                 mColors.at(index)->show();
             }
@@ -1345,12 +1353,16 @@ void MainWindow::handleTabCloseRequested(int index)
         delete(activeTabWidget->widget(index));
         mColors.removeAt(index);
         mExist_Color.removeAt(index);
+        if (m_workspaceUI) {
+            m_workspaceUI->removeColor(index);
+            m_workspaceUI->removeExistColor(index);
+        }
         if (activeTabWidget->currentIndex() >= 0)
         {
             if (mExist_Color.at(activeTabWidget->currentIndex()))
             {
-                mColors.at(activeTabWidget->currentIndex())->resize(activeTabWidget->currentWidget()->width() / 5, activeTabWidget->currentWidget()->height() / 3);
-                mColors.at(activeTabWidget->currentIndex())->move(activeTabWidget->currentWidget()->mapToGlobal(QPoint(0, 0)));
+                mColors.at(activeTabWidget->currentIndex())->resize(activeTabWidget->currentWidget()->width() / 8, activeTabWidget->currentWidget()->height() / 3);
+                mColors.at(activeTabWidget->currentIndex())->move(0, 0);
                 mColors.at(activeTabWidget->currentIndex())->raise();
                 mColors.at(activeTabWidget->currentIndex())->show();
             }
@@ -1648,6 +1660,36 @@ void MainWindow::updateInterfaceMenuCheckState()
         bool isWorkflow = (currentId == "workflow");
         for (QAction* action : m_workflowUI->getViewActions()) {
             action->setVisible(isWorkflow);
+        }
+    }
+
+    updateColorBarVisibility();
+}
+
+void MainWindow::updateColorBarVisibility()
+{
+    bool isWorkspace = m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workspace";
+    QTabWidget* activeTabWidget = m_workspaceUI ? m_workspaceUI->tabWidget() : nullptr;
+    int currentIndex = activeTabWidget ? activeTabWidget->currentIndex() : -1;
+
+    for (int i = 0; i < mColors.size(); ++i)
+    {
+        if (mColors.at(i))
+        {
+            if (isWorkspace && i == currentIndex && i < mExist_Color.size() && mExist_Color.at(i))
+            {
+                if (activeTabWidget && activeTabWidget->currentWidget())
+                {
+                    mColors.at(i)->resize(activeTabWidget->currentWidget()->width() / 8, activeTabWidget->currentWidget()->height() / 3);
+                    mColors.at(i)->move(0, 0);
+                    mColors.at(i)->raise();
+                    mColors.at(i)->show();
+                }
+            }
+            else
+            {
+                mColors.at(i)->hide();
+            }
         }
     }
 }

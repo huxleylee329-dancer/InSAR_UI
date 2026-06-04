@@ -3,13 +3,12 @@
 
 ColorBar::ColorBar(QWidget* parent) : QLabel(parent)
 {
-    this->resize(250,400);
-    this->setMinimumWidth(250);
-    this->setMinimumHeight(400);
+    this->resize(150,300);
+    this->setMinimumWidth(150);
+    this->setMinimumHeight(300);
 
     mPos_Right_Top = QPoint(this->width(),0);
     update();
-    this->setWindowFlags(Qt::Dialog |Qt::FramelessWindowHint| Qt::Tool );
     setTheme("light");
 }
 
@@ -151,7 +150,7 @@ void ColorBar::paintEvent(QPaintEvent* event)
             painter.setPen(Pen_color);
             painter.drawLine(Rect_Right, Rect_Bottom - i * Rect_height / 4, Rect_Right + 10, Rect_Bottom - i * Rect_height / 4);
             QFont TextFont;
-            TextFont.setPixelSize(20);
+            TextFont.setPixelSize(12);
             painter.setFont(TextFont);
             painter.drawText(QPoint(Rect_Right + 10, Rect_Bottom - i * Rect_height / 4), QString::number(mMin + mInternal * i, 'f', 2));
         }

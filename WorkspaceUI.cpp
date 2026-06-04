@@ -1,4 +1,4 @@
-﻿#include "WorkspaceUI.h"
+#include "WorkspaceUI.h"
 #include "treeview.h"
 #include <QSplitter>
 #include <QTreeView>
@@ -132,8 +132,8 @@ void WorkspaceUI::resizeEvent(QResizeEvent* event)
             QWidget* currentWidget = m_tabWidget->currentWidget();
             if (currentWidget && mColors.at(index))
             {
-                mColors.at(index)->resize(currentWidget->width() / 10, currentWidget->height() / 5);
-                mColors.at(index)->move(currentWidget->mapToGlobal(QPoint(0, 0)));
+                mColors.at(index)->resize(currentWidget->width() / 8, currentWidget->height() / 3);
+                mColors.at(index)->move(0, 0);
             }
         }
     }

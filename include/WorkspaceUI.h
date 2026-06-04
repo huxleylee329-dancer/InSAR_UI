@@ -1,4 +1,4 @@
-﻿#ifndef WORKSPACEUI_H
+#ifndef WORKSPACEUI_H
 #define WORKSPACEUI_H
 
 #include "IApplicationInterface.h"
@@ -74,6 +74,8 @@ public slots:
     QList<ColorBar*> colors() { return mColors; }
     void addColor(ColorBar* color) { mColors.append(color); }
     void removeColor(int index) { if (index >= 0 && index < mColors.size()) mColors.removeAt(index); }
+    void addExistColor(bool exist) { mExist_Color.append(exist); }
+    void removeExistColor(int index) { if (index >= 0 && index < mExist_Color.size()) mExist_Color.removeAt(index); }
 
 protected:
     void resizeEvent(QResizeEvent* event) override;

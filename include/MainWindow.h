@@ -147,6 +147,7 @@ private:
     void updateThemeCheckState(QMenu* themeMenu, const QString& theme);
     void setupInterfaceSwitchingMenu();
     void updateInterfaceMenuCheckState();
+    void updateColorBarVisibility();
     void initializeInterfaces(QStandardItemModel* model, XMLFile* project, QString filePath = QString());
 
     // 关闭当前工程（不含确认对话框），供新建/打开工程前调用
