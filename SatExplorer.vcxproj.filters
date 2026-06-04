@@ -220,6 +220,12 @@
     <ClCompile Include="UnwrapWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DemNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DemWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="TargetDetectionNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -676,6 +682,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\UnwrapWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DemNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DemWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\TargetDetectionNode.h">

@@ -227,7 +227,7 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
         }
         return true;
     }
-    else if (type == "phase" || type == "coherence")
+    else if (type == "phase" || type == "coherence" || type == "dem")
     {
         FormatConversion FC;
         Utils util;
@@ -256,6 +256,19 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
             if (type == "coherence")
             {
                 phase_normalized = phase * 255.0;
+            }
+            else if (type == "dem")
+            {
+                double minVal, maxVal;
+                cv::minMaxLoc(phase, &minVal, &maxVal);
+                if (maxVal - minVal > 1e-6)
+                {
+                    phase_normalized = (phase - minVal) * (255.0 / (maxVal - minVal));
+                }
+                else
+                {
+                    phase_normalized = cv::Mat::zeros(phase.size(), CV_64F);
+                }
             }
             else
             {
