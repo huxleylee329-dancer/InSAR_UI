@@ -31,6 +31,10 @@ public:
     InterfaceManager* interfaceManager() const { return m_interfaceManager; }
     WorkspaceUI* workspaceUI() const { return m_workspaceUI; }
 
+    // Color bar list accessors (single source of truth)
+    QList<ColorBar*> colors() const { return mColors; }
+    QList<bool> existColors() const { return mExist_Color; }
+
 public slots:
     void ShowImage(QModelIndex);
     void updateProcess(int, QString);

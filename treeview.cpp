@@ -87,6 +87,7 @@ void TreeView::NewProject(QString name, QString save_path)
 
 void TreeView::updateTreeIcons(const QString &theme)
 {
+    m_cachedTheme = theme;
     if (!model) return;
     bool isDark = theme == "dark";
     QColor iconColor = themeIconColor(isDark);
@@ -494,9 +495,33 @@ void TreeView::DeleteNode()
 void TreeView::rowsInserted(const QModelIndex &parent, int start, int end)
 {
     QTreeView::rowsInserted(parent, start, end);
-    
-    // Read current theme and colorize items automatically
-    QSettings settings("Config.ini", QSettings::IniFormat);
-    QString theme = settings.value("Appearance/Theme", "light").toString();
-    updateTreeIcons(theme);
+
+    // Only colorize newly inserted items, not the entire tree
+    if (m_cachedTheme.isEmpty()) {
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        m_cachedTheme = settings.value("Appearance/Theme", "light").toString();
+    }
+    bool isDark = m_cachedTheme == "dark";
+    QColor iconColor = themeIconColor(isDark);
+    QColor selectedColor = isDark ? QColor(0, 95, 172) : QColor(255, 255, 255);
+
+    QStandardItem* parentItem = model->itemFromIndex(parent);
+    if (!parentItem) return;
+
+    for (int row = start; row <= end; ++row) {
+        QStandardItem* item = parentItem->child(row, 0);
+        if (!item) continue;
+
+        QString statusTip = item->statusTip();
+        bool isProject = !statusTip.isEmpty();
+        bool hasChildren = item->hasChildren();
+
+        if (isProject) {
+            item->setIcon(createColoredIcon(PROJECT_ICON, iconColor, selectedColor));
+        } else if (hasChildren) {
+            item->setIcon(createColoredIcon(FOLDER_ICON, iconColor, selectedColor));
+        } else {
+            item->setIcon(createColoredIcon(IMAGEDATA_ICON, iconColor, selectedColor));
+        }
+    }
 }

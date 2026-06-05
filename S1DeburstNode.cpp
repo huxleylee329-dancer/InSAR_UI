@@ -113,7 +113,6 @@ void S1DeburstNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
-    updateLabels();
 
     // Generate default output name if not set
     if (m_inputData && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty())
@@ -205,11 +204,6 @@ void S1DeburstNode::createWidget()
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     // Populate data node and project combo initially if input data is already connected
-    updateLabels();
-}
-
-void S1DeburstNode::updateLabels()
-{
 }
 
 QString S1DeburstNode::generateDefaultOutputName() const

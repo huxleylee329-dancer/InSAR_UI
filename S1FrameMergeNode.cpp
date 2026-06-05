@@ -113,7 +113,6 @@ void S1FrameMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     if (port >= 0 && port < 2)
     {
         m_inputs[port] = std::dynamic_pointer_cast<ImportedFileData>(data);
-        updateLabels();
 
         // Generate default output name if both inputs connected and name not set
         if (m_inputs[0] && m_inputs[1] && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty())
@@ -273,11 +272,6 @@ void S1FrameMergeNode::createWidget()
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     // 自愈与刷新
-    updateLabels();
-}
-
-void S1FrameMergeNode::updateLabels()
-{
 }
 
 QString S1FrameMergeNode::generateDefaultOutputName() const

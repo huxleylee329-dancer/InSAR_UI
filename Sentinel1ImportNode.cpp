@@ -72,19 +72,8 @@ QWidget* Sentinel1ImportNode::createWidget()
         invalidateExecution();
     };
 
-    // Project Name Badge (Option 3: metadata banner)
-    m_projectLabel = new QLabel();
-    m_projectLabel->setObjectName("ProjectBadge");
-    m_projectLabel->setStyleSheet(
-        "QLabel#ProjectBadge {"
-        "  background-color: rgba(128, 128, 128, 0.12);"
-        "  border: 1px solid rgba(128, 128, 128, 0.2);"
-        "  border-radius: 4px;"
-        "  padding: 4px 8px;"
-        "  font-size: 11px;"
-        "  font-weight: 500;"
-        "}"
-    );
+    // Project Name Badge
+    m_projectLabel = createProjectBadge(projectName());
     layout->addWidget(m_projectLabel);
 
     // 哨兵图像文件（.safe） + 浏览按钮 [3:7:0]
@@ -239,9 +228,6 @@ QWidget* Sentinel1ImportNode::createWidget()
     // Connect signals
     connect(manifestBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onManifestBrowseClicked);
     connect(podBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onPodBrowseClicked);
-
-    // 设置项目名称
-    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
 
     return widget;
 }

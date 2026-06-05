@@ -64,20 +64,8 @@ QWidget* GenericSARBatchImportNode::createWidget()
 
     mainLayout->addLayout(topSection, 4);
 
-    // Project Name Badge (Option 3: metadata banner)
-    m_projectLabel = new QLabel();
-    m_projectLabel->setObjectName("ProjectBadge");
-    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
-    m_projectLabel->setStyleSheet(
-        "QLabel#ProjectBadge {"
-        "  background-color: rgba(128, 128, 128, 0.12);"
-        "  border: 1px solid rgba(128, 128, 128, 0.2);"
-        "  border-radius: 4px;"
-        "  padding: 4px 8px;"
-        "  font-size: 11px;"
-        "  font-weight: 500;"
-        "}"
-    );
+    // Project Name Badge
+    m_projectLabel = createProjectBadge(projectName());
     mainLayout->addWidget(m_projectLabel);
 
     // Bottom section: configuration options

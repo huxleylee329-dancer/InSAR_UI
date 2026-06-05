@@ -101,7 +101,6 @@ private:
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
-    void updateLabels();
     void updateWidgetSize();
     void onMethodChanged(int index);
     QString generateDefaultOutputName() const;

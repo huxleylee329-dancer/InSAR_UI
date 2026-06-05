@@ -175,4 +175,23 @@ IApplicationInterface* ImportNodeBase::getProjectContext() const
     return NodeUtils::getProjectContext(_widget);
 }
 
+QLabel* ImportNodeBase::createProjectBadge(const QString& projectName)
+{
+    auto* label = new QLabel();
+    label->setObjectName("ProjectBadge");
+    label->setText(QStringLiteral(" 📁 当前工程: %1")
+        .arg(projectName.isEmpty() ? QStringLiteral("未打开项目") : projectName));
+    label->setStyleSheet(
+        "QLabel#ProjectBadge {"
+        "  background-color: rgba(128, 128, 128, 0.12);"
+        "  border: 1px solid rgba(128, 128, 128, 0.2);"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+    );
+    return label;
+}
+
 } // namespace QtNodes

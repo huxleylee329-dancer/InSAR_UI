@@ -463,15 +463,12 @@ void MainWindow::Loading(QString Data_path, QString ImageType)
         Color_Label->move(0, 0);
         Color_Label->show();
         mExist_Color.append(true);
-        if (m_workspaceUI) m_workspaceUI->addExistColor(true);
     }
     else
     {
         mExist_Color.append(false);
-        if (m_workspaceUI) m_workspaceUI->addExistColor(false);
     }
     mColors.append(Color_Label);
-    if (m_workspaceUI) m_workspaceUI->addColor(Color_Label);
 }
 void MainWindow::open_from_project_file(QString str)
 {
@@ -1529,10 +1526,6 @@ void MainWindow::handleTabCloseRequested(int index)
         delete(activeTabWidget->widget(index));
         mColors.removeAt(index);
         mExist_Color.removeAt(index);
-        if (m_workspaceUI) {
-            m_workspaceUI->removeColor(index);
-            m_workspaceUI->removeExistColor(index);
-        }
         if (activeTabWidget->currentIndex() >= 0)
         {
             if (mExist_Color.at(activeTabWidget->currentIndex()))

@@ -84,7 +84,6 @@ private:
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
-    void updateLabels();
     QString generateDefaultOutputName() const;
     void executeProcessing();
 

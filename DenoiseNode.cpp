@@ -125,7 +125,6 @@ void DenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
-    updateLabels();
 }
 
 std::shared_ptr<NodeData> DenoiseNode::outData(PortIndex port)
@@ -196,7 +195,6 @@ void DenoiseNode::load(QJsonObject const &json)
     if (m_alphaEdit) m_alphaEdit->setText(QString::number(m_alpha));
 
     onMethodChanged(m_method - 1);
-    updateLabels();
 }
 
 void DenoiseNode::setExecutionMode(ExecutionMode mode)
@@ -387,7 +385,6 @@ void DenoiseNode::createWidget()
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     onMethodChanged(m_method - 1);
-    updateLabels();
 }
 
 void DenoiseNode::onMethodChanged(int index)
@@ -418,10 +415,6 @@ void DenoiseNode::updateWidgetSize()
         _widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }
-}
-
-void DenoiseNode::updateLabels()
-{
 }
 
 QString DenoiseNode::generateDefaultOutputName() const

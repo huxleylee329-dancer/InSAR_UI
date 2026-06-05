@@ -15,6 +15,7 @@ class QProgressDialog;
 class XMLFile;
 class QStandardItemModel;
 class ImageView;
+class MainWindow;
 
 /**
  * @brief 传统工作区界面
@@ -71,11 +72,6 @@ public slots:
 
     // Component access for MainWindow compatibility
     QProgressDialog* processDialog() { return Process; }
-    QList<ColorBar*> colors() { return mColors; }
-    void addColor(ColorBar* color) { mColors.append(color); }
-    void removeColor(int index) { if (index >= 0 && index < mColors.size()) mColors.removeAt(index); }
-    void addExistColor(bool exist) { mExist_Color.append(exist); }
-    void removeExistColor(int index) { if (index >= 0 && index < mExist_Color.size()) mExist_Color.removeAt(index); }
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -93,10 +89,6 @@ private:
     QTabWidget *m_tabWidget = nullptr;
 
     QProgressDialog *Process = nullptr;
-    QList<ColorBar*> mColors;
-    QList<bool> mExist_Color;
-    int ColorBar_Before = -1;
-    int TabCount_Before = -1;
 
     // Theme property
     QString m_currentTheme;
@@ -106,6 +98,8 @@ private:
     QString m_projectPath;
     QString m_projectName;
     XMLFile* m_projectXml = nullptr;
+    bool m_actionsConnected = false;
+    MainWindow* m_mainWindow = nullptr;
 
     QString mData_path;
     QString mType;

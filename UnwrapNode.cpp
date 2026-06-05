@@ -113,7 +113,6 @@ void UnwrapNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
-    updateLabels();
 }
 
 std::shared_ptr<NodeData> UnwrapNode::outData(PortIndex port)
@@ -165,7 +164,6 @@ void UnwrapNode::load(QJsonObject const &json)
     if (m_coherenceEdit) m_coherenceEdit->setText(QString::number(m_coherenceThreshold));
 
     onMethodChanged(m_method - 1);
-    updateLabels();
 }
 
 void UnwrapNode::setExecutionMode(ExecutionMode mode)
@@ -256,7 +254,6 @@ void UnwrapNode::createWidget()
     formLayout->addRow("目标节点", m_outputNodeNameEdit);
 
     onMethodChanged(m_method - 1);
-    updateLabels();
 }
 
 void UnwrapNode::onMethodChanged(int index)
@@ -277,10 +274,6 @@ void UnwrapNode::updateWidgetSize()
         _widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }
-}
-
-void UnwrapNode::updateLabels()
-{
 }
 
 QString UnwrapNode::generateDefaultOutputName() const

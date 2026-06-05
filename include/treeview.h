@@ -32,6 +32,7 @@ private:
     int num_pro;
     int type;//1：左上工程树，2：左下模板
     MyThread* thread;
+    QString m_cachedTheme;
     void updateProcess(int value, QString information);
 signals:
     void sendindex(QModelIndex);

@@ -113,7 +113,6 @@ void DemNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
-    updateLabels();
 }
 
 std::shared_ptr<NodeData> DemNode::outData(PortIndex port)
@@ -165,7 +164,6 @@ void DemNode::load(QJsonObject const &json)
     if (m_timesEdit) m_timesEdit->setText(QString::number(m_times));
 
     onMethodChanged(m_method - 1);
-    updateLabels();
 }
 
 void DemNode::setExecutionMode(ExecutionMode mode)
@@ -274,7 +272,6 @@ void DemNode::createWidget()
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     onMethodChanged(m_method - 1);
-    updateLabels();
 }
 
 void DemNode::onMethodChanged(int index)
@@ -295,10 +292,6 @@ void DemNode::updateWidgetSize()
         _widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }
-}
-
-void DemNode::updateLabels()
-{
 }
 
 QString DemNode::generateDefaultOutputName() const

@@ -112,7 +112,6 @@ void S1SwathMergeNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     if (port >= 0 && port < 3)
     {
         m_inputs[port] = std::dynamic_pointer_cast<ImportedFileData>(data);
-        updateLabels();
 
         // Generate default output name if all inputs connected and name not set
         if (m_inputs[0] && m_inputs[1] && m_inputs[2] && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty())
@@ -308,11 +307,6 @@ void S1SwathMergeNode::createWidget()
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     // 尾部自愈刷新
-    updateLabels();
-}
-
-void S1SwathMergeNode::updateLabels()
-{
 }
 
 QString S1SwathMergeNode::generateDefaultOutputName() const

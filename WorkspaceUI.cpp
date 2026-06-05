@@ -1,4 +1,5 @@
 #include "WorkspaceUI.h"
+#include "MainWindow.h"
 #include "treeview.h"
 #include <QSplitter>
 #include <QTreeView>
@@ -81,32 +82,30 @@ void WorkspaceUI::activate()
     show();
 
     // 动态将工具栏的动作连接至主窗口
-    static bool actionsConnected = false;
-    if (!actionsConnected && m_toolbar) {
+    if (!m_actionsConnected && m_toolbar) {
         QWidget* p = this;
         while (p && !qobject_cast<QMainWindow*>(p)) {
             p = p->parentWidget();
         }
         QMainWindow* mainWindow = qobject_cast<QMainWindow*>(p);
         if (mainWindow) {
-            QList<QToolButton*> buttons = m_toolbar->findChildren<QToolButton*>();
-            for (QToolButton* btn : buttons) {
-                if (btn->text().trimmed() == "New") {
-                    QAction* action = mainWindow->findChild<QAction*>("actionNew");
-                    if (action) connect(btn, &QToolButton::clicked, action, &QAction::trigger);
-                } else if (btn->text().trimmed() == "Open") {
-                    QAction* action = mainWindow->findChild<QAction*>("actionOpen");
-                    if (action) connect(btn, &QToolButton::clicked, action, &QAction::trigger);
-                } else if (btn->text().trimmed() == "Save") {
-                    QAction* action = mainWindow->findChild<QAction*>("actionSave");
-                    if (action) connect(btn, &QToolButton::clicked, action, &QAction::trigger);
-                } else if (btn->text().trimmed() == "Workflow") {
-                    connect(btn, &QToolButton::clicked, mainWindow, [mainWindow]() {
-                        QMetaObject::invokeMethod(mainWindow, "switchToWorkflow");
-                    });
-                }
+            auto connectBtn = [&](const QString& objName, const QString& actionName) {
+                QToolButton* btn = m_toolbar->findChild<QToolButton*>(objName);
+                if (!btn) return;
+                QAction* action = mainWindow->findChild<QAction*>(actionName);
+                if (action) connect(btn, &QToolButton::clicked, action, &QAction::trigger);
+            };
+            connectBtn("btnNew", "actionNew");
+            connectBtn("btnOpen", "actionOpen");
+            connectBtn("btnSave", "actionSave");
+
+            QToolButton* btnWorkflow = m_toolbar->findChild<QToolButton*>("btnWorkflow");
+            if (btnWorkflow) {
+                connect(btnWorkflow, &QToolButton::clicked, mainWindow, [mainWindow]() {
+                    QMetaObject::invokeMethod(mainWindow, "switchToWorkflow");
+                });
             }
-            actionsConnected = true;
+            m_actionsConnected = true;
         }
     }
 }
@@ -147,17 +146,19 @@ void WorkspaceUI::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
 
-    // Handle ColorBar resizing when window size changes
-    if (m_tabWidget && m_tabWidget->count() > 0)
+    // Handle ColorBar resizing when window size changes (reads from MainWindow's lists)
+    if (m_mainWindow && m_tabWidget && m_tabWidget->count() > 0)
     {
         int index = m_tabWidget->currentIndex();
-        if (index >= 0 && index < mExist_Color.size() && mExist_Color.at(index))
+        QList<bool> existColors = m_mainWindow->existColors();
+        QList<ColorBar*> colors = m_mainWindow->colors();
+        if (index >= 0 && index < existColors.size() && existColors.at(index))
         {
             QWidget* currentWidget = m_tabWidget->currentWidget();
-            if (currentWidget && mColors.at(index))
+            if (currentWidget && index < colors.size() && colors.at(index))
             {
-                mColors.at(index)->resize(currentWidget->width() / 8, currentWidget->height() / 3);
-                mColors.at(index)->move(0, 0);
+                colors.at(index)->resize(currentWidget->width() / 8, currentWidget->height() / 3);
+                colors.at(index)->move(0, 0);
             }
         }
     }
@@ -165,6 +166,11 @@ void WorkspaceUI::resizeEvent(QResizeEvent* event)
 
 void WorkspaceUI::setProjectContext(QStandardItemModel* model, const QString& path, const QString& name, XMLFile* projectXml)
 {
+    // Cache MainWindow pointer for accessing shared color bar lists
+    if (!m_mainWindow) {
+        m_mainWindow = qobject_cast<MainWindow*>(window());
+    }
+
     m_projectModel = model;
     m_projectPath = path;
     m_projectName = name;
@@ -281,95 +287,15 @@ void WorkspaceUI::setTheme(const QString &theme)
 
     // Apply toolbar theme styles
     if (m_toolbar) {
-        QString toolbarStyle;
-        QColor separatorColor;
-        QColor iconColor = themeIconColor(theme == "dark");
-        QColor textColor = (theme == "dark") ? QColor("#c1c7cf") : QColor("#595F66");
-        
-        if (theme == "dark") {
-            toolbarStyle = R"(
-                QToolBar {
-                    background-color: #1a1c1c;
-                    border-bottom: 1px solid rgba(135, 141, 152, 0.3);
-                }
-            )";
-            separatorColor = QColor(135, 141, 152, 77);
-        } else if (theme == "light") {
-            toolbarStyle = R"(
-                QToolBar {
-                    background-color: #f3f3f3;
-                    border-bottom: 1px solid rgba(192, 199, 212, 0.3);
-                }
-            )";
-            separatorColor = QColor(192, 199, 212, 77);
-        } else { // fusion
-            toolbarStyle = R"(
-                QToolBar {
-                    background-color: #f0f0f0;
-                    border-bottom: 1px solid rgba(74, 154, 207, 0.3);
-                }
-            )";
-            separatorColor = QColor(74, 154, 207, 77);
-        }
-        
-        m_toolbar->setStyleSheet(toolbarStyle);
-        // 必须在 setStyleSheet 之后重新设置，否则会被样式表重置
-        m_toolbar->setContentsMargins(0, 0, 0, 0);
-        
-        // Update separator widgets
-        for (QObject *obj : m_toolbar->children()) {
-            QWidget *widget = qobject_cast<QWidget*>(obj);
-            if (widget && widget->metaObject()->className() == QString("QWidget")) {
-                widget->setStyleSheet(QString("background-color: %1; margin: 2px 0px;").arg(separatorColor.name(QColor::HexArgb)));
-            }
-        }
-        
-        // Update toolbar buttons
-        for (QObject *obj : m_toolbar->children()) {
-            QToolButton *btn = qobject_cast<QToolButton*>(obj);
-            if (btn) {
-                QString textColorStr = textColor.name();
-                QString hoverBg = (theme == "dark") ? "#2f3131" : "#E0E0E0";
-                QString pressedBg = (theme == "dark") ? "#3f4141" : "#D0D0D0";
-                btn->setStyleSheet(
-                    QString("QToolButton { "
-                    "  border: none; "
-                    "  border-radius: 4px; "
-                    "  background-color: transparent; "
-                    "  color: %1; "
-                    "  font-size: 11px; "
-                    "  font-weight: bold; "
-                    "  text-transform: uppercase; "
-                    "  letter-spacing: 0.5px; "
-                    "  padding: 0px 6px; "
-                    "  margin: 0px; "
-                    "  min-height: 20px; "
-                    "  max-height: 20px; "
-                    "}"
-                    "QToolButton:hover { "
-                    "  background-color: %2; "
-                    "}"
-                    "QToolButton:pressed { "
-                    "  background-color: %3; "
-                    "}").arg(textColorStr).arg(hoverBg).arg(pressedBg)
-                );
-                
-                QString iconPath = btn->property("iconPath").toString();
-                if (!iconPath.isEmpty()) {
-                    QColor c = iconColor;
-                    bool isDark = (theme == "dark");
-                    QString btnText = btn->text().trimmed();
-                    if (btnText == "New" || btnText == "Open" || btnText == "Save") {
-                        c = isDark ? QColor("#82CFFF") : QColor("#005FAC");
-                    } else if (btnText == "Workflow") {
-                        c = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
-                    } else if (btnText == "Zoom In" || btnText == "Zoom Out" || btnText == "Fit") {
-                        c = isDark ? QColor("#FFB95B") : QColor("#A85C00");
-                    }
-                    btn->setIcon(createColoredIcon(iconPath, c));
-                }
-            }
-        }
+        applyToolbarTheme(m_toolbar, theme, [](const QString& btnText, bool isDark) -> QColor {
+            if (btnText == "New" || btnText == "Open" || btnText == "Save")
+                return isDark ? QColor("#82CFFF") : QColor("#005FAC");
+            if (btnText == "Workflow")
+                return isDark ? QColor("#D0BCFF") : QColor("#6750A4");
+            if (btnText == "Zoom In" || btnText == "Zoom Out" || btnText == "Fit")
+                return isDark ? QColor("#FFB95B") : QColor("#A85C00");
+            return isDark ? QColor("#CCCCCC") : QColor("#414752");
+        });
     }
 
     update();
@@ -386,57 +312,12 @@ void WorkspaceUI::clear()
         m_treeView->setColumnHidden(1, true);
     }
 
-    // 清空标签页
+    // 清空标签页（删除 widget 会自动销毁子 ColorBar）
     while (m_tabWidget && m_tabWidget->count() > 0) {
+        QWidget* page = m_tabWidget->widget(0);
         m_tabWidget->removeTab(0);
+        delete page;
     }
-
-    // 清空颜色条
-    qDeleteAll(mColors);
-    mColors.clear();
-    mExist_Color.clear();
-
-    // 重置状态
-    ColorBar_Before = -1;
-    TabCount_Before = -1;
-}
-
-// Helper to create custom toolbar button
-static QToolButton* createToolbarButton(const QString &iconPath, const QString &text, const QColor &iconColor = QColor("#414752"), const QColor &textColor = QColor("#595F66"), QWidget *parent = nullptr)
-{
-    QToolButton *btn = new QToolButton(parent);
-    
-    QIcon coloredIcon = createColoredIcon(iconPath, iconColor);
-    btn->setIcon(coloredIcon);
-    btn->setIconSize(QSize(24, 24));
-    btn->setText(" " + text); // 前置空格拉开图标和文字的间距
-    btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    btn->setProperty("iconPath", iconPath);
-    
-    QString textColorHex = textColor.name();
-    btn->setStyleSheet(
-        QString("QToolButton { "
-        "  border: none; "
-        "  border-radius: 4px; "
-        "  background-color: transparent; "
-        "  color: %1; "
-        "  font-size: 11px; "
-        "  font-weight: bold; "
-        "  text-transform: uppercase; "
-        "  letter-spacing: 0.5px; "
-        "  padding: 0px 6px; "
-        "  margin: 0px; "
-        "  min-height: 20px; "
-        "  max-height: 20px; "
-        "}"
-        "QToolButton:hover { "
-        "  background-color: #E0E0E0; "
-        "}"
-        "QToolButton:pressed { "
-        "  background-color: #D0D0D0; "
-        "}").arg(textColorHex)
-    );
-    return btn;
 }
 
 void WorkspaceUI::setupToolbar()
@@ -459,6 +340,7 @@ void WorkspaceUI::setupToolbar()
 
     // Group 1: Mode toggle (移至第一个位置)
     QToolButton* btnWorkflow = createToolbarButton(":/SatExplorer/svg/flow_editor.svg", "Workflow", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    btnWorkflow->setObjectName("btnWorkflow");
     m_toolbar->addWidget(btnWorkflow);
 
     // Vertical separator
@@ -469,12 +351,15 @@ void WorkspaceUI::setupToolbar()
 
     // Group 2: Project management
     QToolButton* btnNew = createToolbarButton(":/SatExplorer/svg/new_project.svg", "New", COLOR_PRIMARY, COLOR_TEXT, this);
+    btnNew->setObjectName("btnNew");
     m_toolbar->addWidget(btnNew);
 
     QToolButton* btnOpen = createToolbarButton(":/SatExplorer/svg/open_project.svg", "Open", COLOR_PRIMARY, COLOR_TEXT, this);
+    btnOpen->setObjectName("btnOpen");
     m_toolbar->addWidget(btnOpen);
 
     QToolButton* btnSave = createToolbarButton(":/SatExplorer/svg/save.svg", "Save", COLOR_PRIMARY, COLOR_TEXT, this);
+    btnSave->setObjectName("btnSave");
     m_toolbar->addWidget(btnSave);
 
     // Vertical separator
