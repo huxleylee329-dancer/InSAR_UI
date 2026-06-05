@@ -77,6 +77,9 @@
         <file>svg/chevron_down_light.svg</file>
         <file>svg/chevron_right_dark.svg</file>
         <file>svg/chevron_down_dark.svg</file>
+        <file>svg/image_viewer.svg</file>
+        <file>svg/note.svg</file>
+        <file>svg/logger.svg</file>
         <!-- Stylesheets -->
         <file>stylesheets/application.qss</file>
         <file>stylesheets/widgets.qss</file>

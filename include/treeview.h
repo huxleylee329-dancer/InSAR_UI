@@ -27,6 +27,7 @@ public slots:
 
 protected:
      void rowsInserted(const QModelIndex &parent, int start, int end) override;
+     void drawBranches(QPainter *painter, const QRect &rect, const QModelIndex &index) const override;
 
 private:
     int num_pro;

@@ -82,6 +82,7 @@ public:
 
     void setRegistry(std::shared_ptr<QtNodes::NodeDelegateModelRegistry> registry);
     void setPaletteOrder(const PaletteOrder& order);  // Implemented in .cpp
+    void updateTreeIcons(const QString &theme);
 
 signals:
     void nodeDoubleClicked(const QString &modelName);
@@ -101,6 +102,7 @@ private:
     NodeTreeWidget *m_nodeTree;
     std::shared_ptr<QtNodes::NodeDelegateModelRegistry> m_registry;
     PaletteOrder m_paletteOrder;  // Palette order configuration
+    QString m_currentTheme;
 };
 
 // ============================================================================

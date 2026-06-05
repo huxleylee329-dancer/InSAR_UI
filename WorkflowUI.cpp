@@ -1425,6 +1425,10 @@ void WorkflowUI::setTheme(const QString &theme)
         m_propertyEditor->updateThemeStyles();
         m_propertyEditor->refreshCurrentNode();
     }
+
+    if (m_nodeLibrary) {
+        m_nodeLibrary->updateTreeIcons(theme);
+    }
 }
 
 bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)

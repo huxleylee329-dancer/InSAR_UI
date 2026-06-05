@@ -11,16 +11,50 @@
 #include<QFileInfo>
 #include<QSet>
 #include<FormatConversion.h>
+#include <QStyledItemDelegate>
+#include <QPainter>
+#include <QItemSelectionModel>
 
 // Icons now use SVG currentColor - automatically follows widget color property
 // No manual tinting needed - theme colors are set via stylesheet
 
-static bool isDarkTheme(QWidget *w)
+static bool isDarkTheme(const QWidget *w)
 {
     if (!w) return false;
     QColor bg = w->palette().color(w->backgroundRole());
     return bg.lightness() < 128;
 }
+
+
+
+class TreeViewDelegate : public QStyledItemDelegate
+{
+public:
+    explicit TreeViewDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+
+        // 如果是被选中的非叶子节点（有子节点的目录或工程）
+        if ((opt.state & QStyle::State_Selected) && index.model()->hasChildren(index)) {
+            bool isDark = isDarkTheme(opt.widget);
+            QColor bgColor = isDark ? QColor(60, 60, 60) : QColor(230, 230, 230);
+
+            // 1. 手动填充背景色，避开 QSS 的覆盖
+            painter->save();
+            painter->fillRect(opt.rect, bgColor);
+            painter->restore();
+
+            // 2. 清除 State_Selected 标志，防止基类样式表绘制蓝色背景和白色文字
+            opt.state &= ~QStyle::State_Selected;
+        }
+
+        QStyledItemDelegate::paint(painter, opt, index);
+    }
+};
+
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
@@ -43,6 +77,40 @@ TreeView::TreeView(QWidget* parent) : QTreeView(parent)
      this->setColumnHidden(1, true);
      this->setContextMenuPolicy(Qt::CustomContextMenu);
      connect(this, SIGNAL(customContextMenuRequested(const QPoint&)), this, SLOT(slotCustomContextMenu(const QPoint&)));
+     this->setItemDelegate(new TreeViewDelegate(this));
+}
+
+void TreeView::drawBranches(QPainter *painter, const QRect &rect, const QModelIndex &index) const
+{
+    QItemSelectionModel *selModel = selectionModel();
+    bool isSelected = selModel && selModel->isSelected(index);
+
+    if (isSelected && model->hasChildren(index)) {
+        bool isDark = isDarkTheme(this);
+        QColor bgColor = isDark ? QColor(60, 60, 60) : QColor(230, 230, 230);
+
+        // 计算折叠箭头所在的最右侧缩进区域（宽度为 indentation()）
+        int indent = indentation();
+        int foldStart = rect.x() + qMax(0, rect.width() - indent);
+        int foldWidth = qMin(rect.width(), indent);
+        QRect foldRect(foldStart, rect.y(), foldWidth, rect.height());
+
+        painter->save();
+        painter->fillRect(foldRect, bgColor);
+        painter->restore();
+
+        // 临时阻断信号并取消选择，迫使基类 drawBranches 在常规状态下渲染折叠图标（无蓝色背景覆盖）
+        selModel->blockSignals(true);
+        selModel->select(index, QItemSelectionModel::Deselect);
+
+        QTreeView::drawBranches(painter, rect, index);
+
+        // 绘制完成后重新选择以恢复原状态
+        selModel->select(index, QItemSelectionModel::Select);
+        selModel->blockSignals(false);
+    } else {
+        QTreeView::drawBranches(painter, rect, index);
+    }
 }
 
 void TreeView::init_tree()

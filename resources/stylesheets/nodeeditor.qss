@@ -17,7 +17,6 @@ ads--CDockWidget #title {
 
 /* Node Tree Widget */
 NodeTreeWidget {
-    background-color: white;
     border: 1px solid #CCCCCC;
     border-radius: 4px;
 }

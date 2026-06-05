@@ -2,7 +2,10 @@
 #include "include/NodeTreeWidget.h"
 #include "include/PaletteOrder.h"
 #include "NodeModels.h"
+#include "icon_source.h"
+#include "icon_utils.h"
 
+#include <QSettings>
 #include <QTreeWidgetItemIterator>
 #include <QStyle>
 #include <QFileInfo>
@@ -134,7 +137,10 @@ void WorkflowBrowser::onItemDoubleClicked(QTreeWidgetItem *item, int column)
 
 NodeLibraryWidget::NodeLibraryWidget(QWidget *parent) : QWidget(parent)
     , m_registry(nullptr)
+    , m_currentTheme("light")
 {
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    m_currentTheme = settings.value("Appearance/Theme", "light").toString();
     setupUi();
 }
 
@@ -394,6 +400,130 @@ void NodeLibraryWidget::populateNodeTree()
     for (int i = 0; i < m_nodeTree->topLevelItemCount(); ++i)
     {
         m_nodeTree->topLevelItem(i)->setExpanded(true);
+    }
+
+    updateTreeIcons(m_currentTheme);
+}
+
+void NodeLibraryWidget::updateTreeIcons(const QString &theme)
+{
+    m_currentTheme = theme;
+    bool isDark = (theme == "dark");
+    QColor defaultIconColor = themeIconColor(isDark);
+    QColor selectedColor = isDark ? QColor(0, 95, 172) : QColor(255, 255, 255);
+
+    // Recursive lambda to update tree item icons
+    std::function<void(QTreeWidgetItem*)> updateItem = [&](QTreeWidgetItem *item) {
+        if (!item) return;
+
+        bool isTopLevel = (item->parent() == nullptr);
+        bool hasChildren = (item->childCount() > 0);
+
+        if (isTopLevel) {
+            item->setIcon(0, createColoredIcon(TEMPLATE_FOLDER, defaultIconColor, selectedColor));
+        } else if (hasChildren) {
+            item->setIcon(0, createColoredIcon(FOLDER_ICON, defaultIconColor, selectedColor));
+        } else {
+            // It's a leaf node. Choose icon and color based on modelName and theme
+            QString modelName = item->data(0, Qt::UserRole).toString();
+            QString iconPath = TEMPLATE_TOOL;
+            QColor iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC"); // default blue
+
+            if (modelName == "ImageDisplay") {
+                // Image Display / Viewer - Purple
+                iconPath = IMAGE_VIEWER_ICON;
+                iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
+            }
+            else if (modelName == "NoteNode") {
+                // Note Node - Amber/Orange
+                iconPath = NOTE_ICON;
+                iconColor = isDark ? QColor("#FFB95B") : QColor("#A85C00");
+            }
+            else if (modelName == "LoggerNode") {
+                // Logger Node - Blue
+                iconPath = LOGGER_ICON;
+                iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC");
+            }
+            else if (modelName.contains("Import", Qt::CaseInsensitive) || 
+                modelName.contains("Loading", Qt::CaseInsensitive)) {
+                // Import category - Green
+                iconPath = IMPORT_ICON;
+                if (modelName.contains("GeneralSAR", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/imagedata.svg";
+                }
+                iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
+            } 
+            else if (modelName.contains("Denoise", Qt::CaseInsensitive) || 
+                     modelName.contains("Suppression", Qt::CaseInsensitive) || 
+                     modelName.contains("Unwrap", Qt::CaseInsensitive) || 
+                     modelName == "Phase Unwrapping" ||
+                     modelName.contains("DEM", Qt::CaseInsensitive)) {
+                // Processing/Filtering/Unwrapping/DEM - Amber/Orange
+                iconColor = isDark ? QColor("#FFB95B") : QColor("#A85C00");
+                
+                if (modelName.contains("Denoise", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/filter.svg";
+                } else if (modelName.contains("Suppression", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/clutter_suppress.svg";
+                } else if (modelName == "Phase Unwrapping" || modelName.contains("Unwrap", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/unwrap.svg";
+                } else if (modelName.contains("DEM", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/dem.svg";
+                }
+            } 
+            else if (modelName.contains("Crop", Qt::CaseInsensitive) || 
+                     modelName.contains("Cut", Qt::CaseInsensitive) || 
+                     modelName == "AOICrop" ||
+                     modelName.contains("Registration", Qt::CaseInsensitive) || 
+                     modelName.contains("Coregistration", Qt::CaseInsensitive) || 
+                     modelName.contains("Geocoding", Qt::CaseInsensitive) || 
+                     modelName.contains("Merge", Qt::CaseInsensitive) || 
+                     modelName.contains("Deburst", Qt::CaseInsensitive) || 
+                     modelName.contains("Interferometric", Qt::CaseInsensitive) || 
+                     modelName.contains("Baseline", Qt::CaseInsensitive) || 
+                     modelName.contains("Detection", Qt::CaseInsensitive) || 
+                     modelName.contains("Target", Qt::CaseInsensitive)) {
+                // Complex calculations/Registration/Merges/AI Detection - Purple
+                iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
+                
+                if (modelName.contains("Cut", Qt::CaseInsensitive) || modelName == "AOICrop") {
+                    iconPath = ":/SatExplorer/svg/cut.svg";
+                } else if (modelName.contains("Coregistration", Qt::CaseInsensitive) || 
+                           modelName.contains("Registration", Qt::CaseInsensitive) || 
+                           modelName.contains("Geocoding", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/coregistration.svg";
+                } else if (modelName.contains("Deburst", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/splice.svg";
+                } else if (modelName.contains("FrameMerge", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/frame_merge.svg";
+                } else if (modelName.contains("SwathMerge", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/swath_merge.svg";
+                } else if (modelName.contains("Interferometric", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/interferogram.svg";
+                } else if (modelName.contains("Baseline", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/view.svg";
+                } else if (modelName.contains("Target", Qt::CaseInsensitive) || modelName.contains("Detection", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/target_detect.svg";
+                }
+            } 
+            else if (modelName.contains("Evaluation", Qt::CaseInsensitive) || 
+                     modelName.contains("ENL", Qt::CaseInsensitive) || 
+                     modelName.contains("SCR", Qt::CaseInsensitive)) {
+                // Evaluation/Chart - Blue
+                iconPath = ":/SatExplorer/svg/chart.svg";
+                iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC");
+            }
+
+            item->setIcon(0, createColoredIcon(iconPath, iconColor, selectedColor));
+        }
+
+        for (int i = 0; i < item->childCount(); ++i) {
+            updateItem(item->child(i));
+        }
+    };
+
+    for (int i = 0; i < m_nodeTree->topLevelItemCount(); ++i) {
+        updateItem(m_nodeTree->topLevelItem(i));
     }
 }
 
