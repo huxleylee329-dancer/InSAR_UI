@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>NewProject</class>
- <widget class="QWidget" name="NewProject">
+ <widget class="QDialog" name="NewProject">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>366</width>
-    <height>178</height>
+    <width>450</width>
+    <height>130</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -18,36 +18,83 @@
     <normaloff>:/SatExplorer/icon/InSARapp.ico</normaloff>:/SatExplorer/icon/InSARapp.ico</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>15</number>
+   </property>
+   <property name="leftMargin">
+    <number>15</number>
+   </property>
+   <property name="topMargin">
+    <number>15</number>
+   </property>
+   <property name="rightMargin">
+    <number>15</number>
+   </property>
+   <property name="bottomMargin">
+    <number>15</number>
+   </property>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_4">
-     <item>
+    <layout class="QGridLayout" name="gridLayout">
+     <property name="horizontalSpacing">
+      <number>10</number>
+     </property>
+     <property name="verticalSpacing">
+      <number>10</number>
+     </property>
+     <item row="0" column="0">
       <widget class="QLabel" name="label_3">
        <property name="text">
         <string>工程名</string>
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QLineEdit" name="NamelineEdit"/>
+     <item row="0" column="1" colspan="2">
+      <widget class="QLineEdit" name="NamelineEdit">
+       <property name="styleSheet">
+        <string notr="true">min-height: 20px; padding: 2px 6px;</string>
+       </property>
+      </widget>
      </item>
-    </layout>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_3">
-     <item>
+     <item row="1" column="0">
       <widget class="QLabel" name="label_4">
        <property name="text">
         <string>保存位置</string>
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QLineEdit" name="savelineEdit"/>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="savelineEdit">
+       <property name="styleSheet">
+        <string notr="true">min-height: 20px; padding: 2px 6px;</string>
+       </property>
+      </widget>
      </item>
-     <item>
+     <item row="1" column="2">
       <widget class="QPushButton" name="savepushButton">
-       <property name="text">
-        <string>浏览...</string>
+       <property name="minimumSize">
+        <size>
+         <width>26</width>
+         <height>26</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>26</width>
+         <height>26</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">min-width: 0px; min-height: 0px; padding: 0px;</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../resources/SatExplorer.qrc">
+         <normaloff>:/SatExplorer/svg/folder_open.svg</normaloff>:/SatExplorer/svg/folder_open.svg</iconset>
+       </property>
+       <property name="iconSize">
+        <size>
+         <width>14</width>
+         <height>14</height>
+        </size>
        </property>
       </widget>
      </item>

@@ -141,10 +141,17 @@ private slots:
 
     // Group operations
     void onGroupSelection();
+    void onNodeCreated(QtNodes::NodeId const nodeId);
 
 signals:
     // 工作流被修改信号
     void workflowModified();
+
+    // 节点运行状态与进度信号
+    void nodeProgressUpdated(const QString& nodeCaption, int percent);
+    void nodeExecutionStarted(const QString& nodeCaption);
+    void nodeExecutionFinished(const QString& nodeCaption);
+    void nodeExecutionError(const QString& nodeCaption, const QString& error);
 
 private:
     void setupUi();

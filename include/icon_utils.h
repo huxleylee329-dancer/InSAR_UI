@@ -4,7 +4,7 @@
 #include <QPainter>
 #include <QSize>
 
-inline QIcon createColoredIcon(const QString &iconPath, const QColor &color)
+inline QIcon createColoredIcon(const QString &iconPath, const QColor &color, const QColor &selectedColor = QColor())
 {
     QIcon originalIcon(iconPath);
     QIcon coloredIcon;
@@ -18,7 +18,13 @@ inline QIcon createColoredIcon(const QString &iconPath, const QColor &color)
                 QPixmap colored = pixmap;
                 QPainter painter(&colored);
                 painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-                painter.fillRect(colored.rect(), color);
+                
+                QColor drawColor = color;
+                if ((mode == QIcon::Selected || mode == QIcon::Active) && selectedColor.isValid()) {
+                    drawColor = selectedColor;
+                }
+                
+                painter.fillRect(colored.rect(), drawColor);
                 painter.end();
                 coloredIcon.addPixmap(colored, mode, state);
             }
@@ -34,6 +40,16 @@ inline QIcon createColoredIcon(const QString &iconPath, const QColor &color)
             painter.fillRect(colored.rect(), color);
             painter.end();
             coloredIcon = QIcon(colored);
+            
+            if (selectedColor.isValid()) {
+                QPixmap selectedPix = pixmap;
+                QPainter painterSel(&selectedPix);
+                painterSel.setCompositionMode(QPainter::CompositionMode_SourceIn);
+                painterSel.fillRect(selectedPix.rect(), selectedColor);
+                painterSel.end();
+                coloredIcon.addPixmap(selectedPix, QIcon::Selected);
+                coloredIcon.addPixmap(selectedPix, QIcon::Active);
+            }
         } else {
             coloredIcon = originalIcon;
         }

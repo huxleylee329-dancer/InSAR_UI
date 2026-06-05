@@ -50,7 +50,6 @@
     <addaction name="actionOpen"/>
     <addaction name="actionSave"/>
     <addaction name="actionSave_as"/>
-    <addaction name="actionSave_all"/>
     <addaction name="actionClose"/>
     <addaction name="actionQuit"/>
    </widget>
@@ -214,11 +213,6 @@
   <action name="actionSave_as">
    <property name="text">
     <string>另存为</string>
-   </property>
-  </action>
-  <action name="actionSave_all">
-   <property name="text">
-    <string>全部保存</string>
    </property>
   </action>
   <action name="actionClose">

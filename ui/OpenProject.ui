@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>OpenProject</class>
- <widget class="QWidget" name="OpenProject">
+ <widget class="QDialog" name="OpenProject">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
+    <width>450</width>
     <height>130</height>
    </rect>
   </property>
@@ -18,8 +18,26 @@
     <normaloff>:/SatExplorer/icon/InSARapp.ico</normaloff>:/SatExplorer/icon/InSARapp.ico</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>15</number>
+   </property>
+   <property name="leftMargin">
+    <number>15</number>
+   </property>
+   <property name="topMargin">
+    <number>15</number>
+   </property>
+   <property name="rightMargin">
+    <number>15</number>
+   </property>
+   <property name="bottomMargin">
+    <number>15</number>
+   </property>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
+     <property name="spacing">
+      <number>10</number>
+     </property>
      <item>
       <widget class="QLabel" name="label">
        <property name="text">
@@ -28,12 +46,38 @@
       </widget>
      </item>
      <item>
-      <widget class="QLineEdit" name="PathLine"/>
+      <widget class="QLineEdit" name="PathLine">
+       <property name="styleSheet">
+        <string notr="true">min-height: 20px; padding: 2px 6px;</string>
+       </property>
+      </widget>
      </item>
      <item>
       <widget class="QPushButton" name="BrowseButton">
-       <property name="text">
-        <string>浏览...</string>
+       <property name="minimumSize">
+        <size>
+         <width>26</width>
+         <height>26</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>26</width>
+         <height>26</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">min-width: 0px; min-height: 0px; padding: 0px;</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../resources/SatExplorer.qrc">
+         <normaloff>:/SatExplorer/svg/folder_open.svg</normaloff>:/SatExplorer/svg/folder_open.svg</iconset>
+       </property>
+       <property name="iconSize">
+        <size>
+         <width>14</width>
+         <height>14</height>
+        </size>
        </property>
       </widget>
      </item>

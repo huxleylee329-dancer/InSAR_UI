@@ -33,27 +33,15 @@ void WorkspaceUI::setupUi()
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
-    // Create the same layout as in MainWindow.ui
-    m_splitter = new QSplitter(Qt::Vertical, this);
-    m_splitter->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-
-    m_treeView = new TreeView(m_splitter);
+    m_treeView = new TreeView(this);
     m_treeView->init_tree();
     m_treeView->setColumnHidden(1, true);
     m_treeView->setMinimumSize(300, 300);
     m_treeView->setMaximumSize(QWIDGETSIZE_MAX, 16777215);
 
-    m_toolTree = new TreeView(m_splitter);
-    m_toolTree->init_mould();
-    m_toolTree->setMinimumSize(300, 300);
-    m_toolTree->setMaximumSize(QWIDGETSIZE_MAX, 16777215);
-
-    m_splitter->addWidget(m_treeView);
-    m_splitter->addWidget(m_toolTree);
-
     m_splitter2 = new QSplitter(Qt::Horizontal, this);
     m_splitter2->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_splitter2->addWidget(m_splitter);
+    m_splitter2->addWidget(m_treeView);
 
     m_tabWidget = new QTabWidget(m_splitter2);
     m_tabWidget->setTabsClosable(true);
@@ -104,10 +92,7 @@ TreeView* WorkspaceUI::treeView() const
     return m_treeView;
 }
 
-TreeView* WorkspaceUI::toolTree() const
-{
-    return m_toolTree;
-}
+
 
 QTabWidget* WorkspaceUI::tabWidget() const
 {
@@ -177,7 +162,6 @@ void WorkspaceUI::refreshProjectTree()
     if (m_treeView && m_treeView->isHidden())
     {
         m_treeView->show();
-        if (m_toolTree) m_toolTree->show();
         if (m_tabWidget) m_tabWidget->show();
     }
 
@@ -240,17 +224,11 @@ void WorkspaceUI::setTheme(const QString &theme)
     this->setStyleSheet(bgStyle);
 
     // Apply colors to children
-    if (m_splitter) {
-        m_splitter->setProperty("theme-background", bgColor);
-    }
     if (m_splitter2) {
         m_splitter2->setProperty("theme-background", bgColor);
     }
     if (m_treeView) {
         m_treeView->setProperty("theme-background", bgColor);
-    }
-    if (m_toolTree) {
-        m_toolTree->setProperty("theme-background", bgColor);
     }
     if (m_tabWidget) {
         m_tabWidget->setProperty("theme-background", bgColor);
@@ -259,23 +237,6 @@ void WorkspaceUI::setTheme(const QString &theme)
     // Refresh tree view icons for theme
     if (m_treeView) {
         m_treeView->updateTreeIcons(theme);
-    }
-    if (m_toolTree && m_toolTree->model) {
-        QColor toolIconColor = themeIconColor(theme == "dark");
-        for (int row = 0; row < m_toolTree->model->rowCount(); ++row) {
-            QStandardItem *item = m_toolTree->model->item(row, 0);
-            if (!item) continue;
-            QString text = item->text();
-            if (text == "InSAR" || text == "DInSAR") {
-                item->setIcon(createColoredIcon(TEMPLATE_FOLDER, toolIconColor));
-            } else {
-                item->setIcon(createColoredIcon(TEMPLATE_TOOL, toolIconColor));
-            }
-            for (int c = 0; c < item->rowCount(); ++c) {
-                QStandardItem *child = item->child(c, 0);
-                if (child) child->setIcon(QIcon(TEMPLATE_TOOL));
-            }
-        }
     }
 
     update();

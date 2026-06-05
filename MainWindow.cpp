@@ -4,6 +4,10 @@
 
 #include<iostream>
 #include <exception>
+#include <QLabel>
+#include <QProgressBar>
+#include <QStatusBar>
+#include <QTimer>
 // Include headers
 #include"Baseline.h"
 #include<Deformation_Average.h>
@@ -104,7 +108,6 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionOpen",                     ":/SatExplorer/svg/open_project.svg"},
     {"actionSave",                     ":/SatExplorer/svg/save.svg"},
     {"actionSave_as",                  ":/SatExplorer/svg/saveas.svg"},
-    {"actionSave_all",                 ":/SatExplorer/svg/saveall.svg"},
     {"actionClose",                    ":/SatExplorer/svg/close.svg"},
     {"actionQuit",                     ":/SatExplorer/svg/quit.svg"},
     {"actionRegistration",             ":/SatExplorer/svg/coregistration.svg"},
@@ -140,8 +143,12 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     , m_workspaceUI(nullptr)
     , m_workflowUI(nullptr)
     , m_welcomeUI(nullptr)
+    , m_statusProjectLabel(nullptr)
+    , m_statusInterfaceLabel(nullptr)
+    , m_statusProgressBar(nullptr)
 {
     ui.setupUi(this);
+    initStatusBar();
     this->project = new XMLFile;
     this->double_click_open_project_file = "";
     this->b_open_throug_dbclk = false;
@@ -284,6 +291,8 @@ void MainWindow::Addproject(QString name, QString save_path)
     // 新建工程后，重置修改标记（因为刚保存过）
     m_projectModified = false;
     updateWindowTitle();
+
+    statusBar()->showMessage(QStringLiteral("已成功创建新工程: %1").arg(name + ".insar"), 3000);
 }
 void MainWindow::resizeEvent(QResizeEvent* event)
 {
@@ -340,14 +349,22 @@ void MainWindow::updateProcess(int value, QString information)
 {
     this->Process->setValue(value);
     this->Process->setLabelText(information);
+    if (m_statusProgressBar) {
+        m_statusProgressBar->setValue(value);
+    }
+    statusBar()->showMessage(QStringLiteral("正在处理: %1").arg(information));
     QThread::currentThread()->msleep(1);
-
 }
 void MainWindow::endProcess()
 {
         Process->setValue(100);
+        if (m_statusProgressBar) {
+            m_statusProgressBar->setValue(100);
+            m_statusProgressBar->hide();
+        }
+        statusBar()->showMessage(QStringLiteral("处理完成"), 3000);
         waitKey(100);
-        if (!this->Process)
+        if (this->Process)
         {
             delete(Process);
             Process = NULL;
@@ -426,6 +443,9 @@ void MainWindow::Loading(QString Data_path, QString ImageType)
 }
 void MainWindow::open_from_project_file(QString str)
 {
+    if (!maybeSave())
+        return;
+
     // 关闭当前工程（不保存），避免两个工程状态共存
     closeCurrentProject();
 
@@ -545,6 +565,7 @@ void MainWindow::open_from_project_file(QString str)
             loadWorkflowFromProject(str);
         }
         this->project->XMLFile_save(str.toStdString().c_str());
+        statusBar()->showMessage(QStringLiteral("已成功加载工程: %1").arg(fileinfo.fileName()), 3000);
     }
     else
         QMessageBox::warning(NULL, "Warning!", "*.Insar is empty!");
@@ -644,6 +665,10 @@ void MainWindow::ShowImage(QModelIndex image)
                 //this->Process->setAutoClose(true);
                 this->Process->setValue(0);
                 this->Process->show();
+                if (m_statusProgressBar) {
+                    m_statusProgressBar->setValue(0);
+                    m_statusProgressBar->show();
+                }
                 waitKey(100);
                 connect(this, &MainWindow::operate, thread, &MyThread::ShowImage);
                 connect(thread, &MyThread::updateProcess, this, &MainWindow::updateProcess);
@@ -659,29 +684,34 @@ void MainWindow::ShowImage(QModelIndex image)
 }
 void MainWindow::on_actionNew_triggered()
 {
-    // 关闭当前工程（不保存），避免两个工程状态共存
-    closeCurrentProject();
+    if (!maybeSave())
+        return;
 
-    NewProject* newpro = new NewProject;
-    connect(this, &MainWindow::sendModel, newpro, &NewProject::ReceiveModel);
+    NewProject newpro(this);
+    connect(this, &MainWindow::sendModel, &newpro, &NewProject::ReceiveModel);
     emit sendModel(m_interfaceManager->projectModel());
-    newpro->show();
-    connect(newpro, &NewProject::sendPath, this, &MainWindow::Addproject);
-    newpro->setAttribute(Qt::WA_DeleteOnClose, true);
-
+    
+    if (newpro.exec() == QDialog::Accepted)
+    {
+        // 只有在用户点击“确认”并验证通过后，才关闭当前工程并添加新工程
+        closeCurrentProject();
+        Addproject(newpro.project, newpro.save);
+    }
 }
 void MainWindow::on_actionOpen_triggered()
 {
-    // 关闭当前工程（不保存），避免两个工程状态共存
-    closeCurrentProject();
+    if (!maybeSave())
+        return;
 
-    OpenProject* open_Window = new OpenProject;
-    open_Window->show();
-    connect(this, &MainWindow::sendModel, open_Window, &OpenProject::LoadModel);
+    OpenProject open_Window(this);
+    connect(this, &MainWindow::sendModel, &open_Window, &OpenProject::LoadModel);
     emit sendModel(m_interfaceManager->projectModel());
-    connect(open_Window, &OpenProject::sendModel, m_workspaceUI, &WorkspaceUI::updateProjectModel);
-    connect(open_Window, &OpenProject::projectOpened, this, &MainWindow::loadWorkflowFromProject);
-    open_Window->setAttribute(Qt::WA_DeleteOnClose, true);
+    
+    connect(&open_Window, &OpenProject::aboutToLoadProject, this, &MainWindow::closeCurrentProject);
+    connect(&open_Window, &OpenProject::sendModel, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    connect(&open_Window, &OpenProject::projectOpened, this, &MainWindow::loadWorkflowFromProject);
+    
+    open_Window.exec();
 }
 void MainWindow::updateWindowTitle()
 {
@@ -716,6 +746,98 @@ void MainWindow::on_actionSave_triggered()
 
     m_projectModified = false;
     updateWindowTitle();
+    statusBar()->showMessage(QStringLiteral("工程保存成功"), 3000);
+}
+void MainWindow::on_actionSave_as_triggered()
+{
+    if (m_projectPath.isEmpty() || !this->project) {
+        QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("没有打开的工程，无法另存为。"));
+        return;
+    }
+
+    // 1. 弹出保存文件对话框
+    QString newFilePath = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("工程另存为"),
+        m_projectPath,
+        QStringLiteral("InSAR Project (*.insar);;All Files (*)")
+    );
+
+    if (newFilePath.isEmpty()) {
+        return;
+    }
+
+    if (!newFilePath.endsWith(".insar", Qt::CaseInsensitive)) {
+        newFilePath += ".insar";
+    }
+
+    // 如果选择的新路径和当前路径一致，相当于直接保存
+    if (QFileInfo(newFilePath).absoluteFilePath() == QFileInfo(m_projectPath).absoluteFilePath()) {
+        on_actionSave_triggered();
+        return;
+    }
+
+    // 2. 先从当前磁盘文件同步最新数据，确保所有外部写入的节点都加载到内存中
+    this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+
+    // 3. 更新 XML 内存结构中的 project_name 和 project_path
+    QFileInfo newFileInfo(newFilePath);
+    QString newProjectName = newFileInfo.baseName();
+    QString newProjectDir = newFileInfo.absolutePath();
+
+    TiXmlElement* root = nullptr;
+    if (this->project->get_root(root) >= 0 && root) {
+        TiXmlElement* p = root->FirstChildElement("project_info");
+        if (p) {
+            TiXmlElement* nameElem = p->FirstChildElement("project_name");
+            if (nameElem) {
+                nameElem->Clear();
+                nameElem->LinkEndChild(new TiXmlText(newProjectName.toStdString().c_str()));
+            }
+            TiXmlElement* pathElem = p->FirstChildElement("project_path");
+            if (pathElem) {
+                pathElem->Clear();
+                pathElem->LinkEndChild(new TiXmlText(newProjectDir.toStdString().c_str()));
+            }
+        }
+    }
+
+    // 4. 保存工作流与界面状态到内存中
+    saveWorkflowToProject(newFilePath);
+    if (m_interfaceManager) {
+        m_interfaceManager->saveLastInterfaceToProject(this->project);
+    }
+
+    // 5. 保存到新路径
+    if (this->project->XMLFile_save(newFilePath.toStdString().c_str()) < 0) {
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("另存工程失败！"));
+        return;
+    }
+
+    // 6. 重置修改标记，用新路径重新加载工程，刷新所有 UI 和树节点绝对路径
+    m_projectModified = false;
+    open_from_project_file(newFilePath);
+}
+bool MainWindow::maybeSave()
+{
+    if (m_projectPath.isEmpty() || !m_projectModified)
+        return true;
+
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        QStringLiteral("保存提示"),
+        QStringLiteral("当前工程已修改，是否保存？"),
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
+    );
+
+    if (reply == QMessageBox::Save) {
+        on_actionSave_triggered();
+        return true;
+    } else if (reply == QMessageBox::Discard) {
+        return true;
+    } else {
+        return false;
+    }
 }
 void MainWindow::closeCurrentProject()
 {
@@ -784,6 +906,9 @@ void MainWindow::closeCurrentProject()
     m_projectModified = false;
     updateWindowTitle();
     updateFileMenuState();
+
+    updateStatusBarProject("");
+    statusBar()->showMessage(QStringLiteral("工程已关闭"), 3000);
 }
 
 void MainWindow::on_actionClose_triggered()
@@ -1390,20 +1515,21 @@ void MainWindow::onThemeFusion()
 void MainWindow::applyMenuIcons(bool isDark)
 {
     QColor color = themeIconColor(isDark);
+    QColor selectedColor(255, 255, 255); // 选中/Hover状态下使用白色，与文字对齐，避免在蓝色背景下隐形
     for (const auto& m : menuIconMap) {
         QAction* action = findChild<QAction*>(m.actionName);
-        if (action) action->setIcon(createColoredIcon(m.svgPath, color));
+        if (action) action->setIcon(createColoredIcon(m.svgPath, color, selectedColor));
     }
-    if (m_recentMenu) m_recentMenu->setIcon(createColoredIcon(":/SatExplorer/svg/recen_open.svg", color));
+    if (m_recentMenu) m_recentMenu->setIcon(createColoredIcon(":/SatExplorer/svg/recen_open.svg", color, selectedColor));
 
     // Dynamic View menu actions (工作区界面 / 工作流界面)
     QMenu* viewMenu = ui.menubar->findChild<QMenu*>("View");
     if (viewMenu) {
         for (QAction* action : viewMenu->actions()) {
             if (action->text().contains(QStringLiteral("工作区")))
-                action->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", color));
+                action->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", color, selectedColor));
             else if (action->text().contains(QStringLiteral("工作流")))
-                action->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", color));
+                action->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", color, selectedColor));
         }
     }
 }
@@ -1455,6 +1581,11 @@ void MainWindow::setTheme(const QString &theme)
 
     // Recolor menu icons for theme
     applyMenuIcons(theme == "dark");
+
+    // 刷新状态栏中的界面模式徽章样式以适配新主题
+    if (m_interfaceManager) {
+        updateStatusBarInterface(m_interfaceManager->currentInterfaceId());
+    }
 
     // Update ColorBar theme
     for (ColorBar* colorBar : mColors) {
@@ -1571,6 +1702,49 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
         updateWindowTitle();
     });
 
+    // 连接工作流节点的进度和状态信号到 MainWindow 状态栏
+    connect(m_workflowUI, &WorkflowUI::nodeExecutionStarted, this, [this](const QString& caption) {
+        if (m_statusProgressBar) {
+            m_statusProgressBar->setValue(0);
+            m_statusProgressBar->show();
+        }
+        statusBar()->showMessage(QStringLiteral("正在运行节点: %1...").arg(caption));
+    });
+
+    connect(m_workflowUI, &WorkflowUI::nodeProgressUpdated, this, [this](const QString& caption, int percent) {
+        if (m_statusProgressBar) {
+            m_statusProgressBar->setValue(percent);
+            if (!m_statusProgressBar->isVisible()) {
+                m_statusProgressBar->show();
+            }
+        }
+        if (percent >= 100) {
+            QTimer::singleShot(800, this, [this, caption]() {
+                if (m_statusProgressBar && m_statusProgressBar->value() >= 100) {
+                    m_statusProgressBar->hide();
+                }
+                statusBar()->showMessage(QStringLiteral("节点 %1 执行完成").arg(caption), 3000);
+            });
+        } else {
+            statusBar()->showMessage(QStringLiteral("节点 %1 正在处理: %2%").arg(caption).arg(percent));
+        }
+    });
+
+    connect(m_workflowUI, &WorkflowUI::nodeExecutionFinished, this, [this](const QString& caption) {
+        if (m_statusProgressBar) {
+            m_statusProgressBar->setValue(100);
+            m_statusProgressBar->hide();
+        }
+        statusBar()->showMessage(QStringLiteral("节点 %1 执行完成").arg(caption), 4000);
+    });
+
+    connect(m_workflowUI, &WorkflowUI::nodeExecutionError, this, [this](const QString& caption, const QString& error) {
+        if (m_statusProgressBar) {
+            m_statusProgressBar->hide();
+        }
+        statusBar()->showMessage(QStringLiteral("节点 %1 执行出错: %2").arg(caption).arg(error), 6000);
+    });
+
     // Get project name from file path
     QString projectName = filePath;
     if (!filePath.isEmpty()) {
@@ -1618,14 +1792,14 @@ void MainWindow::setupInterfaceSwitchingMenu()
 
     // Add workspace action
     QAction* workspaceAction = viewMenu->addAction(QStringLiteral("工作区界面"));
-    workspaceAction->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", themeIconColor(m_currentTheme == "dark")));
+    workspaceAction->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", themeIconColor(m_currentTheme == "dark"), QColor(255, 255, 255)));
     workspaceAction->setCheckable(true);
     interfaceGroup->addAction(workspaceAction);
     connect(workspaceAction, &QAction::triggered, this, &MainWindow::switchToWorkspace);
 
     // Add workflow action
     QAction* workflowAction = viewMenu->addAction(QStringLiteral("工作流界面"));
-    workflowAction->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", themeIconColor(m_currentTheme == "dark")));
+    workflowAction->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", themeIconColor(m_currentTheme == "dark"), QColor(255, 255, 255)));
     workflowAction->setCheckable(true);
     interfaceGroup->addAction(workflowAction);
     connect(workflowAction, &QAction::triggered, this, &MainWindow::switchToWorkflow);
@@ -1664,6 +1838,7 @@ void MainWindow::updateInterfaceMenuCheckState()
     }
 
     updateColorBarVisibility();
+    updateStatusBarInterface(currentId);
 }
 
 void MainWindow::updateColorBarVisibility()
@@ -1753,6 +1928,7 @@ void MainWindow::onRecentProjectFromWelcome(const QString &filePath)
 void MainWindow::updateProjectContext(const QString& filePath)
 {
     m_projectPath = filePath;
+    updateStatusBarProject(filePath);
     QString projectName;
     if (!filePath.isEmpty()) {
         QFileInfo info(filePath);
@@ -1785,7 +1961,6 @@ void MainWindow::updateFileMenuState()
     ui.actionOpen->setEnabled(true);
     ui.actionSave->setEnabled(isProjectOpen);
     ui.actionSave_as->setEnabled(isProjectOpen);
-    ui.actionSave_all->setEnabled(isProjectOpen);
     ui.actionClose->setEnabled(isProjectOpen);
     ui.actionQuit->setEnabled(true);
 
@@ -1799,4 +1974,102 @@ void MainWindow::updateFileMenuState()
         ui.menuInSAR->setEnabled(false);
         ui.menuDInSAR->setEnabled(false);
     }
+}
+
+void MainWindow::initStatusBar()
+{
+    QStatusBar* bar = statusBar();
+    if (!bar) return;
+
+    // 1. 初始化进度条，限制最大宽度，默认隐藏 (放置在 permanent 区域最左侧，防止显隐时挤压其他控件)
+    m_statusProgressBar = new QProgressBar(this);
+    m_statusProgressBar->setRange(0, 100);
+    m_statusProgressBar->setValue(0);
+    m_statusProgressBar->setTextVisible(true);
+    m_statusProgressBar->setFixedWidth(130);
+    m_statusProgressBar->setFixedHeight(20);
+    m_statusProgressBar->setStyleSheet(
+        "QProgressBar {"
+        "   border: 1px solid #888888;"
+        "   border-radius: 3px;"
+        "   text-align: center;"
+        "   font-size: 9px;"
+        "   background-color: rgba(128, 128, 128, 40);"
+        "   color: palette(text);"
+        "   height: 20px;"
+        "   min-height: 20px;"
+        "   max-height: 20px;"
+        "}"
+        "QProgressBar::chunk {"
+        "   background-color: #3182ce;"
+        "   border-radius: 2px;"
+        "}"
+    );
+    m_statusProgressBar->hide();
+    bar->addPermanentWidget(m_statusProgressBar);
+
+    // 2. 初始化模式 Label，作为 Badge 圆角药丸 (排在中间)
+    m_statusInterfaceLabel = new QLabel(this);
+    m_statusInterfaceLabel->setAlignment(Qt::AlignCenter);
+    m_statusInterfaceLabel->setFixedHeight(20);
+    m_statusInterfaceLabel->setStyleSheet("font-size: 11px; padding: 0px 8px; border-radius: 4px; font-weight: bold; margin-right: 10px;");
+    updateStatusBarInterface("welcome");
+    bar->addPermanentWidget(m_statusInterfaceLabel);
+
+    // 3. 初始化当前工程 Label，作为 permanent widget (排在最右侧，紧贴右边缘)
+    m_statusProjectLabel = new QLabel(this);
+    m_statusProjectLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+    m_statusProjectLabel->setStyleSheet("padding-right: 15px; font-size: 12px;");
+    updateStatusBarProject(""); // 默认显示未加载
+    bar->addPermanentWidget(m_statusProjectLabel);
+
+    // 4. 左侧默认消息
+    bar->showMessage(QStringLiteral("就绪"));
+}
+
+void MainWindow::updateStatusBarProject(const QString& filePath)
+{
+    if (!m_statusProjectLabel) return;
+
+    if (filePath.isEmpty()) {
+        m_statusProjectLabel->setText(QStringLiteral("📁 未加载工程"));
+        m_statusProjectLabel->setToolTip("");
+    } else {
+        QFileInfo info(filePath);
+        m_statusProjectLabel->setText(QStringLiteral("📁 工程: %1").arg(info.fileName()));
+        m_statusProjectLabel->setToolTip(filePath); // 悬停显示完整路径
+    }
+}
+
+void MainWindow::updateStatusBarInterface(const QString& interfaceId)
+{
+    if (!m_statusInterfaceLabel) return;
+
+    bool isDark = (m_currentTheme == "dark");
+    QString style;
+
+    if (interfaceId == "workspace") {
+        m_statusInterfaceLabel->setText(QStringLiteral("工作区模式"));
+        if (isDark) {
+            style = "color: #5cd699; background-color: #1b4d3e; border: 1px solid #2d7a62; font-size: 11px; padding: 0px 8px; border-radius: 4px; font-weight: bold; margin-right: 10px; height: 20px; min-height: 20px; max-height: 20px;";
+        } else {
+            style = "color: #1f8b4c; background-color: #e6f7ed; border: 1px solid #c2e0cf; font-size: 11px; padding: 0px 8px; border-radius: 4px; font-weight: bold; margin-right: 10px; height: 20px; min-height: 20px; max-height: 20px;";
+        }
+    } else if (interfaceId == "workflow") {
+        m_statusInterfaceLabel->setText(QStringLiteral("工作流模式"));
+        if (isDark) {
+            style = "color: #63b3ed; background-color: #1a365d; border: 1px solid #2b4c7e; font-size: 11px; padding: 0px 8px; border-radius: 4px; font-weight: bold; margin-right: 10px; height: 20px; min-height: 20px; max-height: 20px;";
+        } else {
+            style = "color: #2b6cb0; background-color: #ebf8ff; border: 1px solid #bee3f8; font-size: 11px; padding: 0px 8px; border-radius: 4px; font-weight: bold; margin-right: 10px; height: 20px; min-height: 20px; max-height: 20px;";
+        }
+    } else {
+        m_statusInterfaceLabel->setText(QStringLiteral("欢迎界面"));
+        if (isDark) {
+            style = "color: #cccccc; background-color: #333333; border: 1px solid #444444; font-size: 11px; padding: 0px 8px; border-radius: 4px; font-weight: bold; margin-right: 10px; height: 20px; min-height: 20px; max-height: 20px;";
+        } else {
+            style = "color: #4a5568; background-color: #f7fafc; border: 1px solid #e2e8f0; font-size: 11px; padding: 0px 8px; border-radius: 4px; font-weight: bold; margin-right: 10px; height: 20px; min-height: 20px; max-height: 20px;";
+        }
+    }
+
+    m_statusInterfaceLabel->setStyleSheet(style);
 }

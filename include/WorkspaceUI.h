@@ -65,7 +65,6 @@ public slots:
 
     //// Getters for components that MainWindow still needs access to
     TreeView* treeView() const;
-    TreeView* toolTree() const;
     QTabWidget* tabWidget() const;
     QSplitter* mainSplitter() const;
 
@@ -84,10 +83,8 @@ private:
     void setupUi();
 
     // All the original components from MainWindow
-    QSplitter *m_splitter = nullptr;
     QSplitter *m_splitter2 = nullptr;
     TreeView *m_treeView = nullptr;
-    TreeView *m_toolTree = nullptr;
     QTabWidget *m_tabWidget = nullptr;
 
     QProgressDialog *Process = nullptr;

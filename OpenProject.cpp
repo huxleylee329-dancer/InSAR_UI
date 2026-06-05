@@ -1,12 +1,13 @@
-﻿#include"OpenProject.h"
+#include"OpenProject.h"
 #include"icon_source.h"
 #include<QFileDialog>
 #include<QMessageBox>
 OpenProject::OpenProject(QWidget* parent) :
-    QWidget(parent),
+    QDialog(parent),
     ui(new Ui::OpenProject)
 {
     ui->setupUi(this);
+    setFixedSize(450, 130);
     this->project = new XMLFile;
 }
 
@@ -32,8 +33,13 @@ void OpenProject::on_buttonBox_accepted()
     int ret = this->project->XMLFile_load(filename.toStdString().c_str());
     if (ret < 0)
     {
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("无法加载工程文件，请检查文件是否损坏或路径是否正确。"));
         return;
     }
+
+    // 触发信号通知主窗口关闭并清理旧工程，准备加载新工程
+    emit aboutToLoadProject();
+
     TiXmlElement* root;
     ret = this->project->get_root(root);
     TiXmlElement* p, * q, * j;
@@ -135,12 +141,12 @@ void OpenProject::on_buttonBox_accepted()
     else
         QMessageBox::warning(NULL, "Warning!", "*.Insar is empty!");
     emit projectOpened(filename);
-    close();
+    accept();
 }
 
 void OpenProject::on_buttonBox_rejected()
 {
-    close();
+    reject();
 }
 
 void OpenProject::on_BrowseButton_pressed()
@@ -149,5 +155,9 @@ void OpenProject::on_BrowseButton_pressed()
         "Path of project",
         "",
         "*.insar");
+    if (filename.isEmpty())
+    {
+        return; // 用户点击取消，直接返回，保留原有值
+    }
     ui->PathLine->setText(filename);
 }

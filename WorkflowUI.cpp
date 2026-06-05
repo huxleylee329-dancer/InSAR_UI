@@ -378,6 +378,9 @@ void WorkflowUI::setupSceneInternal()
     // Create graph model (Executable supports manual/automatic execution modes)
     m_graphModel = new QtNodes::ExecutableDataFlowGraphModel(m_registry);
 
+    connect(m_graphModel, &QtNodes::AbstractGraphModel::nodeCreated,
+            this, &WorkflowUI::onNodeCreated);
+
     // Create scene
     m_scene = new QtNodes::DataFlowGraphicsScene(*m_graphModel, this);
 
@@ -1705,5 +1708,34 @@ void WorkflowUI::cleanupDetailWindow()
 void WorkflowUI::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+}
+
+void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
+{
+    if (!m_graphModel) return;
+
+    auto execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+    if (!execModel) return;
+
+    // 连接节点的进度和执行信号
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStarted, this, [this, execModel]() {
+        Q_EMIT nodeExecutionStarted(execModel->caption());
+    }, Qt::QueuedConnection);
+
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::progressUpdated, this, [this, execModel](int percent) {
+        Q_EMIT nodeProgressUpdated(execModel->caption(), percent);
+    }, Qt::QueuedConnection);
+
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionFinished, this, [this, execModel]() {
+        Q_EMIT nodeExecutionFinished(execModel->caption());
+    }, Qt::QueuedConnection);
+
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionError, this, [this, execModel](const QString& error) {
+        Q_EMIT nodeExecutionError(execModel->caption(), error);
+    }, Qt::QueuedConnection);
+
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStopped, this, [this, execModel]() {
+        Q_EMIT nodeExecutionFinished(execModel->caption());
+    }, Qt::QueuedConnection);
 }
 

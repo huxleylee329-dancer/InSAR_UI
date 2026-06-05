@@ -1,4 +1,4 @@
-﻿#include "NewProject.h"
+#include "NewProject.h"
 #include <qfiledialog.h>
 #include<qmessagebox.h>
 #include<qsettings.h>
@@ -12,10 +12,11 @@
 //#endif
 using namespace cv;
 NewProject::NewProject(QWidget* parent) :
-	QWidget(parent),
+	QDialog(parent),
 	ui(new Ui::NewProject)
 {
 	ui->setupUi(this);
+	setFixedSize(450, 130);
     copy_model = NULL;
     //QSettings settings("Config.ini", QSettings::IniFormat);
     //settings.beginGroup("Project");
@@ -30,21 +31,23 @@ NewProject::~NewProject()
 
 void NewProject::on_savepushButton_pressed()
 {
-    //QString dir = QFileDialog::getExistingDirectory(this, "choose a folder", "");
-    //ui->savelineEdit->setText(dir + QString("/") + ui->NamelineEdit->text());
-    QString name = ui->NamelineEdit->text();
-    QString folder;
-    folder = QFileDialog::getExistingDirectory(this, "Path of project", "");
+    QString folder = QFileDialog::getExistingDirectory(this, "Path of project", "");
+    if (folder.isEmpty())
+    {
+        return; // 用户点击取消，直接返回，保留原有值
+    }
     this->save = folder;
+
+    QString name = ui->NamelineEdit->text();
     if (!name.isEmpty())
     {
-        ui->savelineEdit->setText(folder + QString("/") + name);
+        ui->savelineEdit->setText(QDir(folder).filePath(name));
     }
     else
     {
         name = QString("default");
         ui->NamelineEdit->setText(name);
-        ui->savelineEdit->setText(folder + QString("/") + name);
+        ui->savelineEdit->setText(QDir(folder).filePath(name));
     }
 }
 void NewProject::saveProjectSettings()
@@ -100,15 +103,15 @@ void NewProject::on_buttonBox_accepted()
     if (!info.isDir()) return;
     QDir dir(this->save);
     this->project = ui->NamelineEdit->text();
+    this->save = ui->savelineEdit->text();
     if (!dir.exists(this->project))
         dir.mkdir(this->project);
-    /*this->save = ui->savelineEdit->text();*/
-    emit sendPath(ui->NamelineEdit->text(),/*ui->masterlineEdit->text(), ui->slavelineEdit->text(),*/ ui->savelineEdit->text());
-    close();
+    emit sendPath(this->project, this->save);
+    accept();
 }
 void NewProject::on_buttonBox_rejected()
 {
-    close();
+    reject();
 }
 
 void NewProject::ReceiveModel(QStandardItemModel* model)

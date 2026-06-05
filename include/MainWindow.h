@@ -12,6 +12,8 @@ class WorkspaceUI;
 class WorkflowUI;
 class WelcomeScreenUI;
 class XMLFile;
+class QLabel;
+class QProgressBar;
 
 class MainWindow : public QMainWindow
 {
@@ -137,6 +139,7 @@ private slots:
 
     // 保存工程
     void on_actionSave_triggered();
+    void on_actionSave_as_triggered();
     // 关闭工程
     void on_actionClose_triggered();
     void on_actionCleanOrphanedFiles_triggered();
@@ -152,6 +155,7 @@ private:
 
     // 关闭当前工程（不含确认对话框），供新建/打开工程前调用
     void closeCurrentProject();
+    bool maybeSave();
 
     // 工作流状态保存/加载
     void saveWorkflowToProject(const QString& projectFilePath);
@@ -164,6 +168,15 @@ private:
 
     // 更新窗口标题（显示工程修改状态）
     void updateWindowTitle();
+
+    // 状态栏控件
+    QLabel* m_statusProjectLabel;
+    QLabel* m_statusInterfaceLabel;
+    QProgressBar* m_statusProgressBar;
+
+    void initStatusBar();
+    void updateStatusBarProject(const QString& filePath);
+    void updateStatusBarInterface(const QString& interfaceId);
 
     // 更新“文件”菜单项状态
     void updateFileMenuState();

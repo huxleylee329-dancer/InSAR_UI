@@ -1,10 +1,11 @@
 #pragma once
 #pragma once
 #include <QtWidgets/QMainWindow>
+#include <QDialog>
 #include<qstandarditemmodel.h>
 #include "ui_NewProject.h"
 
-class NewProject : public QWidget
+class NewProject : public QDialog
 {
     Q_OBJECT
 public:
