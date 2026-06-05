@@ -71,7 +71,7 @@ private slots:
     void onSelectionChanged();
 
 private:
-    QLineEdit* m_projectNameEdit = nullptr;
+    QLabel* m_projectNameLabel = nullptr;
     PopupComboBox* m_loadingNodeCombo = nullptr;
     QListWidget* m_fileListWidget = nullptr;
 

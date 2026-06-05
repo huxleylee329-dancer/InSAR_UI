@@ -16,7 +16,7 @@ GenericSARImportNode::GenericSARImportNode()
     , m_imageEdit(nullptr)
     , m_outputNodeNameEdit(nullptr)
     , m_outputFileNameEdit(nullptr)
-    , m_projectCombo(nullptr)
+    , m_projectLabel(nullptr)
     , m_task(nullptr)
 {
     m_outputFileName = "{InputName}";
@@ -41,6 +41,22 @@ QWidget* GenericSARImportNode::createWidget()
         setOutputData(0, nullptr);
         invalidateExecution();
     };
+
+    // Project Name Badge (Option 3: metadata banner)
+    m_projectLabel = new QLabel();
+    m_projectLabel->setObjectName("ProjectBadge");
+    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
+    m_projectLabel->setStyleSheet(
+        "QLabel#ProjectBadge {"
+        "  background-color: rgba(128, 128, 128, 0.12);"
+        "  border: 1px solid rgba(128, 128, 128, 0.2);"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+    );
+    layout->addWidget(m_projectLabel);
 
     // 通用 SAR 图像 + 浏览按钮 [3:7:0]
     auto* imageRow = new QHBoxLayout();
@@ -68,30 +84,7 @@ QWidget* GenericSARImportNode::createWidget()
     imageRow->addWidget(browseButton, 0);
     layout->addLayout(imageRow);
 
-    // 项目名称 [3:7]
-    auto* projectRow = new QHBoxLayout();
-    projectRow->addWidget(new QLabel("项目名称："), 3);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    
-    // Populate project list from model (Align with Workspace behavior)
-    QStandardItemModel* model = projectModel();
-    if (model && model->rowCount() > 0) {
-        for (int i = 0; i < model->rowCount(); ++i) {
-            auto item = model->item(i, 0);
-            if (item) {
-                m_projectCombo->addItem(item->text());
-            }
-        }
-        // Set current project as default selection
-        int index = m_projectCombo->findText(projectName());
-        if (index >= 0) m_projectCombo->setCurrentIndex(index);
-    } else {
-        m_projectCombo->addItem("未打开项目");
-    }
 
-    projectRow->addWidget(m_projectCombo, 7);
-    layout->addLayout(projectRow);
 
     // 目标节点 [3:7]
     auto* nodeRow = new QHBoxLayout();

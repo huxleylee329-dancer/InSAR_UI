@@ -1717,25 +1717,27 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
     auto execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
     if (!execModel) return;
 
+    QString caption = execModel->caption();
+
     // 连接节点的进度和执行信号
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStarted, this, [this, execModel]() {
-        Q_EMIT nodeExecutionStarted(execModel->caption());
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStarted, this, [this, caption]() {
+        Q_EMIT nodeExecutionStarted(caption);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::progressUpdated, this, [this, execModel](int percent) {
-        Q_EMIT nodeProgressUpdated(execModel->caption(), percent);
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::progressUpdated, this, [this, caption](int percent) {
+        Q_EMIT nodeProgressUpdated(caption, percent);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionFinished, this, [this, execModel]() {
-        Q_EMIT nodeExecutionFinished(execModel->caption());
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionFinished, this, [this, caption]() {
+        Q_EMIT nodeExecutionFinished(caption);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionError, this, [this, execModel](const QString& error) {
-        Q_EMIT nodeExecutionError(execModel->caption(), error);
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionError, this, [this, caption](const QString& error) {
+        Q_EMIT nodeExecutionError(caption, error);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStopped, this, [this, execModel]() {
-        Q_EMIT nodeExecutionFinished(execModel->caption());
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStopped, this, [this, caption]() {
+        Q_EMIT nodeExecutionFinished(caption);
     }, Qt::QueuedConnection);
 }
 

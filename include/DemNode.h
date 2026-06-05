@@ -55,10 +55,7 @@ protected:
     QStringList previewImagePaths() const override;
 
 private:
-    // UI elements
     ::QWidget* _widget;
-    QComboBox* m_projectCombo;
-    QComboBox* m_dataNodeCombo;
     QComboBox* m_methodCombo;
     
     QLabel* m_timesLabel;

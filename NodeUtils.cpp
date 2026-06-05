@@ -164,6 +164,7 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
     }
     
     if (!existingFiles.isEmpty()) {
+        existingFiles.removeDuplicates();
         hasConflict = true;
         conflictDetails.append("- 已存在同名文件:\n    " + existingFiles.join("\n    "));
     }

@@ -23,8 +23,6 @@ namespace QtNodes {
 
 S1FrameMergeNode::S1FrameMergeNode()
     : ExecutableNodeDelegateModel()
-    , m_projectCombo(nullptr)
-    , m_dataNodeCombo{nullptr, nullptr}
     , m_indexSpins{nullptr, nullptr}
     , m_outputNodeNameEdit(nullptr)
     , m_inputs{nullptr, nullptr}
@@ -198,35 +196,7 @@ void S1FrameMergeNode::createWidget()
         invalidateExecution();
     };
 
-    // 选择工程
-    auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("选择工程");
-    projectLabel->setFixedWidth(85);
-    projectLayout->addWidget(projectLabel);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    m_projectCombo->addItem(projectName().isEmpty() ? "未打开项目" : projectName());
-    projectLayout->addWidget(m_projectCombo);
-    layout->addLayout(projectLayout);
 
-    // 数据节点 1 [1:1]
-    auto* dataNode1Layout = new QHBoxLayout();
-    QLabel* dataNode1Label = new QLabel("数据节点 1");
-    dataNode1Label->setFixedWidth(85);
-    dataNode1Layout->addWidget(dataNode1Label);
-    m_dataNodeCombo[0] = new QComboBox();
-    m_dataNodeCombo[0]->setEditable(false);
-    if (m_inputs[0])
-    {
-        QString nodeName = m_inputs[0]->nodeName();
-        m_dataNodeCombo[0]->addItem(nodeName);
-    }
-    else
-    {
-        m_dataNodeCombo[0]->addItem("等待输入");
-    }
-    dataNode1Layout->addWidget(m_dataNodeCombo[0]);
-    layout->addLayout(dataNode1Layout);
 
     // Image Index 1
     auto* index1Layout = new QHBoxLayout();
@@ -251,24 +221,7 @@ void S1FrameMergeNode::createWidget()
     index1Layout->addWidget(m_indexSpins[0]);
     layout->addLayout(index1Layout);
 
-    // 数据节点 2 [1:1]
-    auto* dataNode2Layout = new QHBoxLayout();
-    QLabel* dataNode2Label = new QLabel("数据节点 2");
-    dataNode2Label->setFixedWidth(85);
-    dataNode2Layout->addWidget(dataNode2Label);
-    m_dataNodeCombo[1] = new QComboBox();
-    m_dataNodeCombo[1]->setEditable(false);
-    if (m_inputs[1])
-    {
-        QString nodeName = m_inputs[1]->nodeName();
-        m_dataNodeCombo[1]->addItem(nodeName);
-    }
-    else
-    {
-        m_dataNodeCombo[1]->addItem("等待输入");
-    }
-    dataNode2Layout->addWidget(m_dataNodeCombo[1]);
-    layout->addLayout(dataNode2Layout);
+
 
     // Image Index 2
     auto* index2Layout = new QHBoxLayout();
@@ -325,37 +278,6 @@ void S1FrameMergeNode::createWidget()
 
 void S1FrameMergeNode::updateLabels()
 {
-    // Update project combo
-    if (m_projectCombo)
-    {
-        QString projName = projectName();
-        if (!projName.isEmpty())
-        {
-            if (m_projectCombo->count() == 0 || m_projectCombo->itemText(0) != projName)
-            {
-                m_projectCombo->clear();
-                m_projectCombo->addItem(projName);
-            }
-        }
-    }
-
-    // Update data node combos
-    for (int i = 0; i < 2; ++i)
-    {
-        if (m_dataNodeCombo[i])
-        {
-            m_dataNodeCombo[i]->clear();
-            if (m_inputs[i])
-            {
-                QString nodeName = m_inputs[i]->nodeName();
-                m_dataNodeCombo[i]->addItem(nodeName);
-            }
-            else
-            {
-                m_dataNodeCombo[i]->addItem("等待输入");
-            }
-        }
-    }
 }
 
 QString S1FrameMergeNode::generateDefaultOutputName() const

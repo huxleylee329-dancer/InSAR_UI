@@ -22,8 +22,6 @@ namespace QtNodes {
 
 S1SwathMergeNode::S1SwathMergeNode()
     : ExecutableNodeDelegateModel()
-    , m_projectCombo(nullptr)
-    , m_dataNodeCombo{nullptr, nullptr, nullptr}
     , m_indexSpins{nullptr, nullptr, nullptr}
     , m_outputNodeNameEdit(nullptr)
     , m_inputs{nullptr, nullptr, nullptr}
@@ -208,27 +206,7 @@ void S1SwathMergeNode::createWidget()
         invalidateExecution();
     };
 
-    // 选择工程
-    auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("选择工程");
-    projectLabel->setFixedWidth(90); // 标签固定宽度，组件完美对齐
-    projectLayout->addWidget(projectLabel);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    m_projectCombo->addItem(projectName().isEmpty() ? "未打开项目" : projectName());
-    projectLayout->addWidget(m_projectCombo);
-    layout->addLayout(projectLayout);
 
-    // 数据节点 IW1
-    auto* dataNode1Layout = new QHBoxLayout();
-    QLabel* dataNode1Label = new QLabel("IW1 数据节点");
-    dataNode1Label->setFixedWidth(90);
-    dataNode1Layout->addWidget(dataNode1Label);
-    m_dataNodeCombo[0] = new QComboBox();
-    m_dataNodeCombo[0]->setEditable(false);
-    m_dataNodeCombo[0]->addItem("等待输入");
-    dataNode1Layout->addWidget(m_dataNodeCombo[0]);
-    layout->addLayout(dataNode1Layout);
 
     // Image Index 1
     auto* index1Layout = new QHBoxLayout();
@@ -253,16 +231,7 @@ void S1SwathMergeNode::createWidget()
     index1Layout->addWidget(m_indexSpins[0]);
     layout->addLayout(index1Layout);
 
-    // 数据节点 IW2
-    auto* dataNode2Layout = new QHBoxLayout();
-    QLabel* dataNode2Label = new QLabel("IW2 数据节点");
-    dataNode2Label->setFixedWidth(90);
-    dataNode2Layout->addWidget(dataNode2Label);
-    m_dataNodeCombo[1] = new QComboBox();
-    m_dataNodeCombo[1]->setEditable(false);
-    m_dataNodeCombo[1]->addItem("等待输入");
-    dataNode2Layout->addWidget(m_dataNodeCombo[1]);
-    layout->addLayout(dataNode2Layout);
+
 
     // Image Index 2
     auto* index2Layout = new QHBoxLayout();
@@ -287,16 +256,7 @@ void S1SwathMergeNode::createWidget()
     index2Layout->addWidget(m_indexSpins[1]);
     layout->addLayout(index2Layout);
 
-    // 数据节点 IW3
-    auto* dataNode3Layout = new QHBoxLayout();
-    QLabel* dataNode3Label = new QLabel("IW3 数据节点");
-    dataNode3Label->setFixedWidth(90);
-    dataNode3Layout->addWidget(dataNode3Label);
-    m_dataNodeCombo[2] = new QComboBox();
-    m_dataNodeCombo[2]->setEditable(false);
-    m_dataNodeCombo[2]->addItem("等待输入");
-    dataNode3Layout->addWidget(m_dataNodeCombo[2]);
-    layout->addLayout(dataNode3Layout);
+
 
     // Image Index 3
     auto* index3Layout = new QHBoxLayout();
@@ -353,37 +313,6 @@ void S1SwathMergeNode::createWidget()
 
 void S1SwathMergeNode::updateLabels()
 {
-    // Update project combo
-    if (m_projectCombo)
-    {
-        QString projName = projectName();
-        if (!projName.isEmpty())
-        {
-            if (m_projectCombo->count() == 0 || m_projectCombo->itemText(0) != projName)
-            {
-                m_projectCombo->clear();
-                m_projectCombo->addItem(projName);
-            }
-        }
-    }
-
-    // Update data node combos
-    for (int i = 0; i < 3; ++i)
-    {
-        if (m_dataNodeCombo[i])
-        {
-            m_dataNodeCombo[i]->clear();
-            if (m_inputs[i])
-            {
-                QString nodeName = m_inputs[i]->nodeName();
-                m_dataNodeCombo[i]->addItem(nodeName);
-            }
-            else
-            {
-                m_dataNodeCombo[i]->addItem("等待输入");
-            }
-        }
-    }
 }
 
 QString S1SwathMergeNode::generateDefaultOutputName() const

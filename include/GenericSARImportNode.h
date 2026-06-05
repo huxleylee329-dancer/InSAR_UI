@@ -71,7 +71,7 @@ private:
     QLineEdit* m_imageEdit;
     QLineEdit* m_outputNodeNameEdit;
     QLineEdit* m_outputFileNameEdit;
-    QComboBox* m_projectCombo;
+    QLabel* m_projectLabel;
 
     QString m_imagePath;
     QString m_importedFilePath;

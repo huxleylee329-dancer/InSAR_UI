@@ -107,6 +107,13 @@
      - **自适应图片扫描**：根据节点输出名称，扫描当前输出目录下已存在的所有 `.jpg` 预览图片文件并返回其绝对路径列表。
      - **主线程响应性能**：为契合主线程零卡顿规范，`previewImagePaths()` 内**仅执行本地文件存在性快速扫描**，不得在该函数内执行同步 H5 读取和 JPG 重建（缺失的 JPG 依赖工程载入或 LoadExisting 时触发的异步补救线程进行后台静默补全）。
 
+5. **工作流节点 UI 中的“项目选择”与“数据节点”简化规范 (Project and Data Node Selection Simplification)**：
+   - **设计背景**：历史上在 Workspace UI 的弹窗（Dialog）模式下，因为没有图形连线，需要下拉框让用户手动选择在哪个工程下以及对哪个数据节点进行操作。但在工作流模式下，这两种下拉框变成了冗余设计：工程上下文是全局唯一的（每次只能打开一个工程），输入数据源也是由上游连线唯一决定的。
+   - **设计规范**：
+     - **数据导入/加载类起点节点**：为了向用户明确当前导入或加载的目标，可以展示工程名称。但应将其由原先可交互的 `QComboBox` 下拉框改为只读的 `QLabel` 标签（如 `"项目名称：[当前工程名]"`），避免交互误导。
+     - **中间/下游处理与评估节点**：**完全不提供**“选择工程”和“数据节点”这两个冗余参数选项。应该彻底移除这两个下拉框及对应的标签布局，将节点视觉卡片的高度最大化压缩，仅保留算子特有的算法参数（如滤波方法、窗口大小等）。
+     - **工程上下文获取**：所有处理节点在执行或验证时需要的工程根目录、XML 句柄等，应通过上游输入数据（`m_inputData`）自带的上下文或全局唯一的 `NodeUtils::getProjectContext()` 方法在后台隐式检索，严禁在前端 UI 的下拉框中读取。
+
 ---
 
 ## 技术实现细节与避坑经验 (Technical Details & Pitfalls)
@@ -304,4 +311,45 @@
       1. **节点层严格规范**：所有直接输出文件夹路径的节点，在结束运行（`onProcessingFinished`） and 自愈恢复（`validateAndRestoreOutput`）时，**必须在节点内部自行扫描输出文件夹**，找到实际产生的 `.h5` 结果文件列表，进行排序并过滤（如去除重复），然后构建 `ImportedFileData(h5Paths, dstNode)` 将具体的文件列表传递至 downstream。
       2. **避免传递文件夹路径**：除非节点本身仅输出单个特定文件，否则批量处理节点传递的必须是实际的 **`.h5` 绝对文件路径列表**，绝对不能传递文件夹路径。
       3. **下游节点保持纯净**：下游节点（如 `BaselinePreviewNode`）在 `setInData` 接收到 `ImportedFileData` 时，直接通过 `m_inputData->filePaths()` 即可读取到准确的 H5 物理文件路径列表，无需再做任何 `isDir()` 扫描补救，确保业务逻辑清爽、可靠、符合标准数据流规范。
+
+26. **移除冗余下拉框后的 updateLabels 及构造函数清理自愈 (Clean-up of Redundant Comboboxes in updateLabels & Constructors)**：
+    - **现象与根源**：在按照简化规范移除处理节点的 `m_projectCombo`（选择工程）和 `m_dataNodeCombo`（数据节点）下拉框时，如果清理不彻底，极易引发编译错误。特别是在 `updateLabels()` 函数中，如果节点本身不包含其他需要更新的动态参数（如主图像列表），需要将该方法置空；如果包含其他参数（如主图像选择列表），则必须保留核心的更新逻辑（如 `updateMasterImageCombo()`）。
+    - **避坑与实现对策**：
+      1. 在对应的头文件（`.h`）中删除 `m_projectCombo` 和 `m_dataNodeCombo`（或数组形式的 `m_dataNodeCombo[X]`）的定义。
+      2. 在实现文件（`.cpp`）的构造函数初始化列表中移除对应的指针赋空（`nullptr`）逻辑。
+      3. 在 `createWidget()` 中彻底删除对应的 Layout、QLabel 和 QComboBox 的构造与添加代码。
+      4. 在 `updateLabels()` 中清除对这些已被删除下拉框的所有引用（如 `.clear()` 或 `.addItem()`）。对于像 `S1TopsBackGeocodingNode` 和 `InterferometricFormationNode` 这样拥有其它必要参数 of 节点，应**仅保留对这些有效参数更新方法的调用**，不能误删所有逻辑。
+
+27. **工作流队列信号连接中捕获 raw 指针引发的 Use-After-Free 崩溃避坑 (Queued Lambda Connect & Lifetime Safety)**：
+    - **现象与根源**：在工作流生命周期管理中，主窗口与节点之间通常使用 `Qt::QueuedConnection` 队列连接传递进度、启动、结束等信号。若 lambda 槽函数中按值捕获了节点模型对象的裸指针（如 `[this, execModel]() { Q_EMIT nodeExecutionStarted(execModel->caption()); }`），在重新打开当前工程、切换/关闭工程等操作中，所有节点模型对象会被销毁释放。当主事件循环执行队列中残留的事件时，lambda 会解引用已经销毁的 `execModel` 指针，导致内存越界/野指针访问崩溃。
+    - **避坑对策**：
+      1. **预先提取并捕获基础数据**：在建立连接前，提前将生命周期独立、只读的属性（如 `QString caption = execModel->caption();`）提取出来。
+      2. **按值捕获基础数据**：在 lambda 捕获列表中只捕获 `this` 以及这些只读数据副本（如 `[this, caption]`），避免捕获可能在排队执行期间被销毁的裸指针（如 `execModel`），从而确保生命周期安全。
+
+28. **重新打开当前活动项目的防错交互机制 (Reopening Active Project Protection)**：
+    - **现象与根源**：当用户从“最近打开”列表或通过文件菜单再次选择并打开已经处于活动状态的同一个 `.insar` 工程文件时，直接清除原有资源并重新加载会产生冗余开销。同时，如果当前工程存在未保存的流程图或节点参数修改，强制直接重载会导致用户未保存的修改静默丢失。
+    - **避坑对策**：
+      1. **一致性路径校验**：在 `open_from_project_file(str)` 执行开始，利用 `QFileInfo` 的 `absoluteFilePath()` 精准对比目标工程路径与当前活动路径 `m_projectPath`。
+      2. **弹窗确认与保护**：如果判定为相同工程，弹出 `QMessageBox::question` 确认提示“该项目已在当前窗口中打开，是否重新加载？(注意：未保存的修改将会丢失)”，允许用户选择 Yes 进行重载，或选择 No 终止该操作以防止无意间覆盖未保存的成果；而对于新工程的载入，则继续保持原有的 `maybeSave()` 安全保存检测流程。
+
+29. **导入类（数据源）节点项目名称的 Badge（元数据标签）展示规范 (Project Name Badge in Import Nodes)**：
+    - **现象与根源**：在简化的单工程工作流节点中，若将只读的“项目名称”以纯文本标签形式夹在周围具有边框、背景、高度较厚的可操作输入控件（如 `QComboBox`, `QLineEdit`）中间，会导致视觉排列杂乱（高矮与厚度不一，破坏表单的一致性与流动感）。
+    - **避坑与设计规范**：
+      1. **抽离核心配置表单**：在导入类（如 Sentinel-1 / TSX / ALOS-2 / CSK 等单项及 Batch 导入）节点中，不应把“项目名称”作为表单配置项混编，而应将其完全移出底部的 `configLayout`。
+      2. **引入统一的 Badge 胶囊条**：在文件列表/配置区域上方，以全局只读元数据的形式插入独立的状态胶囊条 `m_projectLabel`。
+      3. **样式模板**：
+         ```cpp
+         m_projectLabel->setObjectName("ProjectBadge");
+         m_projectLabel->setStyleSheet(
+             "QLabel#ProjectBadge {"
+             "  background-color: rgba(128, 128, 128, 0.12);"   // 柔和半透明自适应背景
+             "  border: 1px solid rgba(128, 128, 128, 0.2);"    // 微弱边框，衬托质感
+             "  border-radius: 4px;"                           // 圆角边框
+             "  padding: 4px 8px;"                             // 胶囊边距
+             "  font-size: 11px;"                              // 区分层级的小字号
+             "  font-weight: 500;"
+             "}"
+         );
+         ```
+      4. 这确保了下层配置表单全由一致的输入型控件构成，并向用户明晰了项目名称作为只读环境参数的层级归属。
 

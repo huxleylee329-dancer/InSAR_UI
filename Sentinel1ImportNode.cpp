@@ -15,7 +15,7 @@ Sentinel1ImportNode::Sentinel1ImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_outputFileNameEdit(nullptr)
-    , m_projectCombo(nullptr)
+    , m_projectLabel(nullptr)
     , m_manifestEdit(nullptr)
     , m_podEdit(nullptr)
     , m_subswathCombo(nullptr)
@@ -71,6 +71,21 @@ QWidget* Sentinel1ImportNode::createWidget()
         for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
         invalidateExecution();
     };
+
+    // Project Name Badge (Option 3: metadata banner)
+    m_projectLabel = new QLabel();
+    m_projectLabel->setObjectName("ProjectBadge");
+    m_projectLabel->setStyleSheet(
+        "QLabel#ProjectBadge {"
+        "  background-color: rgba(128, 128, 128, 0.12);"
+        "  border: 1px solid rgba(128, 128, 128, 0.2);"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+    );
+    layout->addWidget(m_projectLabel);
 
     // 哨兵图像文件（.safe） + 浏览按钮 [3:7:0]
     auto* manifestLayout = new QHBoxLayout();
@@ -173,15 +188,7 @@ QWidget* Sentinel1ImportNode::createWidget()
     polLayout->addWidget(m_polarizationCombo, 7);
     layout->addLayout(polLayout);
 
-    // 项目名称 [3:7]
-    auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("项目名称：");
-    projectLayout->addWidget(projectLabel, 3);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_projectCombo->setEditable(false);
-    projectLayout->addWidget(m_projectCombo, 7);
-    layout->addLayout(projectLayout);
+
 
     // 目标节点 [3:7]
     auto* nodeNameLayout = new QHBoxLayout();
@@ -233,23 +240,8 @@ QWidget* Sentinel1ImportNode::createWidget()
     connect(manifestBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onManifestBrowseClicked);
     connect(podBrowse, &QPushButton::clicked, this, &Sentinel1ImportNode::onPodBrowseClicked);
 
-    // 从项目模型动态填充项目列表 (对齐 Workspace 与 Generic SAR 行为)
-    QStandardItemModel* model = projectModel();
-    if (model && model->rowCount() > 0) {
-        for (int i = 0; i < model->rowCount(); ++i) {
-            auto item = model->item(i, 0);
-            if (item) {
-                m_projectCombo->addItem(item->text());
-            }
-        }
-        // 默认选中当前活动项目
-        int index = m_projectCombo->findText(projectName());
-        if (index >= 0) {
-            m_projectCombo->setCurrentIndex(index);
-        }
-    } else {
-        m_projectCombo->addItem("未打开项目");
-    }
+    // 设置项目名称
+    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
 
     return widget;
 }

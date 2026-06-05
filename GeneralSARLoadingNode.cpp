@@ -29,7 +29,7 @@ private:
 
 GeneralSARLoadingNode::GeneralSARLoadingNode()
     : ImportNodeBase()
-    , m_projectNameEdit(nullptr)
+    , m_projectNameLabel(nullptr)
     , m_loadingNodeCombo(nullptr)
     , m_fileListWidget(nullptr)
     , m_isNewNode(true)
@@ -50,10 +50,9 @@ QWidget* GeneralSARLoadingNode::createWidget()
     projectRow->setStretch(0, 3);
     projectRow->setStretch(1, 7);
     projectRow->addWidget(new QLabel(QStringLiteral("项目名称：")));
-    m_projectNameEdit = new QLineEdit();
-    m_projectNameEdit->setReadOnly(true);
-    m_projectNameEdit->setText(projectName().isEmpty() ? QStringLiteral("未打开项目") : projectName());
-    projectRow->addWidget(m_projectNameEdit);
+    m_projectNameLabel = new QLabel();
+    m_projectNameLabel->setText(projectName().isEmpty() ? QStringLiteral("未打开项目") : projectName());
+    projectRow->addWidget(m_projectNameLabel);
     mainLayout->addLayout(projectRow);
 
     // Loading Node Row
@@ -111,7 +110,9 @@ void GeneralSARLoadingNode::refreshUI()
     if (!_widget) return;
 
     // Update project name
-    m_projectNameEdit->setText(projectName().isEmpty() ? QStringLiteral("未打开项目") : projectName());
+    if (m_projectNameLabel) {
+        m_projectNameLabel->setText(projectName().isEmpty() ? QStringLiteral("未打开项目") : projectName());
+    }
 
     QStandardItemModel* model = projectModel();
     if (!model) {
@@ -308,7 +309,7 @@ void GeneralSARLoadingNode::load(QJsonObject const &json)
     ImportNodeBase::load(json);
 
     // After calling base load, if the widget exists, we refresh it
-    if (m_projectNameEdit) {
+    if (m_projectNameLabel) {
         refreshUI();
     }
 }

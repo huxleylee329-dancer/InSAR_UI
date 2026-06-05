@@ -57,9 +57,6 @@ protected:
     QStringList previewImagePaths() const override;
 
 private:
-    // UI elements
-    QComboBox* m_projectCombo;
-    QComboBox* m_dataNodeCombo;
     QComboBox* m_masterImageCombo;
     QCheckBox* m_defaultMasterCheckBox;
     QCheckBox* m_esdCheckBox;

@@ -19,7 +19,7 @@ Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     , m_fileListWidget(nullptr)
     , m_subswathCombo(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_projectCombo(nullptr)
+    , m_projectLabel(nullptr)
     , m_manifestPaths()
     , m_importedFilePaths()
     , m_outputNodeName("S1_Batch_Import")
@@ -91,6 +91,22 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     
     mainLayout->addLayout(topSection, 4);
 
+    // Project Name Badge (Option 3: metadata banner)
+    m_projectLabel = new QLabel();
+    m_projectLabel->setObjectName("ProjectBadge");
+    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
+    m_projectLabel->setStyleSheet(
+        "QLabel#ProjectBadge {"
+        "  background-color: rgba(128, 128, 128, 0.12);"
+        "  border: 1px solid rgba(128, 128, 128, 0.2);"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+    );
+    mainLayout->addWidget(m_projectLabel);
+
     // Bottom section: configuration options
     auto* bottomSection = new QHBoxLayout();
     auto* configLayout = new QVBoxLayout();
@@ -142,33 +158,6 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     polRow->addWidget(m_polarizationCombo);
     configLayout->addLayout(polRow);
 
-    // Project Row [3:7]
-    auto* projectRow = new QHBoxLayout();
-    projectRow->setStretch(0, 3);
-    projectRow->setStretch(1, 7);
-    projectRow->addWidget(new QLabel("项目名称："));
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_projectCombo->setEditable(false);
-
-    // Populate project list from model (Align with Workspace behavior)
-    QStandardItemModel* model = projectModel();
-    if (model && model->rowCount() > 0) {
-        for (int i = 0; i < model->rowCount(); ++i) {
-            auto item = model->item(i, 0);
-            if (item) {
-                m_projectCombo->addItem(item->text());
-            }
-        }
-        // Set current project as default selection
-        int index = m_projectCombo->findText(projectName());
-        if (index >= 0) m_projectCombo->setCurrentIndex(index);
-    } else {
-        m_projectCombo->addItem("未打开项目");
-    }
-
-    projectRow->addWidget(m_projectCombo);
-    configLayout->addLayout(projectRow);
 
     // Output node name row [3:7]
     auto* nameRow = new QHBoxLayout();

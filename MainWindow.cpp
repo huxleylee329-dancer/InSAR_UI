@@ -443,8 +443,27 @@ void MainWindow::Loading(QString Data_path, QString ImageType)
 }
 void MainWindow::open_from_project_file(QString str)
 {
-    if (!maybeSave())
+    if (str.isEmpty())
         return;
+
+    QFileInfo newFileInfo(str);
+    QFileInfo currentFileInfo(m_projectPath);
+    bool isSameProject = (!m_projectPath.isEmpty() && newFileInfo.absoluteFilePath() == currentFileInfo.absoluteFilePath());
+
+    if (isSameProject) {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            QStringLiteral("重新加载提示"),
+            QStringLiteral("该项目已在当前窗口中打开，是否重新加载？\n(注意：未保存的修改将会丢失)"),
+            QMessageBox::Yes | QMessageBox::No
+        );
+        if (reply == QMessageBox::No) {
+            return;
+        }
+    } else {
+        if (!maybeSave())
+            return;
+    }
 
     // 关闭当前工程（不保存），避免两个工程状态共存
     closeCurrentProject();

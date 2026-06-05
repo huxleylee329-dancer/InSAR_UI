@@ -63,8 +63,6 @@ protected:
 
 private:
     // UI elements
-    QComboBox* m_projectCombo;
-    QComboBox* m_dataNodeCombo[2];
     QSpinBox* m_indexSpins[2];
     QLineEdit* m_outputNodeNameEdit;
 

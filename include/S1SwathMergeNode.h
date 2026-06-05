@@ -60,9 +60,6 @@ protected:
     bool validateAndRestoreOutput() override;
 
 private:
-    // UI elements
-    QComboBox* m_projectCombo;
-    QComboBox* m_dataNodeCombo[3];
     QSpinBox* m_indexSpins[3];
     QLineEdit* m_outputNodeNameEdit;
 

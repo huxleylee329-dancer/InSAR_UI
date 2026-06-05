@@ -71,7 +71,7 @@ private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QComboBox* m_projectCombo;  // Target project dropdown (read-only)
+    QLabel* m_projectLabel;  // Target project label (read-only)
     QPushButton* m_importButton;  // Kept for compatibility, not used in UI
     QPushButton* m_stopButton;  // Kept for compatibility, not used in UI
 

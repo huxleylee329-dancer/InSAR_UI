@@ -26,8 +26,6 @@ namespace QtNodes {
 DemNode::DemNode()
     : ExecutableNodeDelegateModel()
     , _widget(nullptr)
-    , m_projectCombo(nullptr)
-    , m_dataNodeCombo(nullptr)
     , m_methodCombo(nullptr)
     , m_timesLabel(nullptr)
     , m_timesEdit(nullptr)
@@ -197,34 +195,7 @@ void DemNode::createWidget()
 
     const int labelWidth = 100;
 
-    // 1. 选择工程
-    auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("选择工程");
-    projectLabel->setFixedWidth(labelWidth);
-    projectLayout->addWidget(projectLabel);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    m_projectCombo->addItem(projectName().isEmpty() ? "未打开项目" : projectName());
-    projectLayout->addWidget(m_projectCombo);
-    layout->addLayout(projectLayout);
 
-    // 2. 数据节点
-    auto* dataNodeLayout = new QHBoxLayout();
-    QLabel* dataNodeLabel = new QLabel("数据节点");
-    dataNodeLabel->setFixedWidth(labelWidth);
-    dataNodeLayout->addWidget(dataNodeLabel);
-    m_dataNodeCombo = new QComboBox();
-    m_dataNodeCombo->setEditable(false);
-    if (m_inputData)
-    {
-        m_dataNodeCombo->addItem(m_inputData->nodeName());
-    }
-    else
-    {
-        m_dataNodeCombo->addItem("等待输入");
-    }
-    dataNodeLayout->addWidget(m_dataNodeCombo);
-    layout->addLayout(dataNodeLayout);
 
     // 3. DEM 方法
     auto* methodLayout = new QHBoxLayout();
@@ -328,31 +299,6 @@ void DemNode::updateWidgetSize()
 
 void DemNode::updateLabels()
 {
-    if (m_projectCombo)
-    {
-        QString projName = projectName();
-        if (!projName.isEmpty())
-        {
-            if (m_projectCombo->count() == 0 || m_projectCombo->itemText(0) != projName)
-            {
-                m_projectCombo->clear();
-                m_projectCombo->addItem(projName);
-            }
-        }
-    }
-
-    if (m_dataNodeCombo)
-    {
-        m_dataNodeCombo->clear();
-        if (m_inputData)
-        {
-            m_dataNodeCombo->addItem(m_inputData->nodeName());
-        }
-        else
-        {
-            m_dataNodeCombo->addItem("等待输入");
-        }
-    }
 }
 
 QString DemNode::generateDefaultOutputName() const

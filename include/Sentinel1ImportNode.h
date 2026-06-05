@@ -83,7 +83,7 @@ private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
     QLineEdit* m_outputFileNameEdit;  // 目标文件名输入框
-    QComboBox* m_projectCombo;      // 目标工程下拉框
+    QLabel* m_projectLabel;      // 目标工程标签
     QLineEdit* m_manifestEdit;
     QLineEdit* m_podEdit;
     QComboBox* m_subswathCombo;

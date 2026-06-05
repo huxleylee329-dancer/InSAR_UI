@@ -17,7 +17,7 @@ GenericSARBatchImportNode::GenericSARBatchImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
-    , m_projectCombo(nullptr)
+    , m_projectLabel(nullptr)
     , m_task(nullptr)
 {
 }
@@ -64,37 +64,25 @@ QWidget* GenericSARBatchImportNode::createWidget()
 
     mainLayout->addLayout(topSection, 4);
 
+    // Project Name Badge (Option 3: metadata banner)
+    m_projectLabel = new QLabel();
+    m_projectLabel->setObjectName("ProjectBadge");
+    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
+    m_projectLabel->setStyleSheet(
+        "QLabel#ProjectBadge {"
+        "  background-color: rgba(128, 128, 128, 0.12);"
+        "  border: 1px solid rgba(128, 128, 128, 0.2);"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+    );
+    mainLayout->addWidget(m_projectLabel);
+
     // Bottom section: configuration options
     auto* bottomSection = new QHBoxLayout();
     auto* configLayout = new QVBoxLayout();
-
-    // Project Row [3:7]
-    auto* projectRow = new QHBoxLayout();
-    projectRow->setStretch(0, 3);
-    projectRow->setStretch(1, 7);
-    projectRow->addWidget(new QLabel("项目名称："));
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_projectCombo->setEditable(false);
-
-    // Populate project list from model (Align with Workspace behavior)
-    QStandardItemModel* model = projectModel();
-    if (model && model->rowCount() > 0) {
-        for (int i = 0; i < model->rowCount(); ++i) {
-            auto item = model->item(i, 0);
-            if (item) {
-                m_projectCombo->addItem(item->text());
-            }
-        }
-        // Set current project as default selection
-        int index = m_projectCombo->findText(projectName());
-        if (index >= 0) m_projectCombo->setCurrentIndex(index);
-    } else {
-        m_projectCombo->addItem("未打开项目");
-    }
-
-    projectRow->addWidget(m_projectCombo);
-    configLayout->addLayout(projectRow);
 
     // Node Row [3:7]
     auto* nodeRow = new QHBoxLayout();
@@ -176,6 +164,7 @@ void GenericSARBatchImportNode::executeImport()
         pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + importNameList[i] + "." + suffix);
         pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + importNameList[i] + ".jpg");
     }
+    pathsToCheck.removeDuplicates();
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), getOutputNodeName(), pathsToCheck, nullptr);
     if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
@@ -399,11 +388,10 @@ void GenericSARBatchImportNode::onImportFinished()
         m_importedFilePaths.append(filePath);
     }
 
-    auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, outputNodeName);
-    setOutputData(0, outputData);
+    m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+    setOutputData(0, m_imageInfoData);
     Q_EMIT dataUpdated(0);
 
-    m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
     setOutputData(1, m_imageInfoData);
     Q_EMIT dataUpdated(1);
 
@@ -486,7 +474,7 @@ NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex po
     if (portType == PortType::Out)
     {
         if (portIndex == 0)
-            return NodeDataType{"imported_file", "Imported Files"};
+            return NodeDataType{"image_info", "Image Info"};
         else if (portIndex == 1)
             return NodeDataType{"image_info", "Image Info"};
     }
@@ -557,9 +545,8 @@ bool GenericSARBatchImportNode::validateAndRestoreOutput()
             }
         }
         if (!m_importedFilePaths.isEmpty()) {
-            auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
-            setOutputData(0, outputData);
             m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePaths);
+            setOutputData(0, m_imageInfoData);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(0);
             Q_EMIT dataUpdated(1);

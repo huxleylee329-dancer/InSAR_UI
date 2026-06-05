@@ -26,8 +26,6 @@ namespace QtNodes {
 InterferometricFormationNode::InterferometricFormationNode()
     : ExecutableNodeDelegateModel()
     , _widget(nullptr)
-    , m_projectCombo(nullptr)
-    , m_dataNodeCombo(nullptr)
     , m_masterImageCombo(nullptr)
     , m_defaultMasterCheckBox(nullptr)
     , m_deflatCheckBox(nullptr)
@@ -243,34 +241,7 @@ void InterferometricFormationNode::createWidget()
         }
     };
 
-    // 1. 选择工程
-    auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("选择工程");
-    projectLabel->setFixedWidth(100);
-    projectLayout->addWidget(projectLabel);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    m_projectCombo->addItem(projectName().isEmpty() ? "未打开项目" : projectName());
-    projectLayout->addWidget(m_projectCombo);
-    layout->addLayout(projectLayout);
 
-    // 2. 数据节点
-    auto* dataNodeLayout = new QHBoxLayout();
-    QLabel* dataNodeLabel = new QLabel("数据节点");
-    dataNodeLabel->setFixedWidth(100);
-    dataNodeLayout->addWidget(dataNodeLabel);
-    m_dataNodeCombo = new QComboBox();
-    m_dataNodeCombo->setEditable(false);
-    if (m_inputData)
-    {
-        m_dataNodeCombo->addItem(m_inputData->nodeName());
-    }
-    else
-    {
-        m_dataNodeCombo->addItem("等待输入");
-    }
-    dataNodeLayout->addWidget(m_dataNodeCombo);
-    layout->addLayout(dataNodeLayout);
 
     // 3. 默认首张图像为主图像
     auto* defaultMasterLayout = new QHBoxLayout();
@@ -513,32 +484,6 @@ void InterferometricFormationNode::onCoherenceStateChanged(int state)
 
 void InterferometricFormationNode::updateLabels()
 {
-    if (m_projectCombo)
-    {
-        QString projName = projectName();
-        if (!projName.isEmpty())
-        {
-            if (m_projectCombo->count() == 0 || m_projectCombo->itemText(0) != projName)
-            {
-                m_projectCombo->clear();
-                m_projectCombo->addItem(projName);
-            }
-        }
-    }
-
-    if (m_dataNodeCombo)
-    {
-        m_dataNodeCombo->clear();
-        if (m_inputData)
-        {
-            m_dataNodeCombo->addItem(m_inputData->nodeName());
-        }
-        else
-        {
-            m_dataNodeCombo->addItem("等待输入");
-        }
-    }
-
     updateMasterImageCombo();
 }
 

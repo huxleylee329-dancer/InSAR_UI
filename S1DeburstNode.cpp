@@ -21,8 +21,6 @@ namespace QtNodes {
 
 S1DeburstNode::S1DeburstNode()
     : ExecutableNodeDelegateModel()
-    , m_projectCombo(nullptr)
-    , m_dataNodeCombo(nullptr)
     , m_outputNodeNameEdit(nullptr)
     , m_inputData(nullptr)
     , m_outputData(nullptr)
@@ -170,35 +168,7 @@ void S1DeburstNode::createWidget()
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(6);
 
-    // 选择工程 [1:1] - 设定 QLabel 的固定宽度，确保对齐
-    auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("选择工程");
-    projectLabel->setFixedWidth(80);
-    projectLayout->addWidget(projectLabel);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    m_projectCombo->addItem(projectName().isEmpty() ? "未打开项目" : projectName());
-    projectLayout->addWidget(m_projectCombo);
-    layout->addLayout(projectLayout);
 
-    // 数据节点 [1:1] - 设定 QLabel 的固定宽度
-    auto* dataNodeLayout = new QHBoxLayout();
-    QLabel* dataNodeLabel = new QLabel("数据节点");
-    dataNodeLabel->setFixedWidth(80);
-    dataNodeLayout->addWidget(dataNodeLabel);
-    m_dataNodeCombo = new QComboBox();
-    m_dataNodeCombo->setEditable(false);
-    if (m_inputData)
-    {
-        QString nodeName = m_inputData->nodeName();
-        m_dataNodeCombo->addItem(nodeName);
-    }
-    else
-    {
-        m_dataNodeCombo->addItem("等待输入");
-    }
-    dataNodeLayout->addWidget(m_dataNodeCombo);
-    layout->addLayout(dataNodeLayout);
 
     // 目标节点名 [1:1] - 设定 QLabel 的固定宽度
     auto invalidateNodeData = [this]() {
@@ -240,34 +210,6 @@ void S1DeburstNode::createWidget()
 
 void S1DeburstNode::updateLabels()
 {
-    // Update project combo
-    if (m_projectCombo)
-    {
-        QString projName = projectName();
-        if (!projName.isEmpty())
-        {
-            if (m_projectCombo->count() == 0 || m_projectCombo->itemText(0) != projName)
-            {
-                m_projectCombo->clear();
-                m_projectCombo->addItem(projName);
-            }
-        }
-    }
-
-    // Update data node combo
-    if (m_dataNodeCombo)
-    {
-        m_dataNodeCombo->clear();
-        if (m_inputData)
-        {
-            QString nodeName = m_inputData->nodeName();
-            m_dataNodeCombo->addItem(nodeName);
-        }
-        else
-        {
-            m_dataNodeCombo->addItem("等待输入");
-        }
-    }
 }
 
 QString S1DeburstNode::generateDefaultOutputName() const

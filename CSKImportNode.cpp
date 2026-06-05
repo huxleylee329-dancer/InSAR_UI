@@ -13,7 +13,7 @@ CSKImportNode::CSKImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
-    , m_projectCombo(nullptr)
+    , m_projectLabel(nullptr)
     , m_importButton(nullptr)
     , m_stopButton(nullptr)
     , m_filePaths()
@@ -82,23 +82,25 @@ QWidget* CSKImportNode::createWidget()
 
     mainLayout->addLayout(topSection, 4);
 
+    // Project Name Badge (Option 3: metadata banner)
+    m_projectLabel = new QLabel();
+    m_projectLabel->setObjectName("ProjectBadge");
+    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
+    m_projectLabel->setStyleSheet(
+        "QLabel#ProjectBadge {"
+        "  background-color: rgba(128, 128, 128, 0.12);"
+        "  border: 1px solid rgba(128, 128, 128, 0.2);"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+    );
+    mainLayout->addWidget(m_projectLabel);
+
     // Bottom section: configuration options - stretch 4
     auto* bottomSection = new QHBoxLayout();
     auto* configLayout = new QVBoxLayout();
-
-    // Target project [3:7]
-    auto* projectRow = new QHBoxLayout();
-    projectRow->setStretch(0, 3);
-    projectRow->setStretch(1, 7);
-    projectRow->addWidget(new QLabel("目标工程："));
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    if (!projectName().isEmpty())
-    {
-        m_projectCombo->addItem(projectName());
-    }
-    projectRow->addWidget(m_projectCombo);
-    configLayout->addLayout(projectRow);
 
     // Target node [3:7]
     auto* nodeRow = new QHBoxLayout();

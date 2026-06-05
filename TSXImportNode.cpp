@@ -14,7 +14,7 @@ TSXImportNode::TSXImportNode()
     , m_outputFileNameEdit(nullptr)
     , m_xmlEdit(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_projectCombo(nullptr)
+    , m_projectLabel(nullptr)
     , m_xmlPath()
     , m_importedFilePath()
     , m_outputFileName()
@@ -63,6 +63,22 @@ QWidget* TSXImportNode::createWidget()
         invalidateExecution();
     };
 
+    // Project Name Badge (Option 3: metadata banner)
+    m_projectLabel = new QLabel();
+    m_projectLabel->setObjectName("ProjectBadge");
+    m_projectLabel->setText(QStringLiteral(" 📁 当前工程: %1").arg(projectName().isEmpty() ? "未打开项目" : projectName()));
+    m_projectLabel->setStyleSheet(
+        "QLabel#ProjectBadge {"
+        "  background-color: rgba(128, 128, 128, 0.12);"
+        "  border: 1px solid rgba(128, 128, 128, 0.2);"
+        "  border-radius: 4px;"
+        "  padding: 4px 8px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+    );
+    layout->addWidget(m_projectLabel);
+
     // XML file row: Label:LineEdit:Button
     auto* xmlRow = new QHBoxLayout();
     xmlRow->addWidget(new QLabel("TSX/TDX图像（.xml）："));
@@ -83,19 +99,7 @@ QWidget* TSXImportNode::createWidget()
     xmlRow->addWidget(xmlBrowse);
     layout->addLayout(xmlRow);
 
-    // Target project row [3:7]
-    auto* projectRow = new QHBoxLayout();
-    projectRow->setStretch(0, 3);
-    projectRow->setStretch(1, 7);
-    projectRow->addWidget(new QLabel("目标工程："));
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    if (!projectName().isEmpty())
-    {
-        m_projectCombo->addItem(projectName());
-    }
-    projectRow->addWidget(m_projectCombo);
-    layout->addLayout(projectRow);
+
 
     // Target node row [3:7]
     auto* nodeRow = new QHBoxLayout();

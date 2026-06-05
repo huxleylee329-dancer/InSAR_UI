@@ -84,7 +84,7 @@ private:
     QListWidget* m_fileListWidget;
     QComboBox* m_subswathCombo;
     QComboBox* m_polarizationCombo;
-    QComboBox* m_projectCombo;
+    QLabel* m_projectLabel;
 
     // State
     QStringList m_manifestPaths;

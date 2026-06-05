@@ -26,8 +26,6 @@ namespace QtNodes {
 UnwrapNode::UnwrapNode()
     : ExecutableNodeDelegateModel()
     , _widget(nullptr)
-    , m_projectCombo(nullptr)
-    , m_dataNodeCombo(nullptr)
     , m_methodCombo(nullptr)
     , m_coherenceLabel(nullptr)
     , m_coherenceEdit(nullptr)
@@ -180,9 +178,11 @@ void UnwrapNode::createWidget()
     _widget = new QWidget();
     _widget->setObjectName("NodeEmbeddedWidget");
     _widget->setFixedWidth(300);
-    auto* layout = new QVBoxLayout(_widget);
-    layout->setContentsMargins(6, 6, 6, 6);
-    layout->setSpacing(6);
+    auto* formLayout = new QFormLayout(_widget);
+    formLayout->setContentsMargins(6, 6, 6, 6);
+    formLayout->setSpacing(6);
+    formLayout->setLabelAlignment(Qt::AlignLeft);
+    formLayout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
 
     auto invalidateNodeData = [this]() {
         if (m_outputData) m_outputData.reset();
@@ -195,42 +195,7 @@ void UnwrapNode::createWidget()
         }
     };
 
-    const int labelWidth = 100;
-
-    // 1. 选择工程
-    auto* projectLayout = new QHBoxLayout();
-    QLabel* projectLabel = new QLabel("选择工程");
-    projectLabel->setFixedWidth(labelWidth);
-    projectLayout->addWidget(projectLabel);
-    m_projectCombo = new QComboBox();
-    m_projectCombo->setEditable(false);
-    m_projectCombo->addItem(projectName().isEmpty() ? "未打开项目" : projectName());
-    projectLayout->addWidget(m_projectCombo);
-    layout->addLayout(projectLayout);
-
-    // 2. 数据节点
-    auto* dataNodeLayout = new QHBoxLayout();
-    QLabel* dataNodeLabel = new QLabel("数据节点");
-    dataNodeLabel->setFixedWidth(labelWidth);
-    dataNodeLayout->addWidget(dataNodeLabel);
-    m_dataNodeCombo = new QComboBox();
-    m_dataNodeCombo->setEditable(false);
-    if (m_inputData)
-    {
-        m_dataNodeCombo->addItem(m_inputData->nodeName());
-    }
-    else
-    {
-        m_dataNodeCombo->addItem("等待输入");
-    }
-    dataNodeLayout->addWidget(m_dataNodeCombo);
-    layout->addLayout(dataNodeLayout);
-
     // 3. 解缠方法
-    auto* methodLayout = new QHBoxLayout();
-    QLabel* methodLabel = new QLabel("解缠方法");
-    methodLabel->setFixedWidth(labelWidth);
-    methodLayout->addWidget(methodLabel);
     m_methodCombo = new QComboBox();
     m_methodCombo->setEditable(false);
     m_methodCombo->addItem("SPD Guided");
@@ -252,14 +217,9 @@ void UnwrapNode::createWidget()
             invalidateNodeData();
         }
     });
-    methodLayout->addWidget(m_methodCombo);
-    layout->addLayout(methodLayout);
 
     // 4. 相干系数阈值
-    auto* coherenceLayout = new QHBoxLayout();
     m_coherenceLabel = new QLabel("相干系数阈值");
-    m_coherenceLabel->setFixedWidth(labelWidth);
-    coherenceLayout->addWidget(m_coherenceLabel);
     m_coherenceEdit = new QLineEdit();
     m_coherenceEdit->setText(QString::number(m_coherenceThreshold));
     connect(m_coherenceEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
@@ -273,14 +233,8 @@ void UnwrapNode::createWidget()
             invalidateNodeData();
         }
     });
-    coherenceLayout->addWidget(m_coherenceEdit);
-    layout->addLayout(coherenceLayout);
 
     // 5. 目标节点
-    auto* outputLayout = new QHBoxLayout();
-    QLabel* outputLabel = new QLabel("目标节点");
-    outputLabel->setFixedWidth(labelWidth);
-    outputLayout->addWidget(outputLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
     m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
@@ -296,10 +250,10 @@ void UnwrapNode::createWidget()
             invalidateNodeData();
         }
     });
-    outputLayout->addWidget(m_outputNodeNameEdit);
-    layout->addLayout(outputLayout);
 
-    layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+    formLayout->addRow("解缠方法", m_methodCombo);
+    formLayout->addRow(m_coherenceLabel, m_coherenceEdit);
+    formLayout->addRow("目标节点", m_outputNodeNameEdit);
 
     onMethodChanged(m_method - 1);
     updateLabels();
@@ -327,31 +281,6 @@ void UnwrapNode::updateWidgetSize()
 
 void UnwrapNode::updateLabels()
 {
-    if (m_projectCombo)
-    {
-        QString projName = projectName();
-        if (!projName.isEmpty())
-        {
-            if (m_projectCombo->count() == 0 || m_projectCombo->itemText(0) != projName)
-            {
-                m_projectCombo->clear();
-                m_projectCombo->addItem(projName);
-            }
-        }
-    }
-
-    if (m_dataNodeCombo)
-    {
-        m_dataNodeCombo->clear();
-        if (m_inputData)
-        {
-            m_dataNodeCombo->addItem(m_inputData->nodeName());
-        }
-        else
-        {
-            m_dataNodeCombo->addItem("等待输入");
-        }
-    }
 }
 
 QString UnwrapNode::generateDefaultOutputName() const
