@@ -195,7 +195,7 @@ private:
     QueueManagerWidget *m_queueManager;
 
     // Toolbar components
-    QToolBar *m_toolbar;
+    QToolBar *m_toolbar = nullptr;
     QAction *m_actionNew;
     QAction *m_actionExport;
     QAction *m_actionImport;

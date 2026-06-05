@@ -88,7 +88,9 @@ void TreeView::NewProject(QString name, QString save_path)
 void TreeView::updateTreeIcons(const QString &theme)
 {
     if (!model) return;
-    QColor iconColor = themeIconColor(theme == "dark");
+    bool isDark = theme == "dark";
+    QColor iconColor = themeIconColor(isDark);
+    QColor selectedColor = isDark ? QColor(0, 95, 172) : QColor(255, 255, 255);
 
     std::function<void(QStandardItem*)> updateItem = [&](QStandardItem *item) {
         if (!item) return;
@@ -97,11 +99,11 @@ void TreeView::updateTreeIcons(const QString &theme)
         bool hasChildren = item->hasChildren();
 
         if (isProject) {
-            item->setIcon(createColoredIcon(PROJECT_ICON, iconColor));
+            item->setIcon(createColoredIcon(PROJECT_ICON, iconColor, selectedColor));
         } else if (hasChildren) {
-            item->setIcon(createColoredIcon(FOLDER_ICON, iconColor));
+            item->setIcon(createColoredIcon(FOLDER_ICON, iconColor, selectedColor));
         } else {
-            item->setIcon(createColoredIcon(IMAGEDATA_ICON, iconColor));
+            item->setIcon(createColoredIcon(IMAGEDATA_ICON, iconColor, selectedColor));
         }
 
         for (int c = 0; c < item->rowCount(); ++c) {
@@ -122,17 +124,19 @@ void TreeView::updateTreeIcons(const QString &theme)
 
 void TreeView::mouseDoubleClickEvent(QMouseEvent * event)
 {
-    if (event->button() == Qt::LeftButton) {
-        if (model->rowCount() >= 1)
-        {
-            emit sendindex(currentIndex());
+    QModelIndex index = currentIndex();
+    QStandardItem* item = model->itemFromIndex(index);
+    if (item && !item->hasChildren()) {
+        if (event->button() == Qt::LeftButton) {
+            emit sendindex(index);
         }
-	}
-    else
-    {
-        
+    } else {
+        if (event->button() == Qt::LeftButton) {
+            setExpanded(index, !isExpanded(index));
+            event->accept();
+        }
     }
- }
+}
 
 void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
 {
@@ -485,4 +489,14 @@ void TreeView::DeleteNode()
 
     model->removeRow(nodeIndex.row(), nodeIndex.parent());
     emit update();
+}
+
+void TreeView::rowsInserted(const QModelIndex &parent, int start, int end)
+{
+    QTreeView::rowsInserted(parent, start, end);
+    
+    // Read current theme and colorize items automatically
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    QString theme = settings.value("Appearance/Theme", "light").toString();
+    updateTreeIcons(theme);
 }

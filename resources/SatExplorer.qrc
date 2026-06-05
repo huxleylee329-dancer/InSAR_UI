@@ -18,7 +18,6 @@
         <file>svg/warning.svg</file>
         <file>svg/x-circle.svg</file>
         <file>svg/block.svg</file>
-        <file>svg/add.svg</file>
         <file>svg/save.svg</file>
         <file>svg/folder_open.svg</file>
         <file>svg/star.svg</file>
@@ -43,6 +42,8 @@
         <file>svg/time_series.svg</file>
         <file>svg/hand.svg</file>
         <file>svg/zoom.svg</file>
+        <file>svg/zoom_out.svg</file>
+        <file>svg/zoom_fit.svg</file>
         <file>svg/cursor_down.svg</file>
         <file>svg/cursor_up.svg</file>
         <file>svg/mark.svg</file>
@@ -56,16 +57,26 @@
         <file>svg/swath_merge.svg</file>
         <file>svg/open_project.svg</file>
         <file>svg/recen_open.svg</file>
-        <file>svg/saveall.svg</file>
         <file>svg/saveas.svg</file>
         <file>svg/quit.svg</file>
         <file>svg/project.svg</file>
-        <file>svg/quit2.svg</file>
-        <file>svg/save1.svg</file>
-        <file>svg/saveas2.svg</file>
         <file>svg/new_project.svg</file>
         <file>svg/flow_editor.svg</file>
         <file>svg/close.svg</file>
+        <file>svg/enhancement.svg</file>
+        <file>svg/filter.svg</file>
+        <file>svg/clutter_suppress.svg</file>
+        <file>svg/radar.svg</file>
+        <file>svg/target_detect.svg</file>
+        <file>svg/batch_detect.svg</file>
+        <file>svg/chart.svg</file>
+        <file>svg/interferogram.svg</file>
+        <file>svg/unwrap.svg</file>
+        <file>svg/palette.svg</file>
+        <file>svg/chevron_right_light.svg</file>
+        <file>svg/chevron_down_light.svg</file>
+        <file>svg/chevron_right_dark.svg</file>
+        <file>svg/chevron_down_dark.svg</file>
         <!-- Stylesheets -->
         <file>stylesheets/application.qss</file>
         <file>stylesheets/widgets.qss</file>

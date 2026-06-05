@@ -14,6 +14,7 @@ class ColorBar;
 class QProgressDialog;
 class XMLFile;
 class QStandardItemModel;
+class ImageView;
 
 /**
  * @brief 传统工作区界面
@@ -81,6 +82,10 @@ protected:
 
 private:
     void setupUi();
+    void setupToolbar();
+    ImageView* activeImageView() const;
+
+    QToolBar *m_toolbar = nullptr;
 
     // All the original components from MainWindow
     QSplitter *m_splitter2 = nullptr;

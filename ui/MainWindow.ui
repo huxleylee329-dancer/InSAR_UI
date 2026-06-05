@@ -48,8 +48,10 @@
     </property>
     <addaction name="actionNew"/>
     <addaction name="actionOpen"/>
+    <addaction name="separator"/>
     <addaction name="actionSave"/>
     <addaction name="actionSave_as"/>
+    <addaction name="separator"/>
     <addaction name="actionClose"/>
     <addaction name="actionQuit"/>
    </widget>
@@ -81,7 +83,7 @@
       </sizepolicy>
      </property>
      <property name="title">
-      <string>import</string>
+      <string>Import</string>
      </property>
      <addaction name="actionTSX"/>
      <addaction name="actionSentinel_1"/>
@@ -98,9 +100,11 @@
      <addaction name="actionS1_swath_merge"/>
     </widget>
     <addaction name="menuImport"/>
+    <addaction name="separator"/>
     <addaction name="actionCut"/>
     <addaction name="actionRegistration"/>
     <addaction name="actiongeocode"/>
+    <addaction name="separator"/>
     <addaction name="menuSentinel1_Tool"/>
    </widget>
    <widget class="QMenu" name="Help">
@@ -152,16 +156,16 @@
      </property>
      <addaction name="actionGenericSAR"/>
     </widget>
-    <widget class="QMenu" name="menuDectection">
+    <widget class="QMenu" name="menuDetection">
      <property name="title">
-      <string>Dectection</string>
+      <string>Detection</string>
      </property>
      <addaction name="actionTargetDetection"/>
      <addaction name="actionBatchTargetRecognition"/>
     </widget>
     <addaction name="menuImport_2"/>
     <addaction name="menuImageEnhancement"/>
-    <addaction name="menuDectection"/>
+    <addaction name="menuDetection"/>
     <addaction name="actionEvaluation"/>
    </widget>
    <action name="actionSpeckleDenoise">
@@ -227,7 +231,7 @@
   </action>
   <action name="actionRegistration">
    <property name="text">
-    <string>coregistration</string>
+    <string>Coregistration</string>
    </property>
   </action>
   <action name="actionInterferometric_Formation">
@@ -282,7 +286,7 @@
   </action>
   <action name="actionSLC_deramp">
    <property name="text">
-    <string>SLC_deramp</string>
+    <string>SLC Deramp</string>
    </property>
   </action>
   <action name="actionBaseline_Formation">
@@ -302,12 +306,12 @@
   </action>
   <action name="actionreference_re_selection">
    <property name="text">
-    <string>reference re-selection</string>
+    <string>Reference Reselection</string>
    </property>
   </action>
   <action name="actionExport_KML">
    <property name="text">
-    <string>export as kml</string>
+    <string>Export as KML</string>
    </property>
   </action>
   <action name="actiongeocode">
@@ -317,12 +321,12 @@
   </action>
   <action name="actionS1_frame_merge">
    <property name="text">
-    <string>S1 frame merge</string>
+    <string>S1 Frame Merge</string>
    </property>
   </action>
   <action name="actionS1_swath_merge">
    <property name="text">
-    <string>S1 swath merge</string>
+    <string>S1 Swath Merge</string>
    </property>
   </action>
   <action name="actionCOSMOS_SkyMed">

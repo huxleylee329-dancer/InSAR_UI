@@ -124,9 +124,30 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionS1_frame_merge",           ":/SatExplorer/svg/frame_merge.svg"},
     {"actionS1_swath_merge",           ":/SatExplorer/svg/swath_merge.svg"},
     {"actionNodeEditor",               ":/SatExplorer/svg/flow_editor.svg"},
+    {"actionCleanOrphanedFiles",       ":/SatExplorer/svg/delete_icon.svg"},
+    {"actionDEM",                      ":/SatExplorer/svg/dem.svg"},
+    {"actionGenericSAR",               ":/SatExplorer/svg/imagedata.svg"},
+    {"actionTSX",                      ":/SatExplorer/svg/import.svg"},
+    {"actionSentinel_1",               ":/SatExplorer/svg/import.svg"},
+    {"actionCOSMOS_SkyMed",            ":/SatExplorer/svg/import.svg"},
+    {"actionALOS_2",                   ":/SatExplorer/svg/import.svg"},
+    {"actionSpeckleDenoise",           ":/SatExplorer/svg/filter.svg"},
+    {"actionDenoise",                  ":/SatExplorer/svg/filter.svg"},
+    {"actionClutterSuppression",       ":/SatExplorer/svg/clutter_suppress.svg"},
+    {"actionTargetDetection",          ":/SatExplorer/svg/target_detect.svg"},
+    {"actionBatchTargetRecognition",   ":/SatExplorer/svg/batch_detect.svg"},
+    {"actionEvaluation",               ":/SatExplorer/svg/chart.svg"},
+    {"actionInterferometric_Formation",":/SatExplorer/svg/interferogram.svg"},
+    {"actionUnwrap",                   ":/SatExplorer/svg/unwrap.svg"},
+    {"actionBaseline_Preview",         ":/SatExplorer/svg/view.svg"},
     // QMenu icons
     {"menuImport",                     ":/SatExplorer/svg/import.svg"},
     {"menuSBAS",                       ":/SatExplorer/svg/baseline_formation.svg"},
+    {"menuSentinel1_Tool",             ":/SatExplorer/svg/toolbox.svg"},
+    {"menuImport_2",                   ":/SatExplorer/svg/import.svg"},
+    {"menuImageEnhancement",           ":/SatExplorer/svg/enhancement.svg"},
+    {"menuDetection",                  ":/SatExplorer/svg/radar.svg"},
+    {"menuTheme",                      ":/SatExplorer/svg/palette.svg"},
 };
 
 MainWindow::MainWindow(QWidget* parent)
@@ -181,16 +202,27 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     QSettings settings("Config.ini", QSettings::IniFormat);
     m_currentTheme = settings.value("Appearance/Theme", "light").toString();
 
-    // 创建最近打开子菜单并插入文件菜单
+    // 创建最近打开子菜单并插入文件菜单（插入在第一个分隔线之前，使其与“新建/打开”归为一组）
     m_recentMenu = new QMenu("最近打开", this);
-    ui.File->insertMenu(ui.actionSave, m_recentMenu);
-
-    // Apply menu icons after m_recentMenu is created
-    applyMenuIcons(m_currentTheme == "dark");
-    updateRecentMenu();
+    QAction* firstSep = nullptr;
+    for (QAction* action : ui.File->actions()) {
+        if (action->isSeparator()) {
+            firstSep = action;
+            break;
+        }
+    }
+    if (firstSep) {
+        ui.File->insertMenu(firstSep, m_recentMenu);
+    } else {
+        ui.File->insertMenu(ui.actionSave, m_recentMenu);
+    }
 
     // Setup theme menu (after setting m_currentTheme)
     setupThemeMenu();
+
+    // Apply menu icons after m_recentMenu is created and setupThemeMenu is done
+    applyMenuIcons(m_currentTheme == "dark");
+    updateRecentMenu();
     
     // Connect signals/slots
     connect(m_workspaceUI->treeView(), SIGNAL(sendindex(QModelIndex)), this, SLOT(ShowImage(QModelIndex)));
@@ -1533,22 +1565,63 @@ void MainWindow::onThemeFusion()
 
 void MainWindow::applyMenuIcons(bool isDark)
 {
-    QColor color = themeIconColor(isDark);
+    auto getActionSemanticColor = [](const QString& name, bool isDark) -> QColor {
+        // 5. Red (Safety & Termination)
+        if (name == "actionQuit" || name == "actionCleanOrphanedFiles") {
+            return isDark ? QColor("#FFB4AB") : QColor("#BA1A1A");
+        }
+        // 2. Green/Teal (Import/Export/Geocoding/Evaluation/KML)
+        if (name.contains("Import") || name.contains("Export") || name == "actionEvaluation" ||
+            name == "actionTSX" || name == "actionSentinel_1" || name == "actionCOSMOS_SkyMed" ||
+            name == "actionALOS_2" || name == "actionGenericSAR" || name == "actionExport_KML" ||
+            name == "actiongeocode" || name == "menuImport" || name == "menuImport_2") {
+            return isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
+        }
+        // 4. Amber/Orange (Filtering/Denoising/Unwrap/DEM)
+        if (name.contains("Denoise") || name == "actionClutterSuppression" ||
+            name == "actionUnwrap" || name == "actionDEM" || name == "actionSLC_deramp") {
+            return isDark ? QColor("#FFB95B") : QColor("#A85C00");
+        }
+        // 3. Purple (Heavy InSAR/SAR calculations & AI detection)
+        if (name == "actionCut" || name == "actionRegistration" || name.contains("Geocoding") ||
+            name.contains("merge") || name.contains("Deburst") || name == "actionInterferometric_Formation" ||
+            name == "menuSBAS" || name == "actionBaseline_Formation" || name == "actionSBAS_deformation" ||
+            name == "actionreference_re_selection" || name == "actionDeformation_Preview" ||
+            name == "actionBaseline_Preview" || name == "menuSentinel1_Tool" || name == "menuImageEnhancement" ||
+            name == "menuDetection" || name == "actionTargetDetection" || name == "actionBatchTargetRecognition") {
+            return isDark ? QColor("#D0BCFF") : QColor("#6750A4");
+        }
+        // 1. Blue (Standard files, project, theme)
+        return isDark ? QColor("#82CFFF") : QColor("#005FAC");
+    };
+
     QColor selectedColor(255, 255, 255); // 选中/Hover状态下使用白色，与文字对齐，避免在蓝色背景下隐形
     for (const auto& m : menuIconMap) {
+        QColor color = getActionSemanticColor(m.actionName, isDark);
         QAction* action = findChild<QAction*>(m.actionName);
-        if (action) action->setIcon(createColoredIcon(m.svgPath, color, selectedColor));
+        if (action) {
+            action->setIcon(createColoredIcon(m.svgPath, color, selectedColor));
+        } else {
+            QMenu* menu = findChild<QMenu*>(m.actionName);
+            if (menu) {
+                menu->setIcon(createColoredIcon(m.svgPath, color, selectedColor));
+            }
+        }
     }
-    if (m_recentMenu) m_recentMenu->setIcon(createColoredIcon(":/SatExplorer/svg/recen_open.svg", color, selectedColor));
+    
+    QColor blueColor = isDark ? QColor("#82CFFF") : QColor("#005FAC");
+    QColor purpleColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
+    
+    if (m_recentMenu) m_recentMenu->setIcon(createColoredIcon(":/SatExplorer/svg/recen_open.svg", blueColor, selectedColor));
 
     // Dynamic View menu actions (工作区界面 / 工作流界面)
     QMenu* viewMenu = ui.menubar->findChild<QMenu*>("View");
     if (viewMenu) {
         for (QAction* action : viewMenu->actions()) {
             if (action->text().contains(QStringLiteral("工作区")))
-                action->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", color, selectedColor));
+                action->setIcon(createColoredIcon(":/SatExplorer/svg/project.svg", blueColor, selectedColor));
             else if (action->text().contains(QStringLiteral("工作流")))
-                action->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", color, selectedColor));
+                action->setIcon(createColoredIcon(":/SatExplorer/svg/flow_editor.svg", purpleColor, selectedColor));
         }
     }
 }
@@ -1658,6 +1731,7 @@ void MainWindow::setupThemeMenu()
 
     // Create Theme submenu under Settings
     QMenu* themeMenu = settingsMenu->addMenu(QStringLiteral("主题"));
+    themeMenu->setObjectName("menuTheme");
 
     // Create theme actions with checkable property
     QAction* lightAction = themeMenu->addAction(QStringLiteral("浅色主题"));
@@ -1829,6 +1903,43 @@ void MainWindow::setupInterfaceSwitchingMenu()
             viewMenu->addAction(action);
         }
     }
+    
+    // 添加“显示工具栏”的控制 Action
+    viewMenu->addSeparator();
+    QAction* showToolBarAction = viewMenu->addAction(QStringLiteral("显示工具栏"));
+    showToolBarAction->setObjectName("actionShowToolBar");
+    showToolBarAction->setCheckable(true);
+
+    // 从配置文件中读取工具栏显隐设置并应用
+    QSettings settings("Config.ini", QSettings::IniFormat);
+    bool showToolBar = settings.value("Appearance/ShowToolBar", true).toBool();
+    showToolBarAction->setChecked(showToolBar);
+
+    connect(showToolBarAction, &QAction::triggered, this, [this](bool checked) {
+        for (QToolBar* toolbar : findChildren<QToolBar*>()) {
+            toolbar->setVisible(checked);
+        }
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        settings.setValue("Appearance/ShowToolBar", checked);
+        settings.sync();
+    });
+
+    // 添加“显示状态栏”的控制 Action
+    QAction* showStatusBarAction = viewMenu->addAction(QStringLiteral("显示状态栏"));
+    showStatusBarAction->setObjectName("actionShowStatusBar");
+    showStatusBarAction->setCheckable(true);
+
+    // 从配置文件中读取状态栏显隐设置并应用
+    bool showStatusBar = settings.value("Appearance/ShowStatusBar", true).toBool();
+    showStatusBarAction->setChecked(showStatusBar);
+    statusBar()->setVisible(showStatusBar);
+
+    connect(showStatusBarAction, &QAction::triggered, this, [this](bool checked) {
+        statusBar()->setVisible(checked);
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        settings.setValue("Appearance/ShowStatusBar", checked);
+        settings.sync();
+    });
 
     updateInterfaceMenuCheckState();
 }
@@ -1983,8 +2094,8 @@ void MainWindow::updateFileMenuState()
     ui.actionClose->setEnabled(isProjectOpen);
     ui.actionQuit->setEnabled(true);
 
-    // 编辑菜单状态更新
-    ui.Edit->setEnabled(isProjectOpen);
+    // 编辑菜单内的“清除孤立文件”在未打开工程时置灰
+    ui.actionCleanOrphanedFiles->setEnabled(isProjectOpen);
 
     // 处理菜单安全加固：若无工程打开，强制置灰（若有工程，则保持由数据刷新逻辑控制）
     if (!isProjectOpen) {

@@ -24,6 +24,19 @@ QTreeView::item:selected:hover {
     color: white;
 }
 
+/* TreeView branch indicator styling (Dark Theme) */
+QTreeView::branch:has-children:closed:has-siblings,
+QTreeView::branch:has-children:closed {
+    border-image: none;
+    image: url(:/SatExplorer/svg/chevron_right_dark.svg);
+}
+
+QTreeView::branch:open:has-children:has-siblings,
+QTreeView::branch:open:has-children {
+    border-image: none;
+    image: url(:/SatExplorer/svg/chevron_down_dark.svg);
+}
+
 MainWindow #treeView,
 MainWindow #tool {
     background-color: #2b2b2b;
@@ -86,7 +99,7 @@ QMenu {
 
 QMenu::item {
     color: #FFFFFF;
-    padding: 4px 20px;
+    padding: 6px 24px 6px 38px;
 }
 
 QMenu::item:disabled {

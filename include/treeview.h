@@ -22,8 +22,11 @@ public:
      //File_Path file_path[10];
      void mouseDoubleClickEvent(QMouseEvent* event);
 public slots:
-    void CleanOrphanedFiles();
-    void slotCustomContextMenu(const QPoint&);
+     void CleanOrphanedFiles();
+     void slotCustomContextMenu(const QPoint&);
+
+protected:
+     void rowsInserted(const QModelIndex &parent, int start, int end) override;
 
 private:
     int num_pro;

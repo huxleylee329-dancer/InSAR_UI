@@ -1,10 +1,11 @@
-﻿#include "InterfaceManager.h"
+#include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 #include <FormatConversion.h>
 #include "tinyxml.h"
 #include <QSettings>
 #include <QToolBar>
 #include <QMainWindow>
+#include <QAction>
 
 InterfaceManager::InterfaceManager(QMainWindow *mainWindow)
     : m_mainWindow(mainWindow)
@@ -98,9 +99,11 @@ QString InterfaceManager::loadDefaultInterface() const
 
 void InterfaceManager::saveDefaultInterface(const QString &interfaceId) const
 {
+    // Do not save "welcome" as default interface
+    if (interfaceId == "welcome") return;
+
     QSettings settings("Config.ini", QSettings::IniFormat);
     settings.setValue("Interface/Default", interfaceId);
-    settings.sync();
 }
 
 QString InterfaceManager::loadLastInterfaceFromProject(XMLFile *projectXml) const
@@ -167,8 +170,15 @@ void InterfaceManager::removeCurrentToolBars()
 
 void InterfaceManager::addInterfaceToolBars(IApplicationInterface *appInterface)
 {
+    bool showToolBar = true;
+    QAction* showToolBarAction = m_mainWindow->findChild<QAction*>("actionShowToolBar");
+    if (showToolBarAction) {
+        showToolBar = showToolBarAction->isChecked();
+    }
+
     for (QToolBar *toolbar : appInterface->toolBars()) {
         m_mainWindow->addToolBar(toolbar);
+        toolbar->setVisible(showToolBar);
     }
 }
 

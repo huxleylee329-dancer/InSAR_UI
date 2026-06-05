@@ -193,16 +193,15 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 static QToolButton* createToolbarButton(const QString &iconPath, const QString &text, const QColor &iconColor = QColor("#414752"), const QColor &textColor = QColor("#595F66"), QWidget *parent = nullptr)
 {
     QToolButton *btn = new QToolButton(parent);
-    btn->setMinimumSize(48, 48);
-    btn->setMaximumSize(48, 48);
     
     // 加载并着色图标
     QIcon coloredIcon = createColoredIcon(iconPath, iconColor);
     
     btn->setIcon(coloredIcon);
     btn->setIconSize(QSize(24, 24));
-    btn->setText(text);
-    btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    btn->setText(" " + text); // 前置空格拉开图标和文字的间距
+    btn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btn->setProperty("iconPath", iconPath);
     
     QString textColorHex = textColor.name();
     btn->setStyleSheet(
@@ -211,11 +210,14 @@ static QToolButton* createToolbarButton(const QString &iconPath, const QString &
         "  border-radius: 4px; "
         "  background-color: transparent; "
         "  color: %1; "
-        "  font-size: 9px; "
+        "  font-size: 11px; "
         "  font-weight: bold; "
         "  text-transform: uppercase; "
         "  letter-spacing: 0.5px; "
-        "  padding: 2px; "
+        "  padding: 0px 6px; "
+        "  margin: 0px; "
+        "  min-height: 20px; "
+        "  max-height: 20px; "
         "}"
         "QToolButton:hover { "
         "  background-color: #E0E0E0; "
@@ -305,8 +307,11 @@ QWidget* WorkflowUI::centralWidget()
 
 QList<QToolBar*> WorkflowUI::toolBars()
 {
-    // Toolbar is already embedded in our own layout - no need to add to main window
-    return QList<QToolBar*>();
+    QList<QToolBar*> list;
+    if (m_toolbar) {
+        list.append(m_toolbar);
+    }
+    return list;
 }
 
 void WorkflowUI::activate()
@@ -582,9 +587,8 @@ void WorkflowUI::setupUi()
     connect(m_propertyEditor, &PropertyEditor::propertyChanged,
             this, &WorkflowUI::onPropertyChanged);
 
-    // Create toolbar and add everything to layout
+    // Create toolbar
     setupToolbar();
-    layout->addWidget(m_toolbar);
     layout->addWidget(m_dockManager);
 }
 
@@ -596,10 +600,11 @@ void WorkflowUI::setupToolbar()
         "QToolBar { "
         "  background-color: #F3F3F3; "
         "  border-bottom: 1px solid rgba(192, 199, 212, 0.3); "
-        "  spacing: 2px; "
-        "  padding: 4px 8px; "
         "}"
     );
+    // 必须在 setStyleSheet 之后调用，否则会被样式表重置
+    m_toolbar->setContentsMargins(0, 0, 0, 0);
+    m_toolbar->setFixedHeight(30);
 
     // 定义Material Design颜色
     const QColor COLOR_PRIMARY("#005fac");          // 蓝色
@@ -607,6 +612,28 @@ void WorkflowUI::setupToolbar()
     const QColor COLOR_ERROR("#ba1a1a");           // 红色
     const QColor COLOR_ON_SURFACE_VARIANT("#414752"); // 灰色
     const QColor COLOR_TEXT("#595F66");            // 文本颜色
+
+    // ======================
+    // Mode Switch: Go back to Workspace
+    // ======================
+    QToolButton *btnWorkspace = createToolbarButton(":/SatExplorer/svg/project.svg", "Workspace", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnWorkspace, &QToolButton::clicked, this, [this]() {
+        QWidget* p = this;
+        while (p && !qobject_cast<QMainWindow*>(p)) {
+            p = p->parentWidget();
+        }
+        QMainWindow* mainWindow = qobject_cast<QMainWindow*>(p);
+        if (mainWindow) {
+            QMetaObject::invokeMethod(mainWindow, "switchToWorkspace");
+        }
+    });
+    m_toolbar->addWidget(btnWorkspace);
+
+    // Vertical separator
+    QWidget *sepMode = new QWidget();
+    sepMode->setFixedWidth(1);
+    sepMode->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
+    m_toolbar->addWidget(sepMode);
 
     // ======================
     // Group 1: File Operations
@@ -631,8 +658,7 @@ void WorkflowUI::setupToolbar()
     // Vertical separator
     QWidget *sep1 = new QWidget();
     sep1->setFixedWidth(1);
-    sep1->setStyleSheet("background-color: rgba(192, 199, 212, 0.3);");
-    sep1->setFixedHeight(32);
+    sep1->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
     m_toolbar->addWidget(sep1);
 
     // ======================
@@ -658,8 +684,7 @@ void WorkflowUI::setupToolbar()
     // Vertical separator
     QWidget *sep2 = new QWidget();
     sep2->setFixedWidth(1);
-    sep2->setStyleSheet("background-color: rgba(192, 199, 212, 0.3);");
-    sep2->setFixedHeight(32);
+    sep2->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
     m_toolbar->addWidget(sep2);
 
     // ======================
@@ -1238,107 +1263,98 @@ void WorkflowUI::setTheme(const QString &theme)
     if (m_toolbar) {
         QString toolbarStyle;
         QColor separatorColor;
+        QColor textColor = (theme == "dark") ? QColor("#c1c7cf") : QColor("#595F66");
+        QColor grayIconColor;
         
         if (theme == "dark") {
-            // Dark theme colors from ui2.md
+            grayIconColor = QColor("#CCCCCC");
             toolbarStyle = R"(
                 QToolBar {
                     background-color: #1a1c1c;
                     border-bottom: 1px solid rgba(135, 141, 152, 0.3);
-                    spacing: 2px;
-                    padding: 4px 8px;
                 }
             )";
-            separatorColor = QColor(135, 141, 152, 77); // rgba(135,141,152,0.3)
+            separatorColor = QColor(135, 141, 152, 77);
         } else if (theme == "light") {
-            // Light theme colors from ui2.md
+            grayIconColor = QColor("#414752");
             toolbarStyle = R"(
                 QToolBar {
                     background-color: #f3f3f3;
                     border-bottom: 1px solid rgba(192, 199, 212, 0.3);
-                    spacing: 2px;
-                    padding: 4px 8px;
                 }
             )";
-            separatorColor = QColor(192, 199, 212, 77); // rgba(192,199,212,0.3)
-        } else {  // fusion
-            // Fusion theme colors - flat with blue accent
+            separatorColor = QColor(192, 199, 212, 77);
+        } else { // fusion
+            grayIconColor = QColor("#005FAC");
             toolbarStyle = R"(
                 QToolBar {
                     background-color: #f0f0f0;
                     border-bottom: 1px solid rgba(74, 154, 207, 0.3);
-                    spacing: 2px;
-                    padding: 4px 8px;
                 }
             )";
-            separatorColor = QColor(74, 154, 207, 77); // rgba(74,154,207,0.3)
+            separatorColor = QColor(74, 154, 207, 77);
         }
         
         m_toolbar->setStyleSheet(toolbarStyle);
+        // 必须在 setStyleSheet 之后重新设置，否则会被样式表重置
+        m_toolbar->setContentsMargins(0, 0, 0, 0);
         
-        // Update separator widgets (find all child widgets that are separators)
+        // Update separator widgets
         for (QObject *obj : m_toolbar->children()) {
             QWidget *widget = qobject_cast<QWidget*>(obj);
             if (widget && widget->metaObject()->className() == QString("QWidget")) {
-                widget->setStyleSheet(QString("background-color: %1;").arg(separatorColor.name(QColor::HexArgb)));
+                widget->setStyleSheet(QString("background-color: %1; margin: 2px 0px;").arg(separatorColor.name(QColor::HexArgb)));
             }
         }
         
-        // Update toolbar buttons (simpler approach - set complete stylesheet)
+        // Update toolbar buttons
         for (QObject *obj : m_toolbar->children()) {
             QToolButton *btn = qobject_cast<QToolButton*>(obj);
             if (btn) {
-                QString textColor, hoverBg, pressedBg;
-                if (theme == "dark") {
-                    textColor = "#c1c7cf";
-                    hoverBg = "#2f3131";
-                    pressedBg = "#3f4141";
-                } else if (theme == "light") {
-                    textColor = "#595F66";
-                    hoverBg = "#E0E0E0";
-                    pressedBg = "#D0D0D0";
-                } else {  // fusion - blue accent
-                    textColor = "#333333";
-                    hoverBg = "#D0E8F5";
-                    pressedBg = "#4a9acf";
-                }
-
+                QString textColorStr = textColor.name();
+                QString hoverBg = (theme == "dark") ? "#2f3131" : "#E0E0E0";
+                QString pressedBg = (theme == "dark") ? "#3f4141" : "#D0D0D0";
                 btn->setStyleSheet(
                     QString("QToolButton { "
                     "  border: none; "
                     "  border-radius: 4px; "
                     "  background-color: transparent; "
                     "  color: %1; "
-                    "  font-size: 9px; "
+                    "  font-size: 11px; "
                     "  font-weight: bold; "
                     "  text-transform: uppercase; "
                     "  letter-spacing: 0.5px; "
-                    "  padding: 2px; "
+                    "  padding: 0px 6px; "
+                    "  margin: 0px; "
+                    "  min-height: 20px; "
+                    "  max-height: 20px; "
                     "}"
                     "QToolButton:hover { "
                     "  background-color: %2; "
                     "}"
                     "QToolButton:pressed { "
                     "  background-color: %3; "
-                    "}").arg(textColor, hoverBg, pressedBg)
+                    "}").arg(textColorStr, hoverBg, pressedBg)
                 );
+                
+                QString iconPath = btn->property("iconPath").toString();
+                if (!iconPath.isEmpty()) {
+                    QColor c = grayIconColor;
+                    bool isDark = (theme == "dark");
+                    QString btnText = btn->text().trimmed();
+                    if (btnText == "Import" || btnText == "Export") {
+                        c = isDark ? QColor("#47D8A4") : QColor("#0F7D5C"); // Teal
+                    } else if (btnText == "Fav") {
+                        c = isDark ? QColor("#FFB95B") : QColor("#A85C00"); // Amber
+                    } else if (btnText == "Halt" || btnText == "PURGE") {
+                        c = isDark ? QColor("#FFB4AB") : QColor("#BA1A1A"); // Red
+                    } else if (btnText == "Workspace") {
+                        c = isDark ? QColor("#82CFFF") : QColor("#005FAC"); // Blue
+                    }
+                    btn->setIcon(createColoredIcon(iconPath, c));
+                }
             }
         }
-
-        // Recolor gray toolbar icons for theme
-        QColor grayIconColor;
-        if (theme == "dark") {
-            grayIconColor = QColor("#CCCCCC");
-        } else if (theme == "light") {
-            grayIconColor = QColor("#414752");
-        } else {  // fusion
-            grayIconColor = QColor("#005FAC");
-        }
-        if (m_btnSync)  m_btnSync->setIcon(createColoredIcon(":/SatExplorer/svg/refresh-cw.svg", grayIconColor));
-        if (m_btnQueue) m_btnQueue->setIcon(createColoredIcon(":/SatExplorer/svg/reorder.svg", grayIconColor));
-        if (m_btnDrop)  m_btnDrop->setIcon(createColoredIcon(":/SatExplorer/svg/playlist_remove.svg", grayIconColor));
-        if (m_btnLogs)  m_btnLogs->setIcon(createColoredIcon(":/SatExplorer/svg/history.svg", grayIconColor));
-        if (m_btnDel)   m_btnDel->setIcon(createColoredIcon(":/SatExplorer/svg/backspace.svg", grayIconColor));
     }
     if (m_dockManager) {
         QString adsStyle;

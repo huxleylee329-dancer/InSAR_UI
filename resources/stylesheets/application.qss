@@ -43,8 +43,12 @@ QMenu {
     border: 1px solid #CCCCCC;
 }
 
+QMenu::icon {
+    margin-left: 10px;
+}
+
 QMenu::item {
-    padding: 6px 24px;
+    padding: 6px 24px 6px 38px;
     background-color: transparent;
 }
 
@@ -79,4 +83,17 @@ QSplitter::handle {
 
 QSplitter::handle:hover {
     background-color: #005FAC;
+}
+
+/* TreeView branch indicator styling (Light Theme) */
+QTreeView::branch:has-children:closed:has-siblings,
+QTreeView::branch:has-children:closed {
+    border-image: none;
+    image: url(:/SatExplorer/svg/chevron_right_light.svg);
+}
+
+QTreeView::branch:open:has-children:has-siblings,
+QTreeView::branch:open:has-children {
+    border-image: none;
+    image: url(:/SatExplorer/svg/chevron_down_light.svg);
 }
