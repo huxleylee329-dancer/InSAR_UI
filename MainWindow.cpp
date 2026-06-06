@@ -379,11 +379,14 @@ void MainWindow::closeEvent(QCloseEvent* event)
         event->accept();
     }
 }
-void MainWindow::Loading(QString Data_path, QString ImageType)
+void MainWindow::Loading(QString Data_path, QString ImageType, QString bmp_path, QString bmp_name)
 {
     // 界面切换到 Workflow 后直接返回
     if (m_interfaceManager && m_interfaceManager->currentInterfaceId() != "workspace")
         return;
+
+    if (bmp_path.isEmpty()) bmp_path = this->bmp_path;
+    if (bmp_name.isEmpty()) bmp_name = this->bmp_name;
 
     QGridLayout* TabLayout = new QGridLayout;
     QWidget* TabChild = new QWidget;
@@ -400,7 +403,7 @@ void MainWindow::Loading(QString Data_path, QString ImageType)
     graph->setInteractive(true);
     graph->setDragMode(QGraphicsView::RubberBandDrag);
     graph->setRubberBandSelectionMode(Qt::ContainsItemShape);
-    QImage Qimg = QImage(this->bmp_path);
+    QImage Qimg = QImage(bmp_path);
     QGraphicsPixmapItem* item = new QGraphicsPixmapItem(QPixmap::fromImage(Qimg));
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemIsMovable);
     item->setAcceptedMouseButtons(Qt::LeftButton);
@@ -656,8 +659,10 @@ void MainWindow::ShowImage(QModelIndex image)
             }
             else
             {
-                mData_path = path;
-                mType = type;
+                if (this->Process) {
+                    this->Process->close();
+                    this->Process->deleteLater();
+                }
                 this->Process = new QProgressDialog("Loading Image...", nullptr, 0, 0, this);
                 Process->setFixedSize(450, 100);
                 Process->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
@@ -670,31 +675,52 @@ void MainWindow::ShowImage(QModelIndex image)
                 }
                 
                 QFutureWatcher<bool>* watcher = new QFutureWatcher<bool>(this);
-                connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher, path_abs]() {
-                    bool success = watcher->result();
-                    if (this->Process) {
-                        this->Process->setValue(100);
-                        this->Process->deleteLater();
-                        this->Process = nullptr;
-                    }
-                    if (m_statusProgressBar) {
-                        m_statusProgressBar->setValue(100);
-                        m_statusProgressBar->hide();
-                    }
-                    watcher->deleteLater();
-                    
-                    if (success) {
-                        Loading(mData_path, mType);
-                    } else {
-                        QFile::remove(path_abs);
-                        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("图像预览生成失败！"));
-                    }
-                });
+                watcher->setProperty("path_abs", path_abs);
+                watcher->setProperty("mData_path", path);
+                watcher->setProperty("mType", type);
+                watcher->setProperty("bmp_path", path_abs);
+                watcher->setProperty("bmp_name", this->bmp_name);
+                watcher->setProperty("progress", QVariant::fromValue(static_cast<void*>(Process)));
+                connect(watcher, &QFutureWatcher<bool>::finished, this, &MainWindow::onLoadImageFinished);
                 
                 QFuture<bool> future = QtConcurrent::run(NodeUtils::generateJpgPreviewFromH5, path, path_abs, type);
                 watcher->setFuture(future);
             }
         }
+    }
+}
+
+void MainWindow::onLoadImageFinished()
+{
+    QFutureWatcher<bool>* watcher = static_cast<QFutureWatcher<bool>*>(sender());
+    if (!watcher) return;
+    
+    bool success = watcher->result();
+    QString path_abs = watcher->property("path_abs").toString();
+    QString mData_path_val = watcher->property("mData_path").toString();
+    QString mType_val = watcher->property("mType").toString();
+    QString bmp_path_val = watcher->property("bmp_path").toString();
+    QString bmp_name_val = watcher->property("bmp_name").toString();
+    QProgressDialog* progress = static_cast<QProgressDialog*>(watcher->property("progress").value<void*>());
+    
+    if (progress) {
+        progress->setValue(100);
+        progress->deleteLater();
+        if (this->Process == progress) {
+            this->Process = nullptr;
+        }
+    }
+    if (m_statusProgressBar) {
+        m_statusProgressBar->setValue(100);
+        m_statusProgressBar->hide();
+    }
+    watcher->deleteLater();
+    
+    if (success) {
+        Loading(mData_path_val, mType_val, bmp_path_val, bmp_name_val);
+    } else {
+        QFile::remove(path_abs);
+        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("图像预览生成失败！"));
     }
 }
 void MainWindow::on_actionNew_triggered()

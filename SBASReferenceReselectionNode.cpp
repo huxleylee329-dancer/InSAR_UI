@@ -381,6 +381,7 @@ void SBASReferenceReselectionNode::execute()
 
 void SBASReferenceReselectionNode::executeProcessing()
 {
+    InSARLogManager::LogInfo("SBASReferenceReselectionNode", "executeProcessing started.");
     m_resultLabel->setText(QStringLiteral("正在复制并准备数据..."));
     
     // Copy the entire input folder contents to the output folder first (SOP rule 3 compatibility)
@@ -455,6 +456,7 @@ void SBASReferenceReselectionNode::onError(const QString& error)
 
 void SBASReferenceReselectionNode::onProcessingFinished()
 {
+    InSARLogManager::LogInfo("SBASReferenceReselectionNode", "executeProcessing completed.");
     m_resultLabel->setText(QStringLiteral("重新计算完成，生成预览图..."));
 
     if (m_thread)

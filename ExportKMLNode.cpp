@@ -265,6 +265,7 @@ void ExportKMLNode::execute()
 
 void ExportKMLNode::executeProcessing()
 {
+    InSARLogManager::LogInfo("ExportKMLNode", "executeProcessing started.");
     m_resultLabel->setText(QStringLiteral("正在开始导出..."));
     
     QDir dir(m_outputPath);
@@ -329,6 +330,7 @@ void ExportKMLNode::onError(const QString& error)
 
 void ExportKMLNode::onProcessingFinished()
 {
+    InSARLogManager::LogInfo("ExportKMLNode", "executeProcessing completed.");
     m_resultLabel->setText(QStringLiteral("导出完成！"));
 
     if (m_thread)

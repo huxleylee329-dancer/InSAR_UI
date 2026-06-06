@@ -18,7 +18,6 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QFileDialog>
-#include <QTimer>
 #include <QtConcurrent/QtConcurrent>
 
 namespace QtNodes {
@@ -414,15 +413,12 @@ bool CoregistrationNode::isReady() const
 
 void CoregistrationNode::processAutomatically()
 {
-    if (m_worker || m_thread) return;
+    if (m_worker || m_thread) {
+        deferAutomaticCompletion();
+        return;
+    }
 
     if (isReady()) {
-        if (!m_outputData) {
-            m_outputData = std::make_shared<ImportedFileData>(QStringList(), m_outputNodeName);
-            m_previewData = std::make_shared<ImageInfoData>(QStringList());
-            setOutputData(0, m_outputData);
-            setOutputData(1, m_previewData);
-        }
         executeProcessing();
     } else {
         setState(ExecutionState::Idle);
@@ -474,7 +470,13 @@ void CoregistrationNode::executeProcessing()
     auto* iface = NodeUtils::getProjectContext(_widget);
 
     // Collision check
-    NodeUtils::OverwriteResult ovResult = NodeUtils::checkAndPromptOverwrite(iface, nodeName, expectedH5Paths, _widget);
+    // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
+    NodeUtils::OverwriteResult ovResult;
+    if (_isAutoTriggered) {
+        ovResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        ovResult = NodeUtils::checkAndPromptOverwrite(iface, nodeName, expectedH5Paths, _widget);
+    }
     if (ovResult == NodeUtils::OverwriteResult::Cancel) {
         setState(ExecutionState::Idle);
         return;
@@ -546,10 +548,8 @@ void CoregistrationNode::executeProcessing()
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(false);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(false);
 
-    // Bypass auto-reset to Idle in base class
-    QTimer::singleShot(0, this, [this]() {
-        setState(ExecutionState::Running);
-    });
+    setState(ExecutionState::Running);
+    deferAutomaticCompletion();
 
     InSARLogManager::LogInfo("CoregistrationNode", "executeProcessing thread started successfully.");
 }

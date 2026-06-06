@@ -17,6 +17,7 @@
 #include <QRegularExpression>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrent>
+#include <QPointer>
 #include <memory>
 
 class IApplicationInterface;
@@ -68,8 +69,8 @@ private:
     int m_masterIndex;
 
     // Worker thread
-    SLCDerampWorker* m_worker;
-    QThread* m_thread;
+    QPointer<SLCDerampWorker> m_worker;
+    QPointer<QThread> m_thread;
     QFutureWatcher<void> m_remedyWatcher;
 
     // Helper methods

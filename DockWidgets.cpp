@@ -998,7 +998,8 @@ void PropertyEditor::generateBasicInfoSection()
 
     QLabel* captionValueLabel = new QLabel(m_nodeData.caption);
     captionValueLabel->setStyleSheet(QString("font-size: 11px; color: %1;").arg(tertiaryTextColor));
-    captionValueLabel->setWordWrap(true);
+    captionValueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    captionValueLabel->setWordWrap(false);
 
     captionLayout->addWidget(captionLabel);
     captionLayout->addWidget(captionValueLabel);

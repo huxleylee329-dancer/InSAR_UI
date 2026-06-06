@@ -341,6 +341,7 @@ void TargetDetectionNode::stopExecution()
 void TargetDetectionNode::processAutomatically()
 {
     if (m_task) {
+        deferAutomaticCompletion();
         return;
     }
 
@@ -398,6 +399,9 @@ void TargetDetectionNode::executeProcessing()
     float thresholdValue = m_thresholdValue;
 
     m_task = new TargetDetectionTask(inputPaths, modelPath, thresholdValue);
+
+    setState(ExecutionState::Running);
+    deferAutomaticCompletion();
 
     connect(m_task, &TargetDetectionTask::updateProcess, this, &TargetDetectionNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::sendTargetDetectionResult, this, &TargetDetectionNode::onDetectionFinished, Qt::QueuedConnection);

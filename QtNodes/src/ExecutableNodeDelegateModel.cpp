@@ -63,14 +63,29 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
         }
 
         if (_mode == ExecutionMode::Automatic) {
+            // If the incoming data is null, an upstream node was invalidated.
+            // Use setState(Idle) to: (1) update our visual, (2) clear our own stale output data,
+            // and (3) cascade the invalidation to our downstream nodes via dataUpdated(nullptr).
+            if (nodeData == nullptr) {
+                setState(ExecutionState::Idle);
+                return;
+            }
+
             // For automatic mode: set running state and zero progress before execution
-            _state = ExecutionState::Running;
+            setState(ExecutionState::Running);
             _progress = 0;
-            Q_EMIT executionStateChanged();
-            triggerVisualUpdate();
 
             // Let subclass do the automatic processing (sets output data if inputs are complete)
+            // Mark as auto-triggered so executeProcessing() can skip overwrite popups
+            _isAutoTriggered = true;
+            _deferAutomaticCompletion = false;
             processAutomatically();
+            _isAutoTriggered = false;
+
+            if (_deferAutomaticCompletion) {
+                _deferAutomaticCompletion = false;
+                return;
+            }
 
             // CRITICAL FIX: If the subclass explicitly changed its state (e.g. to Idle, Error)
             // or if it launched an asynchronous thread and is still Running,
@@ -132,10 +147,14 @@ void ExecutableNodeDelegateModel::start()
         return;
     }
 
-    _state = ExecutionState::Running;
+    if (!prepareToStart()) {
+        return;
+    }
+
+    // Use setState() to trigger downstream invalidation (clear stale outputs & propagate nullptr)
+    setState(ExecutionState::Running);
     _progress = 0;
     Q_EMIT executionStarted();
-    Q_EMIT executionStateChanged();
     Q_EMIT computingStarted();
     triggerVisualUpdate();
 
@@ -193,6 +212,11 @@ void ExecutableNodeDelegateModel::finishExecution()
     for (auto const &pair : _outputData) {
         Q_EMIT dataUpdated(pair.first);
     }
+}
+
+void ExecutableNodeDelegateModel::deferAutomaticCompletion()
+{
+    _deferAutomaticCompletion = true;
 }
 
 void ExecutableNodeDelegateModel::completeAutomaticExecution()
@@ -335,23 +359,21 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
     Q_EMIT executionStateChanged();
     triggerVisualUpdate();
 
-    // Dirty propagation: if this node becomes Idle, all downstream nodes should also become Idle
-    if (state == ExecutionState::Idle && _scene != nullptr) {
-        auto &graphModel = _scene->graphModel();
-        auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&graphModel);
-        if (dfModel) {
-            unsigned int outCount = nPorts(PortType::Out);
-            for (PortIndex idx = 0; idx < outCount; ++idx) {
-                auto connected = dfModel->connections(_nodeId, PortType::Out, idx);
-                for (auto const &cn : connected) {
-                    auto *downstreamDelegate = dfModel->delegateModel<NodeDelegateModel>(cn.inNodeId);
-                    auto *downstreamExec = dynamic_cast<ExecutableNodeDelegateModel*>(downstreamDelegate);
-                    if (downstreamExec) {
-                        downstreamExec->setState(ExecutionState::Idle);
-                    }
-                }
+    // Dirty propagation: if this node becomes non-Completed (Idle, Running, Error, etc.),
+    // all downstream nodes should also become Idle, and old output data should be cleared
+    if (!_isRestoring && state != ExecutionState::Completed && _scene != nullptr) {
+        // Clear own output data and propagate nullptr downstream to break old data chains
+        unsigned int outCount = nPorts(PortType::Out);
+        for (PortIndex idx = 0; idx < outCount; ++idx) {
+            auto it = _outputData.find(idx);
+            if (it != _outputData.end() && it->second != nullptr) {
+                it->second = nullptr;
+                Q_EMIT dataUpdated(idx);
             }
         }
+        // Note: dataUpdated(nullptr) signals above will be caught by ExecutableDataFlowGraphModel::onOutPortDataUpdated,
+        // which calls setPortData(nullptr) -> setInData(nullptr) on downstream nodes.
+        // The setInData(nullptr) early-exit in Automatic mode will then set those nodes to Idle.
     }
 }
 

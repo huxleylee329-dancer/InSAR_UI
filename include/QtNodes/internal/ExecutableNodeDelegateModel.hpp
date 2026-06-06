@@ -132,6 +132,9 @@ public:
     /// Check if the node is currently being restored from a project
     bool isRestoring() const { return _isRestoring; }
 
+    /// Check if the node was automatically triggered by upstream propagation
+    bool isAutoTriggered() const { return _isAutoTriggered; }
+
 public Q_SLOTS:
     void start();
 
@@ -171,11 +174,15 @@ protected:
 
     virtual void processAutomatically() = 0;
 
+    virtual bool prepareToStart() { return true; }
+
     void finishExecution();
 
     /// Complete automatic execution for source nodes with no inputs
     /// Call this after you've set output data in automatic mode
     void completeAutomaticExecution();
+
+    void deferAutomaticCompletion();
 
     /// Call this when input or source data changes in Manual mode
     void invalidateExecution();
@@ -211,6 +218,10 @@ protected:
     // Lifetime is managed externally, this class only stores the reference
     BasicGraphicsScene *_scene = nullptr;
     bool _isRestoring = false;
+    // True when this node's execution was triggered automatically by upstream data propagation
+    // (vs. manually by the user clicking Start). Allows skipping overwrite popups in auto mode.
+    bool _isAutoTriggered = false;
+    bool _deferAutomaticCompletion = false;
 };
 
 } // namespace QtNodes

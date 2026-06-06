@@ -114,6 +114,7 @@ void DeformationPreviewNode::createWidget()
 
 void DeformationPreviewNode::onPreviewClicked()
 {
+    InSARLogManager::LogInfo("DeformationPreviewNode", "onPreviewClicked started.");
     if (!m_inputData || m_inputData->filePaths().isEmpty())
     {
         QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("请先连接输入节点！"));
@@ -153,6 +154,7 @@ void DeformationPreviewNode::onPreviewClicked()
     Pre_wnd->View->SetH5Path(image_path);
     Pre_wnd->show();
     Pre_wnd->setAttribute(Qt::WA_DeleteOnClose, true);
+    InSARLogManager::LogInfo("DeformationPreviewNode", "onPreviewClicked completed.");
 }
 
 void DeformationPreviewNode::updateLabels()

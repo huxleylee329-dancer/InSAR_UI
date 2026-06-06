@@ -939,7 +939,13 @@ void InterferometricFormationNode::executeProcessing()
         }
     }
 
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
+    // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
+    NodeUtils::OverwriteResult overwriteRes;
+    if (_isAutoTriggered) {
+        overwriteRes = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
+    }
     if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
         setState(ExecutionState::Idle);
         return;

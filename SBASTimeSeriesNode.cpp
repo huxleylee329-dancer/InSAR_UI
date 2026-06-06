@@ -336,6 +336,7 @@ void SBASTimeSeriesNode::execute()
 
 void SBASTimeSeriesNode::executeProcessing()
 {
+    InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing started.");
     stopExecution();
 
     m_thread = new QThread(this);
@@ -422,6 +423,7 @@ void SBASTimeSeriesNode::onError(const QString& error)
 
 void SBASTimeSeriesNode::onProcessingFinished()
 {
+    InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing completed.");
     QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
 

@@ -28,8 +28,6 @@ signals:
     void endProcess();
     void errorProcess(QString error_msg);
     void sendModel(QStandardItemModel* model);
-    void sendBL(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
-    void askUserError(QString error_msg, bool* skip);
 
 private:
     QMutex lock;

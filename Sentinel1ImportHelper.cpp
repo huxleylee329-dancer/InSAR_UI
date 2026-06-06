@@ -25,6 +25,7 @@ void importSentinel(
     QStandardItemModel* model
 )
 {
+    InSARLogManager::LogInfo("Sentinel1ImportHelper", QString("Task started: ") + QString(__FUNCTION__));
     if (manifest_file.isEmpty() ||
         subswath.isEmpty() ||
         polarization.isEmpty() ||
@@ -173,6 +174,7 @@ void importSentinelPatch(
     QStandardItemModel* model
 )
 {
+    InSARLogManager::LogInfo("Sentinel1ImportHelper", QString("Task started: ") + QString(__FUNCTION__));
     if (original_filelist.size() != import_namelist.size() ||
         import_namelist.size() < 1 ||
         subswath.isEmpty() ||

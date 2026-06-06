@@ -123,78 +123,26 @@ QWidget* GenericSARImportNode::createWidget()
 
 void GenericSARImportNode::executeImport()
 {
-    // Safety check: Ensure project is open
-    auto* model = projectModel();
-    QString path = projectPath();
-    QString name = projectName();
-
-    if (!model || path.isEmpty() || name.isEmpty())
-    {
-        onError("未检测到打开的项目，请先打开或新建一个项目。");
-        return;
-    }
-    
     if (m_task)
     {
         return;
     }
 
-    QString outputNodeName = getOutputNodeName();
-    if (outputNodeName.isEmpty())
-    {
-        onError("目标节点名不能为空！");
-        return;
-    }
-
-    m_imagePath = m_imageEdit->text().trimmed();
-    
-    if (m_imagePath.isEmpty())
-    {
-        onError("请选择一个 通用 SAR 图像文件。");
-        return;
-    }
-
-    if (!QFileInfo::exists(m_imagePath))
-    {
-        onError("通用 SAR 图像文件不存在：" + m_imagePath);
-        return;
-    }
-
-    m_outputFileName = m_outputFileNameEdit->text().trimmed();
-    
-    if (m_outputFileName.isEmpty())
-    {
-        m_outputFileName = "{InputName}";
-        m_outputFileNameEdit->setText(m_outputFileName);
-    }
-
-    QString resolvedFileName = m_outputFileName;
-    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
-    resolvedFileName.replace(re, QFileInfo(m_imagePath).baseName());
-
-    QString suffix = QFileInfo(m_imagePath).suffix();
-    if (suffix.isEmpty()) suffix = "h5";
-    QString outputPath = QString("%1/%2/%3.%4").arg(projectPath()).arg(outputNodeName).arg(resolvedFileName).arg(suffix);
-    QString previewPath = QString("%1/%2/%3.jpg").arg(projectPath()).arg(outputNodeName).arg(resolvedFileName);
-
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
         return;
     }
 
-    // 清理旧数据，防止更换文件重新执行时导致历史记录累积
-    NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+    }
 
     m_task = new GenericSARImportTask(
         m_imagePath,
         projectPath(),
         getOutputNodeName(),
-        resolvedFileName,
+        m_preparedOutputFileName,
         projectName(),
         projectModel()
     );
@@ -210,6 +158,64 @@ void GenericSARImportNode::executeImport()
 
     QThreadPool::globalInstance()->start(m_task);
 }
+
+bool GenericSARImportNode::prepareToStart()
+{
+    auto* model = projectModel();
+    QString path = projectPath();
+    QString name = projectName();
+
+    if (!model || path.isEmpty() || name.isEmpty())
+    {
+        onError("未检测到打开的项目，请先打开或新建一个项目。");
+        return false;
+    }
+
+    if (m_task)
+    {
+        return false;
+    }
+
+    QString outputNodeName = getOutputNodeName();
+    if (outputNodeName.isEmpty())
+    {
+        onError("目标节点名不能为空！");
+        return false;
+    }
+
+    m_imagePath = m_imageEdit->text().trimmed();
+    if (m_imagePath.isEmpty())
+    {
+        onError("请选择一个 通用 SAR 图像文件。");
+        return false;
+    }
+
+    if (!QFileInfo::exists(m_imagePath))
+    {
+        onError("通用 SAR 图像文件不存在：" + m_imagePath);
+        return false;
+    }
+
+    m_outputFileName = m_outputFileNameEdit->text().trimmed();
+    if (m_outputFileName.isEmpty())
+    {
+        m_outputFileName = "{InputName}";
+        m_outputFileNameEdit->setText(m_outputFileName);
+    }
+
+    m_preparedOutputFileName = m_outputFileName;
+    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
+    m_preparedOutputFileName.replace(re, QFileInfo(m_imagePath).baseName());
+
+    QString suffix = QFileInfo(m_imagePath).suffix();
+    if (suffix.isEmpty()) suffix = "h5";
+    QString outputPath = QString("%1/%2/%3.%4").arg(projectPath()).arg(outputNodeName).arg(m_preparedOutputFileName).arg(suffix);
+    QString previewPath = QString("%1/%2/%3.jpg").arg(projectPath()).arg(outputNodeName).arg(m_preparedOutputFileName);
+
+    m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
 QStringList GenericSARImportNode::getImportedFilePaths() const
 {
     QStringList paths;

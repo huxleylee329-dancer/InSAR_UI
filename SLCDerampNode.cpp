@@ -721,6 +721,7 @@ QString SLCDerampNode::generateDefaultOutputName() const
 
 void SLCDerampNode::executeProcessing()
 {
+    InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing started.");
     if (!validateInputs())
     {
         setState(ExecutionState::Error);

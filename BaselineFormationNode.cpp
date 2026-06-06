@@ -389,6 +389,7 @@ void BaselineFormationNode::execute()
 
 void BaselineFormationNode::executeProcessing()
 {
+    InSARLogManager::LogInfo("BaselineFormationNode", "executeProcessing started.");
     stopExecution();
 
     m_thread = new QThread(this);
@@ -456,6 +457,7 @@ void BaselineFormationNode::onError(const QString& error)
 
 void BaselineFormationNode::onProcessingFinished(QList<double> temporal_baseline, QList<double> spatial_baseline, int index)
 {
+    InSARLogManager::LogInfo("BaselineFormationNode", "executeProcessing completed.");
     m_temporalBaselines = temporal_baseline;
     m_spatialBaselines = spatial_baseline;
     m_masterIndex = index;

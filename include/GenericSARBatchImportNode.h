@@ -5,6 +5,7 @@
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
 #include "GenericSARImportTask.h"
+#include "NodeUtils.h"
 
 #include <QWidget>
 #include <QListWidget>
@@ -16,6 +17,7 @@
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include <QThreadPool>
+#include <vector>
 
 namespace QtNodes {
 
@@ -54,6 +56,7 @@ protected:
     MyThread* workerThread() const override { return nullptr; }
     QThread* qThread() const override { return nullptr; }
     void stopExecution() override;
+    bool prepareToStart() override;
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -78,6 +81,9 @@ private:
     QStringList m_imagePaths;
     QStringList m_importedFilePaths;
     QString m_outputNodeName;
+    std::vector<QString> m_preparedOriginalFileList;
+    std::vector<QString> m_preparedImportNameList;
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 
     std::shared_ptr<ImageInfoData> m_imageInfoData;
 

@@ -88,11 +88,7 @@ void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
 
-    if (!m_inputData || m_inputData->filePath().isEmpty()) {
-        m_outputData.reset();
-        int outCount = nPorts(PortType::Out);
-        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
-    }
+    // 空输入时先让基类传播失效，再清理本节点缓存。
 
     if (m_inputImageLabel) {
         if (m_inputData && !m_inputData->filePath().isEmpty()) {
@@ -118,12 +114,15 @@ void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+        m_outputData.reset();
+    }
 }
 
 std::shared_ptr<NodeData> ClutterSuppressionNode::outData(PortIndex port)
 {
-    Q_UNUSED(port);
-    return m_outputData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 QWidget* ClutterSuppressionNode::embeddedWidget()
@@ -247,15 +246,11 @@ void ClutterSuppressionNode::stopExecution()
 void ClutterSuppressionNode::processAutomatically()
 {
     if (m_task) {
+        deferAutomaticCompletion();
         return;
     }
 
     if (isReady()) {
-        if (!m_outputData) {
-            m_outputData = std::make_shared<ImageInfoData>("");
-            setOutputData(0, m_outputData);
-            setOutputData(1, m_outputData);
-        }
         executeProcessing();
     } else {
         setState(ExecutionState::Idle);
@@ -344,6 +339,9 @@ void ClutterSuppressionNode::executeProcessing()
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
 
     m_task = new ClutterSuppressionTask(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
+
+    setState(ExecutionState::Running);
+    deferAutomaticCompletion();
 
     connect(m_task, &ClutterSuppressionTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_task, &ClutterSuppressionTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);

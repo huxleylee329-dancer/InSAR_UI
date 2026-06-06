@@ -91,11 +91,7 @@ void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
 
-    if (!m_inputData || m_inputData->filePath().isEmpty()) {
-        m_outputData.reset();
-        int outCount = nPorts(PortType::Out);
-        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
-    }
+    // 空输入时先让基类传播失效，再清理本节点缓存。
 
     if (m_inputImageLabel) {
         if (m_inputData && !m_inputData->filePath().isEmpty()) {
@@ -121,12 +117,15 @@ void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+        m_outputData.reset();
+    }
 }
 
 std::shared_ptr<NodeData> SpeckleDenoiseNode::outData(PortIndex port)
 {
-    Q_UNUSED(port);
-    return m_outputData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 QWidget* SpeckleDenoiseNode::embeddedWidget()
@@ -253,18 +252,11 @@ void SpeckleDenoiseNode::processAutomatically()
     // CRITICAL: Prevent duplicate execution - check if already processing
     // m_thread being non-null means execution is in progress
     if (m_task) {
+        deferAutomaticCompletion();
         return;
     }
 
     if (isReady()) {
-        // Set placeholder output data BEFORE starting processing
-        // This prevents base class from resetting state to Idle
-        if (!m_outputData) {
-            m_outputData = std::make_shared<ImageInfoData>("");
-            setOutputData(0, m_outputData);
-            setOutputData(1, m_outputData);
-
-        }
         executeProcessing();
     } else {
         setState(ExecutionState::Idle);
@@ -363,6 +355,9 @@ void SpeckleDenoiseNode::executeProcessing()
 
     m_task = new SpeckleDenoiseTask(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
 
+    setState(ExecutionState::Running);
+    deferAutomaticCompletion();
+
     connect(m_task, &SpeckleDenoiseTask::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_task, &SpeckleDenoiseTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
     connect(m_task, &SpeckleDenoiseTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
@@ -440,7 +435,6 @@ void SpeckleDenoiseNode::onError(const QString& error)
 
     m_task = nullptr;
 
-    // Clear placeholder output data on error
     m_outputData.reset();
 
 }

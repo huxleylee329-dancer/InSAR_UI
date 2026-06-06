@@ -261,6 +261,18 @@ double EvaluationSCRNode::calculateScr(const cv::Mat& targetGray, const cv::Mat&
 
 void EvaluationSCRNode::calculateAndDisplaySCR()
 {
+    // 如果两端口数据不同时有效，直接返回 Idle（不进入计算，避免单端口有数据时产生 Error）
+    if (!isReady()) {
+        if (m_resultsTable) m_resultsTable->setRowCount(0);
+        if (m_originalScrLabel) m_originalScrLabel->setText("--");
+        if (m_filteredScrLabel) m_filteredScrLabel->setText("--");
+        if (m_improvementLabel) m_improvementLabel->setText("--");
+        if (m_summaryLabel) m_summaryLabel->setText("--");
+        m_detectionResults.clear();
+        setState(ExecutionState::Idle);
+        return;
+    }
+
     if (m_stopFlagPtr) {
         *m_stopFlagPtr = true;
     }

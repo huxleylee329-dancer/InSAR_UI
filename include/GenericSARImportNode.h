@@ -4,6 +4,7 @@
 #include "ImportNodeBase.h"
 #include "GenericSARImportTask.h"
 #include "NodeDataTypes.h"
+#include "NodeUtils.h"
 
 #include <QWidget>
 #include <QLineEdit>
@@ -53,6 +54,7 @@ protected:
     MyThread* workerThread() const override { return nullptr; }
     QThread* qThread() const override { return nullptr; }
     void stopExecution() override;
+    bool prepareToStart() override;
 
 protected:
     void onImportFinished() override;
@@ -77,6 +79,8 @@ private:
     QString m_importedFilePath;
     QString m_outputNodeName;
     QString m_outputFileName;
+    QString m_preparedOutputFileName;
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 
     std::shared_ptr<ImageInfoData> m_imageInfoData;
 

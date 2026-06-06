@@ -17,7 +17,6 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QFutureWatcher>
 #include <QJsonArray>
-#include <QTimer>
 #include <QImage>
 #include <QSet>
 #include <QtGlobal>
@@ -444,15 +443,11 @@ bool CutNode::isReady() const
 void CutNode::processAutomatically()
 {
     if (m_isExecuting) {
+        deferAutomaticCompletion();
         return;
     }
 
     if (isReady()) {
-        // Set placeholder output to prevent base class resetting state to Idle
-        if (!m_outputData) {
-            m_outputData = std::make_shared<ImportedFileData>();
-            setOutputData(0, m_outputData);
-        }
         executeProcessing();
     } else {
         setState(ExecutionState::Idle);
@@ -506,8 +501,14 @@ void CutNode::executeProcessing()
     m_outputPaths = outputPaths;
 
     // Output conflict check
-    NodeUtils::OverwriteResult ovResult = NodeUtils::checkAndPromptOverwrite(
-        NodeUtils::getProjectContext(_widget), dstNodeName, outputPaths);
+    // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
+    NodeUtils::OverwriteResult ovResult;
+    if (_isAutoTriggered) {
+        ovResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        ovResult = NodeUtils::checkAndPromptOverwrite(
+            NodeUtils::getProjectContext(_widget), dstNodeName, outputPaths);
+    }
 
     if (ovResult == NodeUtils::OverwriteResult::Cancel) {
         setState(ExecutionState::Idle);
@@ -589,13 +590,7 @@ void CutNode::executeProcessing()
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(false);
 
     setState(ExecutionState::Running);
-
-    // Automatic mode singleShot fix to keep Running state
-    QTimer::singleShot(0, this, [this]() {
-        if (m_thread && m_thread->isRunning()) {
-            setState(ExecutionState::Running);
-        }
-    });
+    deferAutomaticCompletion();
 
     InSARLogManager::LogInfo("CutNode", "executeProcessing completed.");
 }

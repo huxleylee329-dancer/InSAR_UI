@@ -107,70 +107,25 @@ QWidget* GenericSARBatchImportNode::createWidget()
 
 void GenericSARBatchImportNode::executeImport()
 {
-    // Safety check: Ensure project is open
-    auto* model = projectModel();
-    QString path = projectPath();
-    QString name = projectName();
-
-    if (!model || path.isEmpty() || name.isEmpty())
-    {
-        onError("未检测到打开的项目，请先打开或新建一个项目。");
-        return;
-    }
-
-    if (m_imagePaths.isEmpty())
-    {
-        onError("请至少添加一个 通用 SAR 图像文件。");
-        return;
-    }
-
     if (m_task)
     {
         return;
     }
 
-    std::vector<QString> originalFileList;
-    std::vector<QString> importNameList;
-
-    for (const QString& imagePath : m_imagePaths)
-    {
-        if (!QFileInfo::exists(imagePath))
-        {
-            onError("通用 SAR 图像文件不存在：" + imagePath);
-            return;
-        }
-
-        originalFileList.push_back(imagePath);
-        QString importName = generateImportName(imagePath);
-        importNameList.push_back(importName);
-    }
-
-    QStringList pathsToCheck;
-    for (size_t i = 0; i < importNameList.size(); ++i) {
-        QString suffix = QFileInfo(originalFileList[i]).suffix();
-        if (suffix.isEmpty()) suffix = "h5";
-        pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + importNameList[i] + "." + suffix);
-        pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + importNameList[i] + ".jpg");
-    }
-    pathsToCheck.removeDuplicates();
-
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), getOutputNodeName(), pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
         return;
     }
 
-    // 清理旧数据，防止批量导入时反复执行导致数据累加
-    NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+    }
 
     m_task = new GenericSARBatchImportTask(
         projectPath(),
-        originalFileList,
-        importNameList,
+        m_preparedOriginalFileList,
+        m_preparedImportNameList,
         getOutputNodeName(),
         projectName(),
         projectModel()
@@ -186,6 +141,57 @@ void GenericSARBatchImportNode::executeImport()
             this, &GenericSARBatchImportNode::onModelUpdated, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
+}
+
+bool GenericSARBatchImportNode::prepareToStart()
+{
+    auto* model = projectModel();
+    QString path = projectPath();
+    QString name = projectName();
+
+    if (!model || path.isEmpty() || name.isEmpty())
+    {
+        onError("未检测到打开的项目，请先打开或新建一个项目。");
+        return false;
+    }
+
+    if (m_imagePaths.isEmpty())
+    {
+        onError("请至少添加一个 通用 SAR 图像文件。");
+        return false;
+    }
+
+    if (m_task)
+    {
+        return false;
+    }
+
+    m_preparedOriginalFileList.clear();
+    m_preparedImportNameList.clear();
+
+    for (const QString& imagePath : m_imagePaths)
+    {
+        if (!QFileInfo::exists(imagePath))
+        {
+            onError("通用 SAR 图像文件不存在：" + imagePath);
+            return false;
+        }
+
+        m_preparedOriginalFileList.push_back(imagePath);
+        m_preparedImportNameList.push_back(generateImportName(imagePath));
+    }
+
+    QStringList pathsToCheck;
+    for (size_t i = 0; i < m_preparedImportNameList.size(); ++i) {
+        QString suffix = QFileInfo(m_preparedOriginalFileList[i]).suffix();
+        if (suffix.isEmpty()) suffix = "h5";
+        pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + m_preparedImportNameList[i] + "." + suffix);
+        pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + m_preparedImportNameList[i] + ".jpg");
+    }
+    pathsToCheck.removeDuplicates();
+
+    m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(getProjectContext(), getOutputNodeName(), pathsToCheck, nullptr);
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
 }
 
 QStringList GenericSARBatchImportNode::getImportedFilePaths() const

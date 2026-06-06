@@ -445,6 +445,10 @@ void TreeView::Import()
                 "*.jpg");
             if (!dirname.isEmpty())
             {
+                if (mTreeProcess) {
+                    mTreeProcess->close();
+                    mTreeProcess->deleteLater();
+                }
                 mTreeProcess = new QProgressDialog("Saving Image...", nullptr, 0, 0, this);
                 mTreeProcess->setFixedSize(450, 100);
                 mTreeProcess->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
@@ -453,27 +457,40 @@ void TreeView::Import()
                 mTreeProcess->show();
 
                 QFutureWatcher<bool>* watcher = new QFutureWatcher<bool>(this);
-                connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher, dirname]() {
-                    bool success = watcher->result();
-                    if (mTreeProcess) {
-                        mTreeProcess->setValue(100);
-                        mTreeProcess->deleteLater();
-                        mTreeProcess = nullptr;
-                    }
-                    watcher->deleteLater();
-                    
-                    if (!success) {
-                        QFile::remove(dirname);
-                        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("图像保存失败！"));
-                    } else {
-                        QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("图像保存成功！"));
-                    }
-                });
+                watcher->setProperty("dirname", dirname);
+                watcher->setProperty("progress", QVariant::fromValue(static_cast<void*>(mTreeProcess)));
+                connect(watcher, &QFutureWatcher<bool>::finished, this, &TreeView::onSaveImageFinished);
 
                 QFuture<bool> future = QtConcurrent::run(NodeUtils::generateJpgPreviewFromH5, path, dirname, Imagerank);
                 watcher->setFuture(future);
             }
         }
+    }
+}
+
+void TreeView::onSaveImageFinished()
+{
+    QFutureWatcher<bool>* watcher = static_cast<QFutureWatcher<bool>*>(sender());
+    if (!watcher) return;
+    
+    bool success = watcher->result();
+    QString dirname = watcher->property("dirname").toString();
+    QProgressDialog* progress = static_cast<QProgressDialog*>(watcher->property("progress").value<void*>());
+    
+    if (progress) {
+        progress->setValue(100);
+        progress->deleteLater();
+        if (mTreeProcess == progress) {
+            mTreeProcess = nullptr;
+        }
+    }
+    watcher->deleteLater();
+    
+    if (!success) {
+        QFile::remove(dirname);
+        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("图像保存失败！"));
+    } else {
+        QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("图像保存成功！"));
     }
 }
 

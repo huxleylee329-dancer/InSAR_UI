@@ -36,7 +36,7 @@ public:
 
 public slots:
     void ShowImage(QModelIndex);
-    void Loading(QString Data_path, QString ImageType);
+    void Loading(QString Data_path, QString ImageType, QString bmp_path = "", QString bmp_name = "");
     // Open project when double click project file
     void open_from_project_file(QString str);
     // Welcome screen signal handlers
@@ -90,6 +90,7 @@ private:
 signals:
     void sendModel(QStandardItemModel*);
 private slots:
+    void onLoadImageFinished();
     bool CheckTab(QModelIndex);
     //void OpenMould(QModelIndex);
     void on_actionNew_triggered();
