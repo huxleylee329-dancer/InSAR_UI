@@ -3,7 +3,7 @@
 
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
-#include "MyThread.h"
+#include "TSXImportWorker.h"
 #include <QWidget>
 #include <QListWidget>
 #include <QComboBox>
@@ -45,8 +45,8 @@ protected:
     QString getOutputNodeName() const override;
 
     // Thread accessors
-    MyThread* workerThread() const override { return m_workerThread; }
     QThread* qThread() const override { return m_thread; }
+    void stopExecution() override;
 
     // Helper methods
     QString generateOutputFileName(const QString& xmlPath) const;
@@ -79,7 +79,7 @@ private:
     QString m_polarization = "HH";
 
     // Worker thread
-    MyThread* m_workerThread;
+    TSXImportWorker* m_workerThread;
     QThread* m_thread;
 };
 

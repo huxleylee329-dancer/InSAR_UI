@@ -32,20 +32,15 @@ protected:
 private:
     int num_pro;
     int type;//1：左上工程树，2：左下模板
-    MyThread* thread;
     QString m_cachedTheme;
-    void updateProcess(int value, QString information);
 signals:
     void sendindex(QModelIndex);
     /*更新treeview*/
-    void operate(QString, QString, QString);
     void update();
-    void updateProcess_info(int, QString);
 private slots:
     void Import();
     void Delete();
     /*卸载工程响应函数*/
     void Unload();
-    void StopThread();
     void DeleteNode();
  }; 

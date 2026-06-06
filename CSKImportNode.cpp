@@ -172,21 +172,23 @@ void CSKImportNode::executeImport()
         setProgress(100);
         onImportFinished();
         return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::Overwrite) {
+        NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
     }
 
     m_thread = new QThread(this);
-    m_workerThread = new MyThread();
+    m_workerThread = new CSKImportWorker();
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &CSKImportNode::startCSKImport,
-            m_workerThread, &MyThread::import_CSK_patch);
-    connect(m_workerThread, &MyThread::updateProcess,
+            m_workerThread, &CSKImportWorker::import_CSK_patch);
+    connect(m_workerThread, &CSKImportWorker::updateProcess,
             this, &CSKImportNode::onImportProgress);
-    connect(m_workerThread, &MyThread::endProcess,
+    connect(m_workerThread, &CSKImportWorker::endProcess,
             this, &CSKImportNode::onImportFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
+    connect(m_workerThread, &CSKImportWorker::errorProcess,
             this, &CSKImportNode::onThreadError);
-    connect(m_workerThread, &MyThread::sendModel,
+    connect(m_workerThread, &CSKImportWorker::sendModel,
             this, &CSKImportNode::onModelUpdated);
 
     m_thread->start();
@@ -199,6 +201,19 @@ void CSKImportNode::executeImport()
         projectName(),
         projectModel()
     );
+}
+
+void CSKImportNode::stopExecution()
+{
+    m_stopRequested = true;
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
+    if (m_thread && m_thread->isRunning())
+    {
+        m_thread->requestInterruption();
+    }
 }
 
 QStringList CSKImportNode::getImportedFilePaths() const

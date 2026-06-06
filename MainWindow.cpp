@@ -19,6 +19,10 @@
 #include "IApplicationInterface.h"
 #include "icon_utils.h"
 #include <QDebug>
+#include <QtConcurrent/QtConcurrent>
+#include <QFuture>
+#include <QFutureWatcher>
+#include "NodeUtils.h"
 
 // Windows DWM 标题栏主题支持
 #ifdef Q_OS_WIN
@@ -157,7 +161,6 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::MainWindow(QString str, QWidget* parent)
     : QMainWindow(parent)
-    , thread(nullptr)
     , Process(nullptr)
     , project(nullptr)
     , m_interfaceManager(nullptr)
@@ -288,7 +291,6 @@ MainWindow::~MainWindow()
         delete(Process);
         Process = NULL;
     }
-    this->thread = NULL;
     if (this->project)
     {
         delete this->project;
@@ -376,53 +378,6 @@ void MainWindow::closeEvent(QCloseEvent* event)
         closeCurrentProject();
         event->accept();
     }
-}
-void MainWindow::updateProcess(int value, QString information)
-{
-    this->Process->setValue(value);
-    this->Process->setLabelText(information);
-    if (m_statusProgressBar) {
-        m_statusProgressBar->setValue(value);
-    }
-    statusBar()->showMessage(QStringLiteral("正在处理: %1").arg(information));
-    QThread::currentThread()->msleep(1);
-}
-void MainWindow::endProcess()
-{
-        Process->setValue(100);
-        if (m_statusProgressBar) {
-            m_statusProgressBar->setValue(100);
-            m_statusProgressBar->hide();
-        }
-        statusBar()->showMessage(QStringLiteral("处理完成"), 3000);
-        waitKey(100);
-        if (this->Process)
-        {
-            delete(Process);
-            Process = NULL;
-        }
-        Loading(mData_path, mType);
-        thread->thread()->quit();
-        thread->thread()->wait();
-}
-void MainWindow::endThread()
-{
-    thread->thread()->quit();
-    thread->thread()->wait();
-    //thread->thread()->deleteLater();
-}
-void MainWindow::StopThread()
-{
-    //qDebug() << "Close thread id: " << thread->thread()->isFinished();
-   // qDebug() << "Status: " << thread->thread()->isInterruptionRequested();
-    if(this->thread != NULL)
-        if (this->thread->thread()->isRunning())
-    {
-        thread->thread()->requestInterruption();
-        thread->thread()->quit();
-        thread->thread()->wait();
-    }
-
 }
 void MainWindow::Loading(QString Data_path, QString ImageType)
 {
@@ -703,29 +658,41 @@ void MainWindow::ShowImage(QModelIndex image)
             {
                 mData_path = path;
                 mType = type;
-                thread = new MyThread;
-                thread->moveToThread(new QThread(this));
-                this->Process = new QProgressDialog("Loading Image...", "Cancel", 0, 100);
+                this->Process = new QProgressDialog("Loading Image...", nullptr, 0, 0, this);
                 Process->setFixedSize(450, 100);
                 Process->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
                 Process->setWindowTitle(QStringLiteral("Loading Result"));
-                Process->setCancelButton(false);
-                //this->Process->setAutoClose(true);
-                this->Process->setValue(0);
-                this->Process->show();
+                Process->setValue(0);
+                Process->show();
                 if (m_statusProgressBar) {
                     m_statusProgressBar->setValue(0);
                     m_statusProgressBar->show();
                 }
-                waitKey(100);
-                connect(this, &MainWindow::operate, thread, &MyThread::ShowImage);
-                connect(thread, &MyThread::updateProcess, this, &MainWindow::updateProcess);
-                connect(thread->thread(), &QThread::finished, thread, &MyThread::deleteLater);
-                connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);
-                connect(this->Process, &QProgressDialog::destroyed, this, &MainWindow::StopThread);
-                connect(this->Process, &QProgressDialog::canceled, this, &MainWindow::StopThread);// , Qt::QueuedConnection);
-                thread->thread()->start();
-                emit operate(path, path_abs, type);
+                
+                QFutureWatcher<bool>* watcher = new QFutureWatcher<bool>(this);
+                connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher, path_abs]() {
+                    bool success = watcher->result();
+                    if (this->Process) {
+                        this->Process->setValue(100);
+                        this->Process->deleteLater();
+                        this->Process = nullptr;
+                    }
+                    if (m_statusProgressBar) {
+                        m_statusProgressBar->setValue(100);
+                        m_statusProgressBar->hide();
+                    }
+                    watcher->deleteLater();
+                    
+                    if (success) {
+                        Loading(mData_path, mType);
+                    } else {
+                        QFile::remove(path_abs);
+                        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("图像预览生成失败！"));
+                    }
+                });
+                
+                QFuture<bool> future = QtConcurrent::run(NodeUtils::generateJpgPreviewFromH5, path, path_abs, type);
+                watcher->setFuture(future);
             }
         }
     }

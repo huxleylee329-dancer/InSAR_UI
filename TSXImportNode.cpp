@@ -1,6 +1,7 @@
 #include "InSARLogManager.h"
 
 #include "TSXImportNode.h"
+#include "TSXImportWorker.h"
 #include "ImportDataTypes.h"
 #include "NodeUtils.h"
 #include <QFile>
@@ -207,18 +208,18 @@ void TSXImportNode::executeImport()
     }
 
     m_thread = new QThread(this);
-    m_workerThread = new MyThread();
+    m_workerThread = new TSXImportWorker();
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &TSXImportNode::startTSXImport,
-            m_workerThread, &MyThread::import_TSX);
-    connect(m_workerThread, &MyThread::updateProcess,
+            m_workerThread, &TSXImportWorker::import_TSX);
+    connect(m_workerThread, &TSXImportWorker::updateProcess,
             this, &TSXImportNode::onImportProgress);
-    connect(m_workerThread, &MyThread::endProcess,
+    connect(m_workerThread, &TSXImportWorker::endProcess,
             this, &TSXImportNode::onImportFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
+    connect(m_workerThread, &TSXImportWorker::errorProcess,
             this, &TSXImportNode::onThreadError);
-    connect(m_workerThread, &MyThread::sendModel,
+    connect(m_workerThread, &TSXImportWorker::sendModel,
             this, &TSXImportNode::onModelUpdated);
 
     m_thread->start();
@@ -399,6 +400,14 @@ bool TSXImportNode::validateAndRestoreOutput()
     }
 
     return false;
+}
+
+void TSXImportNode::stopExecution()
+{
+    ImportNodeBase::stopExecution();
+    if (m_workerThread) {
+        m_workerThread->StopProcess();
+    }
 }
 
 } // namespace QtNodes

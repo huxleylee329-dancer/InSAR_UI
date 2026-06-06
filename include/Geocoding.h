@@ -1,8 +1,8 @@
-﻿#pragma once
+#pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_Geocoding.h"
-#include"MyThread.h"
+#include "GeocodingWorker.h"
 
 class Geocoding : public QWidget
 {
@@ -20,7 +20,7 @@ public slots:
 private:
     Ui::Geocoding* ui;
     QStandardItemModel* copy;
-    MyThread* Geocoding_thread;
+    GeocodingWorker* Geocoding_thread;
     QString save_path;
     QString projectFile;
     int image_number;

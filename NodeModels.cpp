@@ -36,6 +36,7 @@
 #include "SBASReferenceReselectionNode.h"
 #include "DeformationPreviewNode.h"
 #include "ExportKMLNode.h"
+#include "GeocodingNode.h"
 
 
 #include <memory>
@@ -156,8 +157,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // registry->registerModel<SBASReferenceReselectionNode>("SBAS/Reference Reselection");
     // registry->registerModel<DeformationVisualNode>("SBAS/Deformation Visualization");
 
-    // Export nodes (to be implemented)
-    // registry->registerModel<GeocodingNode>("Export/Geocoding/Image");
+    registry->registerModel<GeocodingNode>("Export/Geocoding");
     // registry->registerModel<KMLExportNode>("Export/KML");
 
     // Register test nodes for development (can be removed when all InSAR nodes are implemented)

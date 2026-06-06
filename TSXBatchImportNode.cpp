@@ -204,21 +204,23 @@ void TSXBatchImportNode::executeImport()
         setProgress(100);
         onImportFinished();
         return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::Overwrite) {
+        NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
     }
 
     m_thread = new QThread(this);
-    m_workerThread = new MyThread();
+    m_workerThread = new TSXImportWorker();
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &TSXBatchImportNode::startTSXBatchImport,
-            m_workerThread, &MyThread::import_TSX_patch);
-    connect(m_workerThread, &MyThread::updateProcess,
+            m_workerThread, &TSXImportWorker::import_TSX_patch);
+    connect(m_workerThread, &TSXImportWorker::updateProcess,
             this, &TSXBatchImportNode::onImportProgress);
-    connect(m_workerThread, &MyThread::endProcess,
+    connect(m_workerThread, &TSXImportWorker::endProcess,
             this, &TSXBatchImportNode::onImportFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
+    connect(m_workerThread, &TSXImportWorker::errorProcess,
             this, &TSXBatchImportNode::onThreadError);
-    connect(m_workerThread, &MyThread::sendModel,
+    connect(m_workerThread, &TSXImportWorker::sendModel,
             this, &TSXBatchImportNode::onModelUpdated);
 
     m_thread->start();
@@ -232,6 +234,19 @@ void TSXBatchImportNode::executeImport()
         projectName(),
         projectModel()
     );
+}
+
+void TSXBatchImportNode::stopExecution()
+{
+    m_stopRequested = true;
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
+    if (m_thread && m_thread->isRunning())
+    {
+        m_thread->requestInterruption();
+    }
 }
 
 QStringList TSXBatchImportNode::getImportedFilePaths() const

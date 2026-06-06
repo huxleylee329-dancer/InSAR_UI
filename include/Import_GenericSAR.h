@@ -1,6 +1,7 @@
 #pragma once
 #include <QtWidgets/QWidget>
 #include <qstandarditemmodel.h>
+#include <vector>
 #include "ui_ImportGenericSAR.h"
 #include <QPointer>
 #include "GenericSARImportTask.h"
@@ -16,7 +17,7 @@ public:
 public slots:
     void ShowProjectList(QStandardItemModel* model);
     void ChangeVision(bool Editable);
-    bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist);
+    bool generate_name(QListWidget* imageslist, std::vector<QString>& original_nameslist, std::vector<QString>& import_nameslist);
 
 private:
     Ui::ImportGenericSAR* ui;

@@ -2,7 +2,8 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_ImportCsk.h"
-#include"MyThread.h"
+#include "CSKImportWorker.h"
+#include <vector>
 
 class import_CSK : public QWidget
 {
@@ -13,17 +14,16 @@ public:
 public slots:
     void errorProcess(QString error_msg);
     void ShowProjectList(QStandardItemModel*);
-    /*生成批量导入文件名*/
-    bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist);
+    bool generate_name(QListWidget* imageslist, std::vector<QString>& original_nameslist, std::vector<QString>& import_nameslist);
     void ChangeVision(bool Editable);
 private:
     Ui::ImportCsk* ui;
     QString save_path;
     QStandardItemModel* copy;
-    MyThread* import_CSK_thread;
+    CSKImportWorker* import_CSK_thread;
 signals:
     void sendPath(QString, QString, QString);
-    void operate2(QString, vector<QString>, vector<QString>, QString, QString, QStandardItemModel*);
+    void operate2(QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();

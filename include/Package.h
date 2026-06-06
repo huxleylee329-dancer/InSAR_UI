@@ -142,15 +142,9 @@ struct OSV
 
 #define InSAR_API __declspec(dllexport)
 #ifdef _DEBUG
-
 #pragma comment(lib, "opencv_world450d.lib")
-
-
 #else
-
 #pragma comment(lib, "opencv_world450.lib")
-
-
 #endif // DEBUG
 
 

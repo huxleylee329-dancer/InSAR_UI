@@ -1,4 +1,4 @@
-﻿#include"MainWindow.h"
+#include"MainWindow.h"
 #include"Import_TSX.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
@@ -50,7 +50,7 @@ Import_TSX::~Import_TSX()
     }
 }
 
-bool Import_TSX::generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist)
+bool Import_TSX::generate_name(QListWidget* imageslist, std::vector<QString>& original_nameslist, std::vector<QString>& import_nameslist)
 {
     if (!imageslist) return false;
     import_nameslist.clear();
@@ -327,19 +327,19 @@ void Import_TSX::on_buttonBox_accepted()
         import_TSX_thread->thread()->wait();
     }
 
-    import_TSX_thread = new MyThread;
+    import_TSX_thread = new TSXImportWorker;
     QThread* thread = new QThread(this);
     import_TSX_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &Import_TSX::operate, import_TSX_thread, &MyThread::import_TSX, Qt::QueuedConnection);
-    connect(import_TSX_thread, &MyThread::updateProcess, this, &Import_TSX::updateProcess);
-    connect(thread, &QThread::finished, import_TSX_thread, &MyThread::deleteLater);
+    connect(this, &Import_TSX::operate, import_TSX_thread, &TSXImportWorker::import_TSX, Qt::QueuedConnection);
+    connect(import_TSX_thread, &TSXImportWorker::updateProcess, this, &Import_TSX::updateProcess);
+    connect(thread, &QThread::finished, import_TSX_thread, &TSXImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-    connect(import_TSX_thread, &MyThread::endProcess, this, &Import_TSX::endProcess);
+    connect(import_TSX_thread, &TSXImportWorker::endProcess, this, &Import_TSX::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_TSX::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
-    connect(import_TSX_thread, &MyThread::sendModel, this, &Import_TSX::TransitModel);
+    connect(import_TSX_thread, &TSXImportWorker::sendModel, this, &Import_TSX::TransitModel);
     thread->start();
     emit operate(
         ui->comboBox_pol->currentText(),
@@ -394,8 +394,8 @@ void Import_TSX::on_buttonBox_2_accepted()
     }
 
     //根据原始文件日期生成导入文件名称
-    vector<QString> original_namelist;
-    vector<QString> import_namelist;
+    std::vector<QString> original_namelist;
+    std::vector<QString> import_namelist;
     if (!generate_name(ui->listWidget, original_namelist, import_namelist)) return;
 
 
@@ -405,19 +405,19 @@ void Import_TSX::on_buttonBox_2_accepted()
         import_TSX_thread2->thread()->wait();
     }
 
-    import_TSX_thread2 = new MyThread;
+    import_TSX_thread2 = new TSXImportWorker;
     QThread* thread2 = new QThread(this);
     import_TSX_thread2->moveToThread(thread2);
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Import_TSX::operate2, import_TSX_thread2, &MyThread::import_TSX_patch, Qt::QueuedConnection);
-    connect(import_TSX_thread2, &MyThread::updateProcess, this, &Import_TSX::updateProcess);
-    connect(thread2, &QThread::finished, import_TSX_thread2, &MyThread::deleteLater);
+    connect(this, &Import_TSX::operate2, import_TSX_thread2, &TSXImportWorker::import_TSX_patch, Qt::QueuedConnection);
+    connect(import_TSX_thread2, &TSXImportWorker::updateProcess, this, &Import_TSX::updateProcess);
+    connect(thread2, &QThread::finished, import_TSX_thread2, &TSXImportWorker::deleteLater);
     connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
-    connect(import_TSX_thread2, &MyThread::endProcess, this, &Import_TSX::endProcess);
+    connect(import_TSX_thread2, &TSXImportWorker::endProcess, this, &Import_TSX::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_TSX::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
-    connect(import_TSX_thread2, &MyThread::sendModel, this, &Import_TSX::TransitModel);
+    connect(import_TSX_thread2, &TSXImportWorker::sendModel, this, &Import_TSX::TransitModel);
     thread2->start();
     emit operate2(
         ui->comboBox_pol2->currentText(),

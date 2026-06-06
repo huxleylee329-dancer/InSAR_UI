@@ -67,7 +67,7 @@ protected:
     void processAutomatically() override;
 
     // Thread accessors - subclasses must implement to return their worker/QThread
-    virtual MyThread* workerThread() const = 0;
+    virtual MyThread* workerThread() const { return nullptr; }
     virtual QThread* qThread() const = 0;
 
     // Helper: create a styled project badge label (shared across all import nodes)

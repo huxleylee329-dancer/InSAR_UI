@@ -2,7 +2,8 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_ImportTsx.h"
-#include"MyThread.h"
+#include "TSXImportWorker.h"
+#include <vector>
 
 class Import_TSX : public QWidget
 {
@@ -13,7 +14,7 @@ public:
 public slots:
     void ShowProjectList(QStandardItemModel* );
     /*生成批量导入文件名*/
-    bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist,  vector<QString>& import_nameslist);
+    bool generate_name(QListWidget* imageslist, std::vector<QString>& original_nameslist,  std::vector<QString>& import_nameslist);
     void ChangeVision(bool Editable);
 private:
     Ui::ImportTsx* ui;
@@ -22,12 +23,12 @@ private:
     QString xml_path;
     QString save_path;
     QStandardItemModel* copy;
-    MyThread* import_TSX_thread, *import_TSX_thread2;
+    TSXImportWorker *import_TSX_thread, *import_TSX_thread2;
     void saveSystemSettings();
 signals:
     void sendPath(QString, QString, QString);
     void operate(QString, QString, QString, QString, QString, QString, QStandardItemModel*);
-    void operate2(QString, QString, vector<QString>, vector<QString>, QString, QString, QStandardItemModel*);
+    void operate2(QString, QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();

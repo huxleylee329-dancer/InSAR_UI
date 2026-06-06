@@ -320,7 +320,7 @@ void Import_GenericSAR::on_buttonBox_2_rejected()
     close();
 }
 
-bool Import_GenericSAR::generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist)
+bool Import_GenericSAR::generate_name(QListWidget* imageslist, std::vector<QString>& original_nameslist, std::vector<QString>& import_nameslist)
 {
     if (!imageslist) return false;
     import_nameslist.clear();

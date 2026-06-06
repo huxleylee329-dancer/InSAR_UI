@@ -18,7 +18,6 @@ class QProgressBar;
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
-    MyThread* thread;
 public:
     MainWindow(QWidget* parent = Q_NULLPTR);
     MainWindow(QString str, QWidget* parent = Q_NULLPTR);
@@ -37,10 +36,6 @@ public:
 
 public slots:
     void ShowImage(QModelIndex);
-    void updateProcess(int, QString);
-    void endProcess();
-    void endThread();
-    void StopThread();
     void Loading(QString Data_path, QString ImageType);
     // Open project when double click project file
     void open_from_project_file(QString str);
@@ -94,7 +89,6 @@ private:
 
 signals:
     void sendModel(QStandardItemModel*);
-    void operate(QString, QString, QString);
 private slots:
     bool CheckTab(QModelIndex);
     //void OpenMould(QModelIndex);

@@ -2,7 +2,8 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_ImportAlos2.h"
-#include"MyThread.h"
+#include "ALOS2ImportWorker.h"
+#include <vector>
 
 class import_ALOS2 : public QWidget
 {
@@ -13,18 +14,17 @@ public:
 public slots:
     void errorProcess(QString error_msg);
     void ShowProjectList(QStandardItemModel*);
-    /*生成批量导入文件名*/
-    bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist,
-        vector<QString>& original_nameslist2);
+    bool generate_name(QListWidget* imageslist, std::vector<QString>& original_nameslist, std::vector<QString>& import_nameslist,
+        std::vector<QString>& original_nameslist2);
     void ChangeVision(bool Editable);
 private:
     Ui::ImportAlos2* ui;
     QString save_path;
     QStandardItemModel* copy;
-    MyThread* import_ALOS2_thread;
+    ALOS2ImportWorker* import_ALOS2_thread;
 signals:
     void sendPath(QString, QString, QString);
-    void operate2(QString, vector<QString>, vector<QString>, vector<QString>, QString, QString, QStandardItemModel*);
+    void operate2(QString, std::vector<QString>, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();

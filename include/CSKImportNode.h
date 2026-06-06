@@ -4,7 +4,7 @@
 
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
-#include "MyThread.h"
+#include "CSKImportWorker.h"
 #include <QWidget>
 #include <QListWidget>
 #include <QPushButton>
@@ -47,8 +47,8 @@ protected:
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
 
     // Thread accessors
-    MyThread* workerThread() const override { return m_workerThread; }
     QThread* qThread() const override { return m_thread; }
+    void stopExecution() override;
 
     // Helper methods
     QString generateOutputFileName(const QString& filePath) const;
@@ -81,7 +81,7 @@ private:
     QString m_outputNodeName;
 
     // Worker thread
-    MyThread* m_workerThread;
+    CSKImportWorker* m_workerThread;
     QThread* m_thread;
 };
 

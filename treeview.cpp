@@ -1,7 +1,8 @@
 #include "treeview.h"
-#include"icon_source.h"
+#include "icon_source.h"
 #include "icon_utils.h"
-#include<qmessagebox.h>
+#include <qmessagebox.h>
+#include "NodeUtils.h"
 #include <QMenu>
 #include <QMenuBar>  
 #include <QStatusBar> 
@@ -14,6 +15,9 @@
 #include <QStyledItemDelegate>
 #include <QPainter>
 #include <QItemSelectionModel>
+#include <QtConcurrent/QtConcurrent>
+#include <QFuture>
+#include <QFutureWatcher>
 
 // Icons now use SVG currentColor - automatically follows widget color property
 // No manual tinting needed - theme colors are set via stylesheet
@@ -66,7 +70,6 @@ TreeView::TreeView(QWidget* parent) : QTreeView(parent)
 {
     this->num_pro =0;
     mTreeProcess = NULL;
-    thread = NULL;
     type = 2;
      model = new QStandardItemModel(0, 2);
      //modelSelection = new QItemSelectionModel(model);
@@ -431,7 +434,6 @@ void TreeView::Import()
     {
         QModelIndex NameIndex = this->currentIndex();
         QModelIndex PathIndex = NameIndex.sibling(0, 1);
-        //QModelIndex ParentIndex = NameIndex.parent();
         QString path = model->itemFromIndex(PathIndex)->text();
         QString name = model->itemFromIndex(NameIndex)->text();
         QString Imagerank = model->itemFromIndex(NameIndex)->toolTip();
@@ -441,58 +443,37 @@ void TreeView::Import()
                 QStringLiteral("图像另存为"),
                 "/",
                 "*.jpg");
-            QFileInfo fileinfo = QFileInfo(dirname);
-           // QString bmp = QString("%1/%2.jpg").arg(fileinfo.absolutePath()).arg(fileinfo.baseName());
-           // QString path_abs = QString("%1%2%3%4").arg(fileinfo.absolutePath()).arg("/").arg(name).arg(".jpg");
             if (!dirname.isEmpty())
             {
-                thread = new MyThread;
-                thread->moveToThread(new QThread(this));
-                mTreeProcess = new QProgressDialog("Loading Image...", "Cancel", 0, 100);
+                mTreeProcess = new QProgressDialog("Saving Image...", nullptr, 0, 0, this);
                 mTreeProcess->setFixedSize(450, 100);
                 mTreeProcess->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
                 mTreeProcess->setWindowTitle(QStringLiteral("保存进度"));
-                mTreeProcess->setCancelButton(false);
-                //this->Process->setAutoClose(true);
                 mTreeProcess->setValue(0);
                 mTreeProcess->show();
-                cv::waitKey(100);
-                connect(this, &TreeView::operate, thread, &MyThread::ShowImage);
-                connect(thread, &MyThread::updateProcess, this, &TreeView::updateProcess);
-                connect(thread->thread(), &QThread::finished, thread, &MyThread::deleteLater);
-                connect(thread, &MyThread::endProcess, this, &TreeView::StopThread);
-                thread->thread()->start();
-                emit operate(path, dirname, Imagerank);
-                //SaveImage(path, dirname, Imagerank);
-                //connect(this, &TreeView::updateProcess_info, this, &TreeView::updateProcess);
 
+                QFutureWatcher<bool>* watcher = new QFutureWatcher<bool>(this);
+                connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher, dirname]() {
+                    bool success = watcher->result();
+                    if (mTreeProcess) {
+                        mTreeProcess->setValue(100);
+                        mTreeProcess->deleteLater();
+                        mTreeProcess = nullptr;
+                    }
+                    watcher->deleteLater();
+                    
+                    if (!success) {
+                        QFile::remove(dirname);
+                        QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("图像保存失败！"));
+                    } else {
+                        QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("图像保存成功！"));
+                    }
+                });
+
+                QFuture<bool> future = QtConcurrent::run(NodeUtils::generateJpgPreviewFromH5, path, dirname, Imagerank);
+                watcher->setFuture(future);
             }
-
-            
         }
-    }
-}
-
-void TreeView::StopThread()
-{
-    mTreeProcess->setValue(100);
-    cv::waitKey(100);
-    if (!mTreeProcess)
-    {
-        delete(mTreeProcess);
-        mTreeProcess = NULL;
-    }
-    thread->thread()->quit();
-    thread->thread()->wait();
-
-}
-
-void TreeView::updateProcess(int value, QString information)
-{
-    if (mTreeProcess)
-    {
-        mTreeProcess->setValue(value);
-        mTreeProcess->setLabelText(information);
     }
 }
 

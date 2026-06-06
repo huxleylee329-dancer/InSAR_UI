@@ -206,12 +206,12 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
     if (h5Path.isEmpty() || jpgPath.isEmpty())
         return false;
 
+    Utils util;
+    FormatConversion FC;
+
     if (type == "complex")
     {
-        Utils util;
         ComplexMat SLC64;
-        FormatConversion FC;
-        
         if (FC.read_slc_from_h5(h5Path.toLocal8Bit().constData(), SLC64) != 0)
             return false;
             
@@ -230,10 +230,7 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
     }
     else if (type == "phase" || type == "coherence" || type == "dem")
     {
-        FormatConversion FC;
-        Utils util;
         cv::Mat phase;
-        
         if (FC.read_array_from_h5(h5Path.toStdString().c_str(), type.toStdString().c_str(), phase) != 0)
             return false;
             
@@ -245,6 +242,14 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
             
         int ret = -1;
         if (type == "phase")
+        {
+            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
+        }
+        else if (type == "coherence")
+        {
+            ret = util.savephase(jpgPath.toStdString().c_str(), "gray", phase);
+        }
+        else if (type == "dem")
         {
             ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
         }
@@ -281,7 +286,14 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
             
             // 3. Apply colormap
             cv::Mat color_image;
-            cv::applyColorMap(phase_normalized, color_image, cv::COLORMAP_JET);
+            if (type == "coherence")
+            {
+                color_image = phase_normalized;
+            }
+            else
+            {
+                cv::applyColorMap(phase_normalized, color_image, cv::COLORMAP_JET);
+            }
             
             // 4. Save using cv::imwrite
             bool success_write = cv::imwrite(jpgPath.toStdString(), color_image);
@@ -299,6 +311,67 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
                 util.resampling(jpgPath.toStdString().c_str(), jpgPath.toStdString().c_str(),
                     (int)(phase.rows / down_sample_times),
                     (int)(phase.cols / down_sample_times));
+            }
+        }
+        return ret == 0;
+    }
+    else if (type == "amplitude")
+    {
+        cv::Mat phase;
+        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "amplitude", phase) != 0)
+            return false;
+            
+        if (phase.type() != CV_32F)
+        {
+            phase.convertTo(phase, CV_32F);
+        }
+        phase = phase.clone();
+        
+        int ret = util.saveAmplitude(jpgPath.toStdString().c_str(), phase);
+        
+        if (ret == 0 && phase.rows * phase.cols > 25e6)
+        {
+            int down_sample_times = (int)std::sqrt(std::floor(double(phase.rows * phase.cols) / 25e6));
+            if (down_sample_times > 1) {
+                util.resampling(jpgPath.toStdString().c_str(), jpgPath.toStdString().c_str(),
+                    (int)(phase.rows / down_sample_times),
+                    (int)(phase.cols / down_sample_times));
+            }
+        }
+        return ret == 0;
+    }
+    else if (type == "SBAS")
+    {
+        cv::Mat defomation_velocity, mask;
+        int ret_vel = FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
+        if (ret_vel != 0)
+            return false;
+            
+        int ret_mask = FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
+        
+        if (defomation_velocity.type() != CV_64F)
+        {
+            defomation_velocity.convertTo(defomation_velocity, CV_64F);
+        }
+        defomation_velocity = defomation_velocity.clone();
+        
+        int ret = -1;
+        if (ret_mask == 0)
+        {
+            ret = util.savephase_white(jpgPath.toStdString().c_str(), "jet", defomation_velocity, mask);
+        }
+        else
+        {
+            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", defomation_velocity);
+        }
+        
+        if (ret == 0 && defomation_velocity.rows * defomation_velocity.cols > 25e6)
+        {
+            int down_sample_times = (int)std::sqrt(std::floor(double(defomation_velocity.rows * defomation_velocity.cols) / 25e6));
+            if (down_sample_times > 1) {
+                util.resampling(jpgPath.toStdString().c_str(), jpgPath.toStdString().c_str(),
+                    (int)(defomation_velocity.rows / down_sample_times),
+                    (int)(defomation_velocity.cols / down_sample_times));
             }
         }
         return ret == 0;

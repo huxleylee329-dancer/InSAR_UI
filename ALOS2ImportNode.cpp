@@ -175,21 +175,23 @@ void ALOS2ImportNode::executeImport()
         setProgress(100);
         onImportFinished();
         return;
+    } else if (overwriteRes == NodeUtils::OverwriteResult::Overwrite) {
+        NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
     }
 
     m_thread = new QThread(this);
-    m_workerThread = new MyThread();
+    m_workerThread = new ALOS2ImportWorker();
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &ALOS2ImportNode::startALOS2Import,
-            m_workerThread, &MyThread::import_ALOS2_patch);
-    connect(m_workerThread, &MyThread::updateProcess,
+            m_workerThread, &ALOS2ImportWorker::import_ALOS2_patch);
+    connect(m_workerThread, &ALOS2ImportWorker::updateProcess,
             this, &ALOS2ImportNode::onImportProgress);
-    connect(m_workerThread, &MyThread::endProcess,
+    connect(m_workerThread, &ALOS2ImportWorker::endProcess,
             this, &ALOS2ImportNode::onImportFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
+    connect(m_workerThread, &ALOS2ImportWorker::errorProcess,
             this, &ALOS2ImportNode::onThreadError);
-    connect(m_workerThread, &MyThread::sendModel,
+    connect(m_workerThread, &ALOS2ImportWorker::sendModel,
             this, &ALOS2ImportNode::onModelUpdated);
 
     m_thread->start();
@@ -203,6 +205,19 @@ void ALOS2ImportNode::executeImport()
         projectName(),
         projectModel()
     );
+}
+
+void ALOS2ImportNode::stopExecution()
+{
+    m_stopRequested = true;
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
+    if (m_thread && m_thread->isRunning())
+    {
+        m_thread->requestInterruption();
+    }
 }
 
 QStringList ALOS2ImportNode::getImportedFilePaths() const

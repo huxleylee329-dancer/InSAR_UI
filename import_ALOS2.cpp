@@ -1,9 +1,10 @@
-﻿#include"MainWindow.h"
+#include"MainWindow.h"
 #include"import_ALOS2.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include<opencv2/highgui.hpp>
 #include<qmessagebox.h>
+#include<QThread>
 import_ALOS2::import_ALOS2(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::ImportAlos2)
@@ -29,9 +30,9 @@ import_ALOS2::~import_ALOS2()
 
 bool import_ALOS2::generate_name(
     QListWidget* imageslist,
-    vector<QString>& original_nameslist, 
-    vector<QString>& import_nameslist,
-    vector<QString>& original_nameslist2
+    std::vector<QString>& original_nameslist, 
+    std::vector<QString>& import_nameslist,
+    std::vector<QString>& original_nameslist2
 )
 {
     if (!imageslist) return false;
@@ -264,8 +265,8 @@ void import_ALOS2::on_buttonBox_accepted()
     }
 
     //根据原始文件日期生成导入文件名称
-    vector<QString> original_namelist, original_namelist2;
-    vector<QString> import_namelist;
+    std::vector<QString> original_namelist, original_namelist2;
+    std::vector<QString> import_namelist;
     if (!generate_name(ui->listWidget, original_namelist, import_namelist, original_namelist2))
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("输入IMG数据不合法，或者同级目录下没有LED文件！"));
@@ -279,20 +280,20 @@ void import_ALOS2::on_buttonBox_accepted()
         import_ALOS2_thread->thread()->wait();
     }
 
-    import_ALOS2_thread = new MyThread;
+    import_ALOS2_thread = new ALOS2ImportWorker;
     QThread* thread = new QThread(this);
     import_ALOS2_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &import_ALOS2::operate2, import_ALOS2_thread, &MyThread::import_ALOS2_patch, Qt::QueuedConnection);
-    connect(import_ALOS2_thread, &MyThread::updateProcess, this, &import_ALOS2::updateProcess);
-    connect(thread, &QThread::finished, import_ALOS2_thread, &MyThread::deleteLater);
+    connect(this, &import_ALOS2::operate2, import_ALOS2_thread, &ALOS2ImportWorker::import_ALOS2_patch, Qt::QueuedConnection);
+    connect(import_ALOS2_thread, &ALOS2ImportWorker::updateProcess, this, &import_ALOS2::updateProcess);
+    connect(thread, &QThread::finished, import_ALOS2_thread, &ALOS2ImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-    connect(import_ALOS2_thread, &MyThread::endProcess, this, &import_ALOS2::endProcess);
-    connect(import_ALOS2_thread, &MyThread::errorProcess, this, &import_ALOS2::errorProcess);
+    connect(import_ALOS2_thread, &ALOS2ImportWorker::endProcess, this, &import_ALOS2::endProcess);
+    connect(import_ALOS2_thread, &ALOS2ImportWorker::errorProcess, this, &import_ALOS2::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_ALOS2::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_ALOS2::StopThread);// , Qt::QueuedConnection);
-    connect(import_ALOS2_thread, &MyThread::sendModel, this, &import_ALOS2::TransitModel);
+    connect(import_ALOS2_thread, &ALOS2ImportWorker::sendModel, this, &import_ALOS2::TransitModel);
     thread->start();
     emit operate2(
         this->save_path, //保存路径

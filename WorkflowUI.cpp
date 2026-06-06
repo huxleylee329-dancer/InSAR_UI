@@ -71,6 +71,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "InSAR",          // InSAR分类
         "DInSAR",         // DInSAR分类
         "Display",        // 图像显示/预览分类
+        "Export",         // 数据导出分类
         "Information",    // 信息/工具节点分类
         "Test"           // 测试节点分类
     };
@@ -186,6 +187,16 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Reference Reselection", "Reference Reselection"},
         {"Time Series View", "Time Series View"},
         {"Export as KML", "Export as KML"}
+    };
+
+    // Export 子分类顺序
+    order.subcategories["Export"] = QStringList{
+        "Geocoding"
+    };
+
+    // Export/Geocoding 类叶子项顺序
+    order.leafItems["Export/Geocoding"] = QList<PaletteOrder::LeafItem>{
+        {"Image Geocoding", "Image Geocoding"}
     };
 
     // Test 类叶子项顺序

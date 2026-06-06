@@ -1,4 +1,4 @@
-﻿#include"Geocoding.h"
+#include"Geocoding.h"
 #include"ui_Geocoding.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -7,6 +7,7 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include<QThread>
 Geocoding::Geocoding(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::Geocoding)
@@ -305,17 +306,17 @@ void Geocoding::on_buttonBox_accepted()
     }
 
 
-    Geocoding_thread = new MyThread;
+    Geocoding_thread = new GeocodingWorker;
     Geocoding_thread->moveToThread(new QThread(this));
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &Geocoding::operate, Geocoding_thread, &MyThread::Geocoding, Qt::QueuedConnection);
-    connect(Geocoding_thread, &MyThread::updateProcess, this, &Geocoding::updateProcess);
-    connect(Geocoding_thread->thread(), &QThread::finished, Geocoding_thread, &MyThread::deleteLater);
-    connect(Geocoding_thread, &MyThread::endProcess, this, &Geocoding::endProcess);
+    connect(this, &Geocoding::operate, Geocoding_thread, &GeocodingWorker::Geocoding, Qt::QueuedConnection);
+    connect(Geocoding_thread, &GeocodingWorker::updateProcess, this, &Geocoding::updateProcess);
+    connect(Geocoding_thread->thread(), &QThread::finished, Geocoding_thread, &GeocodingWorker::deleteLater);
+    connect(Geocoding_thread, &GeocodingWorker::endProcess, this, &Geocoding::endProcess);
     connect(this, &QWidget::destroyed, this, &Geocoding::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Geocoding::StopThread);// , Qt::QueuedConnection);
-    connect(Geocoding_thread, &MyThread::sendModel, this, &Geocoding::TransitModel);
+    connect(Geocoding_thread, &GeocodingWorker::sendModel, this, &Geocoding::TransitModel);
     Geocoding_thread->thread()->start();
     ChangeVision(false);
     operate(1,
@@ -356,17 +357,17 @@ void Geocoding::on_buttonBox_2_accepted()
     }
 
 
-    Geocoding_thread = new MyThread;
+    Geocoding_thread = new GeocodingWorker;
     Geocoding_thread->moveToThread(new QThread(this));
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Geocoding::operate, Geocoding_thread, &MyThread::Geocoding, Qt::QueuedConnection);
-    connect(Geocoding_thread, &MyThread::updateProcess, this, &Geocoding::updateProcess);
-    connect(Geocoding_thread->thread(), &QThread::finished, Geocoding_thread, &MyThread::deleteLater);
-    connect(Geocoding_thread, &MyThread::endProcess, this, &Geocoding::endProcess);
+    connect(this, &Geocoding::operate, Geocoding_thread, &GeocodingWorker::Geocoding, Qt::QueuedConnection);
+    connect(Geocoding_thread, &GeocodingWorker::updateProcess, this, &Geocoding::updateProcess);
+    connect(Geocoding_thread->thread(), &QThread::finished, Geocoding_thread, &GeocodingWorker::deleteLater);
+    connect(Geocoding_thread, &GeocodingWorker::endProcess, this, &Geocoding::endProcess);
     connect(this, &QWidget::destroyed, this, &Geocoding::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Geocoding::StopThread);// , Qt::QueuedConnection);
-    connect(Geocoding_thread, &MyThread::sendModel, this, &Geocoding::TransitModel);
+    connect(Geocoding_thread, &GeocodingWorker::sendModel, this, &Geocoding::TransitModel);
     Geocoding_thread->thread()->start();
     ChangeVision(false);
     operate(

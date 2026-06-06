@@ -1,38 +1,25 @@
 #ifndef MYTHREAD_H
 #define MYTHREAD_H
 
-#include <QMetaType>
 #include <QObject>
-#include <QDebug>
 #include <QThread>
 #include <QMutex>
 #include <QList>
-#include <QStandardItemModel>
-#include <QDir>
 #include <vector>
-#include <string>
-#include <opencv2/opencv.hpp>
-#include "FormatConversion.h"
+
+class QStandardItemModel;
 
 class MyThread : public QObject
 {
     Q_OBJECT
-    XMLFile* DOC;
 
 public:
     MyThread(QObject* parent = nullptr);
     ~MyThread();
 
 public slots:
-    void Import();
     void import_sentinel(QString PODFile, QString manifest_file, QString subswath, QString polarization, QString project_path, QString folder, QString filename, QString project_name, QStandardItemModel* model);
     void import_sentinel_patch(std::vector<QString> original_namelist, std::vector<QString> import_namelist, QString subswath, QString polarization, QString savepath, QString dst_node, QString dst_project, QStandardItemModel* model);
-    void import_TSX(QString polarization, QString xml_filename, QString project_path, QString folder, QString filename, QString project_name, QStandardItemModel* model);
-    void import_TSX_patch(QString polarization, QString savepath, std::vector<QString> original_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
-    void import_CSK_patch(QString savepath, std::vector<QString> original_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
-    void import_ALOS2_patch(QString savepath, std::vector<QString> IMG_file_list, std::vector<QString> LED_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
-    void ShowImage(QString h5_path, QString bmp_path, QString type);
-    void Geocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
     void StopProcess();
     bool isStopRequested();
 
@@ -47,8 +34,6 @@ signals:
 private:
     QMutex lock;
     bool stop_flag;
-    int complex_coherence(const ComplexMat& master_image, const ComplexMat& slave_image, int est_wndsize_rg, int est_wndsize_az, cv::Mat& coherence);
-    int change_suffix(const char* input, QString output_str, QString old_suffix, QString new_suffix);
 };
 
 #endif // MYTHREAD_H

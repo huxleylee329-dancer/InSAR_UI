@@ -1,8 +1,9 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
-#include<qstandarditemmodel.h>
-#include"ui_ImportSentinel.h"
-#include"MyThread.h"
+#include <qstandarditemmodel.h>
+#include <vector>
+#include "ui_ImportSentinel.h"
+#include "MyThread.h"
 
 class import_sentinel : public QWidget
 {
@@ -13,7 +14,7 @@ public:
 public slots:
     void ShowProjectList(QStandardItemModel*);
     /*批量导入文件名生成*/
-    bool generate_name(QListWidget* imageslist, vector<QString>& original_nameslist, vector<QString>& import_nameslist);
+    bool generate_name(QListWidget* imageslist, std::vector<QString>& original_nameslist, std::vector<QString>& import_nameslist);
     void ChangeVision(bool Editable);
 private:
     Ui::ImportSentinel* ui;
@@ -26,7 +27,7 @@ private:
 signals:
     void sendPath(QString, QString, QString);
     void operate(QString, QString , QString , QString , QString ,QString, QString, QString, QStandardItemModel*);
-    void operate2(vector<QString>, vector<QString>, QString, QString, QString, QString, QString, QStandardItemModel*);
+    void operate2(std::vector<QString>, std::vector<QString>, QString, QString, QString, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();
