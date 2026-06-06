@@ -1,14 +1,15 @@
-﻿#include"Baseline_Formation.h"
-#include"ui_BaselineFormation.h"
-#include"Coordinate.h"
-#include"icon_source.h"
+#include<QThread>
+#include<QFile>
+#include<QDir>
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
-#include<Utils.h>
 #include<qmessagebox.h>
-#include<QFile>
-#include<QDir>
+#include<Utils.h>
+#include"Baseline_Formation.h"
+#include"ui_BaselineFormation.h"
+#include"icon_source.h"
+#include"Coordinate.h"
 Baseline_Formation::Baseline_Formation(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::BaselineFormation)
@@ -278,22 +279,48 @@ void Baseline_Formation::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请输入合法时间基线阈值！"));
         return;
     }
-    int index = ui->comboBox_masterImage->currentIndex() + 1;/*= ui->Index_edit->text().toUInt(&bFlag)*/;
+    int index = ui->comboBox_masterImage->currentIndex() + 1;
     this->image_number = ui->comboBox_masterImage->count();
-    Baseline_Formation_thread = new MyThread;
-    Baseline_Formation_thread->moveToThread(new QThread(this));
+    
+    Baseline_Formation_thread = new BaselineWorker();
+    QThread* thread = new QThread(this);
+    Baseline_Formation_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &Baseline_Formation::operate, Baseline_Formation_thread, &MyThread::Baseline_Formation, Qt::QueuedConnection);
-    connect(Baseline_Formation_thread, &MyThread::updateProcess, this, &Baseline_Formation::updateProcess);
-    connect(Baseline_Formation_thread->thread(), &QThread::finished, Baseline_Formation_thread, &MyThread::deleteLater);
-    connect(Baseline_Formation_thread, &MyThread::sendBL, this, &Baseline_Formation::Paint_Baseline);
-    connect(Baseline_Formation_thread, &MyThread::endProcess, this, &Baseline_Formation::endProcess);
+    
+    connect(this, &Baseline_Formation::operate, Baseline_Formation_thread, &BaselineWorker::Baseline_Estimate, Qt::QueuedConnection);
+    connect(Baseline_Formation_thread, &BaselineWorker::updateProcess, this, &Baseline_Formation::updateProcess);
+    connect(thread, &QThread::finished, Baseline_Formation_thread, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    connect(Baseline_Formation_thread, &BaselineWorker::sendBL, this, &Baseline_Formation::Paint_Baseline);
+    connect(Baseline_Formation_thread, &BaselineWorker::endProcess, this, &Baseline_Formation::endProcess);
+    connect(Baseline_Formation_thread, &BaselineWorker::errorProcess, this, [this](QString err) {
+        QMessageBox::warning(this, "Error", err);
+        StopThread();
+    });
     connect(this, &QWidget::destroyed, this, &Baseline_Formation::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Baseline_Formation::StopThread);// , Qt::QueuedConnection);
-    Baseline_Formation_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Baseline_Formation::StopThread);
+    
+    thread->start();
     ChangeVision(false);
-    emit operate(index, ui->comboBox->currentText(), ui->comboBox_dst_node->currentText(), this->copy);
+
+    QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
+    QStandardItem* image = NULL;
+    if (project) {
+        for (int i = 0; i < project->rowCount(); i++) {
+            if (project->child(i, 0)->text() == ui->comboBox_dst_node->currentText()) {
+                image = project->child(i, 0);
+                break;
+            }
+        }
+    }
+    if (!image) return;
+    QStringList filePaths;
+    for (int i = 0; i < image->rowCount(); i++) {
+        filePaths.append(image->child(i, 1)->text());
+    }
+    
+    emit operate(index, filePaths);
 
 }
 

@@ -2,7 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include"ui_SbasTimeSeriesAnalysis.h"
-#include"MyThread.h"
+#include "SBASTimeSeriesWorker.h"
 
 class SBAS_time_series_analysis : public QWidget
 {
@@ -20,7 +20,7 @@ public slots:
 private:
     Ui::SbasTimeSeriesAnalysis* ui;
     QStandardItemModel* copy;
-    MyThread* SBAS_time_series_analysis_thread;
+    SBASTimeSeriesWorker* SBAS_time_series_analysis_thread;
     QString save_path;
     int method;//1：Delaunay_MCF，2：SNAPHU，3：MCF
     int image_number;
@@ -28,7 +28,7 @@ private:
     double spatial_thresh;
     
 signals:
-    void operate(double, double, double, int, int, int, double, double, double, double, double, QString, QString, QString, QString, QStandardItemModel*);
+    void operate(double, double, double, int, int, int, double, double, double, double, double, QString, QString, QString, QString, QStringList, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
     void sendBaseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index, double temporal_thresh, double spatial_thresh);
 

@@ -169,9 +169,23 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Baseline Preview", "Baseline Preview"}
     };
 
+    // DInSAR 子分类顺序
+    order.subcategories["DInSAR"] = QStringList{
+        "SBAS"
+    };
+
     // DInSAR 类叶子项顺序
     order.leafItems["DInSAR"] = QList<PaletteOrder::LeafItem>{
         {"SLC Deramp", "SLC Deramp"}
+    };
+
+    // DInSAR/SBAS 类叶子项顺序
+    order.leafItems["DInSAR/SBAS"] = QList<PaletteOrder::LeafItem>{
+        {"Baseline Formation", "Baseline Formation"},
+        {"Time-Series Analysis", "Time-Series Analysis"},
+        {"Reference Reselection", "Reference Reselection"},
+        {"Time Series View", "Time Series View"},
+        {"Export as KML", "Export as KML"}
     };
 
     // Test 类叶子项顺序

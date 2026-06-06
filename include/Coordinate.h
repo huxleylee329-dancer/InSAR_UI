@@ -17,6 +17,7 @@ class Coordinate : public QWidget
 public:
     explicit Coordinate( QWidget* parent = 0);
     ~Coordinate();
+    QChart* chart() const { return mChart; }
 public slots:
     void Paint(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
     void Paint2(QList<double> temporal_baseline, QList<double> spatial_baseline, int index, double temporal_thresh, double temporal_thresh_low, double spatial_thresh);

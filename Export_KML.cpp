@@ -1,4 +1,5 @@
 #include"Export_KML.h"
+#include"ExportKMLWorker.h"
 #include"Coordinate.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -16,13 +17,52 @@
 //#include<FormatConversion.h>
 Export_KML::Export_KML(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::ExportKml)
+    ui(new Ui::ExportKml),
+    m_thread(nullptr),
+    m_worker(nullptr)
 {
     ui->setupUi(this);
 
 }
 Export_KML::~Export_KML()
 {
+    if (m_thread)
+    {
+        m_thread->quit();
+        m_thread->wait();
+    }
+}
+
+void Export_KML::updateProcess(int progress, QString message)
+{
+    ui->Export->setText(QString("%1%: %2").arg(progress).arg(message));
+}
+
+void Export_KML::endProcess()
+{
+    if (m_thread)
+    {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread = nullptr;
+    }
+    m_worker = nullptr;
+    QMessageBox::information(this, QStringLiteral("提示"), QStringLiteral("KML数据导出成功！"));
+    this->close();
+}
+
+void Export_KML::errorProcess(QString error_msg)
+{
+    if (m_thread)
+    {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread = nullptr;
+    }
+    m_worker = nullptr;
+    QMessageBox::warning(this, QStringLiteral("错误"), QStringLiteral("导出失败: ") + error_msg);
+    ChangeVision(true);
+    ui->Export->setText(QStringLiteral("开始导出"));
 }
 
 void Export_KML::Paint_Colorbar(double mMin, double mMax, QString save_path)
@@ -283,83 +323,35 @@ void Export_KML::on_Export_pressed()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("文件名中不应包含中文或特殊符号！"));
         return;
     }
-    ChangeVision(false);
-    ui->Export->setText(QStringLiteral("正在导出……"));
+
     QStandardItem* project = copy->findItems(ui->comboBox->currentText())[0];
     QString h5_path;
-    QString jpg_path;
-    QString colorbar_path;
-    QString KML_path;
     for (int i = 0; i < project->rowCount(); i++)
     {
         if (project->child(i, 0)->text() == ui->comboBox_2->currentText())
         {
             h5_path = project->child(i, 0)->child(0, 1)->text();
-            jpg_path = ui->File_path->text() +"/" + ui->File_name->text() + ".jpg";
-            colorbar_path = ui->File_path->text() +"/" + "Colorbar.png";
-            KML_path = ui->File_path->text() + "/" + ui->File_name->text() + ".kml";
             break;
         }
     }
-    Utils util;
-    ComplexMat SLC64;
-    FormatConversion FC;
-    Mat deformation_velocity, mask;
-    Mat image;
-    int Rows = 0, Cols = 0;
-    int ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "defomation_velocity", deformation_velocity);
-    Rows = deformation_velocity.rows/*12252*/;
-    Cols = deformation_velocity.cols/*24463*/;
-    ret = FC.read_array_from_h5(h5_path.toStdString().c_str(), "mask", mask);
-    if (deformation_velocity.type() != CV_64F)
-    {
-        deformation_velocity.convertTo(deformation_velocity, CV_64F);
-    }
-    util.savephase_white(jpg_path.toStdString().c_str(), "jet", deformation_velocity, mask);
-    if (QThread::currentThread()->isInterruptionRequested())
-    {
-        //emit endProcess();
-        QFile::remove(jpg_path.toStdString().c_str());
-        return;
-    }
-    double mMax = 0, mMin = 0;
-    cv::minMaxIdx(deformation_velocity, &mMin, &mMax, NULL, NULL);
-    Paint_Colorbar(mMin, mMax, colorbar_path);
-    Mat tmp;
-    double BottomLeft_lon = 0, BottomLeft_lat = 0, BottomRight_lon = 0, BottomRight_lat = 0,
-        TopRight_lon = 0, TopRight_lat = 0, TopLeft_lon = 0, TopLeft_lat = 0, ref_lon = 0.0, ref_lat = 0.0;
-    int ref_row = 0, ref_col = 0;
-    FC.read_int_from_h5(h5_path.toStdString().c_str(), "ref_row", &ref_row);
-    FC.read_int_from_h5(h5_path.toStdString().c_str(), "ref_col", &ref_col);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lat", ref_row, ref_col, 1, 1, tmp);
-    ref_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lon", ref_row, ref_col, 1, 1, tmp);
-    ref_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lat", 0, 0, 1, 1, tmp);
-    TopLeft_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lat", 0, Cols-1, 1, 1, tmp);
-    TopRight_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lat", Rows-1, 0, 1, 1, tmp);
-    BottomLeft_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lat", Rows-1, Cols - 1, 1, 1, tmp);
-    BottomRight_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);;
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lon", 0, 0, 1, 1, tmp);
-    TopLeft_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lon", 0, Cols - 1, 1, 1, tmp);
-    TopRight_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lon", Rows - 1, 0, 1, 1, tmp);
-    BottomLeft_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5_path.toStdString().c_str(), "mapped_lon", Rows - 1, Cols - 1, 1, 1, tmp);
-    BottomRight_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    util.writeOverlayKML(BottomLeft_lon, BottomLeft_lat, BottomRight_lon, BottomRight_lat, TopRight_lon, TopRight_lat,
-        TopLeft_lon, TopLeft_lat, ref_lon, ref_lat,
-        (ui->File_name->text() + ".jpg").toStdString().c_str(), KML_path.toStdString().c_str(), "Colorbar.png");
-    this->close();
-    /*bFlag = ui->File_path->text().contains(QRegularExpression("^\\w+$"));
-    if (!bFlag)
-    {
-        QMessageBox::warning(NULL, "Warning!", QStringLiteral("路径中不应包含中文或特殊符号！"));
-        return;
-    }*/
+
+    ChangeVision(false);
+    ui->Export->setText(QStringLiteral("正在导出……"));
+
+    m_worker = new ExportKMLWorker();
+    m_thread = new QThread(this);
+    m_worker->moveToThread(m_thread);
+
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    connect(m_worker, &ExportKMLWorker::updateProcess, this, &Export_KML::updateProcess);
+    connect(m_worker, &ExportKMLWorker::endProcess, this, &Export_KML::endProcess);
+    connect(m_worker, &ExportKMLWorker::errorProcess, this, &Export_KML::errorProcess);
+
+    m_thread->start();
+
+    QMetaObject::invokeMethod(m_worker, "exportKML", Qt::QueuedConnection,
+                              Q_ARG(QString, h5_path),
+                              Q_ARG(QString, ui->File_path->text()),
+                              Q_ARG(QString, ui->File_name->text()));
 }
 

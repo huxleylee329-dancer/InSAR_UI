@@ -14,13 +14,18 @@ public:
 public slots:
     void ShowProjectList(QStandardItemModel*);
     void Paint_Colorbar(double mMin, double mMax, QString save_path);
+    void updateProcess(int progress, QString message);
+    void endProcess();
+    void errorProcess(QString error_msg);
 private:
     Ui::ExportKml* ui;
     QStandardItemModel* copy;
+    QThread* m_thread;
+    class ExportKMLWorker* m_worker;
 private slots:
     void on_comboBox_currentIndexChanged();
     void on_comboBox_2_currentIndexChanged();
     void on_Browse_pressed();
     void on_Export_pressed();
     void ChangeVision(bool Editable);
-}; 
+};

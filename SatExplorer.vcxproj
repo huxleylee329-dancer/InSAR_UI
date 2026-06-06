@@ -344,6 +344,30 @@
     <ClCompile Include="BaselinePreviewNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BaselineFormationNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SBASTimeSeriesNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SBASTimeSeriesWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SBASReferenceReselectionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SBASReferenceReselectionWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DeformationPreviewNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ExportKMLNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ExportKMLWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="InterferometricFormationNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -849,6 +873,30 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\BaselinePreviewNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\BaselineFormationNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SBASTimeSeriesNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SBASTimeSeriesWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SBASReferenceReselectionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SBASReferenceReselectionWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DeformationPreviewNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ExportKMLNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\ExportKMLWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\InterferometricFormationNode.h">

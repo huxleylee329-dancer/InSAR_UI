@@ -7,6 +7,8 @@
 #include"ImageView.h"
 #include<Qtgui>
 
+class SBASReferenceReselectionWorker;
+
 class SBAS_reference_reselection : public QWidget
 {
     Q_OBJECT
@@ -31,14 +33,14 @@ private:
     bool isSBAS_reference_reselection;
     Ui::SbasReferenceReselection* ui;
     QString save_path;
-    MyThread* SBAS_reference_reselection_thread;
+    SBASReferenceReselectionWorker* SBAS_reference_reselection_thread;
     int image_number;
     int ref_row, ref_col;
     QList<QPoint> plist;
     void ChangeVision(bool Editable);
 signals:
     void sendCopy(QStandardItemModel*);
-    void operate(QString, QString, int, int, QList<QPoint>, QStandardItemModel*);
+    void operate(QString, QString, QString, int, int, QList<QPoint>);
 private slots:
 
     void on_comboBox_project_currentIndexChanged();

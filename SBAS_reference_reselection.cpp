@@ -1,4 +1,5 @@
 #include"SBAS_reference_reselection.h"
+#include"SBASReferenceReselectionWorker.h"
 #include"ui_SbasReferenceReselection.h"
 #include"icon_source.h"
 #include<qdialog.h>
@@ -271,21 +272,32 @@ void SBAS_reference_reselection::on_buttonBox_accepted()
         return;
     }
 
-    SBAS_reference_reselection_thread = new MyThread;
+    QStandardItem* project = copy->findItems(ui->comboBox_project->currentText())[0];
+    QStandardItem* image = nullptr;
+    for (int i = 0; i < project->rowCount(); i++)
+    {
+        if (project->child(i, 0)->text() == ui->comboBox_srcNode->currentText())
+        {
+            image = project->child(i, 0); break;
+        }
+    }
+    if (!image) return;
+    QString times_series_h5 = image->child(0, 1)->text();
+
+    SBAS_reference_reselection_thread = new SBASReferenceReselectionWorker;
     SBAS_reference_reselection_thread->moveToThread(new QThread(this));
     ui->progressBar->setValue(0);
     ui->progressBar->show();
 
-    connect(this, &SBAS_reference_reselection::operate, SBAS_reference_reselection_thread, &MyThread::SBAS_reference_reselection, Qt::QueuedConnection);
-    connect(SBAS_reference_reselection_thread, &MyThread::updateProcess, this, &SBAS_reference_reselection::updateProcess);
-    connect(SBAS_reference_reselection_thread->thread(), &QThread::finished, SBAS_reference_reselection_thread, &MyThread::deleteLater);
-    connect(SBAS_reference_reselection_thread, &MyThread::endProcess, this, &SBAS_reference_reselection::endProcess);
+    connect(this, &SBAS_reference_reselection::operate, SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::SBAS_reference_reselection, Qt::QueuedConnection);
+    connect(SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::updateProcess, this, &SBAS_reference_reselection::updateProcess);
+    connect(SBAS_reference_reselection_thread->thread(), &QThread::finished, SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::deleteLater);
+    connect(SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::endProcess, this, &SBAS_reference_reselection::endProcess);
     connect(this, &QWidget::destroyed, this, &SBAS_reference_reselection::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SBAS_reference_reselection::StopThread);// , Qt::QueuedConnection);
-    connect(SBAS_reference_reselection_thread, &MyThread::sendModel, this, &SBAS_reference_reselection::TransitModel);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SBAS_reference_reselection::StopThread);
     SBAS_reference_reselection_thread->thread()->start();
     ChangeVision(false);
-    emit operate(ui->comboBox_project->currentText(), ui->comboBox_srcNode->currentText(), ref_row, ref_col, plist, this->copy);
+    emit operate(this->save_path, ui->comboBox_srcNode->currentText(), times_series_h5, ref_row, ref_col, plist);
 }
 
 void SBAS_reference_reselection::on_buttonBox_rejected()

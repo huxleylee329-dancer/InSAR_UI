@@ -9,6 +9,7 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include<QThread>
 SBAS_time_series_analysis::SBAS_time_series_analysis(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::SbasTimeSeriesAnalysis)
@@ -306,19 +307,46 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     {
         this->method = 1;
     }
-    SBAS_time_series_analysis_thread = new MyThread;
-    SBAS_time_series_analysis_thread->moveToThread(new QThread(this));
+    SBAS_time_series_analysis_thread = new SBASTimeSeriesWorker();
+    QThread* thread = new QThread(this);
+    SBAS_time_series_analysis_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &SBAS_time_series_analysis::operate, SBAS_time_series_analysis_thread, &MyThread::SBAS_time_series, Qt::QueuedConnection);
-    connect(SBAS_time_series_analysis_thread, &MyThread::updateProcess, this, &SBAS_time_series_analysis::updateProcess);
-    connect(SBAS_time_series_analysis_thread->thread(), &QThread::finished, SBAS_time_series_analysis_thread, &MyThread::deleteLater);
-    connect(SBAS_time_series_analysis_thread, &MyThread::endProcess, this, &SBAS_time_series_analysis::endProcess);
+    
+    connect(this, &SBAS_time_series_analysis::operate, SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::SBAS_time_series, Qt::QueuedConnection);
+    connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::updateProcess, this, &SBAS_time_series_analysis::updateProcess);
+    connect(thread, &QThread::finished, SBAS_time_series_analysis_thread, &QObject::deleteLater);
+    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+    connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::endProcess, this, &SBAS_time_series_analysis::endProcess);
+    connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::errorProcess, this, [this](QString err) {
+        QMessageBox::warning(this, "Error", err);
+        StopThread();
+    });
     connect(this, &QWidget::destroyed, this, &SBAS_time_series_analysis::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SBAS_time_series_analysis::StopThread);// , Qt::QueuedConnection);
-    connect(SBAS_time_series_analysis_thread, &MyThread::sendModel, this, &SBAS_time_series_analysis::TransitModel);
-    SBAS_time_series_analysis_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SBAS_time_series_analysis::StopThread);
+    connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::sendModel, this, &SBAS_time_series_analysis::TransitModel);
+    
+    thread->start();
     ChangeVision(false);
+
+    QStandardItem* project_item = this->copy->findItems(ui->comboBox_project->currentText())[0];
+    if (!project_item) return;
+    QStandardItem* image = NULL;
+    for (int i = 0; i < project_item->rowCount(); i++)
+    {
+        if (project_item->child(i, 0)->text() == ui->comboBox_srcNode->currentText())
+        {
+            image = project_item->child(i, 0); break;
+        }
+    }
+    if (!image) return;
+    QStringList filePaths;
+    for (int i = 0; i < image->rowCount(); i++)
+    {
+        filePaths.append(image->child(i, 1)->text());
+    }
+    QString projPath = copy->item(project_item->row(), 1)->text();
+
     emit operate(
         ui->doubleSpinBox_temporal_thresh_low->value(),
         ui->doubleSpinBox_temporal_thresh->value(),
@@ -331,10 +359,11 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
         ui->doubleSpinBox_temporal_coherence_thresh->value(),
         ui->doubleSpinBox_reflattening_coh_thresh->value(),
         ui->doubleSpinBox_reflattening_def_thresh->value(),
+        projPath,
         ui->comboBox_project->currentText(),
-        ui->comboBox_srcNode->currentText(),
         ui->lineEdit_dstNode->text(),
         ui->csv_path->text(),
+        filePaths,
         this->copy
     );
 

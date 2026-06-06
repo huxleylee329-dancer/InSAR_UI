@@ -31,6 +31,11 @@
 #include "UnwrapNode.h"
 #include "DemNode.h"
 #include "SLCDerampNode.h"
+#include "BaselineFormationNode.h"
+#include "SBASTimeSeriesNode.h"
+#include "SBASReferenceReselectionNode.h"
+#include "DeformationPreviewNode.h"
+#include "ExportKMLNode.h"
 
 
 #include <memory>
@@ -106,6 +111,11 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<ClutterSuppressionNode>("SAR/Enhancement/Clutter Suppression");
     registry->registerModel<CoregistrationNode>("InSAR");
     registry->registerModel<SLCDerampNode>("DInSAR");
+    registry->registerModel<BaselineFormationNode>("DInSAR/SBAS");
+    registry->registerModel<SBASTimeSeriesNode>("DInSAR/SBAS");
+    registry->registerModel<SBASReferenceReselectionNode>("DInSAR/SBAS");
+    registry->registerModel<DeformationPreviewNode>("DInSAR/SBAS");
+    registry->registerModel<ExportKMLNode>("DInSAR/SBAS");
     registry->registerModel<InterferometricFormationNode>("InSAR");
 
     registry->registerModel<DenoiseNode>("InSAR");

@@ -32,9 +32,6 @@ public slots:
     void import_CSK_patch(QString savepath, std::vector<QString> original_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
     void import_ALOS2_patch(QString savepath, std::vector<QString> IMG_file_list, std::vector<QString> LED_file_list, std::vector<QString> import_namelist, QString dst_node, QString dst_project, QStandardItemModel* model);
     void ShowImage(QString h5_path, QString bmp_path, QString type);
-    void Baseline_Formation(int masterIndex, QString project_name, QString src_node, QStandardItemModel* model);
-    void SBAS_time_series(double temporal_thresh_low, double temporal_thresh, double spatial_thresh, int multilook_rg, int multilook_az, int unwrap_method, double alpha, double coherence_thresh, double temporal_coherence_thresh, double refinement_coh_thresh, double refinemen_def_thresh, QString project, QString srcNode, QString dstNode, QString csv_path, QStandardItemModel* model);
-    void SBAS_reference_reselection(QString project, QString srcNode, int ref_row, int ref_col, QList<QPoint> GCPs, QStandardItemModel* model);
     void Geocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
     void StopProcess();
     bool isStopRequested();

@@ -2,7 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include"ui_BaselineFormation.h"
-#include"MyThread.h"
+#include "BaselineWorker.h"
 
 class Baseline_Formation : public QWidget
 {
@@ -20,7 +20,7 @@ public slots:
 private:
     Ui::BaselineFormation* ui;
     QStandardItemModel* copy;
-    MyThread* Baseline_Formation_thread;
+    BaselineWorker* Baseline_Formation_thread;
     QString save_path;
     int method;
     int image_number;
@@ -28,7 +28,7 @@ private:
     double temporal_thresh_low;
     double spatial_thresh;
 signals:
-    void operate(int, QString, QString, QStandardItemModel*);
+    void operate(int, const QStringList&);
     void sendCopy(QStandardItemModel*);
     void sendBaseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index, double temporal_thresh, double temporal_thresh_low, double spatial_thresh);
 

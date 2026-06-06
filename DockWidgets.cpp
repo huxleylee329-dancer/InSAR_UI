@@ -270,6 +270,59 @@ void NodeLibraryWidget::populateNodeTree()
         topItem->setExpanded(false);
         topItem->setFlags(Qt::ItemIsEnabled);
 
+        // Handle direct models under top-level (for "Test", "Note", and "DInSAR/SLC Deramp" cases)
+        if (pathModels.contains(topLevel))
+        {
+            const QList<QPair<QString, QString>> &modelsList = pathModels[topLevel];
+
+            // Build a map: caption -> modelName for matching
+            QMap<QString, QString> captionToModelName;
+            for (const auto &modelPair : modelsList)
+            {
+                captionToModelName[modelPair.second] = modelPair.first;
+            }
+
+            // Track models that have been added
+            QSet<QString> addedModelNames;
+
+            // Match leafOrder items by caption to find correct modelName
+            QList<PaletteOrder::LeafItem> leafOrder = m_paletteOrder.leafItems.value(topLevel);
+            for (const PaletteOrder::LeafItem &leafItemInfo : leafOrder)
+            {
+                const QString &displayName = leafItemInfo.displayName;
+                const QString &caption = leafItemInfo.caption;
+
+                if (caption.isEmpty())
+                    continue;
+
+                // Find the model by caption
+                if (captionToModelName.contains(caption))
+                {
+                    const QString &modelName = captionToModelName[caption];
+                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(topItem);
+                    leafItem->setText(0, displayName);  // Use display name for UI
+                    leafItem->setData(0, Qt::UserRole, modelName);
+                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    addedModelNames.insert(modelName);
+                }
+            }
+
+            // Add any remaining models not in leafOrder
+            for (const auto &modelPair : modelsList)
+            {
+                const QString &modelName = modelPair.first;
+                const QString &caption = modelPair.second;
+                if (!addedModelNames.contains(modelName))
+                {
+                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(topItem);
+                    leafItem->setText(0, caption);
+                    leafItem->setData(0, Qt::UserRole, modelName);
+                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    addedModelNames.insert(modelName);
+                }
+            }
+        }
+
         // Process subcategories for this top-level in palette order
         QStringList subcategories = m_paletteOrder.subcategories.value(topLevel);
         for (const QString &subcategory : subcategories)
@@ -341,65 +394,12 @@ void NodeLibraryWidget::populateNodeTree()
 
             subItem->setExpanded(true);
         }
-
-        // Handle direct models under top-level (for "Test" and "Note" cases)
-        if (pathModels.contains(topLevel))
-        {
-            const QList<QPair<QString, QString>> &modelsList = pathModels[topLevel];
-
-            // Build a map: caption -> modelName for matching
-            QMap<QString, QString> captionToModelName;
-            for (const auto &modelPair : modelsList)
-            {
-                captionToModelName[modelPair.second] = modelPair.first;
-            }
-
-            // Track models that have been added
-            QSet<QString> addedModelNames;
-
-            // Match leafOrder items by caption to find correct modelName
-            QList<PaletteOrder::LeafItem> leafOrder = m_paletteOrder.leafItems.value(topLevel);
-            for (const PaletteOrder::LeafItem &leafItemInfo : leafOrder)
-            {
-                const QString &displayName = leafItemInfo.displayName;
-                const QString &caption = leafItemInfo.caption;
-
-                if (caption.isEmpty())
-                    continue;
-
-                // Find the model by caption
-                if (captionToModelName.contains(caption))
-                {
-                    const QString &modelName = captionToModelName[caption];
-                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(topItem);
-                    leafItem->setText(0, displayName);  // Use display name for UI
-                    leafItem->setData(0, Qt::UserRole, modelName);
-                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                    addedModelNames.insert(modelName);
-                }
-            }
-
-            // Add any remaining models not in leafOrder
-            for (const auto &modelPair : modelsList)
-            {
-                const QString &modelName = modelPair.first;
-                const QString &caption = modelPair.second;
-                if (!addedModelNames.contains(modelName))
-                {
-                    QTreeWidgetItem *leafItem = new QTreeWidgetItem(topItem);
-                    leafItem->setText(0, caption);
-                    leafItem->setData(0, Qt::UserRole, modelName);
-                    leafItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                    addedModelNames.insert(modelName);
-                }
-            }
-        }
     }
 
-    // Expand top-level items
+    // Collapse top-level items (subcategories inside will remain expanded when opened)
     for (int i = 0; i < m_nodeTree->topLevelItemCount(); ++i)
     {
-        m_nodeTree->topLevelItem(i)->setExpanded(true);
+        m_nodeTree->topLevelItem(i)->setExpanded(false);
     }
 
     updateTreeIcons(m_currentTheme);
@@ -479,20 +479,25 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                     iconPath = ":/SatExplorer/svg/dem.svg";
                 }
             } 
-            else if (modelName.contains("Crop", Qt::CaseInsensitive) || 
-                     modelName.contains("Cut", Qt::CaseInsensitive) || 
-                     modelName == "AOICrop" ||
-                     modelName.contains("Registration", Qt::CaseInsensitive) || 
-                     modelName.contains("Coregistration", Qt::CaseInsensitive) || 
-                     modelName.contains("Geocoding", Qt::CaseInsensitive) || 
-                     modelName.contains("Merge", Qt::CaseInsensitive) || 
-                     modelName.contains("Deburst", Qt::CaseInsensitive) || 
-                     modelName.contains("Interferometric", Qt::CaseInsensitive) || 
-                     modelName.contains("Baseline", Qt::CaseInsensitive) || 
-                     modelName.contains("Detection", Qt::CaseInsensitive) || 
-                     modelName.contains("Target", Qt::CaseInsensitive)) {
-                // Complex calculations/Registration/Merges/AI Detection - Purple
-                iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
+             else if (modelName.contains("Crop", Qt::CaseInsensitive) || 
+                      modelName.contains("Cut", Qt::CaseInsensitive) || 
+                      modelName == "AOICrop" ||
+                      modelName.contains("Registration", Qt::CaseInsensitive) || 
+                      modelName.contains("Coregistration", Qt::CaseInsensitive) || 
+                      modelName.contains("Geocoding", Qt::CaseInsensitive) || 
+                      modelName.contains("Merge", Qt::CaseInsensitive) || 
+                      modelName.contains("Deburst", Qt::CaseInsensitive) || 
+                      modelName.contains("Interferometric", Qt::CaseInsensitive) || 
+                      modelName.contains("Baseline", Qt::CaseInsensitive) || 
+                      modelName.contains("Detection", Qt::CaseInsensitive) || 
+                      modelName.contains("Target", Qt::CaseInsensitive) ||
+                      modelName.contains("TimeSeries", Qt::CaseInsensitive) ||
+                      modelName.contains("Deformation", Qt::CaseInsensitive) ||
+                      modelName.contains("Reference", Qt::CaseInsensitive) ||
+                      modelName.contains("Export", Qt::CaseInsensitive) ||
+                      modelName.contains("KML", Qt::CaseInsensitive)) {
+                 // Complex calculations/Registration/Merges/AI Detection - Purple
+                 iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
                 
                 if (modelName.contains("Cut", Qt::CaseInsensitive) || modelName == "AOICrop") {
                     iconPath = ":/SatExplorer/svg/cut.svg";
@@ -508,6 +513,16 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                     iconPath = ":/SatExplorer/svg/swath_merge.svg";
                 } else if (modelName.contains("Interferometric", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/interferogram.svg";
+                } else if (modelName == "BaselineFormation") {
+                    iconPath = ":/SatExplorer/svg/baseline_formation.svg";
+                } else if (modelName == "SBASTimeSeries") {
+                    iconPath = ":/SatExplorer/svg/time_series.svg";
+                } else if (modelName == "SBASReferenceReselection") {
+                    iconPath = ":/SatExplorer/svg/reference.svg";
+                } else if (modelName == "DeformationPreview") {
+                    iconPath = ":/SatExplorer/svg/view.svg";
+                } else if (modelName == "ExportKML") {
+                    iconPath = ":/SatExplorer/svg/GoogleEarth.svg";
                 } else if (modelName.contains("Baseline", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/view.svg";
                 } else if (modelName.contains("Target", Qt::CaseInsensitive) || modelName.contains("Detection", Qt::CaseInsensitive)) {
