@@ -1,5 +1,8 @@
-#include"SLC_deramp.h"
-#include"ui_SlcDeramp.h"
+#include "SLC_deramp.h"
+#include "ui_SlcDeramp.h"
+#include "SLCDerampWorker.h"
+#include <QThread>
+
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -31,7 +34,8 @@ SLC_deramp::~SLC_deramp()
             copy->findItems(ui->comboBox->currentText())[0]->setStatusTip(NOT_IN_PROCESS);
     }
     emit sendCopy(copy);
-    SLC_deramp_thread = NULL;
+    m_thread = nullptr;
+    m_worker = nullptr;
 }
 
 void SLC_deramp::updateProcess(int value, QString information)
@@ -42,27 +46,35 @@ void SLC_deramp::updateProcess(int value, QString information)
 }
 void SLC_deramp::endProcess()
 {
-    SLC_deramp_thread->thread()->quit();
-    SLC_deramp_thread->thread()->wait();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
     ui->progressBar->hide();
     this->close();
 }
 void SLC_deramp::endThread()
 {
-    SLC_deramp_thread->thread()->quit();
-    SLC_deramp_thread->thread()->wait();
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 void SLC_deramp::StopThread()
 {
-    if (SLC_deramp_thread != NULL)
-        if (SLC_deramp_thread->thread()->isRunning())
-        {
-            SLC_deramp_thread->thread()->requestInterruption();
-            SLC_deramp_thread->thread()->quit();
-            SLC_deramp_thread->thread()->wait();
-        }
-
+    if (m_thread && m_thread->isRunning())
+    {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
+void SLC_deramp::TransitModel(QStandardItemModel* model)
+{
+    this->copy = model;
+    emit sendCopy(model);
+}
+
 
 
 
@@ -286,19 +298,22 @@ void SLC_deramp::on_buttonBox_accepted()
     int index = 1;
     ret = sscanf(pchild->GetText(), "%d", &index);
     //this->image_number = ui->comboBox_masterImage->count();
-    SLC_deramp_thread = new MyThread;
-    SLC_deramp_thread->moveToThread(new QThread(this));
+    m_thread = new QThread(this);
+    m_worker = new SLCDerampWorker();
+    m_worker->moveToThread(m_thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &SLC_deramp::operate, SLC_deramp_thread, &MyThread::SLC_deramp, Qt::QueuedConnection);
-    connect(SLC_deramp_thread, &MyThread::updateProcess, this, &SLC_deramp::updateProcess);
-    connect(SLC_deramp_thread->thread(), &QThread::finished, SLC_deramp_thread, &MyThread::deleteLater);
-    connect(SLC_deramp_thread, &MyThread::endProcess, this, &SLC_deramp::endProcess);
+    connect(this, &SLC_deramp::operate, m_worker, &SLCDerampWorker::SLC_deramp, Qt::QueuedConnection);
+    connect(m_worker, &SLCDerampWorker::updateProcess, this, &SLC_deramp::updateProcess);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    connect(m_worker, &SLCDerampWorker::endProcess, this, &SLC_deramp::endProcess);
     connect(this, &QWidget::destroyed, this, &SLC_deramp::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SLC_deramp::StopThread);// , Qt::QueuedConnection);
-    SLC_deramp_thread->thread()->start();
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SLC_deramp::StopThread);
+    connect(m_worker, &SLCDerampWorker::sendModel, this, &SLC_deramp::TransitModel);
+    m_thread->start();
     ChangeVision(false);
     emit operate(index, ui->comboBox->currentText(), ui->comboBox_dst_node->currentText(), ui->lineEdit->text(), this->copy);
+
 
 }
 

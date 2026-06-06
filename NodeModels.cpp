@@ -30,6 +30,8 @@
 #include "DenoiseNode.h"
 #include "UnwrapNode.h"
 #include "DemNode.h"
+#include "SLCDerampNode.h"
+
 
 #include <memory>
 
@@ -103,7 +105,9 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<SpeckleDenoiseNode>("SAR/Enhancement/Speckle Denoise");
     registry->registerModel<ClutterSuppressionNode>("SAR/Enhancement/Clutter Suppression");
     registry->registerModel<CoregistrationNode>("InSAR");
+    registry->registerModel<SLCDerampNode>("DInSAR");
     registry->registerModel<InterferometricFormationNode>("InSAR");
+
     registry->registerModel<DenoiseNode>("InSAR");
     registry->registerModel<UnwrapNode>("InSAR");
     registry->registerModel<DemNode>("InSAR");

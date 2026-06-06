@@ -69,6 +69,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "Data Import",    // 第一级分类
         "Preprocessing",  // 第二级分类
         "InSAR",          // InSAR分类
+        "DInSAR",         // DInSAR分类
         "Display",        // 图像显示/预览分类
         "Information",    // 信息/工具节点分类
         "Test"           // 测试节点分类
@@ -161,10 +162,16 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.leafItems["InSAR"] = QList<PaletteOrder::LeafItem>{
         {"Coregistration", "Coregistration"},
         {"Interferometric Formation", "Interferometric Formation"},
+
         {"Denoise", "Denoise"},
         {"Phase Unwrapping", "Phase Unwrapping"},
         {"DEM Generation", "DEM Generation"},
         {"Baseline Preview", "Baseline Preview"}
+    };
+
+    // DInSAR 类叶子项顺序
+    order.leafItems["DInSAR"] = QList<PaletteOrder::LeafItem>{
+        {"SLC Deramp", "SLC Deramp"}
     };
 
     // Test 类叶子项顺序

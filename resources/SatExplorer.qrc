@@ -35,6 +35,7 @@
         <file>svg/export.svg</file>
         <file>svg/cut.svg</file>
         <file>svg/import.svg</file>
+        <file>svg/import_batch.svg</file>
         <file>svg/coregistration.svg</file>
         <file>svg/splice.svg</file>
         <file>svg/dem.svg</file>

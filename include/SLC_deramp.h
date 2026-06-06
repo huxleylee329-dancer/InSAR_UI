@@ -1,8 +1,10 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
-#include<qstandarditemmodel.h>
-#include"ui_SlcDeramp.h"
-#include"MyThread.h"
+#include <qstandarditemmodel.h>
+#include "ui_SlcDeramp.h"
+
+class SLCDerampWorker;
+class QThread;
 
 class SLC_deramp : public QWidget
 {
@@ -16,10 +18,13 @@ public slots:
     void endProcess();
     void endThread();
     void StopThread();
+    void TransitModel(QStandardItemModel*);
 private:
     Ui::SlcDeramp* ui;
     QStandardItemModel* copy;
-    MyThread* SLC_deramp_thread;
+    QThread* m_thread;
+    SLCDerampWorker* m_worker;
+
     QString save_path;
     int method;
     int image_number;

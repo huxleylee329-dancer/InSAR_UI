@@ -447,9 +447,16 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
             else if (modelName.contains("Import", Qt::CaseInsensitive) || 
                 modelName.contains("Loading", Qt::CaseInsensitive)) {
                 // Import category - Green
-                iconPath = IMPORT_ICON;
                 if (modelName.contains("GeneralSAR", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/imagedata.svg";
+                }
+                else if (modelName.contains("Batch", Qt::CaseInsensitive) ||
+                         modelName == "CSKImport" ||
+                         modelName == "ALOS2Import") {
+                    iconPath = IMPORT_BATCH_ICON;
+                }
+                else {
+                    iconPath = IMPORT_ICON;
                 }
                 iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
             } 
@@ -457,8 +464,9 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                      modelName.contains("Suppression", Qt::CaseInsensitive) || 
                      modelName.contains("Unwrap", Qt::CaseInsensitive) || 
                      modelName == "Phase Unwrapping" ||
-                     modelName.contains("DEM", Qt::CaseInsensitive)) {
-                // Processing/Filtering/Unwrapping/DEM - Amber/Orange
+                     modelName.contains("DEM", Qt::CaseInsensitive) ||
+                     modelName.contains("Deramp", Qt::CaseInsensitive)) {
+                // Processing/Filtering/Unwrapping/DEM/Deramp - Amber/Orange
                 iconColor = isDark ? QColor("#FFB95B") : QColor("#A85C00");
                 
                 if (modelName.contains("Denoise", Qt::CaseInsensitive)) {
@@ -467,7 +475,7 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                     iconPath = ":/SatExplorer/svg/clutter_suppress.svg";
                 } else if (modelName == "Phase Unwrapping" || modelName.contains("Unwrap", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/unwrap.svg";
-                } else if (modelName.contains("DEM", Qt::CaseInsensitive)) {
+                } else if (modelName.contains("DEM", Qt::CaseInsensitive) || modelName.contains("Deramp", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/dem.svg";
                 }
             } 

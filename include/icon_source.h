@@ -8,6 +8,7 @@
 #define EXPORT_ICON ":/SatExplorer/svg/export.svg"
 #define CUT_ICON ":/SatExplorer/svg/cut.svg"
 #define IMPORT_ICON ":/SatExplorer/svg/import.svg"
+#define IMPORT_BATCH_ICON ":/SatExplorer/svg/import_batch.svg"
 #define MATCH_ICON ":/SatExplorer/svg/coregistration.svg"
 #define IMAGE_VIEWER_ICON ":/SatExplorer/svg/image_viewer.svg"
 #define NOTE_ICON ":/SatExplorer/svg/note.svg"
