@@ -6,7 +6,6 @@
 #include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
-#include <QDebug>
 #include <QShowEvent>
 
 namespace QtNodes {

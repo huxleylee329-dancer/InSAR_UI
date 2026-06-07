@@ -15,7 +15,6 @@
 #include <QRegularExpression>
 #include <QJsonObject>
 #include <QJsonValue>
-#include <QDebug>
 #include <QTimer>
 #include <QFile>
 #include <QtConcurrent/QtConcurrent>
@@ -774,7 +773,6 @@ void S1TopsBackGeocodingNode::executeProcessing()
         // 直接复用磁盘上的现有数据，不重新计算
         // 不调用 onProcessingFinished()，因为它会在 UI 主线程上执行重度 HDF5 读取，
         // 若文件损坏会直接崩溃。改为安全地调用 validateAndRestoreOutput()。
-        qDebug() << "[BackGeocoding] LoadExisting: restoring output from disk.";
         m_outputNodeName = m_preparedDstNode;
         m_outputNodeNameEdit->setEnabled(true);
         if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
@@ -785,7 +783,6 @@ void S1TopsBackGeocodingNode::executeProcessing()
         if (validateAndRestoreOutput()) {
             finishExecution();
         } else {
-            qDebug() << "[BackGeocoding] LoadExisting: validateAndRestoreOutput failed, setting error state.";
             setState(ExecutionState::Error);
         }
         return;
@@ -903,7 +900,6 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
                 m_remedyWatcher.disconnect();
 
                 connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
-                    qDebug() << "[BackGeocoding] Remedy preview generation finished. Updating Port 1.";
                     m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
                     setOutputData(1, m_imageInfoData);
                     Q_EMIT dataUpdated(1);
@@ -911,7 +907,6 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
 
                 QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
                     for (int i = 0; i < missingH5s.size(); ++i) {
-                        qDebug() << "[BackGeocoding] Remedy generating missing preview:" << missingJpgs[i];
                         NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
                     }
                 });

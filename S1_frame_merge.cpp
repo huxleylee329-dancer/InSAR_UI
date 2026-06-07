@@ -2,6 +2,7 @@
 #include"ui_S1FrameMerge.h"
 #include"icon_source.h"
 #include"FormatConversion.h"
+#include "tinyxml.h"
 #include"S1FrameMergeWorker.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -131,20 +132,21 @@ void S1_frame_merge::ChangeVision(bool Editable)
 
 void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
 {
-    XMLFile* xmldoc = new XMLFile(); QStandardItem* project = NULL;
+    XMLFile xmldoc;
+    QStandardItem* project = NULL;
     TiXmlElement* pnode = NULL, * pchild = NULL;
     int ret, count = 0;
     this->copy = model;
     for (int i = 0; i < model->rowCount(); i++)
     {
         QString tmpProjectFile = copy->item(i, 1)->text() + "/" + copy->item(i, 0)->text();
-        ret = xmldoc->XMLFile_load(tmpProjectFile.toStdString().c_str());
+        ret = xmldoc.XMLFile_load(tmpProjectFile.toStdString().c_str());
         if (ret < 0) return;
-        ret = xmldoc->find_node("DataNode", pnode);
+        ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+            ret = xmldoc._find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 ui->comboBox_project->addItem(copy->item(i, 0)->text());
@@ -167,13 +169,13 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
     ui->comboBox_node1->clear();
     ui->comboBox_node2->clear();
     //工程文件
-    ret = xmldoc->XMLFile_load(this->projectFile.toStdString().c_str());
+    ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
-    ret = xmldoc->find_node("DataNode", pnode);
+    ret = xmldoc.find_node("DataNode", pnode);
     if (ret < 0) return;
     while (pnode)
     {
-        ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+        ret = xmldoc._find_node(pnode, "Sensor", pchild);
         if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
         {
             ui->comboBox_node1->addItem(pnode->Attribute("name"));
@@ -192,11 +194,11 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
     //初始化图像数据节点
     ui->comboBox_data1->clear();
     ui->comboBox_data2->clear();
-    ret = xmldoc->find_node("DataNode", pnode);
+    ret = xmldoc.find_node("DataNode", pnode);
     if (ret < 0) return;
     while (pnode)
     {
-        ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+        ret = xmldoc._find_node(pnode, "Sensor", pchild);
         if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
         {
             break;
@@ -204,12 +206,12 @@ void S1_frame_merge::ShowProjectList(QStandardItemModel* model)
         pnode = pnode->NextSiblingElement();
     }
     if (!pnode) return;
-    ret = xmldoc->_find_node(pnode, "Data", pchild);
+    ret = xmldoc._find_node(pnode, "Data", pchild);
     if (ret < 0) return;
     while (pchild)
     {
         if (strcmp(pchild->Value(), "Data") != 0) break;
-        ret = xmldoc->_find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
+        ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
         ui->comboBox_data1->addItem(pnode->GetText());
         ui->comboBox_data2->addItem(pnode->GetText());
         pchild = pchild->NextSiblingElement();
@@ -227,15 +229,15 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
         ui->comboBox_node1->clear();
         ui->comboBox_node2->clear();
         this->projectFile = this->save_path + "/" + project->text();
-        XMLFile* xmldoc = new XMLFile();
-        int ret = xmldoc->XMLFile_load(this->projectFile.toStdString().c_str());
+        XMLFile xmldoc;
+        int ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
         if (ret < 0) return;
         TiXmlElement* pnode = NULL, * pchild = NULL;
-        ret = xmldoc->find_node("DataNode", pnode);
+        ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+            ret = xmldoc._find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 ui->comboBox_node1->addItem(pnode->Attribute("name"));
@@ -255,11 +257,11 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
         //初始化图像数据节点
         ui->comboBox_data1->clear();
         ui->comboBox_data2->clear();
-        ret = xmldoc->find_node("DataNode", pnode);
+        ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+            ret = xmldoc._find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 break;
@@ -267,12 +269,12 @@ void S1_frame_merge::on_comboBox_project_currentIndexChanged()
             pnode = pnode->NextSiblingElement();
         }
         if (!pnode) return;
-        ret = xmldoc->_find_node(pnode, "Data", pchild);
+        ret = xmldoc._find_node(pnode, "Data", pchild);
         if (ret < 0) return;
         while (pchild)
         {
             if (strcmp(pchild->Value(), "Data") != 0) break;
-            ret = xmldoc->_find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
+            ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
             ui->comboBox_data1->addItem(pnode->GetText());
             ui->comboBox_data2->addItem(pnode->GetText());
             pchild = pchild->NextSiblingElement();

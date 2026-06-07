@@ -12,6 +12,44 @@
 
 namespace Sentinel1ImportHelper {
 
+// 进度回调上下文
+struct ProgressContext
+{
+    Sentinel1ImportWorker* worker;
+    int progressMin;
+    int progressMax;
+};
+
+// DLL进度回调：将DLL内部0-100映射到UI进度区间
+static void onDllProgress(int percent, const char* message, void* userData)
+{
+    ProgressContext* ctx = static_cast<ProgressContext*>(userData);
+    if (!ctx || !ctx->worker)
+        return;
+    int mapped = ctx->progressMin + (ctx->progressMax - ctx->progressMin) * percent / 100;
+    QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入数据，请耐心等待……");
+    Q_EMIT ctx->worker->updateProcess(mapped, msg);
+}
+
+// 批量进度回调上下文
+struct BatchProgressContext
+{
+    Sentinel1ImportWorker* worker;
+    int imageIndex;
+    int totalImages;
+};
+
+// 批量DLL进度回调：将当前景的DLL内部进度映射到批量总体进度
+static void onBatchDllProgress(int percent, const char* message, void* userData)
+{
+    BatchProgressContext* ctx = static_cast<BatchProgressContext*>(userData);
+    if (!ctx || !ctx->worker)
+        return;
+    int mapped = 2 + ((ctx->imageIndex * 100 + percent) * 98) / (ctx->totalImages * 100);
+    QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入...");
+    Q_EMIT ctx->worker->updateProcess(mapped, msg);
+}
+
 void importSentinel(
     Sentinel1ImportWorker* worker,
     QString PODFile,
@@ -52,11 +90,17 @@ void importSentinel(
     Q_EMIT worker->updateProcess(20, QStringLiteral("正在导入数据，请耐心等待……"));
 
     FormatConversion conversion;
+    ProgressContext progressCtx;
+    progressCtx.worker = worker;
+    progressCtx.progressMin = 20;
+    progressCtx.progressMax = 90;
     ret = conversion.import_sentinel(manifest_file.toStdString().c_str(),
         subswath.toStdString().c_str(),
         polarization.toStdString().c_str(),
         h5_path.toStdString().c_str(),
-        PODFile.toStdString().c_str()
+        PODFile.toStdString().c_str(),
+        onDllProgress,
+        &progressCtx
     );
 
     if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
@@ -204,6 +248,10 @@ void importSentinelPatch(
 
     Q_EMIT worker->updateProcess(process, QStringLiteral("正在导入..."));
 
+    BatchProgressContext batchCtx;
+    batchCtx.worker = worker;
+    batchCtx.totalImages = n_images;
+
     for (int i = 0; i < n_images; i++)
     {
         if (QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
@@ -214,10 +262,14 @@ void importSentinelPatch(
         QString relative_path = temp_folder + filename + ".h5";
         QString h5_path = QString("%1%2%3.h5").arg(savepath).arg(temp_folder).arg(filename);
 
+        batchCtx.imageIndex = i;
         ret = conversion.import_sentinel(manifest_file.toStdString().c_str(),
             subswath.toStdString().c_str(),
             polarization.toStdString().c_str(),
-            h5_path.toStdString().c_str()
+            h5_path.toStdString().c_str(),
+            NULL,
+            onBatchDllProgress,
+            &batchCtx
         );
 
         if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
@@ -317,8 +369,6 @@ void importSentinelPatch(
             origin->setChild(img->row(), 1, new QStandardItem(h5_path));
         }
 
-        process = 2 + 98 * (i + 1) / n_images;
-        Q_EMIT worker->updateProcess(process, QStringLiteral("正在导入..."));
     }
 
     Q_EMIT worker->sendModel(model);

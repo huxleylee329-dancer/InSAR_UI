@@ -154,15 +154,14 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     ::Unwrap unwrap;
     FormatConversion FC;
     Utils util;
-    XMLFile* xml = new XMLFile();
+    XMLFile xml;
     
     QString xml_path = save_path + "/" + project_name;
     if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
         xml_path += ".Insar";
     }
 
-    if (xml->XMLFile_load(xml_path.toStdString().c_str()) < 0) {
-        delete xml;
+    if (xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
         emit errorProcess(QStringLiteral("加载项目XML文件失败: ") + xml_path);
         return;
     }
@@ -216,7 +215,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
         int offset_col = tmp_int.at<int>(0, 0);
 
-        xml->XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(idx).toStdString().c_str(),
+        xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(idx).toStdString().c_str(),
             relative_unwrap_path.at(idx).toStdString().c_str(), offset_row, offset_col, method_str.toStdString().c_str(), 0);
 
         /*工程树*/
@@ -253,20 +252,18 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
             if (ret < 0) continue;
-            
+
             Mat phase_unwrap;
             ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap);
             if (ret < 0) continue;
 
             if (!copyMetadata(i, "SPD_Guided")) {
-                delete xml;
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
@@ -278,7 +275,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
@@ -295,7 +291,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret < 0) continue;
 
             if (!copyMetadata(i, "MCF")) {
-                delete xml;
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
@@ -307,7 +302,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
@@ -321,7 +315,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret < 0) continue;
 
             if (!copyMetadata(i, "Snaphu")) {
-                delete xml;
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
@@ -334,7 +327,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
@@ -348,15 +340,13 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret < 0) continue;
 
             if (!copyMetadata(i, "QualityGuided_MCF")) {
-                delete xml;
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
         }
     }
 
-    xml->XMLFile_save(xml_path.toStdString().c_str());
-    delete xml;
+    xml.XMLFile_save(xml_path.toStdString().c_str());
 
     emit sendModel(model);
     InSARLogManager::LogInfo("UnwrapWorker", QString("Task completed: ") + QString(__FUNCTION__));

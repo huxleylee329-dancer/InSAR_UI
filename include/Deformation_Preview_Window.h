@@ -10,7 +10,7 @@
 #include<opencv2/highgui.hpp>
 #include<FormatConversion.h>
 QT_CHARTS_USE_NAMESPACE
-#ifdef DEBUG
+#ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #pragma comment(lib, "Qt5Chartsd.lib")
 #else

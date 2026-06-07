@@ -9,7 +9,6 @@
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QFileInfo>
-#include <QDebug>
 #include <QPainter>
 #include <QDir>
 #include <QApplication>

@@ -16,7 +16,6 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QStandardItemModel>
-#include <QDebug>
 #include <QMessageBox>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>

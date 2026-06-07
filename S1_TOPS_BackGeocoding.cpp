@@ -6,6 +6,7 @@
 #include<QThread>
 //#include<Utils.h>
 #include<FormatConversion.h>
+#include "tinyxml.h"
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
@@ -103,20 +104,21 @@ void S1_TOPS_BackGeocoding::ChangeVision(bool Editable)
 
 void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
 {
-    XMLFile* xmldoc = new XMLFile(); QStandardItem* project = NULL;
+    XMLFile xmldoc;
+    QStandardItem* project = NULL;
     TiXmlElement* pnode = NULL, * pchild = NULL;
     int ret, count = 0;
     this->copy = model;
     for (int i = 0; i < model->rowCount(); i++)
     {
         QString tmpProjectFile = copy->item(i, 1)->text() + "/" + copy->item(i, 0)->text();
-        ret = xmldoc->XMLFile_load(tmpProjectFile.toStdString().c_str());
+        ret = xmldoc.XMLFile_load(tmpProjectFile.toStdString().c_str());
         if (ret < 0) return;
-        ret = xmldoc->find_node("DataNode", pnode);
+        ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+            ret = xmldoc._find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 ui->comboBox->addItem(copy->item(i, 0)->text());
@@ -129,7 +131,7 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
             pnode = pnode->NextSiblingElement();
         }
     }
-    
+
     if (ui->comboBox->count() < 1)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("无可处理数据，请先导入数据！"));
@@ -138,13 +140,13 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
     }
     ui->comboBox_2->clear();
     //工程文件
-    ret = xmldoc->XMLFile_load(this->projectFile.toStdString().c_str());
+    ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
     if (ret < 0) return;
-    ret = xmldoc->find_node("DataNode", pnode);
+    ret = xmldoc.find_node("DataNode", pnode);
     if (ret < 0) return;
     while (pnode)
     {
-        ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+        ret = xmldoc._find_node(pnode, "Sensor", pchild);
         if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
         {
             ui->comboBox_2->addItem(pnode->Attribute("name"));
@@ -161,11 +163,11 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
 
     //初始化图像数据节点
     ui->comboBox_3->clear();
-    ret = xmldoc->find_node("DataNode", pnode);
+    ret = xmldoc.find_node("DataNode", pnode);
     if (ret < 0) return;
     while (pnode)
     {
-        ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+        ret = xmldoc._find_node(pnode, "Sensor", pchild);
         if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
         {
             break;
@@ -173,12 +175,12 @@ void S1_TOPS_BackGeocoding::ShowProjectList(QStandardItemModel* model)
         pnode = pnode->NextSiblingElement();
     }
     if (!pnode) return;
-    ret = xmldoc->_find_node(pnode, "Data", pchild);
+    ret = xmldoc._find_node(pnode, "Data", pchild);
     if (ret < 0) return;
     while (pchild)
     {
         if (strcmp(pchild->Value(), "Data") != 0) break;
-        ret = xmldoc->_find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
+        ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
         ui->comboBox_3->addItem(pnode->GetText());
         pchild = pchild->NextSiblingElement();
     }
@@ -194,15 +196,15 @@ void S1_TOPS_BackGeocoding::on_comboBox_currentIndexChanged()
         ui->comboBox_2->clear();
 
         this->projectFile = this->save_path + "/" + project->text();
-        XMLFile* xmldoc = new XMLFile();
-        int ret = xmldoc->XMLFile_load(this->projectFile.toStdString().c_str());
+        XMLFile xmldoc;
+        int ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
         if (ret < 0) return;
         TiXmlElement* pnode = NULL, * pchild = NULL;
-        ret = xmldoc->find_node("DataNode", pnode);
+        ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+            ret = xmldoc._find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 ui->comboBox_2->addItem(pnode->Attribute("name"));
@@ -219,11 +221,11 @@ void S1_TOPS_BackGeocoding::on_comboBox_currentIndexChanged()
 
         //初始化图像数据节点
         ui->comboBox_3->clear();
-        ret = xmldoc->find_node("DataNode", pnode);
+        ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+            ret = xmldoc._find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0)
             {
                 break;
@@ -231,12 +233,12 @@ void S1_TOPS_BackGeocoding::on_comboBox_currentIndexChanged()
             pnode = pnode->NextSiblingElement();
         }
         if (!pnode) return;
-        ret = xmldoc->_find_node(pnode, "Data", pchild);
+        ret = xmldoc._find_node(pnode, "Data", pchild);
         if (ret < 0) return;
         while (pchild)
         {
             if (strcmp(pchild->Value(), "Data") != 0) break;
-            ret = xmldoc->_find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
+            ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
             ui->comboBox_3->addItem(pnode->GetText());
             pchild = pchild->NextSiblingElement();
         }
@@ -257,16 +259,16 @@ void S1_TOPS_BackGeocoding::on_comboBox_2_currentIndexChanged()
         }
 
         TiXmlElement* pnode = NULL, * pchild = NULL;
-        XMLFile* xmldoc = new XMLFile();
-        int ret = xmldoc->XMLFile_load(this->projectFile.toStdString().c_str());
+        XMLFile xmldoc;
+        int ret = xmldoc.XMLFile_load(this->projectFile.toStdString().c_str());
         if (ret < 0) return;
         //初始化图像数据节点
         ui->comboBox_3->clear();
-        ret = xmldoc->find_node("DataNode", pnode);
+        ret = xmldoc.find_node("DataNode", pnode);
         if (ret < 0) return;
         while (pnode)
         {
-            ret = xmldoc->_find_node(pnode, "Sensor", pchild);
+            ret = xmldoc._find_node(pnode, "Sensor", pchild);
             if (ret == 0 && strcmp(pchild->GetText(), "sentinel") == 0 &&
                 QString(pnode->Attribute("name")) == ui->comboBox_2->currentText())
             {
@@ -275,12 +277,12 @@ void S1_TOPS_BackGeocoding::on_comboBox_2_currentIndexChanged()
             pnode = pnode->NextSiblingElement();
         }
         if (!pnode) return;
-        ret = xmldoc->_find_node(pnode, "Data", pchild);
+        ret = xmldoc._find_node(pnode, "Data", pchild);
         if (ret < 0) return;
         while (pchild)
         {
             if (strcmp(pchild->Value(), "Data") != 0) break;
-            ret = xmldoc->_find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
+            ret = xmldoc._find_node(pchild, "Data_Name", pnode); if (ret < 0) return;
             ui->comboBox_3->addItem(pnode->GetText());
             pchild = pchild->NextSiblingElement();
         }

@@ -341,7 +341,7 @@ void CutNode::createWidget()
     boxLayout->setContentsMargins(0, 4, 0, 4);
     boxLayout->setSpacing(4);
 
-    QLabel* tipLabel = new QLabel(QStringLiteral("请在“详细视图”中选择裁剪范围"));
+    QLabel* tipLabel = new QLabel(QStringLiteral("请在\"详细视图\"中选择裁剪范围"));
     tipLabel->setStyleSheet("color: #3B82F6; font-size: 11px; font-weight: bold; line-height: 14px;");
     tipLabel->setAlignment(Qt::AlignCenter);
     tipLabel->setWordWrap(true);

@@ -7,7 +7,6 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
-#include <QDebug>
 #include <QRegularExpression>
 #include "InSARLogManager.h"
 
@@ -254,9 +253,9 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
         }
     }
     /*写入XML*/
-    XMLFile* xmlfile = new XMLFile();
+    XMLFile xmlfile;
 	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile->XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
+	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
     for (int i = 0; i < image_number; i++)
     {
 		if (QThread::currentThread()->isInterruptionRequested())
@@ -269,12 +268,11 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
         }
         QString regis_name = QFileInfo(outName).baseName();
         QString relativePath = QString("/%1/%2").arg(file_name).arg(outName);
-        xmlfile->XMLFile_add_regis(file_name.toStdString().c_str(), regis_name.toStdString().c_str(), relativePath.toStdString().c_str(),
+        xmlfile.XMLFile_add_regis(file_name.toStdString().c_str(), regis_name.toStdString().c_str(), relativePath.toStdString().c_str(),
             Row_offset.at(i), Col_offset.at(i), index, interp_times, block_size,
             temporal_baseline.toStdString().c_str(), B_effect.toStdString().c_str(), B_parallel.toStdString().c_str());
     }
-	xmlfile->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-    delete xmlfile;
+	xmlfile.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
     emit sendModel(model);
 	InSARLogManager::LogInfo("CoregistrationWorker", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
@@ -506,9 +504,9 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		B_effect += "0 ";
 	}
 	/*写入XML*/
-	XMLFile* xmlfile = new XMLFile();
+	XMLFile xmlfile;
 	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile->XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
+	xmlfile.XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
 	for (int i = 0; i < images_number; i++)
 	{
 		if (QThread::currentThread()->isInterruptionRequested())
@@ -521,14 +519,13 @@ void CoregistrationWorker::DEMAssistCoregistration(
         }
         QString regis_name = QFileInfo(outName).baseName();
 		QString relativePath = QString("/%1/%2").arg(dstNode).arg(outName);
-		xmlfile->XMLFile_add_regis(dstNode.toStdString().c_str(), regis_name.toStdString().c_str(), 
+		xmlfile.XMLFile_add_regis(dstNode.toStdString().c_str(), regis_name.toStdString().c_str(),
 			relativePath.toStdString().c_str(),
 			Row_offset.at<int>(i, 0), Col_offset.at<int>(i, 0), masterIndex, -1, -1,
 			temporal_baseline.toStdString().c_str(), B_effect.toStdString().c_str(), B_parallel.toStdString().c_str());
 
 	}
-	xmlfile->XMLFile_save((QString(savepath) + "/" + project_name).toStdString().c_str());
-    delete xmlfile;
+	xmlfile.XMLFile_save((QString(savepath) + "/" + project_name).toStdString().c_str());
 	emit sendModel(model);
 	InSARLogManager::LogInfo("CoregistrationWorker", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();

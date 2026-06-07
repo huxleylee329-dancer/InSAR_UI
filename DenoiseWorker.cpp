@@ -153,14 +153,13 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
     int image_number = phase_name.size();
     Filter filter;
     FormatConversion FC;
-    XMLFile* xml = new XMLFile();
+    XMLFile xml;
     QString xml_path = save_path + "/" + project_name;
     if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
         xml_path += ".Insar";
     }
 
-    if (xml->XMLFile_load(xml_path.toStdString().c_str()) < 0) {
-        delete xml;
+    if (xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
         emit errorProcess(QStringLiteral("加载项目XML文件失败: ") + xml_path);
         return;
     }
@@ -173,21 +172,18 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
             Mat phase;
             int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
             if (ret < 0) {
-                delete xml;
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
             }
             Mat phase_filter;
             ret = filter.slope_adaptive_filter(phase, phase_filter, slop_win, pre_win);
             if (ret < 0) {
-                delete xml;
                 emit errorProcess(QStringLiteral("斜坡自适应滤波处理失败，请检查图像数据或窗口参数"));
                 return;
             }
@@ -218,7 +214,6 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lat", tmp);
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             /*行列偏移量*/
@@ -227,7 +222,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             int offset_row = tmp_int.at<int>(0, 0);
             ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
             int offset_col = tmp_int.at<int>(0, 0);
-            xml->XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
+            xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
                 relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "Slope", slop_win, pre_win,
                 0, 0, 0, "", "", "");
 
@@ -266,21 +261,18 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
             Mat phase;
             int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
             if (ret < 0) {
-                delete xml;
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
             }
             Mat phase_filter;
             ret = filter.Goldstein_filter(phase, phase_filter, alpha, goldstein_win, n_pad);
             if (ret < 0) {
-                delete xml;
                 emit errorProcess(QStringLiteral("Goldstein滤波处理失败，请检查图像数据或窗口参数"));
                 return;
             }
@@ -311,7 +303,6 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lat", tmp);
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             /*行列偏移量*/
@@ -320,7 +311,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             int offset_row = tmp_int.at<int>(0, 0);
             ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
             int offset_col = tmp_int.at<int>(0, 0);
-            xml->XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
+            xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
                 relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "Goldstein", 0, 0,
                 goldstein_win, n_pad, alpha, "", "", "");
 
@@ -359,14 +350,12 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
             Mat phase;
             int ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
             if (ret < 0) {
-                delete xml;
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
             }
@@ -374,7 +363,6 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             ret = filter.filter_dl(dl_path.toStdString().c_str(), tmp_path.toStdString().c_str(),
                 model_path.toStdString().c_str(), phase, phase_filter);
             if (ret < 0) {
-                delete xml;
                 emit errorProcess(QStringLiteral("深度学习滤波处理失败，请检查深度学习依赖或环境"));
                 return;
             }
@@ -406,7 +394,6 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lat", tmp);
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             /*行列偏移量*/
@@ -415,7 +402,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             int offset_row = tmp_int.at<int>(0, 0);
             ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
             int offset_col = tmp_int.at<int>(0, 0);
-            xml->XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
+            xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
                 relative_filter_path.at(i).toStdString().c_str(), offset_row, offset_col, "DL", 0, 0,
                 0, 0, 0, dl_path.toStdString().c_str(), model_path.toStdString().c_str(), tmp_path.toStdString().c_str());
 
@@ -447,13 +434,11 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
     }
     else
     {
-        delete xml;
         emit errorProcess(QStringLiteral("未知的滤波方法"));
         return;
     }
 
-    xml->XMLFile_save(xml_path.toStdString().c_str());
-    delete xml;
+    xml.XMLFile_save(xml_path.toStdString().c_str());
 
     emit sendModel(model);
     InSARLogManager::LogInfo("DenoiseWorker", QString("Task completed: ") + QString(__FUNCTION__));

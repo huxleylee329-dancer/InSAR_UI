@@ -12,6 +12,7 @@
 #include<QFile>
 #include<QDir>
 #include"FormatConversion.h"
+#include "tinyxml.h"
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #else
@@ -250,7 +251,7 @@ void SLC_deramp::on_comboBox_dst_node_currentIndexChanged()
 
 void SLC_deramp::on_buttonBox_accepted()
 {
-    XMLFile* xmldoc = new XMLFile(); 
+    XMLFile xmldoc;
     TiXmlElement* pnode = NULL, * pchild = NULL;
     bool bFlag = false;
     if (copy->item(ui->comboBox->currentIndex(), 0)->rowCount() == 0)
@@ -283,9 +284,9 @@ void SLC_deramp::on_buttonBox_accepted()
         }
     }
     if (projectFile.isEmpty()) return;
-    int ret = xmldoc->XMLFile_load(projectFile.toStdString().c_str());
+    int ret = xmldoc.XMLFile_load(projectFile.toStdString().c_str());
     if (ret < 0) return;
-    ret = xmldoc->find_node("DataNode", pnode);
+    ret = xmldoc.find_node("DataNode", pnode);
     if (ret < 0) return;
     while (pnode)
     {
@@ -293,7 +294,7 @@ void SLC_deramp::on_buttonBox_accepted()
         pnode = pnode->NextSiblingElement();
     }
     if (!pnode) return;
-    ret = xmldoc->_find_node(pnode, "master_image", pchild);
+    ret = xmldoc._find_node(pnode, "master_image", pchild);
     if (ret < 0) return;
     int index = 1;
     ret = sscanf(pchild->GetText(), "%d", &index);

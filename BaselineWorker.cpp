@@ -4,7 +4,6 @@
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 #include <QThread>
-#include <QDebug>
 #include <QFileInfo>
 #include <vector>
 #include <string>

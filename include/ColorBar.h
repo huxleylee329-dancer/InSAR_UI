@@ -3,7 +3,7 @@
 #include<Utils.h>
 #include<FormatConversion.h>
 
-#ifdef DEBUG
+#ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
 #else

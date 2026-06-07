@@ -164,7 +164,6 @@ void Preview::mousePressEvent(QMouseEvent* event)
         viewport()->setCursor(Qt::ClosedHandCursor);
         if (this->scene() == nullptr)
         {
-            qDebug() << "The scene is null";
             return ;
         }
         // 记录鼠标按下时的中心点坐标

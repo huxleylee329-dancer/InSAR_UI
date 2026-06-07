@@ -365,7 +365,7 @@ bool DemNode::prepareToStart()
     if (!hasFlatPhase) {
         QMessageBox::warning(nullptr, QStringLiteral("无法执行高程反演"),
             QStringLiteral("输入的解缠相位文件中未包含平地相位消除系数(flat_phase_coefficient)。\n\n"
-                           "请确保上游的“干涉形成 (Interferometric Formation)”节点在运行时已勾选“平地消除 (IsDeflat)”选项，并重新运行后续节点。"));
+                           "请确保上游的\"干涉形成 (Interferometric Formation)\"节点在运行时已勾选\"平地消除 (IsDeflat)\"选项，并重新运行后续节点。"));
         setState(ExecutionState::Error);
         return false;
     }

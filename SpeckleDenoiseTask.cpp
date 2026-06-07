@@ -240,17 +240,17 @@ bool SpeckleDenoiseTask::processBM3DEnhancement(
             // Update XML for persistence
             {
                 QString relativePath = "/" + nodeName + "/" + finalFileName;
-                XMLFile* localXml = new XMLFile();
+                XMLFile localXml;
                 if (!projectPath.isEmpty()) {
-                    localXml->XMLFile_load(projectPath.toStdString().c_str());
+                    localXml.XMLFile_load(projectPath.toStdString().c_str());
                 }
-                localXml->XMLFile_add_origin(
+                localXml.XMLFile_add_origin(
                     nodeName.toStdString().c_str(),
                     displayName.toStdString().c_str(),
                     relativePath.toStdString().c_str(),
                     tag.toStdString().c_str()
                 );
-                localXml->XMLFile_save(projectPath.toStdString().c_str());
+                localXml.XMLFile_save(projectPath.toStdString().c_str());
             }
         }
         else

@@ -13,7 +13,6 @@
 #include <QGraphicsView>
 #include <QtConcurrent/QtConcurrent>
 #include <QFileInfo>
-#include <QDebug>
 #include <QBuffer>
 #include <algorithm>
 

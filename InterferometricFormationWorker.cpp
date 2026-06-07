@@ -10,7 +10,6 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QThread>
-#include <QDebug>
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 
@@ -210,15 +209,14 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
         }
     }
     
-    XMLFile* xml = new XMLFile();
+    XMLFile xml;
     QString xml_path = save_path + "/" + project_name;
     if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
         xml_path += ".Insar";
     }
-    int xml_ret = xml->XMLFile_load(xml_path.toStdString().c_str());
+    int xml_ret = xml.XMLFile_load(xml_path.toStdString().c_str());
     if (xml_ret != 0) {
         InSARLogManager::LogError("InterferometricFormationWorker", "Failed to load project XML file: " + xml_path);
-        delete xml;
         emit errorProcess(QStringLiteral("加载项目XML文件失败: ") + xml_path);
         return;
     }
@@ -236,7 +234,6 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
             if (QThread::currentThread()->isInterruptionRequested())
             {
                 InSARLogManager::LogInfo("InterferometricFormationWorker", "Task cancelled by interruption request.");
-                delete xml;
                 return;
             }
             QString slave_regis_name = origin_node->child(i, 0)->text();
@@ -279,7 +276,6 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                 phase_deflatted.copyTo(phase);
                 if (ret_deflat < 0) {
                     InSARLogManager::LogError("InterferometricFormationWorker", "Deflat process failed.");
-                    delete xml;
                     emit errorProcess(QStringLiteral("平地相位消除失败"));
                     return;
                 }
@@ -339,7 +335,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                 interferometric_phase->appendRow(interferometric_phase_name);
                 interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, interferometric_phase_path);
 
-                xml->XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), phase_name.toStdString().c_str(),
+                xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), phase_name.toStdString().c_str(),
                     ("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "phase-1.0", offset_row, offset_col,
                     isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
             }
@@ -353,7 +349,6 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                 if (QThread::currentThread()->isInterruptionRequested())
                 {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Task cancelled by interruption request inside coherence block.");
-                    delete xml;
                     return;
                 }
                 Mat coherence;
@@ -379,7 +374,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                     interferometric_phase->appendRow(coherence_name);
                     interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, coherence_path);
 
-                    xml->XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), coh_name.toStdString().c_str(),
+                    xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), coh_name.toStdString().c_str(),
                         ("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "coherence-1.0", offset_row, offset_col,
                         isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
                 }
@@ -396,9 +391,8 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
         }
     }
     
-    xml->XMLFile_save(xml_path.toStdString().c_str());
-    delete xml;
-    
+    xml.XMLFile_save(xml_path.toStdString().c_str());
+
     emit sendModel(model);
     InSARLogManager::LogInfo("InterferometricFormationWorker", "Task completed: Interferometric");
     emit endProcess();

@@ -524,11 +524,11 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	}
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration parameters copied successfully to H5 files.");
 	/*写入XML*/
-	XMLFile* xmlfile = new XMLFile();
-	if (xmlfile->XMLFile_load((savePath + "/" + dstProject).toStdString().c_str()) >= 0)
+	XMLFile xmlfile;
+	if (xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str()) >= 0)
 	{
 		TiXmlElement* root = nullptr;
-		xmlfile->get_root(root);
+		xmlfile.get_root(root);
 		if (root)
 		{
 			for (int i = 0; i < images_number; i++)
@@ -663,14 +663,13 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				}
 			}
 		}
-		xmlfile->XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
+		xmlfile.XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
 		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration results successfully saved in project XML file.");
 	}
 	else
 	{
 		InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", "Failed to load project XML file: " + savePath + "/" + dstProject);
 	}
-	delete xmlfile;
 	emit sendModel(model);
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();

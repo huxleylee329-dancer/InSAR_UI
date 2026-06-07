@@ -353,3 +353,51 @@
          ```
       4. 这确保了下层配置表单全由一致的输入型控件构成，并向用户明晰了项目名称作为只读环境参数的层级归属。
 
+30. **HDF5/外部 DLL 读写的全局串行锁规范 (Global HDF5 Access Lock)**：
+    - **现象与根源**：在工作流 Automatic Mode 下，多个节点可能因为上游数据就绪而连续或并发启动，进而同时调用 `FormatConversion`、`Utils` 或外部 DLL 读写 H5 文件、导入数据、生成 JPG 预览图。HDF5 相关库和现有外部 DLL 调用链并不适合无保护并发访问，容易出现 H5 读写竞争、预览生成失败、进程崩溃或偶发性数据损坏。
+    - **避坑与设计规范**：
+      1. **统一使用 RAII 锁**：所有涉及 H5 文件读写、导入、裁剪、配准、解缠、DEM、SBAS、KML 导出、预览图生成等调用路径，必须在 Worker 入口或 H5 临界区创建 `NodeUtils::Hdf5Locker locker;`。
+      2. **集中锁源**：全局锁应由 `NodeUtils::getHdf5Mutex()` 提供，避免各 Worker 自建互不相关的局部锁。
+      3. **递归锁要求**：该锁必须使用 `QMutex::Recursive`。例如 Sentinel-1 导入流程会先进入导入临界区，导入结束后同一调用链再进入 `generateJpgPreviewFromH5()` 生成预览图；递归锁可避免同线程二次加锁死锁。
+      4. **不要只锁 JPG 生成**：只在 `generateJpgPreviewFromH5()` 内加锁不足以保护导入/处理 DLL 本身。凡是直接读写 H5 的 Worker 也必须显式加锁。
+
+31. **自动连续执行节点的防重入与延迟完成规范 (Auto Chain Re-entry Guard)**：
+    - **现象与根源**：Automatic Mode 下，上游端口数据更新、节点状态刷新、参数控件变更、`dataUpdated` 广播可能在短时间内多次触发 `processAutomatically()`。如果节点没有运行中防重入保护，同一个算子会重复启动多个 Worker，导致输出目录竞争、XML 重复写入、进度状态错乱，甚至多个后台线程同时写同一批 H5 文件。
+    - **避坑与设计规范**：
+      1. **运行中标志**：每个会启动后台线程的自动节点必须维护执行中标志（如 `m_isExecuting`）。在 `processAutomatically()`、`prepareToStart()` 和 `executeProcessing()` 三处都应防止重复进入。
+      2. **重复触发只延迟完成**：当 `m_isExecuting == true` 时，自动触发路径不应再次启动 Worker，而应调用 `deferAutomaticCompletion()` 或直接返回，等待当前 Worker 的完成信号统一收尾。
+      3. **全路径复位**：`m_isExecuting` 必须在正常完成、用户停止、Worker 报错、析构清理等所有出口复位，避免节点永久卡在“正在运行”的逻辑状态。
+      4. **状态与线程一致**：只有在 Worker 线程已经启动并成功排队任务之后，才将执行中标志设为 true 并置为 `Running`，避免准备阶段失败却残留运行态。
+
+32. **自动执行启动前的参数快照与 `prepareToStart()` / `executeProcessing()` 分离规范 (Prepared Execution Snapshot)**：
+    - **现象与根源**：连续流程中，节点从收到输入数据到 Worker 真正执行之间可能穿插 UI 事件、覆盖确认、上游状态传播和参数变更。如果 Worker 启动后再反复读取 UI 控件、`m_inputData` 或项目上下文，可能出现输入文件列表、输出节点名、工程目录、覆盖策略在同一次运行内不一致的问题。
+    - **避坑与设计规范**：
+      1. **启动前冻结参数**：复杂节点应实现 `prepareToStart()`，在其中一次性解析并保存运行所需的不可变快照，例如输入 H5 列表、目标节点名、工程根目录、工程名、项目模型指针、预期输出文件路径、覆盖检查结果等。
+      2. **执行阶段只消费快照**：`executeProcessing()` 不应重新从 UI 或输入端口推导关键参数，而应只读取 `m_prepared...` 成员来创建 Worker 和投递任务。
+      3. **失败不启动线程**：`prepareToStart()` 若发现输入未就绪、坐标/ROI 参数无效、输出冲突被取消，应直接返回 false，禁止创建线程和 Worker。
+      4. **人工与自动路径复用**：手动点击运行和自动级联触发应尽量共用同一套 `prepareToStart()` 校验逻辑，避免两条路径行为不一致。
+
+33. **自动级联触发时避免 Modal 覆盖弹窗阻塞流程 (No Modal Prompt in Auto-Triggered Runs)**：
+    - **现象与根源**：`NodeUtils::checkAndPromptOverwrite()` 会弹出覆盖/加载/取消的模态对话框。若下游节点由 Automatic Mode 级联触发时仍弹窗，整个无人值守工作流会被中途阻断；多个节点连续触发时还会造成弹窗风暴，用户难以判断当前阻塞的是哪一个节点。
+    - **避坑与设计规范**：
+      1. **区分触发来源**：节点启动前应判断是否为自动触发（如 `_isAutoTriggered`）。人工点击运行可以弹窗确认，自动级联运行不应弹出模态确认框。
+      2. **自动触发采用确定性策略**：自动级联时建议直接使用 `OverwriteResult::Overwrite` 或节点定义的确定性复用策略，保证流程能连续向下执行。
+      3. **覆盖前仍需清理旧工程节点**：即使自动触发跳过弹窗，只要进入覆盖重算路径，仍必须在 Worker 启动前清理旧输出目录和旧 DataNode，避免 XML 和 UI 树重复累加。
+      4. **人工路径保留安全拦截**：用户主动点击运行仍应保留覆盖/加载/取消选择，以防误覆盖已有耗时成果。
+
+34. **节点失效回 Idle 时的进度清零、输出清空与下游传播规范 (Idle Invalidation Propagation)**：
+    - **现象与根源**：当节点参数变化、上游输入断开或用户停止执行后，如果只把当前节点状态改回 `Idle`，但不清空旧的输出数据，下游节点仍可能持有过期 `NodeData` 并继续显示 Completed，甚至基于旧 H5 路径继续自动执行，造成流程图状态与真实数据不一致。
+    - **避坑与设计规范**：
+      1. **Idle 必须清零进度**：`setState(ExecutionState::Idle)` 时应同步将进度重置为 0，并发出 `progressUpdated(0)`。
+      2. **清空所有输出端口**：只要节点进入非 Completed 状态，就应遍历所有输出端口，将 `_outputData` 中对应数据置空。
+      3. **强制广播空数据**：清空输出后必须对每个输出端口发出 `dataUpdated(portIndex)`，让图模型将 `nullptr` 传播给下游输入端口，迫使下游节点回到 Idle/Pending。
+      4. **恢复阶段例外**：工程加载恢复期间应受 `_isRestoring` 保护，避免恢复 Completed 状态时误触发下游清空。
+
+35. **彻底移除 `MyThread` 后的 Helper、Dialog 与工程配置残留清理规范 (MyThread Removal Closure Check)**：
+    - **现象与根源**：`MyThread` 瘦身并不只是把业务槽函数迁移到独立 Worker。若 Helper 函数签名、Dialog 成员变量、Node 停止逻辑、头文件包含、工程文件配置中仍残留 `MyThread`，后续会出现隐式依赖、编译配置混乱、取消按钮失效，甚至旧类被误重新引入的问题。
+    - **避坑与设计规范**：
+      1. **Helper 签名同步替换**：被多个 UI/Node 共用的 Helper 函数，参数类型必须从 `MyThread*` 改为具体 Worker 指针（如 `Sentinel1ImportWorker*`），并只依赖该 Worker 暴露的标准信号和停止状态接口。
+      2. **停止逻辑下沉到具体 Worker**：导入类等仍需支持中断的 Worker，应保留自身的 `StopProcess()` / `isStopRequested()`，节点或 Dialog 停止时调用具体 Worker，而不是通过 `MyThread` 间接控制。
+      3. **基类不得依赖具体旧线程**：如 `ImportNodeBase` 这类公共基类不应包含 `MyThread.h`，也不应假设存在统一的 `MyThread::StopProcess()`；公共停止逻辑只处理 `QThread::requestInterruption()`，具体 Worker 的停止由派生类负责。
+      4. **收尾检查清单**：完成移植后必须全局搜索 `MyThread`，逐项确认残留是否只是历史日志字符串或注释。需要重点检查 `include`、Helper 参数、Dialog 成员、Node 成员、信号槽连接、`.vcxproj`、`.vcxproj.filters` 和旧源码文件重命名记录。
+

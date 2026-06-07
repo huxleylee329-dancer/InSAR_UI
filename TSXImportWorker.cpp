@@ -9,6 +9,44 @@
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 
+// 进度回调上下文
+struct TsxProgressContext
+{
+    TSXImportWorker* worker;
+    int progressMin;
+    int progressMax;
+};
+
+// DLL进度回调：将DLL内部0-100映射到UI进度区间
+static void onTsxProgress(int percent, const char* message, void* userData)
+{
+    TsxProgressContext* ctx = static_cast<TsxProgressContext*>(userData);
+    if (!ctx || !ctx->worker)
+        return;
+    int mapped = ctx->progressMin + (ctx->progressMax - ctx->progressMin) * percent / 100;
+    QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入数据，请耐心等待……");
+    emit ctx->worker->updateProcess(mapped, msg);
+}
+
+// 批量进度回调上下文
+struct TsxBatchProgressContext
+{
+    TSXImportWorker* worker;
+    int imageIndex;
+    int totalImages;
+};
+
+// 批量DLL进度回调
+static void onTsxBatchProgress(int percent, const char* message, void* userData)
+{
+    TsxBatchProgressContext* ctx = static_cast<TsxBatchProgressContext*>(userData);
+    if (!ctx || !ctx->worker)
+        return;
+    int mapped = 2 + ((ctx->imageIndex * 100 + percent) * 98) / (ctx->totalImages * 100);
+    QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入...");
+    emit ctx->worker->updateProcess(mapped, msg);
+}
+
 TSXImportWorker::TSXImportWorker(QObject* parent)
     : QObject(parent)
     , stop_flag(true)
@@ -62,9 +100,15 @@ void TSXImportWorker::import_TSX(
     QString h5_path = QString("%1%2%3.h5").arg(project_path).arg(temp_folder).arg(filename);
     emit updateProcess(20, QStringLiteral("正在导入数据，请耐心等待……"));
     FormatConversion conversion;
-    ret = conversion.TSX2h5(xml_filename.toStdString().c_str(), 
+    TsxProgressContext progressCtx;
+    progressCtx.worker = this;
+    progressCtx.progressMin = 20;
+    progressCtx.progressMax = 90;
+    ret = conversion.TSX2h5(xml_filename.toStdString().c_str(),
         h5_path.toStdString().c_str(),
-        polarization.toStdString().c_str());
+        polarization.toStdString().c_str(),
+        onTsxProgress,
+        &progressCtx);
     if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
     {
         InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
@@ -120,31 +164,28 @@ void TSXImportWorker::import_TSX(
         origin->appendRow(img);
         origin->setChild(origin->rowCount() - 1, 1, img_path);
 
-        XMLFile* DOC = new XMLFile();
-        ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+        XMLFile DOC;
+        ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
         if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {
             InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
             QFile::remove(h5_path);
             QDir tmp_dir(project_path + QString("/") + folder);
             tmp_dir.removeRecursively();
-            delete DOC;
             emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
             return;
         }
-        ret = DOC->XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
+        ret = DOC.XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
         if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {
             InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
             QFile::remove(h5_path);
             QDir tmp_dir(project_path + QString("/") + folder);
             tmp_dir.removeRecursively();
-            delete DOC;
             emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
             return;
         }
-        ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
-        delete DOC;
+        ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
         if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {
             InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
@@ -195,7 +236,10 @@ void TSXImportWorker::import_TSX_patch(
     int n_images = original_file_list.size();
     int process = 2;
     FormatConversion conversion;
-    XMLFile* DOC = new XMLFile();
+    XMLFile DOC;
+    TsxBatchProgressContext batchCtx;
+    batchCtx.worker = this;
+    batchCtx.totalImages = n_images;
     emit updateProcess(process, QStringLiteral("正在导入..."));
     for (int i = 0; i < n_images; i++)
     {
@@ -205,16 +249,18 @@ void TSXImportWorker::import_TSX_patch(
         QString temp_folder = QString("/") + dst_node + QString("/");
         QString relative_path = temp_folder + filename + ".h5";
         QString h5_path = QString("%1%2%3.h5").arg(savepath).arg(temp_folder).arg(filename);
-        
-        ret = conversion.TSX2h5(xml_filename.toStdString().c_str(), h5_path.toStdString().c_str(), 
-            polarization.toStdString().c_str());
+
+        batchCtx.imageIndex = i;
+        ret = conversion.TSX2h5(xml_filename.toStdString().c_str(), h5_path.toStdString().c_str(),
+            polarization.toStdString().c_str(),
+            onTsxBatchProgress,
+            &batchCtx);
         if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {
             InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
             QFile::remove(h5_path);
             QDir tmp_dir(savepath + QString("/") + dst_node);
             tmp_dir.removeRecursively();
-            delete DOC;
             emit errorProcess(QStringLiteral("导入失败或被中断。"));
             return;
         }
@@ -224,7 +270,6 @@ void TSXImportWorker::import_TSX_patch(
             QFile::remove(h5_path);
             QDir tmp_dir(savepath + QString("/") + dst_node);
             tmp_dir.removeRecursively();
-            delete DOC;
             emit errorProcess(QStringLiteral("未找到项目节点。"));
             return;
         }
@@ -264,36 +309,33 @@ void TSXImportWorker::import_TSX_patch(
             origin->appendRow(img);
             origin->setChild(origin->rowCount() - 1, 1, img_path);
 
-            ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+            ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
             if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
                 QFile::remove(h5_path);
                 QDir tmp_dir(savepath + QString("/") + dst_node);
                 tmp_dir.removeRecursively();
-                delete DOC;
                 emit errorProcess(QStringLiteral("保存配置文件失败。"));
                 return;
             }
-            ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
+            ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
             if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
                 QFile::remove(h5_path);
                 QDir tmp_dir(savepath + QString("/") + dst_node);
                 tmp_dir.removeRecursively();
-                delete DOC;
                 emit errorProcess(QStringLiteral("保存配置文件失败。"));
                 return;
             }
-            ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+            ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
             if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
                 QFile::remove(h5_path);
                 QDir tmp_dir(savepath + QString("/") + dst_node);
                 tmp_dir.removeRecursively();
-                delete DOC;
                 emit errorProcess(QStringLiteral("保存配置文件失败。"));
                 return;
             }
@@ -302,10 +344,7 @@ void TSXImportWorker::import_TSX_patch(
         {
             origin->setChild(img->row(), 1, new QStandardItem(h5_path));
         }
-        process = double(i + 1) / double(n_images) * 100.0;
-        emit updateProcess(process, QStringLiteral("正在导入..."));
     }
-    delete DOC;
 
     emit sendModel(model);
     InSARLogManager::LogInfo("TSXImportWorker", QString("Task completed: ") + QString(__FUNCTION__));

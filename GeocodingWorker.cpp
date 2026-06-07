@@ -3,6 +3,7 @@
 #include "icon_source.h"
 #include "Package.h"
 #include <FormatConversion.h>
+#include "tinyxml.h"
 #include <Utils.h>
 #include <Deflat.h>
 #include <Filter.h>
@@ -13,7 +14,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
-#include <QDebug>
 #include <QThread>
 #include "InSARLogManager.h"
 
@@ -257,18 +257,17 @@ void GeocodingWorker::Geocoding(
 
         QString project_xmlfile = save_path + "/" + project_name;
         TiXmlElement* pnode = NULL, * pchild = NULL;
-        XMLFile* xmldoc = new XMLFile();
-        xmldoc->XMLFile_load(project_xmlfile.toStdString().c_str());
-        xmldoc->find_node("DataNode", pnode);
+        XMLFile xmldoc;
+        xmldoc.XMLFile_load(project_xmlfile.toStdString().c_str());
+        xmldoc.find_node("DataNode", pnode);
         while (pnode)
         {
             if (0 == strcmp(pnode->Attribute("name"), srcNode.toStdString().c_str())) break;
             pnode = pnode->NextSiblingElement();
         }
-        xmldoc->_find_node(pnode, "master_image", pchild);
+        xmldoc._find_node(pnode, "master_image", pchild);
         int masterIndex = 1;
         if (pchild) ret = sscanf(pchild->GetText(), "%d", &masterIndex);
-        delete xmldoc; // avoid memory leak
 
         ret = conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lon", mapped_lon);
         ret += conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lat", mapped_lat);
@@ -376,9 +375,9 @@ void GeocodingWorker::Geocoding(
         project->setChild(project->rowCount() - 1, 1, geocode_Rank);
     }
 
-    XMLFile* xml = new XMLFile();
+    XMLFile xml;
     QString xml_path = save_path + "/" + project_name;
-    xml->XMLFile_load(xml_path.toStdString().c_str());
+    xml.XMLFile_load(xml_path.toStdString().c_str());
     for (int i = 0; i < input_files.size(); i++)
     {
         QFileInfo fileinfo = QFileInfo(QString(output_files.at(i).c_str()));
@@ -412,7 +411,7 @@ void GeocodingWorker::Geocoding(
             geocode->appendRow(geocode_images_name);
             geocode->setChild(geocode->rowCount() - 1, 1, geocode_images_path);
 
-            xml->XMLFile_add_geocoding(dstNode.toStdString().c_str(), geocode_name.toStdString().c_str(),
+            xml.XMLFile_add_geocoding(dstNode.toStdString().c_str(), geocode_name.toStdString().c_str(),
                 ("/" + dstNode + "/" + geocode_name + ".h5").toStdString().c_str(), geocode_Rank_level.toStdString().c_str());
         }
         else
@@ -420,8 +419,7 @@ void GeocodingWorker::Geocoding(
             geocode->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
         }
     }
-    xml->XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-    delete xml;
+    xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 
     emit sendModel(model);
     emit updateProcess(100, QStringLiteral("完成……"));

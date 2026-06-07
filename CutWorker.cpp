@@ -2,11 +2,11 @@
 #include "icon_source.h"
 #include <Utils.h>
 #include <FormatConversion.h>
+#include "tinyxml.h"
 #include <QDir>
 #include <QFileInfo>
 #include "NodeUtils.h"
 #include <QThread>
-#include <QDebug>
 #include "InSARLogManager.h"
 
 CutWorker::CutWorker(QObject* parent)
@@ -405,15 +405,12 @@ void CutWorker::Cut2(double h5_left,
         int rows, cols;
         FC.read_int_from_h5(path_str.toStdString().c_str(), "range_len", &cols);
         FC.read_int_from_h5(path_str.toStdString().c_str(), "azimuth_len", &rows);
-        qDebug() << "[CutWorker] Cut2:" << name << "H5=" << rows << "x" << cols
-                 << "ratio: L=" << h5_left << "R=" << h5_right << "T=" << h5_top << "B=" << h5_bottom;
         offset_row = h5_top * rows; offset_row = offset_row < 0 ? 0 : offset_row;
         offset_col = h5_left * cols; offset_col = offset_col < 0 ? 0 : offset_col;
         int row_end = h5_bottom * rows; row_end = row_end >= rows ? rows : row_end;
         int col_end = h5_right * cols; col_end = col_end >= cols ? cols : col_end;
         int rows_cut = row_end - offset_row;
         int cols_cut = col_end - offset_col;
-        qDebug() << "[CutWorker] Cut2:" << name << "crop region: row[" << offset_row << "," << row_end << "] col[" << offset_col << "," << col_end << "] size=" << rows_cut << "x" << cols_cut;
         FC.read_subarray_from_h5(path_str.toStdString().c_str(), "s_re", offset_row, offset_col, rows_cut, cols_cut, SLC.re);
         FC.read_subarray_from_h5(path_str.toStdString().c_str(), "s_im", offset_row, offset_col, rows_cut, cols_cut, SLC.im);
 

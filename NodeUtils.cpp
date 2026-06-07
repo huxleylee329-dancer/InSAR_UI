@@ -8,7 +8,8 @@
 #include "include/MainWindow.h"
 #include "include/WorkspaceUI.h"
 #include "include/InterfaceManager.h"
-#include "include/FormatConversion.h"
+#include "tinyxml.h"
+#include <FormatConversion.h>
 #include <Utils.h>
 #include <cmath>
 
@@ -273,7 +274,6 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
         
         if (ret != 0)
         {
-            qDebug() << "NodeUtils::generateJpgPreviewFromH5 warning: fallback OpenCV rendering for type:" << type;
             // 1. Normalize
             cv::Mat phase_normalized;
             if (type == "coherence")
@@ -316,7 +316,6 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
             bool success_write = cv::imwrite(jpgPath.toStdString(), color_image);
             if (!success_write)
             {
-                qDebug() << "NodeUtils::generateJpgPreviewFromH5 error: fallback cv::imwrite failed.";
             }
             ret = success_write ? 0 : -1;
         }

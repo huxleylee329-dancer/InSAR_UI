@@ -9,7 +9,7 @@
 #include<Preview_Window.h>
 #include<opencv2/highgui.hpp>
 QT_CHARTS_USE_NAMESPACE
-#ifdef DEBUG
+#ifdef _DEBUG
 #pragma comment(lib, "Qt5Chartsd.lib")
 #else
 #pragma comment(lib, "Qt5Charts.lib")

@@ -2,6 +2,7 @@
 #include"icon_source.h"
 #include<QFileDialog>
 #include<QMessageBox>
+#include "tinyxml.h"
 OpenProject::OpenProject(QWidget* parent) :
     QDialog(parent),
     ui(new Ui::OpenProject)

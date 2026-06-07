@@ -5,7 +5,6 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QThread>
-#include <QDebug>
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 
@@ -61,7 +60,7 @@ void CSKImportWorker::import_CSK_patch(
     int n_images = original_file_list.size();
     int process = 2;
     FormatConversion conversion;
-    XMLFile* DOC = new XMLFile();
+    XMLFile DOC;
     emit updateProcess(process, QStringLiteral("正在导入..."));
     for (int i = 0; i < n_images; i++)
     {
@@ -81,7 +80,6 @@ void CSKImportWorker::import_CSK_patch(
             QFile::remove(h5_path);
             QDir tmp_dir(savepath + QString("/") + dst_node);
             tmp_dir.removeRecursively();
-            delete DOC;
             emit errorProcess("unknown format!");
             return;
         }
@@ -91,7 +89,6 @@ void CSKImportWorker::import_CSK_patch(
             QFile::remove(h5_path);
             QDir tmp_dir(savepath + QString("/") + dst_node);
             tmp_dir.removeRecursively();
-            delete DOC;
             emit errorProcess(QStringLiteral("未找到项目节点。"));
             return;
         }
@@ -131,36 +128,33 @@ void CSKImportWorker::import_CSK_patch(
             origin->appendRow(img);
             origin->setChild(origin->rowCount() - 1, 1, img_path);
 
-            ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+            ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
             if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogError("CSKImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
                 QFile::remove(h5_path);
                 QDir tmp_dir(savepath + QString("/") + dst_node);
                 tmp_dir.removeRecursively();
-                delete DOC;
                 emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
                 return;
             }
-            ret = DOC->XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "CSG-2");
+            ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "CSG-2");
             if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogError("CSKImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
                 QFile::remove(h5_path);
                 QDir tmp_dir(savepath + QString("/") + dst_node);
                 tmp_dir.removeRecursively();
-                delete DOC;
                 emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
                 return;
             }
-            ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+            ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
             if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogError("CSKImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
                 QFile::remove(h5_path);
                 QDir tmp_dir(savepath + QString("/") + dst_node);
                 tmp_dir.removeRecursively();
-                delete DOC;
                 emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
                 return;
             }
@@ -172,7 +166,6 @@ void CSKImportWorker::import_CSK_patch(
         process = double(i + 1) / double(n_images) * 100.0;
         emit updateProcess(process, QStringLiteral("正在导入..."));
     }
-    delete DOC;
 
     emit sendModel(model);
     InSARLogManager::LogInfo("CSKImportWorker", QString("Task completed: ") + QString(__FUNCTION__));

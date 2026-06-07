@@ -6,6 +6,7 @@
 #include "NodeUtils.h"
 #include "icon_source.h"
 #include "InSARLogManager.h"
+#include "tinyxml.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -15,7 +16,6 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QStandardItemModel>
-#include <QDebug>
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QtConcurrent/QtConcurrent>

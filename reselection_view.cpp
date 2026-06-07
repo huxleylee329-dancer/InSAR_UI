@@ -1,7 +1,7 @@
 ﻿#include"reselection_view.h"
 #include"FormatConversion.h"
 #include<icon_source.h>
-#ifdef DEBUG
+#ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #else
 #pragma comment(lib, "FormatConversion.lib")
@@ -261,7 +261,6 @@ void reselection_view::mousePressEvent(QMouseEvent* event)
         viewport()->setCursor(Qt::ClosedHandCursor);
         if (this->scene() == nullptr)
         {
-            qDebug() << "The scene is null";
             return;
         }
         // 记录鼠标按下时的中心点坐标

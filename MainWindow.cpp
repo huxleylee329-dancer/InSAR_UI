@@ -18,7 +18,6 @@
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 #include "icon_utils.h"
-#include <QDebug>
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <QFutureWatcher>
@@ -623,7 +622,6 @@ void MainWindow::ShowImage(QModelIndex image)
 
     if (path.isEmpty() || !QFileInfo(path).exists())
     {
-        qDebug() << "MainWindow::ShowImage early return: path is empty or H5 file does not exist. path:" << path;
         return;
     }
 

@@ -6,6 +6,7 @@
 #include"qprogressdialog.h"
 #include "IApplicationInterface.h"
 #include "InterfaceManager.h"
+#include "tinyxml.h"
 
 class WorkspaceUI;
 class WorkflowUI;

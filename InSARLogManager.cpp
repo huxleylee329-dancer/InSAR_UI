@@ -1,7 +1,7 @@
 #include "InSARLogManager.h"
 #include <QDir>
-#include <QCoreApplication>
 #include <QDebug>
+#include <QCoreApplication>
 
 InSARLogManager& InSARLogManager::instance()
 {

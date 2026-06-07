@@ -166,9 +166,9 @@ void GenericSARImportTask::run()
 		img_path->setText(image_path);
 	}
 	
-	XMLFile* DOC = new XMLFile();
+	XMLFile DOC;
 	QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(m_projectName);
-	ret = DOC->XMLFile_load(xmlFileLoadPath.toStdString().c_str());
+	ret = DOC.XMLFile_load(xmlFileLoadPath.toStdString().c_str());
 	if (ret < 0 || m_stopFlag)
 	{
 		QFile::remove(image_path);
@@ -177,7 +177,7 @@ void GenericSARImportTask::run()
 		return;
 	}
 	
-	ret = DOC->XMLFile_add_origin(m_folder.toStdString().c_str(), m_filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+	ret = DOC.XMLFile_add_origin(m_folder.toStdString().c_str(), m_filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
 	if (ret < 0 || m_stopFlag)
 	{
 		QFile::remove(image_path);
@@ -186,7 +186,7 @@ void GenericSARImportTask::run()
 		return;
 	}
 	
-	ret = DOC->XMLFile_save(xmlFileLoadPath.toStdString().c_str());
+	ret = DOC.XMLFile_save(xmlFileLoadPath.toStdString().c_str());
 	if (ret < 0 || m_stopFlag)
 	{
 		QFile::remove(image_path);
@@ -270,7 +270,7 @@ void GenericSARBatchImportTask::run()
 	for (int i = 0; i < n_images; i++)
 	{
 		if (m_stopFlag) break;
-		XMLFile* DOC = new XMLFile();
+		XMLFile DOC;
 		QString filename = m_importNamelist[i];
         QString image_filename = m_originalFileList[i];
         QFileInfo fileinfo(image_filename);
@@ -370,7 +370,7 @@ void GenericSARBatchImportTask::run()
 			origin->appendRow(img);
 			origin->setChild(origin->rowCount() - 1, 1, img_path);
 
-			ret = DOC->XMLFile_load(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
+			ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
 			if (ret < 0 || m_stopFlag)
 			{
 				QFile::remove(image_path);
@@ -380,7 +380,7 @@ void GenericSARBatchImportTask::run()
 				emit errorProcess(QStringLiteral("加载项目XML失败"));
 				return;
 			}
-			ret = DOC->XMLFile_add_origin(m_dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+			ret = DOC.XMLFile_add_origin(m_dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
 			if (ret < 0 || m_stopFlag)
 			{
 				QFile::remove(image_path);
@@ -390,7 +390,7 @@ void GenericSARBatchImportTask::run()
 				emit errorProcess(QStringLiteral("添加origin节点失败"));
 				return;
 			}
-			ret = DOC->XMLFile_save(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
+			ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
 			if (ret < 0 || m_stopFlag)
 			{
 				QFile::remove(image_path);

@@ -38,25 +38,17 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
 {
     NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("DemWorker", QString("DEM Generation task started. Output folder: %1, Method: %2, Iterations: %3").arg(file_name).arg(method).arg(times));
-    qDebug() << "[DemWorker::Dem] Task started. args: method =" << method 
-             << "times =" << times 
-             << "save_path =" << save_path 
-             << "project_name =" << project_name 
-             << "node_name (srcNode) =" << node_name 
-             << "file_name (dstNode) =" << file_name;
 
     if (save_path.isEmpty() ||
         project_name.isEmpty() ||
         node_name.isEmpty() ||
         file_name.isEmpty())
     {
-        qDebug() << "[DemWorker::Dem] Error: one of the paths/names is empty";
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
     }
 
     if (!model) {
-        qDebug() << "[DemWorker::Dem] Error: project model is NULL";
         emit errorProcess(QStringLiteral("项目模型为空"));
         return;
     }
@@ -74,12 +66,9 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
         dir.mkdir(file_name);
         absolute_path = save_path + "/" + file_name;
     }
-    qDebug() << "[DemWorker::Dem] Output folder created at:" << absolute_path;
 
     QList<QStandardItem*> foundProjects = model->findItems(project_name);
-    qDebug() << "[DemWorker::Dem] Project items found in model:" << foundProjects.size();
     if (foundProjects.isEmpty()) {
-        qDebug() << "[DemWorker::Dem] Error: project_name" << project_name << "not found in model";
         emit errorProcess(QStringLiteral("未找到对应的工程: ") + project_name);
         return;
     }
@@ -93,22 +82,18 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
     QList<QString> absolute_dem_path;
 
     emit updateProcess(10, QStringLiteral("准备数据……"));
-    qDebug() << "[DemWorker::Dem] Project rowCount:" << project->rowCount();
     for (int i = 0; i < project->rowCount(); i++)
     {
         QString childName = project->child(i, 0)->text();
         QString childType = project->child(i, 1) ? project->child(i, 1)->text() : "";
-        qDebug() << "  - Row" << i << "child(0) text:" << childName << "child(1) text (type):" << childType;
         if (childName == node_name)
         {
             node = project->child(i, 0);
-            qDebug() << "  - Found matching data node:" << node_name << "with rowCount:" << node->rowCount();
             for (int j = 0; j < node->rowCount(); j++)
             {
                 QString imgName = node->child(j, 0)->text();
                 QString imgTooltip = node->child(j, 0)->toolTip();
                 QString imgPath = node->child(j, 1) ? node->child(j, 1)->text() : "";
-                qDebug() << "    * Child item" << j << "text:" << imgName << "tooltip:" << imgTooltip << "path:" << imgPath;
                 if (imgTooltip == "phase")
                 {
                     QString change_name;
@@ -125,7 +110,6 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
     }
 
     if (!node) {
-        qDebug() << "[DemWorker::Dem] Error: data node" << node_name << "not found under project" << project_name;
         emit errorProcess(QStringLiteral("未找到指定的数据节点: ") + node_name);
         return;
     }
@@ -176,15 +160,14 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
     ::Dem dem;
     FormatConversion FC;
     Utils util;
-    XMLFile* xml = new XMLFile();
+    XMLFile xml;
 
     QString xml_path = save_path + "/" + project_name;
     if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
         xml_path += ".Insar";
     }
 
-    if (xml->XMLFile_load(xml_path.toStdString().c_str()) < 0) {
-        delete xml;
+    if (xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
         emit errorProcess(QStringLiteral("加载项目XML文件失败: ") + xml_path);
         return;
     }
@@ -195,8 +178,6 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                qDebug() << "[DemWorker::Dem] Interruption requested. Aborting loop.";
-                delete xml;
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解析高程中……").arg(i + 1));
@@ -206,61 +187,45 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             if (QDir::isRelativePath(inputH5)) {
                 inputH5 = save_path + "/" + inputH5;
             }
-            qDebug() << "[DemWorker::Dem] Processing image" << i << "unwrapped path:" << inputH5;
 
             Mat phase;
             int ret = FC.read_array_from_h5(inputH5.toStdString().c_str(), "phase", phase);
-            qDebug() << "  - read_array_from_h5 status:" << ret;
             if (ret < 0) {
-                qDebug() << "  - Error reading phase from h5. Aborting.";
                 emit errorProcess(QStringLiteral("读取相位数据失败，路径: ") + QFileInfo(inputH5).fileName());
-                delete xml;
                 return;
             }
 
             // 预检测 flat_phase_coefficient，防止进入 DLL 的数值计算陷入死循环
             Mat tmp_flat_check;
             if (FC.read_array_from_h5(inputH5.toStdString().c_str(), "flat_phase_coefficient", tmp_flat_check) != 0) {
-                qDebug() << "  - Error: flat_phase_coefficient is missing in H5 file! Aborting to prevent DLL infinite loop.";
-                emit errorProcess(QStringLiteral("高程反演失败：输入相位文件缺少“平地相位消除系数(flat_phase_coefficient)”。请确保上游干涉形成阶段开启了“平地消除(IsDeflat)”。"));
-                delete xml;
+                emit errorProcess(QStringLiteral("高程反演失败：输入相位文件缺少\"平地相位消除系数(flat_phase_coefficient)\"。请确保上游干涉形成阶段开启了\"平地消除(IsDeflat)\"。"));
                 return;
             }
 
             Mat phase_dem;
             ret = dem.dem_newton_iter(inputH5.toStdString().c_str(), phase_dem, save_path.toStdString().c_str(), times, 1);
-            qDebug() << "  - dem_newton_iter status:" << ret << "dem matrix rows:" << phase_dem.rows << "cols:" << phase_dem.cols;
             if (ret < 0) {
-                qDebug() << "  - Error running dem_newton_iter. Aborting.";
-                emit errorProcess(QStringLiteral("高程迭代反演算法失败，请确保上游“干涉形成”节点开启了“平地消除(IsDeflat)”。"));
-                delete xml;
+                emit errorProcess(QStringLiteral("高程迭代反演算法失败，请确保上游\"干涉形成\"节点开启了\"平地消除(IsDeflat)\"。"));
                 return;
             }
 
             /*写入h5*/
             QString outputH5 = absolute_dem_path.at(i);
-            qDebug() << "  - Creating output H5:" << outputH5;
             ret = FC.creat_new_h5(outputH5.toStdString().c_str());
-            qDebug() << "  - creat_new_h5 status:" << ret;
             if (ret < 0) {
-                qDebug() << "  - Error creating output h5. Aborting.";
                 emit errorProcess(QStringLiteral("创建输出文件失败，路径: ") + QFileInfo(outputH5).fileName());
-                delete xml;
                 return;
             }
 
             ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "dem", phase_dem);
-            qDebug() << "  - write_array_to_h5 (dem) status:" << ret;
             
             string tmp_str;
             Mat tmp;
             ret = FC.read_str_from_h5(inputH5.toStdString().c_str(), "source_1", tmp_str);
-            qDebug() << "  - read source_1 status:" << ret << "val:" << tmp_str.c_str();
             ret = FC.write_str_to_h5(outputH5.toStdString().c_str(), "source_1", tmp_str.c_str());
             QString master_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
             
             ret = FC.read_str_from_h5(inputH5.toStdString().c_str(), "source_2", tmp_str);
-            qDebug() << "  - read source_2 status:" << ret << "val:" << tmp_str.c_str();
             ret = FC.write_str_to_h5(outputH5.toStdString().c_str(), "source_2", tmp_str.c_str());
             QString slave_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
             
@@ -287,7 +252,6 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             
             if (QThread::currentThread()->isInterruptionRequested())
             {
-                delete xml;
                 return;
             }
             
@@ -298,7 +262,7 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
             int offset_col = tmp_int.at<int>(0, 0);
             
-            xml->XMLFile_add_dem(file_name.toStdString().c_str(), dem_name.at(i).toStdString().c_str(),
+            xml.XMLFile_add_dem(file_name.toStdString().c_str(), dem_name.at(i).toStdString().c_str(),
                 relative_dem_path.at(i).toStdString().c_str(), offset_row, offset_col, "Iteration", times);
 
             /*工程树*/
@@ -332,8 +296,7 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
         // Placeholder for other methods
     }
 
-    xml->XMLFile_save(xml_path.toStdString().c_str());
-    delete xml;
+    xml.XMLFile_save(xml_path.toStdString().c_str());
 
     emit sendModel(model);
     InSARLogManager::LogInfo("DemWorker", QString("Task completed: ") + QString(__FUNCTION__));

@@ -618,12 +618,11 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 SBAS_series->setChild(SBAS_series->rowCount() - 1, 1, SBAS_series_name_path);
 
                 /*写入XML*/
-                XMLFile* xmlfile = new XMLFile();
-                xmlfile->XMLFile_load((save_path + "/" + projectName).toStdString().c_str());
+                XMLFile xmlfile;
+                xmlfile.XMLFile_load((save_path + "/" + projectName).toStdString().c_str());
                 QString relativePath = QString("/%1/SBAS_time_series.h5").arg(dstNode);
-                xmlfile->XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
-                xmlfile->XMLFile_save((save_path + "/" + projectName).toStdString().c_str());
-                delete xmlfile;
+                xmlfile.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
+                xmlfile.XMLFile_save((save_path + "/" + projectName).toStdString().c_str());
             }
             else
             {
@@ -637,12 +636,11 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     else
     {
         /* 仅在工作流节点执行时，直接向XML写入记录 */
-        XMLFile* xmlfile = new XMLFile();
-        xmlfile->XMLFile_load((save_path + "/" + projectName).toStdString().c_str());
+        XMLFile xmlfile;
+        xmlfile.XMLFile_load((save_path + "/" + projectName).toStdString().c_str());
         QString relativePath = QString("/%1/SBAS_time_series.h5").arg(dstNode);
-        xmlfile->XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
-        xmlfile->XMLFile_save((save_path + "/" + projectName).toStdString().c_str());
-        delete xmlfile;
+        xmlfile.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
+        xmlfile.XMLFile_save((save_path + "/" + projectName).toStdString().c_str());
     }
 
     InSARLogManager::LogInfo("SBASTimeSeriesWorker", "SBAS Time Series analysis completed successfully.");
