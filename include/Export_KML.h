@@ -3,7 +3,6 @@
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
 #include "ui_ExportKml.h"
-#include"MyThread.h"
 
 class Export_KML : public QWidget
 {

@@ -45,6 +45,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                                                      QStandardItemModel* model)
 {
 
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("InterferometricFormationWorker", QString("Interferometric task started. Output folder: %1").arg(file_name));
     
     FormatConversion FC;

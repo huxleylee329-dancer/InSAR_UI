@@ -5,12 +5,12 @@
 #include <QStandardItemModel>
 #include <vector>
 
-class MyThread;
+class Sentinel1ImportWorker;
 
 namespace Sentinel1ImportHelper {
 
 void importSentinel(
-    MyThread* worker,
+    Sentinel1ImportWorker* worker,
     QString PODFile,
     QString manifest_file,
     QString subswath,
@@ -23,7 +23,7 @@ void importSentinel(
 );
 
 void importSentinelPatch(
-    MyThread* worker,
+    Sentinel1ImportWorker* worker,
     std::vector<QString> original_filelist,
     std::vector<QString> import_namelist,
     QString subswath,

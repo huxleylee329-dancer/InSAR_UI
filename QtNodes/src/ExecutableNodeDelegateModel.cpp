@@ -356,6 +356,10 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
     }
     
     _state = state;
+    if (state == ExecutionState::Idle) {
+        _progress = 0;
+        Q_EMIT progressUpdated(0);
+    }
     Q_EMIT executionStateChanged();
     triggerVisualUpdate();
 

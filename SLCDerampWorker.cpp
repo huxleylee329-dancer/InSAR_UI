@@ -49,6 +49,7 @@ void SLCDerampWorker::SLC_deramp(
     QStandardItemModel* model
 )
 {
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("SLCDerampWorker", QString("SLC_deramp task started. Source: %1, Destination: %2").arg(src_node).arg(dst_node));
 
     if (masterIndex < 1 ||

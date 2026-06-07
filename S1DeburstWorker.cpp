@@ -29,6 +29,7 @@ void S1DeburstWorker::S1_Deburst(
     QStandardItemModel* model
 )
 {
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("S1DeburstWorker", QString("S1_Deburst started. Project: %1, Save Path: %2").arg(dstProject).arg(savePath));
     if (savePath.isEmpty() || dstProject.isEmpty() || dstNode.isEmpty() || srcNode.isEmpty() || !model)
     {

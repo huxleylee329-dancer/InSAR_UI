@@ -1,4 +1,5 @@
 #include "DemWorker.h"
+#include "NodeUtils.h"
 #include <Dem.h>
 #include <FormatConversion.h>
 #include <Utils.h>
@@ -35,6 +36,7 @@ DemWorker::~DemWorker()
 
 void DemWorker::Dem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("DemWorker", QString("DEM Generation task started. Output folder: %1, Method: %2, Iterations: %3").arg(file_name).arg(method).arg(times));
     qDebug() << "[DemWorker::Dem] Task started. args: method =" << method 
              << "times =" << times 

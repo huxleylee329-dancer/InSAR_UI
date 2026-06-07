@@ -205,7 +205,7 @@
     <ClCompile Include="MainWindow.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MyThread.cpp">
+    <ClCompile Include="Sentinel1ImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Sentinel1ImportHelper.cpp">
@@ -680,7 +680,7 @@
     </QtMoc>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="include\MyThread.h">
+    <QtMoc Include="include\Sentinel1ImportWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

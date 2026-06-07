@@ -7,6 +7,7 @@
 #include <QThread>
 #include <QDebug>
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
 
 ALOS2ImportWorker::ALOS2ImportWorker(QObject* parent)
     : QObject(parent)
@@ -54,6 +55,7 @@ void ALOS2ImportWorker::import_ALOS2_patch(
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     int ret;
     QDir dir(savepath);
     if (!dir.exists(dst_node))

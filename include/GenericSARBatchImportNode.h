@@ -53,7 +53,6 @@ protected:
 
     // Thread accessors
     GenericSARBatchImportTask* m_task = nullptr;
-    MyThread* workerThread() const override { return nullptr; }
     QThread* qThread() const override { return nullptr; }
     void stopExecution() override;
     bool prepareToStart() override;

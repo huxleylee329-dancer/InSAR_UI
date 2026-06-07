@@ -1,11 +1,20 @@
 #pragma once
 
 #include <QString>
+#include <QMutex>
 
 class QWidget;
 class IApplicationInterface;
 
 namespace NodeUtils {
+
+QMutex* getHdf5Mutex();
+
+class Hdf5Locker {
+public:
+    Hdf5Locker();
+    ~Hdf5Locker();
+};
 
 /**
  * @brief Traverses widgets to find the application context (WorkspaceUI/MainWindow)

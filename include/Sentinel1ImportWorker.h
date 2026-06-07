@@ -1,5 +1,5 @@
-#ifndef MYTHREAD_H
-#define MYTHREAD_H
+#ifndef SENTINEL1IMPORTWORKER_H
+#define SENTINEL1IMPORTWORKER_H
 
 #include <QObject>
 #include <QThread>
@@ -9,13 +9,13 @@
 
 class QStandardItemModel;
 
-class MyThread : public QObject
+class Sentinel1ImportWorker : public QObject
 {
     Q_OBJECT
 
 public:
-    MyThread(QObject* parent = nullptr);
-    ~MyThread();
+    Sentinel1ImportWorker(QObject* parent = nullptr);
+    ~Sentinel1ImportWorker();
 
 public slots:
     void import_sentinel(QString PODFile, QString manifest_file, QString subswath, QString polarization, QString project_path, QString folder, QString filename, QString project_name, QStandardItemModel* model);
@@ -34,4 +34,4 @@ private:
     bool stop_flag;
 };
 
-#endif // MYTHREAD_H
+#endif // SENTINEL1IMPORTWORKER_H

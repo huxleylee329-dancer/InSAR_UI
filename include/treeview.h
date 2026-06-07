@@ -4,7 +4,6 @@
 #include<qtreeview.h>
 #include<QtWidgets/qmainwindow.h>
 #include"qprogressdialog.h"
-#include<MyThread.h>
 
 class TreeView :public QTreeView
 {

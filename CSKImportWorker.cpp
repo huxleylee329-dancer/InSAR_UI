@@ -7,6 +7,7 @@
 #include <QThread>
 #include <QDebug>
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
 
 CSKImportWorker::CSKImportWorker(QObject* parent)
     : QObject(parent)
@@ -52,6 +53,7 @@ void CSKImportWorker::import_CSK_patch(
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     int ret = 0;
     QDir dir(savepath);
     if (!dir.exists(dst_node))

@@ -1,5 +1,6 @@
 #include "ExportKMLWorker.h"
 #include "FormatConversion.h"
+#include "NodeUtils.h"
 #include "Utils.h"
 #include "InSARLogManager.h"
 #include <QThread>
@@ -27,6 +28,7 @@ ExportKMLWorker::~ExportKMLWorker()
 
 void ExportKMLWorker::exportKML(QString h5Path, QString outFolder, QString fileName)
 {
+    NodeUtils::Hdf5Locker locker;
     emit updateProcess(10, QStringLiteral("读取形变数据……"));
     
     FormatConversion FC;

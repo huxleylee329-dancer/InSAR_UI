@@ -4,6 +4,7 @@
 #include <Utils.h>
 #include <FormatConversion.h>
 #include "tinyxml.h"
+#include "NodeUtils.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QThread>
@@ -55,6 +56,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Invalid parameters for BackGeocoding.");
 		return;
 	}
+	NodeUtils::Hdf5Locker locker;
 	int ret;
 	QDir dir(savePath);
 	if (!dir.exists(dstNode)) {

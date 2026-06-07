@@ -1,7 +1,6 @@
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
 #include "IApplicationInterface.h"
-#include "MyThread.h"
 #include "MainWindow.h"
 #include "InterfaceManager.h"
 #include "WorkspaceUI.h"
@@ -126,7 +125,7 @@ void ImportNodeBase::onError(const QString& error)
 void ImportNodeBase::execute()
 {
     // 防止重复执行：如果已经在运行中，直接返回
-    if (workerThread() != nullptr || qThread() != nullptr) {
+    if (qThread() != nullptr) {
         return;
     }
 
@@ -141,11 +140,6 @@ void ImportNodeBase::execute()
 void ImportNodeBase::stopExecution()
 {
     m_stopRequested = true;
-
-    // 停止后台工作线程：设置 stop_flag 使批处理循环退出
-    MyThread* wt = workerThread();
-    if (wt)
-        wt->StopProcess();
 
     // 中断单文件操作中的 isInterruptionRequested() 检查
     QThread* qt = qThread();

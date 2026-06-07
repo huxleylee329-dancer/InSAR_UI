@@ -1,4 +1,5 @@
 #include "DenoiseWorker.h"
+#include "NodeUtils.h"
 #include <Filter.h>
 #include <FormatConversion.h>
 #include "icon_source.h"
@@ -34,6 +35,7 @@ DenoiseWorker::~DenoiseWorker()
 
 void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("DenoiseWorker", QString("Denoise task started. Output folder: %1").arg(file_name));
 
     if (para.size() < 5 ||

@@ -7,7 +7,6 @@
 #include <QVBoxLayout>
 #include <QLayout>
 #include "ColorBar.h"
-#include "MyThread.h"
 #include "icon_source.h"
 #include "icon_utils.h"
 #include "ImageView.h"

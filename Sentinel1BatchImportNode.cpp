@@ -54,6 +54,19 @@ Sentinel1BatchImportNode::~Sentinel1BatchImportNode()
     // Note: m_widget is owned by QtNodes QGraphicsProxyWidget, do not delete here
 }
 
+void Sentinel1BatchImportNode::stopExecution()
+{
+    m_stopRequested = true;
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
+    if (m_thread && m_thread->isRunning())
+    {
+        m_thread->requestInterruption();
+    }
+}
+
 QWidget* Sentinel1BatchImportNode::createWidget()
 {
     auto* widget = new QWidget();
@@ -254,18 +267,18 @@ void Sentinel1BatchImportNode::executeImport()
     }
 
     m_thread = new QThread(this);
-    m_workerThread = new MyThread();
+    m_workerThread = new Sentinel1ImportWorker();
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &Sentinel1BatchImportNode::startBatchImport,
-            m_workerThread, &MyThread::import_sentinel_patch);
-    connect(m_workerThread, &MyThread::updateProcess,
+            m_workerThread, &Sentinel1ImportWorker::import_sentinel_patch);
+    connect(m_workerThread, &Sentinel1ImportWorker::updateProcess,
             this, &Sentinel1BatchImportNode::onImportProgress);
-    connect(m_workerThread, &MyThread::endProcess,
+    connect(m_workerThread, &Sentinel1ImportWorker::endProcess,
             this, &Sentinel1BatchImportNode::onImportFinished);
-    connect(m_workerThread, &MyThread::errorProcess,
+    connect(m_workerThread, &Sentinel1ImportWorker::errorProcess,
             this, &Sentinel1BatchImportNode::onThreadError);
-    connect(m_workerThread, &MyThread::sendModel,
+    connect(m_workerThread, &Sentinel1ImportWorker::sendModel,
             this, &Sentinel1BatchImportNode::onModelUpdated);
 
     m_thread->start();

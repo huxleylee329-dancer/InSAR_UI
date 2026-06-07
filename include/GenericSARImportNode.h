@@ -51,7 +51,6 @@ protected:
 
     // Threading
     GenericSARImportTask* m_task = nullptr;
-    MyThread* workerThread() const override { return nullptr; }
     QThread* qThread() const override { return nullptr; }
     void stopExecution() override;
     bool prepareToStart() override;
@@ -84,7 +83,6 @@ private:
 
     std::shared_ptr<ImageInfoData> m_imageInfoData;
 
-    MyThread* m_workerThread;
     QThread* m_thread;
 };
 

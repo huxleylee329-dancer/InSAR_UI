@@ -2,7 +2,6 @@
 #include <QtWidgets/QMainWindow>
 #include<FormatConversion.h>
 #include"ui_SbasReferenceReselection.h"
-#include"MyThread.h"
 #include"reselection_view.h"
 #include"ImageView.h"
 #include<Qtgui>

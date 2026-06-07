@@ -1,4 +1,4 @@
-#include "MyThread.h"
+#include "Sentinel1ImportWorker.h"
 #include <QMetaType>
 #include <QFile>
 #include <QDebug>
@@ -8,17 +8,17 @@
 
 using namespace std;
 
-MyThread::MyThread(QObject *parent)
+Sentinel1ImportWorker::Sentinel1ImportWorker(QObject *parent)
 {
 	qRegisterMetaType<QList<double>>("QList<double>");
 	stop_flag = true;
 }
 
-MyThread::~MyThread()
+Sentinel1ImportWorker::~Sentinel1ImportWorker()
 {
 }
 
-void MyThread::import_sentinel(
+void Sentinel1ImportWorker::import_sentinel(
 	QString PODFile,
 	QString manifest_file,
 	QString subswath,
@@ -44,7 +44,7 @@ void MyThread::import_sentinel(
 	);
 }
 
-void MyThread::import_sentinel_patch(
+void Sentinel1ImportWorker::import_sentinel_patch(
 	vector<QString> original_filelist, 
 	vector<QString> import_namelist, 
 	QString subswath, 
@@ -69,15 +69,14 @@ void MyThread::import_sentinel_patch(
 }
 
 
-void MyThread::StopProcess()
+void Sentinel1ImportWorker::StopProcess()
 {
 	QMutexLocker locker(&lock);
 	this->stop_flag = false;
 }
 
-bool MyThread::isStopRequested()
+bool Sentinel1ImportWorker::isStopRequested()
 {
 	QMutexLocker locker(&lock);
 	return !stop_flag;
 }
-

@@ -2,7 +2,6 @@
 #include <QtWidgets/QMainWindow>
 #include<FormatConversion.h>
 #include "ui_DeformationAverage.h"
-#include"MyThread.h"
 #include "Deformation_Preview_Window.h"
 #include"ImageView.h"
 #include<Qtgui>
@@ -27,7 +26,7 @@ private:
     bool isDeformation_Averageting;
     Ui::DeformationAverage* ui;
     QString save_path;
-    MyThread* Deformation_Average_thread;
+
     int image_number;
     void ChangeVision(bool Editable);
 signals:

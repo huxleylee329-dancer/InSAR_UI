@@ -29,6 +29,7 @@ void S1FrameMergeWorker::S1_frame_merge(
     QStandardItemModel* model
 )
 {
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("S1FrameMergeWorker", QString("S1_frame_merge started. Project: %1").arg(project_name));
     if (!model) {
         emit errorProcess(QStringLiteral("项目模型为空"));

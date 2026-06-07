@@ -1,4 +1,5 @@
 #include "SBASTimeSeriesWorker.h"
+#include "NodeUtils.h"
 #include <Unwrap.h>
 #include "SBAS.h"
 #include "Utils.h"
@@ -56,6 +57,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     Utils util; SBAS sbas; FormatConversion conversion; Unwrap unwrap;
     int ret;
     vector<string> SAR_images;

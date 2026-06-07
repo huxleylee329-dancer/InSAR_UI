@@ -4,6 +4,7 @@
 #include <FormatConversion.h>
 #include <QDir>
 #include <QFileInfo>
+#include "NodeUtils.h"
 #include <QThread>
 #include <QDebug>
 #include "InSARLogManager.h"
@@ -35,6 +36,7 @@ void CutWorker::Cut(QList<double> para,
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("CutWorker", QString("Starting Coordinate Cut on node '%1' -> '%2'").arg(src_node).arg(dst_node));
 
     XMLFile doc;
@@ -204,6 +206,7 @@ void CutWorker::Cut2(double h5_left,
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("CutWorker", QString("Starting Ratio-based Cut on node '%1' -> '%2'").arg(src_node).arg(dst_node));
 
     XMLFile doc;

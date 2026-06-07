@@ -1,4 +1,5 @@
 #include "SBASReferenceReselectionWorker.h"
+#include "NodeUtils.h"
 #include <Unwrap.h>
 #include "SBAS.h"
 #include "Utils.h"
@@ -29,6 +30,7 @@ SBASReferenceReselectionWorker::~SBASReferenceReselectionWorker()
 void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_path, QString srcNode, QString times_series_h5,
                                                                 int ref_row, int ref_col, QList<QPoint> GCPs)
 {
+    NodeUtils::Hdf5Locker locker;
     Utils util; SBAS sbas; FormatConversion conversion;
     int ret;
     string times_series_h5_std = times_series_h5.toStdString();

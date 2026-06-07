@@ -4,7 +4,7 @@
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
-#include "MyThread.h"
+#include "Sentinel1ImportWorker.h"
 #include "NodeUtils.h"
 #include <QWidget>
 #include <QListWidget>
@@ -59,8 +59,8 @@ protected:
     QStringList previewImagePaths() const override;
 
     // Thread accessors
-    MyThread* workerThread() const override { return m_workerThread; }
     QThread* qThread() const override { return m_thread; }
+    void stopExecution() override;
 
     // Helper methods
     QString generateImportName(const QString& manifestPath) const;
@@ -101,7 +101,7 @@ private:
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 
     // Worker thread
-    MyThread* m_workerThread;
+    Sentinel1ImportWorker* m_workerThread;
     QThread* m_thread;
 
     QFutureWatcher<void> m_remedyWatcher;

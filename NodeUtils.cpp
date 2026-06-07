@@ -14,6 +14,22 @@
 
 namespace NodeUtils {
 
+QMutex* getHdf5Mutex()
+{
+    static QMutex mutex(QMutex::Recursive);
+    return &mutex;
+}
+
+Hdf5Locker::Hdf5Locker()
+{
+    getHdf5Mutex()->lock();
+}
+
+Hdf5Locker::~Hdf5Locker()
+{
+    getHdf5Mutex()->unlock();
+}
+
 IApplicationInterface* getProjectContext(QWidget* widget)
 {
     // 1. Try parent widget traversal
@@ -203,6 +219,7 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
 
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type)
 {
+    Hdf5Locker locker;
     if (h5Path.isEmpty() || jpgPath.isEmpty())
         return false;
 

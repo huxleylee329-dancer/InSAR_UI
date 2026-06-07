@@ -52,7 +52,6 @@ extern void applyTheme(const QString &theme);
 #include"Filter_ui.h"
 #include"treeview.h"
 #include"ImageView.h"
-#include"MyThread.h"
 #include"Unwrap_ui.h"
 #include"Dem_ui.h"
 #include"SLC_deramp.h"

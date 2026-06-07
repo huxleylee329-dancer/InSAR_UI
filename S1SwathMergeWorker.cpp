@@ -30,6 +30,7 @@ void S1SwathMergeWorker::S1_swath_merge(
     QStandardItemModel* model
 )
 {
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("S1SwathMergeWorker", QString("S1_swath_merge started. Project: %1").arg(project_name));
     if (!model) {
         emit errorProcess(QStringLiteral("项目模型为空"));

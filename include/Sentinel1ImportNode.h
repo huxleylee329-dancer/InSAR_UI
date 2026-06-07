@@ -2,7 +2,7 @@
 #define SENTINEL1IMPORTNODE_H
 
 #include "ImportNodeBase.h"
-#include "MyThread.h"
+#include "Sentinel1ImportWorker.h"
 #include "NodeDataTypes.h"
 #include <QWidget>
 #include <QLineEdit>
@@ -56,8 +56,8 @@ protected:
     QStringList previewImagePaths() const override;
 
     // Thread accessors
-    MyThread* workerThread() const override { return m_workerThread; }
     QThread* qThread() const override { return m_thread; }
+    void stopExecution() override;
 
     // Helper methods
     QString generateOutputFileName() const;
@@ -99,7 +99,7 @@ private:
     QString m_polarization = "vv";
 
     // Worker thread
-    MyThread* m_workerThread;
+    Sentinel1ImportWorker* m_workerThread;
     QThread* m_thread;
 
     QFutureWatcher<void> m_remedyWatcher;

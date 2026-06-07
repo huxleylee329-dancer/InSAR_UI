@@ -1,4 +1,5 @@
 #include "GeocodingWorker.h"
+#include "NodeUtils.h"
 #include "icon_source.h"
 #include "Package.h"
 #include <FormatConversion.h>
@@ -54,6 +55,7 @@ void GeocodingWorker::Geocoding(
         emit errorProcess(QStringLiteral("模型指针为空！"));
         return;
     }
+    NodeUtils::Hdf5Locker locker;
 
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         emit errorProcess(QStringLiteral("任务已被中止。"));

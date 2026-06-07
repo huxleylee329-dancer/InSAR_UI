@@ -57,7 +57,6 @@ protected:
     QString getOutputNodeName() const override;
     QStringList previewImagePaths() const override;
 
-    MyThread* workerThread() const override { return nullptr; }
     QThread* qThread() const override { return nullptr; }
 
     bool validateAndRestoreOutput() override;

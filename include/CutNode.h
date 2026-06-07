@@ -121,6 +121,8 @@ private:
     int m_mode = 0; // 0: Auto Center, 1: Coord, 2: Box Selection
     bool m_boxSelected = false;
     bool m_coordsSet = false;
+    double m_lastInputLon = 0.0;
+    double m_lastInputLat = 0.0;
 
     // Saved parameters
     double m_lon = 0.0;

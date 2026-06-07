@@ -25,7 +25,6 @@ Deformation_Average::Deformation_Average(QWidget* parent) :
 }
 Deformation_Average::~Deformation_Average()
 {
-    Deformation_Average_thread = NULL;
     /*改变工程文件的处理状态为NOT_IN_PROCESS*/
     if (copy)
     {

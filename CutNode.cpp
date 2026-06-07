@@ -31,6 +31,8 @@ CutNode::CutNode()
     , m_mode(0) // Default to Auto Center
     , m_boxSelected(false)
     , m_coordsSet(false)
+    , m_lastInputLon(0.0)
+    , m_lastInputLat(0.0)
 {
     setExecutionMode(ExecutionMode::Automatic);
 }
@@ -102,12 +104,11 @@ bool CutNode::portIsOptional(PortType portType, PortIndex portIndex) const
 
 void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-        Q_UNUSED(port);
+    Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
     if (m_inputData && !m_inputData->filePaths().isEmpty()) {
-                if (!isRestoring()) {
-                        m_boxSelected = false;
+        if (!isRestoring()) {
             // 从第一个H5文件的gcps自动提取中心经纬度作为默认值
             QStringList h5Paths = resolvedInputH5Paths();
             if (!h5Paths.isEmpty()) {
@@ -117,16 +118,51 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
                     && gcps.rows > 0 && gcps.cols >= 2) {
                     cv::Mat lon = gcps.col(0);
                     cv::Mat lat = gcps.col(1);
-                    m_lon = cv::mean(lon)[0];
-                    m_lat = cv::mean(lat)[0];
-                    m_coordsSet = true;
-                                        if (m_lonEdit) m_lonEdit->setText(QString::number(m_lon, 'f', 6));
-                    if (m_latEdit) m_latEdit->setText(QString::number(m_lat, 'f', 6));
-                } else {
-                                    }
+                    double new_lon = cv::mean(lon)[0];
+                    double new_lat = cv::mean(lat)[0];
+
+                    // 检查新旧影像中心经纬度差异是否在阈值（约1km，约0.01度）内
+                    bool isSameExtent = false;
+                    if (m_lastInputLon != 0.0 || m_lastInputLat != 0.0) {
+                        double diff_lon = std::abs(new_lon - m_lastInputLon);
+                        double diff_lat = std::abs(new_lat - m_lastInputLat);
+                        if (diff_lon < 0.01 && diff_lat < 0.01) {
+                            isSameExtent = true;
+                        }
+                    }
+
+                    if (isSameExtent) {
+                        // 如果地理覆盖范围一致，保留用户先前的框选标记和裁剪中心参数，仅更新 lastInput
+                        m_lastInputLon = new_lon;
+                        m_lastInputLat = new_lat;
+                    } else {
+                        // 如果地理覆盖范围发生改变（或第一次载入影像），执行安全重置
+                        m_boxSelected = false;
+                        m_lon = new_lon;
+                        m_lat = new_lat;
+                        m_coordsSet = true;
+                        m_lastInputLon = new_lon;
+                        m_lastInputLat = new_lat;
+                        if (m_lonEdit) m_lonEdit->setText(QString::number(m_lon, 'f', 6));
+                        if (m_latEdit) m_latEdit->setText(QString::number(m_lat, 'f', 6));
+                    }
+                }
             }
         } else {
-                    }
+            // 恢复项目时，只获取中心经纬度存入 m_lastInputLon/Lat，以使下一次前驱节点重跑时检验生效，但不修改恢复的框选状态或经纬度
+            QStringList h5Paths = resolvedInputH5Paths();
+            if (!h5Paths.isEmpty()) {
+                FormatConversion FC;
+                cv::Mat gcps;
+                if (FC.read_array_from_h5(h5Paths.first().toLocal8Bit().constData(), "gcps", gcps) == 0
+                    && gcps.rows > 0 && gcps.cols >= 2) {
+                    cv::Mat lon = gcps.col(0);
+                    cv::Mat lat = gcps.col(1);
+                    m_lastInputLon = cv::mean(lon)[0];
+                    m_lastInputLat = cv::mean(lat)[0];
+                }
+            }
+        }
     }
 
     updateLabels();

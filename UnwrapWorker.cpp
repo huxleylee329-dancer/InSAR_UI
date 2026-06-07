@@ -1,4 +1,5 @@
 #include "UnwrapWorker.h"
+#include "NodeUtils.h"
 #include <Unwrap.h>
 #include <FormatConversion.h>
 #include <Utils.h>
@@ -35,6 +36,7 @@ UnwrapWorker::~UnwrapWorker()
 
 void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("UnwrapWorker", QString("Unwrap task started. Output folder: %1, Method: %2").arg(file_name).arg(method));
 
     if (save_path.isEmpty() ||

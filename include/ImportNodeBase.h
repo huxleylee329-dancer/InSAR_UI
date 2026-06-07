@@ -19,7 +19,6 @@
 
 // Forward declarations
 class IApplicationInterface;
-class MyThread;
 
 namespace QtNodes {
 
@@ -66,8 +65,7 @@ protected:
     void stopExecution() override;
     void processAutomatically() override;
 
-    // Thread accessors - subclasses must implement to return their worker/QThread
-    virtual MyThread* workerThread() const { return nullptr; }
+    // Thread accessors - subclasses must implement to return their QThread
     virtual QThread* qThread() const = 0;
 
     // Helper: create a styled project badge label (shared across all import nodes)

@@ -1,4 +1,5 @@
 #include "CoregistrationWorker.h"
+#include "NodeUtils.h"
 #include "icon_source.h"
 #include <Utils.h>
 #include <Registration.h>
@@ -63,6 +64,7 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 	{
 		return;
 	}
+	NodeUtils::Hdf5Locker locker;
 	QStandardItem* project = model->findItems(project_name)[0];
 	if (!project) return;
 	save_path = model->item(project->row(), 1)->text();
@@ -291,6 +293,7 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	{
 		return;
 	}
+	NodeUtils::Hdf5Locker locker;
 	QDir dir(savepath);
 	if (!dir.exists(dstNode))
 		int ret = dir.mkdir(dstNode);

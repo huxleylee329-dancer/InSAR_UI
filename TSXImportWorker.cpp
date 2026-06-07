@@ -7,6 +7,7 @@
 #include <QThread>
 #include <QDebug>
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
 
 TSXImportWorker::TSXImportWorker(QObject* parent)
     : QObject(parent)
@@ -51,6 +52,7 @@ void TSXImportWorker::import_TSX(
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     int ret;
     QDir dir(project_path);
     if (!dir.exists(folder))
@@ -185,7 +187,8 @@ void TSXImportWorker::import_TSX_patch(
         return;
     }
 
-    int ret;
+    NodeUtils::Hdf5Locker locker;
+    int ret = 0;
     QDir dir(savepath);
     if (!dir.exists(dst_node))
         ret = dir.mkdir(dst_node);

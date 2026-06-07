@@ -4,7 +4,6 @@
 #include<ColorBar.h>
 #include<qgraphicsscene.h>
 #include"qprogressdialog.h"
-#include"MyThread.h"
 #include "IApplicationInterface.h"
 #include "InterfaceManager.h"
 

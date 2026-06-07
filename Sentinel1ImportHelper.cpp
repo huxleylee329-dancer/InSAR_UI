@@ -1,6 +1,6 @@
 #include "InSARLogManager.h"
 #include "Sentinel1ImportHelper.h"
-#include "MyThread.h"
+#include "Sentinel1ImportWorker.h"
 #include "NodeUtils.h"
 #include "FormatConversion.h"
 #include "icon_source.h"
@@ -13,7 +13,7 @@
 namespace Sentinel1ImportHelper {
 
 void importSentinel(
-    MyThread* worker,
+    Sentinel1ImportWorker* worker,
     QString PODFile,
     QString manifest_file,
     QString subswath,
@@ -39,6 +39,7 @@ void importSentinel(
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     int ret;
     QDir dir(project_path);
     if (!dir.exists(folder))
@@ -163,7 +164,7 @@ void importSentinel(
 }
 
 void importSentinelPatch(
-    MyThread* worker,
+    Sentinel1ImportWorker* worker,
     std::vector<QString> original_filelist,
     std::vector<QString> import_namelist,
     QString subswath,
@@ -190,6 +191,7 @@ void importSentinelPatch(
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     int ret;
     QDir dir(savepath);
     if (!dir.exists(dst_node))

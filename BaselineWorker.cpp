@@ -2,6 +2,7 @@
 #include "Utils.h"
 #include "FormatConversion.h"
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
 #include <QThread>
 #include <QDebug>
 #include <QFileInfo>
@@ -28,6 +29,7 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
         return;
     }
 
+    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("BaselineWorker", QString("Starting Baseline Estimate. Master Index: %1, Image Count: %2").arg(index).arg(filePaths.size()));
 
     Utils util;

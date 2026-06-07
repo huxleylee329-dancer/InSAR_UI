@@ -3,7 +3,7 @@
 #include <qstandarditemmodel.h>
 #include <vector>
 #include "ui_ImportSentinel.h"
-#include "MyThread.h"
+#include "Sentinel1ImportWorker.h"
 
 class import_sentinel : public QWidget
 {
@@ -23,7 +23,7 @@ private:
     QString date, subswath, polarization;
     QString save_path;
     QStandardItemModel* copy;
-    MyThread* import_sentinel_thread, *import_sentinel_thread_2;
+    Sentinel1ImportWorker* import_sentinel_thread, *import_sentinel_thread_2;
 signals:
     void sendPath(QString, QString, QString);
     void operate(QString, QString , QString , QString , QString ,QString, QString, QString, QStandardItemModel*);

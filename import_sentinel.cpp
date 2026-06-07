@@ -417,19 +417,19 @@ void import_sentinel::on_buttonBox_2_accepted()
         import_sentinel_thread_2->thread()->wait();
     }
 
-    import_sentinel_thread_2 = new MyThread;
+    import_sentinel_thread_2 = new Sentinel1ImportWorker;
     QThread* thread2 = new QThread(this);
     import_sentinel_thread_2->moveToThread(thread2);
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &import_sentinel::operate2, import_sentinel_thread_2, &MyThread::import_sentinel_patch, Qt::QueuedConnection);
-    connect(import_sentinel_thread_2, &MyThread::updateProcess, this, &import_sentinel::updateProcess);
-    connect(thread2, &QThread::finished, import_sentinel_thread_2, &MyThread::deleteLater);
+    connect(this, &import_sentinel::operate2, import_sentinel_thread_2, &Sentinel1ImportWorker::import_sentinel_patch, Qt::QueuedConnection);
+    connect(import_sentinel_thread_2, &Sentinel1ImportWorker::updateProcess, this, &import_sentinel::updateProcess);
+    connect(thread2, &QThread::finished, import_sentinel_thread_2, &Sentinel1ImportWorker::deleteLater);
     connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
-    connect(import_sentinel_thread_2, &MyThread::endProcess, this, &import_sentinel::endProcess);
+    connect(import_sentinel_thread_2, &Sentinel1ImportWorker::endProcess, this, &import_sentinel::endProcess);
     connect(this, &QWidget::destroyed, this, &import_sentinel::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &import_sentinel::StopThread);// , Qt::QueuedConnection);
-    connect(import_sentinel_thread_2, &MyThread::sendModel, this, &import_sentinel::TransitModel);
+    connect(import_sentinel_thread_2, &Sentinel1ImportWorker::sendModel, this, &import_sentinel::TransitModel);
     thread2->start();
     emit operate2(
         original_namelist,
@@ -487,19 +487,19 @@ void import_sentinel::on_buttonBox_accepted()
         import_sentinel_thread->thread()->wait();
     }
 
-    import_sentinel_thread = new MyThread;
+    import_sentinel_thread = new Sentinel1ImportWorker;
     QThread* thread = new QThread(this);
     import_sentinel_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &import_sentinel::operate, import_sentinel_thread, &MyThread::import_sentinel, Qt::QueuedConnection);
-    connect(import_sentinel_thread, &MyThread::updateProcess, this, &import_sentinel::updateProcess);
-    connect(thread, &QThread::finished, import_sentinel_thread, &MyThread::deleteLater);
+    connect(this, &import_sentinel::operate, import_sentinel_thread, &Sentinel1ImportWorker::import_sentinel, Qt::QueuedConnection);
+    connect(import_sentinel_thread, &Sentinel1ImportWorker::updateProcess, this, &import_sentinel::updateProcess);
+    connect(thread, &QThread::finished, import_sentinel_thread, &Sentinel1ImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-    connect(import_sentinel_thread, &MyThread::endProcess, this, &import_sentinel::endProcess);
+    connect(import_sentinel_thread, &Sentinel1ImportWorker::endProcess, this, &import_sentinel::endProcess);
     connect(this, &QWidget::destroyed, this, &import_sentinel::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_sentinel::StopThread);// , Qt::QueuedConnection);
-    connect(import_sentinel_thread, &MyThread::sendModel, this, &import_sentinel::TransitModel);
+    connect(import_sentinel_thread, &Sentinel1ImportWorker::sendModel, this, &import_sentinel::TransitModel);
     thread->start();
     emit operate(
         ui->lineEdit_POD->text(),
