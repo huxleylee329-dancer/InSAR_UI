@@ -98,13 +98,6 @@ void UnwrapNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
-    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-        m_outputData.reset();
-        m_imageInfoData.reset();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-    }
-
     if (m_inputData && m_outputNodeName.isEmpty()) {
         m_outputNodeName = generateDefaultOutputName();
         if (m_outputNodeNameEdit) {
@@ -113,14 +106,16 @@ void UnwrapNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+        m_outputData.reset();
+        m_imageInfoData.reset();
+    }
 }
 
 std::shared_ptr<NodeData> UnwrapNode::outData(PortIndex port)
 {
-    if (port == 0)
-        return m_outputData;
-    else
-        return m_imageInfoData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 ::QWidget* UnwrapNode::embeddedWidget()
@@ -315,21 +310,21 @@ bool UnwrapNode::validateInputs() const
     return true;
 }
 
-void UnwrapNode::executeProcessing()
+bool UnwrapNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("UnwrapNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
-    QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
+    m_preparedDstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text().trimmed();
 
-    QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
+    m_preparedSavePath = projectPath();
+    m_preparedProjectName = projectName();
+    m_preparedSrcNode = m_inputData->nodeName();
 
-    double threshold = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
+    m_preparedMethod = m_method;
+    m_preparedThreshold = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
 
     // Precalculate output file paths for overwrite check
     QStringList pathsToCheck;
@@ -337,21 +332,25 @@ void UnwrapNode::executeProcessing()
     for (const QString& srcPath : srcPaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_unwrapped";
-        pathsToCheck.append(savePath + "/" + dstNode + "/" + changeName + ".h5");
+        pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + changeName + ".h5");
     }
 
     // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
-    NodeUtils::OverwriteResult overwriteRes;
     if (_isAutoTriggered) {
-        overwriteRes = NodeUtils::OverwriteResult::Overwrite;
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
     }
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
-        m_outputNodeName = dstNode;
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void UnwrapNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("UnwrapNode", "executeProcessing started.");
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        m_outputNodeName = m_preparedDstNode;
         
         m_outputNodeNameEdit->setEnabled(true);
         m_methodCombo->setEnabled(true);
@@ -367,8 +366,10 @@ void UnwrapNode::executeProcessing()
         return;
     }
 
-    // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
+        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
+    }
 
     setProgress(0);
     setState(ExecutionState::Running);
@@ -378,8 +379,8 @@ void UnwrapNode::executeProcessing()
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &UnwrapNode::startUnwrap, m_workerThread, &UnwrapWorker::Unwrap);
-    connect(m_thread, &QThread::started, [this, threshold, savePath, dstProject, srcNode, dstNode]() {
-        Q_EMIT startUnwrap(m_method, threshold, savePath, dstProject, srcNode, dstNode, projectModel());
+    connect(m_thread, &QThread::started, [this]() {
+        Q_EMIT startUnwrap(m_preparedMethod, m_preparedThreshold, m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode, projectModel());
     });
     connect(m_workerThread, &UnwrapWorker::updateProcess, this, &UnwrapNode::onProgressUpdate);
     connect(m_workerThread, &UnwrapWorker::endProcess, this, &UnwrapNode::onProcessingFinished);
@@ -690,9 +691,13 @@ void UnwrapNode::stopExecution()
 
 void UnwrapNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

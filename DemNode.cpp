@@ -98,13 +98,6 @@ void DemNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
-    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-        m_outputData.reset();
-        m_imageInfoData.reset();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-    }
-
     if (m_inputData && m_outputNodeName.isEmpty()) {
         m_outputNodeName = generateDefaultOutputName();
         if (m_outputNodeNameEdit) {
@@ -113,14 +106,16 @@ void DemNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+        m_outputData.reset();
+        m_imageInfoData.reset();
+    }
 }
 
 std::shared_ptr<NodeData> DemNode::outData(PortIndex port)
 {
-    if (port == 0)
-        return m_outputData;
-    else
-        return m_imageInfoData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 ::QWidget* DemNode::embeddedWidget()
@@ -334,21 +329,21 @@ bool DemNode::validateInputs() const
     return true;
 }
 
-void DemNode::executeProcessing()
+bool DemNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("DemNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
-    QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
+    m_preparedDstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text().trimmed();
 
-    QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
+    m_preparedSavePath = projectPath();
+    m_preparedProjectName = projectName();
+    m_preparedSrcNode = m_inputData->nodeName();
 
-    int times = m_timesEdit ? m_timesEdit->text().toInt() : m_times;
+    m_preparedMethod = m_method;
+    m_preparedTimes = m_timesEdit ? m_timesEdit->text().toInt() : m_times;
 
     QStringList srcPaths = m_inputData->filePaths();
 
@@ -359,7 +354,7 @@ void DemNode::executeProcessing()
     for (const QString& srcPath : srcPaths) {
         QString inputH5 = srcPath;
         if (QDir::isRelativePath(inputH5)) {
-            inputH5 = savePath + "/" + inputH5;
+            inputH5 = m_preparedSavePath + "/" + inputH5;
         }
         if (FC_check.read_array_from_h5(inputH5.toStdString().c_str(), "flat_phase_coefficient", tmp_check) != 0) {
             hasFlatPhase = false;
@@ -372,7 +367,7 @@ void DemNode::executeProcessing()
             QStringLiteral("输入的解缠相位文件中未包含平地相位消除系数(flat_phase_coefficient)。\n\n"
                            "请确保上游的“干涉形成 (Interferometric Formation)”节点在运行时已勾选“平地消除 (IsDeflat)”选项，并重新运行后续节点。"));
         setState(ExecutionState::Error);
-        return;
+        return false;
     }
 
     // Precalculate output file paths for overwrite check
@@ -380,21 +375,25 @@ void DemNode::executeProcessing()
     for (const QString& srcPath : srcPaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_dem";
-        pathsToCheck.append(savePath + "/" + dstNode + "/" + changeName + ".h5");
+        pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + changeName + ".h5");
     }
 
     // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
-    NodeUtils::OverwriteResult overwriteRes;
     if (_isAutoTriggered) {
-        overwriteRes = NodeUtils::OverwriteResult::Overwrite;
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
     }
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
-        m_outputNodeName = dstNode;
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void DemNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("DemNode", "executeProcessing started.");
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        m_outputNodeName = m_preparedDstNode;
         
         m_outputNodeNameEdit->setEnabled(true);
         m_methodCombo->setEnabled(true);
@@ -410,8 +409,10 @@ void DemNode::executeProcessing()
         return;
     }
 
-    // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
+        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
+    }
 
     setProgress(0);
     setState(ExecutionState::Running);
@@ -421,8 +422,8 @@ void DemNode::executeProcessing()
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &DemNode::startDem, m_workerThread, &DemWorker::Dem);
-    connect(m_thread, &QThread::started, [this, times, savePath, dstProject, srcNode, dstNode]() {
-        Q_EMIT startDem(m_method, times, savePath, dstProject, srcNode, dstNode, projectModel());
+    connect(m_thread, &QThread::started, [this]() {
+        Q_EMIT startDem(m_preparedMethod, m_preparedTimes, m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode, projectModel());
     });
     connect(m_workerThread, &DemWorker::updateProcess, this, &DemNode::onProgressUpdate);
     connect(m_workerThread, &DemWorker::endProcess, this, &DemNode::onProcessingFinished);
@@ -733,9 +734,13 @@ void DemNode::stopExecution()
 
 void DemNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

@@ -126,8 +126,7 @@ void TargetDetectionNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
 
 std::shared_ptr<NodeData> TargetDetectionNode::outData(PortIndex port)
 {
-    Q_UNUSED(port);
-    return m_outputData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 QWidget* TargetDetectionNode::embeddedWidget()

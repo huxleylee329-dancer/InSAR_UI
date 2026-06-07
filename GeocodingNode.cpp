@@ -144,10 +144,7 @@ void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
 std::shared_ptr<NodeData> GeocodingNode::outData(PortIndex port)
 {
-    if (port == 0)
-        return m_outputData;
-    else
-        return m_imageInfoData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 ::QWidget* GeocodingNode::embeddedWidget()

@@ -4,6 +4,7 @@
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
 #include "S1TopsBackGeocodingWorker.h"
+#include "NodeUtils.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
@@ -55,6 +56,7 @@ public:
 protected:
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
+    bool prepareToStart() override;
 
 private:
     QComboBox* m_masterImageCombo;
@@ -70,6 +72,15 @@ private:
     int m_masterIndex;
     bool m_useDefaultMaster;
     bool m_bESD;
+
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedDstNode;
+    QString m_preparedSavePath;
+    QString m_preparedDstProject;
+    QString m_preparedSrcNode;
+    int m_preparedMasterIndex;
+    bool m_preparedBESD;
+    int m_preparedImagesNumber;
 
     // Worker thread
     S1TopsBackGeocodingWorker* m_workerThread;

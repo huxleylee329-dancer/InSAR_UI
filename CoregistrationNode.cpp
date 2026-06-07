@@ -110,10 +110,7 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
 
 std::shared_ptr<NodeData> CoregistrationNode::outData(PortIndex port)
 {
-    if (port == 0)
-        return m_outputData;
-    else
-        return m_previewData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 QWidget* CoregistrationNode::embeddedWidget()

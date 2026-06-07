@@ -105,12 +105,7 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
-    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-                m_outputData.reset();
-        m_previewData.reset();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-    } else {
+    if (m_inputData && !m_inputData->filePaths().isEmpty()) {
                 if (!isRestoring()) {
                         m_boxSelected = false;
             // 从第一个H5文件的gcps自动提取中心经纬度作为默认值
@@ -136,15 +131,16 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
     updateLabels();
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+                m_outputData.reset();
+        m_previewData.reset();
+    }
 }
 
 std::shared_ptr<NodeData> CutNode::outData(PortIndex port)
 {
-        if (port == 0) {
-                return m_outputData;
-    } else {
-                return m_previewData;
-    }
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 QWidget* CutNode::embeddedWidget()
@@ -447,7 +443,7 @@ void CutNode::processAutomatically()
         return;
     }
 
-    if (isReady()) {
+    if (prepareToStart()) {
         executeProcessing();
     } else {
         setState(ExecutionState::Idle);
@@ -459,6 +455,48 @@ void CutNode::execute()
     executeProcessing();
 }
 
+bool CutNode::prepareToStart()
+{
+    if (m_isExecuting) {
+        return false;
+    }
+    if (!isReady()) {
+        if (m_mode == 1 && m_lon == 0.0 && m_lat == 0.0) {
+            InSARLogManager::LogWarning("CutNode", "prepareToStart skipped: lon/lat not set (still 0.0). Please enter coordinates and press Enter to confirm.");
+        } else {
+            InSARLogManager::LogWarning("CutNode", "prepareToStart skipped: node not ready.");
+        }
+        return false;
+    }
+
+    m_preparedInputPaths = resolvedInputH5Paths();
+    m_preparedDstNodeName = m_outputNodeName.trimmed();
+    m_preparedProjDir = projectPath();
+    if (m_preparedProjDir.endsWith(".insar", Qt::CaseInsensitive)) {
+        m_preparedProjDir = QFileInfo(m_preparedProjDir).absolutePath();
+    }
+    m_preparedProjName = projectName();
+    m_preparedModel = projectModel();
+
+    // Expected Output Paths
+    m_preparedOutputPaths.clear();
+    for (const QString& path : m_preparedInputPaths) {
+        QString base = QFileInfo(path).baseName();
+        // Mode 1 (Coord) uses _cut, Mode 0 & 2 (ratios) use _cut2
+        QString outBase = base + (m_mode == 1 ? "_cut" : "_cut2");
+        m_preparedOutputPaths.append(m_preparedProjDir + "/" + m_preparedDstNodeName + "/" + outBase + ".h5");
+    }
+
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+            NodeUtils::getProjectContext(_widget), m_preparedDstNodeName, m_preparedOutputPaths);
+    }
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
 void CutNode::executeProcessing()
 {
     InSARLogManager::LogInfo("CutNode", "executeProcessing started.");
@@ -467,53 +505,11 @@ void CutNode::executeProcessing()
         InSARLogManager::LogInfo("CutNode", "executeProcessing skipped: already executing.");
         return;
     }
-    if (!isReady()) {
-        if (m_mode == 1 && m_lon == 0.0 && m_lat == 0.0) {
-            InSARLogManager::LogWarning("CutNode", "executeProcessing skipped: lon/lat not set (still 0.0). Please enter coordinates and press Enter to confirm.");
-        } else {
-            InSARLogManager::LogWarning("CutNode", "executeProcessing skipped: node not ready.");
-        }
-        return;
-    }
 
     setProgress(0);
+    m_outputPaths = m_preparedOutputPaths;
 
-    QStringList inputPaths = resolvedInputH5Paths();
-    QString srcNodeName = m_inputData->nodeName();
-    QString dstNodeName = m_outputNodeName.trimmed();
-    QString projPath = projectPath();
-    QString projName = projectName();
-    QStandardItemModel* model = projectModel();
-
-    QString projDir = projPath;
-    if (projDir.endsWith(".insar", Qt::CaseInsensitive)) {
-        projDir = QFileInfo(projDir).absolutePath();
-    }
-
-    // Expected Output Paths
-    QStringList outputPaths;
-    for (const QString& path : inputPaths) {
-        QString base = QFileInfo(path).baseName();
-        // Mode 1 (Coord) uses _cut, Mode 0 & 2 (ratios) use _cut2
-        QString outBase = base + (m_mode == 1 ? "_cut" : "_cut2");
-        outputPaths.append(projDir + "/" + dstNodeName + "/" + outBase + ".h5");
-    }
-    m_outputPaths = outputPaths;
-
-    // Output conflict check
-    // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
-    NodeUtils::OverwriteResult ovResult;
-    if (_isAutoTriggered) {
-        ovResult = NodeUtils::OverwriteResult::Overwrite;
-    } else {
-        ovResult = NodeUtils::checkAndPromptOverwrite(
-            NodeUtils::getProjectContext(_widget), dstNodeName, outputPaths);
-    }
-
-    if (ovResult == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (ovResult == NodeUtils::OverwriteResult::LoadExisting) {
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         if (validateAndRestoreOutput()) {
             setState(ExecutionState::Completed);
             finishExecution();
@@ -524,7 +520,7 @@ void CutNode::executeProcessing()
     }
 
     // Clean up old files in destination directory
-    QString dstDir = projDir + "/" + dstNodeName;
+    QString dstDir = m_preparedProjDir + "/" + m_preparedDstNodeName;
     if (QDir(dstDir).exists()) {
         QDir dir(dstDir);
         for (const QFileInfo& fi : dir.entryInfoList({"*.h5", "*.jpg"}, QDir::Files)) {
@@ -533,7 +529,7 @@ void CutNode::executeProcessing()
     }
 
     // Clean up old project tree node if it exists
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNodeName);
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNodeName);
 
     // Instantiate thread and worker
     m_worker = new CutWorker();
@@ -549,6 +545,12 @@ void CutNode::executeProcessing()
 
     m_thread->start();
     m_isExecuting = true;
+
+    QString srcNodeName = m_inputData->nodeName();
+    QString dstNodeName = m_preparedDstNodeName;
+    QString projDir = m_preparedProjDir;
+    QString projName = m_preparedProjName;
+    QStandardItemModel* model = m_preparedModel;
 
     if (m_mode == 1) { // Coordinate crop
         QList<double> para;

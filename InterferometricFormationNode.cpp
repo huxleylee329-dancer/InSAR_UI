@@ -112,13 +112,6 @@ void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, Por
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
-    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-        m_outputData.reset();
-        m_imageInfoData.reset();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-    }
-
     updateLabels();
 
     if (m_inputData && m_outputNodeName.isEmpty()) {
@@ -129,14 +122,16 @@ void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, Por
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+        m_outputData.reset();
+        m_imageInfoData.reset();
+    }
 }
 
 std::shared_ptr<NodeData> InterferometricFormationNode::outData(PortIndex port)
 {
-    if (port == 0)
-        return m_outputData;
-    else
-        return m_imageInfoData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 ::QWidget* InterferometricFormationNode::embeddedWidget()
@@ -873,55 +868,61 @@ void InterferometricFormationNode::stopExecution()
 
 void InterferometricFormationNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
     }
+    else
+    {
+        setState(ExecutionState::Idle);
+    }
 }
 
-void InterferometricFormationNode::executeProcessing()
+bool InterferometricFormationNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("InterferometricFormationNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
+    m_preparedDstNode = m_inputData->nodeName();
+    m_preparedFileName = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
-    QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
-    int masterIdx = m_useDefaultMaster ? 0 : m_masterIndex;
+    m_preparedSavePath = projectPath();
+    m_preparedProjectName = projectName();
 
-    // Check parameters
-    int winWidth = m_winWEdit ? m_winWEdit->text().toInt() : m_winW;
-    int winHeight = m_winHEdit ? m_winHEdit->text().toInt() : m_winH;
-    int multilookRg = m_multilookRgEdit ? m_multilookRgEdit->text().toInt() : m_multilookRg;
-    int multilookAz = m_multilookAzEdit ? m_multilookAzEdit->text().toInt() : m_multilookAz;
+    m_preparedMasterIndex = m_useDefaultMaster ? 0 : m_masterIndex;
+    m_preparedIsDeflat = m_isDeflat;
+    m_preparedIsTopoRemoval = m_isTopoRemoval;
+    m_preparedIsCoherence = m_isCoherence;
+
+    m_preparedWinW = m_winWEdit ? m_winWEdit->text().toInt() : m_winW;
+    m_preparedWinH = m_winHEdit ? m_winHEdit->text().toInt() : m_winH;
+    m_preparedMultilookRg = m_multilookRgEdit ? m_multilookRgEdit->text().toInt() : m_multilookRg;
+    m_preparedMultilookAz = m_multilookAzEdit ? m_multilookAzEdit->text().toInt() : m_multilookAz;
 
     // Check files to see if they exist
     QStringList pathsToCheck;
     QStandardItemModel* model = projectModel();
     if (model)
     {
-        QList<QStandardItem*> foundProjects = model->findItems(dstProject);
+        QList<QStandardItem*> foundProjects = model->findItems(m_preparedProjectName);
         if (!foundProjects.isEmpty())
         {
             QStandardItem* projectItem = foundProjects.first();
             for (int i = 0; i < projectItem->rowCount(); ++i)
             {
                 QStandardItem* nodeItem = projectItem->child(i, 0);
-                if (nodeItem && nodeItem->text() == srcNode)
+                if (nodeItem && nodeItem->text() == m_preparedDstNode)
                 {
-                    if (masterIdx >= 0 && masterIdx < nodeItem->rowCount())
+                    if (m_preparedMasterIndex >= 0 && m_preparedMasterIndex < nodeItem->rowCount())
                     {
-                        QString master_path = nodeItem->child(masterIdx, 1)->text();
+                        QString master_path = nodeItem->child(m_preparedMasterIndex, 1)->text();
                         QFileInfo master_fi(master_path);
                         QString master_name = master_fi.baseName();
 
                         for (int j = 0; j < nodeItem->rowCount(); ++j)
                         {
-                            if (j == masterIdx)
+                            if (j == m_preparedMasterIndex)
                                 continue;
                             QStandardItem* childItem = nodeItem->child(j, 0);
                             if (childItem) {
@@ -929,7 +930,7 @@ void InterferometricFormationNode::executeProcessing()
                                 QFileInfo slave_fi(slave_path);
                                 QString slave_name = slave_fi.baseName();
 
-                                pathsToCheck.append(savePath + "/" + dstNode + "/" + master_name + "_" + slave_name + ".h5");
+                                pathsToCheck.append(m_preparedSavePath + "/" + m_preparedFileName + "/" + master_name + "_" + slave_name + ".h5");
                             }
                         }
                     }
@@ -939,18 +940,21 @@ void InterferometricFormationNode::executeProcessing()
         }
     }
 
-    // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
-    NodeUtils::OverwriteResult overwriteRes;
     if (_isAutoTriggered) {
-        overwriteRes = NodeUtils::OverwriteResult::Overwrite;
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedFileName, pathsToCheck, nullptr);
     }
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
-        m_outputNodeName = dstNode;
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void InterferometricFormationNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("InterferometricFormationNode", "executeProcessing started.");
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        m_outputNodeName = m_preparedFileName;
         
         m_outputNodeNameEdit->setEnabled(true);
         m_defaultMasterCheckBox->setEnabled(true);
@@ -972,8 +976,10 @@ void InterferometricFormationNode::executeProcessing()
         return;
     }
 
-    // Clean up old data nodes to prevent tree duplicates
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        // Clean up old data nodes to prevent tree duplicates
+        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedFileName);
+    }
 
     setProgress(0);
     setState(ExecutionState::Running);
@@ -983,9 +989,12 @@ void InterferometricFormationNode::executeProcessing()
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &InterferometricFormationNode::startInterferometric, m_workerThread, &InterferometricFormationWorker::Interferometric);
-    connect(m_thread, &QThread::started, [this, masterIdx, winWidth, winHeight, multilookRg, multilookAz, savePath, dstProject, srcNode, dstNode]() {
-        Q_EMIT startInterferometric(m_isDeflat, m_isTopoRemoval, m_isCoherence, masterIdx, winWidth, winHeight,
-                                    multilookRg, multilookAz, savePath, dstProject, srcNode, dstNode, projectModel());
+    connect(m_thread, &QThread::started, [this]() {
+        Q_EMIT startInterferometric(m_preparedIsDeflat, m_preparedIsTopoRemoval, m_preparedIsCoherence, 
+                                    m_preparedMasterIndex, m_preparedWinW, m_preparedWinH,
+                                    m_preparedMultilookRg, m_preparedMultilookAz, 
+                                    m_preparedSavePath, m_preparedProjectName, 
+                                    m_preparedDstNode, m_preparedFileName, projectModel());
     });
     connect(m_workerThread, &InterferometricFormationWorker::updateProcess, this, &InterferometricFormationNode::onProgressUpdate);
     connect(m_workerThread, &InterferometricFormationWorker::endProcess, this, &InterferometricFormationNode::onProcessingFinished);

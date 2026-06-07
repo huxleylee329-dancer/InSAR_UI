@@ -4,6 +4,7 @@
 #include "ImportDataTypes.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include "CutWorker.h"
+#include "NodeUtils.h"
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
@@ -61,6 +62,7 @@ public:
     void load(QJsonObject const &json) override;
 protected:
     bool validateAndRestoreOutput() override;
+    bool prepareToStart() override;
 
 private Q_SLOTS:
     void onModeChanged(int index);
@@ -142,6 +144,16 @@ private:
 
     // Flag for delayed execution state correction (Automatic mode pitfall)
     bool m_isExecuting = false;
+
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    QString m_preparedDstNodeName;
+    QString m_preparedProjDir;
+    QString m_preparedProjName;
+    QStandardItemModel* m_preparedModel = nullptr;
+    bool m_preparedSaveToProject = true;
+    XMLFile* m_preparedProjectXmlPtr = nullptr;
 };
 
 } // namespace QtNodes

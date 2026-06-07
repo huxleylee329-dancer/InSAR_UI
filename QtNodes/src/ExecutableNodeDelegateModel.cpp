@@ -366,10 +366,13 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
         unsigned int outCount = nPorts(PortType::Out);
         for (PortIndex idx = 0; idx < outCount; ++idx) {
             auto it = _outputData.find(idx);
-            if (it != _outputData.end() && it->second != nullptr) {
-                it->second = nullptr;
-                Q_EMIT dataUpdated(idx);
+            if (it != _outputData.end()) {
+                if (it->second != nullptr) {
+                    it->second = nullptr;
+                }
             }
+            // Always emit dataUpdated(idx) to force downstream nodes to clear their inputs and transition to Idle
+            Q_EMIT dataUpdated(idx);
         }
         // Note: dataUpdated(nullptr) signals above will be caught by ExecutableDataFlowGraphModel::onOutPortDataUpdated,
         // which calls setPortData(nullptr) -> setInData(nullptr) on downstream nodes.

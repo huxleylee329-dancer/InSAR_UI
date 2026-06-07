@@ -4,6 +4,7 @@
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
 #include "InterferometricFormationWorker.h"
+#include "NodeUtils.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
@@ -55,6 +56,7 @@ public:
 protected:
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
+    bool prepareToStart() override;
 
 private:
     ::QWidget* _widget;
@@ -94,6 +96,20 @@ private:
 
     // Remedy watcher for missing JPG regeneration
     QFutureWatcher<void> m_remedyWatcher;
+
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedDstNode;
+    QString m_preparedSavePath;
+    QString m_preparedProjectName;
+    QString m_preparedFileName;
+    bool m_preparedIsDeflat = true;
+    bool m_preparedIsTopoRemoval = false;
+    bool m_preparedIsCoherence = false;
+    int m_preparedMasterIndex = 0;
+    int m_preparedWinW = 5;
+    int m_preparedWinH = 5;
+    int m_preparedMultilookRg = 1;
+    int m_preparedMultilookAz = 1;
 
     // Helper methods
     void createWidget();

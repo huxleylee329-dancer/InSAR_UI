@@ -180,7 +180,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     return widget;
 }
 
-void Sentinel1BatchImportNode::executeImport()
+bool Sentinel1BatchImportNode::prepareToStart()
 {
     // Safety check: Ensure project is open
     auto* model = projectModel();
@@ -190,13 +190,13 @@ void Sentinel1BatchImportNode::executeImport()
     if (!model || path.isEmpty() || name.isEmpty())
     {
         onError("未检测到打开的项目，请先打开或新建一个项目。");
-        return;
+        return false;
     }
 
     if (m_manifestPaths.isEmpty())
     {
         onError("请至少添加一个清单文件。");
-        return;
+        return false;
     }
 
     for (const QString& manifestPath : m_manifestPaths)
@@ -204,12 +204,12 @@ void Sentinel1BatchImportNode::executeImport()
         if (!QFileInfo::exists(manifestPath))
         {
             onError("清单文件不存在：" + manifestPath);
-            return;
+            return false;
         }
     }
 
-    std::vector<QString> originalNameList;
-    std::vector<QString> importNameList;
+    m_preparedOriginalNameList.clear();
+    m_preparedImportNameList.clear();
 
     for (const QString& manifestPath : m_manifestPaths)
     {
@@ -217,28 +217,40 @@ void Sentinel1BatchImportNode::executeImport()
         if (importName.isEmpty())
         {
             onError("无法从清单文件提取日期：" + manifestPath);
-            return;
+            return false;
         }
-        originalNameList.push_back(manifestPath);
-        importNameList.push_back(importName);
+        m_preparedOriginalNameList.push_back(manifestPath);
+        m_preparedImportNameList.push_back(importName);
     }
 
-    QString outputNodeName = getOutputNodeName();
+    m_preparedOutputNodeName = getOutputNodeName();
 
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    for (const QString& importName : m_preparedImportNameList) {
+        pathsToCheck.append(projectPath() + "/" + m_preparedOutputNodeName + "/" + importName + ".h5");
+        pathsToCheck.append(projectPath() + "/" + m_preparedOutputNodeName + "/" + importName + ".jpg");
     }
 
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(getProjectContext(), m_preparedOutputNodeName, pathsToCheck, nullptr);
+    }
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void Sentinel1BatchImportNode::executeImport()
+{
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
         return;
+    }
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        // 清理旧数据，防止更换文件重新执行时导致历史记录累积
+        NodeUtils::removeDataNodeFromProject(getProjectContext(), m_preparedOutputNodeName);
     }
 
     m_thread = new QThread(this);
@@ -262,12 +274,12 @@ void Sentinel1BatchImportNode::executeImport()
     QString pol = m_polarizationCombo->currentText();
 
     Q_EMIT startBatchImport(
-        originalNameList,
-        importNameList,
+        m_preparedOriginalNameList,
+        m_preparedImportNameList,
         subswath,
         pol,
         projectPath(),
-        outputNodeName,
+        m_preparedOutputNodeName,
         projectName(),
         projectModel()
     );
@@ -774,15 +786,7 @@ bool Sentinel1BatchImportNode::portIsOptional(PortType portType, PortIndex portI
 
 std::shared_ptr<NodeData> Sentinel1BatchImportNode::outData(PortIndex port)
 {
-    if (port == 0)
-    {
-        return ImportNodeBase::outData(0);
-    }
-    else if (port == 1)
-    {
-        return m_imageInfoData;
-    }
-    return nullptr;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 } // namespace QtNodes

@@ -81,8 +81,7 @@ bool BaselineFormationNode::portIsOptional(PortType portType, PortIndex portInde
 
 std::shared_ptr<NodeData> BaselineFormationNode::outData(PortIndex port)
 {
-    Q_UNUSED(port);
-    return m_outputData;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 void BaselineFormationNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
@@ -93,10 +92,6 @@ void BaselineFormationNode::setInData(std::shared_ptr<NodeData> data, PortIndex 
     QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
 
     if (filePaths.isEmpty()) {
-        m_outputData.reset();
-        m_temporalBaselines.clear();
-        m_spatialBaselines.clear();
-        setOutputData(0, nullptr);
         if (m_showChartBtn) m_showChartBtn->setEnabled(false);
     }
 
@@ -104,6 +99,12 @@ void BaselineFormationNode::setInData(std::shared_ptr<NodeData> data, PortIndex 
     updateLabels();
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (filePaths.isEmpty()) {
+        m_outputData.reset();
+        m_temporalBaselines.clear();
+        m_spatialBaselines.clear();
+    }
 }
 
 ::QWidget* BaselineFormationNode::embeddedWidget()

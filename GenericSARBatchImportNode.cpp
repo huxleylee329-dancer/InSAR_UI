@@ -502,15 +502,7 @@ bool GenericSARBatchImportNode::portIsOptional(PortType portType, PortIndex port
 
 std::shared_ptr<NodeData> GenericSARBatchImportNode::outData(PortIndex port)
 {
-    if (port == 0)
-    {
-        return ImportNodeBase::outData(0);
-    }
-    else if (port == 1)
-    {
-        return m_imageInfoData;
-    }
-    return nullptr;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 bool GenericSARBatchImportNode::validateAndRestoreOutput()

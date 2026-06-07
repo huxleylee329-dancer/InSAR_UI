@@ -70,6 +70,7 @@ void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portI
     }
     else
     {
+        m_currentImage = LoadedImage();
         updateInfo(tr("无数据"));
         if (m_imageView && m_imageView->scene()) {
             m_imageView->scene()->clear();

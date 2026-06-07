@@ -5,6 +5,7 @@
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
 #include "MyThread.h"
+#include "NodeUtils.h"
 #include <QWidget>
 #include <QListWidget>
 #include <QComboBox>
@@ -52,6 +53,7 @@ protected:
     // ImportNodeBase interface
     QWidget* createWidget() override;
     void executeImport() override;
+    bool prepareToStart() override;
     QStringList getImportedFilePaths() const override;
     QString getOutputNodeName() const override;
     QStringList previewImagePaths() const override;
@@ -92,6 +94,11 @@ private:
     QString m_outputNodeName;
     QString m_subswath = "iw1";
     QString m_polarization = "vv";
+
+    std::vector<QString> m_preparedOriginalNameList;
+    std::vector<QString> m_preparedImportNameList;
+    QString m_preparedOutputNodeName;
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 
     // Worker thread
     MyThread* m_workerThread;

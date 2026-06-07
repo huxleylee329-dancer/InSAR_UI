@@ -4,6 +4,7 @@
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
 #include "UnwrapWorker.h"
+#include "NodeUtils.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QWidget>
@@ -53,6 +54,7 @@ public:
 protected:
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
+    bool prepareToStart() override;
 
 private:
     ::QWidget* _widget;
@@ -79,6 +81,14 @@ private:
 
     // Remedy watcher for missing JPG regeneration
     QFutureWatcher<void> m_remedyWatcher;
+
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedDstNode;
+    QString m_preparedSavePath;
+    QString m_preparedProjectName;
+    QString m_preparedSrcNode;
+    int m_preparedMethod = 1;
+    double m_preparedThreshold = 0.3;
 
     // Helper methods
     void createWidget();

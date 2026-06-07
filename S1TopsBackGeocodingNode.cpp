@@ -113,15 +113,7 @@ bool S1TopsBackGeocodingNode::portIsOptional(PortType portType, PortIndex portIn
 
 std::shared_ptr<NodeData> S1TopsBackGeocodingNode::outData(PortIndex port)
 {
-    if (port == 0)
-    {
-        return m_outputData;
-    }
-    else if (port == 1)
-    {
-        return m_imageInfoData;
-    }
-    return nullptr;
+    return ExecutableNodeDelegateModel::outData(port);
 }
 
 void S1TopsBackGeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
@@ -138,6 +130,12 @@ void S1TopsBackGeocodingNode::setInData(std::shared_ptr<NodeData> data, PortInde
 
     // Delegate to base class to handle execution mode
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (!m_inputData)
+    {
+        m_outputData.reset();
+        m_imageInfoData.reset();
+    }
 }
 
 ::QWidget* S1TopsBackGeocodingNode::embeddedWidget()
@@ -669,9 +667,13 @@ void S1TopsBackGeocodingNode::stopExecution()
 
 void S1TopsBackGeocodingNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 
@@ -680,35 +682,33 @@ void S1TopsBackGeocodingNode::setExecutionMode(ExecutionMode mode)
     ExecutableNodeDelegateModel::setExecutionMode(mode);
 }
 
-void S1TopsBackGeocodingNode::executeProcessing()
+bool S1TopsBackGeocodingNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
-    // Prepare processing
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
+    m_preparedDstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
-    QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
-    int masterIndex = m_masterIndex;
-    bool b_ESD = m_esdCheckBox ? m_esdCheckBox->isChecked() : true;
+    m_preparedSavePath = projectPath();
+    m_preparedDstProject = projectName();
+    m_preparedSrcNode = m_inputData->nodeName();
+    m_preparedMasterIndex = m_masterIndex;
+    m_preparedBESD = m_esdCheckBox ? m_esdCheckBox->isChecked() : true;
 
     // 覆盖提示判断
     QStringList pathsToCheck;
     QStandardItemModel* model = projectModel();
     if (model)
     {
-        QList<QStandardItem*> foundProjects = model->findItems(dstProject);
+        QList<QStandardItem*> foundProjects = model->findItems(m_preparedDstProject);
         if (!foundProjects.isEmpty())
         {
             QStandardItem* projectItem = foundProjects.first();
             for (int i = 0; i < projectItem->rowCount(); ++i)
             {
                 QStandardItem* nodeItem = projectItem->child(i, 0);
-                if (nodeItem && nodeItem->text() == srcNode)
+                if (nodeItem && nodeItem->text() == m_preparedSrcNode)
                 {
                     int temp_images_number = nodeItem->rowCount();
                     for (int j = 0; j < temp_images_number; ++j)
@@ -716,7 +716,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
                         QStandardItem* childItem = nodeItem->child(j, 0);
                         if (childItem) {
                             QString origin_name = childItem->text();
-                            pathsToCheck.append(savePath + "/" + dstNode + "/" + origin_name + "_regis.h5");
+                            pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + origin_name + "_regis.h5");
                         }
                     }
                     break;
@@ -725,27 +725,62 @@ void S1TopsBackGeocodingNode::executeProcessing()
         }
     }
 
-    // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性，不弹窗打断自动流程
-    NodeUtils::OverwriteResult overwriteRes;
     if (_isAutoTriggered) {
-        overwriteRes = NodeUtils::OverwriteResult::Overwrite;
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
     }
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
+        return false;
+    }
+
+    m_preparedImagesNumber = 0;
+    model = projectModel();
+    if (model)
+    {
+        QList<QStandardItem*> foundProjects = model->findItems(m_preparedDstProject);
+        if (!foundProjects.isEmpty())
+        {
+            QStandardItem* projectItem = foundProjects.first();
+            for (int i = 0; i < projectItem->rowCount(); ++i)
+            {
+                QStandardItem* nodeItem = projectItem->child(i, 0);
+                if (nodeItem) {
+                    if (nodeItem->text() == m_preparedSrcNode)
+                    {
+                        m_preparedImagesNumber = nodeItem->rowCount();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (m_preparedImagesNumber < 2)
+    {
+        InSARLogManager::LogError("S1TopsBackGeocodingNode", "Images number is less than 2, cannot perform Back-Geocoding.");
+        return false;
+    }
+
+    return true;
+}
+
+void S1TopsBackGeocodingNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing started.");
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         // 直接复用磁盘上的现有数据，不重新计算
         // 不调用 onProcessingFinished()，因为它会在 UI 主线程上执行重度 HDF5 读取，
         // 若文件损坏会直接崩溃。改为安全地调用 validateAndRestoreOutput()。
         qDebug() << "[BackGeocoding] LoadExisting: restoring output from disk.";
-        m_outputNodeName = dstNode;
+        m_outputNodeName = m_preparedDstNode;
         m_outputNodeNameEdit->setEnabled(true);
         if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
         if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
         if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
-        setState(ExecutionState::Running);
+        
         setProgress(100);
         if (validateAndRestoreOutput()) {
             finishExecution();
@@ -757,40 +792,9 @@ void S1TopsBackGeocodingNode::executeProcessing()
     }
 
     // 清理旧数据，防止反复执行导致UI Tree数据累加
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
 
     setProgress(0);
-    setState(ExecutionState::Running);
-
-    // Count images under the srcNode
-    int images_number = 0;
-    model = projectModel();
-    if (model)
-    {
-        QList<QStandardItem*> foundProjects = model->findItems(dstProject);
-        if (!foundProjects.isEmpty())
-        {
-            QStandardItem* projectItem = foundProjects.first();
-            for (int i = 0; i < projectItem->rowCount(); ++i)
-            {
-                QStandardItem* nodeItem = projectItem->child(i, 0);
-                if (nodeItem) {
-                    if (nodeItem->text() == srcNode)
-                    {
-                        images_number = nodeItem->rowCount();
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if (images_number < 2)
-    {
-        InSARLogManager::LogError("S1TopsBackGeocodingNode", "Images number is less than 2, cannot perform Back-Geocoding.");
-        setState(ExecutionState::Error);
-        return;
-    }
 
     // Create thread
     m_thread = new QThread();
@@ -799,6 +803,15 @@ void S1TopsBackGeocodingNode::executeProcessing()
 
     // Connect signals
     connect(this, &S1TopsBackGeocodingNode::startBackGeocoding, m_workerThread, &S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding);
+    
+    int images_number = m_preparedImagesNumber;
+    int masterIndex = m_preparedMasterIndex;
+    QString savePath = m_preparedSavePath;
+    QString dstProject = m_preparedDstProject;
+    QString srcNode = m_preparedSrcNode;
+    QString dstNode = m_preparedDstNode;
+    bool b_ESD = m_preparedBESD;
+    
     connect(m_thread, &QThread::started, [this, images_number, masterIndex, savePath, dstProject, srcNode, dstNode, b_ESD]() {
         Q_EMIT startBackGeocoding(images_number, masterIndex, savePath, dstProject, srcNode, dstNode, projectModel(), b_ESD);
     });
