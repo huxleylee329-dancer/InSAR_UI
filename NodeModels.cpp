@@ -55,11 +55,6 @@ std::shared_ptr<NodeDelegateModelRegistry> registerTestNodeModels()
     registry->registerModel<NoteNode>("Information");
 
 #ifdef ENABLE_TEST_NODES
-    // Register test nodes in a "Test" category
-    registry->registerModel<SimpleSourceNode>("Test");
-    registry->registerModel<SimpleMathNode>("Test");
-    registry->registerModel<SimpleDisplayNode>("Test");
-
     // Card-based layout test nodes (new style)
     registry->registerModel<CardSimpleSourceNode>("Test");
     registry->registerModel<CardSimpleMathNode>("Test");
@@ -162,10 +157,6 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 
     // Register test nodes for development (can be removed when all InSAR nodes are implemented)
 #ifdef ENABLE_TEST_NODES
-    registry->registerModel<SimpleSourceNode>("Test");
-    registry->registerModel<SimpleMathNode>("Test");
-    registry->registerModel<SimpleDisplayNode>("Test");
-
     // Card-based layout test nodes (new style)
     registry->registerModel<CardSimpleSourceNode>("Test");
     registry->registerModel<CardSimpleMathNode>("Test");

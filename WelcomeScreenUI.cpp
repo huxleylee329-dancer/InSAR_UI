@@ -1,10 +1,13 @@
-﻿#include "WelcomeScreenUI.h"
+#include "WelcomeScreenUI.h"
 #include <QApplication>
 #include <QPainter>
 #include <QSettings>
 #include <QListWidgetItem>
 #include <QFile>
 #include <QFileInfo>
+#include <QDateTime>
+#include <QScrollArea>
+#include <QImage>
 #include "icon_source.h"
 
 WelcomeScreenUI::WelcomeScreenUI(QWidget *parent)
@@ -32,7 +35,7 @@ void WelcomeScreenUI::setupUi()
     m_titleLabel->setAlignment(Qt::AlignLeft);
     mainLayout->addWidget(m_titleLabel);
 
-    m_subtitleLabel = new QLabel("InSAR Data Processing & Visualization");
+    m_subtitleLabel = new QLabel(QStringLiteral("InSAR 数据处理与可视化"));
     m_subtitleLabel->setStyleSheet("font-size: 14px; color: #888888;");
     m_subtitleLabel->setAlignment(Qt::AlignLeft);
     mainLayout->addWidget(m_subtitleLabel);
@@ -52,24 +55,24 @@ void WelcomeScreenUI::setupUi()
     quickStartLayout->setContentsMargins(0, 0, 0, 0);
     quickStartLayout->setSpacing(12);
 
-    QLabel *quickStartLabel = new QLabel("Quick Start");
+    QLabel *quickStartLabel = new QLabel(QStringLiteral("快速开始"));
     quickStartLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #0078d7; letter-spacing: 1px; text-transform: uppercase;");
     quickStartLayout->addWidget(quickStartLabel);
 
     quickStartLayout->addSpacing(10);
 
     // New Project button with icon and description
-    m_newProjectBtn = qobject_cast<QPushButton*>(createQuickStartButton("add_circle", "New Project", "Create from Sentinel-1 or COSMO-SkyMed stack"));
+    m_newProjectBtn = qobject_cast<QPushButton*>(createQuickStartButton("add_circle", QStringLiteral("新建项目"), QStringLiteral("创建新项目")));
     connect(m_newProjectBtn, &QPushButton::clicked, this, &WelcomeScreenUI::newProjectRequested);
     quickStartLayout->addWidget(m_newProjectBtn);
 
     // Open Project button
-    m_openProjectBtn = qobject_cast<QPushButton*>(createQuickStartButton("folder_open", "Open Project", "Load an existing .insar workspace from disk"));
+    m_openProjectBtn = qobject_cast<QPushButton*>(createQuickStartButton("folder_open", QStringLiteral("打开项目"), QStringLiteral("从磁盘加载现有的 .insar 工作区")));
     connect(m_openProjectBtn, &QPushButton::clicked, this, &WelcomeScreenUI::openProjectRequested);
     quickStartLayout->addWidget(m_openProjectBtn);
 
     // Fetch Data button
-    m_fetchDataBtn = qobject_cast<QPushButton*>(createQuickStartButton("cloud_download", "Fetch Data", "Connect to ESA Hub or NASA EarthData"));
+    m_fetchDataBtn = qobject_cast<QPushButton*>(createQuickStartButton("cloud_download", QStringLiteral("获取数据"), QStringLiteral("连接云端服务器检索数据")));
     connect(m_fetchDataBtn, &QPushButton::clicked, this, &WelcomeScreenUI::fetchDataRequested);
     quickStartLayout->addWidget(m_fetchDataBtn);
 
@@ -83,42 +86,34 @@ void WelcomeScreenUI::setupUi()
     recentLayout->setContentsMargins(0, 0, 0, 0);
     recentLayout->setSpacing(12);
 
-    // Header with "View All" button
+    // Header with "Recent Projects" label only (removed "View All")
     QHBoxLayout *recentHeaderLayout = new QHBoxLayout();
-    QLabel *recentLabel = new QLabel("Recent Projects");
+    QLabel *recentLabel = new QLabel(QStringLiteral("最近项目"));
     recentLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #0078d7; letter-spacing: 1px; text-transform: uppercase;");
     recentHeaderLayout->addWidget(recentLabel);
     recentHeaderLayout->addStretch();
-
-    QPushButton *viewAllBtn = new QPushButton("View All");
-    viewAllBtn->setStyleSheet(
-        "QPushButton {"
-        "  background: transparent;"
-        "  border: none;"
-        "  color: #888888;"
-        "  font-size: 10px;"
-        "  font-weight: bold;"
-        "  text-transform: uppercase;"
-        "  padding: 0;"
-        "}"
-        "QPushButton:hover {"
-        "  color: #0078d7;"
-        "}"
-    );
-    recentHeaderLayout->addWidget(viewAllBtn);
 
     recentLayout->addLayout(recentHeaderLayout);
 
     recentLayout->addSpacing(10);
 
+    // Scroll Area for Recent Projects list to handle up to 10 projects beautifully
+    m_recentScrollArea = new QScrollArea();
+    m_recentScrollArea->setWidgetResizable(true);
+    m_recentScrollArea->setFrameShape(QFrame::NoFrame);
+    m_recentScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_recentScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    m_recentScrollArea->setStyleSheet("QScrollArea { background: transparent; border: none; }");
+
     // Recent projects list container
     m_recentProjectsContainer = new QWidget();
+    m_recentProjectsContainer->setStyleSheet("background: transparent;");
     QVBoxLayout *recentListLayout = new QVBoxLayout(m_recentProjectsContainer);
     recentListLayout->setContentsMargins(0, 0, 0, 0);
     recentListLayout->setSpacing(0);
-    recentLayout->addWidget(m_recentProjectsContainer);
-
-    recentLayout->addStretch();
+    
+    m_recentScrollArea->setWidget(m_recentProjectsContainer);
+    recentLayout->addWidget(m_recentScrollArea);
 
     gridLayout->addWidget(recentContainer, 0, 1);
 
@@ -126,12 +121,12 @@ void WelcomeScreenUI::setupUi()
 
     // Tip of the Day - Bottom section
     m_tipFrame = new QFrame();
+    m_tipFrame->setObjectName("tipFrame");
     m_tipFrame->setStyleSheet(
-        "QFrame {"
-        "  background-color: rgba(99, 71, 0, 0.15);"
+        "#tipFrame {"
+        "  background-color: rgba(0, 120, 215, 0.04);"
         "  border: none;"
-        "  border-left: 4px solid #994700;"
-        "  border-radius: 4px;"
+        "  border-radius: 6px;"
         "  padding: 12px;"
         "}"
     );
@@ -153,11 +148,11 @@ void WelcomeScreenUI::setupUi()
     tipContentLayout->setContentsMargins(0, 0, 0, 0);
     tipContentLayout->setSpacing(4);
 
-    m_tipTitleLabel = new QLabel("Tip of the Day");
+    m_tipTitleLabel = new QLabel(QStringLiteral("每日提示"));
     m_tipTitleLabel->setStyleSheet("font-size: 10px; font-weight: bold; color: #994700; letter-spacing: 1px; text-transform: uppercase;");
     tipContentLayout->addWidget(m_tipTitleLabel);
 
-    m_tipTextLabel = new QLabel("When working with large stacks, use Multi-Look processing early to reduce Phase Noise and accelerate interferogram generation. You can adjust Look-count in Analysis Properties panel.");
+    m_tipTextLabel = new QLabel(QStringLiteral("在处理大型数据栈时，提早使用多视处理（Multi-Look）能有效降低相位噪声并加速干涉图的生成。您可以在“分析属性”面板中调整视数。"));
     m_tipTextLabel->setStyleSheet("font-size: 13px; color: #AAAAAA;");
     m_tipTextLabel->setWordWrap(true);
     tipContentLayout->addWidget(m_tipTextLabel);
@@ -183,17 +178,20 @@ void WelcomeScreenUI::loadRecentProjects()
         delete child;
     }
 
-    // Load recent projects with fake times for demo
-    QStringList times;
-    times << "2 hours ago" << "Yesterday, 14:30" << "Oct 24, 2023" << "Oct 20, 2023";
-
-    for (int i = 0; i < recent.size() && i < 4; ++i) {
+    for (int i = 0; i < recent.size() && i < 10; ++i) {
         const QString &project = recent[i];
         if (!project.isEmpty()) {
             QFileInfo fileInfo(project);
             QString name = fileInfo.baseName();
             QString path = fileInfo.path();
-            QString time = times.value(i, "");
+            
+            // Format actual modification time if file exists, else show file not found
+            QString time = "";
+            if (fileInfo.exists()) {
+                time = fileInfo.lastModified().toString("yyyy-MM-dd hh:mm");
+            } else {
+                time = QStringLiteral("文件未找到");
+            }
 
             QWidget *item = createRecentProjectItem(name, path, time);
             item->setProperty("filePath", project);
@@ -201,11 +199,17 @@ void WelcomeScreenUI::loadRecentProjects()
             m_recentProjectsContainer->layout()->addWidget(item);
         }
     }
+
+    // Add a stretch at the end to keep items aligned to the top of the scroll container
+    if (QVBoxLayout* layout = qobject_cast<QVBoxLayout*>(m_recentProjectsContainer->layout())) {
+        layout->addStretch();
+    }
 }
 
 void WelcomeScreenUI::refreshRecentProjects()
 {
     loadRecentProjects();
+    updateThemeStyles();
 }
 
 QWidget* WelcomeScreenUI::createQuickStartButton(const QString &iconName, const QString &title, const QString &description)
@@ -373,8 +377,8 @@ void WelcomeScreenUI::updateThemeStyles()
     const char *iconBg = isDarkTheme ? "#404040" : "#F0F0F0";   // Icon container background
     const char *itemHoverBg = isDarkTheme ? "#404040" : "#E8E8E8";  // Item hover background
     const char *borderColor = isDarkTheme ? "#404040" : "#E0E0E0";   // Border color
-    const char *tipBg = isDarkTheme ? "rgba(99, 71, 0, 0.15)" : "rgba(255, 193, 7, 0.1)";
-    const char *tipColor = isDarkTheme ? "#994700" : "#F57C00";
+    const char *tipBg = isDarkTheme ? "rgba(0, 120, 215, 0.04)" : "rgba(0, 120, 215, 0.02)";
+    const char *tipColor = isDarkTheme ? "#0078d7" : "#005FAC";
 
     // Update title and subtitle
     m_titleLabel->setStyleSheet(QString("font-size: 36px; font-weight: bold; color: #005FAC;"));
@@ -463,6 +467,33 @@ void WelcomeScreenUI::updateThemeStyles()
         }
     }
 
+    // Update scroll area styles (scrollbar aesthetics)
+    if (m_recentScrollArea) {
+        m_recentScrollArea->setStyleSheet(QString(
+            "QScrollArea {"
+            "  background: transparent;"
+            "  border: none;"
+            "}"
+            "QScrollBar:vertical {"
+            "  width: 8px;"
+            "  background: transparent;"
+            "  margin: 0px 0px 0px 0px;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            "  background: %1;"
+            "  min-height: 20px;"
+            "  border-radius: 4px;"
+            "}"
+            "QScrollBar::handle:vertical:hover {"
+            "  background: %2;"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+            "  height: 0px;"
+            "  background: none;"
+            "}"
+        ).arg(isDarkTheme ? "#555555" : "#cccccc", isDarkTheme ? "#888888" : "#999999"));
+    }
+
     // Update recent project items
     if (m_recentProjectsContainer) {
         QList<QWidget*> items = m_recentProjectsContainer->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
@@ -489,21 +520,20 @@ void WelcomeScreenUI::updateThemeStyles()
     // Update tip frame
     if (m_tipFrame) {
         m_tipFrame->setStyleSheet(QString(
-            "QFrame {"
+            "#tipFrame {"
             "  background-color: %1;"
             "  border: none;"
-            "  border-left: 4px solid %2;"
-            "  border-radius: 4px;"
+            "  border-radius: 6px;"
             "  padding: 12px;"
             "}"
-            "QFrame QLabel {"
+            "#tipFrame QLabel {"
             "  border: none;"
             "}"
-        ).arg(tipBg, tipColor));
+        ).arg(tipBg));
     }
 
     if (m_tipTitleLabel) {
-        m_tipTitleLabel->setStyleSheet(QString("font-size: 10px; font-weight: bold; color: %1; letter-spacing: 1px; text-transform: uppercase; border: none;").arg(tipColor));
+        m_tipTitleLabel->setStyleSheet(QString("font-size: 10px; font-weight: bold; color: %1; letter-spacing: 1px; text-transform: uppercase; border: none;").arg(secondaryText));
     }
     if (m_tipTextLabel) {
         m_tipTextLabel->setStyleSheet(QString("font-size: 13px; color: %1; border: none;").arg(secondaryText));
@@ -618,15 +648,22 @@ void WelcomeScreenUI::paintEvent(QPaintEvent *event)
     // Only draw the watermark
     QPainter painter(this);
 
-    // Draw BigIcon as large watermark in center
-    // 根据主题设置不同的透明度
-    painter.setOpacity(m_isDarkTheme ? 0.03 : 0.04);
-
     QPixmap bgPixmap(BIGICON_BG);
     if (!bgPixmap.isNull()) {
         // Scale to large watermark size
         int size = qMin(width(), height()) * 0.6;
         QPixmap scaled = bgPixmap.scaled(size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+        if (m_isDarkTheme) {
+            // 反转颜色：将深色 Logo 变为亮色以适应暗色背景，保留透明通道
+            QImage img = scaled.toImage();
+            img.invertPixels(QImage::InvertRgb);
+            scaled = QPixmap::fromImage(img);
+            painter.setOpacity(0.05); // 深色主题下的亮色水印透明度
+        } else {
+            painter.setOpacity(0.04); // 浅色主题下的深色水印透明度
+        }
+
         int x = (width() - scaled.width()) / 2;
         int y = (height() - scaled.height()) / 2;
         painter.drawPixmap(x, y, scaled);

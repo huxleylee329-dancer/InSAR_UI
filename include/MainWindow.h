@@ -164,6 +164,7 @@ private:
     void addToRecentProjects(const QString& path);
     void updateRecentMenu();
     void openRecentProject();
+    void handleInvalidRecentProject(const QString& filePath);
 
     // 更新窗口标题（显示工程修改状态）
     void updateWindowTitle();

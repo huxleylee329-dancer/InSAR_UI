@@ -201,9 +201,6 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // Test 类叶子项顺序
     order.leafItems["Test"] = QList<PaletteOrder::LeafItem>{
-        {"Source", "Source"},              // SimpleSourceNode (传统样式)
-        {"Display", "Display"},            // SimpleDisplayNode (传统样式)
-        {"Math (Concat)", "Math (Concat)"}, // SimpleMathNode (传统样式)
         {"Card Source", "Card Source"},    // CardSimpleSourceNode (卡片样式)
         {"Card Display", "Card Display"},  // CardSimpleDisplayNode (卡片样式)
         {"Card Math (Concat)", "Card Math (Concat)"} // CardSimpleMathNode (卡片样式)

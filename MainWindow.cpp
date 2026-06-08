@@ -254,14 +254,15 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     setupInterfaceSwitchingMenu();
 
     if (str.isEmpty()) {
-        // No project opened - show workflow interface for debugging
-        ui.View->setDisabled(0);
+        // No project opened - show welcome screen
+        ui.View->setDisabled(1);
+        ui.Edit->setDisabled(1);
         ui.Process->setDisabled(1);
         ui.menuSAR->setDisabled(1);
         ui.menuInSAR->setDisabled(1);
         ui.menuDInSAR->setDisabled(1);
         
-        m_interfaceManager->switchToInterface("workflow");
+        m_interfaceManager->switchToInterface("welcome");
         updateInterfaceMenuCheckState();
     }
     else {
@@ -973,9 +974,9 @@ void MainWindow::on_actionClose_triggered()
 
     closeCurrentProject();
 
-    // 切换到流程编辑器界面
+    // 切换到欢迎界面
     if (m_interfaceManager) {
-        m_interfaceManager->switchToInterface("workflow");
+        m_interfaceManager->switchToInterface("welcome");
         updateInterfaceMenuCheckState();
     }
 }
@@ -1153,7 +1154,7 @@ void MainWindow::openRecentProject()
 
     QString filePath = action->data().toString();
     if (filePath.isEmpty() || !QFileInfo::exists(filePath)) {
-        QMessageBox::warning(this, "提示", "项目文件不存在：" + filePath);
+        handleInvalidRecentProject(filePath);
         return;
     }
 
@@ -1161,10 +1162,31 @@ void MainWindow::openRecentProject()
         open_from_project_file(filePath);
     }
     catch (const std::exception& e) {
-        QMessageBox::critical(this, "错误", QString("加载项目失败：") + QString::fromUtf8(e.what()));
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("加载项目失败：") + QString::fromUtf8(e.what()));
     }
     catch (...) {
-        QMessageBox::critical(this, "错误", "加载项目时发生未知异常。");
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("加载项目时发生未知异常。"));
+    }
+}
+void MainWindow::handleInvalidRecentProject(const QString& filePath)
+{
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        QStringLiteral("提示"),
+        QStringLiteral("项目文件不存在：%1\n\n是否从历史记录中删除该项？").arg(filePath),
+        QMessageBox::Yes | QMessageBox::No
+    );
+
+    if (reply == QMessageBox::Yes) {
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
+        recent.removeAll(filePath);
+        settings.setValue("Recent/Projects", recent);
+
+        // 刷新欢迎界面和文件菜单最近项目列表
+        if (m_welcomeUI)
+            m_welcomeUI->refreshRecentProjects();
+        updateRecentMenu();
     }
 }
 void MainWindow::on_actionTSX_triggered()
@@ -2035,6 +2057,10 @@ void MainWindow::onOpenProjectFromWelcome()
 
 void MainWindow::onRecentProjectFromWelcome(const QString &filePath)
 {
+    if (filePath.isEmpty() || !QFileInfo::exists(filePath)) {
+        handleInvalidRecentProject(filePath);
+        return;
+    }
     open_from_project_file(filePath);
 }
 
@@ -2077,8 +2103,12 @@ void MainWindow::updateFileMenuState()
     ui.actionClose->setEnabled(isProjectOpen);
     ui.actionQuit->setEnabled(true);
 
-    // 编辑菜单内的“清除孤立文件”在未打开工程时置灰
+    // 编辑菜单在未打开工程时置灰，开启时启用
+    ui.Edit->setEnabled(isProjectOpen);
     ui.actionCleanOrphanedFiles->setEnabled(isProjectOpen);
+
+    // 视图菜单在未打开工程时置灰，开启时启用
+    ui.View->setEnabled(isProjectOpen);
 
     // 处理菜单安全加固：若无工程打开，强制置灰（若有工程，则保持由数据刷新逻辑控制）
     if (!isProjectOpen) {

@@ -1,4 +1,4 @@
-﻿#ifndef WELCOMESCREENUI_H
+#ifndef WELCOMESCREENUI_H
 #define WELCOMESCREENUI_H
 
 #include "IApplicationInterface.h"
@@ -78,6 +78,7 @@ private:
     QPushButton *m_newProjectBtn = nullptr;
     QPushButton *m_openProjectBtn = nullptr;
     QPushButton *m_fetchDataBtn = nullptr;
+    QScrollArea *m_recentScrollArea = nullptr;
     QWidget *m_recentProjectsContainer = nullptr;
     QFrame *m_tipFrame = nullptr;
     QLabel *m_tipTitleLabel = nullptr;
