@@ -69,31 +69,37 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	std::vector<std::string> SAR_images;
 	std::vector<std::string> SAR_images_regis;
 	QList<QString> origin;
-	QList<QStandardItem*> foundProjects = model->findItems(dstProject);
-	if (foundProjects.isEmpty())
-	{
-		emit errorProcess("Project node not found in project tree.");
-		return;
-	}
-	QStandardItem* project = foundProjects.first();
-	for (int i = 0; i < project->rowCount(); i++)
-	{
-		QStandardItem* images = project->child(i, 0);
-		if (images && images->text() == srcNode)
+	bool found_project = false;
+	QMetaObject::invokeMethod(model, [=, &SAR_images, &SAR_images_regis, &origin, &found_project]() {
+		QList<QStandardItem*> foundProjects = model->findItems(dstProject);
+		if (foundProjects.isEmpty()) return;
+		found_project = true;
+		QStandardItem* project = foundProjects.first();
+		for (int i = 0; i < project->rowCount(); i++)
 		{
-			for (int j = 0; j < images->rowCount(); j++)
+			QStandardItem* images = project->child(i, 0);
+			if (images && images->text() == srcNode)
 			{
-				QStandardItem* pathItem = images->child(j, 1);
-				if (pathItem) {
-					QFileInfo fileinfo(pathItem->text());
-					QString origin_name = fileinfo.baseName();
-					origin.append(origin_name);
-					SAR_images.push_back(pathItem->text().toStdString());
-					SAR_images_regis.push_back(QString("%1/%2/%3_regis.h5").arg(savePath).arg(dstNode)
-						.arg(origin_name).toStdString());
+				for (int j = 0; j < images->rowCount(); j++)
+				{
+					QStandardItem* pathItem = images->child(j, 1);
+					if (pathItem) {
+						QFileInfo fileinfo(pathItem->text());
+						QString origin_name = fileinfo.baseName();
+						origin.append(origin_name);
+						SAR_images.push_back(pathItem->text().toStdString());
+						SAR_images_regis.push_back(QString("%1/%2/%3_regis.h5").arg(savePath).arg(dstNode)
+							.arg(origin_name).toStdString());
+					}
 				}
 			}
 		}
+	}, Qt::BlockingQueuedConnection);
+
+	if (!found_project)
+	{
+		emit errorProcess("Project node not found in project tree.");
+		return;
 	}
 	if (SAR_images.empty())
 	{
@@ -445,37 +451,6 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit updateProcess(90 + 10 / burstCount * (i + 1), QStringLiteral("deburst……"));
 	}
 
-	/*建立配准根节点*/
-	QStandardItem* regis = NULL;
-	for (int i = 0; i < project->rowCount(); i++)
-	{
-		if (project->child(i, 0)->text() == dstNode)
-		{
-			regis = project->child(i, 0);
-			break;
-		}
-	}
-
-	if (!regis)
-	{
-		regis = new QStandardItem(dstNode);
-		regis->setToolTip(dstProject);
-		int insert = 0;
-		for (; insert < project->rowCount(); insert++)
-		{
-			if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-				project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-				project->child(insert, 1)->text().compare("complex-2.0") == 0)
-				continue;
-			else
-				break;
-		}
-		regis->setIcon(QIcon(FOLDER_ICON));
-		project->insertRow(insert, regis);
-		QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
-		project->setChild(insert, 1, regis_Rank);
-	}
-	
 	FormatConversion FC;
 	/*获取主星参数*/
 	cv::Mat outArray;
@@ -484,36 +459,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	rows = outArray.rows; cols = outArray.cols;
 	offset_row = 0;
 	int offset_col = 0;
-	/*添加图像到model中并复制h5参数*/
+
+	/*写入辅助参数到h5*/
 	for (int i = 0; i < images_number; i++)
 	{
-		QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
-		QString regis_name = fileinfo.baseName();
-		QStandardItem* item_img = NULL;
-		for (int j = 0; j < regis->rowCount(); j++)
-		{
-			if (regis->child(j, 0)->text() == regis_name)
-			{
-				item_img = regis->child(j, 0);
-				break;
-			}
-		}
-
-		if (!item_img)
-		{
-			QStandardItem* regis_images_name = new QStandardItem(regis_name);
-			regis_images_name->setToolTip("complex");
-			QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-			regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-			regis->appendRow(regis_images_name);
-			regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
-		}
-		else
-		{
-			regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-		}
-
-		/*写入辅助参数到h5*/
 		FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
 		FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
 		FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
@@ -523,153 +472,221 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
 	}
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration parameters copied successfully to H5 files.");
-	/*写入XML*/
-	XMLFile xmlfile;
-	if (xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str()) >= 0)
-	{
-		TiXmlElement* root = nullptr;
-		xmlfile.get_root(root);
-		if (root)
+
+	QMetaObject::invokeMethod(model, [=]() {
+		QList<QStandardItem*> foundProjects = model->findItems(dstProject);
+		if (foundProjects.isEmpty()) return;
+		QStandardItem* project = foundProjects.first();
+
+		/*建立配准根节点*/
+		QStandardItem* regis = NULL;
+		for (int i = 0; i < project->rowCount(); i++)
 		{
-			for (int i = 0; i < images_number; i++)
+			if (project->child(i, 0)->text() == dstNode)
 			{
-				QString relativePath = QString("/%1/%2").arg(dstNode).arg(origin.at(i) + "_regis.h5");
-				QString dataName = origin.at(i) + "_regis";
-				
-				// 查找是否已存在该 DataNode
-				TiXmlElement* dataNodeElem = nullptr;
-				for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
-					const char* nameAttr = p->Attribute("name");
-					if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode) {
-						dataNodeElem = p;
-						break;
-					}
+				regis = project->child(i, 0);
+				break;
+			}
+		}
+
+		if (!regis)
+		{
+			regis = new QStandardItem(dstNode);
+			regis->setToolTip(dstProject);
+			int insert = 0;
+			for (; insert < project->rowCount(); insert++)
+			{
+				if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
+					project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
+					project->child(insert, 1)->text().compare("complex-2.0") == 0)
+					continue;
+				else
+					break;
+			}
+			regis->setIcon(QIcon(FOLDER_ICON));
+			project->insertRow(insert, regis);
+			QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
+			project->setChild(insert, 1, regis_Rank);
+		}
+
+		/*添加图像到model中并复制h5参数*/
+		for (int i = 0; i < images_number; i++)
+		{
+			QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
+			QString regis_name = fileinfo.baseName();
+			QStandardItem* item_img = NULL;
+			for (int j = 0; j < regis->rowCount(); j++)
+			{
+				if (regis->child(j, 0)->text() == regis_name)
+				{
+					item_img = regis->child(j, 0);
+					break;
 				}
-				
-				if (!dataNodeElem) {
-					// 创建新的 DataNode
-					dataNodeElem = new TiXmlElement("DataNode");
-					dataNodeElem->SetAttribute("name", dstNode.toStdString().c_str());
-					dataNodeElem->SetAttribute("data_count", "1");
-					dataNodeElem->SetAttribute("data_processing", "coregistration");
-					dataNodeElem->SetAttribute("rank", "complex-2.0");
+			}
+
+			if (!item_img)
+			{
+				QStandardItem* regis_images_name = new QStandardItem(regis_name);
+				regis_images_name->setToolTip("complex");
+				QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
+				regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
+				regis->appendRow(regis_images_name);
+				regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
+			}
+			else
+			{
+				regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+			}
+		}
+
+		/*写入XML*/
+		XMLFile xmlfile;
+		if (xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str()) >= 0)
+		{
+			TiXmlElement* root = nullptr;
+			xmlfile.get_root(root);
+			if (root)
+			{
+				for (int i = 0; i < images_number; i++)
+				{
+					QString relativePath = QString("/%1/%2").arg(dstNode).arg(origin.at(i) + "_regis.h5");
+					QString dataName = origin.at(i) + "_regis";
 					
-					int index = 1;
-					TiXmlElement* root_child = root->FirstChildElement();
-					if (root_child) {
-						root_child = root_child->NextSiblingElement(); // 略过 project_info
-					}
-					
-					TiXmlElement* insertBeforeNode = nullptr;
-					for (TiXmlElement* p = root_child; p != nullptr; p = p->NextSiblingElement(), index++) {
-						const char* rankAttr = p->Attribute("rank");
-						if (rankAttr && (strcmp(rankAttr, "complex-0.0") == 0 ||
-										 strcmp(rankAttr, "complex-1.0") == 0 ||
-										 strcmp(rankAttr, "complex-2.0") == 0)) {
-							continue;
-						} else {
-							insertBeforeNode = p;
+					// 查找是否已存在该 DataNode
+					TiXmlElement* dataNodeElem = nullptr;
+					for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
+						const char* nameAttr = p->Attribute("name");
+						if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode) {
+							dataNodeElem = p;
 							break;
 						}
 					}
-					dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
 					
-					TiXmlElement* dataElem = new TiXmlElement("Data");
-					
-					TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
-					dataNameNode->LinkEndChild(new TiXmlText(dataName.toStdString().c_str()));
-					dataElem->LinkEndChild(dataNameNode);
-					
-					TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
-					dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
-					dataElem->LinkEndChild(dataRankNode);
-					
-					TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
-					dataIndexNode->LinkEndChild(new TiXmlText("1"));
-					dataElem->LinkEndChild(dataIndexNode);
-					
-					TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
-					dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
-					dataElem->LinkEndChild(dataPathNode);
-					
-					TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
-					rowOffsetNode->LinkEndChild(new TiXmlText("0"));
-					dataElem->LinkEndChild(rowOffsetNode);
-					
-					TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
-					colOffsetNode->LinkEndChild(new TiXmlText("0"));
-					dataElem->LinkEndChild(colOffsetNode);
-					
-					dataNodeElem->LinkEndChild(dataElem);
-					
-					TiXmlElement* paramsElem = new TiXmlElement("Data_Processing_Parameters");
-					TiXmlElement* masterImageElem = new TiXmlElement("master_image");
-					masterImageElem->LinkEndChild(new TiXmlText(QString::number(masterIndex).toStdString().c_str()));
-					paramsElem->LinkEndChild(masterImageElem);
-					dataNodeElem->LinkEndChild(paramsElem);
-					
-					if (insertBeforeNode) {
-						root->InsertBeforeChild(insertBeforeNode, *dataNodeElem);
-						delete dataNodeElem;
+					if (!dataNodeElem) {
+						// 创建新的 DataNode
+						dataNodeElem = new TiXmlElement("DataNode");
+						dataNodeElem->SetAttribute("name", dstNode.toStdString().c_str());
+						dataNodeElem->SetAttribute("data_count", "1");
+						dataNodeElem->SetAttribute("data_processing", "coregistration");
+						dataNodeElem->SetAttribute("rank", "complex-2.0");
 						
-						for (TiXmlElement* p = insertBeforeNode; p != nullptr; p = p->NextSiblingElement()) {
-							index++;
-							p->SetAttribute("index", QString::number(index).toStdString().c_str());
+						int index = 1;
+						TiXmlElement* root_child = root->FirstChildElement();
+						if (root_child) {
+							root_child = root_child->NextSiblingElement(); // 略过 project_info
+						}
+						
+						TiXmlElement* insertBeforeNode = nullptr;
+						for (TiXmlElement* p = root_child; p != nullptr; p = p->NextSiblingElement(), index++) {
+							const char* rankAttr = p->Attribute("rank");
+							if (rankAttr && (strcmp(rankAttr, "complex-0.0") == 0 ||
+											 strcmp(rankAttr, "complex-1.0") == 0 ||
+											 strcmp(rankAttr, "complex-2.0") == 0)) {
+								continue;
+							} else {
+								insertBeforeNode = p;
+								break;
+							}
+						}
+						dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
+						
+						TiXmlElement* dataElem = new TiXmlElement("Data");
+						
+						TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
+						dataNameNode->LinkEndChild(new TiXmlText(dataName.toStdString().c_str()));
+						dataElem->LinkEndChild(dataNameNode);
+						
+						TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
+						dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
+						dataElem->LinkEndChild(dataRankNode);
+						
+						TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
+						dataIndexNode->LinkEndChild(new TiXmlText("1"));
+						dataElem->LinkEndChild(dataIndexNode);
+						
+						TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
+						dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
+						dataElem->LinkEndChild(dataPathNode);
+						
+						TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
+						rowOffsetNode->LinkEndChild(new TiXmlText("0"));
+						dataElem->LinkEndChild(rowOffsetNode);
+						
+						TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
+						colOffsetNode->LinkEndChild(new TiXmlText("0"));
+						dataElem->LinkEndChild(colOffsetNode);
+						
+						dataNodeElem->LinkEndChild(dataElem);
+						
+						TiXmlElement* paramsElem = new TiXmlElement("Data_Processing_Parameters");
+						TiXmlElement* masterImageElem = new TiXmlElement("master_image");
+						masterImageElem->LinkEndChild(new TiXmlText(QString::number(masterIndex).toStdString().c_str()));
+						paramsElem->LinkEndChild(masterImageElem);
+						dataNodeElem->LinkEndChild(paramsElem);
+						
+						if (insertBeforeNode) {
+							root->InsertBeforeChild(insertBeforeNode, *dataNodeElem);
+							delete dataNodeElem;
+							
+							for (TiXmlElement* p = insertBeforeNode; p != nullptr; p = p->NextSiblingElement()) {
+								index++;
+								p->SetAttribute("index", QString::number(index).toStdString().c_str());
+							}
+						} else {
+							root->LinkEndChild(dataNodeElem);
 						}
 					} else {
-						root->LinkEndChild(dataNodeElem);
-					}
-				} else {
-					// 成果节点已存在，追加新的 Data 元素
-					const char* countAttr = dataNodeElem->Attribute("data_count");
-					int count = countAttr ? QString(countAttr).toInt() : 0;
-					count++;
-					dataNodeElem->SetAttribute("data_count", QString::number(count).toStdString().c_str());
-					
-					TiXmlElement* lastChildNode = dataNodeElem->LastChild() ? dataNodeElem->LastChild()->ToElement() : nullptr;
-					
-					TiXmlElement* dataElem = new TiXmlElement("Data");
-					
-					TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
-					dataNameNode->LinkEndChild(new TiXmlText(dataName.toStdString().c_str()));
-					dataElem->LinkEndChild(dataNameNode);
-					
-					TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
-					dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
-					dataElem->LinkEndChild(dataRankNode);
-					
-					TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
-					dataIndexNode->LinkEndChild(new TiXmlText(QString::number(count).toStdString().c_str()));
-					dataElem->LinkEndChild(dataIndexNode);
-					
-					TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
-					dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
-					dataElem->LinkEndChild(dataPathNode);
-					
-					TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
-					rowOffsetNode->LinkEndChild(new TiXmlText("0"));
-					dataElem->LinkEndChild(rowOffsetNode);
-					
-					TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
-					colOffsetNode->LinkEndChild(new TiXmlText("0"));
-					dataElem->LinkEndChild(colOffsetNode);
-					
-					if (lastChildNode) {
-						dataNodeElem->InsertBeforeChild(lastChildNode, *dataElem);
-						delete dataElem;
-					} else {
-						dataNodeElem->LinkEndChild(dataElem);
+						// 成果节点已存在，追加新的 Data 元素
+						const char* countAttr = dataNodeElem->Attribute("data_count");
+						int count = countAttr ? QString(countAttr).toInt() : 0;
+						count++;
+						dataNodeElem->SetAttribute("data_count", QString::number(count).toStdString().c_str());
+						
+						TiXmlElement* lastChildNode = dataNodeElem->LastChild() ? dataNodeElem->LastChild()->ToElement() : nullptr;
+						
+						TiXmlElement* dataElem = new TiXmlElement("Data");
+						
+						TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
+						dataNameNode->LinkEndChild(new TiXmlText(dataName.toStdString().c_str()));
+						dataElem->LinkEndChild(dataNameNode);
+						
+						TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
+						dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
+						dataElem->LinkEndChild(dataRankNode);
+						
+						TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
+						dataIndexNode->LinkEndChild(new TiXmlText(QString::number(count).toStdString().c_str()));
+						dataElem->LinkEndChild(dataIndexNode);
+						
+						TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
+						dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
+						dataElem->LinkEndChild(dataPathNode);
+						
+						TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
+						rowOffsetNode->LinkEndChild(new TiXmlText("0"));
+						dataElem->LinkEndChild(rowOffsetNode);
+						
+						TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
+						colOffsetNode->LinkEndChild(new TiXmlText("0"));
+						dataElem->LinkEndChild(colOffsetNode);
+						
+						if (lastChildNode) {
+							dataNodeElem->InsertBeforeChild(lastChildNode, *dataElem);
+							delete dataElem;
+						} else {
+							dataNodeElem->LinkEndChild(dataElem);
+						}
 					}
 				}
 			}
+			xmlfile.XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
+			InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration results successfully saved in project XML file.");
 		}
-		xmlfile.XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
-		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration results successfully saved in project XML file.");
-	}
-	else
-	{
-		InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", "Failed to load project XML file: " + savePath + "/" + dstProject);
-	}
+		else
+		{
+			InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", "Failed to load project XML file: " + savePath + "/" + dstProject);
+		}
+	}, Qt::BlockingQueuedConnection);
 	emit sendModel(model);
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();

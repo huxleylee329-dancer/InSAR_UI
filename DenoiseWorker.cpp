@@ -227,28 +227,32 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 0, 0, 0, "", "", "");
 
             /*工程树*/
-            QStandardItem* item_img = NULL;
-            for (int j = 0; j < Denoise->rowCount(); j++)
-            {
-                if (Denoise->child(j, 0)->text() == filter_name.at(i))
-                {
-                    item_img = Denoise->child(j, 0);
-                    break;
-                }
-            }
+            if (Denoise && Denoise->model()) {
+                QMetaObject::invokeMethod(Denoise->model(), [=]() {
+                    QStandardItem* item_img = NULL;
+                    for (int j = 0; j < Denoise->rowCount(); j++)
+                    {
+                        if (Denoise->child(j, 0)->text() == filter_name.at(i))
+                        {
+                            item_img = Denoise->child(j, 0);
+                            break;
+                        }
+                    }
 
-            if (!item_img)
-            {
-                QStandardItem* image = new QStandardItem(filter_name.at(i));
-                image->setToolTip("phase");
-                image->setIcon(QIcon(IMAGEDATA_ICON));
-                Denoise->appendRow(image);
-                QStandardItem* image_path = new QStandardItem(absolute_filter_path.at(i));
-                Denoise->setChild(Denoise->rowCount() - 1, 1, image_path);
-            }
-            else
-            {
-                Denoise->setChild(item_img->row(), 1, new QStandardItem(absolute_filter_path.at(i)));
+                    if (!item_img)
+                    {
+                        QStandardItem* image = new QStandardItem(filter_name.at(i));
+                        image->setToolTip("phase");
+                        image->setIcon(QIcon(IMAGEDATA_ICON));
+                        Denoise->appendRow(image);
+                        QStandardItem* image_path = new QStandardItem(absolute_filter_path.at(i));
+                        Denoise->setChild(Denoise->rowCount() - 1, 1, image_path);
+                    }
+                    else
+                    {
+                        Denoise->setChild(item_img->row(), 1, new QStandardItem(absolute_filter_path.at(i)));
+                    }
+                }, Qt::BlockingQueuedConnection);
             }
         }
     }
@@ -317,27 +321,32 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
 
             /*工程树*/
             QStandardItem* item_img = NULL;
-            for (int j = 0; j < Denoise->rowCount(); j++)
-            {
-                if (Denoise->child(j, 0)->text() == filter_name.at(i))
-                {
-                    item_img = Denoise->child(j, 0);
-                    break;
-                }
-            }
+            if (Denoise && Denoise->model()) {
+                QMetaObject::invokeMethod(Denoise->model(), [=]() {
+                    QStandardItem* item_img = NULL;
+                    for (int j = 0; j < Denoise->rowCount(); j++)
+                    {
+                        if (Denoise->child(j, 0)->text() == filter_name.at(i))
+                        {
+                            item_img = Denoise->child(j, 0);
+                            break;
+                        }
+                    }
 
-            if (!item_img)
-            {
-                QStandardItem* image = new QStandardItem(filter_name.at(i));
-                image->setToolTip("phase");
-                image->setIcon(QIcon(IMAGEDATA_ICON));
-                Denoise->appendRow(image);
-                QStandardItem* image_path = new QStandardItem(absolute_filter_path.at(i));
-                Denoise->setChild(Denoise->rowCount() - 1, 1, image_path);
-            }
-            else
-            {
-                Denoise->setChild(item_img->row(), 1, new QStandardItem(absolute_filter_path.at(i)));
+                    if (!item_img)
+                    {
+                        QStandardItem* image = new QStandardItem(filter_name.at(i));
+                        image->setToolTip("phase");
+                        image->setIcon(QIcon(IMAGEDATA_ICON));
+                        Denoise->appendRow(image);
+                        QStandardItem* image_path = new QStandardItem(absolute_filter_path.at(i));
+                        Denoise->setChild(Denoise->rowCount() - 1, 1, image_path);
+                    }
+                    else
+                    {
+                        Denoise->setChild(item_img->row(), 1, new QStandardItem(absolute_filter_path.at(i)));
+                    }
+                }, Qt::BlockingQueuedConnection);
             }
         }
     }
@@ -407,28 +416,32 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 0, 0, 0, dl_path.toStdString().c_str(), model_path.toStdString().c_str(), tmp_path.toStdString().c_str());
 
             /*工程树*/
-            QStandardItem* item_img = NULL;
-            for (int j = 0; j < Denoise->rowCount(); j++)
-            {
-                if (Denoise->child(j, 0)->text() == filter_name.at(i))
-                {
-                    item_img = Denoise->child(j, 0);
-                    break;
-                }
-            }
+            if (Denoise && Denoise->model()) {
+                QMetaObject::invokeMethod(Denoise->model(), [=]() {
+                    QStandardItem* item_img = NULL;
+                    for (int j = 0; j < Denoise->rowCount(); j++)
+                    {
+                        if (Denoise->child(j, 0)->text() == filter_name.at(i))
+                        {
+                            item_img = Denoise->child(j, 0);
+                            break;
+                        }
+                    }
 
-            if (!item_img)
-            {
-                QStandardItem* image = new QStandardItem(filter_name.at(i));
-                image->setToolTip("phase");
-                image->setIcon(QIcon(IMAGEDATA_ICON));
-                Denoise->appendRow(image);
-                QStandardItem* image_path = new QStandardItem(absolute_filter_path.at(i));
-                Denoise->setChild(Denoise->rowCount() - 1, 1, image_path);
-            }
-            else
-            {
-                Denoise->setChild(item_img->row(), 1, new QStandardItem(absolute_filter_path.at(i)));
+                    if (!item_img)
+                    {
+                        QStandardItem* image = new QStandardItem(filter_name.at(i));
+                        image->setToolTip("phase");
+                        image->setIcon(QIcon(IMAGEDATA_ICON));
+                        Denoise->appendRow(image);
+                        QStandardItem* image_path = new QStandardItem(absolute_filter_path.at(i));
+                        Denoise->setChild(Denoise->rowCount() - 1, 1, image_path);
+                    }
+                    else
+                    {
+                        Denoise->setChild(item_img->row(), 1, new QStandardItem(absolute_filter_path.at(i)));
+                    }
+                }, Qt::BlockingQueuedConnection);
             }
         }
     }

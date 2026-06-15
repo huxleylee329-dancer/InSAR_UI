@@ -315,33 +315,37 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
             FC.write_str_to_h5(h5_path.toStdString().c_str(), "acquisition_start_time", start.c_str());
             FC.write_str_to_h5(h5_path.toStdString().c_str(), "acquisition_stop_time", end.c_str());
             
-            QStandardItem* item_img = nullptr;
-            for (int j = 0; j < interferometric_phase->rowCount(); j++)
-            {
-                if (interferometric_phase->child(j, 0)->text() == phase_name)
-                {
-                    item_img = interferometric_phase->child(j, 0);
-                    break;
-                }
-            }
+            if (interferometric_phase && interferometric_phase->model()) {
+                QMetaObject::invokeMethod(interferometric_phase->model(), [=, &xml]() {
+                    QStandardItem* item_img = nullptr;
+                    for (int j = 0; j < interferometric_phase->rowCount(); j++)
+                    {
+                        if (interferometric_phase->child(j, 0)->text() == phase_name)
+                        {
+                            item_img = interferometric_phase->child(j, 0);
+                            break;
+                        }
+                    }
 
-            if (!item_img)
-            {
-                QStandardItem* interferometric_phase_name = new QStandardItem(phase_name);
-                interferometric_phase_name->setToolTip("phase");
-                QStandardItem* interferometric_phase_path = new QStandardItem(h5_path);
-                interferometric_phase_path->setToolTip(h5_name);
-                interferometric_phase_name->setIcon(QIcon(IMAGEDATA_ICON));
-                interferometric_phase->appendRow(interferometric_phase_name);
-                interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, interferometric_phase_path);
+                    if (!item_img)
+                    {
+                        QStandardItem* interferometric_phase_name = new QStandardItem(phase_name);
+                        interferometric_phase_name->setToolTip("phase");
+                        QStandardItem* interferometric_phase_path = new QStandardItem(h5_path);
+                        interferometric_phase_path->setToolTip(h5_name);
+                        interferometric_phase_name->setIcon(QIcon(IMAGEDATA_ICON));
+                        interferometric_phase->appendRow(interferometric_phase_name);
+                        interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, interferometric_phase_path);
 
-                xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), phase_name.toStdString().c_str(),
-                    ("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "phase-1.0", offset_row, offset_col,
-                    isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
-            }
-            else
-            {
-                interferometric_phase->setChild(item_img->row(), 1, new QStandardItem(h5_path));
+                        xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), phase_name.toStdString().c_str(),
+                            ("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "phase-1.0", offset_row, offset_col,
+                            isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
+                    }
+                    else
+                    {
+                        interferometric_phase->setChild(item_img->row(), 1, new QStandardItem(h5_path));
+                    }
+                }, Qt::BlockingQueuedConnection);
             }
 
             if (iscoherence)
@@ -354,33 +358,37 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                 Mat coherence;
                 util.phase_coherence(phase, win_width, win_height, coherence);
 
-                QStandardItem* item_coh = nullptr;
-                for (int j = 0; j < interferometric_phase->rowCount(); j++)
-                {
-                    if (interferometric_phase->child(j, 0)->text() == coh_name)
-                    {
-                        item_coh = interferometric_phase->child(j, 0);
-                        break;
-                    }
-                }
+                if (interferometric_phase && interferometric_phase->model()) {
+                    QMetaObject::invokeMethod(interferometric_phase->model(), [=, &xml]() {
+                        QStandardItem* item_coh = nullptr;
+                        for (int j = 0; j < interferometric_phase->rowCount(); j++)
+                        {
+                            if (interferometric_phase->child(j, 0)->text() == coh_name)
+                            {
+                                item_coh = interferometric_phase->child(j, 0);
+                                break;
+                            }
+                        }
 
-                if (!item_coh)
-                {
-                    QStandardItem* coherence_name = new QStandardItem(coh_name);
-                    coherence_name->setToolTip("coherence");
-                    QStandardItem* coherence_path = new QStandardItem(h5_path);
-                    coherence_path->setToolTip(h5_name);
-                    coherence_name->setIcon(QIcon(IMAGEDATA_ICON));
-                    interferometric_phase->appendRow(coherence_name);
-                    interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, coherence_path);
+                        if (!item_coh)
+                        {
+                            QStandardItem* coherence_name = new QStandardItem(coh_name);
+                            coherence_name->setToolTip("coherence");
+                            QStandardItem* coherence_path = new QStandardItem(h5_path);
+                            coherence_path->setToolTip(h5_name);
+                            coherence_name->setIcon(QIcon(IMAGEDATA_ICON));
+                            interferometric_phase->appendRow(coherence_name);
+                            interferometric_phase->setChild(interferometric_phase->rowCount() - 1, 1, coherence_path);
 
-                    xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), coh_name.toStdString().c_str(),
-                        ("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "coherence-1.0", offset_row, offset_col,
-                        isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
-                }
-                else
-                {
-                    interferometric_phase->setChild(item_coh->row(), 1, new QStandardItem(h5_path));
+                            xml.XMLFile_add_interferometric_phase(file_name.toStdString().c_str(), coh_name.toStdString().c_str(),
+                                ("/" + file_name + "/" + h5_name + ".h5").toStdString().c_str(), master_name.toStdString().c_str(), "coherence-1.0", offset_row, offset_col,
+                                isdeflat, istopo_removal, iscoherence, win_width, win_height, multilook_rg, multilook_az);
+                        }
+                        else
+                        {
+                            interferometric_phase->setChild(item_coh->row(), 1, new QStandardItem(h5_path));
+                        }
+                    }, Qt::BlockingQueuedConnection);
                 }
                 FC.write_array_to_h5(h5_path.toStdString().c_str(), "coherence", coherence);
             }

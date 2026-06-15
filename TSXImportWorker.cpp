@@ -120,85 +120,91 @@ void TSXImportWorker::import_TSX(
     }
     emit updateProcess(90, QStringLiteral("即将完成……"));
 
-    QStandardItem* project = model->findItems(project_name)[0];
-    if (!project) {
+    int localRet = 0;
+    if (model) {
+        QMetaObject::invokeMethod(model, [=, &localRet]() {
+            QStandardItem* project = model->findItems(project_name)[0];
+            if (!project) {
+                localRet = -1;
+                return;
+            }
+            QModelIndex pro_index = model->indexFromItem(project);
+            QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+            QStandardItem* origin = NULL;
+            for (int i = 0; i < project->rowCount(); i++)
+            {
+                if (folder == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
+                {
+                    origin = project->child(i); break;
+                }
+            }
+            if (!origin)
+            {
+                origin = new QStandardItem(folder);
+                origin->setIcon(QIcon(FOLDER_ICON));
+                project->appendRow(origin);
+                QStandardItem* Rank = new QStandardItem("complex-0.0");
+                project->setChild(project->rowCount() - 1, 1, Rank);
+            }
+            QStandardItem* img = NULL;
+            for (int i = 0; i < origin->rowCount(); i++)
+            {
+                if (origin->child(i)->text() == filename)
+                {
+                    img = origin->child(i);
+                    break;
+                }
+            }
+            if (!img)
+            {
+                img = new QStandardItem(filename);
+                img->setToolTip("complex");
+                QStandardItem* img_path = new QStandardItem(h5_path);
+                img->setIcon(QIcon(IMAGEDATA_ICON));
+                origin->appendRow(img);
+                origin->setChild(origin->rowCount() - 1, 1, img_path);
+
+                XMLFile DOC;
+                int ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+                {
+                    localRet = -2;
+                    return;
+                }
+                ret = DOC.XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
+                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+                {
+                    localRet = -2;
+                    return;
+                }
+                ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+                {
+                    localRet = -2;
+                    return;
+                }
+            }
+            else
+            {
+                origin->setChild(img->row(), 1, new QStandardItem(h5_path));
+            }
+        }, Qt::BlockingQueuedConnection);
+    } else {
+        localRet = -1;
+    }
+
+    if (localRet < 0)
+    {
+        InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
         QFile::remove(h5_path);
         QDir tmp_dir(project_path + QString("/") + folder);
         tmp_dir.removeRecursively();
-        emit errorProcess(QStringLiteral("未找到项目节点。"));
+        if (localRet == -1) {
+            emit errorProcess(QStringLiteral("未找到项目节点。"));
+        } else {
+            emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
+        }
         return;
-    }
-    QModelIndex pro_index = model->indexFromItem(project);
-    QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-    QStandardItem* origin = NULL;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (folder == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
-        {
-            origin = project->child(i); break;
-        }
-    }
-    if (!origin)
-    {
-        origin = new QStandardItem(folder);
-        origin->setIcon(QIcon(FOLDER_ICON));
-        project->appendRow(origin);
-        QStandardItem* Rank = new QStandardItem("complex-0.0");
-        project->setChild(project->rowCount() - 1, 1, Rank);
-    }
-    QStandardItem* img = NULL;
-    for (int i = 0; i < origin->rowCount(); i++)
-    {
-        if (origin->child(i)->text() == filename)
-        {
-            img = origin->child(i);
-            break;
-        }
-    }
-    if (!img)
-    {
-        img = new QStandardItem(filename);
-        img->setToolTip("complex");
-        QStandardItem* img_path = new QStandardItem(h5_path);
-        img->setIcon(QIcon(IMAGEDATA_ICON));
-        origin->appendRow(img);
-        origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-        XMLFile DOC;
-        ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
-        if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-        {
-            InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-            QFile::remove(h5_path);
-            QDir tmp_dir(project_path + QString("/") + folder);
-            tmp_dir.removeRecursively();
-            emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
-            return;
-        }
-        ret = DOC.XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
-        if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-        {
-            InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-            QFile::remove(h5_path);
-            QDir tmp_dir(project_path + QString("/") + folder);
-            tmp_dir.removeRecursively();
-            emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
-            return;
-        }
-        ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
-        if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-        {
-            InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-            QFile::remove(h5_path);
-            QDir tmp_dir(project_path + QString("/") + folder);
-            tmp_dir.removeRecursively();
-            emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
-            return;
-        }
-    }
-    else
-    {
-        origin->setChild(img->row(), 1, new QStandardItem(h5_path));
     }
     emit sendModel(model);
     InSARLogManager::LogInfo("TSXImportWorker", QString("Task completed: ") + QString(__FUNCTION__));
@@ -265,84 +271,91 @@ void TSXImportWorker::import_TSX_patch(
             return;
         }
 
-        QStandardItem* project = model->findItems(dst_project)[0];
-        if (!project) {
+        int localRet = 0;
+        if (model) {
+            QMetaObject::invokeMethod(model, [=, &localRet]() {
+                QStandardItem* project = model->findItems(dst_project)[0];
+                if (!project) {
+                    localRet = -1;
+                    return;
+                }
+                QModelIndex pro_index = model->indexFromItem(project);
+                QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+                QStandardItem* origin = NULL;
+                for (int j = 0; j < project->rowCount(); j++)
+                {
+                    if (dst_node == project->child(j)->text() && project->child(j, 1)->text() == "complex-0.0")
+                    {
+                        origin = project->child(j); break;
+                    }
+                }
+                if (!origin)
+                {
+                    origin = new QStandardItem(dst_node);
+                    origin->setIcon(QIcon(FOLDER_ICON));
+                    project->appendRow(origin);
+                    QStandardItem* Rank = new QStandardItem("complex-0.0");
+                    project->setChild(project->rowCount() - 1, 1, Rank);
+                }
+                QStandardItem* img = NULL;
+                for (int j = 0; j < origin->rowCount(); j++)
+                {
+                    if (origin->child(j)->text() == filename)
+                    {
+                        img = origin->child(j);
+                        break;
+                    }
+                }
+                if (!img)
+                {
+                    img = new QStandardItem(filename);
+                    img->setToolTip("complex");
+                    QStandardItem* img_path = new QStandardItem(h5_path);
+                    img->setIcon(QIcon(IMAGEDATA_ICON));
+                    origin->appendRow(img);
+                    origin->setChild(origin->rowCount() - 1, 1, img_path);
+
+                    XMLFile DOC;
+                    int ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+                    if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+                    {
+                        localRet = -2;
+                        return;
+                    }
+                    ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
+                    if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+                    {
+                        localRet = -2;
+                        return;
+                    }
+                    ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+                    if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+                    {
+                        localRet = -2;
+                        return;
+                    }
+                }
+                else
+                {
+                    origin->setChild(img->row(), 1, new QStandardItem(h5_path));
+                }
+            }, Qt::BlockingQueuedConnection);
+        } else {
+            localRet = -1;
+        }
+
+        if (localRet < 0)
+        {
+            InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
             QFile::remove(h5_path);
             QDir tmp_dir(savepath + QString("/") + dst_node);
             tmp_dir.removeRecursively();
-            emit errorProcess(QStringLiteral("未找到项目节点。"));
+            if (localRet == -1) {
+                emit errorProcess(QStringLiteral("未找到项目节点。"));
+            } else {
+                emit errorProcess(QStringLiteral("保存配置文件失败。"));
+            }
             return;
-        }
-        QModelIndex pro_index = model->indexFromItem(project);
-        QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-        QStandardItem* origin = NULL;
-        for (int j = 0; j < project->rowCount(); j++)
-        {
-            if (dst_node == project->child(j)->text() && project->child(j, 1)->text() == "complex-0.0")
-            {
-                origin = project->child(j); break;
-            }
-        }
-        if (!origin)
-        {
-            origin = new QStandardItem(dst_node);
-            origin->setIcon(QIcon(FOLDER_ICON));
-            project->appendRow(origin);
-            QStandardItem* Rank = new QStandardItem("complex-0.0");
-            project->setChild(project->rowCount() - 1, 1, Rank);
-        }
-        QStandardItem* img = NULL;
-        for (int j = 0; j < origin->rowCount(); j++)
-        {
-            if (origin->child(j)->text() == filename)
-            {
-                img = origin->child(j);
-                break;
-            }
-        }
-        if (!img)
-        {
-            img = new QStandardItem(filename);
-            img->setToolTip("complex");
-            QStandardItem* img_path = new QStandardItem(h5_path);
-            img->setIcon(QIcon(IMAGEDATA_ICON));
-            origin->appendRow(img);
-            origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-            ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-                QFile::remove(h5_path);
-                QDir tmp_dir(savepath + QString("/") + dst_node);
-                tmp_dir.removeRecursively();
-                emit errorProcess(QStringLiteral("保存配置文件失败。"));
-                return;
-            }
-            ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "TSX");
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-                QFile::remove(h5_path);
-                QDir tmp_dir(savepath + QString("/") + dst_node);
-                tmp_dir.removeRecursively();
-                emit errorProcess(QStringLiteral("保存配置文件失败。"));
-                return;
-            }
-            ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                InSARLogManager::LogError("TSXImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-                QFile::remove(h5_path);
-                QDir tmp_dir(savepath + QString("/") + dst_node);
-                tmp_dir.removeRecursively();
-                emit errorProcess(QStringLiteral("保存配置文件失败。"));
-                return;
-            }
-        }
-        else
-        {
-            origin->setChild(img->row(), 1, new QStandardItem(h5_path));
         }
     }
 

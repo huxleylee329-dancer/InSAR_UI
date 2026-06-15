@@ -18,6 +18,7 @@
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 #include "icon_utils.h"
+#include <QToolButton>
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <QFutureWatcher>
@@ -1793,6 +1794,38 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     // Create workflow UI (node editor interface)
     // Parent is nullptr - will be managed by InterfaceManager
     m_workflowUI = new WorkflowUI(nullptr);
+
+    // Connect WorkspaceUI toolbar buttons to MainWindow actions
+    auto connectWorkspaceBtn = [&](const QString& objName, QAction* action) {
+        QToolButton* btn = m_workspaceUI->findChild<QToolButton*>(objName);
+        if (btn && action) {
+            connect(btn, &QToolButton::clicked, action, &QAction::trigger);
+        }
+    };
+    connectWorkspaceBtn("btnNew", ui.actionNew);
+    connectWorkspaceBtn("btnOpen", ui.actionOpen);
+    connectWorkspaceBtn("btnSave", ui.actionSave);
+
+    QToolButton* btnWorkflow = m_workspaceUI->findChild<QToolButton*>("btnWorkflow");
+    if (btnWorkflow) {
+        connect(btnWorkflow, &QToolButton::clicked, this, &MainWindow::switchToWorkflow);
+    }
+
+    // Connect WorkflowUI toolbar buttons to MainWindow actions
+    auto connectWorkflowBtn = [&](const QString& objName, QAction* action) {
+        QToolButton* btn = m_workflowUI->findChild<QToolButton*>(objName);
+        if (btn && action) {
+            connect(btn, &QToolButton::clicked, action, &QAction::trigger);
+        }
+    };
+    connectWorkflowBtn("btnNew", ui.actionNew);
+    connectWorkflowBtn("btnOpen", ui.actionOpen);
+    connectWorkflowBtn("btnSave", ui.actionSave);
+
+    QToolButton* btnWorkspace = m_workflowUI->findChild<QToolButton*>("btnWorkspace");
+    if (btnWorkspace) {
+        connect(btnWorkspace, &QToolButton::clicked, this, &MainWindow::switchToWorkspace);
+    }
 
     // 连接工作流修改信号
     connect(m_workflowUI, &WorkflowUI::workflowModified, this, [this]() {

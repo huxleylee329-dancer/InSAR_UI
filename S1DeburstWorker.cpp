@@ -121,73 +121,73 @@ void S1DeburstWorker::S1_Deburst(
     }
 
     /*建立deburst根节点*/
-    QStandardItem* deburst = nullptr;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (project->child(i, 0)->text() == dstNode)
-        {
-            deburst = project->child(i, 0);
-            break;
-        }
-    }
-
-    if (!deburst)
-    {
-        deburst = new QStandardItem(dstNode);
-        deburst->setToolTip(dstProject);
-        int insert = 0;
-        for (; insert < project->rowCount(); insert++)
-        {
-            if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-1.0") == 0)
-                continue;
-            else
-                break;
-        }
-        deburst->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, deburst);
-        QStandardItem* deburst_Rank = new QStandardItem("complex-1.0");
-        project->setChild(insert, 1, deburst_Rank);
-    }
-    
-    // 更新内存树模型（QStandardItemModel），并收集输出路径列表
-    // XML 落盘由 Node 端用原生 TinyXML 完成，绕过外部 DLL 接口（SOP 避坑经验 #9）
-    emit updateProcess(92, QStringLiteral("更新项目树……"));
-    InSARLogManager::LogInfo("S1DeburstWorker", "Updating project tree model and generating output path lists...");
-
     QStringList deburstH5Paths;
     QStringList originNames;
 
-    for (size_t i = 0; i < SAR_images_deburst.size(); i++)
-    {
-        QFileInfo fileinfo = QFileInfo(QString(SAR_images_deburst.at(i).c_str()));
-        QString deburst_name = fileinfo.baseName();
-        deburstH5Paths.append(fileinfo.absoluteFilePath());
-        originNames.append(origin.at(i));
-
-        QStandardItem* item_img = nullptr;
-        for (int j = 0; j < deburst->rowCount(); j++)
-        {
-            if (deburst->child(j, 0)->text() == deburst_name)
+    /*建立deburst根节点*/
+    if (model) {
+        QMetaObject::invokeMethod(model, [=, &deburstH5Paths, &originNames]() {
+            QStandardItem* deburst = nullptr;
+            for (int i = 0; i < project->rowCount(); i++)
             {
-                item_img = deburst->child(j, 0);
-                break;
+                if (project->child(i, 0)->text() == dstNode)
+                {
+                    deburst = project->child(i, 0);
+                    break;
+                }
             }
-        }
 
-        if (!item_img)
-        {
-            QStandardItem* deburst_images_name = new QStandardItem(deburst_name);
-            deburst_images_name->setToolTip("complex");
-            QStandardItem* deburst_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-            deburst_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-            deburst->appendRow(deburst_images_name);
-            deburst->setChild(deburst->rowCount() - 1, 1, deburst_images_path);
-        }
-        else
-        {
-            deburst->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-        }
+            if (!deburst)
+            {
+                deburst = new QStandardItem(dstNode);
+                deburst->setToolTip(dstProject);
+                int insert = 0;
+                for (; insert < project->rowCount(); insert++)
+                {
+                    if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
+                        project->child(insert, 1)->text().compare("complex-1.0") == 0)
+                        continue;
+                    else
+                        break;
+                }
+                deburst->setIcon(QIcon(FOLDER_ICON));
+                project->insertRow(insert, deburst);
+                QStandardItem* deburst_Rank = new QStandardItem("complex-1.0");
+                project->setChild(insert, 1, deburst_Rank);
+            }
+            
+            for (size_t i = 0; i < SAR_images_deburst.size(); i++)
+            {
+                QFileInfo fileinfo = QFileInfo(QString(SAR_images_deburst.at(i).c_str()));
+                QString deburst_name = fileinfo.baseName();
+                deburstH5Paths.append(fileinfo.absoluteFilePath());
+                originNames.append(origin.at(i));
+
+                QStandardItem* item_img = nullptr;
+                for (int j = 0; j < deburst->rowCount(); j++)
+                {
+                    if (deburst->child(j, 0)->text() == deburst_name)
+                    {
+                        item_img = deburst->child(j, 0);
+                        break;
+                    }
+                }
+
+                if (!item_img)
+                {
+                    QStandardItem* deburst_images_name = new QStandardItem(deburst_name);
+                    deburst_images_name->setToolTip("complex");
+                    QStandardItem* deburst_images_path = new QStandardItem(fileinfo.absoluteFilePath());
+                    deburst_images_name->setIcon(QIcon(IMAGEDATA_ICON));
+                    deburst->appendRow(deburst_images_name);
+                    deburst->setChild(deburst->rowCount() - 1, 1, deburst_images_path);
+                }
+                else
+                {
+                    deburst->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+                }
+            }
+        }, Qt::BlockingQueuedConnection);
     }
 
     emit sendModel(model);

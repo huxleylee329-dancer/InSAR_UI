@@ -197,66 +197,10 @@ bool SpeckleDenoiseTask::processBM3DEnhancement(
         QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
         cv::imwrite(finalPath.toStdString(), output8U);
 
-        QStandardItem* projectItem = model->findItems(projectName).isEmpty() ? nullptr : model->findItems(projectName).first();
-        if (!projectItem) {
-            outError = QStringLiteral("未找到目标工程");
-            return false;
-        }
-
-        QStandardItem* dataNode = nullptr;
-        for (int i = 0; i < projectItem->rowCount(); ++i) {
-            if (projectItem->child(i, 0)->text() == nodeName) {
-                dataNode = projectItem->child(i, 0);
-                break;
-            }
-        }
-        if (!dataNode) {
-            dataNode = new QStandardItem(nodeName);
-            dataNode->setIcon(QIcon(FOLDER_ICON));
-            projectItem->appendRow(dataNode);
-        }
-
         QString defaultDisplay = (tag == "SpeckleDenoise") ? QStringLiteral("denoised") : QStringLiteral("clutter_suppressed");
         QString displayName = fileName.isEmpty() ? defaultDisplay : fileName;
-        
-        QStandardItem* item_img = NULL;
-        for (int j = 0; j < dataNode->rowCount(); j++)
-        {
-            if (dataNode->child(j, 0)->text() == displayName)
-            {
-                item_img = dataNode->child(j, 0);
-                break;
-            }
-        }
 
-        if (!item_img)
-        {
-            QStandardItem* nameItem = new QStandardItem(displayName);
-            nameItem->setIcon(QIcon(IMAGEDATA_ICON));
-            nameItem->setToolTip(QStringLiteral("image"));
-            QStandardItem* pathItem = new QStandardItem(finalPath);
-            dataNode->appendRow({ nameItem, pathItem });
-
-            // Update XML for persistence
-            {
-                QString relativePath = "/" + nodeName + "/" + finalFileName;
-                XMLFile localXml;
-                if (!projectPath.isEmpty()) {
-                    localXml.XMLFile_load(projectPath.toStdString().c_str());
-                }
-                localXml.XMLFile_add_origin(
-                    nodeName.toStdString().c_str(),
-                    displayName.toStdString().c_str(),
-                    relativePath.toStdString().c_str(),
-                    tag.toStdString().c_str()
-                );
-                localXml.XMLFile_save(projectPath.toStdString().c_str());
-            }
-        }
-        else
-        {
-            dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));
-        }
+        emit saveImageToProjectRequested(projectName, nodeName, displayName, finalPath, tag, finalFileName);
     } else {
         cv::imwrite(outputPath.toStdString(), output8U);
     }

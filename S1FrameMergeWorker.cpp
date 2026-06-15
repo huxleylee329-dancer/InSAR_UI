@@ -53,22 +53,26 @@ void S1FrameMergeWorker::S1_frame_merge(
     QString IW1_h5, IW2_h5;
     bool b_dstNode_existed = false;
     QStandardItem* frame_merge = nullptr;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        QStandardItem* node = project->child(i, 0);
-        if (node->text() == dstNode && project->child(i, 1)->text() == QString("complex-0.0"))
-        {
-            b_dstNode_existed = true;
-            frame_merge = project->child(i, 0);
-        }
-        if (node->text() == srcNode1)
-        {
-            if (node->rowCount() >= index1) IW1_h5 = node->child(index1 - 1, 1)->text();
-        }
-        if (node->text() == srcNode2)
-        {
-            if (node->rowCount() >= index2) IW2_h5 = node->child(index2 - 1, 1)->text();
-        }
+    if (model) {
+        QMetaObject::invokeMethod(model, [=, &b_dstNode_existed, &frame_merge, &IW1_h5, &IW2_h5]() {
+            for (int i = 0; i < project->rowCount(); i++)
+            {
+                QStandardItem* node = project->child(i, 0);
+                if (node->text() == dstNode && project->child(i, 1)->text() == QString("complex-0.0"))
+                {
+                    b_dstNode_existed = true;
+                    frame_merge = project->child(i, 0);
+                }
+                if (node->text() == srcNode1)
+                {
+                    if (node->rowCount() >= index1) IW1_h5 = node->child(index1 - 1, 1)->text();
+                }
+                if (node->text() == srcNode2)
+                {
+                    if (node->rowCount() >= index2) IW2_h5 = node->child(index2 - 1, 1)->text();
+                }
+            }
+        }, Qt::BlockingQueuedConnection);
     }
 
     if (IW1_h5.isEmpty() || IW2_h5.isEmpty()) {
@@ -103,38 +107,44 @@ void S1FrameMergeWorker::S1_frame_merge(
     emit updateProcess(90, QStringLiteral("正在拼接……"));
 
     /* 建立子带拼接根节点 */
-    if (!b_dstNode_existed)
-    {
-        frame_merge = new QStandardItem(dstNode);
-        frame_merge->setToolTip(project_name);
-        frame_merge->setIcon(QIcon(FOLDER_ICON));
-        project->appendRow(frame_merge);
-        QStandardItem* frame_merge_Rank = new QStandardItem("complex-0.0");
-        project->setChild(project->rowCount() - 1, 1, frame_merge_Rank);
-    }
+    if (model) {
+        QMetaObject::invokeMethod(model, [=, &frame_merge]() {
+            QStandardItem* local_frame_merge = frame_merge;
+            if (!b_dstNode_existed)
+            {
+                local_frame_merge = new QStandardItem(dstNode);
+                local_frame_merge->setToolTip(project_name);
+                local_frame_merge->setIcon(QIcon(FOLDER_ICON));
+                project->appendRow(local_frame_merge);
+                QStandardItem* frame_merge_Rank = new QStandardItem("complex-0.0");
+                project->setChild(project->rowCount() - 1, 1, frame_merge_Rank);
+                frame_merge = local_frame_merge;
+            }
 
-    QStandardItem* item_img = nullptr;
-    for (int j = 0; j < frame_merge->rowCount(); j++)
-    {
-        if (frame_merge->child(j, 0)->text() == filename)
-        {
-            item_img = frame_merge->child(j, 0);
-            break;
-        }
-    }
+            QStandardItem* item_img = nullptr;
+            for (int j = 0; j < local_frame_merge->rowCount(); j++)
+            {
+                if (local_frame_merge->child(j, 0)->text() == filename)
+                {
+                    item_img = local_frame_merge->child(j, 0);
+                    break;
+                }
+            }
 
-    if (!item_img)
-    {
-        QStandardItem* frame_merge_images_name = new QStandardItem(filename);
-        frame_merge_images_name->setToolTip("complex");
-        QStandardItem* frame_merge_images_path = new QStandardItem(merged_h5);
-        frame_merge_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-        frame_merge->appendRow(frame_merge_images_name);
-        frame_merge->setChild(frame_merge->rowCount() - 1, 1, frame_merge_images_path);
-    }
-    else
-    {
-        frame_merge->setChild(item_img->row(), 1, new QStandardItem(merged_h5));
+            if (!item_img)
+            {
+                QStandardItem* frame_merge_images_name = new QStandardItem(filename);
+                frame_merge_images_name->setToolTip("complex");
+                QStandardItem* frame_merge_images_path = new QStandardItem(merged_h5);
+                frame_merge_images_name->setIcon(QIcon(IMAGEDATA_ICON));
+                local_frame_merge->appendRow(frame_merge_images_name);
+                local_frame_merge->setChild(local_frame_merge->rowCount() - 1, 1, frame_merge_images_path);
+            }
+            else
+            {
+                local_frame_merge->setChild(item_img->row(), 1, new QStandardItem(merged_h5));
+            }
+        }, Qt::BlockingQueuedConnection);
     }
 
     InSARLogManager::LogInfo("S1FrameMergeWorker", "Updating project tree model with merged frame output...");

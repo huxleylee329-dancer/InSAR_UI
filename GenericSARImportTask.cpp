@@ -78,116 +78,121 @@ void GenericSARImportTask::run()
 	}
 	emit updateProcess(90, QStringLiteral("即将完成……"));
 
-	auto items = m_model->findItems(m_projectName);
-	if (items.isEmpty() && !m_projectName.endsWith(".insar")) {
-		items = m_model->findItems(m_projectName + ".insar");
-	}
-	
-	if (items.isEmpty()) {
-		QFile::remove(image_path);
-		QDir tmp_dir(m_projectPath + QString("/") + m_folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	
-	QStandardItem* project = items[0];
-	if (!project) {
-		QFile::remove(image_path);
-		QDir tmp_dir(m_projectPath + QString("/") + m_folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	QModelIndex pro_index = m_model->indexFromItem(project);
-	QString pro_path = m_model->data(m_model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-	
-	QStandardItem* origin = NULL;
-	for (int i = 0; i < project->rowCount(); i++)
-	{
-		QStandardItem* child = project->child(i);
-		QStandardItem* secondCol = project->child(i, 1);
-		
-		// Match m_folder name, regardless of second column (to be more robust)
-		if (child && child->text() == m_folder)
-		{
-			origin = child;
+	int localRet = 0;
+	if (m_model) {
+		QMetaObject::invokeMethod(m_model, [=, &localRet]() {
+			auto items = m_model->findItems(m_projectName);
+			if (items.isEmpty() && !m_projectName.endsWith(".insar")) {
+				items = m_model->findItems(m_projectName + ".insar");
+			}
 			
-			// Ensure second column says "complex-0.0" if it's not already set
-			if (!secondCol) {
-				project->setChild(i, 1, new QStandardItem("complex-0.0"));
-			} else if (secondCol->text() != "complex-0.0") {
-				secondCol->setText("complex-0.0");
+			if (items.isEmpty()) {
+				localRet = -1;
+				return;
 			}
-			break;
-		}
-	}
-	
-	if (!origin)
-	{
-		origin = new QStandardItem(m_folder);
-		origin->setIcon(QIcon(FOLDER_ICON));
-		project->appendRow(origin);
-		QStandardItem* Rank = new QStandardItem("complex-0.0");
-		project->setChild(project->rowCount() - 1, 1, Rank);
-	}
+			
+			QStandardItem* project = items[0];
+			if (!project) {
+				localRet = -1;
+				return;
+			}
+			QModelIndex pro_index = m_model->indexFromItem(project);
+			QString pro_path = m_model->data(m_model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+			
+			QStandardItem* origin = NULL;
+			for (int i = 0; i < project->rowCount(); i++)
+			{
+				QStandardItem* child = project->child(i);
+				QStandardItem* secondCol = project->child(i, 1);
+				
+				// Match m_folder name, regardless of second column (to be more robust)
+				if (child && child->text() == m_folder)
+				{
+					origin = child;
+					
+					// Ensure second column says "complex-0.0" if it's not already set
+					if (!secondCol) {
+						project->setChild(i, 1, new QStandardItem("complex-0.0"));
+					} else if (secondCol->text() != "complex-0.0") {
+						secondCol->setText("complex-0.0");
+					}
+					break;
+				}
+			}
+			
+			if (!origin)
+			{
+				origin = new QStandardItem(m_folder);
+				origin->setIcon(QIcon(FOLDER_ICON));
+				project->appendRow(origin);
+				QStandardItem* Rank = new QStandardItem("complex-0.0");
+				project->setChild(project->rowCount() - 1, 1, Rank);
+			}
 
-	QStandardItem* img = NULL;
-	QStandardItem* img_path = NULL;
-	QString trimmedFilename = m_filename.trimmed();
-	
-	QList<int> rowsToRemove;
-	for(int i=0;i<origin->rowCount();i++)
-	{
-		QString itemText = origin->child(i)->text().trimmed();
-		// Match exact m_filename or m_filename with any extension
-		if (itemText.compare(trimmedFilename, Qt::CaseInsensitive) == 0 || 
-		    itemText.startsWith(trimmedFilename + ".", Qt::CaseInsensitive))
-		{
+			QStandardItem* img = NULL;
+			QStandardItem* img_path = NULL;
+			QString trimmedFilename = m_filename.trimmed();
+			
+			QList<int> rowsToRemove;
+			for(int i=0;i<origin->rowCount();i++)
+			{
+				QString itemText = origin->child(i)->text().trimmed();
+				// Match exact m_filename or m_filename with any extension
+				if (itemText.compare(trimmedFilename, Qt::CaseInsensitive) == 0 || 
+					itemText.startsWith(trimmedFilename + ".", Qt::CaseInsensitive))
+				{
+					if (!img) {
+						img = origin->child(i);
+						img_path = origin->child(i, 1);
+					} else {
+						rowsToRemove.prepend(i);
+					}
+				}
+			}
+			
+			foreach(int row, rowsToRemove) {
+				origin->removeRow(row);
+			}
+
 			if (!img) {
-				img = origin->child(i);
-				img_path = origin->child(i, 1);
+				img = new QStandardItem(trimmedFilename);
+				img->setToolTip("complex");
+				img_path = new QStandardItem(image_path);
+				img->setIcon(QIcon(IMAGEDATA_ICON));
+				origin->appendRow(img);
+				origin->setChild(origin->rowCount() - 1, 1, img_path);
 			} else {
-				rowsToRemove.prepend(i);
+				img_path->setText(image_path);
 			}
-		}
-	}
-	
-	foreach(int row, rowsToRemove) {
-		origin->removeRow(row);
-	}
-
-	if (!img) {
-		img = new QStandardItem(trimmedFilename);
-		img->setToolTip("complex");
-		img_path = new QStandardItem(image_path);
-		img->setIcon(QIcon(IMAGEDATA_ICON));
-		origin->appendRow(img);
-		origin->setChild(origin->rowCount() - 1, 1, img_path);
+			
+			XMLFile DOC;
+			QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(m_projectName);
+			int ret = DOC.XMLFile_load(xmlFileLoadPath.toStdString().c_str());
+			if (ret < 0 || m_stopFlag)
+			{
+				localRet = -1;
+				return;
+			}
+			
+			ret = DOC.XMLFile_add_origin(m_folder.toStdString().c_str(), m_filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+			if (ret < 0 || m_stopFlag)
+			{
+				localRet = -1;
+				return;
+			}
+			
+			ret = DOC.XMLFile_save(xmlFileLoadPath.toStdString().c_str());
+			if (ret < 0 || m_stopFlag)
+			{
+				localRet = -1;
+				return;
+			}
+		}, Qt::BlockingQueuedConnection);
 	} else {
-		img_path->setText(image_path);
+		localRet = -1;
 	}
 	
-	XMLFile DOC;
-	QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(m_projectName);
-	ret = DOC.XMLFile_load(xmlFileLoadPath.toStdString().c_str());
-	if (ret < 0 || m_stopFlag)
-	{
-		QFile::remove(image_path);
-		QDir tmp_dir(m_projectPath + QString("/") + m_folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	
-	ret = DOC.XMLFile_add_origin(m_folder.toStdString().c_str(), m_filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
-	if (ret < 0 || m_stopFlag)
-	{
-		QFile::remove(image_path);
-		QDir tmp_dir(m_projectPath + QString("/") + m_folder);
-		tmp_dir.removeRecursively();
-		return;
-	}
-	
-	ret = DOC.XMLFile_save(xmlFileLoadPath.toStdString().c_str());
-	if (ret < 0 || m_stopFlag)
+	if (localRet < 0)
 	{
 		QFile::remove(image_path);
 		QDir tmp_dir(m_projectPath + QString("/") + m_folder);
@@ -301,109 +306,122 @@ void GenericSARBatchImportTask::run()
 			return;
 		}
 
-		QList<QStandardItem*> foundItems = m_model->findItems(m_dstProject);
-		if (foundItems.isEmpty() && !m_dstProject.endsWith(".insar")) {
-			foundItems = m_model->findItems(m_dstProject + ".insar");
+		int localRet = 0;
+		if (m_model) {
+			QMetaObject::invokeMethod(m_model, [=, &localRet]() {
+				QList<QStandardItem*> foundItems = m_model->findItems(m_dstProject);
+				if (foundItems.isEmpty() && !m_dstProject.endsWith(".insar")) {
+					foundItems = m_model->findItems(m_dstProject + ".insar");
+				}
+
+				if (foundItems.isEmpty()) {
+					localRet = -1;
+					return;
+				}
+				
+				QStandardItem* project = foundItems[0];
+				QModelIndex pro_index = m_model->indexFromItem(project);
+				QString pro_path = m_model->data(m_model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+				QStandardItem* origin = NULL;
+				for (int i = 0; i < project->rowCount(); i++)
+				{
+					QStandardItem* child = project->child(i);
+					QStandardItem* secondCol = project->child(i, 1);
+					
+					if (child && child->text() == m_dstNode)
+					{
+						origin = child;
+						if (!secondCol) {
+							project->setChild(i, 1, new QStandardItem("complex-0.0"));
+						} else if (secondCol->text() != "complex-0.0") {
+							secondCol->setText("complex-0.0");
+						}
+						break;
+					}
+				}
+				if (!origin)
+				{
+					origin = new QStandardItem(m_dstNode);
+					origin->setIcon(QIcon(FOLDER_ICON));
+					project->appendRow(origin);
+					QStandardItem* Rank = new QStandardItem("complex-0.0");
+					project->setChild(project->rowCount() - 1, 1, Rank);
+				}
+				QStandardItem* img = NULL;
+				QList<int> rowsToRemove;
+				for (int j = 0; j < origin->rowCount(); j++)
+				{
+					QStandardItem* item = origin->child(j);
+					if (item && item->text() == filename)
+					{
+						if (!img) {
+							img = item;
+						} else {
+							rowsToRemove.prepend(j);
+						}
+					}
+				}
+				
+				foreach(int row, rowsToRemove) {
+					origin->removeRow(row);
+				}
+				if (!img)
+				{
+					img = new QStandardItem(filename);
+					img->setToolTip("complex");
+					QStandardItem* img_path = new QStandardItem(image_path);
+					img->setIcon(QIcon(IMAGEDATA_ICON));
+					origin->appendRow(img);
+					origin->setChild(origin->rowCount() - 1, 1, img_path);
+
+					XMLFile DOC;
+					int ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
+					if (ret < 0 || m_stopFlag)
+					{
+						localRet = -2; // XML load error
+						return;
+					}
+					ret = DOC.XMLFile_add_origin(m_dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+					if (ret < 0 || m_stopFlag)
+					{
+						localRet = -3; // XML add error
+						return;
+					}
+					ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
+					if (ret < 0 || m_stopFlag)
+					{
+						localRet = -4; // XML save error
+						return;
+					}
+				}
+				else
+				{
+					origin->setChild(img->row(), 1, new QStandardItem(image_path));
+				}
+			}, Qt::BlockingQueuedConnection);
+		} else {
+			localRet = -1;
 		}
 
-		if (foundItems.isEmpty()) {
+		if (localRet < 0)
+		{
 			QFile::remove(image_path);
 			QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
 			tmp_dir.removeRecursively();
-			InSARLogManager::LogError("MyThread", QStringLiteral("找不到项目节点"));
-			emit errorProcess(QStringLiteral("找不到项目节点"));
-			return;
-		}
-		
-		QStandardItem* project = foundItems[0];
-		QModelIndex pro_index = m_model->indexFromItem(project);
-		QString pro_path = m_model->data(m_model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-		QStandardItem* origin = NULL;
-		for (int i = 0; i < project->rowCount(); i++)
-		{
-			QStandardItem* child = project->child(i);
-			QStandardItem* secondCol = project->child(i, 1);
-			
-			if (child && child->text() == m_dstNode)
-			{
-				origin = child;
-				if (!secondCol) {
-					project->setChild(i, 1, new QStandardItem("complex-0.0"));
-				} else if (secondCol->text() != "complex-0.0") {
-					secondCol->setText("complex-0.0");
-				}
-				break;
-			}
-		}
-		if (!origin)
-		{
-			origin = new QStandardItem(m_dstNode);
-			origin->setIcon(QIcon(FOLDER_ICON));
-			project->appendRow(origin);
-			QStandardItem* Rank = new QStandardItem("complex-0.0");
-			project->setChild(project->rowCount() - 1, 1, Rank);
-		}
-		QStandardItem* img = NULL;
-		QList<int> rowsToRemove;
-		for (int j = 0; j < origin->rowCount(); j++)
-		{
-			QStandardItem* item = origin->child(j);
-			if (item && item->text() == filename)
-			{
-				if (!img) {
-					img = item;
-				} else {
-					rowsToRemove.prepend(j);
-				}
-			}
-		}
-		
-		foreach(int row, rowsToRemove) {
-			origin->removeRow(row);
-		}
-		if (!img)
-		{
-			img = new QStandardItem(filename);
-			img->setToolTip("complex");
-			QStandardItem* img_path = new QStandardItem(image_path);
-			img->setIcon(QIcon(IMAGEDATA_ICON));
-			origin->appendRow(img);
-			origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-			ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
-			if (ret < 0 || m_stopFlag)
-			{
-				QFile::remove(image_path);
-				QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
-				tmp_dir.removeRecursively();
+			if (localRet == -1) {
+				InSARLogManager::LogError("MyThread", QStringLiteral("找不到项目节点"));
+				emit errorProcess(QStringLiteral("找不到项目节点"));
+			} else if (localRet == -2) {
 				InSARLogManager::LogError("MyThread", QStringLiteral("加载项目XML失败"));
 				emit errorProcess(QStringLiteral("加载项目XML失败"));
-				return;
-			}
-			ret = DOC.XMLFile_add_origin(m_dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
-			if (ret < 0 || m_stopFlag)
-			{
-				QFile::remove(image_path);
-				QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
-				tmp_dir.removeRecursively();
+			} else if (localRet == -3) {
 				InSARLogManager::LogError("MyThread", QStringLiteral("添加origin节点失败"));
 				emit errorProcess(QStringLiteral("添加origin节点失败"));
-				return;
-			}
-			ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
-			if (ret < 0 || m_stopFlag)
-			{
-				QFile::remove(image_path);
-				QDir tmp_dir(m_savepath + QString("/") + m_dstNode);
-				tmp_dir.removeRecursively();
+			} else if (localRet == -4) {
 				InSARLogManager::LogError("MyThread", QStringLiteral("保存项目XML失败"));
 				emit errorProcess(QStringLiteral("保存项目XML失败"));
-				return;
 			}
-		}
-		else
-		{
-			origin->setChild(img->row(), 1, new QStandardItem(image_path));
+			return;
 		}
 		process = double(i + 1) / double(n_images) * 100.0;
 		emit updateProcess(process, QStringLiteral("正在导入..."));

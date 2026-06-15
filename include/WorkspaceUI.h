@@ -98,7 +98,6 @@ private:
     QString m_projectPath;
     QString m_projectName;
     XMLFile* m_projectXml = nullptr;
-    bool m_actionsConnected = false;
     MainWindow* m_mainWindow = nullptr;
 
     QString mData_path;

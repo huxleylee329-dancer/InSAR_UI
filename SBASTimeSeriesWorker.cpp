@@ -556,9 +556,12 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     // 如果有传入 QStandardItemModel，则是旧版 Workspace UI 弹窗在调用，我们需要更新项目树
     if (model)
     {
-        QStandardItem* project = model->findItems(projectName)[0];
-        if (project)
-        {
+        QString times_series_h5_forward = QString::fromStdString(times_series_h5).replace('\\', '/');
+        QMetaObject::invokeMethod(model, [=]() {
+            QList<QStandardItem*> foundProjects = model->findItems(projectName);
+            if (foundProjects.isEmpty()) return;
+            QStandardItem* project = foundProjects[0];
+
             QStandardItem* SBAS_series = NULL;
             for (int i = 0; i < project->rowCount(); i++)
             {
@@ -610,9 +613,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             {
                 QStandardItem* SBAS_series_name = new QStandardItem(QString("SBAS_time_series"));
                 SBAS_series_name->setToolTip("SBAS");
-                std::replace(times_series_h5.begin(), times_series_h5.end(), '\\', '/');
-                QStandardItem* SBAS_series_name_path = new QStandardItem(QString(times_series_h5.c_str()));
-                std::replace(times_series_h5.begin(), times_series_h5.end(), '/', '\\');
+                QStandardItem* SBAS_series_name_path = new QStandardItem(times_series_h5_forward);
                 SBAS_series_name->setIcon(QIcon(IMAGEDATA_ICON));
                 SBAS_series->appendRow(SBAS_series_name);
                 SBAS_series->setChild(SBAS_series->rowCount() - 1, 1, SBAS_series_name_path);
@@ -626,12 +627,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             }
             else
             {
-                std::replace(times_series_h5.begin(), times_series_h5.end(), '\\', '/');
-                SBAS_series->setChild(item_img->row(), 1, new QStandardItem(QString(times_series_h5.c_str())));
-                std::replace(times_series_h5.begin(), times_series_h5.end(), '/', '\\');
+                SBAS_series->setChild(item_img->row(), 1, new QStandardItem(times_series_h5_forward));
             }
-            emit sendModel(model);
-        }
+        }, Qt::BlockingQueuedConnection);
+        emit sendModel(model);
     }
     else
     {

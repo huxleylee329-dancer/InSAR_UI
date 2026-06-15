@@ -265,29 +265,32 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             xml.XMLFile_add_dem(file_name.toStdString().c_str(), dem_name.at(i).toStdString().c_str(),
                 relative_dem_path.at(i).toStdString().c_str(), offset_row, offset_col, "Iteration", times);
 
-            /*工程树*/
-            QStandardItem* item_img = NULL;
-            for (int j = 0; j < Dem_node->rowCount(); j++)
-            {
-                if (Dem_node->child(j, 0)->text() == dem_name.at(i))
-                {
-                    item_img = Dem_node->child(j, 0);
-                    break;
-                }
-            }
+            if (Dem_node && Dem_node->model()) {
+                QMetaObject::invokeMethod(Dem_node->model(), [=]() {
+                    QStandardItem* item_img = NULL;
+                    for (int j = 0; j < Dem_node->rowCount(); j++)
+                    {
+                        if (Dem_node->child(j, 0)->text() == dem_name.at(i))
+                        {
+                            item_img = Dem_node->child(j, 0);
+                            break;
+                        }
+                    }
 
-            if (!item_img)
-            {
-                QStandardItem* image = new QStandardItem(dem_name.at(i));
-                image->setToolTip("dem");
-                image->setIcon(QIcon(IMAGEDATA_ICON));
-                Dem_node->appendRow(image);
-                QStandardItem* image_path = new QStandardItem(absolute_dem_path.at(i));
-                Dem_node->setChild(Dem_node->rowCount() - 1, 1, image_path);
-            }
-            else
-            {
-                Dem_node->setChild(item_img->row(), 1, new QStandardItem(absolute_dem_path.at(i)));
+                    if (!item_img)
+                    {
+                        QStandardItem* image = new QStandardItem(dem_name.at(i));
+                        image->setToolTip("dem");
+                        image->setIcon(QIcon(IMAGEDATA_ICON));
+                        Dem_node->appendRow(image);
+                        QStandardItem* image_path = new QStandardItem(absolute_dem_path.at(i));
+                        Dem_node->setChild(Dem_node->rowCount() - 1, 1, image_path);
+                    }
+                    else
+                    {
+                        Dem_node->setChild(item_img->row(), 1, new QStandardItem(absolute_dem_path.at(i)));
+                    }
+                }, Qt::BlockingQueuedConnection);
             }
         }
     }

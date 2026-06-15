@@ -141,38 +141,42 @@ void CutWorker::Cut(QList<double> para,
         tmp.at<int>(0, 0) = offset_col;
         FC.write_array_to_h5(cut_h5_path.data(), "offset_col", tmp);
 
-        QStandardItem* item_img = nullptr;
-        for (int j = 0; j < Images_Cut->rowCount(); j++)
-        {
-            if (Images_Cut->child(j, 0)->text() == Cut_name)
-            {
-                item_img = Images_Cut->child(j, 0);
-                break;
-            }
-        }
+        if (Images_Cut && Images_Cut->model()) {
+            QMetaObject::invokeMethod(Images_Cut->model(), [=, &doc]() {
+                QStandardItem* item_img = nullptr;
+                for (int j = 0; j < Images_Cut->rowCount(); j++)
+                {
+                    if (Images_Cut->child(j, 0)->text() == Cut_name)
+                    {
+                        item_img = Images_Cut->child(j, 0);
+                        break;
+                    }
+                }
 
-        if (!item_img)
-        {
-            QStandardItem* Image_Cut_Name = new QStandardItem(Cut_name);
-            QString full_cut_path = QString("%1/%2.h5").arg(h5_cut_path).arg(Cut_name);
-            QStandardItem* Image_Cut_Path = new QStandardItem(full_cut_path);
-            Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
-            Images_Cut->appendRow(Image_Cut_Name);
-            Image_Cut_Name->setToolTip("complex");
-            Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
+                if (!item_img)
+                {
+                    QStandardItem* Image_Cut_Name = new QStandardItem(Cut_name);
+                    QString full_cut_path = QString("%1/%2.h5").arg(h5_cut_path).arg(Cut_name);
+                    QStandardItem* Image_Cut_Path = new QStandardItem(full_cut_path);
+                    Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
+                    Images_Cut->appendRow(Image_Cut_Name);
+                    Image_Cut_Name->setToolTip("complex");
+                    Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
 
-            QByteArray dir_name = dst_node.toLocal8Bit();
-            QByteArray filename = QString("%1").arg(Cut_name).toLocal8Bit();
-            QByteArray file_relative_path = QString("/%1/%2.h5").arg(dst_node).arg(Cut_name).toLocal8Bit();
-            doc.XMLFile_add_cut(dir_name.data(), -1, filename.data(),
-                file_relative_path.data(),
-                offset_row, offset_col, para.at(0), para.at(1),
-                para.at(2), para.at(3), "complex-1.0");
-        }
-        else
-        {
-            QString full_cut_path = QString("%1/%2.h5").arg(h5_cut_path).arg(Cut_name);
-            Images_Cut->setChild(item_img->row(), 1, new QStandardItem(full_cut_path));
+                    QByteArray dir_name = dst_node.toLocal8Bit();
+                    QByteArray filename = QString("%1").arg(Cut_name).toLocal8Bit();
+                    QByteArray file_relative_path = QString("/%1/%2.h5").arg(dst_node).arg(Cut_name).toLocal8Bit();
+                    doc.XMLFile_add_cut(dir_name.data(), -1, filename.data(),
+                        file_relative_path.data(),
+                        offset_row, offset_col, para.at(0), para.at(1),
+                        para.at(2), para.at(3), "complex-1.0");
+                }
+                else
+                {
+                    QString full_cut_path = QString("%1/%2.h5").arg(h5_cut_path).arg(Cut_name);
+                    Images_Cut->setChild(item_img->row(), 1, new QStandardItem(full_cut_path));
+                }
+            }, Qt::BlockingQueuedConnection);
         }
 
         emit updateProcess(10 + i * 90 / (image_number), QStringLiteral("正在裁剪第%1个文件").arg(i+1));
@@ -438,34 +442,38 @@ void CutWorker::Cut2(double h5_left,
         FC.write_int_to_h5(cut_h5_path.data(), "offset_row", offset_row);
         FC.write_int_to_h5(cut_h5_path.data(), "offset_col", offset_col);
 
-        QStandardItem* item_img = nullptr;
-        for (int j = 0; j < Images_Cut->rowCount(); j++)
-        {
-            if (Images_Cut->child(j, 0)->text() == Cut_name)
-            {
-                item_img = Images_Cut->child(j, 0);
-                break;
-            }
-        }
+        if (Images_Cut && Images_Cut->model()) {
+            QMetaObject::invokeMethod(Images_Cut->model(), [=, &doc]() {
+                QStandardItem* item_img = nullptr;
+                for (int j = 0; j < Images_Cut->rowCount(); j++)
+                {
+                    if (Images_Cut->child(j, 0)->text() == Cut_name)
+                    {
+                        item_img = Images_Cut->child(j, 0);
+                        break;
+                    }
+                }
 
-        if (!item_img)
-        {
-            QStandardItem* Image_Cut_Name = new QStandardItem(Cut_name);
-            QStandardItem* Image_Cut_Path = new QStandardItem(QString("%1/%2.h5").arg(result_path).arg(Cut_name));
-            Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
-            Images_Cut->appendRow(Image_Cut_Name);
-            Image_Cut_Name->setToolTip("complex");
-            Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
-            QByteArray dir_name = dst_node.toLocal8Bit();
-            QByteArray filename = QString("%1").arg(Cut_name).toLocal8Bit();
-            QByteArray file_relative_path = QString("/%1/%2.h5").arg(dst_node).arg(Cut_name).toLocal8Bit();
-            doc.XMLFile_add_cut(dir_name.data(), master_index, filename.data(),
-                file_relative_path.data(),
-                offset_row, offset_col, 0, 0, 0, 0, src_data_rank.toStdString().c_str());
-        }
-        else
-        {
-            Images_Cut->setChild(item_img->row(), 1, new QStandardItem(QString("%1/%2.h5").arg(result_path).arg(Cut_name)));
+                if (!item_img)
+                {
+                    QStandardItem* Image_Cut_Name = new QStandardItem(Cut_name);
+                    QStandardItem* Image_Cut_Path = new QStandardItem(QString("%1/%2.h5").arg(result_path).arg(Cut_name));
+                    Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
+                    Images_Cut->appendRow(Image_Cut_Name);
+                    Image_Cut_Name->setToolTip("complex");
+                    Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
+                    QByteArray dir_name = dst_node.toLocal8Bit();
+                    QByteArray filename = QString("%1").arg(Cut_name).toLocal8Bit();
+                    QByteArray file_relative_path = QString("/%1/%2.h5").arg(dst_node).arg(Cut_name).toLocal8Bit();
+                    doc.XMLFile_add_cut(dir_name.data(), master_index, filename.data(),
+                        file_relative_path.data(),
+                        offset_row, offset_col, 0, 0, 0, 0, src_data_rank.toStdString().c_str());
+                }
+                else
+                {
+                    Images_Cut->setChild(item_img->row(), 1, new QStandardItem(QString("%1/%2.h5").arg(result_path).arg(Cut_name)));
+                }
+            }, Qt::BlockingQueuedConnection);
         }
 
         emit updateProcess(10 + i * 90 / (image_number), QStringLiteral("正在裁剪第%1个文件").arg(i + 1));

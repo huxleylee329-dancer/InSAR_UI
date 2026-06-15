@@ -175,30 +175,34 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 		{
 			return;
 		}
-        QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
-        QString regis_name = fileinfo.baseName();
-        QStandardItem* item_img = NULL;
-        for (int j = 0; j < regis->rowCount(); j++)
-        {
-            if (regis->child(j, 0)->text() == regis_name)
-            {
-                item_img = regis->child(j, 0);
-                break;
-            }
-        }
+        if (regis && regis->model()) {
+            QMetaObject::invokeMethod(regis->model(), [=]() {
+                QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
+                QString regis_name = fileinfo.baseName();
+                QStandardItem* item_img = NULL;
+                for (int j = 0; j < regis->rowCount(); j++)
+                {
+                    if (regis->child(j, 0)->text() == regis_name)
+                    {
+                        item_img = regis->child(j, 0);
+                        break;
+                    }
+                }
 
-        if (!item_img)
-        {
-            QStandardItem* regis_images_name = new QStandardItem(regis_name);
-            regis_images_name->setToolTip("complex");
-            QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-            regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-            regis->appendRow(regis_images_name);
-            regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
-        }
-        else
-        {
-            regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+                if (!item_img)
+                {
+                    QStandardItem* regis_images_name = new QStandardItem(regis_name);
+                    regis_images_name->setToolTip("complex");
+                    QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
+                    regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
+                    regis->appendRow(regis_images_name);
+                    regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
+                }
+                else
+                {
+                    regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+                }
+            }, Qt::BlockingQueuedConnection);
         }
 
         /*写入辅助参数到h5*/
@@ -473,30 +477,34 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		{
 			return;
 		}
-		QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
-		QString regis_name = fileinfo.baseName();
-		QStandardItem* item_img = NULL;
-		for (int j = 0; j < regis->rowCount(); j++)
-		{
-			if (regis->child(j, 0)->text() == regis_name)
-			{
-				item_img = regis->child(j, 0);
-				break;
-			}
-		}
+		if (regis && regis->model()) {
+			QMetaObject::invokeMethod(regis->model(), [=]() {
+				QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
+				QString regis_name = fileinfo.baseName();
+				QStandardItem* item_img = NULL;
+				for (int j = 0; j < regis->rowCount(); j++)
+				{
+					if (regis->child(j, 0)->text() == regis_name)
+					{
+						item_img = regis->child(j, 0);
+						break;
+					}
+				}
 
-		if (!item_img)
-		{
-			QStandardItem* regis_images_name = new QStandardItem(regis_name);
-			regis_images_name->setToolTip("complex");
-			QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-			regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-			regis->appendRow(regis_images_name);
-			regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
-		}
-		else
-		{
-			regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+				if (!item_img)
+				{
+					QStandardItem* regis_images_name = new QStandardItem(regis_name);
+					regis_images_name->setToolTip("complex");
+					QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
+					regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
+					regis->appendRow(regis_images_name);
+					regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
+				}
+				else
+				{
+					regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+				}
+			}, Qt::BlockingQueuedConnection);
 		}
 		
 		temporal_baseline += "0 ";

@@ -64,6 +64,14 @@ private Q_SLOTS:
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     void onAskUserError(const QString& message, bool* skip);
+    void onSaveImageToProjectRequested(
+        const QString& projectName,
+        const QString& nodeName,
+        const QString& displayName,
+        const QString& finalPath,
+        const QString& tag,
+        const QString& finalFileName
+    );
 
 private:
     QStandardItemModel* projectModel() const;

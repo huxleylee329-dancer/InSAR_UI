@@ -603,16 +603,7 @@ void WorkflowUI::setupToolbar()
     // Mode Switch: Go back to Workspace
     // ======================
     QToolButton *btnWorkspace = createToolbarButton(":/SatExplorer/svg/project.svg", "Workspace", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
-    connect(btnWorkspace, &QToolButton::clicked, this, [this]() {
-        QWidget* p = this;
-        while (p && !qobject_cast<QMainWindow*>(p)) {
-            p = p->parentWidget();
-        }
-        QMainWindow* mainWindow = qobject_cast<QMainWindow*>(p);
-        if (mainWindow) {
-            QMetaObject::invokeMethod(mainWindow, "switchToWorkspace");
-        }
-    });
+    btnWorkspace->setObjectName("btnWorkspace");
     m_toolbar->addWidget(btnWorkspace);
 
     // Vertical separator
@@ -620,6 +611,25 @@ void WorkflowUI::setupToolbar()
     sepMode->setFixedWidth(1);
     sepMode->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
     m_toolbar->addWidget(sepMode);
+
+    // Group 0: Project management (Matches Workspace UI)
+    QToolButton* btnNew = createToolbarButton(":/SatExplorer/svg/new_project.svg", "New", COLOR_PRIMARY, COLOR_TEXT, this);
+    btnNew->setObjectName("btnNew");
+    m_toolbar->addWidget(btnNew);
+
+    QToolButton* btnOpen = createToolbarButton(":/SatExplorer/svg/open_project.svg", "Open", COLOR_PRIMARY, COLOR_TEXT, this);
+    btnOpen->setObjectName("btnOpen");
+    m_toolbar->addWidget(btnOpen);
+
+    QToolButton* btnSave = createToolbarButton(":/SatExplorer/svg/save.svg", "Save", COLOR_PRIMARY, COLOR_TEXT, this);
+    btnSave->setObjectName("btnSave");
+    m_toolbar->addWidget(btnSave);
+
+    // Vertical separator
+    QWidget *sepProject = new QWidget();
+    sepProject->setFixedWidth(1);
+    sepProject->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
+    m_toolbar->addWidget(sepProject);
 
     // ======================
     // Group 1: File Operations
@@ -656,6 +666,7 @@ void WorkflowUI::setupToolbar()
     connect(btnSync, &QToolButton::clicked, this, &WorkflowUI::onRefreshNodes);
     m_toolbar->addWidget(btnSync);
 
+    /* Temporarily removed Queue & Halt buttons
     // Queue button (灰色)
     QToolButton *btnQueue = createToolbarButton(":/SatExplorer/svg/reorder.svg", "Queue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
     m_btnQueue = btnQueue;
@@ -666,6 +677,7 @@ void WorkflowUI::setupToolbar()
     QToolButton *btnHalt = createToolbarButton(":/SatExplorer/svg/stop_circle.svg", "Halt", COLOR_ERROR, COLOR_ERROR, this);
     connect(btnHalt, &QToolButton::clicked, this, &WorkflowUI::onInterruptExecution);
     m_toolbar->addWidget(btnHalt);
+    */
 
     // Vertical separator
     QWidget *sep2 = new QWidget();
@@ -676,6 +688,7 @@ void WorkflowUI::setupToolbar()
     // ======================
     // Group 3: History & Cleanup
     // ======================
+    /* Temporarily removed DeQue & History buttons
     // Drop/Clear Queue button (灰色)
     QToolButton *btnDrop = createToolbarButton(":/SatExplorer/svg/playlist_remove.svg", "DeQue", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
     m_btnDrop = btnDrop;
@@ -687,6 +700,7 @@ void WorkflowUI::setupToolbar()
     m_btnLogs = btnLogs;
     connect(btnLogs, &QToolButton::clicked, this, &WorkflowUI::onShowHistory);
     m_toolbar->addWidget(btnLogs);
+    */
 
     // Del/Delete selected button (灰色)
     QToolButton *btnDel = createToolbarButton(":/SatExplorer/svg/backspace.svg", "DEL", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
@@ -1248,6 +1262,8 @@ void WorkflowUI::setTheme(const QString &theme)
     // Apply toolbar theme styles
     if (m_toolbar) {
         applyToolbarTheme(m_toolbar, theme, [](const QString& btnText, bool isDark) -> QColor {
+            if (btnText == "New" || btnText == "Open" || btnText == "Save")
+                return isDark ? QColor("#82CFFF") : QColor("#005FAC");
             if (btnText == "Import" || btnText == "Export")
                 return isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
             if (btnText == "Fav")

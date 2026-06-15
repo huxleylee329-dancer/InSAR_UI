@@ -33,6 +33,14 @@ signals:
     void errorProcess(QString error_msg);
     void sendModel(QStandardItemModel* model);
     void askUserError(QString error_msg, bool* skip);
+    void saveImageToProjectRequested(
+        QString projectName,
+        QString nodeName,
+        QString displayName,
+        QString finalPath,
+        QString tag,
+        QString finalFileName
+    );
 
 private:
     bool processBM3DEnhancement(

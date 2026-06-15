@@ -114,89 +114,97 @@ void importSentinel(
 
     Q_EMIT worker->updateProcess(90, QStringLiteral("即将完成……"));
 
-    QStandardItem* project = model->findItems(project_name)[0];
-    if (!project) {
-        QFile::remove(h5_path);
-        QDir tmp_dir(project_path + QString("/") + folder);
-        tmp_dir.removeRecursively();
-        return;
-    }
-
-    QModelIndex pro_index = model->indexFromItem(project);
-    QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-    QStandardItem* origin = nullptr;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (folder == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
-        {
-            origin = project->child(i);
-            break;
-        }
-    }
-
-    if (!origin)
-    {
-        origin = new QStandardItem(folder);
-        origin->setIcon(QIcon(FOLDER_ICON));
-        project->appendRow(origin);
-        QStandardItem* Rank = new QStandardItem("complex-0.0");
-        project->setChild(project->rowCount() - 1, 1, Rank);
-    }
-
-    QStandardItem* img = nullptr;
-    for (int i = 0; i < origin->rowCount(); i++)
-    {
-        if (origin->child(i)->text() == filename)
-        {
-            img = origin->child(i);
-            break;
-        }
-    }
-
-    if (!img)
-    {
-        img = new QStandardItem(filename);
-        img->setToolTip("complex");
-        QStandardItem* img_path = new QStandardItem(h5_path);
-        img->setIcon(QIcon(IMAGEDATA_ICON));
-        origin->appendRow(img);
-        origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-        XMLFile xml;
-        ret = xml.XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
-        if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
-        {
-            InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+    QMetaObject::invokeMethod(model, [=, &ret]() {
+        QStandardItem* project = model->findItems(project_name)[0];
+        if (!project) {
+            ret = -1;
             QFile::remove(h5_path);
             QDir tmp_dir(project_path + QString("/") + folder);
             tmp_dir.removeRecursively();
             return;
         }
 
-        ret = xml.XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
-        if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+        QModelIndex pro_index = model->indexFromItem(project);
+        QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+        QStandardItem* origin = nullptr;
+        for (int i = 0; i < project->rowCount(); i++)
         {
-            InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-            QFile::remove(h5_path);
-            QDir tmp_dir(project_path + QString("/") + folder);
-            tmp_dir.removeRecursively();
-            return;
+            if (folder == project->child(i)->text() && project->child(i, 1)->text() == "complex-0.0")
+            {
+                origin = project->child(i);
+                break;
+            }
         }
 
-        ret = xml.XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
-        if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+        if (!origin)
         {
-            InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-            QFile::remove(h5_path);
-            QDir tmp_dir(project_path + QString("/") + folder);
-            tmp_dir.removeRecursively();
-            return;
+            origin = new QStandardItem(folder);
+            origin->setIcon(QIcon(FOLDER_ICON));
+            project->appendRow(origin);
+            QStandardItem* Rank = new QStandardItem("complex-0.0");
+            project->setChild(project->rowCount() - 1, 1, Rank);
         }
-    }
-    else
-    {
-        origin->setChild(img->row(), 1, new QStandardItem(h5_path));
-    }
+
+        QStandardItem* img = nullptr;
+        for (int i = 0; i < origin->rowCount(); i++)
+        {
+            if (origin->child(i)->text() == filename)
+            {
+                img = origin->child(i);
+                break;
+            }
+        }
+
+        if (!img)
+        {
+            img = new QStandardItem(filename);
+            img->setToolTip("complex");
+            QStandardItem* img_path = new QStandardItem(h5_path);
+            img->setIcon(QIcon(IMAGEDATA_ICON));
+            origin->appendRow(img);
+            origin->setChild(origin->rowCount() - 1, 1, img_path);
+
+            XMLFile xml;
+            ret = xml.XMLFile_load(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+            {
+                ret = -1;
+                InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+                QFile::remove(h5_path);
+                QDir tmp_dir(project_path + QString("/") + folder);
+                tmp_dir.removeRecursively();
+                return;
+            }
+
+            ret = xml.XMLFile_add_origin(folder.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
+            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+            {
+                ret = -1;
+                InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+                QFile::remove(h5_path);
+                QDir tmp_dir(project_path + QString("/") + folder);
+                tmp_dir.removeRecursively();
+                return;
+            }
+
+            ret = xml.XMLFile_save(QString("%1/%2").arg(pro_path).arg(project_name).toStdString().c_str());
+            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+            {
+                ret = -1;
+                InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+                QFile::remove(h5_path);
+                QDir tmp_dir(project_path + QString("/") + folder);
+                tmp_dir.removeRecursively();
+                return;
+            }
+        }
+        else
+        {
+            origin->setChild(img->row(), 1, new QStandardItem(h5_path));
+        }
+    }, Qt::BlockingQueuedConnection);
+
+    if (ret < 0) return;
 
     // 静默生成预览图
     QString bmp_path = QString("%1%2%3.jpg").arg(project_path).arg(temp_folder).arg(filename);
@@ -285,89 +293,97 @@ void importSentinelPatch(
         QString bmp_path = QString("%1%2%3.jpg").arg(savepath).arg(temp_folder).arg(filename);
         NodeUtils::generateJpgPreviewFromH5(h5_path, bmp_path, "complex");
 
-        QStandardItem* project = model->findItems(dst_project)[0];
-        if (!project) {
-            QFile::remove(h5_path);
-            QDir tmp_dir(savepath + QString("/") + dst_node);
-            tmp_dir.removeRecursively();
-            return;
-        }
-
-        QModelIndex pro_index = model->indexFromItem(project);
-        QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-        QStandardItem* origin = nullptr;
-        for (int j = 0; j < project->rowCount(); j++)
-        {
-            if (dst_node == project->child(j)->text() && project->child(j, 1)->text() == "complex-0.0")
-            {
-                origin = project->child(j);
-                break;
-            }
-        }
-
-        if (!origin)
-        {
-            origin = new QStandardItem(dst_node);
-            origin->setIcon(QIcon(FOLDER_ICON));
-            project->appendRow(origin);
-            QStandardItem* Rank = new QStandardItem("complex-0.0");
-            project->setChild(project->rowCount() - 1, 1, Rank);
-        }
-
-        QStandardItem* img = nullptr;
-        for (int j = 0; j < origin->rowCount(); j++)
-        {
-            if (origin->child(j)->text() == filename)
-            {
-                img = origin->child(j);
-                break;
-            }
-        }
-
-        if (!img)
-        {
-            img = new QStandardItem(filename);
-            img->setToolTip("complex");
-            QStandardItem* img_path = new QStandardItem(h5_path);
-            img->setIcon(QIcon(IMAGEDATA_ICON));
-            origin->appendRow(img);
-            origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-            XMLFile xml;
-            ret = xml.XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
-            {
-                InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+        QMetaObject::invokeMethod(model, [=, &ret]() {
+            QStandardItem* project = model->findItems(dst_project)[0];
+            if (!project) {
+                ret = -1;
                 QFile::remove(h5_path);
                 QDir tmp_dir(savepath + QString("/") + dst_node);
                 tmp_dir.removeRecursively();
                 return;
             }
 
-            ret = xml.XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+            QModelIndex pro_index = model->indexFromItem(project);
+            QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+            QStandardItem* origin = nullptr;
+            for (int j = 0; j < project->rowCount(); j++)
             {
-                InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-                QFile::remove(h5_path);
-                QDir tmp_dir(savepath + QString("/") + dst_node);
-                tmp_dir.removeRecursively();
-                return;
+                if (dst_node == project->child(j)->text() && project->child(j, 1)->text() == "complex-0.0")
+                {
+                    origin = project->child(j);
+                    break;
+                }
             }
 
-            ret = xml.XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+            if (!origin)
             {
-                InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-                QFile::remove(h5_path);
-                QDir tmp_dir(savepath + QString("/") + dst_node);
-                tmp_dir.removeRecursively();
-                return;
+                origin = new QStandardItem(dst_node);
+                origin->setIcon(QIcon(FOLDER_ICON));
+                project->appendRow(origin);
+                QStandardItem* Rank = new QStandardItem("complex-0.0");
+                project->setChild(project->rowCount() - 1, 1, Rank);
             }
-        }
-        else
-        {
-            origin->setChild(img->row(), 1, new QStandardItem(h5_path));
-        }
+
+            QStandardItem* img = nullptr;
+            for (int j = 0; j < origin->rowCount(); j++)
+            {
+                if (origin->child(j)->text() == filename)
+                {
+                    img = origin->child(j);
+                    break;
+                }
+            }
+
+            if (!img)
+            {
+                img = new QStandardItem(filename);
+                img->setToolTip("complex");
+                QStandardItem* img_path = new QStandardItem(h5_path);
+                img->setIcon(QIcon(IMAGEDATA_ICON));
+                origin->appendRow(img);
+                origin->setChild(origin->rowCount() - 1, 1, img_path);
+
+                XMLFile xml;
+                ret = xml.XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+                {
+                    ret = -1;
+                    InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+                    QFile::remove(h5_path);
+                    QDir tmp_dir(savepath + QString("/") + dst_node);
+                    tmp_dir.removeRecursively();
+                    return;
+                }
+
+                ret = xml.XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "sentinel");
+                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+                {
+                    ret = -1;
+                    InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+                    QFile::remove(h5_path);
+                    QDir tmp_dir(savepath + QString("/") + dst_node);
+                    tmp_dir.removeRecursively();
+                    return;
+                }
+
+                ret = xml.XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
+                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || worker->isStopRequested())
+                {
+                    ret = -1;
+                    InSARLogManager::LogError("Sentinel1ImportHelper", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+                    QFile::remove(h5_path);
+                    QDir tmp_dir(savepath + QString("/") + dst_node);
+                    tmp_dir.removeRecursively();
+                    return;
+                }
+            }
+            else
+            {
+                origin->setChild(img->row(), 1, new QStandardItem(h5_path));
+            }
+        }, Qt::BlockingQueuedConnection);
+
+        if (ret < 0) return;
 
     }
 

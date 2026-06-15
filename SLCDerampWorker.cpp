@@ -74,38 +74,49 @@ void SLCDerampWorker::SLC_deramp(
     vector<string> SAR_images, SAR_images_deramp;
     QList<QString> origin;
 
-    QList<QStandardItem*> foundProjects = model->findItems(project_name);
-    if (foundProjects.isEmpty()) {
+    QString save_path;
+    int image_number = 0;
+    bool found_project = false;
+    bool found_image = false;
+
+    QMetaObject::invokeMethod(model, [=, &SAR_images, &SAR_images_deramp, &origin, &save_path, &image_number, &found_project, &found_image]() {
+        QList<QStandardItem*> foundProjects = model->findItems(project_name);
+        if (foundProjects.isEmpty()) return;
+        found_project = true;
+        QStandardItem* project = foundProjects.first();
+        QStandardItem* image = NULL;
+        save_path = model->item(project->row(), 1)->text();
+        for (int i = 0; i < project->rowCount(); i++)
+        {
+            if (project->child(i, 0)->text() == src_node)
+            {
+                image = project->child(i, 0);
+                break;
+            }
+        }
+        if (!image) return;
+        found_image = true;
+
+        image_number = image->rowCount();
+        for (int i = 0; i < image->rowCount(); i++)
+        {
+            SAR_images.push_back(image->child(i, 1)->text().toStdString());
+            QFileInfo fileinfo(image->child(i, 1)->text());
+            QString origin_name = fileinfo.baseName();
+            origin.append(origin_name);
+            SAR_images_deramp.push_back(QString("%1/%2/%3_deramp.h5").arg(save_path).arg(dst_node)
+                .arg(origin_name).toStdString());
+        }
+    }, Qt::BlockingQueuedConnection);
+
+    if (!found_project) {
         emit errorProcess(QStringLiteral("未找到对应的工程: ") + project_name);
         return;
     }
-    QStandardItem* project = foundProjects.first();
-    QStandardItem* image = NULL;
-    QString save_path = model->item(project->row(), 1)->text();
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (project->child(i, 0)->text() == src_node)
-        {
-            image = project->child(i, 0);
-            break;
-        }
-    }
-    if (!image) {
+    if (!found_image) {
         emit errorProcess(QStringLiteral("在项目中未找到输入数据节点: ") + src_node);
         return;
     }
-
-    int image_number = image->rowCount();
-    for (int i = 0; i < image->rowCount(); i++)
-    {
-        SAR_images.push_back(image->child(i, 1)->text().toStdString());
-        QFileInfo fileinfo(image->child(i, 1)->text());
-        QString origin_name = fileinfo.baseName();
-        origin.append(origin_name);
-        SAR_images_deramp.push_back(QString("%1/%2/%3_deramp.h5").arg(save_path).arg(dst_node)
-            .arg(origin_name).toStdString());
-    }
-
     if (SAR_images.empty()) {
         emit errorProcess(QStringLiteral("输入节点下没有发现可处理的数据文件"));
         return;
@@ -163,38 +174,7 @@ void SLCDerampWorker::SLC_deramp(
     ret = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
         prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
 
-    /* 建立 deramp 根节点 */
-    QStandardItem* deramp = NULL;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (project->child(i, 0)->text() == dst_node)
-        {
-            deramp = project->child(i, 0);
-            break;
-        }
-    }
 
-    if (!deramp)
-    {
-        deramp = new QStandardItem(dst_node);
-        deramp->setToolTip(project_name);
-        int insert = 0;
-        for (; insert < project->rowCount(); insert++)
-        {
-            if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-3.0") == 0
-                )
-                continue;
-            else
-                break;
-        }
-        deramp->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, deramp);
-        QStandardItem* deramp_Rank = new QStandardItem("complex-3.0");
-        project->setChild(insert, 1, deramp_Rank);
-    }
 
     ret = conversion.write_array_to_h5(SAR_images_deramp[masterIndex - 1].c_str(), "mapped_lat", mappedLat);
     ret = conversion.write_array_to_h5(SAR_images_deramp[masterIndex - 1].c_str(), "mapped_lon", mappedLon);
@@ -226,30 +206,6 @@ void SLCDerampWorker::SLC_deramp(
         resultH5Paths.append(fileinfo.absoluteFilePath());
         resultOriginNames.append(origin.at(i));
 
-        QStandardItem* item_img = NULL;
-        for (int j = 0; j < deramp->rowCount(); j++)
-        {
-            if (deramp->child(j, 0)->text() == deramp_name)
-            {
-                item_img = deramp->child(j, 0);
-                break;
-            }
-        }
-
-        if (!item_img)
-        {
-            QStandardItem* deramp_images_name = new QStandardItem(deramp_name);
-            deramp_images_name->setToolTip("complex");
-            QStandardItem* deramp_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-            deramp_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-            deramp->appendRow(deramp_images_name);
-            deramp->setChild(deramp->rowCount() - 1, 1, deramp_images_path);
-        }
-        else
-        {
-            deramp->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-        }
-
         // 拼接成功后，立刻生成 JPG 预览图（在后台线程中执行）
         QString h5Path = fileinfo.absoluteFilePath();
         QString jpgPath = fileinfo.absolutePath() + "/" + fileinfo.baseName() + ".jpg";
@@ -257,6 +213,73 @@ void SLCDerampWorker::SLC_deramp(
 
         emit updateProcess(process, QStringLiteral("进度..."));
     }
+
+    QMetaObject::invokeMethod(model, [=]() {
+        QList<QStandardItem*> foundProjects = model->findItems(project_name);
+        if (foundProjects.isEmpty()) return;
+        QStandardItem* project = foundProjects.first();
+
+        QStandardItem* deramp = NULL;
+        for (int i = 0; i < project->rowCount(); i++)
+        {
+            if (project->child(i, 0)->text() == dst_node)
+            {
+                deramp = project->child(i, 0);
+                break;
+            }
+        }
+
+        if (!deramp)
+        {
+            deramp = new QStandardItem(dst_node);
+            deramp->setToolTip(project_name);
+            int insert = 0;
+            for (; insert < project->rowCount(); insert++)
+            {
+                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
+                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
+                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
+                    project->child(insert, 1)->text().compare("complex-3.0") == 0
+                    )
+                    continue;
+                else
+                    break;
+            }
+            deramp->setIcon(QIcon(FOLDER_ICON));
+            project->insertRow(insert, deramp);
+            QStandardItem* deramp_Rank = new QStandardItem("complex-3.0");
+            project->setChild(insert, 1, deramp_Rank);
+        }
+
+        for (int i = 0; i < image_number; i++)
+        {
+            QFileInfo fileinfo = QFileInfo(QString(SAR_images_deramp.at(i).c_str()));
+            QString deramp_name = fileinfo.baseName();
+            QStandardItem* item_img = NULL;
+            for (int j = 0; j < deramp->rowCount(); j++)
+            {
+                if (deramp->child(j, 0)->text() == deramp_name)
+                {
+                    item_img = deramp->child(j, 0);
+                    break;
+                }
+            }
+
+            if (!item_img)
+            {
+                QStandardItem* deramp_images_name = new QStandardItem(deramp_name);
+                deramp_images_name->setToolTip("complex");
+                QStandardItem* deramp_images_path = new QStandardItem(fileinfo.absoluteFilePath());
+                deramp_images_name->setIcon(QIcon(IMAGEDATA_ICON));
+                deramp->appendRow(deramp_images_name);
+                deramp->setChild(deramp->rowCount() - 1, 1, deramp_images_path);
+            }
+            else
+            {
+                deramp->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+            }
+        }
+    }, Qt::BlockingQueuedConnection);
 
     emit sendModel(model);
     // 回传数据到 Node 模块，用于落盘自愈

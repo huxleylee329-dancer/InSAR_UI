@@ -363,6 +363,7 @@ void SpeckleDenoiseNode::executeProcessing()
     connect(m_task, &SpeckleDenoiseTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
     connect(m_task, &SpeckleDenoiseTask::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::QueuedConnection);
     connect(m_task, &SpeckleDenoiseTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &SpeckleDenoiseTask::saveImageToProjectRequested, this, &SpeckleDenoiseNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
 
@@ -437,6 +438,73 @@ void SpeckleDenoiseNode::onError(const QString& error)
 
     m_outputData.reset();
 
+}
+
+void SpeckleDenoiseNode::onSaveImageToProjectRequested(
+    const QString& projectName,
+    const QString& nodeName,
+    const QString& displayName,
+    const QString& finalPath,
+    const QString& tag,
+    const QString& finalFileName
+)
+{
+    QStandardItemModel* model = projectModel();
+    if (!model) return;
+
+    QStandardItem* projectItem = model->findItems(projectName).isEmpty() ? nullptr : model->findItems(projectName).first();
+    if (!projectItem) return;
+
+    QStandardItem* dataNode = nullptr;
+    for (int i = 0; i < projectItem->rowCount(); ++i) {
+        if (projectItem->child(i, 0)->text() == nodeName) {
+            dataNode = projectItem->child(i, 0);
+            break;
+        }
+    }
+    if (!dataNode) {
+        dataNode = new QStandardItem(nodeName);
+        dataNode->setIcon(QIcon(FOLDER_ICON));
+        projectItem->appendRow(dataNode);
+    }
+
+    QStandardItem* item_img = nullptr;
+    for (int j = 0; j < dataNode->rowCount(); j++) {
+        if (dataNode->child(j, 0)->text() == displayName) {
+            item_img = dataNode->child(j, 0);
+            break;
+        }
+    }
+
+    if (!item_img) {
+        QStandardItem* nameItem = new QStandardItem(displayName);
+        nameItem->setIcon(QIcon(IMAGEDATA_ICON));
+        nameItem->setToolTip(QStringLiteral("image"));
+        QStandardItem* pathItem = new QStandardItem(finalPath);
+        dataNode->appendRow({ nameItem, pathItem });
+
+        // Update XML for persistence
+        QString projPath = projectPath();
+        if (!projPath.isEmpty()) {
+            QString relativePath = "/" + nodeName + "/" + finalFileName;
+            XMLFile localXml;
+            localXml.XMLFile_load(projPath.toStdString().c_str());
+            localXml.XMLFile_add_origin(
+                nodeName.toStdString().c_str(),
+                displayName.toStdString().c_str(),
+                relativePath.toStdString().c_str(),
+                tag.toStdString().c_str()
+            );
+            localXml.XMLFile_save(projPath.toStdString().c_str());
+        }
+    } else {
+        dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));
+    }
+
+    // Refresh tree
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
+    }
 }
 
 void SpeckleDenoiseNode::onModelUpdated(QStandardItemModel* model)

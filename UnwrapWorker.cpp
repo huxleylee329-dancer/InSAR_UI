@@ -67,82 +67,55 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         absolute_path = save_path + "/" + file_name;
     }
 
-    QList<QStandardItem*> foundProjects = model->findItems(project_name);
-    if (foundProjects.isEmpty()) {
-        emit errorProcess(QStringLiteral("未找到对应的工程: ") + project_name);
-        return;
-    }
-
-    QStandardItem* project = foundProjects.first();
-    QStandardItem* node = NULL;
     QList<QString> phase_name;
     QList<QString> phase_path;
     QList<QString> unwrap_name;
     QList<QString> relative_unwrap_path;
     QList<QString> absolute_unwrap_path;
+    bool found_project = false;
+    bool found_node = false;
 
     emit updateProcess(10, QStringLiteral("准备数据……"));
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (project->child(i, 0)->text() == node_name)
-        {
-            node = project->child(i, 0);
-            for (int j = 0; j < node->rowCount(); j++)
-            {
-                if (node->child(j, 0)->toolTip() == "phase")
-                {
-                    QString change_name;
-                    QString origin_name = node->child(j, 0)->text();
-                    phase_name.append(node->child(j, 0)->text());
-                    phase_path.append(node->child(j, 1)->text());
-                    change_name = origin_name + "_unwrapped";
-                    unwrap_name.append(change_name);
-                    relative_unwrap_path.append("/" + file_name + "/" + change_name + ".h5");
-                    absolute_unwrap_path.append(save_path + "/" + file_name + "/" + change_name + ".h5");
-                }
-            }
-            break;
-        }
-    }
 
-    if (!node) {
-        emit errorProcess(QStringLiteral("未找到指定的数据节点: ") + node_name);
+    QMetaObject::invokeMethod(model, [=, &phase_name, &phase_path, &unwrap_name, &relative_unwrap_path, &absolute_unwrap_path, &found_project, &found_node]() {
+        QList<QStandardItem*> foundProjects = model->findItems(project_name);
+        if (foundProjects.isEmpty()) {
+            return;
+        }
+        found_project = true;
+        QStandardItem* project = foundProjects.first();
+
+        for (int i = 0; i < project->rowCount(); i++)
+        {
+            if (project->child(i, 0)->text() == node_name)
+            {
+                found_node = true;
+                QStandardItem* node = project->child(i, 0);
+                for (int j = 0; j < node->rowCount(); j++)
+                {
+                    if (node->child(j, 0)->toolTip() == "phase")
+                    {
+                        QString origin_name = node->child(j, 0)->text();
+                        phase_name.append(node->child(j, 0)->text());
+                        phase_path.append(node->child(j, 1)->text());
+                        QString change_name = origin_name + "_unwrapped";
+                        unwrap_name.append(change_name);
+                        relative_unwrap_path.append("/" + file_name + "/" + change_name + ".h5");
+                        absolute_unwrap_path.append(save_path + "/" + file_name + "/" + change_name + ".h5");
+                    }
+                }
+                break;
+            }
+        }
+    }, Qt::BlockingQueuedConnection);
+
+    if (!found_project) {
+        emit errorProcess(QStringLiteral("未找到对应的工程: ") + project_name);
         return;
     }
-
-    /*建立根节点*/
-    QStandardItem* Unwrap_node = NULL;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (project->child(i, 0)->text() == file_name)
-        {
-            Unwrap_node = project->child(i, 0);
-            break;
-        }
-    }
-
-    if (!Unwrap_node)
-    {
-        Unwrap_node = new QStandardItem(file_name);
-        Unwrap_node->setToolTip(project_name);
-        int insert = 0;
-        for (; insert < project->rowCount(); insert++)
-        {
-            if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
-                project->child(insert, 1)->text().compare("phase-2.0") == 0 ||
-                project->child(insert, 1)->text().compare("phase-3.0") == 0)
-                continue;
-            else
-                break;
-        }
-        Unwrap_node->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, Unwrap_node);
-        QStandardItem* Unwrap_node_Rank = new QStandardItem("phase-3.0");
-        project->setChild(insert, 1, Unwrap_node_Rank);
+    if (!found_node) {
+        emit errorProcess(QStringLiteral("未找到指定的数据节点: ") + node_name);
+        return;
     }
 
     int image_number = phase_name.size();
@@ -154,21 +127,25 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     ::Unwrap unwrap;
     FormatConversion FC;
     Utils util;
-    XMLFile xml;
     
     QString xml_path = save_path + "/" + project_name;
     if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
         xml_path += ".Insar";
     }
 
-    if (xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
+    XMLFile temp_xml;
+    if (temp_xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
         emit errorProcess(QStringLiteral("加载项目XML文件失败: ") + xml_path);
         return;
     }
 
     int ret = 0;
 
-    auto copyMetadata = [&](int idx, QString method_str) -> bool {
+    std::vector<int> offset_rows(image_number, 0);
+    std::vector<int> offset_cols(image_number, 0);
+    std::vector<bool> process_success(image_number, false);
+
+    auto copyH5Metadata = [&](int idx) -> bool {
         /*写入h5*/
         ret = FC.creat_new_h5(absolute_unwrap_path.at(idx).toStdString().c_str());
         if (ret < 0) return false;
@@ -211,37 +188,9 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         /*行列偏移量*/
         Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
         ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
-        int offset_row = tmp_int.at<int>(0, 0);
+        offset_rows[idx] = tmp_int.at<int>(0, 0);
         ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
-        int offset_col = tmp_int.at<int>(0, 0);
-
-        xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(idx).toStdString().c_str(),
-            relative_unwrap_path.at(idx).toStdString().c_str(), offset_row, offset_col, method_str.toStdString().c_str(), 0);
-
-        /*工程树*/
-        QStandardItem* item_img = NULL;
-        for (int j = 0; j < Unwrap_node->rowCount(); j++)
-        {
-            if (Unwrap_node->child(j, 0)->text() == unwrap_name.at(idx))
-            {
-                item_img = Unwrap_node->child(j, 0);
-                break;
-            }
-        }
-
-        if (!item_img)
-        {
-            QStandardItem* image = new QStandardItem(unwrap_name.at(idx));
-            image->setToolTip("phase");
-            image->setIcon(QIcon(IMAGEDATA_ICON));
-            Unwrap_node->appendRow(image);
-            QStandardItem* image_path = new QStandardItem(absolute_unwrap_path.at(idx));
-            Unwrap_node->setChild(Unwrap_node->rowCount() - 1, 1, image_path);
-        }
-        else
-        {
-            Unwrap_node->setChild(item_img->row(), 1, new QStandardItem(absolute_unwrap_path.at(idx)));
-        }
+        offset_cols[idx] = tmp_int.at<int>(0, 0);
 
         return true;
     };
@@ -263,10 +212,11 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap);
             if (ret < 0) continue;
 
-            if (!copyMetadata(i, "SPD_Guided")) {
+            if (!copyH5Metadata(i)) {
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            process_success[i] = true;
         }
     }
     else if (method == 2)
@@ -290,10 +240,11 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = unwrap.MCF(phase, phase_unwrap, coherence, residue, (absolute_path + "/MCF.net").toStdString().c_str(), app_path.toStdString().c_str());
             if (ret < 0) continue;
 
-            if (!copyMetadata(i, "MCF")) {
+            if (!copyH5Metadata(i)) {
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            process_success[i] = true;
         }
     }
     else if (method == 3)
@@ -314,10 +265,11 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), absolute_path.toStdString().c_str(), app_path.toStdString().c_str());
             if (ret < 0) continue;
 
-            if (!copyMetadata(i, "Snaphu")) {
+            if (!copyH5Metadata(i)) {
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            process_success[i] = true;
         }
     }
     else if (method == 4)
@@ -339,14 +291,96 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold, absolute_path.toStdString().c_str(), app_path.toStdString().c_str());
             if (ret < 0) continue;
 
-            if (!copyMetadata(i, "QualityGuided_MCF")) {
+            if (!copyH5Metadata(i)) {
                 return;
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            process_success[i] = true;
         }
     }
 
-    xml.XMLFile_save(xml_path.toStdString().c_str());
+    QMetaObject::invokeMethod(model, [=]() {
+        QList<QStandardItem*> foundProjects = model->findItems(project_name);
+        if (foundProjects.isEmpty()) return;
+        QStandardItem* project = foundProjects.first();
+
+        /*建立根节点*/
+        QStandardItem* Unwrap_node = NULL;
+        for (int i = 0; i < project->rowCount(); i++)
+        {
+            if (project->child(i, 0)->text() == file_name)
+            {
+                Unwrap_node = project->child(i, 0);
+                break;
+            }
+        }
+
+        if (!Unwrap_node)
+        {
+            Unwrap_node = new QStandardItem(file_name);
+            Unwrap_node->setToolTip(project_name);
+            int insert = 0;
+            for (; insert < project->rowCount(); insert++)
+            {
+                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
+                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
+                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
+                    project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
+                    project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
+                    project->child(insert, 1)->text().compare("phase-2.0") == 0 ||
+                    project->child(insert, 1)->text().compare("phase-3.0") == 0)
+                    continue;
+                else
+                    break;
+            }
+            Unwrap_node->setIcon(QIcon(FOLDER_ICON));
+            project->insertRow(insert, Unwrap_node);
+            QStandardItem* Unwrap_node_Rank = new QStandardItem("phase-3.0");
+            project->setChild(insert, 1, Unwrap_node_Rank);
+        }
+
+        XMLFile local_xml;
+        local_xml.XMLFile_load(xml_path.toStdString().c_str());
+
+        QString method_str = "SPD_Guided";
+        if (method == 2) method_str = "MCF";
+        else if (method == 3) method_str = "Snaphu";
+        else if (method == 4) method_str = "QualityGuided_MCF";
+
+        for (int i = 0; i < image_number; i++)
+        {
+            if (!process_success[i]) continue;
+
+            local_xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
+                relative_unwrap_path.at(i).toStdString().c_str(), offset_rows[i], offset_cols[i], method_str.toStdString().c_str(), 0);
+
+            /*工程树*/
+            QStandardItem* item_img = NULL;
+            for (int j = 0; j < Unwrap_node->rowCount(); j++)
+            {
+                if (Unwrap_node->child(j, 0)->text() == unwrap_name.at(i))
+                {
+                    item_img = Unwrap_node->child(j, 0);
+                    break;
+                }
+            }
+
+            if (!item_img)
+            {
+                QStandardItem* image = new QStandardItem(unwrap_name.at(i));
+                image->setToolTip("phase");
+                image->setIcon(QIcon(IMAGEDATA_ICON));
+                Unwrap_node->appendRow(image);
+                QStandardItem* image_path = new QStandardItem(absolute_unwrap_path.at(i));
+                Unwrap_node->setChild(Unwrap_node->rowCount() - 1, 1, image_path);
+            }
+            else
+            {
+                Unwrap_node->setChild(item_img->row(), 1, new QStandardItem(absolute_unwrap_path.at(i)));
+            }
+        }
+        local_xml.XMLFile_save(xml_path.toStdString().c_str());
+    }, Qt::BlockingQueuedConnection);
 
     emit sendModel(model);
     InSARLogManager::LogInfo("UnwrapWorker", QString("Task completed: ") + QString(__FUNCTION__));

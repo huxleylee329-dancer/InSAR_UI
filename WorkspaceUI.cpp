@@ -79,34 +79,6 @@ QList<QToolBar*> WorkspaceUI::toolBars()
 void WorkspaceUI::activate()
 {
     show();
-
-    // 动态将工具栏的动作连接至主窗口
-    if (!m_actionsConnected && m_toolbar) {
-        QWidget* p = this;
-        while (p && !qobject_cast<QMainWindow*>(p)) {
-            p = p->parentWidget();
-        }
-        QMainWindow* mainWindow = qobject_cast<QMainWindow*>(p);
-        if (mainWindow) {
-            auto connectBtn = [&](const QString& objName, const QString& actionName) {
-                QToolButton* btn = m_toolbar->findChild<QToolButton*>(objName);
-                if (!btn) return;
-                QAction* action = mainWindow->findChild<QAction*>(actionName);
-                if (action) connect(btn, &QToolButton::clicked, action, &QAction::trigger);
-            };
-            connectBtn("btnNew", "actionNew");
-            connectBtn("btnOpen", "actionOpen");
-            connectBtn("btnSave", "actionSave");
-
-            QToolButton* btnWorkflow = m_toolbar->findChild<QToolButton*>("btnWorkflow");
-            if (btnWorkflow) {
-                connect(btnWorkflow, &QToolButton::clicked, mainWindow, [mainWindow]() {
-                    QMetaObject::invokeMethod(mainWindow, "switchToWorkflow");
-                });
-            }
-            m_actionsConnected = true;
-        }
-    }
 }
 
 void WorkspaceUI::deactivate()

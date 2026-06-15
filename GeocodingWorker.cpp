@@ -355,71 +355,75 @@ void GeocodingWorker::Geocoding(
         }
     }
     /*建立地理编码根节点*/
-    QStandardItem* geocode = NULL;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        if (project->child(i, 0)->text() == dstNode)
-        {
-            geocode = project->child(i, 0);
-            break;
-        }
-    }
-
-    if (!geocode)
-    {
-        geocode = new QStandardItem(dstNode);
-        geocode->setToolTip(project_name);
-        geocode->setIcon(QIcon(FOLDER_ICON));
-        project->appendRow(geocode);
-        QStandardItem* geocode_Rank = new QStandardItem(geocode_Rank_level);
-        project->setChild(project->rowCount() - 1, 1, geocode_Rank);
-    }
-
-    XMLFile xml;
-    QString xml_path = save_path + "/" + project_name;
-    xml.XMLFile_load(xml_path.toStdString().c_str());
-    for (int i = 0; i < input_files.size(); i++)
-    {
-        QFileInfo fileinfo = QFileInfo(QString(output_files.at(i).c_str()));
-        QString geocode_name = fileinfo.baseName();
-        QStandardItem* item_img = NULL;
-        for (int j = 0; j < geocode->rowCount(); j++)
-        {
-            if (geocode->child(j, 0)->text() == geocode_name)
+    if (model) {
+        QMetaObject::invokeMethod(model, [=]() {
+            QStandardItem* geocode = NULL;
+            for (int i = 0; i < project->rowCount(); i++)
             {
-                item_img = geocode->child(j, 0);
-                break;
+                if (project->child(i, 0)->text() == dstNode)
+                {
+                    geocode = project->child(i, 0);
+                    break;
+                }
             }
-        }
 
-        if (!item_img)
-        {
-            QStandardItem* geocode_images_name = new QStandardItem(geocode_name);
-            if (product_level == QString("coherence-1.0")) geocode_images_name->setToolTip("coherence");
-            else if (product_level == QString("phase-1.0") ||
-                product_level == QString("phase-2.0") ||
-                product_level == QString("phase-3.0")
-                )
+            if (!geocode)
             {
-                geocode_images_name->setToolTip("phase");
+                geocode = new QStandardItem(dstNode);
+                geocode->setToolTip(project_name);
+                geocode->setIcon(QIcon(FOLDER_ICON));
+                project->appendRow(geocode);
+                QStandardItem* geocode_Rank = new QStandardItem(geocode_Rank_level);
+                project->setChild(project->rowCount() - 1, 1, geocode_Rank);
             }
-            else if (product_level == QString("dem-1.0")) geocode_images_name->setToolTip("dem");
-            else if (product_level == QString("SBAS-1.0")) geocode_images_name->setToolTip("SBAS");
-            else geocode_images_name->setToolTip("amplitude");
-            QStandardItem* geocode_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-            geocode_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-            geocode->appendRow(geocode_images_name);
-            geocode->setChild(geocode->rowCount() - 1, 1, geocode_images_path);
 
-            xml.XMLFile_add_geocoding(dstNode.toStdString().c_str(), geocode_name.toStdString().c_str(),
-                ("/" + dstNode + "/" + geocode_name + ".h5").toStdString().c_str(), geocode_Rank_level.toStdString().c_str());
-        }
-        else
-        {
-            geocode->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-        }
+            XMLFile xml;
+            QString xml_path = save_path + "/" + project_name;
+            xml.XMLFile_load(xml_path.toStdString().c_str());
+            for (int i = 0; i < input_files.size(); i++)
+            {
+                QFileInfo fileinfo = QFileInfo(QString(output_files.at(i).c_str()));
+                QString geocode_name = fileinfo.baseName();
+                QStandardItem* item_img = NULL;
+                for (int j = 0; j < geocode->rowCount(); j++)
+                {
+                    if (geocode->child(j, 0)->text() == geocode_name)
+                    {
+                        item_img = geocode->child(j, 0);
+                        break;
+                    }
+                }
+
+                if (!item_img)
+                {
+                    QStandardItem* geocode_images_name = new QStandardItem(geocode_name);
+                    if (product_level == QString("coherence-1.0")) geocode_images_name->setToolTip("coherence");
+                    else if (product_level == QString("phase-1.0") ||
+                        product_level == QString("phase-2.0") ||
+                        product_level == QString("phase-3.0")
+                        )
+                    {
+                        geocode_images_name->setToolTip("phase");
+                    }
+                    else if (product_level == QString("dem-1.0")) geocode_images_name->setToolTip("dem");
+                    else if (product_level == QString("SBAS-1.0")) geocode_images_name->setToolTip("SBAS");
+                    else geocode_images_name->setToolTip("amplitude");
+                    QStandardItem* geocode_images_path = new QStandardItem(fileinfo.absoluteFilePath());
+                    geocode_images_name->setIcon(QIcon(IMAGEDATA_ICON));
+                    geocode->appendRow(geocode_images_name);
+                    geocode->setChild(geocode->rowCount() - 1, 1, geocode_images_path);
+
+                    xml.XMLFile_add_geocoding(dstNode.toStdString().c_str(), geocode_name.toStdString().c_str(),
+                        ("/" + dstNode + "/" + geocode_name + ".h5").toStdString().c_str(), geocode_Rank_level.toStdString().c_str());
+                }
+                else
+                {
+                    geocode->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
+                }
+            }
+            xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
+        }, Qt::BlockingQueuedConnection);
     }
-    xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
 
     emit sendModel(model);
     emit updateProcess(100, QStringLiteral("完成……"));
