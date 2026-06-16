@@ -157,7 +157,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             {
                 sbas.writeDIMACS_spatial(mcf_problem.c_str(), nodes, edges, triangles);
                 unwrap.mcf_delaunay(mcf_problem.c_str(), appPath.c_str());
-                sbas.readDIMACS(mcf_solution.c_str(), nodes, edges, triangles, &obj);
+                sbas.readDIMACS(mcf_solution.c_str(), nodes, edges, triangles, obj);
             }
             sbas.floodFillUnwrap(nodes, edges, 1, false);
             sbas.retrieve_unwrapped_phase(nodes, phase);
