@@ -9,6 +9,12 @@
 #include "TSXBatchImportNode.h"
 #include "CSKImportNode.h"
 #include "ALOS2ImportNode.h"
+#include "LUTANImportNode.h"
+#include "HTHTImportNode.h"
+#include "SpacetyImportNode.h"
+#include "AIRSATImportNode.h"
+#include "BiomassImportNode.h"
+#include "LidarImportNode.h"
 #include "S1DeburstNode.h"
 #include "S1FrameMergeNode.h"
 #include "S1SwathMergeNode.h"
@@ -84,6 +90,23 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // ALOS-2
     registry->registerModel<ALOS2ImportNode>("Data Import/ALOS-2/Batch Import");
 
+    // LuTan-1
+    registry->registerModel<LUTANImportNode>("Data Import/LuTan-1/Batch Import");
+
+    // Hongtu-1
+    registry->registerModel<HTHTImportNode>("Data Import/Hongtu-1/Batch Import");
+
+    // Fucheng-1
+    registry->registerModel<SpacetyImportNode>("Data Import/Fucheng-1/Batch Import");
+
+    // AIRSAT
+    registry->registerModel<AIRSATImportNode>("Data Import/AIRSAT/Batch Import");
+
+    // Biomass L1A
+    registry->registerModel<BiomassImportNode>("Data Import/Biomass L1A/Batch Import");
+
+    // LiDAR
+    registry->registerModel<LidarImportNode>("Data Import/LiDAR/Batch Import");
     
     // Generic SAR
     registry->registerModel<GenericSARImportNode>("SAR/Import/Generic SAR/Single Import");

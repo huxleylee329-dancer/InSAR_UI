@@ -452,7 +452,13 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                 }
                 else if (modelName.contains("Batch", Qt::CaseInsensitive) ||
                          modelName == "CSKImport" ||
-                         modelName == "ALOS2Import") {
+                         modelName == "ALOS2Import" ||
+                         modelName == "LUTANImport" ||
+                         modelName == "HTHTImport" ||
+                         modelName == "SpacetyImport" ||
+                         modelName == "AIRSATImport" ||
+                         modelName == "BiomassImport" ||
+                         modelName == "LidarImport") {
                     iconPath = IMPORT_BATCH_ICON;
                 }
                 else {

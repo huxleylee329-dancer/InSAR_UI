@@ -1,0 +1,315 @@
+#include "MainWindow.h"
+#include "import_AIRSAT.h"
+#include "icon_source.h"
+#include "qfiledialog.h"
+#include <opencv2/highgui.hpp>
+#include <qmessagebox.h>
+#include <QThread>
+
+import_AIRSAT::import_AIRSAT(QWidget* parent) :
+    QWidget(parent),
+    ui(new Ui::ImportAirsat)
+{
+    ui->setupUi(this);
+    import_AIRSAT_thread = NULL;
+    ui->progressBar->setMinimum(0);
+    ui->progressBar->setMaximum(100);
+    ui->progressBar->setHidden(1);
+    ui->lineEdit_dst_node->setText("AIRSAT_Import");
+}
+
+import_AIRSAT::~import_AIRSAT()
+{
+    import_AIRSAT_thread = NULL;
+    if (copy)
+    {
+        for (int i = 0; i < ui->comboBox_dst_project->count(); i++)
+        {
+            if (!copy->findItems(ui->comboBox_dst_project->itemText(i)).isEmpty())
+                copy->findItems(ui->comboBox_dst_project->itemText(i))[0]->setStatusTip(NOT_IN_PROCESS);
+        }
+    }
+}
+
+bool import_AIRSAT::generate_name(
+    QListWidget* imageslist,
+    std::vector<QString>& data_files,
+    std::vector<QString>& xml_files,
+    std::vector<QString>& import_names
+)
+{
+    if (!imageslist) return false;
+    data_files.clear();
+    xml_files.clear();
+    import_names.clear();
+    for (int i = 0; i < imageslist->count(); i++)
+    {
+        QString text = imageslist->item(i)->text();
+        QStringList parts = text.split(" | ");
+        if (parts.size() != 2)
+            continue;
+        QString data_path = parts[0].trimmed();
+        QString xml_path = parts[1].trimmed();
+        data_files.push_back(data_path);
+        xml_files.push_back(xml_path);
+        
+        QFileInfo fileinfo(data_path);
+        import_names.push_back(fileinfo.baseName());
+    }
+    return !data_files.empty();
+}
+
+void import_AIRSAT::ChangeVision(bool Editable)
+{
+    if (Editable)
+    {
+        ui->comboBox_dst_project->setDisabled(0);
+        ui->lineEdit_dst_node->setDisabled(0);
+        ui->buttonBox->buttons().at(0)->setDisabled(0);
+        ui->pushButton_add->setDisabled(0);
+        ui->pushButton_remove->setDisabled(0);
+        ui->pushButton_browse_data->setDisabled(0);
+        ui->pushButton_browse_xml->setDisabled(0);
+        ui->lineEdit_data_file->setDisabled(0);
+        ui->lineEdit_xml_file->setDisabled(0);
+    }
+    else
+    {
+        ui->comboBox_dst_project->setDisabled(1);
+        ui->lineEdit_dst_node->setDisabled(1);
+        ui->buttonBox->buttons().at(0)->setDisabled(1);
+        ui->pushButton_add->setDisabled(1);
+        ui->pushButton_remove->setDisabled(1);
+        ui->pushButton_browse_data->setDisabled(1);
+        ui->pushButton_browse_xml->setDisabled(1);
+        ui->lineEdit_data_file->setDisabled(1);
+        ui->lineEdit_xml_file->setDisabled(1);
+    }
+}
+
+void import_AIRSAT::updateProcess(int value, QString information)
+{
+    if (!ui->progressBar->isHidden())
+    {
+        ui->progressBar->setValue(value);
+        ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
+        ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    }
+}
+
+void import_AIRSAT::endProcess()
+{
+    if (import_AIRSAT_thread)
+    {
+        import_AIRSAT_thread->thread()->quit();
+        import_AIRSAT_thread->thread()->wait();
+    }
+    ui->progressBar->hide();
+    this->close();
+}
+
+void import_AIRSAT::errorProcess(QString error_msg)
+{
+    QMessageBox::warning(NULL, "Error", error_msg);
+    if (import_AIRSAT_thread)
+    {
+        import_AIRSAT_thread->thread()->quit();
+        import_AIRSAT_thread->thread()->wait();
+        import_AIRSAT_thread = NULL;
+    }
+    ui->progressBar->hide();
+    ChangeVision(true);
+}
+
+void import_AIRSAT::endThread()
+{
+    if (import_AIRSAT_thread)
+    {
+        import_AIRSAT_thread->thread()->quit();
+        import_AIRSAT_thread->thread()->wait();
+        import_AIRSAT_thread = NULL;
+    }
+}
+
+void import_AIRSAT::StopThread()
+{
+    if (import_AIRSAT_thread != NULL)
+    {
+        if (import_AIRSAT_thread->thread()->isRunning())
+        {
+            import_AIRSAT_thread->thread()->requestInterruption();
+            import_AIRSAT_thread->thread()->quit();
+            import_AIRSAT_thread->thread()->wait();
+        }
+        import_AIRSAT_thread = NULL;
+    }
+}
+
+void import_AIRSAT::TransitModel(QStandardItemModel* model)
+{
+    emit sendCopy(model);
+}
+
+void import_AIRSAT::ShowProjectList(QStandardItemModel* model)
+{
+    this->copy = model;
+    for (int i = 0; i < model->rowCount(); i++)
+    {
+        ui->comboBox_dst_project->addItem(model->item(i, 0)->text());
+        model->item(i, 0)->setStatusTip(IN_PROCESS);
+    }
+    ui->comboBox_dst_project->setCurrentIndex(0);
+    this->save_path = model->item(0, 1)->text();
+}
+
+void import_AIRSAT::on_comboBox_dst_project_currentIndexChanged()
+{
+    if (!this->copy || ui->comboBox_dst_project->currentIndex() < 0) return;
+    auto items = this->copy->findItems(ui->comboBox_dst_project->currentText());
+    if (items.isEmpty()) return;
+    QStandardItem* project = items[0];
+    QModelIndex pro_index = this->copy->indexFromItem(project);
+    QModelIndex pro_path_index = pro_index.siblingAtColumn(1);
+    this->save_path = this->copy->itemFromIndex(pro_path_index)->text();
+}
+
+void import_AIRSAT::on_pushButton_browse_data_clicked()
+{
+    QString filename = QFileDialog::getOpenFileName(this,
+        QStringLiteral("选择数据文件"),
+        "",
+        "Data Files (*.tiff *.tif *.h5)");
+    if (!filename.isEmpty())
+    {
+        ui->lineEdit_data_file->setText(filename);
+    }
+}
+
+void import_AIRSAT::on_pushButton_browse_xml_clicked()
+{
+    QString filename = QFileDialog::getOpenFileName(this,
+        QStringLiteral("选择参数 XML 文件"),
+        "",
+        "XML Files (*.xml)");
+    if (!filename.isEmpty())
+    {
+        ui->lineEdit_xml_file->setText(filename);
+    }
+}
+
+void import_AIRSAT::on_pushButton_add_pressed()
+{
+    QString data_file = ui->lineEdit_data_file->text().trimmed();
+    QString xml_file = ui->lineEdit_xml_file->text().trimmed();
+    if (data_file.isEmpty() || xml_file.isEmpty())
+    {
+        QMessageBox::warning(this, "Warning", QStringLiteral("数据文件和XML文件路径都不能为空！"));
+        return;
+    }
+    if (!QFileInfo::exists(data_file))
+    {
+        QMessageBox::warning(this, "Warning", QStringLiteral("数据文件不存在！"));
+        return;
+    }
+    if (!QFileInfo::exists(xml_file))
+    {
+        QMessageBox::warning(this, "Warning", QStringLiteral("XML文件不存在！"));
+        return;
+    }
+    
+    QString itemText = data_file + " | " + xml_file;
+    for (int i = 0; i < ui->listWidget->count(); ++i)
+    {
+        if (ui->listWidget->item(i)->text() == itemText)
+        {
+            QMessageBox::warning(this, "Warning", QStringLiteral("该文件对已在列表中！"));
+            return;
+        }
+    }
+    ui->listWidget->addItem(itemText);
+    ui->lineEdit_data_file->clear();
+    ui->lineEdit_xml_file->clear();
+}
+
+void import_AIRSAT::on_pushButton_remove_pressed()
+{
+    if (ui->listWidget->count() >= 1)
+    {
+        ui->listWidget->takeItem(ui->listWidget->currentRow());
+    }
+}
+
+void import_AIRSAT::on_buttonBox_rejected()
+{
+    close();
+}
+
+void import_AIRSAT::on_buttonBox_accepted()
+{
+    if (ui->listWidget->count() < 1)
+    {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("导入图像文件为空！"));
+        return;
+    }
+    if (ui->lineEdit_dst_node->text().isEmpty())
+    {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点名为空！"));
+        return;
+    }
+
+    if (!this->copy) return;
+    auto items = this->copy->findItems(ui->comboBox_dst_project->currentText());
+    if (items.isEmpty()) return;
+    QStandardItem* project = items[0];
+    if (!project) {
+        return;
+    }
+    bool same_name_node = false;
+    for (int i = 0; i < project->rowCount(); i++)
+    {
+        if (ui->lineEdit_dst_node->text() == project->child(i, 0)->text() && project->child(i, 1)->text() != "complex-0.0")
+        {
+            same_name_node = true;
+        }
+    }
+    if (same_name_node)
+    {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("目标节点已存在，且和导入数据级别不同，请重命名！"));
+        return;
+    }
+
+    std::vector<QString> data_file_list;
+    std::vector<QString> xml_file_list;
+    std::vector<QString> import_namelist;
+    if (!generate_name(ui->listWidget, data_file_list, xml_file_list, import_namelist)) return;
+
+    if (import_AIRSAT_thread) {
+        import_AIRSAT_thread->thread()->quit();
+        import_AIRSAT_thread->thread()->wait();
+    }
+
+    import_AIRSAT_thread = new AIRSATImportWorker;
+    QThread* thread = new QThread(this);
+    import_AIRSAT_thread->moveToThread(thread);
+    ui->progressBar->setValue(0);
+    ui->progressBar->show();
+    connect(this, &import_AIRSAT::operate2, import_AIRSAT_thread, &AIRSATImportWorker::import_AIRSAT_patch, Qt::QueuedConnection);
+    connect(import_AIRSAT_thread, &AIRSATImportWorker::updateProcess, this, &import_AIRSAT::updateProcess);
+    connect(thread, &QThread::finished, import_AIRSAT_thread, &AIRSATImportWorker::deleteLater);
+    connect(thread, &QThread::finished, thread, &QThread::deleteLater);
+    connect(import_AIRSAT_thread, &AIRSATImportWorker::endProcess, this, &import_AIRSAT::endProcess);
+    connect(import_AIRSAT_thread, &AIRSATImportWorker::errorProcess, this, &import_AIRSAT::errorProcess);
+    connect(this, &QWidget::destroyed, this, &import_AIRSAT::StopThread);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_AIRSAT::StopThread);
+    connect(import_AIRSAT_thread, &AIRSATImportWorker::sendModel, this, &import_AIRSAT::TransitModel);
+    thread->start();
+    emit operate2(
+        this->save_path,
+        data_file_list,
+        xml_file_list,
+        import_namelist,
+        ui->lineEdit_dst_node->text(),
+        ui->comboBox_dst_project->currentText(),
+        this->copy);
+    ChangeVision(false);
+}

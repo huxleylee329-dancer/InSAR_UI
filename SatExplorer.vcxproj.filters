@@ -157,7 +157,25 @@
     <ClCompile Include="import_CSK.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="import_AIRSAT.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="import_ALOS2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_Biomass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_LiDAR.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_Spacety.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_LUTAN.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="import_HTHT.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NodeModels.cpp">
@@ -176,6 +194,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ALOS2ImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BiomassImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LidarImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LUTANImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="HTHTImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GenericSARImportNode.cpp">
@@ -262,7 +292,25 @@
     <ClCompile Include="CSKImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="AIRSATImportWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SpacetyImportWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="ALOS2ImportWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="BiomassImportWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LidarImportWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LUTANImportWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="HTHTImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SLCDerampNode.cpp">
@@ -284,6 +332,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CSKImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AIRSATImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SpacetyImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="S1DeburstNode.cpp">
@@ -681,10 +735,46 @@
     <QtMoc Include="include\import_CSK.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\import_AIRSAT.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\import_ALOS2.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\import_Biomass.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\import_LiDAR.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\import_Spacety.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\import_LUTAN.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\import_HTHT.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\ALOS2ImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\BiomassImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\BiomassImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\LidarImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\LUTANImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\HTHTImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SpacetyImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\GenericSARImportNode.h">
@@ -771,7 +861,22 @@
     <QtMoc Include="include\CSKImportWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\AIRSATImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\ALOS2ImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\LidarImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\SpacetyImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\LUTANImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\HTHTImportWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SLCDerampNode.h">
@@ -799,6 +904,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\CSKImportNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\AIRSATImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\S1SwathMergeNode.h">
@@ -1133,7 +1241,25 @@
     <QtUic Include="ui\ImportCsk.ui">
       <Filter>Form Files</Filter>
     </QtUic>
+    <QtUic Include="ui\ImportAirsat.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
     <QtUic Include="ui\ImportAlos2.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\ImportBiomass.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\ImportLidar.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\ImportSpacety.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\ImportLutan.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\ImportHtht.ui">
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="ui\S1Deburst.ui">

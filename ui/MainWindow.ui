@@ -85,10 +85,28 @@
      <property name="title">
       <string>Import</string>
      </property>
-     <addaction name="actionTSX"/>
-     <addaction name="actionSentinel_1"/>
-     <addaction name="actionCOSMOS_SkyMed"/>
-     <addaction name="actionALOS_2"/>
+     <widget class="QMenu" name="menuInSAR_Import">
+      <property name="title">
+       <string>InSAR Data</string>
+      </property>
+      <addaction name="actionTSX"/>
+      <addaction name="actionSentinel_1"/>
+      <addaction name="actionCOSMOS_SkyMed"/>
+      <addaction name="actionALOS_2"/>
+      <addaction name="actionLuTan_1"/>
+      <addaction name="actionHongtu_1"/>
+      <addaction name="actionSpacety"/>
+      <addaction name="actionAIRSAT"/>
+      <addaction name="actionBiomass"/>
+     </widget>
+     <widget class="QMenu" name="menuLiDAR_Import">
+      <property name="title">
+       <string>LiDAR Data</string>
+      </property>
+      <addaction name="actionLiDAR"/>
+     </widget>
+     <addaction name="menuInSAR_Import"/>
+     <addaction name="menuLiDAR_Import"/>
     </widget>
     <widget class="QMenu" name="menuSentinel1_Tool">
      <property name="title">
@@ -362,6 +380,36 @@
   <action name="actionCleanOrphanedFiles">
    <property name="text">
     <string>清除孤立文件</string>
+   </property>
+  </action>
+  <action name="actionLuTan_1">
+   <property name="text">
+    <string>LuTan-1</string>
+   </property>
+  </action>
+  <action name="actionHongtu_1">
+   <property name="text">
+    <string>Hongtu-1</string>
+   </property>
+  </action>
+  <action name="actionSpacety">
+   <property name="text">
+    <string>Spacety</string>
+   </property>
+  </action>
+  <action name="actionAIRSAT">
+   <property name="text">
+    <string>AIRSAT</string>
+   </property>
+  </action>
+  <action name="actionBiomass">
+   <property name="text">
+    <string>Biomass L1A</string>
+   </property>
+  </action>
+  <action name="actionLiDAR">
+   <property name="text">
+    <string>LiDAR (GEDI/ICESat-2)</string>
    </property>
   </action>
  </widget>

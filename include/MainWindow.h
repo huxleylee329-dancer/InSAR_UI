@@ -119,6 +119,12 @@ private slots:
     void on_actionS1_frame_merge_triggered();
     void on_actionCOSMOS_SkyMed_triggered();
     void on_actionALOS_2_triggered();
+    void on_actionLuTan_1_triggered();
+    void on_actionHongtu_1_triggered();
+    void on_actionSpacety_triggered();
+    void on_actionAIRSAT_triggered();
+    void on_actionBiomass_triggered();
+    void on_actionLiDAR_triggered();
     void handleTabCloseRequested(int);
     // Switch ColorBar
     void ShowColorBar(int index);

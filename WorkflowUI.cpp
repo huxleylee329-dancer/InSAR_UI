@@ -82,7 +82,13 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "Sentinel-1",       // Data Import 下的第一个子分类
         "TerraSAR-X",       // 第二个
         "COSMO-SkyMed",     // 第三个
-        "ALOS-2"            // 第四个
+        "ALOS-2",           // 第四个
+        "LuTan-1",
+        "Hongtu-1",
+        "Fucheng-1",
+        "AIRSAT",
+        "Biomass L1A",
+        "LiDAR"
     };
 
     order.subcategories["Preprocessing"] = QStringList{
@@ -116,6 +122,30 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     order.leafItems["Data Import/ALOS-2"] = QList<PaletteOrder::LeafItem>{
         {"Batch Import", "ALOS-2 Import"}           // ALOS-2 批量导入
+    };
+
+    order.leafItems["Data Import/LuTan-1"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "LuTan-1 Import"}
+    };
+
+    order.leafItems["Data Import/Hongtu-1"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "Hongtu-1 Import"}
+    };
+
+    order.leafItems["Data Import/Fucheng-1"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "Fucheng-1 Import"}
+    };
+
+    order.leafItems["Data Import/AIRSAT"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "AIRSAT Import"}
+    };
+
+    order.leafItems["Data Import/Biomass L1A"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "Biomass L1A Import"}
+    };
+
+    order.leafItems["Data Import/LiDAR"] = QList<PaletteOrder::LeafItem>{
+        {"Batch Import", "LiDAR Import"}
     };
 
     order.leafItems["SAR/Import"] = QList<PaletteOrder::LeafItem>{

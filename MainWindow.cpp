@@ -67,6 +67,12 @@ extern void applyTheme(const QString &theme);
 #include"S1_frame_merge.h"
 #include"import_CSK.h"
 #include"import_ALOS2.h"
+#include "import_LUTAN.h"
+#include "import_HTHT.h"
+#include "import_Spacety.h"
+#include "import_AIRSAT.h"
+#include "import_Biomass.h"
+#include "import_LiDAR.h"
 #include"icon_source.h"
 #include"SpeckleDenoise.h"
 #include"ClutterSuppression.h"
@@ -134,6 +140,12 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionSentinel_1",               ":/SatExplorer/svg/import.svg"},
     {"actionCOSMOS_SkyMed",            ":/SatExplorer/svg/import.svg"},
     {"actionALOS_2",                   ":/SatExplorer/svg/import.svg"},
+    {"actionLuTan_1",                  ":/SatExplorer/svg/import.svg"},
+    {"actionHongtu_1",                 ":/SatExplorer/svg/import.svg"},
+    {"actionSpacety",                  ":/SatExplorer/svg/import.svg"},
+    {"actionAIRSAT",                   ":/SatExplorer/svg/import.svg"},
+    {"actionBiomass",                  ":/SatExplorer/svg/import.svg"},
+    {"actionLiDAR",                    ":/SatExplorer/svg/import.svg"},
     {"actionSpeckleDenoise",           ":/SatExplorer/svg/filter.svg"},
     {"actionDenoise",                  ":/SatExplorer/svg/filter.svg"},
     {"actionClutterSuppression",       ":/SatExplorer/svg/clutter_suppress.svg"},
@@ -143,8 +155,9 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionInterferometric_Formation",":/SatExplorer/svg/interferogram.svg"},
     {"actionUnwrap",                   ":/SatExplorer/svg/unwrap.svg"},
     {"actionBaseline_Preview",         ":/SatExplorer/svg/view.svg"},
-    // QMenu icons
     {"menuImport",                     ":/SatExplorer/svg/import.svg"},
+    {"menuInSAR_Import",               ":/SatExplorer/svg/import.svg"},
+    {"menuLiDAR_Import",               ":/SatExplorer/svg/import.svg"},
     {"menuSBAS",                       ":/SatExplorer/svg/baseline_formation.svg"},
     {"menuSentinel1_Tool",             ":/SatExplorer/svg/toolbox.svg"},
     {"menuImport_2",                   ":/SatExplorer/svg/import.svg"},
@@ -1443,6 +1456,72 @@ void MainWindow::on_actionALOS_2_triggered()
     alos2->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
+void MainWindow::on_actionLuTan_1_triggered()
+{
+    import_LUTAN* lutan = new import_LUTAN;
+    connect(this, &MainWindow::sendModel, lutan, &import_LUTAN::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    lutan->show();
+
+    connect(lutan, &import_LUTAN::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    lutan->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionHongtu_1_triggered()
+{
+    import_HTHT* htht = new import_HTHT;
+    connect(this, &MainWindow::sendModel, htht, &import_HTHT::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    htht->show();
+
+    connect(htht, &import_HTHT::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    htht->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionSpacety_triggered()
+{
+    import_Spacety* spacety = new import_Spacety;
+    connect(this, &MainWindow::sendModel, spacety, &import_Spacety::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    spacety->show();
+
+    connect(spacety, &import_Spacety::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    spacety->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionAIRSAT_triggered()
+{
+    import_AIRSAT* airsat = new import_AIRSAT;
+    connect(this, &MainWindow::sendModel, airsat, &import_AIRSAT::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    airsat->show();
+
+    connect(airsat, &import_AIRSAT::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    airsat->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionBiomass_triggered()
+{
+    import_Biomass* biomass = new import_Biomass;
+    connect(this, &MainWindow::sendModel, biomass, &import_Biomass::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    biomass->show();
+
+    connect(biomass, &import_Biomass::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    biomass->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionLiDAR_triggered()
+{
+    import_LiDAR* lidar = new import_LiDAR;
+    connect(this, &MainWindow::sendModel, lidar, &import_LiDAR::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    lidar->show();
+
+    connect(lidar, &import_LiDAR::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    lidar->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
 void MainWindow::ShowColorBar(int index)
 {
     // 界面切换到 Workflow 后直接返回
@@ -1580,7 +1659,9 @@ void MainWindow::applyMenuIcons(bool isDark)
         if (name.contains("Import") || name.contains("Export") || name == "actionEvaluation" ||
             name == "actionTSX" || name == "actionSentinel_1" || name == "actionCOSMOS_SkyMed" ||
             name == "actionALOS_2" || name == "actionGenericSAR" || name == "actionExport_KML" ||
-            name == "actiongeocode" || name == "menuImport" || name == "menuImport_2") {
+            name == "actiongeocode" || name == "menuImport" || name == "menuImport_2" ||
+            name == "actionLuTan_1" || name == "actionHongtu_1" || name == "actionSpacety" ||
+            name == "actionAIRSAT" || name == "actionBiomass" || name == "actionLiDAR") {
             return isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
         }
         // 4. Amber/Orange (Filtering/Denoising/Unwrap/DEM)

@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ImportBiomass</class>
+ <widget class="QWidget" name="ImportBiomass">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>550</width>
+    <height>500</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>导入Biomass L1A数据</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="../resources/SatExplorer.qrc">
+    <normaloff>:/SatExplorer/icon/InSARapp.ico</normaloff>:/SatExplorer/icon/InSARapp.ico</iconset>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="groupBox_files">
+     <property name="title">
+      <string>单组数据配置</string>
+     </property>
+     <layout class="QFormLayout" name="formLayout_files">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_amp">
+        <property name="text">
+         <string>幅度文件 (.tiff)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <layout class="QHBoxLayout" name="horizontalLayout_amp">
+        <item>
+         <widget class="QLineEdit" name="lineEdit_amp_file"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushButton_amp_browse">
+          <property name="text">
+           <string>浏览...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_phase">
+        <property name="text">
+         <string>相位文件 (.tiff)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <layout class="QHBoxLayout" name="horizontalLayout_phase">
+        <item>
+         <widget class="QLineEdit" name="lineEdit_phase_file"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushButton_phase_browse">
+          <property name="text">
+           <string>浏览...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_xml">
+        <property name="text">
+         <string>参数 XML (.xml)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <layout class="QHBoxLayout" name="horizontalLayout_xml">
+        <item>
+         <widget class="QLineEdit" name="lineEdit_xml_file"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushButton_xml_browse">
+          <property name="text">
+           <string>浏览...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_orbit">
+        <property name="text">
+         <string>轨道文件 (.tiff)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <layout class="QHBoxLayout" name="horizontalLayout_orbit">
+        <item>
+         <widget class="QLineEdit" name="lineEdit_orbit_file"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="pushButton_orbit_browse">
+          <property name="text">
+           <string>浏览...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="label_pol">
+        <property name="text">
+         <string>极化方式</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QComboBox" name="comboBox_pol">
+        <item>
+         <property name="text">
+          <string>HH</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>HV</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>VH</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>VV</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_list" stretch="8,2">
+     <item>
+      <widget class="QListWidget" name="listWidget"/>
+     </item>
+     <item>
+      <layout class="QVBoxLayout" name="verticalLayout_buttons">
+       <item>
+        <widget class="QPushButton" name="pushButton_add">
+         <property name="text">
+          <string>添加</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="pushButton_remove">
+         <property name="text">
+          <string>移除</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_buttons">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_dst">
+     <property name="title">
+      <string>目标配置</string>
+     </property>
+     <layout class="QFormLayout" name="formLayout_dst">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_dst_project">
+        <property name="text">
+         <string>目标工程</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBox_dst_project"/>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_dst_node">
+        <property name="text">
+         <string>目标节点</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="lineEdit_dst_node"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_bottom" stretch="5,5">
+     <item>
+      <widget class="QProgressBar" name="progressBar">
+       <property name="value">
+        <number>0</number>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QDialogButtonBox" name="buttonBox">
+       <property name="standardButtons">
+        <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources>
+  <include location="../resources/SatExplorer.qrc"/>
+ </resources>
+ <connections/>
+</ui>
