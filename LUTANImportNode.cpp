@@ -67,10 +67,6 @@ QWidget* LUTANImportNode::createWidget()
         invalidateExecution();
     };
 
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
-
     // Row 1: Data file row
     auto* dataRow = new QHBoxLayout();
     dataRow->addWidget(new QLabel("数据文件："), 3);
@@ -111,6 +107,10 @@ QWidget* LUTANImportNode::createWidget()
     m_fileListWidget = new QListWidget();
     m_fileListWidget->setMaximumHeight(80);
     mainLayout->addWidget(m_fileListWidget);
+
+    // Project Name Badge
+    m_projectLabel = createProjectBadge(projectName());
+    mainLayout->addWidget(m_projectLabel);
 
     // Target node row
     auto* nodeRow = new QHBoxLayout();
@@ -244,11 +244,55 @@ QStringList LUTANImportNode::getImportedFilePaths() const
     return m_importedFilePaths;
 }
 
+unsigned int LUTANImportNode::nPorts(PortType portType) const
+{
+    if (portType == PortType::In) return 0;
+    return 2;
+}
+
 NodeDataType LUTANImportNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::Out)
-        return NodeDataType{"imported_file", "Imported Files"};
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+    }
     return NodeDataType();
+}
+
+bool LUTANImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out;
+}
+
+QString LUTANImportNode::portCaption(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return tr("成果 *");
+        if (portIndex == 1) return tr("预览 ?");
+    }
+    return QString();
+}
+
+bool LUTANImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out && portIndex == 1;
+}
+
+std::shared_ptr<NodeData> LUTANImportNode::outData(PortIndex port)
+{
+    return ExecutableNodeDelegateModel::outData(port);
+}
+
+QStringList LUTANImportNode::previewImagePaths() const
+{
+    QStringList jpgPaths;
+    for (const QString& h5Path : m_importedFilePaths) {
+        QFileInfo fi(h5Path);
+        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        if (QFileInfo::exists(jpg))
+            jpgPaths.append(jpg);
+    }
+    return jpgPaths;
 }
 
 QString LUTANImportNode::getOutputNodeName() const
@@ -264,10 +308,59 @@ QString LUTANImportNode::getOutputNodeName() const
 bool LUTANImportNode::validateAndRestoreOutput()
 {
     if (m_importedFilePaths.isEmpty()) return false;
+
+    // 检查所有 H5 文件是否存在
     for (const QString& path : m_importedFilePaths)
     {
         if (!QFileInfo::exists(path)) return false;
     }
+
+    // 恢复 Port 0 输出
+    QString outputNodeName = m_outputNodeName;
+    if (outputNodeName.isEmpty()) outputNodeName = "LUTAN_Import";
+    auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, outputNodeName);
+    setOutputData(0, outputData);
+    Q_EMIT dataUpdated(0);
+
+    // Port 1 预览恢复
+    QStringList allJpgPaths;
+    QStringList missingH5s, missingJpgs;
+
+    for (const QString& h5Path : m_importedFilePaths) {
+        QFileInfo fi(h5Path);
+        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        allJpgPaths.append(jpg);
+        if (!QFileInfo::exists(jpg)) {
+            missingH5s.append(h5Path);
+            missingJpgs.append(jpg);
+        }
+    }
+
+    if (!missingH5s.isEmpty()) {
+        // 异步补全缺失的 JPG（严禁主线程同步调用 generateJpgPreviewFromH5）
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+        m_remedyWatcher.disconnect();
+
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, allJpgPaths]() {
+            m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+        });
+
+        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+            for (int i = 0; i < missingH5s.size(); ++i)
+                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+        });
+        m_remedyWatcher.setFuture(future);
+    } else {
+        // 全部 JPG 已存在，直接设置
+        m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+        setOutputData(1, m_imageInfoData);
+        Q_EMIT dataUpdated(1);
+    }
+
     return true;
 }
 
@@ -375,6 +468,18 @@ void LUTANImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
+    // 双路输出：Port 1 预览
+    if (!m_importedFilePaths.isEmpty()) {
+        QStringList jpgPaths;
+        for (const QString& h5Path : m_importedFilePaths) {
+            QFileInfo fi(h5Path);
+            jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
+        }
+        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
+        setOutputData(1, m_imageInfoData);
+        Q_EMIT dataUpdated(1);
+    }
+
     if (m_thread)
     {
         m_thread->quit();
@@ -447,8 +552,7 @@ QJsonObject LUTANImportNode::save() const
 
 void LUTANImportNode::load(QJsonObject const &json)
 {
-    ImportNodeBase::load(json);
-
+    // 先解析自身字段，再调用基类 load()（基类会同步触发 validateAndRestoreOutput）
     m_dataFiles.clear();
     QJsonArray dataArray = json["dataFiles"].toArray();
     for (QJsonValueRef val : dataArray) m_dataFiles.append(val.toString());
@@ -462,14 +566,16 @@ void LUTANImportNode::load(QJsonObject const &json)
     for (QJsonValueRef val : modesArray) m_modes.append(val.toInt());
 
     m_outputNodeName = json["outputNodeName"].toString();
-    if (m_outputNodeNameEdit)
-    {
-        m_outputNodeNameEdit->setText(m_outputNodeName);
+    if (m_outputNodeName.isEmpty()) {
+        m_outputNodeName = "LUTAN_Import";
     }
 
     m_importedFilePaths.clear();
     QJsonArray importedArray = json["importedFilePaths"].toArray();
     for (QJsonValueRef val : importedArray) m_importedFilePaths.append(val.toString());
+
+    // 同步 UI 控件
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
 
     if (m_fileListWidget)
     {
@@ -486,6 +592,8 @@ void LUTANImportNode::load(QJsonObject const &json)
                 .arg(modeStr));
         }
     }
+
+    ImportNodeBase::load(json);
 }
 
 } // namespace QtNodes

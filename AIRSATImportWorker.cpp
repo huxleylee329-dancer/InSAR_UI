@@ -92,6 +92,11 @@ void AIRSATImportWorker::import_AIRSAT_patch(
             return;
         }
 
+        // 生成 JPG 预览缩略图
+        QFileInfo fi(h5_path);
+        QString jpg_path = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, "complex");
+
         int localRet = 0;
         if (model) {
             QMetaObject::invokeMethod(model, [=, &localRet]() {

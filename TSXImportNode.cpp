@@ -309,6 +309,15 @@ void TSXImportNode::onImportFinished()
 
     ImportNodeBase::onImportFinished();
 
+    // Port 1 预览（JPG 已由 Worker 生成）
+    if (!m_importedFilePath.isEmpty()) {
+        QFileInfo fi(m_importedFilePath);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+        setOutputData(1, m_imageInfoData);
+        Q_EMIT dataUpdated(1);
+    }
+
     if (m_thread) {
         m_thread->quit();
         m_thread->wait();
@@ -380,6 +389,57 @@ void TSXImportNode::load(QJsonObject const &json)
     }
 }
 
+unsigned int TSXImportNode::nPorts(PortType portType) const
+{
+    if (portType == PortType::In) return 0;
+    return 2;
+}
+
+NodeDataType TSXImportNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+    }
+    return NodeDataType();
+}
+
+bool TSXImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out;
+}
+
+QString TSXImportNode::portCaption(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return tr("成果 *");
+        if (portIndex == 1) return tr("预览 ?");
+    }
+    return QString();
+}
+
+bool TSXImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out && portIndex == 1;
+}
+
+std::shared_ptr<NodeData> TSXImportNode::outData(PortIndex port)
+{
+    return ExecutableNodeDelegateModel::outData(port);
+}
+
+QStringList TSXImportNode::previewImagePaths() const
+{
+    QStringList jpgPaths;
+    if (!m_importedFilePath.isEmpty()) {
+        QFileInfo fi(m_importedFilePath);
+        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        if (QFileInfo::exists(jpg))
+            jpgPaths.append(jpg);
+    }
+    return jpgPaths;
+}
+
 bool TSXImportNode::validateAndRestoreOutput()
 {
     QString nodeName = m_outputNodeName.trimmed();
@@ -396,6 +456,34 @@ bool TSXImportNode::validateAndRestoreOutput()
         m_importedFilePath = outputPath;
         auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
         setOutputData(0, outputData);
+        Q_EMIT dataUpdated(0);
+
+        // Port 1 预览恢复
+        QFileInfo fi(outputPath);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+
+        if (!QFileInfo::exists(jpgPath)) {
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+            m_remedyWatcher.disconnect();
+
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPath]() {
+                m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+                setOutputData(1, m_imageInfoData);
+                Q_EMIT dataUpdated(1);
+            });
+
+            QString capturedH5 = outputPath;
+            QFuture<void> future = QtConcurrent::run([capturedH5, jpgPath]() {
+                NodeUtils::generateJpgPreviewFromH5(capturedH5, jpgPath, "complex");
+            });
+            m_remedyWatcher.setFuture(future);
+        } else {
+            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+        }
+
         return true;
     }
 

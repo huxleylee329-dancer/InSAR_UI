@@ -3,6 +3,7 @@
 
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
+#include "NodeDataTypes.h"
 #include "LidarImportWorker.h"
 #include <QWidget>
 #include <QListWidget>
@@ -16,6 +17,8 @@
 #include <QThread>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrent>
 
 namespace QtNodes {
 
@@ -43,7 +46,13 @@ protected:
     void executeImport() override;
     QStringList getImportedFilePaths() const override;
     QString getOutputNodeName() const override;
+    unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
+    QStringList previewImagePaths() const override;
 
     // Thread accessors
     QThread* qThread() const override { return m_thread; }
@@ -90,6 +99,10 @@ private:
     QString m_outputNodeName;
     QString m_productType;
     int m_rhPercentile;
+
+    // Port 1 预览数据
+    std::shared_ptr<ImageInfoData> m_imageInfoData;
+    QFutureWatcher<void> m_remedyWatcher;
 
     // Worker thread
     LidarImportWorker* m_workerThread;

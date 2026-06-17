@@ -3,6 +3,7 @@
 
 #include "ImportNodeBase.h"
 #include "ImportDataTypes.h"
+#include "NodeDataTypes.h"
 #include "TSXImportWorker.h"
 #include <QWidget>
 #include <QListWidget>
@@ -13,6 +14,8 @@
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include <QThread>
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrent>
 
 namespace QtNodes {
 
@@ -43,6 +46,13 @@ protected:
     void executeImport() override;
     QStringList getImportedFilePaths() const override;
     QString getOutputNodeName() const override;
+    unsigned int nPorts(PortType portType) const override;
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    std::shared_ptr<NodeData> outData(PortIndex port) override;
+    QStringList previewImagePaths() const override;
 
     // Thread accessors
     QThread* qThread() const override { return m_thread; }
@@ -77,6 +87,10 @@ private:
     QStringList m_importedFilePaths;
     QString m_outputNodeName;
     QString m_polarization = "HH";
+
+    // Port 1 预览数据
+    std::shared_ptr<ImageInfoData> m_imageInfoData;
+    QFutureWatcher<void> m_remedyWatcher;
 
     // Worker thread
     TSXImportWorker* m_workerThread;

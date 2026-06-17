@@ -221,11 +221,55 @@ QStringList CSKImportNode::getImportedFilePaths() const
     return m_importedFilePaths;
 }
 
+unsigned int CSKImportNode::nPorts(PortType portType) const
+{
+    if (portType == PortType::In) return 0;
+    return 2;
+}
+
 NodeDataType CSKImportNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::Out)
-        return NodeDataType{"imported_file", "Imported Files"};
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+    }
     return NodeDataType();
+}
+
+bool CSKImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out;
+}
+
+QString CSKImportNode::portCaption(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return tr("成果 *");
+        if (portIndex == 1) return tr("预览 ?");
+    }
+    return QString();
+}
+
+bool CSKImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
+{
+    return portType == PortType::Out && portIndex == 1;
+}
+
+std::shared_ptr<NodeData> CSKImportNode::outData(PortIndex port)
+{
+    return ExecutableNodeDelegateModel::outData(port);
+}
+
+QStringList CSKImportNode::previewImagePaths() const
+{
+    QStringList jpgPaths;
+    for (const QString& h5Path : m_importedFilePaths) {
+        QFileInfo fi(h5Path);
+        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        if (QFileInfo::exists(jpg))
+            jpgPaths.append(jpg);
+    }
+    return jpgPaths;
 }
 
 QString CSKImportNode::getOutputNodeName() const
@@ -317,6 +361,18 @@ void CSKImportNode::onImportFinished()
     }
 
     ImportNodeBase::onImportFinished();
+
+    // 双路输出：Port 1 预览
+    if (!m_importedFilePaths.isEmpty()) {
+        QStringList jpgPaths;
+        for (const QString& h5Path : m_importedFilePaths) {
+            QFileInfo fi(h5Path);
+            jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
+        }
+        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
+        setOutputData(1, m_imageInfoData);
+        Q_EMIT dataUpdated(1);
+    }
 
     // Clean up thread (consistent with TSXBatchImportNode)
     if (m_thread)
@@ -419,6 +475,45 @@ bool CSKImportNode::validateAndRestoreOutput()
             m_importedFilePaths = importedFiles;
             auto outputData = std::make_shared<ImportedFileData>(importedFiles, nodeName);
             setOutputData(0, outputData);
+            Q_EMIT dataUpdated(0);
+
+            // Port 1 预览恢复
+            QStringList allJpgPaths;
+            QStringList missingH5s, missingJpgs;
+
+            for (const QString& h5Path : importedFiles) {
+                QFileInfo fi(h5Path);
+                QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+                allJpgPaths.append(jpg);
+                if (!QFileInfo::exists(jpg)) {
+                    missingH5s.append(h5Path);
+                    missingJpgs.append(jpg);
+                }
+            }
+
+            if (!missingH5s.isEmpty()) {
+                m_remedyWatcher.cancel();
+                m_remedyWatcher.waitForFinished();
+                m_remedyWatcher.disconnect();
+
+                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                        [this, allJpgPaths]() {
+                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+                    setOutputData(1, m_imageInfoData);
+                    Q_EMIT dataUpdated(1);
+                });
+
+                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+                    for (int i = 0; i < missingH5s.size(); ++i)
+                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+                });
+                m_remedyWatcher.setFuture(future);
+            } else {
+                m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+                setOutputData(1, m_imageInfoData);
+                Q_EMIT dataUpdated(1);
+            }
+
             return true;
         }
     }

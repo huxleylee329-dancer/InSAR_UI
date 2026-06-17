@@ -118,6 +118,12 @@ void TSXImportWorker::import_TSX(
         emit errorProcess(QStringLiteral("导入失败或被中止。"));
         return;
     }
+
+    // 生成 JPG 预览缩略图
+    QFileInfo fi(h5_path);
+    QString jpg_path = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+    NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, "complex");
+
     emit updateProcess(90, QStringLiteral("即将完成……"));
 
     int localRet = 0;
@@ -270,6 +276,11 @@ void TSXImportWorker::import_TSX_patch(
             emit errorProcess(QStringLiteral("导入失败或被中断。"));
             return;
         }
+
+        // 生成 JPG 预览缩略图
+        QFileInfo fi(h5_path);
+        QString jpg_path = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, "complex");
 
         int localRet = 0;
         if (model) {

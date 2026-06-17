@@ -141,6 +141,11 @@ void LidarImportWorker::import_Lidar_patch(
             return;
         }
 
+        // 生成 JPG 预览缩略图（LiDAR 使用 "dem" 类型）
+        QFileInfo fi(h5_path);
+        QString jpg_path = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, "dem");
+
         int localRet = 0;
         if (model) {
             QMetaObject::invokeMethod(model, [=, &localRet]() {
