@@ -26,7 +26,7 @@ using namespace cv;
 using namespace std;
 
 UnwrapWorker::UnwrapWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

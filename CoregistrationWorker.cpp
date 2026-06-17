@@ -3,6 +3,8 @@
 #include "icon_source.h"
 #include <Utils.h>
 #include <Registration.h>
+#include <QDir>
+#include <QThread>
 #include <QMessageBox>
 #include <QCoreApplication>
 #include <QFile>
@@ -26,7 +28,7 @@ using namespace cv;
 using namespace std;
 
 CoregistrationWorker::CoregistrationWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
     , m_demPath("")
     , m_filePattern("{InputName}_regis")
 {

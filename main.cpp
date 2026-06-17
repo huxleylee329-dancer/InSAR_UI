@@ -17,6 +17,8 @@
 #include <QMetaType>
 #include <QAbstractItemModel>
 #include <vector>
+#include "ImportTask.h"
+
 
 // Global function to load QSS from file
 QString loadStyleSheet(const QString &fileName)
@@ -65,6 +67,9 @@ int main(int argc, char *argv[])
     qRegisterMetaType<QAbstractItemModel::LayoutChangeHint>("QAbstractItemModel::LayoutChangeHint");
     qRegisterMetaType<std::vector<QString>>("std::vector<QString>");
     qRegisterMetaType<QList<double>>("QList<double>");
+    qRegisterMetaType<ImportTask>("ImportTask");
+    qRegisterMetaType<std::vector<ImportTask>>("std::vector<ImportTask>");
+
 
     // Load theme preference from Config.ini
     QSettings settings("Config.ini", QSettings::IniFormat);

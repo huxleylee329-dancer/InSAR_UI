@@ -1,12 +1,9 @@
-#ifndef SBASTIMESERIESWORKER_H
-#define SBASTIMESERIESWORKER_H
+#pragma once
 
-#include <QObject>
-#include <QString>
+#include "BaseWorker.h"
 #include <QStringList>
-#include <QStandardItemModel>
 
-class SBASTimeSeriesWorker : public QObject
+class SBASTimeSeriesWorker : public BaseWorker
 {
     Q_OBJECT
 
@@ -21,12 +18,4 @@ public slots:
                           double refinement_coh_thresh, double refinemen_def_thresh,
                           QString projectPath, QString projectName, QString dstNode, QString csvPath,
                           QStringList filePaths, QStandardItemModel* model = nullptr);
-
-signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-    void sendModel(QStandardItemModel* model);
 };
-
-#endif // SBASTIMESERIESWORKER_H

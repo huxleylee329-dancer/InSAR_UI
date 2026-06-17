@@ -123,6 +123,8 @@ bool SBASReferenceReselectionNode::portIsOptional(PortType portType, PortIndex p
 
 std::shared_ptr<NodeData> SBASReferenceReselectionNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     if (port == 0)
         return m_outputData;
     else

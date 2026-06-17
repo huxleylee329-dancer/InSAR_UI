@@ -25,7 +25,7 @@ using namespace cv;
 using namespace std;
 
 DenoiseWorker::DenoiseWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

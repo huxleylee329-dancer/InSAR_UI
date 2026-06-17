@@ -105,6 +105,8 @@ bool SBASTimeSeriesNode::portIsOptional(PortType portType, PortIndex portIndex) 
 
 std::shared_ptr<NodeData> SBASTimeSeriesNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     if (port == 0)
         return m_outputData;
     else

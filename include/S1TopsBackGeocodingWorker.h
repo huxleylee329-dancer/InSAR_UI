@@ -1,9 +1,7 @@
 #pragma once
-#include <QObject>
-#include <QString>
-#include <QStandardItemModel>
+#include "BaseWorker.h"
 
-class S1TopsBackGeocodingWorker : public QObject
+class S1TopsBackGeocodingWorker : public BaseWorker
 {
     Q_OBJECT
 public:
@@ -21,10 +19,4 @@ public slots:
         QStandardItemModel* model,
         bool b_ESD = true
     );
-
-signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-    void sendModel(QStandardItemModel* model);
 };

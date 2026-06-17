@@ -56,6 +56,8 @@ NodeDataType CardSimpleSourceNode::dataType(PortType portType, PortIndex portInd
 
 std::shared_ptr<NodeData> CardSimpleSourceNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     auto data = ExecutableNodeDelegateModel::outData(port);
     if (data) {
         return data;
@@ -224,6 +226,8 @@ NodeDataType CardSimpleMathNode::dataType(PortType portType, PortIndex portIndex
 
 std::shared_ptr<NodeData> CardSimpleMathNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     return _output;
 }
 

@@ -77,6 +77,8 @@ NodeDataType S1DeburstNode::dataType(PortType portType, PortIndex portIndex) con
 
 std::shared_ptr<NodeData> S1DeburstNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     if (port == 0)
         return m_outputData;
     else

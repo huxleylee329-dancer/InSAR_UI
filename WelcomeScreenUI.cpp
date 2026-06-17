@@ -1,5 +1,6 @@
 #include "WelcomeScreenUI.h"
 #include <QApplication>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QSettings>
 #include <QListWidgetItem>
@@ -544,9 +545,10 @@ void WelcomeScreenUI::updateThemeStyles()
 
 bool WelcomeScreenUI::eventFilter(QObject *watched, QEvent *event)
 {
-    if (event->type() == QEvent::MouseButtonPress) {
+    if (event->type() == QEvent::MouseButtonRelease) {
+        QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
         QWidget *widget = qobject_cast<QWidget*>(watched);
-        if (widget) {
+        if (widget && mouseEvent->button() == Qt::LeftButton && widget->rect().contains(mouseEvent->pos())) {
             QString filePath = widget->property("filePath").toString();
             if (!filePath.isEmpty()) {
                 emit recentProjectRequested(filePath);

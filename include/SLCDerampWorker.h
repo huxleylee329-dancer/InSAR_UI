@@ -1,12 +1,9 @@
 #pragma once
 
-#include <QObject>
-#include <QString>
-#include <QList>
-#include <QStandardItemModel>
+#include "BaseWorker.h"
 #include <QStringList>
 
-class SLCDerampWorker : public QObject
+class SLCDerampWorker : public BaseWorker
 {
     Q_OBJECT
 
@@ -24,9 +21,6 @@ public slots:
     );
 
 signals:
-    void updateProcess(int value, QString information);
-    void endProcess();
-    void errorProcess(const QString& errorMsg);
-    void sendModel(QStandardItemModel* model);
+    // 特有信号：回传 SLC 去斜坡结果
     void sendResults(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames);
 };

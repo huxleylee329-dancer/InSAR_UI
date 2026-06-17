@@ -9,26 +9,13 @@
 #include <QThread>
 
 BaseImportWorker::BaseImportWorker(const QString& satelliteName, QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
     , m_satelliteName(satelliteName)
-    , stop_flag(true)
 {
 }
 
 BaseImportWorker::~BaseImportWorker()
 {
-}
-
-void BaseImportWorker::StopProcess()
-{
-    QMutexLocker locker(&lock);
-    this->stop_flag = false;
-}
-
-bool BaseImportWorker::isStopRequested()
-{
-    QMutexLocker locker(&lock);
-    return !stop_flag;
 }
 
 void BaseImportWorker::updateImportProgress(int percent, const QString& message)
@@ -70,6 +57,7 @@ void BaseImportWorker::import_patch(
     }
 
     int n_images = tasks.size();
+    InSARLogManager::LogInfo(m_satelliteName + "ImportWorker", QString("Task started: import_patch. Target Node: %1, Project: %2, Total Images: %3").arg(dst_node).arg(dst_project).arg(tasks.size()));
     emit updateProcess(2, QStringLiteral("正在开始导入..."));
 
     for (int i = 0; i < n_images; ++i)
@@ -77,13 +65,15 @@ void BaseImportWorker::import_patch(
         if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) break;
 
         const auto& task = tasks[i];
+        InSARLogManager::LogInfo(m_satelliteName + "ImportWorker", QString("Importing image %1/%2: %3").arg(i + 1).arg(n_images).arg(task.filename));
+
         QString temp_folder = QString("/") + dst_node + QString("/");
         QString relative_path = temp_folder + task.filename + ".h5";
         QString h5_path = QString("%1%2%3.h5").arg(savepath).arg(temp_folder).arg(task.filename);
 
-        // A. 执行子类特有的转换（传入当前任务的进度区间）
-        int progressMin = (double(i) / n_images) * 100;
-        int progressMax = (double(i + 1) / n_images) * 100;
+        // A. 执行子类特有的转换（传入当前任务的进度区间，最大限制为 90%）
+        int progressMin = (double(i) / n_images) * 90;
+        int progressMax = (double(i + 1) / n_images) * 90;
         bool success = convertToH5(task.arguments, h5_path, progressMin, progressMax);
 
         if (!success || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
@@ -91,6 +81,8 @@ void BaseImportWorker::import_patch(
             handleError("Conversion to H5 failed or interrupted.", h5_path, savepath + "/" + dst_node);
             return;
         }
+
+        InSARLogManager::LogInfo(m_satelliteName + "ImportWorker", QString("Successfully converted image to H5: %1").arg(task.filename));
 
         // B. 静默生成 JPG 预览缩略图
         QFileInfo fi(h5_path);

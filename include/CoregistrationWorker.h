@@ -1,17 +1,13 @@
 #pragma once
 
-#include <QObject>
+#include "BaseWorker.h"
 #include <QList>
-#include <QStandardItemModel>
-#include <QString>
-#include <QThread>
-#include <QDir>
 #include <vector>
 #include <string>
 #include <opencv2/opencv.hpp>
 #include "FormatConversion.h"
 
-class CoregistrationWorker : public QObject
+class CoregistrationWorker : public BaseWorker
 {
     Q_OBJECT
 public:
@@ -24,12 +20,6 @@ public:
 public slots:
     void Regis(QList<int> para, QString save_path, QString project_name, QString Cut_name, QString file_name, QStandardItemModel* model);
     void DEMAssistCoregistration(int masterIndex, QString savepath, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
-
-signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-    void sendModel(QStandardItemModel* model);
 
 private:
     int Registration_copy(std::vector<std::string>& SAR_images, std::vector<std::string>& SAR_images_out, cv::Mat& offset_row_out, cv::Mat& offset_col_out, int Master_index, int interp_times, int blocksize);

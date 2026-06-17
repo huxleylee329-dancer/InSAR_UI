@@ -128,6 +128,8 @@ void DenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
 std::shared_ptr<NodeData> DenoiseNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     if (port == 0)
         return m_outputData;
     else

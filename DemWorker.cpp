@@ -26,7 +26,7 @@ using namespace cv;
 using namespace std;
 
 DemWorker::DemWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

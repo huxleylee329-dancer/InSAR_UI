@@ -77,6 +77,9 @@ bool BaselinePreviewNode::portIsOptional(PortType portType, PortIndex portIndex)
 std::shared_ptr<NodeData> BaselinePreviewNode::outData(PortIndex port)
 {
     Q_UNUSED(port);
+    // 状态守卫：非 Completed 时返回 nullptr，确保脏传播正确级联
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     return m_outputData;
 }
 

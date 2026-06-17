@@ -86,6 +86,8 @@ bool SLCDerampNode::portIsOptional(PortType portType, PortIndex portIndex) const
 
 std::shared_ptr<NodeData> SLCDerampNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     if (port == 0)
         return m_outputData;
     else

@@ -10,7 +10,7 @@
 #include "InSARLogManager.h"
 
 CutWorker::CutWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

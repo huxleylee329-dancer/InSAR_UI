@@ -22,7 +22,7 @@ using namespace std;
 using namespace cv;
 
 SBASTimeSeriesWorker::SBASTimeSeriesWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

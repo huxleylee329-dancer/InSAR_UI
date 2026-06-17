@@ -11,7 +11,7 @@
 #include <QIcon>
 
 S1FrameMergeWorker::S1FrameMergeWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

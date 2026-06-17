@@ -49,6 +49,9 @@
     <ClCompile Include="Sentinel1ImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BaseWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="BaseImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -868,6 +871,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SpacetyImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\BaseWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\BaseImportWorker.h">

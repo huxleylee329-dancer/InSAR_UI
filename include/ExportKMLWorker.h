@@ -1,10 +1,8 @@
-#ifndef EXPORTKMLWORKER_H
-#define EXPORTKMLWORKER_H
+#pragma once
 
-#include <QObject>
-#include <QString>
+#include "BaseWorker.h"
 
-class ExportKMLWorker : public QObject
+class ExportKMLWorker : public BaseWorker
 {
     Q_OBJECT
 
@@ -15,13 +13,6 @@ public:
 public slots:
     void exportKML(QString h5Path, QString outFolder, QString fileName);
 
-signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-
 private:
     void paintColorbar(double mMin, double mMax, QString save_path);
 };
-
-#endif // EXPORTKMLWORKER_H

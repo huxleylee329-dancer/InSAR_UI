@@ -1,11 +1,8 @@
-#ifndef S1SWATHMERGEWORKER_H
-#define S1SWATHMERGEWORKER_H
+#pragma once
 
-#include <QObject>
-#include <QString>
-#include <QStandardItemModel>
+#include "BaseWorker.h"
 
-class S1SwathMergeWorker : public QObject
+class S1SwathMergeWorker : public BaseWorker
 {
     Q_OBJECT
 public:
@@ -14,24 +11,18 @@ public:
 
 public slots:
     void S1_swath_merge(
-        int index1, 
-        int index2, 
-        int index3, 
-        QString project_name, 
-        QString srcNode1, 
-        QString srcNode2, 
-        QString srcNode3, 
-        QString dstNode, 
+        int index1,
+        int index2,
+        int index3,
+        QString project_name,
+        QString srcNode1,
+        QString srcNode2,
+        QString srcNode3,
+        QString dstNode,
         QStandardItemModel* model
     );
 
 signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-    void sendModel(QStandardItemModel* model);
-    // 回传计算结果，由调用方完成 XML 写入以满足 SOP 规范 9
+    // 特有信号：回传计算结果，由调用方完成 XML 写入
     void sendResult(QString dstNode, QString filename, QString savePath, QString projectName);
 };
-
-#endif // S1SWATHMERGEWORKER_H

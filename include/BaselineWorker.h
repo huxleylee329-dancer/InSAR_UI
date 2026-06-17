@@ -1,11 +1,10 @@
 #pragma once
 
-#include <QObject>
+#include "BaseWorker.h"
 #include <QList>
-#include <QString>
 #include <QStringList>
 
-class BaselineWorker : public QObject
+class BaselineWorker : public BaseWorker
 {
     Q_OBJECT
 public:
@@ -16,8 +15,6 @@ public slots:
     void Baseline_Estimate(int index, const QStringList& filePaths);
 
 signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error);
+    // 特有信号：回传基线数据
     void sendBL(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
 };

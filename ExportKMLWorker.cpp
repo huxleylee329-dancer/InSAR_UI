@@ -18,7 +18,7 @@ using namespace cv;
 using namespace std;
 
 ExportKMLWorker::ExportKMLWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

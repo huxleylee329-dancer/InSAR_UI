@@ -19,7 +19,7 @@ using namespace std;
 using namespace cv;
 
 SBASReferenceReselectionWorker::SBASReferenceReselectionWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

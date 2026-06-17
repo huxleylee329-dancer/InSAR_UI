@@ -1,13 +1,11 @@
 #pragma once
-#include <QObject>
-#include <QMutex>
-#include <QStandardItemModel>
+#include "BaseWorker.h"
 #include <vector>
 #include "ImportTask.h"
 
 // 导入 Worker 基类，提供批量导入的标准骨架流程
 // 子类只需实现 convertToH5() 和 satelliteFormatTag() 即可完成卫星特定的导入逻辑
-class BaseImportWorker : public QObject
+class BaseImportWorker : public BaseWorker
 {
     Q_OBJECT
 
@@ -15,6 +13,7 @@ public:
     explicit BaseImportWorker(const QString& satelliteName, QObject* parent = nullptr);
     virtual ~BaseImportWorker();
 
+public slots:
     // 核心骨架方法：执行批量导入的主循环，子类无需重写
     void import_patch(
         const QString& savepath,
@@ -23,18 +22,6 @@ public:
         const QString& dst_project,
         QStandardItemModel* model
     );
-
-signals:
-    // 所有 Worker 共享的标准信号
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-    void sendModel(QStandardItemModel* model);
-
-public slots:
-    // 取消控制槽
-    void StopProcess();
-    bool isStopRequested();
 
     // 辅助函数：更新导入进度（子类可在 convertToH5 内部调用，也可在静态回调中使用）
     void updateImportProgress(int percent, const QString& message = QString());
@@ -56,7 +43,5 @@ protected:
     void handleError(const QString& error_msg, const QString& h5_path, const QString& dir_path);
 
 protected:
-    QMutex lock;
-    bool stop_flag = true; // true 表示运行，false 表示停止请求
     QString m_satelliteName;
 };

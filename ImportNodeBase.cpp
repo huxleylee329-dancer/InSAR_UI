@@ -7,10 +7,14 @@
 #include "InterfaceManager.h"
 #include "WorkspaceUI.h"
 #include "NodeUtils.h"
+#include "InSARLogManager.h"
+
 #include <QApplication>
 #include <QThread>
 #include <QFileInfo>
 #include <QtConcurrent/QtConcurrent>
+#include <QDebug>
+
 
 namespace QtNodes {
 
@@ -83,12 +87,18 @@ bool ImportNodeBase::portIsOptional(PortType portType, PortIndex portIndex) cons
 
 std::shared_ptr<NodeData> ImportNodeBase::outData(PortIndex port)
 {
+    // 状态守卫：非 Completed 状态时返回 nullptr，确保脏传播能正确级联 Idle 到下游
+    // 否则 setState(Running) 清空 _outputData 后，fallback 到成员变量仍返回旧数据，
+    // 导致下游 setInData 收不到 nullptr，无法触发 setState(Idle) 级联
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
+
     // First try to get data from ExecutableNodeDelegateModel base class
     auto data = ExecutableNodeDelegateModel::outData(port);
     if (data)
         return data;
 
-    // Fall back to member variables
+    // Fall back to member variables（兼容子类忘记调用 setOutputData 的情况）
     if (port == 0) return m_importedFiles;
     if (port == 1) return m_imageInfo;
 
@@ -98,11 +108,12 @@ std::shared_ptr<NodeData> ImportNodeBase::outData(PortIndex port)
 QStringList ImportNodeBase::previewImagePaths() const
 {
     QStringList jpgPaths;
-    if (!m_importedFilePaths.isEmpty()) {
-        QFileInfo fi(m_importedFilePaths.first());
+    for (const QString& h5Path : m_importedFilePaths) {
+        QFileInfo fi(h5Path);
         QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        if (QFileInfo::exists(jpg))
+        if (QFileInfo::exists(jpg)) {
             jpgPaths.append(jpg);
+        }
     }
     return jpgPaths;
 }
@@ -164,7 +175,10 @@ void ImportNodeBase::execute()
     setProgress(0);
     setState(ExecutionState::Running);
 
+    InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute started.");
+
     // Call the legacy executeImport() method
+
     executeImport();
 }
 
@@ -189,9 +203,12 @@ bool ImportNodeBase::validateAndRestoreOutput()
     if (expectedPaths.isEmpty())
         return false;
 
-    QString firstH5 = expectedPaths.first();
-    if (!QFile::exists(firstH5))
-        return false;
+    // Check that all expected H5 files exist on disk
+    for (const QString& path : expectedPaths) {
+        if (!QFile::exists(path)) {
+            return false;
+        }
+    }
 
     // 恢复 Port 0
     m_importedFilePaths = expectedPaths;
@@ -201,28 +218,41 @@ bool ImportNodeBase::validateAndRestoreOutput()
     Q_EMIT dataUpdated(0);
 
     // 恢复 Port 1 预览
-    QFileInfo fi(firstH5);
-    QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+    QStringList expectedJpgPaths;
+    QStringList missingH5s;
+    QStringList missingJpgs;
 
-    if (!QFileInfo::exists(jpgPath)) {
+    for (const QString& h5Path : expectedPaths) {
+        QFileInfo fi(h5Path);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        expectedJpgPaths.append(jpgPath);
+
+        if (!QFile::exists(jpgPath)) {
+            missingH5s.append(h5Path);
+            missingJpgs.append(jpgPath);
+        }
+    }
+
+    if (!missingH5s.isEmpty()) {
         // 异步生成预览
         m_remedyWatcher.cancel();
         m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPath]() {
-            m_imageInfo = std::make_shared<ImageInfoData>(jpgPath);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
+            m_imageInfo = std::make_shared<ImageInfoData>(expectedJpgPaths);
             setOutputData(1, m_imageInfo);
             Q_EMIT dataUpdated(1);
         });
 
-        QString capturedH5 = firstH5;
-        QFuture<void> future = QtConcurrent::run([capturedH5, jpgPath]() {
-            NodeUtils::generateJpgPreviewFromH5(capturedH5, jpgPath, "complex");
+        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+            for (int i = 0; i < missingH5s.size(); ++i) {
+                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+            }
         });
         m_remedyWatcher.setFuture(future);
     } else {
-        m_imageInfo = std::make_shared<ImageInfoData>(jpgPath);
+        m_imageInfo = std::make_shared<ImageInfoData>(expectedJpgPaths);
         setOutputData(1, m_imageInfo);
         Q_EMIT dataUpdated(1);
     }
@@ -272,9 +302,13 @@ void ImportNodeBase::onImportFinished()
 
     // 装载 Port 1 预览数据（JPG 已由 Worker 生成）
     if (!m_importedFilePaths.isEmpty()) {
-        QFileInfo fi(m_importedFilePaths.first());
-        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        m_imageInfo = std::make_shared<ImageInfoData>(jpgPath);
+        QStringList jpgPaths;
+        for (const QString& h5Path : m_importedFilePaths) {
+            QFileInfo fi(h5Path);
+            QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+            jpgPaths.append(jpgPath);
+        }
+        m_imageInfo = std::make_shared<ImageInfoData>(jpgPaths);
         setOutputData(1, m_imageInfo);
         Q_EMIT dataUpdated(1);
     }
@@ -290,6 +324,8 @@ void ImportNodeBase::onImportFinished()
         m_worker->deleteLater();
         m_worker = nullptr;
     }
+
+    InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute completed.");
 
     finishExecution();
 }
@@ -336,13 +372,17 @@ void ImportNodeBase::startWorker(BaseImportWorker* worker, const std::vector<Imp
 
     m_thread->start();
 
-    QMetaObject::invokeMethod(m_worker, "import_patch",
+    bool success = QMetaObject::invokeMethod(m_worker, "import_patch",
         Q_ARG(QString, projectPath()),
         Q_ARG(std::vector<ImportTask>, tasks),
         Q_ARG(QString, getOutputNodeName()),
         Q_ARG(QString, projectName()),
         Q_ARG(QStandardItemModel*, projectModel()));
+    if (!success) {
+        qWarning() << "ImportNodeBase::startWorker - Failed to invoke BaseImportWorker::import_patch asynchronously!";
+    }
 }
+
 
 // ============================================================================
 // Helper methods

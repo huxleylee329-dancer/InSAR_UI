@@ -60,6 +60,8 @@ QString ExportKMLNode::portCaption(PortType portType, PortIndex portIndex) const
 
 std::shared_ptr<NodeData> ExportKMLNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     return m_outputData;
 }
 

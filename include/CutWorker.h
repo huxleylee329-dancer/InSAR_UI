@@ -1,11 +1,8 @@
 #pragma once
 
-#include <QObject>
-#include <QList>
-#include <QString>
-#include <QStandardItemModel>
+#include "BaseWorker.h"
 
-class CutWorker : public QObject
+class CutWorker : public BaseWorker
 {
     Q_OBJECT
 public:
@@ -35,10 +32,4 @@ public slots:
               QString src_node,
               QString dst_node,
               QStandardItemModel* model);
-
-signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error);
-    void sendModel(QStandardItemModel* model);
 };

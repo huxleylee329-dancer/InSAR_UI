@@ -10,7 +10,7 @@
 #include <QIcon>
 
 S1SwathMergeWorker::S1SwathMergeWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

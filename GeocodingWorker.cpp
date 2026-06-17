@@ -20,25 +20,12 @@
 using namespace cv;
 
 GeocodingWorker::GeocodingWorker(QObject* parent)
-    : QObject(parent)
-    , stop_flag(true)
+    : BaseWorker(parent)
 {
 }
 
 GeocodingWorker::~GeocodingWorker()
 {
-}
-
-void GeocodingWorker::StopProcess()
-{
-    QMutexLocker locker(&lock);
-    this->stop_flag = false;
-}
-
-bool GeocodingWorker::isStopRequested()
-{
-    QMutexLocker locker(&lock);
-    return !stop_flag;
 }
 
 void GeocodingWorker::Geocoding(

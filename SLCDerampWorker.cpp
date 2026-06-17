@@ -33,7 +33,7 @@ using namespace cv;
 using namespace std;
 
 SLCDerampWorker::SLCDerampWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

@@ -12,7 +12,7 @@ using namespace std;
 using namespace cv;
 
 BaselineWorker::BaselineWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

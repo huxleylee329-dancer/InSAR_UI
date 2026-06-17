@@ -8,3 +8,8 @@ struct ImportTask {
     QString filename;        // 目标导入名称（如 "csk_image_01"）
     QStringList arguments;   // 传入的源文件路径列表或参数串
 };
+
+#include <QMetaType>
+Q_DECLARE_METATYPE(ImportTask)
+Q_DECLARE_METATYPE(std::vector<ImportTask>)
+

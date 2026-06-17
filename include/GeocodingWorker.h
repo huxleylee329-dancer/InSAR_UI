@@ -1,10 +1,7 @@
 #pragma once
-#include <QObject>
-#include <QString>
-#include <QStandardItemModel>
-#include <QMutex>
+#include "BaseWorker.h"
 
-class GeocodingWorker : public QObject
+class GeocodingWorker : public BaseWorker
 {
     Q_OBJECT
 public:
@@ -21,16 +18,4 @@ public slots:
         QString dstNode,
         QStandardItemModel* model
     );
-    void StopProcess();
-    bool isStopRequested();
-
-signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-    void sendModel(QStandardItemModel* model);
-
-private:
-    QMutex lock;
-    bool stop_flag;
 };

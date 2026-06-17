@@ -76,6 +76,8 @@ NodeDataType S1FrameMergeNode::dataType(PortType portType, PortIndex portIndex) 
 
 std::shared_ptr<NodeData> S1FrameMergeNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     if (port == 0)
         return m_outputData;
     else

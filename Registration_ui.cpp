@@ -9,6 +9,7 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include<QThread>
 #ifdef _DEBUG
 //#pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")

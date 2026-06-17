@@ -13,7 +13,7 @@
 #include <QStringList>
 
 S1DeburstWorker::S1DeburstWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

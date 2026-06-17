@@ -24,7 +24,7 @@
 #endif
 
 S1TopsBackGeocodingWorker::S1TopsBackGeocodingWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

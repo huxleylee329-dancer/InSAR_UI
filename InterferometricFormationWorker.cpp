@@ -29,7 +29,7 @@ using namespace cv;
 using namespace std;
 
 InterferometricFormationWorker::InterferometricFormationWorker(QObject* parent)
-    : QObject(parent)
+    : BaseWorker(parent)
 {
 }
 

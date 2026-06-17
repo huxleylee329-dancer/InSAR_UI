@@ -75,6 +75,8 @@ NodeDataType S1SwathMergeNode::dataType(PortType portType, PortIndex portIndex) 
 
 std::shared_ptr<NodeData> S1SwathMergeNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
     if (port == 0)
         return m_outputData;
     else
