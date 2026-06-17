@@ -73,9 +73,6 @@ private slots:
     void onThreadError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 
-signals:
-    void startAIRSATImport(QString, std::vector<QString>, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
-
 private:
     // UI elements
     QWidget* m_widget;

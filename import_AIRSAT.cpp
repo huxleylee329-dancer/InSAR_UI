@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "import_AIRSAT.h"
+#include "ImportTask.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <opencv2/highgui.hpp>
@@ -293,7 +294,6 @@ void import_AIRSAT::on_buttonBox_accepted()
     import_AIRSAT_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &import_AIRSAT::operate2, import_AIRSAT_thread, &AIRSATImportWorker::import_AIRSAT_patch, Qt::QueuedConnection);
     connect(import_AIRSAT_thread, &AIRSATImportWorker::updateProcess, this, &import_AIRSAT::updateProcess);
     connect(thread, &QThread::finished, import_AIRSAT_thread, &AIRSATImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -303,13 +303,21 @@ void import_AIRSAT::on_buttonBox_accepted()
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_AIRSAT::StopThread);
     connect(import_AIRSAT_thread, &AIRSATImportWorker::sendModel, this, &import_AIRSAT::TransitModel);
     thread->start();
-    emit operate2(
-        this->save_path,
-        data_file_list,
-        xml_file_list,
-        import_namelist,
-        ui->lineEdit_dst_node->text(),
-        ui->comboBox_dst_project->currentText(),
-        this->copy);
+
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < data_file_list.size(); ++i) {
+        ImportTask task;
+        task.filename = import_namelist[i];
+        task.arguments = QStringList{ data_file_list[i], xml_file_list[i] };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_AIRSAT_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 }

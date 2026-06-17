@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "import_Biomass.h"
+#include "ImportTask.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <qmessagebox.h>
@@ -268,7 +269,6 @@ void import_Biomass::on_buttonBox_accepted()
     ui->progressBar->setValue(0);
     ui->progressBar->show();
 
-    connect(this, &import_Biomass::operate, import_Biomass_thread, &BiomassImportWorker::import_Biomass_patch, Qt::QueuedConnection);
     connect(import_Biomass_thread, &BiomassImportWorker::updateProcess, this, &import_Biomass::updateProcess);
     connect(thread, &QThread::finished, import_Biomass_thread, &BiomassImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -280,18 +280,21 @@ void import_Biomass::on_buttonBox_accepted()
 
     thread->start();
 
-    emit operate(
-        this->save_path,
-        m_ampFiles,
-        m_phaseFiles,
-        m_xmlFiles,
-        m_orbitFiles,
-        m_polarizations,
-        m_importNamelist,
-        dstNode,
-        ui->comboBox_dst_project->currentText(),
-        this->copy
-    );
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < m_ampFiles.size(); ++i) {
+        ImportTask task;
+        task.filename = m_importNamelist[i];
+        task.arguments = QStringList{ m_ampFiles[i], m_phaseFiles[i], m_xmlFiles[i], m_orbitFiles[i], m_polarizations[i] };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_Biomass_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, dstNode),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
 
     ChangeVision(false);
 }

@@ -1,16 +1,8 @@
 #include "BiomassImportWorker.h"
-#include "icon_source.h"
 #include <FormatConversion.h>
-#include <QDir>
-#include <QFileInfo>
-#include <QFile>
-#include <QThread>
-#include "InSARLogManager.h"
-#include "NodeUtils.h"
 
 BiomassImportWorker::BiomassImportWorker(QObject* parent)
-    : QObject(parent)
-    , stop_flag(true)
+    : BaseImportWorker("Biomass", parent)
 {
 }
 
@@ -18,195 +10,30 @@ BiomassImportWorker::~BiomassImportWorker()
 {
 }
 
-void BiomassImportWorker::StopProcess()
+bool BiomassImportWorker::convertToH5(const QStringList& arguments, const QString& outputPath,
+                                     int progressMin, int progressMax)
 {
-    QMutexLocker locker(&lock);
-    this->stop_flag = false;
-}
+    if (arguments.size() < 5) return false;
 
-bool BiomassImportWorker::isStopRequested()
-{
-    QMutexLocker locker(&lock);
-    return !stop_flag;
-}
+    QString amp_file = arguments[0];
+    QString phase_file = arguments[1];
+    QString xml_file = arguments[2];
+    QString orbit_file = arguments[3];
+    QString polarization = arguments[4];
 
-void BiomassImportWorker::import_Biomass_patch(
-    QString savepath,
-    std::vector<QString> amp_files,
-    std::vector<QString> phase_files,
-    std::vector<QString> xml_files,
-    std::vector<QString> orbit_files,
-    std::vector<QString> polarizations,
-    std::vector<QString> import_namelist,
-    QString dst_node,
-    QString dst_project,
-    QStandardItemModel* model
-)
-{
-    if (savepath.isEmpty() ||
-        dst_node.isEmpty() ||
-        dst_project.isEmpty() ||
-        amp_files.empty() ||
-        phase_files.empty() ||
-        xml_files.empty() ||
-        orbit_files.empty() ||
-        polarizations.empty() ||
-        import_namelist.empty() ||
-        model == NULL
-        )
+    Biomass1A_reader biomass_reader(
+        amp_file.toStdString().c_str(),
+        phase_file.toStdString().c_str(),
+        xml_file.toStdString().c_str(),
+        orbit_file.toStdString().c_str(),
+        polarization.toStdString().c_str()
+    );
+
+    int ret = biomass_reader.init();
+    if (ret >= 0)
     {
-        InSARLogManager::LogInfo("BiomassImportWorker", QString("Task completed (empty or invalid input): ") + QString(__FUNCTION__));
-        emit endProcess();
-        return;
+        ret = biomass_reader.write_to_h5(outputPath.toStdString().c_str());
     }
 
-    NodeUtils::Hdf5Locker locker;
-    int ret = 0;
-    QDir dir(savepath);
-    if (!dir.exists(dst_node))
-        ret = dir.mkdir(dst_node);
-
-    int n_images = amp_files.size();
-    int process = 2;
-    emit updateProcess(process, QStringLiteral("正在导入..."));
-
-    for (int i = 0; i < n_images; i++)
-    {
-        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) break;
-
-        QString filename = import_namelist[i];
-        QString amp_file = amp_files[i];
-        QString phase_file = phase_files[i];
-        QString xml_file = xml_files[i];
-        QString orbit_file = orbit_files[i];
-        QString polarization = polarizations[i];
-
-        QString temp_folder = QString("/") + dst_node + QString("/");
-        QString relative_path = temp_folder + filename + ".h5";
-        QString h5_path = QString("%1%2%3.h5").arg(savepath).arg(temp_folder).arg(filename);
-
-        Biomass1A_reader biomass_reader(
-            amp_file.toStdString().c_str(),
-            phase_file.toStdString().c_str(),
-            xml_file.toStdString().c_str(),
-            orbit_file.toStdString().c_str(),
-            polarization.toStdString().c_str()
-        );
-
-        ret = biomass_reader.init();
-        ret += biomass_reader.write_to_h5(h5_path.toStdString().c_str());
-
-        if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-        {
-            InSARLogManager::LogError("BiomassImportWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
-            InSARLogManager::LogError("BiomassImportWorker", "unknown format!");
-            QFile::remove(h5_path);
-            QDir tmp_dir(savepath + QString("/") + dst_node);
-            tmp_dir.removeRecursively();
-            emit errorProcess(QStringLiteral("导入格式未知或文件读取失败！"));
-            return;
-        }
-
-        // 生成 JPG 预览缩略图
-        QFileInfo fi(h5_path);
-        QString jpg_path = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, "complex");
-
-        int localRet = 0;
-        if (model) {
-            QMetaObject::invokeMethod(model, [=, &localRet]() {
-                if (model->findItems(dst_project).isEmpty()) {
-                    localRet = -1;
-                    return;
-                }
-                QStandardItem* project = model->findItems(dst_project)[0];
-                if (!project) {
-                    localRet = -1;
-                    return;
-                }
-                QModelIndex pro_index = model->indexFromItem(project);
-                QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
-                QStandardItem* origin = NULL;
-                for (int j = 0; j < project->rowCount(); j++)
-                {
-                    if (dst_node == project->child(j)->text() && project->child(j, 1)->text() == "complex-0.0")
-                    {
-                        origin = project->child(j); break;
-                    }
-                }
-                if (!origin)
-                {
-                    origin = new QStandardItem(dst_node);
-                    origin->setIcon(QIcon(FOLDER_ICON));
-                    project->appendRow(origin);
-                    QStandardItem* Rank = new QStandardItem("complex-0.0");
-                    project->setChild(project->rowCount() - 1, 1, Rank);
-                }
-                QStandardItem* img = NULL;
-                for (int j = 0; j < origin->rowCount(); j++)
-                {
-                    if (origin->child(j)->text() == filename)
-                    {
-                        img = origin->child(j);
-                        break;
-                    }
-                }
-                if (!img)
-                {
-                    img = new QStandardItem(filename);
-                    img->setToolTip("complex");
-                    QStandardItem* img_path = new QStandardItem(h5_path);
-                    img->setIcon(QIcon(IMAGEDATA_ICON));
-                    origin->appendRow(img);
-                    origin->setChild(origin->rowCount() - 1, 1, img_path);
-
-                    XMLFile DOC;
-                    int ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-                    if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-                    {
-                        localRet = -2;
-                        return;
-                    }
-                    ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Biomass");
-                    if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-                    {
-                        localRet = -2;
-                        return;
-                    }
-                    ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(dst_project).toStdString().c_str());
-                    if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-                    {
-                        localRet = -2;
-                        return;
-                    }
-                }
-                else
-                {
-                    origin->setChild(img->row(), 1, new QStandardItem(h5_path));
-                }
-            }, Qt::BlockingQueuedConnection);
-        } else {
-            localRet = -1;
-        }
-
-        if (localRet < 0)
-        {
-            InSARLogManager::LogError("BiomassImportWorker", QString("Task failed or interrupted in updating model/XML: ") + QString(__FUNCTION__));
-            QFile::remove(h5_path);
-            QDir tmp_dir(savepath + QString("/") + dst_node);
-            tmp_dir.removeRecursively();
-            if (localRet == -1) {
-                emit errorProcess(QStringLiteral("未找到项目节点。"));
-            } else {
-                emit errorProcess(QStringLiteral("保存项目配置文件失败。"));
-            }
-            return;
-        }
-        process = double(i + 1) / double(n_images) * 100.0;
-        emit updateProcess(process, QStringLiteral("正在导入..."));
-    }
-
-    emit sendModel(model);
-    InSARLogManager::LogInfo("BiomassImportWorker", QString("Task completed: ") + QString(__FUNCTION__));
-    emit endProcess();
+    return ret >= 0;
 }

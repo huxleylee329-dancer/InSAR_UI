@@ -207,12 +207,17 @@ void TSXImportNode::executeImport()
         return;
     }
 
+    // 构造 ImportTask
+    std::vector<ImportTask> tasks;
+    ImportTask task;
+    task.filename = m_outputFileName;
+    task.arguments = QStringList{ m_xmlPath, m_polarizationCombo->currentText() };
+    tasks.push_back(task);
+
     m_thread = new QThread(this);
     m_workerThread = new TSXImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &TSXImportNode::startTSXImport,
-            m_workerThread, &TSXImportWorker::import_TSX);
     connect(m_workerThread, &TSXImportWorker::updateProcess,
             this, &TSXImportNode::onImportProgress);
     connect(m_workerThread, &TSXImportWorker::endProcess,
@@ -224,18 +229,12 @@ void TSXImportNode::executeImport()
 
     m_thread->start();
 
-    QString polarization = m_polarizationCombo->currentText();
-    outputNodeName = getOutputNodeName();
-
-    Q_EMIT startTSXImport(
-        polarization,
-        m_xmlPath,
-        projectPath(),
-        outputNodeName,
-        m_outputFileName,
-        projectName(),
-        projectModel()
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 QStringList TSXImportNode::getImportedFilePaths() const

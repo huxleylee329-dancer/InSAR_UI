@@ -128,13 +128,7 @@ void BiomassImportNode::executeImport()
         return;
     }
 
-    std::vector<QString> ampFileList;
-    std::vector<QString> phaseFileList;
-    std::vector<QString> xmlFileList;
-    std::vector<QString> orbitFileList;
-    std::vector<QString> polList;
-    std::vector<QString> importNameList;
-
+    std::vector<ImportTask> tasks;
     for (int i = 0; i < m_ampPaths.size(); ++i)
     {
         if (!QFileInfo::exists(m_ampPaths[i])) { onError("幅度文件不存在：" + m_ampPaths[i]); return; }
@@ -142,19 +136,17 @@ void BiomassImportNode::executeImport()
         if (!QFileInfo::exists(m_xmlPaths[i])) { onError("参数XML文件不存在：" + m_xmlPaths[i]); return; }
         if (!QFileInfo::exists(m_orbitPaths[i])) { onError("轨道文件不存在：" + m_orbitPaths[i]); return; }
 
-        ampFileList.push_back(m_ampPaths[i]);
-        phaseFileList.push_back(m_phasePaths[i]);
-        xmlFileList.push_back(m_xmlPaths[i]);
-        orbitFileList.push_back(m_orbitPaths[i]);
-        polList.push_back(m_polarizations[i]);
-        importNameList.push_back(m_importNames[i]);
+        ImportTask task;
+        task.filename = m_importNames[i];
+        task.arguments = QStringList{ m_ampPaths[i], m_phasePaths[i], m_xmlPaths[i], m_orbitPaths[i], m_polarizations[i] };
+        tasks.push_back(task);
     }
 
     QString outputNodeName = getOutputNodeName();
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    for (const auto& task : tasks) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
     }
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
@@ -173,7 +165,6 @@ void BiomassImportNode::executeImport()
     m_workerThread = new BiomassImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &BiomassImportNode::startBiomassImport, m_workerThread, &BiomassImportWorker::import_Biomass_patch);
     connect(m_workerThread, &BiomassImportWorker::updateProcess, this, &BiomassImportNode::onImportProgress);
     connect(m_workerThread, &BiomassImportWorker::endProcess, this, &BiomassImportNode::onImportFinished);
     connect(m_workerThread, &BiomassImportWorker::errorProcess, this, &BiomassImportNode::onThreadError);
@@ -181,18 +172,12 @@ void BiomassImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startBiomassImport(
-        projectPath(),
-        ampFileList,
-        phaseFileList,
-        xmlFileList,
-        orbitFileList,
-        polList,
-        importNameList,
-        outputNodeName,
-        projectName(),
-        projectModel()
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void BiomassImportNode::stopExecution()

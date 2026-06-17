@@ -68,18 +68,6 @@ private slots:
     void onThreadError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 
-signals:
-    void startLUTANImport(
-        QString savepath,
-        std::vector<QString> data_files,
-        std::vector<QString> xml_files,
-        std::vector<int> modes,
-        std::vector<QString> import_names,
-        QString dst_node,
-        QString dst_project,
-        QStandardItemModel* model
-    );
-
 private:
     // UI elements
     QLineEdit* m_dataEdit;

@@ -161,10 +161,7 @@ void SpacetyImportNode::executeImport()
         }
     }
 
-    std::vector<QString> dataFileList;
-    std::vector<QString> xmlFileList;
-    std::vector<QString> importNameList;
-
+    std::vector<ImportTask> tasks;
     for (int i = 0; i < m_dataFiles.size(); ++i)
     {
         QString dataFilePath = m_dataFiles[i];
@@ -174,17 +171,19 @@ void SpacetyImportNode::executeImport()
             onError("无法从数据文件生成输出文件名：" + dataFilePath);
             return;
         }
-        dataFileList.push_back(dataFilePath);
-        xmlFileList.push_back(i < m_xmlFiles.size() ? m_xmlFiles[i] : "");
-        importNameList.push_back(importName);
+
+        ImportTask task;
+        task.filename = importName;
+        task.arguments = QStringList{ dataFilePath, i < m_xmlFiles.size() ? m_xmlFiles[i] : "", QString::number(m_spotlightMode ? 1 : 0) };
+        tasks.push_back(task);
     }
 
     QString outputNodeName = getOutputNodeName();
 
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    for (const auto& task : tasks) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
     }
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
@@ -203,8 +202,6 @@ void SpacetyImportNode::executeImport()
     m_workerThread = new SpacetyImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &SpacetyImportNode::startSpacetyImport,
-            m_workerThread, &SpacetyImportWorker::import_Spacety_patch);
     connect(m_workerThread, &SpacetyImportWorker::updateProcess,
             this, &SpacetyImportNode::onImportProgress);
     connect(m_workerThread, &SpacetyImportWorker::endProcess,
@@ -216,16 +213,12 @@ void SpacetyImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startSpacetyImport(
-        projectPath(),
-        dataFileList,
-        xmlFileList,
-        importNameList,
-        outputNodeName,
-        projectName(),
-        projectModel(),
-        m_spotlightMode
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void SpacetyImportNode::stopExecution()

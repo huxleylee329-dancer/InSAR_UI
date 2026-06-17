@@ -70,18 +70,6 @@ private slots:
     void onModelUpdated(QStandardItemModel* model);
     void onProductTypeChanged(int index);
 
-signals:
-    void startLidarImport(
-        QString savepath,
-        std::vector<QString> original_file_list,
-        std::vector<QString> import_namelist,
-        QString product_type,
-        int rh_percentile,
-        QString dst_node,
-        QString dst_project,
-        QStandardItemModel* model
-    );
-
 private:
     void updateWidgetSize();
 

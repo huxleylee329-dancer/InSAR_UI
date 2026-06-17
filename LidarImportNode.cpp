@@ -200,21 +200,21 @@ void LidarImportNode::executeImport()
         }
     }
 
-    std::vector<QString> originalFileList;
-    std::vector<QString> importNameList;
-
+    std::vector<ImportTask> tasks;
     for (const QString& path : m_filePaths)
     {
         QFileInfo fileInfo(path);
-        originalFileList.push_back(path);
-        importNameList.push_back(fileInfo.baseName());
+        ImportTask task;
+        task.filename = fileInfo.baseName();
+        task.arguments = QStringList{ path, m_productTypeCombo->currentText(), QString::number(m_rhPercentileSpin->value()) };
+        tasks.push_back(task);
     }
 
     QString outputNodeName = getOutputNodeName();
 
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
+    for (const auto& task : tasks) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
     }
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
@@ -233,8 +233,6 @@ void LidarImportNode::executeImport()
     m_workerThread = new LidarImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &LidarImportNode::startLidarImport,
-            m_workerThread, &LidarImportWorker::import_Lidar_patch);
     connect(m_workerThread, &LidarImportWorker::updateProcess,
             this, &LidarImportNode::onImportProgress);
     connect(m_workerThread, &LidarImportWorker::endProcess,
@@ -246,16 +244,12 @@ void LidarImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startLidarImport(
-        projectPath(),
-        originalFileList,
-        importNameList,
-        m_productTypeCombo->currentText(),
-        m_rhPercentileSpin->value(),
-        outputNodeName,
-        projectName(),
-        projectModel()
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void LidarImportNode::stopExecution()

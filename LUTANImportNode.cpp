@@ -149,11 +149,7 @@ void LUTANImportNode::executeImport()
         return;
     }
 
-    std::vector<QString> dataFilesVec;
-    std::vector<QString> xmlFilesVec;
-    std::vector<int> modesVec;
-    std::vector<QString> importNameList;
-
+    std::vector<ImportTask> tasks;
     for (int i = 0; i < m_dataFiles.size(); ++i)
     {
         QString df = m_dataFiles[i];
@@ -172,17 +168,17 @@ void LUTANImportNode::executeImport()
         }
 
         QFileInfo fi(df);
-        dataFilesVec.push_back(df);
-        xmlFilesVec.push_back(xf);
-        modesVec.push_back(m);
-        importNameList.push_back(fi.baseName());
+        ImportTask task;
+        task.filename = fi.baseName();
+        task.arguments = QStringList{ df, xf, QString::number(m) };
+        tasks.push_back(task);
     }
 
     QString outputNodeName = getOutputNodeName();
 
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
+    for (const auto& task : tasks) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
     }
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
@@ -201,8 +197,6 @@ void LUTANImportNode::executeImport()
     m_workerThread = new LUTANImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &LUTANImportNode::startLUTANImport,
-            m_workerThread, &LUTANImportWorker::import_LUTAN_patch);
     connect(m_workerThread, &LUTANImportWorker::updateProcess,
             this, &LUTANImportNode::onImportProgress);
     connect(m_workerThread, &LUTANImportWorker::endProcess,
@@ -214,16 +208,12 @@ void LUTANImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startLUTANImport(
-        projectPath(),
-        dataFilesVec,
-        xmlFilesVec,
-        modesVec,
-        importNameList,
-        outputNodeName,
-        projectName(),
-        projectModel()
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void LUTANImportNode::stopExecution()

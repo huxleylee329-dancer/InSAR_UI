@@ -135,10 +135,7 @@ void ALOS2ImportNode::executeImport()
         }
     }
 
-    std::vector<QString> imgFileList;
-    std::vector<QString> ledFileList;
-    std::vector<QString> importNameList;
-
+    std::vector<ImportTask> tasks;
     for (const QString& imgPath : m_imgPaths)
     {
         QString importName = generateOutputFileName(imgPath);
@@ -147,7 +144,6 @@ void ALOS2ImportNode::executeImport()
             onError("无法从 IMG 文件生成输出文件名：" + imgPath);
             return;
         }
-        imgFileList.push_back(imgPath);
 
         QString ledPath = generateLEDPath(imgPath);
         if (!QFileInfo::exists(ledPath))
@@ -155,16 +151,19 @@ void ALOS2ImportNode::executeImport()
             onError("IMG 文件对应的 LED 文件未找到：" + imgPath);
             return;
         }
-        ledFileList.push_back(ledPath);
-        importNameList.push_back(importName);
+
+        ImportTask task;
+        task.filename = importName;
+        task.arguments = QStringList{ imgPath, ledPath };
+        tasks.push_back(task);
     }
 
     QString outputNodeName = getOutputNodeName();
 
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    for (const auto& task : tasks) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
     }
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
@@ -183,8 +182,6 @@ void ALOS2ImportNode::executeImport()
     m_workerThread = new ALOS2ImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &ALOS2ImportNode::startALOS2Import,
-            m_workerThread, &ALOS2ImportWorker::import_ALOS2_patch);
     connect(m_workerThread, &ALOS2ImportWorker::updateProcess,
             this, &ALOS2ImportNode::onImportProgress);
     connect(m_workerThread, &ALOS2ImportWorker::endProcess,
@@ -196,15 +193,12 @@ void ALOS2ImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startALOS2Import(
-        projectPath(),
-        imgFileList,
-        ledFileList,
-        importNameList,
-        outputNodeName,
-        projectName(),
-        projectModel()
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void ALOS2ImportNode::stopExecution()

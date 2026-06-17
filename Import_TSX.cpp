@@ -1,5 +1,6 @@
 #include"MainWindow.h"
 #include"Import_TSX.h"
+#include"ImportTask.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include<opencv2/highgui.hpp>
@@ -332,7 +333,6 @@ void Import_TSX::on_buttonBox_accepted()
     import_TSX_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &Import_TSX::operate, import_TSX_thread, &TSXImportWorker::import_TSX, Qt::QueuedConnection);
     connect(import_TSX_thread, &TSXImportWorker::updateProcess, this, &Import_TSX::updateProcess);
     connect(thread, &QThread::finished, import_TSX_thread, &TSXImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -341,15 +341,20 @@ void Import_TSX::on_buttonBox_accepted()
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
     connect(import_TSX_thread, &TSXImportWorker::sendModel, this, &Import_TSX::TransitModel);
     thread->start();
-    emit operate(
-        ui->comboBox_pol->currentText(),
-        ui->LineEdit_xml->text(),
-        this->save_path,
-        ui->lineEdit_dst_node->text(),
-        ui->LineEdit_dst_filename->text(),
-        ui->comboBox_dst_project->currentText(),
-        this->copy
-    );
+
+    // 构造 ImportTask
+    std::vector<ImportTask> tasks;
+    ImportTask task;
+    task.filename = ui->LineEdit_dst_filename->text();
+    task.arguments = QStringList{ ui->LineEdit_xml->text(), ui->comboBox_pol->currentText() };
+    tasks.push_back(task);
+
+    QMetaObject::invokeMethod(import_TSX_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 
 }
@@ -410,7 +415,6 @@ void Import_TSX::on_buttonBox_2_accepted()
     import_TSX_thread2->moveToThread(thread2);
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Import_TSX::operate2, import_TSX_thread2, &TSXImportWorker::import_TSX_patch, Qt::QueuedConnection);
     connect(import_TSX_thread2, &TSXImportWorker::updateProcess, this, &Import_TSX::updateProcess);
     connect(thread2, &QThread::finished, import_TSX_thread2, &TSXImportWorker::deleteLater);
     connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
@@ -419,14 +423,23 @@ void Import_TSX::on_buttonBox_2_accepted()
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
     connect(import_TSX_thread2, &TSXImportWorker::sendModel, this, &Import_TSX::TransitModel);
     thread2->start();
-    emit operate2(
-        ui->comboBox_pol2->currentText(),
-        this->save_path, //保存路径
-        original_namelist,//原始文件名
-        import_namelist, //导入文件名
-        ui->lineEdit_dst_node_2->text(), //导入节点名
-        ui->comboBox_dst_project_2->currentText(), //导入工程名
-        this->copy);
+
+    // 构造 ImportTask 列表
+    QString polarization = ui->comboBox_pol2->currentText();
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < original_namelist.size(); ++i) {
+        ImportTask task;
+        task.filename = import_namelist[i];
+        task.arguments = QStringList{ original_namelist[i], polarization };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_TSX_thread2, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node_2->text()),
+        Q_ARG(QString, ui->comboBox_dst_project_2->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 }
 

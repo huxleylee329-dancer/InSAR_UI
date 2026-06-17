@@ -1,39 +1,15 @@
 #pragma once
-#include <QObject>
-#include <QString>
-#include <QStandardItemModel>
-#include <QMutex>
-#include <vector>
+#include "BaseImportWorker.h"
 
-class SpacetyImportWorker : public QObject
+class SpacetyImportWorker : public BaseImportWorker
 {
     Q_OBJECT
 public:
     explicit SpacetyImportWorker(QObject* parent = nullptr);
-    ~SpacetyImportWorker();
+    virtual ~SpacetyImportWorker();
 
-public slots:
-    void import_Spacety_patch(
-        QString savepath,
-        std::vector<QString> data_file_list,
-        std::vector<QString> xml_file_list,
-        std::vector<QString> import_namelist,
-        QString dst_node,
-        QString dst_project,
-        QStandardItemModel* model,
-        bool spotlight_mode
-    );
-
-    void StopProcess();
-    bool isStopRequested();
-
-signals:
-    void updateProcess(int progress, QString message);
-    void endProcess();
-    void errorProcess(QString error_msg);
-    void sendModel(QStandardItemModel* model);
-
-private:
-    QMutex lock;
-    bool stop_flag;
+protected:
+    bool convertToH5(const QStringList& arguments, const QString& outputPath,
+                     int progressMin, int progressMax) override;
+    QString satelliteFormatTag() const override { return "Spacety"; }
 };

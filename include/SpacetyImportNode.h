@@ -73,9 +73,6 @@ private slots:
     void onThreadError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 
-signals:
-    void startSpacetyImport(QString, std::vector<QString>, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*, bool);
-
 private:
     // UI elements
     QWidget* m_widget;

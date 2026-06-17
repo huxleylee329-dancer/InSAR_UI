@@ -27,8 +27,6 @@ private:
     void saveSystemSettings();
 signals:
     void sendPath(QString, QString, QString);
-    void operate(QString, QString, QString, QString, QString, QString, QStandardItemModel*);
-    void operate2(QString, QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_dst_project_currentIndexChanged();

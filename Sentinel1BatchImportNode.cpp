@@ -270,8 +270,6 @@ void Sentinel1BatchImportNode::executeImport()
     m_workerThread = new Sentinel1ImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &Sentinel1BatchImportNode::startBatchImport,
-            m_workerThread, &Sentinel1ImportWorker::import_sentinel_patch);
     connect(m_workerThread, &Sentinel1ImportWorker::updateProcess,
             this, &Sentinel1BatchImportNode::onImportProgress);
     connect(m_workerThread, &Sentinel1ImportWorker::endProcess,
@@ -286,16 +284,21 @@ void Sentinel1BatchImportNode::executeImport()
     QString subswath = m_subswathCombo->currentText();
     QString pol = m_polarizationCombo->currentText();
 
-    Q_EMIT startBatchImport(
-        m_preparedOriginalNameList,
-        m_preparedImportNameList,
-        subswath,
-        pol,
-        projectPath(),
-        m_preparedOutputNodeName,
-        projectName(),
-        projectModel()
-    );
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < m_preparedOriginalNameList.size(); ++i) {
+        ImportTask task;
+        task.filename = m_preparedImportNameList[i];
+        task.arguments = QStringList{ m_preparedOriginalNameList[i], subswath, pol };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, m_preparedOutputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 QStringList Sentinel1BatchImportNode::getImportedFilePaths() const

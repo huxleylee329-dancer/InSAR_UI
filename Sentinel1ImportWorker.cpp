@@ -1,82 +1,59 @@
 #include "Sentinel1ImportWorker.h"
-#include <QMetaType>
-#include <QFile>
-#include <QDebug>
-#include "InSARLogManager.h"
-#include "NodeUtils.h"
-#include "Sentinel1ImportHelper.h"
+#include <FormatConversion.h>
 
-using namespace std;
-
-Sentinel1ImportWorker::Sentinel1ImportWorker(QObject *parent)
+// 进度回调上下文
+struct S1ProgressContext
 {
-	qRegisterMetaType<QList<double>>("QList<double>");
-	stop_flag = true;
+    Sentinel1ImportWorker* worker;
+    int progressMin;
+    int progressMax;
+};
+
+// DLL进度回调：将DLL内部0-100映射到当前任务的进度区间
+static void onS1DllProgress(int percent, const char* message, void* userData)
+{
+    S1ProgressContext* ctx = static_cast<S1ProgressContext*>(userData);
+    if (!ctx || !ctx->worker)
+        return;
+    int mapped = ctx->progressMin + (ctx->progressMax - ctx->progressMin) * percent / 100;
+    QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入...");
+    ctx->worker->updateImportProgress(mapped, msg);
+}
+
+Sentinel1ImportWorker::Sentinel1ImportWorker(QObject* parent)
+    : BaseImportWorker("Sentinel1", parent)
+{
 }
 
 Sentinel1ImportWorker::~Sentinel1ImportWorker()
 {
 }
 
-void Sentinel1ImportWorker::import_sentinel(
-	QString PODFile,
-	QString manifest_file,
-	QString subswath,
-	QString polarization,
-	QString project_path,
-	QString folder,
-	QString filename,
-	QString project_name,
-	QStandardItemModel* model
-)
+bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QString& outputPath,
+                                       int progressMin, int progressMax)
 {
-	Sentinel1ImportHelper::importSentinel(
-		this,
-		PODFile,
-		manifest_file,
-		subswath,
-		polarization,
-		project_path,
-		folder,
-		filename,
-		project_name,
-		model
-	);
-}
+    if (arguments.size() < 3) return false;
 
-void Sentinel1ImportWorker::import_sentinel_patch(
-	vector<QString> original_filelist, 
-	vector<QString> import_namelist, 
-	QString subswath, 
-	QString polarization,
-	QString savepath, 
-	QString dst_node,
-	QString dst_project,
-	QStandardItemModel* model
-)
-{
-	Sentinel1ImportHelper::importSentinelPatch(
-		this,
-		original_filelist,
-		import_namelist,
-		subswath,
-		polarization,
-		savepath,
-		dst_node,
-		dst_project,
-		model
-	);
-}
+    QString manifest_file = arguments[0];
+    QString subswath      = arguments[1];
+    QString polarization  = arguments[2];
+    QString pod_file      = arguments.size() > 3 ? arguments[3] : "";
 
+    FormatConversion conversion;
+    S1ProgressContext context;
+    context.worker = this;
+    context.progressMin = progressMin;
+    context.progressMax = progressMax;
 
-void Sentinel1ImportWorker::StopProcess()
-{
-	QMutexLocker locker(&lock);
-	this->stop_flag = false;
-}
+    int ret = conversion.import_sentinel(
+        manifest_file.toStdString().c_str(),
+        subswath.toStdString().c_str(),
+        polarization.toStdString().c_str(),
+        outputPath.toStdString().c_str(),
+        pod_file.isEmpty() ? nullptr : pod_file.toStdString().c_str(),
+        onS1DllProgress,
+        &context
+    );
 
-bool Sentinel1ImportWorker::isStopRequested()
-{
-	QMutexLocker locker(&lock);
-	return !stop_flag;
+    return ret >= 0;
 }

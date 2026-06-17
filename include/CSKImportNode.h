@@ -73,9 +73,6 @@ private slots:
     void onThreadError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 
-signals:
-    void startCSKImport(QString, std::vector<QString>, std::vector<QString>, QString, QString, QStandardItemModel*);
-
 private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;

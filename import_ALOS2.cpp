@@ -1,5 +1,6 @@
 #include"MainWindow.h"
 #include"import_ALOS2.h"
+#include"ImportTask.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include<opencv2/highgui.hpp>
@@ -285,7 +286,6 @@ void import_ALOS2::on_buttonBox_accepted()
     import_ALOS2_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &import_ALOS2::operate2, import_ALOS2_thread, &ALOS2ImportWorker::import_ALOS2_patch, Qt::QueuedConnection);
     connect(import_ALOS2_thread, &ALOS2ImportWorker::updateProcess, this, &import_ALOS2::updateProcess);
     connect(thread, &QThread::finished, import_ALOS2_thread, &ALOS2ImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -295,13 +295,21 @@ void import_ALOS2::on_buttonBox_accepted()
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_ALOS2::StopThread);// , Qt::QueuedConnection);
     connect(import_ALOS2_thread, &ALOS2ImportWorker::sendModel, this, &import_ALOS2::TransitModel);
     thread->start();
-    emit operate2(
-        this->save_path, //保存路径
-        original_namelist,//原始文件名(IMG文件)
-        original_namelist2,//（LED文件）
-        import_namelist, //导入文件名
-        ui->lineEdit_dst_node->text(), //导入节点名
-        ui->comboBox_dst_project->currentText(), //导入工程名
-        this->copy);
+
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < original_namelist.size(); ++i) {
+        ImportTask task;
+        task.filename = import_namelist[i];
+        task.arguments = QStringList{ original_namelist[i], original_namelist2[i] };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_ALOS2_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 }

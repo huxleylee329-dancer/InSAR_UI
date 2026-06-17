@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "import_Spacety.h"
+#include "ImportTask.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <qmessagebox.h>
@@ -271,7 +272,6 @@ void import_Spacety::on_buttonBox_accepted()
     import_Spacety_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &import_Spacety::operate2, import_Spacety_thread, &SpacetyImportWorker::import_Spacety_patch, Qt::QueuedConnection);
     connect(import_Spacety_thread, &SpacetyImportWorker::updateProcess, this, &import_Spacety::updateProcess);
     connect(thread, &QThread::finished, import_Spacety_thread, &SpacetyImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -281,15 +281,21 @@ void import_Spacety::on_buttonBox_accepted()
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_Spacety::StopThread);
     connect(import_Spacety_thread, &SpacetyImportWorker::sendModel, this, &import_Spacety::TransitModel);
     thread->start();
-    
-    emit operate2(
-        this->save_path,
-        data_file_list,
-        xml_file_list,
-        import_namelist,
-        ui->lineEdit_dst_node->text(),
-        ui->comboBox_dst_project->currentText(),
-        this->copy,
-        ui->checkBox_spotlight->isChecked());
+
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < data_file_list.size(); ++i) {
+        ImportTask task;
+        task.filename = import_namelist[i];
+        task.arguments = QStringList{ data_file_list[i], xml_file_list[i], ui->checkBox_spotlight->isChecked() ? "1" : "0" };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_Spacety_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 }

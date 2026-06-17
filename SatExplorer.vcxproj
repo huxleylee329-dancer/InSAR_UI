@@ -226,7 +226,7 @@
     <ClCompile Include="Sentinel1ImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Sentinel1ImportHelper.cpp">
+    <ClCompile Include="BaseImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NewProject.cpp">
@@ -1052,6 +1052,9 @@
     <QtMoc Include="include\LidarImportWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\BaseImportWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\SpacetyImportWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -1121,7 +1124,7 @@
     <ClInclude Include="include\ImportDataTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\Sentinel1ImportHelper.h">
+    <ClInclude Include="include\ImportTask.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <QtMoc Include="include\QtNodes\internal\Definitions.hpp">

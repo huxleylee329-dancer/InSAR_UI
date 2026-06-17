@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "import_LiDAR.h"
+#include "ImportTask.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <qmessagebox.h>
@@ -253,7 +254,6 @@ void import_LiDAR::on_buttonBox_accepted()
     ui->progressBar->setValue(0);
     ui->progressBar->show();
 
-    connect(this, &import_LiDAR::operate2, import_lidar_thread, &LidarImportWorker::import_Lidar_patch, Qt::QueuedConnection);
     connect(import_lidar_thread, &LidarImportWorker::updateProcess, this, &import_LiDAR::updateProcess);
     connect(thread, &QThread::finished, import_lidar_thread, &LidarImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -265,16 +265,21 @@ void import_LiDAR::on_buttonBox_accepted()
 
     thread->start();
 
-    emit operate2(
-        this->save_path,
-        original_namelist,
-        import_namelist,
-        ui->comboBox_product_type->currentText(),
-        ui->spinBox_rh_percentile->value(),
-        ui->lineEdit_dst_node->text(),
-        ui->comboBox_dst_project->currentText(),
-        this->copy
-    );
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < original_namelist.size(); ++i) {
+        ImportTask task;
+        task.filename = import_namelist[i];
+        task.arguments = QStringList{ original_namelist[i], ui->comboBox_product_type->currentText(), QString::number(ui->spinBox_rh_percentile->value()) };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_lidar_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
 
     ChangeVision(false);
 }

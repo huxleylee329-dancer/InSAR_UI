@@ -1,5 +1,6 @@
 #include"MainWindow.h"
 #include"import_CSK.h"
+#include"ImportTask.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include<opencv2/highgui.hpp>
@@ -241,7 +242,6 @@ void import_CSK::on_buttonBox_accepted()
     import_CSK_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &import_CSK::operate2, import_CSK_thread, &CSKImportWorker::import_CSK_patch, Qt::QueuedConnection);
     connect(import_CSK_thread, &CSKImportWorker::updateProcess, this, &import_CSK::updateProcess);
     connect(thread, &QThread::finished, import_CSK_thread, &CSKImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -251,12 +251,21 @@ void import_CSK::on_buttonBox_accepted()
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_CSK::StopThread);// , Qt::QueuedConnection);
     connect(import_CSK_thread, &CSKImportWorker::sendModel, this, &import_CSK::TransitModel);
     thread->start();
-    emit operate2(
-        this->save_path, //保存路径
-        original_namelist,//原始文件名
-        import_namelist, //导入文件名
-        ui->lineEdit_dst_node->text(), //导入节点名
-        ui->comboBox_dst_project->currentText(), //导入工程名
-        this->copy);
+
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < original_namelist.size(); ++i) {
+        ImportTask task;
+        task.filename = import_namelist[i];
+        task.arguments = QStringList{ original_namelist[i] };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_CSK_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 }

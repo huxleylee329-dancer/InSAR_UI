@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "import_LUTAN.h"
+#include "ImportTask.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <qmessagebox.h>
@@ -283,7 +284,6 @@ void import_LUTAN::on_buttonBox_accepted()
     ui->progressBar->setValue(0);
     ui->progressBar->show();
 
-    connect(this, &import_LUTAN::operate2, import_LUTAN_thread, &LUTANImportWorker::import_LUTAN_patch, Qt::QueuedConnection);
     connect(import_LUTAN_thread, &LUTANImportWorker::updateProcess, this, &import_LUTAN::updateProcess);
     connect(thread, &QThread::finished, import_LUTAN_thread, &LUTANImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -294,15 +294,21 @@ void import_LUTAN::on_buttonBox_accepted()
     connect(import_LUTAN_thread, &LUTANImportWorker::sendModel, this, &import_LUTAN::TransitModel);
 
     thread->start();
-    emit operate2(
-        this->save_path,
-        data_files,
-        xml_files,
-        modes,
-        import_names,
-        ui->lineEdit_dst_node->text(),
-        ui->comboBox_dst_project->currentText(),
-        this->copy
-    );
+
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < data_files.size(); ++i) {
+        ImportTask task;
+        task.filename = import_names[i];
+        task.arguments = QStringList{ data_files[i], xml_files[i], QString::number(modes[i]) };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_LUTAN_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 }

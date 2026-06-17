@@ -212,8 +212,6 @@ void TSXBatchImportNode::executeImport()
     m_workerThread = new TSXImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &TSXBatchImportNode::startTSXBatchImport,
-            m_workerThread, &TSXImportWorker::import_TSX_patch);
     connect(m_workerThread, &TSXImportWorker::updateProcess,
             this, &TSXBatchImportNode::onImportProgress);
     connect(m_workerThread, &TSXImportWorker::endProcess,
@@ -225,15 +223,21 @@ void TSXBatchImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startTSXBatchImport(
-        polarization,
-        projectPath(),
-        originalFileList,
-        importNameList,
-        outputNodeName,
-        projectName(),
-        projectModel()
-    );
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < originalFileList.size(); ++i) {
+        ImportTask task;
+        task.filename = importNameList[i];
+        task.arguments = QStringList{ originalFileList[i], polarization };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void TSXBatchImportNode::stopExecution()

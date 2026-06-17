@@ -68,20 +68,6 @@ private slots:
     void onThreadError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 
-signals:
-    void startBiomassImport(
-        QString savepath,
-        std::vector<QString> amp_files,
-        std::vector<QString> phase_files,
-        std::vector<QString> xml_files,
-        std::vector<QString> orbit_files,
-        std::vector<QString> polarizations,
-        std::vector<QString> import_namelist,
-        QString dst_node,
-        QString dst_project,
-        QStandardItemModel* model
-    );
-
 private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;

@@ -141,9 +141,7 @@ void CSKImportNode::executeImport()
         }
     }
 
-    std::vector<QString> originalFileList;
-    std::vector<QString> importNameList;
-
+    std::vector<ImportTask> tasks;
     for (const QString& filePath : m_filePaths)
     {
         QString importName = generateOutputFileName(filePath);
@@ -152,16 +150,18 @@ void CSKImportNode::executeImport()
             onError("无法从 H5 文件生成输出文件名：" + filePath);
             return;
         }
-        originalFileList.push_back(filePath);
-        importNameList.push_back(importName);
+        ImportTask task;
+        task.filename = importName;
+        task.arguments = QStringList{ filePath };
+        tasks.push_back(task);
     }
 
     QString outputNodeName = getOutputNodeName();
 
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    for (const auto& task : tasks) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
     }
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
@@ -180,8 +180,6 @@ void CSKImportNode::executeImport()
     m_workerThread = new CSKImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &CSKImportNode::startCSKImport,
-            m_workerThread, &CSKImportWorker::import_CSK_patch);
     connect(m_workerThread, &CSKImportWorker::updateProcess,
             this, &CSKImportNode::onImportProgress);
     connect(m_workerThread, &CSKImportWorker::endProcess,
@@ -193,14 +191,12 @@ void CSKImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startCSKImport(
-        projectPath(),
-        originalFileList,
-        importNameList,
-        outputNodeName,
-        projectName(),
-        projectModel()
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void CSKImportNode::stopExecution()

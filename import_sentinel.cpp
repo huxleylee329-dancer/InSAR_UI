@@ -1,5 +1,6 @@
 #include"MainWindow.h"
 #include"import_sentinel.h"
+#include"ImportTask.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include<opencv2/highgui.hpp>
@@ -423,7 +424,6 @@ void import_sentinel::on_buttonBox_2_accepted()
     import_sentinel_thread_2->moveToThread(thread2);
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &import_sentinel::operate2, import_sentinel_thread_2, &Sentinel1ImportWorker::import_sentinel_patch, Qt::QueuedConnection);
     connect(import_sentinel_thread_2, &Sentinel1ImportWorker::updateProcess, this, &import_sentinel::updateProcess);
     connect(thread2, &QThread::finished, import_sentinel_thread_2, &Sentinel1ImportWorker::deleteLater);
     connect(thread2, &QThread::finished, thread2, &QThread::deleteLater);
@@ -432,16 +432,22 @@ void import_sentinel::on_buttonBox_2_accepted()
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &import_sentinel::StopThread);// , Qt::QueuedConnection);
     connect(import_sentinel_thread_2, &Sentinel1ImportWorker::sendModel, this, &import_sentinel::TransitModel);
     thread2->start();
-    emit operate2(
-        original_namelist,
-        import_namelist,
-        subswath,
-        polarization,
-        this->save_path,
-        ui->lineEdit_dst_node_2->text(),
-        ui->ComboBox_dst_project_2->currentText(),
-        this->copy
-    );
+
+    // 构造 ImportTask 列表
+    std::vector<ImportTask> tasks;
+    for (size_t i = 0; i < original_namelist.size(); ++i) {
+        ImportTask task;
+        task.filename = import_namelist[i];
+        task.arguments = QStringList{ original_namelist[i], subswath, polarization };
+        tasks.push_back(task);
+    }
+
+    QMetaObject::invokeMethod(import_sentinel_thread_2, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node_2->text()),
+        Q_ARG(QString, ui->ComboBox_dst_project_2->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
 }
 
@@ -493,7 +499,6 @@ void import_sentinel::on_buttonBox_accepted()
     import_sentinel_thread->moveToThread(thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &import_sentinel::operate, import_sentinel_thread, &Sentinel1ImportWorker::import_sentinel, Qt::QueuedConnection);
     connect(import_sentinel_thread, &Sentinel1ImportWorker::updateProcess, this, &import_sentinel::updateProcess);
     connect(thread, &QThread::finished, import_sentinel_thread, &Sentinel1ImportWorker::deleteLater);
     connect(thread, &QThread::finished, thread, &QThread::deleteLater);
@@ -502,17 +507,22 @@ void import_sentinel::on_buttonBox_accepted()
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_sentinel::StopThread);// , Qt::QueuedConnection);
     connect(import_sentinel_thread, &Sentinel1ImportWorker::sendModel, this, &import_sentinel::TransitModel);
     thread->start();
-    emit operate(
-        ui->lineEdit_POD->text(),
-        ui->lineEdit_manifest_file->text(), 
-        ui->ComboBox_subswath->currentText(),
-        ui->ComboBox_polarization->currentText(), 
-        this->save_path, 
-        ui->lineEdit_dst_node->text(),
-        ui->LineEdit_dst_filename->text(),
-        ui->comboBox_dst_project->currentText(),
-        this->copy
-    );
+
+    // 构造 ImportTask 列表（单文件导入）
+    std::vector<ImportTask> tasks;
+    ImportTask task;
+    task.filename = ui->LineEdit_dst_filename->text();
+    task.arguments = QStringList{ ui->lineEdit_manifest_file->text(),
+        ui->ComboBox_subswath->currentText(), ui->ComboBox_polarization->currentText(),
+        ui->lineEdit_POD->text() };
+    tasks.push_back(task);
+
+    QMetaObject::invokeMethod(import_sentinel_thread, "import_patch",
+        Q_ARG(QString, this->save_path),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, ui->lineEdit_dst_node->text()),
+        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
+        Q_ARG(QStandardItemModel*, this->copy));
     ChangeVision(false);
     
 }

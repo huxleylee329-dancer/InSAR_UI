@@ -141,10 +141,7 @@ void AIRSATImportNode::executeImport()
         }
     }
 
-    std::vector<QString> dataFileList;
-    std::vector<QString> xmlFileList;
-    std::vector<QString> importNameList;
-
+    std::vector<ImportTask> tasks;
     for (int i = 0; i < m_dataFilePaths.size(); ++i)
     {
         QString importName = generateOutputFileName(m_dataFilePaths[i]);
@@ -153,17 +150,18 @@ void AIRSATImportNode::executeImport()
             onError("无法从数据文件生成输出文件名：" + m_dataFilePaths[i]);
             return;
         }
-        dataFileList.push_back(m_dataFilePaths[i]);
-        xmlFileList.push_back(m_xmlFilePaths[i]);
-        importNameList.push_back(importName);
+        ImportTask task;
+        task.filename = importName;
+        task.arguments = QStringList{ m_dataFilePaths[i], m_xmlFilePaths[i] };
+        tasks.push_back(task);
     }
 
     QString outputNodeName = getOutputNodeName();
 
     QStringList pathsToCheck;
-    for (const QString& importName : importNameList) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + importName + ".jpg");
+    for (const auto& task : tasks) {
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
+        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
     }
 
     auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
@@ -182,8 +180,6 @@ void AIRSATImportNode::executeImport()
     m_workerThread = new AIRSATImportWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &AIRSATImportNode::startAIRSATImport,
-            m_workerThread, &AIRSATImportWorker::import_AIRSAT_patch);
     connect(m_workerThread, &AIRSATImportWorker::updateProcess,
             this, &AIRSATImportNode::onImportProgress);
     connect(m_workerThread, &AIRSATImportWorker::endProcess,
@@ -195,15 +191,12 @@ void AIRSATImportNode::executeImport()
 
     m_thread->start();
 
-    Q_EMIT startAIRSATImport(
-        projectPath(),
-        dataFileList,
-        xmlFileList,
-        importNameList,
-        outputNodeName,
-        projectName(),
-        projectModel()
-    );
+    QMetaObject::invokeMethod(m_workerThread, "import_patch",
+        Q_ARG(QString, projectPath()),
+        Q_ARG(std::vector<ImportTask>, tasks),
+        Q_ARG(QString, outputNodeName),
+        Q_ARG(QString, projectName()),
+        Q_ARG(QStandardItemModel*, projectModel()));
 }
 
 void AIRSATImportNode::stopExecution()
