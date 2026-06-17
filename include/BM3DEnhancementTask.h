@@ -1,5 +1,5 @@
-#ifndef SPECKLEDENOISETASK_H
-#define SPECKLEDENOISETASK_H
+#ifndef BM3DENHANCEMENTTASK_H
+#define BM3DENHANCEMENTTASK_H
 
 #include <QObject>
 #include <QRunnable>
@@ -8,11 +8,18 @@
 #include <QStandardItemModel>
 #include "FormatConversion.h"
 
-class SpeckleDenoiseTask : public QObject, public QRunnable
+// BM3D增强类型枚举
+enum class EnhancementType {
+    SpeckleDenoise,      // 斑点去噪
+    ClutterSuppression   // 杂波抑制
+};
+
+class BM3DEnhancementTask : public QObject, public QRunnable
 {
     Q_OBJECT
 public:
-    SpeckleDenoiseTask(
+    BM3DEnhancementTask(
+        EnhancementType type,
         QStringList inputPaths,
         QStringList outputPaths,
         QString nodeName,
@@ -23,7 +30,7 @@ public:
         bool saveToProject,
         XMLFile* projectXml
     );
-    
+
     void stop();
     void run() override;
 
@@ -44,7 +51,6 @@ signals:
 
 private:
     bool processBM3DEnhancement(
-        QString tag,
         QString inputPath,
         QString outputPath,
         QString nodeName,
@@ -59,6 +65,7 @@ private:
         int progressStep
     );
 
+    EnhancementType m_type;
     QStringList m_inputPaths;
     QStringList m_outputPaths;
     QString m_nodeName;
@@ -68,9 +75,9 @@ private:
     QStandardItemModel* m_model;
     bool m_saveToProject;
     XMLFile* m_projectXml;
-    
+
     QMutex m_lock;
     bool m_stopFlag;
 };
 
-#endif // SPECKLEDENOISETASK_H
+#endif // BM3DENHANCEMENTTASK_H

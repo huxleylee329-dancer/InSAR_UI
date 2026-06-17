@@ -338,17 +338,17 @@ void ClutterSuppressionNode::executeProcessing()
     // 清理旧数据，防止反复执行导致数据累加
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
 
-    m_task = new ClutterSuppressionTask(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
+    m_task = new BM3DEnhancementTask(EnhancementType::ClutterSuppression, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
 
-    connect(m_task, &ClutterSuppressionTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
-    connect(m_task, &ClutterSuppressionTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
-    connect(m_task, &ClutterSuppressionTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
-    connect(m_task, &ClutterSuppressionTask::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::QueuedConnection);
-    connect(m_task, &ClutterSuppressionTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::BlockingQueuedConnection);
-    connect(m_task, &ClutterSuppressionTask::saveImageToProjectRequested, this, &ClutterSuppressionNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &ClutterSuppressionNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
     m_outputNodeNameEdit->setEnabled(false);

@@ -467,7 +467,7 @@
     <ClCompile Include="SLCDerampWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="SpeckleDenoiseTask.cpp" />
+    <ClCompile Include="BM3DEnhancementTask.cpp" />
     <ClCompile Include="TargetDetectionNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -475,7 +475,6 @@
     <ClCompile Include="ClutterSuppressionNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ClutterSuppressionTask.cpp" />
     <ClCompile Include="ImageDisplayNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1070,7 +1069,7 @@
     <QtMoc Include="include\SLCDerampWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\SpeckleDenoiseTask.h" />
+    <QtMoc Include="include\BM3DEnhancementTask.h" />
     <QtMoc Include="include\TargetDetectionNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -1078,7 +1077,6 @@
     <QtMoc Include="include\ClutterSuppressionNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <QtMoc Include="include\ClutterSuppressionTask.h" />
     <QtMoc Include="include\ImageDisplayNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>

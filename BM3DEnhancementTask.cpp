@@ -1,6 +1,6 @@
 #include "InSARLogManager.h"
 #include <memory>
-#include "SpeckleDenoiseTask.h"
+#include "BM3DEnhancementTask.h"
 #include "icon_source.h"
 #include "BM3DWrapper.h"
 #include <QFileInfo>
@@ -8,7 +8,8 @@
 #include <QDebug>
 #include <opencv2/opencv.hpp>
 
-SpeckleDenoiseTask::SpeckleDenoiseTask(
+BM3DEnhancementTask::BM3DEnhancementTask(
+    EnhancementType type,
     QStringList inputPaths,
     QStringList outputPaths,
     QString nodeName,
@@ -19,7 +20,8 @@ SpeckleDenoiseTask::SpeckleDenoiseTask(
     bool saveToProject,
     XMLFile* projectXml
 )
-    : m_inputPaths(inputPaths)
+    : m_type(type)
+    , m_inputPaths(inputPaths)
     , m_outputPaths(outputPaths)
     , m_nodeName(nodeName)
     , m_fileNames(fileNames)
@@ -32,13 +34,13 @@ SpeckleDenoiseTask::SpeckleDenoiseTask(
 {
 }
 
-void SpeckleDenoiseTask::stop()
+void BM3DEnhancementTask::stop()
 {
     QMutexLocker locker(&m_lock);
     m_stopFlag = true;
 }
 
-void SpeckleDenoiseTask::run()
+void BM3DEnhancementTask::run()
 {
     for (int i = 0; i < m_inputPaths.size(); ++i) {
         m_lock.lock();
@@ -52,7 +54,7 @@ void SpeckleDenoiseTask::run()
         int progressStep = 100 / m_inputPaths.size();
         QString outError;
         bool ok = processBM3DEnhancement(
-            "SpeckleDenoise", m_inputPaths[i], m_outputPaths[i], m_nodeName,
+            m_inputPaths[i], m_outputPaths[i], m_nodeName,
             m_fileNames.isEmpty() ? QString() : m_fileNames[i],
             m_projectPath, m_projectName, m_model, m_saveToProject, m_projectXml, outError, baseProgress, progressStep
         );
@@ -62,22 +64,21 @@ void SpeckleDenoiseTask::run()
             QString msg = QStringLiteral("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(m_inputPaths[i]).fileName(), outError);
             emit askUserError(msg, &skip);
             if (!skip) {
-                InSARLogManager::LogError("MyThread", QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
+                InSARLogManager::LogError("BM3DEnhancementTask", QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
                 emit errorProcess(QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
                 return;
             }
         }
-        
+
         int overallProgress = (i + 1) * 100 / m_inputPaths.size();
         emit updateProcess(overallProgress, QStringLiteral("批处理进度: %1/%2").arg(i + 1).arg(m_inputPaths.size()));
     }
-    
+
     emit sendModel(m_model);
     emit endProcess();
 }
 
-bool SpeckleDenoiseTask::processBM3DEnhancement(
-    QString tag,
+bool BM3DEnhancementTask::processBM3DEnhancement(
     QString inputPath,
     QString outputPath,
     QString nodeName,
@@ -92,6 +93,24 @@ bool SpeckleDenoiseTask::processBM3DEnhancement(
     int progressStep
 )
 {
+    // 根据增强类型动态配置
+    QString tag;
+    QString processMsg;
+    QString suffix;
+    QString defaultDisplay;
+
+    if (m_type == EnhancementType::SpeckleDenoise) {
+        tag = "SpeckleDenoise";
+        processMsg = QStringLiteral("执行BM3D去噪 (可能耗时较长)...");
+        suffix = "_denoised.png";
+        defaultDisplay = QStringLiteral("denoised");
+    } else { // ClutterSuppression
+        tag = "ClutterSuppression";
+        processMsg = QStringLiteral("执行BM3D去杂波 (可能耗时较长)...");
+        suffix = "_clutter.png";
+        defaultDisplay = QStringLiteral("clutter_suppressed");
+    }
+
     emit updateProcess(baseProgress + progressStep * 0.0, QStringLiteral("加载图像..."));
 
     cv::Mat inputGray = cv::imread(inputPath.toStdString(), cv::IMREAD_GRAYSCALE);
@@ -133,7 +152,6 @@ bool SpeckleDenoiseTask::processBM3DEnhancement(
     double sigmaEst = calcMedian(absDiff) / 0.6745;
     double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
 
-    QString processMsg = (tag == "SpeckleDenoise") ? QStringLiteral("执行BM3D去噪 (可能耗时较长)...") : QStringLiteral("执行BM3D去杂波 (可能耗时较长)...");
     emit updateProcess(baseProgress + progressStep * 0.4, processMsg);
 
     cv::Mat img8U;
@@ -183,7 +201,6 @@ bool SpeckleDenoiseTask::processBM3DEnhancement(
             dir.mkdir(nodeName);
         }
 
-        QString suffix = (tag == "SpeckleDenoise") ? "_denoised.png" : "_clutter.png";
         QString finalFileName;
         if (fileName.isEmpty()) {
             finalFileName = QFileInfo(inputPath).baseName() + suffix;
@@ -197,7 +214,6 @@ bool SpeckleDenoiseTask::processBM3DEnhancement(
         QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
         cv::imwrite(finalPath.toStdString(), output8U);
 
-        QString defaultDisplay = (tag == "SpeckleDenoise") ? QStringLiteral("denoised") : QStringLiteral("clutter_suppressed");
         QString displayName = fileName.isEmpty() ? defaultDisplay : fileName;
 
         emit saveImageToProjectRequested(projectName, nodeName, displayName, finalPath, tag, finalFileName);

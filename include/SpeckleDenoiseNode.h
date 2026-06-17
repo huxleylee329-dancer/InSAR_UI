@@ -2,7 +2,7 @@
 
 #include "NodeDataTypes.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
-#include "SpeckleDenoiseTask.h"
+#include "BM3DEnhancementTask.h"
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
@@ -98,7 +98,7 @@ private:
     bool m_saveToProject = true;
 
     // Threading
-    SpeckleDenoiseTask* m_task = nullptr;
+    BM3DEnhancementTask* m_task = nullptr;
 };
 
 } // namespace QtNodes

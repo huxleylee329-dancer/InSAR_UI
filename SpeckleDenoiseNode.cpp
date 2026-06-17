@@ -353,17 +353,17 @@ void SpeckleDenoiseNode::executeProcessing()
     // 清理旧数据，防止反复执行导致数据累加
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
 
-    m_task = new SpeckleDenoiseTask(inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
+    m_task = new BM3DEnhancementTask(EnhancementType::SpeckleDenoise, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
 
-    connect(m_task, &SpeckleDenoiseTask::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::QueuedConnection);
-    connect(m_task, &SpeckleDenoiseTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
-    connect(m_task, &SpeckleDenoiseTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
-    connect(m_task, &SpeckleDenoiseTask::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::QueuedConnection);
-    connect(m_task, &SpeckleDenoiseTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::BlockingQueuedConnection);
-    connect(m_task, &SpeckleDenoiseTask::saveImageToProjectRequested, this, &SpeckleDenoiseNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &SpeckleDenoiseNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
 
