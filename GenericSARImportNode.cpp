@@ -4,6 +4,7 @@
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 #include "NodeUtils.h"
+#include "ImportDataTypes.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -20,14 +21,6 @@ GenericSARImportNode::GenericSARImportNode()
     , m_task(nullptr)
 {
     m_outputFileName = "{InputName}";
-}
-
-GenericSARImportNode::~GenericSARImportNode()
-{
-    if (m_task)
-    {
-        m_task->stop();
-    }
 }
 
 QWidget* GenericSARImportNode::createWidget()
@@ -51,18 +44,18 @@ QWidget* GenericSARImportNode::createWidget()
     imageRow->addWidget(new QLabel("通用 SAR 图像："), 3);
     m_imageEdit = new QLineEdit();
     m_imageEdit->setPlaceholderText("选择通用 SAR 图像文件");
-    connect(m_imageEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+    connect(m_imageEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_imageEdit->text();
         if (m_imagePath != text) {
             if (!confirmParameterChange()) {
                 m_imageEdit->setText(m_imagePath);
                 return;
             }
-            m_imagePath = text; 
+            m_imagePath = text;
             invalidateNodeData();
             if (!m_imagePath.isEmpty() && QFileInfo::exists(m_imagePath))
             {
-                m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
+                m_imageInfo = std::make_shared<ImageInfoData>(m_imagePath);
                 Q_EMIT dataUpdated(1);
             }
         }
@@ -71,8 +64,6 @@ QWidget* GenericSARImportNode::createWidget()
     imageRow->addWidget(m_imageEdit, 7);
     imageRow->addWidget(browseButton, 0);
     layout->addLayout(imageRow);
-
-
 
     // 目标节点 [3:7]
     auto* nodeRow = new QHBoxLayout();
@@ -101,14 +92,14 @@ QWidget* GenericSARImportNode::createWidget()
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
     m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
-    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
             if (!confirmParameterChange()) {
                 m_outputFileNameEdit->setText(m_outputFileName);
                 return;
             }
-            m_outputFileName = text; 
+            m_outputFileName = text;
             invalidateNodeData();
         }
     });
@@ -216,39 +207,28 @@ bool GenericSARImportNode::prepareToStart()
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
 }
 
-QStringList GenericSARImportNode::getImportedFilePaths() const
+QStringList GenericSARImportNode::getExpectedOutputFilePaths() const
 {
-    QStringList paths;
-    if (!m_importedFilePath.isEmpty()) {
-        paths.append(m_importedFilePath);
-    } else {
+    if (!m_imagePath.isEmpty() && !m_outputNodeName.isEmpty()) {
         QString suffix = QFileInfo(m_imagePath).suffix();
-        if (suffix.isEmpty()) suffix = "h5"; // Fallback
+        if (suffix.isEmpty()) suffix = "h5";
 
         QString resolvedFileName = m_outputFileName;
         QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
         resolvedFileName.replace(re, QFileInfo(m_imagePath).baseName());
 
-        paths.append(QString("%1/%2/%3.%4")
+        return { QString("%1/%2/%3.%4")
             .arg(projectPath())
             .arg(m_outputNodeName)
             .arg(resolvedFileName)
-            .arg(suffix));
+            .arg(suffix) };
     }
-    return paths;
+    return {};
 }
 
 QString GenericSARImportNode::getOutputNodeName() const
 {
     return m_outputNodeName;
-}
-
-QStringList GenericSARImportNode::previewImagePaths() const
-{
-    if (!m_importedFilePath.isEmpty() && QFileInfo::exists(m_importedFilePath)) {
-        return QStringList() << m_importedFilePath;
-    }
-    return QStringList();
 }
 
 void GenericSARImportNode::onImageBrowseClicked()
@@ -269,57 +249,36 @@ void GenericSARImportNode::onImageBrowseClicked()
     if (m_outputFileNameEdit->text().trimmed().isEmpty())
         m_outputFileNameEdit->setText("{InputName}");
 
-    m_imageInfoData = std::make_shared<ImageInfoData>(m_imagePath);
-    setOutputData(1, m_imageInfoData);
-    
-    m_importedFilePath.clear();
+    m_imageInfo = std::make_shared<ImageInfoData>(m_imagePath);
+    setOutputData(1, m_imageInfo);
+
+    m_importedFilePaths.clear();
     setOutputData(0, nullptr);
     setState(ExecutionState::Idle);
-    
+
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 }
 
-void GenericSARImportNode::onImportProgress(int progress, const QString& message)
-{
-    Q_UNUSED(message);
-    setProgress(progress);
-}
-
-void GenericSARImportNode::stopExecution()
-{
-    ImportNodeBase::stopExecution();
-    if (m_task) m_task->stop();
-}
-
 void GenericSARImportNode::onImportFinished()
 {
-    QString suffix = QFileInfo(m_imagePath).suffix();
-    if (suffix.isEmpty()) suffix = "h5";
+    // 更新导入文件路径
+    m_importedFilePaths = getExpectedOutputFilePaths();
 
-    QString resolvedFileName = m_outputFileName;
-    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
-    resolvedFileName.replace(re, QFileInfo(m_imagePath).baseName());
-
-    m_importedFilePath = QString("%1/%2/%3.%4")
-        .arg(projectPath())
-        .arg(m_outputNodeName)
-        .arg(resolvedFileName)
-        .arg(suffix);
-
-    // Port 0: 输出 ImageInfoData（导入后的路径），供下游处理节点使用
-    if (!m_importedFilePath.isEmpty())
+    // Port 0: 输出 ImportedFileData
+    if (!m_importedFilePaths.isEmpty())
     {
-        auto outputData = std::make_shared<ImageInfoData>(m_importedFilePath);
-        setOutputData(0, outputData);
+        QString nodeName = getOutputNodeName();
+        m_importedFiles = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
+        setOutputData(0, m_importedFiles);
         Q_EMIT dataUpdated(0);
     }
 
-    // Port 1: 预览输出（保持使用导入后的路径更统一）
-    if (!m_importedFilePath.isEmpty())
+    // Port 1: 预览输出
+    if (!m_importedFilePaths.isEmpty())
     {
-        m_imageInfoData = std::make_shared<ImageInfoData>(m_importedFilePath);
-        setOutputData(1, m_imageInfoData);
+        m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths.first());
+        setOutputData(1, m_imageInfo);
         Q_EMIT dataUpdated(1);
     }
 
@@ -328,16 +287,16 @@ void GenericSARImportNode::onImportFinished()
     m_task = nullptr;
 }
 
+void GenericSARImportNode::onImportProgress(int progress, const QString& message)
+{
+    Q_UNUSED(message);
+    setProgress(progress);
+}
+
 void GenericSARImportNode::onThreadError(const QString& error)
 {
     onError(error);
-
     m_task = nullptr;
-}
-
-void GenericSARImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ImportNodeBase::setExecutionMode(mode);
 }
 
 void GenericSARImportNode::onModelUpdated(QStandardItemModel* model)
@@ -369,99 +328,6 @@ void GenericSARImportNode::load(QJsonObject const &json)
     if (m_imageEdit) m_imageEdit->setText(m_imagePath);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
-}
-
-unsigned int GenericSARImportNode::nPorts(PortType portType) const
-{
-    // No input ports, two output ports (Port 0: Result, Port 1: Preview)
-    if (portType == PortType::In)
-        return 0;
-    else
-        return 2;
-}
-
-NodeDataType GenericSARImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out)
-    {
-        if (portIndex == 0)
-            return NodeDataType{"image_info", "Image Info"};
-        else if (portIndex == 1)
-            return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool GenericSARImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString GenericSARImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out)
-    {
-        if (portIndex == 0)
-            return tr("成果 *");
-        else if (portIndex == 1)
-            return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool GenericSARImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    // Port 1 is optional
-    if (portType == PortType::Out && portIndex == 1)
-        return true;
-
-    return false;
-}
-
-std::shared_ptr<NodeData> GenericSARImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
-}
-
-bool GenericSARImportNode::validateAndRestoreOutput()
-{
-    QString nodeName = m_outputNodeName.trimmed();
-    if (nodeName.isEmpty())
-        return false;
-
-    QString projDirStr = projectPath();
-
-    QString suffix = QFileInfo(m_imagePath).suffix();
-    if (suffix.isEmpty()) suffix = "h5";
-
-    QString finalFileName = m_outputFileName;
-    if (finalFileName.isEmpty()) {
-        finalFileName = QFileInfo(m_imagePath).baseName();
-    } else {
-        QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
-        finalFileName.replace(re, QFileInfo(m_imagePath).baseName());
-    }
-
-    QString outputPath = QString("%1/%2/%3.%4")
-        .arg(projDirStr)
-        .arg(nodeName)
-        .arg(finalFileName)
-        .arg(suffix);
-
-    if (QFile::exists(outputPath)) {
-        m_importedFilePath = outputPath;
-        if (!m_importedFilePath.isEmpty()) {
-            auto outputData = std::make_shared<ImageInfoData>(m_importedFilePath);
-            setOutputData(0, outputData);
-            m_imageInfoData = outputData;
-            setOutputData(1, outputData);
-            Q_EMIT dataUpdated(0);
-            Q_EMIT dataUpdated(1);
-            return true;
-        }
-    }
-
-    return false;
 }
 
 } // namespace QtNodes

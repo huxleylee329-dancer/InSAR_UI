@@ -4,6 +4,8 @@
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
 #include <QtNodes/NodeDelegateModelRegistry>
+#include "ImportDataTypes.h"
+#include "NodeDataTypes.h"
 #include <QLineEdit>
 #include <QComboBox>
 #include <QPushButton>
@@ -15,10 +17,13 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QStandardItemModel>
+#include <QFutureWatcher>
 #include <memory>
 
 // Forward declarations
 class IApplicationInterface;
+class BaseImportWorker;
+struct ImportTask;
 
 namespace QtNodes {
 
@@ -31,15 +36,21 @@ class ImportNodeBase : public ExecutableNodeDelegateModel
 
 public:
     ImportNodeBase();
-    virtual ~ImportNodeBase() = default;
+    virtual ~ImportNodeBase();
 
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Import"); }
     QString name() const override { return QStringLiteral("ImportBase"); }
 
+    // 统一的端口配置（默认 2 端口：Port0=成果, Port1=预览）
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
+    QString portCaption(PortType portType, PortIndex portIndex) const override;
+    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
+    QStringList previewImagePaths() const override;
+
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
 
     // Get project context (to be accessed by derived classes)
@@ -51,33 +62,57 @@ public:
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
+    // 统一的执行控制
+    void stopExecution() override;
+    bool validateAndRestoreOutput() override;
+
+protected slots:
+    // 统一的 Worker 槽函数
+    void onImportProgress(int progress, const QString& message);
+    void onImportFinished();
+    void onThreadError(const QString& error);
+    void onModelUpdated(QStandardItemModel* model);
+
 protected:
     // Subclass must override these (legacy interface)
     virtual void executeImport() = 0;
-    
-    // Subclasses must implement this to provide the generated file paths
-    virtual QStringList getImportedFilePaths() const = 0;
-    virtual QString getOutputNodeName() const;
+
+    // 子类必须实现：返回预期的输出文件路径列表
+    virtual QStringList getExpectedOutputFilePaths() const = 0;
+    // 子类必须实现：返回输出的 XML 节点名称
+    virtual QString getOutputNodeName() const = 0;
+
     virtual QWidget* createWidget() = 0;
 
     // New Executable interface that subclasses must override
     void execute() override;
-    void stopExecution() override;
     void processAutomatically() override;
 
-    // Thread accessors - subclasses must implement to return their QThread
-    virtual QThread* qThread() const = 0;
+    // 辅助启动函数：子类只需调用此函数即可启动异步导入
+    void startWorker(BaseImportWorker* worker, const std::vector<ImportTask>& tasks);
 
     // Helper: create a styled project badge label (shared across all import nodes)
     static QLabel* createProjectBadge(const QString& projectName);
 
     // Helper methods
     void onProgressUpdate(int progress, const QString& message);
-    virtual void onImportFinished();
     void onError(const QString& error);
 
     // Get project context interface
     IApplicationInterface* getProjectContext() const;
+
+    // 统一的工作线程管理
+    QThread* m_thread = nullptr;
+    BaseImportWorker* m_worker = nullptr;
+
+    // 统一的输出数据
+    std::shared_ptr<ImportedFileData> m_importedFiles;
+    std::shared_ptr<ImageInfoData> m_imageInfo;
+    QStringList m_importedFilePaths;
+    QString m_outputFileName;
+
+    // 异步预览生成
+    QFutureWatcher<void> m_remedyWatcher;
 
     // Flag for stop request
     bool m_stopRequested;

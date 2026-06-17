@@ -13,9 +13,6 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QThread>
 
 namespace QtNodes {
 
@@ -25,7 +22,6 @@ class GenericSARImportNode : public ImportNodeBase
 
 public:
     GenericSARImportNode();
-    ~GenericSARImportNode();
 
     QString caption() const override { return QStringLiteral("Generic SAR Import"); }
     QString name() const override { return QStringLiteral("GenericSARImport"); }
@@ -33,33 +29,18 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
-    unsigned int nPorts(PortType portType) const override;
-    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
-    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
-    QString portCaption(PortType portType, PortIndex portIndex) const override;
-    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
-    std::shared_ptr<NodeData> outData(PortIndex port) override;
-
-    void setExecutionMode(ExecutionMode mode) override;
-
 protected:
     QWidget* createWidget() override;
     void executeImport() override;
-    QStringList getImportedFilePaths() const override;
+    QStringList getExpectedOutputFilePaths() const override;
     QString getOutputNodeName() const override;
-    QStringList previewImagePaths() const override;
 
     // Threading
     GenericSARImportTask* m_task = nullptr;
-    QThread* qThread() const override { return nullptr; }
-    void stopExecution() override;
     bool prepareToStart() override;
 
-protected:
-    void onImportFinished() override;
-    bool validateAndRestoreOutput() override;
-
 private slots:
+    void onImportFinished();
     void onImageBrowseClicked();
     void onImportProgress(int progress, const QString& message);
     void onThreadError(const QString& error);
@@ -75,15 +56,10 @@ private:
     QLabel* m_projectLabel;
 
     QString m_imagePath;
-    QString m_importedFilePath;
     QString m_outputNodeName;
     QString m_outputFileName;
     QString m_preparedOutputFileName;
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
-
-    std::shared_ptr<ImageInfoData> m_imageInfoData;
-
-    QThread* m_thread;
 };
 
 } // namespace QtNodes

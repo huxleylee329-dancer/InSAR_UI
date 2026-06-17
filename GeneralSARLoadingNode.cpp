@@ -1,11 +1,8 @@
 #include "GeneralSARLoadingNode.h"
-#include "IApplicationInterface.h"
 #include "MainWindow.h"
-#include "NodeUtils.h"
 #include "ImportDataTypes.h"
 #include <QJsonArray>
 #include <QFileInfo>
-#include <QDir>
 #include <QShowEvent>
 
 namespace QtNodes {
@@ -247,17 +244,17 @@ void GeneralSARLoadingNode::executeImport()
         return;
     }
 
-    m_selectedImageInfoData = std::make_shared<ImageInfoData>(validPaths);
+    m_imageInfo = std::make_shared<ImageInfoData>(validPaths);
     auto outputData = std::make_shared<ImportedFileData>(validPaths, m_loadingNodeName);
     setOutputData(0, outputData);
-    setOutputData(1, m_selectedImageInfoData);
+    setOutputData(1, m_imageInfo);
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 
     finishExecution();
 }
 
-QStringList GeneralSARLoadingNode::getImportedFilePaths() const
+QStringList GeneralSARLoadingNode::getExpectedOutputFilePaths() const
 {
     return m_checkedFilePaths;
 }
@@ -265,17 +262,6 @@ QStringList GeneralSARLoadingNode::getImportedFilePaths() const
 QString GeneralSARLoadingNode::getOutputNodeName() const
 {
     return m_loadingNodeName;
-}
-
-QStringList GeneralSARLoadingNode::previewImagePaths() const
-{
-    QStringList existingPaths;
-    for (const QString& path : m_checkedFilePaths) {
-        if (QFileInfo::exists(path)) {
-            existingPaths << path;
-        }
-    }
-    return existingPaths;
 }
 
 QJsonObject GeneralSARLoadingNode::save() const
@@ -311,78 +297,6 @@ void GeneralSARLoadingNode::load(QJsonObject const &json)
     if (m_projectNameLabel) {
         refreshUI();
     }
-}
-
-unsigned int GeneralSARLoadingNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::Out)
-        return 2;
-    return 0;
-}
-
-NodeDataType GeneralSARLoadingNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    Q_UNUSED(portIndex);
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool GeneralSARLoadingNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString GeneralSARLoadingNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return tr("成果 *");
-        if (portIndex == 1) return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool GeneralSARLoadingNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out && portIndex == 1) return true;
-    return false;
-}
-
-std::shared_ptr<NodeData> GeneralSARLoadingNode::outData(PortIndex port)
-{
-    if (port == 0 || port == 1) {
-        return m_selectedImageInfoData;
-    }
-    return nullptr;
-}
-
-void GeneralSARLoadingNode::setExecutionMode(ExecutionMode mode)
-{
-    ImportNodeBase::setExecutionMode(mode);
-}
-
-bool GeneralSARLoadingNode::validateAndRestoreOutput()
-{
-    if (m_checkedFilePaths.isEmpty()) {
-        return false;
-    }
-
-    // Check if the files still exist
-    for (const QString& path : m_checkedFilePaths) {
-        if (!QFileInfo::exists(path)) {
-            return false;
-        }
-    }
-
-    m_selectedImageInfoData = std::make_shared<ImageInfoData>(m_checkedFilePaths);
-    auto importedData = std::make_shared<ImportedFileData>(m_checkedFilePaths, m_loadingNodeName);
-    setOutputData(0, importedData);
-    setOutputData(1, m_selectedImageInfoData);
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
-    return true;
 }
 
 } // namespace QtNodes

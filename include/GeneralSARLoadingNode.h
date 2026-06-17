@@ -41,25 +41,11 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
-    unsigned int nPorts(PortType portType) const override;
-    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
-    bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
-    QString portCaption(PortType portType, PortIndex portIndex) const override;
-    bool portIsOptional(PortType portType, PortIndex portIndex) const override;
-    std::shared_ptr<NodeData> outData(PortIndex port) override;
-
-    void setExecutionMode(ExecutionMode mode) override;
-
 protected:
     QWidget* createWidget() override;
     void executeImport() override;
-    QStringList getImportedFilePaths() const override;
+    QStringList getExpectedOutputFilePaths() const override;
     QString getOutputNodeName() const override;
-    QStringList previewImagePaths() const override;
-
-    QThread* qThread() const override { return nullptr; }
-
-    bool validateAndRestoreOutput() override;
 
 public slots:
     void onProjectModelChanged(QStandardItemModel* model);
@@ -77,8 +63,6 @@ private:
     QString m_loadingNodeName;
     QStringList m_checkedFilePaths;
     bool m_isNewNode = true;
-
-    std::shared_ptr<ImageInfoData> m_selectedImageInfoData;
 };
 
 } // namespace QtNodes

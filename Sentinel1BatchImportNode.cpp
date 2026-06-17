@@ -1,7 +1,10 @@
 #include "InSARLogManager.h"
 
 #include "Sentinel1BatchImportNode.h"
+#include "Sentinel1ImportWorker.h"
+#include "ImportTask.h"
 #include "IApplicationInterface.h"
+#include "ImportDataTypes.h"
 #include "NodeUtils.h"
 #include "FormatConversion.h"
 #include <QFile>
@@ -21,50 +24,8 @@ Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     , m_polarizationCombo(nullptr)
     , m_projectLabel(nullptr)
     , m_manifestPaths()
-    , m_importedFilePaths()
     , m_outputNodeName("S1_Batch_Import")
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
 {
-}
-
-Sentinel1BatchImportNode::~Sentinel1BatchImportNode()
-{
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    // Note: m_widget is owned by QtNodes QGraphicsProxyWidget, do not delete here
-}
-
-void Sentinel1BatchImportNode::stopExecution()
-{
-    m_stopRequested = true;
-    if (m_workerThread)
-    {
-        m_workerThread->StopProcess();
-    }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-    }
 }
 
 QWidget* Sentinel1BatchImportNode::createWidget()
@@ -101,7 +62,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     buttonColLayout->addWidget(addFiles);
     buttonColLayout->addWidget(removeFiles);
     topSection->addLayout(buttonColLayout);
-    
+
     mainLayout->addLayout(topSection, 4);
 
     // Project Name Badge
@@ -266,21 +227,6 @@ void Sentinel1BatchImportNode::executeImport()
         NodeUtils::removeDataNodeFromProject(getProjectContext(), m_preparedOutputNodeName);
     }
 
-    m_thread = new QThread(this);
-    m_workerThread = new Sentinel1ImportWorker();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(m_workerThread, &Sentinel1ImportWorker::updateProcess,
-            this, &Sentinel1BatchImportNode::onImportProgress);
-    connect(m_workerThread, &Sentinel1ImportWorker::endProcess,
-            this, &Sentinel1BatchImportNode::onImportFinished);
-    connect(m_workerThread, &Sentinel1ImportWorker::errorProcess,
-            this, &Sentinel1BatchImportNode::onThreadError);
-    connect(m_workerThread, &Sentinel1ImportWorker::sendModel,
-            this, &Sentinel1BatchImportNode::onModelUpdated);
-
-    m_thread->start();
-
     QString subswath = m_subswathCombo->currentText();
     QString pol = m_polarizationCombo->currentText();
 
@@ -293,17 +239,22 @@ void Sentinel1BatchImportNode::executeImport()
         tasks.push_back(task);
     }
 
-    QMetaObject::invokeMethod(m_workerThread, "import_patch",
-        Q_ARG(QString, projectPath()),
-        Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, m_preparedOutputNodeName),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
+    // 三行启动
+    auto* worker = new Sentinel1ImportWorker();
+    startWorker(worker, tasks);
 }
 
-QStringList Sentinel1BatchImportNode::getImportedFilePaths() const
+QStringList Sentinel1BatchImportNode::getExpectedOutputFilePaths() const
 {
-    return m_importedFilePaths;
+    QStringList paths;
+    QString outputNodeName = getOutputNodeName();
+    for (const QString& manifestPath : m_manifestPaths) {
+        QString importName = generateImportName(manifestPath);
+        if (!importName.isEmpty()) {
+            paths.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
+        }
+    }
+    return paths;
 }
 
 QString Sentinel1BatchImportNode::getOutputNodeName() const
@@ -314,24 +265,6 @@ QString Sentinel1BatchImportNode::getOutputNodeName() const
         return "S1_Batch_Import";
     }
     return name;
-}
-
-QStringList Sentinel1BatchImportNode::previewImagePaths() const
-{
-    QStringList existingPaths;
-    for (const QString& h5Path : m_importedFilePaths) {
-        if (QFileInfo::exists(h5Path)) {
-            QFileInfo fi(h5Path);
-            QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-            
-            // 自愈已被移至 validateAndRestoreOutput 中异步执行
-            
-            if (QFileInfo::exists(jpgPath)) {
-                existingPaths << jpgPath;
-            }
-        }
-    }
-    return existingPaths;
 }
 
 QString Sentinel1BatchImportNode::generateImportName(const QString& manifestPath) const
@@ -426,7 +359,7 @@ void Sentinel1BatchImportNode::onAddFilesClicked()
             QFileInfo fi(file);
             m_fileListWidget->addItem(fi.dir().dirName() + "/" + fi.fileName());
             added = true;
-            
+
             int outCount = nPorts(PortType::Out);
             for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
             invalidateExecution();
@@ -528,15 +461,15 @@ void Sentinel1BatchImportNode::onRemoveFilesClicked()
                 QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
                 jpgPaths.append(jpgPath);
             }
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
+            m_imageInfo = std::make_shared<ImageInfoData>(jpgPaths);
+            setOutputData(1, m_imageInfo);
             Q_EMIT dataUpdated(1);
 
             auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, getOutputNodeName());
             setOutputData(0, outputData);
             Q_EMIT dataUpdated(0);
         } else {
-            m_imageInfoData.reset();
+            m_imageInfo.reset();
             setOutputData(1, nullptr);
             Q_EMIT dataUpdated(1);
 
@@ -545,84 +478,6 @@ void Sentinel1BatchImportNode::onRemoveFilesClicked()
         }
 
         invalidateExecution();
-    }
-}
-
-void Sentinel1BatchImportNode::onImportProgress(int progress, const QString& message)
-{
-    Q_UNUSED(message);
-    setProgress(progress);
-}
-
-void Sentinel1BatchImportNode::onImportFinished()
-{
-    QString outputNodeName = getOutputNodeName();
-
-    m_importedFilePaths.clear();
-    for (int i = 0; i < m_manifestPaths.size(); ++i) {
-        QString importName = generateImportName(m_manifestPaths[i]);
-        if (!importName.isEmpty()) {
-            QString filePath = QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(importName);
-            m_importedFilePaths.append(filePath);
-        }
-    }
-    ImportNodeBase::onImportFinished();
-
-    // 双路输出：Port 1 预览输出
-    if (!m_importedFilePaths.isEmpty())
-    {
-        QStringList jpgPaths;
-        for (const QString& h5Path : m_importedFilePaths) {
-            QFileInfo fi(h5Path);
-            QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-            jpgPaths.append(jpgPath);
-        }
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void Sentinel1BatchImportNode::onThreadError(const QString& error)
-{
-    onError(error);
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void Sentinel1BatchImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ExecutionMode oldMode = executionMode();
-    ImportNodeBase::setExecutionMode(mode);
-}
-
-void Sentinel1BatchImportNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    if (auto* iface = getProjectContext()) {
-        iface->refreshProjectTree();
     }
 }
 
@@ -685,124 +540,6 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
     ExecutableNodeDelegateModel::load(json);
 
     updateAvailableParameters();
-}
-
-bool Sentinel1BatchImportNode::validateAndRestoreOutput()
-{
-    QString nodeName = m_outputNodeName.trimmed();
-    if (nodeName.isEmpty())
-        return false;
-
-    QString outputPath = projectPath() + "/" + nodeName + "/";
-    QDir dir(outputPath);
-    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
-        m_importedFilePaths.clear();
-        for (const QString &manifestPath : m_manifestPaths) {
-            QString importName = generateImportName(manifestPath);
-            QString importedPath = outputPath + importName + ".h5";
-            bool exists = QFile::exists(importedPath);
-            if (exists) {
-                m_importedFilePaths.append(importedPath);
-            }
-        }
-        if (!m_importedFilePaths.isEmpty()) {
-            auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
-            setOutputData(0, outputData);
-            Q_EMIT dataUpdated(0);
-
-            // 双路输出：Port 1 预览输出
-            QStringList missingH5s;
-            QStringList missingJpgs;
-            QStringList allJpgPaths;
-
-            for (const QString& h5Path : m_importedFilePaths) {
-                QFileInfo fi(h5Path);
-                QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-                allJpgPaths.append(jpgPath);
-                
-                if (!QFileInfo::exists(jpgPath)) {
-                    missingH5s.append(h5Path);
-                    missingJpgs.append(jpgPath);
-                }
-            }
-
-            if (!missingH5s.isEmpty()) {
-                m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
-                m_remedyWatcher.disconnect();
-
-                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
-                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                    setOutputData(1, m_imageInfoData);
-                    Q_EMIT dataUpdated(1);
-                });
-
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-                    for (int i = 0; i < missingH5s.size(); ++i) {
-                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                    }
-                });
-                m_remedyWatcher.setFuture(future);
-            } else {
-                m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
-            }
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-unsigned int Sentinel1BatchImportNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::In)
-        return 0;
-    else
-        return 2;
-}
-
-NodeDataType Sentinel1BatchImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out)
-    {
-        if (portIndex == 0)
-            return NodeDataType{"imported_file", "Imported Files"};
-        else if (portIndex == 1)
-            return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool Sentinel1BatchImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString Sentinel1BatchImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out)
-    {
-        if (portIndex == 0)
-            return tr("成果 *");
-        else if (portIndex == 1)
-            return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool Sentinel1BatchImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out && portIndex == 1)
-        return true;
-    return false;
-}
-
-std::shared_ptr<NodeData> Sentinel1BatchImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
 }
 
 } // namespace QtNodes

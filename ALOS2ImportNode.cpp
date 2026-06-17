@@ -1,4 +1,6 @@
 #include "ALOS2ImportNode.h"
+#include "ALOS2ImportWorker.h"
+#include "ImportTask.h"
 #include "NodeUtils.h"
 #include <QFile>
 #include <QJsonArray>
@@ -13,36 +15,8 @@ ALOS2ImportNode::ALOS2ImportNode()
     , m_fileListWidget(nullptr)
     , m_projectLabel(nullptr)
     , m_imgPaths()
-    , m_importedFilePaths()
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
+    , m_outputNodeName()
 {
-}
-
-ALOS2ImportNode::~ALOS2ImportNode()
-{
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    // Note: m_widget is owned by QtNodes QGraphicsProxyWidget, do not delete here
 }
 
 QWidget* ALOS2ImportNode::createWidget()
@@ -178,96 +152,22 @@ void ALOS2ImportNode::executeImport()
         NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
     }
 
-    m_thread = new QThread(this);
-    m_workerThread = new ALOS2ImportWorker();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(m_workerThread, &ALOS2ImportWorker::updateProcess,
-            this, &ALOS2ImportNode::onImportProgress);
-    connect(m_workerThread, &ALOS2ImportWorker::endProcess,
-            this, &ALOS2ImportNode::onImportFinished);
-    connect(m_workerThread, &ALOS2ImportWorker::errorProcess,
-            this, &ALOS2ImportNode::onThreadError);
-    connect(m_workerThread, &ALOS2ImportWorker::sendModel,
-            this, &ALOS2ImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    QMetaObject::invokeMethod(m_workerThread, "import_patch",
-        Q_ARG(QString, projectPath()),
-        Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, outputNodeName),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
+    // 三行启动
+    auto* worker = new ALOS2ImportWorker();
+    startWorker(worker, tasks);
 }
 
-void ALOS2ImportNode::stopExecution()
+QStringList ALOS2ImportNode::getExpectedOutputFilePaths() const
 {
-    m_stopRequested = true;
-    if (m_workerThread)
-    {
-        m_workerThread->StopProcess();
+    QStringList paths;
+    QString outputNodeName = getOutputNodeName();
+    for (const QString& imgPath : m_imgPaths) {
+        QString importName = generateOutputFileName(imgPath);
+        if (!importName.isEmpty()) {
+            paths.append(projectPath() + "/" + outputNodeName + "/" + importName + ".h5");
+        }
     }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-    }
-}
-
-QStringList ALOS2ImportNode::getImportedFilePaths() const
-{
-    return m_importedFilePaths;
-}
-
-unsigned int ALOS2ImportNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::In) return 0;
-    return 2;
-}
-
-NodeDataType ALOS2ImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool ALOS2ImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString ALOS2ImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return tr("成果 *");
-        if (portIndex == 1) return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool ALOS2ImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out && portIndex == 1;
-}
-
-std::shared_ptr<NodeData> ALOS2ImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
-}
-
-QStringList ALOS2ImportNode::previewImagePaths() const
-{
-    QStringList jpgPaths;
-    for (const QString& h5Path : m_importedFilePaths) {
-        QFileInfo fi(h5Path);
-        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        if (QFileInfo::exists(jpg))
-            jpgPaths.append(jpg);
-    }
-    return jpgPaths;
+    return paths;
 }
 
 QString ALOS2ImportNode::getOutputNodeName() const
@@ -337,7 +237,7 @@ void ALOS2ImportNode::onAddFilesClicked()
         {
             m_imgPaths.append(file);
             m_fileListWidget->addItem(QFileInfo(file).fileName());
-            
+
             int outCount = nPorts(PortType::Out);
             for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
             invalidateExecution();
@@ -359,86 +259,6 @@ void ALOS2ImportNode::onRemoveFilesClicked()
         for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
         invalidateExecution();
     }
-}
-
-void ALOS2ImportNode::onImportProgress(int progress, const QString& message)
-{
-    Q_UNUSED(message);  // Ignore message
-    setProgress(progress);
-}
-
-void ALOS2ImportNode::onImportFinished()
-{
-    QString outputNodeName = getOutputNodeName();
-    m_importedFilePaths.clear();
-    for (int i = 0; i < m_imgPaths.size(); ++i)
-    {
-        QString importName = generateOutputFileName(m_imgPaths[i]);
-        if (!importName.isEmpty())
-        {
-            QString filePath = QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(importName);
-            m_importedFilePaths.append(filePath);
-        }
-    }
-
-    ImportNodeBase::onImportFinished();
-
-    // 双路输出：Port 1 预览
-    if (!m_importedFilePaths.isEmpty()) {
-        QStringList jpgPaths;
-        for (const QString& h5Path : m_importedFilePaths) {
-            QFileInfo fi(h5Path);
-            jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
-        }
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    // Clean up thread (consistent with TSXBatchImportNode)
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void ALOS2ImportNode::onThreadError(const QString& error)
-{
-    onError(error);
-
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void ALOS2ImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ExecutionMode oldMode = executionMode();
-    ImportNodeBase::setExecutionMode(mode);
-}
-
-void ALOS2ImportNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
 }
 
 QJsonObject ALOS2ImportNode::save() const
@@ -472,75 +292,6 @@ void ALOS2ImportNode::load(QJsonObject const &json)
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
-}
-
-bool ALOS2ImportNode::validateAndRestoreOutput()
-{
-    QString nodeName = m_outputNodeName.trimmed();
-    if (nodeName.isEmpty())
-        return false;
-
-    QString outputPath = projectPath() + "/" + nodeName + "/";
-
-    QDir dir(outputPath);
-    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
-        // 批量导入：构建所有已导入文件的路径
-        QStringList importedFiles;
-        for (const QString &path : m_imgPaths) {
-            QString importName = generateOutputFileName(path);
-            QString importedPath = outputPath + importName + ".h5";
-            if (QFile::exists(importedPath)) {
-                importedFiles.append(importedPath);
-            }
-        }
-        if (!importedFiles.isEmpty()) {
-            m_importedFilePaths = importedFiles;
-            auto outputData = std::make_shared<ImportedFileData>(importedFiles, nodeName);
-            setOutputData(0, outputData);
-            Q_EMIT dataUpdated(0);
-
-            // Port 1 预览恢复
-            QStringList allJpgPaths;
-            QStringList missingH5s, missingJpgs;
-
-            for (const QString& h5Path : importedFiles) {
-                QFileInfo fi(h5Path);
-                QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-                allJpgPaths.append(jpg);
-                if (!QFileInfo::exists(jpg)) {
-                    missingH5s.append(h5Path);
-                    missingJpgs.append(jpg);
-                }
-            }
-
-            if (!missingH5s.isEmpty()) {
-                m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
-                m_remedyWatcher.disconnect();
-
-                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                        [this, allJpgPaths]() {
-                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                    setOutputData(1, m_imageInfoData);
-                    Q_EMIT dataUpdated(1);
-                });
-
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-                    for (int i = 0; i < missingH5s.size(); ++i)
-                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                });
-                m_remedyWatcher.setFuture(future);
-            } else {
-                m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
-            }
-
-            return true;
-        }
-    }
-
-    return false;
 }
 
 } // namespace QtNodes

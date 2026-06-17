@@ -3,6 +3,7 @@
 #include "TSXImportNode.h"
 #include "TSXImportWorker.h"
 #include "ImportDataTypes.h"
+#include "ImportTask.h"
 #include "NodeUtils.h"
 #include <QFile>
 #include <QFileInfo>
@@ -17,38 +18,8 @@ TSXImportNode::TSXImportNode()
     , m_polarizationCombo(nullptr)
     , m_projectLabel(nullptr)
     , m_xmlPath()
-    , m_importedFilePath()
     , m_outputFileName()
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
 {
-}
-
-TSXImportNode::~TSXImportNode()
-{
-    // Clean up worker thread
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    // Note: m_widget is owned by QtNodes QGraphicsProxyWidget, do not delete here
 }
 
 QWidget* TSXImportNode::createWidget()
@@ -72,14 +43,14 @@ QWidget* TSXImportNode::createWidget()
     auto* xmlRow = new QHBoxLayout();
     xmlRow->addWidget(new QLabel("TSX/TDX图像（.xml）："));
     m_xmlEdit = new QLineEdit();
-    connect(m_xmlEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+    connect(m_xmlEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_xmlEdit->text();
         if (m_xmlPath != text) {
             if (!confirmParameterChange()) {
                 m_xmlEdit->setText(m_xmlPath);
                 return;
             }
-            m_xmlPath = text; 
+            m_xmlPath = text;
             invalidateNodeData();
         }
     });
@@ -87,8 +58,6 @@ QWidget* TSXImportNode::createWidget()
     xmlRow->addWidget(m_xmlEdit);
     xmlRow->addWidget(xmlBrowse);
     layout->addLayout(xmlRow);
-
-
 
     // Target node row [3:7]
     auto* nodeRow = new QHBoxLayout();
@@ -117,14 +86,14 @@ QWidget* TSXImportNode::createWidget()
     filenameRow->setStretch(1, 7);
     filenameRow->addWidget(new QLabel("目标文件名："));
     m_outputFileNameEdit = new QLineEdit();
-    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
             if (!confirmParameterChange()) {
                 m_outputFileNameEdit->setText(m_outputFileName);
                 return;
             }
-            m_outputFileName = text; 
+            m_outputFileName = text;
             invalidateNodeData();
         }
     });
@@ -214,39 +183,14 @@ void TSXImportNode::executeImport()
     task.arguments = QStringList{ m_xmlPath, m_polarizationCombo->currentText() };
     tasks.push_back(task);
 
-    m_thread = new QThread(this);
-    m_workerThread = new TSXImportWorker();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(m_workerThread, &TSXImportWorker::updateProcess,
-            this, &TSXImportNode::onImportProgress);
-    connect(m_workerThread, &TSXImportWorker::endProcess,
-            this, &TSXImportNode::onImportFinished);
-    connect(m_workerThread, &TSXImportWorker::errorProcess,
-            this, &TSXImportNode::onThreadError);
-    connect(m_workerThread, &TSXImportWorker::sendModel,
-            this, &TSXImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    QMetaObject::invokeMethod(m_workerThread, "import_patch",
-        Q_ARG(QString, projectPath()),
-        Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, outputNodeName),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
+    // 三行启动
+    auto* worker = new TSXImportWorker();
+    startWorker(worker, tasks);
 }
 
-QStringList TSXImportNode::getImportedFilePaths() const
+QStringList TSXImportNode::getExpectedOutputFilePaths() const
 {
-    QStringList paths;
-    if (!m_importedFilePath.isEmpty()) {
-        paths.append(m_importedFilePath);
-    } else {
-        QString outputNodeName = getOutputNodeName();
-        paths.append(QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(m_outputFileName));
-    }
-    return paths;
+    return { projectPath() + "/" + getOutputNodeName() + "/" + m_outputFileName + ".h5" };
 }
 
 QString TSXImportNode::getOutputNodeName() const
@@ -295,69 +239,6 @@ void TSXImportNode::onXmlBrowseClicked()
     }
 }
 
-void TSXImportNode::onImportProgress(int progress, const QString& message)
-{
-    Q_UNUSED(message);
-    setProgress(progress);
-}
-
-void TSXImportNode::onImportFinished()
-{
-    QString outputPath = projectPath() + "/" + getOutputNodeName() + "/" + m_outputFileName + ".h5";
-    m_importedFilePath = outputPath;
-
-    ImportNodeBase::onImportFinished();
-
-    // Port 1 预览（JPG 已由 Worker 生成）
-    if (!m_importedFilePath.isEmpty()) {
-        QFileInfo fi(m_importedFilePath);
-        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void TSXImportNode::onThreadError(const QString& error)
-{
-    onError(error);
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void TSXImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ExecutionMode oldMode = executionMode();
-    ImportNodeBase::setExecutionMode(mode);
-}
-
-void TSXImportNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-}
-
 QJsonObject TSXImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
@@ -385,115 +266,6 @@ void TSXImportNode::load(QJsonObject const &json)
     if (m_polarizationCombo) {
         int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
-    }
-}
-
-unsigned int TSXImportNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::In) return 0;
-    return 2;
-}
-
-NodeDataType TSXImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool TSXImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString TSXImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return tr("成果 *");
-        if (portIndex == 1) return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool TSXImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out && portIndex == 1;
-}
-
-std::shared_ptr<NodeData> TSXImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
-}
-
-QStringList TSXImportNode::previewImagePaths() const
-{
-    QStringList jpgPaths;
-    if (!m_importedFilePath.isEmpty()) {
-        QFileInfo fi(m_importedFilePath);
-        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        if (QFileInfo::exists(jpg))
-            jpgPaths.append(jpg);
-    }
-    return jpgPaths;
-}
-
-bool TSXImportNode::validateAndRestoreOutput()
-{
-    QString nodeName = m_outputNodeName.trimmed();
-    if (nodeName.isEmpty())
-        return false;
-
-    QString fileName = m_outputFileName;
-    if (fileName.isEmpty())
-        return false;
-
-    QString outputPath = projectPath() + "/" + nodeName + "/" + fileName + ".h5";
-
-    if (QFile::exists(outputPath)) {
-        m_importedFilePath = outputPath;
-        auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
-        setOutputData(0, outputData);
-        Q_EMIT dataUpdated(0);
-
-        // Port 1 预览恢复
-        QFileInfo fi(outputPath);
-        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-
-        if (!QFileInfo::exists(jpgPath)) {
-            m_remedyWatcher.cancel();
-            m_remedyWatcher.waitForFinished();
-            m_remedyWatcher.disconnect();
-
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPath]() {
-                m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-                setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
-            });
-
-            QString capturedH5 = outputPath;
-            QFuture<void> future = QtConcurrent::run([capturedH5, jpgPath]() {
-                NodeUtils::generateJpgPreviewFromH5(capturedH5, jpgPath, "complex");
-            });
-            m_remedyWatcher.setFuture(future);
-        } else {
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-        }
-
-        return true;
-    }
-
-    return false;
-}
-
-void TSXImportNode::stopExecution()
-{
-    ImportNodeBase::stopExecution();
-    if (m_workerThread) {
-        m_workerThread->StopProcess();
     }
 }
 

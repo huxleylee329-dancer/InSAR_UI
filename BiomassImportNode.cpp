@@ -1,4 +1,6 @@
 #include "BiomassImportNode.h"
+#include "BiomassImportWorker.h"
+#include "ImportTask.h"
 #include "IApplicationInterface.h"
 #include "NodeUtils.h"
 #include "InSARLogManager.h"
@@ -22,34 +24,8 @@ BiomassImportNode::BiomassImportNode()
     , m_orbitPaths()
     , m_polarizations()
     , m_importNames()
-    , m_importedFilePaths()
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
+    , m_outputNodeName()
 {
-}
-
-BiomassImportNode::~BiomassImportNode()
-{
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
 }
 
 QWidget* BiomassImportNode::createWidget()
@@ -142,121 +118,28 @@ void BiomassImportNode::executeImport()
         tasks.push_back(task);
     }
 
+    startWorker(new BiomassImportWorker(), tasks);
+}
+
+QStringList BiomassImportNode::getExpectedOutputFilePaths() const
+{
+    QStringList expectedPaths;
     QString outputNodeName = getOutputNodeName();
-    QStringList pathsToCheck;
-    for (const auto& task : tasks) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
-    }
-
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
-        setProgress(100);
-        onImportFinished();
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
-    }
-
-    m_thread = new QThread(this);
-    m_workerThread = new BiomassImportWorker();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(m_workerThread, &BiomassImportWorker::updateProcess, this, &BiomassImportNode::onImportProgress);
-    connect(m_workerThread, &BiomassImportWorker::endProcess, this, &BiomassImportNode::onImportFinished);
-    connect(m_workerThread, &BiomassImportWorker::errorProcess, this, &BiomassImportNode::onThreadError);
-    connect(m_workerThread, &BiomassImportWorker::sendModel, this, &BiomassImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    QMetaObject::invokeMethod(m_workerThread, "import_patch",
-        Q_ARG(QString, projectPath()),
-        Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, outputNodeName),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
-}
-
-void BiomassImportNode::stopExecution()
-{
-    m_stopRequested = true;
-    if (m_workerThread)
+    for (int i = 0; i < m_importNames.size(); ++i)
     {
-        m_workerThread->StopProcess();
+        expectedPaths.append(projectPath() + "/" + outputNodeName + "/" + m_importNames[i] + ".h5");
     }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-    }
-}
-
-QStringList BiomassImportNode::getImportedFilePaths() const
-{
-    return m_importedFilePaths;
-}
-
-unsigned int BiomassImportNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::In) return 0;
-    return 2;
-}
-
-NodeDataType BiomassImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool BiomassImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString BiomassImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return tr("成果 *");
-        if (portIndex == 1) return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool BiomassImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out && portIndex == 1;
-}
-
-std::shared_ptr<NodeData> BiomassImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
-}
-
-QStringList BiomassImportNode::previewImagePaths() const
-{
-    QStringList jpgPaths;
-    for (const QString& h5Path : m_importedFilePaths) {
-        QFileInfo fi(h5Path);
-        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        if (QFileInfo::exists(jpg))
-            jpgPaths.append(jpg);
-    }
-    return jpgPaths;
+    return expectedPaths;
 }
 
 QString BiomassImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
-    {
-        return "Biomass_Batch_Import";
+    if (m_outputNodeNameEdit) {
+        QString name = m_outputNodeNameEdit->text().trimmed();
+        if (!name.isEmpty())
+            return name;
     }
-    return name;
+    return m_outputNodeName.isEmpty() ? "Biomass_Batch_Import" : m_outputNodeName;
 }
 
 void BiomassImportNode::onAddFilesClicked()
@@ -345,87 +228,10 @@ void BiomassImportNode::onRemoveFilesClicked()
     }
 }
 
-void BiomassImportNode::onImportProgress(int progress, const QString& message)
-{
-    Q_UNUSED(message);
-    setProgress(progress);
-}
-
-void BiomassImportNode::onImportFinished()
-{
-    QString outputNodeName = getOutputNodeName();
-    m_importedFilePaths.clear();
-    for (int i = 0; i < m_ampPaths.size(); ++i)
-    {
-        QString filePath = QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(m_importNames[i]);
-        m_importedFilePaths.append(filePath);
-    }
-
-    ImportNodeBase::onImportFinished();
-
-    // 双路输出：Port 1 预览
-    if (!m_importedFilePaths.isEmpty()) {
-        QStringList jpgPaths;
-        for (const QString& h5Path : m_importedFilePaths) {
-            QFileInfo fi(h5Path);
-            jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
-        }
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void BiomassImportNode::onThreadError(const QString& error)
-{
-    onError(error);
-
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void BiomassImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ImportNodeBase::setExecutionMode(mode);
-}
-
-void BiomassImportNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    if (auto* iface = getProjectContext()) {
-        iface->refreshProjectTree();
-    }
-}
-
 QJsonObject BiomassImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
-    
+
     QJsonArray ampArray, phaseArray, xmlArray, orbitArray, polArray, nameArray;
     for (int i = 0; i < m_ampPaths.size(); ++i)
     {
@@ -436,7 +242,7 @@ QJsonObject BiomassImportNode::save() const
         polArray.append(m_polarizations[i]);
         nameArray.append(m_importNames[i]);
     }
-    
+
     json["ampPaths"] = ampArray;
     json["phasePaths"] = phaseArray;
     json["xmlPaths"] = xmlArray;
@@ -444,7 +250,7 @@ QJsonObject BiomassImportNode::save() const
     json["polarizations"] = polArray;
     json["importNames"] = nameArray;
     json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
-    
+
     return json;
 }
 
@@ -486,72 +292,6 @@ void BiomassImportNode::load(QJsonObject const &json)
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
-}
-
-bool BiomassImportNode::validateAndRestoreOutput()
-{
-    QString nodeName = m_outputNodeName.trimmed();
-    if (nodeName.isEmpty())
-        return false;
-
-    QString outputPath = projectPath() + "/" + nodeName + "/";
-    QDir dir(outputPath);
-    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
-        QStringList importedFiles;
-        for (int i = 0; i < m_importNames.size(); ++i) {
-            QString importedPath = outputPath + m_importNames[i] + ".h5";
-            if (QFile::exists(importedPath)) {
-                importedFiles.append(importedPath);
-            }
-        }
-        if (!importedFiles.isEmpty()) {
-            m_importedFilePaths = importedFiles;
-            auto outputData = std::make_shared<ImportedFileData>(importedFiles, nodeName);
-            setOutputData(0, outputData);
-            Q_EMIT dataUpdated(0);
-
-            // Port 1 预览恢复
-            QStringList allJpgPaths;
-            QStringList missingH5s, missingJpgs;
-
-            for (const QString& h5Path : importedFiles) {
-                QFileInfo fi(h5Path);
-                QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-                allJpgPaths.append(jpg);
-                if (!QFileInfo::exists(jpg)) {
-                    missingH5s.append(h5Path);
-                    missingJpgs.append(jpg);
-                }
-            }
-
-            if (!missingH5s.isEmpty()) {
-                m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
-                m_remedyWatcher.disconnect();
-
-                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                        [this, allJpgPaths]() {
-                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                    setOutputData(1, m_imageInfoData);
-                    Q_EMIT dataUpdated(1);
-                });
-
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-                    for (int i = 0; i < missingH5s.size(); ++i)
-                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                });
-                m_remedyWatcher.setFuture(future);
-            } else {
-                m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
-            }
-
-            return true;
-        }
-    }
-
-    return false;
 }
 
 } // namespace QtNodes

@@ -1,5 +1,7 @@
 #include "InSARLogManager.h"
 #include "AIRSATImportNode.h"
+#include "AIRSATImportWorker.h"
+#include "ImportTask.h"
 #include "IApplicationInterface.h"
 #include "NodeUtils.h"
 #include <QFile>
@@ -17,34 +19,8 @@ AIRSATImportNode::AIRSATImportNode()
     , m_projectLabel(nullptr)
     , m_dataFilePaths()
     , m_xmlFilePaths()
-    , m_importedFilePaths()
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
+    , m_outputNodeName()
 {
-}
-
-AIRSATImportNode::~AIRSATImportNode()
-{
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
 }
 
 QWidget* AIRSATImportNode::createWidget()
@@ -156,116 +132,26 @@ void AIRSATImportNode::executeImport()
         tasks.push_back(task);
     }
 
+    auto* worker = new AIRSATImportWorker();
+    startWorker(worker, tasks);
+}
+
+QStringList AIRSATImportNode::getExpectedOutputFilePaths() const
+{
+    QStringList expectedPaths;
     QString outputNodeName = getOutputNodeName();
 
-    QStringList pathsToCheck;
-    for (const auto& task : tasks) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
-    }
-
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
-        setProgress(100);
-        onImportFinished();
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
-    }
-
-    m_thread = new QThread(this);
-    m_workerThread = new AIRSATImportWorker();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(m_workerThread, &AIRSATImportWorker::updateProcess,
-            this, &AIRSATImportNode::onImportProgress);
-    connect(m_workerThread, &AIRSATImportWorker::endProcess,
-            this, &AIRSATImportNode::onImportFinished);
-    connect(m_workerThread, &AIRSATImportWorker::errorProcess,
-            this, &AIRSATImportNode::onThreadError);
-    connect(m_workerThread, &AIRSATImportWorker::sendModel,
-            this, &AIRSATImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    QMetaObject::invokeMethod(m_workerThread, "import_patch",
-        Q_ARG(QString, projectPath()),
-        Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, outputNodeName),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
-}
-
-void AIRSATImportNode::stopExecution()
-{
-    m_stopRequested = true;
-    if (m_workerThread)
+    for (int i = 0; i < m_dataFilePaths.size(); ++i)
     {
-        m_workerThread->StopProcess();
+        QString importName = generateOutputFileName(m_dataFilePaths[i]);
+        if (!importName.isEmpty())
+        {
+            QString filePath = QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(importName);
+            expectedPaths.append(filePath);
+        }
     }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-    }
-}
 
-QStringList AIRSATImportNode::getImportedFilePaths() const
-{
-    return m_importedFilePaths;
-}
-
-unsigned int AIRSATImportNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::In) return 0;
-    return 2;
-}
-
-NodeDataType AIRSATImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool AIRSATImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString AIRSATImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return tr("成果 *");
-        if (portIndex == 1) return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool AIRSATImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out && portIndex == 1;
-}
-
-std::shared_ptr<NodeData> AIRSATImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
-}
-
-QStringList AIRSATImportNode::previewImagePaths() const
-{
-    QStringList jpgPaths;
-    for (const QString& h5Path : m_importedFilePaths) {
-        QFileInfo fi(h5Path);
-        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        if (QFileInfo::exists(jpg))
-            jpgPaths.append(jpg);
-    }
-    return jpgPaths;
+    return expectedPaths;
 }
 
 QString AIRSATImportNode::getOutputNodeName() const
@@ -333,82 +219,6 @@ void AIRSATImportNode::onRemoveFilesClicked()
     }
 }
 
-void AIRSATImportNode::onImportProgress(int progress, const QString& message)
-{
-    Q_UNUSED(message);
-    setProgress(progress);
-}
-
-void AIRSATImportNode::onImportFinished()
-{
-    QString outputNodeName = getOutputNodeName();
-    m_importedFilePaths.clear();
-    for (int i = 0; i < m_dataFilePaths.size(); ++i)
-    {
-        QString importName = generateOutputFileName(m_dataFilePaths[i]);
-        if (!importName.isEmpty())
-        {
-            QString filePath = QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(importName);
-            m_importedFilePaths.append(filePath);
-        }
-    }
-
-    ImportNodeBase::onImportFinished();
-
-    // 双路输出：Port 1 预览
-    if (!m_importedFilePaths.isEmpty()) {
-        QStringList jpgPaths;
-        for (const QString& h5Path : m_importedFilePaths) {
-            QFileInfo fi(h5Path);
-            jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
-        }
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void AIRSATImportNode::onThreadError(const QString& error)
-{
-    onError(error);
-
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void AIRSATImportNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    if (auto* iface = getProjectContext()) {
-        iface->refreshProjectTree();
-    }
-}
-
 void AIRSATImportNode::updateWidgetSize()
 {
     if (m_widget) {
@@ -465,77 +275,5 @@ void AIRSATImportNode::load(QJsonObject const &json)
     updateWidgetSize();
 }
 
-bool AIRSATImportNode::validateAndRestoreOutput()
-{
-    QString nodeName = m_outputNodeName.trimmed();
-    if (nodeName.isEmpty())
-        return false;
-
-    QString outputPath = projectPath() + "/" + nodeName + "/";
-
-    QDir dir(outputPath);
-    if (dir.exists() && dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0) {
-        QStringList importedFiles;
-        for (const QString &path : m_dataFilePaths) {
-            QString importName = generateOutputFileName(path);
-            QString importedPath = outputPath + importName + ".h5";
-            if (QFile::exists(importedPath)) {
-                importedFiles.append(importedPath);
-            }
-        }
-        if (!importedFiles.isEmpty()) {
-            m_importedFilePaths = importedFiles;
-            auto outputData = std::make_shared<ImportedFileData>(importedFiles, nodeName);
-            setOutputData(0, outputData);
-            Q_EMIT dataUpdated(0);
-
-            // Port 1 预览恢复
-            QStringList allJpgPaths;
-            QStringList missingH5s, missingJpgs;
-
-            for (const QString& h5Path : importedFiles) {
-                QFileInfo fi(h5Path);
-                QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-                allJpgPaths.append(jpg);
-                if (!QFileInfo::exists(jpg)) {
-                    missingH5s.append(h5Path);
-                    missingJpgs.append(jpg);
-                }
-            }
-
-            if (!missingH5s.isEmpty()) {
-                m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
-                m_remedyWatcher.disconnect();
-
-                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                        [this, allJpgPaths]() {
-                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                    setOutputData(1, m_imageInfoData);
-                    Q_EMIT dataUpdated(1);
-                });
-
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-                    for (int i = 0; i < missingH5s.size(); ++i)
-                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                });
-                m_remedyWatcher.setFuture(future);
-            } else {
-                m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
-            }
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void AIRSATImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ImportNodeBase::setExecutionMode(mode);
-}
 
 } // namespace QtNodes

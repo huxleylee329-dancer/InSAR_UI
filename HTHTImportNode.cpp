@@ -1,5 +1,7 @@
 #include "InSARLogManager.h"
 #include "HTHTImportNode.h"
+#include "HTHTImportWorker.h"
+#include "ImportTask.h"
 #include "IApplicationInterface.h"
 #include "NodeUtils.h"
 #include <QFile>
@@ -18,38 +20,8 @@ HTHTImportNode::HTHTImportNode()
     , m_fileListWidget(nullptr)
     , m_outputNodeNameEdit(nullptr)
     , m_projectLabel(nullptr)
-    , m_dataFiles()
-    , m_xmlFiles()
-    , m_modes()
-    , m_importedFilePaths()
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
 {
     m_outputNodeName = "HTHT_Import";
-}
-
-HTHTImportNode::~HTHTImportNode()
-{
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
 }
 
 QWidget* HTHTImportNode::createWidget()
@@ -174,182 +146,29 @@ void HTHTImportNode::executeImport()
         tasks.push_back(task);
     }
 
+    startWorker(new HTHTImportWorker(), tasks);
+}
+
+QStringList HTHTImportNode::getExpectedOutputFilePaths() const
+{
+    QStringList expectedPaths;
     QString outputNodeName = getOutputNodeName();
-
-    QStringList pathsToCheck;
-    for (const auto& task : tasks) {
-        pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".h5");
-    }
-
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
-        setProgress(100);
-        onImportFinished();
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
-    }
-
-    m_thread = new QThread(this);
-    m_workerThread = new HTHTImportWorker();
-    m_workerThread->moveToThread(m_thread);
-
-    connect(m_workerThread, &HTHTImportWorker::updateProcess,
-            this, &HTHTImportNode::onImportProgress);
-    connect(m_workerThread, &HTHTImportWorker::endProcess,
-            this, &HTHTImportNode::onImportFinished);
-    connect(m_workerThread, &HTHTImportWorker::errorProcess,
-            this, &HTHTImportNode::onThreadError);
-    connect(m_workerThread, &HTHTImportWorker::sendModel,
-            this, &HTHTImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    QMetaObject::invokeMethod(m_workerThread, "import_patch",
-        Q_ARG(QString, projectPath()),
-        Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, outputNodeName),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
-}
-
-void HTHTImportNode::stopExecution()
-{
-    m_stopRequested = true;
-    if (m_workerThread)
+    for (const QString& df : m_dataFiles)
     {
-        m_workerThread->StopProcess();
+        QFileInfo fi(df);
+        expectedPaths.append(projectPath() + "/" + outputNodeName + "/" + fi.baseName() + ".h5");
     }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-    }
-}
-
-QStringList HTHTImportNode::getImportedFilePaths() const
-{
-    return m_importedFilePaths;
-}
-
-unsigned int HTHTImportNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::In) return 0;
-    return 2;
-}
-
-NodeDataType HTHTImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"imported_file", "Imported Files"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool HTHTImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString HTHTImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return tr("成果 *");
-        if (portIndex == 1) return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool HTHTImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out && portIndex == 1;
-}
-
-std::shared_ptr<NodeData> HTHTImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
-}
-
-QStringList HTHTImportNode::previewImagePaths() const
-{
-    QStringList jpgPaths;
-    for (const QString& h5Path : m_importedFilePaths) {
-        QFileInfo fi(h5Path);
-        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        if (QFileInfo::exists(jpg))
-            jpgPaths.append(jpg);
-    }
-    return jpgPaths;
+    return expectedPaths;
 }
 
 QString HTHTImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
-    {
-        return "HTHT_Import";
+    if (m_outputNodeNameEdit) {
+        QString name = m_outputNodeNameEdit->text().trimmed();
+        if (!name.isEmpty())
+            return name;
     }
-    return name;
-}
-
-bool HTHTImportNode::validateAndRestoreOutput()
-{
-    if (m_importedFilePaths.isEmpty()) return false;
-
-    // 检查所有 H5 文件是否存在
-    for (const QString& path : m_importedFilePaths)
-    {
-        if (!QFileInfo::exists(path)) return false;
-    }
-
-    // 恢复 Port 0 输出
-    QString outputNodeName = m_outputNodeName;
-    if (outputNodeName.isEmpty()) outputNodeName = "HTHT_Import";
-    auto outputData = std::make_shared<ImportedFileData>(m_importedFilePaths, outputNodeName);
-    setOutputData(0, outputData);
-    Q_EMIT dataUpdated(0);
-
-    // Port 1 预览恢复
-    QStringList allJpgPaths;
-    QStringList missingH5s, missingJpgs;
-
-    for (const QString& h5Path : m_importedFilePaths) {
-        QFileInfo fi(h5Path);
-        QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        allJpgPaths.append(jpg);
-        if (!QFileInfo::exists(jpg)) {
-            missingH5s.append(h5Path);
-            missingJpgs.append(jpg);
-        }
-    }
-
-    if (!missingH5s.isEmpty()) {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                [this, allJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-        });
-
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-            for (int i = 0; i < missingH5s.size(); ++i)
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-        });
-        m_remedyWatcher.setFuture(future);
-    } else {
-        m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    return true;
+    return m_outputNodeName.isEmpty() ? "HTHT_Import" : m_outputNodeName;
 }
 
 void HTHTImportNode::onDataBrowseClicked()
@@ -437,82 +256,6 @@ void HTHTImportNode::onRemoveTaskClicked()
     }
 }
 
-void HTHTImportNode::onImportProgress(int progress, const QString& message)
-{
-    onProgressUpdate(progress, message);
-}
-
-void HTHTImportNode::onImportFinished()
-{
-    m_importedFilePaths.clear();
-    QString outputNodeName = getOutputNodeName();
-    for (const QString& df : m_dataFiles)
-    {
-        QFileInfo fi(df);
-        QString filename = fi.baseName();
-        QString h5_path = projectPath() + "/" + outputNodeName + "/" + filename + ".h5";
-        m_importedFilePaths.append(h5_path);
-    }
-
-    ImportNodeBase::onImportFinished();
-
-    // 双路输出：Port 1 预览
-    if (!m_importedFilePaths.isEmpty()) {
-        QStringList jpgPaths;
-        for (const QString& h5Path : m_importedFilePaths) {
-            QFileInfo fi(h5Path);
-            jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
-        }
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void HTHTImportNode::onThreadError(const QString& error)
-{
-    onError(error);
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void HTHTImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ImportNodeBase::setExecutionMode(mode);
-}
-
-void HTHTImportNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    if (auto* iface = getProjectContext())
-    {
-        iface->refreshProjectTree();
-    }
-}
-
 QJsonObject HTHTImportNode::save() const
 {
     QJsonObject modelJson = ImportNodeBase::save();
@@ -530,10 +273,6 @@ QJsonObject HTHTImportNode::save() const
     modelJson["modes"] = modesArray;
 
     modelJson["outputNodeName"] = m_outputNodeName;
-
-    QJsonArray importedArray;
-    for (const QString& f : m_importedFilePaths) importedArray.append(f);
-    modelJson["importedFilePaths"] = importedArray;
 
     return modelJson;
 }
@@ -557,10 +296,6 @@ void HTHTImportNode::load(QJsonObject const &json)
     if (m_outputNodeName.isEmpty()) {
         m_outputNodeName = "HTHT_Import";
     }
-
-    m_importedFilePaths.clear();
-    QJsonArray importedArray = json["importedFilePaths"].toArray();
-    for (QJsonValueRef val : importedArray) m_importedFilePaths.append(val.toString());
 
     // 同步 UI 控件
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);

@@ -1,5 +1,7 @@
 #include "InSARLogManager.h"
 #include "Sentinel1ImportNode.h"
+#include "Sentinel1ImportWorker.h"
+#include "ImportTask.h"
 #include "IApplicationInterface.h"
 #include "ImportDataTypes.h"
 #include "NodeUtils.h"
@@ -22,52 +24,9 @@ Sentinel1ImportNode::Sentinel1ImportNode()
     , m_polarizationCombo(nullptr)
     , m_manifestPath()
     , m_podPath()
-    , m_importedFilePath()
     , m_outputNodeName("{InputName}")
     , m_outputFileName("{InputName}")
-    , m_workerThread(nullptr)
-    , m_thread(nullptr)
 {
-}
-
-Sentinel1ImportNode::~Sentinel1ImportNode()
-{
-    // Clean up worker thread
-    if (m_workerThread)
-    {
-        if (m_thread && m_thread->isRunning())
-        {
-            m_workerThread->StopProcess();
-        }
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (m_thread)
-    {
-        if (m_thread->isRunning())
-        {
-            m_thread->quit();
-            m_thread->wait();
-        }
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    // Note: m_widget is owned by QtNodes QGraphicsProxyWidget, do not delete here
-}
-
-void Sentinel1ImportNode::stopExecution()
-{
-    m_stopRequested = true;
-    if (m_workerThread)
-    {
-        m_workerThread->StopProcess();
-    }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-    }
 }
 
 QWidget* Sentinel1ImportNode::createWidget()
@@ -95,15 +54,15 @@ QWidget* Sentinel1ImportNode::createWidget()
     manifestLayout->addWidget(manifestLabel, 3);
     m_manifestEdit = new QLineEdit();
     m_manifestEdit->setPlaceholderText("选择 .safe 目录中的 manifest 文件");
-    connect(m_manifestEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+    connect(m_manifestEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_manifestEdit->text();
         if (m_manifestPath != text) {
             if (!confirmParameterChange()) {
                 m_manifestEdit->setText(m_manifestPath);
                 return;
             }
-            m_manifestPath = text; 
-            
+            m_manifestPath = text;
+
             updateAvailableParameters(m_manifestPath);
 
             QString autoName = generateOutputFileName();
@@ -127,14 +86,14 @@ QWidget* Sentinel1ImportNode::createWidget()
     podLayout->addWidget(podLabel, 3);
     m_podEdit = new QLineEdit();
     m_podEdit->setPlaceholderText("可选，留空则不使用精轨文件");
-    connect(m_podEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+    connect(m_podEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_podEdit->text();
         if (m_podPath != text) {
             if (!confirmParameterChange()) {
                 m_podEdit->setText(m_podPath);
                 return;
             }
-            m_podPath = text; 
+            m_podPath = text;
             invalidateNodeData();
         }
     });
@@ -190,8 +149,6 @@ QWidget* Sentinel1ImportNode::createWidget()
     polLayout->addWidget(m_polarizationCombo, 7);
     layout->addLayout(polLayout);
 
-
-
     // 目标节点 [3:7]
     auto* nodeNameLayout = new QHBoxLayout();
     QLabel* nodeNameLabel = new QLabel("目标节点");
@@ -221,14 +178,14 @@ QWidget* Sentinel1ImportNode::createWidget()
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
     m_outputFileNameEdit->setPlaceholderText("支持 {InputName} 变量");
-    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() { 
+    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
             if (!confirmParameterChange()) {
                 m_outputFileNameEdit->setText(m_outputFileName);
                 return;
             }
-            m_outputFileName = text; 
+            m_outputFileName = text;
             invalidateNodeData();
         }
     });
@@ -304,27 +261,21 @@ void Sentinel1ImportNode::executeImport()
     }
     tasks.push_back(task);
 
-    m_thread = new QThread(this);
-    m_workerThread = new Sentinel1ImportWorker();
-    m_workerThread->moveToThread(m_thread);
+    // 三行启动
+    auto* worker = new Sentinel1ImportWorker();
+    startWorker(worker, tasks);
+}
 
-    connect(m_workerThread, &Sentinel1ImportWorker::updateProcess,
-            this, &Sentinel1ImportNode::onImportProgress);
-    connect(m_workerThread, &Sentinel1ImportWorker::endProcess,
-            this, &Sentinel1ImportNode::onImportFinished);
-    connect(m_workerThread, &Sentinel1ImportWorker::errorProcess,
-            this, &Sentinel1ImportNode::onThreadError);
-    connect(m_workerThread, &Sentinel1ImportWorker::sendModel,
-            this, &Sentinel1ImportNode::onModelUpdated);
-
-    m_thread->start();
-
-    QMetaObject::invokeMethod(m_workerThread, "import_patch",
-        Q_ARG(QString, projectPath()),
-        Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, outputNodeName),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
+QStringList Sentinel1ImportNode::getExpectedOutputFilePaths() const
+{
+    QString outputNodeName = getOutputNodeName();
+    QString fileName = getOutputFileName();
+    if (fileName.isEmpty()) {
+        QString subswath = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
+        QString pol = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
+        fileName = subswath + "_" + pol;
+    }
+    return { projectPath() + "/" + outputNodeName + "/" + fileName + ".h5" };
 }
 
 QString Sentinel1ImportNode::resolveInputName(const QString& name) const
@@ -351,23 +302,6 @@ QString Sentinel1ImportNode::resolveInputName(const QString& name) const
     }
     return resolved;
 }
-QStringList Sentinel1ImportNode::getImportedFilePaths() const
-{
-    QStringList paths;
-    if (!m_importedFilePath.isEmpty()) {
-        paths.append(m_importedFilePath);
-    } else {
-        QString outputNodeName = getOutputNodeName();
-        QString fileName = getOutputFileName();
-        if (fileName.isEmpty()) {
-            QString subswath = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
-            QString pol = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
-            fileName = subswath + "_" + pol;
-        }
-        paths.append(QString("%1/%2/%3.h5").arg(projectPath()).arg(outputNodeName).arg(fileName));
-    }
-    return paths;
-}
 
 QString Sentinel1ImportNode::getOutputNodeName() const
 {
@@ -377,21 +311,6 @@ QString Sentinel1ImportNode::getOutputNodeName() const
         return "S1_Import";
     }
     return resolveInputName(name);
-}
-
-QStringList Sentinel1ImportNode::previewImagePaths() const
-{
-    if (!m_importedFilePath.isEmpty()) {
-        QFileInfo fi(m_importedFilePath);
-        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        
-        // 自愈已被移至 validateAndRestoreOutput 中异步执行
-        
-        if (QFileInfo::exists(jpgPath)) {
-            return QStringList() << jpgPath;
-        }
-    }
-    return QStringList();
 }
 
 QString Sentinel1ImportNode::getOutputFileName() const
@@ -518,76 +437,6 @@ void Sentinel1ImportNode::onPodBrowseClicked()
     }
 }
 
-void Sentinel1ImportNode::onImportProgress(int progress, const QString& message)
-{
-    Q_UNUSED(message);
-    setProgress(progress);
-}
-
-void Sentinel1ImportNode::onImportFinished()
-{
-    QString outputPath = projectPath() + "/" + getOutputNodeName() + "/" + getOutputFileName() + ".h5";
-    m_importedFilePath = outputPath;
-
-    ImportNodeBase::onImportFinished();
-
-    // 双路输出：Port 1 预览输出
-    if (!m_importedFilePath.isEmpty())
-    {
-        QFileInfo fi(m_importedFilePath);
-        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-        setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
-    }
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void Sentinel1ImportNode::onThreadError(const QString& error)
-{
-    onError(error);
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-}
-
-void Sentinel1ImportNode::setExecutionMode(ExecutionMode mode)
-{
-    ExecutionMode oldMode = executionMode();
-    ImportNodeBase::setExecutionMode(mode);
-    
-    // If switching from Manual to Automatic and we have valid data, we could trigger execution
-    // But for import nodes, automatic mode usually doesn't make sense since it needs user selection
-}
-
-void Sentinel1ImportNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    if (auto* iface = getProjectContext()) {
-        iface->refreshProjectTree();
-    }
-}
-
 QJsonObject Sentinel1ImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
@@ -643,105 +492,6 @@ void Sentinel1ImportNode::load(QJsonObject const &json)
     if (!m_manifestPath.isEmpty()) {
         updateAvailableParameters(m_manifestPath);
     }
-}
-
-bool Sentinel1ImportNode::validateAndRestoreOutput()
-{
-    QString nodeName = getOutputNodeName();
-    if (nodeName.isEmpty())
-        return false;
-
-    QString fileName = getOutputFileName();
-    if (fileName.isEmpty())
-        return false;
-
-    QString outputPath = projectPath() + "/" + nodeName + "/" + fileName + ".h5";
-
-    if (QFile::exists(outputPath)) {
-        m_importedFilePath = outputPath;
-        auto outputData = std::make_shared<ImportedFileData>(outputPath, nodeName);
-        setOutputData(0, outputData);
-        Q_EMIT dataUpdated(0);
-
-        // 双路输出：Port 1 预览输出
-        QFileInfo fi(outputPath);
-        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        
-        if (!QFileInfo::exists(jpgPath)) {
-            m_remedyWatcher.cancel();
-            m_remedyWatcher.waitForFinished();
-            m_remedyWatcher.disconnect();
-
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPath]() {
-                m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-                setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
-            });
-
-            QString capturedH5 = outputPath;
-            QFuture<void> future = QtConcurrent::run([capturedH5, jpgPath]() {
-                NodeUtils::generateJpgPreviewFromH5(capturedH5, jpgPath, "complex");
-            });
-            m_remedyWatcher.setFuture(future);
-        } else {
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-        }
-
-        return true;
-    }
-
-    return false;
-}
-
-unsigned int Sentinel1ImportNode::nPorts(PortType portType) const
-{
-    if (portType == PortType::In)
-        return 0;
-    else
-        return 2;
-}
-
-NodeDataType Sentinel1ImportNode::dataType(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out)
-    {
-        if (portIndex == 0)
-            return NodeDataType{"imported_file", "Imported File"};
-        else if (portIndex == 1)
-            return NodeDataType{"image_info", "Image Info"};
-    }
-    return NodeDataType();
-}
-
-bool Sentinel1ImportNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
-{
-    return portType == PortType::Out;
-}
-
-QString Sentinel1ImportNode::portCaption(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out)
-    {
-        if (portIndex == 0)
-            return tr("成果 *");
-        else if (portIndex == 1)
-            return tr("预览 ?");
-    }
-    return QString();
-}
-
-bool Sentinel1ImportNode::portIsOptional(PortType portType, PortIndex portIndex) const
-{
-    if (portType == PortType::Out && portIndex == 1)
-        return true;
-    return false;
-}
-
-std::shared_ptr<NodeData> Sentinel1ImportNode::outData(PortIndex port)
-{
-    return ExecutableNodeDelegateModel::outData(port);
 }
 
 } // namespace QtNodes
