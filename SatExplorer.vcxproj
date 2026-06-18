@@ -511,6 +511,9 @@
     <ClCompile Include="WorkflowUI.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="NodeSearchPopup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="PaletteGraphicsView.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -891,6 +894,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\WorkspaceUI.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\NodeSearchPopup.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\PaletteGraphicsView.h">

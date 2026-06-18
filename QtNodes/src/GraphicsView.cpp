@@ -2,7 +2,10 @@
 
 #include "BasicGraphicsScene.hpp"
 #include "ConnectionGraphicsObject.hpp"
+#include "DataFlowGraphModel.hpp"
+#include "NodeDelegateModelRegistry.hpp"
 #include "NodeGraphicsObject.hpp"
+#include "NodeSearchPopup.h"
 #include "StyleCollection.hpp"
 #include "UndoCommands.hpp"
 
@@ -10,8 +13,18 @@
 
 #include <QtGui/QBrush>
 #include <QtGui/QPen>
+#include <QtGui/QPainter>
+#include <QtGui/QImage>
 
 #include <QtWidgets/QMenu>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMessageBox>
+#include <QtGui/QClipboard>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
+#include <QtCore/QMimeData>
+#include <QtWidgets/QApplication>
 
 #include <QtCore/QDebug>
 #include <QtCore/QPointF>
@@ -139,7 +152,7 @@ void GraphicsView::setScene(BasicGraphicsScene *scene)
 
     {
         delete _pasteAction;
-        _pasteAction = new QAction(QStringLiteral("Copy Selection"), this);
+        _pasteAction = new QAction(QStringLiteral("Paste"), this);
         _pasteAction->setShortcutContext(Qt::ShortcutContext::WidgetShortcut);
         _pasteAction->setShortcut(QKeySequence(QKeySequence::Paste));
         _pasteAction->setAutoRepeat(false);
@@ -158,6 +171,12 @@ void GraphicsView::setScene(BasicGraphicsScene *scene)
 
         addAction(_groupSelectionAction);
     }
+
+    // 监听剪贴板变化，实时更新粘贴 Action 的可用状态
+    connect(QApplication::clipboard(), &QClipboard::changed,
+            this, &GraphicsView::updatePasteActionState);
+    // 初始化粘贴 Action 状态
+    updatePasteActionState();
 
     auto undoAction = scene->undoStack().createUndoAction(this, tr("&Undo"));
     undoAction->setShortcuts(QKeySequence::Undo);
@@ -186,16 +205,17 @@ void GraphicsView::centerScene()
 void GraphicsView::contextMenuEvent(QContextMenuEvent *event)
 {
     if (itemAt(event->pos())) {
+        // 点击在节点上，交给基类处理（节点自行管理右键菜单）
         QGraphicsView::contextMenuEvent(event);
         return;
     }
 
+    // 点击在空白区域，弹出统一画布菜单
     auto const scenePos = mapToScene(event->pos());
-
-    QMenu *menu = nodeScene()->createSceneMenu(scenePos);
-
+    QMenu *menu = createCanvasContextMenu(scenePos, event->globalPos());
     if (menu) {
         menu->exec(event->globalPos());
+        delete menu;
     }
 }
 
@@ -327,6 +347,15 @@ void GraphicsView::keyPressEvent(QKeyEvent *event)
         setDragMode(QGraphicsView::RubberBandDrag);
         break;
 
+    case Qt::Key_Tab: {
+        // 仅在没有其他文本框获取焦点时触发搜索弹窗
+        QWidget *focusW = QApplication::focusWidget();
+        if (!focusW || focusW == this || focusW == viewport()) {
+            showNodeSearchPopup(QCursor::pos());
+        }
+        break;
+    }
+
     default:
         break;
     }
@@ -429,4 +458,192 @@ QPointF GraphicsView::scenePastePosition()
         origin = viewRect.center();
 
     return mapToScene(origin);
+}
+
+void GraphicsView::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (itemAt(event->pos())) {
+        // 双击在节点上，交给基类处理
+        QGraphicsView::mouseDoubleClickEvent(event);
+        return;
+    }
+    // 空白区域双击 → 弹出搜索框
+    showNodeSearchPopup(event->globalPos());
+}
+
+QMenu *GraphicsView::createCanvasContextMenu(QPointF scenePos, QPoint globalPos)
+{
+    auto *menu = new QMenu(this);
+
+    // 添加节点
+    QAction *addNodeAction = menu->addAction(QStringLiteral("添加节点 (Add Node...)"));
+    QObject::connect(addNodeAction, &QAction::triggered, [this, globalPos]() {
+        showNodeSearchPopup(globalPos);
+    });
+
+    menu->addSeparator();
+
+    // 复制
+    QAction *copyAction = menu->addAction(QStringLiteral("复制 (Copy)\tCtrl+C"));
+    QObject::connect(copyAction, &QAction::triggered, this, &GraphicsView::onCopySelectedObjects);
+
+    // 粘贴（根据剪贴板状态自动 enable/disable）
+    QAction *pasteAction = menu->addAction(QStringLiteral("粘贴 (Paste)\tCtrl+V"));
+    pasteAction->setEnabled(hasValidPasteData());
+    QObject::connect(pasteAction, &QAction::triggered, this, &GraphicsView::onPasteObjects);
+
+    // 全选
+    QAction *selectAllAction = menu->addAction(QStringLiteral("全选 (Select All)\tCtrl+A"));
+    QObject::connect(selectAllAction, &QAction::triggered, this, &GraphicsView::onSelectAll);
+
+    // 清除选择
+    QAction *clearSelAction = menu->addAction(QStringLiteral("清除选择 (Clear Selection)\tEsc"));
+    QObject::connect(clearSelAction, &QAction::triggered, scene(), &QGraphicsScene::clearSelection);
+
+    menu->addSeparator();
+
+    // 自适应大小
+    QAction *zoomFitAction = menu->addAction(QStringLiteral("自适应大小 (Zoom to Fit)"));
+    QObject::connect(zoomFitAction, &QAction::triggered, this, &GraphicsView::onZoomToFit);
+
+    // 恢复100%缩放
+    QAction *resetZoomAction = menu->addAction(QStringLiteral("恢复100%缩放 (Reset Zoom)"));
+    QObject::connect(resetZoomAction, &QAction::triggered, this, &GraphicsView::onResetZoom);
+
+    menu->addSeparator();
+
+    // 清空画布
+    QAction *clearCanvasAction = menu->addAction(QStringLiteral("清空画布 (Clear Canvas...)"));
+    QObject::connect(clearCanvasAction, &QAction::triggered, this, &GraphicsView::onClearCanvas);
+
+    // 导出为图片
+    QAction *exportAction = menu->addAction(QStringLiteral("导出为图片 (Export as Image...)"));
+    QObject::connect(exportAction, &QAction::triggered, this, &GraphicsView::onExportAsImage);
+
+    return menu;
+}
+
+void GraphicsView::showNodeSearchPopup(QPoint globalPos)
+{
+    QStringList modelNames = getAllRegisteredModelNames();
+    if (modelNames.isEmpty()) return;
+    auto *popup = new NodeSearchPopup(modelNames, nodeScene(), mapToScene(mapFromGlobal(globalPos)), this);
+    popup->move(globalPos);
+    popup->show();
+}
+
+QStringList GraphicsView::getAllRegisteredModelNames() const
+{
+    QStringList names;
+    auto *basicScene = const_cast<GraphicsView *>(this)->nodeScene();
+    if (!basicScene) return names;
+
+    auto *dataFlowModel = dynamic_cast<DataFlowGraphModel *>(&basicScene->graphModel());
+    if (!dataFlowModel) return names;
+
+    auto registry = dataFlowModel->dataModelRegistry();
+    if (!registry) return names;
+
+    auto const &creators = registry->registeredModelCreators();
+    for (auto const &pair : creators) {
+        names.append(pair.first);
+    }
+    names.sort(Qt::CaseInsensitive);
+    return names;
+}
+
+void GraphicsView::onZoomToFit()
+{
+    centerScene();
+}
+
+void GraphicsView::onResetZoom()
+{
+    setupScale(1.0);
+}
+
+void GraphicsView::onClearCanvas()
+{
+    auto *basicScene = nodeScene();
+    if (!basicScene) return;
+
+    auto nodeIds = basicScene->graphModel().allNodeIds();
+    if (nodeIds.empty()) return;
+
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        QStringLiteral("清空画布"),
+        QStringLiteral("确定要清空画布上的所有节点吗？此操作可通过 Ctrl+Z 撤销。"),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+
+    if (reply == QMessageBox::Yes) {
+        basicScene->clearScene();
+    }
+}
+
+void GraphicsView::onExportAsImage()
+{
+    QString filePath = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("导出画布为图片"),
+        QString(),
+        QStringLiteral("PNG Files (*.png);;JPEG Files (*.jpg *.jpeg)"));
+
+    if (filePath.isEmpty()) return;
+
+    // 获取所有节点的边界矩形
+    QRectF sceneBounds = scene()->itemsBoundingRect();
+    if (sceneBounds.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("导出"), QStringLiteral("画布上没有任何节点可导出。"));
+        return;
+    }
+    // 添加边距
+    sceneBounds.adjust(-50, -50, 50, 50);
+
+    // 创建与场景等大的图像（使用 1:1 比例，不受当前缩放影响）
+    QImage image(sceneBounds.size().toSize(), QImage::Format_ARGB32);
+    image.fill(Qt::white);
+
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    scene()->render(&painter, QRectF(QPointF(0, 0), sceneBounds.size()), sceneBounds);
+    painter.end();
+
+    if (!image.save(filePath)) {
+        QMessageBox::warning(this, QStringLiteral("导出失败"), QStringLiteral("无法保存图片文件：") + filePath);
+    }
+}
+
+void GraphicsView::onSelectAll()
+{
+    if (!scene()) return;
+    for (QGraphicsItem *item : scene()->items()) {
+        item->setSelected(true);
+    }
+}
+
+bool GraphicsView::hasValidPasteData() const
+{
+    const QClipboard *clipboard = QApplication::clipboard();
+    const QMimeData *mimeData = clipboard->mimeData();
+    if (!mimeData || !mimeData->hasFormat("application/qt-nodes-graph"))
+        return false;
+
+    QByteArray data = mimeData->data("application/qt-nodes-graph");
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (doc.isNull() || !doc.isObject())
+        return false;
+
+    QJsonObject json = doc.object();
+    QJsonArray nodes = json["nodes"].toArray();
+    return !nodes.isEmpty();
+}
+
+void GraphicsView::updatePasteActionState()
+{
+    if (_pasteAction) {
+        _pasteAction->setEnabled(hasValidPasteData());
+    }
 }

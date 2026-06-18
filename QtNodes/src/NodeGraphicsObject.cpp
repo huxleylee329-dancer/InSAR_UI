@@ -250,6 +250,20 @@ void NodeGraphicsObject::mousePressEvent(QGraphicsSceneMouseEvent *event)
         _nodeState.setResizing(hit);
     }
 
+    // 右键点击节点时自动选中（支持 Ctrl 追加选择）
+    if (event->button() == Qt::RightButton) {
+        if (!(event->modifiers() & Qt::ControlModifier)) {
+            // 未按 Ctrl：清空其他选择，仅选中当前节点
+            if (!isSelected()) {
+                nodeScene()->clearSelection();
+                setSelected(true);
+            }
+        } else {
+            // 按住 Ctrl：追加/切换当前节点的选择状态
+            setSelected(!isSelected());
+        }
+    }
+
     QGraphicsObject::mousePressEvent(event);
 
     if (isSelected()) {

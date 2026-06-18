@@ -106,6 +106,8 @@ private slots:
 
     // Edit operations
     void onClear();
+    void onExportCanvasAsImage();
+    void onClearCanvas();
     void onDelete();
 
     // Scene operations

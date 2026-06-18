@@ -14,6 +14,7 @@
 #include "DockAreaWidget.h"
 
 #include <QPainter>
+#include <QImage>
 #include <QTimer>
 #include <QtWidgets/QGraphicsItem>
 #include <QtWidgets/QGraphicsObject>
@@ -543,6 +544,57 @@ void WorkflowUI::setupSceneInternal()
     // Connect to group selection signal
     connect(m_view, &QtNodes::GraphicsView::groupSelected, this, &WorkflowUI::onGroupSelection);
 
+    // 连接节点右键菜单信号
+    connect(m_scene, &QtNodes::BasicGraphicsScene::nodeContextMenu,
+            this, [this](QtNodes::NodeId nodeId, QPointF const pos) {
+        if (!m_scene || !m_graphModel) return;
+
+        QMenu menu;
+
+        // 复制
+        QAction *copyAction = menu.addAction(QStringLiteral("复制 (Copy)"));
+        copyAction->setShortcut(QKeySequence(QKeySequence::Copy));
+        connect(copyAction, &QAction::triggered, [this]() {
+            if (m_view) m_view->onCopySelectedObjects();
+        });
+
+        // 粘贴（根据剪贴板状态自动 enable/disable）
+        QAction *pasteAction = menu.addAction(QStringLiteral("粘贴 (Paste)"));
+        pasteAction->setEnabled(m_view && m_view->hasValidPasteData());
+        pasteAction->setShortcut(QKeySequence(QKeySequence::Paste));
+        connect(pasteAction, &QAction::triggered, [this]() {
+            if (m_view) m_view->onPasteObjects();
+        });
+
+        menu.addSeparator();
+
+        // 删除
+        QAction *deleteAction = menu.addAction(QStringLiteral("删除 (Delete)"));
+        deleteAction->setShortcut(QKeySequence(QKeySequence::Delete));
+        connect(deleteAction, &QAction::triggered, [this]() {
+            if (m_view) m_view->onDeleteSelectedObjects();
+        });
+
+        menu.addSeparator();
+
+        // 全选
+        QAction *selectAllAction = menu.addAction(QStringLiteral("全选 (Select All)"));
+        selectAllAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_A));
+        connect(selectAllAction, &QAction::triggered, [this]() {
+            if (m_view) m_view->onSelectAll();
+        });
+
+        // 清除选择
+        QAction *clearSelAction = menu.addAction(QStringLiteral("清除选择"));
+        clearSelAction->setShortcut(QKeySequence(Qt::Key_Escape));
+        connect(clearSelAction, &QAction::triggered, [this]() {
+            if (m_scene) m_scene->clearSelection();
+        });
+
+        // 在鼠标位置弹出菜单
+        menu.exec(QCursor::pos());
+    });
+
     // Set view properties
     m_view->setRenderHint(QPainter::Antialiasing);
     m_view->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
@@ -878,6 +930,62 @@ void WorkflowUI::onClear()
     }
 
     m_propertyEditor->clearSelection();
+}
+
+void WorkflowUI::onExportCanvasAsImage()
+{
+    if (!m_scene || !m_view) return;
+
+    QString filePath = QFileDialog::getSaveFileName(
+        this,
+        QStringLiteral("导出画布为图片"),
+        QString(),
+        QStringLiteral("PNG Files (*.png);;JPEG Files (*.jpg *.jpeg)"));
+
+    if (filePath.isEmpty()) return;
+
+    // 获取所有节点的边界矩形
+    QRectF sceneBounds = m_scene->itemsBoundingRect();
+    if (sceneBounds.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("导出"), QStringLiteral("画布上没有任何节点可导出。"));
+        return;
+    }
+    // 添加边距
+    sceneBounds.adjust(-50, -50, 50, 50);
+
+    // 创建与场景等大的图像（1:1 比例，不受当前视口缩放影响）
+    QImage image(sceneBounds.size().toSize(), QImage::Format_ARGB32);
+    image.fill(Qt::white);
+
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    m_scene->render(&painter, QRectF(QPointF(0, 0), sceneBounds.size()), sceneBounds);
+    painter.end();
+
+    if (!image.save(filePath)) {
+        QMessageBox::warning(this, QStringLiteral("导出失败"),
+                             QStringLiteral("无法保存图片文件：") + filePath);
+    }
+}
+
+void WorkflowUI::onClearCanvas()
+{
+    if (!m_graphModel) return;
+
+    auto nodeIds = m_graphModel->allNodeIds();
+    if (nodeIds.empty()) return;
+
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        QStringLiteral("清空画布"),
+        QStringLiteral("确定要清空画布上的所有节点吗？此操作可通过 Ctrl+Z 撤销。"),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+
+    if (reply == QMessageBox::Yes) {
+        onClear();
+    }
 }
 
 void WorkflowUI::refreshProjectTree()

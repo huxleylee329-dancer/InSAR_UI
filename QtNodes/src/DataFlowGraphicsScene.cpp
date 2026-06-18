@@ -59,88 +59,52 @@ std::vector<NodeId> DataFlowGraphicsScene::selectedNodes() const
 
 QMenu *DataFlowGraphicsScene::createSceneMenu(QPointF const scenePos)
 {
+    // 简化版：仅提供快速添加节点的过滤菜单
+    // 完整的右键菜单已移至 GraphicsView::createCanvasContextMenu 统一管理
     QMenu *modelMenu = new QMenu();
 
-    // Add filterbox to the context menu
+    // 搜索框
     auto *txtBox = new QLineEdit(modelMenu);
-    txtBox->setPlaceholderText(QStringLiteral("Filter"));
+    txtBox->setPlaceholderText(QStringLiteral("搜索节点..."));
     txtBox->setClearButtonEnabled(true);
 
     auto *txtBoxAction = new QWidgetAction(modelMenu);
     txtBoxAction->setDefaultWidget(txtBox);
-
-    // 1.
     modelMenu->addAction(txtBoxAction);
 
-    // Add result treeview to the context menu
-    QTreeWidget *treeView = new QTreeWidget(modelMenu);
-    treeView->header()->close();
-
-    auto *treeViewAction = new QWidgetAction(modelMenu);
-    treeViewAction->setDefaultWidget(treeView);
-
-    // 2.
-    modelMenu->addAction(treeViewAction);
-
+    // 节点列表（扁平化，无分类树）
     auto registry = _graphModel.dataModelRegistry();
+    auto const &assocMap = registry->registeredModelsCategoryAssociation();
 
-    for (auto const &cat : registry->categories()) {
-        auto item = new QTreeWidgetItem(treeView);
-        item->setText(0, cat);
-        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
+    for (auto const &assoc : assocMap) {
+        // 节点名 → 菜单项
+        QAction *action = modelMenu->addAction(assoc.first);
+        action->setData(assoc.first); // 存储模型名
     }
 
-    for (auto const &assoc : registry->registeredModelsCategoryAssociation()) {
-        QList<QTreeWidgetItem *> parent = treeView->findItems(assoc.second, Qt::MatchExactly);
+    // 点击菜单项 → 创建节点
+    connect(modelMenu, &QMenu::triggered, [this, modelMenu, scenePos](QAction *action) {
+        QString modelName = action->data().toString();
+        if (!modelName.isEmpty()) {
+            this->undoStack().push(new CreateCommand(this, modelName, scenePos));
+        }
+        modelMenu->close();
+    });
 
-        if (parent.count() <= 0)
-            continue;
-
-        auto item = new QTreeWidgetItem(parent.first());
-        item->setText(0, assoc.first);
-    }
-
-    treeView->expandAll();
-
-    connect(treeView,
-            &QTreeWidget::itemClicked,
-            [this, modelMenu, scenePos](QTreeWidgetItem *item, int) {
-                if (!(item->flags() & (Qt::ItemIsSelectable))) {
-                    return;
-                }
-
-                this->undoStack().push(new CreateCommand(this, item->text(0), scenePos));
-
-                modelMenu->close();
-            });
-
-    //Setup filtering
-    connect(txtBox, &QLineEdit::textChanged, [treeView](const QString &text) {
-        QTreeWidgetItemIterator categoryIt(treeView, QTreeWidgetItemIterator::HasChildren);
-        while (*categoryIt)
-            (*categoryIt++)->setHidden(true);
-        QTreeWidgetItemIterator it(treeView, QTreeWidgetItemIterator::NoChildren);
-        while (*it) {
-            auto modelName = (*it)->text(0);
-            const bool match = (modelName.contains(text, Qt::CaseInsensitive));
-            (*it)->setHidden(!match);
-            if (match) {
-                QTreeWidgetItem *parent = (*it)->parent();
-                while (parent) {
-                    parent->setHidden(false);
-                    parent = parent->parent();
-                }
-            }
-            ++it;
+    // 过滤：隐藏不匹配的菜单项
+    connect(txtBox, &QLineEdit::textChanged, [modelMenu](const QString &text) {
+        for (QAction *action : modelMenu->actions()) {
+            // 跳过分隔符和搜索框 action（搜索框 action 没有 data）
+            if (action->isSeparator() || action->data().toString().isEmpty())
+                continue;
+            QString name = action->data().toString();
+            action->setVisible(text.isEmpty() || name.contains(text, Qt::CaseInsensitive));
         }
     });
 
-    // make sure the text box gets focus so the user doesn't have to click on it
     txtBox->setFocus();
 
-    // QMenu's instance auto-destruction
     modelMenu->setAttribute(Qt::WA_DeleteOnClose);
-
     return modelMenu;
 }
 

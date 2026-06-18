@@ -4,6 +4,8 @@
 
 #include "Export.hpp"
 
+class QMenu;
+
 namespace QtNodes {
 
 class BasicGraphicsScene;
@@ -62,6 +64,22 @@ public Q_SLOTS:
 
     void onGroupSelectedObjects();
 
+    void onZoomToFit();
+
+    void onResetZoom();
+
+    void onClearCanvas();
+
+    void onExportAsImage();
+
+    void onSelectAll();
+
+    /// 检查剪贴板是否包含合法的节点图数据
+    bool hasValidPasteData() const;
+
+    /// 根据剪贴板状态更新粘贴 Action 的 enable/disable
+    void updatePasteActionState();
+
 Q_SIGNALS:
     void scaleChanged(double scale);
 
@@ -80,6 +98,8 @@ protected:
 
     void mouseMoveEvent(QMouseEvent *event) override;
 
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+
     void drawBackground(QPainter *painter, const QRectF &r) override;
 
     void showEvent(QShowEvent *event) override;
@@ -91,6 +111,13 @@ protected:
     QPointF scenePastePosition();
 
 private:
+    // 显示节点搜索弹窗
+    void showNodeSearchPopup(QPoint globalPos);
+    // 创建画布右键菜单
+    QMenu *createCanvasContextMenu(QPointF scenePos, QPoint globalPos);
+    // 获取所有已注册的节点模型名称
+    QStringList getAllRegisteredModelNames() const;
+
     QAction *_clearSelectionAction = nullptr;
     QAction *_deleteSelectionAction = nullptr;
     QAction *_duplicateSelectionAction = nullptr;
