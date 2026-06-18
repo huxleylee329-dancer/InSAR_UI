@@ -162,6 +162,10 @@ void EvaluationSCRNode::setInData(std::shared_ptr<NodeData> data, PortIndex port
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (isRestoring()) {
+        return;
+    }
     
     if (isReady()) {
         execute();
@@ -634,6 +638,8 @@ void EvaluationSCRNode::load(QJsonObject const &json)
     if (json.contains("summary") && m_summaryLabel) {
         m_summaryLabel->setText(json["summary"].toString());
     }
+
+    ExecutableNodeDelegateModel::load(json);
 }
 
 QStringList EvaluationSCRNode::previewImagePaths() const

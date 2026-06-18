@@ -55,33 +55,10 @@ void CutWorker::Cut(QList<double> para,
         return;
     }
     QStandardItem* project = found[0];
-    QStandardItem* Images_Cut = nullptr;
-    for (int i = 0; i < project->rowCount(); i++)
+    QStandardItem* Images_Cut = NodeUtils::findOrCreateProjectNode(project, dst_node, "complex-1.0");
+    if (Images_Cut)
     {
-        if (project->child(i, 0)->text() == dst_node)
-        {
-            Images_Cut = project->child(i, 0);
-            break;
-        }
-    }
-
-    if (!Images_Cut)
-    {
-        Images_Cut = new QStandardItem(dst_node);
-        int insert = 0;
-        for (; insert < project->rowCount(); insert++)
-        {
-            if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-1.0") == 0)
-                continue;
-            else
-                break;
-        }
-        Images_Cut->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, Images_Cut);
         Images_Cut->setToolTip(project_name);
-        QStandardItem* Images_Cut_Rank = new QStandardItem("complex-1.0");
-        project->setChild(insert, 1, Images_Cut_Rank);
     }
 
     int src_node_index = 0;
@@ -268,125 +245,11 @@ void CutWorker::Cut2(double h5_left,
     }
     
     int image_number = node->rowCount();
-    QStandardItem* Images_Cut = nullptr;
-    for (int i = 0; i < project->rowCount(); i++)
+    QString src_data_rank = project->child(src_node_index, 1)->text();
+    QStandardItem* Images_Cut = NodeUtils::findOrCreateProjectNode(project, dst_node, src_data_rank);
+    if (Images_Cut)
     {
-        if (project->child(i, 0)->text() == dst_node)
-        {
-            Images_Cut = project->child(i, 0);
-            break;
-        }
-    }
-    if (!Images_Cut)
-    {
-        Images_Cut = new QStandardItem(dst_node);
-        int insert = 0;
-        /*获取源节点数据等级信息*/
-        QString src_data_rank = project->child(src_node_index, 1)->text();
-        if (src_data_rank == QString("complex-0.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0) continue;
-                else break;
-            }
-        }
-        else if (src_data_rank == QString("complex-1.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0
-                    ) continue;
-                else break;
-            }
-        }
-        else if (src_data_rank == QString("complex-2.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-2.0") == 0
-                    ) continue;
-                else break;
-            }
-        }
-        else if (src_data_rank == QString("complex-3.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-3.0") == 0
-                    ) continue;
-                else break;
-            }
-        }
-        else if (src_data_rank == QString("phase-1.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-1.0") == 0
-                    ) continue;
-                else break;
-            }
-        }
-        else if (src_data_rank == QString("phase-2.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-2.0") == 0
-                    ) continue;
-                else break;
-            }
-        }
-        else if (src_data_rank == QString("phase-3.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-3.0") == 0
-                    ) continue;
-                else break;
-            }
-        }
-        else if (src_data_rank == QString("dem-1.0"))
-        {
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-3.0") == 0 ||
-                    project->child(insert, 1)->text().compare("dem-1.0") == 0
-                    ) continue;
-                else break;
-            }
-        }
-        Images_Cut->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, Images_Cut);
         Images_Cut->setToolTip(project_name);
-        QStandardItem* Images_Cut_Rank = new QStandardItem(src_data_rank);
-        project->setChild(insert, 1, Images_Cut_Rank);
     }
 
     emit updateProcess(10, QStringLiteral("正在读取图片信息……"));

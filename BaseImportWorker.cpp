@@ -104,44 +104,15 @@ void BaseImportWorker::import_patch(
             QModelIndex pro_index = model->indexFromItem(project);
             QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
 
+            bool isNewChild = false;
             // 查找或创建 Origin 节点
-            QStandardItem* origin = nullptr;
-            for (int j = 0; j < project->rowCount(); j++)
-            {
-                if (dst_node == project->child(j)->text() && project->child(j, 1)->text() == "complex-0.0")
-                {
-                    origin = project->child(j);
-                    break;
-                }
-            }
-            if (!origin)
-            {
-                origin = new QStandardItem(dst_node);
-                origin->setIcon(QIcon(FOLDER_ICON));
-                project->appendRow(origin);
-                QStandardItem* Rank = new QStandardItem("complex-0.0");
-                project->setChild(project->rowCount() - 1, 1, Rank);
-            }
+            QStandardItem* origin = NodeUtils::findOrCreateProjectNode(project, dst_node, "complex-0.0");
 
             // 查找或创建映像叶子项
-            QStandardItem* img = nullptr;
-            for (int j = 0; j < origin->rowCount(); j++)
-            {
-                if (origin->child(j)->text() == task.filename)
-                {
-                    img = origin->child(j);
-                    break;
-                }
-            }
+            QStandardItem* img = NodeUtils::findOrCreateChildItem(origin, task.filename, "complex", h5_path, "", &isNewChild);
 
-            if (!img)
+            if (isNewChild)
             {
-                img = new QStandardItem(task.filename);
-                img->setToolTip("complex");
-                QStandardItem* img_path = new QStandardItem(h5_path);
-                img->setIcon(QIcon(IMAGEDATA_ICON));
-                origin->appendRow(img);
-                origin->setChild(origin->rowCount() - 1, 1, img_path);
 
                 // 更新 XML 项目配置文件
                 XMLFile DOC;

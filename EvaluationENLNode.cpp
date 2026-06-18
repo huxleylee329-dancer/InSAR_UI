@@ -158,6 +158,10 @@ void EvaluationENLNode::setInData(std::shared_ptr<NodeData> data, PortIndex port
 
     // Call base class setInData to correctly update execution state
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    if (isRestoring()) {
+        return;
+    }
     
     // Auto execute if ready
     if (isReady()) {

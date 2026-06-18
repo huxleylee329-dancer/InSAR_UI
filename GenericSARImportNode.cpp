@@ -265,19 +265,13 @@ void GenericSARImportNode::onImportFinished()
     // 更新导入文件路径
     m_importedFilePaths = getExpectedOutputFilePaths();
 
-    // Port 0: 输出 ImportedFileData
+    // Port 0 & Port 1: 输出 ImageInfoData
     if (!m_importedFilePaths.isEmpty())
     {
-        QString nodeName = getOutputNodeName();
-        m_importedFiles = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
-        setOutputData(0, m_importedFiles);
+        m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths);
+        setOutputData(0, m_imageInfo);
         Q_EMIT dataUpdated(0);
-    }
 
-    // Port 1: 预览输出
-    if (!m_importedFilePaths.isEmpty())
-    {
-        m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths.first());
         setOutputData(1, m_imageInfo);
         Q_EMIT dataUpdated(1);
     }
@@ -328,6 +322,37 @@ void GenericSARImportNode::load(QJsonObject const &json)
     if (m_imageEdit) m_imageEdit->setText(m_imagePath);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setText(m_outputFileName);
+}
+
+NodeDataType GenericSARImportNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return NodeDataType{"image_info", "Image Info"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+    }
+    return NodeDataType();
+}
+
+bool GenericSARImportNode::validateAndRestoreOutput()
+{
+    QStringList expectedPaths = getExpectedOutputFilePaths();
+    if (expectedPaths.isEmpty())
+        return false;
+
+    // Check file existence
+    for (const QString& path : expectedPaths) {
+        if (!QFile::exists(path)) {
+            return false;
+        }
+    }
+
+    m_importedFilePaths = expectedPaths;
+    m_imageInfo = std::make_shared<ImageInfoData>(expectedPaths);
+    setOutputData(0, m_imageInfo);
+    setOutputData(1, m_imageInfo);
+    Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
+    return true;
 }
 
 } // namespace QtNodes

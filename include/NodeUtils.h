@@ -6,6 +6,8 @@
 class QWidget;
 class IApplicationInterface;
 
+class QStandardItem;
+
 namespace NodeUtils {
 
 QMutex* getHdf5Mutex();
@@ -61,5 +63,40 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
  * @return 是否生成成功
  */
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type = "complex");
+
+/**
+ * @brief 查找或创建项目树节点，并根据 Rank 自动排序插入
+ * @param project 项目根节点
+ * @param nodeName 节点名称
+ * @param rankType 排序级名称（如 "complex-0.0" 等）
+ * @param iconPath 节点图标路径，若为空则使用默认的 FOLDER_ICON
+ * @return 查找到或创建出的 QStandardItem 指针
+ */
+QStandardItem* findOrCreateProjectNode(
+    QStandardItem* project,
+    const QString& nodeName,
+    const QString& rankType,
+    const QString& iconPath = "",
+    bool* created = nullptr
+);
+
+/**
+ * @brief 查找或在父节点下创建子项（数据叶子节点，支持第二列存储路径）
+ * @param parent 父节点
+ * @param childName 子项名称（文件名）
+ * @param tooltip 工具提示信息（数据类型，如 "complex" / "phase" 等）
+ * @param h5Path 第二列关联的数据路径
+ * @param iconPath 子项图标路径，若为空则使用默认的 IMAGEDATA_ICON
+ * @param created 输出参数，指示是否是新建的节点
+ * @return 查找到或创建出的 QStandardItem 指针
+ */
+QStandardItem* findOrCreateChildItem(
+    QStandardItem* parent,
+    const QString& childName,
+    const QString& tooltip,
+    const QString& h5Path,
+    const QString& iconPath = "",
+    bool* created = nullptr
+);
 
 } // namespace NodeUtils

@@ -44,6 +44,9 @@ QWidget* GenericSARBatchImportNode::createWidget()
     // Left side: file list widget
     m_fileListWidget = new QListWidget();
     m_fileListWidget->setMaximumHeight(100);
+    for (const QString& file : m_imagePaths) {
+        m_fileListWidget->addItem(QFileInfo(file).fileName());
+    }
     topSection->addWidget(m_fileListWidget);
 
     // Right side: add/remove buttons
@@ -70,7 +73,7 @@ QWidget* GenericSARBatchImportNode::createWidget()
     nodeRow->setStretch(1, 7);
     nodeRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setText("GenericSAR_Batch_Import");
+    m_outputNodeNameEdit->setText(m_outputNodeName.isEmpty() ? "GenericSAR_Batch_Import" : m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
         if (m_outputNodeName != text) {
@@ -216,11 +219,7 @@ QStringList GenericSARBatchImportNode::getExpectedOutputFilePaths() const
 
 QString GenericSARBatchImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
-        return "GenericSAR_Batch_Import";
-
-    return name;
+    return m_outputNodeName.isEmpty() ? "GenericSAR_Batch_Import" : m_outputNodeName;
 }
 
 QString GenericSARBatchImportNode::generateImportName(const QString& imagePath) const
@@ -419,7 +418,22 @@ void GenericSARBatchImportNode::onImportProgress(int progress, const QString& me
 
 void GenericSARBatchImportNode::onImportFinished()
 {
-    ImportNodeBase::onImportFinished();
+    m_importedFilePaths = getExpectedOutputFilePaths();
+
+    if (!m_importedFilePaths.isEmpty()) {
+        m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths);
+        setOutputData(0, m_imageInfo);
+        Q_EMIT dataUpdated(0);
+
+        setOutputData(1, m_imageInfo);
+        Q_EMIT dataUpdated(1);
+    }
+
+    InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute completed.");
+
+    finishExecution();
+
+    m_task = nullptr;
 }
 
 void GenericSARBatchImportNode::onThreadError(const QString& error)
@@ -430,6 +444,37 @@ void GenericSARBatchImportNode::onThreadError(const QString& error)
 void GenericSARBatchImportNode::onModelUpdated(QStandardItemModel* model)
 {
     ImportNodeBase::onModelUpdated(model);
+}
+
+NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return NodeDataType{"image_info", "Image Info"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+    }
+    return NodeDataType();
+}
+
+bool GenericSARBatchImportNode::validateAndRestoreOutput()
+{
+    QStringList expectedPaths = getExpectedOutputFilePaths();
+    if (expectedPaths.isEmpty())
+        return false;
+
+    // Check file existence
+    for (const QString& path : expectedPaths) {
+        if (!QFile::exists(path)) {
+            return false;
+        }
+    }
+
+    m_importedFilePaths = expectedPaths;
+    m_imageInfo = std::make_shared<ImageInfoData>(expectedPaths);
+    setOutputData(0, m_imageInfo);
+    setOutputData(1, m_imageInfo);
+    Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
+    return true;
 }
 
 } // namespace QtNodes

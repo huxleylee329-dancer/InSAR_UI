@@ -104,36 +104,10 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
     QString master_name = fileinfo.baseName();
     
     /*建立根节点*/
-    QStandardItem* interferometric_phase = nullptr;
-    for (int i = 0; i < project->rowCount(); i++)
+    QStandardItem* interferometric_phase = NodeUtils::findOrCreateProjectNode(project, file_name, "phase-1.0");
+    if (interferometric_phase)
     {
-        if (project->child(i, 0)->text() == file_name)
-        {
-            interferometric_phase = project->child(i, 0);
-            break;
-        }
-    }
-
-    if (!interferometric_phase)
-    {
-        interferometric_phase = new QStandardItem(file_name);
         interferometric_phase->setToolTip(project_name);
-        int insert = 0;
-        for (; insert < project->rowCount(); insert++)
-        {
-            if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                project->child(insert, 1)->text().compare("phase-1.0") == 0)
-                continue;
-            else
-                break;
-        }
-        interferometric_phase->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, interferometric_phase);
-        QStandardItem* interferometric_phase_Rank = new QStandardItem("phase-1.0");
-        project->setChild(insert, 1, interferometric_phase_Rank);
     }
     
     emit updateProcess(2, QStringLiteral("开始处理……"));

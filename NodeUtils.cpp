@@ -1,5 +1,8 @@
 #include "include/NodeUtils.h"
 #include <QWidget>
+#include <QStandardItem>
+#include <QStandardItemModel>
+#include "include/icon_source.h"
 #include <QApplication>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -393,6 +396,121 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
         return ret == 0;
     }
     return false;
+}
+
+QStandardItem* findOrCreateProjectNode(
+    QStandardItem* project,
+    const QString& nodeName,
+    const QString& rankType,
+    const QString& iconPath,
+    bool* created)
+{
+    if (!project) return nullptr;
+
+    // 1. 查找是否已存在相同名称和 Rank 的节点
+    for (int i = 0; i < project->rowCount(); ++i) {
+        if (project->child(i, 0)->text() == nodeName &&
+            project->child(i, 1) && project->child(i, 1)->text() == rankType) {
+            if (created) *created = false;
+            return project->child(i, 0);
+        }
+    }
+
+    if (created) *created = true;
+
+    // 2. 统一定义项目树所有阶段 of Rank 排序顺序
+    static const QStringList RANK_ORDER = {
+        // === 1. 复数图像数据阶段 ===
+        "complex-0.0",     // 原始导入图像
+        "complex-1.0",     // 裁剪后图像 / 去爆
+        "complex-2.0",     // 配准后图像
+        "complex-3.0",     // 去斜率图像
+        
+        // === 2. 相位数据阶段 ===
+        "phase-1.0",       // 干涉相位图
+        "phase-1.1",       // 【地理编码】干涉相位图
+        
+        // === 3. 相干性数据阶段 ===
+        "coherence-1.0",   // 相干系数图
+        "coherence-1.1",   // 【地理编码】相干系数图
+        
+        // === 4. 滤波与解缠相位阶段 ===
+        "phase-2.0",       // 滤波相位图
+        "phase-2.1",       // 【地理编码】滤波相位图
+        "phase-3.0",       // 解缠相位图
+        "phase-3.1",       // 【地理编码】解缠相位图
+        
+        // === 5. 高程与最终产品阶段 ===
+        "dem-1.0",         // 雷达坐标系 DEM
+        "dem-1.1",         // 【地理编码】地理坐标系 DEM
+        "SBAS-1.0",        // 时序形变速率
+        "SBAS-1.1"         // 【地理编码】时序形变速率
+    };
+
+    int targetIdx = RANK_ORDER.indexOf(rankType);
+    if (targetIdx == -1) targetIdx = 999; // 未知 rank 默认放最后
+
+    // 3. 寻找正确的排序插入位置
+    int insert = 0;
+    for (; insert < project->rowCount(); ++insert) {
+        QStandardItem* rankCol = project->child(insert, 1);
+        QString childRank = rankCol ? rankCol->text() : "";
+        int childIdx = RANK_ORDER.indexOf(childRank);
+        if (childIdx == -1) childIdx = 999;
+
+        if (childIdx <= targetIdx) {
+            continue;
+        } else {
+            break;
+        }
+    }
+
+    // 4. 创建并插入节点
+    QStandardItem* node = new QStandardItem(nodeName);
+    QString finalIcon = iconPath.isEmpty() ? FOLDER_ICON : iconPath;
+    node->setIcon(QIcon(finalIcon));
+    project->insertRow(insert, node);
+
+    QStandardItem* rankItem = new QStandardItem(rankType);
+    project->setChild(insert, 1, rankItem);
+
+    return node;
+}
+
+QStandardItem* findOrCreateChildItem(
+    QStandardItem* parent,
+    const QString& childName,
+    const QString& tooltip,
+    const QString& h5Path,
+    const QString& iconPath,
+    bool* created)
+{
+    if (!parent) return nullptr;
+
+    // 1. 查找是否已存在该子项
+    for (int i = 0; i < parent->rowCount(); ++i) {
+        if (parent->child(i, 0)->text() == childName) {
+            if (created) *created = false;
+            return parent->child(i, 0);
+        }
+    }
+
+    if (created) *created = true;
+
+    // 2. 创建子项
+    QStandardItem* item = new QStandardItem(childName);
+    item->setToolTip(tooltip);
+    
+    QString finalIcon = iconPath.isEmpty() ? IMAGEDATA_ICON : iconPath;
+    item->setIcon(QIcon(finalIcon));
+
+    // 3. 插入子项并绑定路径到第二列
+    parent->appendRow(item);
+    
+    QStandardItem* pathItem = new QStandardItem(h5Path);
+    parent->setChild(parent->rowCount() - 1, 1, pathItem);
+
+    return item;
 }
 
 } // namespace NodeUtils

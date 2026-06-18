@@ -245,8 +245,7 @@ void GeneralSARLoadingNode::executeImport()
     }
 
     m_imageInfo = std::make_shared<ImageInfoData>(validPaths);
-    auto outputData = std::make_shared<ImportedFileData>(validPaths, m_loadingNodeName);
-    setOutputData(0, outputData);
+    setOutputData(0, m_imageInfo);
     setOutputData(1, m_imageInfo);
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
@@ -297,6 +296,37 @@ void GeneralSARLoadingNode::load(QJsonObject const &json)
     if (m_projectNameLabel) {
         refreshUI();
     }
+}
+
+NodeDataType GeneralSARLoadingNode::dataType(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::Out) {
+        if (portIndex == 0) return NodeDataType{"image_info", "Image Info"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+    }
+    return NodeDataType();
+}
+
+bool GeneralSARLoadingNode::validateAndRestoreOutput()
+{
+    QStringList expectedPaths = getExpectedOutputFilePaths();
+    if (expectedPaths.isEmpty())
+        return false;
+
+    // Check file existence
+    for (const QString& path : expectedPaths) {
+        if (!QFile::exists(path)) {
+            return false;
+        }
+    }
+
+    m_checkedFilePaths = expectedPaths;
+    m_imageInfo = std::make_shared<ImageInfoData>(expectedPaths);
+    setOutputData(0, m_imageInfo);
+    setOutputData(1, m_imageInfo);
+    Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
+    return true;
 }
 
 } // namespace QtNodes

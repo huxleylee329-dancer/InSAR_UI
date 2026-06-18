@@ -32,6 +32,9 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+    NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    bool validateAndRestoreOutput() override;
+
 protected:
     QWidget* createWidget() override;
     void executeImport() override;

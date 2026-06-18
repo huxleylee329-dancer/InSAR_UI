@@ -110,35 +110,10 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 		return;
     }
     /*建立配准根节点*/
-    QStandardItem* regis = NULL;
-    for (int i = 0; i < project->rowCount(); i++)
+    QStandardItem* regis = NodeUtils::findOrCreateProjectNode(project, file_name, "complex-2.0");
+    if (regis)
     {
-        if (project->child(i, 0)->text() == file_name)
-        {
-            regis = project->child(i, 0);
-            break;
-        }
-    }
-
-    if (!regis)
-    {
-        regis = new QStandardItem(file_name);
         regis->setToolTip(project_name);
-        int insert = 0;
-        for (; insert < project->rowCount(); insert++)
-        {
-            if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                project->child(insert, 1)->text().compare("complex-2.0") == 0
-                )
-                continue;
-            else
-                break;
-        }
-        regis->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, regis);
-        QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
-        project->setChild(insert, 1, regis_Rank);
     }
     
     FormatConversion FC;
@@ -442,34 +417,10 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	}
 
 	/*建立配准根节点*/
-	QStandardItem* regis = NULL;
-	for (int i = 0; i < project->rowCount(); i++)
+	QStandardItem* regis = NodeUtils::findOrCreateProjectNode(project, dstNode, "complex-2.0");
+	if (regis)
 	{
-		if (project->child(i, 0)->text() == dstNode)
-		{
-			regis = project->child(i, 0);
-			break;
-		}
-	}
-
-	if (!regis)
-	{
-		regis = new QStandardItem(dstNode);
 		regis->setToolTip(project_name);
-		int insert = 0;
-		for (; insert < project->rowCount(); insert++)
-		{
-			if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-				project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-				project->child(insert, 1)->text().compare("complex-2.0") == 0)
-				continue;
-			else
-				break;
-		}
-		regis->setIcon(QIcon(FOLDER_ICON));
-		project->insertRow(insert, regis);
-		QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
-		project->setChild(insert, 1, regis_Rank);
 	}
 	
 	QString temporal_baseline, B_parallel, B_effect;
