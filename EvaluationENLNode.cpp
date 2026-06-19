@@ -1,5 +1,6 @@
 
 #include "EvaluationENLNode.h"
+#include "SARProcessor.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -237,29 +238,12 @@ void EvaluationENLNode::onRegionChanged(int index)
 
 double EvaluationENLNode::calculateENL(const cv::Mat& roiGray)
 {
-    if (roiGray.empty()) return 0.0;
-    
-    cv::Mat meanMat, stddevMat;
-    cv::meanStdDev(roiGray, meanMat, stddevMat);
-    
-    double mean = meanMat.at<double>(0, 0);
-    double stddev = stddevMat.at<double>(0, 0);
-    
-    if (stddev == 0) return 0.0;
-    
-    return (mean * mean) / (stddev * stddev);
+    return SARProcessor::CalculateENL(roiGray);
 }
 
 double EvaluationENLNode::calculateEPI(const cv::Mat& orig, const cv::Mat& filtered)
 {
-    if (orig.empty() || filtered.empty()) return 0.0;
-    cv::Mat lapOrig, lapFilt;
-    cv::Laplacian(orig, lapOrig, CV_64F);
-    cv::Laplacian(filtered, lapFilt, CV_64F);
-    double sumOrig = cv::sum(cv::abs(lapOrig))[0];
-    double sumFilt = cv::sum(cv::abs(lapFilt))[0];
-    if (sumOrig == 0) return 0.0;
-    return sumFilt / sumOrig;
+    return SARProcessor::CalculateEPI(orig, filtered);
 }
 
 void EvaluationENLNode::calculateAndDisplayENL()

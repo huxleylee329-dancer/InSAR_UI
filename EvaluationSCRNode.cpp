@@ -1,5 +1,6 @@
 #include "InSARLogManager.h"
 #include "EvaluationSCRNode.h"
+#include "SARProcessor.h"
 #include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -239,28 +240,7 @@ void EvaluationSCRNode::onRegionChanged(int index)
 
 double EvaluationSCRNode::calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray)
 {
-    if (targetGray.empty() || clutterGray.empty()) return 0.0;
-    
-    cv::Mat targetDouble, clutterDouble;
-    targetGray.convertTo(targetDouble, CV_64F);
-    clutterGray.convertTo(clutterDouble, CV_64F);
-
-    cv::Scalar targetMeanValue, targetStdValue;
-    cv::Scalar clutterMeanValue, clutterStdValue;
-
-    cv::meanStdDev(targetDouble, targetMeanValue, targetStdValue);
-    cv::meanStdDev(clutterDouble, clutterMeanValue, clutterStdValue);
-
-    double targetMean = targetMeanValue[0];
-    double clutterMean = clutterMeanValue[0];
-    double clutterStd = clutterStdValue[0];
-
-    if (clutterStd <= 1e-12) return 0.0;
-
-    double numerator = std::abs(targetMean - clutterMean);
-    if (numerator <= 1e-12) return 0.0;
-
-    return 20.0 * std::log10(numerator / clutterStd);
+    return SARProcessor::CalculateSCR(targetGray, clutterGray);
 }
 
 void EvaluationSCRNode::calculateAndDisplaySCR()

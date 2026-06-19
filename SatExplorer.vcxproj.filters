@@ -565,31 +565,7 @@
     <ClCompile Include="TargetDetection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="basic2.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="diff_boxcount.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Import_GenericSAR.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="BM3DWrapper.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="BM3D_cpp\bm3d.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="BM3D_cpp\bm3d_wiener.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="BM3D_cpp\group_3d.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="BM3D_cpp\patch_2d.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="BM3D_cpp\transform.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="InterfaceManager.cpp">
@@ -1427,33 +1403,6 @@
       <Filter>QtNodes\Include</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\BM3DWrapper.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\bm3d.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\bm3d_wiener.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\global_define.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\group_3d.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\patch_2d.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\transform.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\basic2.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\diff_boxcount.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

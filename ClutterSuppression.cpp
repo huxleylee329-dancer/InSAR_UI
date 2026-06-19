@@ -9,7 +9,7 @@
 #include <vector>
 #include "FormatConversion.h"
 #include "icon_source.h"
-#include "BM3DWrapper.h"
+#include "SARProcessor.h"
 
 
 #include "InSARLogManager.h"
@@ -598,38 +598,7 @@ bool ClutterSuppression::eventFilter(QObject* watched, QEvent* event)
 double ClutterSuppression::calculateScr(const cv::Mat& targetGray,
                                         const cv::Mat& clutterGray) const
 {
-    if (targetGray.empty() || clutterGray.empty())
-    {
-        return 0.0;
-    }
-
-    cv::Mat targetDouble;
-    cv::Mat clutterDouble;
-    targetGray.convertTo(targetDouble, CV_64F);
-    clutterGray.convertTo(clutterDouble, CV_64F);
-
-    cv::Scalar targetMeanValue, targetStdValue;
-    cv::Scalar clutterMeanValue, clutterStdValue;
-
-    cv::meanStdDev(targetDouble, targetMeanValue, targetStdValue);
-    cv::meanStdDev(clutterDouble, clutterMeanValue, clutterStdValue);
-
-    double targetMean = targetMeanValue[0];
-    double clutterMean = clutterMeanValue[0];
-    double clutterStd = clutterStdValue[0];
-
-    if (clutterStd <= 1e-12)
-    {
-        return 0.0;
-    }
-
-    double numerator = std::abs(targetMean - clutterMean);
-    if (numerator <= 1e-12)
-    {
-        return 0.0;
-    }
-
-    return 20.0 * std::log10(numerator / clutterStd);
+    return SARProcessor::CalculateSCR(targetGray, clutterGray);
 }
 
 
@@ -720,71 +689,15 @@ void ClutterSuppression::updateScrResults()
 cv::Mat ClutterSuppression::runClutterSuppressionCoreLogic(const cv::Mat& inputGray) const
 {
     if (inputGray.empty()) return cv::Mat();
-
-    const double noiseGain = 1.1;
-
-    cv::Mat imgDouble;
-    inputGray.convertTo(imgDouble, CV_64F);
-
-    cv::Mat imgLog;
-    cv::log(imgDouble + 1.0, imgLog);
-
-    double minV = 0.0;
-    double maxV = 0.0;
-    cv::minMaxLoc(imgLog, &minV, &maxV);
-
-    double rangeV = maxV - minV;
-    if (rangeV == 0.0)
-    {
-        rangeV = 1.0;
-    }
-
-    cv::Mat imgNorm = (imgLog - minV) / rangeV;
-
-    double medianValue = calcMedian(imgLog);
-    cv::Mat absDiff;
-    cv::absdiff(imgLog, medianValue, absDiff);
-
-    double sigmaEst = calcMedian(absDiff) / 0.6745;
-    double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
-
-    cv::Mat imgDenNorm = runBm3dDenoise(imgNorm, sigmaFinal);
-    if (imgDenNorm.empty()) return cv::Mat();
-
-    cv::Mat imgDen = imgDenNorm * rangeV + minV;
-
-    cv::Mat imgOut;
-    cv::exp(imgDen, imgOut);
-    imgOut = imgOut - 1.0;
-
-    double meanInput = cv::mean(imgDouble)[0];
-    double meanOutput = cv::mean(imgOut)[0];
-    if (meanOutput != 0.0)
-    {
-        imgOut = imgOut * (meanInput / meanOutput);
-    }
-
-    cv::min(imgOut, 255.0, imgOut);
-    cv::max(imgOut, 0.0, imgOut);
-
-    cv::Mat output8U;
-    imgOut.convertTo(output8U, CV_8U);
-
-    return output8U;
+    return SARProcessor::DenoiseGray(inputGray, 0.0);
 }
 
 cv::Mat ClutterSuppression::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const
 {
-    cv::Mat img8U;
-    imgNorm.convertTo(img8U, CV_8U, 255.0);
-
-    double sigma8 = sigmaFinal * 255.0;
-    cv::Mat den8U = BM3DWrapper::DenoiseGray(img8U, sigma8);
-    if (den8U.empty()) return cv::Mat();
-
-    cv::Mat denNorm;
-    den8U.convertTo(denNorm, CV_64F, 1.0 / 255.0);
-    return denNorm;
+    // 已由 runClutterSuppressionCoreLogic 统一调用 SARProcessor，此方法保留接口兼容
+    Q_UNUSED(imgNorm);
+    Q_UNUSED(sigmaFinal);
+    return cv::Mat();
 }
 
 double ClutterSuppression::calcMedian(const cv::Mat& input) const

@@ -92,14 +92,14 @@
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <PreprocessorDefinitions>NODE_EDITOR_STATIC;ADS_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\SRC\Microsoft.ML.OnnxRuntime.1.25.1\build\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\Microsoft.ML.OnnxRuntime.1.25.1\runtimes\win-x64\native;D:\SRC\opencv\build\x64\vc15\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>onnxruntime.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\opencv\build\x64\vc15\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -110,14 +110,14 @@
       <Optimization>MaxSpeed</Optimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <PreprocessorDefinitions>NODE_EDITOR_STATIC;ADS_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;D:\onnxruntime-win-x64-1.26.0\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>include;include\QtNodes\internal;include\ADS;D:\SRC\InSAR\include;D:\SRC\opencv\build\include;D:\SRC\HDF5\include;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\include;D:\Qt\5.15.2\msvc2019_64\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;D:\onnxruntime-win-x64-1.26.0\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>onnxruntime.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -130,17 +130,10 @@
     <ClCompile Include="Baseline_Preview.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="basic2.cpp" />
     <ClCompile Include="BatchTargetRecognition.cpp">
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpp17</LanguageStandard>
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">stdcpp17</LanguageStandard>
     </ClCompile>
-    <ClCompile Include="BM3DWrapper.cpp" />
-    <ClCompile Include="BM3D_cpp\bm3d.cpp" />
-    <ClCompile Include="BM3D_cpp\bm3d_wiener.cpp" />
-    <ClCompile Include="BM3D_cpp\group_3d.cpp" />
-    <ClCompile Include="BM3D_cpp\patch_2d.cpp" />
-    <ClCompile Include="BM3D_cpp\transform.cpp" />
     <ClCompile Include="ClutterSuppression.cpp" />
     <ClCompile Include="ColorBar.cpp">
       <Filter>Source Files</Filter>
@@ -158,9 +151,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Dem_ui.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="diff_boxcount.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="EvaluationENLNode.cpp" />
@@ -801,15 +791,8 @@
     <QtMoc Include="include\IApplicationInterface.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <ClInclude Include="include\basic2.h" />
-    <ClInclude Include="include\bm3d.h" />
-    <ClInclude Include="include\BM3DWrapper.h" />
-    <ClInclude Include="include\diff_boxcount.h" />
-    <ClInclude Include="include\bm3d_wiener.h" />
     <QtMoc Include="include\EvaluationENLNode.h" />
     <QtMoc Include="include\EvaluationSCRNode.h" />
-    <ClInclude Include="include\global_define.h" />
-    <ClInclude Include="include\group_3d.h" />
     <ClInclude Include="include\icon_source.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -877,7 +860,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\QtNodes\internal\CardExecutableNodeDelegateModel.hpp" />
-    <ClInclude Include="include\patch_2d.h" />
     <ClInclude Include="include\tinystr.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -902,7 +884,6 @@
     <QtMoc Include="include\PaletteGraphicsView.h">
       <Filter>Header Files</Filter>
     </QtMoc>
-    <ClInclude Include="include\transform.h" />
     <ClInclude Include="resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>

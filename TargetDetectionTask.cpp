@@ -1,6 +1,7 @@
 #include "InSARLogManager.h"
 #include "TargetDetectionTask.h"
 #include "TargetDetection.h"
+#include "SARProcessor.h"
 #include <QFileInfo>
 #include <QDebug>
 
@@ -38,11 +39,19 @@ void TargetDetectionTask::run()
 
         float shipProb = 0.0f;
         QString resultText;
-        QString errorMsg;
+        char resultBuf[256] = {0};
 
-        bool ok = TargetDetection::runDetectionTask(m_imagePaths[i], m_modelPath, m_thresholdValue, shipProb, resultText, errorMsg);
+        bool ok = SARProcessor::DetectShip(
+            m_imagePaths[i].toLocal8Bit().constData(),
+            m_modelPath.toLocal8Bit().constData(),
+            m_thresholdValue,
+            shipProb,
+            resultBuf,
+            sizeof(resultBuf)
+        );
 
         if (!ok) {
+            QString errorMsg = QString::fromLocal8Bit(resultBuf);
             bool skip = false;
             QString errMsg = QStringLiteral("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(m_imagePaths[i]).fileName(), errorMsg);
             
@@ -59,6 +68,7 @@ void TargetDetectionTask::run()
             continue;
         }
 
+        resultText = QString::fromLocal8Bit(resultBuf);
         emit sendTargetDetectionResult(i, true, shipProb, resultText, "");
     }
 

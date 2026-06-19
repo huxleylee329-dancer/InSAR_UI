@@ -2,7 +2,7 @@
 #include <memory>
 #include "BM3DEnhancementTask.h"
 #include "icon_source.h"
-#include "BM3DWrapper.h"
+#include "SARProcessor.h"
 #include <QFileInfo>
 #include <QDir>
 #include <QDebug>
@@ -119,71 +119,16 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
         return false;
     }
 
-    emit updateProcess(baseProgress + progressStep * 0.2, QStringLiteral("准备BM3D计算..."));
-
-    const double noiseGain = 1.1;
-    cv::Mat imgDouble;
-    inputGray.convertTo(imgDouble, CV_64F);
-    cv::Mat imgLog;
-    cv::log(imgDouble + 1.0, imgLog);
-
-    auto calcMedian = [](const cv::Mat& img) {
-        cv::Mat imgCopy = img.clone();
-        imgCopy = imgCopy.reshape(0, 1);
-        std::sort(imgCopy.begin<double>(), imgCopy.end<double>());
-        int n = imgCopy.total();
-        if (n % 2 == 0 && n > 0) {
-            return (imgCopy.at<double>(n / 2 - 1) + imgCopy.at<double>(n / 2)) / 2.0;
-        } else if (n > 0) {
-            return imgCopy.at<double>(n / 2);
-        }
-        return 0.0;
-    };
-
-    double minV = 0.0, maxV = 0.0;
-    cv::minMaxLoc(imgLog, &minV, &maxV);
-    double rangeV = maxV - minV;
-    if (rangeV <= 0.0) rangeV = 1.0;
-    cv::Mat imgNorm = (imgLog - minV) / rangeV;
-
-    double medianValue = calcMedian(imgLog);
-    cv::Mat absDiff;
-    cv::absdiff(imgLog, medianValue, absDiff);
-    double sigmaEst = calcMedian(absDiff) / 0.6745;
-    double sigmaFinal = (sigmaEst * noiseGain) / rangeV;
-
     emit updateProcess(baseProgress + progressStep * 0.4, processMsg);
 
-    cv::Mat img8U;
-    imgNorm.convertTo(img8U, CV_8U, 255.0);
-    double sigma8 = sigmaFinal * 255.0;
-    cv::Mat den8U = BM3DWrapper::DenoiseGray(img8U, sigma8);
+    cv::Mat output8U = SARProcessor::DenoiseGray(inputGray, 0.0);
 
-    if (den8U.empty()) {
+    if (output8U.empty()) {
         outError = QStringLiteral("BM3D处理失败");
         return false;
     }
 
     emit updateProcess(baseProgress + progressStep * 0.8, QStringLiteral("后处理及保存..."));
-
-    cv::Mat denNorm;
-    den8U.convertTo(denNorm, CV_64F, 1.0 / 255.0);
-    cv::Mat imgDen = denNorm * rangeV + minV;
-    cv::Mat imgOut;
-    cv::exp(imgDen, imgOut);
-    imgOut = imgOut - 1.0;
-
-    double meanInput = cv::mean(imgDouble)[0];
-    double meanOutput = cv::mean(imgOut)[0];
-    if (meanOutput != 0.0) {
-        imgOut = imgOut * (meanInput / meanOutput);
-    }
-
-    cv::min(imgOut, 255.0, imgOut);
-    cv::max(imgOut, 0.0, imgOut);
-
-    cv::Mat output8U;
-    imgOut.convertTo(output8U, CV_8U);
 
     if (saveToProject) {
         if (!model) {

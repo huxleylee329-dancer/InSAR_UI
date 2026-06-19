@@ -1,6 +1,5 @@
 #include "TargetDetection.h"
-#include "basic2.h"
-#include "diff_boxcount.h"
+#include "SARProcessor.h"
 
 #include <QMessageBox>
 #include <QVBoxLayout>
@@ -9,7 +8,6 @@
 #include <QDir>
 #include <QDebug>
 #include <opencv2/opencv.hpp>
-#include <onnxruntime_cxx_api.h>
 
 
 #include "InSARLogManager.h"
@@ -266,78 +264,19 @@ bool TargetDetection::runDetectionTask(const QString& imagePath,
                                          QString& resultText,
                                          QString& errorMsg)
 {
-    cv::Mat img = cv::imread(imagePath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE | cv::IMREAD_ANYDEPTH);
-    if (img.empty())
-    {
-        errorMsg = "Failed to read image.";
+    char resultBuf[256] = {0};
+    bool ok = SARProcessor::DetectShip(
+        imagePath.toLocal8Bit().constData(),
+        modelPath.toLocal8Bit().constData(),
+        thresholdValue,
+        shipProb,
+        resultBuf,
+        sizeof(resultBuf)
+    );
+    if (!ok) {
+        errorMsg = QString::fromLocal8Bit(resultBuf);
         return false;
     }
-
-    BasicFeatures feats = extract_basic_features(img);
-    double difbox = extract_diffbox_feature(img);
-
-    std::vector<float> inputTensorValues = {
-        static_cast<float>(feats.fphr),
-        static_cast<float>(difbox),
-        static_cast<float>(feats.correlation),
-        static_cast<float>(feats.contrast),
-        static_cast<float>(feats.asm_val)
-    };
-
-    try
-    {
-        Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ShipDetection");
-        Ort::SessionOptions sessionOptions;
-
-        std::wstring modelPathW = QDir::toNativeSeparators(modelPath).toStdWString();
-        Ort::Session session(env, modelPathW.c_str(), sessionOptions);
-
-        const char* inputNames[] = { "float_input" };
-        const char* outputNames[] = { "label", "probabilities" };
-
-        Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-        std::vector<int64_t> inputShape = { 1, 5 };
-
-        Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
-            memoryInfo,
-            inputTensorValues.data(),
-            inputTensorValues.size(),
-            inputShape.data(),
-            inputShape.size()
-        );
-
-        auto outputTensors = session.Run(
-            Ort::RunOptions{ nullptr },
-            inputNames,
-            &inputTensor,
-            1,
-            outputNames,
-            2
-        );
-
-        auto type_info = outputTensors[1].GetTensorTypeAndShapeInfo();
-        size_t elem_count = type_info.GetElementCount();
-        float* probArr = outputTensors[1].GetTensorMutableData<float>();
-        
-        if (elem_count >= 2) {
-            shipProb = probArr[1];
-        } else if (elem_count == 1) {
-            shipProb = probArr[0];
-        } else {
-            shipProb = 0.0f;
-        }
-
-        resultText = shipProb >= thresholdValue ? "Ship" : "Sea";
-        return true;
-    }
-    catch (const Ort::Exception& e)
-    {
-        errorMsg = QString("ONNX Runtime Error: ") + e.what();
-        return false;
-    }
-    catch (const std::exception& e)
-    {
-        errorMsg = QString("Detection Error: ") + e.what();
-        return false;
-    }
+    resultText = QString::fromLocal8Bit(resultBuf);
+    return true;
 }
