@@ -39,6 +39,10 @@ protected:
     // 子类必须实现的 XML 标签标识（如 "CSG-2", "TSX", "sentinel" 等）
     virtual QString satelliteFormatTag() const = 0;
 
+    // 子类可覆写：指定预览图渲染的数据类型（默认 "complex"）
+    // LiDAR 等非复数数据应覆写为 "dem" 等类型
+    virtual QString previewDataType() const { return "complex"; }
+
     // 辅助函数：清理资源并报告错误
     void handleError(const QString& error_msg, const QString& h5_path, const QString& dir_path);
 

@@ -87,7 +87,7 @@ void BaseImportWorker::import_patch(
         // B. 静默生成 JPG 预览缩略图
         QFileInfo fi(h5_path);
         QString jpg_path = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, "complex");
+        NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, previewDataType());
 
         // C. 跨线程更新项目树与 XML
         int localRet = 0;
@@ -109,7 +109,7 @@ void BaseImportWorker::import_patch(
             QStandardItem* origin = NodeUtils::findOrCreateProjectNode(project, dst_node, "complex-0.0");
 
             // 查找或创建映像叶子项
-            QStandardItem* img = NodeUtils::findOrCreateChildItem(origin, task.filename, "complex", h5_path, "", &isNewChild);
+            QStandardItem* img = NodeUtils::findOrCreateChildItem(origin, task.filename, previewDataType(), h5_path, "", &isNewChild);
 
             if (isNewChild)
             {

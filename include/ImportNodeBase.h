@@ -82,6 +82,9 @@ protected:
     // 子类必须实现：返回输出的 XML 节点名称
     virtual QString getOutputNodeName() const = 0;
 
+    // 子类可覆写：指定预览图渲染的数据类型（默认 "complex"）
+    virtual QString previewDataType() const { return "complex"; }
+
     virtual QWidget* createWidget() = 0;
 
     // New Executable interface that subclasses must override

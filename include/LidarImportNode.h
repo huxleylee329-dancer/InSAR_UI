@@ -35,6 +35,7 @@ protected:
     void executeImport() override;
     QStringList getExpectedOutputFilePaths() const override;
     QString getOutputNodeName() const override;
+    QString previewDataType() const override { return "dem"; }
 
 private slots:
     void onAddFilesClicked();

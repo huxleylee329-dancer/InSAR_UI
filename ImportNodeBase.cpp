@@ -245,9 +245,10 @@ bool ImportNodeBase::validateAndRestoreOutput()
             Q_EMIT dataUpdated(1);
         });
 
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+        QString type = previewDataType();
+        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, type]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], type);
             }
         });
         m_remedyWatcher.setFuture(future);
