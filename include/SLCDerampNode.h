@@ -13,10 +13,7 @@
 #include <QHBoxLayout>
 #include <QThread>
 #include <QStandardItemModel>
-#include <QFileInfo>
-#include <QRegularExpression>
 #include <QFutureWatcher>
-#include <QtConcurrent/QtConcurrent>
 #include <QPointer>
 #include <memory>
 

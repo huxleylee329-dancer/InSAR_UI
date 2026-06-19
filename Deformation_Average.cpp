@@ -35,11 +35,6 @@ Deformation_Average::~Deformation_Average()
         }
     }
 }
-void Deformation_Average::TransitModel(QStandardItemModel* model)
-{
-    emit sendCopy(model);
-}
-
 void Deformation_Average::cancelled()
 {
     isPreviewPressed = false;

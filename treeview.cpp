@@ -124,22 +124,6 @@ void TreeView::init_tree()
     type = 1;
 }
 
-void TreeView::init_mould()
-{
-    model->setHeaderData(0, Qt::Horizontal, QString("template"));
-    QStandardItem* InSAR = new QStandardItem("InSAR");
-    InSAR->setIcon(QIcon(TEMPLATE_FOLDER));
-    QStandardItem* DInSAR = new QStandardItem("DInSAR");
-    DInSAR->setIcon(QIcon(TEMPLATE_FOLDER));
-    model->appendRow(InSAR);
-    model->appendRow(DInSAR);
-    QStandardItem* ToDEM = new QStandardItem("DEM");
-    ToDEM->setIcon(QIcon(TEMPLATE_TOOL));
-    ToDEM->setToolTip("DEM");
-    InSAR->appendRow(ToDEM);
-    type = 2;
-}
-
 void TreeView::NewProject(QString name, QString save_path)
 {
     
@@ -189,11 +173,6 @@ void TreeView::updateTreeIcons(const QString &theme)
     }
 }
 
-
- QList<QStandardItem*> TreeView::returnTheItems()
- {
-    return model->findItems("*", Qt::MatchWildcard | Qt::MatchRecursive);
- }
 
 void TreeView::mouseDoubleClickEvent(QMouseEvent * event)
 {

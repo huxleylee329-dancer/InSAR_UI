@@ -4,7 +4,6 @@
 #include "IApplicationInterface.h"
 #include <QMainWindow>
 #include <QList>
-#include <QSettings>
 #include <QString>
 
 /**
@@ -42,12 +41,6 @@ public:
      * @return 当前界面ID
      */
     QString currentInterfaceId() const;
-
-    /**
-     * @brief 获取所有已注册的界面列表
-     * @return 界面列表
-     */
-    QList<IApplicationInterface*> interfaces() const;
 
     /**
      * @brief 读取全局默认界面

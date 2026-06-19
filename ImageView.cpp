@@ -151,6 +151,17 @@ void ImageView::fitImage()
 	}
 }
 
+void ImageView::resetZoom()
+{
+	if (scene() && !scene()->sceneRect().isEmpty()) {
+		resetTransform();
+		centerOn(scene()->sceneRect().center());
+		m_needsFit = false;
+		updateTransformationMode();
+		viewport()->update();
+	}
+}
+
 void ImageView::zoomIn()
 {
 	zoomBy(1.25);

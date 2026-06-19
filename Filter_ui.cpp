@@ -4,16 +4,9 @@
 #include<qcheckbox.h>
 #include<qscrollarea.h>
 #include <QThread>
-//#include<Utils.h>
-//#include<FormatConversion.h>
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#endif
-//#include<FormatConversion.h>
 Filter_ui::Filter_ui(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::Filter)

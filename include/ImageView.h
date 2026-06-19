@@ -33,6 +33,7 @@ public:
 	
 	void loadImage(const QString& path);
 	void fitImage();
+	void resetZoom();
 	void zoomIn();
 	void zoomOut();
 	void zoomBy(double factor);

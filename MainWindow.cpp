@@ -6,6 +6,7 @@
 #include <exception>
 #include <QLabel>
 #include <QProgressBar>
+#include <QGraphicsScene>
 #include <QStatusBar>
 #include <QTimer>
 // Include headers
@@ -79,7 +80,6 @@ extern void applyTheme(const QString &theme);
 #include"BatchTargetRecognition.h"
 #include"TargetDetection.h"
 #include "InSARLogManager.h"
-//#include<Mould.h>
 
 // Qt related headers
 #include<QtGui>
@@ -93,16 +93,9 @@ extern void applyTheme(const QString &theme);
 #include<qsettings.h>
 #include<qdir.h>
 // Include headers
-//#include<FormatConversion.h>
-//#include<Utils.h>
 // opencv related headers
 #include<opencv2/highgui.hpp>
 
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#pragma comment(lib, "ComplexMat_d.lib")
-//#endif
 using namespace cv;
 
 // ============================================================================
@@ -310,18 +303,6 @@ MainWindow::~MainWindow()
         this->project = NULL;
     }
 }
-//void MainWindow::OpenMould(QModelIndex index)
-//{
-//    if (ui.tool->model->itemFromIndex(index)->toolTip() == "DEM")
-//    {
-//        Mould* mould = new Mould;
-//        connect(this, &MainWindow::sendModel, mould, &Mould::ReceiveModel);
-//        emit sendModel(ui.treeView->model);
-//        mould->show();
-//        connect(mould, &Mould::sendCopy, this, &MainWindow::RenewTree);
-//        mould->setAttribute(Qt::WA_DeleteOnClose, true);
-//    }
-//}
 void MainWindow::Addproject(QString name, QString save_path)
 {
     m_workspaceUI->treeView()->NewProject(name, save_path);

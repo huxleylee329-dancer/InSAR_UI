@@ -16,6 +16,7 @@
 #include <QJsonValue>
 #include <QTimer>
 #include <QDebug>
+#include <QtConcurrent/QtConcurrentRun>
 
 namespace QtNodes {
 

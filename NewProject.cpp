@@ -5,11 +5,6 @@
 #include"qregularexpression.h"
 #include<opencv2/opencv.hpp>
 #include<opencv2/highgui.hpp>
-//#include<FormatConversion.h>
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#endif
 using namespace cv;
 NewProject::NewProject(QWidget* parent) :
 	QDialog(parent),

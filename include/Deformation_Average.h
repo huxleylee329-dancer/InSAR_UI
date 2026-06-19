@@ -15,7 +15,6 @@ public:
     QStandardItemModel* copy;
 public slots:
     void ShowProjectList(QStandardItemModel*);
-    void TransitModel(QStandardItemModel*);
     void cancelled();
 
 private:

@@ -7,6 +7,8 @@
 #include "Utils.h"
 #include "InSARLogManager.h"
 #include <QMessageBox>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>

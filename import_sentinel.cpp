@@ -6,11 +6,6 @@
 #include<opencv2/highgui.hpp>
 #include<qmessagebox.h>
 #include "tinyxml.h"
-//#include<FormatConversion.h>
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#endif
 import_sentinel::import_sentinel(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::ImportSentinel)

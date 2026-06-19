@@ -45,6 +45,7 @@
         <file>svg/zoom.svg</file>
         <file>svg/zoom_out.svg</file>
         <file>svg/zoom_fit.svg</file>
+        <file>svg/zoom_reset.svg</file>
         <file>svg/cursor_down.svg</file>
         <file>svg/cursor_up.svg</file>
         <file>svg/mark.svg</file>

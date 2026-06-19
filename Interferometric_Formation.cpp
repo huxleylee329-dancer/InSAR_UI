@@ -4,16 +4,9 @@
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
-//#include<Utils.h>
-//#include<FormatConversion.h>
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#endif
-//#include<FormatConversion.h>
 Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::InterferometricFormation),

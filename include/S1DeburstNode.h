@@ -12,13 +12,9 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFrame>
 #include <QThread>
 #include <QStandardItemModel>
-#include <QFileInfo>
-#include <QRegularExpression>
 #include <QFutureWatcher>
-#include <QtConcurrent/QtConcurrent>
 #include <memory>
 
 // Forward declarations

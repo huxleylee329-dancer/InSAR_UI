@@ -4,17 +4,14 @@
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
-//#include<Utils.h>
 #include<FormatConversion.h>
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
 #include<QThread>
 #ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
 #endif
-//#include<FormatConversion.h>
 Registration_ui::Registration_ui(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::Registration)

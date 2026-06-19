@@ -31,7 +31,6 @@ private:
 signals:
     void operate(int, QString, QString, QString, QStandardItemModel*);
     void sendCopy(QStandardItemModel*);
-    void sendBaseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
 
 private slots:
     void on_comboBox_currentIndexChanged();

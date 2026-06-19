@@ -1626,8 +1626,6 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
             QString newValue = edit->text();
             if (newValue != param.value) {
                 emit propertyChanged(m_currentNodeId, param.name, newValue);
-                // TODO: Call a method on the node to update the parameter value
-                // This requires extending ExecutableNodeDelegateModel with setParameter()
             }
         });
 
@@ -1655,7 +1653,6 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
         connect(spinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, spinBox, param](double value) {
             QString newValue = QString::number(value, 'f', param.decimals);
             emit propertyChanged(m_currentNodeId, param.name, newValue);
-            // TODO: Call a method on the node to update the parameter value
         });
 
         cardLayout->addWidget(spinBox);
@@ -1700,7 +1697,6 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
             if (!fileName.isEmpty()) {
                 edit->setText(fileName);
                 emit propertyChanged(m_currentNodeId, param.name, fileName);
-                // TODO: Call a method on the node to update the parameter value
             }
         });
 
@@ -1709,7 +1705,6 @@ void PropertyEditor::addParameterCard(QVBoxLayout* layout, const QtNodes::Parame
             QString newValue = edit->text();
             if (newValue != param.value) {
                 emit propertyChanged(m_currentNodeId, param.name, newValue);
-                // TODO: Call a method on the node to update the parameter value
             }
         });
 

@@ -52,24 +52,6 @@
 
 namespace QtNodes {
 
-// Create test node model registry
-std::shared_ptr<NodeDelegateModelRegistry> registerTestNodeModels()
-{
-    auto registry = std::make_shared<NodeDelegateModelRegistry>();
-
-    // Register Note node (layout management tool)
-    registry->registerModel<NoteNode>("Information");
-
-#ifdef ENABLE_TEST_NODES
-    // Card-based layout test nodes (new style)
-    registry->registerModel<CardSimpleSourceNode>("Test");
-    registry->registerModel<CardSimpleMathNode>("Test");
-    registry->registerModel<CardSimpleDisplayNode>("Test");
-#endif
-
-    return registry;
-}
-
 // Create InSAR node model registry (full version, to be implemented)
 std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 {

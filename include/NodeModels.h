@@ -17,14 +17,6 @@ namespace QtNodes {
  */
 std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels();
 
-/**
- * @brief Create basic test node models (for verification)
- *
- * This function registers simple test nodes for verifying QtNodes library integration.
- *
- * @return Shared pointer to node model registry
- */
-std::shared_ptr<NodeDelegateModelRegistry> registerTestNodeModels();
 
 } // namespace QtNodes
 

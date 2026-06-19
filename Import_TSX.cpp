@@ -5,11 +5,6 @@
 #include"qfiledialog.h"
 #include<opencv2/highgui.hpp>
 #include<qmessagebox.h>
-//#include<FormatConversion.h>
-//#ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
-//#pragma comment(lib, "FormatConversion_d.lib")
-//#endif
 Import_TSX::Import_TSX(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::ImportTsx)

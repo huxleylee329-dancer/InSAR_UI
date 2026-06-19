@@ -12,8 +12,6 @@ public:
      TreeView(QWidget* parent = Q_NULLPTR);
      void NewProject(QString, QString);
      void init_tree();
-     void init_mould();
-     QList<QStandardItem*> returnTheItems();
      QStandardItemModel* model;
      QProgressDialog* mTreeProcess;
      void updateTreeIcons(const QString &theme);

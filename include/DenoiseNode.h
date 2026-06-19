@@ -14,8 +14,6 @@
 #include <QHBoxLayout>
 #include <QThread>
 #include <QStandardItemModel>
-#include <QFileInfo>
-#include <QRegularExpression>
 #include <QFutureWatcher>
 #include <memory>
 

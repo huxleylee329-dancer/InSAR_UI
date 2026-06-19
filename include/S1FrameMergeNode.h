@@ -7,17 +7,13 @@
 #include <QtNodes/NodeData>
 #include <QWidget>
 #include <QLabel>
-#include <QComboBox>
 #include <QSpinBox>
 #include <QLineEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFrame>
 #include <QThread>
 #include <QStandardItemModel>
-#include <QFileInfo>
 #include <QFutureWatcher>
-#include <QtConcurrent/QtConcurrent>
 #include <memory>
 
 // Forward declarations

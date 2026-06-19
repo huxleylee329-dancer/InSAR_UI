@@ -263,7 +263,7 @@ void WorkspaceUI::setTheme(const QString &theme)
                 return isDark ? QColor("#82CFFF") : QColor("#005FAC");
             if (btnText == "Workflow")
                 return isDark ? QColor("#D0BCFF") : QColor("#6750A4");
-            if (btnText == "Zoom In" || btnText == "Zoom Out" || btnText == "Fit")
+            if (btnText == "Zoom In" || btnText == "Zoom Out" || btnText == "Fit" || btnText == "Reset Zoom")
                 return isDark ? QColor("#FFB95B") : QColor("#A85C00");
             return isDark ? QColor("#CCCCCC") : QColor("#414752");
         });
@@ -359,6 +359,13 @@ void WorkspaceUI::setupToolbar()
     connect(btnZoomFit, &QToolButton::clicked, this, [this]() {
         ImageView* view = activeImageView();
         if (view) view->fitImage();
+    });
+
+    QToolButton* btnZoomReset = createToolbarButton(":/SatExplorer/svg/zoom_reset.svg", "Reset Zoom", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    m_toolbar->addWidget(btnZoomReset);
+    connect(btnZoomReset, &QToolButton::clicked, this, [this]() {
+        ImageView* view = activeImageView();
+        if (view) view->resetZoom();
     });
 }
 

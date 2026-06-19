@@ -2,7 +2,6 @@
 #include <QtWidgets/QMainWindow>
 #include "ui_MainWindow.h"
 #include<ColorBar.h>
-#include<qgraphicsscene.h>
 #include"qprogressdialog.h"
 #include "IApplicationInterface.h"
 #include "InterfaceManager.h"

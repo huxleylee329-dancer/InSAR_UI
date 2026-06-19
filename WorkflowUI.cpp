@@ -714,6 +714,39 @@ void WorkflowUI::setupToolbar()
     m_toolbar->addWidget(sepProject);
 
     // ======================
+    // Group: View Operations (Zoom In, Zoom Out, Fit, Reset Zoom)
+    // ======================
+    QToolButton *btnZoomIn = createToolbarButton(":/SatExplorer/svg/zoom.svg", "Zoom In", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnZoomIn, &QToolButton::clicked, this, [this]() {
+        if (m_view) m_view->scaleUp();
+    });
+    m_toolbar->addWidget(btnZoomIn);
+
+    QToolButton *btnZoomOut = createToolbarButton(":/SatExplorer/svg/zoom_out.svg", "Zoom Out", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnZoomOut, &QToolButton::clicked, this, [this]() {
+        if (m_view) m_view->scaleDown();
+    });
+    m_toolbar->addWidget(btnZoomOut);
+
+    QToolButton *btnZoomFit = createToolbarButton(":/SatExplorer/svg/zoom_fit.svg", "Fit", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnZoomFit, &QToolButton::clicked, this, [this]() {
+        if (m_view) m_view->onZoomToFit();
+    });
+    m_toolbar->addWidget(btnZoomFit);
+
+    QToolButton *btnZoomReset = createToolbarButton(":/SatExplorer/svg/zoom_reset.svg", "Reset Zoom", COLOR_ON_SURFACE_VARIANT, COLOR_TEXT, this);
+    connect(btnZoomReset, &QToolButton::clicked, this, [this]() {
+        if (m_view) m_view->onResetZoom();
+    });
+    m_toolbar->addWidget(btnZoomReset);
+
+    // Vertical separator
+    QWidget *sepZoom = new QWidget();
+    sepZoom->setFixedWidth(1);
+    sepZoom->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
+    m_toolbar->addWidget(sepZoom);
+
+    // ======================
     // Group 1: File Operations
     // ======================
     // Import button (蓝色)
@@ -1402,6 +1435,8 @@ void WorkflowUI::setTheme(const QString &theme)
         applyToolbarTheme(m_toolbar, theme, [](const QString& btnText, bool isDark) -> QColor {
             if (btnText == "New" || btnText == "Open" || btnText == "Save")
                 return isDark ? QColor("#82CFFF") : QColor("#005FAC");
+            if (btnText == "Zoom In" || btnText == "Zoom Out" || btnText == "Fit" || btnText == "Reset Zoom")
+                return isDark ? QColor("#FFB95B") : QColor("#A85C00");
             if (btnText == "Import" || btnText == "Export")
                 return isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
             if (btnText == "Fav")

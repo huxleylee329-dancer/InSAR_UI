@@ -9,11 +9,9 @@
 #include <QLineEdit>
 #include <QComboBox>
 #include <QPushButton>
-#include <QProgressBar>
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFormLayout>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QStandardItemModel>

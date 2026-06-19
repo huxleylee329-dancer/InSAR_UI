@@ -86,11 +86,6 @@ QString InterfaceManager::currentInterfaceId() const
     return m_currentInterface ? m_currentInterface->id() : QString();
 }
 
-QList<IApplicationInterface*> InterfaceManager::interfaces() const
-{
-    return m_interfaces;
-}
-
 QString InterfaceManager::loadDefaultInterface() const
 {
     QSettings settings("Config.ini", QSettings::IniFormat);

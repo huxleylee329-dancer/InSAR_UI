@@ -13,10 +13,8 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFrame>
 #include <QThread>
 #include <QStandardItemModel>
-#include <QFileInfo>
 #include <QFutureWatcher>
 #include <memory>
 

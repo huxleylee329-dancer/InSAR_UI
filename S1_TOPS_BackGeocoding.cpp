@@ -4,14 +4,12 @@
 #include<qcheckbox.h>
 #include<qscrollarea.h>
 #include<QThread>
-//#include<Utils.h>
 #include<FormatConversion.h>
 #include "tinyxml.h"
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
 #ifdef _DEBUG
-//#pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
 #else
 //#pragma comment(lib, "Utils.lib")

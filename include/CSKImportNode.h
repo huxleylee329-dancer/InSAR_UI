@@ -7,9 +7,6 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QLabel>
-#include <QComboBox>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 
 namespace QtNodes {
 

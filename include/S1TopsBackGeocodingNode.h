@@ -14,11 +14,8 @@
 #include <QCheckBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QFrame>
 #include <QThread>
 #include <QStandardItemModel>
-#include <QFileInfo>
-#include <QRegularExpression>
 #include <QFutureWatcher>
 #include <memory>
 

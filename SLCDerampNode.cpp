@@ -9,6 +9,7 @@
 #include <QHBoxLayout>
 #include <QFile>
 #include <QFileInfo>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QDir>
 #include <QApplication>
 #include <QStandardItemModel>
