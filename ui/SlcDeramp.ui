@@ -15,7 +15,7 @@
   </property>
   <property name="windowIcon">
    <iconset resource="../resources/SatExplorer.qrc">
-    <normaloff>:/SatExplorer/icon/svg/dem.svg</normaloff>:/SatExplorer/icon/svg/dem.svg</iconset>
+    <normaloff>:/SatExplorer/svg/dem.svg</normaloff>:/SatExplorer/svg/dem.svg</iconset>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>

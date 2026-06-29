@@ -24,6 +24,47 @@
 using namespace cv;
 using namespace std;
 
+thread_local DenoiseWorker* t_currentWorker = nullptr;
+thread_local int t_currentImageIndex = 0;
+thread_local int t_totalImagesCount = 1;
+thread_local int t_lastLoggedProgress = -10;
+
+static void __stdcall denoiseProgressCallback(int progress, const char* message)
+{
+    if (t_currentWorker)
+    {
+        int start_prog = 10 + t_currentImageIndex * 80 / t_totalImagesCount;
+        int end_prog = 10 + (t_currentImageIndex + 1) * 80 / t_totalImagesCount;
+        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+
+        QString msgStr = QString::fromLocal8Bit(message);
+        emit t_currentWorker->updateProcess(mapped_prog, QStringLiteral("第%1幅图像滤波中：%2% (%3)")
+            .arg(t_currentImageIndex + 1).arg(progress).arg(msgStr));
+
+        if (progress == 0 || progress == 100 || (progress - t_lastLoggedProgress) >= 10)
+        {
+            InSARLogManager::LogInfo("DenoiseWorker", QString("Denoise progress: %1% (Total: %2%) - %3")
+                .arg(progress).arg(mapped_prog).arg(msgStr));
+            t_lastLoggedProgress = progress;
+        }
+    }
+}
+
+struct ThreadLocalGuard {
+    ThreadLocalGuard(DenoiseWorker* worker, int total) {
+        t_currentWorker = worker;
+        t_currentImageIndex = 0;
+        t_totalImagesCount = total;
+        t_lastLoggedProgress = -10;
+    }
+    ~ThreadLocalGuard() {
+        t_currentWorker = nullptr;
+        t_currentImageIndex = 0;
+        t_totalImagesCount = 1;
+        t_lastLoggedProgress = -10;
+    }
+};
+
 DenoiseWorker::DenoiseWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -151,6 +192,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
     }
 
     int image_number = phase_name.size();
+    ThreadLocalGuard tlGuard(this, image_number);
     Filter filter;
     FormatConversion FC;
     XMLFile xml;
@@ -170,6 +212,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
         int slop_win = para.at(1);
         for (int i = 0; i < image_number; i++)
         {
+            t_currentImageIndex = i;
             if (QThread::currentThread()->isInterruptionRequested())
             {
                 return;
@@ -182,7 +225,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 return;
             }
             Mat phase_filter;
-            ret = filter.slope_adaptive_filter(phase, phase_filter, slop_win, pre_win);
+            ret = filter.slope_adaptive_filter(phase, phase_filter, slop_win, pre_win, denoiseProgressCallback);
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("斜坡自适应滤波处理失败，请检查图像数据或窗口参数"));
                 return;

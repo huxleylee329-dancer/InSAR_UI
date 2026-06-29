@@ -152,7 +152,8 @@ void BaseImportWorker::import_patch(
 
         // 更新总体进度
         int progress = double(i + 1) / double(n_images) * 100.0;
-        emit updateProcess(progress, QStringLiteral("正在导入..."));
+        QString progressMsg = (progress >= 100) ? QStringLiteral("导入完成") : QStringLiteral("正在导入...");
+        emit updateProcess(progress, progressMsg);
     }
 
     emit sendModel(model);
