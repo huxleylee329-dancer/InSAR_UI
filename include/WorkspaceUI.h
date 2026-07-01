@@ -16,6 +16,8 @@ class XMLFile;
 class QStandardItemModel;
 class ImageView;
 class MainWindow;
+class QComboBox;
+class QLabel;
 
 /**
  * @brief 传统工作区界面
@@ -76,10 +78,16 @@ public slots:
 protected:
     void resizeEvent(QResizeEvent* event) override;
 
+private slots:
+    void onSortMethodChanged(int index);
+
 private:
     void setupUi();
     void setupToolbar();
     ImageView* activeImageView() const;
+    void initializeOriginalIndices(QStandardItemModel* model);
+    void sortProjectTree(QStandardItemModel* model, const QString& projectPath);
+    QList<QString> getWorkflowTopologicalOrder(const QString& projectPath);
 
     QToolBar *m_toolbar = nullptr;
 
@@ -89,6 +97,12 @@ private:
     QTabWidget *m_tabWidget = nullptr;
 
     QProgressDialog *Process = nullptr;
+
+    // UI elements for custom title panel
+    QWidget *m_titlePanel = nullptr;
+    QLabel *m_titleLabel = nullptr;
+    QComboBox *m_sortComboBox = nullptr;
+    int m_sortMethod = 1; // 0: Generation, 1: Time, 2: Topology
 
     // Theme property
     QString m_currentTheme;

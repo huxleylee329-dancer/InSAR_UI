@@ -61,6 +61,7 @@ void applyTheme(const QString &theme = "light")
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    a.setWindowIcon(QIcon(APP_ICON));
 
     qRegisterMetaType<QList<QPersistentModelIndex>>("QList<QPersistentModelIndex>");
     qRegisterMetaType<QVector<int>>("QVector<int>");

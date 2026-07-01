@@ -211,9 +211,9 @@
    <addaction name="View"/>
    <addaction name="Setting"/>
    <addaction name="Process"/>
-   <addaction name="menuSAR"/>
    <addaction name="menuInSAR"/>
    <addaction name="menuDInSAR"/>
+   <addaction name="menuSAR"/>
    <addaction name="Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>

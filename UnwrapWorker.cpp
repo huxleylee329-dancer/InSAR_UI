@@ -98,19 +98,13 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         return;
     }
 
-    QDir dir(save_path);
-    QString absolute_path;
-    if (!dir.exists(file_name))
+    QString absolute_path = save_path + "/" + file_name;
+    QDir target_dir(absolute_path);
+    if (target_dir.exists())
     {
-        dir.mkdir(file_name);
-        absolute_path = save_path + "/" + file_name;
+        target_dir.removeRecursively();
     }
-    else
-    {
-        dir.remove(file_name);
-        dir.mkdir(file_name);
-        absolute_path = save_path + "/" + file_name;
-    }
+    QDir(save_path).mkdir(file_name);
 
     QList<QString> phase_name;
     QList<QString> phase_path;
