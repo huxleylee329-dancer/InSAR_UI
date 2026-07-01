@@ -1,4 +1,4 @@
-﻿#include"para_struct.h"
+#include"para_struct.h"
 #include"InSAR_IPC.h"
 #include"ComplexMat.h"
 #include"Utils.h"
@@ -223,12 +223,13 @@ int _tmain(int argc, _TCHAR* argv[])
 
 		// TSX2h5进度回调桥接到IPC
 		struct TmpltDemProgressCtx { InSAR_IPC* ipc; int progressMin; int progressMax; };
-		auto tmpltDemCallback = [](int percent, const char* message, void* userData) -> void {
+		auto tmpltDemCallback = [](int percent, const char* message, void* userData) -> bool {
 			TmpltDemProgressCtx* ctx = static_cast<TmpltDemProgressCtx*>(userData);
-			if (!ctx || !ctx->ipc) return;
+			if (!ctx || !ctx->ipc) return false;
 			int mapped = ctx->progressMin + (ctx->progressMax - ctx->progressMin) * percent / 100;
 			const char* msg = (message && message[0]) ? message : "importing TSX...";
 			processCallback(ctx->ipc, eCallbackType_UpdateCmplt, mapped, msg);
+			return true;
 		};
 
 		TmpltDemProgressCtx masterCtx = { IPC, 1, 10 };

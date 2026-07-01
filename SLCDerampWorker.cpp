@@ -32,6 +32,47 @@
 using namespace cv;
 using namespace std;
 
+thread_local SLCDerampWorker* t_currentDerampWorker = nullptr;
+thread_local int t_derampLastLoggedProgress = -10;
+
+static bool __stdcall derampProgressCallback(int progress, const char* message)
+{
+    if (t_currentDerampWorker)
+    {
+        if (t_currentDerampWorker->thread()->isInterruptionRequested() || t_currentDerampWorker->isStopRequested())
+        {
+            return false;
+        }
+
+        int start_prog = 10;
+        int end_prog = 50;
+        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+
+        QString msgStr = QString::fromLocal8Bit(message);
+        emit t_currentDerampWorker->updateProcess(mapped_prog, QStringLiteral("去参考相位 - DEM映射中：%1% (%2)")
+            .arg(progress).arg(msgStr));
+
+        if (progress == 0 || progress == 100 || (progress - t_derampLastLoggedProgress) >= 10)
+        {
+            InSARLogManager::LogInfo("SLCDerampWorker", QString("demMapping progress: %1% (Total: %2%) - %3")
+                .arg(progress).arg(mapped_prog).arg(msgStr));
+            t_derampLastLoggedProgress = progress;
+        }
+    }
+    return true;
+}
+
+struct DerampThreadLocalGuard {
+    DerampThreadLocalGuard(SLCDerampWorker* worker) {
+        t_currentDerampWorker = worker;
+        t_derampLastLoggedProgress = -10;
+    }
+    ~DerampThreadLocalGuard() {
+        t_currentDerampWorker = nullptr;
+        t_derampLastLoggedProgress = -10;
+    }
+};
+
 SLCDerampWorker::SLCDerampWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -50,6 +91,7 @@ void SLCDerampWorker::SLC_deramp(
 )
 {
     NodeUtils::Hdf5Locker locker;
+    DerampThreadLocalGuard tlGuard(this);
     InSARLogManager::LogInfo("SLCDerampWorker", QString("SLC_deramp task started. Source: %1, Destination: %2").arg(src_node).arg(dst_node));
 
     if (masterIndex < 1 ||
@@ -162,7 +204,7 @@ void SLCDerampWorker::SLC_deramp(
     ret = conversion.utc2gps(end_time.c_str(), &end);
     ret = conversion.read_array_from_h5(master_file.c_str(), "state_vec", statevec);
     
-    if (QThread::currentThread()->isInterruptionRequested()) {
+    if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         emit errorProcess(QStringLiteral("用户取消操作"));
         return;
     }
@@ -172,7 +214,7 @@ void SLCDerampWorker::SLC_deramp(
     ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
     Mat mappedLon, mappedLat;
     ret = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
-        prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
+        prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, derampProgressCallback);
 
 
 
@@ -184,7 +226,7 @@ void SLCDerampWorker::SLC_deramp(
 
     for (int i = 0; i < image_number; i++)
     {
-        if (QThread::currentThread()->isInterruptionRequested()) {
+        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
             emit errorProcess(QStringLiteral("用户取消操作"));
             return;
         }

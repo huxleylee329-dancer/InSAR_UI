@@ -852,6 +852,10 @@ void SLCDerampNode::execute()
 
 void SLCDerampNode::stopExecution()
 {
+    if (m_worker)
+    {
+        m_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();

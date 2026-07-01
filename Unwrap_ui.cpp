@@ -68,6 +68,10 @@ void Unwrap_ui::endThread()
 }
 void Unwrap_ui::StopThread()
 {
+    if (Unwrap_worker != NULL)
+    {
+        Unwrap_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();

@@ -31,7 +31,7 @@ static bool __stdcall unwrapProgressCallback(int progress, const char* message)
 {
     if (t_currentUnwrapWorker)
     {
-        if (t_currentUnwrapWorker->thread()->isInterruptionRequested())
+        if (t_currentUnwrapWorker->thread()->isInterruptionRequested() || t_currentUnwrapWorker->isStopRequested())
         {
             return false;
         }
@@ -226,7 +226,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         if (0 == FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "mapped_lat", tmp))
             FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "mapped_lat", tmp);
 
-        if (QThread::currentThread()->isInterruptionRequested())
+        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {
             return false;
         }
@@ -245,7 +245,9 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     {
         for (int i = 0; i < image_number; i++)
         {
-            if (QThread::currentThread()->isInterruptionRequested())
+            t_unwrapCurrentImageIndex = i;
+            t_unwrapLastLoggedProgress = -10;
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 return;
             }
@@ -269,12 +271,12 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     {
         for (int i = 0; i < image_number; i++)
         {
-            if (QThread::currentThread()->isInterruptionRequested())
+            t_unwrapCurrentImageIndex = i;
+            t_unwrapLastLoggedProgress = -10;
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 return;
             }
-            t_unwrapCurrentImageIndex = i;
-            t_unwrapLastLoggedProgress = -10;
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
@@ -299,7 +301,9 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     {
         for (int i = 0; i < image_number; i++)
         {
-            if (QThread::currentThread()->isInterruptionRequested())
+            t_unwrapCurrentImageIndex = i;
+            t_unwrapLastLoggedProgress = -10;
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 return;
             }
@@ -325,12 +329,12 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         double distance_threshold = 5.0;
         for (int i = 0; i < image_number; i++)
         {
-            if (QThread::currentThread()->isInterruptionRequested())
+            t_unwrapCurrentImageIndex = i;
+            t_unwrapLastLoggedProgress = -10;
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 return;
             }
-            t_unwrapCurrentImageIndex = i;
-            t_unwrapLastLoggedProgress = -10;
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);

@@ -10,14 +10,21 @@ struct TsxProgressContext
 };
 
 // DLL进度回调：将DLL内部0-100映射到UI进度区间
-static void onTsxProgress(int percent, const char* message, void* userData)
+static bool onTsxProgress(int percent, const char* message, void* userData)
 {
     TsxProgressContext* ctx = static_cast<TsxProgressContext*>(userData);
     if (!ctx || !ctx->worker)
-        return;
+        return false;
+
+    if (ctx->worker->isStopRequested())
+    {
+        return false;
+    }
+
     int mapped = ctx->progressMin + (ctx->progressMax - ctx->progressMin) * percent / 100;
     QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入数据，请耐心等待……");
     ctx->worker->updateImportProgress(mapped, msg);
+    return true;
 }
 
 TSXImportWorker::TSXImportWorker(QObject* parent)

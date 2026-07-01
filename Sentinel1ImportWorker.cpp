@@ -10,14 +10,21 @@ struct S1ProgressContext
 };
 
 // DLL进度回调：将DLL内部0-100映射到当前任务的进度区间
-static void onS1DllProgress(int percent, const char* message, void* userData)
+static bool onS1DllProgress(int percent, const char* message, void* userData)
 {
     S1ProgressContext* ctx = static_cast<S1ProgressContext*>(userData);
     if (!ctx || !ctx->worker)
-        return;
+        return false;
+
+    if (ctx->worker->isStopRequested())
+    {
+        return false;
+    }
+
     int mapped = ctx->progressMin + (ctx->progressMax - ctx->progressMin) * percent / 100;
     QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入...");
     ctx->worker->updateImportProgress(mapped, msg);
+    return true;
 }
 
 Sentinel1ImportWorker::Sentinel1ImportWorker(QObject* parent)

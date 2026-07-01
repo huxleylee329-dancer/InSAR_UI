@@ -25,6 +25,53 @@
 using namespace cv;
 using namespace std;
 
+thread_local DemWorker* t_activeDemWorker = nullptr;
+thread_local int t_activeDemImageIndex = 0;
+thread_local int t_totalDemImagesCount = 1;
+thread_local int t_lastLoggedDemProgress = -10;
+
+static bool __stdcall demProgressCallback(int progress, const char* message)
+{
+    if (t_activeDemWorker)
+    {
+        if (t_activeDemWorker->thread()->isInterruptionRequested() || t_activeDemWorker->isStopRequested())
+        {
+            return false;
+        }
+
+        int start_prog = 10 + t_activeDemImageIndex * 80 / t_totalDemImagesCount;
+        int end_prog = 10 + (t_activeDemImageIndex + 1) * 80 / t_totalDemImagesCount;
+        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+
+        QString msgStr = QString::fromLocal8Bit(message);
+        emit t_activeDemWorker->updateProcess(mapped_prog, QStringLiteral("第%1幅图像高程反演中：%2% (%3)")
+            .arg(t_activeDemImageIndex + 1).arg(progress).arg(msgStr));
+
+        if (progress == 0 || progress == 100 || (progress - t_lastLoggedDemProgress) >= 10)
+        {
+            InSARLogManager::LogInfo("DemWorker", QString("Dem progress: %1% (Total: %2%) - %3")
+                .arg(progress).arg(mapped_prog).arg(msgStr));
+            t_lastLoggedDemProgress = progress;
+        }
+    }
+    return true;
+}
+
+struct DemThreadLocalGuard {
+    DemThreadLocalGuard(DemWorker* worker, int total) {
+        t_activeDemWorker = worker;
+        t_activeDemImageIndex = 0;
+        t_totalDemImagesCount = total;
+        t_lastLoggedDemProgress = -10;
+    }
+    ~DemThreadLocalGuard() {
+        t_activeDemWorker = nullptr;
+        t_activeDemImageIndex = 0;
+        t_totalDemImagesCount = 1;
+        t_lastLoggedDemProgress = -10;
+    }
+};
+
 DemWorker::DemWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -152,6 +199,7 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
     }
 
     int image_number = phase_name.size();
+    DemThreadLocalGuard tlGuard(this, image_number);
     if (image_number == 0) {
         emit errorProcess(QStringLiteral("没有可解析的解缠相位图像"));
         return;
@@ -176,6 +224,7 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
     {
         for (int i = 0; i < image_number; i++)
         {
+            t_activeDemImageIndex = i;
             if (QThread::currentThread()->isInterruptionRequested())
             {
                 return;
@@ -203,7 +252,7 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             }
 
             Mat phase_dem;
-            ret = dem.dem_newton_iter(inputH5.toStdString().c_str(), phase_dem, save_path.toStdString().c_str(), times, 1);
+            ret = dem.dem_newton_iter(inputH5.toStdString().c_str(), phase_dem, save_path.toStdString().c_str(), times, 1, demProgressCallback);
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("高程迭代反演算法失败，请确保上游\"干涉形成\"节点开启了\"平地消除(IsDeflat)\"。"));
                 return;

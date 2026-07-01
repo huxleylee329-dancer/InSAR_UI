@@ -57,6 +57,7 @@ void Dem_ui::StopThread()
     if (Dem_thread != NULL)
         if (Dem_thread->thread()->isRunning())
         {
+            Dem_thread->StopProcess();
             Dem_thread->thread()->requestInterruption();
             Dem_thread->thread()->quit();
             Dem_thread->thread()->wait();

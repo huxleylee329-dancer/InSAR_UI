@@ -725,6 +725,10 @@ void DemNode::execute()
 
 void DemNode::stopExecution()
 {
+    if (m_workerThread)
+    {
+        m_workerThread->StopProcess();
+    }
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();

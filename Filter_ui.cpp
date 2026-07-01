@@ -72,6 +72,7 @@ void Filter_ui::StopThread()
     if(Filter_thread != NULL)
         if (Filter_thread->thread()->isRunning())
     {
+        Filter_thread->StopProcess();
         Filter_thread->thread()->requestInterruption();
         Filter_thread->thread()->quit();
         Filter_thread->thread()->wait();

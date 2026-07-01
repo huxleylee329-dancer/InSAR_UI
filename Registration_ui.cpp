@@ -91,6 +91,7 @@ void Registration_ui::StopThread()
     {
         if (Registration_thread->thread()->isRunning())
         {
+            Registration_thread->StopProcess();
             Registration_thread->thread()->requestInterruption();
             Registration_thread->thread()->quit();
             Registration_thread->thread()->wait();

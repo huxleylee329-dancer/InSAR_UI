@@ -312,6 +312,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
 
         for (int i = 0; i < image_number; i++)
         {
+            t_currentImageIndex = i;
             if (QThread::currentThread()->isInterruptionRequested())
             {
                 return;
@@ -324,7 +325,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 return;
             }
             Mat phase_filter;
-            ret = filter.Goldstein_filter(phase, phase_filter, alpha, goldstein_win, n_pad);
+            ret = filter.Goldstein_filter(phase, phase_filter, alpha, goldstein_win, n_pad, denoiseProgressCallback);
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("Goldstein滤波处理失败，请检查图像数据或窗口参数"));
                 return;

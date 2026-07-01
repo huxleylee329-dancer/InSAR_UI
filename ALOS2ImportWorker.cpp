@@ -10,14 +10,21 @@ struct Alos2ProgressContext
 };
 
 // DLL进度回调
-static void onAlos2Progress(int percent, const char* message, void* userData)
+static bool onAlos2Progress(int percent, const char* message, void* userData)
 {
     Alos2ProgressContext* ctx = static_cast<Alos2ProgressContext*>(userData);
     if (!ctx || !ctx->worker)
-        return;
+        return false;
+
+    if (ctx->worker->isStopRequested())
+    {
+        return false;
+    }
+
     int mapped = ctx->progressMin + (ctx->progressMax - ctx->progressMin) * percent / 100;
     QString msg = (message && message[0]) ? QString::fromUtf8(message) : QStringLiteral("正在导入...");
     ctx->worker->updateImportProgress(mapped, msg);
+    return true;
 }
 
 ALOS2ImportWorker::ALOS2ImportWorker(QObject* parent)

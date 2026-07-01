@@ -27,6 +27,47 @@
 using namespace cv;
 using namespace std;
 
+thread_local CoregistrationWorker* t_currentCoregisWorker = nullptr;
+thread_local int t_coregisLastLoggedProgress = -10;
+
+static bool __stdcall coregisProgressCallback(int progress, const char* message)
+{
+    if (t_currentCoregisWorker)
+    {
+        if (t_currentCoregisWorker->thread()->isInterruptionRequested() || t_currentCoregisWorker->isStopRequested())
+        {
+            return false;
+        }
+
+        int start_prog = 60;
+        int end_prog = 90;
+        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+
+        QString msgStr = QString::fromLocal8Bit(message);
+        emit t_currentCoregisWorker->updateProcess(mapped_prog, QStringLiteral("配准中 - 重采样进度：%1% (%2)")
+            .arg(progress).arg(msgStr));
+
+        if (progress == 0 || progress == 100 || (progress - t_coregisLastLoggedProgress) >= 10)
+        {
+            InSARLogManager::LogInfo("CoregistrationWorker", QString("Bilinear resampling progress: %1% (Total: %2%) - %3")
+                .arg(progress).arg(mapped_prog).arg(msgStr));
+            t_coregisLastLoggedProgress = progress;
+        }
+    }
+    return true;
+}
+
+struct CoregisThreadLocalGuard {
+    CoregisThreadLocalGuard(CoregistrationWorker* worker) {
+        t_currentCoregisWorker = worker;
+        t_coregisLastLoggedProgress = -10;
+    }
+    ~CoregisThreadLocalGuard() {
+        t_currentCoregisWorker = nullptr;
+        t_coregisLastLoggedProgress = -10;
+    }
+};
+
 CoregistrationWorker::CoregistrationWorker(QObject* parent)
     : BaseWorker(parent)
     , m_demPath("")
@@ -321,6 +362,7 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	if (SAR_images.size() < 2) return;
 
 	emit updateProcess(10, QStringLiteral("开始进行配准……"));
+	CoregisThreadLocalGuard tlGuard(this);
 	masterIndex = masterIndex < 1 ? 1 : masterIndex;
 	masterIndex = masterIndex > images_number ? images_number : masterIndex;
 
@@ -369,11 +411,14 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		&lonMax, &latMax, &lonMin, &latMin);
 	Utils::getSRTMDEM(dempath.c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
 	coregis.getDEMRgAzPos(dem, statevec, rangePos, azimuthPos, lon_upperleft, lat_upperleft, offset_row, offset_col,
-		sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, 5.0 / 6000.0, 5.0 / 6000.0);
+		sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback);
 	int count = 0;
 	for (int i = 0; i < images_number; i++)
 	{
 		if (i == masterIndex - 1) continue;
+		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+			return;
+		}
 		int offset_r, offset_c;
 		offset_row2 = offset_col2 = 0;
 		slave_file = SAR_images[i].c_str();
@@ -393,14 +438,14 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		conversion.utc2gps(end_time.c_str(), &end2);
 		conversion.read_array_from_h5(slave_file, "state_vec", statevec2);
 		conversion.read_slc_from_h5(slave_file, slave);
-
+ 
 		coregis.getDEMRgAzPos(dem, statevec2, rangePos2, azimuthPos2, lon_upperleft, lat_upperleft, offset_row2, offset_col2,
-			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0);
-
+			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback);
+ 
 		coregis.computeSlaveOffset(rangePos, azimuthPos, rangePos2, azimuthPos2, slaveAzimuthOffset, slaveRangeOffset);
 		coregis.fitSlaveOffset(slaveAzimuthOffset, rangePos, azimuthPos, &a0, &a1, &a2);
 		coregis.fitSlaveOffset(slaveRangeOffset, rangePos, azimuthPos, &b0, &b1, &b2);
-		coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c);
+		coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c, coregisProgressCallback);
 		conversion.creat_new_h5(SAR_images_regis[i].c_str());
 		conversion.write_slc_to_h5(SAR_images_regis[i].c_str(), slave);
 		conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "range_len", slave.GetCols());

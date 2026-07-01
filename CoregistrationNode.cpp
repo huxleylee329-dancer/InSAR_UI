@@ -553,6 +553,9 @@ void CoregistrationNode::executeProcessing()
 
 void CoregistrationNode::stopExecution()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning()) {
         m_thread->requestInterruption();
         m_thread->quit();
