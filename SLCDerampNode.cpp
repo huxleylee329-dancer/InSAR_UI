@@ -505,7 +505,7 @@ void SLCDerampNode::onProcessingFinished()
     // Update UI
     m_outputNodeNameEdit->setEnabled(true);
 
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
     setProgress(100);
     InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing completed.");
     finishExecution();
@@ -757,7 +757,7 @@ void SLCDerampNode::executeProcessing()
             if (answer == NodeUtils::OverwriteResult::LoadExisting)
             {
                 if (validateAndRestoreOutput()) {
-                    setState(ExecutionState::Completed);
+                    setState(ExecutionState::Running);
                     setProgress(100);
                     finishExecution();
                     return;

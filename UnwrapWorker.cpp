@@ -22,8 +22,52 @@
 #pragma comment(lib, "Unwrap.lib")
 #endif
 
-using namespace cv;
-using namespace std;
+thread_local UnwrapWorker* t_currentUnwrapWorker = nullptr;
+thread_local int t_unwrapCurrentImageIndex = 0;
+thread_local int t_unwrapTotalImagesCount = 1;
+thread_local int t_unwrapLastLoggedProgress = -10;
+
+static bool __stdcall unwrapProgressCallback(int progress, const char* message)
+{
+    if (t_currentUnwrapWorker)
+    {
+        if (t_currentUnwrapWorker->thread()->isInterruptionRequested())
+        {
+            return false;
+        }
+
+        int start_prog = 10 + t_unwrapCurrentImageIndex * 80 / t_unwrapTotalImagesCount;
+        int end_prog = 10 + (t_unwrapCurrentImageIndex + 1) * 80 / t_unwrapTotalImagesCount;
+        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+
+        QString msgStr = QString::fromLocal8Bit(message);
+        emit t_currentUnwrapWorker->updateProcess(mapped_prog, QStringLiteral("第%1幅图像解缠中：%2% (%3)")
+            .arg(t_unwrapCurrentImageIndex + 1).arg(progress).arg(msgStr));
+
+        if (progress == 0 || progress == 100 || (progress - t_unwrapLastLoggedProgress) >= 10)
+        {
+            InSARLogManager::LogInfo("UnwrapWorker", QString("Unwrap progress: %1% (Total: %2%) - %3")
+                .arg(progress).arg(mapped_prog).arg(msgStr));
+            t_unwrapLastLoggedProgress = progress;
+        }
+    }
+    return true;
+}
+
+struct UnwrapThreadLocalGuard {
+    UnwrapThreadLocalGuard(UnwrapWorker* worker, int total) {
+        t_currentUnwrapWorker = worker;
+        t_unwrapCurrentImageIndex = 0;
+        t_unwrapTotalImagesCount = total;
+        t_unwrapLastLoggedProgress = -10;
+    }
+    ~UnwrapThreadLocalGuard() {
+        t_currentUnwrapWorker = nullptr;
+        t_unwrapCurrentImageIndex = 0;
+        t_unwrapTotalImagesCount = 1;
+        t_unwrapLastLoggedProgress = -10;
+    }
+};
 
 UnwrapWorker::UnwrapWorker(QObject* parent)
     : BaseWorker(parent)
@@ -36,6 +80,7 @@ UnwrapWorker::~UnwrapWorker()
 
 void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
+    UnwrapThreadLocalGuard guard(this, model ? 1 : 1); // We will update total images count after we read image_number
     NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("UnwrapWorker", QString("Unwrap task started. Output folder: %1, Method: %2").arg(file_name).arg(method));
 
@@ -123,6 +168,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         emit errorProcess(QStringLiteral("没有可解缠的干涉图像"));
         return;
     }
+    t_unwrapTotalImagesCount = image_number;
 
     ::Unwrap unwrap;
     FormatConversion FC;
@@ -227,6 +273,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             {
                 return;
             }
+            t_unwrapCurrentImageIndex = i;
+            t_unwrapLastLoggedProgress = -10;
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
@@ -281,6 +329,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             {
                 return;
             }
+            t_unwrapCurrentImageIndex = i;
+            t_unwrapLastLoggedProgress = -10;
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);

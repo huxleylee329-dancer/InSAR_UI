@@ -33,6 +33,10 @@ public:
 
     void stop();
     void run() override;
+    bool isStopped() {
+        QMutexLocker locker(&m_lock);
+        return m_stopFlag;
+    }
 
 signals:
     void updateProcess(int progress, QString message);

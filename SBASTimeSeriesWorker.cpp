@@ -16,6 +16,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <atomic>
 #include <opencv2/opencv.hpp>
 
 using namespace std;
@@ -290,10 +291,19 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     v = 0.0; z = 0.0; temporal_coh = 0.0;
     cv::hconcat(B1, c, BMc);
     
-    emit updateProcess(70, QStringLiteral("时间序列分析……"));
+    emit updateProcess(70, QStringLiteral("时间序列分析(1/2)……"));
+    std::atomic<int> completed_rows(0);
+    std::atomic<bool> cancel_flag(false);
+    int step_val = std::max(1, phase.rows / 10);
+
 #pragma omp parallel for schedule(guided)
     for (int i = 0; i < phase.rows; i++)
     {
+        if (cancel_flag || QThread::currentThread()->isInterruptionRequested()) {
+            cancel_flag = true;
+            continue;
+        }
+
         Mat temp(M, 1, CV_64F), temp_coh(M, M, CV_64F); temp = 0.0, temp_coh = 0.0;
         for (int j = 0; j < phase.cols; j++)
         {
@@ -322,9 +332,15 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 }
             }
         }
+
+        int current_completed = ++completed_rows;
+        if (current_completed % step_val == 0) {
+            int progress = 70 + (current_completed * 5 / phase.rows);
+            emit updateProcess(progress, QStringLiteral("时间序列分析(1/2)……"));
+        }
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancel_flag || QThread::currentThread()->isInterruptionRequested()) return;
 
     /*第二次轨道精炼和重去平*/
     v = v / 4 / PI * wavelength;
@@ -374,9 +390,19 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
 
     if (QThread::currentThread()->isInterruptionRequested()) return;
 
+    emit updateProcess(75, QStringLiteral("时间序列分析(2/2)……"));
+    std::atomic<int> completed_rows2(0);
+    std::atomic<bool> cancel_flag2(false);
+    int step_val2 = std::max(1, phase.rows / 10);
+
 #pragma omp parallel for schedule(guided)
     for (int i = 0; i < phase.rows; i++)
     {
+        if (cancel_flag2 || QThread::currentThread()->isInterruptionRequested()) {
+            cancel_flag2 = true;
+            continue;
+        }
+
         Mat temp(M, 1, CV_64F), temp_coh(M, M, CV_64F); temp = 0.0, temp_coh = 0.0;
         for (int j = 0; j < phase.cols; j++)
         {
@@ -428,9 +454,15 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 temporal_coh.at<double>(i, j) = coh;
             }
         }
+
+        int current_completed = ++completed_rows2;
+        if (current_completed % step_val2 == 0) {
+            int progress = 75 + (current_completed * 5 / phase.rows);
+            emit updateProcess(progress, QStringLiteral("时间序列分析(2/2)……"));
+        }
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancel_flag2 || QThread::currentThread()->isInterruptionRequested()) return;
 
     //保存时序分析结果
     emit updateProcess(80, QStringLiteral("结果筛选……"));

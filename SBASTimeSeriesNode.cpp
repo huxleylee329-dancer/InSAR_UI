@@ -436,7 +436,7 @@ void SBASTimeSeriesNode::onProcessingFinished()
     }
 
     setProgress(100);
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
 
     // Asynchronously generate preview JPG (SOP rule 7)
     generateStaticPreviewJpg();

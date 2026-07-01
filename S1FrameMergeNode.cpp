@@ -352,7 +352,7 @@ void S1FrameMergeNode::onProcessingFinished()
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setEnabled(true);
 
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
     setProgress(100);
     InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing completed.");
     finishExecution();
@@ -508,7 +508,7 @@ void S1FrameMergeNode::executeProcessing()
             m_outputNodeName = dstNode;
             if (validateAndRestoreOutput())
             {
-                setState(ExecutionState::Completed);
+                setState(ExecutionState::Running);
                 setProgress(100);
                 finishExecution();
                 Q_EMIT dataUpdated(0);

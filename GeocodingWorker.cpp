@@ -19,6 +19,47 @@
 
 using namespace cv;
 
+thread_local GeocodingWorker* t_currentGeocodingWorker = nullptr;
+thread_local int t_geocodingLastLoggedProgress = -10;
+
+static bool __stdcall geocodingProgressCallback(int progress, const char* message)
+{
+    if (t_currentGeocodingWorker)
+    {
+        if (t_currentGeocodingWorker->thread()->isInterruptionRequested() || t_currentGeocodingWorker->isStopRequested())
+        {
+            return false;
+        }
+
+        int start_prog = 2;
+        int end_prog = 20;
+        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+
+        QString msgStr = QString::fromLocal8Bit(message);
+        emit t_currentGeocodingWorker->updateProcess(mapped_prog, QStringLiteral("正在地理编码：%1% (%2)")
+            .arg(progress).arg(msgStr));
+
+        if (progress == 0 || progress == 100 || (progress - t_geocodingLastLoggedProgress) >= 10)
+        {
+            InSARLogManager::LogInfo("GeocodingWorker", QString("demMapping progress: %1% (Total: %2%) - %3")
+                .arg(progress).arg(mapped_prog).arg(msgStr));
+            t_geocodingLastLoggedProgress = progress;
+        }
+    }
+    return true;
+}
+
+struct GeocodingThreadLocalGuard {
+    GeocodingThreadLocalGuard(GeocodingWorker* worker) {
+        t_currentGeocodingWorker = worker;
+        t_geocodingLastLoggedProgress = -10;
+    }
+    ~GeocodingThreadLocalGuard() {
+        t_currentGeocodingWorker = nullptr;
+        t_geocodingLastLoggedProgress = -10;
+    }
+};
+
 GeocodingWorker::GeocodingWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -38,6 +79,7 @@ void GeocodingWorker::Geocoding(
     QStandardItemModel* model
 )
 {
+    GeocodingThreadLocalGuard guard(this);
     if (!model) {
         emit errorProcess(QStringLiteral("模型指针为空！"));
         return;
@@ -138,7 +180,7 @@ void GeocodingWorker::Geocoding(
                 &lonMax, &latMax, &lonMin, &latMin);
             ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
             ret = flat.demMapping(dem, mappedDem, mapped_lat, mapped_lon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
-                prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
+                prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, geocodingProgressCallback);
             //多视操作
             if (multilook_rg > 1 || multilook_az > 1)
             {
@@ -288,7 +330,7 @@ void GeocodingWorker::Geocoding(
                 &lonMax, &latMax, &lonMin, &latMin);
             ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
             ret = flat.demMapping(dem, mappedDem, mapped_lat, mapped_lon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
-                prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
+                prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, geocodingProgressCallback);
         }
 
         //多视操作

@@ -7,6 +7,52 @@
 #include <QDir>
 #include <QDebug>
 #include <opencv2/opencv.hpp>
+#include <QThread>
+
+thread_local BM3DEnhancementTask* t_currentBM3DTask = nullptr;
+thread_local int t_bm3dBaseProgress = 0;
+thread_local int t_bm3dProgressStep = 100;
+thread_local int t_bm3dLastLoggedProgress = -10;
+
+static bool __stdcall bm3dProgressCallback(int progress, const char* message)
+{
+    if (t_currentBM3DTask)
+    {
+        if (t_currentBM3DTask->isStopped())
+        {
+            return false;
+        }
+
+        int mapped_prog = t_bm3dBaseProgress + progress * t_bm3dProgressStep / 100;
+
+        QString msgStr = QString::fromLocal8Bit(message);
+        emit t_currentBM3DTask->updateProcess(mapped_prog, QStringLiteral("BM3D处理中：%1% (%2)")
+            .arg(progress).arg(msgStr));
+
+        if (progress == 0 || progress == 100 || (progress - t_bm3dLastLoggedProgress) >= 10)
+        {
+            InSARLogManager::LogInfo("BM3DEnhancementTask", QString("BM3D progress: %1% (Total: %2%) - %3")
+                .arg(progress).arg(mapped_prog).arg(msgStr));
+            t_bm3dLastLoggedProgress = progress;
+        }
+    }
+    return true;
+}
+
+struct BM3DThreadLocalGuard {
+    BM3DThreadLocalGuard(BM3DEnhancementTask* task, int baseProg, int progStep) {
+        t_currentBM3DTask = task;
+        t_bm3dBaseProgress = baseProg;
+        t_bm3dProgressStep = progStep;
+        t_bm3dLastLoggedProgress = -10;
+    }
+    ~BM3DThreadLocalGuard() {
+        t_currentBM3DTask = nullptr;
+        t_bm3dBaseProgress = 0;
+        t_bm3dProgressStep = 100;
+        t_bm3dLastLoggedProgress = -10;
+    }
+};
 
 BM3DEnhancementTask::BM3DEnhancementTask(
     EnhancementType type,
@@ -121,7 +167,8 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
 
     emit updateProcess(baseProgress + progressStep * 0.4, processMsg);
 
-    cv::Mat output8U = SARProcessor::DenoiseGray(inputGray, 0.0);
+    BM3DThreadLocalGuard guard(this, baseProgress + progressStep * 0.4, progressStep * 0.4);
+    cv::Mat output8U = SARProcessor::DenoiseGray(inputGray, 0.0, bm3dProgressCallback);
 
     if (output8U.empty()) {
         outError = QStringLiteral("BM3D处理失败");

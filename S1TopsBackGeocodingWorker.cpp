@@ -23,6 +23,29 @@
 #pragma comment(lib, "ComplexMat.lib")
 #endif
 
+thread_local S1TopsBackGeocodingWorker* t_currentBackGeocodingWorker = nullptr;
+
+static bool __stdcall backGeocodingProgressCallback(int progress, const char* message)
+{
+    if (t_currentBackGeocodingWorker)
+    {
+        if (t_currentBackGeocodingWorker->thread()->isInterruptionRequested())
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+struct BackGeocodingThreadLocalGuard {
+    BackGeocodingThreadLocalGuard(S1TopsBackGeocodingWorker* worker) {
+        t_currentBackGeocodingWorker = worker;
+    }
+    ~BackGeocodingThreadLocalGuard() {
+        t_currentBackGeocodingWorker = nullptr;
+    }
+};
+
 S1TopsBackGeocodingWorker::S1TopsBackGeocodingWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -43,6 +66,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	bool b_ESD
 )
 {
+	BackGeocodingThreadLocalGuard guard(this);
 	if (images_number < 2 ||
 		masterIndex < 1 ||
 		masterIndex > images_number ||

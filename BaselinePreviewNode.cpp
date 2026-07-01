@@ -408,7 +408,7 @@ void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, 
     m_outputData = std::make_shared<BaselineData>(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
 
     setProgress(100);
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
     if (m_showChartBtn) m_showChartBtn->setEnabled(true);
 
     generateStaticPreviewJpg();

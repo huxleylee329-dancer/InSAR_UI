@@ -469,8 +469,11 @@ void GeocodingNode::onProcessingFinished()
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
-            setState(ExecutionState::Completed);
+            setState(ExecutionState::Running);
+            setProgress(100);
             InSARLogManager::LogInfo("GeocodingNode", "Processing preview generation completed.");
+            finishExecution();
+            Q_EMIT dataUpdated(0);
         });
 
         QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
@@ -480,7 +483,9 @@ void GeocodingNode::onProcessingFinished()
         });
         m_remedyWatcher.setFuture(future);
     } else {
-        setState(ExecutionState::Completed);
+        setState(ExecutionState::Running);
+        setProgress(100);
+        finishExecution();
     }
 }
 

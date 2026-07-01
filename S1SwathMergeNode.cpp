@@ -382,7 +382,7 @@ void S1SwathMergeNode::onProcessingFinished()
     m_outputNodeNameEdit->setEnabled(true);
 
     // Notify base class that we're finished
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
     setProgress(100);
     InSARLogManager::LogInfo("S1SwathMergeNode", "executeProcessing completed.");
     finishExecution();
@@ -511,7 +511,7 @@ void S1SwathMergeNode::executeProcessing()
         m_outputNodeName = dstNode;
         if (validateAndRestoreOutput())
         {
-            setState(ExecutionState::Completed);
+            setState(ExecutionState::Running);
             setProgress(100);
             finishExecution();
             Q_EMIT dataUpdated(0);

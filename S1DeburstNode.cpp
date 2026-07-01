@@ -305,7 +305,7 @@ void S1DeburstNode::onProcessingFinished()
     // Update UI
     m_outputNodeNameEdit->setEnabled(true);
 
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
     setProgress(100);
     InSARLogManager::LogInfo("S1DeburstNode", "executeProcessing completed.");
     finishExecution();
@@ -580,7 +580,7 @@ void S1DeburstNode::executeProcessing()
             m_outputNodeName = dstNode;
             if (validateAndRestoreOutput())
             {
-                setState(ExecutionState::Completed);
+                setState(ExecutionState::Running);
                 setProgress(100);
                 finishExecution();
                 return;

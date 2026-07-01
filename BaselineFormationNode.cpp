@@ -466,7 +466,7 @@ void BaselineFormationNode::onProcessingFinished(QList<double> temporal_baseline
     m_outputData = std::make_shared<ImportedFileData>(filePaths, m_outputNodeName);
 
     setProgress(100);
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
     if (m_showChartBtn) m_showChartBtn->setEnabled(true);
 
     // SOP rule 7 & 17: Generate static preview graph asynchronously or using offscreen coordinate rendering

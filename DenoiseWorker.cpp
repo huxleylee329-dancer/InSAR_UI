@@ -29,10 +29,15 @@ thread_local int t_currentImageIndex = 0;
 thread_local int t_totalImagesCount = 1;
 thread_local int t_lastLoggedProgress = -10;
 
-static void __stdcall denoiseProgressCallback(int progress, const char* message)
+static bool __stdcall denoiseProgressCallback(int progress, const char* message)
 {
     if (t_currentWorker)
     {
+        if (t_currentWorker->thread()->isInterruptionRequested())
+        {
+            return false;
+        }
+
         int start_prog = 10 + t_currentImageIndex * 80 / t_totalImagesCount;
         int end_prog = 10 + (t_currentImageIndex + 1) * 80 / t_totalImagesCount;
         int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
@@ -48,6 +53,7 @@ static void __stdcall denoiseProgressCallback(int progress, const char* message)
             t_lastLoggedProgress = progress;
         }
     }
+    return true;
 }
 
 struct ThreadLocalGuard {

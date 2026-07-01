@@ -345,7 +345,9 @@ void ExportKMLNode::onProcessingFinished()
 
     QString kmlPath = m_outputPath + "/" + m_fileName + ".kml";
     m_outputData = std::make_shared<ImportedFileData>(kmlPath, m_fileName);
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
+    setProgress(100);
+    finishExecution();
     Q_EMIT dataUpdated(0);
 }
 

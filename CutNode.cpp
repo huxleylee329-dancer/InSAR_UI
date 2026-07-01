@@ -721,7 +721,7 @@ void CutNode::onProcessingFinished()
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 
-    setState(ExecutionState::Completed);
+    setState(ExecutionState::Running);
     finishExecution();
 }
 
