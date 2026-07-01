@@ -203,7 +203,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // DInSAR 子分类顺序
     order.subcategories["DInSAR"] = QStringList{
-        "SBAS"
+        "SBAS",
+        "PSI"
     };
 
     // DInSAR 类叶子项顺序
@@ -218,6 +219,14 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Reference Reselection", "Reference Reselection"},
         {"Time Series View", "Time Series View"},
         {"Export as KML", "Export as KML"}
+    };
+
+    // DInSAR/PSI 类叶子项顺序
+    order.leafItems["DInSAR/PSI"] = QList<PaletteOrder::LeafItem>{
+        {"PS Candidate Selection", "PS Candidate Selection"},
+        {"PS Network Construction", "PS Network Construction"},
+        {"PS Time Series Analysis", "PS Time Series Analysis"},
+        {"PS Deformation Preview", "PS Deformation Preview"}
     };
 
     // Export 子分类顺序

@@ -75,6 +75,7 @@ extern void applyTheme(const QString &theme);
 #include "import_Biomass.h"
 #include "import_LiDAR.h"
 #include"icon_source.h"
+#include"PS_Dialogs.h"
 #include"SpeckleDenoise.h"
 #include"ClutterSuppression.h"
 #include"BatchTargetRecognition.h"
@@ -122,6 +123,9 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionDeformation_Preview",      ":/SatExplorer/svg/view.svg"},
     {"actionreference_re_selection",   ":/SatExplorer/svg/reference.svg"},
     {"actionExport_KML",               ":/SatExplorer/svg/GoogleEarth.svg"},
+    {"actionPSI_Candidate",            ":/SatExplorer/svg/psi_candidate.svg"},
+    {"actionPSI_Network",              ":/SatExplorer/svg/psi_network.svg"},
+    {"actionPSI_TimeSeries",           ":/SatExplorer/svg/psi_time_series.svg"},
     {"actiongeocode",                  ":/SatExplorer/svg/geocoding.svg"},
     {"actionS1_frame_merge",           ":/SatExplorer/svg/frame_merge.svg"},
     {"actionS1_swath_merge",           ":/SatExplorer/svg/swath_merge.svg"},
@@ -152,6 +156,7 @@ static const MenuIconMapping menuIconMap[] = {
     {"menuInSAR_Import",               ":/SatExplorer/svg/import.svg"},
     {"menuLiDAR_Import",               ":/SatExplorer/svg/import.svg"},
     {"menuSBAS",                       ":/SatExplorer/svg/baseline_formation.svg"},
+    {"menuPSI",                        ":/SatExplorer/svg/time_series.svg"},
     {"menuSentinel1_Tool",             ":/SatExplorer/svg/toolbox.svg"},
     {"menuImport_2",                   ":/SatExplorer/svg/import.svg"},
     {"menuImageEnhancement",           ":/SatExplorer/svg/enhancement.svg"},
@@ -1264,6 +1269,36 @@ void MainWindow::on_actionSBAS_deformation_triggered()
     SBAS_time_series->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
+void MainWindow::on_actionPSI_Candidate_triggered()
+{
+    QtNodes::PS_Candidate_Dialog* dlg = new QtNodes::PS_Candidate_Dialog(this);
+    connect(this, &MainWindow::sendModel, dlg, &QtNodes::PS_Candidate_Dialog::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    dlg->show();
+    connect(dlg, &QtNodes::PS_Candidate_Dialog::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionPSI_Network_triggered()
+{
+    QtNodes::PS_Network_Dialog* dlg = new QtNodes::PS_Network_Dialog(this);
+    connect(this, &MainWindow::sendModel, dlg, &QtNodes::PS_Network_Dialog::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    dlg->show();
+    connect(dlg, &QtNodes::PS_Network_Dialog::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionPSI_TimeSeries_triggered()
+{
+    QtNodes::PS_TimeSeries_Dialog* dlg = new QtNodes::PS_TimeSeries_Dialog(this);
+    connect(this, &MainWindow::sendModel, dlg, &QtNodes::PS_TimeSeries_Dialog::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    dlg->show();
+    connect(dlg, &QtNodes::PS_TimeSeries_Dialog::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    dlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
 void MainWindow::on_actionDeformation_Preview_triggered()
 {
     Deformation_Average* bl = new Deformation_Average();
@@ -1656,7 +1691,8 @@ void MainWindow::applyMenuIcons(bool isDark)
             name == "menuSBAS" || name == "actionBaseline_Formation" || name == "actionSBAS_deformation" ||
             name == "actionreference_re_selection" || name == "actionDeformation_Preview" ||
             name == "actionBaseline_Preview" || name == "menuSentinel1_Tool" || name == "menuImageEnhancement" ||
-            name == "menuDetection" || name == "actionTargetDetection" || name == "actionBatchTargetRecognition") {
+            name == "menuDetection" || name == "actionTargetDetection" || name == "actionBatchTargetRecognition" ||
+            name == "menuPSI" || name.contains("PSI_")) {
             return isDark ? QColor("#D0BCFF") : QColor("#6750A4");
         }
         // 1. Blue (Standard files, project, theme)

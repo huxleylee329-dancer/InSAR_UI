@@ -501,7 +501,9 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                       modelName.contains("Deformation", Qt::CaseInsensitive) ||
                       modelName.contains("Reference", Qt::CaseInsensitive) ||
                       modelName.contains("Export", Qt::CaseInsensitive) ||
-                      modelName.contains("KML", Qt::CaseInsensitive)) {
+                      modelName.contains("KML", Qt::CaseInsensitive) ||
+                      modelName == "PSCandidate" ||
+                      modelName == "PSNetwork") {
                  // Complex calculations/Registration/Merges/AI Detection - Purple
                  iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
                 
@@ -533,6 +535,14 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                     iconPath = ":/SatExplorer/svg/view.svg";
                 } else if (modelName.contains("Target", Qt::CaseInsensitive) || modelName.contains("Detection", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/target_detect.svg";
+                } else if (modelName == "PSCandidate") {
+                    iconPath = ":/SatExplorer/svg/psi_candidate.svg";
+                } else if (modelName == "PSNetwork") {
+                    iconPath = ":/SatExplorer/svg/psi_network.svg";
+                } else if (modelName == "PSTimeSeries") {
+                    iconPath = ":/SatExplorer/svg/psi_time_series.svg";
+                } else if (modelName == "PSDeformationPreview") {
+                    iconPath = ":/SatExplorer/svg/psi_preview.svg";
                 }
             } 
             else if (modelName.contains("Evaluation", Qt::CaseInsensitive) || 

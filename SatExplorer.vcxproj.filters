@@ -130,6 +130,9 @@
     <ClCompile Include="SBAS_time_series_analysis.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="PS_Dialogs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="Preview_Window.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -242,6 +245,27 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SBASTimeSeriesWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSCandidateNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSCandidateWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSNetworkNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSNetworkWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSTimeSeriesNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSTimeSeriesWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PSDeformationPreviewNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SBASReferenceReselectionNode.cpp">
@@ -684,6 +708,9 @@
     <QtMoc Include="include\SBAS_time_series_analysis.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\PS_Dialogs.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\Preview_Window.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -787,6 +814,27 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SBASTimeSeriesWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PSCandidateNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PSCandidateWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PSNetworkNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PSNetworkWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PSTimeSeriesNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PSTimeSeriesWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PSDeformationPreviewNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SBASReferenceReselectionNode.h">
@@ -1298,6 +1346,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\NodeDataTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\PSI.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\NodeModels.h">

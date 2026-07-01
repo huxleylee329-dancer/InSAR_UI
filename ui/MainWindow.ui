@@ -154,8 +154,17 @@
      <addaction name="actionDeformation_Preview"/>
      <addaction name="actionExport_KML"/>
     </widget>
+    <widget class="QMenu" name="menuPSI">
+     <property name="title">
+      <string>PSI</string>
+     </property>
+     <addaction name="actionPSI_Candidate"/>
+     <addaction name="actionPSI_Network"/>
+     <addaction name="actionPSI_TimeSeries"/>
+    </widget>
     <addaction name="actionSLC_deramp"/>
     <addaction name="menuSBAS"/>
+    <addaction name="menuPSI"/>
    </widget>
    <widget class="QMenu" name="menuSAR">
     <property name="title">
@@ -410,6 +419,21 @@
   <action name="actionLiDAR">
    <property name="text">
     <string>LiDAR (GEDI/ICESat-2)</string>
+   </property>
+  </action>
+  <action name="actionPSI_Candidate">
+   <property name="text">
+    <string>PS Candidate Selection</string>
+   </property>
+  </action>
+  <action name="actionPSI_Network">
+   <property name="text">
+    <string>PS Network Construction</string>
+   </property>
+  </action>
+  <action name="actionPSI_TimeSeries">
+   <property name="text">
+    <string>PS Time Series Inversion</string>
    </property>
   </action>
  </widget>

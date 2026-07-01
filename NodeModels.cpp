@@ -43,6 +43,10 @@
 #include "DeformationPreviewNode.h"
 #include "ExportKMLNode.h"
 #include "GeocodingNode.h"
+#include "PSCandidateNode.h"
+#include "PSNetworkNode.h"
+#include "PSTimeSeriesNode.h"
+#include "PSDeformationPreviewNode.h"
 
 
 #include <memory>
@@ -117,6 +121,10 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<SBASReferenceReselectionNode>("DInSAR/SBAS");
     registry->registerModel<DeformationPreviewNode>("DInSAR/SBAS");
     registry->registerModel<ExportKMLNode>("DInSAR/SBAS");
+    registry->registerModel<PSCandidateNode>("DInSAR/PSI");
+    registry->registerModel<PSNetworkNode>("DInSAR/PSI");
+    registry->registerModel<PSTimeSeriesNode>("DInSAR/PSI");
+    registry->registerModel<PSDeformationPreviewNode>("DInSAR/PSI");
     registry->registerModel<InterferometricFormationNode>("InSAR");
 
     registry->registerModel<DenoiseNode>("InSAR");

@@ -106,6 +106,9 @@ private slots:
     void on_actionDeformation_Preview_triggered();
     void on_actionreference_re_selection_triggered();
     void on_actionExport_KML_triggered();
+    void on_actionPSI_Candidate_triggered();
+    void on_actionPSI_Network_triggered();
+    void on_actionPSI_TimeSeries_triggered();
     void on_actionBaseline_Preview_triggered();
     void on_actionSLC_deramp_triggered();
     void on_actionBaseline_Formation_triggered();
