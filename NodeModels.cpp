@@ -40,6 +40,7 @@
 #include "BaselineFormationNode.h"
 #include "SBASTimeSeriesNode.h"
 #include "SBASReferenceReselectionNode.h"
+#include "DeformationRateFieldNode.h"
 #include "DeformationPreviewNode.h"
 #include "ExportKMLNode.h"
 #include "GeocodingNode.h"
@@ -113,6 +114,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<BaselineFormationNode>("DInSAR/SBAS/Baseline Estimation");
     registry->registerModel<SBASTimeSeriesNode>("DInSAR/SBAS/SBAS Time Series Analysis");
     registry->registerModel<SBASReferenceReselectionNode>("DInSAR/SBAS/Reference Point Re-selection");
+    registry->registerModel<DeformationRateFieldNode>("DInSAR/SBAS/Rate Field Analysis");
     registry->registerModel<DeformationPreviewNode>("DInSAR/SBAS/Deformation Visualization");
     
     // DInSAR/PSI

@@ -103,6 +103,7 @@ private slots:
     void on_actionS1_TOPS_BackGeocoding_triggered();
     void on_actionS1_Deburst_triggered();
     void on_actionSBAS_deformation_triggered();
+    void on_actionDeformationRateField_triggered();
     void on_actionDeformation_Preview_triggered();
     void on_actionreference_re_selection_triggered();
     void on_actionExport_KML_triggered();

@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DeformationRateField</class>
+ <widget class="QWidget" name="DeformationRateField">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>560</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>变形速率场与质量评估</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="groupBox_io">
+     <property name="title">
+      <string>输入输出设置</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_io">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_project">
+        <property name="text">
+         <string>所属工程:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBox_project"/>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_srcNode">
+        <property name="text">
+         <string>时序数据源:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="comboBox_srcNode"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_dstNode">
+        <property name="text">
+         <string>目标节点名:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="lineEdit_dstNode">
+        <property name="text">
+         <string>RateField</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_params">
+     <property name="title">
+      <string>速率场参数设置</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_params">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_modelType">
+        <property name="text">
+         <string>速率模型:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBox_modelType"/>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_confidenceLevel">
+        <property name="text">
+         <string>置信水平:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="comboBox_confidenceLevel"/>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_cohThreshHigh">
+        <property name="text">
+         <string>高质相干阈值:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="lineEdit_cohThreshHigh">
+        <property name="text">
+         <string>0.5</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_cohThreshMid">
+        <property name="text">
+         <string>中质相干阈值:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLineEdit" name="lineEdit_cohThreshMid">
+        <property name="text">
+         <string>0.3</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="label_uncertaintyThreshHigh">
+        <property name="text">
+         <string>高质不确阈值:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <widget class="QLineEdit" name="lineEdit_uncertaintyThreshHigh">
+        <property name="text">
+         <string>2.0</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="label_uncertaintyThreshMid">
+        <property name="text">
+         <string>中质不确阈值:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QLineEdit" name="lineEdit_uncertaintyThreshMid">
+        <property name="text">
+         <string>5.0</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_visual">
+     <property name="title">
+      <string>可视化设置</string>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_visual">
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_colorMap">
+        <property name="text">
+         <string>可视化色带:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="comboBox_colorMap"/>
+      </item>
+      <item row="1" column="0" colspan="2">
+       <layout class="QHBoxLayout" name="horizontalLayout_contour">
+        <item>
+         <widget class="QCheckBox" name="checkBox_showContour">
+          <property name="text">
+           <string>显示等值线</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_contourInterval">
+          <property name="text">
+           <string>等值线间隔:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEdit_contourInterval">
+          <property name="text">
+           <string>5</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item row="2" column="0" colspan="2">
+       <layout class="QHBoxLayout" name="horizontalLayout_arrow">
+        <item>
+         <widget class="QCheckBox" name="checkBox_showArrow">
+          <property name="text">
+           <string>显示矢量箭头</string>
+          </property>
+          <property name="checked">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="label_arrowSpacing">
+          <property name="text">
+           <string>采样间隔:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEdit_arrowSpacing">
+          <property name="text">
+           <string>10</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="progressBar">
+     <property name="value">
+      <number>0</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

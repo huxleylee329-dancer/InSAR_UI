@@ -130,6 +130,9 @@
     <ClCompile Include="SBAS_time_series_analysis.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DeformationRateField_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="PS_Dialogs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -245,6 +248,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SBASTimeSeriesWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DeformationRateFieldNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DeformationRateFieldWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PSCandidateNode.cpp">
@@ -708,6 +717,9 @@
     <QtMoc Include="include\SBAS_time_series_analysis.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\DeformationRateField_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\PS_Dialogs.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -814,6 +826,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SBASTimeSeriesWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DeformationRateFieldNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DeformationRateFieldWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\PSCandidateNode.h">
@@ -1251,6 +1269,9 @@
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="ui\SbasTimeSeriesAnalysis.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\DeformationRateField.ui">
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="ui\DeformationAverage.ui">

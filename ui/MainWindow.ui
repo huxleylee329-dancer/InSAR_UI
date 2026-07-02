@@ -139,6 +139,7 @@
      <addaction name="actionBaseline_Formation"/>
      <addaction name="actionSBAS_deformation"/>
      <addaction name="actionreference_re_selection"/>
+     <addaction name="actionDeformationRateField"/>
      <addaction name="actionDeformation_Preview"/>
     </widget>
     <widget class="QMenu" name="menuPSI">
@@ -421,6 +422,11 @@
   <action name="actionPSI_TimeSeries">
    <property name="text">
     <string>PS Time Series Inversion</string>
+   </property>
+  </action>
+  <action name="actionDeformationRateField">
+   <property name="text">
+    <string>Rate Field Analysis</string>
    </property>
   </action>
  </widget>

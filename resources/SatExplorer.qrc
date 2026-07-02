@@ -41,6 +41,7 @@
         <file>svg/dem.svg</file>
         <file>svg/baseline_formation.svg</file>
         <file>svg/time_series.svg</file>
+        <file>svg/rate_field.svg</file>
         <file>svg/psi_candidate.svg</file>
         <file>svg/psi_network.svg</file>
         <file>svg/psi_time_series.svg</file>

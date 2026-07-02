@@ -573,6 +573,8 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                      iconPath = ":/SatExplorer/svg/reference.svg";
                  } else if (modelName == "DeformationPreview") {
                      iconPath = ":/SatExplorer/svg/view.svg";
+                 } else if (modelName == "DeformationRateField") {
+                     iconPath = ":/SatExplorer/svg/rate_field.svg";
                  } else if (modelName.contains("Baseline", Qt::CaseInsensitive)) {
                      iconPath = ":/SatExplorer/svg/view.svg";
                  } else if (modelName.contains("Target", Qt::CaseInsensitive) || modelName.contains("Detection", Qt::CaseInsensitive)) {

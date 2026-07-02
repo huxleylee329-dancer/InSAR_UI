@@ -164,6 +164,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Baseline Estimation", "Baseline Estimation"},
         {"SBAS Time Series Analysis", "SBAS Time Series Analysis"},
         {"Reference Point Re-selection", "Reference Point Re-selection"},
+        {"Rate Field Analysis", "Rate Field Analysis"},
         {"Deformation Visualization", "Deformation Visualization"}
     };
 

@@ -61,6 +61,7 @@ extern void applyTheme(const QString &theme);
 #include <QJsonObject>
 #include "tinyxml.h"
 #include"SBAS_time_series_analysis.h"
+#include"DeformationRateField_ui.h"
 #include"SBAS_reference_reselection.h"
 #include<Export_KML.h>
 #include"Geocoding.h"
@@ -120,6 +121,7 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionSLC_deramp",               ":/SatExplorer/svg/splice.svg"},
     {"actionBaseline_Formation",       ":/SatExplorer/svg/baseline_formation.svg"},
     {"actionSBAS_deformation",         ":/SatExplorer/svg/time_series.svg"},
+    {"actionDeformationRateField",     ":/SatExplorer/svg/rate_field.svg"},
     {"actionDeformation_Preview",      ":/SatExplorer/svg/view.svg"},
     {"actionreference_re_selection",   ":/SatExplorer/svg/reference.svg"},
     {"actionExport_KML",               ":/SatExplorer/svg/GoogleEarth.svg"},
@@ -1272,6 +1274,16 @@ void MainWindow::on_actionSBAS_deformation_triggered()
     SBAS_time_series->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
+void MainWindow::on_actionDeformationRateField_triggered()
+{
+    DeformationRateField_ui* dialog = new DeformationRateField_ui();
+    connect(this, &MainWindow::sendModel, dialog, &DeformationRateField_ui::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    dialog->show();
+    connect(dialog, &DeformationRateField_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    dialog->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
 void MainWindow::on_actionPSI_Candidate_triggered()
 {
     QtNodes::PS_Candidate_Dialog* dlg = new QtNodes::PS_Candidate_Dialog(this);
@@ -1692,6 +1704,7 @@ void MainWindow::applyMenuIcons(bool isDark)
         if (name == "actionCut" || name == "actionRegistration" || name.contains("Geocoding") ||
             name.contains("merge") || name.contains("Deburst") || name == "actionInterferometric_Formation" ||
             name == "menuSBAS" || name == "actionBaseline_Formation" || name == "actionSBAS_deformation" ||
+            name == "actionDeformationRateField" ||
             name == "actionreference_re_selection" || name == "actionDeformation_Preview" ||
             name == "actionBaseline_Preview" || name == "menuSentinel1_Tool" || name == "menuPreprocessing" ||
             name == "menuImageEnhancement" || name == "menuDetection" || name == "actionTargetDetection" ||

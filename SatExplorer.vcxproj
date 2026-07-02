@@ -99,7 +99,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\opencv\build\x64\vc15\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;DeformationRateField_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -117,7 +117,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -262,6 +262,9 @@
     <ClCompile Include="SBAS_time_series_analysis.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DeformationRateField_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="PS_Dialogs.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -383,6 +386,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SBASTimeSeriesWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DeformationRateFieldNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DeformationRateFieldWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PSCandidateNode.cpp">
@@ -857,6 +866,9 @@
     <QtMoc Include="include\SBAS_time_series_analysis.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\DeformationRateField_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\PS_Dialogs.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -1006,6 +1018,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\SBASTimeSeriesWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DeformationRateFieldNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DeformationRateFieldWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\PSCandidateNode.h">
@@ -1292,6 +1310,9 @@
       <Filter>UI Files</Filter>
     </QtUic>
     <QtUic Include="ui\SbasTimeSeriesAnalysis.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\DeformationRateField.ui">
       <Filter>UI Files</Filter>
     </QtUic>
     <QtUic Include="ui\SlcDeramp.ui">
