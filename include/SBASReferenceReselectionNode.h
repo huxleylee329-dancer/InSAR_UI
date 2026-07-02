@@ -30,7 +30,7 @@ public:
     ~SBASReferenceReselectionNode();
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("Reference Reselection"); }
+    QString caption() const override { return QStringLiteral("Reference Point Re-selection"); }
     QString name() const override { return QStringLiteral("SBASReferenceReselection"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;

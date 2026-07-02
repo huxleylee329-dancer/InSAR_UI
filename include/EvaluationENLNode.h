@@ -43,7 +43,7 @@ public:
     EvaluationENLNode();
     ~EvaluationENLNode() override;
 
-    QString caption() const override { return "Evaluation-ENL"; }
+    QString caption() const override { return "ENL Evaluation"; }
     QString name() const override { return "EvaluationENL"; }
 
     unsigned int nPorts(PortType portType) const override;

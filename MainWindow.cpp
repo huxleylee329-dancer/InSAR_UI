@@ -117,7 +117,7 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionCut",                      ":/SatExplorer/svg/cut.svg"},
     {"actionS1_TOPS_BackGeocoding",    ":/SatExplorer/svg/coregistration.svg"},
     {"actionS1_Deburst",               ":/SatExplorer/svg/splice.svg"},
-    {"actionSLC_deramp",               ":/SatExplorer/svg/dem.svg"},
+    {"actionSLC_deramp",               ":/SatExplorer/svg/splice.svg"},
     {"actionBaseline_Formation",       ":/SatExplorer/svg/baseline_formation.svg"},
     {"actionSBAS_deformation",         ":/SatExplorer/svg/time_series.svg"},
     {"actionDeformation_Preview",      ":/SatExplorer/svg/view.svg"},
@@ -133,16 +133,16 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionCleanOrphanedFiles",       ":/SatExplorer/svg/delete_icon.svg"},
     {"actionDEM",                      ":/SatExplorer/svg/dem.svg"},
     {"actionGenericSAR",               ":/SatExplorer/svg/imagedata.svg"},
-    {"actionTSX",                      ":/SatExplorer/svg/import.svg"},
-    {"actionSentinel_1",               ":/SatExplorer/svg/import.svg"},
-    {"actionCOSMOS_SkyMed",            ":/SatExplorer/svg/import.svg"},
-    {"actionALOS_2",                   ":/SatExplorer/svg/import.svg"},
-    {"actionLuTan_1",                  ":/SatExplorer/svg/import.svg"},
-    {"actionHongtu_1",                 ":/SatExplorer/svg/import.svg"},
-    {"actionSpacety",                  ":/SatExplorer/svg/import.svg"},
-    {"actionAIRSAT",                   ":/SatExplorer/svg/import.svg"},
-    {"actionBiomass",                  ":/SatExplorer/svg/import.svg"},
-    {"actionLiDAR",                    ":/SatExplorer/svg/import.svg"},
+    {"actionTSX",                      ":/SatExplorer/svg/x_band.svg"},
+    {"actionSentinel_1",               ":/SatExplorer/svg/sentinel1_logo.svg"},
+    {"actionCOSMOS_SkyMed",            ":/SatExplorer/svg/x_band.svg"},
+    {"actionALOS_2",                   ":/SatExplorer/svg/l_band.svg"},
+    {"actionLuTan_1",                  ":/SatExplorer/svg/l_band.svg"},
+    {"actionHongtu_1",                 ":/SatExplorer/svg/c_band.svg"},
+    {"actionSpacety",                  ":/SatExplorer/svg/x_band.svg"},
+    {"actionAIRSAT",                   ":/SatExplorer/svg/airborne_sar.svg"},
+    {"actionBiomass",                  ":/SatExplorer/svg/l_band.svg"},
+    {"actionLiDAR",                    ":/SatExplorer/svg/lidar_sensor.svg"},
     {"actionSpeckleDenoise",           ":/SatExplorer/svg/filter.svg"},
     {"actionDenoise",                  ":/SatExplorer/svg/filter.svg"},
     {"actionClutterSuppression",       ":/SatExplorer/svg/clutter_suppress.svg"},
@@ -152,13 +152,11 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionInterferometric_Formation",":/SatExplorer/svg/interferogram.svg"},
     {"actionUnwrap",                   ":/SatExplorer/svg/unwrap.svg"},
     {"actionBaseline_Preview",         ":/SatExplorer/svg/view.svg"},
-    {"menuImport",                     ":/SatExplorer/svg/import.svg"},
-    {"menuInSAR_Import",               ":/SatExplorer/svg/import.svg"},
-    {"menuLiDAR_Import",               ":/SatExplorer/svg/import.svg"},
-    {"menuSBAS",                       ":/SatExplorer/svg/baseline_formation.svg"},
-    {"menuPSI",                        ":/SatExplorer/svg/time_series.svg"},
+    {"menuInSAR_Import",               ":/SatExplorer/svg/insar_group.svg"},
+    {"menuLiDAR_Import",               ":/SatExplorer/svg/lidar_group.svg"},
+    {"menuSBAS",                       ":/SatExplorer/svg/time_series.svg"},
+    {"menuPSI",                        ":/SatExplorer/svg/psi_network.svg"},
     {"menuSentinel1_Tool",             ":/SatExplorer/svg/toolbox.svg"},
-    {"menuImport_2",                   ":/SatExplorer/svg/import.svg"},
     {"menuImageEnhancement",           ":/SatExplorer/svg/enhancement.svg"},
     {"menuDetection",                  ":/SatExplorer/svg/radar.svg"},
     {"menuTheme",                      ":/SatExplorer/svg/palette.svg"},
@@ -251,10 +249,12 @@ MainWindow::MainWindow(QString str, QWidget* parent)
         QStandardItemModel* currentModel = m_interfaceManager->projectModel();
         if (currentModel && currentModel->rowCount() > 0)
         {
-            if (!ui.Process->isEnabled()) ui.Process->setDisabled(0);
-            if (!ui.menuSAR->isEnabled()) ui.menuSAR->setDisabled(0);
+            if (!ui.menuImport_Top->isEnabled()) ui.menuImport_Top->setDisabled(0);
+            if (!ui.menuPreprocessing->isEnabled()) ui.menuPreprocessing->setDisabled(0);
             if (!ui.menuInSAR->isEnabled()) ui.menuInSAR->setDisabled(0);
             if (!ui.menuDInSAR->isEnabled()) ui.menuDInSAR->setDisabled(0);
+            if (!ui.menuSAR->isEnabled()) ui.menuSAR->setDisabled(0);
+            if (!ui.menuExport->isEnabled()) ui.menuExport->setDisabled(0);
         }
 
         m_projectModified = true;
@@ -268,11 +268,12 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     if (str.isEmpty()) {
         // No project opened - show welcome screen
         ui.View->setDisabled(1);
-        ui.Edit->setDisabled(1);
-        ui.Process->setDisabled(1);
-        ui.menuSAR->setDisabled(1);
+        ui.menuImport_Top->setDisabled(1);
+        ui.menuPreprocessing->setDisabled(1);
         ui.menuInSAR->setDisabled(1);
         ui.menuDInSAR->setDisabled(1);
+        ui.menuSAR->setDisabled(1);
+        ui.menuExport->setDisabled(1);
         
         m_interfaceManager->switchToInterface("welcome");
         updateInterfaceMenuCheckState();
@@ -929,10 +930,12 @@ void MainWindow::closeCurrentProject()
     }
 
     // 禁用处理菜单（恢复到初始状态）
-    ui.Process->setDisabled(1);
-    ui.menuSAR->setDisabled(1);
+    ui.menuImport_Top->setDisabled(1);
+    ui.menuPreprocessing->setDisabled(1);
     ui.menuInSAR->setDisabled(1);
     ui.menuDInSAR->setDisabled(1);
+    ui.menuSAR->setDisabled(1);
+    ui.menuExport->setDisabled(1);
 
     // 清空标签页
     if (m_workspaceUI && m_workspaceUI->tabWidget()) {
@@ -1690,9 +1693,9 @@ void MainWindow::applyMenuIcons(bool isDark)
             name.contains("merge") || name.contains("Deburst") || name == "actionInterferometric_Formation" ||
             name == "menuSBAS" || name == "actionBaseline_Formation" || name == "actionSBAS_deformation" ||
             name == "actionreference_re_selection" || name == "actionDeformation_Preview" ||
-            name == "actionBaseline_Preview" || name == "menuSentinel1_Tool" || name == "menuImageEnhancement" ||
-            name == "menuDetection" || name == "actionTargetDetection" || name == "actionBatchTargetRecognition" ||
-            name == "menuPSI" || name.contains("PSI_")) {
+            name == "actionBaseline_Preview" || name == "menuSentinel1_Tool" || name == "menuPreprocessing" ||
+            name == "menuImageEnhancement" || name == "menuDetection" || name == "actionTargetDetection" ||
+            name == "actionBatchTargetRecognition" || name == "menuPSI" || name.contains("PSI_")) {
             return isDark ? QColor("#D0BCFF") : QColor("#6750A4");
         }
         // 1. Blue (Standard files, project, theme)
@@ -2234,8 +2237,7 @@ void MainWindow::updateFileMenuState()
     ui.actionClose->setEnabled(isProjectOpen);
     ui.actionQuit->setEnabled(true);
 
-    // 编辑菜单在未打开工程时置灰，开启时启用
-    ui.Edit->setEnabled(isProjectOpen);
+    // 清除孤立文件在未打开工程时置灰，开启时启用
     ui.actionCleanOrphanedFiles->setEnabled(isProjectOpen);
 
     // 视图菜单在未打开工程时置灰，开启时启用
@@ -2243,10 +2245,12 @@ void MainWindow::updateFileMenuState()
 
     // 处理菜单安全加固：若无工程打开，强制置灰（若有工程，则保持由数据刷新逻辑控制）
     if (!isProjectOpen) {
-        ui.Process->setEnabled(false);
-        ui.menuSAR->setEnabled(false);
+        ui.menuImport_Top->setEnabled(false);
+        ui.menuPreprocessing->setEnabled(false);
         ui.menuInSAR->setEnabled(false);
         ui.menuDInSAR->setEnabled(false);
+        ui.menuSAR->setEnabled(false);
+        ui.menuExport->setEnabled(false);
     }
 }
 

@@ -30,7 +30,7 @@ public:
     ~BaselineFormationNode();
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("Baseline Formation"); }
+    QString caption() const override { return QStringLiteral("Baseline Estimation"); }
     QString name() const override { return QStringLiteral("BaselineFormation"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;

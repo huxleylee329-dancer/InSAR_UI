@@ -86,6 +86,14 @@
         <file>svg/image_viewer.svg</file>
         <file>svg/note.svg</file>
         <file>svg/logger.svg</file>
+        <file>svg/insar_group.svg</file>
+        <file>svg/lidar_group.svg</file>
+        <file>svg/sentinel1_logo.svg</file>
+        <file>svg/x_band.svg</file>
+        <file>svg/c_band.svg</file>
+        <file>svg/l_band.svg</file>
+        <file>svg/airborne_sar.svg</file>
+        <file>svg/lidar_sensor.svg</file>
         <!-- Stylesheets -->
         <file>stylesheets/application.qss</file>
         <file>stylesheets/widgets.qss</file>

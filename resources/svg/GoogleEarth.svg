@@ -1,1 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-globe"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Globe -->
+  <circle cx="12" cy="12" r="9" />
+  <line x1="3" y1="12" x2="21" y2="12" />
+  <path d="M12 3 a12 12 0 0 0 0 18" />
+  <!-- Vector Path / Flight Line -->
+  <path d="M6 16 C 9 10, 15 8, 18 10" stroke-width="2.5" />
+  <!-- Waypoints (Solid dots) -->
+  <circle cx="6" cy="16" r="1.5" fill="currentColor" />
+  <circle cx="18" cy="10" r="1.5" fill="currentColor" />
+</svg>

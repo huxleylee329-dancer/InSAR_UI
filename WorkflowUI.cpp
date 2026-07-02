@@ -66,93 +66,69 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // ===== 1. 顶级分类顺序 =====
     order.topLevel = QStringList{
-        "SAR",            // SAR处理分类
-        "Data Import",    // 第一级分类
-        "Preprocessing",  // 第二级分类
-        "InSAR",          // InSAR分类
-        "DInSAR",         // DInSAR分类
-        "Display",        // 图像显示/预览分类
-        "Export",         // 数据导出分类
-        "Information",    // 信息/工具节点分类
-        "Test"           // 测试节点分类
+        "Data Import",    // 1. 数据导入
+        "Preprocessing",  // 2. 预处理
+        "InSAR",          // 3. InSAR分类
+        "DInSAR",         // 4. DInSAR分类
+        "SAR",            // 5. SAR处理分类
+        "Export",         // 6. 数据导出分类
+        "Display",        // 7. 图像显示/预览分类
+        "Information",    // 8. 信息/工具节点分类
+        "Test"            // 9. 测试节点分类
     };
 
     // ===== 2. 子分类顺序 =====
     // 格式: 顶级分类名 -> 子分类列表（按顺序）
     order.subcategories["Data Import"] = QStringList{
-        "Sentinel-1",       // Data Import 下的第一个子分类
-        "TerraSAR-X",       // 第二个
-        "COSMO-SkyMed",     // 第三个
-        "ALOS-2",           // 第四个
-        "LuTan-1",
-        "Hongtu-1",
-        "Fucheng-1",
-        "AIRSAT",
-        "Biomass L1A",
-        "LiDAR"
+        "InSAR Data",
+        "LiDAR Data",
+        "Generic SAR"
     };
 
     order.subcategories["Preprocessing"] = QStringList{
-        "Sentinel-1",        // Preprocessing 下的第一个子分类
-        "Region Crop"
+        "Sentinel-1"
     };
 
     order.subcategories["SAR"] = QStringList{
-        "Import",           // SAR 下的第一个子分类
-        "Enhancement",      // SAR 下的第二个子分类
-        "Detection",        // SAR 下的第三个子分类
-        "Evaluation"        // SAR 下的第四个子分类
+        "Denoise & Enhancement",
+        "Detection",
+        "Evaluation"
+    };
+
+    order.subcategories["DInSAR"] = QStringList{
+        "SBAS",
+        "PSI"
     };
 
     // ===== 3. 叶子项顺序 =====
     // 格式: 子分类完整路径 -> 叶子项列表（按顺序）
     // LeafItem 结构: {显示名称, 实际 caption}
-    order.leafItems["Data Import/Sentinel-1"] = QList<PaletteOrder::LeafItem>{
-        {"Single Import", "Sentinel-1 Import"},      // Sentinel-1 单文件导入
-        {"Batch Import", "Sentinel-1 Batch Import"} // Sentinel-1 批量导入
+    
+    // Data Import / InSAR Data 叶子项
+    order.leafItems["Data Import/InSAR Data"] = QList<PaletteOrder::LeafItem>{
+        {"Sentinel-1 Single Import", "Sentinel-1 Import"},
+        {"Sentinel-1 Batch Import", "Sentinel-1 Batch Import"},
+        {"TerraSAR-X Single Import", "TerraSAR-X Import"},
+        {"TerraSAR-X Batch Import", "TerraSAR-X Batch Import"},
+        {"COSMO-SkyMed Import", "COSMO-SkyMed Import"},
+        {"ALOS-2 Import", "ALOS-2 Import"},
+        {"LuTan-1 Import", "LuTan-1 Import"},
+        {"Hongtu-1 Import", "Hongtu-1 Import"},
+        {"Fucheng-1 Import", "Fucheng-1 Import"},
+        {"AIRSAT Import", "AIRSAT Import"},
+        {"Biomass L1A Import", "Biomass L1A Import"}
     };
 
-    order.leafItems["Data Import/TerraSAR-X"] = QList<PaletteOrder::LeafItem>{
-        {"Single Import", "TerraSAR-X Import"},       // TerraSAR-X 单文件导入
-        {"Batch Import", "TerraSAR-X Batch Import"} // TerraSAR-X 批量导入
+    // Data Import / Generic SAR 叶子项
+    order.leafItems["Data Import/Generic SAR"] = QList<PaletteOrder::LeafItem>{
+        {"Generic SAR Single Import", "Generic SAR Import"},
+        {"Generic SAR Batch Import", "Generic SAR Batch Import"},
+        {"General SAR Loading", "General SAR Loading"}
     };
 
-    order.leafItems["Data Import/COSMO-SkyMed"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "COSMO-SkyMed Import"}     // COSMO-SkyMed 批量导入
-    };
-
-    order.leafItems["Data Import/ALOS-2"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "ALOS-2 Import"}           // ALOS-2 批量导入
-    };
-
-    order.leafItems["Data Import/LuTan-1"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "LuTan-1 Import"}
-    };
-
-    order.leafItems["Data Import/Hongtu-1"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "Hongtu-1 Import"}
-    };
-
-    order.leafItems["Data Import/Fucheng-1"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "Fucheng-1 Import"}
-    };
-
-    order.leafItems["Data Import/AIRSAT"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "AIRSAT Import"}
-    };
-
-    order.leafItems["Data Import/Biomass L1A"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "Biomass L1A Import"}
-    };
-
-    order.leafItems["Data Import/LiDAR"] = QList<PaletteOrder::LeafItem>{
-        {"Batch Import", "LiDAR Import"}
-    };
-
-    order.leafItems["SAR/Import"] = QList<PaletteOrder::LeafItem>{
-        {"Single Import", "Generic SAR Import"},
-        {"Batch Import", "Generic SAR Batch Import"},
-        {"Imported Re-loading", "General SAR Loading"}
+    // Data Import / LiDAR Data 叶子项
+    order.leafItems["Data Import/LiDAR Data"] = QList<PaletteOrder::LeafItem>{
+        {"LiDAR (GEDI/ICESat-2) Import", "LiDAR (GEDI/ICESat-2) Import"}
     };
 
     // Display 类叶子项顺序
@@ -160,10 +136,10 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Image Viewer", "Image Preview"}
     };
 
-
     // Preprocessing 类叶子项顺序
-    order.leafItems["Preprocessing/Region Crop"] = QList<PaletteOrder::LeafItem>{
-        {"AOI Crop", "AOI Crop"}
+    order.leafItems["Preprocessing"] = QList<PaletteOrder::LeafItem>{
+        {"AOI Crop", "AOI Crop"},
+        {"Coregistration", "Coregistration"}
     };
 
     order.leafItems["Preprocessing/Sentinel-1"] = QList<PaletteOrder::LeafItem>{
@@ -173,70 +149,56 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"TOPS Back-Geocoding", "S1 TOPS Back-Geocoding"} // 后向地理编码/配准
     };
 
-    // SAR Enhancement 类叶子项顺序
-    order.leafItems["SAR/Enhancement"] = QList<PaletteOrder::LeafItem>{
-        {"Speckle Denoise", "Speckle Denoise"},     // Speckle Denoise节点
-        {"Clutter Suppression", "Clutter Suppression"}  // Clutter Suppression节点
-    };
-
-    // SAR Detection 类叶子项顺序
-    order.leafItems["SAR/Detection"] = QList<PaletteOrder::LeafItem>{
-        {"Target Detection", "Target Detection"}    // 目标检测节点
-    };
-
-    // SAR Evaluation 类叶子项顺序
-    order.leafItems["SAR/Evaluation"] = QList<PaletteOrder::LeafItem>{
-        {"Evaluation-ENL", "Evaluation-ENL"},
-        {"Evaluation-SCR", "Evaluation-SCR"}
-    };
-
     // InSAR 类叶子项顺序
     order.leafItems["InSAR"] = QList<PaletteOrder::LeafItem>{
-        {"Coregistration", "Coregistration"},
+        {"Baseline Preview", "Baseline Preview"},
+        {"SLC Deramp", "SLC Deramp"},
         {"Interferometric Formation", "Interferometric Formation"},
-
-        {"Denoise", "Denoise"},
+        {"Phase Filtering", "Phase Filtering"},
         {"Phase Unwrapping", "Phase Unwrapping"},
-        {"DEM Generation", "DEM Generation"},
-        {"Baseline Preview", "Baseline Preview"}
-    };
-
-    // DInSAR 子分类顺序
-    order.subcategories["DInSAR"] = QStringList{
-        "SBAS",
-        "PSI"
-    };
-
-    // DInSAR 类叶子项顺序
-    order.leafItems["DInSAR"] = QList<PaletteOrder::LeafItem>{
-        {"SLC Deramp", "SLC Deramp"}
+        {"DEM Generation", "DEM Generation"}
     };
 
     // DInSAR/SBAS 类叶子项顺序
     order.leafItems["DInSAR/SBAS"] = QList<PaletteOrder::LeafItem>{
-        {"Baseline Formation", "Baseline Formation"},
-        {"Time-Series Analysis", "Time-Series Analysis"},
-        {"Reference Reselection", "Reference Reselection"},
-        {"Time Series View", "Time Series View"},
-        {"Export as KML", "Export as KML"}
+        {"Baseline Estimation", "Baseline Estimation"},
+        {"SBAS Time Series Analysis", "SBAS Time Series Analysis"},
+        {"Reference Point Re-selection", "Reference Point Re-selection"},
+        {"Deformation Visualization", "Deformation Visualization"}
     };
 
     // DInSAR/PSI 类叶子项顺序
     order.leafItems["DInSAR/PSI"] = QList<PaletteOrder::LeafItem>{
         {"PS Candidate Selection", "PS Candidate Selection"},
         {"PS Network Construction", "PS Network Construction"},
-        {"PS Time Series Analysis", "PS Time Series Analysis"},
+        {"PS Time Series Inversion", "PS Time Series Inversion"},
         {"PS Deformation Preview", "PS Deformation Preview"}
     };
 
-    // Export 子分类顺序
-    order.subcategories["Export"] = QStringList{
-        "Geocoding"
+    // SAR/Denoise & Enhancement 类叶子项顺序
+    order.leafItems["SAR/Denoise & Enhancement"] = QList<PaletteOrder::LeafItem>{
+        {"Speckle Denoise", "Speckle Denoise"},
+        {"Clutter Suppression", "Clutter Suppression"}
     };
 
-    // Export/Geocoding 类叶子项顺序
-    order.leafItems["Export/Geocoding"] = QList<PaletteOrder::LeafItem>{
-        {"Image Geocoding", "Image Geocoding"}
+    // SAR/Detection 类叶子项顺序
+    order.leafItems["SAR/Detection"] = QList<PaletteOrder::LeafItem>{
+        {"Target Detection", "Target Detection"}
+    };
+
+    // SAR/Evaluation 类叶子项顺序
+    order.leafItems["SAR/Evaluation"] = QList<PaletteOrder::LeafItem>{
+        {"ENL Evaluation", "ENL Evaluation"},
+        {"SCR Evaluation", "SCR Evaluation"}
+    };
+
+    // Export 子分类顺序 (扁平化2级目录，不设子分类)
+    order.subcategories["Export"] = QStringList{};
+
+    // Export 类叶子项顺序 (直接挂在顶级分类下)
+    order.leafItems["Export"] = QList<PaletteOrder::LeafItem>{
+        {"Geocoding", "Geocoding"},
+        {"KML Export", "KML Export"}
     };
 
     // Test 类叶子项顺序

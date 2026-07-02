@@ -31,7 +31,7 @@ public:
     ~DenoiseNode();
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("Denoise"); }
+    QString caption() const override { return QStringLiteral("Phase Filtering"); }
     QString name() const override { return QStringLiteral("Denoise"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;

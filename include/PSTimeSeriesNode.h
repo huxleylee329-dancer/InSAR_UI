@@ -26,7 +26,7 @@ public:
     ~PSTimeSeriesNode();
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("PS Time Series Analysis"); }
+    QString caption() const override { return QStringLiteral("PS Time Series Inversion"); }
     QString name() const override { return QStringLiteral("PSTimeSeries"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;

@@ -29,7 +29,7 @@ public:
     ~SBASTimeSeriesNode();
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("Time-Series Analysis"); }
+    QString caption() const override { return QStringLiteral("SBAS Time Series Analysis"); }
     QString name() const override { return QStringLiteral("SBASTimeSeries"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;

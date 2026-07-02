@@ -52,14 +52,10 @@
     <addaction name="actionSave"/>
     <addaction name="actionSave_as"/>
     <addaction name="separator"/>
+    <addaction name="actionCleanOrphanedFiles"/>
+    <addaction name="separator"/>
     <addaction name="actionClose"/>
     <addaction name="actionQuit"/>
-   </widget>
-   <widget class="QMenu" name="Edit">
-    <property name="title">
-     <string>编辑</string>
-    </property>
-    <addaction name="actionCleanOrphanedFiles"/>
    </widget>
    <widget class="QMenu" name="View">
     <property name="title">
@@ -70,27 +66,16 @@
     <property name="title">
      <string>设置</string>
     </property>
-   </widget>
-   <widget class="QMenu" name="Process">
-    <property name="title">
-     <string>工具</string>
-    </property>
-    <widget class="QMenu" name="menuImport">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
+    <widget class="QMenu" name="menuImport_Top">
      <property name="title">
-      <string>Import</string>
+      <string>导入</string>
      </property>
      <widget class="QMenu" name="menuInSAR_Import">
       <property name="title">
        <string>InSAR Data</string>
       </property>
-      <addaction name="actionTSX"/>
       <addaction name="actionSentinel_1"/>
+      <addaction name="actionTSX"/>
       <addaction name="actionCOSMOS_SkyMed"/>
       <addaction name="actionALOS_2"/>
       <addaction name="actionLuTan_1"/>
@@ -107,38 +92,41 @@
      </widget>
      <addaction name="menuInSAR_Import"/>
      <addaction name="menuLiDAR_Import"/>
+     <addaction name="actionGenericSAR"/>
     </widget>
-    <widget class="QMenu" name="menuSentinel1_Tool">
+    <widget class="QMenu" name="menuPreprocessing">
      <property name="title">
-      <string>Sentinel1 Tools</string>
+      <string>预处理</string>
      </property>
-     <addaction name="actionS1_Deburst"/>
-     <addaction name="actionS1_TOPS_BackGeocoding"/>
-     <addaction name="actionS1_frame_merge"/>
-     <addaction name="actionS1_swath_merge"/>
+     <widget class="QMenu" name="menuSentinel1_Tool">
+      <property name="title">
+       <string>Sentinel1 Tools</string>
+      </property>
+      <addaction name="actionS1_Deburst"/>
+      <addaction name="actionS1_frame_merge"/>
+      <addaction name="actionS1_swath_merge"/>
+      <addaction name="actionS1_TOPS_BackGeocoding"/>
+     </widget>
+     <addaction name="actionCut"/>
+     <addaction name="actionRegistration"/>
+     <addaction name="menuSentinel1_Tool"/>
     </widget>
-    <addaction name="menuImport"/>
-    <addaction name="separator"/>
-    <addaction name="actionCut"/>
-    <addaction name="actionRegistration"/>
-    <addaction name="actiongeocode"/>
-    <addaction name="separator"/>
-    <addaction name="menuSentinel1_Tool"/>
-   </widget>
-   <widget class="QMenu" name="Help">
-    <property name="title">
-     <string>帮助</string>
-    </property>
-   </widget>
-   <widget class="QMenu" name="menuInSAR">
-    <property name="title">
-     <string>InSAR</string>
-    </property>
-    <addaction name="actionBaseline_Preview"/>
-    <addaction name="actionInterferometric_Formation"/>
-    <addaction name="actionDenoise"/>
-    <addaction name="actionUnwrap"/>
-    <addaction name="actionDEM"/>
+    <widget class="QMenu" name="Help">
+     <property name="title">
+      <string>帮助</string>
+     </property>
+    </widget>
+    <widget class="QMenu" name="menuInSAR">
+     <property name="title">
+      <string>InSAR</string>
+     </property>
+     <addaction name="actionBaseline_Preview"/>
+     <addaction name="actionSLC_deramp"/>
+     <addaction name="actionInterferometric_Formation"/>
+     <addaction name="actionDenoise"/>
+     <addaction name="actionUnwrap"/>
+     <addaction name="actionDEM"/>
+    </widget>
    </widget>
    <widget class="QMenu" name="menuDInSAR">
     <property name="title">
@@ -152,7 +140,6 @@
      <addaction name="actionSBAS_deformation"/>
      <addaction name="actionreference_re_selection"/>
      <addaction name="actionDeformation_Preview"/>
-     <addaction name="actionExport_KML"/>
     </widget>
     <widget class="QMenu" name="menuPSI">
      <property name="title">
@@ -162,7 +149,6 @@
      <addaction name="actionPSI_Network"/>
      <addaction name="actionPSI_TimeSeries"/>
     </widget>
-    <addaction name="actionSLC_deramp"/>
     <addaction name="menuSBAS"/>
     <addaction name="menuPSI"/>
    </widget>
@@ -172,16 +158,10 @@
     </property>
     <widget class="QMenu" name="menuImageEnhancement">
      <property name="title">
-      <string>Enhancement</string>
+      <string>Denoise &amp; Enhancement</string>
      </property>
      <addaction name="actionSpeckleDenoise"/>
      <addaction name="actionClutterSuppression"/>
-    </widget>
-    <widget class="QMenu" name="menuImport_2">
-     <property name="title">
-      <string>Import</string>
-     </property>
-     <addaction name="actionGenericSAR"/>
     </widget>
     <widget class="QMenu" name="menuDetection">
      <property name="title">
@@ -190,10 +170,16 @@
      <addaction name="actionTargetDetection"/>
      <addaction name="actionBatchTargetRecognition"/>
     </widget>
-    <addaction name="menuImport_2"/>
     <addaction name="menuImageEnhancement"/>
     <addaction name="menuDetection"/>
     <addaction name="actionEvaluation"/>
+   </widget>
+   <widget class="QMenu" name="menuExport">
+    <property name="title">
+     <string>数据导出</string>
+    </property>
+    <addaction name="actiongeocode"/>
+    <addaction name="actionExport_KML"/>
    </widget>
    <action name="actionSpeckleDenoise">
     <property name="text">
@@ -216,13 +202,14 @@
     </property>
    </action>
    <addaction name="File"/>
-   <addaction name="Edit"/>
-   <addaction name="View"/>
-   <addaction name="Setting"/>
-   <addaction name="Process"/>
+   <addaction name="menuImport_Top"/>
+   <addaction name="menuPreprocessing"/>
    <addaction name="menuInSAR"/>
    <addaction name="menuDInSAR"/>
    <addaction name="menuSAR"/>
+   <addaction name="menuExport"/>
+   <addaction name="View"/>
+   <addaction name="Setting"/>
    <addaction name="Help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
@@ -268,27 +255,27 @@
   </action>
   <action name="actionDenoise">
    <property name="text">
-    <string>Denoise</string>
+    <string>Phase Filtering</string>
    </property>
   </action>
   <action name="actionUnwrap">
    <property name="text">
-    <string>Unwrap</string>
+    <string>Phase Unwrapping</string>
    </property>
   </action>
   <action name="actionDEM">
    <property name="text">
-    <string>DEM</string>
+    <string>DEM Generation</string>
    </property>
   </action>
   <action name="actionCut">
    <property name="text">
-    <string>AOI</string>
+    <string>AOI Crop</string>
    </property>
   </action>
   <action name="actionTSX">
    <property name="text">
-    <string>TSX</string>
+    <string>TerraSAR-X</string>
    </property>
   </action>
   <action name="actionSentinel_1">
@@ -318,27 +305,27 @@
   </action>
   <action name="actionBaseline_Formation">
    <property name="text">
-    <string>Baseline Formation</string>
+    <string>Baseline Estimation</string>
    </property>
   </action>
   <action name="actionSBAS_deformation">
    <property name="text">
-    <string>Time-Series Analysis</string>
+    <string>SBAS Time Series Analysis</string>
    </property>
   </action>
   <action name="actionDeformation_Preview">
    <property name="text">
-    <string>Time Series View</string>
+    <string>Deformation Visualization</string>
    </property>
   </action>
   <action name="actionreference_re_selection">
    <property name="text">
-    <string>Reference Reselection</string>
+    <string>Reference Point Re-selection</string>
    </property>
   </action>
   <action name="actionExport_KML">
    <property name="text">
-    <string>Export as KML</string>
+    <string>KML Export</string>
    </property>
   </action>
   <action name="actiongeocode">
@@ -358,7 +345,7 @@
   </action>
   <action name="actionCOSMOS_SkyMed">
    <property name="text">
-    <string>CSG-2</string>
+    <string>COSMO-SkyMed</string>
    </property>
   </action>
   <action name="actionALOS_2">
@@ -403,7 +390,7 @@
   </action>
   <action name="actionSpacety">
    <property name="text">
-    <string>Spacety</string>
+    <string>Fucheng-1</string>
    </property>
   </action>
   <action name="actionAIRSAT">

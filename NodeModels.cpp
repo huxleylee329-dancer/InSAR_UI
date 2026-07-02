@@ -61,76 +61,65 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 {
     auto registry = std::make_shared<NodeDelegateModelRegistry>();
 
-    // Register Data Import nodes - Using 3-level hierarchy
-    // Sentinel-1
-    registry->registerModel<Sentinel1ImportNode>("Data Import/Sentinel-1/Single Import");
-    registry->registerModel<Sentinel1BatchImportNode>("Data Import/Sentinel-1/Batch Import");
+    // Register Data Import nodes - Using 3-level hierarchy (Option 3: Business Categorization)
+    // InSAR Data
+    registry->registerModel<Sentinel1ImportNode>("Data Import/InSAR Data/Sentinel-1 Single Import");
+    registry->registerModel<Sentinel1BatchImportNode>("Data Import/InSAR Data/Sentinel-1 Batch Import");
+    registry->registerModel<TSXImportNode>("Data Import/InSAR Data/TerraSAR-X Single Import");
+    registry->registerModel<TSXBatchImportNode>("Data Import/InSAR Data/TerraSAR-X Batch Import");
+    registry->registerModel<CSKImportNode>("Data Import/InSAR Data/COSMO-SkyMed Import");
+    registry->registerModel<ALOS2ImportNode>("Data Import/InSAR Data/ALOS-2 Import");
+    registry->registerModel<LUTANImportNode>("Data Import/InSAR Data/LuTan-1 Import");
+    registry->registerModel<HTHTImportNode>("Data Import/InSAR Data/Hongtu-1 Import");
+    registry->registerModel<SpacetyImportNode>("Data Import/InSAR Data/Fucheng-1 Import");
+    registry->registerModel<AIRSATImportNode>("Data Import/InSAR Data/AIRSAT Import");
+    registry->registerModel<BiomassImportNode>("Data Import/InSAR Data/Biomass L1A Import");
 
-    // TerraSAR-X
-    registry->registerModel<TSXImportNode>("Data Import/TerraSAR-X/Single Import");
-    registry->registerModel<TSXBatchImportNode>("Data Import/TerraSAR-X/Batch Import");
-
-    // COSMO-SkyMed
-    registry->registerModel<CSKImportNode>("Data Import/COSMO-SkyMed/Batch Import");
-
-    // ALOS-2
-    registry->registerModel<ALOS2ImportNode>("Data Import/ALOS-2/Batch Import");
-
-    // LuTan-1
-    registry->registerModel<LUTANImportNode>("Data Import/LuTan-1/Batch Import");
-
-    // Hongtu-1
-    registry->registerModel<HTHTImportNode>("Data Import/Hongtu-1/Batch Import");
-
-    // Fucheng-1
-    registry->registerModel<SpacetyImportNode>("Data Import/Fucheng-1/Batch Import");
-
-    // AIRSAT
-    registry->registerModel<AIRSATImportNode>("Data Import/AIRSAT/Batch Import");
-
-    // Biomass L1A
-    registry->registerModel<BiomassImportNode>("Data Import/Biomass L1A/Batch Import");
-
-    // LiDAR
-    registry->registerModel<LidarImportNode>("Data Import/LiDAR/Batch Import");
+    // LiDAR Data
+    registry->registerModel<LidarImportNode>("Data Import/LiDAR Data/LiDAR (GEDI/ICESat-2) Import");
     
     // Generic SAR
-    registry->registerModel<GenericSARImportNode>("SAR/Import/Generic SAR/Single Import");
-    registry->registerModel<GenericSARBatchImportNode>("SAR/Import/Generic SAR/Batch Import");
-    registry->registerModel<GeneralSARLoadingNode>("SAR/Import/General SAR Loading");
+    registry->registerModel<GenericSARImportNode>("Data Import/Generic SAR/Generic SAR Single Import");
+    registry->registerModel<GenericSARBatchImportNode>("Data Import/Generic SAR/Generic SAR Batch Import");
+    registry->registerModel<GeneralSARLoadingNode>("Data Import/Generic SAR/General SAR Loading");
 
     // ============================================================================
     // Preprocessing Nodes
     // ============================================================================
+    registry->registerModel<CutNode>("Preprocessing");
+    registry->registerModel<CoregistrationNode>("Preprocessing");
+    
     // Sentinel-1 Preprocessing
     registry->registerModel<S1DeburstNode>("Preprocessing/Sentinel-1/Deburst");
     registry->registerModel<S1FrameMergeNode>("Preprocessing/Sentinel-1/Frame Merge");
     registry->registerModel<S1SwathMergeNode>("Preprocessing/Sentinel-1/Swath Merge");
     registry->registerModel<S1TopsBackGeocodingNode>("Preprocessing/Sentinel-1/Back-Geocoding");
 
-
     // ============================================================================
-    // SAR Enhancement Nodes
+    // SAR Enhancement Nodes (in SAR)
     // ============================================================================
-    registry->registerModel<SpeckleDenoiseNode>("SAR/Enhancement/Speckle Denoise");
-    registry->registerModel<ClutterSuppressionNode>("SAR/Enhancement/Clutter Suppression");
-    registry->registerModel<CoregistrationNode>("InSAR");
-    registry->registerModel<SLCDerampNode>("DInSAR");
-    registry->registerModel<BaselineFormationNode>("DInSAR/SBAS");
-    registry->registerModel<SBASTimeSeriesNode>("DInSAR/SBAS");
-    registry->registerModel<SBASReferenceReselectionNode>("DInSAR/SBAS");
-    registry->registerModel<DeformationPreviewNode>("DInSAR/SBAS");
-    registry->registerModel<ExportKMLNode>("DInSAR/SBAS");
-    registry->registerModel<PSCandidateNode>("DInSAR/PSI");
-    registry->registerModel<PSNetworkNode>("DInSAR/PSI");
-    registry->registerModel<PSTimeSeriesNode>("DInSAR/PSI");
-    registry->registerModel<PSDeformationPreviewNode>("DInSAR/PSI");
+    registry->registerModel<SpeckleDenoiseNode>("SAR/Denoise & Enhancement/Speckle Denoise");
+    registry->registerModel<ClutterSuppressionNode>("SAR/Denoise & Enhancement/Clutter Suppression");
+    
+    // InSAR & DInSAR Core Nodes
+    registry->registerModel<SLCDerampNode>("InSAR");
     registry->registerModel<InterferometricFormationNode>("InSAR");
-
     registry->registerModel<DenoiseNode>("InSAR");
     registry->registerModel<UnwrapNode>("InSAR");
     registry->registerModel<DemNode>("InSAR");
     registry->registerModel<BaselinePreviewNode>("InSAR");
+
+    // DInSAR/SBAS
+    registry->registerModel<BaselineFormationNode>("DInSAR/SBAS/Baseline Estimation");
+    registry->registerModel<SBASTimeSeriesNode>("DInSAR/SBAS/SBAS Time Series Analysis");
+    registry->registerModel<SBASReferenceReselectionNode>("DInSAR/SBAS/Reference Point Re-selection");
+    registry->registerModel<DeformationPreviewNode>("DInSAR/SBAS/Deformation Visualization");
+    
+    // DInSAR/PSI
+    registry->registerModel<PSCandidateNode>("DInSAR/PSI/PS Candidate Selection");
+    registry->registerModel<PSNetworkNode>("DInSAR/PSI/PS Network Construction");
+    registry->registerModel<PSTimeSeriesNode>("DInSAR/PSI/PS Time Series Estimation");
+    registry->registerModel<PSDeformationPreviewNode>("DInSAR/PSI/PS Deformation Preview");
 
     // ============================================================================
     // SAR Detection Nodes
@@ -140,33 +129,14 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // ============================================================================
     // SAR Evaluation Nodes
     // ============================================================================
-    registry->registerModel<EvaluationENLNode>("SAR/Evaluation/Evaluation-ENL");
-    registry->registerModel<EvaluationSCRNode>("SAR/Evaluation/Evaluation-SCR");
+    registry->registerModel<EvaluationENLNode>("SAR/Evaluation/ENL Evaluation");
+    registry->registerModel<EvaluationSCRNode>("SAR/Evaluation/SCR Evaluation");
     // Future Categories (placeholders for upcoming functionality)
     // ============================================================================
 
-    // Preprocessing nodes (to be implemented)
-    registry->registerModel<CutNode>("Preprocessing/Region Crop/AOI Crop");
-    // registry->registerModel<Cut2Node>("Preprocessing/Region Crop/Frame Crop");
-    // registry->registerModel<FilterNode>("Preprocessing/Filter/Goldstein");
-    // registry->registerModel<UnwrapNode>("Preprocessing/Phase Unwrapping/SNAPHU");
-
-    // Registration nodes (to be implemented)
-    // registry->registerModel<RegisNode>("Registration/Intensity Based/Coarse");
-    // registry->registerModel<DEMAssistCoregNode>("Registration/DEM Assisted/Fine");
-    // registry->registerModel<TOPSBackGeocodingNode>("Registration/TopSAR/Back-Geocoding");
-
-    // Interferometry nodes (to be implemented)
-    // registry->registerModel<InterferometricNode>("Interferometry/Interferogram Formation");
-    // registry->registerModel<BaselineFormationNode>("Interferometry/Baseline Estimation");
-
-    // SBAS/DInSAR nodes (to be implemented)
-    // registry->registerModel<SBASTimeSeriesNode>("SBAS/Time Series Analysis");
-    // registry->registerModel<SBASReferenceReselectionNode>("SBAS/Reference Reselection");
-    // registry->registerModel<DeformationVisualNode>("SBAS/Deformation Visualization");
-
-    registry->registerModel<GeocodingNode>("Export/Geocoding");
-    // registry->registerModel<KMLExportNode>("Export/KML");
+    // Export Nodes
+    registry->registerModel<GeocodingNode>("Export");
+    registry->registerModel<ExportKMLNode>("Export");
 
     // Register test nodes for development (can be removed when all InSAR nodes are implemented)
 #ifdef ENABLE_TEST_NODES

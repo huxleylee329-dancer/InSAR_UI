@@ -20,7 +20,7 @@ public:
     ~DeformationPreviewNode() override;
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("Time Series View"); }
+    QString caption() const override { return QStringLiteral("Deformation Visualization"); }
     QString name() const override { return QStringLiteral("DeformationPreview"); }
 
     unsigned int nPorts(PortType portType) const override;

@@ -420,7 +420,37 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
         bool hasChildren = (item->childCount() > 0);
 
         if (isTopLevel) {
-            item->setIcon(0, createColoredIcon(TEMPLATE_FOLDER, defaultIconColor, selectedColor));
+            QString catName = item->text(0);
+            QString iconPath = TEMPLATE_FOLDER;
+            QColor iconColor = defaultIconColor;
+
+            if (catName == "Data Import") {
+                iconPath = ":/SatExplorer/svg/import.svg";
+                iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C"); // Green
+            } else if (catName == "Preprocessing") {
+                iconPath = ":/SatExplorer/svg/toolbox.svg";
+                iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4"); // Purple
+            } else if (catName == "InSAR") {
+                iconPath = ":/SatExplorer/svg/interferogram.svg";
+                iconColor = isDark ? QColor("#FFB95B") : QColor("#A85C00"); // Amber/Orange
+            } else if (catName == "DInSAR") {
+                iconPath = ":/SatExplorer/svg/time_series.svg";
+                iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4"); // Purple
+            } else if (catName == "SAR") {
+                iconPath = ":/SatExplorer/svg/radar.svg";
+                iconColor = isDark ? QColor("#FFB95B") : QColor("#A85C00"); // Amber/Orange
+            } else if (catName == "Export") {
+                iconPath = ":/SatExplorer/svg/export.svg";
+                iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C"); // Green
+            } else if (catName == "Display") {
+                iconPath = ":/SatExplorer/svg/image_viewer.svg";
+                iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC"); // Blue
+            } else if (catName == "Information") {
+                iconPath = ":/SatExplorer/svg/logger.svg";
+                iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC"); // Blue
+            }
+
+            item->setIcon(0, createColoredIcon(iconPath, iconColor, selectedColor));
         } else if (hasChildren) {
             item->setIcon(0, createColoredIcon(FOLDER_ICON, defaultIconColor, selectedColor));
         } else {
@@ -444,27 +474,41 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                 iconPath = LOGGER_ICON;
                 iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC");
             }
-            else if (modelName.contains("Import", Qt::CaseInsensitive) || 
-                modelName.contains("Loading", Qt::CaseInsensitive)) {
-                // Import category - Green
-                if (modelName.contains("GeneralSAR", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/imagedata.svg";
+            else if (modelName == "Geocoding" || modelName == "ExportKML") {
+                // Export category - Green
+                iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
+                if (modelName == "Geocoding") {
+                    iconPath = ":/SatExplorer/svg/geocoding.svg";
+                } else {
+                    iconPath = ":/SatExplorer/svg/GoogleEarth.svg";
                 }
-                else if (modelName.contains("Batch", Qt::CaseInsensitive) ||
-                         modelName == "CSKImport" ||
-                         modelName == "ALOS2Import" ||
-                         modelName == "LUTANImport" ||
-                         modelName == "HTHTImport" ||
-                         modelName == "SpacetyImport" ||
-                         modelName == "AIRSATImport" ||
-                         modelName == "BiomassImport" ||
-                         modelName == "LidarImport") {
-                    iconPath = IMPORT_BATCH_ICON;
+            }
+            else if (modelName.contains("Import", Qt::CaseInsensitive) || 
+                     modelName.contains("Loading", Qt::CaseInsensitive)) {
+                // Import category - Green
+                iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
+                
+                if (modelName.startsWith("Sentinel1")) {
+                    iconPath = ":/SatExplorer/svg/sentinel1_logo.svg";
+                }
+                else if (modelName.startsWith("TSX") || modelName == "CSKImport" || modelName == "SpacetyImport") {
+                    iconPath = ":/SatExplorer/svg/x_band.svg";
+                }
+                else if (modelName == "ALOS2Import" || modelName == "LUTANImport" || modelName == "BiomassImport") {
+                    iconPath = ":/SatExplorer/svg/l_band.svg";
+                }
+                else if (modelName == "HTHTImport") {
+                    iconPath = ":/SatExplorer/svg/c_band.svg";
+                }
+                else if (modelName == "AIRSATImport") {
+                    iconPath = ":/SatExplorer/svg/airborne_sar.svg";
+                }
+                else if (modelName == "LidarImport") {
+                    iconPath = ":/SatExplorer/svg/lidar_sensor.svg";
                 }
                 else {
-                    iconPath = IMPORT_ICON;
+                    iconPath = ":/SatExplorer/svg/imagedata.svg";
                 }
-                iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
             } 
             else if (modelName.contains("Denoise", Qt::CaseInsensitive) || 
                      modelName.contains("Suppression", Qt::CaseInsensitive) || 
@@ -481,8 +525,10 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                     iconPath = ":/SatExplorer/svg/clutter_suppress.svg";
                 } else if (modelName == "Phase Unwrapping" || modelName.contains("Unwrap", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/unwrap.svg";
-                } else if (modelName.contains("DEM", Qt::CaseInsensitive) || modelName.contains("Deramp", Qt::CaseInsensitive)) {
+                } else if (modelName.contains("DEM", Qt::CaseInsensitive)) {
                     iconPath = ":/SatExplorer/svg/dem.svg";
+                } else if (modelName.contains("Deramp", Qt::CaseInsensitive)) {
+                    iconPath = ":/SatExplorer/svg/splice.svg";
                 }
             } 
              else if (modelName.contains("Crop", Qt::CaseInsensitive) || 
@@ -490,7 +536,7 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                       modelName == "AOICrop" ||
                       modelName.contains("Registration", Qt::CaseInsensitive) || 
                       modelName.contains("Coregistration", Qt::CaseInsensitive) || 
-                      modelName.contains("Geocoding", Qt::CaseInsensitive) || 
+                      modelName.contains("BackGeocoding", Qt::CaseInsensitive) || 
                       modelName.contains("Merge", Qt::CaseInsensitive) || 
                       modelName.contains("Deburst", Qt::CaseInsensitive) || 
                       modelName.contains("Interferometric", Qt::CaseInsensitive) || 
@@ -500,58 +546,54 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                       modelName.contains("TimeSeries", Qt::CaseInsensitive) ||
                       modelName.contains("Deformation", Qt::CaseInsensitive) ||
                       modelName.contains("Reference", Qt::CaseInsensitive) ||
-                      modelName.contains("Export", Qt::CaseInsensitive) ||
-                      modelName.contains("KML", Qt::CaseInsensitive) ||
                       modelName == "PSCandidate" ||
                       modelName == "PSNetwork") {
                  // Complex calculations/Registration/Merges/AI Detection - Purple
                  iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
-                
-                if (modelName.contains("Cut", Qt::CaseInsensitive) || modelName == "AOICrop") {
-                    iconPath = ":/SatExplorer/svg/cut.svg";
-                } else if (modelName.contains("Coregistration", Qt::CaseInsensitive) || 
-                           modelName.contains("Registration", Qt::CaseInsensitive) || 
-                           modelName.contains("Geocoding", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/coregistration.svg";
-                } else if (modelName.contains("Deburst", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/splice.svg";
-                } else if (modelName.contains("FrameMerge", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/frame_merge.svg";
-                } else if (modelName.contains("SwathMerge", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/swath_merge.svg";
-                } else if (modelName.contains("Interferometric", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/interferogram.svg";
-                } else if (modelName == "BaselineFormation") {
-                    iconPath = ":/SatExplorer/svg/baseline_formation.svg";
-                } else if (modelName == "SBASTimeSeries") {
-                    iconPath = ":/SatExplorer/svg/time_series.svg";
-                } else if (modelName == "SBASReferenceReselection") {
-                    iconPath = ":/SatExplorer/svg/reference.svg";
-                } else if (modelName == "DeformationPreview") {
-                    iconPath = ":/SatExplorer/svg/view.svg";
-                } else if (modelName == "ExportKML") {
-                    iconPath = ":/SatExplorer/svg/GoogleEarth.svg";
-                } else if (modelName.contains("Baseline", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/view.svg";
-                } else if (modelName.contains("Target", Qt::CaseInsensitive) || modelName.contains("Detection", Qt::CaseInsensitive)) {
-                    iconPath = ":/SatExplorer/svg/target_detect.svg";
-                } else if (modelName == "PSCandidate") {
-                    iconPath = ":/SatExplorer/svg/psi_candidate.svg";
-                } else if (modelName == "PSNetwork") {
-                    iconPath = ":/SatExplorer/svg/psi_network.svg";
-                } else if (modelName == "PSTimeSeries") {
-                    iconPath = ":/SatExplorer/svg/psi_time_series.svg";
-                } else if (modelName == "PSDeformationPreview") {
-                    iconPath = ":/SatExplorer/svg/psi_preview.svg";
-                }
-            } 
-            else if (modelName.contains("Evaluation", Qt::CaseInsensitive) || 
-                     modelName.contains("ENL", Qt::CaseInsensitive) || 
-                     modelName.contains("SCR", Qt::CaseInsensitive)) {
-                // Evaluation/Chart - Blue
-                iconPath = ":/SatExplorer/svg/chart.svg";
-                iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC");
-            }
+                 
+                 if (modelName.contains("Cut", Qt::CaseInsensitive) || modelName == "AOICrop") {
+                     iconPath = ":/SatExplorer/svg/cut.svg";
+                 } else if (modelName.contains("Coregistration", Qt::CaseInsensitive) || 
+                            modelName.contains("Registration", Qt::CaseInsensitive) ||
+                            modelName.contains("BackGeocoding", Qt::CaseInsensitive)) {
+                     iconPath = ":/SatExplorer/svg/coregistration.svg";
+                 } else if (modelName.contains("Deburst", Qt::CaseInsensitive)) {
+                     iconPath = ":/SatExplorer/svg/splice.svg";
+                 } else if (modelName.contains("FrameMerge", Qt::CaseInsensitive)) {
+                     iconPath = ":/SatExplorer/svg/frame_merge.svg";
+                 } else if (modelName.contains("SwathMerge", Qt::CaseInsensitive)) {
+                     iconPath = ":/SatExplorer/svg/swath_merge.svg";
+                 } else if (modelName.contains("Interferometric", Qt::CaseInsensitive)) {
+                     iconPath = ":/SatExplorer/svg/interferogram.svg";
+                 } else if (modelName == "BaselineFormation") {
+                     iconPath = ":/SatExplorer/svg/baseline_formation.svg";
+                 } else if (modelName == "SBASTimeSeries") {
+                     iconPath = ":/SatExplorer/svg/time_series.svg";
+                 } else if (modelName == "SBASReferenceReselection") {
+                     iconPath = ":/SatExplorer/svg/reference.svg";
+                 } else if (modelName == "DeformationPreview") {
+                     iconPath = ":/SatExplorer/svg/view.svg";
+                 } else if (modelName.contains("Baseline", Qt::CaseInsensitive)) {
+                     iconPath = ":/SatExplorer/svg/view.svg";
+                 } else if (modelName.contains("Target", Qt::CaseInsensitive) || modelName.contains("Detection", Qt::CaseInsensitive)) {
+                     iconPath = ":/SatExplorer/svg/target_detect.svg";
+                 } else if (modelName == "PSCandidate") {
+                     iconPath = ":/SatExplorer/svg/psi_candidate.svg";
+                 } else if (modelName == "PSNetwork") {
+                     iconPath = ":/SatExplorer/svg/psi_network.svg";
+                 } else if (modelName == "PSTimeSeries") {
+                     iconPath = ":/SatExplorer/svg/psi_time_series.svg";
+                 } else if (modelName == "PSDeformationPreview") {
+                     iconPath = ":/SatExplorer/svg/psi_preview.svg";
+                 }
+             } 
+             else if (modelName.contains("Evaluation", Qt::CaseInsensitive) || 
+                      modelName.contains("ENL", Qt::CaseInsensitive) || 
+                      modelName.contains("SCR", Qt::CaseInsensitive)) {
+                 // Evaluation/Chart - Blue
+                 iconPath = ":/SatExplorer/svg/chart.svg";
+                 iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC");
+             }
 
             item->setIcon(0, createColoredIcon(iconPath, iconColor, selectedColor));
         }

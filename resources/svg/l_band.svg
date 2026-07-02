@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Complete long wavelength wave -->
+  <path d="M2 12 C 4 7, 6 7, 8 12 C 10 17, 12 17, 14 12" />
+  <!-- Letter L (Perfect 6x8 size matching X) -->
+  <path d="M16.5 8 V 16 H 21" stroke-width="3" />
+  <!-- Base plate line -->
+  <path d="M2 18 H11" />
+</svg>

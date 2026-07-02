@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Emitter -->
+  <circle cx="12" cy="5" r="3" />
+  <!-- Laser rays (only 3 bold rays) -->
+  <line x1="8" y1="8" x2="6" y2="18" stroke-dasharray="1 3" />
+  <line x1="12" y1="8" x2="12" y2="15" stroke-dasharray="1 3" />
+  <line x1="16" y1="8" x2="18" y2="19" stroke-dasharray="1 3" />
+  <!-- Rugged terrain profile (simplified to 3 peaks) -->
+  <path d="M4 19 L9 15 L14 20 L20 18" />
+</svg>

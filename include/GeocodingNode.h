@@ -32,7 +32,7 @@ public:
     ~GeocodingNode();
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("Image Geocoding"); }
+    QString caption() const override { return QStringLiteral("Geocoding"); }
     QString name() const override { return QStringLiteral("Geocoding"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;

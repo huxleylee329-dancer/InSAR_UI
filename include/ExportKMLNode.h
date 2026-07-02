@@ -27,7 +27,7 @@ public:
     ~ExportKMLNode();
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("Export as KML"); }
+    QString caption() const override { return QStringLiteral("KML Export"); }
     QString name() const override { return QStringLiteral("ExportKML"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Left Satellite -->
+  <rect x="3" y="4" width="4" height="3" rx="1" />
+  <!-- Right Satellite -->
+  <rect x="17" y="4" width="4" height="3" rx="1" />
+  <!-- Horizontal Phase Wave (Tandem link) -->
+  <path d="M7 5.5 Q 9.5 2, 12 5.5 T 17 5.5" />
+  <!-- Scan beams meeting at the ground center -->
+  <line x1="5" y1="7" x2="12" y2="18" stroke-dasharray="2 2" />
+  <line x1="19" y1="7" x2="12" y2="18" stroke-dasharray="2 2" />
+  <!-- Ground Line -->
+  <line x1="3" y1="18" x2="21" y2="18" />
+  <!-- Target point on the ground -->
+  <circle cx="12" cy="18" r="1.5" fill="currentColor" />
+</svg>

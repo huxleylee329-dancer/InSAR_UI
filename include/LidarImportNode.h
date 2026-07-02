@@ -23,7 +23,7 @@ public:
     ~LidarImportNode() = default;
 
     // NodeDelegateModel interface
-    QString caption() const override { return QStringLiteral("LiDAR Import"); }
+    QString caption() const override { return QStringLiteral("LiDAR (GEDI/ICESat-2) Import"); }
     QString name() const override { return QStringLiteral("LidarImport"); }
 
     QJsonObject save() const override;

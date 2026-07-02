@@ -44,7 +44,7 @@ public:
     EvaluationSCRNode();
     ~EvaluationSCRNode() override;
 
-    QString caption() const override { return "Evaluation-SCR"; }
+    QString caption() const override { return "SCR Evaluation"; }
     QString name() const override { return "EvaluationSCR"; }
 
     unsigned int nPorts(PortType portType) const override;

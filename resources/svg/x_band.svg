@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Simplified high-frequency wave -->
+  <path d="M2 12 C 3.5 7, 4.5 7, 6 12 C 7.5 17, 8.5 17, 10 12" />
+  <!-- Letter X (Centered in the right half, enlarged) -->
+  <path d="M15 8 L21 16 M21 8 L15 16" stroke-width="3" />
+  <!-- Base plate line -->
+  <path d="M2 18 H11" />
+</svg>
