@@ -40,5 +40,6 @@ private slots:
     /*卸载工程响应函数*/
     void Unload();
     void DeleteNode();
+    void ManageGcp(); // 新增 GCP 管理槽
     void onSaveImageFinished();
  }; 

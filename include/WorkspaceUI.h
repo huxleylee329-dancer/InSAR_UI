@@ -90,6 +90,7 @@ private:
     QList<QString> getWorkflowTopologicalOrder(const QString& projectPath);
 
     QToolBar *m_toolbar = nullptr;
+    QToolButton *m_btnGcp = nullptr;
 
     // All the original components from MainWindow
     QSplitter *m_splitter2 = nullptr;

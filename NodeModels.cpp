@@ -48,6 +48,8 @@
 #include "PSNetworkNode.h"
 #include "PSTimeSeriesNode.h"
 #include "PSDeformationPreviewNode.h"
+#include "GCPManagerNode.h"
+
 
 
 #include <memory>
@@ -139,6 +141,9 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // Export Nodes
     registry->registerModel<GeocodingNode>("Export");
     registry->registerModel<ExportKMLNode>("Export");
+
+    // Tools
+    registry->registerModel<GCPManagerNode>("Tools");
 
     // Register test nodes for development (can be removed when all InSAR nodes are implemented)
 #ifdef ENABLE_TEST_NODES

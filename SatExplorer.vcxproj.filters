@@ -412,6 +412,21 @@
     <ClCompile Include="TSXImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GCPDatabase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPImportExport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPAnnotationWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPManagerWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPManagerNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="QtNodes\src\AbstractGraphModel.cpp">
       <Filter>QtNodes\Src</Filter>
     </ClCompile>
@@ -648,6 +663,21 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <QtMoc Include="include\GCPDatabase.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GCPAnnotationWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GCPManagerWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GCPManagerNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="include\GCPImportExport.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="include\Cut.h">
       <Filter>Header Files</Filter>
     </QtMoc>

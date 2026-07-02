@@ -151,6 +151,7 @@ private slots:
     // 关闭工程
     void on_actionClose_triggered();
     void on_actionCleanOrphanedFiles_triggered();
+    void on_actionGCP_Manager_triggered();
 private:
     void setupThemeMenu();
     void setTheme(const QString &theme);
@@ -189,4 +190,6 @@ private:
 
     // 更新“文件”菜单项状态
     void updateFileMenuState();
+
+    QAction* m_actionGcpManager;
 };

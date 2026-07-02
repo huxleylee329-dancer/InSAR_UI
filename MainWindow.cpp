@@ -19,7 +19,11 @@
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
 #include "icon_utils.h"
+#include "include/GCPDatabase.h"
+#include "include/GCPAnnotationWidget.h"
+#include <QtSql/QSqlError>
 #include <QToolButton>
+#include <QFrame>
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <QFutureWatcher>
@@ -180,6 +184,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     , m_statusProjectLabel(nullptr)
     , m_statusInterfaceLabel(nullptr)
     , m_statusProgressBar(nullptr)
+    , m_actionGcpManager(nullptr)
 {
     ui.setupUi(this);
     initStatusBar();
@@ -257,6 +262,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
             if (!ui.menuDInSAR->isEnabled()) ui.menuDInSAR->setDisabled(0);
             if (!ui.menuSAR->isEnabled()) ui.menuSAR->setDisabled(0);
             if (!ui.menuExport->isEnabled()) ui.menuExport->setDisabled(0);
+            if (m_actionGcpManager && !m_actionGcpManager->isEnabled()) m_actionGcpManager->setDisabled(0);
         }
 
         m_projectModified = true;
@@ -276,6 +282,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
         ui.menuDInSAR->setDisabled(1);
         ui.menuSAR->setDisabled(1);
         ui.menuExport->setDisabled(1);
+        if (m_actionGcpManager) m_actionGcpManager->setDisabled(1);
         
         m_interfaceManager->switchToInterface("welcome");
         updateInterfaceMenuCheckState();
@@ -285,6 +292,25 @@ MainWindow::MainWindow(QString str, QWidget* parent)
         this->open_from_project_file(str);
     }
     
+    // 动态创建并插入“工具”菜单 (SOP 建议一)
+    QMenu* menuTools = new QMenu(QStringLiteral("工具(&T)"), this);
+    m_actionGcpManager = new QAction(QStringLiteral("地面控制点管理与评估"), this);
+    m_actionGcpManager->setIcon(QIcon(GCP_ICON));
+    menuTools->addAction(m_actionGcpManager);
+
+    // 挂接槽信号
+    connect(m_actionGcpManager, &QAction::triggered, this, &MainWindow::on_actionGCP_Manager_triggered);
+
+    // 插入到“数据导出”的后面
+    QList<QAction*> actions = menuBar()->actions();
+    QAction* exportAction = ui.menuExport->menuAction();
+    int idx = actions.indexOf(exportAction);
+    if (idx != -1 && idx + 1 < actions.size()) {
+        menuBar()->insertMenu(actions[idx + 1], menuTools);
+    } else {
+        menuBar()->addMenu(menuTools);
+    }
+
     updateFileMenuState();
 }
 MainWindow::~MainWindow()
@@ -396,10 +422,89 @@ void MainWindow::Loading(QString Data_path, QString ImageType, QString bmp_path,
     int index = activeTabWidget->addTab(TabChild, bmp_name);
     activeTabWidget->setCurrentWidget(TabChild);
 
+    // 创建内置快捷工具栏 (SOP 建议三)
+    QWidget* toolBarWidget = new QWidget(TabChild);
+    toolBarWidget->setStyleSheet("background-color: rgba(128, 128, 128, 0.05); border-bottom: 1px solid rgba(128, 128, 128, 0.15);");
+    QHBoxLayout* toolBarLayout = new QHBoxLayout(toolBarWidget);
+    toolBarLayout->setContentsMargins(10, 4, 10, 4);
+    toolBarLayout->setSpacing(8);
+
+    QToolButton* btnZoomIn = new QToolButton(toolBarWidget);
+    btnZoomIn->setIcon(style()->standardIcon(QStyle::SP_TitleBarMaxButton));
+    btnZoomIn->setToolTip(QStringLiteral("放大"));
+    btnZoomIn->setCursor(Qt::PointingHandCursor);
+
+    QToolButton* btnZoomOut = new QToolButton(toolBarWidget);
+    btnZoomOut->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));
+    btnZoomOut->setToolTip(QStringLiteral("缩小"));
+    btnZoomOut->setCursor(Qt::PointingHandCursor);
+
+    QToolButton* btnFit = new QToolButton(toolBarWidget);
+    btnFit->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+    btnFit->setToolTip(QStringLiteral("适应屏幕"));
+    btnFit->setCursor(Qt::PointingHandCursor);
+
+    QFrame* line = new QFrame(toolBarWidget);
+    line->setFrameShape(QFrame::VLine);
+    line->setFrameShadow(QFrame::Sunken);
+    line->setMinimumHeight(16);
+
+    QToolButton* btnGcp = new QToolButton(toolBarWidget);
+    btnGcp->setText(QStringLiteral(" GCP 标注与管理 "));
+    btnGcp->setIcon(QIcon(GCP_ICON));
+    btnGcp->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    btnGcp->setToolTip(QStringLiteral("打开此影像的地面控制点(GCP)标注与残差评估界面"));
+    btnGcp->setCursor(Qt::PointingHandCursor);
+    btnGcp->setStyleSheet(
+        "QToolButton {"
+        "  background-color: rgba(130, 207, 255, 0.15);"
+        "  border: 1px solid rgba(130, 207, 255, 0.4);"
+        "  border-radius: 4px;"
+        "  padding: 3px 6px;"
+        "  font-weight: bold;"
+        "  color: #005FAC;"
+        "}"
+        "QToolButton:hover {"
+        "  background-color: rgba(130, 207, 255, 0.3);"
+        "}"
+    );
+
+    // 暗黑模式下文字配色的微调
+    if (m_currentTheme == "dark") {
+        btnGcp->setStyleSheet(
+            "QToolButton {"
+            "  background-color: rgba(130, 207, 255, 0.15);"
+            "  border: 1px solid rgba(130, 207, 255, 0.4);"
+            "  border-radius: 4px;"
+            "  padding: 3px 6px;"
+            "  font-weight: bold;"
+            "  color: #82CFFF;"
+            "}"
+            "QToolButton:hover {"
+            "  background-color: rgba(130, 207, 255, 0.3);"
+            "}"
+        );
+    }
+
+    // 只对 H5 影像节点显示 GCP 标注入口
+    if (!Data_path.endsWith(".h5", Qt::CaseInsensitive)) {
+        btnGcp->setVisible(false);
+        line->setVisible(false);
+    }
+
+    toolBarLayout->addWidget(btnZoomIn);
+    toolBarLayout->addWidget(btnZoomOut);
+    toolBarLayout->addWidget(btnFit);
+    toolBarLayout->addWidget(line);
+    toolBarLayout->addWidget(btnGcp);
+    toolBarLayout->addStretch();
 
     ImageView* graph = new ImageView(TabChild);
-    TabLayout->addWidget(graph);
+    TabLayout->addWidget(toolBarWidget, 0, 0);
+    TabLayout->addWidget(graph, 1, 0);
     TabLayout->setContentsMargins(0, 0, 0, 0);
+    TabLayout->setSpacing(0);
+
     QGraphicsScene* scene = new QGraphicsScene;
     graph->setScene(scene);
     graph->setInteractive(true);
@@ -412,6 +517,45 @@ void MainWindow::Loading(QString Data_path, QString ImageType, QString bmp_path,
     scene->addItem(item);
     TabChild->setLayout(TabLayout);
     TabChild->setAttribute(Qt::WA_DeleteOnClose);
+
+    // 绑定事件
+    connect(btnZoomIn, &QToolButton::clicked, graph, &ImageView::zoomIn);
+    connect(btnZoomOut, &QToolButton::clicked, graph, &ImageView::zoomOut);
+    connect(btnFit, &QToolButton::clicked, graph, &ImageView::fitImage);
+    
+    connect(btnGcp, &QToolButton::clicked, this, [this, Data_path]() {
+        if (Data_path.isEmpty()) return;
+        
+        QStandardItemModel* model = m_workspaceUI->treeView()->model;
+        if (!model || model->rowCount() == 0) return;
+        
+        // 自动推算数据库路径
+        QStandardItem* firstProjItem = model->item(0, 0);
+        QModelIndex firstProjPathIdx = firstProjItem->index().sibling(0, 1);
+        QStandardItem* firstProjPathItem = model->itemFromIndex(firstProjPathIdx);
+        if (!firstProjPathItem) return;
+        
+        QString projXmlPath = firstProjPathItem->text();
+        QString projBase = QFileInfo(projXmlPath).baseName();
+        QString projDir = QFileInfo(projXmlPath).absolutePath();
+        QString dbPath = projDir + "/" + projBase + "_gcp.db";
+        
+        GCPDatabase* db = new GCPDatabase(this);
+        if (db->open(dbPath)) {
+            GCPAnnotationDialog annotationDlg(Data_path, db, this);
+            annotationDlg.exec();
+            db->close();
+            
+            // 标注完成后，刷新工作区以体现所有更改
+            m_workspaceUI->refreshProjectTree();
+        } else {
+            QSqlDatabase sqlDb = QSqlDatabase::database(db->connectionName());
+            QMessageBox::critical(this, QStringLiteral("数据库打开失败"), 
+                QStringLiteral("无法打开或初始化控制点数据库：\n%1\n\nSQLite 错误信息：%2")
+                .arg(dbPath).arg(sqlDb.lastError().text()));
+        }
+        db->deleteLater();
+    });
     /// progressdialog.setValue(100);
     // progressdialog.autoClose();
     graph->show();
@@ -2264,6 +2408,7 @@ void MainWindow::updateFileMenuState()
         ui.menuDInSAR->setEnabled(false);
         ui.menuSAR->setEnabled(false);
         ui.menuExport->setEnabled(false);
+        if (m_actionGcpManager) m_actionGcpManager->setEnabled(false);
     }
 }
 
@@ -2363,4 +2508,114 @@ void MainWindow::updateStatusBarInterface(const QString& interfaceId)
     }
 
     m_statusInterfaceLabel->setStyleSheet(style);
+}
+
+void MainWindow::on_actionGCP_Manager_triggered()
+{
+    // 1. 检查工程是否打开且 Workspace 树是否存在
+    if (!m_workspaceUI || !m_workspaceUI->treeView() || !m_workspaceUI->treeView()->model) {
+        QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("请先打开或新建一个 InSAR 工程！"));
+        return;
+    }
+    
+    QStandardItemModel* model = m_workspaceUI->treeView()->model;
+    if (model->rowCount() == 0) {
+        QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("请先打开或新建一个 InSAR 工程！"));
+        return;
+    }
+
+    // 2. 递归扫描项目树里的所有影像文件 H5 节点 (属于三级叶子节点)
+    // 树层级：Projects (0) -> Data Nodes (1) -> Images (2)
+    QMap<QString, QString> imagePathMap; // 影像显示名称 -> H5绝对物理路径
+    for (int p = 0; p < model->rowCount(); ++p) {
+        QStandardItem* projItem = model->item(p, 0);
+        if (!projItem) continue;
+        for (int d = 0; d < projItem->rowCount(); ++d) {
+            QStandardItem* dirItem = projItem->child(d, 0);
+            if (!dirItem) continue;
+            for (int i = 0; i < dirItem->rowCount(); ++i) {
+                QStandardItem* imgItem = dirItem->child(i, 0);
+                if (!imgItem) continue;
+                // 数据路径存储在 Item 的第二列 (sibling 1) 节点文本中
+                QModelIndex pathIdx = imgItem->index().sibling(i, 1);
+                QStandardItem* pathItem = model->itemFromIndex(pathIdx);
+                if (pathItem) {
+                    QString path = pathItem->text();
+                    if (path.endsWith(".h5", Qt::CaseInsensitive)) {
+                        imagePathMap[imgItem->text()] = path;
+                    }
+                }
+            }
+        }
+    }
+
+    if (imagePathMap.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("当前工程中没有已导入的影像数据，请先导入或加载影像数据！"));
+        return;
+    }
+
+    // 获取当前工程文件路径以推导控制点 SQLite 数据库路径
+    QStandardItem* firstProjItem = model->item(0, 0);
+    QModelIndex firstProjPathIdx = firstProjItem->index().sibling(0, 1);
+    QStandardItem* firstProjPathItem = model->itemFromIndex(firstProjPathIdx);
+    if (!firstProjPathItem) {
+        QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("无法获取当前工程物理路径。"));
+        return;
+    }
+    
+    QString projXmlPath = firstProjPathItem->text();
+    QString projBase = QFileInfo(projXmlPath).baseName();
+    QString projDir = QFileInfo(projXmlPath).absolutePath();
+    QString dbPath = projDir + "/" + projBase + "_gcp.db";
+
+    // 3. 弹出一个影像选择对话框
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("选择标注底图影像"));
+    dlg.setMinimumWidth(360);
+    QVBoxLayout* layout = new QVBoxLayout(&dlg);
+    
+    QLabel* label = new QLabel(QStringLiteral("请选择要进行控制点标注与管理的底图影像:"), &dlg);
+    layout->addWidget(label);
+    
+    QComboBox* combo = new QComboBox(&dlg);
+    combo->setMinimumHeight(28);
+    for (auto it = imagePathMap.begin(); it != imagePathMap.end(); ++it) {
+        combo->addItem(it.key(), it.value());
+    }
+    layout->addWidget(combo);
+    
+    // 增加间距
+    layout->addSpacing(10);
+    
+    QHBoxLayout* btnLayout = new QHBoxLayout();
+    QPushButton* okBtn = new QPushButton(QStringLiteral("确认"), &dlg);
+    QPushButton* cancelBtn = new QPushButton(QStringLiteral("取消"), &dlg);
+    okBtn->setDefault(true);
+    btnLayout->addWidget(okBtn);
+    btnLayout->addWidget(cancelBtn);
+    layout->addLayout(btnLayout);
+    
+    connect(okBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+    connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+    
+    if (dlg.exec() == QDialog::Accepted) {
+        QString selectedH5 = combo->currentData().toString();
+        
+        // 4. 打开控制点数据库并拉起标注大窗口
+        GCPDatabase* db = new GCPDatabase(this);
+        if (db->open(dbPath)) {
+            GCPAnnotationDialog annotationDlg(selectedH5, db, this);
+            annotationDlg.exec();
+            db->close();
+            
+            // 标注完成后，刷新工作区以体现所有更改
+            m_workspaceUI->refreshProjectTree();
+        } else {
+            QSqlDatabase sqlDb = QSqlDatabase::database(db->connectionName());
+            QMessageBox::critical(this, QStringLiteral("数据库打开失败"), 
+                QStringLiteral("无法打开或初始化控制点数据库：\n%1\n\nSQLite 错误信息：%2")
+                .arg(dbPath).arg(sqlDb.lastError().text()));
+        }
+        db->deleteLater();
+    }
 }

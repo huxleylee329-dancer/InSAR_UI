@@ -72,9 +72,10 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         "DInSAR",         // 4. DInSAR分类
         "SAR",            // 5. SAR处理分类
         "Export",         // 6. 数据导出分类
-        "Display",        // 7. 图像显示/预览分类
-        "Information",    // 8. 信息/工具节点分类
-        "Test"            // 9. 测试节点分类
+        "Tools",          // 7. 工具分类
+        "Display",        // 8. 图像显示/预览分类
+        "Information",    // 9. 信息/工具节点分类
+        "Test"            // 10. 测试节点分类
     };
 
     // ===== 2. 子分类顺序 =====
@@ -213,6 +214,12 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.leafItems["Information"] = QList<PaletteOrder::LeafItem>{
         {"Note", "Note"},          // NoteNode - 文本注释节点
         {"Logger", "Logger"}       // LoggerNode - 日志记录节点
+    };
+
+    // Tools 子分类与叶子项顺序
+    order.subcategories["Tools"] = QStringList{};
+    order.leafItems["Tools"] = QList<PaletteOrder::LeafItem>{
+        {"GCP Manager", "GCP Manager"}
     };
 
     return order;

@@ -98,8 +98,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\opencv\build\x64\vc15\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;DeformationRateField_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;DeformationRateField_d.lib;Qt5Sqld.lib;gdal_i.lib;GCPManager_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -116,8 +116,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;Qt5Sql.lib;gdal_i.lib;GCPManager.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -546,6 +546,21 @@
     <ClCompile Include="NodeTreeWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="GCPDatabase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPImportExport.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPAnnotationWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPManagerWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GCPManagerNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="NodeUtils.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -899,6 +914,21 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\QtNodes\internal\CardExecutableNodeDelegateModel.hpp" />
+    <QtMoc Include="include\GCPDatabase.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GCPAnnotationWidget.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GCPManagerWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GCPManagerNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <ClInclude Include="include\GCPImportExport.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="include\tinystr.h">
       <Filter>Header Files</Filter>
     </ClInclude>

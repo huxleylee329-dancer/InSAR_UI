@@ -228,12 +228,16 @@ void TreeView::slotCustomContextMenu(const QPoint& point) //槽函数定义
             QMenu* menu = new QMenu(this);
             QAction* image_saveas = new QAction(QStringLiteral("另存为"));
             QAction* image_delete = new QAction(QStringLiteral("删除"));
+            QAction* image_gcp = new QAction(QStringLiteral("GCP标注与管理"));
             image_saveas->setIcon(QIcon(EXPORT_ICON));
             image_delete->setIcon(QIcon(EXPORT_ICON));
+            image_gcp->setIcon(QIcon(GCP_ICON));
             menu->addAction(image_saveas);
             menu->addAction(image_delete);
+            menu->addAction(image_gcp);
             connect(image_saveas, &QAction::triggered, this, &TreeView::Import);
             connect(image_delete, &QAction::triggered, this, &TreeView::Delete);
+            connect(image_gcp, &QAction::triggered, this, &TreeView::ManageGcp);
             menu->exec(this->mapToGlobal(point));
         }
 
@@ -571,3 +575,58 @@ void TreeView::rowsInserted(const QModelIndex &parent, int start, int end)
         }
     }
 }
+
+#include "include/GCPAnnotationWidget.h"
+#include "include/GCPDatabase.h"
+#include <QtSql/QSqlDatabase>
+#include <QtSql/QSqlError>
+
+void TreeView::ManageGcp()
+{
+    if (this->currentIndex().isValid())
+    {
+        QModelIndex currentIdx = this->currentIndex();
+        if (!currentIdx.parent().isValid() || !currentIdx.parent().parent().isValid()) {
+            QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("请选中具体的影像数据节点以标注控制点！"));
+            return;
+        }
+
+        QString Project_path = model->itemFromIndex(currentIdx.parent().parent().sibling(0, 1))->text();
+        QString Project_name = model->itemFromIndex(currentIdx.parent().parent())->text();
+        QModelIndex NameIndex = currentIdx;
+        QModelIndex PathIndex = NameIndex.sibling(0, 1);
+        
+        if (!PathIndex.isValid() || !model->itemFromIndex(PathIndex)) {
+            QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("无法定位该影像的文件路径！"));
+            return;
+        }
+        
+        QString h5Path = model->itemFromIndex(PathIndex)->text();
+        if (h5Path.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("数据文件路径为空，请确认影像是否正常加载。"));
+            return;
+        }
+
+        QString projXmlPath = Project_path + "/" + Project_name;
+        QString projBaseName = QFileInfo(projXmlPath).baseName();
+        QString dbPath = Project_path + "/" + projBaseName + "_gcp.db";
+
+        GCPDatabase* db = new GCPDatabase(this);
+        if (db->open(dbPath))
+        {
+            GCPAnnotationDialog dlg(h5Path, db, this);
+            dlg.exec();
+            db->close();
+        }
+        else
+        {
+            QSqlDatabase sqlDb = QSqlDatabase::database(db->connectionName());
+            QString dbError = sqlDb.lastError().text();
+            QMessageBox::critical(this, QStringLiteral("数据库打开失败"), 
+                QStringLiteral("无法打开或初始化控制点数据库：\n%1\n\nSQLite 错误信息：%2")
+                .arg(dbPath).arg(dbError.isEmpty() ? QStringLiteral("未知连接错误") : dbError));
+        }
+        db->deleteLater();
+    }
+}
+
