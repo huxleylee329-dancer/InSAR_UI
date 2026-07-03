@@ -58,6 +58,7 @@ extern void applyTheme(const QString &theme);
 #include"treeview.h"
 #include"ImageView.h"
 #include"Unwrap_ui.h"
+#include"DEMSourceDialog.h"
 #include"Dem_ui.h"
 #include"SLC_deramp.h"
 #include"Baseline_Formation.h"
@@ -142,6 +143,7 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionNodeEditor",               ":/SatExplorer/svg/flow_editor.svg"},
     {"actionCleanOrphanedFiles",       ":/SatExplorer/svg/delete_icon.svg"},
     {"actionDEM",                      ":/SatExplorer/svg/dem.svg"},
+    {"actionExternal_DEM",             ":/SatExplorer/svg/external_dem.svg"},
     {"actionGenericSAR",               ":/SatExplorer/svg/imagedata.svg"},
     {"actionTSX",                      ":/SatExplorer/svg/x_band.svg"},
     {"actionSentinel_1",               ":/SatExplorer/svg/sentinel1_logo.svg"},
@@ -1491,6 +1493,15 @@ void MainWindow::on_actionDEM_triggered()
     connect(Dem, &Dem_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     Dem->setAttribute(Qt::WA_DeleteOnClose, true);
 }
+void MainWindow::on_actionExternal_DEM_triggered()
+{
+    DEMSourceDialog* demSourceDlg = new DEMSourceDialog(this);
+    connect(this, &MainWindow::sendModel, demSourceDlg, &DEMSourceDialog::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    demSourceDlg->show();
+    connect(demSourceDlg, &DEMSourceDialog::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    demSourceDlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
 void MainWindow::on_actiongeocode_triggered()
 {
     Geocoding* geocode = new Geocoding();
@@ -1753,7 +1764,7 @@ void MainWindow::applyMenuIcons(bool isDark)
             name == "actiongeocode" || name == "menuImport" || name == "menuImport_2" ||
             name == "actionLuTan_1" || name == "actionHongtu_1" || name == "actionSpacety" ||
             name == "actionAIRSAT" || name == "actionBiomass" || name == "actionLiDAR" ||
-            name == "actionGcpManager") {
+            name == "actionGcpManager" || name == "actionExternal_DEM") {
             return isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
         }
         // 4. Amber/Orange (Filtering/Denoising/Unwrap/DEM)

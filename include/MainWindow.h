@@ -121,6 +121,7 @@ private slots:
     void on_actionDenoise_triggered();
     void on_actionUnwrap_triggered();
     void on_actionDEM_triggered();
+    void on_actionExternal_DEM_triggered();
     void on_actiongeocode_triggered();
     void on_actionS1_swath_merge_triggered();
     void on_actionS1_frame_merge_triggered();

@@ -36,6 +36,7 @@
 #include "DenoiseNode.h"
 #include "UnwrapNode.h"
 #include "DemNode.h"
+#include "DEMSourceNode.h"
 #include "SLCDerampNode.h"
 #include "BaselineFormationNode.h"
 #include "SBASTimeSeriesNode.h"
@@ -114,6 +115,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<DenoiseNode>("InSAR");
     registry->registerModel<UnwrapNode>("InSAR");
     registry->registerModel<DemNode>("InSAR");
+    registry->registerModel<DEMSourceNode>("Data Import/DEM Data");
     registry->registerModel<BaselinePreviewNode>("InSAR");
 
     // DInSAR/SBAS

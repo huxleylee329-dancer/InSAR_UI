@@ -83,8 +83,10 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     order.subcategories["Data Import"] = QStringList{
         "InSAR Data",
         "LiDAR Data",
-        "Generic SAR"
+        "Generic SAR",
+        "DEM Data"
     };
+
 
     order.subcategories["Preprocessing"] = QStringList{
         "Sentinel-1"
@@ -118,6 +120,11 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Fucheng-1 Import", "Fucheng-1 Import"},
         {"AIRSAT Import", "AIRSAT Import"},
         {"Biomass L1A Import", "Biomass L1A Import"}
+    };
+
+    // Data Import / DEM Data 叶子项
+    order.leafItems["Data Import/DEM Data"] = QList<PaletteOrder::LeafItem>{
+        {"External DEM Fetch", "External DEM"}
     };
 
     // Data Import / Generic SAR 叶子项
@@ -158,7 +165,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"Interferometric Formation", "Interferometric Formation"},
         {"Phase Filtering", "Phase Filtering"},
         {"Phase Unwrapping", "Phase Unwrapping"},
-        {"DEM Generation", "DEM Generation"}
+        {"DEM Generation", "DEM Generation"},
+        {"External DEM", "External DEM"}
     };
 
     // DInSAR/SBAS 类叶子项顺序

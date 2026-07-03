@@ -93,6 +93,7 @@
      <addaction name="menuInSAR_Import"/>
      <addaction name="menuLiDAR_Import"/>
      <addaction name="actionGenericSAR"/>
+     <addaction name="actionExternal_DEM"/>
     </widget>
     <widget class="QMenu" name="menuPreprocessing">
      <property name="title">
@@ -433,6 +434,11 @@
   <action name="actionDeformationRateField">
    <property name="text">
     <string>Rate Field Analysis</string>
+   </property>
+  </action>
+  <action name="actionExternal_DEM">
+   <property name="text">
+    <string>External DEM</string>
    </property>
   </action>
  </widget>

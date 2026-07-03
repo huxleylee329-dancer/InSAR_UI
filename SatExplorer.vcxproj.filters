@@ -313,7 +313,16 @@
     <ClCompile Include="DemNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="DEMSourceNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DEMSourceDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DemWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DEMSourceWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GeocodingNode.cpp">
@@ -927,7 +936,16 @@
     <QtMoc Include="include\DemNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\DEMSourceNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DEMSourceDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\DemWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\DEMSourceWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\GeocodingNode.h">

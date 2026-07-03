@@ -487,7 +487,9 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                 }
             }
             else if (modelName.contains("Import", Qt::CaseInsensitive) || 
-                     modelName.contains("Loading", Qt::CaseInsensitive)) {
+                     modelName.contains("Loading", Qt::CaseInsensitive) ||
+                     modelName == "DEMSource" ||
+                     modelName == "DEMSourceNode") {
                 // Import category - Green
                 iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
                 
@@ -508,6 +510,9 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                 }
                 else if (modelName == "LidarImport") {
                     iconPath = ":/SatExplorer/svg/lidar_sensor.svg";
+                }
+                else if (modelName == "DEMSource" || modelName == "DEMSourceNode") {
+                    iconPath = ":/SatExplorer/svg/external_dem.svg";
                 }
                 else {
                     iconPath = ":/SatExplorer/svg/imagedata.svg";
