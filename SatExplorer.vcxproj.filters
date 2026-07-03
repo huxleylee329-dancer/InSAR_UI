@@ -367,6 +367,12 @@
     <ClCompile Include="CutNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="OrbitRefinementNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="OrbitRefinementWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="CSKImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -982,6 +988,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\CutNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\OrbitRefinementNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\OrbitRefinementWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\CSKImportNode.h">

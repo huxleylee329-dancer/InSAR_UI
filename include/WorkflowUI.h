@@ -98,6 +98,9 @@ public:
     // 获取面板显示/隐藏的Action（供主窗口添加到视图菜单）
     QList<QAction*> getViewActions() const;
 
+public slots:
+    void onNodeDoubleClicked(const QString &modelName);
+
 private slots:
     // File operations
     void onNew();
@@ -115,7 +118,6 @@ private slots:
     void onSceneLoaded();
 
     // Left sidebar signals
-    void onNodeDoubleClicked(const QString &modelName);
     void onNodeSearchTextChanged(const QString &text);
     void onNodeItemClicked(const QString &modelName);
     void onNodeDropped(QtNodes::NodeId nodeId, const QString &modelName);

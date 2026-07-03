@@ -122,6 +122,7 @@ static const MenuIconMapping menuIconMap[] = {
     {"actionClose",                    ":/SatExplorer/svg/close.svg"},
     {"actionQuit",                     ":/SatExplorer/svg/quit.svg"},
     {"actionRegistration",             ":/SatExplorer/svg/coregistration.svg"},
+    {"actionOrbitRefinement",          ":/SatExplorer/svg/orbit_refine.svg"},
     {"actionCut",                      ":/SatExplorer/svg/cut.svg"},
     {"actionS1_TOPS_BackGeocoding",    ":/SatExplorer/svg/coregistration.svg"},
     {"actionS1_Deburst",               ":/SatExplorer/svg/splice.svg"},
@@ -1275,6 +1276,17 @@ void MainWindow::on_actionCut_triggered()
     connect(cut, &Cut::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     cut->setAttribute(Qt::WA_DeleteOnClose, true);
 }
+void MainWindow::on_actionOrbitRefinement_triggered()
+{
+    if (m_interfaceManager && m_interfaceManager->currentInterfaceId() == "workflow") {
+        if (m_workflowUI) {
+            m_workflowUI->onNodeDoubleClicked("OrbitRefinement");
+        }
+    } else {
+        QMessageBox::information(this, QStringLiteral("提示"), 
+            QStringLiteral("轨道精炼功能目前仅在工作流编辑器（Node Editor）中支持，请切换界面后在画布上双击或通过该菜单创建节点使用！"));
+    }
+}
 void MainWindow::on_actionRegistration_triggered()
 {
     Registration_ui* regis = new Registration_ui();
@@ -1750,7 +1762,7 @@ void MainWindow::applyMenuIcons(bool isDark)
             return isDark ? QColor("#FFB95B") : QColor("#A85C00");
         }
         // 3. Purple (Heavy InSAR/SAR calculations & AI detection)
-        if (name == "actionCut" || name == "actionRegistration" || name.contains("Geocoding") ||
+        if (name == "actionCut" || name == "actionRegistration" || name == "actionOrbitRefinement" || name.contains("Geocoding") ||
             name.contains("merge") || name.contains("Deburst") || name == "actionInterferometric_Formation" ||
             name == "menuSBAS" || name == "actionBaseline_Formation" || name == "actionSBAS_deformation" ||
             name == "actionDeformationRateField" ||

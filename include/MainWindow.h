@@ -102,6 +102,7 @@ private slots:
     // Import sentinel dialog
     void on_actionSentinel_1_triggered();
     void on_actionCut_triggered();
+    void on_actionOrbitRefinement_triggered();
     void on_actionRegistration_triggered();
     void on_actionS1_TOPS_BackGeocoding_triggered();
     void on_actionS1_Deburst_triggered();

@@ -551,6 +551,7 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                       modelName.contains("Reference", Qt::CaseInsensitive) ||
                       modelName == "PSCandidate" ||
                       modelName == "GCPManager" ||
+                      modelName == "OrbitRefinement" ||
                       modelName == "PSNetwork") {
                  // Complex calculations/Registration/Merges/AI Detection - Purple
                  iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
@@ -594,6 +595,8 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                  } else if (modelName == "GCPManager") {
                      iconPath = ":/SatExplorer/svg/GCPs.svg";
                      iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC"); // Blue (consistent with Tools)
+                 } else if (modelName == "OrbitRefinement") {
+                     iconPath = ":/SatExplorer/svg/orbit_refine.svg";
                  }
              } 
              else if (modelName.contains("Evaluation", Qt::CaseInsensitive) || 

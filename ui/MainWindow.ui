@@ -107,6 +107,7 @@
       <addaction name="actionS1_swath_merge"/>
       <addaction name="actionS1_TOPS_BackGeocoding"/>
      </widget>
+     <addaction name="actionOrbitRefinement"/>
      <addaction name="actionCut"/>
      <addaction name="actionRegistration"/>
      <addaction name="menuSentinel1_Tool"/>
@@ -272,6 +273,11 @@
   <action name="actionCut">
    <property name="text">
     <string>AOI Crop</string>
+   </property>
+  </action>
+  <action name="actionOrbitRefinement">
+   <property name="text">
+    <string>Orbit Refinement</string>
    </property>
   </action>
   <action name="actionTSX">

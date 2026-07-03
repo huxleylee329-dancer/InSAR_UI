@@ -34,6 +34,7 @@
         <file>svg/tool.svg</file>
         <file>svg/export.svg</file>
         <file>svg/cut.svg</file>
+        <file>svg/orbit_refine.svg</file>
         <file>svg/import.svg</file>
         <file>svg/import_batch.svg</file>
         <file>svg/coregistration.svg</file>

@@ -49,6 +49,8 @@
 #include "PSTimeSeriesNode.h"
 #include "PSDeformationPreviewNode.h"
 #include "GCPManagerNode.h"
+#include "OrbitRefinementNode.h"
+
 
 
 
@@ -91,6 +93,8 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     // ============================================================================
     registry->registerModel<CutNode>("Preprocessing");
     registry->registerModel<CoregistrationNode>("Preprocessing");
+    registry->registerModel<OrbitRefinementNode>("Preprocessing");
+
     
     // Sentinel-1 Preprocessing
     registry->registerModel<S1DeburstNode>("Preprocessing/Sentinel-1/Deburst");

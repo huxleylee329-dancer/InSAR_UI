@@ -139,6 +139,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // Preprocessing 类叶子项顺序
     order.leafItems["Preprocessing"] = QList<PaletteOrder::LeafItem>{
+        {"OrbitRefinement", "Orbit Refinement"},
         {"AOI Crop", "AOI Crop"},
         {"Coregistration", "Coregistration"}
     };
