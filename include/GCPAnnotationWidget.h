@@ -6,9 +6,15 @@
 #include <QGraphicsEllipseItem>
 #include <QGraphicsTextItem>
 #include <QMap>
-#include <QDialog>
 #include <QTableWidget>
 #include <QPushButton>
+#include <QDockWidget>
+#include <QLabel>
+#include <opencv2/opencv.hpp>
+
+// 预声明 GCPDatabase，防止循环包含
+class GCPDatabase;
+class GCPAnnotationDockWidget;
 
 // 自定义控制点图形项，支持鼠标拖拽，并在拖拽结束后通知界面
 class GCPMarkerItem : public QGraphicsItemGroup
@@ -30,61 +36,53 @@ private:
     QGraphicsTextItem* m_text;
 };
 
-class GCPAnnotationWidget : public ImageView
+// GCP 场景辅助器，非侵入式劫持事件与绘制 GCP
+class GCPSceneHelper : public QObject
 {
     Q_OBJECT
 public:
-    explicit GCPAnnotationWidget(QWidget* parent = nullptr);
-    ~GCPAnnotationWidget();
+    GCPSceneHelper(ImageView* view, GCPAnnotationDockWidget* dock, QObject* parent = nullptr);
+    ~GCPSceneHelper();
 
-    // 加载/清除控制点标记
     void displayGCPs(const std::vector<GCPPoint>& gcps);
-    void clearGCPMarkers();
-
-    // 标注模式设置
-    void setAnnotationMode(bool enabled);
-    bool isAnnotationMode() const { return m_annotationMode; }
-
-    // 选择/激活特定 GCP
+    void clearMarkers();
     void setSelectedGCP(int gcpId);
-    int selectedGCP() const { return m_selectedGcpId; }
-
-signals:
-    void gcpAddedOrUpdated(int gcpId, double row, double col);
-    void gcpSelected(int gcpId);
+    void setAnnotationMode(bool enabled);
+    ImageView* imageView() const { return m_view; }
 
 protected:
-    // 重写事件以捕获标注操作
-    void mousePressEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
-    bool m_annotationMode;
-    int m_selectedGcpId;
-    
-    // gcpId -> MarkerItem 的映射
+    ImageView* m_view;
+    GCPAnnotationDockWidget* m_dock;
     QMap<int, GCPMarkerItem*> m_markerMap;
-    
-    // 根据 GCP 属性渲染单个标记并添加到场景中
+    int m_selectedGcpId;
+    bool m_annotationMode;
+
     void addOrUpdateMarker(const GCPPoint& gcp);
-    
-    friend class GCPMarkerItem;
-    // 供 GCPMarkerItem 拖动结束时调用，以发出更新信号
-    void notifyMarkerMoved(int gcpId, const QPointF& newScenePos);
 };
 
-// 预声明 GCPDatabase，防止循环包含
-class GCPDatabase;
-
-// GCP 交互标注与管理大窗口
-class GCPAnnotationDialog : public QDialog
+// GCP 交互标注与管理停靠窗口
+class GCPAnnotationDockWidget : public QDockWidget
 {
     Q_OBJECT
 public:
-    GCPAnnotationDialog(const QString& h5Path, GCPDatabase* db, QWidget* parent = nullptr);
-    ~GCPAnnotationDialog();
+    explicit GCPAnnotationDockWidget(QWidget* parent = nullptr);
+    ~GCPAnnotationDockWidget();
 
-private slots:
+    void loadDataset(const QString& h5Path);
+    void calculateRealtimeResiduals();
+    GCPDatabase* getDatabase() const { return m_db; }
+
+    void bindImageView(ImageView* view);
+    ImageView* findActiveImageView();
+    ImageView* boundImageView() const { return m_sceneHelper ? m_sceneHelper->imageView() : nullptr; }
+
+signals:
+    void gcpDataSaved(const QString& h5Path);
+
+public slots:
     void loadGCPList();
     void onTableSelectionChanged();
     void onTableItemChanged(QTableWidgetItem* item);
@@ -92,6 +90,7 @@ private slots:
     // 来自标注视口的关联信号
     void onGcpSelectedFromImage(int gcpId);
     void onGcpAddedOrUpdatedFromImage(int gcpId, double row, double col);
+    void onMouseMovedOverImage(const QPointF& scenePos);
 
     // 按钮操作
     void onAddGcp();
@@ -110,12 +109,26 @@ private:
     
     // 界面控件
     QTableWidget* m_table;
-    GCPAnnotationWidget* m_view;
     QPushButton* m_btnAdd;
     QPushButton* m_btnDelete;
     QPushButton* m_btnImport;
     QPushButton* m_btnExport;
     QPushButton* m_btnClose;
+    QLabel* m_magnifierLabel;   // 像素放大镜 QLabel
+    QLabel* m_rmseStatusLabel;  // RMSE 状态 QLabel
 
     bool m_isUpdatingTable; // 防循环更新标志
+
+    GCPSceneHelper* m_sceneHelper; // 场景打点辅助器
+
+    // 缓存参数以便前台进行残差实时评估
+    cv::Mat m_rowCoef;
+    cv::Mat m_colCoef;
+    int m_sceneWidth;
+    int m_sceneHeight;
+    int m_offsetRow;
+    int m_offsetCol;
+    double m_rangeSpacing;
+    double m_azimuthSpacing;
+    QImage m_previewImage;      // 缓存JPG图像，用于局部裁剪生成放大镜
 };

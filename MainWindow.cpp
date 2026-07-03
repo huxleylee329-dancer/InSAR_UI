@@ -63,6 +63,9 @@ extern void applyTheme(const QString &theme);
 #include"Baseline_Formation.h"
 #include <QJsonDocument>
 #include <QJsonObject>
+#include "include/GCPAnnotationWidget.h"
+#include "include/GCPDatabase.h"
+#include <QtSql/QSqlError>
 #include "tinyxml.h"
 #include"SBAS_time_series_analysis.h"
 #include"DeformationRateField_ui.h"
@@ -166,6 +169,7 @@ static const MenuIconMapping menuIconMap[] = {
     {"menuImageEnhancement",           ":/SatExplorer/svg/enhancement.svg"},
     {"menuDetection",                  ":/SatExplorer/svg/radar.svg"},
     {"menuTheme",                      ":/SatExplorer/svg/palette.svg"},
+    {"actionGcpManager",               ":/SatExplorer/svg/GCPs.svg"},
 };
 
 MainWindow::MainWindow(QWidget* parent)
@@ -293,8 +297,9 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     }
     
     // 动态创建并插入“工具”菜单 (SOP 建议一)
-    QMenu* menuTools = new QMenu(QStringLiteral("工具(&T)"), this);
+    QMenu* menuTools = new QMenu(QStringLiteral("工具"), this);
     m_actionGcpManager = new QAction(QStringLiteral("地面控制点管理与评估"), this);
+    m_actionGcpManager->setObjectName("actionGcpManager");
     m_actionGcpManager->setIcon(QIcon(GCP_ICON));
     menuTools->addAction(m_actionGcpManager);
 
@@ -416,94 +421,15 @@ void MainWindow::Loading(QString Data_path, QString ImageType, QString bmp_path,
     if (bmp_path.isEmpty()) bmp_path = this->bmp_path;
     if (bmp_name.isEmpty()) bmp_name = this->bmp_name;
 
-    QGridLayout* TabLayout = new QGridLayout;
     QWidget* TabChild = new QWidget;
-    QTabWidget* activeTabWidget = m_workspaceUI->tabWidget();
-    int index = activeTabWidget->addTab(TabChild, bmp_name);
-    activeTabWidget->setCurrentWidget(TabChild);
+    TabChild->setProperty("filePath", Data_path); // 记录数据物理路径以供系统工具栏控制 GCP 显隐
 
-    // 创建内置快捷工具栏 (SOP 建议三)
-    QWidget* toolBarWidget = new QWidget(TabChild);
-    toolBarWidget->setStyleSheet("background-color: rgba(128, 128, 128, 0.05); border-bottom: 1px solid rgba(128, 128, 128, 0.15);");
-    QHBoxLayout* toolBarLayout = new QHBoxLayout(toolBarWidget);
-    toolBarLayout->setContentsMargins(10, 4, 10, 4);
-    toolBarLayout->setSpacing(8);
-
-    QToolButton* btnZoomIn = new QToolButton(toolBarWidget);
-    btnZoomIn->setIcon(style()->standardIcon(QStyle::SP_TitleBarMaxButton));
-    btnZoomIn->setToolTip(QStringLiteral("放大"));
-    btnZoomIn->setCursor(Qt::PointingHandCursor);
-
-    QToolButton* btnZoomOut = new QToolButton(toolBarWidget);
-    btnZoomOut->setIcon(style()->standardIcon(QStyle::SP_TitleBarMinButton));
-    btnZoomOut->setToolTip(QStringLiteral("缩小"));
-    btnZoomOut->setCursor(Qt::PointingHandCursor);
-
-    QToolButton* btnFit = new QToolButton(toolBarWidget);
-    btnFit->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
-    btnFit->setToolTip(QStringLiteral("适应屏幕"));
-    btnFit->setCursor(Qt::PointingHandCursor);
-
-    QFrame* line = new QFrame(toolBarWidget);
-    line->setFrameShape(QFrame::VLine);
-    line->setFrameShadow(QFrame::Sunken);
-    line->setMinimumHeight(16);
-
-    QToolButton* btnGcp = new QToolButton(toolBarWidget);
-    btnGcp->setText(QStringLiteral(" GCP 标注与管理 "));
-    btnGcp->setIcon(QIcon(GCP_ICON));
-    btnGcp->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    btnGcp->setToolTip(QStringLiteral("打开此影像的地面控制点(GCP)标注与残差评估界面"));
-    btnGcp->setCursor(Qt::PointingHandCursor);
-    btnGcp->setStyleSheet(
-        "QToolButton {"
-        "  background-color: rgba(130, 207, 255, 0.15);"
-        "  border: 1px solid rgba(130, 207, 255, 0.4);"
-        "  border-radius: 4px;"
-        "  padding: 3px 6px;"
-        "  font-weight: bold;"
-        "  color: #005FAC;"
-        "}"
-        "QToolButton:hover {"
-        "  background-color: rgba(130, 207, 255, 0.3);"
-        "}"
-    );
-
-    // 暗黑模式下文字配色的微调
-    if (m_currentTheme == "dark") {
-        btnGcp->setStyleSheet(
-            "QToolButton {"
-            "  background-color: rgba(130, 207, 255, 0.15);"
-            "  border: 1px solid rgba(130, 207, 255, 0.4);"
-            "  border-radius: 4px;"
-            "  padding: 3px 6px;"
-            "  font-weight: bold;"
-            "  color: #82CFFF;"
-            "}"
-            "QToolButton:hover {"
-            "  background-color: rgba(130, 207, 255, 0.3);"
-            "}"
-        );
-    }
-
-    // 只对 H5 影像节点显示 GCP 标注入口
-    if (!Data_path.endsWith(".h5", Qt::CaseInsensitive)) {
-        btnGcp->setVisible(false);
-        line->setVisible(false);
-    }
-
-    toolBarLayout->addWidget(btnZoomIn);
-    toolBarLayout->addWidget(btnZoomOut);
-    toolBarLayout->addWidget(btnFit);
-    toolBarLayout->addWidget(line);
-    toolBarLayout->addWidget(btnGcp);
-    toolBarLayout->addStretch();
-
-    ImageView* graph = new ImageView(TabChild);
-    TabLayout->addWidget(toolBarWidget, 0, 0);
-    TabLayout->addWidget(graph, 1, 0);
+    QGridLayout* TabLayout = new QGridLayout(TabChild);
     TabLayout->setContentsMargins(0, 0, 0, 0);
     TabLayout->setSpacing(0);
+
+    ImageView* graph = new ImageView(TabChild);
+    TabLayout->addWidget(graph, 0, 0);
 
     QGraphicsScene* scene = new QGraphicsScene;
     graph->setScene(scene);
@@ -515,47 +441,10 @@ void MainWindow::Loading(QString Data_path, QString ImageType, QString bmp_path,
     item->setFlags(QGraphicsItem::ItemIsSelectable | QGraphicsItem::ItemIsMovable);
     item->setAcceptedMouseButtons(Qt::LeftButton);
     scene->addItem(item);
+
     TabChild->setLayout(TabLayout);
     TabChild->setAttribute(Qt::WA_DeleteOnClose);
 
-    // 绑定事件
-    connect(btnZoomIn, &QToolButton::clicked, graph, &ImageView::zoomIn);
-    connect(btnZoomOut, &QToolButton::clicked, graph, &ImageView::zoomOut);
-    connect(btnFit, &QToolButton::clicked, graph, &ImageView::fitImage);
-    
-    connect(btnGcp, &QToolButton::clicked, this, [this, Data_path]() {
-        if (Data_path.isEmpty()) return;
-        
-        QStandardItemModel* model = m_workspaceUI->treeView()->model;
-        if (!model || model->rowCount() == 0) return;
-        
-        // 自动推算数据库路径
-        QStandardItem* firstProjItem = model->item(0, 0);
-        QModelIndex firstProjPathIdx = firstProjItem->index().sibling(0, 1);
-        QStandardItem* firstProjPathItem = model->itemFromIndex(firstProjPathIdx);
-        if (!firstProjPathItem) return;
-        
-        QString projXmlPath = firstProjPathItem->text();
-        QString projBase = QFileInfo(projXmlPath).baseName();
-        QString projDir = QFileInfo(projXmlPath).absolutePath();
-        QString dbPath = projDir + "/" + projBase + "_gcp.db";
-        
-        GCPDatabase* db = new GCPDatabase(this);
-        if (db->open(dbPath)) {
-            GCPAnnotationDialog annotationDlg(Data_path, db, this);
-            annotationDlg.exec();
-            db->close();
-            
-            // 标注完成后，刷新工作区以体现所有更改
-            m_workspaceUI->refreshProjectTree();
-        } else {
-            QSqlDatabase sqlDb = QSqlDatabase::database(db->connectionName());
-            QMessageBox::critical(this, QStringLiteral("数据库打开失败"), 
-                QStringLiteral("无法打开或初始化控制点数据库：\n%1\n\nSQLite 错误信息：%2")
-                .arg(dbPath).arg(sqlDb.lastError().text()));
-        }
-        db->deleteLater();
-    });
     /// progressdialog.setValue(100);
     // progressdialog.autoClose();
     graph->show();
@@ -570,9 +459,16 @@ void MainWindow::Loading(QString Data_path, QString ImageType, QString bmp_path,
     }
     else
     {
+        Color_Label->hide();
         mExist_Color.append(false);
     }
     mColors.append(Color_Label);
+
+    // 在所有子控件及布局构建并挂载完毕后，最后执行 addTab 与 setCurrentWidget。
+    // 这能确保 currentChanged 信号被触发时，活动页面中已经可以立即检索到 ImageView 子控件，消除了打点事件过滤的初始化时序竞态条件。
+    QTabWidget* activeTabWidget = m_workspaceUI->tabWidget();
+    int index = activeTabWidget->addTab(TabChild, bmp_name);
+    activeTabWidget->setCurrentWidget(TabChild);
 }
 void MainWindow::open_from_project_file(QString str)
 {
@@ -1707,29 +1603,27 @@ void MainWindow::ShowColorBar(int index)
 
     if ( activeTabWidget->count()== mExist_Color.size())
     {
-        if (activeTabWidget->count() - 1 >= index)
+        if (index >= 0 && index < mExist_Color.size() && index < mColors.size())
         {
             cout << activeTabWidget->count();
             cout << "\n" << "new";
             if (mExist_Color.at(index))
             {
-
-                mColors.at(index)->resize(activeTabWidget->currentWidget()->width() / 8, activeTabWidget->currentWidget()->height() / 3);
-                mColors.at(index)->move(0, 0);
-                mColors.at(index)->raise();
-                mColors.at(index)->show();
+                if (activeTabWidget->currentWidget())
+                {
+                    mColors.at(index)->resize(activeTabWidget->currentWidget()->width() / 8, activeTabWidget->currentWidget()->height() / 3);
+                    mColors.at(index)->move(0, 0);
+                    mColors.at(index)->raise();
+                    mColors.at(index)->show();
+                }
             }
         }
 
-        if (ColorBar_Before >= 0)
+        if (ColorBar_Before >= 0 && ColorBar_Before < mColors.size())
         {
-            if (mColors.size())
-            {
-                cout << activeTabWidget->count();
-                cout << "\n" << "hide";
-                mColors.at(ColorBar_Before)->hide();
-            }
-
+            cout << activeTabWidget->count();
+            cout << "\n" << "hide";
+            mColors.at(ColorBar_Before)->hide();
         }
         cout << activeTabWidget->count();
         cout << "\n" << "change";
@@ -1737,7 +1631,7 @@ void MainWindow::ShowColorBar(int index)
     }
     if (TabCount_Before >= 0 && TabCount_Before< activeTabWidget->count())
     {
-        if (mColors.size())
+        if (ColorBar_Before >= 0 && ColorBar_Before < mColors.size())
         {
             cout << activeTabWidget->count();
             cout << "\n" << "hide";
@@ -1787,6 +1681,16 @@ void MainWindow::handleTabCloseRequested(int index)
 
     if (activeTabWidget->widget(index))
     {
+        QWidget* tabContent = activeTabWidget->widget(index);
+        if (tabContent) {
+            ImageView* view = tabContent->findChild<ImageView*>();
+            if (view && m_gcpDockWidget) {
+                if (m_gcpDockWidget->boundImageView() == view) {
+                    m_gcpDockWidget->bindImageView(nullptr);
+                }
+            }
+        }
+
         cout << activeTabWidget->count();
         cout << "\n" << "close";
        // activeTabWidget->removeTab(index);
@@ -1830,13 +1734,14 @@ void MainWindow::applyMenuIcons(bool isDark)
         if (name == "actionQuit" || name == "actionCleanOrphanedFiles") {
             return isDark ? QColor("#FFB4AB") : QColor("#BA1A1A");
         }
-        // 2. Green/Teal (Import/Export/Geocoding/Evaluation/KML)
+        // 2. Green/Teal (Import/Export/Geocoding/Evaluation/KML/GCP)
         if (name.contains("Import") || name.contains("Export") || name == "actionEvaluation" ||
             name == "actionTSX" || name == "actionSentinel_1" || name == "actionCOSMOS_SkyMed" ||
             name == "actionALOS_2" || name == "actionGenericSAR" || name == "actionExport_KML" ||
             name == "actiongeocode" || name == "menuImport" || name == "menuImport_2" ||
             name == "actionLuTan_1" || name == "actionHongtu_1" || name == "actionSpacety" ||
-            name == "actionAIRSAT" || name == "actionBiomass" || name == "actionLiDAR") {
+            name == "actionAIRSAT" || name == "actionBiomass" || name == "actionLiDAR" ||
+            name == "actionGcpManager") {
             return isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
         }
         // 4. Amber/Orange (Filtering/Denoising/Unwrap/DEM)
@@ -2310,6 +2215,10 @@ void MainWindow::switchToWorkspace()
 
 void MainWindow::switchToWorkflow()
 {
+    if (m_gcpDockWidget) {
+        m_gcpDockWidget->hide();
+    }
+
     if (m_interfaceManager->switchToInterface("workflow")) {
         updateInterfaceMenuCheckState();
         // Save to project
@@ -2512,6 +2421,12 @@ void MainWindow::updateStatusBarInterface(const QString& interfaceId)
 
 void MainWindow::on_actionGCP_Manager_triggered()
 {
+    // 如果控制点标注界面当前已经显示，再次触发则将其隐藏以实现 Toggle 效果
+    if (m_gcpDockWidget && m_gcpDockWidget->isVisible()) {
+        m_gcpDockWidget->hide();
+        return;
+    }
+
     // 1. 检查工程是否打开且 Workspace 树是否存在
     if (!m_workspaceUI || !m_workspaceUI->treeView() || !m_workspaceUI->treeView()->model) {
         QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("请先打开或新建一个 InSAR 工程！"));
@@ -2524,9 +2439,22 @@ void MainWindow::on_actionGCP_Manager_triggered()
         return;
     }
 
+    // 新增：如果当前活动 Tab 已经是 H5 影像，则直接在其上开启控制台，无需弹窗选择
+    if (m_workspaceUI && m_workspaceUI->isVisible()) {
+        QWidget* currentTab = m_workspaceUI->tabWidget()->currentWidget();
+        if (currentTab) {
+            QString filePath = currentTab->property("filePath").toString();
+            if (!filePath.isEmpty() && filePath.endsWith(".h5", Qt::CaseInsensitive)) {
+                showGCPDockWidget(filePath);
+                return;
+            }
+        }
+    }
+
     // 2. 递归扫描项目树里的所有影像文件 H5 节点 (属于三级叶子节点)
     // 树层级：Projects (0) -> Data Nodes (1) -> Images (2)
     QMap<QString, QString> imagePathMap; // 影像显示名称 -> H5绝对物理路径
+    QMap<QString, QModelIndex> imageIndexMap; // 影像绝对物理路径 -> QModelIndex
     for (int p = 0; p < model->rowCount(); ++p) {
         QStandardItem* projItem = model->item(p, 0);
         if (!projItem) continue;
@@ -2543,6 +2471,7 @@ void MainWindow::on_actionGCP_Manager_triggered()
                     QString path = pathItem->text();
                     if (path.endsWith(".h5", Qt::CaseInsensitive)) {
                         imagePathMap[imgItem->text()] = path;
+                        imageIndexMap[path] = imgItem->index();
                     }
                 }
             }
@@ -2600,22 +2529,42 @@ void MainWindow::on_actionGCP_Manager_triggered()
     
     if (dlg.exec() == QDialog::Accepted) {
         QString selectedH5 = combo->currentData().toString();
-        
-        // 4. 打开控制点数据库并拉起标注大窗口
-        GCPDatabase* db = new GCPDatabase(this);
-        if (db->open(dbPath)) {
-            GCPAnnotationDialog annotationDlg(selectedH5, db, this);
-            annotationDlg.exec();
-            db->close();
-            
-            // 标注完成后，刷新工作区以体现所有更改
-            m_workspaceUI->refreshProjectTree();
-        } else {
-            QSqlDatabase sqlDb = QSqlDatabase::database(db->connectionName());
-            QMessageBox::critical(this, QStringLiteral("数据库打开失败"), 
-                QStringLiteral("无法打开或初始化控制点数据库：\n%1\n\nSQLite 错误信息：%2")
-                .arg(dbPath).arg(sqlDb.lastError().text()));
+        if (imageIndexMap.contains(selectedH5)) {
+            ShowImage(imageIndexMap[selectedH5]);
         }
-        db->deleteLater();
+        showGCPDockWidget(selectedH5);
     }
+}
+
+void MainWindow::showGCPDockWidget(const QString& h5Path)
+{
+    if (!m_gcpDockWidget) {
+        m_gcpDockWidget = new GCPAnnotationDockWidget(this);
+        addDockWidget(Qt::BottomDockWidgetArea, m_gcpDockWidget);
+        
+        // 当保存数据时，通知工作区刷新工程树
+        connect(m_gcpDockWidget, &GCPAnnotationDockWidget::gcpDataSaved, this, [this]() {
+            if (m_workspaceUI) {
+                m_workspaceUI->refreshProjectTree();
+            }
+        });
+
+        // 监听 Tab 切换，自适应重载控制点文件并重新绑定活动视图
+        if (m_workspaceUI && m_workspaceUI->tabWidget()) {
+            connect(m_workspaceUI->tabWidget(), &QTabWidget::currentChanged, this, [this]() {
+                if (m_gcpDockWidget && m_gcpDockWidget->isVisible()) {
+                    QWidget* currentTab = m_workspaceUI->tabWidget()->currentWidget();
+                    if (currentTab) {
+                        QString filePath = currentTab->property("filePath").toString();
+                        if (!filePath.isEmpty() && filePath.endsWith(".h5", Qt::CaseInsensitive)) {
+                            m_gcpDockWidget->loadDataset(filePath);
+                        }
+                    }
+                }
+            });
+        }
+    }
+    m_gcpDockWidget->show();
+    m_gcpDockWidget->raise();
+    m_gcpDockWidget->loadDataset(h5Path);
 }

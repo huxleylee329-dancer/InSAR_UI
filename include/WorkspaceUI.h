@@ -74,6 +74,7 @@ public slots:
 
     // Component access for MainWindow compatibility
     QProgressDialog* processDialog() { return Process; }
+    ImageView* activeImageView() const;
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -84,13 +85,15 @@ private slots:
 private:
     void setupUi();
     void setupToolbar();
-    ImageView* activeImageView() const;
+    void updateGcpButtonState();
     void initializeOriginalIndices(QStandardItemModel* model);
     void sortProjectTree(QStandardItemModel* model, const QString& projectPath);
     QList<QString> getWorkflowTopologicalOrder(const QString& projectPath);
 
     QToolBar *m_toolbar = nullptr;
     QToolButton *m_btnGcp = nullptr;
+    QAction *m_gcpSepAction = nullptr;
+    QAction *m_gcpBtnAction = nullptr;
 
     // All the original components from MainWindow
     QSplitter *m_splitter2 = nullptr;

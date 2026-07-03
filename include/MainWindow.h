@@ -13,6 +13,7 @@ class WelcomeScreenUI;
 class XMLFile;
 class QLabel;
 class QProgressBar;
+class GCPAnnotationDockWidget;
 
 class MainWindow : public QMainWindow
 {
@@ -28,6 +29,8 @@ public:
     // Getters for application-wide components
     InterfaceManager* interfaceManager() const { return m_interfaceManager; }
     WorkspaceUI* workspaceUI() const { return m_workspaceUI; }
+    GCPAnnotationDockWidget* gcpDockWidget() const { return m_gcpDockWidget; }
+    void showGCPDockWidget(const QString& h5Path);
 
     // Color bar list accessors (single source of truth)
     QList<ColorBar*> colors() const { return mColors; }
@@ -151,6 +154,8 @@ private slots:
     // 关闭工程
     void on_actionClose_triggered();
     void on_actionCleanOrphanedFiles_triggered();
+
+public slots:
     void on_actionGCP_Manager_triggered();
 private:
     void setupThemeMenu();
@@ -192,4 +197,5 @@ private:
     void updateFileMenuState();
 
     QAction* m_actionGcpManager;
+    GCPAnnotationDockWidget* m_gcpDockWidget = nullptr;
 };

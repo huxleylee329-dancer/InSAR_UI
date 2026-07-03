@@ -3,6 +3,7 @@
 #include "include/GCPAnnotationWidget.h"
 #include "include/NodeUtils.h"
 #include "include/IApplicationInterface.h"
+#include "MainWindow.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -220,12 +221,25 @@ void GCPManagerNode::onOpenDialogClicked()
 
     initDatabase();
     
-    // 打开标注管理大窗
+    // 打开标注管理停靠区
     QString inputH5 = m_inputData->filePath();
-    GCPAnnotationDialog dlg(inputH5, m_db, _widget);
-    if (dlg.exec() == QDialog::Accepted) {
-        updateLabels();
-        invalidateNodeData(); // SOP 34: 标注改动后使先前结果失效，清空输出并通知下游
+    MainWindow* mainWin = qobject_cast<MainWindow*>(_widget->window());
+    if (mainWin) {
+        mainWin->showGCPDockWidget(inputH5);
+        
+        GCPAnnotationDockWidget* gcpDock = mainWin->gcpDockWidget();
+        if (gcpDock) {
+            // 避免重复连接
+            disconnect(gcpDock, &GCPAnnotationDockWidget::gcpDataSaved, this, nullptr);
+            
+            // 当控制点在Dock中保存修改时，前台实时触发该节点数据失效并更新标签
+            connect(gcpDock, &GCPAnnotationDockWidget::gcpDataSaved, this, [this, inputH5](const QString& filePath) {
+                if (filePath == inputH5) {
+                    invalidateNodeData();
+                    updateLabels();
+                }
+            });
+        }
     }
 }
 

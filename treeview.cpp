@@ -1,9 +1,12 @@
 #include "treeview.h"
+#include "MainWindow.h"
 #include "icon_source.h"
 #include "icon_utils.h"
 #include <qmessagebox.h>
 #include "NodeUtils.h"
 #include <QMenu>
+#include "include/GCPDatabase.h"
+#include "include/GCPAnnotationWidget.h"
 #include <QMenuBar>  
 #include <QStatusBar> 
 #include <QFileDialog>
@@ -611,22 +614,11 @@ void TreeView::ManageGcp()
         QString projBaseName = QFileInfo(projXmlPath).baseName();
         QString dbPath = Project_path + "/" + projBaseName + "_gcp.db";
 
-        GCPDatabase* db = new GCPDatabase(this);
-        if (db->open(dbPath))
-        {
-            GCPAnnotationDialog dlg(h5Path, db, this);
-            dlg.exec();
-            db->close();
+        MainWindow* mainWin = qobject_cast<MainWindow*>(window());
+        if (mainWin) {
+            mainWin->ShowImage(currentIndex());
+            mainWin->showGCPDockWidget(h5Path);
         }
-        else
-        {
-            QSqlDatabase sqlDb = QSqlDatabase::database(db->connectionName());
-            QString dbError = sqlDb.lastError().text();
-            QMessageBox::critical(this, QStringLiteral("数据库打开失败"), 
-                QStringLiteral("无法打开或初始化控制点数据库：\n%1\n\nSQLite 错误信息：%2")
-                .arg(dbPath).arg(dbError.isEmpty() ? QStringLiteral("未知连接错误") : dbError));
-        }
-        db->deleteLater();
     }
 }
 

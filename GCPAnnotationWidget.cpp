@@ -66,13 +66,11 @@ void GCPMarkerItem::updatePosition(double x, double y)
 QVariant GCPMarkerItem::itemChange(GraphicsItemChange change, const QVariant& value)
 {
     if (change == ItemPositionHasChanged && scene()) {
-        QGraphicsScene* sc = scene();
-        QList<QGraphicsView*> views = sc->views();
-        for (QGraphicsView* view : views) {
-            GCPAnnotationWidget* widget = qobject_cast<GCPAnnotationWidget*>(view);
-            if (widget) {
-                widget->notifyMarkerMoved(m_gcpId, scenePos());
-                break;
+        QVariant prop = scene()->property("gcpDockWidget");
+        if (prop.isValid()) {
+            GCPAnnotationDockWidget* dock = (GCPAnnotationDockWidget*)prop.toLongLong();
+            if (dock) {
+                dock->onGcpAddedOrUpdatedFromImage(m_gcpId, scenePos().y(), scenePos().x());
             }
         }
     }
@@ -80,22 +78,41 @@ QVariant GCPMarkerItem::itemChange(GraphicsItemChange change, const QVariant& va
 }
 
 
-// ===== GCPAnnotationWidget 实现 =====
+// ===== GCPSceneHelper 实现 =====
 
-GCPAnnotationWidget::GCPAnnotationWidget(QWidget* parent)
-    : ImageView(parent)
-    , m_annotationMode(false)
+GCPSceneHelper::GCPSceneHelper(ImageView* view, GCPAnnotationDockWidget* dock, QObject* parent)
+    : QObject(parent)
+    , m_view(view)
+    , m_dock(dock)
     , m_selectedGcpId(-1)
+    , m_annotationMode(false)
 {
+    if (m_view && m_view->viewport()) {
+        m_view->viewport()->installEventFilter(this);
+        m_view->setMouseTracking(true);
+        m_view->viewport()->setMouseTracking(true);
+        
+        // 设置 Scene 属性，方便 Marker 寻回
+        if (m_view->scene()) {
+            m_view->scene()->setProperty("gcpDockWidget", (qlonglong)m_dock);
+        }
+    }
 }
 
-GCPAnnotationWidget::~GCPAnnotationWidget()
+GCPSceneHelper::~GCPSceneHelper()
 {
+    clearMarkers();
+    if (m_view && m_view->viewport()) {
+        m_view->viewport()->removeEventFilter(this);
+        if (m_view->scene()) {
+            m_view->scene()->setProperty("gcpDockWidget", QVariant());
+        }
+    }
 }
 
-void GCPAnnotationWidget::displayGCPs(const std::vector<GCPPoint>& gcps)
+void GCPSceneHelper::displayGCPs(const std::vector<GCPPoint>& gcps)
 {
-    clearGCPMarkers();
+    clearMarkers();
 
     for (const auto& gcp : gcps) {
         if (gcp.isAnnotated()) {
@@ -104,26 +121,19 @@ void GCPAnnotationWidget::displayGCPs(const std::vector<GCPPoint>& gcps)
     }
 }
 
-void GCPAnnotationWidget::clearGCPMarkers()
+void GCPSceneHelper::clearMarkers()
 {
-    if (!scene()) return;
+    if (!m_view || !m_view->scene()) return;
 
+    QGraphicsScene* sc = m_view->scene();
     for (auto* marker : m_markerMap.values()) {
-        scene()->removeItem(marker);
+        sc->removeItem(marker);
         delete marker;
     }
     m_markerMap.clear();
 }
 
-void GCPAnnotationWidget::setAnnotationMode(bool enabled)
-{
-    m_annotationMode = enabled;
-    for (auto* marker : m_markerMap.values()) {
-        marker->setFlag(QGraphicsItem::ItemIsMovable, enabled);
-    }
-}
-
-void GCPAnnotationWidget::setSelectedGCP(int gcpId)
+void GCPSceneHelper::setSelectedGCP(int gcpId)
 {
     m_selectedGcpId = gcpId;
     for (auto it = m_markerMap.begin(); it != m_markerMap.end(); ++it) {
@@ -141,50 +151,57 @@ void GCPAnnotationWidget::setSelectedGCP(int gcpId)
     }
 }
 
-void GCPAnnotationWidget::mousePressEvent(QMouseEvent* event)
+void GCPSceneHelper::setAnnotationMode(bool enabled)
 {
-    if (!scene()) {
-        ImageView::mousePressEvent(event);
-        return;
+    m_annotationMode = enabled;
+    for (auto* marker : m_markerMap.values()) {
+        marker->setFlag(QGraphicsItem::ItemIsMovable, enabled);
     }
-
-    QPointF scenePos = mapToScene(event->pos());
-
-    if (m_annotationMode && event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
-        if (m_selectedGcpId >= 0) {
-            emit gcpAddedOrUpdated(m_selectedGcpId, scenePos.y(), scenePos.x());
-            return;
-        }
-    }
-
-    QGraphicsItem* clickedItem = scene()->itemAt(scenePos, transform());
-    if (clickedItem) {
-        QGraphicsItem* parent = clickedItem->parentItem();
-        while (parent && !qgraphicsitem_cast<GCPMarkerItem*>(parent)) {
-            parent = parent->parentItem();
-        }
-        
-        GCPMarkerItem* marker = qgraphicsitem_cast<GCPMarkerItem*>(parent);
-        if (marker) {
-            int gcpId = marker->gcpId();
-            setSelectedGCP(gcpId);
-            emit gcpSelected(gcpId);
-            ImageView::mousePressEvent(event);
-            return;
-        }
-    }
-
-    ImageView::mousePressEvent(event);
 }
 
-void GCPAnnotationWidget::mouseReleaseEvent(QMouseEvent* event)
+bool GCPSceneHelper::eventFilter(QObject* watched, QEvent* event)
 {
-    ImageView::mouseReleaseEvent(event);
+    if (m_view && watched == m_view->viewport()) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            QPointF scenePos = m_view->mapToScene(mouseEvent->pos());
+            
+            // Ctrl + 左键点击：打点或修改控制点坐标
+            if (m_annotationMode && mouseEvent->button() == Qt::LeftButton && (mouseEvent->modifiers() & Qt::ControlModifier)) {
+                if (m_selectedGcpId >= 0) {
+                    m_dock->onGcpAddedOrUpdatedFromImage(m_selectedGcpId, scenePos.y(), scenePos.x());
+                    return true; // 拦截事件，防止主视口进行默认的拖拽/框选
+                }
+            }
+            
+            // 点击现有的点：选中控制点
+            QGraphicsItem* clickedItem = m_view->scene()->itemAt(scenePos, m_view->transform());
+            if (clickedItem) {
+                QGraphicsItem* parent = clickedItem->parentItem();
+                while (parent && !qgraphicsitem_cast<GCPMarkerItem*>(parent)) {
+                    parent = parent->parentItem();
+                }
+                GCPMarkerItem* marker = qgraphicsitem_cast<GCPMarkerItem*>(parent);
+                if (marker) {
+                    int gcpId = marker->gcpId();
+                    setSelectedGCP(gcpId);
+                    m_dock->onGcpSelectedFromImage(gcpId);
+                    return false; // 不拦截，以便让拖拽机制本身工作
+                }
+            }
+        }
+        else if (event->type() == QEvent::MouseMove) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            QPointF scenePos = m_view->mapToScene(mouseEvent->pos());
+            m_dock->onMouseMovedOverImage(scenePos);
+        }
+    }
+    return QObject::eventFilter(watched, event);
 }
 
-void GCPAnnotationWidget::addOrUpdateMarker(const GCPPoint& gcp)
+void GCPSceneHelper::addOrUpdateMarker(const GCPPoint& gcp)
 {
-    if (!scene()) return;
+    if (!m_view || !m_view->scene()) return;
 
     double x = gcp.col;
     double y = gcp.row;
@@ -200,67 +217,97 @@ void GCPAnnotationWidget::addOrUpdateMarker(const GCPPoint& gcp)
         GCPMarkerItem* marker = new GCPMarkerItem(gcp.id, x, y, label, gcp.quality);
         marker->setFlag(QGraphicsItem::ItemIsMovable, m_annotationMode);
         
-        scene()->addItem(marker);
+        m_view->scene()->addItem(marker);
         m_markerMap[gcp.id] = marker;
     }
 }
 
-void GCPAnnotationWidget::notifyMarkerMoved(int gcpId, const QPointF& newScenePos)
-{
-    emit gcpAddedOrUpdated(gcpId, newScenePos.y(), newScenePos.x());
-}
 
+// ===== GCPAnnotationDockWidget 实现 =====
+#include "include/MainWindow.h"
+#include "include/InterfaceManager.h"
+#include "include/WorkspaceUI.h"
+#include "GCPManager.h"
+#include <QPainter>
 
-// ===== GCPAnnotationDialog 实现 =====
-
-GCPAnnotationDialog::GCPAnnotationDialog(const QString& h5Path, GCPDatabase* db, QWidget* parent)
-    : QDialog(parent)
-    , m_h5Path(h5Path)
-    , m_db(db)
+GCPAnnotationDockWidget::GCPAnnotationDockWidget(QWidget* parent)
+    : QDockWidget(parent)
+    , m_db(nullptr)
     , m_isUpdatingTable(false)
+    , m_sceneHelper(nullptr)
+    , m_sceneWidth(0)
+    , m_sceneHeight(0)
+    , m_offsetRow(0)
+    , m_offsetCol(0)
+    , m_rangeSpacing(0.0)
+    , m_azimuthSpacing(0.0)
 {
     setWindowTitle(QStringLiteral("GCP 控制点标注与管理"));
-    resize(1200, 750);
-    setModal(true);
+    setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
+
+    QWidget* contentWidget = new QWidget(this);
+    setWidget(contentWidget);
 
     createLayout();
     setupConnections();
-    
-    // 异步或同步准备预览图
-    prepareImagePreview();
-    
-    // 加载数据列表
-    loadGCPList();
+
+    m_db = new GCPDatabase(this);
 }
 
-GCPAnnotationDialog::~GCPAnnotationDialog()
+GCPAnnotationDockWidget::~GCPAnnotationDockWidget()
 {
 }
 
-void GCPAnnotationDialog::createLayout()
+void GCPAnnotationDockWidget::createLayout()
 {
-    QHBoxLayout* mainLayout = new QHBoxLayout(this);
+    QWidget* contentWidget = widget();
+    QHBoxLayout* mainLayout = new QHBoxLayout(contentWidget);
+    mainLayout->setContentsMargins(5, 5, 5, 5);
+    mainLayout->setSpacing(5);
 
-    // ================= 左侧控制区 =================
-    QWidget* leftWidget = new QWidget(this);
-    QVBoxLayout* leftLayout = new QVBoxLayout(leftWidget);
+    // 左侧控制子面板
+    QWidget* leftPanel = new QWidget(contentWidget);
+    leftPanel->setFixedWidth(300);
+    QVBoxLayout* leftLayout = new QVBoxLayout(leftPanel);
     leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(5);
 
-    // 按钮工具栏
-    QHBoxLayout* btnLayout = new QHBoxLayout();
-    m_btnAdd = new QPushButton(QStringLiteral("添加点"), this);
-    m_btnDelete = new QPushButton(QStringLiteral("删除点"), this);
-    m_btnImport = new QPushButton(QStringLiteral("导入..."), this);
-    m_btnExport = new QPushButton(QStringLiteral("导出..."), this);
+    // 放大镜与状态指示面板
+    QHBoxLayout* infoLayout = new QHBoxLayout();
+    m_magnifierLabel = new QLabel(leftPanel);
+    m_magnifierLabel->setFixedSize(100, 100);
+    m_magnifierLabel->setStyleSheet("border: 1px solid rgba(192, 199, 212, 0.5); background-color: black;");
+    m_magnifierLabel->setAlignment(Qt::AlignCenter);
 
-    btnLayout->addWidget(m_btnAdd);
-    btnLayout->addWidget(m_btnDelete);
-    btnLayout->addWidget(m_btnImport);
-    btnLayout->addWidget(m_btnExport);
+    m_rmseStatusLabel = new QLabel(leftPanel);
+    m_rmseStatusLabel->setText(QStringLiteral("请双击底图影像以开始标注...\n评估点数: 0"));
+    m_rmseStatusLabel->setStyleSheet("font-size: 11px; color: #1e88e5; line-height: 1.3;");
+    m_rmseStatusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+
+    infoLayout->addWidget(m_magnifierLabel);
+    infoLayout->addWidget(m_rmseStatusLabel, 1);
+    leftLayout->addLayout(infoLayout);
+
+    // 功能按钮栏
+    QGridLayout* btnLayout = new QGridLayout();
+    m_btnAdd = new QPushButton(QStringLiteral("添加点"), leftPanel);
+    m_btnDelete = new QPushButton(QStringLiteral("删除点"), leftPanel);
+    m_btnImport = new QPushButton(QStringLiteral("导入..."), leftPanel);
+    m_btnExport = new QPushButton(QStringLiteral("导出..."), leftPanel);
+    m_btnClose = new QPushButton(QStringLiteral("保存并隐藏"), leftPanel);
+    m_btnClose->setMinimumHeight(28);
+
+    btnLayout->addWidget(m_btnAdd, 0, 0);
+    btnLayout->addWidget(m_btnDelete, 0, 1);
+    btnLayout->addWidget(m_btnImport, 1, 0);
+    btnLayout->addWidget(m_btnExport, 1, 1);
+    btnLayout->addWidget(m_btnClose, 2, 0, 1, 2);
     leftLayout->addLayout(btnLayout);
 
-    // 表格视图
-    m_table = new QTableWidget(this);
+    mainLayout->addWidget(leftPanel);
+
+    // 右侧表格视图
+    m_table = new QTableWidget(contentWidget);
     m_table->setColumnCount(10);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -273,86 +320,134 @@ void GCPAnnotationDialog::createLayout()
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setStretchLastSection(true);
     
-    leftLayout->addWidget(m_table);
-
-    // 关闭按钮
-    m_btnClose = new QPushButton(QStringLiteral("保存并关闭"), this);
-    m_btnClose->setMinimumHeight(35);
-    leftLayout->addWidget(m_btnClose);
-
-    leftWidget->setFixedWidth(500);
-    mainLayout->addWidget(leftWidget);
-
-    // ================= 右侧影像区 =================
-    m_view = new GCPAnnotationWidget(this);
-    m_view->setAnnotationMode(true); // 始终在弹窗里启用标注模式
-    mainLayout->addWidget(m_view, 1);
+    mainLayout->addWidget(m_table, 1);
+    contentWidget->setFixedHeight(200); // 底部栏固定高度，节省主视口高度空间
 }
 
-void GCPAnnotationDialog::setupConnections()
+void GCPAnnotationDockWidget::setupConnections()
 {
-    connect(m_btnAdd, &QPushButton::clicked, this, &GCPAnnotationDialog::onAddGcp);
-    connect(m_btnDelete, &QPushButton::clicked, this, &GCPAnnotationDialog::onDeleteGcp);
-    connect(m_btnImport, &QPushButton::clicked, this, &GCPAnnotationDialog::onImportGcp);
-    connect(m_btnExport, &QPushButton::clicked, this, &GCPAnnotationDialog::onExportGcp);
-    connect(m_btnClose, &QPushButton::clicked, this, &QDialog::accept);
-
-    connect(m_table, &QTableWidget::itemSelectionChanged, this, &GCPAnnotationDialog::onTableSelectionChanged);
-    connect(m_table, &QTableWidget::itemChanged, this, &GCPAnnotationDialog::onTableItemChanged);
-
-    // 绑定影像标注的事件信号
-    connect(m_view, &GCPAnnotationWidget::gcpSelected, this, &GCPAnnotationDialog::onGcpSelectedFromImage);
-    connect(m_view, &GCPAnnotationWidget::gcpAddedOrUpdated, this, &GCPAnnotationDialog::onGcpAddedOrUpdatedFromImage);
-}
-
-void GCPAnnotationDialog::prepareImagePreview()
-{
-    if (m_h5Path.isEmpty() || !QFile::exists(m_h5Path)) {
-        m_view->setMoveMode();
-        return;
-    }
-
-    QFileInfo fi(m_h5Path);
-    // 临时预览图存放路径，命名为同级同名的 jpg
-    m_jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-
-    if (QFile::exists(m_jpgPath)) {
-        m_view->loadImage(m_jpgPath);
-        m_view->fitImage();
-        return;
-    }
-
-    // 若本地无预览图，启用 QProgressDialog 异步生成，防止 UI 线程阻塞
-    QProgressDialog* progressDlg = new QProgressDialog(
-        QStringLiteral("正在从 H5 数据中提取生成影像预览图，请稍候..."), 
-        QString(), 0, 0, this
-    );
-    progressDlg->setWindowTitle(QStringLiteral("影像提取"));
-    progressDlg->setWindowModality(Qt::WindowModal);
-    progressDlg->show();
-
-    // 跨线程池启动生成任务
-    QFutureWatcher<bool>* watcher = new QFutureWatcher<bool>(this);
-    connect(watcher, &QFutureWatcher<bool>::finished, this, [this, progressDlg, watcher]() {
-        progressDlg->close();
-        progressDlg->deleteLater();
-        if (watcher->result() && QFile::exists(m_jpgPath)) {
-            m_view->loadImage(m_jpgPath);
-            m_view->fitImage();
-            
-            // 影像加载完后，重新渲染控制点，确保标记在最新的图像视口上呈现
-            loadGCPList();
-        } else {
-            QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("影像预览图生成失败。"));
-        }
-        watcher->deleteLater();
+    connect(m_btnAdd, &QPushButton::clicked, this, &GCPAnnotationDockWidget::onAddGcp);
+    connect(m_btnDelete, &QPushButton::clicked, this, &GCPAnnotationDockWidget::onDeleteGcp);
+    connect(m_btnImport, &QPushButton::clicked, this, &GCPAnnotationDockWidget::onImportGcp);
+    connect(m_btnExport, &QPushButton::clicked, this, &GCPAnnotationDockWidget::onExportGcp);
+    
+    connect(m_btnClose, &QPushButton::clicked, this, [this]() {
+        emit gcpDataSaved(m_h5Path);
+        this->hide();
     });
 
-    QFuture<bool> future = QtConcurrent::run(NodeUtils::generateJpgPreviewFromH5, m_h5Path, m_jpgPath, QString("complex"));
-    watcher->setFuture(future);
+    connect(m_table, &QTableWidget::itemSelectionChanged, this, &GCPAnnotationDockWidget::onTableSelectionChanged);
+    connect(m_table, &QTableWidget::itemChanged, this, &GCPAnnotationDockWidget::onTableItemChanged);
 }
 
-void GCPAnnotationDialog::loadGCPList()
+ImageView* GCPAnnotationDockWidget::findActiveImageView()
+{
+    MainWindow* mainWin = qobject_cast<MainWindow*>(window());
+    if (!mainWin) return nullptr;
+
+    // 1. 如果在 Workspace 模式，从活动 Tab 中找 ImageView
+    if (mainWin->workspaceUI() && mainWin->workspaceUI()->isVisible()) {
+        return mainWin->workspaceUI()->activeImageView();
+    }
+
+    // 2. 如果在 Workflow 模式，从当前的整个主窗口子树中找可见 of ImageView
+    QList<ImageView*> views = mainWin->findChildren<ImageView*>();
+    for (ImageView* view : views) {
+        if (view->isVisible()) {
+            return view;
+        }
+    }
+
+    return nullptr;
+}
+
+void GCPAnnotationDockWidget::bindImageView(ImageView* view)
+{
+    if (m_sceneHelper) {
+        delete m_sceneHelper;
+        m_sceneHelper = nullptr;
+    }
+    
+    if (view) {
+        m_sceneHelper = new GCPSceneHelper(view, this, this);
+        m_sceneHelper->setAnnotationMode(true);
+        
+        // 绑定后，刷新渲染当前影像的所有控制点
+        if (m_db && m_db->isOpen()) {
+            std::vector<GCPPoint> gcps = m_db->getGCPs();
+            m_sceneHelper->displayGCPs(gcps);
+        }
+    }
+}
+
+void GCPAnnotationDockWidget::loadDataset(const QString& h5Path)
+{
+    m_h5Path = h5Path;
+    
+    MainWindow* mainWin = qobject_cast<MainWindow*>(window());
+    if (mainWin && mainWin->interfaceManager()) {
+        QString projPath = mainWin->interfaceManager()->projectPath();
+        QString projBase = QFileInfo(projPath).baseName();
+        QString projDir = QFileInfo(projPath).absolutePath();
+        QString dbPath = projDir + "/" + projBase + "_gcp.db";
+        
+        if (m_db) {
+            m_db->close();
+            m_db->open(dbPath);
+        }
+    }
+    
+    // 2. 从底图 H5 中提取并缓存定位参数
+    m_rowCoef = cv::Mat();
+    m_colCoef = cv::Mat();
+    m_sceneWidth = 0;
+    m_sceneHeight = 0;
+    m_offsetRow = 0;
+    m_offsetCol = 0;
+    m_rangeSpacing = 0.0;
+    m_azimuthSpacing = 0.0;
+    
+    if (QFile::exists(m_h5Path)) {
+        FormatConversion conversion;
+        std::string h5Str = m_h5Path.toStdString();
+        
+        NodeUtils::Hdf5Locker locker;
+        
+        conversion.read_int_from_h5(h5Str.c_str(), "range_len", &m_sceneWidth);
+        conversion.read_int_from_h5(h5Str.c_str(), "azimuth_len", &m_sceneHeight);
+        conversion.read_int_from_h5(h5Str.c_str(), "offset_row", &m_offsetRow);
+        conversion.read_int_from_h5(h5Str.c_str(), "offset_col", &m_offsetCol);
+        conversion.read_array_from_h5(h5Str.c_str(), "row_coefficient", m_rowCoef);
+        conversion.read_array_from_h5(h5Str.c_str(), "col_coefficient", m_colCoef);
+        conversion.read_double_from_h5(h5Str.c_str(), "range_spacing", &m_rangeSpacing);
+        if (conversion.read_double_from_h5(h5Str.c_str(), "azimuth_spacing", &m_azimuthSpacing) != 0) {
+            m_azimuthSpacing = m_rangeSpacing * 2.0;
+        }
+    }
+    
+    // 3. 寻找当前活动的大影像视口并挂载 GCP 覆盖层
+    ImageView* activeView = findActiveImageView();
+    bindImageView(activeView);
+    
+    // 4. 载入本地 JPG 预览图用于左侧放大镜（因为影像已被加载，JPG必已存在）
+    QFileInfo fi(m_h5Path);
+    m_jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+    if (QFile::exists(m_jpgPath)) {
+        m_previewImage.load(m_jpgPath);
+    } else {
+        m_previewImage = QImage();
+    }
+    
+    // 5. 刷新控制点列表与残差估计
+    loadGCPList();
+}
+
+void GCPAnnotationDockWidget::prepareImagePreview()
+{
+    // 本方案复用主视口，由 loadDataset 自动处理
+}
+
+void GCPAnnotationDockWidget::loadGCPList()
 {
     if (!m_db || !m_db->isOpen()) return;
 
@@ -365,17 +460,14 @@ void GCPAnnotationDialog::loadGCPList()
         const auto& gcp = gcps[i];
         m_table->insertRow(i);
 
-        // ID
         QTableWidgetItem* idItem = new QTableWidgetItem(QString::number(gcp.id));
-        idItem->setFlags(idItem->flags() & ~Qt::ItemIsEditable); // ID 不可编辑
+        idItem->setFlags(idItem->flags() & ~Qt::ItemIsEditable);
         m_table->setItem(i, 0, idItem);
 
-        // Lon, Lat, Height (可编辑)
         m_table->setItem(i, 1, new QTableWidgetItem(QString::number(gcp.lon, 'f', 8)));
         m_table->setItem(i, 2, new QTableWidgetItem(QString::number(gcp.lat, 'f', 8)));
         m_table->setItem(i, 3, new QTableWidgetItem(QString::number(gcp.height, 'f', 3)));
 
-        // Row, Col (行列号在影像中标注，表格中不可直接编辑)
         QString rowStr = std::isnan(gcp.row) ? "" : QString::number(gcp.row, 'f', 3);
         QString colStr = std::isnan(gcp.col) ? "" : QString::number(gcp.col, 'f', 3);
         QTableWidgetItem* rowItem = new QTableWidgetItem(rowStr);
@@ -385,7 +477,6 @@ void GCPAnnotationDialog::loadGCPList()
         m_table->setItem(i, 4, rowItem);
         m_table->setItem(i, 5, colItem);
 
-        // Residuals (不可编辑)
         QString resRStr = std::isnan(gcp.residual_range) ? "" : QString::number(gcp.residual_range, 'f', 3);
         QString resAStr = std::isnan(gcp.residual_azimuth) ? "" : QString::number(gcp.residual_azimuth, 'f', 3);
         QTableWidgetItem* resRItem = new QTableWidgetItem(resRStr);
@@ -395,18 +486,20 @@ void GCPAnnotationDialog::loadGCPList()
         m_table->setItem(i, 6, resRItem);
         m_table->setItem(i, 7, resAItem);
 
-        // Quality (可编辑，0,1,2)
         m_table->setItem(i, 8, new QTableWidgetItem(QString::number(gcp.quality)));
-
-        // Description (可编辑)
         m_table->setItem(i, 9, new QTableWidgetItem(QString::fromStdString(gcp.description)));
     }
 
-    m_view->displayGCPs(gcps);
+    if (m_sceneHelper) {
+        m_sceneHelper->displayGCPs(gcps);
+    }
+    
     m_isUpdatingTable = false;
+
+    calculateRealtimeResiduals();
 }
 
-void GCPAnnotationDialog::onTableSelectionChanged()
+void GCPAnnotationDockWidget::onTableSelectionChanged()
 {
     if (m_isUpdatingTable) return;
 
@@ -414,57 +507,54 @@ void GCPAnnotationDialog::onTableSelectionChanged()
     if (curRow < 0) return;
 
     int gcpId = m_table->item(curRow, 0)->text().toInt();
-    m_view->setSelectedGCP(gcpId);
+    if (m_sceneHelper) {
+        m_sceneHelper->setSelectedGCP(gcpId);
+    }
 }
 
-void GCPAnnotationDialog::onTableItemChanged(QTableWidgetItem* item)
+void GCPAnnotationDockWidget::onTableItemChanged(QTableWidgetItem* item)
 {
     if (m_isUpdatingTable || !m_db) return;
 
     int row = item->row();
     int gcpId = m_table->item(row, 0)->text().toInt();
 
-    // 加载当前最新点位
     GCPPoint gcp = m_db->getGCP(gcpId);
-
-    // 根据修改列进行更新
     int col = item->column();
     bool ok = false;
     double val = item->text().toDouble(&ok);
 
-    if (col == 1 && ok) { // Lon
+    if (col == 1 && ok) {
         gcp.lon = val;
-        // 关键安全规范：地理坐标改变，重置原有残差数据
         gcp.residual_range = std::numeric_limits<double>::quiet_NaN();
         gcp.residual_azimuth = std::numeric_limits<double>::quiet_NaN();
     } 
-    else if (col == 2 && ok) { // Lat
+    else if (col == 2 && ok) {
         gcp.lat = val;
         gcp.residual_range = std::numeric_limits<double>::quiet_NaN();
         gcp.residual_azimuth = std::numeric_limits<double>::quiet_NaN();
     } 
-    else if (col == 3 && ok) { // Height
+    else if (col == 3 && ok) {
         gcp.height = val;
         gcp.residual_range = std::numeric_limits<double>::quiet_NaN();
         gcp.residual_azimuth = std::numeric_limits<double>::quiet_NaN();
     } 
-    else if (col == 8) { // Quality
+    else if (col == 8) {
         int qual = item->text().toInt(&ok);
         if (ok && (qual >= 0 && qual <= 2)) {
             gcp.quality = qual;
         }
     } 
-    else if (col == 9) { // Description
+    else if (col == 9) {
         gcp.description = item->text().trimmed().toStdString();
     }
 
     m_db->updateGCP(gcp);
     
-    // 异步更新显示
     QMetaObject::invokeMethod(this, "loadGCPList", Qt::QueuedConnection);
 }
 
-void GCPAnnotationDialog::onGcpSelectedFromImage(int gcpId)
+void GCPAnnotationDockWidget::onGcpSelectedFromImage(int gcpId)
 {
     for (int i = 0; i < m_table->rowCount(); ++i) {
         if (m_table->item(i, 0)->text().toInt() == gcpId) {
@@ -474,7 +564,7 @@ void GCPAnnotationDialog::onGcpSelectedFromImage(int gcpId)
     }
 }
 
-void GCPAnnotationDialog::onGcpAddedOrUpdatedFromImage(int gcpId, double row, double col)
+void GCPAnnotationDockWidget::onGcpAddedOrUpdatedFromImage(int gcpId, double row, double col)
 {
     if (!m_db) return;
 
@@ -482,18 +572,145 @@ void GCPAnnotationDialog::onGcpAddedOrUpdatedFromImage(int gcpId, double row, do
     gcp.row = row;
     gcp.col = col;
     
-    // 标注微调后重置以前的残差
     gcp.residual_range = std::numeric_limits<double>::quiet_NaN();
     gcp.residual_azimuth = std::numeric_limits<double>::quiet_NaN();
 
     m_db->updateGCP(gcp);
     
-    // 刷新显示并保持高亮
     loadGCPList();
-    m_view->setSelectedGCP(gcpId);
+    
+    if (m_sceneHelper) {
+        m_sceneHelper->setSelectedGCP(gcpId);
+    }
 }
 
-void GCPAnnotationDialog::onAddGcp()
+void GCPAnnotationDockWidget::onMouseMovedOverImage(const QPointF& scenePos)
+{
+    if (m_previewImage.isNull()) {
+        m_magnifierLabel->setText(QStringLiteral("无底图缓存"));
+        return;
+    }
+
+    int px = static_cast<int>(std::round(scenePos.x()));
+    int py = static_cast<int>(std::round(scenePos.y()));
+
+    int w = m_previewImage.width();
+    int h = m_previewImage.height();
+
+    if (px < 0 || px >= w || py < 0 || py >= h) {
+        m_magnifierLabel->setText(QStringLiteral("越界"));
+        return;
+    }
+
+    int size = 11;
+    int half = size / 2;
+    int srcX = px - half;
+    int srcY = py - half;
+
+    int clampX = std::max(0, std::min(srcX, w - size));
+    int clampY = std::max(0, std::min(srcY, h - size));
+
+    QImage subImg = m_previewImage.copy(clampX, clampY, size, size);
+    QPixmap pix = QPixmap::fromImage(subImg.scaled(120, 120, Qt::KeepAspectRatio, Qt::FastTransformation));
+
+    QPainter painter(&pix);
+    painter.setPen(QPen(Qt::red, 1));
+    painter.drawLine(60, 0, 60, 120);
+    painter.drawLine(0, 60, 120, 60);
+    painter.end();
+
+    m_magnifierLabel->setPixmap(pix);
+}
+
+void GCPAnnotationDockWidget::calculateRealtimeResiduals()
+{
+    if (!m_db || !m_db->isOpen()) return;
+
+    std::vector<GCPPoint> gcps = m_db->getGCPs();
+    if (gcps.empty()) {
+        m_rmseStatusLabel->setText(QStringLiteral("无控制点数据\n评估点数: 0"));
+        return;
+    }
+
+    std::vector<GCPPoint> activeGcps;
+    for (const auto& gcp : gcps) {
+        if (gcp.isAnnotated()) {
+            activeGcps.push_back(gcp);
+        }
+    }
+
+    if (activeGcps.empty()) {
+        m_rmseStatusLabel->setText(QStringLiteral("无有效标注点\n评估点数: 0"));
+        return;
+    }
+
+    if (m_rowCoef.empty() || m_colCoef.empty()) {
+        m_rmseStatusLabel->setText(QStringLiteral("未加载定位多项式参数\n评估点数: %1").arg(activeGcps.size()));
+        return;
+    }
+
+    GCPManager manager;
+    GCPEvaluationResult evalResult;
+
+    manager.evaluate_coregistration_accuracy(
+        activeGcps,
+        m_rowCoef, m_colCoef,
+        m_sceneHeight, m_sceneWidth,
+        m_offsetRow, m_offsetCol,
+        m_rangeSpacing, m_azimuthSpacing,
+        evalResult
+    );
+
+    m_db->updateGCPs(activeGcps);
+
+    m_isUpdatingTable = true;
+    
+    for (int i = 0; i < m_table->rowCount(); ++i) {
+        int id = m_table->item(i, 0)->text().toInt();
+        for (const auto& gcp : activeGcps) {
+            if (gcp.id == id) {
+                QString resRStr = std::isnan(gcp.residual_range) ? "" : QString::number(gcp.residual_range, 'f', 3);
+                QString resAStr = std::isnan(gcp.residual_azimuth) ? "" : QString::number(gcp.residual_azimuth, 'f', 3);
+                
+                m_table->item(i, 6)->setText(resRStr);
+                m_table->item(i, 7)->setText(resAStr);
+
+                QColor rowBgColor = Qt::transparent;
+                if (!std::isnan(gcp.residual_range) && !std::isnan(gcp.residual_azimuth)) {
+                    double pixelR = gcp.residual_range / m_rangeSpacing;
+                    double pixelA = gcp.residual_azimuth / m_azimuthSpacing;
+                    double pixelErr = std::sqrt(pixelR * pixelR + pixelA * pixelA);
+                    
+                    if (pixelErr > 2.0) {
+                        rowBgColor = QColor(255, 230, 230);
+                    }
+                }
+                for (int col = 0; col < m_table->columnCount(); ++col) {
+                    m_table->item(i, col)->setBackground(QBrush(rowBgColor));
+                }
+                break;
+            }
+        }
+    }
+
+    m_isUpdatingTable = false;
+
+    QString statusText = QStringLiteral("评估点数: %1\n距离向 RMS: %2 米\n方位向 RMS: %3 米\n二维综合 RMS: %4 米")
+        .arg(evalResult.num_gcp_used)
+        .arg(evalResult.mean_residual_range, 0, 'f', 3)
+        .arg(evalResult.mean_residual_azimuth, 0, 'f', 3)
+        .arg(evalResult.rms_residual_2d, 0, 'f', 3);
+        
+    if (!m_sceneHelper) {
+        statusText += QStringLiteral("\n\n⚠️ 提示：未在主界面中找到活动的影像视口。\n请先双击或打开该底图影像以启用图形标注。");
+    }
+    
+    m_rmseStatusLabel->setText(statusText);
+    
+    emit gcpDataSaved(m_h5Path);
+}
+
+void GCPAnnotationDockWidget::onAddGcp()
 {
     if (!m_db) return;
 
@@ -507,7 +724,6 @@ void GCPAnnotationDialog::onAddGcp()
     int newId = m_db->addGCP(gcp);
     if (newId >= 0) {
         loadGCPList();
-        // 选中新行，方便编辑
         for (int i = 0; i < m_table->rowCount(); ++i) {
             if (m_table->item(i, 0)->text().toInt() == newId) {
                 m_table->setCurrentCell(i, 1);
@@ -517,7 +733,7 @@ void GCPAnnotationDialog::onAddGcp()
     }
 }
 
-void GCPAnnotationDialog::onDeleteGcp()
+void GCPAnnotationDockWidget::onDeleteGcp()
 {
     int curRow = m_table->currentRow();
     if (curRow < 0 || !m_db) return;
@@ -531,7 +747,7 @@ void GCPAnnotationDialog::onDeleteGcp()
     }
 }
 
-void GCPAnnotationDialog::onImportGcp()
+void GCPAnnotationDockWidget::onImportGcp()
 {
     if (!m_db) return;
 
@@ -561,7 +777,7 @@ void GCPAnnotationDialog::onImportGcp()
     }
 }
 
-void GCPAnnotationDialog::onExportGcp()
+void GCPAnnotationDockWidget::onExportGcp()
 {
     if (!m_db) return;
 

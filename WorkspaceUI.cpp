@@ -1,6 +1,10 @@
 #include "WorkspaceUI.h"
 #include "MainWindow.h"
 #include "treeview.h"
+#include "include/GCPDatabase.h"
+#include "include/GCPAnnotationWidget.h"
+#include <QMessageBox>
+#include <QtSql/QSqlError>
 #include <QSplitter>
 #include <QTreeView>
 #include <QTabWidget>
@@ -114,6 +118,9 @@ void WorkspaceUI::setupUi()
     Process = nullptr;
 
     connect(m_sortComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &WorkspaceUI::onSortMethodChanged);
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int) {
+        updateGcpButtonState();
+    });
 }
 
 QWidget* WorkspaceUI::centralWidget()
@@ -207,6 +214,7 @@ void WorkspaceUI::setProjectContext(QStandardItemModel* model, const QString& pa
 
     // Trigger tree refresh to ensure the view reflects the new model
     refreshProjectTree();
+    updateGcpButtonState();
 }
 
 QStandardItemModel* WorkspaceUI::projectModel() const
@@ -326,6 +334,8 @@ void WorkspaceUI::setTheme(const QString &theme)
                 return isDark ? QColor("#D0BCFF") : QColor("#6750A4");
             if (btnText == "Zoom In" || btnText == "Zoom Out" || btnText == "Fit" || btnText == "Reset Zoom")
                 return isDark ? QColor("#FFB95B") : QColor("#A85C00");
+            if (btnText.trimmed() == "GCP")
+                return isDark ? QColor("#47D8A4") : QColor("#0F7D5C");
             return isDark ? QColor("#CCCCCC") : QColor("#414752");
         });
     }
@@ -416,12 +426,17 @@ void WorkspaceUI::clear()
         m_treeView->setColumnHidden(1, true);
     }
 
+    m_projectPath.clear();
+    m_projectName.clear();
+
     // 清空标签页（删除 widget 会自动销毁子 ColorBar）
     while (m_tabWidget && m_tabWidget->count() > 0) {
         QWidget* page = m_tabWidget->widget(0);
         m_tabWidget->removeTab(0);
         delete page;
     }
+
+    updateGcpButtonState();
 }
 
 void WorkspaceUI::setupToolbar()
@@ -499,6 +514,28 @@ void WorkspaceUI::setupToolbar()
     connect(btnZoomReset, &QToolButton::clicked, this, [this]() {
         ImageView* view = activeImageView();
         if (view) view->resetZoom();
+    });
+
+    // 增加 GCP 专用分割线与按钮
+    QWidget* sepGcp = new QWidget(this);
+    sepGcp->setObjectName("sepGcp");
+    sepGcp->setFixedWidth(1);
+    sepGcp->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
+    m_gcpSepAction = m_toolbar->addWidget(sepGcp);
+
+    m_btnGcp = createToolbarButton(":/SatExplorer/svg/GCPs.svg", "GCP", COLOR_PRIMARY, COLOR_TEXT, this);
+    m_btnGcp->setObjectName("m_btnGcp");
+    m_btnGcp->setToolTip(QStringLiteral("打开当前影像的地面控制点(GCP)标注与残差评估界面"));
+    m_gcpBtnAction = m_toolbar->addWidget(m_btnGcp);
+
+    m_gcpSepAction->setVisible(true);
+    m_gcpBtnAction->setVisible(true);
+
+    connect(m_btnGcp, &QToolButton::clicked, this, [this]() {
+        MainWindow* mainWin = qobject_cast<MainWindow*>(window());
+        if (mainWin) {
+            mainWin->on_actionGCP_Manager_triggered();
+        }
     });
 }
 
@@ -831,4 +868,15 @@ void WorkspaceUI::onSortMethodChanged(int index)
 {
     m_sortMethod = index;
     refreshProjectTree();
+}
+
+void WorkspaceUI::updateGcpButtonState()
+{
+    if (!m_gcpBtnAction) return;
+
+    // GCP 按钮在工具区一直保持可见，不再根据当前页是否为 h5 动态隐藏
+    m_gcpBtnAction->setVisible(true);
+    if (m_gcpSepAction) {
+        m_gcpSepAction->setVisible(true);
+    }
 }
