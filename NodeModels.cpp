@@ -51,6 +51,10 @@
 #include "PSDeformationPreviewNode.h"
 #include "GCPManagerNode.h"
 #include "OrbitRefinementNode.h"
+#include "PhaseElevationRegressionNode.h"
+#include "GacosOnlineServiceNode.h"
+#include "TroposphericCorrectionNode.h"
+#include "IonosphericCorrectionNode.h"
 
 
 
@@ -150,6 +154,12 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
 
     // Tools
     registry->registerModel<GCPManagerNode>("Tools");
+
+    // Atmospheric Correction
+    registry->registerModel<PhaseElevationRegressionNode>("DInSAR/Atmospheric Correction");
+    registry->registerModel<GacosOnlineServiceNode>("DInSAR/Atmospheric Correction");
+    registry->registerModel<TroposphericCorrectionNode>("DInSAR/Atmospheric Correction");
+    registry->registerModel<IonosphericCorrectionNode>("DInSAR/Atmospheric Correction");
 
     // Register test nodes for development (can be removed when all InSAR nodes are implemented)
 #ifdef ENABLE_TEST_NODES

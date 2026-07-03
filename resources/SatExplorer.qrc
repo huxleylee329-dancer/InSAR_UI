@@ -48,6 +48,14 @@
         <file>svg/psi_network.svg</file>
         <file>svg/psi_time_series.svg</file>
         <file>svg/psi_preview.svg</file>
+        <file>svg/dinsar_deformation.svg</file>
+        <file>svg/workflow_import.svg</file>
+        <file>svg/workflow_export.svg</file>
+        <file>svg/atmospheric_correction.svg</file>
+        <file>svg/gacos.svg</file>
+        <file>svg/ionosphere.svg</file>
+        <file>svg/phase_elevation.svg</file>
+        <file>svg/troposphere.svg</file>
         <file>svg/hand.svg</file>
         <file>svg/zoom.svg</file>
         <file>svg/zoom_out.svg</file>

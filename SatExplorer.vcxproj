@@ -99,7 +99,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;DeformationRateField_d.lib;Qt5Sqld.lib;gdal_i.lib;GCPManager_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;DeformationRateField_d.lib;Qt5Sqld.lib;gdal_i.lib;GCPManager_d.lib;AtmosphericCorrection_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -117,7 +117,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;Qt5Sql.lib;gdal_i.lib;GCPManager.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;Qt5Sql.lib;gdal_i.lib;GCPManager.lib;AtmosphericCorrection.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -473,6 +473,42 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="GeocodingWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TroposphericCorrectionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TroposphericCorrectionWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TroposphericCorrection_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IonosphericCorrectionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IonosphericCorrectionWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IonosphericCorrection_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PhaseElevationRegressionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PhaseElevationRegressionWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PhaseElevationRegression_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GacosOnlineServiceNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GacosOnlineServiceWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GacosOnlineService_ui.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TSXImportWorker.cpp">
@@ -1152,6 +1188,42 @@
     <QtMoc Include="include\GeocodingWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\TroposphericCorrectionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TroposphericCorrectionWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TroposphericCorrection_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\IonosphericCorrectionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\IonosphericCorrectionWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\IonosphericCorrection_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PhaseElevationRegressionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PhaseElevationRegressionWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PhaseElevationRegression_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GacosOnlineServiceNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GacosOnlineServiceWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GacosOnlineService_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\TSXImportWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -1381,6 +1453,18 @@
     <QtUic Include="ui\SpeckleDenoise.ui" />
     <QtUic Include="ui\TargetDetection.ui" />
     <QtUic Include="ui\Unwrap.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\PhaseElevationRegression.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\GacosOnlineService.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\TroposphericCorrection.ui">
+      <Filter>UI Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\IonosphericCorrection.ui">
       <Filter>UI Files</Filter>
     </QtUic>
   </ItemGroup>

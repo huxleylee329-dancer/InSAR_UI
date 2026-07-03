@@ -100,7 +100,8 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     order.subcategories["DInSAR"] = QStringList{
         "SBAS",
-        "PSI"
+        "PSI",
+        "Atmospheric Correction"
     };
 
     // ===== 3. 叶子项顺序 =====
@@ -184,6 +185,14 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
         {"PS Network Construction", "PS Network Construction"},
         {"PS Time Series Inversion", "PS Time Series Inversion"},
         {"PS Deformation Preview", "PS Deformation Preview"}
+    };
+
+    // DInSAR/Atmospheric Correction 类叶子项顺序
+    order.leafItems["DInSAR/Atmospheric Correction"] = QList<PaletteOrder::LeafItem>{
+        {"Phase-Elevation Regression", "Phase-Elevation Regression"},
+        {"GACOS Online Service", "GACOS Online Service"},
+        {"ERA5 Tropospheric Correction", "ERA5 Tropospheric Correction"},
+        {"Ionospheric Correction", "Ionospheric Correction (Split-Spectrum)"}
     };
 
     // SAR/Denoise & Enhancement 类叶子项顺序
@@ -738,12 +747,12 @@ void WorkflowUI::setupToolbar()
     // Group 1: File Operations
     // ======================
     // Import button (蓝色)
-    QToolButton *btnImport = createToolbarButton(":/SatExplorer/svg/folder_open.svg", "Import", COLOR_PRIMARY, COLOR_TEXT, this);
+    QToolButton *btnImport = createToolbarButton(":/SatExplorer/svg/workflow_import.svg", "Import", COLOR_PRIMARY, COLOR_TEXT, this);
     connect(btnImport, &QToolButton::clicked, this, &WorkflowUI::onImport);
     m_toolbar->addWidget(btnImport);
 
     // Export button (蓝色)
-    QToolButton *btnExport = createToolbarButton(":/SatExplorer/svg/save.svg", "Export", COLOR_PRIMARY, COLOR_TEXT, this);
+    QToolButton *btnExport = createToolbarButton(":/SatExplorer/svg/workflow_export.svg", "Export", COLOR_PRIMARY, COLOR_TEXT, this);
     connect(btnExport, &QToolButton::clicked, this, &WorkflowUI::onExport);
     m_toolbar->addWidget(btnExport);
 
@@ -753,12 +762,6 @@ void WorkflowUI::setupToolbar()
         QMessageBox::information(this, "Favorite Workflows", "Favorite workflows feature coming soon.");
     });
     m_toolbar->addWidget(btnFav);
-
-    // Vertical separator
-    QWidget *sep1 = new QWidget();
-    sep1->setFixedWidth(1);
-    sep1->setStyleSheet("background-color: rgba(192, 199, 212, 0.3); margin: 2px 0px;");
-    m_toolbar->addWidget(sep1);
 
     // ======================
     // Group 2: Execution Controls

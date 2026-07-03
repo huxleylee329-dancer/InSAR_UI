@@ -173,6 +173,10 @@ static const MenuIconMapping menuIconMap[] = {
     {"menuDetection",                  ":/SatExplorer/svg/radar.svg"},
     {"menuTheme",                      ":/SatExplorer/svg/palette.svg"},
     {"actionGcpManager",               ":/SatExplorer/svg/GCPs.svg"},
+    {"actionPhaseElevationRegression",  ":/SatExplorer/svg/phase_elevation.svg"},
+    {"actionGacosOnlineService",         ":/SatExplorer/svg/gacos.svg"},
+    {"actionTroposphericCorrection",     ":/SatExplorer/svg/troposphere.svg"},
+    {"actionIonosphericCorrection",      ":/SatExplorer/svg/ionosphere.svg"},
 };
 
 MainWindow::MainWindow(QWidget* parent)
@@ -192,6 +196,12 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     , m_statusInterfaceLabel(nullptr)
     , m_statusProgressBar(nullptr)
     , m_actionGcpManager(nullptr)
+    , m_actionPhaseElevationRegression(nullptr)
+    , m_actionGacosOnlineService(nullptr)
+    , m_actionTroposphericCorrection(nullptr)
+    , m_actionIonosphericCorrection(nullptr)
+    , m_menuTools(nullptr)
+    , m_menuAtmosphericCorrection(nullptr)
 {
     ui.setupUi(this);
     initStatusBar();
@@ -270,6 +280,12 @@ MainWindow::MainWindow(QString str, QWidget* parent)
             if (!ui.menuSAR->isEnabled()) ui.menuSAR->setDisabled(0);
             if (!ui.menuExport->isEnabled()) ui.menuExport->setDisabled(0);
             if (m_actionGcpManager && !m_actionGcpManager->isEnabled()) m_actionGcpManager->setDisabled(0);
+            if (m_menuTools) m_menuTools->menuAction()->setEnabled(true);
+            if (m_menuAtmosphericCorrection) m_menuAtmosphericCorrection->menuAction()->setEnabled(true);
+            if (m_actionPhaseElevationRegression) m_actionPhaseElevationRegression->setEnabled(true);
+            if (m_actionGacosOnlineService) m_actionGacosOnlineService->setEnabled(true);
+            if (m_actionTroposphericCorrection) m_actionTroposphericCorrection->setEnabled(true);
+            if (m_actionIonosphericCorrection) m_actionIonosphericCorrection->setEnabled(true);
         }
 
         m_projectModified = true;
@@ -279,6 +295,65 @@ MainWindow::MainWindow(QString str, QWidget* parent)
 
     // Add interface switching menu to View
     setupInterfaceSwitchingMenu();
+
+    // 动态创建并插入“工具”菜单 (SOP 建议一)
+    m_menuTools = new QMenu(QStringLiteral("工具"), this);
+    m_actionGcpManager = new QAction(QStringLiteral("地面控制点管理与评估"), this);
+    m_actionGcpManager->setObjectName("actionGcpManager");
+    m_actionGcpManager->setIcon(QIcon(GCP_ICON));
+    m_menuTools->addAction(m_actionGcpManager);
+
+    // 挂接槽信号
+    connect(m_actionGcpManager, &QAction::triggered, this, &MainWindow::on_actionGCP_Manager_triggered);
+
+    // 插入到“数据导出”的后面
+    QList<QAction*> actions = menuBar()->actions();
+    QAction* exportAction = ui.menuExport->menuAction();
+    int idx = actions.indexOf(exportAction);
+    if (idx != -1 && idx + 1 < actions.size()) {
+        menuBar()->insertMenu(actions[idx + 1], m_menuTools);
+    } else {
+        menuBar()->addMenu(m_menuTools);
+    }
+
+    // 动态创建并插入“大气校正”菜单 (V2.2 UI 集成)
+    m_menuAtmosphericCorrection = new QMenu(QStringLiteral("大气校正"), this);
+    m_menuAtmosphericCorrection->setObjectName("menuAtmosphericCorrection");
+
+    m_actionPhaseElevationRegression = new QAction(QStringLiteral("经验性相位-高程回归"), this);
+    m_actionPhaseElevationRegression->setObjectName("actionPhaseElevationRegression");
+    m_menuAtmosphericCorrection->addAction(m_actionPhaseElevationRegression);
+    connect(m_actionPhaseElevationRegression, &QAction::triggered, this, &MainWindow::on_actionPhaseElevationRegression_triggered);
+
+    m_actionGacosOnlineService = new QAction(QStringLiteral("GACOS 在线服务"), this);
+    m_actionGacosOnlineService->setObjectName("actionGacosOnlineService");
+    m_menuAtmosphericCorrection->addAction(m_actionGacosOnlineService);
+    connect(m_actionGacosOnlineService, &QAction::triggered, this, &MainWindow::on_actionGacosOnlineService_triggered);
+
+    m_actionTroposphericCorrection = new QAction(QStringLiteral("ERA5 对流层校正"), this);
+    m_actionTroposphericCorrection->setObjectName("actionTroposphericCorrection");
+    m_menuAtmosphericCorrection->addAction(m_actionTroposphericCorrection);
+    connect(m_actionTroposphericCorrection, &QAction::triggered, this, &MainWindow::on_actionTroposphericCorrection_triggered);
+
+    m_actionIonosphericCorrection = new QAction(QStringLiteral("电离层 Split-Spectrum 校正"), this);
+    m_actionIonosphericCorrection->setObjectName("actionIonosphericCorrection");
+    m_menuAtmosphericCorrection->addAction(m_actionIonosphericCorrection);
+    connect(m_actionIonosphericCorrection, &QAction::triggered, this, &MainWindow::on_actionIonosphericCorrection_triggered);
+
+    // 在无工程打开时，默认禁用
+    m_actionPhaseElevationRegression->setEnabled(false);
+    m_actionGacosOnlineService->setEnabled(false);
+    m_actionTroposphericCorrection->setEnabled(false);
+    m_actionIonosphericCorrection->setEnabled(false);
+
+    // 插入到 DInSAR 后面（数据导出前面），符合地理数据处理先后逻辑流程
+    QList<QAction*> newActions = menuBar()->actions();
+    int exportIdx = newActions.indexOf(exportAction);
+    if (exportIdx != -1) {
+        menuBar()->insertMenu(newActions[exportIdx], m_menuAtmosphericCorrection);
+    } else {
+        menuBar()->addMenu(m_menuAtmosphericCorrection);
+    }
 
     if (str.isEmpty()) {
         // No project opened - show welcome screen
@@ -290,6 +365,13 @@ MainWindow::MainWindow(QString str, QWidget* parent)
         ui.menuSAR->setDisabled(1);
         ui.menuExport->setDisabled(1);
         if (m_actionGcpManager) m_actionGcpManager->setDisabled(1);
+        if (m_actionPhaseElevationRegression) m_actionPhaseElevationRegression->setEnabled(false);
+        if (m_actionGacosOnlineService) m_actionGacosOnlineService->setEnabled(false);
+        if (m_actionTroposphericCorrection) m_actionTroposphericCorrection->setEnabled(false);
+        if (m_actionIonosphericCorrection) m_actionIonosphericCorrection->setEnabled(false);
+        
+        m_menuTools->menuAction()->setEnabled(false);
+        m_menuAtmosphericCorrection->menuAction()->setEnabled(false);
         
         m_interfaceManager->switchToInterface("welcome");
         updateInterfaceMenuCheckState();
@@ -299,26 +381,6 @@ MainWindow::MainWindow(QString str, QWidget* parent)
         this->open_from_project_file(str);
     }
     
-    // 动态创建并插入“工具”菜单 (SOP 建议一)
-    QMenu* menuTools = new QMenu(QStringLiteral("工具"), this);
-    m_actionGcpManager = new QAction(QStringLiteral("地面控制点管理与评估"), this);
-    m_actionGcpManager->setObjectName("actionGcpManager");
-    m_actionGcpManager->setIcon(QIcon(GCP_ICON));
-    menuTools->addAction(m_actionGcpManager);
-
-    // 挂接槽信号
-    connect(m_actionGcpManager, &QAction::triggered, this, &MainWindow::on_actionGCP_Manager_triggered);
-
-    // 插入到“数据导出”的后面
-    QList<QAction*> actions = menuBar()->actions();
-    QAction* exportAction = ui.menuExport->menuAction();
-    int idx = actions.indexOf(exportAction);
-    if (idx != -1 && idx + 1 < actions.size()) {
-        menuBar()->insertMenu(actions[idx + 1], menuTools);
-    } else {
-        menuBar()->addMenu(menuTools);
-    }
-
     updateFileMenuState();
 }
 MainWindow::~MainWindow()
@@ -1783,6 +1845,12 @@ void MainWindow::applyMenuIcons(bool isDark)
             name == "actionBatchTargetRecognition" || name == "menuPSI" || name.contains("PSI_")) {
             return isDark ? QColor("#D0BCFF") : QColor("#6750A4");
         }
+        // 6. Cyan/Sky Blue (Atmospheric Correction)
+        if (name == "menuAtmosphericCorrection" || name == "actionPhaseElevationRegression" ||
+            name == "actionGacosOnlineService" || name == "actionTroposphericCorrection" ||
+            name == "actionIonosphericCorrection") {
+            return isDark ? QColor("#80E8FF") : QColor("#00687A");
+        }
         // 1. Blue (Standard files, project, theme)
         return isDark ? QColor("#82CFFF") : QColor("#005FAC");
     };
@@ -2341,6 +2409,12 @@ void MainWindow::updateFileMenuState()
         ui.menuSAR->setEnabled(false);
         ui.menuExport->setEnabled(false);
         if (m_actionGcpManager) m_actionGcpManager->setEnabled(false);
+        if (m_menuTools) m_menuTools->menuAction()->setEnabled(false);
+        if (m_menuAtmosphericCorrection) m_menuAtmosphericCorrection->menuAction()->setEnabled(false);
+        if (m_actionPhaseElevationRegression) m_actionPhaseElevationRegression->setEnabled(false);
+        if (m_actionGacosOnlineService) m_actionGacosOnlineService->setEnabled(false);
+        if (m_actionTroposphericCorrection) m_actionTroposphericCorrection->setEnabled(false);
+        if (m_actionIonosphericCorrection) m_actionIonosphericCorrection->setEnabled(false);
     }
 }
 
@@ -2590,4 +2664,44 @@ void MainWindow::showGCPDockWidget(const QString& h5Path)
     m_gcpDockWidget->show();
     m_gcpDockWidget->raise();
     m_gcpDockWidget->loadDataset(h5Path);
+}
+
+void MainWindow::on_actionPhaseElevationRegression_triggered()
+{
+    PhaseElevationRegression_ui* regis = new PhaseElevationRegression_ui();
+    connect(this, &MainWindow::sendModel, regis, &PhaseElevationRegression_ui::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    regis->show();
+    connect(regis, &PhaseElevationRegression_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    regis->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionGacosOnlineService_triggered()
+{
+    GacosOnlineService_ui* gacos = new GacosOnlineService_ui();
+    connect(this, &MainWindow::sendModel, gacos, &GacosOnlineService_ui::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    gacos->show();
+    connect(gacos, &GacosOnlineService_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    gacos->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionTroposphericCorrection_triggered()
+{
+    TroposphericCorrection_ui* tropo = new TroposphericCorrection_ui();
+    connect(this, &MainWindow::sendModel, tropo, &TroposphericCorrection_ui::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    tropo->show();
+    connect(tropo, &TroposphericCorrection_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    tropo->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+
+void MainWindow::on_actionIonosphericCorrection_triggered()
+{
+    IonosphericCorrection_ui* iono = new IonosphericCorrection_ui();
+    connect(this, &MainWindow::sendModel, iono, &IonosphericCorrection_ui::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    iono->show();
+    connect(iono, &IonosphericCorrection_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
+    iono->setAttribute(Qt::WA_DeleteOnClose, true);
 }

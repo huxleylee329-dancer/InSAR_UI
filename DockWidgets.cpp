@@ -434,7 +434,7 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                 iconPath = ":/SatExplorer/svg/interferogram.svg";
                 iconColor = isDark ? QColor("#FFB95B") : QColor("#A85C00"); // Amber/Orange
             } else if (catName == "DInSAR") {
-                iconPath = ":/SatExplorer/svg/time_series.svg";
+                iconPath = ":/SatExplorer/svg/dinsar_deformation.svg";
                 iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4"); // Purple
             } else if (catName == "SAR") {
                 iconPath = ":/SatExplorer/svg/radar.svg";
@@ -476,6 +476,22 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                 // Logger Node - Blue
                 iconPath = LOGGER_ICON;
                 iconColor = isDark ? QColor("#82CFFF") : QColor("#005FAC");
+            }
+            else if (modelName == "Phase-Elevation Regression") {
+                iconPath = ":/SatExplorer/svg/phase_elevation.svg";
+                iconColor = isDark ? QColor("#80E8FF") : QColor("#00687A");
+            }
+            else if (modelName == "GACOS Online Service") {
+                iconPath = ":/SatExplorer/svg/gacos.svg";
+                iconColor = isDark ? QColor("#80E8FF") : QColor("#00687A");
+            }
+            else if (modelName == "ERA5 Tropospheric Correction") {
+                iconPath = ":/SatExplorer/svg/troposphere.svg";
+                iconColor = isDark ? QColor("#80E8FF") : QColor("#00687A");
+            }
+            else if (modelName == "Ionospheric Correction (Split-Spectrum)") {
+                iconPath = ":/SatExplorer/svg/ionosphere.svg";
+                iconColor = isDark ? QColor("#80E8FF") : QColor("#00687A");
             }
             else if (modelName == "Geocoding" || modelName == "ExportKML") {
                 // Export category - Green

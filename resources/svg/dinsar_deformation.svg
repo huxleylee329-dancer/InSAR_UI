@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 后图层 -->
+  <path d="M7 3h12a2 2 0 0 1 2 2v10" />
+  <!-- 前图层 -->
+  <rect x="3" y="7" width="12" height="12" rx="2" />
+  <!-- 差分 Delta 三角形 -->
+  <polygon points="18 13 22 21 14 21" />
+</svg>

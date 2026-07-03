@@ -331,6 +331,42 @@
     <ClCompile Include="GeocodingWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TroposphericCorrectionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TroposphericCorrectionWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TroposphericCorrection_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IonosphericCorrectionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IonosphericCorrectionWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IonosphericCorrection_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PhaseElevationRegressionNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PhaseElevationRegressionWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PhaseElevationRegression_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GacosOnlineServiceNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GacosOnlineServiceWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GacosOnlineService_ui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="TSXImportWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -954,6 +990,42 @@
     <QtMoc Include="include\GeocodingWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <QtMoc Include="include\TroposphericCorrectionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TroposphericCorrectionWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\TroposphericCorrection_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\IonosphericCorrectionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\IonosphericCorrectionWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\IonosphericCorrection_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PhaseElevationRegressionNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PhaseElevationRegressionWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\PhaseElevationRegression_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GacosOnlineServiceNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GacosOnlineServiceWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\GacosOnlineService_ui.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
     <QtMoc Include="include\TSXImportWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
@@ -1395,6 +1467,18 @@
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="ui\Unwrap.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\PhaseElevationRegression.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\GacosOnlineService.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\TroposphericCorrection.ui">
+      <Filter>Form Files</Filter>
+    </QtUic>
+    <QtUic Include="ui\IonosphericCorrection.ui">
       <Filter>Form Files</Filter>
     </QtUic>
     <QtUic Include="ui\SpeckleDenoise.ui">
