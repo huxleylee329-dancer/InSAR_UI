@@ -82,9 +82,12 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
             return;
         }
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
+        if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
+        if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
         sbas.refinement_and_reflattening(phase, reflattening_mask, coherence, 0.0);
         phase = phase - phase.at<double>(ref_row, ref_col);
+        if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
         conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0, phase.rows, phase.cols);
     }
 
@@ -136,7 +139,9 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
         double r = nearRange + double(offset_col) * spacing;
         c.at<double>(i, 0) = 4 * PI / wavelength * B_spatial / sin(theta) / r;
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
+        if (phase_vec[i].type() != CV_64F) phase_vec[i].convertTo(phase_vec[i], CV_64F);
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coh_vec[i]);
+        if (coh_vec[i].type() != CV_64F) coh_vec[i].convertTo(coh_vec[i], CV_64F);
     }
     Mat dummy = Mat::zeros(phase.rows, phase.cols, CV_64F);
     for (int i = 0; i < N + 1; i++)

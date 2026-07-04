@@ -224,6 +224,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
             }
+            // 临时转换为双精度以匹配 DLL 的数学处理要求，保证算法精度并避免崩溃
+            if (phase.type() != CV_64F) {
+                phase.convertTo(phase, CV_64F);
+            }
             Mat phase_filter;
             ret = filter.slope_adaptive_filter(phase, phase_filter, slop_win, pre_win, denoiseProgressCallback);
             if (ret < 0) {
@@ -232,6 +236,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             }
             /*写入h5*/
             ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
+            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
+            if (phase_filter.type() != CV_32F) {
+                phase_filter.convertTo(phase_filter, CV_32F);
+            }
             ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
             string tmp_str;
             Mat tmp;
@@ -318,6 +326,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
             }
+            // 临时转换为双精度以匹配 DLL 的数学处理要求，保证算法精度并避免崩溃
+            if (phase.type() != CV_64F) {
+                phase.convertTo(phase, CV_64F);
+            }
             Mat phase_filter;
             ret = filter.Goldstein_filter(phase, phase_filter, alpha, goldstein_win, n_pad, denoiseProgressCallback);
             if (ret < 0) {
@@ -326,6 +338,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             }
             /*写入h5*/
             ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
+            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
+            if (phase_filter.type() != CV_32F) {
+                phase_filter.convertTo(phase_filter, CV_32F);
+            }
             ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
             string tmp_str;
             Mat tmp;

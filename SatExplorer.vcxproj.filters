@@ -1513,7 +1513,7 @@
     <ClInclude Include="include\NodeDataTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\PSI.h">
+    <ClInclude Include="..\InSAR\include\PSI.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\NodeModels.h">

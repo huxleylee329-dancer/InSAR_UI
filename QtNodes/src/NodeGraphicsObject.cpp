@@ -34,7 +34,7 @@ NodeGraphicsObject::NodeGraphicsObject(BasicGraphicsScene &scene, NodeId nodeId)
 
     setLockedState();
 
-    setCacheMode(QGraphicsItem::DeviceCoordinateCache);
+    setCacheMode(QGraphicsItem::NoCache);
 
     QJsonObject nodeStyleJson = _graphModel.nodeData(_nodeId, NodeRole::Style).toJsonObject();
 
@@ -176,8 +176,6 @@ void NodeGraphicsObject::reactToConnection(ConnectionGraphicsObject const *cgo)
 
 void NodeGraphicsObject::paint(QPainter *painter, QStyleOptionGraphicsItem const *option, QWidget *)
 {
-    painter->setClipRect(option->exposedRect);
-
     nodeScene()->nodePainter().paint(painter, *this);
 }
 

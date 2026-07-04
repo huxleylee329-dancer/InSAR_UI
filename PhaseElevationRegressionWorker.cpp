@@ -161,6 +161,9 @@ void PhaseElevationRegressionWorker::doRegression(
         Mat phase;
         ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "phase", phase);
         if (ret < 0) { continue; }
+        if (phase.type() != CV_32F) {
+            phase.convertTo(phase, CV_32F);
+        }
 
         int rows = phase.rows;
         int cols = phase.cols;
@@ -169,6 +172,9 @@ void PhaseElevationRegressionWorker::doRegression(
         Mat coherence;
         ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "coherence", coherence);
         bool has_coherence = (ret == 0 && coherence.rows == rows && coherence.cols == cols);
+        if (has_coherence && coherence.type() != CV_32F) {
+            coherence.convertTo(coherence, CV_32F);
+        }
 
         // 读取高程数据（mapped_dem 或从 lat/lon 推断）
         Mat dem;
@@ -176,6 +182,9 @@ void PhaseElevationRegressionWorker::doRegression(
         ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_dem", dem);
         if (ret == 0 && dem.rows == rows && dem.cols == cols) {
             has_dem = true;
+            if (dem.type() != CV_32F) {
+                dem.convertTo(dem, CV_32F);
+            }
         }
 
         // 读取地理坐标
@@ -186,6 +195,8 @@ void PhaseElevationRegressionWorker::doRegression(
             ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat);
             if (ret == 0 && lat_mat.rows == rows && lat_mat.cols == cols) {
                 has_latlon = true;
+                if (lat_mat.type() != CV_32F) lat_mat.convertTo(lat_mat, CV_32F);
+                if (lon_mat.type() != CV_32F) lon_mat.convertTo(lon_mat, CV_32F);
             }
         }
 

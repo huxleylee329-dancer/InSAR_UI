@@ -976,16 +976,34 @@ void MainWindow::on_actionSave_as_triggered()
         m_interfaceManager->saveLastInterfaceToProject(this->project);
     }
 
-    // 4.5. 询问用户是否复制关联的数据文件
+    // 4.5. 检查新旧工程是否在同一个目录下
+    QString oldProjectDir = QFileInfo(m_projectPath).absolutePath();
+    bool isSameDir = (QString::compare(QFileInfo(oldProjectDir).absoluteFilePath(), QFileInfo(newProjectDir).absoluteFilePath(), Qt::CaseInsensitive) == 0);
+
     bool copyData = false;
-    QMessageBox::StandardButton reply = QMessageBox::question(
-        this,
-        QStringLiteral("复制数据"),
-        QStringLiteral("是否将当前工程中已处理的数据文件（如H5影像）一同复制到新的目录？"),
-        QMessageBox::Yes | QMessageBox::No
-    );
-    if (reply == QMessageBox::Yes) {
-        copyData = true;
+    if (isSameDir) {
+        // 同一目录下，不复制关联数据文件（避免同名覆盖自删），但需要静默复制并重命名 GCP 数据库
+        QString oldProjBase = QFileInfo(m_projectPath).baseName();
+        QString newProjBase = newFileInfo.baseName();
+        QString srcDb = oldProjectDir + "/" + oldProjBase + "_gcp.db";
+        QString dstDb = newProjectDir + "/" + newProjBase + "_gcp.db";
+        if (QFile::exists(srcDb) && QString::compare(QFileInfo(srcDb).absoluteFilePath(), QFileInfo(dstDb).absoluteFilePath(), Qt::CaseInsensitive) != 0) {
+            if (QFile::exists(dstDb)) {
+                QFile::remove(dstDb);
+            }
+            QFile::copy(srcDb, dstDb);
+        }
+    } else {
+        // 不同目录下，询问用户是否复制关联的数据文件
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            QStringLiteral("复制数据"),
+            QStringLiteral("是否将当前工程中已处理的数据文件（如H5影像）一同复制到新的目录？"),
+            QMessageBox::Yes | QMessageBox::No
+        );
+        if (reply == QMessageBox::Yes) {
+            copyData = true;
+        }
     }
 
     if (copyData) {
@@ -1011,7 +1029,6 @@ void MainWindow::on_actionSave_as_triggered()
         }
 
         // 构建需要拷贝的文件列表（源路径 -> 目标路径）
-        QString oldProjectDir = QFileInfo(m_projectPath).absolutePath();
         QList<QPair<QString, QString>> filesToCopy;
 
         for (const QString& relPath : relativePaths) {
@@ -1034,12 +1051,12 @@ void MainWindow::on_actionSave_as_triggered()
             }
         }
 
-        // 拷贝 GCP 控制点 SQLite 数据库（如果存在）
+        // 拷贝 GCP 控制点 SQLite 数据库（如果存在且不同名/不同路径）
         QString oldProjBase = QFileInfo(m_projectPath).baseName();
         QString newProjBase = newFileInfo.baseName();
         QString srcDb = oldProjectDir + "/" + oldProjBase + "_gcp.db";
         QString dstDb = newProjectDir + "/" + newProjBase + "_gcp.db";
-        if (QFile::exists(srcDb)) {
+        if (QFile::exists(srcDb) && QString::compare(QFileInfo(srcDb).absoluteFilePath(), QFileInfo(dstDb).absoluteFilePath(), Qt::CaseInsensitive) != 0) {
             filesToCopy.append(qMakePair(srcDb, dstDb));
         }
 
@@ -1074,6 +1091,11 @@ void MainWindow::on_actionSave_as_triggered()
                     const auto& pair = filesToCopy.at(i);
                     QString src = pair.first;
                     QString dst = pair.second;
+
+                    // 防御性检查：如果源路径与目标路径完全相同，则跳过复制，避免自删
+                    if (QString::compare(QFileInfo(src).absoluteFilePath(), QFileInfo(dst).absoluteFilePath(), Qt::CaseInsensitive) == 0) {
+                        continue;
+                    }
 
                     // 自动建立目标文件夹
                     QDir().mkpath(QFileInfo(dst).absolutePath());

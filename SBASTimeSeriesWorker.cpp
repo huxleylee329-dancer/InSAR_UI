@@ -144,11 +144,13 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 return;
             }
             conversion.read_array_from_h5(phaseFiles[i].c_str(), "phase", phase);
+            if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
             ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
             if (ret < 0)
             {
                 util.phase_coherence(phase, coherence);
             }
+            if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
             sbas.set_high_coherence_node_phase(mask, nodes, edges, phase);
             sbas.set_weight_by_coherence(coherence, nodes, edges);
             sbas.compute_high_coherence_residue(nodes, edges, triangles);
@@ -162,6 +164,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             }
             sbas.floodFillUnwrap(nodes, edges, 1, false);
             sbas.retrieve_unwrapped_phase(nodes, phase);
+            if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
             conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
             for (int j = 0; j < nodes.size(); j++)
             {
@@ -182,11 +185,13 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 return;
             }
             conversion.read_array_from_h5(phaseFiles[i].c_str(), "phase", phase);
+            if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
             ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
             if (ret < 0)
             {
                 util.phase_coherence(phase, coherence);
             }
+            if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
             Mat residue, phase2;
             util.residue(phase, residue);
             if (unwrap_method == 2)//SNAPHU方法
@@ -197,6 +202,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             {
                 unwrap.MCF(phase, phase2, coherence, residue, mcf_problem.c_str(), appPath.c_str());
             }
+            if (phase2.type() != CV_32F) phase2.convertTo(phase2, CV_32F);
             conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase2);
             int process = double(i + 1) / phaseFiles.size() * 100.0 * 0.5;
             emit updateProcess(10 + process, QStringLiteral("相位解缠中……"));
@@ -225,9 +231,12 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     for (int i = 0; i < phaseFiles.size(); i++)
     {
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
+        if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
+        if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
         sbas.refinement_and_reflattening(phase, mask, coherence, refinement_coh_thresh);
         phase = phase - phase.at<double>(ref_i, ref_j);
+        if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
         conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase);
     }
 
@@ -279,6 +288,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         double r = nearRange + double(offset_col_val) * spacing;
         c.at<double>(i, 0) = 4 * PI / wavelength * B_spatial / sin(theta) / r;
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
+        if (phase_vec[i].type() != CV_64F) phase_vec[i].convertTo(phase_vec[i], CV_64F);
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coh_vec[i]);
     }
     Mat dummy = Mat::zeros(phase.rows, phase.cols, CV_64F);
@@ -362,6 +372,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         if (cv::countNonZero(refinement_mask) < 4)
         {
             conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
+            if (phase_vec[i].type() != CV_64F) phase_vec[i].convertTo(phase_vec[i], CV_64F);
         }
         else
         {
@@ -380,10 +391,13 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 if (b_break) break;
             }
             conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
+            if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
             conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
+            if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
             sbas.refinement_and_reflattening(phase, refinement_mask, coherence, refinement_coh_thresh);
             phase = phase - phase.at<double>(ref_i, ref_j);
             phase.copyTo(phase_vec[i]);
+            if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
             conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0, phase.rows, phase.cols);
         }
     }

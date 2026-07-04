@@ -174,16 +174,27 @@ void TroposphericCorrectionWorker::doCorrection(
         Mat phase;
         ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "phase", phase);
         if (ret < 0) continue;
+        if (phase.type() != CV_32F) {
+            phase.convertTo(phase, CV_32F);
+        }
 
         int rows = phase.rows, cols = phase.cols;
 
         Mat lat_mat, lon_mat, dem;
         bool has_latlon = false, has_dem = false;
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat))
-            if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat))
+        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat)) {
+            if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat)) {
                 has_latlon = true;
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_dem", dem))
+                if (lat_mat.type() != CV_32F) lat_mat.convertTo(lat_mat, CV_32F);
+                if (lon_mat.type() != CV_32F) lon_mat.convertTo(lon_mat, CV_32F);
+            }
+        }
+        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_dem", dem)) {
             has_dem = true;
+            if (dem.type() != CV_32F) {
+                dem.convertTo(dem, CV_32F);
+            }
+        }
 
         if (!has_latlon) {
             emit updateProcess(progress, QStringLiteral("第%1幅缺少坐标数据，跳过").arg(idx + 1));

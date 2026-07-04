@@ -250,12 +250,21 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
             if (ret < 0) continue;
 
+            // 临时转换为双精度以满足 DLL 解缠算法对 CV_64F 的强校验要求
+            if (phase.type() != CV_64F) {
+                phase.convertTo(phase, CV_64F);
+            }
+
             Mat phase_unwrap;
-            ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap);
+            ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap, unwrapProgressCallback);
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
                 return;
+            }
+            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
+            if (phase_unwrap.type() != CV_32F) {
+                phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
             process_success[i] = true;
@@ -276,16 +285,25 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
             if (ret < 0) continue;
 
+            // 临时转换为双精度以满足 DLL 解缠算法及辅助计算对 CV_64F 的强校验要求
+            if (phase.type() != CV_64F) {
+                phase.convertTo(phase, CV_64F);
+            }
+
             Mat phase_unwrap;
             Mat coherence, residue;
             ret = util.phase_coherence(phase, coherence);
             ret = util.residue(phase, residue);
             QString app_path = QCoreApplication::applicationDirPath();
-            ret = unwrap.MCF(phase, phase_unwrap, coherence, residue, (absolute_path + "/MCF.net").toStdString().c_str(), app_path.toStdString().c_str());
+            ret = unwrap.MCF(phase, phase_unwrap, coherence, residue, (absolute_path + "/MCF.net").toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
                 return;
+            }
+            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
+            if (phase_unwrap.type() != CV_32F) {
+                phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
             process_success[i] = true;
@@ -308,11 +326,15 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
-            ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), absolute_path.toStdString().c_str(), app_path.toStdString().c_str());
+            ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), absolute_path.toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
                 return;
+            }
+            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
+            if (phase_unwrap.type() != CV_32F) {
+                phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
             process_success[i] = true;
@@ -334,13 +356,22 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
             if (ret < 0) continue;
 
+            // 临时转换为双精度以满足 DLL 解缠算法对 CV_64F 的强校验要求
+            if (phase.type() != CV_64F) {
+                phase.convertTo(phase, CV_64F);
+            }
+
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
-            ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold, absolute_path.toStdString().c_str(), app_path.toStdString().c_str());
+            ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold, absolute_path.toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
                 return;
+            }
+            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
+            if (phase_unwrap.type() != CV_32F) {
+                phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
             ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
             process_success[i] = true;

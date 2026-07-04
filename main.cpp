@@ -18,6 +18,7 @@
 #include <QAbstractItemModel>
 #include <vector>
 #include "ImportTask.h"
+#include <opencv2/core.hpp>
 
 
 // Global function to load QSS from file
@@ -60,6 +61,9 @@ void applyTheme(const QString &theme = "light")
 
 int main(int argc, char *argv[])
 {
+    // 禁用 Intel IPP 优化以防止 OpenCV 在 Debug 模式或特定数据类型下引发 ipp::IwException 内部异常，避免调试器中断或闪退
+    cv::ipp::setUseIPP(false);
+
     QApplication a(argc, argv);
     a.setWindowIcon(QIcon(APP_ICON));
 

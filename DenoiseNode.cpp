@@ -854,7 +854,10 @@ XMLFile* DenoiseNode::projectXml() const
 
 void DenoiseNode::execute()
 {
-    executeProcessing();
+    if (prepareToStart())
+    {
+        executeProcessing();
+    }
 }
 
 void DenoiseNode::stopExecution()
@@ -873,9 +876,13 @@ void DenoiseNode::stopExecution()
 
 void DenoiseNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

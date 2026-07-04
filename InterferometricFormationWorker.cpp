@@ -28,6 +28,33 @@
 using namespace cv;
 using namespace std;
 
+// 用于 DLL 进度回调与取消的全局线程局部变量及桥接实现
+static thread_local InterferometricFormationWorker* current_worker = nullptr;
+static thread_local int g_substep_prog_start = 0;
+static thread_local int g_substep_prog_end = 0;
+static thread_local QString g_current_pair_info;
+
+static bool __stdcall DeflatProgressCallbackImpl(int progress, const char* message) {
+    if (current_worker) {
+        if (current_worker->isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+            return false;
+        }
+        int mapped_prog = g_substep_prog_start + (progress * (g_substep_prog_end - g_substep_prog_start)) / 100;
+        QString info = g_current_pair_info;
+        if (message && message[0] != '\0') {
+            info += QString(" (%1)").arg(QString::fromUtf8(message));
+        }
+        emit current_worker->updateProcess(mapped_prog, info);
+    }
+    return true;
+}
+
+struct WorkerResetGuard {
+    ~WorkerResetGuard() {
+        current_worker = nullptr;
+    }
+};
+
 InterferometricFormationWorker::InterferometricFormationWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -43,6 +70,8 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                                                      QString project_name, QString node_name, QString file_name,
                                                      QStandardItemModel* model)
 {
+    current_worker = this;
+    WorkerResetGuard reset_guard;
 
     NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("InterferometricFormationWorker", QString("Interferometric task started. Output folder: %1").arg(file_name));
@@ -110,7 +139,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
         interferometric_phase->setToolTip(project_name);
     }
     
-    emit updateProcess(2, QStringLiteral("开始处理……"));
+    emit updateProcess(2, QStringLiteral("正在读取主影像SLC数据……"));
 
     ComplexMat Master;
     int ret = FC.read_slc_from_h5(master_path.toStdString().c_str(), Master);
@@ -119,6 +148,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
         return;
     }
     
+    emit updateProcess(5, QStringLiteral("正在解析主影像元数据……"));
     Mat statevec, lon_coef, lat_coef, inc_coef, statevec2;
     double prf, prf2, rangeSpacing, wavelength, nearRangeTime, acquisitionStartTime, acquisitionStopTime;
     string start, end;
@@ -151,38 +181,79 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
     bool b_mapped = false;
     if (multilook_az > 1 || multilook_rg > 1)
     {
+        emit updateProcess(7, QStringLiteral("正在多视降采样地理坐标矩阵……"));
         int rows_mapped = sceneHeight / multilook_az;
         int cols_mapped = sceneWidth / multilook_rg;
         
         if (0 == FC.read_array_from_h5(master_path.toStdString().c_str(), "mapped_lon", mapped_lon))
         {
-            Mat lon_new(rows_mapped, cols_mapped, CV_32F);
-            for (int i = 0; i < rows_mapped; i++)
+            // ================= 算法块 1: 使用 OpenCV 高性能内置区域插值 (当前启用) =================
+            cv::resize(mapped_lon, mapped_lon, cv::Size(cols_mapped, rows_mapped), 0, 0, cv::INTER_AREA);
+            
+            /*
+            // ================= 算法块 2: 100% 数值等价的高性能指针迭代版 (已注释，可切换测试) =================
+            // 说明：如需切换至 100% 字节等价版本，请注释掉上面的 cv::resize，并取消本段注释
             {
-                for (int j = 0; j < cols_mapped; j++)
+                Mat lon_new(rows_mapped, cols_mapped, CV_32F);
+                float pixel_count = static_cast<float>(multilook_az * multilook_rg);
+                for (int i = 0; i < rows_mapped; i++)
                 {
-                    lon_new.at<float>(i, j) = cv::mean(mapped_lon(cv::Range(i * multilook_az, i * multilook_az + multilook_az),
-                        cv::Range(j * multilook_rg, j * multilook_rg + multilook_rg)))[0];
+                    float* dst_row = lon_new.ptr<float>(i);
+                    for (int j = 0; j < cols_mapped; j++)
+                    {
+                        float sum = 0.0f;
+                        for (int r = 0; r < multilook_az; r++)
+                        {
+                            const float* src_row = mapped_lon.ptr<float>(i * multilook_az + r);
+                            for (int c = 0; c < multilook_rg; c++)
+                            {
+                                sum += src_row[j * multilook_rg + c];
+                            }
+                        }
+                        dst_row[j] = sum / pixel_count;
+                    }
                 }
+                lon_new.copyTo(mapped_lon);
             }
-            lon_new.copyTo(mapped_lon);
+            */
             
             if (0 == FC.read_array_from_h5(master_path.toStdString().c_str(), "mapped_lat", mapped_lat))
             {
-                for (int i = 0; i < rows_mapped; i++)
+                // ================= 算法块 1: 使用 OpenCV 高性能内置区域插值 (当前启用) =================
+                cv::resize(mapped_lat, mapped_lat, cv::Size(cols_mapped, rows_mapped), 0, 0, cv::INTER_AREA);
+                
+                /*
+                // ================= 算法块 2: 100% 数值等价的高性能指针迭代版 (已注释，可切换测试) =================
+                // 说明：如需切换至 100% 字节等价版本，请注释掉上面的 cv::resize，并取消本段注释
                 {
-                    for (int j = 0; j < cols_mapped; j++)
+                    Mat lat_new(rows_mapped, cols_mapped, CV_32F);
+                    float pixel_count = static_cast<float>(multilook_az * multilook_rg);
+                    for (int i = 0; i < rows_mapped; i++)
                     {
-                        lon_new.at<float>(i, j) = cv::mean(mapped_lat(cv::Range(i * multilook_az, i * multilook_az + multilook_az),
-                            cv::Range(j * multilook_rg, j * multilook_rg + multilook_rg)))[0];
+                        float* dst_row = lat_new.ptr<float>(i);
+                        for (int j = 0; j < cols_mapped; j++)
+                        {
+                            float sum = 0.0f;
+                            for (int r = 0; r < multilook_az; r++)
+                            {
+                                const float* src_row = mapped_lat.ptr<float>(i * multilook_az + r);
+                                for (int c = 0; c < multilook_rg; c++)
+                                {
+                                    sum += src_row[j * multilook_rg + c];
+                                }
+                            }
+                            dst_row[j] = sum / pixel_count;
+                        }
                     }
+                    lat_new.copyTo(mapped_lat);
                 }
-                lon_new.copyTo(mapped_lat);
+                */
                 b_mapped = true;
             }
         }
     }
     
+    emit updateProcess(9, QStringLiteral("正在加载项目配置文件……"));
     XMLFile xml;
     QString xml_path = save_path + "/" + project_name;
     if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
@@ -196,6 +267,9 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
     }
     
     int count = origin_node->rowCount();
+    int total_pairs = count - 1;
+    if (total_pairs <= 0) total_pairs = 1;
+    
     int pair = 1;
     for (int i = 0; i < count; i++)
     {
@@ -205,7 +279,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
         }
         else
         {
-            if (QThread::currentThread()->isInterruptionRequested())
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogInfo("InterferometricFormationWorker", "Task cancelled by interruption request.");
                 return;
@@ -220,6 +294,11 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
             QString phase_name = QString("%1_%2_phase").arg(master_name).arg(slave_name);
             QString coh_name = QString("%1_%2_coh").arg(master_name).arg(slave_name);
             
+            int pair_span = 90 / total_pairs;
+            int pair_prog_start = 10 + (pair - 1) * pair_span;
+            int pair_prog_end = 10 + pair * pair_span;
+            
+            emit updateProcess(pair_prog_start, QStringLiteral("生成第%1/%2幅干涉图：正在读取辅影像数据……").arg(pair).arg(total_pairs));
             ComplexMat Slave;
             Mat phase;
             ret = FC.read_slc_from_h5(slave_path.toStdString().c_str(), Slave);
@@ -228,6 +307,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                 continue;
             }
             
+            emit updateProcess(pair_prog_start + pair_span * 0.1, QStringLiteral("生成第%1/%2幅干涉图：正在计算多视相干乘积……").arg(pair).arg(total_pairs));
             if (Master.type() != CV_32F) Master.convertTo(Master, CV_32F);
             if (Slave.type() != CV_32F) Slave.convertTo(Slave, CV_32F);
             ret = util.Multilook(Master, Slave, 1, 1, phase);
@@ -244,11 +324,20 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
             
             if (isdeflat)
             {
+                // 配置回调映射范围并绑定全局变量
+                g_substep_prog_start = pair_prog_start + pair_span * 0.2;
+                g_substep_prog_end = pair_prog_start + pair_span * 0.4;
+                g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在消除平地相位").arg(pair).arg(total_pairs);
 
                 int ret_deflat = flat.deflat(statevec, statevec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0,
-                    1 / prf, 1 / prf2, 1, wavelength, phase_deflatted, flat_phase_coefficient);
+                    1 / prf, 1 / prf2, 1, wavelength, phase_deflatted, flat_phase_coefficient, DeflatProgressCallbackImpl);
                 phase_deflatted.copyTo(phase);
-                if (ret_deflat < 0) {
+                
+                if (ret_deflat == -2) {
+                    InSARLogManager::LogInfo("InterferometricFormationWorker", "Deflat process cancelled by user.");
+                    return;
+                }
+                else if (ret_deflat < 0) {
                     InSARLogManager::LogError("InterferometricFormationWorker", "Deflat process failed.");
                     emit errorProcess(QStringLiteral("平地相位消除失败"));
                     return;
@@ -257,10 +346,20 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
             }
             if (istopo_removal)
             {
+                // 配置回调映射范围并绑定全局变量
+                g_substep_prog_start = pair_prog_start + pair_span * 0.4;
+                g_substep_prog_end = pair_prog_start + pair_span * 0.8;
+                g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在进行地形相位模拟").arg(pair).arg(total_pairs);
+
                 int ret_topo = flat.topography_simulation(phase_deflatted, statevec, statevec2, lon_coef, lat_coef, inc_coef, prf, prf2,
                     sceneHeight, sceneWidth, offset_row, offset_col, nearRangeTime, rangeSpacing, wavelength,
-                    acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str());
-                if (ret_topo < 0) {
+                    acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str(), 20, DeflatProgressCallbackImpl);
+                
+                if (ret_topo == -2) {
+                    InSARLogManager::LogInfo("InterferometricFormationWorker", "Topography simulation cancelled by user.");
+                    return;
+                }
+                else if (ret_topo < 0) {
                     InSARLogManager::LogWarning("InterferometricFormationWorker", "Topography simulation failed.");
                 }
                 else {
@@ -324,13 +423,27 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
 
             if (iscoherence)
             {
-                if (QThread::currentThread()->isInterruptionRequested())
+                // 配置回调参数映射范围并绑定全局变量
+                g_substep_prog_start = pair_prog_start + pair_span * 0.8;
+                g_substep_prog_end = pair_prog_start + pair_span * 0.98;
+                g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在计算干涉相干系数").arg(pair).arg(total_pairs);
+
+                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
                 {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Task cancelled by interruption request inside coherence block.");
                     return;
                 }
                 Mat coherence;
-                util.phase_coherence(phase, win_width, win_height, coherence);
+                int ret_coh = util.phase_coherence(phase, win_width, win_height, coherence, DeflatProgressCallbackImpl);
+                if (ret_coh == -2) {
+                    InSARLogManager::LogInfo("InterferometricFormationWorker", "Coherence calculation cancelled by user.");
+                    return;
+                }
+                else if (ret_coh < 0) {
+                    InSARLogManager::LogError("InterferometricFormationWorker", "Coherence calculation failed.");
+                    emit errorProcess(QStringLiteral("相干系数计算失败"));
+                    return;
+                }
 
                 if (interferometric_phase && interferometric_phase->model()) {
                     QMetaObject::invokeMethod(interferometric_phase->model(), [=, &xml]() {
@@ -367,8 +480,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                 FC.write_array_to_h5(h5_path.toStdString().c_str(), "coherence", coherence);
             }
             
-            int prog = 10 + pair * 80 / (count - 1);
-            emit updateProcess(prog, QStringLiteral("生成第%1幅干涉图……").arg(pair));
+            emit updateProcess(pair_prog_end, QStringLiteral("生成第%1/%2幅干涉图已完成").arg(pair).arg(total_pairs));
             pair++;
         }
     }
