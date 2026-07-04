@@ -483,30 +483,41 @@ void S1SwathMergeNode::setExecutionMode(ExecutionMode mode)
     ExecutableNodeDelegateModel::setExecutionMode(mode);
 }
 
-void S1SwathMergeNode::executeProcessing()
+bool S1SwathMergeNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("S1SwathMergeNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
     QString dstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
+    m_preparedDstNode = dstNode;
+
     QString outputPath = projectPath() + "/" + dstNode + "/";
 
     QStringList pathsToCheck;
     pathsToCheck.append(outputPath + "merged_phase.h5");
     pathsToCheck.append(outputPath + "merged_phase.jpg");
 
-    // 覆盖/复用安全拦截检测
+    m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     auto ctx = NodeUtils::getProjectContext(_widget);
-    NodeUtils::OverwriteResult overwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, dstNode, pathsToCheck);
-    if (overwriteResult == NodeUtils::OverwriteResult::Cancel)
-    {
-        setState(ExecutionState::Idle);
-        return;
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, dstNode, pathsToCheck, nullptr);
     }
-    else if (overwriteResult == NodeUtils::OverwriteResult::LoadExisting)
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void S1SwathMergeNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("S1SwathMergeNode", "executeProcessing started.");
+
+    QString dstNode = m_preparedDstNode;
+    QString outputPath = projectPath() + "/" + dstNode + "/";
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting)
     {
         m_outputNodeName = dstNode;
         if (validateAndRestoreOutput())
@@ -524,7 +535,7 @@ void S1SwathMergeNode::executeProcessing()
             return;
         }
     }
-    else if (overwriteResult == NodeUtils::OverwriteResult::Overwrite)
+    else if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite)
     {
         QDir outputDir(outputPath);
         if (outputDir.exists())
@@ -545,7 +556,6 @@ void S1SwathMergeNode::executeProcessing()
     }
 
     setProgress(0);
-    setState(ExecutionState::Running);
 
     // Prepare processing
     int index1 = m_index1;

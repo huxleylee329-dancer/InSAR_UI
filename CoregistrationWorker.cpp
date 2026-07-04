@@ -8,6 +8,7 @@
 #include <QMessageBox>
 #include <QCoreApplication>
 #include <QFile>
+#include <atomic>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include "InSARLogManager.h"
@@ -30,11 +31,16 @@ using namespace std;
 thread_local CoregistrationWorker* t_currentCoregisWorker = nullptr;
 thread_local int t_coregisLastLoggedProgress = -10;
 
-static bool __stdcall coregisProgressCallback(int progress, const char* message)
+static bool __stdcall coregisProgressCallback(int progress, const char* message, void* userData)
 {
-    if (t_currentCoregisWorker)
+    CoregistrationWorker* worker = static_cast<CoregistrationWorker*>(userData);
+    if (!worker)
     {
-        if (t_currentCoregisWorker->thread()->isInterruptionRequested() || t_currentCoregisWorker->isStopRequested())
+        worker = t_currentCoregisWorker;
+    }
+    if (worker)
+    {
+        if (worker->thread()->isInterruptionRequested() || worker->isStopRequested())
         {
             return false;
         }
@@ -44,7 +50,7 @@ static bool __stdcall coregisProgressCallback(int progress, const char* message)
         int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
 
         QString msgStr = QString::fromLocal8Bit(message);
-        emit t_currentCoregisWorker->updateProcess(mapped_prog, QStringLiteral("配准中 - 重采样进度：%1% (%2)")
+        emit worker->updateProcess(mapped_prog, QStringLiteral("配准中 - 重采样进度：%1% (%2)")
             .arg(progress).arg(msgStr));
 
         if (progress == 0 || progress == 100 || (progress - t_coregisLastLoggedProgress) >= 10)
@@ -411,7 +417,7 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		&lonMax, &latMax, &lonMin, &latMin);
 	Utils::getSRTMDEM(dempath.c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
 	coregis.getDEMRgAzPos(dem, statevec, rangePos, azimuthPos, lon_upperleft, lat_upperleft, offset_row, offset_col,
-		sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback);
+		sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback, this);
 	int count = 0;
 	for (int i = 0; i < images_number; i++)
 	{
@@ -440,12 +446,12 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		conversion.read_slc_from_h5(slave_file, slave);
  
 		coregis.getDEMRgAzPos(dem, statevec2, rangePos2, azimuthPos2, lon_upperleft, lat_upperleft, offset_row2, offset_col2,
-			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback);
+			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback, this);
  
 		coregis.computeSlaveOffset(rangePos, azimuthPos, rangePos2, azimuthPos2, slaveAzimuthOffset, slaveRangeOffset);
 		coregis.fitSlaveOffset(slaveAzimuthOffset, rangePos, azimuthPos, &a0, &a1, &a2);
 		coregis.fitSlaveOffset(slaveRangeOffset, rangePos, azimuthPos, &b0, &b1, &b2);
-		coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c, coregisProgressCallback);
+		coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c, coregisProgressCallback, this);
 		conversion.creat_new_h5(SAR_images_regis[i].c_str());
 		conversion.write_slc_to_h5(SAR_images_regis[i].c_str(), slave);
 		conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "range_len", slave.GetCols());
@@ -562,6 +568,8 @@ int CoregistrationWorker::Registration_copy(
 	FormatConversion conversion;
 	int ret, type;
 	int n_images = SAR_images.size();
+	int num_slaves = n_images - 1;
+	int slave_idx = 0;
 	offset_col_out.create(n_images, 1, CV_32S);
 	offset_row_out.create(n_images, 1, CV_32S);
 	Mat images_rows, images_cols, tmp;
@@ -649,7 +657,10 @@ int CoregistrationWorker::Registration_copy(
 		}
 		
 		//分块读取并计算偏移量
-		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 0.5), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
+		double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
+		emit updateProcess(int(start_p), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
+		std::atomic<int> completed_blocks(0);
+		int total_blocks = m * n;
 		int mm, nn;
 		mm = images_rows.at<int>(ii, 0) / blocksize;
 		nn = images_cols.at<int>(ii, 0) / blocksize;
@@ -659,6 +670,9 @@ int CoregistrationWorker::Registration_copy(
 
 			for (int j = 0; j < m; j++)
 			{
+				if (isStopRequested()) {
+					continue;
+				}
 				int offset_row, offset_col, move_r, move_c;
 				ComplexMat master, slave, master_interp, slave_interp;
 				for (int k = 0; k < n; k++)
@@ -679,7 +693,19 @@ int CoregistrationWorker::Registration_copy(
 						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
 						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
 					}
-
+					int current_done = ++completed_blocks;
+					int step = std::max(1, total_blocks / 50);
+					if (current_done % step == 0 || current_done == total_blocks) {
+						double block_ratio = double(current_done) / double(total_blocks);
+						double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
+						double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
+						double current_prog = start_p + block_ratio * (end_p - start_p);
+						#pragma omp critical
+						{
+							emit updateProcess(int(current_prog), QStringLiteral("第%1对图像配准中：%2%")
+								.arg(ii + 1).arg(int(block_ratio * 100)));
+						}
+					}
 				}
 			}
 
@@ -690,6 +716,9 @@ int CoregistrationWorker::Registration_copy(
 			ComplexMat master, slave, master_interp, slave_interp;
 			for (int j = 0; j < m; j++)
 			{
+				if (isStopRequested()) {
+					break;
+				}
 				for (int k = 0; k < n; k++)
 				{
 					offset_row = j * blocksize; offset_col = k * blocksize;
@@ -717,7 +746,19 @@ int CoregistrationWorker::Registration_copy(
 						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
 						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
 					}
-
+					int current_done = ++completed_blocks;
+					int step = std::max(1, total_blocks / 50);
+					if (current_done % step == 0 || current_done == total_blocks) {
+						double block_ratio = double(current_done) / double(total_blocks);
+						double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
+						double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
+						double current_prog = start_p + block_ratio * (end_p - start_p);
+						#pragma omp critical
+						{
+							emit updateProcess(int(current_prog), QStringLiteral("第%1对图像配准中：%2%")
+								.arg(ii + 1).arg(int(block_ratio * 100)));
+						}
+					}
 				}
 			}
 		}
@@ -953,8 +994,10 @@ int CoregistrationWorker::Registration_copy(
 		}
 
 		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
-		emit updateProcess(10 + (70.0 / (double)n_images) * (double(ii) + 1.0), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
+		if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) return -1;
+		double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
+		emit updateProcess(int(end_p), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
+		slave_idx++;
 	}
 	return 0;
 }

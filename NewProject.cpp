@@ -94,13 +94,18 @@ void NewProject::on_buttonBox_accepted()
 
     //saveProjectSettings();
     //saveSystemSettings();
-    QFileInfo info(this->save);
-    if (!info.isDir()) return;
-    QDir dir(this->save);
     this->project = ui->NamelineEdit->text();
     this->save = ui->savelineEdit->text();
-    if (!dir.exists(this->project))
-        dir.mkdir(this->project);
+
+    QDir dir;
+    if (!dir.exists(this->save))
+    {
+        if (!dir.mkpath(this->save))
+        {
+            QMessageBox::warning(this, "Warning!", QStringLiteral("无法创建目标工程目录，请检查路径权限或合法性！"));
+            return;
+        }
+    }
     emit sendPath(this->project, this->save);
     accept();
 }

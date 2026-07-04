@@ -459,47 +459,64 @@ bool DenoiseNode::validateInputs() const
     return true;
 }
 
-void DenoiseNode::executeProcessing()
+bool DenoiseNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("DenoiseNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
     QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text().trimmed();
 
     QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
 
     int pre = m_prefilterWinEdit ? m_prefilterWinEdit->text().toInt() : m_prefilterWin;
     int slop = m_slopeWinEdit ? m_slopeWinEdit->text().toInt() : m_slopeWin;
     int gold = m_goldsteinWinEdit ? m_goldsteinWinEdit->text().toInt() : m_goldsteinWin;
     int pad = m_nPadEdit ? m_nPadEdit->text().toInt() : m_nPad;
-    double alpha = m_alphaEdit ? m_alphaEdit->text().toDouble() : m_alpha;
+    m_preparedAlpha = m_alphaEdit ? m_alphaEdit->text().toDouble() : m_alpha;
 
-    QList<int> para;
-    para.append(pre);
-    para.append(slop);
-    para.append(gold);
-    para.append(pad);
-    para.append(m_method);
+    m_preparedPara.clear();
+    m_preparedPara.append(pre);
+    m_preparedPara.append(slop);
+    m_preparedPara.append(gold);
+    m_preparedPara.append(pad);
+    m_preparedPara.append(m_method);
 
-    // Precalculate output file paths for overwrite check
-    QStringList pathsToCheck;
+    m_preparedDstNode = dstNode;
+
+    m_preparedOutputPaths.clear();
     QStringList srcPaths = m_inputData->filePaths();
     for (const QString& srcPath : srcPaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_denoised";
-        pathsToCheck.append(savePath + "/" + dstNode + "/" + changeName + ".h5");
+        m_preparedOutputPaths.append(savePath + "/" + dstNode + "/" + changeName + ".h5");
     }
 
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, m_preparedOutputPaths, nullptr);
+    }
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void DenoiseNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("DenoiseNode", "executeProcessing started.");
+
+    setProgress(0);
+
+    QString dstNode = m_preparedDstNode;
+    QString savePath = projectPath();
+    QString dstProject = projectName();
+    QString srcNode = m_inputData->nodeName();
+
+    QList<int> para = m_preparedPara;
+    double alpha = m_preparedAlpha;
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = dstNode;
         
         m_outputNodeNameEdit->setEnabled(true);
@@ -518,9 +535,6 @@ void DenoiseNode::executeProcessing()
 
     // Clean up old data nodes to prevent tree duplicates
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
-
-    setProgress(0);
-    setState(ExecutionState::Running);
 
     m_thread = new QThread();
     m_workerThread = new DenoiseWorker();

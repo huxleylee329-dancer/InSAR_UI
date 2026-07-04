@@ -722,24 +722,18 @@ QString SLCDerampNode::generateDefaultOutputName() const
     return "deramp结果";
 }
 
-void SLCDerampNode::executeProcessing()
+bool SLCDerampNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing started.");
     if (!validateInputs())
     {
-        setState(ExecutionState::Error);
-        return;
+        return false;
     }
 
-    // Retrieve input and output settings
-    QString srcNode = m_inputData->nodeName();
     QString dstNode = m_outputNodeNameEdit->text().trimmed();
-    QString dstProject = projectName();
-    QString savePath = projectPath();
+    if (dstNode.isEmpty()) dstNode = generateDefaultOutputName();
+    m_preparedDstNode = dstNode;
 
-    m_outputNodeName = dstNode;
-
-    // 1. 覆盖冲突检查与复用拦截 (SOP 3)
+    m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString outputPath = projectPath() + "/" + dstNode + "/";
     QDir outputDir(outputPath);
     if (outputDir.exists()) {
@@ -747,38 +741,50 @@ void SLCDerampNode::executeProcessing()
         filters << "*_deramp.h5";
         QStringList existingH5 = outputDir.entryList(filters, QDir::Files);
         if (!existingH5.isEmpty()) {
-            // 提示冲突
-            NodeUtils::OverwriteResult answer = NodeUtils::checkAndPromptOverwrite(
-                NodeUtils::getProjectContext(_widget),
-                caption(),
-                existingH5
-            );
+            if (_isAutoTriggered) {
+                m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+            } else {
+                m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+                    NodeUtils::getProjectContext(_widget),
+                    caption(),
+                    existingH5,
+                    nullptr
+                );
+            }
+        }
+    }
 
-            if (answer == NodeUtils::OverwriteResult::LoadExisting)
-            {
-                if (validateAndRestoreOutput()) {
-                    setState(ExecutionState::Running);
-                    setProgress(100);
-                    finishExecution();
-                    return;
-                }
-                else
-                {
-                    setState(ExecutionState::Error);
-                    return;
-                }
-            }
-            else if (answer == NodeUtils::OverwriteResult::Cancel)
-            {
-                setState(ExecutionState::Idle);
-                return;
-            }
-            // Overwrite branch: continues
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void SLCDerampNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing started.");
+
+    // Retrieve input and output settings
+    QString srcNode = m_inputData->nodeName();
+    QString dstNode = m_preparedDstNode;
+    QString dstProject = projectName();
+    QString savePath = projectPath();
+
+    m_outputNodeName = dstNode;
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting)
+    {
+        if (validateAndRestoreOutput()) {
+            setState(ExecutionState::Running);
+            setProgress(100);
+            finishExecution();
+            return;
+        }
+        else
+        {
+            setState(ExecutionState::Error);
+            return;
         }
     }
 
     setProgress(0);
-    setState(ExecutionState::Running);
 
     // 2. 覆盖运行前，清理工程 XML 的旧记录和左侧树视图以避影分身 (SOP 14)
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);

@@ -150,12 +150,14 @@ void BaseImportWorker::import_patch(
             return;
         }
 
-        // 更新总体进度
-        int progress = double(i + 1) / double(n_images) * 100.0;
-        QString progressMsg = (progress >= 100) ? QStringLiteral("导入完成") : QStringLiteral("正在导入...");
+        // 更新总体进度（文件转换和子节点生成共占总进度的90%）
+        int progress = (double(i + 1) / double(n_images)) * 90.0;
+        QString progressMsg = QStringLiteral("正在导入...");
         emit updateProcess(progress, progressMsg);
     }
 
+    // 整个批量任务结束，将进度更新为100%并完成收尾
+    emit updateProcess(100, QStringLiteral("导入完成"));
     emit sendModel(model);
     InSARLogManager::LogInfo(m_satelliteName + "ImportWorker", "Task completed: import_patch");
     emit endProcess();

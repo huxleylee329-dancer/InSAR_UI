@@ -54,8 +54,17 @@ unsigned int CoregistrationNode::nPorts(PortType portType) const
 
 NodeDataType CoregistrationNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
-    return NodeDataType{"imported_file", "Imported File"};
+    if (portType == PortType::In)
+    {
+        return NodeDataType{"imported_file", "Imported File"};
+    }
+    else
+    {
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "Imported File"};
+        else
+            return NodeDataType{"image_info", "Image Info"};
+    }
 }
 
 bool CoregistrationNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
@@ -427,6 +436,46 @@ void CoregistrationNode::execute()
     executeProcessing();
 }
 
+bool CoregistrationNode::prepareToStart()
+{
+    if (m_worker || m_thread) {
+        return false;
+    }
+    if (!isReady()) {
+        InSARLogManager::LogWarning("CoregistrationNode", "prepareToStart skipped: node not ready.");
+        return false;
+    }
+
+    QStringList inputPaths = m_inputData->filePaths();
+    QString projDir = getRealSavePath();
+    QString nodeName = m_outputNodeName.trimmed();
+
+    m_preparedOutputNames.clear();
+    m_preparedH5Paths.clear();
+    m_preparedJpgPaths.clear();
+
+    for (const QString& path : inputPaths) {
+        QString origName = QFileInfo(path).completeBaseName();
+        QString outName = resolveOutputFileName(origName);
+        if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
+            outName += ".h5";
+        }
+        m_preparedOutputNames.append(QFileInfo(outName).completeBaseName());
+        m_preparedH5Paths.append(projDir + "/" + nodeName + "/" + outName);
+        m_preparedJpgPaths.append(projDir + "/" + nodeName + "/" + QFileInfo(outName).completeBaseName() + ".jpg");
+    }
+
+    auto* iface = NodeUtils::getProjectContext(_widget);
+
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(iface, nodeName, m_preparedH5Paths, nullptr);
+    }
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
 void CoregistrationNode::executeProcessing()
 {
     InSARLogManager::LogInfo("CoregistrationNode", "executeProcessing started.");
@@ -435,49 +484,20 @@ void CoregistrationNode::executeProcessing()
         stopExecution();
     }
 
-    if (!isReady()) return;
-
     setProgress(0);
 
+    m_savedOutputFiles = m_preparedOutputNames;
+    m_outputImagePaths = m_preparedH5Paths;
+    m_outputJpgPaths = m_preparedJpgPaths;
+
+    auto* iface = NodeUtils::getProjectContext(_widget);
+    QString nodeName = m_outputNodeName.trimmed();
     QStringList inputPaths = m_inputData->filePaths();
     QString projDir = getRealSavePath();
     QString projName = projectName();
-    QString nodeName = m_outputNodeName.trimmed();
     QStandardItemModel* model = projectModel();
 
-    QStringList expectedH5Paths;
-    QStringList expectedJpgPaths;
-    QStringList outputNames;
-
-    for (const QString& path : inputPaths) {
-        QString origName = QFileInfo(path).completeBaseName();
-        QString outName = resolveOutputFileName(origName);
-        if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
-            outName += ".h5";
-        }
-        outputNames.append(QFileInfo(outName).completeBaseName());
-        expectedH5Paths.append(projDir + "/" + nodeName + "/" + outName);
-        expectedJpgPaths.append(projDir + "/" + nodeName + "/" + QFileInfo(outName).completeBaseName() + ".jpg");
-    }
-
-    m_savedOutputFiles = outputNames;
-    m_outputImagePaths = expectedH5Paths;
-    m_outputJpgPaths = expectedJpgPaths;
-
-    auto* iface = NodeUtils::getProjectContext(_widget);
-
-    // Collision check
-    // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
-    NodeUtils::OverwriteResult ovResult;
-    if (_isAutoTriggered) {
-        ovResult = NodeUtils::OverwriteResult::Overwrite;
-    } else {
-        ovResult = NodeUtils::checkAndPromptOverwrite(iface, nodeName, expectedH5Paths, _widget);
-    }
-    if (ovResult == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (ovResult == NodeUtils::OverwriteResult::LoadExisting) {
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         if (validateAndRestoreOutput()) {
             setState(ExecutionState::Completed);
             finishExecution();
@@ -576,6 +596,10 @@ void CoregistrationNode::onProcessingFinished()
 {
     InSARLogManager::LogInfo("CoregistrationNode", "Coregistration process finished. Generating previews...");
 
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
     m_worker = nullptr;
     m_thread = nullptr;
 
@@ -623,6 +647,10 @@ void CoregistrationNode::onError(const QString& error)
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
 
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
     m_worker = nullptr;
     m_thread = nullptr;
 

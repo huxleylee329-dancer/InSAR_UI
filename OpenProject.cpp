@@ -57,7 +57,28 @@ void OpenProject::on_buttonBox_accepted()
             Project->setIcon(QIcon(PROJECT_ICON));
             Project->setStatusTip(NOT_IN_PROCESS);
             if (!strcmp(q->Value(), "project_name"))
-                Project->setText(q->GetText());
+            {
+                // 如果实际文件名与XML中记录的名称不一致（手动改名或另存为Bug导致），自动修正XML内存结构并更新显示名称
+                QString actualFileName = fileinfo.fileName();
+                QString oldFileName = QString::fromUtf8(q->GetText());
+                if (actualFileName != oldFileName)
+                {
+                    q->Clear();
+                    q->LinkEndChild(new TiXmlText(actualFileName.toStdString().c_str()));
+
+                    // 自动修正并重命名 GCP 数据库文件（自愈机制）
+                    QString projDir = fileinfo.absolutePath();
+                    QString oldBase = QFileInfo(oldFileName).baseName();
+                    QString newBase = fileinfo.baseName();
+                    QString oldDbPath = projDir + "/" + oldBase + "_gcp.db";
+                    QString newDbPath = projDir + "/" + newBase + "_gcp.db";
+                    if (QFile::exists(oldDbPath) && !QFile::exists(newDbPath))
+                    {
+                        QFile::rename(oldDbPath, newDbPath);
+                    }
+                }
+                Project->setText(actualFileName);
+            }
             q = q->NextSiblingElement();
             if (!strcmp(q->Value(), "project_path"))
                 if (!strcmp(abs_path.toStdString().c_str(), q->GetText()))

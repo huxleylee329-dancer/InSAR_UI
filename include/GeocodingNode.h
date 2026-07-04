@@ -3,6 +3,7 @@
 
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
+#include "NodeUtils.h"
 #include "GeocodingWorker.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
@@ -50,6 +51,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
 
@@ -104,6 +106,14 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+
+    // Prepared data for pre-execution lifecycle
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedDstNode;
+    QStringList m_preparedOutputPaths;
+    int m_preparedType = 0;
+    int m_preparedMultiRg = 0;
+    int m_preparedMultiAz = 0;
 
 signals:
     void startGeocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);

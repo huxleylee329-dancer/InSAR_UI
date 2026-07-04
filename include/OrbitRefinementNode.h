@@ -3,6 +3,7 @@
 
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
+#include "NodeUtils.h"
 #include "OrbitRefinementWorker.h"
 #include <GCPDatabase.h>
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
@@ -52,6 +53,7 @@ public:
     QStringList previewImagePaths() const override;
 
 protected:
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
 
 private:
@@ -102,6 +104,10 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+
+    // Prepared data for pre-execution lifecycle
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedDstNode;
 };
 
 } // namespace QtNodes

@@ -305,39 +305,57 @@ bool GeocodingNode::validateInputs() const
     return true;
 }
 
-void GeocodingNode::executeProcessing()
+bool GeocodingNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("GeocodingNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
     QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text().trimmed();
 
     QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
 
-    int type = m_typeCombo ? m_typeCombo->currentIndex() + 1 : m_type;
-    int multiRg = m_multiRgSpin ? m_multiRgSpin->value() : m_multiRg;
-    int multiAz = m_multiAzSpin ? m_multiAzSpin->value() : m_multiAz;
+    m_preparedType = m_typeCombo ? m_typeCombo->currentIndex() + 1 : m_type;
+    m_preparedMultiRg = m_multiRgSpin ? m_multiRgSpin->value() : m_multiRg;
+    m_preparedMultiAz = m_multiAzSpin ? m_multiAzSpin->value() : m_multiAz;
+
+    m_preparedDstNode = dstNode;
 
     QStringList srcPaths = m_inputData->filePaths();
 
-    // Precalculate output file paths for overwrite check
-    QStringList pathsToCheck;
+    m_preparedOutputPaths.clear();
     for (const QString& srcPath : srcPaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_geocoded";
-        pathsToCheck.append(savePath + "/" + dstNode + "/" + changeName + ".h5");
+        m_preparedOutputPaths.append(savePath + "/" + dstNode + "/" + changeName + ".h5");
     }
 
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), dstNode, m_preparedOutputPaths, nullptr);
+    }
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void GeocodingNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("GeocodingNode", "executeProcessing started.");
+
+    setProgress(0);
+
+    QString dstNode = m_preparedDstNode;
+    QString savePath = projectPath();
+    QString dstProject = projectName();
+    QString srcNode = m_inputData->nodeName();
+
+    int type = m_preparedType;
+    int multiRg = m_preparedMultiRg;
+    int multiAz = m_preparedMultiAz;
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = dstNode;
         
         m_outputNodeNameEdit->setEnabled(true);
@@ -356,9 +374,6 @@ void GeocodingNode::executeProcessing()
 
     // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
-
-    setProgress(0);
-    setState(ExecutionState::Running);
 
     m_thread = new QThread();
     m_workerThread = new GeocodingWorker();

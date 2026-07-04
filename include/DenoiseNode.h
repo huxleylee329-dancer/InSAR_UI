@@ -3,6 +3,7 @@
 
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
+#include "NodeUtils.h"
 #include "DenoiseWorker.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
@@ -49,6 +50,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
 
@@ -114,6 +116,13 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+
+    // Prepared data for pre-execution lifecycle
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedDstNode;
+    QStringList m_preparedOutputPaths;
+    QList<int> m_preparedPara;
+    double m_preparedAlpha = 0.0;
 
 signals:
     void startDenoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);

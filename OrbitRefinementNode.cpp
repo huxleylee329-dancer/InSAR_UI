@@ -589,23 +589,19 @@ QString OrbitRefinementNode::generateDefaultOutputName() const
     return "OrbitRefined";
 }
 
-void OrbitRefinementNode::executeProcessing()
+bool OrbitRefinementNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("OrbitRefinementNode", "executeProcessing 开始。");
     if (!validateInputs()) {
-        setState(ExecutionState::Error);
-        return;
+        return false;
     }
 
-    QString srcNode = m_inputData->nodeName();
     QString dstNode = m_outputNodeNameEdit->text().trimmed();
     if (dstNode.isEmpty()) dstNode = generateDefaultOutputName();
-    m_outputNodeName = dstNode;
+    m_preparedDstNode = dstNode;
 
     QString savePath = projectPath();
-    QString projName = projectName();
 
-    // 1. 覆盖冲突检查与复用拦截 (SOP 3)
+    m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString outputPath = savePath + "/" + dstNode + "/";
     QDir outputDir(outputPath);
     if (outputDir.exists()) {
@@ -613,31 +609,46 @@ void OrbitRefinementNode::executeProcessing()
         filters << "*.h5";
         QStringList existingH5 = outputDir.entryList(filters, QDir::Files);
         if (!existingH5.isEmpty()) {
-            NodeUtils::OverwriteResult answer = NodeUtils::checkAndPromptOverwrite(
-                NodeUtils::getProjectContext(_widget),
-                caption(),
-                existingH5
-            );
-
-            if (answer == NodeUtils::OverwriteResult::LoadExisting) {
-                if (validateAndRestoreOutput()) {
-                    setState(ExecutionState::Running);
-                    setProgress(100);
-                    finishExecution();
-                    return;
-                } else {
-                    setState(ExecutionState::Error);
-                    return;
-                }
-            } else if (answer == NodeUtils::OverwriteResult::Cancel) {
-                setState(ExecutionState::Idle);
-                return;
+            if (_isAutoTriggered) {
+                m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+            } else {
+                m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+                    NodeUtils::getProjectContext(_widget),
+                    caption(),
+                    existingH5,
+                    nullptr
+                );
             }
         }
     }
 
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void OrbitRefinementNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("OrbitRefinementNode", "executeProcessing 开始。");
+
+    QString srcNode = m_inputData->nodeName();
+    QString dstNode = m_preparedDstNode;
+    m_outputNodeName = dstNode;
+
+    QString savePath = projectPath();
+    QString projName = projectName();
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        if (validateAndRestoreOutput()) {
+            setState(ExecutionState::Running);
+            setProgress(100);
+            finishExecution();
+            return;
+        } else {
+            setState(ExecutionState::Error);
+            return;
+        }
+    }
+
     setProgress(0);
-    setState(ExecutionState::Running);
 
     // 2. 覆盖运行前，清理工程 XML 的旧记录和左侧树视图以避影分身 (SOP 14)
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);

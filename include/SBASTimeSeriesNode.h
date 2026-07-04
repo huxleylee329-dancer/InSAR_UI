@@ -3,6 +3,7 @@
 
 #include "ImportDataTypes.h"
 #include "NodeDataTypes.h"
+#include "NodeUtils.h"
 #include "SBASTimeSeriesWorker.h"
 #include <QtNodes/internal/ExecutableNodeDelegateModel.hpp>
 #include <QtNodes/NodeData>
@@ -47,6 +48,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
 
@@ -108,6 +110,9 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+
+    // Prepared data for pre-execution lifecycle
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 
 signals:
     void startProcess();

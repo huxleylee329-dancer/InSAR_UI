@@ -2,6 +2,7 @@
 
 #include "NodeDataTypes.h"
 #include "ImportDataTypes.h"
+#include "NodeUtils.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include "CoregistrationWorker.h"
 #include <QComboBox>
@@ -52,6 +53,7 @@ public:
     void load(QJsonObject const &json) override;
 
 protected:
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
 
 private Q_SLOTS:
@@ -117,6 +119,12 @@ private:
     CoregistrationWorker* m_worker = nullptr;
     QThread* m_thread = nullptr;
     QFutureWatcher<void> m_remedyWatcher;
+
+    // Prepared data for pre-execution lifecycle
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QStringList m_preparedH5Paths;
+    QStringList m_preparedJpgPaths;
+    QStringList m_preparedOutputNames;
 };
 
 } // namespace QtNodes

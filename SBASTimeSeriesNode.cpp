@@ -302,30 +302,34 @@ bool SBASTimeSeriesNode::validateInputs() const
     return true;
 }
 
-void SBASTimeSeriesNode::execute()
+bool SBASTimeSeriesNode::prepareToStart()
 {
     if (!validateInputs()) {
-        onError(QStringLiteral("参数校验未通过，请连接输入并指定目标节点名！"));
-        return;
+        InSARLogManager::LogWarning("SBASTimeSeriesNode", "prepareToStart skipped: validateInputs failed.");
+        return false;
     }
 
-    // SOP rule 3: Overwrite check and prompt
     QString outDir = projectPath() + "/" + m_outputNodeName;
     QString h5Path = outDir + "/SBAS_time_series.h5";
     QStringList pathsToCheck = QStringList() << h5Path;
 
-    NodeUtils::OverwriteResult overwriteRes = NodeUtils::checkAndPromptOverwrite(
-        NodeUtils::getProjectContext(_widget),
-        m_outputNodeName,
-        pathsToCheck,
-        _widget
-    );
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+            NodeUtils::getProjectContext(_widget),
+            m_outputNodeName,
+            pathsToCheck,
+            nullptr
+        );
+    }
 
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
-        // Skip calculation, restore state immediately
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void SBASTimeSeriesNode::execute()
+{
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         validateAndRestoreOutput();
         return;
     }

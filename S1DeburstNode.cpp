@@ -549,52 +549,62 @@ void S1DeburstNode::setExecutionMode(ExecutionMode mode)
     ExecutableNodeDelegateModel::setExecutionMode(mode);
 }
 
-void S1DeburstNode::executeProcessing()
+bool S1DeburstNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("S1DeburstNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
-    // Prepare processing
     QString dstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
+    m_preparedDstNode = dstNode;
+
     QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
     QString outputPath = savePath + "/" + dstNode + "/";
 
-    // 覆盖/复用安全拦截检测
+    m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QDir outDir(outputPath);
     if (outDir.exists() && outDir.entryList(QDir::Files | QDir::NoDotAndDotDot).count() > 0)
     {
         auto ctx = NodeUtils::getProjectContext(_widget);
-        NodeUtils::OverwriteResult overwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, dstNode, { outputPath });
-        if (overwriteResult == NodeUtils::OverwriteResult::Cancel)
+        if (_isAutoTriggered) {
+            m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+        } else {
+            m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, dstNode, { outputPath }, nullptr);
+        }
+    }
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void S1DeburstNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("S1DeburstNode", "executeProcessing started.");
+
+    // Prepare processing
+    QString dstNode = m_preparedDstNode;
+    QString savePath = projectPath();
+    QString dstProject = projectName();
+    QString srcNode = m_inputData->nodeName();
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting)
+    {
+        m_outputNodeName = dstNode;
+        if (validateAndRestoreOutput())
         {
-            setState(ExecutionState::Idle);
+            setState(ExecutionState::Running);
+            setProgress(100);
+            finishExecution();
             return;
         }
-        else if (overwriteResult == NodeUtils::OverwriteResult::LoadExisting)
+        else
         {
-            m_outputNodeName = dstNode;
-            if (validateAndRestoreOutput())
-            {
-                setState(ExecutionState::Running);
-                setProgress(100);
-                finishExecution();
-                return;
-            }
-            else
-            {
-                setState(ExecutionState::Error);
-                return;
-            }
+            setState(ExecutionState::Error);
+            return;
         }
     }
 
     setProgress(0);
-    setState(ExecutionState::Running);
 
     // Create thread and worker
     m_thread = new QThread();

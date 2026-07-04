@@ -447,19 +447,16 @@ void S1FrameMergeNode::setExecutionMode(ExecutionMode mode)
     ExecutableNodeDelegateModel::setExecutionMode(mode);
 }
 
-void S1FrameMergeNode::executeProcessing()
+bool S1FrameMergeNode::prepareToStart()
 {
-    InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing started.");
     if (!validateInputs())
-        return;
+        return false;
 
-    // Prepare processing
     QString dstNode = m_outputNodeNameEdit && !m_outputNodeNameEdit->text().isEmpty()
         ? m_outputNodeNameEdit->text()
         : (m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName);
-    m_outputNodeName = dstNode;
-    if (m_outputNodeNameEdit && m_outputNodeNameEdit->text() != dstNode)
-        m_outputNodeNameEdit->setText(dstNode);
+    m_preparedDstNode = dstNode;
+
     QString savePath = projectPath();
     QString dstProject = projectName();
     QString outputPath = savePath + "/" + dstNode + "/";
@@ -493,47 +490,63 @@ void S1FrameMergeNode::executeProcessing()
         }
     }
 
-    // 覆盖/复用安全拦截检测
+    m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     if (!pathsToCheck.isEmpty())
     {
         auto ctx = NodeUtils::getProjectContext(_widget);
-        NodeUtils::OverwriteResult overwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, dstNode, pathsToCheck);
-        if (overwriteResult == NodeUtils::OverwriteResult::Cancel)
+        if (_isAutoTriggered) {
+            m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+        } else {
+            m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, dstNode, pathsToCheck, nullptr);
+        }
+    }
+
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
+}
+
+void S1FrameMergeNode::executeProcessing()
+{
+    InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing started.");
+
+    // Prepare processing
+    QString dstNode = m_preparedDstNode;
+    m_outputNodeName = dstNode;
+    if (m_outputNodeNameEdit && m_outputNodeNameEdit->text() != dstNode)
+        m_outputNodeNameEdit->setText(dstNode);
+    QString savePath = projectPath();
+    QString dstProject = projectName();
+    QString outputPath = savePath + "/" + dstNode + "/";
+
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting)
+    {
+        m_outputNodeName = dstNode;
+        if (validateAndRestoreOutput())
         {
-            setState(ExecutionState::Idle);
+            setState(ExecutionState::Running);
+            setProgress(100);
+            finishExecution();
+            Q_EMIT dataUpdated(0);
+            Q_EMIT dataUpdated(1);
             return;
         }
-        else if (overwriteResult == NodeUtils::OverwriteResult::LoadExisting)
+        else
         {
-            m_outputNodeName = dstNode;
-            if (validateAndRestoreOutput())
-            {
-                setState(ExecutionState::Running);
-                setProgress(100);
-                finishExecution();
-                Q_EMIT dataUpdated(0);
-                Q_EMIT dataUpdated(1);
-                return;
-            }
-            else
-            {
-                setState(ExecutionState::Error);
-                return;
-            }
+            setState(ExecutionState::Error);
+            return;
         }
-        else if (overwriteResult == NodeUtils::OverwriteResult::Overwrite)
+    }
+    else if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite)
+    {
+        QDir outputDir(outputPath);
+        if (outputDir.exists())
         {
-            QDir outputDir(outputPath);
-            if (outputDir.exists())
+            QFileInfoList entries = outputDir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries);
+            for (const QFileInfo& entry : entries)
             {
-                QFileInfoList entries = outputDir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries);
-                for (const QFileInfo& entry : entries)
-                {
-                    if (entry.isDir())
-                        QDir(entry.absoluteFilePath()).removeRecursively();
-                    else
-                        QFile::remove(entry.absoluteFilePath());
-                }
+                if (entry.isDir())
+                    QDir(entry.absoluteFilePath()).removeRecursively();
+                else
+                    QFile::remove(entry.absoluteFilePath());
             }
         }
     }

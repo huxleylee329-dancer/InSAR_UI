@@ -448,7 +448,7 @@ bool DEMSourceNode::prepareToStart()
         else
         {
             auto iface = NodeUtils::getProjectContext(_widget);
-            m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(iface, m_preparedDstNode, QStringList() << targetH5, _widget);
+            m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(iface, m_preparedDstNode, QStringList() << targetH5, nullptr);
             if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel)
             {
                 return false;

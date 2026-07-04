@@ -27,6 +27,9 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <QFutureWatcher>
+#include <QEventLoop>
+#include <memory>
+#include <atomic>
 #include "NodeUtils.h"
 
 // Windows DWM 标题栏主题支持
@@ -590,8 +593,26 @@ void MainWindow::open_from_project_file(QString str)
             Project->setStatusTip(NOT_IN_PROCESS);
             if (!strcmp(q->Value(), "project_name"))
             {
-                String x(q->GetText());
-                Project->setText(x.c_str());
+                // 如果实际文件名与XML中记录的名称不一致（手动改名或另存为Bug导致），自动修正XML内存结构并更新显示名称
+                QString actualFileName = fileinfo.fileName();
+                QString oldFileName = QString::fromUtf8(q->GetText());
+                if (actualFileName != oldFileName)
+                {
+                    q->Clear();
+                    q->LinkEndChild(new TiXmlText(actualFileName.toStdString().c_str()));
+
+                    // 自动修正并重命名 GCP 数据库文件（自愈机制）
+                    QString projDir = fileinfo.absolutePath();
+                    QString oldBase = QFileInfo(oldFileName).baseName();
+                    QString newBase = fileinfo.baseName();
+                    QString oldDbPath = projDir + "/" + oldBase + "_gcp.db";
+                    QString newDbPath = projDir + "/" + newBase + "_gcp.db";
+                    if (QFile::exists(oldDbPath) && !QFile::exists(newDbPath))
+                    {
+                        QFile::rename(oldDbPath, newDbPath);
+                    }
+                }
+                Project->setText(actualFileName);
             }
 
             q = q->NextSiblingElement();
@@ -929,7 +950,7 @@ void MainWindow::on_actionSave_as_triggered()
 
     // 3. 更新 XML 内存结构中的 project_name 和 project_path
     QFileInfo newFileInfo(newFilePath);
-    QString newProjectName = newFileInfo.baseName();
+    QString newProjectName = newFileInfo.fileName(); // 另存为时使用含后缀的完整文件名，确保与系统全局的工程名形式一致
     QString newProjectDir = newFileInfo.absolutePath();
 
     TiXmlElement* root = nullptr;
@@ -953,6 +974,150 @@ void MainWindow::on_actionSave_as_triggered()
     saveWorkflowToProject(newFilePath);
     if (m_interfaceManager) {
         m_interfaceManager->saveLastInterfaceToProject(this->project);
+    }
+
+    // 4.5. 询问用户是否复制关联的数据文件
+    bool copyData = false;
+    QMessageBox::StandardButton reply = QMessageBox::question(
+        this,
+        QStringLiteral("复制数据"),
+        QStringLiteral("是否将当前工程中已处理的数据文件（如H5影像）一同复制到新的目录？"),
+        QMessageBox::Yes | QMessageBox::No
+    );
+    if (reply == QMessageBox::Yes) {
+        copyData = true;
+    }
+
+    if (copyData) {
+        // 解析 XML 并获取所有相对路径
+        QStringList relativePaths;
+        TiXmlElement* root = nullptr;
+        if (this->project->get_root(root) >= 0 && root) {
+            for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
+                if (p->Value() && strcmp(p->Value(), "DataNode") == 0) {
+                    for (TiXmlElement* q = p->FirstChildElement(); q != nullptr; q = q->NextSiblingElement()) {
+                        if (q->Value() && strcmp(q->Value(), "Data") == 0) {
+                            TiXmlElement* pathElem = q->FirstChildElement("Data_Path");
+                            if (pathElem && pathElem->GetText()) {
+                                QString relPath = QString::fromUtf8(pathElem->GetText());
+                                if (!relPath.isEmpty()) {
+                                    relativePaths.append(relPath);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 构建需要拷贝的文件列表（源路径 -> 目标路径）
+        QString oldProjectDir = QFileInfo(m_projectPath).absolutePath();
+        QList<QPair<QString, QString>> filesToCopy;
+
+        for (const QString& relPath : relativePaths) {
+            // H5 数据文件
+            QString srcH5 = oldProjectDir + relPath;
+            QString dstH5 = newProjectDir + relPath;
+            if (QFile::exists(srcH5)) {
+                filesToCopy.append(qMakePair(srcH5, dstH5));
+            }
+
+            // 对应的 JPG 预览图文件
+            int dotIdx = relPath.lastIndexOf('.');
+            if (dotIdx != -1) {
+                QString relJpg = relPath.left(dotIdx) + ".jpg";
+                QString srcJpg = oldProjectDir + relJpg;
+                QString dstJpg = newProjectDir + relJpg;
+                if (QFile::exists(srcJpg)) {
+                    filesToCopy.append(qMakePair(srcJpg, dstJpg));
+                }
+            }
+        }
+
+        // 拷贝 GCP 控制点 SQLite 数据库（如果存在）
+        QString oldProjBase = QFileInfo(m_projectPath).baseName();
+        QString newProjBase = newFileInfo.baseName();
+        QString srcDb = oldProjectDir + "/" + oldProjBase + "_gcp.db";
+        QString dstDb = newProjectDir + "/" + newProjBase + "_gcp.db";
+        if (QFile::exists(srcDb)) {
+            filesToCopy.append(qMakePair(srcDb, dstDb));
+        }
+
+        // 执行后台多线程文件复制
+        if (!filesToCopy.isEmpty()) {
+            QStringList failedFiles;
+            std::shared_ptr<std::atomic<bool>> cancelFlag = std::make_shared<std::atomic<bool>>(false);
+
+            QProgressDialog progress(
+                QStringLiteral("正在复制项目数据..."),
+                QStringLiteral("取消"),
+                0,
+                filesToCopy.size(),
+                this
+            );
+            progress.setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
+            progress.setWindowTitle(QStringLiteral("项目另存为"));
+            progress.setWindowModality(Qt::WindowModal);
+            progress.setMinimumDuration(0);
+            progress.setValue(0);
+            progress.show();
+
+            connect(&progress, &QProgressDialog::canceled, [cancelFlag]() {
+                cancelFlag->store(true);
+            });
+
+            QFuture<void> future = QtConcurrent::run([filesToCopy, cancelFlag, &progress, &failedFiles]() {
+                for (int i = 0; i < filesToCopy.size(); ++i) {
+                    if (cancelFlag->load()) {
+                        break;
+                    }
+                    const auto& pair = filesToCopy.at(i);
+                    QString src = pair.first;
+                    QString dst = pair.second;
+
+                    // 自动建立目标文件夹
+                    QDir().mkpath(QFileInfo(dst).absolutePath());
+
+                    // 如果目标文件已存在，先删除再覆盖
+                    if (QFile::exists(dst)) {
+                        QFile::remove(dst);
+                    }
+
+                    if (!QFile::copy(src, dst)) {
+                        failedFiles.append(src);
+                    }
+
+                    int val = i + 1;
+                    QString labelText = QStringLiteral("正在复制文件 (%1/%2):\n%3")
+                                        .arg(val)
+                                        .arg(filesToCopy.size())
+                                        .arg(QFileInfo(src).fileName());
+                    QMetaObject::invokeMethod(&progress, "setValue", Qt::QueuedConnection, Q_ARG(int, val));
+                    QMetaObject::invokeMethod(&progress, "setLabelText", Qt::QueuedConnection, Q_ARG(QString, labelText));
+                }
+            });
+
+            QEventLoop loop;
+            QFutureWatcher<void> watcher;
+            connect(&watcher, &QFutureWatcher<void>::finished, &loop, &QEventLoop::quit);
+            watcher.setFuture(future);
+
+            // 阻塞主线程直到复制完成，确保局部变量生命周期安全，且主事件循环仍能响应UI
+            loop.exec();
+
+            if (cancelFlag->load()) {
+                QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("另存为已取消，部分文件可能未被成功复制。"));
+                return;
+            }
+
+            if (!failedFiles.isEmpty()) {
+                QMessageBox::warning(
+                    this,
+                    QStringLiteral("警告"),
+                    QStringLiteral("部分数据文件复制失败，请检查目标磁盘空间或权限。\n失败文件数：%1").arg(failedFiles.size())
+                );
+            }
+        }
     }
 
     // 5. 保存到新路径
