@@ -1078,6 +1078,29 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
 
 void NodeDetailWindow::updateTableData(const NodeDataSnapshot& snapshot)
 {
+    bool hadPreview = (_imageView != nullptr);
+    bool hasPreview = !snapshot.previewImagePaths.isEmpty() && QFileInfo::exists(snapshot.previewImagePaths.first());
+    
+    if (hadPreview != hasPreview || _previewImagePaths.size() != snapshot.previewImagePaths.size()) {
+        loadData(snapshot);
+        return;
+    }
+    
+    _previewImagePaths = snapshot.previewImagePaths;
+    if (_prevButton && _nextButton) {
+        if (_previewImagePaths.size() <= 1) {
+            _prevButton->hide();
+            _nextButton->hide();
+        } else {
+            _prevButton->show();
+            _nextButton->show();
+        }
+    }
+    if (_currentPreviewIndex < 0 || _currentPreviewIndex >= _previewImagePaths.size()) {
+        _currentPreviewIndex = 0;
+    }
+    updatePreviewImage();
+
     _detectionResults = snapshot.detectionResults;
     if (!_resultsTable) return;
     
@@ -1247,8 +1270,17 @@ QString NodeDetailWindow::getThemeStylesheet(QWidget* parent)
 
 void NodeDetailWindow::updatePreviewImage()
 {
-    if (_previewImagePaths.isEmpty() || _currentPreviewIndex < 0 || _currentPreviewIndex >= _previewImagePaths.size())
+    if (_previewImagePaths.isEmpty() || _currentPreviewIndex < 0 || _currentPreviewIndex >= _previewImagePaths.size()) {
+        if (_imageView && _imageView->scene()) {
+            _imageView->scene()->clear();
+        }
+        if (_imageNameLabel) {
+            _imageNameLabel->setText(QString());
+        }
+        if (_prevButton) _prevButton->setEnabled(false);
+        if (_nextButton) _nextButton->setEnabled(false);
         return;
+    }
 
     QString currentPath = _previewImagePaths[_currentPreviewIndex];
     if (QFileInfo::exists(currentPath)) {

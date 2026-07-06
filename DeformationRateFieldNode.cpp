@@ -318,28 +318,44 @@ bool DeformationRateFieldNode::validateInputs() const
     return true;
 }
 
-void DeformationRateFieldNode::execute()
+bool DeformationRateFieldNode::prepareToStart()
 {
     if (!validateInputs()) {
-        onError(QStringLiteral("参数校验未通过，请连接输入并指定目标节点名！"));
-        return;
+        if (m_resultLabel) {
+            m_resultLabel->setText(QStringLiteral("状态：参数校验未通过，请连接输入并指定目标节点名！"));
+        }
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+        setState(ExecutionState::Error);
+        return false;
+    }
+
+    if (isAutoTriggered()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+        return true;
     }
 
     QString outDir = projectPath() + "/" + m_outputNodeName;
     QString h5Path = outDir + "/DeformationRateField.h5";
     QStringList pathsToCheck = QStringList() << h5Path;
 
-    NodeUtils::OverwriteResult overwriteRes = NodeUtils::checkAndPromptOverwrite(
+    m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
         NodeUtils::getProjectContext(_widget),
         m_outputNodeName,
         pathsToCheck,
         _widget
     );
 
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+        return false;
+    }
+
+    return true;
+}
+
+void DeformationRateFieldNode::execute()
+{
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         validateAndRestoreOutput();
         return;
     }
@@ -414,8 +430,10 @@ void DeformationRateFieldNode::stopExecution()
 
 void DeformationRateFieldNode::processAutomatically()
 {
-    if (validateInputs()) {
+    if (prepareToStart()) {
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 

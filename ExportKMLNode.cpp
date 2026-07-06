@@ -233,31 +233,41 @@ bool ExportKMLNode::validateInputs() const
     return true;
 }
 
-void ExportKMLNode::execute()
+bool ExportKMLNode::prepareToStart()
 {
     if (!validateInputs())
     {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
         setState(ExecutionState::Error);
-        return;
+        return false;
     }
 
-    setState(ExecutionState::Running);
+    if (isAutoTriggered()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+        return true;
+    }
 
-    // Overwrite check (SOP rule 3)
     QString kmlPath = m_outputPath + "/" + m_fileName + ".kml";
     QStringList pathsToCheck = QStringList() << kmlPath;
 
-    NodeUtils::OverwriteResult overwriteRes = NodeUtils::checkAndPromptOverwrite(
+    m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
         NodeUtils::getProjectContext(_widget),
         m_fileName,
         pathsToCheck,
         _widget
     );
 
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
-        setState(ExecutionState::Idle);
-        return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+        return false;
+    }
+
+    return true;
+}
+
+void ExportKMLNode::execute()
+{
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         validateAndRestoreOutput();
         return;
     }
@@ -268,8 +278,10 @@ void ExportKMLNode::execute()
 void ExportKMLNode::executeProcessing()
 {
     InSARLogManager::LogInfo("ExportKMLNode", "executeProcessing started.");
+    // Ensure any previous execution is stopped
+    stopExecution();
     m_resultLabel->setText(QStringLiteral("正在开始导出..."));
-    
+
     QDir dir(m_outputPath);
     if (!dir.exists())
     {
@@ -281,6 +293,7 @@ void ExportKMLNode::executeProcessing()
     m_worker->moveToThread(m_thread);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
     connect(this, &ExportKMLNode::startProcess, m_worker, [this]() {
         m_worker->exportKML(
             m_inputData->filePath(),
@@ -293,6 +306,9 @@ void ExportKMLNode::executeProcessing()
     connect(m_worker, &ExportKMLWorker::endProcess, this, &ExportKMLNode::onProcessingFinished);
     connect(m_worker, &ExportKMLWorker::errorProcess, this, &ExportKMLNode::onError);
 
+    // Update state and progress before starting
+    setState(ExecutionState::Running);
+    setProgress(0);
     m_thread->start();
     Q_EMIT startProcess();
 }
@@ -302,13 +318,20 @@ void ExportKMLNode::stopExecution()
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
-        m_resultLabel->setText(QStringLiteral("已请求取消..."));
+        m_thread->quit();
+        m_thread->wait();
     }
+    m_thread = nullptr;
+    m_worker = nullptr;
 }
 
 void ExportKMLNode::processAutomatically()
 {
-    execute();
+    if (prepareToStart()) {
+        execute();
+    } else {
+        setState(ExecutionState::Idle);
+    }
 }
 
 void ExportKMLNode::onProgressUpdate(int progress, const QString& message)
@@ -321,13 +344,8 @@ void ExportKMLNode::onError(const QString& error)
     InSARLogManager::LogError("ExportKMLNode", "Error during KML export: " + error);
     m_resultLabel->setText(QStringLiteral("失败: ") + error);
     setState(ExecutionState::Error);
-    
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread = nullptr;
-    }
+    finishExecution();
+    stopExecution();
 }
 
 void ExportKMLNode::onProcessingFinished()
@@ -335,20 +353,12 @@ void ExportKMLNode::onProcessingFinished()
     InSARLogManager::LogInfo("ExportKMLNode", "executeProcessing completed.");
     m_resultLabel->setText(QStringLiteral("导出完成！"));
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread = nullptr;
-        m_worker = nullptr;
-    }
-
     QString kmlPath = m_outputPath + "/" + m_fileName + ".kml";
     m_outputData = std::make_shared<ImportedFileData>(kmlPath, m_fileName);
     setState(ExecutionState::Running);
-    setProgress(100);
     finishExecution();
     Q_EMIT dataUpdated(0);
+    stopExecution();
 }
 
 bool ExportKMLNode::validateAndRestoreOutput()

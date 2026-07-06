@@ -62,7 +62,6 @@ private:
     QString m_outputNodeName;
     QString m_outputFileName;
     QString m_preparedOutputFileName;
-    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 };
 
 } // namespace QtNodes

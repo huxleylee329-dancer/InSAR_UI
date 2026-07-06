@@ -223,6 +223,11 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
 
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type)
 {
+    return generateJpgPreviewFromH5WithProgress(h5Path, jpgPath, type, nullptr);
+}
+
+bool generateJpgPreviewFromH5WithProgress(const QString& h5Path, const QString& jpgPath, const QString& type, std::function<void(int, int)> cb)
+{
     Hdf5Locker locker;
     if (h5Path.isEmpty() || jpgPath.isEmpty())
         return false;
@@ -230,168 +235,422 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
     Utils util;
     FormatConversion FC;
 
-    if (type == "complex")
-    {
-        ComplexMat SLC64;
-        if (FC.read_slc_from_h5(h5Path.toLocal8Bit().constData(), SLC64) != 0)
-            return false;
-            
-        util.saveSLC(jpgPath.toLocal8Bit().constData(), 65, SLC64);
-        
-        if (SLC64.GetCols() * SLC64.GetRows() > 25e6)
+    // 局部 Lambda 帮助函数：手动归一化与保存相位 JPG（用于 savephase 失败时的备用逻辑）
+    auto savePhaseFallback = [&](const cv::Mat& mat_to_save, const QString& type_str) -> int {
+        cv::Mat phase_normalized;
+        if (type_str == "coherence")
         {
-            int down_sample_times = (int)std::sqrt(std::floor(double(SLC64.GetCols() * SLC64.GetRows()) / 25e6));
-            if (down_sample_times > 1) {
-                util.resampling(jpgPath.toLocal8Bit().constData(), jpgPath.toLocal8Bit().constData(),
-                    (int)(SLC64.GetRows() / down_sample_times),
-                    (int)(SLC64.GetCols() / down_sample_times));
+            phase_normalized = mat_to_save * 255.0;
+        }
+        else if (type_str == "dem")
+        {
+            double minVal, maxVal;
+            cv::minMaxLoc(mat_to_save, &minVal, &maxVal);
+            if (maxVal - minVal > 1e-6)
+            {
+                phase_normalized = (mat_to_save - minVal) * (255.0 / (maxVal - minVal));
+            }
+            else
+            {
+                phase_normalized = cv::Mat::zeros(mat_to_save.size(), CV_64F);
             }
         }
+        else
+        {
+            phase_normalized = (mat_to_save + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
+        }
+        
+        phase_normalized.convertTo(phase_normalized, CV_8U);
+        
+        cv::Mat color_image;
+        if (type_str == "coherence")
+        {
+            color_image = phase_normalized;
+        }
+        else
+        {
+            cv::applyColorMap(phase_normalized, color_image, cv::COLORMAP_JET);
+        }
+        
+        bool success_write = cv::imwrite(jpgPath.toStdString(), color_image);
+        return success_write ? 0 : -1;
+    };
+
+    if (type == "complex")
+    {
+        int rows = 0, cols = 0;
+        if (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "s_re", &rows, &cols) != 0)
+            return false;
+
+        double totalPixels = double(rows) * cols;
+        int down_sample_times = 1;
+        if (totalPixels > 25e6)
+        {
+            down_sample_times = (int)std::sqrt(std::floor(totalPixels / 25e6));
+        }
+
+        if (down_sample_times <= 1)
+        {
+            ComplexMat SLC64;
+            if (FC.read_slc_from_h5(h5Path.toLocal8Bit().constData(), SLC64) != 0)
+                return false;
+                
+            util.saveSLC(jpgPath.toLocal8Bit().constData(), 65, SLC64);
+            if (cb) cb(rows, rows);
+            return true;
+        }
+
+        // 分块读取并下采样拼装
+        int dst_rows = rows / down_sample_times;
+        int dst_cols = cols / down_sample_times;
+        ComplexMat downsampled_SLC(dst_rows, dst_cols);
+
+        int block_height_read = (1024 / down_sample_times) * down_sample_times;
+        if (block_height_read == 0) block_height_read = down_sample_times;
+
+        for (int r = 0; r < rows; r += block_height_read)
+        {
+            int rows_to_read = std::min(block_height_read, rows - r);
+            cv::Mat block_re, block_im;
+
+            if (FC.read_subarray_from_h5(h5Path.toLocal8Bit().constData(), "s_re", r, 0, rows_to_read, cols, block_re) != 0 ||
+                FC.read_subarray_from_h5(h5Path.toLocal8Bit().constData(), "s_im", r, 0, rows_to_read, cols, block_im) != 0)
+            {
+                return false;
+            }
+
+            int block_dst_rows = rows_to_read / down_sample_times;
+            int block_dst_cols = cols / down_sample_times;
+
+            if (block_dst_rows > 0 && block_dst_cols > 0)
+            {
+                cv::Mat down_re, down_im;
+                cv::resize(block_re, down_re, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
+                cv::resize(block_im, down_im, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
+
+                int r_dst = r / down_sample_times;
+                if (r_dst + block_dst_rows <= dst_rows)
+                {
+                    down_re.copyTo(downsampled_SLC.re(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
+                    down_im.copyTo(downsampled_SLC.im(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
+                }
+            }
+
+            if (cb)
+            {
+                cb(r + rows_to_read, rows);
+            }
+        }
+
+        util.saveSLC(jpgPath.toLocal8Bit().constData(), 65, downsampled_SLC);
         return true;
     }
     else if (type == "phase" || type == "coherence" || type == "dem")
     {
-        cv::Mat phase;
-        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), type.toStdString().c_str(), phase) != 0)
+        int rows = 0, cols = 0;
+        if (FC.get_dataset_dims(h5Path.toStdString().c_str(), type.toStdString().c_str(), &rows, &cols) != 0)
             return false;
-            
-        if (phase.type() != CV_64F)
+
+        double totalPixels = double(rows) * cols;
+        int down_sample_times = 1;
+        if (totalPixels > 25e6)
         {
-            phase.convertTo(phase, CV_64F);
+            down_sample_times = (int)std::sqrt(std::floor(totalPixels / 25e6));
         }
-        phase = phase.clone();
-            
+
+        cv::Mat phase;
         int ret = -1;
-        if (type == "phase")
+
+        if (down_sample_times <= 1)
         {
-            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
-        }
-        else if (type == "coherence")
-        {
-            ret = util.savephase(jpgPath.toStdString().c_str(), "gray", phase);
-        }
-        else if (type == "dem")
-        {
-            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
-        }
-        
-        if (ret != 0)
-        {
-            // 1. Normalize
-            cv::Mat phase_normalized;
-            if (type == "coherence")
+            if (FC.read_array_from_h5(h5Path.toStdString().c_str(), type.toStdString().c_str(), phase) != 0)
+                return false;
+                
+            if (phase.type() != CV_64F)
             {
-                phase_normalized = phase * 255.0;
+                phase.convertTo(phase, CV_64F);
+            }
+            phase = phase.clone();
+                
+            if (type == "phase")
+            {
+                ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
+            }
+            else if (type == "coherence")
+            {
+                ret = util.savephase(jpgPath.toStdString().c_str(), "gray", phase);
             }
             else if (type == "dem")
             {
-                double minVal, maxVal;
-                cv::minMaxLoc(phase, &minVal, &maxVal);
-                if (maxVal - minVal > 1e-6)
-                {
-                    phase_normalized = (phase - minVal) * (255.0 / (maxVal - minVal));
-                }
-                else
-                {
-                    phase_normalized = cv::Mat::zeros(phase.size(), CV_64F);
-                }
-            }
-            else
-            {
-                phase_normalized = (phase + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
+                ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
             }
             
-            // 2. Convert to CV_8UC1 (saturating cast)
-            phase_normalized.convertTo(phase_normalized, CV_8U);
-            
-            // 3. Apply colormap
-            cv::Mat color_image;
-            if (type == "coherence")
+            if (ret != 0)
             {
-                color_image = phase_normalized;
+                ret = savePhaseFallback(phase, type);
             }
-            else
-            {
-                cv::applyColorMap(phase_normalized, color_image, cv::COLORMAP_JET);
-            }
-            
-            // 4. Save using cv::imwrite
-            bool success_write = cv::imwrite(jpgPath.toStdString(), color_image);
-            if (!success_write)
-            {
-            }
-            ret = success_write ? 0 : -1;
+            if (cb) cb(rows, rows);
+            return ret == 0;
         }
 
-        if (ret == 0 && phase.rows * phase.cols > 25e6)
+        // 分块读取并下采样拼装
+        int dst_rows = rows / down_sample_times;
+        int dst_cols = cols / down_sample_times;
+        cv::Mat downsampled_phase(dst_rows, dst_cols, CV_64F);
+
+        int block_height_read = (1024 / down_sample_times) * down_sample_times;
+        if (block_height_read == 0) block_height_read = down_sample_times;
+
+        for (int r = 0; r < rows; r += block_height_read)
         {
-            int down_sample_times = (int)std::sqrt(std::floor(double(phase.rows * phase.cols) / 25e6));
-            if (down_sample_times > 1) {
-                util.resampling(jpgPath.toStdString().c_str(), jpgPath.toStdString().c_str(),
-                    (int)(phase.rows / down_sample_times),
-                    (int)(phase.cols / down_sample_times));
+            int rows_to_read = std::min(block_height_read, rows - r);
+            cv::Mat block_phase;
+
+            if (FC.read_subarray_from_h5(h5Path.toStdString().c_str(), type.toStdString().c_str(), r, 0, rows_to_read, cols, block_phase) != 0)
+                return false;
+
+            if (block_phase.type() != CV_64F)
+            {
+                block_phase.convertTo(block_phase, CV_64F);
             }
+
+            int block_dst_rows = rows_to_read / down_sample_times;
+            int block_dst_cols = cols / down_sample_times;
+
+            if (block_dst_rows > 0 && block_dst_cols > 0)
+            {
+                cv::Mat down_block;
+                cv::resize(block_phase, down_block, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
+
+                int r_dst = r / down_sample_times;
+                if (r_dst + block_dst_rows <= dst_rows)
+                {
+                    down_block.copyTo(downsampled_phase(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
+                }
+            }
+
+            if (cb)
+            {
+                cb(r + rows_to_read, rows);
+            }
+        }
+
+        if (type == "phase")
+        {
+            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", downsampled_phase);
+        }
+        else if (type == "coherence")
+        {
+            ret = util.savephase(jpgPath.toStdString().c_str(), "gray", downsampled_phase);
+        }
+        else if (type == "dem")
+        {
+            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", downsampled_phase);
+        }
+
+        if (ret != 0)
+        {
+            ret = savePhaseFallback(downsampled_phase, type);
         }
         return ret == 0;
     }
     else if (type == "amplitude")
     {
-        cv::Mat phase;
-        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "amplitude", phase) != 0)
+        int rows = 0, cols = 0;
+        if (FC.get_dataset_dims(h5Path.toStdString().c_str(), "amplitude", &rows, &cols) != 0)
             return false;
-            
-        if (phase.type() != CV_32F)
+
+        double totalPixels = double(rows) * cols;
+        int down_sample_times = 1;
+        if (totalPixels > 25e6)
         {
-            phase.convertTo(phase, CV_32F);
+            down_sample_times = (int)std::sqrt(std::floor(totalPixels / 25e6));
         }
-        phase = phase.clone();
-        
-        int ret = util.saveAmplitude(jpgPath.toStdString().c_str(), phase);
-        
-        if (ret == 0 && phase.rows * phase.cols > 25e6)
+
+        cv::Mat phase;
+        int ret = -1;
+
+        if (down_sample_times <= 1)
         {
-            int down_sample_times = (int)std::sqrt(std::floor(double(phase.rows * phase.cols) / 25e6));
-            if (down_sample_times > 1) {
-                util.resampling(jpgPath.toStdString().c_str(), jpgPath.toStdString().c_str(),
-                    (int)(phase.rows / down_sample_times),
-                    (int)(phase.cols / down_sample_times));
+            if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "amplitude", phase) != 0)
+                return false;
+                
+            if (phase.type() != CV_32F)
+            {
+                phase.convertTo(phase, CV_32F);
+            }
+            phase = phase.clone();
+            
+            ret = util.saveAmplitude(jpgPath.toStdString().c_str(), phase);
+            if (cb) cb(rows, rows);
+            return ret == 0;
+        }
+
+        // 分块读取并下采样拼装
+        int dst_rows = rows / down_sample_times;
+        int dst_cols = cols / down_sample_times;
+        cv::Mat downsampled_amplitude(dst_rows, dst_cols, CV_32F);
+
+        int block_height_read = (1024 / down_sample_times) * down_sample_times;
+        if (block_height_read == 0) block_height_read = down_sample_times;
+
+        for (int r = 0; r < rows; r += block_height_read)
+        {
+            int rows_to_read = std::min(block_height_read, rows - r);
+            cv::Mat block_amp;
+
+            if (FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "amplitude", r, 0, rows_to_read, cols, block_amp) != 0)
+                return false;
+
+            if (block_amp.type() != CV_32F)
+            {
+                block_amp.convertTo(block_amp, CV_32F);
+            }
+
+            int block_dst_rows = rows_to_read / down_sample_times;
+            int block_dst_cols = cols / down_sample_times;
+
+            if (block_dst_rows > 0 && block_dst_cols > 0)
+            {
+                cv::Mat down_block;
+                cv::resize(block_amp, down_block, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
+
+                int r_dst = r / down_sample_times;
+                if (r_dst + block_dst_rows <= dst_rows)
+                {
+                    down_block.copyTo(downsampled_amplitude(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
+                }
+            }
+
+            if (cb)
+            {
+                cb(r + rows_to_read, rows);
             }
         }
+
+        ret = util.saveAmplitude(jpgPath.toStdString().c_str(), downsampled_amplitude);
         return ret == 0;
     }
     else if (type == "SBAS")
     {
-        cv::Mat defomation_velocity, mask;
-        int ret_vel = FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
-        if (ret_vel != 0)
+        int rows = 0, cols = 0;
+        if (FC.get_dataset_dims(h5Path.toStdString().c_str(), "defomation_velocity", &rows, &cols) != 0)
             return false;
-            
-        int ret_mask = FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
-        
-        if (defomation_velocity.type() != CV_64F)
+
+        double totalPixels = double(rows) * cols;
+        int down_sample_times = 1;
+        if (totalPixels > 25e6)
         {
-            defomation_velocity.convertTo(defomation_velocity, CV_64F);
+            down_sample_times = (int)std::sqrt(std::floor(totalPixels / 25e6));
         }
-        defomation_velocity = defomation_velocity.clone();
-        
-        int ret = -1;
-        if (ret_mask == 0)
+
+        cv::Mat defomation_velocity, mask;
+        int ret_vel = -1, ret_mask = -1;
+
+        if (down_sample_times <= 1)
         {
-            ret = util.savephase_white(jpgPath.toStdString().c_str(), "jet", defomation_velocity, mask);
+            ret_vel = FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
+            if (ret_vel != 0)
+                return false;
+                
+            ret_mask = FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
+            
+            if (defomation_velocity.type() != CV_64F)
+            {
+                defomation_velocity.convertTo(defomation_velocity, CV_64F);
+            }
+            defomation_velocity = defomation_velocity.clone();
+            
+            int ret = -1;
+            if (ret_mask == 0)
+            {
+                ret = util.savephase_white(jpgPath.toStdString().c_str(), "jet", defomation_velocity, mask);
+            }
+            else
+            {
+                ret = util.savephase(jpgPath.toStdString().c_str(), "jet", defomation_velocity);
+            }
+            if (cb) cb(rows, rows);
+            return ret == 0;
+        }
+
+        // 分块读取并下采样拼装
+        int dst_rows = rows / down_sample_times;
+        int dst_cols = cols / down_sample_times;
+        cv::Mat downsampled_vel(dst_rows, dst_cols, CV_64F);
+        cv::Mat downsampled_mask;
+
+        int mask_rows = 0, mask_cols = 0;
+        bool has_mask = (FC.get_dataset_dims(h5Path.toStdString().c_str(), "mask", &mask_rows, &mask_cols) == 0);
+        if (has_mask)
+        {
+            downsampled_mask.create(dst_rows, dst_cols, CV_32S);
+        }
+
+        int block_height_read = (1024 / down_sample_times) * down_sample_times;
+        if (block_height_read == 0) block_height_read = down_sample_times;
+
+        for (int r = 0; r < rows; r += block_height_read)
+        {
+            int rows_to_read = std::min(block_height_read, rows - r);
+            cv::Mat block_vel;
+
+            if (FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", r, 0, rows_to_read, cols, block_vel) != 0)
+                return false;
+
+            if (block_vel.type() != CV_64F)
+            {
+                block_vel.convertTo(block_vel, CV_64F);
+            }
+
+            cv::Mat block_mask;
+            if (has_mask)
+            {
+                if (FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mask", r, 0, rows_to_read, cols, block_mask) != 0)
+                {
+                    has_mask = false;
+                }
+            }
+
+            int block_dst_rows = rows_to_read / down_sample_times;
+            int block_dst_cols = cols / down_sample_times;
+
+            if (block_dst_rows > 0 && block_dst_cols > 0)
+            {
+                cv::Mat down_vel;
+                cv::resize(block_vel, down_vel, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
+
+                int r_dst = r / down_sample_times;
+                if (r_dst + block_dst_rows <= dst_rows)
+                {
+                    down_vel.copyTo(downsampled_vel(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
+                }
+
+                if (has_mask && !block_mask.empty())
+                {
+                    cv::Mat down_mask;
+                    cv::resize(block_mask, down_mask, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_NEAREST);
+                    if (r_dst + block_dst_rows <= dst_rows)
+                    {
+                        down_mask.copyTo(downsampled_mask(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
+                    }
+                }
+            }
+
+            if (cb)
+            {
+                cb(r + rows_to_read, rows);
+            }
+        }
+
+        int ret = -1;
+        if (has_mask && !downsampled_mask.empty())
+        {
+            ret = util.savephase_white(jpgPath.toStdString().c_str(), "jet", downsampled_vel, downsampled_mask);
         }
         else
         {
-            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", defomation_velocity);
-        }
-        
-        if (ret == 0 && defomation_velocity.rows * defomation_velocity.cols > 25e6)
-        {
-            int down_sample_times = (int)std::sqrt(std::floor(double(defomation_velocity.rows * defomation_velocity.cols) / 25e6));
-            if (down_sample_times > 1) {
-                util.resampling(jpgPath.toStdString().c_str(), jpgPath.toStdString().c_str(),
-                    (int)(defomation_velocity.rows / down_sample_times),
-                    (int)(defomation_velocity.cols / down_sample_times));
-            }
+            ret = util.savephase(jpgPath.toStdString().c_str(), "jet", downsampled_vel);
         }
         return ret == 0;
     }

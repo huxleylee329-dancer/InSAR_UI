@@ -114,8 +114,16 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             if (!h5Paths.isEmpty()) {
                 FormatConversion FC;
                 cv::Mat gcps;
-                if (FC.read_array_from_h5(h5Paths.first().toLocal8Bit().constData(), "gcps", gcps) == 0
-                    && gcps.rows > 0 && gcps.cols >= 2) {
+                bool gcpReadSuccess = false;
+                {
+                    NodeUtils::Hdf5Locker locker;
+                    if (FC.read_array_from_h5(h5Paths.first().toLocal8Bit().constData(), "gcps", gcps) == 0
+                        && gcps.rows > 0 && gcps.cols >= 2) {
+                        gcpReadSuccess = true;
+                    }
+                }
+
+                if (gcpReadSuccess) {
                     cv::Mat lon = gcps.col(0);
                     cv::Mat lat = gcps.col(1);
                     double new_lon = cv::mean(lon)[0];
@@ -146,6 +154,16 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
                         if (m_lonEdit) m_lonEdit->setText(QString::number(m_lon, 'f', 6));
                         if (m_latEdit) m_latEdit->setText(QString::number(m_lat, 'f', 6));
                     }
+                } else {
+                    // 如果无法读取GCP或GCP为空，执行安全重置
+                    m_boxSelected = false;
+                    m_coordsSet = false;
+                    m_lon = 0.0;
+                    m_lat = 0.0;
+                    m_lastInputLon = 0.0;
+                    m_lastInputLat = 0.0;
+                    if (m_lonEdit) m_lonEdit->setText("");
+                    if (m_latEdit) m_latEdit->setText("");
                 }
             }
         } else {
@@ -154,8 +172,15 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             if (!h5Paths.isEmpty()) {
                 FormatConversion FC;
                 cv::Mat gcps;
-                if (FC.read_array_from_h5(h5Paths.first().toLocal8Bit().constData(), "gcps", gcps) == 0
-                    && gcps.rows > 0 && gcps.cols >= 2) {
+                bool gcpReadSuccess = false;
+                {
+                    NodeUtils::Hdf5Locker locker;
+                    if (FC.read_array_from_h5(h5Paths.first().toLocal8Bit().constData(), "gcps", gcps) == 0
+                        && gcps.rows > 0 && gcps.cols >= 2) {
+                        gcpReadSuccess = true;
+                    }
+                }
+                if (gcpReadSuccess) {
                     cv::Mat lon = gcps.col(0);
                     cv::Mat lat = gcps.col(1);
                     m_lastInputLon = cv::mean(lon)[0];
@@ -169,9 +194,13 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     ExecutableNodeDelegateModel::setInData(data, port);
 
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-                m_outputData.reset();
+        m_outputData.reset();
         m_previewData.reset();
+        m_outputPaths.clear();
+        m_savedOutputFileNames.clear();
     }
+
+    updateParameterWidgetsEnableState();
 }
 
 std::shared_ptr<NodeData> CutNode::outData(PortIndex port)
@@ -360,9 +389,7 @@ void CutNode::createWidget()
     m_saveToProjectCheckBox->setChecked(m_saveToProject);
     connect(m_saveToProjectCheckBox, &QCheckBox::stateChanged, this, [this, invalidateNodeData](int state) {
         m_saveToProject = (state == Qt::Checked);
-        if (m_outputNodeNameEdit) {
-            m_outputNodeNameEdit->setEnabled(m_saveToProject);
-        }
+        updateParameterWidgetsEnableState();
         invalidateNodeData();
     });
     layout->addWidget(m_saveToProjectCheckBox);
@@ -386,6 +413,7 @@ void CutNode::createWidget()
 
     onModeChanged(m_mode);
     updateLabels();
+    updateParameterWidgetsEnableState();
 }
 
 void CutNode::onModeChanged(int index)
@@ -396,6 +424,7 @@ void CutNode::onModeChanged(int index)
         m_coordinateWidget->setVisible(m_mode == 1);
         m_boxSelectionWidget->setVisible(m_mode == 2);
         updateWidgetSize();
+        updateParameterWidgetsEnableState();
     }
 
     if (m_outputData) m_outputData.reset();
@@ -615,17 +644,7 @@ void CutNode::executeProcessing()
             Q_ARG(QStandardItemModel*, model));
     }
 
-    if (m_modeCombo) m_modeCombo->setEnabled(false);
-    if (m_lonEdit) m_lonEdit->setEnabled(false);
-    if (m_latEdit) m_latEdit->setEnabled(false);
-    if (m_widthEdit) m_widthEdit->setEnabled(false);
-    if (m_heightEdit) m_heightEdit->setEnabled(false);
-    if (m_leftSpin) m_leftSpin->setEnabled(false);
-    if (m_rightSpin) m_rightSpin->setEnabled(false);
-    if (m_topSpin) m_topSpin->setEnabled(false);
-    if (m_bottomSpin) m_bottomSpin->setEnabled(false);
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(false);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(false);
+    updateParameterWidgetsEnableState();
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
@@ -702,21 +721,11 @@ void CutNode::onProcessingFinished()
         setOutputData(1, m_previewData);
     }
 
-    if (m_modeCombo) m_modeCombo->setEnabled(true);
-    if (m_lonEdit) m_lonEdit->setEnabled(m_mode == 1);
-    if (m_latEdit) m_latEdit->setEnabled(m_mode == 1);
-    if (m_widthEdit) m_widthEdit->setEnabled(m_mode == 1);
-    if (m_heightEdit) m_heightEdit->setEnabled(m_mode == 1);
-    if (m_leftSpin) m_leftSpin->setEnabled(m_mode == 0);
-    if (m_rightSpin) m_rightSpin->setEnabled(m_mode == 0);
-    if (m_topSpin) m_topSpin->setEnabled(m_mode == 0);
-    if (m_bottomSpin) m_bottomSpin->setEnabled(m_mode == 0);
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
-
     m_isExecuting = false;
     m_thread = nullptr;
     m_worker = nullptr;
+
+    updateParameterWidgetsEnableState();
 
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
@@ -731,21 +740,11 @@ void CutNode::onError(const QString& error)
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
 
-    if (m_modeCombo) m_modeCombo->setEnabled(true);
-    if (m_lonEdit) m_lonEdit->setEnabled(m_mode == 1);
-    if (m_latEdit) m_latEdit->setEnabled(m_mode == 1);
-    if (m_widthEdit) m_widthEdit->setEnabled(m_mode == 1);
-    if (m_heightEdit) m_heightEdit->setEnabled(m_mode == 1);
-    if (m_leftSpin) m_leftSpin->setEnabled(m_mode == 0);
-    if (m_rightSpin) m_rightSpin->setEnabled(m_mode == 0);
-    if (m_topSpin) m_topSpin->setEnabled(m_mode == 0);
-    if (m_bottomSpin) m_bottomSpin->setEnabled(m_mode == 0);
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
-
     m_isExecuting = false;
     m_thread = nullptr;
     m_worker = nullptr;
+
+    updateParameterWidgetsEnableState();
 
     m_outputData.reset();
     m_previewData.reset();
@@ -1279,6 +1278,25 @@ void CutNode::updateWidgetSize()
         _widget->adjustSize();
         Q_EMIT embeddedWidgetSizeUpdated();
     }
+}
+
+void CutNode::updateParameterWidgetsEnableState()
+{
+    bool hasInput = (m_inputData && !m_inputData->filePaths().isEmpty());
+    bool isExec = m_isExecuting;
+    bool enableWidgets = hasInput && !isExec;
+
+    if (m_modeCombo) m_modeCombo->setEnabled(enableWidgets);
+    if (m_lonEdit) m_lonEdit->setEnabled(enableWidgets && (m_mode == 1));
+    if (m_latEdit) m_latEdit->setEnabled(enableWidgets && (m_mode == 1));
+    if (m_widthEdit) m_widthEdit->setEnabled(enableWidgets && (m_mode == 1));
+    if (m_heightEdit) m_heightEdit->setEnabled(enableWidgets && (m_mode == 1));
+    if (m_leftSpin) m_leftSpin->setEnabled(enableWidgets && (m_mode == 0));
+    if (m_rightSpin) m_rightSpin->setEnabled(enableWidgets && (m_mode == 0));
+    if (m_topSpin) m_topSpin->setEnabled(enableWidgets && (m_mode == 0));
+    if (m_bottomSpin) m_bottomSpin->setEnabled(enableWidgets && (m_mode == 0));
+    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(enableWidgets);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets && m_saveToProject);
 }
 
 QJsonObject CutNode::save() const

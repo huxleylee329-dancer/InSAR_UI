@@ -436,7 +436,11 @@ void SBASReferenceReselectionNode::stopExecution()
 
 void SBASReferenceReselectionNode::processAutomatically()
 {
-    execute();
+    if (prepareToStart()) {
+        execute();
+    } else {
+        setState(ExecutionState::Idle);
+    }
 }
 
 void SBASReferenceReselectionNode::onProgressUpdate(int progress, const QString& message)

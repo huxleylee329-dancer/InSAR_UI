@@ -477,7 +477,11 @@ void DEMSourceNode::stopExecution()
 
 void DEMSourceNode::processAutomatically()
 {
-    executeProcessing();
+    if (prepareToStart()) {
+        executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
+    }
 }
 
 void DEMSourceNode::executeProcessing()
@@ -597,6 +601,14 @@ bool DEMSourceNode::validateAndRestoreOutput()
 
         if (!QFile::exists(targetJpg)) {
             // 后台异步生成缺失的预览图
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+            m_remedyWatcher.disconnect();
+
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
+                Q_EMIT dataUpdated(1);
+            });
+
             m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
                 NodeUtils::generateJpgPreviewFromH5(targetH5, targetJpg, "dem");
             }));
@@ -604,6 +616,11 @@ bool DEMSourceNode::validateAndRestoreOutput()
 
         setState(ExecutionState::Completed);
         updateCacheSizeLabel();
+
+        Q_EMIT dataUpdated(0);
+        if (QFile::exists(targetJpg)) {
+            Q_EMIT dataUpdated(1);
+        }
         return true;
     }
 

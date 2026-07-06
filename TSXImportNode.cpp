@@ -162,19 +162,16 @@ void TSXImportNode::executeImport()
         return;
     }
 
-    QString outputNodeName = getOutputNodeName();
-    QString outputPath = projectPath() + "/" + outputNodeName + "/" + m_outputFileName + ".h5";
-    QString previewPath = projectPath() + "/" + outputNodeName + "/" + m_outputFileName + ".jpg";
-
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+    // 因为已经在 prepareToStart() 中完成了存在性检查，这里直接读取 m_preparedOverwriteResult 并分支处理
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
         setState(ExecutionState::Idle);
         return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    } else if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
         return;
     }
+
 
     // 构造 ImportTask
     std::vector<ImportTask> tasks;
@@ -190,7 +187,14 @@ void TSXImportNode::executeImport()
 
 QStringList TSXImportNode::getExpectedOutputFilePaths() const
 {
-    return { projectPath() + "/" + getOutputNodeName() + "/" + m_outputFileName + ".h5" };
+    QString fileName = m_outputFileName;
+    if (fileName.isEmpty() && m_outputFileNameEdit) {
+        fileName = m_outputFileNameEdit->text().trimmed();
+    }
+    if (fileName.isEmpty()) {
+        fileName = generateOutputFileName();
+    }
+    return { projectPath() + "/" + getOutputNodeName() + "/" + fileName + ".h5" };
 }
 
 QString TSXImportNode::getOutputNodeName() const

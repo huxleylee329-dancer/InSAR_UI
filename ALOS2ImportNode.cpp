@@ -140,17 +140,16 @@ void ALOS2ImportNode::executeImport()
         pathsToCheck.append(projectPath() + "/" + outputNodeName + "/" + task.filename + ".jpg");
     }
 
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, pathsToCheck, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+    // 因为已经在 prepareToStart() 中完成了存在性检查，这里直接读取 m_preparedOverwriteResult 并分支处理
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
         setState(ExecutionState::Idle);
         return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    } else if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
         return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(getProjectContext(), outputNodeName);
     }
+
 
     // 三行启动
     auto* worker = new ALOS2ImportWorker();

@@ -538,9 +538,13 @@ void S1DeburstNode::stopExecution()
 
 void S1DeburstNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

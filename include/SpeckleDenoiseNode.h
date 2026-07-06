@@ -80,6 +80,7 @@ private:
 
     void executeProcessing();
     QString generateOutputFileName() const;
+    void updateParameterWidgetsEnableState();
 
     // UI控件
     QWidget* _widget = nullptr;
@@ -99,6 +100,7 @@ private:
 
     // Threading
     BM3DEnhancementTask* m_task = nullptr;
+    bool m_isExecuting = false;
 };
 
 } // namespace QtNodes

@@ -15,6 +15,7 @@
 #include <QThread>
 #include <QJsonObject>
 #include <memory>
+#include "NodeUtils.h"
 
 namespace QtNodes {
 
@@ -84,6 +85,10 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool prepareToStart() override;
+
+private:
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 
 signals:
     void startProcess();

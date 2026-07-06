@@ -434,6 +434,9 @@ bool GCPManagerNode::validateAndRestoreOutput()
         setState(ExecutionState::Completed);
         initDatabase();
         updateLabels();
+
+        Q_EMIT dataUpdated(0);
+        Q_EMIT dataUpdated(1);
         return true;
     }
 

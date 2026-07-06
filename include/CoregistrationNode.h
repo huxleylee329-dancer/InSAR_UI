@@ -63,6 +63,7 @@ private Q_SLOTS:
     void onModelUpdated(QStandardItemModel* model);
     void updateMasterImageCombo();
     void updateWidgetSize();
+    void updateParameterWidgetsEnableState();
 
 private:
     bool isReady() const;
@@ -119,6 +120,7 @@ private:
     CoregistrationWorker* m_worker = nullptr;
     QThread* m_thread = nullptr;
     QFutureWatcher<void> m_remedyWatcher;
+    bool m_isExecuting = false;
 
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;

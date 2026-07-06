@@ -3,6 +3,8 @@
 #include <QString>
 #include <QMutex>
 
+#include <functional>
+
 class QWidget;
 class IApplicationInterface;
 
@@ -63,6 +65,16 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
  * @return 是否生成成功
  */
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type = "complex");
+
+/**
+ * @brief 从 H5 科学数据文件中提取幅值并生成 JPG 预览图，带进度回调接口
+ * @param h5Path H5文件路径
+ * @param jpgPath 输出JPG路径
+ * @param type 数据类型，支持 "complex"（复数SLC）和 "phase"（相位）
+ * @param cb 进度回调函数，参数为已处理行数和总行数
+ * @return 是否生成成功
+ */
+bool generateJpgPreviewFromH5WithProgress(const QString& h5Path, const QString& jpgPath, const QString& type, std::function<void(int, int)> cb);
 
 /**
  * @brief 查找或创建项目树节点，并根据 Rank 自动排序插入

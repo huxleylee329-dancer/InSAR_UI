@@ -872,9 +872,13 @@ void SLCDerampNode::stopExecution()
 
 void SLCDerampNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

@@ -248,34 +248,49 @@ bool PSNetworkNode::validateInputs() const
     return true;
 }
 
-void PSNetworkNode::execute()
+bool PSNetworkNode::prepareToStart()
 {
     if (!validateInputs()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
         setState(ExecutionState::Warning);
-        return;
+        return false;
     }
 
-    QString rawPath = projectPath();
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString outDir = dir + "/" + m_outputNodeName;
-    QString h5Path = outDir + "/PS_network.h5";
+    if (isAutoTriggered()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+        return true;
+    }
 
     // 检查并提示覆盖
     if (executionMode() == ExecutionMode::Manual) {
+        QString rawPath = projectPath();
+        QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
+                      ? QFileInfo(rawPath).absolutePath()
+                      : rawPath;
+        QString outDir = dir + "/" + m_outputNodeName;
+        QString h5Path = outDir + "/PS_network.h5";
+
         QStringList pathsToCheck;
         pathsToCheck << h5Path;
-        NodeUtils::OverwriteResult res = NodeUtils::checkAndPromptOverwrite(
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
             NodeUtils::getProjectContext(_widget), m_outputNodeName, pathsToCheck
         );
-        if (res == NodeUtils::OverwriteResult::Cancel) {
-            setState(ExecutionState::Idle);
-            return;
-        } else if (res == NodeUtils::OverwriteResult::LoadExisting) {
-            validateAndRestoreOutput();
-            return;
+        if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
+            m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+            return false;
         }
+    } else {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    }
+
+    return true;
+}
+
+void PSNetworkNode::execute()
+{
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        validateAndRestoreOutput();
+        return;
     }
 
     // 清除项目子节点及 XML 条目，防止 UI 树和项目 XML 的多重重影 bug
@@ -393,12 +408,11 @@ void PSNetworkNode::onProcessingFinished()
 
     generateStaticPreviewJpg();
 
-    setState(ExecutionState::Completed);
-    setProgress(100);
+    setState(ExecutionState::Running);
+    finishExecution();
     updateLabels();
 
     Q_EMIT dataUpdated(0);
-    finishExecution();
     stopExecution();
 }
 
@@ -604,8 +618,10 @@ QString PSNetworkNode::projectName() const
 
 void PSNetworkNode::processAutomatically()
 {
-    if (validateInputs()) {
+    if (prepareToStart()) {
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 

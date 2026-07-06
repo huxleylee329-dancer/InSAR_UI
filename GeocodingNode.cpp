@@ -438,14 +438,17 @@ void GeocodingNode::onProcessingFinished()
             
             // Determine type dynamically from datasets
             QString type = "amplitude";
-            if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", dummy) == 0) {
-                type = "phase";
-            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "coherence", dummy) == 0) {
-                type = "coherence";
-            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "dem", dummy) == 0) {
-                type = "dem";
-            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", dummy) == 0) {
-                type = "SBAS";
+            {
+                NodeUtils::Hdf5Locker locker;
+                if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", dummy) == 0) {
+                    type = "phase";
+                } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "coherence", dummy) == 0) {
+                    type = "coherence";
+                } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "dem", dummy) == 0) {
+                    type = "dem";
+                } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", dummy) == 0) {
+                    type = "SBAS";
+                }
             }
             types.append(type);
         }
@@ -570,14 +573,17 @@ bool GeocodingNode::validateAndRestoreOutput()
 
         // Determine type dynamically from datasets
         QString type = "amplitude";
-        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", dummy) == 0) {
-            type = "phase";
-        } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "coherence", dummy) == 0) {
-            type = "coherence";
-        } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "dem", dummy) == 0) {
-            type = "dem";
-        } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", dummy) == 0) {
-            type = "SBAS";
+        {
+            NodeUtils::Hdf5Locker locker;
+            if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", dummy) == 0) {
+                type = "phase";
+            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "coherence", dummy) == 0) {
+                type = "coherence";
+            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "dem", dummy) == 0) {
+                type = "dem";
+            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", dummy) == 0) {
+                type = "SBAS";
+            }
         }
         types.append(type);
     }
@@ -713,9 +719,13 @@ void GeocodingNode::stopExecution()
 
 void GeocodingNode::processAutomatically()
 {
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

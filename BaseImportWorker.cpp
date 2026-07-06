@@ -71,9 +71,11 @@ void BaseImportWorker::import_patch(
         QString relative_path = temp_folder + task.filename + ".h5";
         QString h5_path = QString("%1%2%3.h5").arg(savepath).arg(temp_folder).arg(task.filename);
 
-        // A. 执行子类特有的转换（传入当前任务的进度区间，最大限制为 90%）
-        int progressMin = (double(i) / n_images) * 90;
-        int progressMax = (double(i + 1) / n_images) * 90;
+        // A. 执行子类特有的转换（分配 80% 进度给 H5 转换，余下 20% 分配给预览及元数据处理）
+        int startRange = (double(i) / n_images) * 90;
+        int endRange = (double(i + 1) / n_images) * 90;
+        int progressMin = startRange;
+        int progressMax = startRange + (endRange - startRange) * 0.8;
         bool success = convertToH5(task.arguments, h5_path, progressMin, progressMax);
 
         if (!success || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
@@ -84,74 +86,88 @@ void BaseImportWorker::import_patch(
 
         InSARLogManager::LogInfo(m_satelliteName + "ImportWorker", QString("Successfully converted image to H5: %1").arg(task.filename));
 
-        // B. 静默生成 JPG 预览缩略图
+        // B. 生成 JPG 预览缩略图（带分块进度更新）
         QFileInfo fi(h5_path);
         QString jpg_path = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        NodeUtils::generateJpgPreviewFromH5(h5_path, jpg_path, previewDataType());
+        NodeUtils::generateJpgPreviewFromH5WithProgress(h5_path, jpg_path, previewDataType(), [&](int cur, int total) {
+            int subProgress = progressMax + (endRange - progressMax) * double(cur) / total;
+            emit updateProcess(subProgress, QStringLiteral("正在生成图像预览..."));
+        });
 
-        // C. 跨线程更新项目树与 XML
-        int localRet = 0;
-        QMetaObject::invokeMethod(model, [=, &localRet]() {
+        // C. 在子线程执行 XML 的 Load/Save 操作以避免阻塞 UI 主线程，仅在 UI 线程插入/更新树节点
+        QString pro_path;
+        bool isNewChild = true;
+        int checkRet = 0;
+        QMetaObject::invokeMethod(model, [&]() {
             if (model->findItems(dst_project).isEmpty()) {
-                localRet = -1;
+                checkRet = -1;
                 return;
             }
             QStandardItem* project = model->findItems(dst_project)[0];
             if (!project) {
-                localRet = -1;
+                checkRet = -1;
                 return;
             }
             QModelIndex pro_index = model->indexFromItem(project);
-            QString pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
+            pro_path = model->data(model->index(pro_index.row(), pro_index.column() + 1, pro_index.parent())).toString();
 
-            bool isNewChild = false;
-            // 查找或创建 Origin 节点
             QStandardItem* origin = NodeUtils::findOrCreateProjectNode(project, dst_node, "complex-0.0");
-
-            // 查找或创建映像叶子项
-            QStandardItem* img = NodeUtils::findOrCreateChildItem(origin, task.filename, previewDataType(), h5_path, "", &isNewChild);
-
-            if (isNewChild)
-            {
-
-                // 更新 XML 项目配置文件
-                XMLFile DOC;
-                QString xml_path = QString("%1/%2").arg(pro_path).arg(dst_project);
-                int ret = DOC.XMLFile_load(xml_path.toStdString().c_str());
-                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-                {
-                    localRet = -2;
-                    return;
-                }
-
-                // 此处动态调用 satelliteFormatTag() 虚函数写入具体的卫星格式名称
-                ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), task.filename.toStdString().c_str(), relative_path.toStdString().c_str(), satelliteFormatTag().toStdString().c_str());
-                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-                {
-                    localRet = -2;
-                    return;
-                }
-                ret = DOC.XMLFile_save(xml_path.toStdString().c_str());
-                if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-                {
-                    localRet = -2;
-                    return;
+            for (int r = 0; r < origin->rowCount(); ++r) {
+                if (origin->child(r, 0)->text() == task.filename) {
+                    isNewChild = false;
+                    break;
                 }
             }
-            else
+        }, Qt::BlockingQueuedConnection);
+
+        if (checkRet < 0 || pro_path.isEmpty())
+        {
+            handleError(QStringLiteral("未找到项目节点。"), h5_path, savepath + "/" + dst_node);
+            return;
+        }
+
+        if (isNewChild)
+        {
+            XMLFile DOC;
+            QString xml_path = QString("%1/%2").arg(pro_path).arg(dst_project);
+            int ret = DOC.XMLFile_load(xml_path.toStdString().c_str());
+            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+            {
+                handleError(QStringLiteral("保存项目配置文件失败。"), h5_path, savepath + "/" + dst_node);
+                return;
+            }
+
+            ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), task.filename.toStdString().c_str(), relative_path.toStdString().c_str(), satelliteFormatTag().toStdString().c_str());
+            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+            {
+                handleError(QStringLiteral("保存项目配置文件失败。"), h5_path, savepath + "/" + dst_node);
+                return;
+            }
+            ret = DOC.XMLFile_save(xml_path.toStdString().c_str());
+            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+            {
+                handleError(QStringLiteral("保存项目配置文件失败。"), h5_path, savepath + "/" + dst_node);
+                return;
+            }
+        }
+
+        // 更新树模型节点（仅 UI 数据呈现操作在 UI 主线程进行）
+        QMetaObject::invokeMethod(model, [=]() {
+            if (model->findItems(dst_project).isEmpty()) return;
+            QStandardItem* project = model->findItems(dst_project)[0];
+            if (!project) return;
+            QStandardItem* origin = NodeUtils::findOrCreateProjectNode(project, dst_node, "complex-0.0");
+            
+            bool created = false;
+            QStandardItem* img = NodeUtils::findOrCreateChildItem(origin, task.filename, previewDataType(), h5_path, "", &created);
+            if (!created)
             {
                 origin->setChild(img->row(), 1, new QStandardItem(h5_path));
             }
         }, Qt::BlockingQueuedConnection);
 
-        if (localRet < 0)
-        {
-            handleError(localRet == -1 ? QStringLiteral("未找到项目节点。") : QStringLiteral("保存项目配置文件失败。"), h5_path, savepath + "/" + dst_node);
-            return;
-        }
-
-        // 更新总体进度（文件转换和子节点生成共占总进度的90%）
-        int progress = (double(i + 1) / double(n_images)) * 90.0;
+        // 更新总体进度（将进度推进至此图对应的 endRange 处）
+        int progress = endRange;
         QString progressMsg = QStringLiteral("正在导入...");
         emit updateProcess(progress, progressMsg);
     }

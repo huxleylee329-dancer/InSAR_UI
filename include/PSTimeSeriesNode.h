@@ -14,6 +14,7 @@
 #include <QThread>
 #include <QJsonObject>
 #include <memory>
+#include "NodeUtils.h"
 
 namespace QtNodes {
 
@@ -43,6 +44,8 @@ public:
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
+    bool prepareToStart() override;
+
 protected:
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
@@ -52,6 +55,9 @@ protected:
 
     QString projectPath() const;
     QString projectName() const;
+
+private:
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 
 private:
     // UI elements

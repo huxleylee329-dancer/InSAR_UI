@@ -172,6 +172,19 @@ void ImportNodeBase::execute()
     }
 
     m_stopRequested = false;
+
+    // 如果准备阶段确定加载已存在文件，直接跳转完成，不启动 Worker
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        setProgress(100);
+        onImportFinished();
+        return;
+    }
+
+    // 如果用户选择覆盖，在正式运行前移除原有项目节点以避免数据累加/UI重影
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+    }
+
     setProgress(0);
     setState(ExecutionState::Running);
 
@@ -180,6 +193,40 @@ void ImportNodeBase::execute()
     // Call the legacy executeImport() method
 
     executeImport();
+}
+
+bool ImportNodeBase::prepareToStart()
+{
+    // 自动触发模式下，跳过交互弹窗，默认覆盖处理
+    if (isAutoTriggered()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+        return true;
+    }
+
+    QStringList expectedPaths = getExpectedOutputFilePaths();
+    if (expectedPaths.isEmpty()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+        return true;
+    }
+
+    // 汇总需要校验的文件路径：H5成果文件与其对应的预览JPG缩略图
+    QStringList pathsToCheck = expectedPaths;
+    for (const QString& h5Path : expectedPaths) {
+        QFileInfo fi(h5Path);
+        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+        pathsToCheck.append(jpgPath);
+    }
+
+    // 弹出弹窗询问用户选择
+    m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+        getProjectContext(), getOutputNodeName(), pathsToCheck, nullptr);
+
+    // 用户选择取消时返回 false，阻止框架进入 Running 状态并清空成果数据
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
+        return false;
+    }
+
+    return true;
 }
 
 void ImportNodeBase::stopExecution()

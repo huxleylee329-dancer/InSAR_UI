@@ -17,6 +17,8 @@
 #include <QStandardItemModel>
 #include <QFutureWatcher>
 #include <memory>
+#include "NodeUtils.h"
+
 
 // Forward declarations
 class IApplicationInterface;
@@ -63,6 +65,8 @@ public:
     // 统一的执行控制
     void stopExecution() override;
     bool validateAndRestoreOutput() override;
+    bool prepareToStart() override;
+
 
 protected slots:
     // 统一的 Worker 槽函数
@@ -105,6 +109,8 @@ protected:
     // 统一的工作线程管理
     QThread* m_thread = nullptr;
     BaseImportWorker* m_worker = nullptr;
+    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+
 
     // 统一的输出数据
     std::shared_ptr<ImportedFileData> m_importedFiles;

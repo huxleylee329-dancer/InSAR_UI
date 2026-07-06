@@ -64,7 +64,6 @@ private:
     QString m_outputNodeName;
     std::vector<QString> m_preparedOriginalFileList;
     std::vector<QString> m_preparedImportNameList;
-    NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
 };
 
 } // namespace QtNodes

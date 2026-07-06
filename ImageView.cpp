@@ -7,6 +7,7 @@
 #include<QScrollBar>
 #include<QGraphicsRectItem>
 #include<QGraphicsPixmapItem>
+#include<QFile>
 
 ImageView::ImageView(QWidget* parent) :
 	QGraphicsView(parent),
@@ -30,16 +31,16 @@ ImageView::~ImageView()
 void ImageView::setRoiSelectionMode(RoiSelectionMode mode)
 {
 	m_roiSelectionMode = mode;
-	if (mode != RoiSelectionMode::None) {
-		setDragMode(QGraphicsView::NoDrag);
-	} else {
+	if (mode == RoiSelectionMode::None) {
 		setDragMode(QGraphicsView::ScrollHandDrag);
+	}
+	else {
+		setDragMode(QGraphicsView::NoDrag);
 	}
 }
 
 void ImageView::clearRoi()
 {
-	m_storedRoi = QRectF();
 	if (m_roiRectItem && scene()) {
 		scene()->removeItem(m_roiRectItem);
 		delete m_roiRectItem;
@@ -128,7 +129,14 @@ void ImageView::loadImage(const QString& path)
 	m_targetRectItem = nullptr;
 	m_clutterRectItem = nullptr;
 	
-	QPixmap pixmap(path);
+	QPixmap pixmap;
+	if (!path.isEmpty()) {
+		QFile file(path);
+		if (file.open(QIODevice::ReadOnly)) {
+			QByteArray data = file.readAll();
+			pixmap.loadFromData(data);
+		}
+	}
 	scene()->addPixmap(pixmap);
 	
 	if (!m_storedRoi.isNull()) setRoiRect(m_storedRoi);

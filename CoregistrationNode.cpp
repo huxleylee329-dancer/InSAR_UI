@@ -35,6 +35,7 @@ CoregistrationNode::CoregistrationNode()
     , m_outputFileName("{InputName}_regis")
     , m_worker(nullptr)
     , m_thread(nullptr)
+    , m_isExecuting(false)
 {
     setExecutionMode(ExecutionMode::Automatic);
 }
@@ -77,14 +78,13 @@ bool CoregistrationNode::portCaptionVisible(PortType portType, PortIndex portInd
 QString CoregistrationNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        return QStringLiteral("输入图像");
+        return QStringLiteral("输入数据");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
-        else if (portIndex == 1)
+        else
             return QStringLiteral("预览 ?");
     }
-    return QString();
 }
 
 bool CoregistrationNode::portIsOptional(PortType portType, PortIndex portIndex) const
@@ -101,6 +101,9 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         m_outputData.reset();
         m_previewData.reset();
+        m_outputImagePaths.clear();
+        m_outputJpgPaths.clear();
+        m_savedOutputFiles.clear();
         setOutputData(0, nullptr);
         setOutputData(1, nullptr);
     }
@@ -115,6 +118,7 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+    updateParameterWidgetsEnableState();
 }
 
 std::shared_ptr<NodeData> CoregistrationNode::outData(PortIndex port)
@@ -134,7 +138,7 @@ void CoregistrationNode::createWidget()
 {
     _widget = new QWidget();
     _widget->setObjectName("NodeEmbeddedWidget");
-    _widget->setFixedWidth(300); // CRITICAL: Avoid dynamic size bounding box layout synchronization bug
+    _widget->setFixedWidth(300);
 
     auto* layout = new QVBoxLayout(_widget);
     layout->setContentsMargins(8, 8, 8, 8);
@@ -154,7 +158,6 @@ void CoregistrationNode::createWidget()
     formLayout->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     formLayout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
 
-    // 1. Method selection (Coarse vs Fine)
     m_methodCombo = new QComboBox();
     m_methodCombo->addItem(QStringLiteral("强度图配准 (Coarse)"), "Coarse");
     m_methodCombo->addItem(QStringLiteral("DEM辅助配准 (Fine)"), "Fine");
@@ -167,11 +170,11 @@ void CoregistrationNode::createWidget()
         }
         m_method = m_methodCombo->itemData(index).toString();
         updateWidgetSize();
+        updateParameterWidgetsEnableState();
         invalidateNodeData();
     });
     formLayout->addRow(new QLabel(QStringLiteral("配准模式：")), m_methodCombo);
 
-    // 2. Default Master Checkbox
     m_defaultFirstMasterCheckBox = new QCheckBox(QStringLiteral("默认首张图像为主图像"));
     m_defaultFirstMasterCheckBox->setChecked(m_defaultFirstMaster);
     connect(m_defaultFirstMasterCheckBox, &QCheckBox::stateChanged, this, [this, invalidateNodeData](int state) {
@@ -184,12 +187,12 @@ void CoregistrationNode::createWidget()
             }
             m_defaultFirstMaster = newState;
             updateMasterImageCombo();
+            updateParameterWidgetsEnableState();
             invalidateNodeData();
         }
     });
     formLayout->addRow(m_defaultFirstMasterCheckBox);
 
-    // 3. Master Image selection combo
     m_masterImageCombo = new QComboBox();
     connect(m_masterImageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
         if (!m_defaultFirstMaster && m_inputData && index >= 0) {
@@ -207,7 +210,6 @@ void CoregistrationNode::createWidget()
     });
     formLayout->addRow(new QLabel(QStringLiteral("主图像：")), m_masterImageCombo);
 
-    // 4. Coarse params: Interpolation Times & Block Size
     m_interpLabel = new QLabel(QStringLiteral("插值倍数："));
     m_interpCombo = new QComboBox();
     m_interpCombo->addItems(QStringList() << "2" << "4" << "8" << "16");
@@ -244,80 +246,63 @@ void CoregistrationNode::createWidget()
     });
     formLayout->addRow(m_blockSizeLabel, m_blockSizeCombo);
 
-    // 5. Fine params: DEM Path Browser
     m_demPathLabel = new QLabel(QStringLiteral("DEM路径："));
-    m_demPathEdit = new QLineEdit(m_demPath);
-    m_demPathEdit->setPlaceholderText(QStringLiteral("选择SRTM DEM路径..."));
+    m_demPathEdit = new QLineEdit();
+    m_demPathEdit->setText(m_demPath);
+    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
     connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        QString path = m_demPathEdit->text();
-        if (m_demPath != path) {
-            if (!confirmParameterChange()) {
-                m_demPathEdit->setText(m_demPath);
-                return;
-            }
-            m_demPath = path;
+        QString text = m_demPathEdit->text().trimmed();
+        if (m_demPath != text) {
+            m_demPath = text;
             invalidateNodeData();
         }
     });
-
-    m_demBrowseBtn = new QPushButton("...");
-    m_demBrowseBtn->setFixedWidth(30);
-    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
-        QString dir = QFileDialog::getExistingDirectory(nullptr, QStringLiteral("选择DEM文件夹"), m_demPath);
-        if (!dir.isEmpty() && m_demPath != dir) {
-            if (!confirmParameterChange()) {
-                return;
-            }
-            m_demPath = dir;
-            m_demPathEdit->setText(m_demPath);
-            invalidateNodeData();
+    
+    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
+    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this]() {
+        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPath = file;
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+            if (m_outputData) m_outputData.reset();
+            if (m_previewData) m_previewData.reset();
+            setOutputData(0, nullptr);
+            setOutputData(1, nullptr);
+            invalidateExecution();
         }
     });
 
-    QWidget* demWidget = new QWidget();
-    QHBoxLayout* demLayout = new QHBoxLayout(demWidget);
-    demLayout->setContentsMargins(0, 0, 0, 0);
-    demLayout->setSpacing(4);
+    auto* demLayout = new QHBoxLayout();
     demLayout->addWidget(m_demPathEdit);
     demLayout->addWidget(m_demBrowseBtn);
-    formLayout->addRow(m_demPathLabel, demWidget);
+    formLayout->addRow(m_demPathLabel, demLayout);
 
-    // 6. Output Node Name & Output File Name Pattern
-    m_outputNodeNameEdit = new QLineEdit(m_outputNodeName);
+    m_outputNodeNameEdit = new QLineEdit();
+    m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
-            if (!confirmParameterChange()) {
-                m_outputNodeNameEdit->setText(m_outputNodeName);
-                return;
-            }
-            NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
             m_outputNodeName = text;
             invalidateNodeData();
         }
     });
-    formLayout->addRow(new QLabel(QStringLiteral("目标节点：")), m_outputNodeNameEdit);
+    formLayout->addRow(new QLabel(QStringLiteral("输出节点名：")), m_outputNodeNameEdit);
 
-    m_outputFileNameEdit = new QLineEdit(m_outputFileName);
-    m_outputFileNameEdit->setPlaceholderText(QStringLiteral("支持 {InputName} 变量"));
+    m_outputFileNameEdit = new QLineEdit();
+    m_outputFileNameEdit->setText(m_outputFileName);
     connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text().trimmed();
         if (m_outputFileName != text) {
-            if (!confirmParameterChange()) {
-                m_outputFileNameEdit->setText(m_outputFileName);
-                return;
-            }
             m_outputFileName = text;
             invalidateNodeData();
         }
     });
-    formLayout->addRow(new QLabel(QStringLiteral("输出名规则：")), m_outputFileNameEdit);
+    formLayout->addRow(new QLabel(QStringLiteral("文件名命名规则：")), m_outputFileNameEdit);
 
     layout->addLayout(formLayout);
 
-    // Initial setup
-    updateMasterImageCombo();
     updateWidgetSize();
+    updateParameterWidgetsEnableState();
 }
 
 void CoregistrationNode::updateMasterImageCombo()
@@ -328,9 +313,7 @@ void CoregistrationNode::updateMasterImageCombo()
 
     if (m_defaultFirstMaster) {
         m_masterImageCombo->addItem(QStringLiteral("自动选择首张图像..."));
-        m_masterImageCombo->setEnabled(false);
     } else {
-        m_masterImageCombo->setEnabled(true);
         if (m_inputData) {
             QStringList paths = m_inputData->filePaths();
             for (const QString& path : paths) {
@@ -344,9 +327,9 @@ void CoregistrationNode::updateMasterImageCombo()
             }
         } else {
             m_masterImageCombo->addItem(QStringLiteral("无数据输入"));
-            m_masterImageCombo->setEnabled(false);
         }
     }
+    updateParameterWidgetsEnableState();
 }
 
 void CoregistrationNode::updateWidgetSize()
@@ -363,6 +346,25 @@ void CoregistrationNode::updateWidgetSize()
     m_demPathLabel->setVisible(!isCoarse);
     m_demPathEdit->setVisible(!isCoarse);
     m_demBrowseBtn->setVisible(!isCoarse);
+}
+
+void CoregistrationNode::updateParameterWidgetsEnableState()
+{
+    bool hasInput = (m_inputData && !m_inputData->filePaths().isEmpty());
+    bool isExec = m_isExecuting;
+    bool enableWidgets = hasInput && !isExec;
+
+    if (m_methodCombo) m_methodCombo->setEnabled(enableWidgets);
+    if (m_defaultFirstMasterCheckBox) m_defaultFirstMasterCheckBox->setEnabled(enableWidgets);
+    if (m_masterImageCombo) m_masterImageCombo->setEnabled(enableWidgets && !m_defaultFirstMaster);
+    
+    bool isCoarse = (m_method == "Coarse");
+    if (m_interpCombo) m_interpCombo->setEnabled(enableWidgets && isCoarse);
+    if (m_blockSizeCombo) m_blockSizeCombo->setEnabled(enableWidgets && isCoarse);
+    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !isCoarse);
+    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !isCoarse);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
+    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(enableWidgets);
 }
 
 QStringList CoregistrationNode::previewImagePaths() const
@@ -424,7 +426,7 @@ void CoregistrationNode::processAutomatically()
         return;
     }
 
-    if (isReady()) {
+    if (prepareToStart()) {
         executeProcessing();
     } else {
         setState(ExecutionState::Idle);
@@ -525,6 +527,7 @@ void CoregistrationNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
+    m_isExecuting = true;
     m_thread->start();
 
     int masterIdx = m_defaultFirstMaster ? 1 : m_masterIndex;
@@ -555,15 +558,7 @@ void CoregistrationNode::executeProcessing()
             Q_ARG(QStandardItemModel*, model));
     }
 
-    if (m_methodCombo) m_methodCombo->setEnabled(false);
-    if (m_defaultFirstMasterCheckBox) m_defaultFirstMasterCheckBox->setEnabled(false);
-    if (m_masterImageCombo) m_masterImageCombo->setEnabled(false);
-    if (m_interpCombo) m_interpCombo->setEnabled(false);
-    if (m_blockSizeCombo) m_blockSizeCombo->setEnabled(false);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(false);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(false);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(false);
-    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(false);
+    updateParameterWidgetsEnableState();
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
@@ -581,8 +576,10 @@ void CoregistrationNode::stopExecution()
         m_thread->quit();
         m_thread->wait();
     }
+    m_isExecuting = false;
     m_worker = nullptr;
     m_thread = nullptr;
+    updateParameterWidgetsEnableState();
     setState(ExecutionState::Stopped);
 }
 
@@ -618,15 +615,8 @@ void CoregistrationNode::onProcessingFinished()
         setOutputData(0, m_outputData);
         setOutputData(1, m_previewData);
 
-        if (m_methodCombo) m_methodCombo->setEnabled(true);
-        if (m_defaultFirstMasterCheckBox) m_defaultFirstMasterCheckBox->setEnabled(true);
-        updateMasterImageCombo();
-        if (m_interpCombo) m_interpCombo->setEnabled(true);
-        if (m_blockSizeCombo) m_blockSizeCombo->setEnabled(true);
-        if (m_demPathEdit) m_demPathEdit->setEnabled(true);
-        if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(true);
-        if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(true);
-        if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(true);
+        m_isExecuting = false;
+        updateParameterWidgetsEnableState();
 
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
@@ -654,18 +644,15 @@ void CoregistrationNode::onError(const QString& error)
     m_worker = nullptr;
     m_thread = nullptr;
 
-    if (m_methodCombo) m_methodCombo->setEnabled(true);
-    if (m_defaultFirstMasterCheckBox) m_defaultFirstMasterCheckBox->setEnabled(true);
-    updateMasterImageCombo();
-    if (m_interpCombo) m_interpCombo->setEnabled(true);
-    if (m_blockSizeCombo) m_blockSizeCombo->setEnabled(true);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(true);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(true);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(true);
-    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(true);
+    m_isExecuting = false;
+    updateParameterWidgetsEnableState();
 
     m_outputData.reset();
     m_previewData.reset();
+    m_outputImagePaths.clear();
+    m_outputJpgPaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 }
 
 void CoregistrationNode::onModelUpdated(QStandardItemModel* model)
@@ -822,6 +809,10 @@ bool CoregistrationNode::validateAndRestoreOutput()
 
     m_outputData = std::make_shared<ImportedFileData>(expectedH5Paths, nodeName);
     setOutputData(0, m_outputData);
+    Q_EMIT dataUpdated(0);
+    if (missingH5s.isEmpty()) {
+        Q_EMIT dataUpdated(1);
+    }
 
     // Restore Standard Item Model Tree View
     QStandardItemModel* projModelPtr = projectModel();
@@ -926,6 +917,7 @@ bool CoregistrationNode::validateAndRestoreOutput()
                 }
                 dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
 
+                NodeUtils::Hdf5Locker locker;
                 FormatConversion FC;
                 Utils util;
                 

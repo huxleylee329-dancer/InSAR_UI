@@ -130,8 +130,12 @@ void DEMSourceWorker::fetch_dem(
 
     emit updateProcess(5, QStringLiteral("准备解析范围……"));
 
-    // 1. 获取绝对工作目录
-    QString save_path = QFileInfo(projectPath).absolutePath();
+    // 1. 获取绝对工作目录（防止二次剥离目录路径）
+    QString save_path = projectPath;
+    if (projectPath.endsWith(".insar", Qt::CaseInsensitive))
+    {
+        save_path = QFileInfo(projectPath).absolutePath();
+    }
 
     // 2. 精准提取 AOI 范围
     double min_lon = 0, max_lon = 0, min_lat = 0, max_lat = 0;
@@ -164,31 +168,39 @@ void DEMSourceWorker::fetch_dem(
     {
         // 尝试从雷达多项式系数计算边界
         std::string source_file;
+        QString src_file;
+        // 若存在 source_1，表明是干涉/相位等衍生 H5 文件，需读取主影像路径
         if (FC.read_str_from_h5(firstInput.toStdString().c_str(), "source_1", source_file) == 0)
         {
-            QString src_file = save_path + "/" + QString(source_file.c_str());
-            if (QFile::exists(src_file))
+            src_file = save_path + "/" + QString(source_file.c_str());
+        }
+        else
+        {
+            // 否则本身即是原始 SLC 或裁剪影像，直接以输入 H5 文件自身作为参数源文件
+            src_file = firstInput;
+        }
+
+        if (QFile::exists(src_file))
+        {
+            int sceneHeight = 0, sceneWidth = 0, offset_row = 0, offset_col = 0;
+            Mat lon_coef, lat_coef;
+            if (FC.read_int_from_h5(src_file.toStdString().c_str(), "range_len", &sceneWidth) == 0 &&
+                FC.read_int_from_h5(src_file.toStdString().c_str(), "azimuth_len", &sceneHeight) == 0 &&
+                FC.read_int_from_h5(src_file.toStdString().c_str(), "offset_row", &offset_row) == 0 &&
+                FC.read_int_from_h5(src_file.toStdString().c_str(), "offset_col", &offset_col) == 0 &&
+                FC.read_array_from_h5(src_file.toStdString().c_str(), "lon_coefficient", lon_coef) == 0 &&
+                FC.read_array_from_h5(src_file.toStdString().c_str(), "lat_coefficient", lat_coef) == 0)
             {
-                int sceneHeight = 0, sceneWidth = 0, offset_row = 0, offset_col = 0;
-                Mat lon_coef, lat_coef;
-                if (FC.read_int_from_h5(src_file.toStdString().c_str(), "range_len", &sceneWidth) == 0 &&
-                    FC.read_int_from_h5(src_file.toStdString().c_str(), "azimuth_len", &sceneHeight) == 0 &&
-                    FC.read_int_from_h5(src_file.toStdString().c_str(), "offset_row", &offset_row) == 0 &&
-                    FC.read_int_from_h5(src_file.toStdString().c_str(), "offset_col", &offset_col) == 0 &&
-                    FC.read_array_from_h5(src_file.toStdString().c_str(), "lon_coefficient", lon_coef) == 0 &&
-                    FC.read_array_from_h5(src_file.toStdString().c_str(), "lat_coefficient", lat_coef) == 0)
+                double lonMax = 0, lonMin = 0, latMax = 0, latMin = 0;
+                if (Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
+                    &lonMax, &latMax, &lonMin, &latMin) == 0)
                 {
-                    double lonMax = 0, lonMin = 0, latMax = 0, latMin = 0;
-                    if (Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
-                        &lonMax, &latMax, &lonMin, &latMin) == 0)
-                    {
-                        min_lon = lonMin;
-                        max_lon = lonMax;
-                        min_lat = latMin;
-                        max_lat = latMax;
-                        aoi_ok = true;
-                        InSARLogManager::LogInfo("DEMSourceWorker", QString("Extracted AOI from radar geometry boundary: Lon[%1, %2], Lat[%3, %4]").arg(min_lon).arg(max_lon).arg(min_lat).arg(max_lat));
-                    }
+                    min_lon = lonMin;
+                    max_lon = lonMax;
+                    min_lat = latMin;
+                    max_lat = latMax;
+                    aoi_ok = true;
+                    InSARLogManager::LogInfo("DEMSourceWorker", QString("Extracted AOI from radar geometry boundary: Lon[%1, %2], Lat[%3, %4]").arg(min_lon).arg(max_lon).arg(min_lat).arg(max_lat));
                 }
             }
         }
@@ -303,9 +315,9 @@ void DEMSourceWorker::fetch_dem(
                 else if (demSource == 2) // Copernicus 30m
                 {
                     // 使用 AWS S3 公共免密源
-                    char ns = (lat >= 0) ? 'n' : 's';
-                    char ew = (lon >= 0) ? 'e' : 'w';
-                    QString tileAWS = QString("Copernicus_DSM_COG_10_%1_%2_00_%3_%4_00_DEM")
+                    char ns = (lat >= 0) ? 'N' : 'S';
+                    char ew = (lon >= 0) ? 'E' : 'W';
+                    QString tileAWS = QString("Copernicus_DSM_COG_10_%1%2_00_%3%4_00_DEM")
                         .arg(ns)
                         .arg(qAbs(lat), 2, 10, QChar('0'))
                         .arg(ew)
@@ -379,25 +391,40 @@ void DEMSourceWorker::fetch_dem(
         QTextStream out(&vrtFile);
         out.setCodec("UTF-8");
 
-        // 统一按 SRTM 1" 标准算，以防混合计算
+        // 统一按数据源类型计算瓦片大小及重叠步长，防大小不一致导致 GDAL 无法打开 VRT
         int tileW = 3601;
         int tileH = 3601;
+        int stepW = 3600;
+        int stepH = 3600;
+        bool hasOverlap = true;
+
         if (demSource == 1) // SRTM 3"
         {
             tileW = 1201;
             tileH = 1201;
+            stepW = 1200;
+            stepH = 1200;
+            hasOverlap = true;
+        }
+        else if (demSource == 2 || demSource == 3) // Copernicus 30m 或 ASTER GDEM
+        {
+            tileW = 3600;
+            tileH = 3600;
+            stepW = 3600;
+            stepH = 3600;
+            hasOverlap = false;
         }
 
         double res = (demSource == 1) ? (3.0 / 3600.0) : (1.0 / 3600.0);
         double vrtMinLon = startLon;
         double vrtMaxLat = endLat + 1.0;
-        int totalW = (endLon - startLon + 1) * (tileW - 1) + 1;
-        int totalH = (endLat - startLat + 1) * (tileH - 1) + 1;
+        int totalW = (endLon - startLon + 1) * stepW + (hasOverlap ? 1 : 0);
+        int totalH = (endLat - startLat + 1) * stepH + (hasOverlap ? 1 : 0);
 
-        out << "<GDALDataset rasterXSize=\"" << totalW << "\" rasterYSize=\"" << totalH << "\">\n";
+        out << "<VRTDataset rasterXSize=\"" << totalW << "\" rasterYSize=\"" << totalH << "\">\n";
         out << "  <SRS>GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]</SRS>\n";
         out << "  <GeoTransform>" << vrtMinLon << ", " << res << ", 0.0, " << vrtMaxLat << ", 0.0, " << -res << "</GeoTransform>\n";
-        out << "  <GDALRasterBand dataType=\"Float32\" band=\"1\">\n";
+        out << "  <VRTRasterBand dataType=\"Float32\" band=\"1\">\n";
         out << "    <NoDataValue>-32767</NoDataValue>\n";
 
         for (const QString& file : cachedFiles)
@@ -414,11 +441,11 @@ void DEMSourceWorker::fetch_dem(
             int lonVal = tName.mid(4, 3).toInt();
             if (ew == 'W' || ew == 'w') lonVal = -lonVal;
 
-            int xOff = qRound((lonVal - vrtMinLon) * (tileW - 1));
-            int yOff = qRound((vrtMaxLat - (latVal + 1.0)) * (tileH - 1));
+            int xOff = qRound((lonVal - vrtMinLon) * stepW);
+            int yOff = qRound((vrtMaxLat - (latVal + 1.0)) * stepH);
 
             out << "    <SimpleSource>\n";
-            out << "      <SourceFilename relativeToVRT=\"0\">" << QDir::toNativeSeparators(file) << "</SourceFilename>\n";
+            out << "      <SourceFilename relativeToVRT=\"0\">" << QDir::cleanPath(file) << "</SourceFilename>\n";
             out << "      <SourceBand>1</SourceBand>\n";
             out << "      <SourceProperties RasterXSize=\"" << tileW << "\" RasterYSize=\"" << tileH << "\" DataType=\"Float32\" />\n";
             out << "      <SrcRect xOff=\"0\" yOff=\"0\" xSize=\"" << tileW << "\" ySize=\"" << tileH << "\" />\n";
@@ -426,8 +453,8 @@ void DEMSourceWorker::fetch_dem(
             out << "    </SimpleSource>\n";
         }
 
-        out << "  </GDALRasterBand>\n";
-        out << "</GDALDataset>\n";
+        out << "  </VRTRasterBand>\n";
+        out << "</VRTDataset>\n";
         vrtFile.close();
 
         finalInputFile = vrtPath;
@@ -441,8 +468,10 @@ void DEMSourceWorker::fetch_dem(
     double new_gt[6] = { 0 };
     char wkt_projection[1024] = { 0 };
 
+
+
     int ret = manager.read_crop_and_resample_dem(
-        finalInputFile.toLocal8Bit().constData(),
+        QDir::toNativeSeparators(finalInputFile).toLocal8Bit().constData(),
         min_lon, max_lon,
         min_lat, max_lat,
         targetResolution,

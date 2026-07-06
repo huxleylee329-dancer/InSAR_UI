@@ -408,8 +408,10 @@ void SBASTimeSeriesNode::stopExecution()
 
 void SBASTimeSeriesNode::processAutomatically()
 {
-    if (validateInputs()) {
+    if (prepareToStart()) {
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 

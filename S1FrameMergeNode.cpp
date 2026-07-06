@@ -435,9 +435,13 @@ void S1FrameMergeNode::stopExecution()
 void S1FrameMergeNode::processAutomatically()
 {
     // In automatic mode, if inputs are valid, execute
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

@@ -472,9 +472,13 @@ void S1SwathMergeNode::stopExecution()
 void S1SwathMergeNode::processAutomatically()
 {
     // In automatic mode, if inputs are valid, execute
-    if (validateInputs())
+    if (prepareToStart())
     {
         executeProcessing();
+    }
+    else
+    {
+        setState(ExecutionState::Idle);
     }
 }
 

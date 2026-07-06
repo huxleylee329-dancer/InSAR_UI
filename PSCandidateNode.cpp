@@ -229,34 +229,49 @@ bool PSCandidateNode::validateInputs() const
     return true;
 }
 
-void PSCandidateNode::execute()
+bool PSCandidateNode::prepareToStart()
 {
     if (!validateInputs()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
         setState(ExecutionState::Warning);
-        return;
+        return false;
     }
 
-    QString rawPath = projectPath();
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString outDir = dir + "/" + m_outputNodeName;
-    QString h5Path = outDir + "/PS_candidates.h5";
+    if (isAutoTriggered()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+        return true;
+    }
 
     // 检查并提示覆盖（仅在手动执行模态下，避免后台自动连续运行挂起）
     if (executionMode() == ExecutionMode::Manual) {
+        QString rawPath = projectPath();
+        QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
+                      ? QFileInfo(rawPath).absolutePath()
+                      : rawPath;
+        QString outDir = dir + "/" + m_outputNodeName;
+        QString h5Path = outDir + "/PS_candidates.h5";
+
         QStringList pathsToCheck;
         pathsToCheck << h5Path;
-        NodeUtils::OverwriteResult res = NodeUtils::checkAndPromptOverwrite(
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
             NodeUtils::getProjectContext(_widget), m_outputNodeName, pathsToCheck
         );
-        if (res == NodeUtils::OverwriteResult::Cancel) {
-            setState(ExecutionState::Idle);
-            return;
-        } else if (res == NodeUtils::OverwriteResult::LoadExisting) {
-            validateAndRestoreOutput();
-            return;
+        if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
+            m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+            return false;
         }
+    } else {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    }
+
+    return true;
+}
+
+void PSCandidateNode::execute()
+{
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        validateAndRestoreOutput();
+        return;
     }
 
     // 清除旧的项目子节点及 XML 条目，防止 UI 树和项目 XML 的多重重影 bug
@@ -373,12 +388,11 @@ void PSCandidateNode::onProcessingFinished()
 
     generateStaticPreviewJpg();
 
-    setState(ExecutionState::Completed);
-    setProgress(100);
+    setState(ExecutionState::Running);
+    finishExecution();
     updateLabels();
 
     Q_EMIT dataUpdated(0);
-    finishExecution();
     stopExecution();
 }
 
@@ -540,8 +554,10 @@ QString PSCandidateNode::projectName() const
 
 void PSCandidateNode::processAutomatically()
 {
-    if (validateInputs()) {
+    if (prepareToStart()) {
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 

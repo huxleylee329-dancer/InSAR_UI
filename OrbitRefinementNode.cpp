@@ -934,8 +934,10 @@ void OrbitRefinementNode::stopExecution()
 
 void OrbitRefinementNode::processAutomatically()
 {
-    if (validateInputs()) {
+    if (prepareToStart()) {
         executeProcessing();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 

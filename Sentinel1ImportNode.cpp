@@ -237,19 +237,16 @@ void Sentinel1ImportNode::executeImport()
         return;
     }
 
-    QString outputNodeName = getOutputNodeName();
-    QString outputPath = projectPath() + "/" + outputNodeName + "/" + resolvedFileName + ".h5";
-    QString previewPath = projectPath() + "/" + outputNodeName + "/" + resolvedFileName + ".jpg";
-
-    auto overwriteRes = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
-    if (overwriteRes == NodeUtils::OverwriteResult::Cancel) {
+    // 因为已经在 prepareToStart() 中完成了存在性检查，这里直接读取 m_preparedOverwriteResult 并分支处理
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
         setState(ExecutionState::Idle);
         return;
-    } else if (overwriteRes == NodeUtils::OverwriteResult::LoadExisting) {
+    } else if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
         return;
     }
+
 
     // 构造 ImportTask
     std::vector<ImportTask> tasks;

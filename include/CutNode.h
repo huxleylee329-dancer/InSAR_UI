@@ -82,6 +82,7 @@ private:
     void executeProcessing();
     void updateLabels();
     void updateWidgetSize();
+    void updateParameterWidgetsEnableState();
     QStringList resolvedInputH5Paths() const;
     QStringList resolvedInputPreviewPaths() const;
 

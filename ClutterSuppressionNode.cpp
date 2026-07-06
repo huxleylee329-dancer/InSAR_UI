@@ -30,6 +30,7 @@ ClutterSuppressionNode::ClutterSuppressionNode()
     , m_outputNodeName("ClutterSuppression")
     , m_outputFileName("{InputName}_clutter")
     , m_task(nullptr)
+    , m_isExecuting(false)
 {
     setExecutionMode(ExecutionMode::Automatic);
 }
@@ -37,8 +38,6 @@ ClutterSuppressionNode::ClutterSuppressionNode()
 ClutterSuppressionNode::~ClutterSuppressionNode()
 {
     stopExecution();
-
-
 }
 
 unsigned int ClutterSuppressionNode::nPorts(PortType portType) const
@@ -66,14 +65,13 @@ bool ClutterSuppressionNode::portCaptionVisible(PortType portType, PortIndex por
 QString ClutterSuppressionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        return "输入图像";
+        return QStringLiteral("输入图像");
     } else {
         if (portIndex == 0)
-            return "成果 *";
-        else if (portIndex == 1)
-            return "预览 ?";
+            return QStringLiteral("成果 *");
+        else
+            return QStringLiteral("预览 ?");
     }
-    return QString();
 }
 
 bool ClutterSuppressionNode::portIsOptional(PortType portType, PortIndex portIndex) const
@@ -87,8 +85,6 @@ void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex
 {
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
-
-    // 空输入时先让基类传播失效，再清理本节点缓存。
 
     if (m_inputImageLabel) {
         if (m_inputData && !m_inputData->filePath().isEmpty()) {
@@ -117,7 +113,12 @@ void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex
 
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         m_outputData.reset();
+        m_outputImagePaths.clear();
+        m_savedOutputFiles.clear();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
     }
+    updateParameterWidgetsEnableState();
 }
 
 std::shared_ptr<NodeData> ClutterSuppressionNode::outData(PortIndex port)
@@ -226,12 +227,8 @@ QStringList ClutterSuppressionNode::previewImagePaths() const
 
 void ClutterSuppressionNode::onSaveToProjectChanged(int state)
 {
-    if (m_outputNodeNameEdit) {
-        m_outputNodeNameEdit->setEnabled(state == Qt::Checked);
-    }
-    if (m_outputFileNameEdit) {
-        m_outputFileNameEdit->setEnabled(state == Qt::Checked);
-    }
+    m_saveToProject = (state == Qt::Checked);
+    updateParameterWidgetsEnableState();
 }
 
 void ClutterSuppressionNode::stopExecution()
@@ -239,7 +236,10 @@ void ClutterSuppressionNode::stopExecution()
     if (m_task)
     {
         m_task->stop();
+        m_task = nullptr;
     }
+    m_isExecuting = false;
+    updateParameterWidgetsEnableState();
     setState(ExecutionState::Stopped);
 }
 
@@ -338,6 +338,7 @@ void ClutterSuppressionNode::executeProcessing()
     // 清理旧数据，防止反复执行导致数据累加
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
 
+    m_isExecuting = true;
     m_task = new BM3DEnhancementTask(EnhancementType::ClutterSuppression, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
 
     setState(ExecutionState::Running);
@@ -351,9 +352,7 @@ void ClutterSuppressionNode::executeProcessing()
     connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &ClutterSuppressionNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
-    m_outputNodeNameEdit->setEnabled(false);
-    m_outputFileNameEdit->setEnabled(false);
-    m_saveToProjectCheckBox->setEnabled(false);
+    updateParameterWidgetsEnableState();
 }
 
 void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& message)
@@ -388,9 +387,8 @@ void ClutterSuppressionNode::onProcessingFinished()
     setOutputData(0, m_outputData);
     setOutputData(1, m_outputData);
 
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
-    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
+    m_isExecuting = false;
+    updateParameterWidgetsEnableState();
 
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
@@ -405,13 +403,16 @@ void ClutterSuppressionNode::onError(const QString& error)
 {
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(true);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(m_saveToProject);
-    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(m_saveToProject);
+    
+    m_isExecuting = false;
+    updateParameterWidgetsEnableState();
 
     m_task = nullptr;
 
     m_outputData.reset();
+    m_outputImagePaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 }
 
 void ClutterSuppressionNode::onSaveImageToProjectRequested(
@@ -614,6 +615,8 @@ bool ClutterSuppressionNode::validateAndRestoreOutput()
             m_outputData = std::make_shared<ImageInfoData>(validPaths);
             setOutputData(0, m_outputData);
             setOutputData(1, m_outputData);
+            Q_EMIT dataUpdated(0);
+            Q_EMIT dataUpdated(1);
             return true;
         }
     }
@@ -643,10 +646,23 @@ bool ClutterSuppressionNode::validateAndRestoreOutput()
         m_outputData = std::make_shared<ImageInfoData>(QStringList() << outputPath);
         setOutputData(0, m_outputData);
         setOutputData(1, m_outputData);
+        Q_EMIT dataUpdated(0);
+        Q_EMIT dataUpdated(1);
         return true;
     }
 
     return false;
+}
+
+void ClutterSuppressionNode::updateParameterWidgetsEnableState()
+{
+    bool hasInput = (m_inputData && !m_inputData->filePaths().isEmpty());
+    bool isExec = m_isExecuting;
+    bool enableWidgets = hasInput && !isExec;
+
+    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(enableWidgets);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets && m_saveToProject);
+    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(enableWidgets && m_saveToProject);
 }
 
 } // namespace QtNodes
