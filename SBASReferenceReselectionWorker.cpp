@@ -39,6 +39,9 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     ret = conversion.read_array_from_h5(times_series_h5_std.c_str(), "formation_matrix", formation_matrix);
     ret = conversion.read_array_from_h5(times_series_h5_std.c_str(), "mask", mask);
     ret = conversion.read_array_from_h5(times_series_h5_std.c_str(), "temporal_baseline", temporal_baseline);
+    if (!temporal_baseline.empty() && temporal_baseline.type() != CV_64F) {
+        temporal_baseline.convertTo(temporal_baseline, CV_64F);
+    }
     
     //确定应用程序路径
     string appPath = QCoreApplication::applicationDirPath().toStdString();
@@ -129,6 +132,7 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
         wavelength = VEL_C / wavelength;
         ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "inc_coefficient", temp);
         if (ret == 0) {
+            if (!temp.empty() && temp.type() != CV_64F) temp.convertTo(temp, CV_64F);
             theta = temp.at<double>(0, 0) / 180.0 * PI;
         }
         else

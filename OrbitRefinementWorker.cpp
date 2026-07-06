@@ -128,6 +128,16 @@ void OrbitRefinementWorker::refine_orbit(
         return;
     }
 
+    if (!state_vec.empty() && state_vec.type() != CV_64F) {
+        state_vec.convertTo(state_vec, CV_64F);
+    }
+    if (!lon_coefficient.empty() && lon_coefficient.type() != CV_64F) {
+        lon_coefficient.convertTo(lon_coefficient, CV_64F);
+    }
+    if (!lat_coefficient.empty() && lat_coefficient.type() != CV_64F) {
+        lat_coefficient.convertTo(lat_coefficient, CV_64F);
+    }
+
     // 转换影像首行 GPS 开始时间
     double start_gps_time = 0.0;
     if (conversion.utc2gps(start_time_str.c_str(), &start_gps_time) != 0) {

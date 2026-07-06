@@ -943,9 +943,15 @@ bool CoregistrationNode::validateAndRestoreOutput()
                 if (m_method == "Coarse") {
                     QString masterPath = inputPaths.at(masterIdx - 1);
                     FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "state_vec", State_Vec_Master);
+                    if (!State_Vec_Master.empty() && State_Vec_Master.type() != CV_64F) State_Vec_Master.convertTo(State_Vec_Master, CV_64F);
                     FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "lon_coefficient", Lon_Coeff_Master);
+                    if (!Lon_Coeff_Master.empty() && Lon_Coeff_Master.type() != CV_64F) Lon_Coeff_Master.convertTo(Lon_Coeff_Master, CV_64F);
                     FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "lat_coefficient", Lat_Coeff_Master);
+                    if (!Lat_Coeff_Master.empty() && Lat_Coeff_Master.type() != CV_64F) Lat_Coeff_Master.convertTo(Lat_Coeff_Master, CV_64F);
                     FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "prf", tmp_double);
+                    if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
+                        tmp_double.convertTo(tmp_double, CV_64F);
+                    }
                     if (tmp_double.at<double>(0, 0) != 0) {
                         interp_interval = 1 / tmp_double.at<double>(0, 0);
                     }
@@ -974,9 +980,15 @@ bool CoregistrationNode::validateAndRestoreOutput()
                             string time_slave_str;
                             QString slavePath = inputPaths.at(i);
                             FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "state_vec", State_Vec_Slave);
+                            if (!State_Vec_Slave.empty() && State_Vec_Slave.type() != CV_64F) State_Vec_Slave.convertTo(State_Vec_Slave, CV_64F);
                             FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "lon_coefficient", Lon_Coeff_Slave);
+                            if (!Lon_Coeff_Slave.empty() && Lon_Coeff_Slave.type() != CV_64F) Lon_Coeff_Slave.convertTo(Lon_Coeff_Slave, CV_64F);
                             FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "lat_coefficient", Lat_Coeff_Slave);
+                            if (!Lat_Coeff_Slave.empty() && Lat_Coeff_Slave.type() != CV_64F) Lat_Coeff_Slave.convertTo(Lat_Coeff_Slave, CV_64F);
                             FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "prf", tmp_double);
+                            if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
+                                tmp_double.convertTo(tmp_double, CV_64F);
+                            }
                             if (tmp_double.at<double>(0, 0) != 0) {
                                 interp_interval_slave = 1 / tmp_double.at<double>(0, 0);
                             }

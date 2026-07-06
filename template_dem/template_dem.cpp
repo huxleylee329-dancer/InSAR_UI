@@ -465,10 +465,13 @@ int _tmain(int argc, _TCHAR* argv[])
 	ret = conversion.read_array_from_h5(regis_h5_master.c_str(), "lon_coefficient", lon_coef);
 	ret = conversion.read_array_from_h5(regis_h5_master.c_str(), "lat_coefficient", lat_coef);
 	ret = conversion.read_array_from_h5(regis_h5_slave.c_str(), "prf", tmp);
+	if (!tmp.empty() && tmp.type() != CV_64F) tmp.convertTo(tmp, CV_64F);
 	slave_interval = 1 / tmp.at<double>(0, 0);
 	ret = conversion.read_array_from_h5(regis_h5_master.c_str(), "prf", tmp);
+	if (!tmp.empty() && tmp.type() != CV_64F) tmp.convertTo(tmp, CV_64F);
 	master_interval = 1 / tmp.at<double>(0, 0);
 	ret = conversion.read_array_from_h5(regis_h5_master.c_str(), "carrier_frequency", tmp);
+	if (!tmp.empty() && tmp.type() != CV_64F) tmp.convertTo(tmp, CV_64F);
 	lambda = 3e8 / tmp.at<double>(0, 0);
 	ret = deflat.deflat(master_statevec, slave_statevec, lon_coef, lat_coef, phase, offset_row_master, offset_col_master, 0,
 		master_interval, slave_interval, 1, lambda, phase_deflatted, flat_phase_coefficient);

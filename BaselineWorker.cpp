@@ -60,9 +60,15 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
 
     try {
         FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "state_vec", State_Vec_Master);
+        if (!State_Vec_Master.empty() && State_Vec_Master.type() != CV_64F) State_Vec_Master.convertTo(State_Vec_Master, CV_64F);
         FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lon_coefficient", Lon_Coeff_Master);
+        if (!Lon_Coeff_Master.empty() && Lon_Coeff_Master.type() != CV_64F) Lon_Coeff_Master.convertTo(Lon_Coeff_Master, CV_64F);
         FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lat_coefficient", Lat_Coeff_Master);
+        if (!Lat_Coeff_Master.empty() && Lat_Coeff_Master.type() != CV_64F) Lat_Coeff_Master.convertTo(Lat_Coeff_Master, CV_64F);
         FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "prf", tmp_double);
+        if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
+            tmp_double.convertTo(tmp_double, CV_64F);
+        }
         interp_interval = 1 / tmp_double.at<double>(0, 0);
 
         Mat tmp = Mat::zeros(1, 1, CV_32SC1);
@@ -114,9 +120,15 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
 
             try {
                 FC.read_array_from_h5(SAR_images.at(i).c_str(), "state_vec", State_Vec_Slave);
+                if (!State_Vec_Slave.empty() && State_Vec_Slave.type() != CV_64F) State_Vec_Slave.convertTo(State_Vec_Slave, CV_64F);
                 FC.read_array_from_h5(SAR_images.at(i).c_str(), "lon_coefficient", Lon_Coeff_Slave);
+                if (!Lon_Coeff_Slave.empty() && Lon_Coeff_Slave.type() != CV_64F) Lon_Coeff_Slave.convertTo(Lon_Coeff_Slave, CV_64F);
                 FC.read_array_from_h5(SAR_images.at(i).c_str(), "lat_coefficient", Lat_Coeff_Slave);
+                if (!Lat_Coeff_Slave.empty() && Lat_Coeff_Slave.type() != CV_64F) Lat_Coeff_Slave.convertTo(Lat_Coeff_Slave, CV_64F);
                 FC.read_array_from_h5(SAR_images.at(i).c_str(), "prf", tmp_double);
+                if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
+                    tmp_double.convertTo(tmp_double, CV_64F);
+                }
                 interp_interval_slave = 1 / tmp_double.at<double>(0, 0);
 
                 FC.read_str_from_h5(SAR_images.at(i).c_str(), "acquisition_start_time", time_slave_str);

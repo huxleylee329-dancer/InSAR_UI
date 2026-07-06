@@ -1,4 +1,4 @@
-﻿#include<Deformation_Preview_Window.h>
+#include<Deformation_Preview_Window.h>
 
 #include<icon_source.h>
 
@@ -593,6 +593,10 @@ void Deformation_Preview::GetOffset()
                         int index = Mask_Index.at<int>(i, j);
                         Mat V;
                         FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index, 0, 1, times_num, V);
+                        if (!V.empty() && V.type() != CV_64F)
+                        {
+                            V.convertTo(V, CV_64F);
+                        }
                         for (int k = 0; k < times_num; k++)
                         {
                             Result.at<double>(k) += V.at<double>(k);
@@ -655,6 +659,10 @@ void Deformation_Preview::GetOffset()
                         int index = Mask_Index.at<int>(i, j);
                         Mat V;
                         FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index, 0, 1, times_num, V);
+                        if (!V.empty() && V.type() != CV_64F)
+                        {
+                            V.convertTo(V, CV_64F);
+                        }
                         for (int k = 0; k < times_num; k++)
                         {
                             Result.at<double>(k) += V.at<double>(k);
@@ -672,6 +680,10 @@ void Deformation_Preview::GetOffset()
                         int index2 = Mask_Index.at<int>(i, j);
                         Mat V2;
                         FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index2, 0, 1, times_num, V2);
+                        if (!V2.empty() && V2.type() != CV_64F)
+                        {
+                            V2.convertTo(V2, CV_64F);
+                        }
                         for (int k = 0; k < times_num; k++)
                         {
                             Result2.at<double>(k) += V2.at<double>(k);
@@ -745,6 +757,14 @@ void Deformation_Chart::resizeEvent(QResizeEvent* event)
 
 void Deformation_Chart::SetData(Mat Times_series, Mat Deformation)
 {
+    if (!Times_series.empty() && Times_series.type() != CV_64F)
+    {
+        Times_series.convertTo(Times_series, CV_64F);
+    }
+    if (!Deformation.empty() && Deformation.type() != CV_64F)
+    {
+        Deformation.convertTo(Deformation, CV_64F);
+    }
     QList<double> temporal_baseline;
     QList<double> spatial_baseline;
     for (int i = 0; i < Times_series.cols; i++)

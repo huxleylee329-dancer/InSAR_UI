@@ -180,6 +180,10 @@ void PSTimeSeriesWorker::ps_time_series(
 
     QString h5Path = outDir + "/PS_time_series.h5";
 
+    if (!temporal_coherence.empty() && temporal_coherence.type() != CV_64F) {
+        temporal_coherence.convertTo(temporal_coherence, CV_64F);
+    }
+
     // 准备过滤后的 PS 坐标矩阵
     cv::Mat filtered_coords(filtered_ps_count, 2, CV_32SC1);
     int new_idx = 0;

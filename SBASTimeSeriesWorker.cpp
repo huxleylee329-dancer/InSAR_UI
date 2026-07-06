@@ -278,6 +278,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         wavelength = VEL_C / wavelength;
         ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "inc_coefficient", temp);
         if (ret == 0) {
+            if (!temp.empty() && temp.type() != CV_64F) temp.convertTo(temp, CV_64F);
             theta = temp.at<double>(0, 0) / 180.0 * PI;
         }
         else
@@ -290,6 +291,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
         if (phase_vec[i].type() != CV_64F) phase_vec[i].convertTo(phase_vec[i], CV_64F);
         conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coh_vec[i]);
+        if (coh_vec[i].type() != CV_64F) coh_vec[i].convertTo(coh_vec[i], CV_64F);
     }
     Mat dummy = Mat::zeros(phase.rows, phase.cols, CV_64F);
     for (int i = 0; i < N + 1; i++)

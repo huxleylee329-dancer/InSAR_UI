@@ -233,6 +233,9 @@ Important rules from the SOP:
 - [ ] **HDF5 锁保护**：所有涉及 H5 文件读写、外部 DLL 处理的关键代码段，必须使用 RAII 模式的 `NodeUtils::Hdf5Locker` 进行加锁保护，防止多线程死锁。
 - [ ] **端口契约一致性**：工作流导入/处理节点的输出必须使用 `ImportedFileData` 传输“已排序的绝对 `.h5` 文件路径列表”，严禁传输目录路径。
 - [ ] **路径转换正确**：工作流中的工程路径可能为 `.insar` 文件本身，在拼接输出目录时，必须先使用 `QFileInfo` 获取其所在目录。
+- [ ] **浮点精度选择**：涉及卫星大空间几何坐标计算与轨道插值的矩阵（如 `state_vec`, `prf`, `inc_coefficient`）必须使用双精度 (`CV_64F` / `double`) 以避免几何漂移；普通局部图像处理与存储（如相干系数、时序形变结果等）推荐使用单精度 (`CV_32F` / `float`) 以减半内存开销。
+- [ ] **防范元素 mismatch**：防范 OpenCV 的 `.at` 元素访问时的类型 mismatch 风险。在对可能被改为单精度的 H5 矩阵执行 `.at<double>` 元素提取前，必须检查其 `type() != CV_64F` 并显式进行 `.convertTo(..., CV_64F)` 强转。
+- [ ] **HDF5 写入类型一致性**：对 H5 分块写入（如 `write_subarray_to_h5`）时，写入矩阵的 cv::Mat 类型（如 `CV_32F`）必须与初始化创建 Dataset（如 `write_array_to_h5`）时的 cv::Mat 类型保持严格吻合，避免出现 `datatype mismatch` 写入错退。
 
 ### 3. 工作流鲁棒性与工程恢复 (Workflow Robustness)
 - [ ] **自包含的工程恢复**：`validateAndRestoreOutput()` 在恢复节点状态时必须是完全自包含的，必须在不依赖上游输入节点存在/连接的条件下，正确校验并载入本地已有输出。

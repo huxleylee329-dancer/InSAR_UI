@@ -179,6 +179,10 @@ void DeformationRateFieldWorker::analyze_rate_field(
         }
     }
 
+    if (!temporal_coherence.empty() && temporal_coherence.type() != CV_64F) {
+        temporal_coherence.convertTo(temporal_coherence, CV_64F);
+    }
+
     if (QThread::currentThread()->isInterruptionRequested()) return;
 
     emit updateProcess(20, QStringLiteral("执行速率场分析计算..."));
