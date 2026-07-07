@@ -12,6 +12,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include "InSARLogManager.h"
+#include <omp.h>
+#include <QElapsedTimer>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
@@ -30,9 +32,23 @@ using namespace std;
 
 thread_local CoregistrationWorker* t_currentCoregisWorker = nullptr;
 static std::atomic<int> s_coregisLastLoggedProgress(-10);
+static std::atomic<int> s_coregisLastEmittedProgress(-10);
 
 static bool __stdcall coregisProgressCallback(int progress, const char* message, void* userData)
 {
+    // 回调防洪节流：100ms 内非边界进度直接秒退，降低 CPU 调度暴风
+    thread_local QElapsedTimer s_cbTimer;
+    thread_local bool s_timerStarted = false;
+    if (!s_timerStarted) {
+        s_cbTimer.start();
+        s_timerStarted = true;
+    }
+    
+    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
+        return true;
+    }
+    s_cbTimer.restart();
+
     CoregistrationWorker* worker = static_cast<CoregistrationWorker*>(userData);
     if (!worker)
     {
@@ -45,18 +61,24 @@ static bool __stdcall coregisProgressCallback(int progress, const char* message,
             return false;
         }
 
-        int start_prog = 60;
-        int end_prog = 90;
-        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+        double start_prog = worker->getStageStart();
+        double stage_width = worker->getStageWidth();
+        int mapped_prog = qBound(0, qRound(start_prog + progress * stage_width / 100.0), 100);
 
-        QString msgStr = QString::fromLocal8Bit(message);
-        emit worker->updateProcess(mapped_prog, QStringLiteral("配准中 - 重采样进度：%1% (%2)")
-            .arg(progress).arg(msgStr));
+        int lastEmitted = s_coregisLastEmittedProgress.load();
+        if (progress == 0 || progress == 100 || progress != lastEmitted)
+        {
+            s_coregisLastEmittedProgress.store(progress);
+            QString msgStr = QString::fromLocal8Bit(message);
+            emit worker->updateProcess(mapped_prog, QStringLiteral("配准中 - 重采样进度：%1% (%2)")
+                .arg(progress).arg(msgStr));
+        }
 
         int lastLogged = s_coregisLastLoggedProgress.load();
         if (progress == 0 || progress == 100 || (progress - lastLogged) >= 10 || progress < lastLogged)
         {
             s_coregisLastLoggedProgress.store(progress);
+            QString msgStr = QString::fromLocal8Bit(message);
             InSARLogManager::LogInfo("CoregistrationWorker", QString("Bilinear resampling progress: %1% (Total: %2%) - %3")
                 .arg(progress).arg(mapped_prog).arg(msgStr));
         }
@@ -68,10 +90,12 @@ struct CoregisThreadLocalGuard {
     CoregisThreadLocalGuard(CoregistrationWorker* worker) {
         t_currentCoregisWorker = worker;
         s_coregisLastLoggedProgress.store(-10);
+        s_coregisLastEmittedProgress.store(-10);
     }
     ~CoregisThreadLocalGuard() {
         t_currentCoregisWorker = nullptr;
         s_coregisLastLoggedProgress.store(-10);
+        s_coregisLastEmittedProgress.store(-10);
     }
 };
 
@@ -113,7 +137,6 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 	{
 		return;
 	}
-	NodeUtils::Hdf5Locker locker;
 	QStandardItem* project = model->findItems(project_name)[0];
 	if (!project) return;
 	save_path = model->item(project->row(), 1)->text();
@@ -150,6 +173,9 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
         }
     }
 	emit updateProcess(10, QStringLiteral("开始进行配准……"));
+	int maxThreads = omp_get_num_procs();
+	omp_set_num_threads(maxThreads);
+
 	Mat offset_row_out, offset_col_out;
     int ret = Registration_copy(SAR_images, SAR_images_regis, offset_row_out, offset_col_out, index, interp_times, block_size);
     if (ret<0 || QThread::currentThread()->isInterruptionRequested())
@@ -173,28 +199,31 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
     int Rows, Cols;
     double time_Master = 0;
     string time_master_str;
-    FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "state_vec", State_Vec_Master);
-    if (!State_Vec_Master.empty() && State_Vec_Master.type() != CV_64F) State_Vec_Master.convertTo(State_Vec_Master, CV_64F);
-    FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lon_coefficient", Lon_Coeff_Master);
-    if (!Lon_Coeff_Master.empty() && Lon_Coeff_Master.type() != CV_64F) Lon_Coeff_Master.convertTo(Lon_Coeff_Master, CV_64F);
-    FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lat_coefficient", Lat_Coeff_Master);
-    if (!Lat_Coeff_Master.empty() && Lat_Coeff_Master.type() != CV_64F) Lat_Coeff_Master.convertTo(Lat_Coeff_Master, CV_64F);
-    FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "prf", tmp_double);
-    if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-        tmp_double.convertTo(tmp_double, CV_64F);
+    {
+        NodeUtils::Hdf5Locker locker;
+        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "state_vec", State_Vec_Master);
+        if (!State_Vec_Master.empty() && State_Vec_Master.type() != CV_64F) State_Vec_Master.convertTo(State_Vec_Master, CV_64F);
+        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lon_coefficient", Lon_Coeff_Master);
+        if (!Lon_Coeff_Master.empty() && Lon_Coeff_Master.type() != CV_64F) Lon_Coeff_Master.convertTo(Lon_Coeff_Master, CV_64F);
+        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lat_coefficient", Lat_Coeff_Master);
+        if (!Lat_Coeff_Master.empty() && Lat_Coeff_Master.type() != CV_64F) Lat_Coeff_Master.convertTo(Lat_Coeff_Master, CV_64F);
+        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "prf", tmp_double);
+        if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
+            tmp_double.convertTo(tmp_double, CV_64F);
+        }
+        interp_interval = 1 / tmp_double.at<double>(0, 0);
+        Mat tmp = Mat::zeros(1, 1, CV_32SC1);
+        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_row", tmp);
+        offset_row = tmp.at<int>(0, 0);
+        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_col", tmp);
+        offset_col = tmp.at<int>(0, 0);
+        FC.read_str_from_h5(SAR_images.at(index - 1).c_str(), "acquisition_start_time", time_master_str);
+        FC.utc2gps(time_master_str.c_str(), &time_Master);
+        ComplexMat SLC;
+        FC.read_slc_from_h5(SAR_images_regis.at(index - 1).c_str(), SLC);
+        Rows = SLC.GetRows();
+        Cols = SLC.GetCols();
     }
-    interp_interval = 1 / tmp_double.at<double>(0, 0);
-    Mat tmp = Mat::zeros(1, 1, CV_32SC1);
-    FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_row", tmp);
-    offset_row = tmp.at<int>(0, 0);
-    FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_col", tmp);
-    offset_col = tmp.at<int>(0, 0);
-    FC.read_str_from_h5(SAR_images.at(index - 1).c_str(), "acquisition_start_time", time_master_str);
-    FC.utc2gps(time_master_str.c_str(), &time_Master);
-    ComplexMat SLC;
-    FC.read_slc_from_h5(SAR_images_regis.at(index - 1).c_str(), SLC);
-    Rows = SLC.GetRows();
-    Cols = SLC.GetCols();
     QString temporal_baseline, B_parallel, B_effect;
     /*添加图像到model中并复制h5参数*/
     vector<int> Row_offset;
@@ -233,24 +262,27 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
                 {
                     regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
                 }
-            }, Qt::BlockingQueuedConnection);
+            }, Qt::QueuedConnection);
         }
 
         /*写入辅助参数到h5*/
 		offset_row = offset_col = 0;
-        FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
-        FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
-        FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
-        FC.read_int_from_h5(SAR_images.at(i).c_str(), "offset_row", &offset_row);
-		offset_row += offset_row_out.at<int>(i, 0);
-        FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", offset_row);
-        Row_offset.push_back(offset_row);
-        FC.read_int_from_h5(SAR_images.at(i).c_str(), "offset_col", &offset_col);
-		offset_col += offset_col_out.at<int>(i, 0);
-        FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", offset_col);
-        Col_offset.push_back(offset_col);
-        FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", Rows);
-        FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", Cols);
+        {
+            NodeUtils::Hdf5Locker locker;
+            FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
+            FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
+            FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
+            FC.read_int_from_h5(SAR_images.at(i).c_str(), "offset_row", &offset_row);
+		    offset_row += offset_row_out.at<int>(i, 0);
+            FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", offset_row);
+            Row_offset.push_back(offset_row);
+            FC.read_int_from_h5(SAR_images.at(i).c_str(), "offset_col", &offset_col);
+		    offset_col += offset_col_out.at<int>(i, 0);
+            FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", offset_col);
+            Col_offset.push_back(offset_col);
+            FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", Rows);
+            FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", Cols);
+        }
         /*估计时空基线*/
         if (i == index - 1)  //主图像
         {
@@ -266,19 +298,22 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
             double sigma_V = 0, sigma_H = 0;
             double time_Slave = 0;
             string time_slave_str;
-            FC.read_array_from_h5(SAR_images.at(i).c_str(), "state_vec", State_Vec_Slave);
-            if (!State_Vec_Slave.empty() && State_Vec_Slave.type() != CV_64F) State_Vec_Slave.convertTo(State_Vec_Slave, CV_64F);
-            FC.read_array_from_h5(SAR_images.at(i).c_str(), "lon_coefficient", Lon_Coeff_Slave);
-            if (!Lon_Coeff_Slave.empty() && Lon_Coeff_Slave.type() != CV_64F) Lon_Coeff_Slave.convertTo(Lon_Coeff_Slave, CV_64F);
-            FC.read_array_from_h5(SAR_images.at(i).c_str(), "lat_coefficient", Lat_Coeff_Slave);
-            if (!Lat_Coeff_Slave.empty() && Lat_Coeff_Slave.type() != CV_64F) Lat_Coeff_Slave.convertTo(Lat_Coeff_Slave, CV_64F);
-            FC.read_array_from_h5(SAR_images.at(i).c_str(), "prf", tmp_double);
-            if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-                tmp_double.convertTo(tmp_double, CV_64F);
+            {
+                NodeUtils::Hdf5Locker locker;
+                FC.read_array_from_h5(SAR_images.at(i).c_str(), "state_vec", State_Vec_Slave);
+                if (!State_Vec_Slave.empty() && State_Vec_Slave.type() != CV_64F) State_Vec_Slave.convertTo(State_Vec_Slave, CV_64F);
+                FC.read_array_from_h5(SAR_images.at(i).c_str(), "lon_coefficient", Lon_Coeff_Slave);
+                if (!Lon_Coeff_Slave.empty() && Lon_Coeff_Slave.type() != CV_64F) Lon_Coeff_Slave.convertTo(Lon_Coeff_Slave, CV_64F);
+                FC.read_array_from_h5(SAR_images.at(i).c_str(), "lat_coefficient", Lat_Coeff_Slave);
+                if (!Lat_Coeff_Slave.empty() && Lat_Coeff_Slave.type() != CV_64F) Lat_Coeff_Slave.convertTo(Lat_Coeff_Slave, CV_64F);
+                FC.read_array_from_h5(SAR_images.at(i).c_str(), "prf", tmp_double);
+                if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
+                    tmp_double.convertTo(tmp_double, CV_64F);
+                }
+                interp_interval_slave = 1 / tmp_double.at<double>(0, 0);
+                FC.read_str_from_h5(SAR_images.at(i).c_str(), "acquisition_start_time", time_slave_str);
+                FC.utc2gps(time_slave_str.c_str(), &time_Slave);
             }
-            interp_interval_slave = 1 / tmp_double.at<double>(0, 0);
-            FC.read_str_from_h5(SAR_images.at(i).c_str(), "acquisition_start_time", time_slave_str);
-            FC.utc2gps(time_slave_str.c_str(), &time_Slave);
             double delta = (time_Slave - time_Master) / 60 / 60 / 24;
             char tmp_d2s[512];
             sprintf_s(tmp_d2s, "%.4f", delta);
@@ -380,6 +415,9 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	if (SAR_images.size() < 2) return;
 
 	emit updateProcess(10, QStringLiteral("开始进行配准……"));
+	int maxThreads = omp_get_num_procs();
+	omp_set_num_threads(maxThreads);
+
 	CoregisThreadLocalGuard tlGuard(this);
 	masterIndex = masterIndex < 1 ? 1 : masterIndex;
 	masterIndex = masterIndex > images_number ? images_number : masterIndex;
@@ -415,6 +453,7 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		conversion.utc2gps(end_time.c_str(), &end);
 		conversion.read_array_from_h5(master_file, "state_vec", statevec);
 		conversion.read_slc_from_h5(master_file, slave);
+		InSARLogManager::LogInfo("CoregistrationWorker", QString("Master image resolved. Size: %1 x %2 (Width x Height)").arg(sceneWidth).arg(sceneHeight));
 		
 		conversion.creat_new_h5(SAR_images_regis[masterIndex - 1].c_str());
 		conversion.write_slc_to_h5(SAR_images_regis[masterIndex - 1].c_str(), slave);
@@ -432,6 +471,7 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
 		&lonMax, &latMax, &lonMin, &latMin);
 	Utils::getSRTMDEM(dempath.c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
+	this->setStage(10.0, 20.0);
 	coregis.getDEMRgAzPos(dem, statevec, rangePos, azimuthPos, lon_upperleft, lat_upperleft, offset_row, offset_col,
 		sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback, this);
 	int count = 0;
@@ -462,14 +502,19 @@ void CoregistrationWorker::DEMAssistCoregistration(
 			conversion.utc2gps(end_time.c_str(), &end2);
 			conversion.read_array_from_h5(slave_file, "state_vec", statevec2);
 			conversion.read_slc_from_h5(slave_file, slave);
+			InSARLogManager::LogInfo("CoregistrationWorker", QString("Slave image resolved. Index: %1, Size: %2 x %3 (Width x Height)").arg(i + 1).arg(sceneWidth2).arg(sceneHeight2));
 		}
  
+		double totalWidth = 60.0 / double(images_number - 1);
+		double currentSlaveStart = 30.0 + double(count) * totalWidth;
+		this->setStage(currentSlaveStart, totalWidth * 0.40);
 		coregis.getDEMRgAzPos(dem, statevec2, rangePos2, azimuthPos2, lon_upperleft, lat_upperleft, offset_row2, offset_col2,
 			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback, this);
  
 		coregis.computeSlaveOffset(rangePos, azimuthPos, rangePos2, azimuthPos2, slaveAzimuthOffset, slaveRangeOffset);
 		coregis.fitSlaveOffset(slaveAzimuthOffset, rangePos, azimuthPos, &a0, &a1, &a2);
 		coregis.fitSlaveOffset(slaveRangeOffset, rangePos, azimuthPos, &b0, &b1, &b2);
+		this->setStage(currentSlaveStart + totalWidth * 0.40, totalWidth * 0.60);
 		coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c, coregisProgressCallback, this);
 		{
 			NodeUtils::Hdf5Locker locker;
@@ -530,17 +575,19 @@ void CoregistrationWorker::DEMAssistCoregistration(
 				{
 					regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
 				}
-			}, Qt::BlockingQueuedConnection);
+			}, Qt::QueuedConnection);
 		}
 		
 		temporal_baseline += "0 ";
 		B_parallel += "0 ";
 		B_effect += "0 ";
 	}
+
 	/*写入XML*/
 	XMLFile xmlfile;
 	emit updateProcess(95, QStringLiteral("写入工程文件……"));
 	xmlfile.XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
+
 	for (int i = 0; i < images_number; i++)
 	{
 		if (QThread::currentThread()->isInterruptionRequested())

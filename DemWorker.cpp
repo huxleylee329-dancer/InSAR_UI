@@ -7,6 +7,7 @@
 #include "InSARLogManager.h"
 #include <QDir>
 #include <QThread>
+#include <QElapsedTimer>
 #include <QStandardItem>
 #include <QDebug>
 
@@ -32,6 +33,17 @@ thread_local int t_lastLoggedDemProgress = -10;
 
 static bool __stdcall demProgressCallback(int progress, const char* message)
 {
+    thread_local QElapsedTimer s_cbTimer;
+    thread_local bool s_timerStarted = false;
+    if (!s_timerStarted) {
+        s_cbTimer.start();
+        s_timerStarted = true;
+    }
+    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
+        return true;
+    }
+    s_cbTimer.restart();
+
     if (t_activeDemWorker)
     {
         if (t_activeDemWorker->thread()->isInterruptionRequested() || t_activeDemWorker->isStopRequested())

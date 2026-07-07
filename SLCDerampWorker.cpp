@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QThread>
+#include <QElapsedTimer>
 #include <QCoreApplication>
 #include <QStandardItem>
 #include <vector>
@@ -37,6 +38,17 @@ thread_local int t_derampLastLoggedProgress = -10;
 
 static bool __stdcall derampProgressCallback(int progress, const char* message)
 {
+    thread_local QElapsedTimer s_cbTimer;
+    thread_local bool s_timerStarted = false;
+    if (!s_timerStarted) {
+        s_cbTimer.start();
+        s_timerStarted = true;
+    }
+    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
+        return true;
+    }
+    s_cbTimer.restart();
+
     if (t_currentDerampWorker)
     {
         if (t_currentDerampWorker->thread()->isInterruptionRequested() || t_currentDerampWorker->isStopRequested())

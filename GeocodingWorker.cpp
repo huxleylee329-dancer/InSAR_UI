@@ -15,6 +15,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QThread>
+#include <QElapsedTimer>
 #include "InSARLogManager.h"
 
 using namespace cv;
@@ -24,6 +25,17 @@ thread_local int t_geocodingLastLoggedProgress = -10;
 
 static bool __stdcall geocodingProgressCallback(int progress, const char* message)
 {
+    thread_local QElapsedTimer s_cbTimer;
+    thread_local bool s_timerStarted = false;
+    if (!s_timerStarted) {
+        s_cbTimer.start();
+        s_timerStarted = true;
+    }
+    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
+        return true;
+    }
+    s_cbTimer.restart();
+
     if (t_currentGeocodingWorker)
     {
         if (t_currentGeocodingWorker->thread()->isInterruptionRequested() || t_currentGeocodingWorker->isStopRequested())
@@ -98,8 +110,6 @@ void GeocodingWorker::GeocodingWithDem(
         emit errorProcess(QStringLiteral("模型指针为空！"));
         return;
     }
-    NodeUtils::Hdf5Locker locker;
-
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         emit errorProcess(QStringLiteral("任务已被中止。"));
         return;
@@ -160,39 +170,47 @@ void GeocodingWorker::GeocodingWithDem(
     {
         std::string source_file;
         Mat mapped_lat, mapped_lon, phase, mapped_phase;
+        double lonMax = 0, lonMin = 0, latMax = 0, latMin = 0, lon_upperleft = 0, lat_upperleft = 0, rangeSpacing = 0,
+            nearRangeTime = 0, wavelength = 0, prf = 0, start = 0, end = 0;
+        int sceneHeight = 0, sceneWidth = 0, offset_row = 0, offset_col = 0, multilook_rg = 1, multilook_az = 1;
+        Mat lon_coef, lat_coef, dem, mappedDem, statevec;
+        std::string start_time, end_time, master_file;
         
-        ret = conversion.read_array_from_h5(input_files[0].c_str(), "mapped_lon", mapped_lon);
-        ret += conversion.read_array_from_h5(input_files[0].c_str(), "mapped_lat", mapped_lat);
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = conversion.read_array_from_h5(input_files[0].c_str(), "mapped_lon", mapped_lon);
+            ret += conversion.read_array_from_h5(input_files[0].c_str(), "mapped_lat", mapped_lat);
+            if (ret != 0)
+            {
+                conversion.read_str_from_h5(input_files[0].c_str(), "source_1", source_file);
+                QString src_file = save_path + "/" + QString(source_file.c_str());
+                master_file = src_file.toStdString();
+                ret = conversion.read_int_from_h5(input_files[0].c_str(), "multilook_az", &multilook_az);
+                ret = conversion.read_int_from_h5(input_files[0].c_str(), "multilook_rg", &multilook_rg);
+                ret = conversion.read_int_from_h5(master_file.c_str(), "range_len", &sceneWidth);
+                ret = conversion.read_int_from_h5(master_file.c_str(), "azimuth_len", &sceneHeight);
+                ret = conversion.read_int_from_h5(master_file.c_str(), "offset_row", &offset_row);
+                ret = conversion.read_int_from_h5(master_file.c_str(), "offset_col", &offset_col);
+                ret = conversion.read_array_from_h5(master_file.c_str(), "lon_coefficient", lon_coef);
+                ret = conversion.read_array_from_h5(master_file.c_str(), "lat_coefficient", lat_coef);
+                ret = conversion.read_double_from_h5(master_file.c_str(), "prf", &prf);
+                ret = conversion.read_double_from_h5(master_file.c_str(), "carrier_frequency", &wavelength);
+                ret = conversion.read_double_from_h5(master_file.c_str(), "range_spacing", &rangeSpacing);
+                ret = conversion.read_double_from_h5(master_file.c_str(), "slant_range_first_pixel", &nearRangeTime);
+                ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_start_time", start_time);
+                ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_stop_time", end_time);
+                ret = conversion.read_array_from_h5(master_file.c_str(), "state_vec", statevec);
+            }
+        }
         if (ret != 0)
         {
             Deflat flat;
-            conversion.read_str_from_h5(input_files[0].c_str(), "source_1", source_file);
             QString src_file = save_path + "/" + QString(source_file.c_str());
-            double lonMax, lonMin, latMax, latMin, lon_upperleft, lat_upperleft, rangeSpacing,
-                nearRangeTime, wavelength, prf, start, end;
-            int sceneHeight, sceneWidth, offset_row, offset_col, multilook_rg, multilook_az;
-            Mat lon_coef, lat_coef, dem, mappedDem, statevec;
-            std::string start_time, end_time, master_file;
             master_file = src_file.toStdString();
-            ret = conversion.read_int_from_h5(input_files[0].c_str(), "multilook_az", &multilook_az);
-            ret = conversion.read_int_from_h5(input_files[0].c_str(), "multilook_rg", &multilook_rg);
-            ret = conversion.read_int_from_h5(master_file.c_str(), "range_len", &sceneWidth);
-            ret = conversion.read_int_from_h5(master_file.c_str(), "azimuth_len", &sceneHeight);
-            ret = conversion.read_int_from_h5(master_file.c_str(), "offset_row", &offset_row);
-            ret = conversion.read_int_from_h5(master_file.c_str(), "offset_col", &offset_col);
-            ret = conversion.read_array_from_h5(master_file.c_str(), "lon_coefficient", lon_coef);
-            ret = conversion.read_array_from_h5(master_file.c_str(), "lat_coefficient", lat_coef);
-            ret = conversion.read_double_from_h5(master_file.c_str(), "prf", &prf);
-            ret = conversion.read_double_from_h5(master_file.c_str(), "carrier_frequency", &wavelength);
             wavelength = VEL_C / wavelength;
-            ret = conversion.read_double_from_h5(master_file.c_str(), "range_spacing", &rangeSpacing);
-            ret = conversion.read_double_from_h5(master_file.c_str(), "slant_range_first_pixel", &nearRangeTime);
             nearRangeTime = 2.0 * nearRangeTime / VEL_C;
-            ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_start_time", start_time);
             ret = conversion.utc2gps(start_time.c_str(), &start);
-            ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_stop_time", end_time);
             ret = conversion.utc2gps(end_time.c_str(), &end);
-            ret = conversion.read_array_from_h5(master_file.c_str(), "state_vec", statevec);
             ret = Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
                 &lonMax, &latMax, &lonMin, &latMin);
             ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
@@ -233,60 +251,66 @@ void GeocodingWorker::GeocodingWithDem(
                 return;
             }
 
-            if (product_level == QString("phase-1.0"))
             {
-                ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
-                geocode_Rank_level = "phase-1.1";
-            }
-            if (product_level == QString("phase-2.0"))
-            {
-                ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
-                geocode_Rank_level = "phase-2.1";
-            }
-            if (product_level == QString("phase-3.0"))
-            {
-                ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
-                geocode_Rank_level = "phase-3.1";
-            }
-            if (product_level == QString("coherence-1.0"))
-            {
-                ret = conversion.read_array_from_h5(input_files[i].c_str(), "coherence", phase);
-                geocode_Rank_level = "coherence-1.1";
-            }
-            if (product_level == QString("dem-1.0"))
-            {
-                ret = conversion.read_array_from_h5(input_files[i].c_str(), "dem", phase);
-                geocode_Rank_level = "dem-1.1";
-            }
-            if (product_level == QString("SBAS-1.0"))
-            {
-                ret = conversion.read_array_from_h5(input_files[i].c_str(), "defomation_velocity", phase);
-                geocode_Rank_level = "SBAS-1.1";
+                NodeUtils::Hdf5Locker locker;
+                if (product_level == QString("phase-1.0"))
+                {
+                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
+                    geocode_Rank_level = "phase-1.1";
+                }
+                if (product_level == QString("phase-2.0"))
+                {
+                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
+                    geocode_Rank_level = "phase-2.1";
+                }
+                if (product_level == QString("phase-3.0"))
+                {
+                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
+                    geocode_Rank_level = "phase-3.1";
+                }
+                if (product_level == QString("coherence-1.0"))
+                {
+                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "coherence", phase);
+                    geocode_Rank_level = "coherence-1.1";
+                }
+                if (product_level == QString("dem-1.0"))
+                {
+                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "dem", phase);
+                    geocode_Rank_level = "dem-1.1";
+                }
+                if (product_level == QString("SBAS-1.0"))
+                {
+                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "defomation_velocity", phase);
+                    geocode_Rank_level = "SBAS-1.1";
+                }
             }
             ret = util.SAR2UTM(mapped_lon, mapped_lat, phase, mapped_phase, 1, &lon_east, &lon_west, &lat_north, &lat_south);
-            ret = conversion.creat_new_h5(output_files[i].c_str());
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_east", lon_east);
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_west", lon_west);
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_north", lat_north);
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
-            if (product_level == QString("phase-1.0") ||
-                product_level == QString("phase-2.0") ||
-                product_level == QString("phase-3.0")
-                )
             {
-                ret = conversion.write_array_to_h5(output_files[i].c_str(), "phase", mapped_phase);
-            }
-            if (product_level == QString("coherence-1.0"))
-            {
-                ret = conversion.write_array_to_h5(output_files[i].c_str(), "coherence", mapped_phase);
-            }
-            if (product_level == QString("dem-1.0"))
-            {
-                ret = conversion.write_array_to_h5(output_files[i].c_str(), "dem", mapped_phase);
-            }
-            if (product_level == QString("SBAS-1.0"))
-            {
-                ret = conversion.write_array_to_h5(output_files[i].c_str(), "defomation_velocity", mapped_phase);
+                NodeUtils::Hdf5Locker locker;
+                ret = conversion.creat_new_h5(output_files[i].c_str());
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_east", lon_east);
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_west", lon_west);
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_north", lat_north);
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
+                if (product_level == QString("phase-1.0") ||
+                    product_level == QString("phase-2.0") ||
+                    product_level == QString("phase-3.0")
+                    )
+                {
+                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "phase", mapped_phase);
+                }
+                if (product_level == QString("coherence-1.0"))
+                {
+                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "coherence", mapped_phase);
+                }
+                if (product_level == QString("dem-1.0"))
+                {
+                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "dem", mapped_phase);
+                }
+                if (product_level == QString("SBAS-1.0"))
+                {
+                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "defomation_velocity", mapped_phase);
+                }
             }
             int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
 
@@ -315,39 +339,46 @@ void GeocodingWorker::GeocodingWithDem(
         int masterIndex = 1;
         if (pchild) ret = sscanf(pchild->GetText(), "%d", &masterIndex);
 
-        ret = conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lon", mapped_lon);
-        ret += conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lat", mapped_lat);
+        double lonMax2 = 0, lonMin2 = 0, latMax2 = 0, latMin2 = 0, lon_upperleft2 = 0, lat_upperleft2 = 0, rangeSpacing2 = 0,
+            nearRangeTime2 = 0, wavelength2 = 0, prf2 = 0, start2 = 0, end2 = 0;
+        int sceneHeight2 = 0, sceneWidth2 = 0, offset_row2 = 0, offset_col2 = 0;
+        Mat lon_coef2, lat_coef2, dem2, mappedDem2, statevec2;
+        std::string start_time2, end_time2, master_file2;
+
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lon", mapped_lon);
+            ret += conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lat", mapped_lat);
+            if (ret != 0)
+            {
+                master_file2 = input_files[masterIndex - 1];
+                ret = conversion.read_int_from_h5(master_file2.c_str(), "range_len", &sceneWidth2);
+                ret = conversion.read_int_from_h5(master_file2.c_str(), "azimuth_len", &sceneHeight2);
+                ret = conversion.read_int_from_h5(master_file2.c_str(), "offset_row", &offset_row2);
+                ret = conversion.read_int_from_h5(master_file2.c_str(), "offset_col", &offset_col2);
+                ret = conversion.read_array_from_h5(master_file2.c_str(), "lon_coefficient", lon_coef2);
+                ret = conversion.read_array_from_h5(master_file2.c_str(), "lat_coefficient", lat_coef2);
+                ret = conversion.read_double_from_h5(master_file2.c_str(), "prf", &prf2);
+                ret = conversion.read_double_from_h5(master_file2.c_str(), "carrier_frequency", &wavelength2);
+                ret = conversion.read_double_from_h5(master_file2.c_str(), "range_spacing", &rangeSpacing2);
+                ret = conversion.read_double_from_h5(master_file2.c_str(), "slant_range_first_pixel", &nearRangeTime2);
+                ret = conversion.read_str_from_h5(master_file2.c_str(), "acquisition_start_time", start_time2);
+                ret = conversion.read_str_from_h5(master_file2.c_str(), "acquisition_stop_time", end_time2);
+                ret = conversion.read_array_from_h5(master_file2.c_str(), "state_vec", statevec2);
+            }
+        }
         if (ret != 0)
         {
             Deflat flat;
-            double lonMax, lonMin, latMax, latMin, lon_upperleft, lat_upperleft, rangeSpacing,
-                nearRangeTime, wavelength, prf, start, end;
-            int sceneHeight, sceneWidth, offset_row, offset_col, multilook_rg, multilook_az;
-            Mat lon_coef, lat_coef, dem, mappedDem, statevec;
-            std::string start_time, end_time, master_file;
-            master_file = input_files[masterIndex - 1];
-            ret = conversion.read_int_from_h5(master_file.c_str(), "range_len", &sceneWidth);
-            ret = conversion.read_int_from_h5(master_file.c_str(), "azimuth_len", &sceneHeight);
-            ret = conversion.read_int_from_h5(master_file.c_str(), "offset_row", &offset_row);
-            ret = conversion.read_int_from_h5(master_file.c_str(), "offset_col", &offset_col);
-            ret = conversion.read_array_from_h5(master_file.c_str(), "lon_coefficient", lon_coef);
-            ret = conversion.read_array_from_h5(master_file.c_str(), "lat_coefficient", lat_coef);
-            ret = conversion.read_double_from_h5(master_file.c_str(), "prf", &prf);
-            ret = conversion.read_double_from_h5(master_file.c_str(), "carrier_frequency", &wavelength);
-            wavelength = VEL_C / wavelength;
-            ret = conversion.read_double_from_h5(master_file.c_str(), "range_spacing", &rangeSpacing);
-            ret = conversion.read_double_from_h5(master_file.c_str(), "slant_range_first_pixel", &nearRangeTime);
-            nearRangeTime = 2.0 * nearRangeTime / VEL_C;
-            ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_start_time", start_time);
-            ret = conversion.utc2gps(start_time.c_str(), &start);
-            ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_stop_time", end_time);
-            ret = conversion.utc2gps(end_time.c_str(), &end);
-            ret = conversion.read_array_from_h5(master_file.c_str(), "state_vec", statevec);
-            ret = Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
-                &lonMax, &latMax, &lonMin, &latMin);
-            ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
-            ret = flat.demMapping(dem, mappedDem, mapped_lat, mapped_lon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
-                prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, geocodingProgressCallback);
+            wavelength2 = VEL_C / wavelength2;
+            nearRangeTime2 = 2.0 * nearRangeTime2 / VEL_C;
+            ret = conversion.utc2gps(start_time2.c_str(), &start2);
+            ret = conversion.utc2gps(end_time2.c_str(), &end2);
+            ret = Utils::computeImageGeoBoundry(lat_coef2, lon_coef2, sceneHeight2, sceneWidth2, offset_row2, offset_col2,
+                &lonMax2, &latMax2, &lonMin2, &latMin2);
+            ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem2, &lon_upperleft2, &lat_upperleft2, lonMin2, lonMax2, latMin2, latMax2);
+            ret = flat.demMapping(dem2, mappedDem2, mapped_lat, mapped_lon, lon_upperleft2, lat_upperleft2, offset_row2, offset_col2, sceneHeight2, sceneWidth2,
+                prf2, rangeSpacing2, wavelength2, nearRangeTime2, start2, end2, statevec2, 20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, geocodingProgressCallback);
         }
 
         //多视操作
@@ -385,17 +416,23 @@ void GeocodingWorker::GeocodingWithDem(
                 return;
             }
 
-            ret = conversion.read_slc_from_h5(input_files[i].c_str(), slc);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = conversion.read_slc_from_h5(input_files[i].c_str(), slc);
+            }
             slc.convertTo(slc, CV_64F);
             amplitude = slc.GetMod();
             util.multilook_SAR(amplitude, amplitude, multi_rg, multi_az);
             ret = util.SAR2UTM(mapped_lon, mapped_lat, amplitude, mapped_amplitude, 1, &lon_east, &lon_west, &lat_north, &lat_south);
-            ret = conversion.creat_new_h5(output_files[i].c_str());
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_east", lon_east);
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_west", lon_west);
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_north", lat_north);
-            ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
-            ret = conversion.write_array_to_h5(output_files[i].c_str(), "amplitude", mapped_amplitude);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = conversion.creat_new_h5(output_files[i].c_str());
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_east", lon_east);
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_west", lon_west);
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_north", lat_north);
+                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
+                ret = conversion.write_array_to_h5(output_files[i].c_str(), "amplitude", mapped_amplitude);
+            }
             int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
             emit updateProcess(process, QStringLiteral("正在地理编码……"));
         }

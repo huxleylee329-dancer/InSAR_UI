@@ -5,6 +5,7 @@
 #include <FormatConversion.h>
 #include <QDir>
 #include <QThread>
+#include <QElapsedTimer>
 #include <QStandardItem>
 #include <cmath>
 #include <complex>
@@ -26,6 +27,17 @@ static thread_local IonosphericCorrectionWorker* currentWorker = nullptr;
 
 static bool __stdcall ionosphericProgressCallback(int progress, const char* message)
 {
+    thread_local QElapsedTimer s_cbTimer;
+    thread_local bool s_timerStarted = false;
+    if (!s_timerStarted) {
+        s_cbTimer.start();
+        s_timerStarted = true;
+    }
+    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
+        return true;
+    }
+    s_cbTimer.restart();
+
     if (currentWorker) {
         if (QThread::currentThread()->isInterruptionRequested()) {
             return false;

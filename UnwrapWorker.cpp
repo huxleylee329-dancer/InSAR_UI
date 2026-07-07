@@ -7,6 +7,7 @@
 #include "InSARLogManager.h"
 #include <QDir>
 #include <QThread>
+#include <QElapsedTimer>
 #include <QCoreApplication>
 #include <QStandardItem>
 
@@ -29,6 +30,17 @@ thread_local int t_unwrapLastLoggedProgress = -10;
 
 static bool __stdcall unwrapProgressCallback(int progress, const char* message)
 {
+    thread_local QElapsedTimer s_cbTimer;
+    thread_local bool s_timerStarted = false;
+    if (!s_timerStarted) {
+        s_cbTimer.start();
+        s_timerStarted = true;
+    }
+    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
+        return true;
+    }
+    s_cbTimer.restart();
+
     if (t_currentUnwrapWorker)
     {
         if (t_currentUnwrapWorker->thread()->isInterruptionRequested() || t_currentUnwrapWorker->isStopRequested())
@@ -81,7 +93,6 @@ UnwrapWorker::~UnwrapWorker()
 void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
     UnwrapThreadLocalGuard guard(this, model ? 1 : 1); // We will update total images count after we read image_number
-    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("UnwrapWorker", QString("Unwrap task started. Output folder: %1, Method: %2").arg(file_name).arg(method));
 
     if (save_path.isEmpty() ||
@@ -186,6 +197,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     std::vector<bool> process_success(image_number, false);
 
     auto copyH5Metadata = [&](int idx) -> bool {
+        NodeUtils::Hdf5Locker locker;
         /*写入h5*/
         ret = FC.creat_new_h5(absolute_unwrap_path.at(idx).toStdString().c_str());
         if (ret < 0) return false;
@@ -247,7 +259,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            }
             if (ret < 0) continue;
 
             // 临时转换为双精度以满足 DLL 解缠算法对 CV_64F 的强校验要求
@@ -266,7 +281,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            }
             process_success[i] = true;
         }
     }
@@ -282,7 +300,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            }
             if (ret < 0) continue;
 
             // 临时转换为双精度以满足 DLL 解缠算法及辅助计算对 CV_64F 的强校验要求
@@ -305,7 +326,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            }
             process_success[i] = true;
         }
     }
@@ -321,7 +345,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            }
             if (ret < 0) continue;
 
             Mat phase_unwrap;
@@ -336,7 +363,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            }
             process_success[i] = true;
         }
     }
@@ -353,7 +383,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
+            }
             if (ret < 0) continue;
 
             // 临时转换为双精度以满足 DLL 解缠算法对 CV_64F 的强校验要求
@@ -373,7 +406,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
+            }
             process_success[i] = true;
         }
     }

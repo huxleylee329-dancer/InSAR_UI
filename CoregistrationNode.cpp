@@ -568,7 +568,7 @@ void CoregistrationNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
     m_isExecuting = true;
-    m_thread->start();
+    m_thread->start(QThread::LowestPriority);
 
     int masterIdx = m_defaultFirstMaster ? 1 : m_masterIndex;
 

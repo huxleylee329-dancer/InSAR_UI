@@ -18,6 +18,8 @@
 #include <QMainWindow>
 #include <QAction>
 #include <QDateTime>
+#include <QElapsedTimer>
+#include "InSARLogManager.h"
 #include <QFileInfo>
 #include <QDir>
 #include <algorithm>
@@ -250,7 +252,9 @@ void WorkspaceUI::refreshProjectTree()
     if (m_projectModel && m_treeView) {
         sortProjectTree(m_projectModel, m_projectPath);
 
-        m_treeView->setModel(m_projectModel);
+        if (m_treeView->model != m_projectModel) {
+            m_treeView->setModel(m_projectModel);
+        }
         m_treeView->model = m_projectModel; // Synchronize TreeView's internal pointer
         m_treeView->setColumnHidden(1, true);
         m_treeView->updateTreeIcons(m_currentTheme);
@@ -571,11 +575,21 @@ void WorkspaceUI::sortProjectTree(QStandardItemModel* model, const QString& proj
 
             if (m_sortMethod == 1) {
                 // 时间顺序：按修改时间升序排列
-                std::stable_sort(fileRows.begin(), fileRows.end(), [](const QList<QStandardItem*>& a, const QList<QStandardItem*>& b) {
+                QHash<QString, QDateTime> timeCache;
+                for (const auto& row : fileRows) {
+                    QString path = (row.size() > 1 && row[1]) ? row[1]->text() : "";
+                    if (!path.isEmpty()) {
+                        QFileInfo fileInfo(path);
+                        if (fileInfo.exists()) {
+                            timeCache.insert(path, fileInfo.lastModified());
+                        }
+                    }
+                }
+                std::stable_sort(fileRows.begin(), fileRows.end(), [&timeCache](const QList<QStandardItem*>& a, const QList<QStandardItem*>& b) {
                     QString pathA = (a.size() > 1 && a[1]) ? a[1]->text() : "";
                     QString pathB = (b.size() > 1 && b[1]) ? b[1]->text() : "";
-                    QDateTime timeA = QFileInfo(pathA).exists() ? QFileInfo(pathA).lastModified() : QDateTime();
-                    QDateTime timeB = QFileInfo(pathB).exists() ? QFileInfo(pathB).lastModified() : QDateTime();
+                    QDateTime timeA = timeCache.value(pathA, QDateTime());
+                    QDateTime timeB = timeCache.value(pathB, QDateTime());
                     return timeA < timeB;
                 });
             } else {
@@ -650,8 +664,17 @@ void WorkspaceUI::sortProjectTree(QStandardItemModel* model, const QString& proj
                 return latestTime;
             };
 
+            QHash<QStandardItem*, QDateTime> catTimeCache;
+            for (const auto& row : catRows) {
+                if (!row.isEmpty() && row[0]) {
+                    catTimeCache.insert(row[0], getCategoryLatestTime(row));
+                }
+            }
+
             std::stable_sort(catRows.begin(), catRows.end(), [&](const QList<QStandardItem*>& a, const QList<QStandardItem*>& b) {
-                return getCategoryLatestTime(a) < getCategoryLatestTime(b);
+                QDateTime timeA = (a.size() > 0 && a[0]) ? catTimeCache.value(a[0], QDateTime::fromMSecsSinceEpoch(0)) : QDateTime::fromMSecsSinceEpoch(0);
+                QDateTime timeB = (b.size() > 0 && b[0]) ? catTimeCache.value(b[0], QDateTime::fromMSecsSinceEpoch(0)) : QDateTime::fromMSecsSinceEpoch(0);
+                return timeA < timeB;
             });
         }
         else if (m_sortMethod == 2) {

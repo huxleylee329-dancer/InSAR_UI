@@ -21,10 +21,16 @@ public slots:
     void Regis(QList<int> para, QString save_path, QString project_name, QString Cut_name, QString file_name, QStandardItemModel* model);
     void DEMAssistCoregistration(int masterIndex, QString savepath, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
 
+    double getStageStart() const { return m_stageStart; }
+    double getStageWidth() const { return m_stageWidth; }
+    void setStage(double start, double width) { m_stageStart = start; m_stageWidth = width; }
+
 private:
     int Registration_copy(std::vector<std::string>& SAR_images, std::vector<std::string>& SAR_images_out, cv::Mat& offset_row_out, cv::Mat& offset_col_out, int Master_index, int interp_times, int blocksize);
     QString resolveOutputFileName(const QString& originalName) const;
 
     QString m_demPath;
     QString m_filePattern;
+    double m_stageStart = 60.0;
+    double m_stageWidth = 30.0;
 };

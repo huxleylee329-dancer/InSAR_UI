@@ -61,6 +61,9 @@ void applyTheme(const QString &theme = "light")
 
 int main(int argc, char *argv[])
 {
+    // 禁用 Windows 平台的 TSF 输入法框架以防止输入法在 TextInputFramework.dll 中引发 MessagingValidationException 导致程序崩溃
+    qputenv("QT_IM_MODULE", "none");
+
     // 禁用 Intel IPP 优化以防止 OpenCV 在 Debug 模式或特定数据类型下引发 ipp::IwException 内部异常，避免调试器中断或闪退
     cv::ipp::setUseIPP(false);
 

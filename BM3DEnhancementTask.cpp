@@ -8,6 +8,7 @@
 #include <QDebug>
 #include <opencv2/opencv.hpp>
 #include <QThread>
+#include <QElapsedTimer>
 
 thread_local BM3DEnhancementTask* t_currentBM3DTask = nullptr;
 thread_local int t_bm3dBaseProgress = 0;
@@ -16,6 +17,17 @@ thread_local int t_bm3dLastLoggedProgress = -10;
 
 static bool __stdcall bm3dProgressCallback(int progress, const char* message)
 {
+    thread_local QElapsedTimer s_cbTimer;
+    thread_local bool s_timerStarted = false;
+    if (!s_timerStarted) {
+        s_cbTimer.start();
+        s_timerStarted = true;
+    }
+    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
+        return true;
+    }
+    s_cbTimer.restart();
+
     if (t_currentBM3DTask)
     {
         if (t_currentBM3DTask->isStopped())

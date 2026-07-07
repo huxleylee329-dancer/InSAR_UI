@@ -9,6 +9,7 @@
 #include <QGraphicsScene>
 #include <QStatusBar>
 #include <QTimer>
+#include <QElapsedTimer>
 // Include headers
 #include"Baseline.h"
 #include<Deformation_Average.h>
