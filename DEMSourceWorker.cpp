@@ -6,6 +6,37 @@
 #include <icon_source.h>
 #include <QThread>
 #include "NodeUtils.h"
+#include <gdal_priv.h>
+
+static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt)
+{
+    GDALAllRegister();
+    GDALDriver* poDriver = GetGDALDriverManager()->GetDriverByName("GTiff");
+    if (!poDriver) return false;
+
+    int cols = dem.cols;
+    int rows = dem.rows;
+    GDALDataset* poDstDS = poDriver->Create(tifPath.toLocal8Bit().constData(), cols, rows, 1, GDT_Float32, nullptr);
+    if (!poDstDS) return false;
+
+    poDstDS->SetGeoTransform(const_cast<double*>(gt));
+    poDstDS->SetProjection(wkt);
+
+    GDALRasterBand* poBand = poDstDS->GetRasterBand(1);
+    poBand->SetNoDataValue(-32767.0);
+    
+    cv::Mat floatDem;
+    if (dem.type() != CV_32F) {
+        dem.convertTo(floatDem, CV_32F);
+    } else {
+        floatDem = dem;
+    }
+
+    CPLErr err = poBand->RasterIO(GF_Write, 0, 0, cols, rows, floatDem.data, cols, rows, GDT_Float32, 0, 0);
+    GDALClose(poDstDS);
+
+    return err == CE_None;
+}
 
 #include <QDir>
 #include <QFileInfo>
@@ -509,11 +540,22 @@ void DEMSourceWorker::fetch_dem(
     QString outputH5Name = dstNode + "_dem.h5";
     QString outputH5Path = save_path + "/" + dstNode + "/" + outputH5Name;
 
+    // 7.5 写入 TIF 成果文件（供下游工作流节点使用）
+    QString outputTifName = dstNode + "_dem.tif";
+    QString outputTifPath = save_path + "/" + dstNode + "/" + outputTifName;
+    write_dem_to_tif(outputTifPath, cropped_dem, new_gt, wkt_projection);
+
     if (FC.creat_new_h5(outputH5Path.toStdString().c_str()) != 0)
     {
         emit errorProcess(QStringLiteral("创建输出 H5 文件失败。"));
         return;
     }
+
+    // 确保高程和三维坐标使用双精度(CV_64F)写入，防止 precompiled DLL 读取时发生类型 Mismatch
+    if (cropped_dem.type() != CV_64F) cropped_dem.convertTo(cropped_dem, CV_64F);
+    if (dem_x.type() != CV_64F) dem_x.convertTo(dem_x, CV_64F);
+    if (dem_y.type() != CV_64F) dem_y.convertTo(dem_y, CV_64F);
+    if (dem_z.type() != CV_64F) dem_z.convertTo(dem_z, CV_64F);
 
     // 写入数据集
     FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem", cropped_dem);

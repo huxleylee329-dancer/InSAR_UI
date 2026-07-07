@@ -302,6 +302,10 @@ void ExecutableNodeDelegateModel::setOutputData(PortIndex portIndex, std::shared
 
 std::shared_ptr<NodeData> ExecutableNodeDelegateModel::getOutputData(PortIndex portIndex)
 {
+    auto data = outData(portIndex);
+    if (data) {
+        return data;
+    }
     auto it = _outputData.find(portIndex);
     if (it != _outputData.end()) {
         return it->second;

@@ -79,6 +79,20 @@ void GeocodingWorker::Geocoding(
     QStandardItemModel* model
 )
 {
+    GeocodingWithDem(type, multi_rg, multi_az, project_name, srcNode, dstNode, model, QString());
+}
+
+void GeocodingWorker::GeocodingWithDem(
+    int type,
+    int multi_rg,
+    int multi_az,
+    QString project_name,
+    QString srcNode,
+    QString dstNode,
+    QStandardItemModel* model,
+    QString dem_path
+)
+{
     GeocodingThreadLocalGuard guard(this);
     if (!model) {
         emit errorProcess(QStringLiteral("模型指针为空！"));
@@ -100,11 +114,14 @@ void GeocodingWorker::Geocoding(
     QDir dir(save_path);
     if (!dir.exists(dstNode))
         dir.mkdir(dstNode);
-    //外部DEM文件夹
-    QString appPath = QCoreApplication::applicationDirPath();
-    QString demPath = appPath + "/dem";
-    QDir appDir(appPath);
-    if (!appDir.exists("dem")) appDir.mkdir("dem");
+    //外部DEM文件夹或文件路径
+    QString demPath = dem_path;
+    if (demPath.isEmpty() || QFileInfo(demPath).isFile()) {
+        QString appPath = QCoreApplication::applicationDirPath();
+        demPath = appPath + "/dem";
+        QDir appDir(appPath);
+        if (!appDir.exists("dem")) appDir.mkdir("dem");
+    }
 
     std::vector<std::string> input_files;
     std::vector<std::string> output_files;

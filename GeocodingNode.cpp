@@ -50,16 +50,20 @@ GeocodingNode::~GeocodingNode()
 unsigned int GeocodingNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 1;
+        return 2;
     else
         return 2;
 }
 
 NodeDataType GeocodingNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
     if (portType == PortType::In)
-        return NodeDataType{"imported_file", "Imported File"};
+    {
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "Imported File"};
+        else
+            return NodeDataType{"imported_file", "DEM File"};
+    }
     else
     {
         if (portIndex == 0)
@@ -79,7 +83,10 @@ bool GeocodingNode::portCaptionVisible(PortType portType, PortIndex portIndex) c
 QString GeocodingNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        return QStringLiteral("输入图像");
+        if (portIndex == 0)
+            return QStringLiteral("输入图像");
+        else
+            return QStringLiteral("DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -91,6 +98,8 @@ QString GeocodingNode::portCaption(PortType portType, PortIndex portIndex) const
 
 bool GeocodingNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
+    if (portType == PortType::In && portIndex == 1)
+        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -98,44 +107,52 @@ bool GeocodingNode::portIsOptional(PortType portType, PortIndex portIndex) const
 
 void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
-    m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+    if (port == 0) {
+        m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
-    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-        m_outputData.reset();
-        m_imageInfoData.reset();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-    } else {
-        // Automatically determine type based on the level of the input node
-        QString srcNode = m_inputData->nodeName();
-        QStandardItemModel* model = projectModel();
-        if (model) {
-            QStandardItem* project = model->findItems(projectName())[0];
-            if (project) {
-                for (int i = 0; i < project->rowCount(); i++) {
-                    if (project->child(i, 0)->text() == srcNode) {
-                        QString level = project->child(i, 1)->text();
-                        if (level.contains("complex") || level.contains("amplitude")) {
-                            m_type = 2; // SAR图像
-                        } else {
-                            m_type = 1; // 干涉产品
+        if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+            m_outputData.reset();
+            m_imageInfoData.reset();
+            setOutputData(0, nullptr);
+            setOutputData(1, nullptr);
+        } else {
+            // Automatically determine type based on the level of the input node
+            QString srcNode = m_inputData->nodeName();
+            QStandardItemModel* model = projectModel();
+            if (model) {
+                QStandardItem* project = model->findItems(projectName())[0];
+                if (project) {
+                    for (int i = 0; i < project->rowCount(); i++) {
+                        if (project->child(i, 0)->text() == srcNode) {
+                            QString level = project->child(i, 1)->text();
+                            if (level.contains("complex") || level.contains("amplitude")) {
+                                m_type = 2; // SAR图像
+                            } else {
+                                m_type = 1; // 干涉产品
+                            }
+                            if (m_typeCombo) {
+                                m_typeCombo->setCurrentIndex(m_type - 1);
+                                onTypeChanged(m_type - 1);
+                            }
+                            break;
                         }
-                        if (m_typeCombo) {
-                            m_typeCombo->setCurrentIndex(m_type - 1);
-                            onTypeChanged(m_type - 1);
-                        }
-                        break;
                     }
                 }
             }
         }
-    }
 
-    if (m_inputData && m_outputNodeName.isEmpty()) {
-        m_outputNodeName = generateDefaultOutputName();
-        if (m_outputNodeNameEdit) {
-            m_outputNodeNameEdit->setText(m_outputNodeName);
+        if (m_inputData && m_outputNodeName.isEmpty()) {
+            m_outputNodeName = generateDefaultOutputName();
+            if (m_outputNodeNameEdit) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+            }
+        }
+    } else if (port == 1) {
+        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (m_demInputData) {
+            m_demPath = m_demInputData->filePath();
+        } else {
+            m_demPath.clear();
         }
     }
 
@@ -164,6 +181,7 @@ QJsonObject GeocodingNode::save() const
     modelJson["type"] = m_type;
     modelJson["multiRg"] = m_multiRgSpin ? m_multiRgSpin->value() : m_multiRg;
     modelJson["multiAz"] = m_multiAzSpin ? m_multiAzSpin->value() : m_multiAz;
+    modelJson[QStringLiteral("demPath")] = m_demPath;
 
     return modelJson;
 }
@@ -181,6 +199,9 @@ void GeocodingNode::load(QJsonObject const &json)
 
     QJsonValue vMultiAz = json["multiAz"];
     if (!vMultiAz.isUndefined()) m_multiAz = vMultiAz.toInt();
+
+    QJsonValue vDemPath = json[QStringLiteral("demPath")];
+    if (!vDemPath.isUndefined()) m_demPath = vDemPath.toString();
 
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_typeCombo) {
@@ -319,6 +340,7 @@ bool GeocodingNode::prepareToStart()
     m_preparedType = m_typeCombo ? m_typeCombo->currentIndex() + 1 : m_type;
     m_preparedMultiRg = m_multiRgSpin ? m_multiRgSpin->value() : m_multiRg;
     m_preparedMultiAz = m_multiAzSpin ? m_multiAzSpin->value() : m_multiAz;
+    m_preparedDemPath = m_demPath;
 
     m_preparedDstNode = dstNode;
 
@@ -350,6 +372,7 @@ void GeocodingNode::executeProcessing()
     QString savePath = projectPath();
     QString dstProject = projectName();
     QString srcNode = m_inputData->nodeName();
+    QString preparedDemPath = m_preparedDemPath;
 
     int type = m_preparedType;
     int multiRg = m_preparedMultiRg;
@@ -379,9 +402,9 @@ void GeocodingNode::executeProcessing()
     m_workerThread = new GeocodingWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &GeocodingNode::startGeocoding, m_workerThread, &GeocodingWorker::Geocoding);
-    connect(m_thread, &QThread::started, [this, type, multiRg, multiAz, dstProject, srcNode, dstNode]() {
-        Q_EMIT startGeocoding(type, multiRg, multiAz, dstProject, srcNode, dstNode, projectModel());
+    connect(this, &GeocodingNode::startGeocoding, m_workerThread, &GeocodingWorker::GeocodingWithDem);
+    connect(m_thread, &QThread::started, [this, type, multiRg, multiAz, dstProject, srcNode, dstNode, preparedDemPath]() {
+        Q_EMIT startGeocoding(type, multiRg, multiAz, dstProject, srcNode, dstNode, projectModel(), preparedDemPath);
     });
     connect(m_workerThread, &GeocodingWorker::updateProcess, this, &GeocodingNode::onProgressUpdate);
     connect(m_workerThread, &GeocodingWorker::endProcess, this, &GeocodingNode::onProcessingFinished);

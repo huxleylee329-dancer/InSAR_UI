@@ -7,6 +7,37 @@
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include "FormatConversion.h"
+#include <gdal_priv.h>
+
+static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt)
+{
+    GDALAllRegister();
+    GDALDriver* poDriver = GetGDALDriverManager()->GetDriverByName("GTiff");
+    if (!poDriver) return false;
+
+    int cols = dem.cols;
+    int rows = dem.rows;
+    GDALDataset* poDstDS = poDriver->Create(tifPath.toLocal8Bit().constData(), cols, rows, 1, GDT_Float32, nullptr);
+    if (!poDstDS) return false;
+
+    poDstDS->SetGeoTransform(const_cast<double*>(gt));
+    poDstDS->SetProjection(wkt);
+
+    GDALRasterBand* poBand = poDstDS->GetRasterBand(1);
+    poBand->SetNoDataValue(-32767.0);
+    
+    cv::Mat floatDem;
+    if (dem.type() != CV_32F) {
+        dem.convertTo(floatDem, CV_32F);
+    } else {
+        floatDem = dem;
+    }
+
+    CPLErr err = poBand->RasterIO(GF_Write, 0, 0, cols, rows, floatDem.data, cols, rows, GDT_Float32, 0, 0);
+    GDALClose(poDstDS);
+
+    return err == CE_None;
+}
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -128,10 +159,33 @@ void DEMSourceNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
 std::shared_ptr<NodeData> DEMSourceNode::outData(PortIndex port)
 {
-    if (port == 0)
-        return m_outputData;
-    else
-        return m_imageInfoData;
+    std::shared_ptr<NodeData> data;
+    if (port == 0) {
+        data = m_outputData;
+    } else {
+        data = m_imageInfoData;
+    }
+
+    if (data) {
+        qDebug() << "[DEMSourceNode] outData: port =" << port 
+                 << ", type =" << data->type().id 
+                 << ", summary =" << data->getSummary();
+        if (port == 0) {
+            auto fileData = std::dynamic_pointer_cast<ImportedFileData>(data);
+            if (fileData) {
+                qDebug() << "  -> File paths =" << fileData->filePaths() 
+                         << ", nodeName =" << fileData->nodeName();
+            }
+        } else {
+            auto imgData = std::dynamic_pointer_cast<ImageInfoData>(data);
+            if (imgData) {
+                qDebug() << "  -> File path =" << imgData->filePath();
+            }
+        }
+    } else {
+        qDebug() << "[DEMSourceNode] outData: port =" << port << "is null";
+    }
+    return data;
 }
 
 ::QWidget* DEMSourceNode::embeddedWidget()
@@ -435,7 +489,7 @@ bool DEMSourceNode::prepareToStart()
     else m_preparedResolution = m_customResEdit ? m_customResEdit->text().toDouble() : m_customResolution;
 
     // Overwrite check
-    QString targetH5Dir = QFileInfo(m_preparedSavePath).absolutePath() + "/" + m_preparedDstNode;
+    QString targetH5Dir = m_preparedSavePath + "/" + m_preparedDstNode;
     QString targetH5 = targetH5Dir + "/" + m_preparedDstNode + "_dem.h5";
     
     m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
@@ -495,7 +549,7 @@ void DEMSourceNode::executeProcessing()
         return;
     }
 
-    QString savePath = QFileInfo(m_preparedSavePath).absolutePath();
+    QString savePath = m_preparedSavePath;
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
         QDir oldDir(savePath + "/" + m_preparedDstNode);
         if (oldDir.exists()) {
@@ -559,24 +613,28 @@ void DEMSourceNode::onProcessingFinished()
     m_workerThread = nullptr;
     m_thread = nullptr;
 
-    QString savePath = QFileInfo(m_preparedSavePath).absolutePath();
+    QString savePath = m_preparedSavePath;
     QString h5Path = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.h5";
+    QString tifPath = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.tif";
     QString jpgPath = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.jpg";
 
-    m_outputData = std::make_shared<ImportedFileData>(h5Path, m_preparedDstNode);
+    qDebug() << "[DEMSourceNode] onProcessingFinished: h5Path =" << h5Path << ", tifPath =" << tifPath << ", jpgPath =" << jpgPath;
+
+    m_outputData = std::make_shared<ImportedFileData>(tifPath, m_preparedDstNode);
     m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
 
-    // 异步生成预览图
-    m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
-        NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
-    }));
-
+    m_remedyWatcher.disconnect();
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
         setState(ExecutionState::Completed);
         updateCacheSizeLabel();
     });
+
+    // 异步生成预览图
+    m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
+        NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
+    }));
 }
 
 void DEMSourceNode::onModelUpdated(QStandardItemModel* model)
@@ -590,13 +648,34 @@ void DEMSourceNode::onModelUpdated(QStandardItemModel* model)
 
 bool DEMSourceNode::validateAndRestoreOutput()
 {
-    QString savePath = QFileInfo(projectPath()).absolutePath();
+    QString savePath = projectPath();
     QString name = m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName;
     QString targetH5 = savePath + "/" + name + "/" + name + "_dem.h5";
+    QString targetTif = savePath + "/" + name + "/" + name + "_dem.tif";
     QString targetJpg = savePath + "/" + name + "/" + name + "_dem.jpg";
 
+    qDebug() << "[DEMSourceNode] validateAndRestoreOutput: Checking targetH5 =" << targetH5;
+
     if (QFile::exists(targetH5)) {
-        m_outputData = std::make_shared<ImportedFileData>(targetH5, name);
+        if (!QFile::exists(targetTif)) {
+            FormatConversion FC;
+            cv::Mat dem;
+            double min_lon = 0, max_lon = 0, min_lat = 0, max_lat = 0;
+            if (FC.read_array_from_h5(targetH5.toLocal8Bit().constData(), "dem", dem) == 0 &&
+                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_min_lon", &min_lon) == 0 &&
+                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_max_lon", &max_lon) == 0 &&
+                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_min_lat", &min_lat) == 0 &&
+                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_max_lat", &max_lat) == 0)
+            {
+                double res_lon = (max_lon - min_lon) / dem.cols;
+                double res_lat = (max_lat - min_lat) / dem.rows;
+                double new_gt[6] = { min_lon, res_lon, 0.0, max_lat, 0.0, -res_lat };
+                const char* wkt_projection = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]";
+                write_dem_to_tif(targetTif, dem, new_gt, wkt_projection);
+            }
+        }
+
+        m_outputData = std::make_shared<ImportedFileData>(targetTif, name);
         m_imageInfoData = std::make_shared<ImageInfoData>(targetJpg);
 
         if (!QFile::exists(targetJpg)) {

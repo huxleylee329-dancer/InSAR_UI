@@ -29,7 +29,7 @@ using namespace cv;
 using namespace std;
 
 thread_local CoregistrationWorker* t_currentCoregisWorker = nullptr;
-thread_local int t_coregisLastLoggedProgress = -10;
+static std::atomic<int> s_coregisLastLoggedProgress(-10);
 
 static bool __stdcall coregisProgressCallback(int progress, const char* message, void* userData)
 {
@@ -53,11 +53,12 @@ static bool __stdcall coregisProgressCallback(int progress, const char* message,
         emit worker->updateProcess(mapped_prog, QStringLiteral("配准中 - 重采样进度：%1% (%2)")
             .arg(progress).arg(msgStr));
 
-        if (progress == 0 || progress == 100 || (progress - t_coregisLastLoggedProgress) >= 10)
+        int lastLogged = s_coregisLastLoggedProgress.load();
+        if (progress == 0 || progress == 100 || (progress - lastLogged) >= 10 || progress < lastLogged)
         {
+            s_coregisLastLoggedProgress.store(progress);
             InSARLogManager::LogInfo("CoregistrationWorker", QString("Bilinear resampling progress: %1% (Total: %2%) - %3")
                 .arg(progress).arg(mapped_prog).arg(msgStr));
-            t_coregisLastLoggedProgress = progress;
         }
     }
     return true;
@@ -66,11 +67,11 @@ static bool __stdcall coregisProgressCallback(int progress, const char* message,
 struct CoregisThreadLocalGuard {
     CoregisThreadLocalGuard(CoregistrationWorker* worker) {
         t_currentCoregisWorker = worker;
-        t_coregisLastLoggedProgress = -10;
+        s_coregisLastLoggedProgress.store(-10);
     }
     ~CoregisThreadLocalGuard() {
         t_currentCoregisWorker = nullptr;
-        t_coregisLastLoggedProgress = -10;
+        s_coregisLastLoggedProgress.store(-10);
     }
 };
 
@@ -331,7 +332,6 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	{
 		return;
 	}
-	NodeUtils::Hdf5Locker locker;
 	QDir dir(savepath);
 	if (!dir.exists(dstNode))
 		int ret = dir.mkdir(dstNode);
@@ -395,35 +395,39 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	offset_row = offset_col = 0;
 	const char* master_file = SAR_images[masterIndex - 1].c_str();
 	const char* slave_file = NULL;
-	conversion.read_int_from_h5(master_file, "range_len", &sceneWidth);
-	conversion.read_int_from_h5(master_file, "azimuth_len", &sceneHeight);
-	conversion.read_int_from_h5(master_file, "offset_row", &offset_row);
-	conversion.read_int_from_h5(master_file, "offset_col", &offset_col);
-	conversion.read_array_from_h5(master_file, "lon_coefficient", lon_coef);
-	conversion.read_array_from_h5(master_file, "lat_coefficient", lat_coef);
-	conversion.read_double_from_h5(master_file, "prf", &prf);
-	conversion.read_double_from_h5(master_file, "carrier_frequency", &wavelength);
-	wavelength = VEL_C / wavelength;
-	conversion.read_double_from_h5(master_file, "range_spacing", &rangeSpacing);
-	conversion.read_double_from_h5(master_file, "slant_range_first_pixel", &nearRangeTime);
-	nearRangeTime = 2.0 * nearRangeTime / VEL_C;
-	conversion.read_str_from_h5(master_file, "acquisition_start_time", start_time);
-	conversion.utc2gps(start_time.c_str(), &start);
-	conversion.read_str_from_h5(master_file, "acquisition_stop_time", end_time);
-	conversion.utc2gps(end_time.c_str(), &end);
-	conversion.read_array_from_h5(master_file, "state_vec", statevec);
-	conversion.read_slc_from_h5(master_file, slave);
+	{
+		NodeUtils::Hdf5Locker locker;
+		conversion.read_int_from_h5(master_file, "range_len", &sceneWidth);
+		conversion.read_int_from_h5(master_file, "azimuth_len", &sceneHeight);
+		conversion.read_int_from_h5(master_file, "offset_row", &offset_row);
+		conversion.read_int_from_h5(master_file, "offset_col", &offset_col);
+		conversion.read_array_from_h5(master_file, "lon_coefficient", lon_coef);
+		conversion.read_array_from_h5(master_file, "lat_coefficient", lat_coef);
+		conversion.read_double_from_h5(master_file, "prf", &prf);
+		conversion.read_double_from_h5(master_file, "carrier_frequency", &wavelength);
+		wavelength = VEL_C / wavelength;
+		conversion.read_double_from_h5(master_file, "range_spacing", &rangeSpacing);
+		conversion.read_double_from_h5(master_file, "slant_range_first_pixel", &nearRangeTime);
+		nearRangeTime = 2.0 * nearRangeTime / VEL_C;
+		conversion.read_str_from_h5(master_file, "acquisition_start_time", start_time);
+		conversion.utc2gps(start_time.c_str(), &start);
+		conversion.read_str_from_h5(master_file, "acquisition_stop_time", end_time);
+		conversion.utc2gps(end_time.c_str(), &end);
+		conversion.read_array_from_h5(master_file, "state_vec", statevec);
+		conversion.read_slc_from_h5(master_file, slave);
+		
+		conversion.creat_new_h5(SAR_images_regis[masterIndex - 1].c_str());
+		conversion.write_slc_to_h5(SAR_images_regis[masterIndex - 1].c_str(), slave);
+		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "range_len", slave.GetCols());
+		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "azimuth_len", slave.GetRows());
+		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_row", offset_row);
+		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_col", offset_col);
+		conversion.Copy_para_from_h5_2_h5(SAR_images[masterIndex - 1].c_str(), SAR_images_regis[masterIndex - 1].c_str());
+		conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "process_state", "coregistration");
+		conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "comment", "complex-2.0");
+	}
 	Mat Row_offset(images_number, 1, CV_32S); Row_offset.at<int>(masterIndex - 1, 0) = 0;
 	Mat Col_offset(images_number, 1, CV_32S); Col_offset.at<int>(masterIndex - 1, 0) = 0;
-	conversion.creat_new_h5(SAR_images_regis[masterIndex - 1].c_str());
-	conversion.write_slc_to_h5(SAR_images_regis[masterIndex - 1].c_str(), slave);
-	conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "range_len", slave.GetCols());
-	conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "azimuth_len", slave.GetRows());
-	conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_row", offset_row);
-	conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_col", offset_col);
-	conversion.Copy_para_from_h5_2_h5(SAR_images[masterIndex - 1].c_str(), SAR_images_regis[masterIndex - 1].c_str());
-	conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "process_state", "coregistration");
-	conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "comment", "complex-2.0");
 	
 	Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
 		&lonMax, &latMax, &lonMin, &latMin);
@@ -440,22 +444,25 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		int offset_r, offset_c;
 		offset_row2 = offset_col2 = 0;
 		slave_file = SAR_images[i].c_str();
-		conversion.read_int_from_h5(slave_file, "range_len", &sceneWidth2);
-		conversion.read_int_from_h5(slave_file, "azimuth_len", &sceneHeight2);
-		conversion.read_int_from_h5(slave_file, "offset_row", &offset_row2);
-		conversion.read_int_from_h5(slave_file, "offset_col", &offset_col2);
-		conversion.read_array_from_h5(slave_file, "lon_coefficient", lon_coef2);
-		conversion.read_array_from_h5(slave_file, "lat_coefficient", lat_coef2);
-		conversion.read_double_from_h5(slave_file, "prf", &prf2);
-		conversion.read_double_from_h5(slave_file, "range_spacing", &rangeSpacing2);
-		conversion.read_double_from_h5(slave_file, "slant_range_first_pixel", &nearRangeTime2);
-		nearRangeTime2 = 2.0 * nearRangeTime2 / VEL_C;
-		conversion.read_str_from_h5(slave_file, "acquisition_start_time", start_time);
-		conversion.utc2gps(start_time.c_str(), &start2);
-		conversion.read_str_from_h5(slave_file, "acquisition_stop_time", end_time);
-		conversion.utc2gps(end_time.c_str(), &end2);
-		conversion.read_array_from_h5(slave_file, "state_vec", statevec2);
-		conversion.read_slc_from_h5(slave_file, slave);
+		{
+			NodeUtils::Hdf5Locker locker;
+			conversion.read_int_from_h5(slave_file, "range_len", &sceneWidth2);
+			conversion.read_int_from_h5(slave_file, "azimuth_len", &sceneHeight2);
+			conversion.read_int_from_h5(slave_file, "offset_row", &offset_row2);
+			conversion.read_int_from_h5(slave_file, "offset_col", &offset_col2);
+			conversion.read_array_from_h5(slave_file, "lon_coefficient", lon_coef2);
+			conversion.read_array_from_h5(slave_file, "lat_coefficient", lat_coef2);
+			conversion.read_double_from_h5(slave_file, "prf", &prf2);
+			conversion.read_double_from_h5(slave_file, "range_spacing", &rangeSpacing2);
+			conversion.read_double_from_h5(slave_file, "slant_range_first_pixel", &nearRangeTime2);
+			nearRangeTime2 = 2.0 * nearRangeTime2 / VEL_C;
+			conversion.read_str_from_h5(slave_file, "acquisition_start_time", start_time);
+			conversion.utc2gps(start_time.c_str(), &start2);
+			conversion.read_str_from_h5(slave_file, "acquisition_stop_time", end_time);
+			conversion.utc2gps(end_time.c_str(), &end2);
+			conversion.read_array_from_h5(slave_file, "state_vec", statevec2);
+			conversion.read_slc_from_h5(slave_file, slave);
+		}
  
 		coregis.getDEMRgAzPos(dem, statevec2, rangePos2, azimuthPos2, lon_upperleft, lat_upperleft, offset_row2, offset_col2,
 			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback, this);
@@ -464,17 +471,20 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		coregis.fitSlaveOffset(slaveAzimuthOffset, rangePos, azimuthPos, &a0, &a1, &a2);
 		coregis.fitSlaveOffset(slaveRangeOffset, rangePos, azimuthPos, &b0, &b1, &b2);
 		coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c, coregisProgressCallback, this);
-		conversion.creat_new_h5(SAR_images_regis[i].c_str());
-		conversion.write_slc_to_h5(SAR_images_regis[i].c_str(), slave);
-		conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "range_len", slave.GetCols());
-		conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "azimuth_len", slave.GetRows());
-		conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_row", offset_row2 + offset_r);
-		Row_offset.at<int>(i, 0) = offset_row2 + offset_r;
-		conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_col", offset_col2 + offset_c);
-		Col_offset.at<int>(i, 0) = offset_col2 + offset_c;
-		conversion.Copy_para_from_h5_2_h5(SAR_images[i].c_str(), SAR_images_regis.at(i).c_str());
-		conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
-		conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
+		{
+			NodeUtils::Hdf5Locker locker;
+			conversion.creat_new_h5(SAR_images_regis[i].c_str());
+			conversion.write_slc_to_h5(SAR_images_regis[i].c_str(), slave);
+			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "range_len", slave.GetCols());
+			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "azimuth_len", slave.GetRows());
+			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_row", offset_row2 + offset_r);
+			Row_offset.at<int>(i, 0) = offset_row2 + offset_r;
+			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_col", offset_col2 + offset_c);
+			Col_offset.at<int>(i, 0) = offset_col2 + offset_c;
+			conversion.Copy_para_from_h5_2_h5(SAR_images[i].c_str(), SAR_images_regis.at(i).c_str());
+			conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
+			conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
+		}
 		count++;
 		emit updateProcess(10 + double(count) / double(images_number - 1) * 80, QStringLiteral("正在处理..."));
 	}

@@ -99,6 +99,7 @@ private:
 
     // Data
     std::shared_ptr<ImportedFileData> m_inputData = nullptr;
+    std::shared_ptr<ImportedFileData> m_demInputData = nullptr;
     std::shared_ptr<ImportedFileData> m_outputData = nullptr;
     std::shared_ptr<ImageInfoData> m_previewData = nullptr;
 

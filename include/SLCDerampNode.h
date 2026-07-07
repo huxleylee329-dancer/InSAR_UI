@@ -62,9 +62,11 @@ private:
 
     // Input/output data storage
     std::shared_ptr<ImportedFileData> m_inputData;
+    std::shared_ptr<ImportedFileData> m_demInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     QString m_outputNodeName;
+    QString m_demPath;
     int m_masterIndex;
 
     // Worker thread
@@ -99,10 +101,12 @@ private:
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
+    QString m_preparedDemPath;
 
 signals:
     void startDeramp(int masterIndex, QString project_name,
-                     QString src_node, QString dst_node, QStandardItemModel* model);
+                     QString src_node, QString dst_node, QStandardItemModel* model,
+                     QString dem_path);
 };
 
 } // namespace QtNodes

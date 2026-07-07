@@ -17,6 +17,7 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QPointer>
 #include <memory>
 
 class IApplicationInterface;
@@ -72,11 +73,13 @@ private:
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
+    std::shared_ptr<ImportedFileData> m_demInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     
     // Parameters
     QString m_outputNodeName;
+    QString m_demPath;
     int m_masterIndex;
     bool m_useDefaultMaster;
     bool m_isDeflat;
@@ -89,7 +92,7 @@ private:
 
     // Worker thread
     InterferometricFormationWorker* m_workerThread;
-    QThread* m_thread;
+    QPointer<QThread> m_thread;
 
     // Remedy watcher for missing JPG regeneration
     QFutureWatcher<void> m_remedyWatcher;
@@ -99,6 +102,7 @@ private:
     QString m_preparedSavePath;
     QString m_preparedProjectName;
     QString m_preparedFileName;
+    QString m_preparedDemPath;
     bool m_preparedIsDeflat = true;
     bool m_preparedIsTopoRemoval = false;
     bool m_preparedIsCoherence = false;
@@ -137,7 +141,7 @@ signals:
                               int master_index, int win_width, int win_height,
                               int multilook_rg, int multilook_az, QString save_path,
                               QString project_name, QString node_name, QString file_name,
-                              QStandardItemModel* model);
+                              QStandardItemModel* model, QString dem_path);
 };
 
 } // namespace QtNodes

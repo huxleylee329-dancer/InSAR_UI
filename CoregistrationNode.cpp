@@ -48,7 +48,7 @@ CoregistrationNode::~CoregistrationNode()
 unsigned int CoregistrationNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 1;
+        return 2;
     else
         return 2;
 }
@@ -57,7 +57,10 @@ NodeDataType CoregistrationNode::dataType(PortType portType, PortIndex portIndex
 {
     if (portType == PortType::In)
     {
-        return NodeDataType{"imported_file", "Imported File"};
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "Imported File"};
+        else
+            return NodeDataType{"imported_file", "DEM File"};
     }
     else
     {
@@ -78,7 +81,10 @@ bool CoregistrationNode::portCaptionVisible(PortType portType, PortIndex portInd
 QString CoregistrationNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        return QStringLiteral("输入数据");
+        if (portIndex == 0)
+            return QStringLiteral("输入数据");
+        else
+            return QStringLiteral("DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -89,6 +95,8 @@ QString CoregistrationNode::portCaption(PortType portType, PortIndex portIndex) 
 
 bool CoregistrationNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
+    if (portType == PortType::In && portIndex == 1)
+        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -96,24 +104,36 @@ bool CoregistrationNode::portIsOptional(PortType portType, PortIndex portIndex) 
 
 void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
-    m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
-    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-        m_outputData.reset();
-        m_previewData.reset();
-        m_outputImagePaths.clear();
-        m_outputJpgPaths.clear();
-        m_savedOutputFiles.clear();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-    }
-
-    updateMasterImageCombo();
-
-    if (m_inputData && m_outputNodeName.isEmpty()) {
-        m_outputNodeName = "Coregistration";
-        if (m_outputNodeNameEdit) {
-            m_outputNodeNameEdit->setText(m_outputNodeName);
+    if (port == 0) {
+        m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+            m_outputData.reset();
+            m_previewData.reset();
+            m_outputImagePaths.clear();
+            m_outputJpgPaths.clear();
+            m_savedOutputFiles.clear();
+            setOutputData(0, nullptr);
+            setOutputData(1, nullptr);
+        }
+        updateMasterImageCombo();
+        if (m_inputData && m_outputNodeName.isEmpty()) {
+            m_outputNodeName = "Coregistration";
+            if (m_outputNodeNameEdit) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+            }
+        }
+    } else if (port == 1) {
+        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (m_demInputData) {
+            m_demPath = m_demInputData->filePath();
+            if (m_demPathEdit) {
+                m_demPathEdit->setText(m_demPath);
+            }
+        } else {
+            m_demPath.clear();
+            if (m_demPathEdit) {
+                m_demPathEdit->clear();
+            }
         }
     }
 
@@ -163,15 +183,18 @@ void CoregistrationNode::createWidget()
     m_methodCombo->addItem(QStringLiteral("DEM辅助配准 (Fine)"), "Fine");
     m_methodCombo->setCurrentIndex(m_method == "Coarse" ? 0 : 1);
     connect(m_methodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
-        if (!confirmParameterChange()) {
-            QSignalBlocker blocker(m_methodCombo);
-            m_methodCombo->setCurrentIndex(m_method == "Coarse" ? 0 : 1);
-            return;
+        QString newMethod = m_methodCombo->itemData(index).toString();
+        if (m_method != newMethod) {
+            if (!confirmParameterChange()) {
+                QSignalBlocker blocker(m_methodCombo);
+                m_methodCombo->setCurrentIndex(m_method == "Coarse" ? 0 : 1);
+                return;
+            }
+            m_method = newMethod;
+            updateWidgetSize();
+            updateParameterWidgetsEnableState();
+            invalidateNodeData();
         }
-        m_method = m_methodCombo->itemData(index).toString();
-        updateWidgetSize();
-        updateParameterWidgetsEnableState();
-        invalidateNodeData();
     });
     formLayout->addRow(new QLabel(QStringLiteral("配准模式：")), m_methodCombo);
 
@@ -247,9 +270,18 @@ void CoregistrationNode::createWidget()
     formLayout->addRow(m_blockSizeLabel, m_blockSizeCombo);
 
     m_demPathLabel = new QLabel(QStringLiteral("DEM路径："));
+    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+
     m_demPathEdit = new QLineEdit();
     m_demPathEdit->setText(m_demPath);
     m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+    m_demPathEdit->setStyleSheet(
+        "QLineEdit:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
     connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_demPathEdit->text().trimmed();
         if (m_demPath != text) {
@@ -259,6 +291,13 @@ void CoregistrationNode::createWidget()
     });
     
     m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
+    m_demBrowseBtn->setStyleSheet(
+        "QPushButton:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
     connect(m_demBrowseBtn, &QPushButton::clicked, this, [this]() {
         QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
         if (!file.isEmpty()) {
@@ -359,10 +398,12 @@ void CoregistrationNode::updateParameterWidgetsEnableState()
     if (m_masterImageCombo) m_masterImageCombo->setEnabled(enableWidgets && !m_defaultFirstMaster);
     
     bool isCoarse = (m_method == "Coarse");
+    bool hasDemConn = (m_demInputData != nullptr);
     if (m_interpCombo) m_interpCombo->setEnabled(enableWidgets && isCoarse);
     if (m_blockSizeCombo) m_blockSizeCombo->setEnabled(enableWidgets && isCoarse);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !isCoarse);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !isCoarse);
+    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !isCoarse && !hasDemConn);
+    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !isCoarse && !hasDemConn);
+    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !isCoarse && !hasDemConn);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(enableWidgets);
 }
@@ -412,8 +453,7 @@ bool CoregistrationNode::isReady() const
 
     if (m_method == "Fine") {
         if (m_demPath.trimmed().isEmpty()) return false;
-        QDir demDir(m_demPath);
-        if (!demDir.exists()) return false;
+        if (!QFileInfo(m_demPath).exists()) return false;
     }
 
     return true;

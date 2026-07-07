@@ -39,16 +39,20 @@ SLCDerampNode::~SLCDerampNode()
 unsigned int SLCDerampNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 1;
+        return 2;
     else
         return 2;
 }
 
 NodeDataType SLCDerampNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
     if (portType == PortType::In)
-        return NodeDataType{"imported_file", "Imported File"};
+    {
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "Imported File"};
+        else
+            return NodeDataType{"imported_file", "DEM File"};
+    }
     else
     {
         if (portIndex == 0)
@@ -68,7 +72,10 @@ bool SLCDerampNode::portCaptionVisible(PortType portType, PortIndex portIndex) c
 QString SLCDerampNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        return QStringLiteral("输入图像");
+        if (portIndex == 0)
+            return QStringLiteral("输入图像");
+        else
+            return QStringLiteral("DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -80,6 +87,8 @@ QString SLCDerampNode::portCaption(PortType portType, PortIndex portIndex) const
 
 bool SLCDerampNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
+    if (portType == PortType::In && portIndex == 1)
+        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -97,25 +106,33 @@ std::shared_ptr<NodeData> SLCDerampNode::outData(PortIndex port)
 
 void SLCDerampNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
-    m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+    if (port == 0) {
+        m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
-    if (!m_inputData || m_inputData->filePaths().isEmpty())
-    {
-        m_outputData.reset();
-        m_imageInfoData.reset();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-    }
-
-    updateLabels();
-
-    if (m_inputData && m_outputNodeName.isEmpty())
-    {
-        m_outputNodeName = generateDefaultOutputName();
-        if (m_outputNodeNameEdit)
+        if (!m_inputData || m_inputData->filePaths().isEmpty())
         {
-            m_outputNodeNameEdit->setText(m_outputNodeName);
+            m_outputData.reset();
+            m_imageInfoData.reset();
+            setOutputData(0, nullptr);
+            setOutputData(1, nullptr);
+        }
+
+        updateLabels();
+
+        if (m_inputData && m_outputNodeName.isEmpty())
+        {
+            m_outputNodeName = generateDefaultOutputName();
+            if (m_outputNodeNameEdit)
+            {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+            }
+        }
+    } else if (port == 1) {
+        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (m_demInputData) {
+            m_demPath = m_demInputData->filePath();
+        } else {
+            m_demPath.clear();
         }
     }
 
@@ -138,6 +155,7 @@ QJsonObject SLCDerampNode::save() const
     QString nodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     modelJson["outputNodeName"] = nodeName;
     modelJson["masterIndex"] = m_masterIndex;
+    modelJson[QStringLiteral("demPath")] = m_demPath;
 
     return modelJson;
 }
@@ -154,6 +172,12 @@ void SLCDerampNode::load(QJsonObject const &json)
     if (!vIndex.isUndefined())
     {
         m_masterIndex = vIndex.toInt();
+    }
+
+    QJsonValue vDemPath = json[QStringLiteral("demPath")];
+    if (!vDemPath.isUndefined())
+    {
+        m_demPath = vDemPath.toString();
     }
 
     ExecutableNodeDelegateModel::load(json);
@@ -754,6 +778,8 @@ bool SLCDerampNode::prepareToStart()
         }
     }
 
+    m_preparedDemPath = m_demPath;
+
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
 }
 
@@ -766,6 +792,7 @@ void SLCDerampNode::executeProcessing()
     QString dstNode = m_preparedDstNode;
     QString dstProject = projectName();
     QString savePath = projectPath();
+    QString preparedDemPath = m_preparedDemPath;
 
     m_outputNodeName = dstNode;
 
@@ -786,7 +813,7 @@ void SLCDerampNode::executeProcessing()
 
     setProgress(0);
 
-    // 2. 覆盖运行前，清理工程 XML 的旧记录和左侧树视图以避影分身 (SOP 14)
+    // 2. 覆盖运行前，清理工程 XML 的旧记录 and 左侧树视图以避影分身 (SOP 14)
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
 
     // Create thread and worker
@@ -795,9 +822,9 @@ void SLCDerampNode::executeProcessing()
     m_worker->moveToThread(m_thread);
 
     // Connect signals
-    connect(this, &SLCDerampNode::startDeramp, m_worker, &SLCDerampWorker::SLC_deramp);
-    connect(m_thread, &QThread::started, [this, dstProject, srcNode, dstNode]() {
-        Q_EMIT startDeramp(m_masterIndex, dstProject, srcNode, dstNode, projectModel());
+    connect(this, &SLCDerampNode::startDeramp, m_worker, &SLCDerampWorker::SLC_deramp_with_dem);
+    connect(m_thread, &QThread::started, [this, dstProject, srcNode, dstNode, preparedDemPath]() {
+        Q_EMIT startDeramp(m_masterIndex, dstProject, srcNode, dstNode, projectModel(), preparedDemPath);
     });
     connect(m_worker, &SLCDerampWorker::updateProcess, this, &SLCDerampNode::onProgressUpdate);
     connect(m_worker, &SLCDerampWorker::endProcess, this, &SLCDerampNode::onProcessingFinished);

@@ -60,16 +60,20 @@ InterferometricFormationNode::~InterferometricFormationNode()
 unsigned int InterferometricFormationNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 1;
+        return 2;
     else
         return 2;
 }
 
 NodeDataType InterferometricFormationNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
     if (portType == PortType::In)
-        return NodeDataType{"imported_file", "Imported File"};
+    {
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "Imported File"};
+        else
+            return NodeDataType{"imported_file", "DEM File"};
+    }
     else
     {
         if (portIndex == 0)
@@ -89,7 +93,10 @@ bool InterferometricFormationNode::portCaptionVisible(PortType portType, PortInd
 QString InterferometricFormationNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        return QStringLiteral("输入图像");
+        if (portIndex == 0)
+            return QStringLiteral("输入图像");
+        else
+            return QStringLiteral("DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -101,6 +108,8 @@ QString InterferometricFormationNode::portCaption(PortType portType, PortIndex p
 
 bool InterferometricFormationNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
+    if (portType == PortType::In && portIndex == 1)
+        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -108,24 +117,29 @@ bool InterferometricFormationNode::portIsOptional(PortType portType, PortIndex p
 
 void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
-    m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
-
-    updateLabels();
-
-    if (m_inputData && m_outputNodeName.isEmpty()) {
-        m_outputNodeName = generateDefaultOutputName();
-        if (m_outputNodeNameEdit) {
-            m_outputNodeNameEdit->setText(m_outputNodeName);
+    if (port == 0) {
+        m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        updateLabels();
+        if (m_inputData && m_outputNodeName.isEmpty()) {
+            m_outputNodeName = generateDefaultOutputName();
+            if (m_outputNodeNameEdit) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+            }
+        }
+        if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+            m_outputData.reset();
+            m_imageInfoData.reset();
+        }
+    } else if (port == 1) {
+        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (m_demInputData) {
+            m_demPath = m_demInputData->filePath();
+        } else {
+            m_demPath.clear();
         }
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
-
-    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-        m_outputData.reset();
-        m_imageInfoData.reset();
-    }
 }
 
 std::shared_ptr<NodeData> InterferometricFormationNode::outData(PortIndex port)
@@ -156,6 +170,7 @@ QJsonObject InterferometricFormationNode::save() const
     modelJson["winH"] = m_winHEdit ? m_winHEdit->text().toInt() : m_winH;
     modelJson["multilookRg"] = m_multilookRgEdit ? m_multilookRgEdit->text().toInt() : m_multilookRg;
     modelJson["multilookAz"] = m_multilookAzEdit ? m_multilookAzEdit->text().toInt() : m_multilookAz;
+    modelJson[QStringLiteral("demPath")] = m_demPath;
 
     return modelJson;
 }
@@ -191,6 +206,9 @@ void InterferometricFormationNode::load(QJsonObject const &json)
 
     QJsonValue vMultilookAz = json["multilookAz"];
     if (!vMultilookAz.isUndefined()) m_multilookAz = vMultilookAz.toInt();
+
+    QJsonValue vDemPath = json[QStringLiteral("demPath")];
+    if (!vDemPath.isUndefined()) m_demPath = vDemPath.toString();
 
     ExecutableNodeDelegateModel::load(json);
 
@@ -893,6 +911,7 @@ bool InterferometricFormationNode::prepareToStart()
     m_preparedIsDeflat = m_isDeflat;
     m_preparedIsTopoRemoval = m_isTopoRemoval;
     m_preparedIsCoherence = m_isCoherence;
+    m_preparedDemPath = m_demPath;
 
     m_preparedWinW = m_winWEdit ? m_winWEdit->text().toInt() : m_winW;
     m_preparedWinH = m_winHEdit ? m_winHEdit->text().toInt() : m_winH;
@@ -987,13 +1006,14 @@ void InterferometricFormationNode::executeProcessing()
     m_workerThread = new InterferometricFormationWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &InterferometricFormationNode::startInterferometric, m_workerThread, &InterferometricFormationWorker::Interferometric);
+    connect(this, &InterferometricFormationNode::startInterferometric, m_workerThread, &InterferometricFormationWorker::InterferometricWithDem);
     connect(m_thread, &QThread::started, [this]() {
         Q_EMIT startInterferometric(m_preparedIsDeflat, m_preparedIsTopoRemoval, m_preparedIsCoherence, 
                                     m_preparedMasterIndex, m_preparedWinW, m_preparedWinH,
                                     m_preparedMultilookRg, m_preparedMultilookAz, 
                                     m_preparedSavePath, m_preparedProjectName, 
-                                    m_preparedDstNode, m_preparedFileName, projectModel());
+                                    m_preparedDstNode, m_preparedFileName, projectModel(),
+                                    m_preparedDemPath);
     });
     connect(m_workerThread, &InterferometricFormationWorker::updateProcess, this, &InterferometricFormationNode::onProgressUpdate);
     connect(m_workerThread, &InterferometricFormationWorker::endProcess, this, &InterferometricFormationNode::onProcessingFinished);

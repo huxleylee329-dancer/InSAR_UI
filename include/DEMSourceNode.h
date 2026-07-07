@@ -17,6 +17,7 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QPointer>
 #include <memory>
 
 class IApplicationInterface;
@@ -80,7 +81,7 @@ private:
 
     // Worker thread
     DEMSourceWorker* m_workerThread;
-    QThread* m_thread;
+    QPointer<QThread> m_thread;
 
     // Remedy watcher for missing JPG regeneration
     QFutureWatcher<void> m_remedyWatcher;

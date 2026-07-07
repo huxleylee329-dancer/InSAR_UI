@@ -70,6 +70,17 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                                                      QString project_name, QString node_name, QString file_name,
                                                      QStandardItemModel* model)
 {
+    InterferometricWithDem(isdeflat, istopo_removal, iscoherence, master_index, win_width, win_height,
+                           multilook_rg, multilook_az, save_path, project_name, node_name, file_name,
+                           model, QString());
+}
+
+void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool istopo_removal, bool iscoherence,
+                                                            int master_index, int win_width, int win_height,
+                                                            int multilook_rg, int multilook_az, QString save_path,
+                                                            QString project_name, QString node_name, QString file_name,
+                                                            QStandardItemModel* model, QString dem_path)
+{
     current_worker = this;
     WorkerResetGuard reset_guard;
 
@@ -102,11 +113,14 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
     }
     QString absolute_path = save_path + "/" + file_name;
 
-    // 外部DEM文件夹
-    QString appPath = QCoreApplication::applicationDirPath();
-    QString demPath = appPath + "/dem";
-    QDir appDir(appPath);
-    if (!appDir.exists("dem")) appDir.mkdir("dem");
+    // 外部DEM文件夹或文件路径
+    QString demPath = dem_path;
+    if (demPath.isEmpty()) {
+        QString appPath = QCoreApplication::applicationDirPath();
+        demPath = appPath + "/dem";
+        QDir appDir(appPath);
+        if (!appDir.exists("dem")) appDir.mkdir("dem");
+    }
 
     for (int i = 0; i < project->rowCount(); i++)
     {
@@ -354,7 +368,7 @@ void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_
                 int ret_topo = flat.topography_simulation(phase_deflatted, statevec, statevec2, lon_coef, lat_coef, inc_coef, prf, prf2,
                     sceneHeight, sceneWidth, offset_row, offset_col, nearRangeTime, rangeSpacing, wavelength,
                     acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str(), 20, DeflatProgressCallbackImpl);
-                
+
                 if (ret_topo == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Topography simulation cancelled by user.");
                     return;

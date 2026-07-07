@@ -68,11 +68,13 @@ private:
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
+    std::shared_ptr<ImportedFileData> m_demInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     
     // Parameters
     QString m_outputNodeName;
+    QString m_demPath;
     int m_type;       // 1: 干涉产品, 2: SAR图像
     int m_multiRg;    // default 1
     int m_multiAz;    // default 1
@@ -111,12 +113,13 @@ private:
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
     QStringList m_preparedOutputPaths;
+    QString m_preparedDemPath;
     int m_preparedType = 0;
     int m_preparedMultiRg = 0;
     int m_preparedMultiAz = 0;
 
 signals:
-    void startGeocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
+    void startGeocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model, QString dem_path);
 };
 
 } // namespace QtNodes

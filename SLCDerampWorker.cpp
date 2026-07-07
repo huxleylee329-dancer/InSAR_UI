@@ -90,6 +90,18 @@ void SLCDerampWorker::SLC_deramp(
     QStandardItemModel* model
 )
 {
+    SLC_deramp_with_dem(masterIndex, project_name, src_node, dst_node, model, QString());
+}
+
+void SLCDerampWorker::SLC_deramp_with_dem(
+    int masterIndex,
+    QString project_name,
+    QString src_node,
+    QString dst_node,
+    QStandardItemModel* model,
+    QString dem_path
+)
+{
     NodeUtils::Hdf5Locker locker;
     DerampThreadLocalGuard tlGuard(this);
     InSARLogManager::LogInfo("SLCDerampWorker", QString("SLC_deramp task started. Source: %1, Destination: %2").arg(src_node).arg(dst_node));
@@ -105,11 +117,14 @@ void SLCDerampWorker::SLC_deramp(
         return;
     }
 
-    // 确定外部 DEM 文件夹
-    QString appPath = QCoreApplication::applicationDirPath();
-    QString demPath = appPath + "/dem";
-    QDir appDir(appPath);
-    if (!appDir.exists("dem")) appDir.mkdir("dem");
+    // 确定外部 DEM 文件夹或文件路径
+    QString demPath = dem_path;
+    if (demPath.isEmpty()) {
+        QString appPath = QCoreApplication::applicationDirPath();
+        demPath = appPath + "/dem";
+        QDir appDir(appPath);
+        if (!appDir.exists("dem")) appDir.mkdir("dem");
+    }
 
     // 确定待处理数据文件
     Utils util; FormatConversion conversion; Deflat flat;

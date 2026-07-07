@@ -88,6 +88,7 @@ public:
                     sizeStr = QString::number(sizeMB, 'f', 2) + " MB";
                 }
                 fields.append({"Total Size", sizeStr, FieldEditType::None});
+                fields.append({"Paths", _filePaths.join("\n"), FieldEditType::None});
             } else {
                 QFileInfo fi(_filePaths.first());
                 if (fi.isDir()) {
@@ -115,11 +116,13 @@ public:
                     }
 
                     fields.append({"Folder", fi.fileName(), FieldEditType::None});
+                    fields.append({"Path", fi.absoluteFilePath(), FieldEditType::None});
                     fields.append({"H5 Files", QString::number(h5Count), FieldEditType::None});
                     fields.append({"Previews", QString::number(previewCount), FieldEditType::None});
                     fields.append({"Total Size", sizeStr, FieldEditType::None});
                 } else {
                     fields.append({"File", fi.fileName(), FieldEditType::None});
+                    fields.append({"Path", fi.absoluteFilePath(), FieldEditType::None});
                     fields.append({"Size", QString::number(fi.size() / 1024.0, 'f', 2) + " KB", FieldEditType::None});
                 }
             }
