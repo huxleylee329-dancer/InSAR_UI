@@ -1,4 +1,5 @@
 #include "DEMSourceDialog.h"
+#include "NodeUtils.h"
 #include <QFormLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -52,11 +53,20 @@ DEMSourceDialog::DEMSourceDialog(QWidget* parent)
 
     auto* cacheLayout = new QHBoxLayout();
     m_cacheDirEdit = new QLineEdit(this);
+    m_cacheDirEdit->setObjectName("demPathEdit");
     m_browseCacheBtn = new QPushButton(QStringLiteral("浏览..."), this);
     m_browseCacheBtn->setFixedWidth(60);
     cacheLayout->addWidget(m_cacheDirEdit);
     cacheLayout->addWidget(m_browseCacheBtn);
     formLayout->addRow(QStringLiteral("缓存目录:"), cacheLayout);
+
+    connect(m_cacheDirEdit, &QLineEdit::editingFinished, this, [this]() {
+        QString dir = m_cacheDirEdit->text().trimmed();
+        auto* iface = NodeUtils::getProjectContext(this);
+        if (iface && !dir.isEmpty()) {
+            NodeUtils::setGlobalDemPath(iface, dir, true);
+        }
+    });
 
     auto* cacheManageLayout = new QHBoxLayout();
     m_cacheSizeLabel = new QLabel(QStringLiteral("当前缓存: 0.00 MB"), this);
@@ -127,7 +137,13 @@ void DEMSourceDialog::onProjectChanged(int index)
         QStandardItem* pathItem = m_model->item(projIdx, 1);
         if (pathItem) {
             QString projectPath = pathItem->text();
-            QString cacheDir = QFileInfo(projectPath).absolutePath() + "/cache";
+            auto* iface = NodeUtils::getProjectContext(this);
+            QString cacheDir;
+            if (iface) {
+                cacheDir = NodeUtils::getGlobalDemPath(iface);
+            } else {
+                cacheDir = QFileInfo(projectPath).absolutePath() + "/cache";
+            }
             m_cacheDirEdit->setText(QDir::toNativeSeparators(cacheDir));
             updateCacheSizeLabel();
         }
@@ -347,6 +363,11 @@ void DEMSourceDialog::onBrowseCachePressed()
     if (!dir.isEmpty()) {
         m_cacheDirEdit->setText(QDir::toNativeSeparators(dir));
         updateCacheSizeLabel();
+
+        auto* iface = NodeUtils::getProjectContext(this);
+        if (iface) {
+            NodeUtils::setGlobalDemPath(iface, QDir::toNativeSeparators(dir), true);
+        }
     }
 }
 

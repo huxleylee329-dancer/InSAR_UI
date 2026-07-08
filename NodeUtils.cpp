@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QDir>
+#include <QLineEdit>
 #include "include/IApplicationInterface.h"
 #include "include/MainWindow.h"
 #include "include/WorkspaceUI.h"
@@ -959,6 +960,89 @@ bool writeScalarToH5(const QString& filePath, const QString& dataset, double val
     cv::Mat tmp = cv::Mat::zeros(1, 1, CV_64FC1);
     tmp.at<double>(0, 0) = value;
     return writeMatToH5(filePath, dataset, tmp, errMsg);
+}
+
+QString getGlobalDemPath(IApplicationInterface* iface)
+{
+    if (!iface) return QString();
+    XMLFile* xml = iface->projectXml();
+    if (!xml) return QString();
+    
+    TiXmlElement* root = nullptr;
+    xml->get_root(root);
+    if (!root) return QString();
+    
+    TiXmlElement* pnode = nullptr;
+    xml->_find_node(root, "globalDemPath", pnode);
+    if (pnode && pnode->GetText()) {
+        return QString::fromUtf8(pnode->GetText());
+    }
+    
+    // 缺省时返回默认的项目级缓存路径项目目录/.dem_cache
+    QString projPath = iface->projectPath();
+    if (projPath.isEmpty()) return QString();
+    
+    QFileInfo fi(projPath);
+    QString projectDir = fi.absolutePath();
+    return QDir::toNativeSeparators(projectDir + "/.dem_cache");
+}
+
+bool setGlobalDemPath(IApplicationInterface* iface, const QString& path, bool askUser)
+{
+    if (!iface || path.isEmpty()) return false;
+    
+    XMLFile* xml = iface->projectXml();
+    if (!xml) return false;
+    
+    TiXmlElement* root = nullptr;
+    xml->get_root(root);
+    if (!root) return false;
+    
+    QString cleanPath = QDir::toNativeSeparators(path);
+    
+    // 判断是否已经是该全局路径，避免重复设置
+    QString currentGlobal = getGlobalDemPath(iface);
+    if (QDir::toNativeSeparators(currentGlobal) == cleanPath) {
+        return true;
+    }
+    
+    if (askUser) {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            nullptr,
+            QStringLiteral("设置全局高程数据"),
+            QStringLiteral("是否将该路径应用为本项目的全局默认高程数据？\n\n新路径：%1").arg(cleanPath),
+            QMessageBox::Yes | QMessageBox::No
+        );
+        if (reply != QMessageBox::Yes) {
+            return false;
+        }
+    }
+    
+    TiXmlElement* pnode = nullptr;
+    xml->_find_node(root, "globalDemPath", pnode);
+    if (!pnode) {
+        pnode = new TiXmlElement("globalDemPath");
+        root->LinkEndChild(pnode);
+    }
+    
+    pnode->Clear();
+    pnode->LinkEndChild(new TiXmlText(cleanPath.toUtf8().constData()));
+    
+    // 保存项目 XML
+    xml->XMLFile_save(iface->projectPath().toStdString().c_str());
+    
+    // 联动更新整个应用程序中所有已启用（未连线）的 demPathEdit 控件
+    foreach (QWidget* widget, QApplication::allWidgets()) {
+        QLineEdit* lineEdit = qobject_cast<QLineEdit*>(widget);
+        if (lineEdit && lineEdit->objectName() == "demPathEdit") {
+            if (lineEdit->isEnabled()) {
+                lineEdit->setText(cleanPath);
+                emit lineEdit->editingFinished();
+            }
+        }
+    }
+    
+    return true;
 }
 
 } // namespace NodeUtils

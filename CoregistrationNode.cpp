@@ -176,11 +176,12 @@ void CoregistrationNode::createWidget()
         invalidateExecution();
     };
 
-    QFormLayout* formLayout = new QFormLayout();
-    formLayout->setContentsMargins(0, 0, 0, 0);
-    formLayout->setSpacing(6);
-    formLayout->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    formLayout->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
+    // 1. formLayout1 (Top parameters)
+    QFormLayout* formLayout1 = new QFormLayout();
+    formLayout1->setContentsMargins(0, 0, 0, 0);
+    formLayout1->setSpacing(6);
+    formLayout1->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    formLayout1->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
 
     m_methodCombo = new QComboBox();
     m_methodCombo->addItem(QStringLiteral("强度图配准 (Coarse)"), "Coarse");
@@ -200,7 +201,9 @@ void CoregistrationNode::createWidget()
             invalidateNodeData();
         }
     });
-    formLayout->addRow(new QLabel(QStringLiteral("配准模式：")), m_methodCombo);
+    QLabel* methodLabel = new QLabel(QStringLiteral("配准模式："));
+    methodLabel->setFixedWidth(100);
+    formLayout1->addRow(methodLabel, m_methodCombo);
 
     m_defaultFirstMasterCheckBox = new QCheckBox(QStringLiteral("默认首张图像为主图像"));
     m_defaultFirstMasterCheckBox->setChecked(m_defaultFirstMaster);
@@ -218,7 +221,6 @@ void CoregistrationNode::createWidget()
             invalidateNodeData();
         }
     });
-    formLayout->addRow(m_defaultFirstMasterCheckBox);
 
     m_masterImageCombo = new QComboBox();
     connect(m_masterImageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
@@ -235,9 +237,22 @@ void CoregistrationNode::createWidget()
             }
         }
     });
-    formLayout->addRow(new QLabel(QStringLiteral("主图像：")), m_masterImageCombo);
+    QLabel* masterLabel = new QLabel(QStringLiteral("主图像："));
+    masterLabel->setFixedWidth(100);
+    formLayout1->addRow(masterLabel, m_masterImageCombo);
 
+    layout->addLayout(formLayout1);
+    layout->addWidget(m_defaultFirstMasterCheckBox);
+
+    // 2. Coarse parameters container
+    m_coarseParamsWidget = new QWidget();
+    QVBoxLayout* coarseLayout = new QVBoxLayout(m_coarseParamsWidget);
+    coarseLayout->setContentsMargins(0, 0, 0, 0);
+    coarseLayout->setSpacing(6);
+
+    QHBoxLayout* interpRow = new QHBoxLayout();
     m_interpLabel = new QLabel(QStringLiteral("插值倍数："));
+    m_interpLabel->setFixedWidth(100);
     m_interpCombo = new QComboBox();
     m_interpCombo->addItems(QStringList() << "2" << "4" << "8" << "16");
     m_interpCombo->setCurrentText(QString::number(m_interpTimes));
@@ -253,9 +268,13 @@ void CoregistrationNode::createWidget()
             invalidateNodeData();
         }
     });
-    formLayout->addRow(m_interpLabel, m_interpCombo);
+    interpRow->addWidget(m_interpLabel);
+    interpRow->addWidget(m_interpCombo);
+    coarseLayout->addLayout(interpRow);
 
+    QHBoxLayout* blockSizeRow = new QHBoxLayout();
     m_blockSizeLabel = new QLabel(QStringLiteral("块大小："));
+    m_blockSizeLabel->setFixedWidth(100);
     m_blockSizeCombo = new QComboBox();
     m_blockSizeCombo->addItems(QStringList() << "32" << "64" << "128" << "256");
     m_blockSizeCombo->setCurrentText(QString::number(m_blockSize));
@@ -271,12 +290,21 @@ void CoregistrationNode::createWidget()
             invalidateNodeData();
         }
     });
-    formLayout->addRow(m_blockSizeLabel, m_blockSizeCombo);
+    blockSizeRow->addWidget(m_blockSizeLabel);
+    blockSizeRow->addWidget(m_blockSizeCombo);
+    coarseLayout->addLayout(blockSizeRow);
 
-    m_demPathLabel = new QLabel(QStringLiteral("DEM路径："));
-    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+    layout->addWidget(m_coarseParamsWidget);
+
+    if (m_demPath.isEmpty()) {
+        auto* iface = NodeUtils::getProjectContext(nullptr);
+        if (iface) {
+            m_demPath = NodeUtils::getGlobalDemPath(iface);
+        }
+    }
 
     m_demPathEdit = new QLineEdit();
+    m_demPathEdit->setObjectName("demPathEdit");
     m_demPathEdit->setText(m_demPath);
     m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
     m_demPathEdit->setStyleSheet(
@@ -291,6 +319,10 @@ void CoregistrationNode::createWidget()
         if (m_demPath != text) {
             m_demPath = text;
             invalidateNodeData();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
         }
     });
     
@@ -312,13 +344,19 @@ void CoregistrationNode::createWidget()
             setOutputData(0, nullptr);
             setOutputData(1, nullptr);
             invalidateExecution();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
         }
     });
 
-    auto* demLayout = new QHBoxLayout();
-    demLayout->addWidget(m_demPathEdit);
-    demLayout->addWidget(m_demBrowseBtn);
-    formLayout->addRow(m_demPathLabel, demLayout);
+    // 3. formLayout2 (Output parameters)
+    QFormLayout* formLayout2 = new QFormLayout();
+    formLayout2->setContentsMargins(0, 0, 0, 0);
+    formLayout2->setSpacing(6);
+    formLayout2->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    formLayout2->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
 
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -329,7 +367,9 @@ void CoregistrationNode::createWidget()
             invalidateNodeData();
         }
     });
-    formLayout->addRow(new QLabel(QStringLiteral("输出节点名：")), m_outputNodeNameEdit);
+    QLabel* outNodeLabel = new QLabel(QStringLiteral("输出节点名："));
+    outNodeLabel->setFixedWidth(100);
+    formLayout2->addRow(outNodeLabel, m_outputNodeNameEdit);
 
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
@@ -340,9 +380,27 @@ void CoregistrationNode::createWidget()
             invalidateNodeData();
         }
     });
-    formLayout->addRow(new QLabel(QStringLiteral("文件名命名规则：")), m_outputFileNameEdit);
+    QLabel* outFileLabel = new QLabel(QStringLiteral("文件名命名规则："));
+    outFileLabel->setFixedWidth(100);
+    formLayout2->addRow(outFileLabel, m_outputFileNameEdit);
 
-    layout->addLayout(formLayout);
+    layout->addLayout(formLayout2);
+
+    // 4. DEM Row container
+    m_demRowWidget = new QWidget();
+    QHBoxLayout* demRow = new QHBoxLayout(m_demRowWidget);
+    demRow->setContentsMargins(0, 0, 0, 0);
+    demRow->setSpacing(6);
+
+    m_demPathLabel = new QLabel(QStringLiteral("DEM路径："));
+    m_demPathLabel->setFixedWidth(100);
+    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+
+    demRow->addWidget(m_demPathLabel);
+    demRow->addWidget(m_demPathEdit);
+    demRow->addWidget(m_demBrowseBtn);
+
+    layout->addWidget(m_demRowWidget);
 
     updateWidgetSize();
     updateParameterWidgetsEnableState();
@@ -381,14 +439,10 @@ void CoregistrationNode::updateWidgetSize()
 
     bool isCoarse = (m_method == "Coarse");
 
-    m_interpLabel->setVisible(isCoarse);
-    m_interpCombo->setVisible(isCoarse);
-    m_blockSizeLabel->setVisible(isCoarse);
-    m_blockSizeCombo->setVisible(isCoarse);
+    if (m_coarseParamsWidget) m_coarseParamsWidget->setVisible(isCoarse);
+    if (m_demRowWidget) m_demRowWidget->setVisible(!isCoarse);
 
-    m_demPathLabel->setVisible(!isCoarse);
-    m_demPathEdit->setVisible(!isCoarse);
-    m_demBrowseBtn->setVisible(!isCoarse);
+    _widget->adjustSize();
 }
 
 void CoregistrationNode::updateParameterWidgetsEnableState()

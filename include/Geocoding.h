@@ -17,6 +17,10 @@ public slots:
     void endThread();
     void StopThread();
     void TransitModel(QStandardItemModel*);
+signals:
+    void operate(int, int, int, QString, QString, QString, QStandardItemModel*, QString dem_path);
+    void sendCopy(QStandardItemModel*);
+
 private:
     Ui::Geocoding* ui;
     QStandardItemModel* copy;
@@ -25,9 +29,14 @@ private:
     QString projectFile;
     int image_number;
     void ChangeVision(bool Editable);
-signals:
-    void operate(int, int, int, QString, QString, QString, QStandardItemModel*);
-    void sendCopy(QStandardItemModel*);
+
+    QLabel* m_demPathLabel1 = nullptr;
+    QLineEdit* m_demPathEdit1 = nullptr;
+    QPushButton* m_demBrowseBtn1 = nullptr;
+
+    QLabel* m_demPathLabel2 = nullptr;
+    QLineEdit* m_demPathEdit2 = nullptr;
+    QPushButton* m_demBrowseBtn2 = nullptr;
 private slots:
     /*工程选择按钮响应函数*/
     void on_comboBox_project1_currentIndexChanged();

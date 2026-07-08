@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QCheckBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -71,6 +72,10 @@ private:
     QLineEdit* m_multilookAzEdit;
     QLineEdit* m_outputNodeNameEdit;
 
+    QLabel* m_demPathLabel = nullptr;
+    QLineEdit* m_demPathEdit = nullptr;
+    QPushButton* m_demBrowseBtn = nullptr;
+
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
     std::shared_ptr<ImportedFileData> m_demInputData;
@@ -120,6 +125,7 @@ private:
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateLabels();
+    void updateParameterWidgetsEnableState();
     void updateMasterImageCombo();
     void onCoherenceStateChanged(int state);
     QString generateDefaultOutputName() const;

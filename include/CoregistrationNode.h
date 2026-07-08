@@ -78,6 +78,8 @@ private:
 
     // UI Widgets
     QWidget* _widget = nullptr;
+    QWidget* m_coarseParamsWidget = nullptr;
+    QWidget* m_demRowWidget = nullptr;
     QComboBox* m_methodCombo = nullptr;
     QCheckBox* m_defaultFirstMasterCheckBox = nullptr;
     QComboBox* m_masterImageCombo = nullptr;

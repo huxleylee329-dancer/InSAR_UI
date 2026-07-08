@@ -129,15 +129,6 @@ void SLCDerampWorker::SLC_deramp_with_dem(
         return;
     }
 
-    // 确定外部 DEM 文件夹或文件路径
-    QString demPath = dem_path;
-    if (demPath.isEmpty()) {
-        QString appPath = QCoreApplication::applicationDirPath();
-        demPath = appPath + "/dem";
-        QDir appDir(appPath);
-        if (!appDir.exists("dem")) appDir.mkdir("dem");
-    }
-
     // 确定待处理数据文件
     Utils util; FormatConversion conversion; Deflat flat;
     vector<string> SAR_images, SAR_images_deramp;
@@ -177,6 +168,12 @@ void SLCDerampWorker::SLC_deramp_with_dem(
                 .arg(origin_name).toStdString());
         }
     }, Qt::BlockingQueuedConnection);
+
+    // 确定外部 DEM 文件夹或文件路径
+    QString demPath = dem_path;
+    if (demPath.isEmpty()) {
+        demPath = QDir::toNativeSeparators(save_path + "/.dem_cache");
+    }
 
     if (!found_project) {
         emit errorProcess(QStringLiteral("未找到对应的工程: ") + project_name);

@@ -78,9 +78,14 @@ DEMSourceNode::DEMSourceNode()
 {
     setExecutionMode(ExecutionMode::Automatic);
     
-    // 初始化默认缓存目录为全局共享目录 D:\SRC\insar_ui\bin\dem
-    QString appDir = QCoreApplication::applicationDirPath();
-    m_cacheDir = QDir::toNativeSeparators(appDir + "/dem");
+    // 初始化默认缓存目录，优先使用项目的全局默认高程数据路径
+    auto* iface = NodeUtils::getProjectContext(nullptr);
+    if (iface) {
+        m_cacheDir = NodeUtils::getGlobalDemPath(iface);
+    } else {
+        QString appDir = QCoreApplication::applicationDirPath();
+        m_cacheDir = QDir::toNativeSeparators(appDir + "/dem");
+    }
 }
 
 DEMSourceNode::~DEMSourceNode()
@@ -352,13 +357,18 @@ void DEMSourceNode::createWidget()
     cacheLayout->addWidget(cacheLabel);
     
     m_cacheDirEdit = new QLineEdit();
+    m_cacheDirEdit->setObjectName("demPathEdit");
     m_cacheDirEdit->setText(m_cacheDir);
     m_cacheDirEdit->setToolTip(QStringLiteral("默认指向软件全局共享 dem 目录。可修改为工程局部目录以便打包工程。"));
     connect(m_cacheDirEdit, &QLineEdit::editingFinished, this, [this]() {
-        QString dir = m_cacheDirEdit->text();
+        QString dir = m_cacheDirEdit->text().trimmed();
         if (m_cacheDir != dir) {
             m_cacheDir = dir;
             updateCacheSizeLabel();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_cacheDir, true);
+            }
         }
     });
     cacheLayout->addWidget(m_cacheDirEdit);
@@ -371,6 +381,10 @@ void DEMSourceNode::createWidget()
             m_cacheDir = QDir::toNativeSeparators(selectedDir);
             m_cacheDirEdit->setText(m_cacheDir);
             updateCacheSizeLabel();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_cacheDir, true);
+            }
         }
     });
     cacheLayout->addWidget(m_browseCacheBtn);

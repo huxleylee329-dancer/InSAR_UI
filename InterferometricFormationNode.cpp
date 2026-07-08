@@ -18,6 +18,7 @@
 #include <QStandardItemModel>
 #include <QMessageBox>
 #include <QTimer>
+#include <QFileDialog>
 #include <QtConcurrent/QtConcurrent>
 
 namespace QtNodes {
@@ -134,12 +135,19 @@ void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, Por
         m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
         if (m_demInputData) {
             m_demPath = m_demInputData->filePath();
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
         } else {
-            m_demPath.clear();
+            if (!isRestoring()) {
+                m_demPath.clear();
+                if (m_demPathEdit) {
+                    m_demPathEdit->clear();
+                }
+            }
         }
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+    updateParameterWidgetsEnableState();
 }
 
 std::shared_ptr<NodeData> InterferometricFormationNode::outData(PortIndex port)
@@ -479,6 +487,68 @@ void InterferometricFormationNode::createWidget()
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
+    // 13. DEM路径
+    auto* demLayout = new QHBoxLayout();
+    m_demPathLabel = new QLabel("DEM路径");
+    m_demPathLabel->setFixedWidth(100);
+    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+    
+    if (m_demPath.isEmpty()) {
+        auto* iface = NodeUtils::getProjectContext(nullptr);
+        if (iface) {
+            m_demPath = NodeUtils::getGlobalDemPath(iface);
+        }
+    }
+    
+    m_demPathEdit = new QLineEdit();
+    m_demPathEdit->setObjectName("demPathEdit");
+    m_demPathEdit->setText(m_demPath);
+    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+    m_demPathEdit->setStyleSheet(
+        "QLineEdit:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_demPathEdit->text().trimmed();
+        if (m_demPath != text) {
+            m_demPath = text;
+            invalidateNodeData();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
+    m_demBrowseBtn->setStyleSheet(
+        "QPushButton:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
+        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPath = file;
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+            invalidateNodeData();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    demLayout->addWidget(m_demPathLabel);
+    demLayout->addWidget(m_demPathEdit);
+    demLayout->addWidget(m_demBrowseBtn);
+    layout->addLayout(demLayout);
+
     // Spacer
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
@@ -487,11 +557,7 @@ void InterferometricFormationNode::createWidget()
 
 void InterferometricFormationNode::onCoherenceStateChanged(int state)
 {
-    bool enabled = (state == Qt::Checked);
-    if (m_winWLabel) m_winWLabel->setEnabled(enabled);
-    if (m_winWEdit) m_winWEdit->setEnabled(enabled);
-    if (m_winHLabel) m_winHLabel->setEnabled(enabled);
-    if (m_winHEdit) m_winHEdit->setEnabled(enabled);
+    updateParameterWidgetsEnableState();
 }
 
 void InterferometricFormationNode::updateLabels()
@@ -749,15 +815,7 @@ void InterferometricFormationNode::onProcessingFinished()
             Q_EMIT dataUpdated(1);
 
             // Update UI state
-            m_outputNodeNameEdit->setEnabled(true);
-            m_defaultMasterCheckBox->setEnabled(true);
-            m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-            m_deflatCheckBox->setEnabled(true);
-            m_topoRemovalCheckBox->setEnabled(true);
-            m_coherenceCheckBox->setEnabled(true);
-            onCoherenceStateChanged(m_isCoherence ? Qt::Checked : Qt::Unchecked);
-            m_multilookRgEdit->setEnabled(true);
-            m_multilookAzEdit->setEnabled(true);
+            updateParameterWidgetsEnableState();
 
             setState(ExecutionState::Running);
             setProgress(100);
@@ -780,15 +838,7 @@ void InterferometricFormationNode::onProcessingFinished()
         Q_EMIT dataUpdated(1);
 
         // Update UI state
-        m_outputNodeNameEdit->setEnabled(true);
-        m_defaultMasterCheckBox->setEnabled(true);
-        m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-        m_deflatCheckBox->setEnabled(true);
-        m_topoRemovalCheckBox->setEnabled(true);
-        m_coherenceCheckBox->setEnabled(true);
-        onCoherenceStateChanged(m_isCoherence ? Qt::Checked : Qt::Unchecked);
-        m_multilookRgEdit->setEnabled(true);
-        m_multilookAzEdit->setEnabled(true);
+        updateParameterWidgetsEnableState();
 
         setState(ExecutionState::Running);
         setProgress(100);
@@ -815,15 +865,7 @@ void InterferometricFormationNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
-    m_outputNodeNameEdit->setEnabled(true);
-    m_defaultMasterCheckBox->setEnabled(true);
-    m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-    m_deflatCheckBox->setEnabled(true);
-    m_topoRemovalCheckBox->setEnabled(true);
-    m_coherenceCheckBox->setEnabled(true);
-    onCoherenceStateChanged(m_isCoherence ? Qt::Checked : Qt::Unchecked);
-    m_multilookRgEdit->setEnabled(true);
-    m_multilookAzEdit->setEnabled(true);
+    updateParameterWidgetsEnableState();
     
     setState(ExecutionState::Error);
 }
@@ -974,15 +1016,7 @@ void InterferometricFormationNode::executeProcessing()
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = m_preparedFileName;
         
-        m_outputNodeNameEdit->setEnabled(true);
-        m_defaultMasterCheckBox->setEnabled(true);
-        m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-        m_deflatCheckBox->setEnabled(true);
-        m_topoRemovalCheckBox->setEnabled(true);
-        m_coherenceCheckBox->setEnabled(true);
-        onCoherenceStateChanged(m_isCoherence ? Qt::Checked : Qt::Unchecked);
-        m_multilookRgEdit->setEnabled(true);
-        m_multilookAzEdit->setEnabled(true);
+        updateParameterWidgetsEnableState();
 
         setState(ExecutionState::Running);
         setProgress(100);
@@ -1025,16 +1059,7 @@ void InterferometricFormationNode::executeProcessing()
     m_thread->start();
     
     // Disable inputs UI
-    m_outputNodeNameEdit->setEnabled(false);
-    m_defaultMasterCheckBox->setEnabled(false);
-    m_masterImageCombo->setEnabled(false);
-    m_deflatCheckBox->setEnabled(false);
-    m_topoRemovalCheckBox->setEnabled(false);
-    m_coherenceCheckBox->setEnabled(false);
-    if (m_winWEdit) m_winWEdit->setEnabled(false);
-    if (m_winHEdit) m_winHEdit->setEnabled(false);
-    m_multilookRgEdit->setEnabled(false);
-    m_multilookAzEdit->setEnabled(false);
+    updateParameterWidgetsEnableState();
 
     // Keep running state in automatic mode
     QTimer::singleShot(0, this, [this]() {
@@ -1182,6 +1207,33 @@ QStringList InterferometricFormationNode::previewImagePaths() const
         }
     }
     return list;
+}
+
+void InterferometricFormationNode::updateParameterWidgetsEnableState()
+{
+    bool isExec = m_thread && m_thread->isRunning();
+    bool enableWidgets = !isExec;
+
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
+    if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(enableWidgets);
+    if (m_masterImageCombo) m_masterImageCombo->setEnabled(enableWidgets && !m_useDefaultMaster);
+    if (m_deflatCheckBox) m_deflatCheckBox->setEnabled(enableWidgets);
+    if (m_topoRemovalCheckBox) m_topoRemovalCheckBox->setEnabled(enableWidgets);
+    if (m_coherenceCheckBox) m_coherenceCheckBox->setEnabled(enableWidgets);
+
+    bool coherenceEnabled = enableWidgets && m_isCoherence;
+    if (m_winWLabel) m_winWLabel->setEnabled(coherenceEnabled);
+    if (m_winWEdit) m_winWEdit->setEnabled(coherenceEnabled);
+    if (m_winHLabel) m_winHLabel->setEnabled(coherenceEnabled);
+    if (m_winHEdit) m_winHEdit->setEnabled(coherenceEnabled);
+
+    if (m_multilookRgEdit) m_multilookRgEdit->setEnabled(enableWidgets);
+    if (m_multilookAzEdit) m_multilookAzEdit->setEnabled(enableWidgets);
+
+    bool hasDemConn = (m_demInputData != nullptr);
+    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !hasDemConn);
 }
 
 } // namespace QtNodes

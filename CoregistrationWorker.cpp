@@ -369,10 +369,7 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	//外部DEM文件夹
     QString demPath = m_demPath;
     if (demPath.isEmpty()) {
-        QString appPath = QCoreApplication::applicationDirPath();
-        demPath = appPath + "/dem";
-        QDir appDir(appPath);
-        if (!appDir.exists("dem")) appDir.mkdir("dem");
+        demPath = QDir::toNativeSeparators(savepath + "/.dem_cache");
     }
 	string dempath = demPath.toStdString();
 

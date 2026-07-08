@@ -7,6 +7,10 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include<QFileDialog>
+#include<QLineEdit>
+#include<QPushButton>
+#include "NodeUtils.h"
 Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::InterferometricFormation),
@@ -22,6 +26,58 @@ Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
     ui->win_h_label->setHidden(1);
     ui->win_h->setHidden(1);
     connect(ui->iscoherence, &QCheckBox::stateChanged, this, &Interferometric_Formation::ChangeSetting);
+
+    QHBoxLayout* demLayout = new QHBoxLayout();
+    m_demPathLabel = new QLabel(QStringLiteral("DEM路径:"), this);
+    m_demPathLabel->setFixedWidth(100);
+    
+    m_demPathEdit = new QLineEdit(this);
+    m_demPathEdit->setObjectName("demPathEdit");
+    auto* iface = NodeUtils::getProjectContext(this);
+    QString defaultDem = iface ? NodeUtils::getGlobalDemPath(iface) : QString();
+    m_demPathEdit->setText(defaultDem);
+    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+
+    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."), this);
+    m_demBrowseBtn->setFixedWidth(60);
+    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this]() {
+        QString file = QFileDialog::getOpenFileName(this, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPathEdit->setText(file);
+            auto* iface = NodeUtils::getProjectContext(this);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, file, true);
+            }
+        }
+    });
+
+    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this]() {
+        QString text = m_demPathEdit->text().trimmed();
+        auto* iface = NodeUtils::getProjectContext(this);
+        if (iface) {
+            NodeUtils::setGlobalDemPath(iface, text, true);
+        }
+    });
+
+    demLayout->addWidget(m_demPathEdit);
+    demLayout->addWidget(m_demBrowseBtn);
+    
+    if (ui->formLayout) {
+        ui->formLayout->addRow(m_demPathLabel, demLayout);
+    }
+
+    connect(ui->Istopo_removal, &QCheckBox::stateChanged, this, [this](int state) {
+        bool enabled = (state == Qt::Checked);
+        m_demPathLabel->setEnabled(enabled);
+        m_demPathEdit->setEnabled(enabled);
+        m_demBrowseBtn->setEnabled(enabled);
+    });
+
+    // Initialize state
+    bool hasDem = ui->Istopo_removal->isChecked();
+    m_demPathLabel->setEnabled(hasDem);
+    m_demPathEdit->setEnabled(hasDem);
+    m_demBrowseBtn->setEnabled(hasDem);
 }
 Interferometric_Formation::~Interferometric_Formation()
 {
@@ -92,6 +148,11 @@ void Interferometric_Formation::ChangeVision(bool Editable)
         ui->multilook_az->setDisabled(0);
         ui->multilook_rg->setDisabled(0);
         ui->buttonBox->buttons().at(0)->setDisabled(0);
+        
+        bool hasDem = ui->Istopo_removal->isChecked();
+        if (m_demPathLabel) m_demPathLabel->setEnabled(hasDem);
+        if (m_demPathEdit) m_demPathEdit->setEnabled(hasDem);
+        if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(hasDem);
     }
     else
     {
@@ -107,6 +168,10 @@ void Interferometric_Formation::ChangeVision(bool Editable)
         ui->multilook_az->setDisabled(1);
         ui->multilook_rg->setDisabled(1);
         ui->buttonBox->buttons().at(0)->setDisabled(1);
+        
+        if (m_demPathLabel) m_demPathLabel->setEnabled(false);
+        if (m_demPathEdit) m_demPathEdit->setEnabled(false);
+        if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(false);
     }
 
 
@@ -371,7 +436,7 @@ void Interferometric_Formation::on_buttonBox_accepted()
     ui->progressBar->setValue(0);
     ui->progressBar->show();
 
-    connect(this, &Interferometric_Formation::operate, Interferometric_Formation_worker, &InterferometricFormationWorker::Interferometric);
+    connect(this, &Interferometric_Formation::operate, Interferometric_Formation_worker, &InterferometricFormationWorker::InterferometricWithDem);
     connect(Interferometric_Formation_worker, &InterferometricFormationWorker::updateProcess, this, &Interferometric_Formation::updateProcess);
     connect(Interferometric_Formation_worker, &InterferometricFormationWorker::endProcess, this, &Interferometric_Formation::endProcess);
     connect(this, &QWidget::destroyed, this, &Interferometric_Formation::StopThread);
@@ -387,7 +452,7 @@ void Interferometric_Formation::on_buttonBox_accepted()
     emit operate(ui->Isdeflat->isChecked(), ui->Istopo_removal->isChecked(), ui->iscoherence->isChecked(),
         ui->comboBox_3->currentIndex(), win_width, win_height, ui->multilook_rg->text().toInt(),
         ui->multilook_az->text().toInt(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(),
-        ui->file_name->text(), this->copy);
+        ui->file_name->text(), this->copy, m_demPathEdit->text().trimmed());
 }
 
 void Interferometric_Formation::on_buttonBox_rejected()

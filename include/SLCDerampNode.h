@@ -10,6 +10,7 @@
 #include <QWidget>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QThread>
@@ -60,6 +61,10 @@ private:
     QLineEdit* m_outputNodeNameEdit;
     QLabel* m_masterIndexLabel;
 
+    QLabel* m_demPathLabel = nullptr;
+    QLineEdit* m_demPathEdit = nullptr;
+    QPushButton* m_demBrowseBtn = nullptr;
+
     // Input/output data storage
     std::shared_ptr<ImportedFileData> m_inputData;
     std::shared_ptr<ImportedFileData> m_demInputData;
@@ -78,6 +83,7 @@ private:
     void createWidget();
     void updateLabels();
     void updateWidgetSize();
+    void updateParameterWidgetsEnableState();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);

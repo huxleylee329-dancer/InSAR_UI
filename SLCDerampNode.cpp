@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <QDebug>
 #include <QMessageBox>
+#include <QFileDialog>
 
 namespace QtNodes {
 
@@ -131,12 +132,19 @@ void SLCDerampNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
         if (m_demInputData) {
             m_demPath = m_demInputData->filePath();
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
         } else {
-            m_demPath.clear();
+            if (!isRestoring()) {
+                m_demPath.clear();
+                if (m_demPathEdit) {
+                    m_demPathEdit->clear();
+                }
+            }
         }
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+    updateParameterWidgetsEnableState();
 }
 
 ::QWidget* SLCDerampNode::embeddedWidget()
@@ -410,6 +418,68 @@ void SLCDerampNode::createWidget()
     m_masterIndexLabel = new QLabel("主图像序号: [未连接]");
     layout->addWidget(m_masterIndexLabel);
 
+    // DEM Path Row
+    auto* demLayout = new QHBoxLayout();
+    m_demPathLabel = new QLabel("DEM路径");
+    m_demPathLabel->setFixedWidth(80);
+    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+    
+    if (m_demPath.isEmpty()) {
+        auto* iface = NodeUtils::getProjectContext(nullptr);
+        if (iface) {
+            m_demPath = NodeUtils::getGlobalDemPath(iface);
+        }
+    }
+    
+    m_demPathEdit = new QLineEdit();
+    m_demPathEdit->setObjectName("demPathEdit");
+    m_demPathEdit->setText(m_demPath);
+    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+    m_demPathEdit->setStyleSheet(
+        "QLineEdit:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_demPathEdit->text().trimmed();
+        if (m_demPath != text) {
+            m_demPath = text;
+            invalidateNodeData();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
+    m_demBrowseBtn->setStyleSheet(
+        "QPushButton:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
+        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPath = file;
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+            invalidateNodeData();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    demLayout->addWidget(m_demPathLabel);
+    demLayout->addWidget(m_demPathEdit);
+    demLayout->addWidget(m_demBrowseBtn);
+    layout->addLayout(demLayout);
+
     // Bottom spacer
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
@@ -527,7 +597,7 @@ void SLCDerampNode::onProcessingFinished()
     }
 
     // Update UI
-    m_outputNodeNameEdit->setEnabled(true);
+    updateParameterWidgetsEnableState();
 
     setState(ExecutionState::Running);
     setProgress(100);
@@ -554,7 +624,7 @@ void SLCDerampNode::onError(const QString& error)
         m_worker = nullptr;
     }
 
-    m_outputNodeNameEdit->setEnabled(true);
+    updateParameterWidgetsEnableState();
     setState(ExecutionState::Error);
 }
 
@@ -836,7 +906,7 @@ void SLCDerampNode::executeProcessing()
 
     // Start thread
     m_thread->start();
-    m_outputNodeNameEdit->setEnabled(false);
+    updateParameterWidgetsEnableState();
 
     // QTimer::singleShot 强行把状态设回 Running，规避基类 setInData 复写 (SOP 5)
     QTimer::singleShot(0, this, [this]() {
@@ -907,6 +977,19 @@ void SLCDerampNode::processAutomatically()
     {
         setState(ExecutionState::Idle);
     }
+}
+
+void SLCDerampNode::updateParameterWidgetsEnableState()
+{
+    bool isExec = m_thread && m_thread->isRunning();
+    bool enableWidgets = !isExec;
+
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
+
+    bool hasDemConn = (m_demInputData != nullptr);
+    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !hasDemConn);
 }
 
 } // namespace QtNodes

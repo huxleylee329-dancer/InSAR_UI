@@ -19,6 +19,10 @@ public slots:
     void endThread();
     void StopThread();
     void TransitModel(QStandardItemModel*);
+signals:
+    void operate(int masterIndex, QString project_name, QString src_node, QString dst_node, QStandardItemModel* model, QString dem_path);
+    void sendCopy(QStandardItemModel*);
+
 private:
     Ui::SlcDeramp* ui;
     QStandardItemModel* copy;
@@ -28,14 +32,15 @@ private:
     QString save_path;
     int method;
     int image_number;
-signals:
-    void operate(int, QString, QString, QString, QStandardItemModel*);
-    void sendCopy(QStandardItemModel*);
+    void ChangeVision(bool Editable);
+    
+    QLabel* m_demPathLabel = nullptr;
+    QLineEdit* m_demPathEdit = nullptr;
+    QPushButton* m_demBrowseBtn = nullptr;
 
 private slots:
     void on_comboBox_currentIndexChanged();
     void on_comboBox_dst_node_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
-    void ChangeVision(bool Editable);
 };

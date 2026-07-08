@@ -12,6 +12,10 @@
 #include<QFile>
 #include<QDir>
 #include"FormatConversion.h"
+#include<QFileDialog>
+#include<QLineEdit>
+#include<QPushButton>
+#include "NodeUtils.h"
 #include "tinyxml.h"
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
@@ -26,6 +30,50 @@ SLC_deramp::SLC_deramp(QWidget* parent) :
     ui->progressBar->setValue(0);
     ui->progressBar->hide();
 
+    QHBoxLayout* demLayout = new QHBoxLayout();
+    m_demPathLabel = new QLabel(QStringLiteral("DEM路径:"), this);
+    m_demPathLabel->setFixedWidth(80);
+    
+    m_demPathEdit = new QLineEdit(this);
+    m_demPathEdit->setObjectName("demPathEdit");
+    auto* iface = NodeUtils::getProjectContext(this);
+    QString defaultDem = iface ? NodeUtils::getGlobalDemPath(iface) : QString();
+    m_demPathEdit->setText(defaultDem);
+    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+
+    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."), this);
+    m_demBrowseBtn->setFixedWidth(60);
+    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this]() {
+        QString file = QFileDialog::getOpenFileName(this, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPathEdit->setText(file);
+            auto* iface = NodeUtils::getProjectContext(this);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, file, true);
+            }
+        }
+    });
+
+    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this]() {
+        QString text = m_demPathEdit->text().trimmed();
+        auto* iface = NodeUtils::getProjectContext(this);
+        if (iface) {
+            NodeUtils::setGlobalDemPath(iface, text, true);
+        }
+    });
+
+    demLayout->addWidget(m_demPathLabel);
+    demLayout->addWidget(m_demPathEdit);
+    demLayout->addWidget(m_demBrowseBtn);
+    
+    if (ui->verticalLayout) {
+        int index = ui->verticalLayout->indexOf(ui->horizontalLayout_4);
+        if (index != -1) {
+            ui->verticalLayout->insertLayout(index, demLayout);
+        } else {
+            ui->verticalLayout->addLayout(demLayout);
+        }
+    }
 }
 SLC_deramp::~SLC_deramp()
 {
@@ -203,6 +251,10 @@ void SLC_deramp::ChangeVision(bool Editable)
         //ui->comboBox_masterImage->setDisabled(0);
         ui->lineEdit->setDisabled(0);
         ui->buttonBox->buttons().at(0)->setDisabled(0);
+        
+        if (m_demPathLabel) m_demPathLabel->setEnabled(true);
+        if (m_demPathEdit) m_demPathEdit->setEnabled(true);
+        if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(true);
     }
     else
     {
@@ -211,9 +263,11 @@ void SLC_deramp::ChangeVision(bool Editable)
         //ui->comboBox_masterImage->setDisabled(1);
         ui->lineEdit->setDisabled(1);
         ui->buttonBox->buttons().at(0)->setDisabled(1);
+        
+        if (m_demPathLabel) m_demPathLabel->setEnabled(false);
+        if (m_demPathEdit) m_demPathEdit->setEnabled(false);
+        if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(false);
     }
-
-
 }
 
 
@@ -304,7 +358,7 @@ void SLC_deramp::on_buttonBox_accepted()
     m_worker->moveToThread(m_thread);
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &SLC_deramp::operate, m_worker, &SLCDerampWorker::SLC_deramp, Qt::QueuedConnection);
+    connect(this, &SLC_deramp::operate, m_worker, &SLCDerampWorker::SLC_deramp_with_dem, Qt::QueuedConnection);
     connect(m_worker, &SLCDerampWorker::updateProcess, this, &SLC_deramp::updateProcess);
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_worker, &SLCDerampWorker::endProcess, this, &SLC_deramp::endProcess);
@@ -313,7 +367,7 @@ void SLC_deramp::on_buttonBox_accepted()
     connect(m_worker, &SLCDerampWorker::sendModel, this, &SLC_deramp::TransitModel);
     m_thread->start();
     ChangeVision(false);
-    emit operate(index, ui->comboBox->currentText(), ui->comboBox_dst_node->currentText(), ui->lineEdit->text(), this->copy);
+    emit operate(index, ui->comboBox->currentText(), ui->comboBox_dst_node->currentText(), ui->lineEdit->text(), this->copy, m_demPathEdit->text().trimmed());
 
 
 }

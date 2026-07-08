@@ -7,6 +7,10 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include<QFileDialog>
+#include<QLineEdit>
+#include<QPushButton>
+#include "NodeUtils.h"
 #include<QThread>
 Geocoding::Geocoding(QWidget* parent) :
     QWidget(parent),
@@ -23,6 +27,105 @@ Geocoding::Geocoding(QWidget* parent) :
     ui->spinBox_multi_az->setMinimum(1);
     ui->spinBox_multi_rg->setValue(1);
     ui->spinBox_multi_rg->setMinimum(1);
+
+    // Left panel DEM (Interferogram Geocoding)
+    QHBoxLayout* demLayout1 = new QHBoxLayout();
+    m_demPathLabel1 = new QLabel(QStringLiteral("DEM路径:"), this);
+    m_demPathLabel1->setFixedWidth(80);
+    
+    m_demPathEdit1 = new QLineEdit(this);
+    m_demPathEdit1->setObjectName("demPathEdit");
+    auto* iface = NodeUtils::getProjectContext(this);
+    QString defaultDem = iface ? NodeUtils::getGlobalDemPath(iface) : QString();
+    m_demPathEdit1->setText(defaultDem);
+    m_demPathEdit1->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+
+    m_demBrowseBtn1 = new QPushButton(QStringLiteral("浏览..."), this);
+    m_demBrowseBtn1->setFixedWidth(60);
+    
+    demLayout1->addWidget(m_demPathLabel1);
+    demLayout1->addWidget(m_demPathEdit1);
+    demLayout1->addWidget(m_demBrowseBtn1);
+    
+    if (ui->verticalLayout_2) {
+        int index1 = ui->verticalLayout_2->indexOf(ui->buttonBox);
+        if (index1 != -1) {
+            ui->verticalLayout_2->insertLayout(index1, demLayout1);
+        } else {
+            ui->verticalLayout_2->addLayout(demLayout1);
+        }
+    }
+
+    // Right panel DEM (SAR Image Geocoding)
+    QHBoxLayout* demLayout2 = new QHBoxLayout();
+    m_demPathLabel2 = new QLabel(QStringLiteral("DEM路径:"), this);
+    m_demPathLabel2->setFixedWidth(80);
+    
+    m_demPathEdit2 = new QLineEdit(this);
+    m_demPathEdit2->setObjectName("demPathEdit");
+    m_demPathEdit2->setText(defaultDem);
+    m_demPathEdit2->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+
+    m_demBrowseBtn2 = new QPushButton(QStringLiteral("浏览..."), this);
+    m_demBrowseBtn2->setFixedWidth(60);
+    
+    demLayout2->addWidget(m_demPathLabel2);
+    demLayout2->addWidget(m_demPathEdit2);
+    demLayout2->addWidget(m_demBrowseBtn2);
+    
+    if (ui->verticalLayout_4) {
+        int index2 = ui->verticalLayout_4->indexOf(ui->buttonBox_2);
+        if (index2 != -1) {
+            ui->verticalLayout_4->insertLayout(index2, demLayout2);
+        } else {
+            ui->verticalLayout_4->addLayout(demLayout2);
+        }
+    }
+
+    // Connections to sync both edits
+    auto onBrowse1 = [this]() {
+        QString file = QFileDialog::getOpenFileName(this, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPathEdit1->setText(file);
+            m_demPathEdit2->setText(file);
+            auto* iface = NodeUtils::getProjectContext(this);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, file, true);
+            }
+        }
+    };
+    connect(m_demBrowseBtn1, &QPushButton::clicked, this, onBrowse1);
+    
+    auto onBrowse2 = [this]() {
+        QString file = QFileDialog::getOpenFileName(this, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPathEdit1->setText(file);
+            m_demPathEdit2->setText(file);
+            auto* iface = NodeUtils::getProjectContext(this);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, file, true);
+            }
+        }
+    };
+    connect(m_demBrowseBtn2, &QPushButton::clicked, this, onBrowse2);
+
+    connect(m_demPathEdit1, &QLineEdit::editingFinished, this, [this]() {
+        QString text = m_demPathEdit1->text().trimmed();
+        m_demPathEdit2->setText(text);
+        auto* iface = NodeUtils::getProjectContext(this);
+        if (iface) {
+            NodeUtils::setGlobalDemPath(iface, text, true);
+        }
+    });
+
+    connect(m_demPathEdit2, &QLineEdit::editingFinished, this, [this]() {
+        QString text = m_demPathEdit2->text().trimmed();
+        m_demPathEdit1->setText(text);
+        auto* iface = NodeUtils::getProjectContext(this);
+        if (iface) {
+            NodeUtils::setGlobalDemPath(iface, text, true);
+        }
+    });
 }
 Geocoding::~Geocoding()
 {
@@ -104,6 +207,13 @@ void Geocoding::ChangeVision(bool Editable)
         ui->spinBox_multi_rg->setDisabled(0);
         ui->buttonBox->buttons().at(0)->setDisabled(0);
         ui->buttonBox_2->buttons().at(0)->setDisabled(0);
+        
+        if (m_demPathLabel1) m_demPathLabel1->setEnabled(true);
+        if (m_demPathEdit1) m_demPathEdit1->setEnabled(true);
+        if (m_demBrowseBtn1) m_demBrowseBtn1->setEnabled(true);
+        if (m_demPathLabel2) m_demPathLabel2->setEnabled(true);
+        if (m_demPathEdit2) m_demPathEdit2->setEnabled(true);
+        if (m_demBrowseBtn2) m_demBrowseBtn2->setEnabled(true);
     }
     else
     {
@@ -117,9 +227,14 @@ void Geocoding::ChangeVision(bool Editable)
         ui->spinBox_multi_rg->setDisabled(1);
         ui->buttonBox->buttons().at(0)->setDisabled(1);
         ui->buttonBox_2->buttons().at(0)->setDisabled(1);
+        
+        if (m_demPathLabel1) m_demPathLabel1->setEnabled(false);
+        if (m_demPathEdit1) m_demPathEdit1->setEnabled(false);
+        if (m_demBrowseBtn1) m_demBrowseBtn1->setEnabled(false);
+        if (m_demPathLabel2) m_demPathLabel2->setEnabled(false);
+        if (m_demPathEdit2) m_demPathEdit2->setEnabled(false);
+        if (m_demBrowseBtn2) m_demBrowseBtn2->setEnabled(false);
     }
-
-
 }
 
 void Geocoding::ShowProjectList(QStandardItemModel* model)
@@ -310,7 +425,7 @@ void Geocoding::on_buttonBox_accepted()
     Geocoding_thread->moveToThread(new QThread(this));
     ui->progressBar->setValue(0);
     ui->progressBar->show();
-    connect(this, &Geocoding::operate, Geocoding_thread, &GeocodingWorker::Geocoding, Qt::QueuedConnection);
+    connect(this, &Geocoding::operate, Geocoding_thread, &GeocodingWorker::GeocodingWithDem, Qt::QueuedConnection);
     connect(Geocoding_thread, &GeocodingWorker::updateProcess, this, &Geocoding::updateProcess);
     connect(Geocoding_thread->thread(), &QThread::finished, Geocoding_thread, &GeocodingWorker::deleteLater);
     connect(Geocoding_thread, &GeocodingWorker::endProcess, this, &Geocoding::endProcess);
@@ -325,7 +440,8 @@ void Geocoding::on_buttonBox_accepted()
         ui->comboBox_project1->currentText(),
         ui->comboBox_node1->currentText(),
         ui->lineEdit_dstnode1->text(), 
-        this->copy
+        this->copy,
+        m_demPathEdit1->text().trimmed()
     );
 }
 
@@ -361,7 +477,7 @@ void Geocoding::on_buttonBox_2_accepted()
     Geocoding_thread->moveToThread(new QThread(this));
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Geocoding::operate, Geocoding_thread, &GeocodingWorker::Geocoding, Qt::QueuedConnection);
+    connect(this, &Geocoding::operate, Geocoding_thread, &GeocodingWorker::GeocodingWithDem, Qt::QueuedConnection);
     connect(Geocoding_thread, &GeocodingWorker::updateProcess, this, &Geocoding::updateProcess);
     connect(Geocoding_thread->thread(), &QThread::finished, Geocoding_thread, &GeocodingWorker::deleteLater);
     connect(Geocoding_thread, &GeocodingWorker::endProcess, this, &Geocoding::endProcess);
@@ -377,7 +493,8 @@ void Geocoding::on_buttonBox_2_accepted()
         ui->comboBox_project2->currentText(),
         ui->comboBox_node2->currentText(),
         ui->lineEdit_dstnode2->text(),
-        this->copy
+        this->copy,
+        m_demPathEdit2->text().trimmed()
     );
 }
 

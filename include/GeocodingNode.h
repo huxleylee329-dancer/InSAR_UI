@@ -12,6 +12,7 @@
 #include <QComboBox>
 #include <QSpinBox>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QThread>
@@ -65,6 +66,10 @@ private:
     QSpinBox* m_multiAzSpin;
     
     QLineEdit* m_outputNodeNameEdit;
+    
+    QLabel* m_demPathLabel = nullptr;
+    QLineEdit* m_demPathEdit = nullptr;
+    QPushButton* m_demBrowseBtn = nullptr;
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
@@ -94,6 +99,7 @@ private:
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();
+    void updateParameterWidgetsEnableState();
     void onTypeChanged(int index);
     QString generateDefaultOutputName() const;
     void executeProcessing();

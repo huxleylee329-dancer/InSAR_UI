@@ -124,13 +124,10 @@ void GeocodingWorker::GeocodingWithDem(
     QDir dir(save_path);
     if (!dir.exists(dstNode))
         dir.mkdir(dstNode);
-    //外部DEM文件夹或文件路径
+    // 外部DEM文件夹或文件路径
     QString demPath = dem_path;
-    if (demPath.isEmpty() || QFileInfo(demPath).isFile()) {
-        QString appPath = QCoreApplication::applicationDirPath();
-        demPath = appPath + "/dem";
-        QDir appDir(appPath);
-        if (!appDir.exists("dem")) appDir.mkdir("dem");
+    if (demPath.isEmpty()) {
+        demPath = QDir::toNativeSeparators(save_path + "/.dem_cache");
     }
 
     std::vector<std::string> input_files;

@@ -128,10 +128,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
     // 外部DEM文件夹或文件路径
     QString demPath = dem_path;
     if (demPath.isEmpty()) {
-        QString appPath = QCoreApplication::applicationDirPath();
-        demPath = appPath + "/dem";
-        QDir appDir(appPath);
-        if (!appDir.exists("dem")) appDir.mkdir("dem");
+        demPath = QDir::toNativeSeparators(save_path + "/.dem_cache");
     }
 
     for (int i = 0; i < project->rowCount(); i++)

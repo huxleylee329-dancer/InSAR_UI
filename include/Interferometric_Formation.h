@@ -19,6 +19,10 @@ public slots:
     void endThread();
     void StopThread();
     void TransitModel(QStandardItemModel*);
+signals:
+    void operate(bool isdeflat, bool istopo_removal, bool iscoherence, int master_index, int win_r, int win_c, int multilook_rg, int multilook_az, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model, QString dem_path);
+    void sendCopy(QStandardItemModel*);
+
 private:
     Ui::InterferometricFormation* ui;
     QStandardItemModel* copy;
@@ -27,9 +31,10 @@ private:
     QString save_path;
     int image_number;
     void ChangeVision(bool Editable);
-signals:
-    void operate(bool isdeflat, bool istopo_removal, bool iscoherence, int master_index, int win_r, int win_c, int multilook_rg, int multilook_az, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
-    void sendCopy(QStandardItemModel*);
+    
+    QLabel* m_demPathLabel = nullptr;
+    QLineEdit* m_demPathEdit = nullptr;
+    QPushButton* m_demBrowseBtn = nullptr;
 private slots:
     void ChangeSetting();
     //void on_iscoherence_Checked();

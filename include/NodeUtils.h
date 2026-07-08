@@ -158,4 +158,14 @@ bool writeMatToH5(const QString& filePath,
 bool writeScalarToH5(const QString& filePath, const QString& dataset, int value, QString* errMsg = nullptr);
 bool writeScalarToH5(const QString& filePath, const QString& dataset, double value, QString* errMsg = nullptr);
 
+/**
+ * @brief 获取项目全局 DEM 路径，若未设置则返回默认的项目级缓存路径 (projectDir/.dem_cache)
+ */
+QString getGlobalDemPath(IApplicationInterface* iface);
+
+/**
+ * @brief 设置项目全局 DEM 路径，更新 XML 并可选地弹窗询问以及联动更新所有打开的 DEM 输入框
+ */
+bool setGlobalDemPath(IApplicationInterface* iface, const QString& path, bool askUser = false);
+
 } // namespace NodeUtils

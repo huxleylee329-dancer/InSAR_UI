@@ -19,6 +19,7 @@
 #include <QStandardItemModel>
 #include <QMessageBox>
 #include <QTimer>
+#include <QFileDialog>
 #include <QtConcurrent/QtConcurrent>
 
 namespace QtNodes {
@@ -151,12 +152,19 @@ void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
         if (m_demInputData) {
             m_demPath = m_demInputData->filePath();
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
         } else {
-            m_demPath.clear();
+            if (!isRestoring()) {
+                m_demPath.clear();
+                if (m_demPathEdit) {
+                    m_demPathEdit->clear();
+                }
+            }
         }
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+    updateParameterWidgetsEnableState();
 }
 
 std::shared_ptr<NodeData> GeocodingNode::outData(PortIndex port)
@@ -273,6 +281,66 @@ void GeocodingNode::createWidget()
     outRow->addWidget(m_outputNodeNameEdit);
     layout->addLayout(outRow);
 
+    // DEM Path Row
+    auto* demRow = new QHBoxLayout();
+    m_demPathLabel = new QLabel(QStringLiteral("DEM路径:"));
+    m_demPathLabel->setFixedWidth(80);
+    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+    
+    if (m_demPath.isEmpty()) {
+        auto* iface = NodeUtils::getProjectContext(nullptr);
+        if (iface) {
+            m_demPath = NodeUtils::getGlobalDemPath(iface);
+        }
+    }
+    
+    m_demPathEdit = new QLineEdit();
+    m_demPathEdit->setObjectName("demPathEdit");
+    m_demPathEdit->setText(m_demPath);
+    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
+    m_demPathEdit->setStyleSheet(
+        "QLineEdit:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this]() {
+        QString text = m_demPathEdit->text().trimmed();
+        if (m_demPath != text) {
+            m_demPath = text;
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
+    m_demBrowseBtn->setStyleSheet(
+        "QPushButton:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this]() {
+        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
+        if (!file.isEmpty()) {
+            m_demPath = file;
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    demRow->addWidget(m_demPathLabel);
+    demRow->addWidget(m_demPathEdit);
+    demRow->addWidget(m_demBrowseBtn);
+    layout->addLayout(demRow);
+
     // Connections
     connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GeocodingNode::onTypeChanged);
     connect(m_outputNodeNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
@@ -286,19 +354,7 @@ void GeocodingNode::createWidget()
 void GeocodingNode::onTypeChanged(int index)
 {
     m_type = index + 1;
-    if (m_type == 1) {
-        // Disable multi-look for Interferometry products
-        if (m_multiRgSpin) m_multiRgSpin->setEnabled(false);
-        if (m_multiAzSpin) m_multiAzSpin->setEnabled(false);
-        if (m_multiRgLabel) m_multiRgLabel->setEnabled(false);
-        if (m_multiAzLabel) m_multiAzLabel->setEnabled(false);
-    } else {
-        // Enable multi-look for SAR Images
-        if (m_multiRgSpin) m_multiRgSpin->setEnabled(true);
-        if (m_multiAzSpin) m_multiAzSpin->setEnabled(true);
-        if (m_multiRgLabel) m_multiRgLabel->setEnabled(true);
-        if (m_multiAzLabel) m_multiAzLabel->setEnabled(true);
-    }
+    updateParameterWidgetsEnableState();
 }
 
 QString GeocodingNode::generateDefaultOutputName() const
@@ -381,9 +437,7 @@ void GeocodingNode::executeProcessing()
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = dstNode;
         
-        m_outputNodeNameEdit->setEnabled(true);
-        m_typeCombo->setEnabled(true);
-        onTypeChanged(m_type - 1);
+        updateParameterWidgetsEnableState();
 
         setState(ExecutionState::Running);
         setProgress(100);
@@ -420,10 +474,7 @@ void GeocodingNode::executeProcessing()
     });
 
     // Disable inputs during execution
-    m_outputNodeNameEdit->setEnabled(false);
-    m_typeCombo->setEnabled(false);
-    if (m_multiRgSpin) m_multiRgSpin->setEnabled(false);
-    if (m_multiAzSpin) m_multiAzSpin->setEnabled(false);
+    updateParameterWidgetsEnableState();
 
     m_thread->start();
 }
@@ -491,9 +542,7 @@ void GeocodingNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
-    m_outputNodeNameEdit->setEnabled(true);
-    m_typeCombo->setEnabled(true);
-    onTypeChanged(m_type - 1);
+    updateParameterWidgetsEnableState();
 
     m_outputNodeName = dstNode;
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
@@ -548,9 +597,7 @@ void GeocodingNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
-    m_outputNodeNameEdit->setEnabled(true);
-    m_typeCombo->setEnabled(true);
-    onTypeChanged(m_type - 1);
+    updateParameterWidgetsEnableState();
 
     setState(ExecutionState::Error);
 }
@@ -750,6 +797,26 @@ void GeocodingNode::processAutomatically()
     {
         setState(ExecutionState::Idle);
     }
+}
+
+void GeocodingNode::updateParameterWidgetsEnableState()
+{
+    bool isExec = m_thread && m_thread->isRunning();
+    bool enableWidgets = !isExec;
+
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
+    if (m_typeCombo) m_typeCombo->setEnabled(enableWidgets);
+
+    bool isInterfero = (m_type == 1);
+    if (m_multiRgSpin) m_multiRgSpin->setEnabled(enableWidgets && !isInterfero);
+    if (m_multiAzSpin) m_multiAzSpin->setEnabled(enableWidgets && !isInterfero);
+    if (m_multiRgLabel) m_multiRgLabel->setEnabled(enableWidgets && !isInterfero);
+    if (m_multiAzLabel) m_multiAzLabel->setEnabled(enableWidgets && !isInterfero);
+
+    bool hasDemConn = (m_demInputData != nullptr);
+    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !hasDemConn);
 }
 
 } // namespace QtNodes
