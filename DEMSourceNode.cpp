@@ -661,11 +661,16 @@ bool DEMSourceNode::validateAndRestoreOutput()
             FormatConversion FC;
             cv::Mat dem;
             double min_lon = 0, max_lon = 0, min_lat = 0, max_lat = 0;
-            if (FC.read_array_from_h5(targetH5.toLocal8Bit().constData(), "dem", dem) == 0 &&
-                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_min_lon", &min_lon) == 0 &&
-                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_max_lon", &max_lon) == 0 &&
-                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_min_lat", &min_lat) == 0 &&
-                FC.read_double_from_h5(targetH5.toLocal8Bit().constData(), "dem_max_lat", &max_lat) == 0)
+            bool read_success = false;
+            {
+                NodeUtils::Hdf5Locker locker;
+                read_success = (NodeUtils::readMatFromH5(targetH5, "dem", dem) &&
+                                NodeUtils::readScalarFromH5(targetH5, "dem_min_lon", min_lon) &&
+                                NodeUtils::readScalarFromH5(targetH5, "dem_max_lon", max_lon) &&
+                                NodeUtils::readScalarFromH5(targetH5, "dem_min_lat", min_lat) &&
+                                NodeUtils::readScalarFromH5(targetH5, "dem_max_lat", max_lat));
+            }
+            if (read_success)
             {
                 double res_lon = (max_lon - min_lon) / dem.cols;
                 double res_lat = (max_lat - min_lat) / dem.rows;

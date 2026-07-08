@@ -491,15 +491,13 @@ void SBASTimeSeriesNode::generateStaticPreviewJpg()
     });
 
     watcher->setFuture(QtConcurrent::run([h5Path, jpgPath]() {
+        NodeUtils::Hdf5Locker locker;
         FormatConversion FC;
         Utils util;
         Mat defomation_velocity, mask;
-        int ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
-        ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
+        int ret = (NodeUtils::readMatFromH5(h5Path, "defomation_velocity", defomation_velocity, CV_64F) &&
+                   NodeUtils::readMatFromH5(h5Path, "mask", mask)) ? 0 : -1;
         if (ret == 0 && !defomation_velocity.empty()) {
-            if (defomation_velocity.type() != CV_64F) {
-                defomation_velocity.convertTo(defomation_velocity, CV_64F);
-            }
             util.savephase_white(jpgPath.toStdString().c_str(), "jet", defomation_velocity, mask);
         }
     }));

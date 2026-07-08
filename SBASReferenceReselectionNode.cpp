@@ -270,14 +270,14 @@ void SBASReferenceReselectionNode::onSelectClicked()
         Utils util;
         FormatConversion FC;
         Mat defomation_velocity, mask;
-        int ret = FC.read_array_from_h5(image_path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
-        ret += FC.read_array_from_h5(image_path.toStdString().c_str(), "mask", mask);
+        int ret = -1;
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = (NodeUtils::readMatFromH5(image_path, "defomation_velocity", defomation_velocity, CV_64F) &&
+                   NodeUtils::readMatFromH5(image_path, "mask", mask)) ? 0 : -1;
+        }
         if (ret == 0)
         {
-            if (defomation_velocity.type() != CV_64F)
-            {
-                defomation_velocity.convertTo(defomation_velocity, CV_64F);
-            }
             util.savephase_white(jpg_path.toStdString().c_str(), "jet", defomation_velocity, mask);
         }
     }
@@ -530,17 +530,14 @@ void SBASReferenceReselectionNode::generateStaticPreviewJpg()
     });
 
     QFuture<bool> future = QtConcurrent::run([h5Path, jpgPath]() -> bool {
+        NodeUtils::Hdf5Locker locker;
         Utils util;
         FormatConversion FC;
         Mat defomation_velocity, mask;
-        int ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
-        ret += FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
+        int ret = (NodeUtils::readMatFromH5(h5Path, "defomation_velocity", defomation_velocity, CV_64F) &&
+                   NodeUtils::readMatFromH5(h5Path, "mask", mask)) ? 0 : -1;
         if (ret == 0)
         {
-            if (defomation_velocity.type() != CV_64F)
-            {
-                defomation_velocity.convertTo(defomation_velocity, CV_64F);
-            }
             util.savephase_white(jpgPath.toStdString().c_str(), "jet", defomation_velocity, mask);
             return true;
         }
@@ -564,8 +561,13 @@ bool SBASReferenceReselectionNode::validateAndRestoreOutput()
         // Retrieve ref_row and ref_col from H5 if possible
         FormatConversion FC;
         Mat ref_i, ref_j;
-        if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "ref_row", ref_i) == 0 &&
-            FC.read_array_from_h5(h5Path.toStdString().c_str(), "ref_col", ref_j) == 0)
+        bool read_ok = false;
+        {
+            NodeUtils::Hdf5Locker locker;
+            read_ok = (NodeUtils::readMatFromH5(h5Path, "ref_row", ref_i) &&
+                       NodeUtils::readMatFromH5(h5Path, "ref_col", ref_j));
+        }
+        if (read_ok)
         {
             m_refRow = ref_i.at<int>(0, 0);
             m_refCol = ref_j.at<int>(0, 0);

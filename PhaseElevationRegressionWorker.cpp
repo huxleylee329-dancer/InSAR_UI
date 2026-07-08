@@ -171,46 +171,43 @@ void PhaseElevationRegressionWorker::doRegression(
 
         // 读取相位
         Mat phase;
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "phase", phase);
-        if (ret < 0) { continue; }
-        if (phase.type() != CV_32F) {
-            phase.convertTo(phase, CV_32F);
-        }
+        Mat coherence;
+        Mat dem;
+        Mat lat_mat, lon_mat;
+        bool has_coherence = false;
+        bool has_dem = false;
+        bool has_latlon = false;
+        {
+            NodeUtils::Hdf5Locker locker;
+            QString phaseH5 = phase_paths[idx];
+            
+            ret = NodeUtils::readMatFromH5(phaseH5, "phase", phase, CV_32F) ? 0 : -1;
+            if (ret < 0) { continue; }
 
+            int rows = phase.rows;
+            int cols = phase.cols;
+
+            // 读取相干性
+            if (NodeUtils::readMatFromH5(phaseH5, "coherence", coherence, CV_32F) && 
+                coherence.rows == rows && coherence.cols == cols) {
+                has_coherence = true;
+            }
+
+            // 读取高程数据（mapped_dem 或从 lat/lon 推断）
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_dem", dem, CV_32F) && 
+                dem.rows == rows && dem.cols == cols) {
+                has_dem = true;
+            }
+
+            // 读取地理坐标
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lat", lat_mat, CV_32F) &&
+                NodeUtils::readMatFromH5(phaseH5, "mapped_lon", lon_mat, CV_32F) &&
+                lat_mat.rows == rows && lat_mat.cols == cols) {
+                has_latlon = true;
+            }
+        }
         int rows = phase.rows;
         int cols = phase.cols;
-
-        // 读取相干性
-        Mat coherence;
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "coherence", coherence);
-        bool has_coherence = (ret == 0 && coherence.rows == rows && coherence.cols == cols);
-        if (has_coherence && coherence.type() != CV_32F) {
-            coherence.convertTo(coherence, CV_32F);
-        }
-
-        // 读取高程数据（mapped_dem 或从 lat/lon 推断）
-        Mat dem;
-        bool has_dem = false;
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_dem", dem);
-        if (ret == 0 && dem.rows == rows && dem.cols == cols) {
-            has_dem = true;
-            if (dem.type() != CV_32F) {
-                dem.convertTo(dem, CV_32F);
-            }
-        }
-
-        // 读取地理坐标
-        Mat lat_mat, lon_mat;
-        bool has_latlon = false;
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat);
-        if (ret == 0) {
-            ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat);
-            if (ret == 0 && lat_mat.rows == rows && lat_mat.cols == cols) {
-                has_latlon = true;
-                if (lat_mat.type() != CV_32F) lat_mat.convertTo(lat_mat, CV_32F);
-                if (lon_mat.type() != CV_32F) lon_mat.convertTo(lon_mat, CV_32F);
-            }
-        }
 
         // 预分配输出矩阵 (双重保险)
         Mat corrected_phase = phase.clone();
@@ -244,41 +241,47 @@ void PhaseElevationRegressionWorker::doRegression(
         if (ret < 0) continue;
 
         // 复制元数据
-        string tmp_str;
-        Mat tmp;
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", tmp_str);
-        FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", tmp_str);
-        FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
+        {
+            NodeUtils::Hdf5Locker locker;
+            QString phaseH5 = phase_paths[idx];
+            QString outH5 = absolute_output_paths[idx];
+            string tmp_str;
+            Mat tmp;
+            
+            NodeUtils::readStringFromH5(phaseH5, "source_1", tmp_str);
+            FC.write_str_to_h5(outH5.toStdString().c_str(), "source_1", tmp_str.c_str());
+            NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str);
+            FC.write_str_to_h5(outH5.toStdString().c_str(), "source_2", tmp_str.c_str());
 
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "flat_phase_coefficient", tmp);
-        FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "flat_phase_coefficient", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "range_len", tmp);
-        FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "range_len", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "azimuth_len", tmp);
-        FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "azimuth_len", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "multilook_rg", tmp);
-        FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "multilook_rg", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "multilook_az", tmp);
-        FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "multilook_az", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp);
+            NodeUtils::writeMatToH5(outH5, "flat_phase_coefficient", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "range_len", tmp);
+            NodeUtils::writeMatToH5(outH5, "range_len", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "azimuth_len", tmp);
+            NodeUtils::writeMatToH5(outH5, "azimuth_len", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "multilook_rg", tmp);
+            NodeUtils::writeMatToH5(outH5, "multilook_rg", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "multilook_az", tmp);
+            NodeUtils::writeMatToH5(outH5, "multilook_az", tmp);
 
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", tmp))
-            FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lon", tmp);
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", tmp))
-            FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lat", tmp);
-        if (has_coherence) {
-            FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "coherence", coherence);
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lon", tmp))
+                NodeUtils::writeMatToH5(outH5, "mapped_lon", tmp);
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lat", tmp))
+                NodeUtils::writeMatToH5(outH5, "mapped_lat", tmp);
+            if (has_coherence) {
+                NodeUtils::writeMatToH5(outH5, "coherence", coherence);
+            }
+
+            // 写入校正后的相位
+            NodeUtils::writeMatToH5(outH5, "phase", corrected_phase);
+
+            // 读取偏移量
+            Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
+            NodeUtils::readMatFromH5(phaseH5, "offset_row", tmp_int);
+            offset_rows[idx] = tmp_int.at<int>(0, 0);
+            NodeUtils::readMatFromH5(phaseH5, "offset_col", tmp_int);
+            offset_cols[idx] = tmp_int.at<int>(0, 0);
         }
-
-        // 写入校正后的相位
-        FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "phase", corrected_phase);
-
-        // 读取偏移量
-        Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "offset_row", tmp_int);
-        offset_rows[idx] = tmp_int.at<int>(0, 0);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "offset_col", tmp_int);
-        offset_cols[idx] = tmp_int.at<int>(0, 0);
 
         process_ok[idx] = true;
     }

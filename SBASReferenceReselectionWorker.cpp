@@ -36,11 +36,12 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     string times_series_h5_std = times_series_h5.toStdString();
     
     Mat formation_matrix, mask, temporal_baseline, reflattening_mask;
-    ret = conversion.read_array_from_h5(times_series_h5_std.c_str(), "formation_matrix", formation_matrix);
-    ret = conversion.read_array_from_h5(times_series_h5_std.c_str(), "mask", mask);
-    ret = conversion.read_array_from_h5(times_series_h5_std.c_str(), "temporal_baseline", temporal_baseline);
-    if (!temporal_baseline.empty() && temporal_baseline.type() != CV_64F) {
-        temporal_baseline.convertTo(temporal_baseline, CV_64F);
+    ret = NodeUtils::readMatFromH5(times_series_h5, "formation_matrix", formation_matrix) ? 0 : -1;
+    if (ret == 0) {
+        ret = NodeUtils::readMatFromH5(times_series_h5, "mask", mask) ? 0 : -1;
+    }
+    if (ret == 0) {
+        ret = NodeUtils::readMatFromH5(times_series_h5, "temporal_baseline", temporal_baseline, CV_64F) ? 0 : -1;
     }
     
     //确定应用程序路径
@@ -84,10 +85,9 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
             emit errorProcess(QStringLiteral("任务被中断"));
             return;
         }
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
-        if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
-        if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
+        QString pFile = QString::fromStdString(phaseFiles[i]);
+        NodeUtils::readMatFromH5(pFile, "unwrapped_phase_1", phase, CV_64F);
+        NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
         sbas.refinement_and_reflattening(phase, reflattening_mask, coherence, 0.0);
         phase = phase - phase.at<double>(ref_row, ref_col);
         if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
@@ -123,29 +123,26 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     for (int i = 0; i < M; i++)
     {
         Mat temp;
-        conversion.read_int_from_h5(phaseFiles[i].c_str(), "offset_col", &offset_col);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "slant_range_first_pixel", &nearRange);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "range_spacing", &spacing);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "B_spatial", &B_spatial);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "B_temporal", &B_temporal);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "carrier_frequency", &wavelength);
+        QString pFile = QString::fromStdString(phaseFiles[i]);
+        NodeUtils::readScalarFromH5(pFile, "offset_col", offset_col);
+        NodeUtils::readScalarFromH5(pFile, "slant_range_first_pixel", nearRange);
+        NodeUtils::readScalarFromH5(pFile, "range_spacing", spacing);
+        NodeUtils::readScalarFromH5(pFile, "B_spatial", B_spatial);
+        NodeUtils::readScalarFromH5(pFile, "B_temporal", B_temporal);
+        NodeUtils::readScalarFromH5(pFile, "carrier_frequency", wavelength);
         wavelength = VEL_C / wavelength;
-        ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "inc_coefficient", temp);
-        if (ret == 0) {
-            if (!temp.empty() && temp.type() != CV_64F) temp.convertTo(temp, CV_64F);
+        if (NodeUtils::readMatFromH5(pFile, "inc_coefficient", temp, CV_64F)) {
             theta = temp.at<double>(0, 0) / 180.0 * PI;
         }
         else
         {
-            conversion.read_double_from_h5(phaseFiles[i].c_str(), "inc_center", &theta);
+            NodeUtils::readScalarFromH5(pFile, "inc_center", theta);
             theta = theta / 180.0 * PI;
         }
         double r = nearRange + double(offset_col) * spacing;
         c.at<double>(i, 0) = 4 * PI / wavelength * B_spatial / sin(theta) / r;
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
-        if (phase_vec[i].type() != CV_64F) phase_vec[i].convertTo(phase_vec[i], CV_64F);
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coh_vec[i]);
-        if (coh_vec[i].type() != CV_64F) coh_vec[i].convertTo(coh_vec[i], CV_64F);
+        NodeUtils::readMatFromH5(pFile, "unwrapped_phase_2", phase_vec[i], CV_64F);
+        NodeUtils::readMatFromH5(pFile, "coherence", coh_vec[i], CV_64F);
     }
     Mat dummy = Mat::zeros(phase.rows, phase.cols, CV_64F);
     for (int i = 0; i < N + 1; i++)

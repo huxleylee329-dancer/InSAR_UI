@@ -772,4 +772,193 @@ QStandardItem* findOrCreateChildItem(
     return item;
 }
 
+// ---------------------------------------------------------------------
+// 读取 cv::Mat 矩阵数据
+// ---------------------------------------------------------------------
+bool readMatFromH5(const QString& filePath,
+                   const QString& dataset,
+                   cv::Mat& mat,
+                   int targetType,
+                   QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 文件不存在: %1").arg(filePath);
+        return false;
+    }
+    if (dataset.isEmpty()) {
+        if (errMsg) *errMsg = QStringLiteral("数据集名称为空");
+        return false;
+    }
+
+    NodeUtils::Hdf5Locker locker;
+    FormatConversion FC;
+
+    int rc = FC.read_array_from_h5(filePath.toStdString().c_str(),
+                                   dataset.toStdString().c_str(),
+                                   mat);
+    if (rc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("读取 H5 数据集 %1 失败 (rc=%2)")
+                                   .arg(dataset).arg(rc);
+        return false;
+    }
+
+    if (targetType >= 0 && mat.type() != targetType) {
+        mat.convertTo(mat, targetType);
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------
+// 读取标量数据（重载实现，支持 int, double, float, qint64）
+// ---------------------------------------------------------------------
+bool readScalarFromH5(const QString& filePath, const QString& dataset, int& value, QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 文件不存在: %1").arg(filePath);
+        return false;
+    }
+    if (dataset.isEmpty()) {
+        if (errMsg) *errMsg = QStringLiteral("数据集名称为空");
+        return false;
+    }
+
+    NodeUtils::Hdf5Locker locker;
+    FormatConversion FC;
+
+    int rc = FC.read_int_from_h5(filePath.toStdString().c_str(),
+                                 dataset.toStdString().c_str(),
+                                 &value);
+    if (rc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("读取 H5 标量(int) %1 失败 (rc=%2)")
+                                   .arg(dataset).arg(rc);
+        return false;
+    }
+    return true;
+}
+
+bool readScalarFromH5(const QString& filePath, const QString& dataset, double& value, QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 文件不存在: %1").arg(filePath);
+        return false;
+    }
+    if (dataset.isEmpty()) {
+        if (errMsg) *errMsg = QStringLiteral("数据集名称为空");
+        return false;
+    }
+
+    NodeUtils::Hdf5Locker locker;
+    FormatConversion FC;
+
+    int rc = FC.read_double_from_h5(filePath.toStdString().c_str(),
+                                    dataset.toStdString().c_str(),
+                                    &value);
+    if (rc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("读取 H5 标量(double) %1 失败 (rc=%2)")
+                                   .arg(dataset).arg(rc);
+        return false;
+    }
+    return true;
+}
+
+bool readScalarFromH5(const QString& filePath, const QString& dataset, float& value, QString* errMsg)
+{
+    double tmp = 0.0;
+    if (!readScalarFromH5(filePath, dataset, tmp, errMsg)) {
+        return false;
+    }
+    value = static_cast<float>(tmp);
+    return true;
+}
+
+bool readScalarFromH5(const QString& filePath, const QString& dataset, qint64& value, QString* errMsg)
+{
+    int tmp = 0;
+    if (!readScalarFromH5(filePath, dataset, tmp, errMsg)) {
+        return false;
+    }
+    value = static_cast<qint64>(tmp);
+    return true;
+}
+
+// ---------------------------------------------------------------------
+// 读取字符串数据
+// ---------------------------------------------------------------------
+bool readStringFromH5(const QString& filePath,
+                      const QString& dataset,
+                      std::string& out,
+                      QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 文件不存在: %1").arg(filePath);
+        return false;
+    }
+    if (dataset.isEmpty()) {
+        if (errMsg) *errMsg = QStringLiteral("数据集名称为空");
+        return false;
+    }
+
+    NodeUtils::Hdf5Locker locker;
+    FormatConversion FC;
+
+    int rc = FC.read_str_from_h5(filePath.toStdString().c_str(),
+                                 dataset.toStdString().c_str(),
+                                 out);
+    if (rc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("读取 H5 字符串 %1 失败 (rc=%2)")
+                                   .arg(dataset).arg(rc);
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------
+// 写入 cv::Mat 矩阵数据
+// ---------------------------------------------------------------------
+bool writeMatToH5(const QString& filePath,
+                  const QString& dataset,
+                  const cv::Mat& mat,
+                  QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 文件不存在: %1").arg(filePath);
+        return false;
+    }
+    if (dataset.isEmpty()) {
+        if (errMsg) *errMsg = QStringLiteral("数据集名称为空");
+        return false;
+    }
+
+    NodeUtils::Hdf5Locker locker;
+    FormatConversion FC;
+
+    // write_array_to_h5 底层接口接收 cv::Mat&，我们使用 const_cast 去除 const 限制
+    int rc = FC.write_array_to_h5(filePath.toStdString().c_str(),
+                                  dataset.toStdString().c_str(),
+                                  const_cast<cv::Mat&>(mat));
+    if (rc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("写入 H5 数据集 %1 失败 (rc=%2)")
+                                   .arg(dataset).arg(rc);
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------
+// 写入标量数据
+// ---------------------------------------------------------------------
+bool writeScalarToH5(const QString& filePath, const QString& dataset, int value, QString* errMsg)
+{
+    cv::Mat tmp = cv::Mat::zeros(1, 1, CV_32SC1);
+    tmp.at<int>(0, 0) = value;
+    return writeMatToH5(filePath, dataset, tmp, errMsg);
+}
+
+bool writeScalarToH5(const QString& filePath, const QString& dataset, double value, QString* errMsg)
+{
+    cv::Mat tmp = cv::Mat::zeros(1, 1, CV_64FC1);
+    tmp.at<double>(0, 0) = value;
+    return writeMatToH5(filePath, dataset, tmp, errMsg);
+}
+
 } // namespace NodeUtils

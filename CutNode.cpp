@@ -112,12 +112,11 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             // 从第一个H5文件的gcps自动提取中心经纬度作为默认值
             QStringList h5Paths = resolvedInputH5Paths();
             if (!h5Paths.isEmpty()) {
-                FormatConversion FC;
                 cv::Mat gcps;
                 bool gcpReadSuccess = false;
                 {
                     NodeUtils::Hdf5Locker locker;
-                    if (FC.read_array_from_h5(h5Paths.first().toLocal8Bit().constData(), "gcps", gcps) == 0
+                    if (NodeUtils::readMatFromH5(h5Paths.first(), "gcps", gcps)
                         && gcps.rows > 0 && gcps.cols >= 2) {
                         gcpReadSuccess = true;
                     }
@@ -170,12 +169,11 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             // 恢复项目时，只获取中心经纬度存入 m_lastInputLon/Lat，以使下一次前驱节点重跑时检验生效，但不修改恢复的框选状态或经纬度
             QStringList h5Paths = resolvedInputH5Paths();
             if (!h5Paths.isEmpty()) {
-                FormatConversion FC;
                 cv::Mat gcps;
                 bool gcpReadSuccess = false;
                 {
                     NodeUtils::Hdf5Locker locker;
-                    if (FC.read_array_from_h5(h5Paths.first().toLocal8Bit().constData(), "gcps", gcps) == 0
+                    if (NodeUtils::readMatFromH5(h5Paths.first(), "gcps", gcps)
                         && gcps.rows > 0 && gcps.cols >= 2) {
                         gcpReadSuccess = true;
                     }

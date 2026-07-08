@@ -230,18 +230,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
             Mat phase;
-            int ret;
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
-            }
+            int ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
-            }
-            // 临时转换为双精度以匹配 DLL 的数学处理要求，保证算法精度并避免崩溃
-            if (phase.type() != CV_64F) {
-                phase.convertTo(phase, CV_64F);
             }
             Mat phase_filter;
             ret = filter.slope_adaptive_filter(phase, phase_filter, slop_win, pre_win, denoiseProgressCallback);
@@ -254,39 +246,50 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             int offset_row = 0, offset_col = 0;
             {
                 NodeUtils::Hdf5Locker locker;
+                QString filterPath = absolute_filter_path.at(i);
+                QString phasePath = phase_path.at(i);
+
                 /*写入h5*/
-                ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
+                ret = FC.creat_new_h5(filterPath.toStdString().c_str());
                 // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
                 if (phase_filter.type() != CV_32F) {
                     phase_filter.convertTo(phase_filter, CV_32F);
                 }
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
-                ret = FC.read_str_from_h5(phase_path.at(i).toStdString().c_str(), "source_1", tmp_str);
-                ret = FC.write_str_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "source_1", tmp_str.c_str());
+                NodeUtils::writeMatToH5(filterPath, "phase", phase_filter);
+                
+                NodeUtils::readStringFromH5(phasePath, "source_1", tmp_str);
+                FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_1", tmp_str.c_str());
                 QString master_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
-                ret = FC.read_str_from_h5(phase_path.at(i).toStdString().c_str(), "source_2", tmp_str);
-                ret = FC.write_str_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "source_2", tmp_str.c_str());
+                
+                NodeUtils::readStringFromH5(phasePath, "source_2", tmp_str);
+                FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_2", tmp_str.c_str());
                 QString slave_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "range_len", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "range_len", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
-                FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
-                FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_az", tmp);
-                FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "multilook_az", tmp);
-                if (0 == FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "mapped_lon", tmp))
-                    FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lon", tmp);
-                if (0 == FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "mapped_lat", tmp))
-                    FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lat", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "flat_phase_coefficient", tmp);
+                NodeUtils::writeMatToH5(filterPath, "flat_phase_coefficient", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "range_len", tmp);
+                NodeUtils::writeMatToH5(filterPath, "range_len", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "azimuth_len", tmp);
+                NodeUtils::writeMatToH5(filterPath, "azimuth_len", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "multilook_rg", tmp);
+                NodeUtils::writeMatToH5(filterPath, "multilook_rg", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "multilook_az", tmp);
+                NodeUtils::writeMatToH5(filterPath, "multilook_az", tmp);
+                
+                if (NodeUtils::readMatFromH5(phasePath, "mapped_lon", tmp))
+                    NodeUtils::writeMatToH5(filterPath, "mapped_lon", tmp);
+                if (NodeUtils::readMatFromH5(phasePath, "mapped_lat", tmp))
+                    NodeUtils::writeMatToH5(filterPath, "mapped_lat", tmp);
                 
                 /*行列偏移量*/
                 Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-                ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
+                NodeUtils::readMatFromH5(master_path, "offset_row", tmp_int);
                 offset_row = tmp_int.at<int>(0, 0);
-                ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
+                NodeUtils::readMatFromH5(master_path, "offset_col", tmp_int);
                 offset_col = tmp_int.at<int>(0, 0);
             }
             xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
@@ -337,18 +340,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
             Mat phase;
-            int ret;
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
-            }
+            int ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
-            }
-            // 临时转换为双精度以匹配 DLL 的数学处理要求，保证算法精度并避免崩溃
-            if (phase.type() != CV_64F) {
-                phase.convertTo(phase, CV_64F);
             }
             Mat phase_filter;
             ret = filter.Goldstein_filter(phase, phase_filter, alpha, goldstein_win, n_pad, denoiseProgressCallback);
@@ -361,39 +356,50 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             int offset_row = 0, offset_col = 0;
             {
                 NodeUtils::Hdf5Locker locker;
+                QString filterPath = absolute_filter_path.at(i);
+                QString phasePath = phase_path.at(i);
+
                 /*写入h5*/
-                ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
+                ret = FC.creat_new_h5(filterPath.toStdString().c_str());
                 // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
                 if (phase_filter.type() != CV_32F) {
                     phase_filter.convertTo(phase_filter, CV_32F);
                 }
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
-                ret = FC.read_str_from_h5(phase_path.at(i).toStdString().c_str(), "source_1", tmp_str);
-                ret = FC.write_str_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "source_1", tmp_str.c_str());
+                NodeUtils::writeMatToH5(filterPath, "phase", phase_filter);
+                
+                NodeUtils::readStringFromH5(phasePath, "source_1", tmp_str);
+                FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_1", tmp_str.c_str());
                 QString master_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
-                ret = FC.read_str_from_h5(phase_path.at(i).toStdString().c_str(), "source_2", tmp_str);
-                ret = FC.write_str_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "source_2", tmp_str.c_str());
+                
+                NodeUtils::readStringFromH5(phasePath, "source_2", tmp_str);
+                FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_2", tmp_str.c_str());
                 QString slave_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "range_len", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "range_len", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
-                FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
-                FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_az", tmp);
-                FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "multilook_az", tmp);
-                if (0 == FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "mapped_lon", tmp))
-                    FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lon", tmp);
-                if (0 == FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "mapped_lat", tmp))
-                    FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lat", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "flat_phase_coefficient", tmp);
+                NodeUtils::writeMatToH5(filterPath, "flat_phase_coefficient", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "range_len", tmp);
+                NodeUtils::writeMatToH5(filterPath, "range_len", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "azimuth_len", tmp);
+                NodeUtils::writeMatToH5(filterPath, "azimuth_len", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "multilook_rg", tmp);
+                NodeUtils::writeMatToH5(filterPath, "multilook_rg", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "multilook_az", tmp);
+                NodeUtils::writeMatToH5(filterPath, "multilook_az", tmp);
+                
+                if (NodeUtils::readMatFromH5(phasePath, "mapped_lon", tmp))
+                    NodeUtils::writeMatToH5(filterPath, "mapped_lon", tmp);
+                if (NodeUtils::readMatFromH5(phasePath, "mapped_lat", tmp))
+                    NodeUtils::writeMatToH5(filterPath, "mapped_lat", tmp);
                 
                 /*行列偏移量*/
                 Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-                ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
+                NodeUtils::readMatFromH5(master_path, "offset_row", tmp_int);
                 offset_row = tmp_int.at<int>(0, 0);
-                ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
+                NodeUtils::readMatFromH5(master_path, "offset_col", tmp_int);
                 offset_col = tmp_int.at<int>(0, 0);
             }
             xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),
@@ -444,11 +450,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
             Mat phase;
-            int ret;
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
-            }
+            int ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("读取H5相位数据失败: ") + phase_path.at(i));
                 return;
@@ -465,36 +467,46 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             int offset_row = 0, offset_col = 0;
             {
                 NodeUtils::Hdf5Locker locker;
+                QString filterPath = absolute_filter_path.at(i);
+                QString phasePath = phase_path.at(i);
+
                 /*写入h5*/
-                ret = FC.creat_new_h5(absolute_filter_path.at(i).toStdString().c_str());
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "phase", phase_filter);
-                ret = FC.read_str_from_h5(phase_path.at(i).toStdString().c_str(), "source_1", tmp_str);
-                ret = FC.write_str_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "source_1", tmp_str.c_str());
+                ret = FC.creat_new_h5(filterPath.toStdString().c_str());
+                NodeUtils::writeMatToH5(filterPath, "phase", phase_filter);
+                
+                NodeUtils::readStringFromH5(phasePath, "source_1", tmp_str);
+                FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_1", tmp_str.c_str());
                 QString master_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
-                ret = FC.read_str_from_h5(phase_path.at(i).toStdString().c_str(), "source_2", tmp_str);
-                ret = FC.write_str_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "source_2", tmp_str.c_str());
+                
+                NodeUtils::readStringFromH5(phasePath, "source_2", tmp_str);
+                FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_2", tmp_str.c_str());
                 QString slave_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "range_len", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "range_len", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-                ret = FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-                FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
-                FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
-                FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_az", tmp);
-                FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "multilook_az", tmp);
-                if (0 == FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "mapped_lon", tmp))
-                    FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lon", tmp);
-                if (0 == FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "mapped_lat", tmp))
-                    FC.write_array_to_h5(absolute_filter_path.at(i).toStdString().c_str(), "mapped_lat", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "flat_phase_coefficient", tmp);
+                NodeUtils::writeMatToH5(filterPath, "flat_phase_coefficient", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "range_len", tmp);
+                NodeUtils::writeMatToH5(filterPath, "range_len", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "azimuth_len", tmp);
+                NodeUtils::writeMatToH5(filterPath, "azimuth_len", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "multilook_rg", tmp);
+                NodeUtils::writeMatToH5(filterPath, "multilook_rg", tmp);
+                
+                NodeUtils::readMatFromH5(phasePath, "multilook_az", tmp);
+                NodeUtils::writeMatToH5(filterPath, "multilook_az", tmp);
+                
+                if (NodeUtils::readMatFromH5(phasePath, "mapped_lon", tmp))
+                    NodeUtils::writeMatToH5(filterPath, "mapped_lon", tmp);
+                if (NodeUtils::readMatFromH5(phasePath, "mapped_lat", tmp))
+                    NodeUtils::writeMatToH5(filterPath, "mapped_lat", tmp);
                 
                 /*行列偏移量*/
                 Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-                ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
+                NodeUtils::readMatFromH5(master_path, "offset_row", tmp_int);
                 offset_row = tmp_int.at<int>(0, 0);
-                ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
+                NodeUtils::readMatFromH5(master_path, "offset_col", tmp_int);
                 offset_col = tmp_int.at<int>(0, 0);
             }
             xml.XMLFile_add_denoise(file_name.toStdString().c_str(), filter_name.at(i).toStdString().c_str(),

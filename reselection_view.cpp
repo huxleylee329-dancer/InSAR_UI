@@ -1,4 +1,5 @@
-﻿#include"reselection_view.h"
+#include"reselection_view.h"
+#include "NodeUtils.h"
 #include"FormatConversion.h"
 #include<icon_source.h>
 #ifdef _DEBUG
@@ -472,9 +473,11 @@ void reselection_view::GetOffset()
         QMessageBox::warning(NULL, QStringLiteral("警告"), QStringLiteral("无形变文件"));
         return;
     }
-    FormatConversion FC;
     Mat Mask;
-    FC.read_array_from_h5(mPath.toStdString().c_str(), "mask", Mask);
+    {
+        NodeUtils::Hdf5Locker locker;
+        NodeUtils::readMatFromH5(mPath, "mask", Mask);
+    }
     int rows = Mask.rows;
     int cols = Mask.cols;
     int center_row = mFirst.y() / mScene->height() * rows;

@@ -102,21 +102,25 @@ void CutWorker::Cut(QList<double> para,
         QString Cut_name = QString("%1_cut").arg(name);
 
         QByteArray cut_h5_path = QString("%1/%2.h5").arg(h5_cut_path).arg(Cut_name).toLocal8Bit();
-        FC.creat_new_h5(cut_h5_path.data());
-        FC.write_slc_to_h5(cut_h5_path.data(), SLC);
-        FC.Copy_para_from_h5_2_h5(path_str.data(), cut_h5_path.data());
+        {
+            NodeUtils::Hdf5Locker locker;
+            QString cutH5 = QString::fromLocal8Bit(cut_h5_path);
+            FC.creat_new_h5(cut_h5_path.data());
+            FC.write_slc_to_h5(cut_h5_path.data(), SLC);
+            FC.Copy_para_from_h5_2_h5(path_str.data(), cut_h5_path.data());
 
-        FC.write_str_to_h5(cut_h5_path.data(), "process_state", "cut");
-        FC.write_str_to_h5(cut_h5_path.data(), "comment", "complex-1.0");
-        cv::Mat tmp = cv::Mat::zeros(1, 1, CV_32SC1);
-        tmp.at<int>(0, 0) = SLC.GetRows();
-        FC.write_array_to_h5(cut_h5_path.data(), "azimuth_len", tmp);
-        tmp.at<int>(0, 0) = SLC.GetCols();
-        FC.write_array_to_h5(cut_h5_path.data(), "range_len", tmp);
-        tmp.at<int>(0, 0) = offset_row;
-        FC.write_array_to_h5(cut_h5_path.data(), "offset_row", tmp);
-        tmp.at<int>(0, 0) = offset_col;
-        FC.write_array_to_h5(cut_h5_path.data(), "offset_col", tmp);
+            FC.write_str_to_h5(cut_h5_path.data(), "process_state", "cut");
+            FC.write_str_to_h5(cut_h5_path.data(), "comment", "complex-1.0");
+            cv::Mat tmp = cv::Mat::zeros(1, 1, CV_32SC1);
+            tmp.at<int>(0, 0) = SLC.GetRows();
+            NodeUtils::writeMatToH5(cutH5, "azimuth_len", tmp);
+            tmp.at<int>(0, 0) = SLC.GetCols();
+            NodeUtils::writeMatToH5(cutH5, "range_len", tmp);
+            tmp.at<int>(0, 0) = offset_row;
+            NodeUtils::writeMatToH5(cutH5, "offset_row", tmp);
+            tmp.at<int>(0, 0) = offset_col;
+            NodeUtils::writeMatToH5(cutH5, "offset_col", tmp);
+        }
 
         if (Images_Cut && Images_Cut->model()) {
             QMetaObject::invokeMethod(Images_Cut->model(), [=, &doc]() {
@@ -269,41 +273,51 @@ void CutWorker::Cut2(double h5_left,
         QFileInfo fileinfo = QFileInfo(path);
         QString name = fileinfo.baseName();
         QByteArray path_str = path.toLocal8Bit();
-        int rows, cols;
-        FC.read_int_from_h5(path_str.toStdString().c_str(), "range_len", &cols);
-        FC.read_int_from_h5(path_str.toStdString().c_str(), "azimuth_len", &rows);
+        int rows = 0, cols = 0;
+        {
+            NodeUtils::Hdf5Locker locker;
+            NodeUtils::readScalarFromH5(path, "range_len", cols);
+            NodeUtils::readScalarFromH5(path, "azimuth_len", rows);
+        }
         offset_row = h5_top * rows; offset_row = offset_row < 0 ? 0 : offset_row;
         offset_col = h5_left * cols; offset_col = offset_col < 0 ? 0 : offset_col;
         int row_end = h5_bottom * rows; row_end = row_end >= rows ? rows : row_end;
         int col_end = h5_right * cols; col_end = col_end >= cols ? cols : col_end;
         int rows_cut = row_end - offset_row;
         int cols_cut = col_end - offset_col;
-        FC.read_subarray_from_h5(path_str.toStdString().c_str(), "s_re", offset_row, offset_col, rows_cut, cols_cut, SLC.re);
-        FC.read_subarray_from_h5(path_str.toStdString().c_str(), "s_im", offset_row, offset_col, rows_cut, cols_cut, SLC.im);
+        
+        {
+            NodeUtils::Hdf5Locker locker;
+            FC.read_subarray_from_h5(path.toStdString().c_str(), "s_re", offset_row, offset_col, rows_cut, cols_cut, SLC.re);
+            FC.read_subarray_from_h5(path.toStdString().c_str(), "s_im", offset_row, offset_col, rows_cut, cols_cut, SLC.im);
+        }
 
         QString Cut_name = QString("%1_cut2").arg(name);
-
-        QByteArray cut_h5_path = QString("%1/%2.h5").arg(result_path).arg(Cut_name).toLocal8Bit();
-        FC.creat_new_h5(cut_h5_path.data());
-        FC.write_slc_to_h5(cut_h5_path.data(), SLC);
-        FC.Copy_para_from_h5_2_h5(path_str.data(), cut_h5_path.data());
-
-        FC.write_str_to_h5(cut_h5_path.data(), "process_state", "cut");
-        QString src_data_rank = project->child(src_node_index, 1)->text();
-        FC.write_str_to_h5(cut_h5_path.data(), "comment", src_data_rank.toStdString().c_str());
-        FC.write_int_to_h5(cut_h5_path.data(), "range_len", SLC.GetCols());
-        FC.write_int_to_h5(cut_h5_path.data(), "azimuth_len", SLC.GetRows());
-
-        if (src_data_rank != QString("complex-0.0"))
+        QString cutH5 = QString("%1/%2.h5").arg(result_path).arg(Cut_name);
+        
         {
-            int offset_row_old = 0, offset_col_old = 0;
-            FC.read_int_from_h5(path_str.toStdString().c_str(), "offset_row", &offset_row_old);
-            FC.read_int_from_h5(path_str.toStdString().c_str(), "offset_col", &offset_col_old);
-            offset_row += offset_row_old;
-            offset_col += offset_col_old;
+            NodeUtils::Hdf5Locker locker;
+            FC.creat_new_h5(cutH5.toStdString().c_str());
+            FC.write_slc_to_h5(cutH5.toStdString().c_str(), SLC);
+            FC.Copy_para_from_h5_2_h5(path.toStdString().c_str(), cutH5.toStdString().c_str());
+
+            FC.write_str_to_h5(cutH5.toStdString().c_str(), "process_state", "cut");
+            QString src_data_rank = project->child(src_node_index, 1)->text();
+            FC.write_str_to_h5(cutH5.toStdString().c_str(), "comment", src_data_rank.toStdString().c_str());
+            NodeUtils::writeScalarToH5(cutH5, "range_len", SLC.GetCols());
+            NodeUtils::writeScalarToH5(cutH5, "azimuth_len", SLC.GetRows());
+
+            if (src_data_rank != QString("complex-0.0"))
+            {
+                int offset_row_old = 0, offset_col_old = 0;
+                NodeUtils::readScalarFromH5(path, "offset_row", offset_row_old);
+                NodeUtils::readScalarFromH5(path, "offset_col", offset_col_old);
+                offset_row += offset_row_old;
+                offset_col += offset_col_old;
+            }
+            NodeUtils::writeScalarToH5(cutH5, "offset_row", offset_row);
+            NodeUtils::writeScalarToH5(cutH5, "offset_col", offset_col);
         }
-        FC.write_int_to_h5(cut_h5_path.data(), "offset_row", offset_row);
-        FC.write_int_to_h5(cut_h5_path.data(), "offset_col", offset_col);
 
         if (Images_Cut && Images_Cut->model()) {
             QMetaObject::invokeMethod(Images_Cut->model(), [=, &doc]() {

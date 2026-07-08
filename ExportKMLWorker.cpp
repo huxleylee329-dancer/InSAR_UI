@@ -31,11 +31,14 @@ void ExportKMLWorker::exportKML(QString h5Path, QString outFolder, QString fileN
     NodeUtils::Hdf5Locker locker;
     emit updateProcess(10, QStringLiteral("读取形变数据……"));
     
-    FormatConversion FC;
     Mat deformation_velocity, mask;
     
-    int ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", deformation_velocity);
-    ret += FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
+    int ret = -1;
+    if (NodeUtils::readMatFromH5(h5Path, "defomation_velocity", deformation_velocity) &&
+        NodeUtils::readMatFromH5(h5Path, "mask", mask))
+    {
+        ret = 0;
+    }
     
     if (ret != 0)
     {
@@ -86,31 +89,35 @@ void ExportKMLWorker::exportKML(QString h5Path, QString outFolder, QString fileN
         TopRight_lon = 0, TopRight_lat = 0, TopLeft_lon = 0, TopLeft_lat = 0, ref_lon = 0.0, ref_lat = 0.0;
     int ref_row = 0, ref_col = 0;
     
-    FC.read_int_from_h5(h5Path.toStdString().c_str(), "ref_row", &ref_row);
-    FC.read_int_from_h5(h5Path.toStdString().c_str(), "ref_col", &ref_col);
-    
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", ref_row, ref_col, 1, 1, tmp);
-    ref_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", ref_row, ref_col, 1, 1, tmp);
-    ref_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", 0, 0, 1, 1, tmp);
-    TopLeft_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", 0, Cols-1, 1, 1, tmp);
-    TopRight_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", Rows-1, 0, 1, 1, tmp);
-    BottomLeft_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", Rows-1, Cols - 1, 1, 1, tmp);
-    BottomRight_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", 0, 0, 1, 1, tmp);
-    TopLeft_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", 0, Cols - 1, 1, 1, tmp);
-    TopRight_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", Rows - 1, 0, 1, 1, tmp);
-    BottomLeft_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
-    FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", Rows - 1, Cols - 1, 1, 1, tmp);
-    BottomRight_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+    {
+        NodeUtils::Hdf5Locker locker;
+        FormatConversion FC;
+        NodeUtils::readScalarFromH5(h5Path, "ref_row", ref_row);
+        NodeUtils::readScalarFromH5(h5Path, "ref_col", ref_col);
+        
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", ref_row, ref_col, 1, 1, tmp);
+        ref_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", ref_row, ref_col, 1, 1, tmp);
+        ref_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", 0, 0, 1, 1, tmp);
+        TopLeft_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", 0, Cols-1, 1, 1, tmp);
+        TopRight_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", Rows-1, 0, 1, 1, tmp);
+        BottomLeft_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lat", Rows-1, Cols - 1, 1, 1, tmp);
+        BottomRight_lat = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", 0, 0, 1, 1, tmp);
+        TopLeft_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", 0, Cols - 1, 1, 1, tmp);
+        TopRight_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", Rows - 1, 0, 1, 1, tmp);
+        BottomLeft_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+        FC.read_subarray_from_h5(h5Path.toStdString().c_str(), "mapped_lon", Rows - 1, Cols - 1, 1, 1, tmp);
+        BottomRight_lon = tmp.type() == CV_64F ? tmp.at<double>(0, 0) : tmp.at<float>(0, 0);
+    }
     
     util.writeOverlayKML(BottomLeft_lon, BottomLeft_lat, BottomRight_lon, BottomRight_lat, TopRight_lon, TopRight_lat,
         TopLeft_lon, TopLeft_lat, ref_lon, ref_lat,

@@ -501,9 +501,9 @@ void OrbitRefinementNode::onProcessingFinished()
         
         // 读取 H5 元数据提取最终计算出的 RMS 残差值
         double rmsRange = 0.0, rmsAzimuth = 0.0;
-        FormatConversion FC;
-        FC.read_double_from_h5(h5Paths.at(0).toStdString().c_str(), "orbit_refinement_rms_range", &rmsRange);
-        FC.read_double_from_h5(h5Paths.at(0).toStdString().c_str(), "orbit_refinement_rms_azimuth", &rmsAzimuth);
+        QString targetH5 = h5Paths.at(0);
+        NodeUtils::readScalarFromH5(targetH5, "orbit_refinement_rms_range", rmsRange);
+        NodeUtils::readScalarFromH5(targetH5, "orbit_refinement_rms_azimuth", rmsAzimuth);
         
         QString residualJpg = outputPath + "gcp_residuals_" + QString::number(_nodeId) + ".jpg";
         drawGcpResidualsPlot(gcps, rmsRange, rmsAzimuth, residualJpg);

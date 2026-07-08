@@ -408,19 +408,15 @@ void GCPAnnotationDockWidget::loadDataset(const QString& h5Path)
     m_azimuthSpacing = 0.0;
     
     if (QFile::exists(m_h5Path)) {
-        FormatConversion conversion;
-        std::string h5Str = m_h5Path.toStdString();
-        
         NodeUtils::Hdf5Locker locker;
-        
-        conversion.read_int_from_h5(h5Str.c_str(), "range_len", &m_sceneWidth);
-        conversion.read_int_from_h5(h5Str.c_str(), "azimuth_len", &m_sceneHeight);
-        conversion.read_int_from_h5(h5Str.c_str(), "offset_row", &m_offsetRow);
-        conversion.read_int_from_h5(h5Str.c_str(), "offset_col", &m_offsetCol);
-        conversion.read_array_from_h5(h5Str.c_str(), "row_coefficient", m_rowCoef);
-        conversion.read_array_from_h5(h5Str.c_str(), "col_coefficient", m_colCoef);
-        conversion.read_double_from_h5(h5Str.c_str(), "range_spacing", &m_rangeSpacing);
-        if (conversion.read_double_from_h5(h5Str.c_str(), "azimuth_spacing", &m_azimuthSpacing) != 0) {
+        NodeUtils::readScalarFromH5(m_h5Path, "range_len", m_sceneWidth);
+        NodeUtils::readScalarFromH5(m_h5Path, "azimuth_len", m_sceneHeight);
+        NodeUtils::readScalarFromH5(m_h5Path, "offset_row", m_offsetRow);
+        NodeUtils::readScalarFromH5(m_h5Path, "offset_col", m_offsetCol);
+        NodeUtils::readMatFromH5(m_h5Path, "row_coefficient", m_rowCoef, CV_64F);
+        NodeUtils::readMatFromH5(m_h5Path, "col_coefficient", m_colCoef, CV_64F);
+        NodeUtils::readScalarFromH5(m_h5Path, "range_spacing", m_rangeSpacing);
+        if (!NodeUtils::readScalarFromH5(m_h5Path, "azimuth_spacing", m_azimuthSpacing)) {
             m_azimuthSpacing = m_rangeSpacing * 2.0;
         }
     }

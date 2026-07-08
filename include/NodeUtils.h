@@ -5,6 +5,8 @@
 
 #include <functional>
 
+#include <opencv2/core.hpp>
+
 class QWidget;
 class IApplicationInterface;
 
@@ -110,5 +112,50 @@ QStandardItem* findOrCreateChildItem(
     const QString& iconPath = "",
     bool* created = nullptr
 );
+
+/**
+ * @brief 从 H5 文件中读取 cv::Mat 矩阵数据（带自动线程锁）
+ * @param filePath H5 文件路径
+ * @param dataset 数据集名称
+ * @param mat 输出的 cv::Mat 矩阵
+ * @param targetType 期望转换的 OpenCV 矩阵类型（如 CV_64F、CV_32F 等），默认为 -1 表示不作转换
+ * @param errMsg 可选的错误信息输出指针
+ * @return 是否读取成功
+ */
+bool readMatFromH5(const QString& filePath,
+                   const QString& dataset,
+                   cv::Mat& mat,
+                   int targetType = -1,
+                   QString* errMsg = nullptr);
+
+/**
+ * @brief 从 H5 文件中读取标量数据（重载形式，支持 int, double, float, qint64）
+ */
+bool readScalarFromH5(const QString& filePath, const QString& dataset, int& value, QString* errMsg = nullptr);
+bool readScalarFromH5(const QString& filePath, const QString& dataset, double& value, QString* errMsg = nullptr);
+bool readScalarFromH5(const QString& filePath, const QString& dataset, float& value, QString* errMsg = nullptr);
+bool readScalarFromH5(const QString& filePath, const QString& dataset, qint64& value, QString* errMsg = nullptr);
+
+/**
+ * @brief 从 H5 文件中读取字符串数据
+ */
+bool readStringFromH5(const QString& filePath,
+                      const QString& dataset,
+                      std::string& out,
+                      QString* errMsg = nullptr);
+
+/**
+ * @brief 向 H5 文件中写入 cv::Mat 矩阵数据（带自动线程锁）
+ */
+bool writeMatToH5(const QString& filePath,
+                  const QString& dataset,
+                  const cv::Mat& mat,
+                  QString* errMsg = nullptr);
+
+/**
+ * @brief 向 H5 文件中写入标量数据
+ */
+bool writeScalarToH5(const QString& filePath, const QString& dataset, int value, QString* errMsg = nullptr);
+bool writeScalarToH5(const QString& filePath, const QString& dataset, double value, QString* errMsg = nullptr);
 
 } // namespace NodeUtils

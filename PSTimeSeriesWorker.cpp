@@ -60,17 +60,20 @@ void PSTimeSeriesWorker::ps_time_series(
     double carrier_frequency = 0.0, inc_center = 0.0, slant_range_first_pixel = 0.0, range_spacing = 0.0;
     int offset_col = 0;
 
-    int ret = FC.read_int_from_h5(networkH5.toStdString().c_str(), "ps_count", &ps_count);
-    ret += FC.read_int_from_h5(networkH5.toStdString().c_str(), "edge_count", &edge_count);
-    ret += FC.read_int_from_h5(networkH5.toStdString().c_str(), "ref_index", &ref_index);
-    ret += FC.read_int_from_h5(networkH5.toStdString().c_str(), "rows", &rows);
-    ret += FC.read_int_from_h5(networkH5.toStdString().c_str(), "cols", &cols);
-    ret += FC.read_int_from_h5(networkH5.toStdString().c_str(), "offset_col", &offset_col);
-    
-    ret += FC.read_double_from_h5(networkH5.toStdString().c_str(), "carrier_frequency", &carrier_frequency);
-    ret += FC.read_double_from_h5(networkH5.toStdString().c_str(), "inc_center", &inc_center);
-    ret += FC.read_double_from_h5(networkH5.toStdString().c_str(), "slant_range_first_pixel", &slant_range_first_pixel);
-    ret += FC.read_double_from_h5(networkH5.toStdString().c_str(), "range_spacing", &range_spacing);
+    int ret = 0;
+    if (!NodeUtils::readScalarFromH5(networkH5, "ps_count", ps_count) ||
+        !NodeUtils::readScalarFromH5(networkH5, "edge_count", edge_count) ||
+        !NodeUtils::readScalarFromH5(networkH5, "ref_index", ref_index) ||
+        !NodeUtils::readScalarFromH5(networkH5, "rows", rows) ||
+        !NodeUtils::readScalarFromH5(networkH5, "cols", cols) ||
+        !NodeUtils::readScalarFromH5(networkH5, "offset_col", offset_col) ||
+        !NodeUtils::readScalarFromH5(networkH5, "carrier_frequency", carrier_frequency) ||
+        !NodeUtils::readScalarFromH5(networkH5, "inc_center", inc_center) ||
+        !NodeUtils::readScalarFromH5(networkH5, "slant_range_first_pixel", slant_range_first_pixel) ||
+        !NodeUtils::readScalarFromH5(networkH5, "range_spacing", range_spacing))
+    {
+        ret = -1;
+    }
 
     if (ret != 0 || ps_count <= 0 || edge_count <= 0) {
         emit errorProcess(QStringLiteral("读取 PS 网络元数据失败"));
@@ -79,12 +82,12 @@ void PSTimeSeriesWorker::ps_time_series(
 
     // 2. 读取数组和矩阵
     cv::Mat ps_coords, edge_nodes, edge_phase_diff, temporal_baseline, spatial_baseline, formation_matrix;
-    ret = FC.read_array_from_h5(networkH5.toStdString().c_str(), "ps_coordinates", ps_coords);
-    ret += FC.read_array_from_h5(networkH5.toStdString().c_str(), "edges", edge_nodes);
-    ret += FC.read_array_from_h5(networkH5.toStdString().c_str(), "edge_phase_diff", edge_phase_diff);
-    ret += FC.read_array_from_h5(networkH5.toStdString().c_str(), "temporal_baseline", temporal_baseline);
-    ret += FC.read_array_from_h5(networkH5.toStdString().c_str(), "spatial_baseline", spatial_baseline);
-    ret += FC.read_array_from_h5(networkH5.toStdString().c_str(), "formation_matrix", formation_matrix);
+    ret = (NodeUtils::readMatFromH5(networkH5, "ps_coordinates", ps_coords) &&
+           NodeUtils::readMatFromH5(networkH5, "edges", edge_nodes) &&
+           NodeUtils::readMatFromH5(networkH5, "edge_phase_diff", edge_phase_diff) &&
+           NodeUtils::readMatFromH5(networkH5, "temporal_baseline", temporal_baseline) &&
+           NodeUtils::readMatFromH5(networkH5, "spatial_baseline", spatial_baseline) &&
+           NodeUtils::readMatFromH5(networkH5, "formation_matrix", formation_matrix)) ? 0 : -1;
 
     if (ret != 0 || ps_coords.empty() || edge_nodes.empty() || edge_phase_diff.empty()) {
         emit errorProcess(QStringLiteral("读取 PS 网络大矩阵数据失败"));

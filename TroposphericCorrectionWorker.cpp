@@ -184,39 +184,33 @@ void TroposphericCorrectionWorker::doCorrection(
 
         // 读取相位和坐标
         Mat phase;
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "phase", phase);
-        if (ret < 0) continue;
-        if (phase.type() != CV_32F) {
-            phase.convertTo(phase, CV_32F);
-        }
-
-        int rows = phase.rows, cols = phase.cols;
-
-        Mat lat_mat, lon_mat, dem;
         bool has_latlon = false, has_dem = false;
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat)) {
-            if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat)) {
+        Mat lat_mat, lon_mat, dem;
+        string src1_str, src2_str;
+        {
+            NodeUtils::Hdf5Locker locker;
+            QString phaseH5 = phase_paths[idx];
+            
+            ret = NodeUtils::readMatFromH5(phaseH5, "phase", phase, CV_32F) ? 0 : -1;
+            if (ret < 0) continue;
+
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lat", lat_mat, CV_32F) &&
+                NodeUtils::readMatFromH5(phaseH5, "mapped_lon", lon_mat, CV_32F)) {
                 has_latlon = true;
-                if (lat_mat.type() != CV_32F) lat_mat.convertTo(lat_mat, CV_32F);
-                if (lon_mat.type() != CV_32F) lon_mat.convertTo(lon_mat, CV_32F);
             }
-        }
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_dem", dem)) {
-            has_dem = true;
-            if (dem.type() != CV_32F) {
-                dem.convertTo(dem, CV_32F);
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_dem", dem, CV_32F)) {
+                has_dem = true;
             }
+
+            NodeUtils::readStringFromH5(phaseH5, "source_1", src1_str);
+            NodeUtils::readStringFromH5(phaseH5, "source_2", src2_str);
         }
+        int rows = phase.rows, cols = phase.cols;
 
         if (!has_latlon) {
             emit updateProcess(progress, QStringLiteral("第%1幅缺少坐标数据，跳过").arg(idx + 1));
             continue;
         }
-
-        // 读取主从影像时间戳（用于求差）
-        string src1_str, src2_str;
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", src1_str);
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", src2_str);
 
         // 提取日期字符串
         QString masterDate = extractDateString(QString::fromStdString(src1_str));
@@ -239,7 +233,7 @@ void TroposphericCorrectionWorker::doCorrection(
         // 获取雷达波长 (米)
         double wavelength = 0.055465763; // 默认值 (Sentinel-1 C波段)
         double carrier_frequency = 0;
-        if (0 == FC.read_double_from_h5(phase_paths[idx].toStdString().c_str(), "carrier_frequency", &carrier_frequency)) {
+        if (NodeUtils::readScalarFromH5(phase_paths[idx], "carrier_frequency", carrier_frequency)) {
             if (carrier_frequency > 0) {
                 wavelength = 299792458.0 / carrier_frequency;
             }
@@ -270,29 +264,35 @@ void TroposphericCorrectionWorker::doCorrection(
         ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
         if (ret < 0) continue;
 
-        string tmp_str;
-        Mat tmp;
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", tmp_str);
-        FC.write_str_to_h5(abs_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", tmp_str);
-        FC.write_str_to_h5(abs_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
+        {
+            NodeUtils::Hdf5Locker locker;
+            QString phaseH5 = phase_paths[idx];
+            QString absH5 = abs_paths[idx];
+            string tmp_str;
+            Mat tmp;
+            
+            NodeUtils::readStringFromH5(phaseH5, "source_1", tmp_str);
+            FC.write_str_to_h5(absH5.toStdString().c_str(), "source_1", tmp_str.c_str());
+            NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str);
+            FC.write_str_to_h5(absH5.toStdString().c_str(), "source_2", tmp_str.c_str());
 
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "flat_phase_coefficient", tmp);
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "flat_phase_coefficient", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "range_len", tmp);
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "range_len", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "azimuth_len", tmp);
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "azimuth_len", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "multilook_rg", tmp);
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "multilook_rg", tmp);
-        FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "multilook_az", tmp);
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "multilook_az", tmp);
-        if (has_latlon) {
-            FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat);
-            FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat);
+            NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp);
+            NodeUtils::writeMatToH5(absH5, "flat_phase_coefficient", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "range_len", tmp);
+            NodeUtils::writeMatToH5(absH5, "range_len", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "azimuth_len", tmp);
+            NodeUtils::writeMatToH5(absH5, "azimuth_len", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "multilook_rg", tmp);
+            NodeUtils::writeMatToH5(absH5, "multilook_rg", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "multilook_az", tmp);
+            NodeUtils::writeMatToH5(absH5, "multilook_az", tmp);
+            if (has_latlon) {
+                NodeUtils::writeMatToH5(absH5, "mapped_lat", lat_mat);
+                NodeUtils::writeMatToH5(absH5, "mapped_lon", lon_mat);
+            }
+
+            NodeUtils::writeMatToH5(absH5, "phase", corrected_phase);
         }
-
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "phase", corrected_phase);
 
         process_ok[idx] = true;
     }

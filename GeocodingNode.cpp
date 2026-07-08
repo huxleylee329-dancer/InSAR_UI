@@ -463,13 +463,13 @@ void GeocodingNode::onProcessingFinished()
             QString type = "amplitude";
             {
                 NodeUtils::Hdf5Locker locker;
-                if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", dummy) == 0) {
+                if (NodeUtils::readMatFromH5(h5Path, "phase", dummy)) {
                     type = "phase";
-                } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "coherence", dummy) == 0) {
+                } else if (NodeUtils::readMatFromH5(h5Path, "coherence", dummy)) {
                     type = "coherence";
-                } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "dem", dummy) == 0) {
+                } else if (NodeUtils::readMatFromH5(h5Path, "dem", dummy)) {
                     type = "dem";
-                } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", dummy) == 0) {
+                } else if (NodeUtils::readMatFromH5(h5Path, "defomation_velocity", dummy)) {
                     type = "SBAS";
                 }
             }
@@ -598,13 +598,13 @@ bool GeocodingNode::validateAndRestoreOutput()
         QString type = "amplitude";
         {
             NodeUtils::Hdf5Locker locker;
-            if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "phase", dummy) == 0) {
+            if (NodeUtils::readMatFromH5(h5Path, "phase", dummy)) {
                 type = "phase";
-            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "coherence", dummy) == 0) {
+            } else if (NodeUtils::readMatFromH5(h5Path, "coherence", dummy)) {
                 type = "coherence";
-            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "dem", dummy) == 0) {
+            } else if (NodeUtils::readMatFromH5(h5Path, "dem", dummy)) {
                 type = "dem";
-            } else if (FC.read_array_from_h5(h5Path.toStdString().c_str(), "defomation_velocity", dummy) == 0) {
+            } else if (NodeUtils::readMatFromH5(h5Path, "defomation_velocity", dummy)) {
                 type = "SBAS";
             }
         }

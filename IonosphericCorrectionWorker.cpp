@@ -149,27 +149,33 @@ void IonosphericCorrectionWorker::doCorrection(
             ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
             if (ret < 0) continue;
 
-            Mat slc_complex;
-            ret = FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "complex", slc_complex);
-            if (ret >= 0) {
-                FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "complex", slc_complex);
-            }
+            QString srcH5 = slc_paths[idx];
+            QString dstH5 = abs_paths[idx];
 
-            // 复制元数据
-            string tmp_str;
-            Mat tmp;
-            if (0 == FC.read_str_from_h5(slc_paths[idx].toStdString().c_str(), "source_1", tmp_str))
-                FC.write_str_to_h5(abs_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
-            if (0 == FC.read_str_from_h5(slc_paths[idx].toStdString().c_str(), "source_2", tmp_str))
-                FC.write_str_to_h5(abs_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
-            if (0 == FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "range_len", tmp))
-                FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "range_len", tmp);
-            if (0 == FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "azimuth_len", tmp))
-                FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "azimuth_len", tmp);
-            if (0 == FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "mapped_lat", tmp))
-                FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "mapped_lat", tmp);
-            if (0 == FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "mapped_lon", tmp))
-                FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "mapped_lon", tmp);
+            Mat slc_complex;
+            {
+                NodeUtils::Hdf5Locker locker;
+                if (NodeUtils::readMatFromH5(srcH5, "complex", slc_complex)) {
+                    NodeUtils::writeMatToH5(dstH5, "complex", slc_complex);
+                }
+
+                // 复制元数据
+                string tmp_str;
+                Mat tmp;
+                FormatConversion FC;
+                if (NodeUtils::readStringFromH5(srcH5, "source_1", tmp_str))
+                    FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_1", tmp_str.c_str());
+                if (NodeUtils::readStringFromH5(srcH5, "source_2", tmp_str))
+                    FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_2", tmp_str.c_str());
+                if (NodeUtils::readMatFromH5(srcH5, "range_len", tmp))
+                    NodeUtils::writeMatToH5(dstH5, "range_len", tmp);
+                if (NodeUtils::readMatFromH5(srcH5, "azimuth_len", tmp))
+                    NodeUtils::writeMatToH5(dstH5, "azimuth_len", tmp);
+                if (NodeUtils::readMatFromH5(srcH5, "mapped_lat", tmp))
+                    NodeUtils::writeMatToH5(dstH5, "mapped_lat", tmp);
+                if (NodeUtils::readMatFromH5(srcH5, "mapped_lon", tmp))
+                    NodeUtils::writeMatToH5(dstH5, "mapped_lon", tmp);
+            }
 
             process_ok[idx] = true;
             continue;
@@ -177,12 +183,12 @@ void IonosphericCorrectionWorker::doCorrection(
 
         // 读取 Master 复数 SLC 数据
         Mat master_complex;
-        ret = FC.read_array_from_h5(slc_paths[0].toStdString().c_str(), "complex", master_complex);
+        ret = NodeUtils::readMatFromH5(slc_paths[0], "complex", master_complex) ? 0 : -1;
         if (ret < 0) continue;
 
         // 读取 Slave 复数 SLC 数据
         Mat slave_complex;
-        ret = FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "complex", slave_complex);
+        ret = NodeUtils::readMatFromH5(slc_paths[idx], "complex", slave_complex) ? 0 : -1;
         if (ret < 0) continue;
 
         int rows = slave_complex.rows;
@@ -237,32 +243,38 @@ void IonosphericCorrectionWorker::doCorrection(
         if (ret < 0) continue;
 
         // 复制元数据
-        string tmp_str;
-        Mat tmp;
-        FC.read_str_from_h5(slc_paths[idx].toStdString().c_str(), "source_1", tmp_str);
-        FC.write_str_to_h5(abs_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
-        FC.read_str_from_h5(slc_paths[idx].toStdString().c_str(), "source_2", tmp_str);
-        FC.write_str_to_h5(abs_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
+        {
+            NodeUtils::Hdf5Locker locker;
+            QString srcH5 = slc_paths[idx];
+            QString dstH5 = abs_paths[idx];
+            string tmp_str;
+            Mat tmp;
+            
+            NodeUtils::readStringFromH5(srcH5, "source_1", tmp_str);
+            FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_1", tmp_str.c_str());
+            NodeUtils::readStringFromH5(srcH5, "source_2", tmp_str);
+            FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_2", tmp_str.c_str());
 
-        FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "range_len", tmp);
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "range_len", tmp);
-        FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "azimuth_len", tmp);
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "azimuth_len", tmp);
+            NodeUtils::readMatFromH5(srcH5, "range_len", tmp);
+            NodeUtils::writeMatToH5(dstH5, "range_len", tmp);
+            NodeUtils::readMatFromH5(srcH5, "azimuth_len", tmp);
+            NodeUtils::writeMatToH5(dstH5, "azimuth_len", tmp);
 
-        // 写入校正后的复数 SLC
-        FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "complex", corrected);
+            // 写入校正后的复数 SLC
+            NodeUtils::writeMatToH5(dstH5, "complex", corrected);
 
-        // 可选输出 TEC 估计图
-        if (outputTEC) {
-            // 由于算法封装至 DLL 内部，此处输出空的 TEC 占位矩阵
-            cv::Mat tec_placeholder = cv::Mat::zeros(corrected.rows, corrected.cols, CV_32FC1);
-            FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "tec_estimate", tec_placeholder);
+            // 可选输出 TEC 估计图
+            if (outputTEC) {
+                // 由于算法封装至 DLL 内部，此处输出空的 TEC 占位矩阵
+                cv::Mat tec_placeholder = cv::Mat::zeros(corrected.rows, corrected.cols, CV_32FC1);
+                NodeUtils::writeMatToH5(dstH5, "tec_estimate", tec_placeholder);
+            }
+
+            if (NodeUtils::readMatFromH5(srcH5, "mapped_lat", tmp))
+                NodeUtils::writeMatToH5(dstH5, "mapped_lat", tmp);
+            if (NodeUtils::readMatFromH5(srcH5, "mapped_lon", tmp))
+                NodeUtils::writeMatToH5(dstH5, "mapped_lon", tmp);
         }
-
-        if (0 == FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "mapped_lat", tmp))
-            FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "mapped_lat", tmp);
-        if (0 == FC.read_array_from_h5(slc_paths[idx].toStdString().c_str(), "mapped_lon", tmp))
-            FC.write_array_to_h5(abs_paths[idx].toStdString().c_str(), "mapped_lon", tmp);
 
         process_ok[idx] = true;
     }

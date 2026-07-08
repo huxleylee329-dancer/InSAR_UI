@@ -35,38 +35,39 @@ void GCPManagerWorker::evaluate_gcps(
     std::string inputH5 = inputH5Path.toStdString();
     std::string outputH5 = outputH5Path.toStdString();
 
-    FormatConversion conversion;
-
     int sceneWidth = 0, sceneHeight = 0;
     int offsetRow = 0, offsetCol = 0;
     double rangeSpacing = 0.0, azimuthSpacing = 0.0;
     cv::Mat rowCoef, colCoef;
 
     // 从输入 H5 中加载必须的参数
-    if (conversion.read_int_from_h5(inputH5.c_str(), "range_len", &sceneWidth) != 0 ||
-        conversion.read_int_from_h5(inputH5.c_str(), "azimuth_len", &sceneHeight) != 0) {
-        emit errorProcess(QStringLiteral("读取影像宽高数据失败。"));
-        return;
-    }
+    {
+        NodeUtils::Hdf5Locker locker;
+        if (!NodeUtils::readScalarFromH5(inputH5Path, "range_len", sceneWidth) ||
+            !NodeUtils::readScalarFromH5(inputH5Path, "azimuth_len", sceneHeight)) {
+            emit errorProcess(QStringLiteral("读取影像宽高数据失败。"));
+            return;
+        }
 
-    conversion.read_int_from_h5(inputH5.c_str(), "offset_row", &offsetRow);
-    conversion.read_int_from_h5(inputH5.c_str(), "offset_col", &offsetCol);
-    conversion.read_array_from_h5(inputH5.c_str(), "row_coefficient", rowCoef);
-    conversion.read_array_from_h5(inputH5.c_str(), "col_coefficient", colCoef);
+        NodeUtils::readScalarFromH5(inputH5Path, "offset_row", offsetRow);
+        NodeUtils::readScalarFromH5(inputH5Path, "offset_col", offsetCol);
+        NodeUtils::readMatFromH5(inputH5Path, "row_coefficient", rowCoef, CV_64F);
+        NodeUtils::readMatFromH5(inputH5Path, "col_coefficient", colCoef, CV_64F);
 
-    if (rowCoef.empty() || colCoef.empty()) {
-        emit errorProcess(QStringLiteral("影像逆向行列映射多项式系数 row_coefficient 或 col_coefficient 为空。"));
-        return;
-    }
+        if (rowCoef.empty() || colCoef.empty()) {
+            emit errorProcess(QStringLiteral("影像逆向行列映射多项式系数 row_coefficient 或 col_coefficient 为空。"));
+            return;
+        }
 
-    if (conversion.read_double_from_h5(inputH5.c_str(), "range_spacing", &rangeSpacing) != 0) {
-        emit errorProcess(QStringLiteral("读取影像距离向采样间隔 range_spacing 失败。"));
-        return;
-    }
+        if (!NodeUtils::readScalarFromH5(inputH5Path, "range_spacing", rangeSpacing)) {
+            emit errorProcess(QStringLiteral("读取影像距离向采样间隔 range_spacing 失败。"));
+            return;
+        }
 
-    // 尝试读取方位向分辨率，若读取失败，则设为合理的 Sentinel-1 Fallback 默认值
-    if (conversion.read_double_from_h5(inputH5.c_str(), "azimuth_spacing", &azimuthSpacing) != 0) {
-        azimuthSpacing = rangeSpacing * 2.0; 
+        // 尝试读取方位向分辨率，若读取失败，则设为合理的 Sentinel-1 Fallback 默认值
+        if (!NodeUtils::readScalarFromH5(inputH5Path, "azimuth_spacing", azimuthSpacing)) {
+            azimuthSpacing = rangeSpacing * 2.0; 
+        }
     }
 
     emit updateProcess(40, QStringLiteral("参数加载完成，执行控制点清洗与残差解算..."));
@@ -111,6 +112,7 @@ void GCPManagerWorker::evaluate_gcps(
     QDir().mkpath(outFi.absolutePath());
 
     // 创建新的结果 H5 快照
+    FormatConversion conversion;
     if (conversion.creat_new_h5(outputH5.c_str()) != 0) {
         emit errorProcess(QStringLiteral("无法创建输出的 GCPResults.h5 临时快照文件。"));
         return;
@@ -141,24 +143,26 @@ void GCPManagerWorker::evaluate_gcps(
     }
 
     // 写入矢量数组数据集
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_lon", lonMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_lat", latMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_height", hgtMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_row", rowMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_col", colMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_residual_range", resRMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_residual_azimuth", resAMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_residual_height", resHMat);
-    conversion.write_array_to_h5(outputH5.c_str(), "gcp_quality", qualMat);
+    {
+        NodeUtils::Hdf5Locker locker;
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_lon", lonMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_lat", latMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_height", hgtMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_row", rowMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_col", colMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_residual_range", resRMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_residual_azimuth", resAMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_residual_height", resHMat);
+        NodeUtils::writeMatToH5(outputH5Path, "gcp_quality", qualMat);
 
-    // 写入质量和精度评估元数据属性
-    conversion.write_int_to_h5(outputH5.c_str(), "num_gcp_total", static_cast<int>(gcps.size()));
-    conversion.write_int_to_h5(outputH5.c_str(), "num_gcp_used", evalResult.num_gcp_used);
-    conversion.write_int_to_h5(outputH5.c_str(), "num_gcp_rejected", evalResult.num_gcp_rejected);
-    conversion.write_double_to_h5(outputH5.c_str(), "mean_residual_range", evalResult.mean_residual_range);
-    conversion.write_double_to_h5(outputH5.c_str(), "mean_residual_azimuth", evalResult.mean_residual_azimuth);
-    conversion.write_double_to_h5(outputH5.c_str(), "rms_residual_2d", evalResult.rms_residual_2d);
-    conversion.write_double_to_h5(outputH5.c_str(), "rms_residual_3d", evalResult.rms_residual_3d);
+        NodeUtils::writeScalarToH5(outputH5Path, "num_gcp_total", static_cast<int>(gcps.size()));
+        NodeUtils::writeScalarToH5(outputH5Path, "num_gcp_used", evalResult.num_gcp_used);
+        NodeUtils::writeScalarToH5(outputH5Path, "num_gcp_rejected", evalResult.num_gcp_rejected);
+        NodeUtils::writeScalarToH5(outputH5Path, "mean_residual_range", evalResult.mean_residual_range);
+        NodeUtils::writeScalarToH5(outputH5Path, "mean_residual_azimuth", evalResult.mean_residual_azimuth);
+        NodeUtils::writeScalarToH5(outputH5Path, "rms_residual_2d", evalResult.rms_residual_2d);
+        NodeUtils::writeScalarToH5(outputH5Path, "rms_residual_3d", evalResult.rms_residual_3d);
+    }
 
     emit updateProcess(100, QStringLiteral("GCP 精度评估和输出已成功完成！"));
 

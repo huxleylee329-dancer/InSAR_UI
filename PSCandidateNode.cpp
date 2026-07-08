@@ -446,12 +446,9 @@ void PSCandidateNode::generateStaticPreviewJpg()
         FormatConversion FC;
         Utils util;
         cv::Mat dispersion, mask;
-        int ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "amplitude_dispersion", dispersion);
-        ret += FC.read_array_from_h5(h5Path.toStdString().c_str(), "ps_mask", mask);
+        int ret = (NodeUtils::readMatFromH5(h5Path, "amplitude_dispersion", dispersion, CV_64F) &&
+                   NodeUtils::readMatFromH5(h5Path, "ps_mask", mask)) ? 0 : -1;
         if (ret == 0 && !dispersion.empty()) {
-            if (dispersion.type() != CV_64F) {
-                dispersion.convertTo(dispersion, CV_64F);
-            }
             util.savephase_white(jpgPath.toStdString().c_str(), "jet", dispersion, mask);
         }
     }));

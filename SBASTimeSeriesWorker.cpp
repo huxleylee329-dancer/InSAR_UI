@@ -143,14 +143,13 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 InSARLogManager::LogInfo("SBASTimeSeriesWorker", "Task interrupted during unwrap.");
                 return;
             }
-            conversion.read_array_from_h5(phaseFiles[i].c_str(), "phase", phase);
-            if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
-            ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
+            QString pFile = QString::fromStdString(phaseFiles[i]);
+            NodeUtils::readMatFromH5(pFile, "phase", phase, CV_64F);
+            ret = NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F) ? 0 : -1;
             if (ret < 0)
             {
                 util.phase_coherence(phase, coherence);
             }
-            if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
             sbas.set_high_coherence_node_phase(mask, nodes, edges, phase);
             sbas.set_weight_by_coherence(coherence, nodes, edges);
             sbas.compute_high_coherence_residue(nodes, edges, triangles);
@@ -184,14 +183,13 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 InSARLogManager::LogInfo("SBASTimeSeriesWorker", "Task interrupted during unwrap.");
                 return;
             }
-            conversion.read_array_from_h5(phaseFiles[i].c_str(), "phase", phase);
-            if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
-            ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
+            QString pFile = QString::fromStdString(phaseFiles[i]);
+            NodeUtils::readMatFromH5(pFile, "phase", phase, CV_64F);
+            ret = NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F) ? 0 : -1;
             if (ret < 0)
             {
                 util.phase_coherence(phase, coherence);
             }
-            if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
             Mat residue, phase2;
             util.residue(phase, residue);
             if (unwrap_method == 2)//SNAPHU方法
@@ -230,10 +228,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     }
     for (int i = 0; i < phaseFiles.size(); i++)
     {
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
-        if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
-        if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
+        QString pFile = QString::fromStdString(phaseFiles[i]);
+        NodeUtils::readMatFromH5(pFile, "unwrapped_phase_1", phase, CV_64F);
+        NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
         sbas.refinement_and_reflattening(phase, mask, coherence, refinement_coh_thresh);
         phase = phase - phase.at<double>(ref_i, ref_j);
         if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
@@ -269,29 +266,26 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     for (int i = 0; i < M; i++)
     {
         Mat temp;
-        conversion.read_int_from_h5(phaseFiles[i].c_str(), "offset_col", &offset_col_val);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "slant_range_first_pixel", &nearRange);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "range_spacing", &spacing);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "B_spatial", &B_spatial);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "B_temporal", &B_temporal);
-        conversion.read_double_from_h5(phaseFiles[i].c_str(), "carrier_frequency", &wavelength);
+        QString pFile = QString::fromStdString(phaseFiles[i]);
+        NodeUtils::readScalarFromH5(pFile, "offset_col", offset_col_val);
+        NodeUtils::readScalarFromH5(pFile, "slant_range_first_pixel", nearRange);
+        NodeUtils::readScalarFromH5(pFile, "range_spacing", spacing);
+        NodeUtils::readScalarFromH5(pFile, "B_spatial", B_spatial);
+        NodeUtils::readScalarFromH5(pFile, "B_temporal", B_temporal);
+        NodeUtils::readScalarFromH5(pFile, "carrier_frequency", wavelength);
         wavelength = VEL_C / wavelength;
-        ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "inc_coefficient", temp);
-        if (ret == 0) {
-            if (!temp.empty() && temp.type() != CV_64F) temp.convertTo(temp, CV_64F);
+        if (NodeUtils::readMatFromH5(pFile, "inc_coefficient", temp, CV_64F)) {
             theta = temp.at<double>(0, 0) / 180.0 * PI;
         }
         else
         {
-            conversion.read_double_from_h5(phaseFiles[i].c_str(), "inc_center", &theta);
+            NodeUtils::readScalarFromH5(pFile, "inc_center", theta);
             theta = theta / 180.0 * PI;
         }
         double r = nearRange + double(offset_col_val) * spacing;
         c.at<double>(i, 0) = 4 * PI / wavelength * B_spatial / sin(theta) / r;
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
-        if (phase_vec[i].type() != CV_64F) phase_vec[i].convertTo(phase_vec[i], CV_64F);
-        conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coh_vec[i]);
-        if (coh_vec[i].type() != CV_64F) coh_vec[i].convertTo(coh_vec[i], CV_64F);
+        NodeUtils::readMatFromH5(pFile, "unwrapped_phase_2", phase_vec[i], CV_64F);
+        NodeUtils::readMatFromH5(pFile, "coherence", coh_vec[i], CV_64F);
     }
     Mat dummy = Mat::zeros(phase.rows, phase.cols, CV_64F);
     for (int i = 0; i < N + 1; i++)
@@ -373,8 +367,8 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     {
         if (cv::countNonZero(refinement_mask) < 4)
         {
-            conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase_vec[i]);
-            if (phase_vec[i].type() != CV_64F) phase_vec[i].convertTo(phase_vec[i], CV_64F);
+            QString pFile = QString::fromStdString(phaseFiles[i]);
+            NodeUtils::readMatFromH5(pFile, "unwrapped_phase_2", phase_vec[i], CV_64F);
         }
         else
         {
@@ -392,10 +386,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 }
                 if (b_break) break;
             }
-            conversion.read_array_from_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
-            if (phase.type() != CV_64F) phase.convertTo(phase, CV_64F);
-            conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
-            if (coherence.type() != CV_64F) coherence.convertTo(coherence, CV_64F);
+            QString pFile = QString::fromStdString(phaseFiles[i]);
+            NodeUtils::readMatFromH5(pFile, "unwrapped_phase_1", phase, CV_64F);
+            NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
             sbas.refinement_and_reflattening(phase, refinement_mask, coherence, refinement_coh_thresh);
             phase = phase - phase.at<double>(ref_i, ref_j);
             phase.copyTo(phase_vec[i]);
@@ -580,10 +573,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     conversion.write_array_to_h5(times_series_h5.c_str(), "residue_topography", z);
     for (int ii = 0; ii < phaseFiles.size(); ii++)
     {
-        ret = conversion.read_array_from_h5(phaseFiles[ii].c_str(), "mapped_lat", mapped_lat);
-        if (ret == 0)
+        QString pFile = QString::fromStdString(phaseFiles[ii]);
+        if (NodeUtils::readMatFromH5(pFile, "mapped_lat", mapped_lat))
         {
-            conversion.read_array_from_h5(phaseFiles[ii].c_str(), "mapped_lon", mapped_lon);
+            NodeUtils::readMatFromH5(pFile, "mapped_lon", mapped_lon);
             Mat lon_new(temporal_coh.rows, temporal_coh.cols, CV_32F), lat_new(temporal_coh.rows, temporal_coh.cols, CV_32F);
             for (int r_idx = 0; r_idx < temporal_coh.rows; r_idx++)
             {

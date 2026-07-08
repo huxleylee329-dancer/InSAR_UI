@@ -106,18 +106,19 @@ void OrbitRefinementWorker::refine_orbit(
 
     // 从主影像读取几何及轨道参数
     try {
-        if (conversion.read_array_from_h5(masterPathStd.c_str(), "state_vec", state_vec) != 0 ||
-            conversion.read_array_from_h5(masterPathStd.c_str(), "lon_coefficient", lon_coefficient) != 0 ||
-            conversion.read_array_from_h5(masterPathStd.c_str(), "lat_coefficient", lat_coefficient) != 0 ||
-            conversion.read_double_from_h5(masterPathStd.c_str(), "prf", &prf) != 0 ||
-            conversion.read_double_from_h5(masterPathStd.c_str(), "range_spacing", &range_spacing) != 0 ||
-            conversion.read_double_from_h5(masterPathStd.c_str(), "carrier_frequency", &carrier_frequency) != 0 ||
-            conversion.read_double_from_h5(masterPathStd.c_str(), "slant_range_first_pixel", &slant_range_first_pixel) != 0 ||
-            conversion.read_int_from_h5(masterPathStd.c_str(), "offset_row", &offset_row) != 0 ||
-            conversion.read_int_from_h5(masterPathStd.c_str(), "offset_col", &offset_col) != 0 ||
-            conversion.read_int_from_h5(masterPathStd.c_str(), "azimuth_len", &sceneHeight) != 0 ||
-            conversion.read_int_from_h5(masterPathStd.c_str(), "range_len", &sceneWidth) != 0 ||
-            conversion.read_str_from_h5(masterPathStd.c_str(), "acquisition_start_time", start_time_str) != 0)
+        QString masterPath = QString::fromStdString(masterPathStd);
+        if (!NodeUtils::readMatFromH5(masterPath, "state_vec", state_vec) ||
+            !NodeUtils::readMatFromH5(masterPath, "lon_coefficient", lon_coefficient) ||
+            !NodeUtils::readMatFromH5(masterPath, "lat_coefficient", lat_coefficient) ||
+            !NodeUtils::readScalarFromH5(masterPath, "prf", prf) ||
+            !NodeUtils::readScalarFromH5(masterPath, "range_spacing", range_spacing) ||
+            !NodeUtils::readScalarFromH5(masterPath, "carrier_frequency", carrier_frequency) ||
+            !NodeUtils::readScalarFromH5(masterPath, "slant_range_first_pixel", slant_range_first_pixel) ||
+            !NodeUtils::readScalarFromH5(masterPath, "offset_row", offset_row) ||
+            !NodeUtils::readScalarFromH5(masterPath, "offset_col", offset_col) ||
+            !NodeUtils::readScalarFromH5(masterPath, "azimuth_len", sceneHeight) ||
+            !NodeUtils::readScalarFromH5(masterPath, "range_len", sceneWidth) ||
+            !NodeUtils::readStringFromH5(masterPath, "acquisition_start_time", start_time_str))
         {
             emit errorProcess(QStringLiteral("读取主影像 H5 文件几何参数失败！"));
             return;
@@ -220,14 +221,14 @@ void OrbitRefinementWorker::refine_orbit(
         if (i == masterIndex - 1) {
             std::string outPathStd = dstPath.toStdString();
             try {
-                if (conversion.write_array_to_h5(outPathStd.c_str(), "state_vec", state_vec) != 0 ||
-                    conversion.write_array_to_h5(outPathStd.c_str(), "lon_coefficient", lon_coefficient) != 0 ||
-                    conversion.write_array_to_h5(outPathStd.c_str(), "lat_coefficient", lat_coefficient) != 0 ||
-                    conversion.write_int_to_h5(outPathStd.c_str(), "orbit_refined", 1) != 0 ||
-                    conversion.write_double_to_h5(outPathStd.c_str(), "orbit_refinement_rms_range", correction.rms_residual_range) != 0 ||
-                    conversion.write_double_to_h5(outPathStd.c_str(), "orbit_refinement_rms_azimuth", correction.rms_residual_azimuth) != 0 ||
-                    conversion.write_int_to_h5(outPathStd.c_str(), "orbit_refinement_num_gcp", correction.num_gcp_used) != 0 ||
-                    conversion.write_int_to_h5(outPathStd.c_str(), "orbit_refinement_poly_degree", polyDegree) != 0)
+                if (!NodeUtils::writeMatToH5(dstPath, "state_vec", state_vec) ||
+                    !NodeUtils::writeMatToH5(dstPath, "lon_coefficient", lon_coefficient) ||
+                    !NodeUtils::writeMatToH5(dstPath, "lat_coefficient", lat_coefficient) ||
+                    !NodeUtils::writeScalarToH5(dstPath, "orbit_refined", 1) ||
+                    !NodeUtils::writeScalarToH5(dstPath, "orbit_refinement_rms_range", correction.rms_residual_range) ||
+                    !NodeUtils::writeScalarToH5(dstPath, "orbit_refinement_rms_azimuth", correction.rms_residual_azimuth) ||
+                    !NodeUtils::writeScalarToH5(dstPath, "orbit_refinement_num_gcp", correction.num_gcp_used) ||
+                    !NodeUtils::writeScalarToH5(dstPath, "orbit_refinement_poly_degree", polyDegree))
                 {
                     emit errorProcess(QStringLiteral("将精炼轨道参数回写主影像失败！"));
                     return;

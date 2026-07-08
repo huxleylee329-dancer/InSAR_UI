@@ -1,4 +1,5 @@
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
 
 #include "ImageDisplayNode.h"
 #include "FormatConversion.h"
@@ -255,8 +256,12 @@ ImageDisplayNode::LoadedImage ImageDisplayNode::loadImageTask(QString filePath, 
             return result;
         }
 
-        FormatConversion FC;
-        if (FC.read_array_from_h5(filePath.toLocal8Bit().constData(), dataset.toLocal8Bit().constData(), mat) != 0)
+        bool read_ok = false;
+        {
+            NodeUtils::Hdf5Locker locker;
+            read_ok = NodeUtils::readMatFromH5(filePath, dataset, mat);
+        }
+        if (!read_ok)
         {
             result.errorMessage = tr("无法从H5读取数据集: %1").arg(dataset);
             result.success = false;

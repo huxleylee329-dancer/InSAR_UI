@@ -180,24 +180,24 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
     string start, end;
     int offset_row, offset_col, sceneHeight, sceneWidth;
     
-    FC.read_array_from_h5(master_path.toStdString().c_str(), "state_vec", statevec);
-    FC.read_array_from_h5(master_path.toStdString().c_str(), "lon_coefficient", lon_coef);
-    FC.read_array_from_h5(master_path.toStdString().c_str(), "lat_coefficient", lat_coef);
-    FC.read_array_from_h5(master_path.toStdString().c_str(), "inc_coefficient", inc_coef);
-    FC.read_double_from_h5(master_path.toStdString().c_str(), "prf", &prf);
-    FC.read_double_from_h5(master_path.toStdString().c_str(), "range_spacing", &rangeSpacing);
-    FC.read_double_from_h5(master_path.toStdString().c_str(), "carrier_frequency", &wavelength);
+    NodeUtils::readMatFromH5(master_path, "state_vec", statevec);
+    NodeUtils::readMatFromH5(master_path, "lon_coefficient", lon_coef);
+    NodeUtils::readMatFromH5(master_path, "lat_coefficient", lat_coef);
+    NodeUtils::readMatFromH5(master_path, "inc_coefficient", inc_coef);
+    NodeUtils::readScalarFromH5(master_path, "prf", prf);
+    NodeUtils::readScalarFromH5(master_path, "range_spacing", rangeSpacing);
+    NodeUtils::readScalarFromH5(master_path, "carrier_frequency", wavelength);
     
     wavelength = VEL_C / wavelength;
-    FC.read_int_from_h5(master_path.toStdString().c_str(), "offset_row", &offset_row);
-    FC.read_int_from_h5(master_path.toStdString().c_str(), "offset_col", &offset_col);
-    FC.read_int_from_h5(master_path.toStdString().c_str(), "range_len", &sceneWidth);
-    FC.read_int_from_h5(master_path.toStdString().c_str(), "azimuth_len", &sceneHeight);
-    FC.read_double_from_h5(master_path.toStdString().c_str(), "slant_range_first_pixel", &nearRangeTime);
+    NodeUtils::readScalarFromH5(master_path, "offset_row", offset_row);
+    NodeUtils::readScalarFromH5(master_path, "offset_col", offset_col);
+    NodeUtils::readScalarFromH5(master_path, "range_len", sceneWidth);
+    NodeUtils::readScalarFromH5(master_path, "azimuth_len", sceneHeight);
+    NodeUtils::readScalarFromH5(master_path, "slant_range_first_pixel", nearRangeTime);
     
     nearRangeTime = nearRangeTime / VEL_C * 2.0;
-    FC.read_str_from_h5(master_path.toStdString().c_str(), "acquisition_start_time", start);
-    FC.read_str_from_h5(master_path.toStdString().c_str(), "acquisition_stop_time", end);
+    NodeUtils::readStringFromH5(master_path, "acquisition_start_time", start);
+    NodeUtils::readStringFromH5(master_path, "acquisition_stop_time", end);
     FC.utc2gps(start.c_str(), &acquisitionStartTime);
     FC.utc2gps(end.c_str(), &acquisitionStopTime);
     
@@ -211,7 +211,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
         int rows_mapped = sceneHeight / multilook_az;
         int cols_mapped = sceneWidth / multilook_rg;
         
-        if (0 == FC.read_array_from_h5(master_path.toStdString().c_str(), "mapped_lon", mapped_lon))
+        if (NodeUtils::readMatFromH5(master_path, "mapped_lon", mapped_lon))
         {
             // ================= 算法块 1: 使用 OpenCV 高性能内置区域插值 (当前启用) =================
             cv::resize(mapped_lon, mapped_lon, cv::Size(cols_mapped, rows_mapped), 0, 0, cv::INTER_AREA);
@@ -243,7 +243,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             }
             */
             
-            if (0 == FC.read_array_from_h5(master_path.toStdString().c_str(), "mapped_lat", mapped_lat))
+            if (NodeUtils::readMatFromH5(master_path, "mapped_lat", mapped_lat))
             {
                 // ================= 算法块 1: 使用 OpenCV 高性能内置区域插值 (当前启用) =================
                 cv::resize(mapped_lat, mapped_lat, cv::Size(cols_mapped, rows_mapped), 0, 0, cv::INTER_AREA);
@@ -344,8 +344,10 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             QString slave_relative_path = "/" + node_name + "/" + slave_regis_name + ".h5";
             ret = FC.write_str_to_h5(h5_path.toStdString().c_str(), "source_1", master_relative_path.toStdString().c_str());
             ret = FC.write_str_to_h5(h5_path.toStdString().c_str(), "source_2", slave_relative_path.toStdString().c_str());
-            ret = FC.read_array_from_h5(slave_path.toStdString().c_str(), "state_vec", statevec2);
-            ret = FC.read_double_from_h5(slave_path.toStdString().c_str(), "prf", &prf2);
+            ret = NodeUtils::readMatFromH5(slave_path, "state_vec", statevec2) ? 0 : -1;
+            if (ret == 0) {
+                ret = NodeUtils::readScalarFromH5(slave_path, "prf", prf2) ? 0 : -1;
+            }
             Mat phase_deflatted, flat_phase_coefficient;
             
             if (isdeflat)

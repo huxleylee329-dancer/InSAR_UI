@@ -47,7 +47,6 @@ void BaseImportWorker::import_patch(
         return;
     }
 
-    NodeUtils::Hdf5Locker hdf5Locker; // H5数据安全锁
     QDir dir(savepath);
     if (!dir.exists(dst_node)) {
         if (!dir.mkdir(dst_node)) {
@@ -76,7 +75,11 @@ void BaseImportWorker::import_patch(
         int endRange = (double(i + 1) / n_images) * 90;
         int progressMin = startRange;
         int progressMax = startRange + (endRange - startRange) * 0.8;
-        bool success = convertToH5(task.arguments, h5_path, progressMin, progressMax);
+        bool success = false;
+        {
+            NodeUtils::Hdf5Locker hdf5Locker;
+            success = convertToH5(task.arguments, h5_path, progressMin, progressMax);
+        }
 
         if (!success || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {

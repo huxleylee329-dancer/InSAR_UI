@@ -150,7 +150,6 @@ void DEMSourceWorker::fetch_dem(
     QStandardItemModel* model
 )
 {
-    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("DEMSourceWorker", QString("External DEM fetch started. Target node: %1, Source Type: %2").arg(dstNode).arg(demSource));
 
     if (projectPath.isEmpty() || projectName.isEmpty() || dstNode.isEmpty() || filePaths.isEmpty() || !model)
@@ -181,8 +180,13 @@ void DEMSourceWorker::fetch_dem(
 
     // 检查是否存在 mapped_lon/mapped_lat (已地理编码的 H5)并从其提取 AOI 范围
     Mat mat_lon, mat_lat;
-    if (FC.read_array_from_h5(firstInput.toStdString().c_str(), "mapped_lon", mat_lon) == 0 &&
-        FC.read_array_from_h5(firstInput.toStdString().c_str(), "mapped_lat", mat_lat) == 0)
+    bool mapped_check = false;
+    {
+        NodeUtils::Hdf5Locker locker;
+        mapped_check = (NodeUtils::readMatFromH5(firstInput, "mapped_lon", mat_lon) &&
+                        NodeUtils::readMatFromH5(firstInput, "mapped_lat", mat_lat));
+    }
+    if (mapped_check)
     {
         double min_lon_val, max_lon_val, min_lat_val, max_lat_val;
         minMaxLoc(mat_lon, &min_lon_val, &max_lon_val);
@@ -200,8 +204,12 @@ void DEMSourceWorker::fetch_dem(
         // 尝试从雷达多项式系数计算边界
         std::string source_file;
         QString src_file;
-        // 若存在 source_1，表明是干涉/相位等衍生 H5 文件，需读取主影像路径
-        if (FC.read_str_from_h5(firstInput.toStdString().c_str(), "source_1", source_file) == 0)
+        bool read_src_ok = false;
+        {
+            NodeUtils::Hdf5Locker locker;
+            read_src_ok = NodeUtils::readStringFromH5(firstInput, "source_1", source_file);
+        }
+        if (read_src_ok)
         {
             src_file = save_path + "/" + QString(source_file.c_str());
         }
@@ -215,12 +223,17 @@ void DEMSourceWorker::fetch_dem(
         {
             int sceneHeight = 0, sceneWidth = 0, offset_row = 0, offset_col = 0;
             Mat lon_coef, lat_coef;
-            if (FC.read_int_from_h5(src_file.toStdString().c_str(), "range_len", &sceneWidth) == 0 &&
-                FC.read_int_from_h5(src_file.toStdString().c_str(), "azimuth_len", &sceneHeight) == 0 &&
-                FC.read_int_from_h5(src_file.toStdString().c_str(), "offset_row", &offset_row) == 0 &&
-                FC.read_int_from_h5(src_file.toStdString().c_str(), "offset_col", &offset_col) == 0 &&
-                FC.read_array_from_h5(src_file.toStdString().c_str(), "lon_coefficient", lon_coef) == 0 &&
-                FC.read_array_from_h5(src_file.toStdString().c_str(), "lat_coefficient", lat_coef) == 0)
+            bool read_para_ok = false;
+            {
+                NodeUtils::Hdf5Locker locker;
+                read_para_ok = (NodeUtils::readScalarFromH5(src_file, "range_len", sceneWidth) &&
+                                NodeUtils::readScalarFromH5(src_file, "azimuth_len", sceneHeight) &&
+                                NodeUtils::readScalarFromH5(src_file, "offset_row", offset_row) &&
+                                NodeUtils::readScalarFromH5(src_file, "offset_col", offset_col) &&
+                                NodeUtils::readMatFromH5(src_file, "lon_coefficient", lon_coef) &&
+                                NodeUtils::readMatFromH5(src_file, "lat_coefficient", lat_coef));
+            }
+            if (read_para_ok)
             {
                 double lonMax = 0, lonMin = 0, latMax = 0, latMin = 0;
                 if (Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
@@ -545,25 +558,6 @@ void DEMSourceWorker::fetch_dem(
     QString outputTifPath = save_path + "/" + dstNode + "/" + outputTifName;
     write_dem_to_tif(outputTifPath, cropped_dem, new_gt, wkt_projection);
 
-    if (FC.creat_new_h5(outputH5Path.toStdString().c_str()) != 0)
-    {
-        emit errorProcess(QStringLiteral("创建输出 H5 文件失败。"));
-        return;
-    }
-
-    // 确保高程和三维坐标使用双精度(CV_64F)写入，防止 precompiled DLL 读取时发生类型 Mismatch
-    if (cropped_dem.type() != CV_64F) cropped_dem.convertTo(cropped_dem, CV_64F);
-    if (dem_x.type() != CV_64F) dem_x.convertTo(dem_x, CV_64F);
-    if (dem_y.type() != CV_64F) dem_y.convertTo(dem_y, CV_64F);
-    if (dem_z.type() != CV_64F) dem_z.convertTo(dem_z, CV_64F);
-
-    // 写入数据集
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem", cropped_dem);
-
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_x", dem_x);
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_y", dem_y);
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_z", dem_z);
-
     // 写入经纬度辅助 2D 矩阵
     int rows = cropped_dem.rows;
     int cols = cropped_dem.cols;
@@ -582,28 +576,54 @@ void DEMSourceWorker::fetch_dem(
         }
     }
 
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lon", out_lon);
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lat", out_lat);
-
-    // 写入元数据属性
+    bool write_success = false;
+    // 确定数据源名称
     string srcName = "SRTM1";
     if (demSource == 1) srcName = "SRTM3";
     else if (demSource == 2) srcName = "Copernicus";
-
     else if (demSource == 3) srcName = "ASTER";
 
-    FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_source", srcName.c_str());
-    FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lon", min_lon);
-    FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lon", max_lon);
-    FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lat", min_lat);
-    FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lat", max_lat);
-    FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_cache_path", QDir::toNativeSeparators(cacheDir).toStdString().c_str());
+    {
+        NodeUtils::Hdf5Locker locker;
+        if (FC.creat_new_h5(outputH5Path.toStdString().c_str()) == 0)
+        {
+            // 确保高程和三维坐标使用双精度(CV_64F)写入，防止 precompiled DLL 读取时发生类型 Mismatch
+            if (cropped_dem.type() != CV_64F) cropped_dem.convertTo(cropped_dem, CV_64F);
+            if (dem_x.type() != CV_64F) dem_x.convertTo(dem_x, CV_64F);
+            if (dem_y.type() != CV_64F) dem_y.convertTo(dem_y, CV_64F);
+            if (dem_z.type() != CV_64F) dem_z.convertTo(dem_z, CV_64F);
 
-    // 写入行列偏移量以向下兼容
-    Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-    tmp_int.at<int>(0, 0) = 0;
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_row", tmp_int);
-    FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_col", tmp_int);
+            // 写入数据集
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem", cropped_dem);
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_x", dem_x);
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_y", dem_y);
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_z", dem_z);
+
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lon", out_lon);
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lat", out_lat);
+
+            // 写入元数据属性
+            FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_source", srcName.c_str());
+            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lon", min_lon);
+            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lon", max_lon);
+            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lat", min_lat);
+            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lat", max_lat);
+            FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_cache_path", QDir::toNativeSeparators(cacheDir).toStdString().c_str());
+
+            // 写入行列偏移量以向下兼容
+            Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
+            tmp_int.at<int>(0, 0) = 0;
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_row", tmp_int);
+            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_col", tmp_int);
+            write_success = true;
+        }
+    }
+
+    if (!write_success)
+    {
+        emit errorProcess(QStringLiteral("创建或写入输出 H5 文件失败。"));
+        return;
+    }
 
     // 8. 挂载到项目树及更新 XML
     XMLFile xml;

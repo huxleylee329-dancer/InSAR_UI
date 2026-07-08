@@ -467,11 +467,11 @@ void PSNetworkNode::generateStaticPreviewJpg()
         FormatConversion FC;
         
         int rows = 0, cols = 0, ps_count = 0, edge_count = 0, ref_index = 0;
-        FC.read_int_from_h5(h5Path.toStdString().c_str(), "rows", &rows);
-        FC.read_int_from_h5(h5Path.toStdString().c_str(), "cols", &cols);
-        FC.read_int_from_h5(h5Path.toStdString().c_str(), "ps_count", &ps_count);
-        FC.read_int_from_h5(h5Path.toStdString().c_str(), "edge_count", &edge_count);
-        FC.read_int_from_h5(h5Path.toStdString().c_str(), "ref_index", &ref_index);
+        NodeUtils::readScalarFromH5(h5Path, "rows", rows);
+        NodeUtils::readScalarFromH5(h5Path, "cols", cols);
+        NodeUtils::readScalarFromH5(h5Path, "ps_count", ps_count);
+        NodeUtils::readScalarFromH5(h5Path, "edge_count", edge_count);
+        NodeUtils::readScalarFromH5(h5Path, "ref_index", ref_index);
 
         if (rows <= 0 || cols <= 0) return;
 
@@ -480,8 +480,8 @@ void PSNetworkNode::generateStaticPreviewJpg()
         // 如果能读取离差分布作为背景，则加载它
         if (QFileInfo::exists(candidatesH5)) {
             cv::Mat dispersion, mask;
-            int ret1 = FC.read_array_from_h5(candidatesH5.toStdString().c_str(), "amplitude_dispersion", dispersion);
-            ret1 += FC.read_array_from_h5(candidatesH5.toStdString().c_str(), "ps_mask", mask);
+            int ret1 = (NodeUtils::readMatFromH5(candidatesH5, "amplitude_dispersion", dispersion) &&
+                        NodeUtils::readMatFromH5(candidatesH5, "ps_mask", mask)) ? 0 : -1;
             if (ret1 == 0 && !dispersion.empty()) {
                 double minVal, maxVal;
                 cv::minMaxLoc(dispersion, &minVal, &maxVal, NULL, NULL, mask);
@@ -492,8 +492,8 @@ void PSNetworkNode::generateStaticPreviewJpg()
         }
 
         cv::Mat ps_coords, edge_nodes;
-        int ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "ps_coordinates", ps_coords);
-        ret += FC.read_array_from_h5(h5Path.toStdString().c_str(), "edges", edge_nodes);
+        int ret = (NodeUtils::readMatFromH5(h5Path, "ps_coordinates", ps_coords) &&
+                   NodeUtils::readMatFromH5(h5Path, "edges", edge_nodes)) ? 0 : -1;
 
         if (ret == 0 && !ps_coords.empty() && !edge_nodes.empty()) {
             // 绘制网格边 (蓝色)

@@ -178,28 +178,38 @@ void GeocodingWorker::GeocodingWithDem(
         
         {
             NodeUtils::Hdf5Locker locker;
-            ret = conversion.read_array_from_h5(input_files[0].c_str(), "mapped_lon", mapped_lon);
-            ret += conversion.read_array_from_h5(input_files[0].c_str(), "mapped_lat", mapped_lat);
+            QString inputH5 = QString::fromStdString(input_files[0]);
+            ret = (NodeUtils::readMatFromH5(inputH5, "mapped_lon", mapped_lon) &&
+                   NodeUtils::readMatFromH5(inputH5, "mapped_lat", mapped_lat)) ? 0 : -1;
             if (ret != 0)
             {
-                conversion.read_str_from_h5(input_files[0].c_str(), "source_1", source_file);
+                NodeUtils::readStringFromH5(inputH5, "source_1", source_file);
                 QString src_file = save_path + "/" + QString(source_file.c_str());
-                master_file = src_file.toStdString();
-                ret = conversion.read_int_from_h5(input_files[0].c_str(), "multilook_az", &multilook_az);
-                ret = conversion.read_int_from_h5(input_files[0].c_str(), "multilook_rg", &multilook_rg);
-                ret = conversion.read_int_from_h5(master_file.c_str(), "range_len", &sceneWidth);
-                ret = conversion.read_int_from_h5(master_file.c_str(), "azimuth_len", &sceneHeight);
-                ret = conversion.read_int_from_h5(master_file.c_str(), "offset_row", &offset_row);
-                ret = conversion.read_int_from_h5(master_file.c_str(), "offset_col", &offset_col);
-                ret = conversion.read_array_from_h5(master_file.c_str(), "lon_coefficient", lon_coef);
-                ret = conversion.read_array_from_h5(master_file.c_str(), "lat_coefficient", lat_coef);
-                ret = conversion.read_double_from_h5(master_file.c_str(), "prf", &prf);
-                ret = conversion.read_double_from_h5(master_file.c_str(), "carrier_frequency", &wavelength);
-                ret = conversion.read_double_from_h5(master_file.c_str(), "range_spacing", &rangeSpacing);
-                ret = conversion.read_double_from_h5(master_file.c_str(), "slant_range_first_pixel", &nearRangeTime);
-                ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_start_time", start_time);
-                ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_stop_time", end_time);
-                ret = conversion.read_array_from_h5(master_file.c_str(), "state_vec", statevec);
+                QString masterH5 = QDir::toNativeSeparators(src_file);
+                master_file = masterH5.toStdString();
+                
+                if (NodeUtils::readScalarFromH5(inputH5, "multilook_az", multilook_az) &&
+                    NodeUtils::readScalarFromH5(inputH5, "multilook_rg", multilook_rg) &&
+                    NodeUtils::readScalarFromH5(masterH5, "range_len", sceneWidth) &&
+                    NodeUtils::readScalarFromH5(masterH5, "azimuth_len", sceneHeight) &&
+                    NodeUtils::readScalarFromH5(masterH5, "offset_row", offset_row) &&
+                    NodeUtils::readScalarFromH5(masterH5, "offset_col", offset_col) &&
+                    NodeUtils::readMatFromH5(masterH5, "lon_coefficient", lon_coef) &&
+                    NodeUtils::readMatFromH5(masterH5, "lat_coefficient", lat_coef) &&
+                    NodeUtils::readScalarFromH5(masterH5, "prf", prf) &&
+                    NodeUtils::readScalarFromH5(masterH5, "carrier_frequency", wavelength) &&
+                    NodeUtils::readScalarFromH5(masterH5, "range_spacing", rangeSpacing) &&
+                    NodeUtils::readScalarFromH5(masterH5, "slant_range_first_pixel", nearRangeTime) &&
+                    NodeUtils::readStringFromH5(masterH5, "acquisition_start_time", start_time) &&
+                    NodeUtils::readStringFromH5(masterH5, "acquisition_stop_time", end_time) &&
+                    NodeUtils::readMatFromH5(masterH5, "state_vec", statevec))
+                {
+                    ret = 0;
+                }
+                else
+                {
+                    ret = -1;
+                }
             }
         }
         if (ret != 0)
@@ -253,63 +263,65 @@ void GeocodingWorker::GeocodingWithDem(
 
             {
                 NodeUtils::Hdf5Locker locker;
+                QString inputH5 = QString::fromStdString(input_files[i]);
                 if (product_level == QString("phase-1.0"))
                 {
-                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
+                    ret = NodeUtils::readMatFromH5(inputH5, "phase", phase) ? 0 : -1;
                     geocode_Rank_level = "phase-1.1";
                 }
                 if (product_level == QString("phase-2.0"))
                 {
-                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
+                    ret = NodeUtils::readMatFromH5(inputH5, "phase", phase) ? 0 : -1;
                     geocode_Rank_level = "phase-2.1";
                 }
                 if (product_level == QString("phase-3.0"))
                 {
-                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "phase", phase);
+                    ret = NodeUtils::readMatFromH5(inputH5, "phase", phase) ? 0 : -1;
                     geocode_Rank_level = "phase-3.1";
                 }
                 if (product_level == QString("coherence-1.0"))
                 {
-                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "coherence", phase);
+                    ret = NodeUtils::readMatFromH5(inputH5, "coherence", phase) ? 0 : -1;
                     geocode_Rank_level = "coherence-1.1";
                 }
                 if (product_level == QString("dem-1.0"))
                 {
-                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "dem", phase);
+                    ret = NodeUtils::readMatFromH5(inputH5, "dem", phase) ? 0 : -1;
                     geocode_Rank_level = "dem-1.1";
                 }
                 if (product_level == QString("SBAS-1.0"))
                 {
-                    ret = conversion.read_array_from_h5(input_files[i].c_str(), "defomation_velocity", phase);
+                    ret = NodeUtils::readMatFromH5(inputH5, "defomation_velocity", phase) ? 0 : -1;
                     geocode_Rank_level = "SBAS-1.1";
                 }
             }
             ret = util.SAR2UTM(mapped_lon, mapped_lat, phase, mapped_phase, 1, &lon_east, &lon_west, &lat_north, &lat_south);
             {
                 NodeUtils::Hdf5Locker locker;
+                QString outputH5 = QString::fromStdString(output_files[i]);
                 ret = conversion.creat_new_h5(output_files[i].c_str());
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_east", lon_east);
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_west", lon_west);
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_north", lat_north);
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
+                NodeUtils::writeScalarToH5(outputH5, "lon_east", lon_east);
+                NodeUtils::writeScalarToH5(outputH5, "lon_west", lon_west);
+                NodeUtils::writeScalarToH5(outputH5, "lat_north", lat_north);
+                NodeUtils::writeScalarToH5(outputH5, "lat_south", lat_south);
                 if (product_level == QString("phase-1.0") ||
                     product_level == QString("phase-2.0") ||
                     product_level == QString("phase-3.0")
                     )
                 {
-                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "phase", mapped_phase);
+                    NodeUtils::writeMatToH5(outputH5, "phase", mapped_phase);
                 }
                 if (product_level == QString("coherence-1.0"))
                 {
-                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "coherence", mapped_phase);
+                    NodeUtils::writeMatToH5(outputH5, "coherence", mapped_phase);
                 }
                 if (product_level == QString("dem-1.0"))
                 {
-                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "dem", mapped_phase);
+                    NodeUtils::writeMatToH5(outputH5, "dem", mapped_phase);
                 }
                 if (product_level == QString("SBAS-1.0"))
                 {
-                    ret = conversion.write_array_to_h5(output_files[i].c_str(), "defomation_velocity", mapped_phase);
+                    NodeUtils::writeMatToH5(outputH5, "defomation_velocity", mapped_phase);
                 }
             }
             int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
@@ -347,24 +359,33 @@ void GeocodingWorker::GeocodingWithDem(
 
         {
             NodeUtils::Hdf5Locker locker;
-            ret = conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lon", mapped_lon);
-            ret += conversion.read_array_from_h5(input_files[masterIndex - 1].c_str(), "mapped_lat", mapped_lat);
+            QString inputH5 = QString::fromStdString(input_files[masterIndex - 1]);
+            ret = (NodeUtils::readMatFromH5(inputH5, "mapped_lon", mapped_lon) &&
+                   NodeUtils::readMatFromH5(inputH5, "mapped_lat", mapped_lat)) ? 0 : -1;
             if (ret != 0)
             {
                 master_file2 = input_files[masterIndex - 1];
-                ret = conversion.read_int_from_h5(master_file2.c_str(), "range_len", &sceneWidth2);
-                ret = conversion.read_int_from_h5(master_file2.c_str(), "azimuth_len", &sceneHeight2);
-                ret = conversion.read_int_from_h5(master_file2.c_str(), "offset_row", &offset_row2);
-                ret = conversion.read_int_from_h5(master_file2.c_str(), "offset_col", &offset_col2);
-                ret = conversion.read_array_from_h5(master_file2.c_str(), "lon_coefficient", lon_coef2);
-                ret = conversion.read_array_from_h5(master_file2.c_str(), "lat_coefficient", lat_coef2);
-                ret = conversion.read_double_from_h5(master_file2.c_str(), "prf", &prf2);
-                ret = conversion.read_double_from_h5(master_file2.c_str(), "carrier_frequency", &wavelength2);
-                ret = conversion.read_double_from_h5(master_file2.c_str(), "range_spacing", &rangeSpacing2);
-                ret = conversion.read_double_from_h5(master_file2.c_str(), "slant_range_first_pixel", &nearRangeTime2);
-                ret = conversion.read_str_from_h5(master_file2.c_str(), "acquisition_start_time", start_time2);
-                ret = conversion.read_str_from_h5(master_file2.c_str(), "acquisition_stop_time", end_time2);
-                ret = conversion.read_array_from_h5(master_file2.c_str(), "state_vec", statevec2);
+                QString masterH5 = QString::fromStdString(master_file2);
+                if (NodeUtils::readScalarFromH5(masterH5, "range_len", sceneWidth2) &&
+                    NodeUtils::readScalarFromH5(masterH5, "azimuth_len", sceneHeight2) &&
+                    NodeUtils::readScalarFromH5(masterH5, "offset_row", offset_row2) &&
+                    NodeUtils::readScalarFromH5(masterH5, "offset_col", offset_col2) &&
+                    NodeUtils::readMatFromH5(masterH5, "lon_coefficient", lon_coef2) &&
+                    NodeUtils::readMatFromH5(masterH5, "lat_coefficient", lat_coef2) &&
+                    NodeUtils::readScalarFromH5(masterH5, "prf", prf2) &&
+                    NodeUtils::readScalarFromH5(masterH5, "carrier_frequency", wavelength2) &&
+                    NodeUtils::readScalarFromH5(masterH5, "range_spacing", rangeSpacing2) &&
+                    NodeUtils::readScalarFromH5(masterH5, "slant_range_first_pixel", nearRangeTime2) &&
+                    NodeUtils::readStringFromH5(masterH5, "acquisition_start_time", start_time2) &&
+                    NodeUtils::readStringFromH5(masterH5, "acquisition_stop_time", end_time2) &&
+                    NodeUtils::readMatFromH5(masterH5, "state_vec", statevec2))
+                {
+                    ret = 0;
+                }
+                else
+                {
+                    ret = -1;
+                }
             }
         }
         if (ret != 0)
@@ -426,12 +447,13 @@ void GeocodingWorker::GeocodingWithDem(
             ret = util.SAR2UTM(mapped_lon, mapped_lat, amplitude, mapped_amplitude, 1, &lon_east, &lon_west, &lat_north, &lat_south);
             {
                 NodeUtils::Hdf5Locker locker;
+                QString outputH5 = QString::fromStdString(output_files[i]);
                 ret = conversion.creat_new_h5(output_files[i].c_str());
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_east", lon_east);
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lon_west", lon_west);
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_north", lat_north);
-                ret = conversion.write_double_to_h5(output_files[i].c_str(), "lat_south", lat_south);
-                ret = conversion.write_array_to_h5(output_files[i].c_str(), "amplitude", mapped_amplitude);
+                NodeUtils::writeScalarToH5(outputH5, "lon_east", lon_east);
+                NodeUtils::writeScalarToH5(outputH5, "lon_west", lon_west);
+                NodeUtils::writeScalarToH5(outputH5, "lat_north", lat_north);
+                NodeUtils::writeScalarToH5(outputH5, "lat_south", lat_south);
+                NodeUtils::writeMatToH5(outputH5, "amplitude", mapped_amplitude);
             }
             int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
             emit updateProcess(process, QStringLiteral("正在地理编码……"));

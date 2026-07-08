@@ -213,23 +213,34 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     string start_time, end_time, master_file;
     master_file = SAR_images[masterIndex - 1];
 
-    ret = conversion.read_int_from_h5(master_file.c_str(), "range_len", &sceneWidth);
-    ret = conversion.read_int_from_h5(master_file.c_str(), "azimuth_len", &sceneHeight);
-    ret = conversion.read_int_from_h5(master_file.c_str(), "offset_row", &offset_row);
-    ret = conversion.read_int_from_h5(master_file.c_str(), "offset_col", &offset_col);
-    ret = conversion.read_array_from_h5(master_file.c_str(), "lon_coefficient", lon_coef);
-    ret = conversion.read_array_from_h5(master_file.c_str(), "lat_coefficient", lat_coef);
-    ret = conversion.read_double_from_h5(master_file.c_str(), "prf", &prf);
-    ret = conversion.read_double_from_h5(master_file.c_str(), "carrier_frequency", &wavelength);
+    QString masterH5 = QString::fromStdString(master_file);
+    {
+        NodeUtils::Hdf5Locker locker;
+        if (NodeUtils::readScalarFromH5(masterH5, "range_len", sceneWidth) &&
+            NodeUtils::readScalarFromH5(masterH5, "azimuth_len", sceneHeight) &&
+            NodeUtils::readScalarFromH5(masterH5, "offset_row", offset_row) &&
+            NodeUtils::readScalarFromH5(masterH5, "offset_col", offset_col) &&
+            NodeUtils::readMatFromH5(masterH5, "lon_coefficient", lon_coef) &&
+            NodeUtils::readMatFromH5(masterH5, "lat_coefficient", lat_coef) &&
+            NodeUtils::readScalarFromH5(masterH5, "prf", prf) &&
+            NodeUtils::readScalarFromH5(masterH5, "carrier_frequency", wavelength) &&
+            NodeUtils::readScalarFromH5(masterH5, "range_spacing", rangeSpacing) &&
+            NodeUtils::readScalarFromH5(masterH5, "slant_range_first_pixel", nearRangeTime) &&
+            NodeUtils::readStringFromH5(masterH5, "acquisition_start_time", start_time) &&
+            NodeUtils::readStringFromH5(masterH5, "acquisition_stop_time", end_time) &&
+            NodeUtils::readMatFromH5(masterH5, "state_vec", statevec))
+        {
+            ret = 0;
+        }
+        else
+        {
+            ret = -1;
+        }
+    }
     wavelength = VEL_C / wavelength;
-    ret = conversion.read_double_from_h5(master_file.c_str(), "range_spacing", &rangeSpacing);
-    ret = conversion.read_double_from_h5(master_file.c_str(), "slant_range_first_pixel", &nearRangeTime);
     nearRangeTime = 2.0 * nearRangeTime / VEL_C;
-    ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_start_time", start_time);
     ret = conversion.utc2gps(start_time.c_str(), &start);
-    ret = conversion.read_str_from_h5(master_file.c_str(), "acquisition_stop_time", end_time);
     ret = conversion.utc2gps(end_time.c_str(), &end);
-    ret = conversion.read_array_from_h5(master_file.c_str(), "state_vec", statevec);
     
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         emit errorProcess(QStringLiteral("用户取消操作"));
@@ -245,8 +256,12 @@ void SLCDerampWorker::SLC_deramp_with_dem(
 
 
 
-    ret = conversion.write_array_to_h5(SAR_images_deramp[masterIndex - 1].c_str(), "mapped_lat", mappedLat);
-    ret = conversion.write_array_to_h5(SAR_images_deramp[masterIndex - 1].c_str(), "mapped_lon", mappedLon);
+    {
+        NodeUtils::Hdf5Locker locker;
+        QString derampH5 = QString::fromStdString(SAR_images_deramp[masterIndex - 1]);
+        NodeUtils::writeMatToH5(derampH5, "mapped_lat", mappedLat);
+        NodeUtils::writeMatToH5(derampH5, "mapped_lon", mappedLon);
+    }
 
     QStringList resultH5Paths;
     QStringList resultOriginNames;
@@ -258,15 +273,21 @@ void SLCDerampWorker::SLC_deramp_with_dem(
             return;
         }
 
-        ret = flat.SLC_deramp(slc, mappedDem, mappedLat, mappedLon, SAR_images[i].c_str());
-        ret = conversion.write_slc_to_h5(SAR_images_deramp[i].c_str(), slc);
-        ret = conversion.Copy_para_from_h5_2_h5(SAR_images[i].c_str(), SAR_images_deramp[i].c_str());
-        ret = conversion.read_int_from_h5(SAR_images[i].c_str(), "offset_row", &offset_row);
-        ret = conversion.write_int_to_h5(SAR_images_deramp[i].c_str(), "offset_row", offset_row);
-        ret = conversion.read_int_from_h5(SAR_images[i].c_str(), "offset_col", &offset_col);
-        ret = conversion.write_int_to_h5(SAR_images_deramp[i].c_str(), "offset_col", offset_col);
-        ret = conversion.write_int_to_h5(SAR_images_deramp[i].c_str(), "range_len", sceneWidth);
-        ret = conversion.write_int_to_h5(SAR_images_deramp[i].c_str(), "azimuth_len", sceneHeight);
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = flat.SLC_deramp(slc, mappedDem, mappedLat, mappedLon, SAR_images[i].c_str());
+            ret = conversion.write_slc_to_h5(SAR_images_deramp[i].c_str(), slc);
+            ret = conversion.Copy_para_from_h5_2_h5(SAR_images[i].c_str(), SAR_images_deramp[i].c_str());
+            
+            QString srcH5 = QString::fromStdString(SAR_images[i]);
+            QString dstH5 = QString::fromStdString(SAR_images_deramp[i]);
+            NodeUtils::readScalarFromH5(srcH5, "offset_row", offset_row);
+            NodeUtils::writeScalarToH5(dstH5, "offset_row", offset_row);
+            NodeUtils::readScalarFromH5(srcH5, "offset_col", offset_col);
+            NodeUtils::writeScalarToH5(dstH5, "offset_col", offset_col);
+            NodeUtils::writeScalarToH5(dstH5, "range_len", sceneWidth);
+            NodeUtils::writeScalarToH5(dstH5, "azimuth_len", sceneHeight);
+        }
 
         double process = 10.0 + 80.0 / (double(image_number)) * double(i + 1);
 

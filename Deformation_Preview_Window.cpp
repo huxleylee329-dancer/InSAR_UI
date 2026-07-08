@@ -1,5 +1,5 @@
 #include<Deformation_Preview_Window.h>
-
+#include "NodeUtils.h"
 #include<icon_source.h>
 
 
@@ -566,12 +566,15 @@ void Deformation_Preview::GetOffset()
         {
             FormatConversion FC;
             Mat Mask, Mask_Index, Times_Series;
-            double Min_def, Max_def;
-            FC.read_double_from_h5(mPath.toStdString().c_str(), "max_deformation", &Max_def);
-            FC.read_double_from_h5(mPath.toStdString().c_str(), "min_deformation", &Min_def);
-            FC.read_array_from_h5(mPath.toStdString().c_str(), "mask", Mask);
-            FC.read_array_from_h5(mPath.toStdString().c_str(), "mask_count_map", Mask_Index);
-            FC.read_array_from_h5(mPath.toStdString().c_str(), "temporal_baseline", Times_Series);
+            double Min_def = 0, Max_def = 0;
+            {
+                NodeUtils::Hdf5Locker locker;
+                NodeUtils::readScalarFromH5(mPath, "max_deformation", Max_def);
+                NodeUtils::readScalarFromH5(mPath, "min_deformation", Min_def);
+                NodeUtils::readMatFromH5(mPath, "mask", Mask);
+                NodeUtils::readMatFromH5(mPath, "mask_count_map", Mask_Index);
+                NodeUtils::readMatFromH5(mPath, "temporal_baseline", Times_Series);
+            }
             int rows = Mask.rows;
             int cols = Mask.cols;
             int times_num = Times_Series.cols;
@@ -592,7 +595,10 @@ void Deformation_Preview::GetOffset()
                         count++;
                         int index = Mask_Index.at<int>(i, j);
                         Mat V;
-                        FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index, 0, 1, times_num, V);
+                        {
+                            NodeUtils::Hdf5Locker locker;
+                            FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index, 0, 1, times_num, V);
+                        }
                         if (!V.empty() && V.type() != CV_64F)
                         {
                             V.convertTo(V, CV_64F);
@@ -624,12 +630,15 @@ void Deformation_Preview::GetOffset()
         {
             FormatConversion FC;
             Mat Mask, Mask_Index, Times_Series;
-            double Min_def, Max_def;
-            FC.read_double_from_h5(mPath.toStdString().c_str(), "max_deformation", &Max_def);
-            FC.read_double_from_h5(mPath.toStdString().c_str(), "min_deformation", &Min_def);
-            FC.read_array_from_h5(mPath.toStdString().c_str(), "mask", Mask);
-            FC.read_array_from_h5(mPath.toStdString().c_str(), "mask_count_map", Mask_Index);
-            FC.read_array_from_h5(mPath.toStdString().c_str(), "temporal_baseline", Times_Series);
+            double Min_def = 0, Max_def = 0;
+            {
+                NodeUtils::Hdf5Locker locker;
+                NodeUtils::readScalarFromH5(mPath, "max_deformation", Max_def);
+                NodeUtils::readScalarFromH5(mPath, "min_deformation", Min_def);
+                NodeUtils::readMatFromH5(mPath, "mask", Mask);
+                NodeUtils::readMatFromH5(mPath, "mask_count_map", Mask_Index);
+                NodeUtils::readMatFromH5(mPath, "temporal_baseline", Times_Series);
+            }
             int rows = Mask.rows;
             int cols = Mask.cols;
             int times_num = Times_Series.cols;
@@ -658,7 +667,10 @@ void Deformation_Preview::GetOffset()
                         count++;
                         int index = Mask_Index.at<int>(i, j);
                         Mat V;
-                        FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index, 0, 1, times_num, V);
+                        {
+                            NodeUtils::Hdf5Locker locker;
+                            FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index, 0, 1, times_num, V);
+                        }
                         if (!V.empty() && V.type() != CV_64F)
                         {
                             V.convertTo(V, CV_64F);
@@ -679,7 +691,10 @@ void Deformation_Preview::GetOffset()
                         count2++;
                         int index2 = Mask_Index.at<int>(i, j);
                         Mat V2;
-                        FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index2, 0, 1, times_num, V2);
+                        {
+                            NodeUtils::Hdf5Locker locker;
+                            FC.read_subarray_from_h5(mPath.toStdString().c_str(), "deformation_time_series", index2, 0, 1, times_num, V2);
+                        }
                         if (!V2.empty() && V2.type() != CV_64F)
                         {
                             V2.convertTo(V2, CV_64F);

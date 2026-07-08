@@ -52,10 +52,10 @@ void PSNetworkWorker::build_network(
 
     FormatConversion FC;
     cv::Mat ps_mask;
+    int ret = 0;
 
     // 1. 从 candidatesH5 读取 ps_mask
-    int ret = FC.read_array_from_h5(candidatesH5.toStdString().c_str(), "ps_mask", ps_mask);
-    if (ret != 0 || ps_mask.empty()) {
+    if (!NodeUtils::readMatFromH5(candidatesH5, "ps_mask", ps_mask) || ps_mask.empty()) {
         emit errorProcess(QStringLiteral("读取 PS 候选点掩膜失败: ") + candidatesH5);
         return;
     }
@@ -151,33 +151,32 @@ void PSNetworkWorker::build_network(
     int offset_col = 0;
 
     QString masterPath = slcFilePaths.at(0); // 第一景作为 Master
-    ret = FC.read_array_from_h5(masterPath.toStdString().c_str(), "state_vec", State_Vec_Master);
-    ret += FC.read_array_from_h5(masterPath.toStdString().c_str(), "lon_coefficient", Lon_Coeff_Master);
-    ret += FC.read_array_from_h5(masterPath.toStdString().c_str(), "lat_coefficient", Lat_Coeff_Master);
-    ret += FC.read_array_from_h5(masterPath.toStdString().c_str(), "prf", tmp_double);
+    ret = (NodeUtils::readMatFromH5(masterPath, "state_vec", State_Vec_Master) &&
+           NodeUtils::readMatFromH5(masterPath, "lon_coefficient", Lon_Coeff_Master) &&
+           NodeUtils::readMatFromH5(masterPath, "lat_coefficient", Lat_Coeff_Master) &&
+           NodeUtils::readMatFromH5(masterPath, "prf", tmp_double)) ? 0 : -1;
     interp_interval_master = 1.0 / tmp_double.at<double>(0, 0);
 
     Mat tmp = Mat::zeros(1, 1, CV_32SC1);
-    FC.read_array_from_h5(masterPath.toStdString().c_str(), "offset_row", tmp);
+    NodeUtils::readMatFromH5(masterPath, "offset_row", tmp);
     offset_row_master = tmp.at<int>(0, 0);
-    FC.read_array_from_h5(masterPath.toStdString().c_str(), "offset_col", tmp);
+    NodeUtils::readMatFromH5(masterPath, "offset_col", tmp);
     offset_col_master = tmp.at<int>(0, 0);
     offset_col = offset_col_master;
 
-    FC.read_str_from_h5(masterPath.toStdString().c_str(), "acquisition_start_time", time_master_str);
+    NodeUtils::readStringFromH5(masterPath, "acquisition_start_time", time_master_str);
     FC.utc2gps(time_master_str.c_str(), &time_Master);
 
     // 获取核心雷达几何参数
-    FC.read_double_from_h5(masterPath.toStdString().c_str(), "carrier_frequency", &carrier_frequency);
-    FC.read_double_from_h5(masterPath.toStdString().c_str(), "slant_range_first_pixel", &slant_range_first_pixel);
-    FC.read_double_from_h5(masterPath.toStdString().c_str(), "range_spacing", &range_spacing);
+    NodeUtils::readScalarFromH5(masterPath, "carrier_frequency", carrier_frequency);
+    NodeUtils::readScalarFromH5(masterPath, "slant_range_first_pixel", slant_range_first_pixel);
+    NodeUtils::readScalarFromH5(masterPath, "range_spacing", range_spacing);
     
     Mat tmp_inc;
-    int ret_inc = FC.read_array_from_h5(masterPath.toStdString().c_str(), "inc_coefficient", tmp_inc);
-    if (ret_inc == 0 && !tmp_inc.empty()) {
+    if (NodeUtils::readMatFromH5(masterPath, "inc_coefficient", tmp_inc) && !tmp_inc.empty()) {
         inc_center = tmp_inc.at<double>(0, 0);
     } else {
-        FC.read_double_from_h5(masterPath.toStdString().c_str(), "inc_center", &inc_center);
+        NodeUtils::readScalarFromH5(masterPath, "inc_center", inc_center);
     }
 
     for (int i = 0; i < num_images; ++i) {
@@ -193,13 +192,13 @@ void PSNetworkWorker::build_network(
             string time_slave_str;
 
             QString slavePath = slcFilePaths.at(i);
-            FC.read_array_from_h5(slavePath.toStdString().c_str(), "state_vec", State_Vec_Slave);
-            FC.read_array_from_h5(slavePath.toStdString().c_str(), "lon_coefficient", Lon_Coeff_Slave);
-            FC.read_array_from_h5(slavePath.toStdString().c_str(), "lat_coefficient", Lat_Coeff_Slave);
-            FC.read_array_from_h5(slavePath.toStdString().c_str(), "prf", tmp_double);
+            NodeUtils::readMatFromH5(slavePath, "state_vec", State_Vec_Slave);
+            NodeUtils::readMatFromH5(slavePath, "lon_coefficient", Lon_Coeff_Slave);
+            NodeUtils::readMatFromH5(slavePath, "lat_coefficient", Lat_Coeff_Slave);
+            NodeUtils::readMatFromH5(slavePath, "prf", tmp_double);
             interp_interval_slave = 1.0 / tmp_double.at<double>(0, 0);
 
-            FC.read_str_from_h5(slavePath.toStdString().c_str(), "acquisition_start_time", time_slave_str);
+            NodeUtils::readStringFromH5(slavePath, "acquisition_start_time", time_slave_str);
             FC.utc2gps(time_slave_str.c_str(), &time_Slave);
 
             double delta_t = (time_Slave - time_Master) / 60.0 / 60.0 / 24.0;

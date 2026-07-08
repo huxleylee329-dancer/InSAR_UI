@@ -1,5 +1,6 @@
 #include "InSARLogManager.h"
 #include <ColorBar.h>
+#include "NodeUtils.h"
 
 ColorBar::ColorBar(QWidget* parent) : QLabel(parent)
 {
@@ -39,9 +40,11 @@ int ColorBar::SetData(QString Data_path, QString Type)
         Type == "coherence" ||
         Type == "dem") 
     {
-        FormatConversion FC;
         Mat V;
-        FC.read_array_from_h5(Data_path.toStdString().c_str(), Type.toStdString().c_str(), V);
+        {
+            NodeUtils::Hdf5Locker locker;
+            NodeUtils::readMatFromH5(Data_path, Type, V);
+        }
         mType = Type;
         cv::minMaxLoc(V, &mMin, &mMax, NULL, NULL);
         update();
@@ -49,9 +52,11 @@ int ColorBar::SetData(QString Data_path, QString Type)
     }
     else if (Type == "SBAS")
     {
-        FormatConversion FC;
         Mat V;
-        FC.read_array_from_h5(Data_path.toStdString().c_str(), "defomation_velocity", V);
+        {
+            NodeUtils::Hdf5Locker locker;
+            NodeUtils::readMatFromH5(Data_path, "defomation_velocity", V);
+        }
         mType = Type;
         cv::minMaxLoc(V, &mMin, &mMax, NULL, NULL);
         update();

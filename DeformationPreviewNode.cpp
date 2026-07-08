@@ -131,10 +131,15 @@ void DeformationPreviewNode::onPreviewClicked()
     {
         // Generate JPG preview synchronously
         Utils util;
-        FormatConversion FC;
         Mat defomation_velocity, mask;
-        int ret = FC.read_array_from_h5(image_path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
-        ret += FC.read_array_from_h5(image_path.toStdString().c_str(), "mask", mask);
+        int ret = -1;
+        {
+            NodeUtils::Hdf5Locker locker;
+            if (NodeUtils::readMatFromH5(image_path, "defomation_velocity", defomation_velocity) &&
+                NodeUtils::readMatFromH5(image_path, "mask", mask)) {
+                ret = 0;
+            }
+        }
         if (ret == 0)
         {
             if (defomation_velocity.type() != CV_64F)

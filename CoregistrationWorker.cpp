@@ -201,23 +201,18 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
     string time_master_str;
     {
         NodeUtils::Hdf5Locker locker;
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "state_vec", State_Vec_Master);
-        if (!State_Vec_Master.empty() && State_Vec_Master.type() != CV_64F) State_Vec_Master.convertTo(State_Vec_Master, CV_64F);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lon_coefficient", Lon_Coeff_Master);
-        if (!Lon_Coeff_Master.empty() && Lon_Coeff_Master.type() != CV_64F) Lon_Coeff_Master.convertTo(Lon_Coeff_Master, CV_64F);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lat_coefficient", Lat_Coeff_Master);
-        if (!Lat_Coeff_Master.empty() && Lat_Coeff_Master.type() != CV_64F) Lat_Coeff_Master.convertTo(Lat_Coeff_Master, CV_64F);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "prf", tmp_double);
-        if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-            tmp_double.convertTo(tmp_double, CV_64F);
-        }
-        interp_interval = 1 / tmp_double.at<double>(0, 0);
-        Mat tmp = Mat::zeros(1, 1, CV_32SC1);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_row", tmp);
-        offset_row = tmp.at<int>(0, 0);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_col", tmp);
-        offset_col = tmp.at<int>(0, 0);
-        FC.read_str_from_h5(SAR_images.at(index - 1).c_str(), "acquisition_start_time", time_master_str);
+        QString masterImgPath = QString::fromStdString(SAR_images.at(index - 1));
+        NodeUtils::readMatFromH5(masterImgPath, "state_vec", State_Vec_Master, CV_64F);
+        NodeUtils::readMatFromH5(masterImgPath, "lon_coefficient", Lon_Coeff_Master, CV_64F);
+        NodeUtils::readMatFromH5(masterImgPath, "lat_coefficient", Lat_Coeff_Master, CV_64F);
+        
+        double prf = 0.0;
+        NodeUtils::readScalarFromH5(masterImgPath, "prf", prf);
+        interp_interval = 1.0 / prf;
+
+        NodeUtils::readScalarFromH5(masterImgPath, "offset_row", offset_row);
+        NodeUtils::readScalarFromH5(masterImgPath, "offset_col", offset_col);
+        NodeUtils::readStringFromH5(masterImgPath, "acquisition_start_time", time_master_str);
         FC.utc2gps(time_master_str.c_str(), &time_Master);
         ComplexMat SLC;
         FC.read_slc_from_h5(SAR_images_regis.at(index - 1).c_str(), SLC);
@@ -272,11 +267,13 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
             FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
             FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
             FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
-            FC.read_int_from_h5(SAR_images.at(i).c_str(), "offset_row", &offset_row);
+            
+            QString slaveImgPath = QString::fromStdString(SAR_images.at(i));
+            NodeUtils::readScalarFromH5(slaveImgPath, "offset_row", offset_row);
 		    offset_row += offset_row_out.at<int>(i, 0);
             FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", offset_row);
             Row_offset.push_back(offset_row);
-            FC.read_int_from_h5(SAR_images.at(i).c_str(), "offset_col", &offset_col);
+            NodeUtils::readScalarFromH5(slaveImgPath, "offset_col", offset_col);
 		    offset_col += offset_col_out.at<int>(i, 0);
             FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", offset_col);
             Col_offset.push_back(offset_col);
@@ -300,18 +297,16 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
             string time_slave_str;
             {
                 NodeUtils::Hdf5Locker locker;
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "state_vec", State_Vec_Slave);
-                if (!State_Vec_Slave.empty() && State_Vec_Slave.type() != CV_64F) State_Vec_Slave.convertTo(State_Vec_Slave, CV_64F);
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "lon_coefficient", Lon_Coeff_Slave);
-                if (!Lon_Coeff_Slave.empty() && Lon_Coeff_Slave.type() != CV_64F) Lon_Coeff_Slave.convertTo(Lon_Coeff_Slave, CV_64F);
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "lat_coefficient", Lat_Coeff_Slave);
-                if (!Lat_Coeff_Slave.empty() && Lat_Coeff_Slave.type() != CV_64F) Lat_Coeff_Slave.convertTo(Lat_Coeff_Slave, CV_64F);
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "prf", tmp_double);
-                if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-                    tmp_double.convertTo(tmp_double, CV_64F);
-                }
-                interp_interval_slave = 1 / tmp_double.at<double>(0, 0);
-                FC.read_str_from_h5(SAR_images.at(i).c_str(), "acquisition_start_time", time_slave_str);
+                QString slaveImgPath = QString::fromStdString(SAR_images.at(i));
+                NodeUtils::readMatFromH5(slaveImgPath, "state_vec", State_Vec_Slave, CV_64F);
+                NodeUtils::readMatFromH5(slaveImgPath, "lon_coefficient", Lon_Coeff_Slave, CV_64F);
+                NodeUtils::readMatFromH5(slaveImgPath, "lat_coefficient", Lat_Coeff_Slave, CV_64F);
+                
+                double prf_slave = 0.0;
+                NodeUtils::readScalarFromH5(slaveImgPath, "prf", prf_slave);
+                interp_interval_slave = 1 / prf_slave;
+                
+                NodeUtils::readStringFromH5(slaveImgPath, "acquisition_start_time", time_slave_str);
                 FC.utc2gps(time_slave_str.c_str(), &time_Slave);
             }
             double delta = (time_Slave - time_Master) / 60 / 60 / 24;
@@ -435,23 +430,24 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	const char* slave_file = NULL;
 	{
 		NodeUtils::Hdf5Locker locker;
-		conversion.read_int_from_h5(master_file, "range_len", &sceneWidth);
-		conversion.read_int_from_h5(master_file, "azimuth_len", &sceneHeight);
-		conversion.read_int_from_h5(master_file, "offset_row", &offset_row);
-		conversion.read_int_from_h5(master_file, "offset_col", &offset_col);
-		conversion.read_array_from_h5(master_file, "lon_coefficient", lon_coef);
-		conversion.read_array_from_h5(master_file, "lat_coefficient", lat_coef);
-		conversion.read_double_from_h5(master_file, "prf", &prf);
-		conversion.read_double_from_h5(master_file, "carrier_frequency", &wavelength);
+		QString masterPath = QString::fromStdString(master_file);
+		NodeUtils::readScalarFromH5(masterPath, "range_len", sceneWidth);
+		NodeUtils::readScalarFromH5(masterPath, "azimuth_len", sceneHeight);
+		NodeUtils::readScalarFromH5(masterPath, "offset_row", offset_row);
+		NodeUtils::readScalarFromH5(masterPath, "offset_col", offset_col);
+		NodeUtils::readMatFromH5(masterPath, "lon_coefficient", lon_coef);
+		NodeUtils::readMatFromH5(masterPath, "lat_coefficient", lat_coef);
+		NodeUtils::readScalarFromH5(masterPath, "prf", prf);
+		NodeUtils::readScalarFromH5(masterPath, "carrier_frequency", wavelength);
 		wavelength = VEL_C / wavelength;
-		conversion.read_double_from_h5(master_file, "range_spacing", &rangeSpacing);
-		conversion.read_double_from_h5(master_file, "slant_range_first_pixel", &nearRangeTime);
+		NodeUtils::readScalarFromH5(masterPath, "range_spacing", rangeSpacing);
+		NodeUtils::readScalarFromH5(masterPath, "slant_range_first_pixel", nearRangeTime);
 		nearRangeTime = 2.0 * nearRangeTime / VEL_C;
-		conversion.read_str_from_h5(master_file, "acquisition_start_time", start_time);
+		NodeUtils::readStringFromH5(masterPath, "acquisition_start_time", start_time);
 		conversion.utc2gps(start_time.c_str(), &start);
-		conversion.read_str_from_h5(master_file, "acquisition_stop_time", end_time);
+		NodeUtils::readStringFromH5(masterPath, "acquisition_stop_time", end_time);
 		conversion.utc2gps(end_time.c_str(), &end);
-		conversion.read_array_from_h5(master_file, "state_vec", statevec);
+		NodeUtils::readMatFromH5(masterPath, "state_vec", statevec);
 		conversion.read_slc_from_h5(master_file, slave);
 		InSARLogManager::LogInfo("CoregistrationWorker", QString("Master image resolved. Size: %1 x %2 (Width x Height)").arg(sceneWidth).arg(sceneHeight));
 		
@@ -486,21 +482,22 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		slave_file = SAR_images[i].c_str();
 		{
 			NodeUtils::Hdf5Locker locker;
-			conversion.read_int_from_h5(slave_file, "range_len", &sceneWidth2);
-			conversion.read_int_from_h5(slave_file, "azimuth_len", &sceneHeight2);
-			conversion.read_int_from_h5(slave_file, "offset_row", &offset_row2);
-			conversion.read_int_from_h5(slave_file, "offset_col", &offset_col2);
-			conversion.read_array_from_h5(slave_file, "lon_coefficient", lon_coef2);
-			conversion.read_array_from_h5(slave_file, "lat_coefficient", lat_coef2);
-			conversion.read_double_from_h5(slave_file, "prf", &prf2);
-			conversion.read_double_from_h5(slave_file, "range_spacing", &rangeSpacing2);
-			conversion.read_double_from_h5(slave_file, "slant_range_first_pixel", &nearRangeTime2);
+			QString slavePath = QString::fromStdString(slave_file);
+			NodeUtils::readScalarFromH5(slavePath, "range_len", sceneWidth2);
+			NodeUtils::readScalarFromH5(slavePath, "azimuth_len", sceneHeight2);
+			NodeUtils::readScalarFromH5(slavePath, "offset_row", offset_row2);
+			NodeUtils::readScalarFromH5(slavePath, "offset_col", offset_col2);
+			NodeUtils::readMatFromH5(slavePath, "lon_coefficient", lon_coef2);
+			NodeUtils::readMatFromH5(slavePath, "lat_coefficient", lat_coef2);
+			NodeUtils::readScalarFromH5(slavePath, "prf", prf2);
+			NodeUtils::readScalarFromH5(slavePath, "range_spacing", rangeSpacing2);
+			NodeUtils::readScalarFromH5(slavePath, "slant_range_first_pixel", nearRangeTime2);
 			nearRangeTime2 = 2.0 * nearRangeTime2 / VEL_C;
-			conversion.read_str_from_h5(slave_file, "acquisition_start_time", start_time);
+			NodeUtils::readStringFromH5(slavePath, "acquisition_start_time", start_time);
 			conversion.utc2gps(start_time.c_str(), &start2);
-			conversion.read_str_from_h5(slave_file, "acquisition_stop_time", end_time);
+			NodeUtils::readStringFromH5(slavePath, "acquisition_stop_time", end_time);
 			conversion.utc2gps(end_time.c_str(), &end2);
-			conversion.read_array_from_h5(slave_file, "state_vec", statevec2);
+			NodeUtils::readMatFromH5(slavePath, "state_vec", statevec2);
 			conversion.read_slc_from_h5(slave_file, slave);
 			InSARLogManager::LogInfo("CoregistrationWorker", QString("Slave image resolved. Index: %1, Size: %2 x %3 (Width x Height)").arg(i + 1).arg(sceneWidth2).arg(sceneHeight2));
 		}
@@ -645,15 +642,26 @@ int CoregistrationWorker::Registration_copy(
 	images_rows = Mat::zeros(n_images, 1, CV_32S); images_cols = Mat::zeros(n_images, 1, CV_32S);
 	for (int i = 0; i < n_images; i++)
 	{
-		ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
-		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", tmp);
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
-		images_cols.at<int>(i, 0) = tmp.at<int>(0, 0);
-
-		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", tmp);
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
-		images_rows.at<int>(i, 0) = tmp.at<int>(0, 0);
+		bool step_ok = false;
+		{
+			NodeUtils::Hdf5Locker locker;
+			ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
+			if (ret >= 0)
+			{
+				ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", tmp);
+				if (ret >= 0)
+				{
+					images_cols.at<int>(i, 0) = tmp.at<int>(0, 0);
+					ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", tmp);
+					if (ret >= 0)
+					{
+						images_rows.at<int>(i, 0) = tmp.at<int>(0, 0);
+						step_ok = true;
+					}
+				}
+			}
+		}
+		if (!step_ok || QThread::currentThread()->isInterruptionRequested()) return -1;
 	}
 	//分块读取数据并求取偏移量
 	Utils util; Registration regis;

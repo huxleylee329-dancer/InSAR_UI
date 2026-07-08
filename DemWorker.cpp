@@ -244,7 +244,7 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             }
 
             Mat phase;
-            int ret = FC.read_array_from_h5(inputH5.toStdString().c_str(), "phase", phase);
+            int ret = NodeUtils::readMatFromH5(inputH5, "phase", phase) ? 0 : -1;
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("读取相位数据失败，路径: ") + QFileInfo(inputH5).fileName());
                 return;
@@ -252,7 +252,7 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
 
             // 预检测 flat_phase_coefficient，防止进入 DLL 的数值计算陷入死循环
             Mat tmp_flat_check;
-            if (FC.read_array_from_h5(inputH5.toStdString().c_str(), "flat_phase_coefficient", tmp_flat_check) != 0) {
+            if (!NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficient", tmp_flat_check)) {
                 emit errorProcess(QStringLiteral("高程反演失败：输入相位文件缺少\"平地相位消除系数(flat_phase_coefficient)\"。请确保上游干涉形成阶段开启了\"平地消除(IsDeflat)\"。"));
                 return;
             }
@@ -272,38 +272,38 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
                 return;
             }
 
-            ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "dem", phase_dem);
+            NodeUtils::writeMatToH5(outputH5, "dem", phase_dem);
             
             string tmp_str;
             Mat tmp;
-            ret = FC.read_str_from_h5(inputH5.toStdString().c_str(), "source_1", tmp_str);
-            ret = FC.write_str_to_h5(outputH5.toStdString().c_str(), "source_1", tmp_str.c_str());
+            NodeUtils::readStringFromH5(inputH5, "source_1", tmp_str);
+            FC.write_str_to_h5(outputH5.toStdString().c_str(), "source_1", tmp_str.c_str());
             QString master_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
             
-            ret = FC.read_str_from_h5(inputH5.toStdString().c_str(), "source_2", tmp_str);
-            ret = FC.write_str_to_h5(outputH5.toStdString().c_str(), "source_2", tmp_str.c_str());
+            NodeUtils::readStringFromH5(inputH5, "source_2", tmp_str);
+            FC.write_str_to_h5(outputH5.toStdString().c_str(), "source_2", tmp_str.c_str());
             QString slave_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
             
-            ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
-            if (ret < 0) {
-                // Fallback check: in some files it might be flat_phase_coefficientficient
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "flat_phase_coefficientficient", tmp);
-            }
-            if (ret == 0) {
-                ret = FC.write_array_to_h5(absolute_dem_path.at(i).toStdString().c_str(), "flat_phase_coefficient", tmp);
+            QString phasePath = phase_path.at(i);
+            QString demPath = absolute_dem_path.at(i);
+
+            if (NodeUtils::readMatFromH5(phasePath, "flat_phase_coefficient", tmp) ||
+                NodeUtils::readMatFromH5(phasePath, "flat_phase_coefficientficient", tmp)) 
+            {
+                NodeUtils::writeMatToH5(demPath, "flat_phase_coefficient", tmp);
             }
 
-            ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "range_len", tmp);
-            ret = FC.write_array_to_h5(absolute_dem_path.at(i).toStdString().c_str(), "range_len", tmp);
+            NodeUtils::readMatFromH5(phasePath, "range_len", tmp);
+            NodeUtils::writeMatToH5(demPath, "range_len", tmp);
             
-            ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
-            ret = FC.write_array_to_h5(absolute_dem_path.at(i).toStdString().c_str(), "azimuth_len", tmp);
+            NodeUtils::readMatFromH5(phasePath, "azimuth_len", tmp);
+            NodeUtils::writeMatToH5(demPath, "azimuth_len", tmp);
             
-            FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
-            FC.write_array_to_h5(absolute_dem_path.at(i).toStdString().c_str(), "multilook_rg", tmp);
+            NodeUtils::readMatFromH5(phasePath, "multilook_rg", tmp);
+            NodeUtils::writeMatToH5(demPath, "multilook_rg", tmp);
             
-            FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "multilook_az", tmp);
-            FC.write_array_to_h5(absolute_dem_path.at(i).toStdString().c_str(), "multilook_az", tmp);
+            NodeUtils::readMatFromH5(phasePath, "multilook_az", tmp);
+            NodeUtils::writeMatToH5(demPath, "multilook_az", tmp);
             
             if (QThread::currentThread()->isInterruptionRequested())
             {
@@ -312,9 +312,9 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             
             /*行列偏移量*/
             Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-            ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
+            NodeUtils::readMatFromH5(master_path, "offset_row", tmp_int);
             int offset_row = tmp_int.at<int>(0, 0);
-            ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
+            NodeUtils::readMatFromH5(master_path, "offset_col", tmp_int);
             int offset_col = tmp_int.at<int>(0, 0);
             
             xml.XMLFile_add_dem(file_name.toStdString().c_str(), dem_name.at(i).toStdString().c_str(),

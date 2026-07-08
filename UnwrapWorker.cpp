@@ -204,33 +204,47 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
         string tmp_str;
         Mat tmp;
-        ret = FC.read_str_from_h5(phase_path.at(idx).toStdString().c_str(), "source_1", tmp_str);
-        ret = FC.write_str_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "source_1", tmp_str.c_str());
+        QString phaseH5 = phase_path.at(idx);
+        QString unwrapH5 = absolute_unwrap_path.at(idx);
+        
+        {
+            NodeUtils::Hdf5Locker locker;
+            FormatConversion FC;
+            NodeUtils::readStringFromH5(phaseH5, "source_1", tmp_str);
+            FC.write_str_to_h5(unwrapH5.toStdString().c_str(), "source_1", tmp_str.c_str());
+        }
         QString master_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
 
-        ret = FC.read_str_from_h5(phase_path.at(idx).toStdString().c_str(), "source_2", tmp_str);
-        ret = FC.write_str_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "source_2", tmp_str.c_str());
+        {
+            NodeUtils::Hdf5Locker locker;
+            FormatConversion FC;
+            NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str);
+            FC.write_str_to_h5(unwrapH5.toStdString().c_str(), "source_2", tmp_str.c_str());
+        }
         QString slave_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
 
-        ret = FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "flat_phase_coefficient", tmp);
-        ret = FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "flat_phase_coefficient", tmp);
+        {
+            NodeUtils::Hdf5Locker locker;
+            NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp);
+            NodeUtils::writeMatToH5(unwrapH5, "flat_phase_coefficient", tmp);
 
-        ret = FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "range_len", tmp);
-        ret = FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "range_len", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "range_len", tmp);
+            NodeUtils::writeMatToH5(unwrapH5, "range_len", tmp);
 
-        ret = FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "azimuth_len", tmp);
-        ret = FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "azimuth_len", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "azimuth_len", tmp);
+            NodeUtils::writeMatToH5(unwrapH5, "azimuth_len", tmp);
 
-        FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "multilook_rg", tmp);
-        FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "multilook_rg", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "multilook_rg", tmp);
+            NodeUtils::writeMatToH5(unwrapH5, "multilook_rg", tmp);
 
-        FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "multilook_az", tmp);
-        FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "multilook_az", tmp);
+            NodeUtils::readMatFromH5(phaseH5, "multilook_az", tmp);
+            NodeUtils::writeMatToH5(unwrapH5, "multilook_az", tmp);
 
-        if (0 == FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "mapped_lon", tmp))
-            FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "mapped_lon", tmp);
-        if (0 == FC.read_array_from_h5(phase_path.at(idx).toStdString().c_str(), "mapped_lat", tmp))
-            FC.write_array_to_h5(absolute_unwrap_path.at(idx).toStdString().c_str(), "mapped_lat", tmp);
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lon", tmp))
+                NodeUtils::writeMatToH5(unwrapH5, "mapped_lon", tmp);
+            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lat", tmp))
+                NodeUtils::writeMatToH5(unwrapH5, "mapped_lat", tmp);
+        }
 
         if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {
@@ -239,10 +253,13 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
         /*行列偏移量*/
         Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-        ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_row", tmp_int);
-        offset_rows[idx] = tmp_int.at<int>(0, 0);
-        ret = FC.read_array_from_h5(master_path.toStdString().c_str(), "offset_col", tmp_int);
-        offset_cols[idx] = tmp_int.at<int>(0, 0);
+        {
+            NodeUtils::Hdf5Locker locker;
+            NodeUtils::readMatFromH5(master_path, "offset_row", tmp_int);
+            offset_rows[idx] = tmp_int.at<int>(0, 0);
+            NodeUtils::readMatFromH5(master_path, "offset_col", tmp_int);
+            offset_cols[idx] = tmp_int.at<int>(0, 0);
+        }
 
         return true;
     };
@@ -259,16 +276,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
-            }
+            ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
             if (ret < 0) continue;
-
-            // 临时转换为双精度以满足 DLL 解缠算法对 CV_64F 的强校验要求
-            if (phase.type() != CV_64F) {
-                phase.convertTo(phase, CV_64F);
-            }
 
             Mat phase_unwrap;
             ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap, unwrapProgressCallback);
@@ -281,10 +290,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
-            }
+            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }
@@ -300,16 +306,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
-            }
+            ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
             if (ret < 0) continue;
-
-            // 临时转换为双精度以满足 DLL 解缠算法及辅助计算对 CV_64F 的强校验要求
-            if (phase.type() != CV_64F) {
-                phase.convertTo(phase, CV_64F);
-            }
 
             Mat phase_unwrap;
             Mat coherence, residue;
@@ -326,10 +324,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
-            }
+            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }
@@ -345,10 +340,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
-            }
+            ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase) ? 0 : -1;
             if (ret < 0) continue;
 
             Mat phase_unwrap;
@@ -363,10 +355,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
-            }
+            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }
@@ -383,16 +372,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.read_array_from_h5(phase_path.at(i).toStdString().c_str(), "phase", phase);
-            }
+            ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
             if (ret < 0) continue;
-
-            // 临时转换为双精度以满足 DLL 解缠算法对 CV_64F 的强校验要求
-            if (phase.type() != CV_64F) {
-                phase.convertTo(phase, CV_64F);
-            }
 
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
@@ -406,10 +387,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (phase_unwrap.type() != CV_32F) {
                 phase_unwrap.convertTo(phase_unwrap, CV_32F);
             }
-            {
-                NodeUtils::Hdf5Locker locker;
-                ret = FC.write_array_to_h5(absolute_unwrap_path.at(i).toStdString().c_str(), "phase", phase_unwrap);
-            }
+            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }

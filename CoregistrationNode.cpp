@@ -974,20 +974,16 @@ bool CoregistrationNode::validateAndRestoreOutput()
 
                 if (m_method == "Coarse") {
                     QString masterPath = inputPaths.at(masterIdx - 1);
-                    FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "state_vec", State_Vec_Master);
-                    if (!State_Vec_Master.empty() && State_Vec_Master.type() != CV_64F) State_Vec_Master.convertTo(State_Vec_Master, CV_64F);
-                    FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "lon_coefficient", Lon_Coeff_Master);
-                    if (!Lon_Coeff_Master.empty() && Lon_Coeff_Master.type() != CV_64F) Lon_Coeff_Master.convertTo(Lon_Coeff_Master, CV_64F);
-                    FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "lat_coefficient", Lat_Coeff_Master);
-                    if (!Lat_Coeff_Master.empty() && Lat_Coeff_Master.type() != CV_64F) Lat_Coeff_Master.convertTo(Lat_Coeff_Master, CV_64F);
-                    FC.read_array_from_h5(masterPath.toLocal8Bit().constData(), "prf", tmp_double);
-                    if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-                        tmp_double.convertTo(tmp_double, CV_64F);
+                    NodeUtils::readMatFromH5(masterPath, "state_vec", State_Vec_Master, CV_64F);
+                    NodeUtils::readMatFromH5(masterPath, "lon_coefficient", Lon_Coeff_Master, CV_64F);
+                    NodeUtils::readMatFromH5(masterPath, "lat_coefficient", Lat_Coeff_Master, CV_64F);
+                    
+                    double prf = 0.0;
+                    NodeUtils::readScalarFromH5(masterPath, "prf", prf);
+                    if (prf != 0) {
+                        interp_interval = 1 / prf;
                     }
-                    if (tmp_double.at<double>(0, 0) != 0) {
-                        interp_interval = 1 / tmp_double.at<double>(0, 0);
-                    }
-                    FC.read_str_from_h5(masterPath.toLocal8Bit().constData(), "acquisition_start_time", time_master_str);
+                    NodeUtils::readStringFromH5(masterPath, "acquisition_start_time", time_master_str);
                     FC.utc2gps(time_master_str.c_str(), &time_Master);
 
                     // Get Rows and Cols from master regis H5
@@ -995,8 +991,8 @@ bool CoregistrationNode::validateAndRestoreOutput()
                     QString masterRegisName = resolveOutputFileName(QFileInfo(masterPath).completeBaseName());
                     if (!masterRegisName.endsWith(".h5", Qt::CaseInsensitive)) masterRegisName += ".h5";
                     QString masterRegisPath = projDir + "/" + nodeName + "/" + masterRegisName;
-                    FC.read_int_from_h5(masterRegisPath.toLocal8Bit().constData(), "azimuth_len", &Rows);
-                    FC.read_int_from_h5(masterRegisPath.toLocal8Bit().constData(), "range_len", &Cols);
+                    NodeUtils::readScalarFromH5(masterRegisPath, "azimuth_len", Rows);
+                    NodeUtils::readScalarFromH5(masterRegisPath, "range_len", Cols);
 
                     for (int i = 0; i < inputPaths.size(); i++) {
                         if (i == masterIdx - 1) {
@@ -1011,20 +1007,16 @@ bool CoregistrationNode::validateAndRestoreOutput()
                             double time_Slave = 0;
                             string time_slave_str;
                             QString slavePath = inputPaths.at(i);
-                            FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "state_vec", State_Vec_Slave);
-                            if (!State_Vec_Slave.empty() && State_Vec_Slave.type() != CV_64F) State_Vec_Slave.convertTo(State_Vec_Slave, CV_64F);
-                            FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "lon_coefficient", Lon_Coeff_Slave);
-                            if (!Lon_Coeff_Slave.empty() && Lon_Coeff_Slave.type() != CV_64F) Lon_Coeff_Slave.convertTo(Lon_Coeff_Slave, CV_64F);
-                            FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "lat_coefficient", Lat_Coeff_Slave);
-                            if (!Lat_Coeff_Slave.empty() && Lat_Coeff_Slave.type() != CV_64F) Lat_Coeff_Slave.convertTo(Lat_Coeff_Slave, CV_64F);
-                            FC.read_array_from_h5(slavePath.toLocal8Bit().constData(), "prf", tmp_double);
-                            if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-                                tmp_double.convertTo(tmp_double, CV_64F);
+                            NodeUtils::readMatFromH5(slavePath, "state_vec", State_Vec_Slave, CV_64F);
+                            NodeUtils::readMatFromH5(slavePath, "lon_coefficient", Lon_Coeff_Slave, CV_64F);
+                            NodeUtils::readMatFromH5(slavePath, "lat_coefficient", Lat_Coeff_Slave, CV_64F);
+                            
+                            double prf_slave = 0.0;
+                            NodeUtils::readScalarFromH5(slavePath, "prf", prf_slave);
+                            if (prf_slave != 0) {
+                                interp_interval_slave = 1 / prf_slave;
                             }
-                            if (tmp_double.at<double>(0, 0) != 0) {
-                                interp_interval_slave = 1 / tmp_double.at<double>(0, 0);
-                            }
-                            FC.read_str_from_h5(slavePath.toLocal8Bit().constData(), "acquisition_start_time", time_slave_str);
+                            NodeUtils::readStringFromH5(slavePath, "acquisition_start_time", time_slave_str);
                             FC.utc2gps(time_slave_str.c_str(), &time_Slave);
                             double delta = (time_Slave - time_Master) / 60 / 60 / 24;
                             char tmp_d2s[512];
@@ -1035,8 +1027,8 @@ bool CoregistrationNode::validateAndRestoreOutput()
                             QString regisName = resolveOutputFileName(QFileInfo(slavePath).completeBaseName());
                             if (!regisName.endsWith(".h5", Qt::CaseInsensitive)) regisName += ".h5";
                             QString regisPath = projDir + "/" + nodeName + "/" + regisName;
-                            FC.read_int_from_h5(regisPath.toLocal8Bit().constData(), "offset_row", &offset_row);
-                            FC.read_int_from_h5(regisPath.toLocal8Bit().constData(), "offset_col", &offset_col);
+                            NodeUtils::readScalarFromH5(regisPath, "offset_row", offset_row);
+                            NodeUtils::readScalarFromH5(regisPath, "offset_col", offset_col);
 
                             util.baseline_estimation(State_Vec_Master, State_Vec_Slave, Lon_Coeff_Master, Lat_Coeff_Master,
                                 offset_row, offset_col, Rows, Cols, interp_interval, interp_interval_slave, &V_baseline, &H_baseline, &sigma_V, &sigma_H);
@@ -1063,8 +1055,8 @@ bool CoregistrationNode::validateAndRestoreOutput()
                     QString outH5Path = projDir + "/" + nodeName + "/" + outName;
 
                     int rowOffset = 0, colOffset = 0;
-                    FC.read_int_from_h5(outH5Path.toLocal8Bit().constData(), "offset_row", &rowOffset);
-                    FC.read_int_from_h5(outH5Path.toLocal8Bit().constData(), "offset_col", &colOffset);
+                    NodeUtils::readScalarFromH5(outH5Path, "offset_row", rowOffset);
+                    NodeUtils::readScalarFromH5(outH5Path, "offset_col", colOffset);
 
                     TiXmlElement* dataElem = new TiXmlElement("Data");
 

@@ -439,19 +439,15 @@ void PSTimeSeriesNode::generateStaticPreviewJpg()
         Utils util;
         
         cv::Mat velocity_1d, ps_coords, mask;
-        int ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "deformation_velocity", velocity_1d);
-        ret += FC.read_array_from_h5(h5Path.toStdString().c_str(), "ps_coordinates", ps_coords);
-        ret += FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
+        int ret = (NodeUtils::readMatFromH5(h5Path, "deformation_velocity", velocity_1d, CV_64F) &&
+                   NodeUtils::readMatFromH5(h5Path, "ps_coordinates", ps_coords) &&
+                   NodeUtils::readMatFromH5(h5Path, "mask", mask)) ? 0 : -1;
 
         if (ret == 0 && !velocity_1d.empty() && !ps_coords.empty() && !mask.empty()) {
             int rows = mask.rows;
             int cols = mask.cols;
             cv::Mat velocity_2d = cv::Mat::zeros(rows, cols, CV_64FC1);
             int ps_count = velocity_1d.rows;
-
-            if (velocity_1d.type() != CV_64F) {
-                velocity_1d.convertTo(velocity_1d, CV_64F);
-            }
 
             for (int i = 0; i < ps_count; ++i) {
                 int r = ps_coords.at<int>(i, 0);

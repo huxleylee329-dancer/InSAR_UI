@@ -59,29 +59,30 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
     string time_master_str;
 
     try {
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "state_vec", State_Vec_Master);
-        if (!State_Vec_Master.empty() && State_Vec_Master.type() != CV_64F) State_Vec_Master.convertTo(State_Vec_Master, CV_64F);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lon_coefficient", Lon_Coeff_Master);
-        if (!Lon_Coeff_Master.empty() && Lon_Coeff_Master.type() != CV_64F) Lon_Coeff_Master.convertTo(Lon_Coeff_Master, CV_64F);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "lat_coefficient", Lat_Coeff_Master);
-        if (!Lat_Coeff_Master.empty() && Lat_Coeff_Master.type() != CV_64F) Lat_Coeff_Master.convertTo(Lat_Coeff_Master, CV_64F);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "prf", tmp_double);
-        if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-            tmp_double.convertTo(tmp_double, CV_64F);
+        QString masterH5 = QString::fromStdString(SAR_images.at(index - 1));
+        {
+            NodeUtils::Hdf5Locker locker;
+            NodeUtils::readMatFromH5(masterH5, "state_vec", State_Vec_Master, CV_64F);
+            NodeUtils::readMatFromH5(masterH5, "lon_coefficient", Lon_Coeff_Master, CV_64F);
+            NodeUtils::readMatFromH5(masterH5, "lat_coefficient", Lat_Coeff_Master, CV_64F);
+            NodeUtils::readMatFromH5(masterH5, "prf", tmp_double, CV_64F);
+            
+            Mat tmp = Mat::zeros(1, 1, CV_32SC1);
+            NodeUtils::readMatFromH5(masterH5, "offset_row", tmp);
+            offset_row = tmp.at<int>(0, 0);
+            NodeUtils::readMatFromH5(masterH5, "offset_col", tmp);
+            offset_col = tmp.at<int>(0, 0);
+
+            NodeUtils::readStringFromH5(masterH5, "acquisition_start_time", time_master_str);
         }
         interp_interval = 1 / tmp_double.at<double>(0, 0);
-
-        Mat tmp = Mat::zeros(1, 1, CV_32SC1);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_row", tmp);
-        offset_row = tmp.at<int>(0, 0);
-        FC.read_array_from_h5(SAR_images.at(index - 1).c_str(), "offset_col", tmp);
-        offset_col = tmp.at<int>(0, 0);
-
-        FC.read_str_from_h5(SAR_images.at(index - 1).c_str(), "acquisition_start_time", time_master_str);
         FC.utc2gps(time_master_str.c_str(), &time_Master);
 
         ComplexMat SLC;
-        FC.read_slc_from_h5(SAR_images.at(index - 1).c_str(), SLC);
+        {
+            NodeUtils::Hdf5Locker locker;
+            FC.read_slc_from_h5(SAR_images.at(index - 1).c_str(), SLC);
+        }
         Rows = SLC.GetRows();
         Cols = SLC.GetCols();
     }
@@ -119,19 +120,16 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
             string time_slave_str;
 
             try {
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "state_vec", State_Vec_Slave);
-                if (!State_Vec_Slave.empty() && State_Vec_Slave.type() != CV_64F) State_Vec_Slave.convertTo(State_Vec_Slave, CV_64F);
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "lon_coefficient", Lon_Coeff_Slave);
-                if (!Lon_Coeff_Slave.empty() && Lon_Coeff_Slave.type() != CV_64F) Lon_Coeff_Slave.convertTo(Lon_Coeff_Slave, CV_64F);
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "lat_coefficient", Lat_Coeff_Slave);
-                if (!Lat_Coeff_Slave.empty() && Lat_Coeff_Slave.type() != CV_64F) Lat_Coeff_Slave.convertTo(Lat_Coeff_Slave, CV_64F);
-                FC.read_array_from_h5(SAR_images.at(i).c_str(), "prf", tmp_double);
-                if (!tmp_double.empty() && tmp_double.type() != CV_64F) {
-                    tmp_double.convertTo(tmp_double, CV_64F);
+                QString slaveH5 = QString::fromStdString(SAR_images.at(i));
+                {
+                    NodeUtils::Hdf5Locker locker;
+                    NodeUtils::readMatFromH5(slaveH5, "state_vec", State_Vec_Slave, CV_64F);
+                    NodeUtils::readMatFromH5(slaveH5, "lon_coefficient", Lon_Coeff_Slave, CV_64F);
+                    NodeUtils::readMatFromH5(slaveH5, "lat_coefficient", Lat_Coeff_Slave, CV_64F);
+                    NodeUtils::readMatFromH5(slaveH5, "prf", tmp_double, CV_64F);
+                    NodeUtils::readStringFromH5(slaveH5, "acquisition_start_time", time_slave_str);
                 }
                 interp_interval_slave = 1 / tmp_double.at<double>(0, 0);
-
-                FC.read_str_from_h5(SAR_images.at(i).c_str(), "acquisition_start_time", time_slave_str);
                 FC.utc2gps(time_slave_str.c_str(), &time_Slave);
 
                 double delta = (time_Slave - time_Master) / 60 / 60 / 24;

@@ -1,5 +1,6 @@
 #include"Deformation_Average.h"
 #include"icon_source.h"
+#include "NodeUtils.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
@@ -174,16 +175,22 @@ void Deformation_Average::on_Preview_pressed()
     {
         Utils util;
         ComplexMat SLC64;
-        FormatConversion FC;
         Mat defomation_velocity, mask;
         Mat image;
-        int ret = FC.read_array_from_h5(image_path.toStdString().c_str(), "defomation_velocity", defomation_velocity);
-        ret = FC.read_array_from_h5(image_path.toStdString().c_str(), "mask", mask);
-        if (defomation_velocity.type() != CV_64F)
+        bool ok = false;
         {
-            defomation_velocity.convertTo(defomation_velocity, CV_64F);
+            NodeUtils::Hdf5Locker locker;
+            ok = NodeUtils::readMatFromH5(image_path, "defomation_velocity", defomation_velocity) &&
+                 NodeUtils::readMatFromH5(image_path, "mask", mask);
         }
-        util.savephase_white(jpg_path.toStdString().c_str(), "jet", defomation_velocity, mask);
+        if (ok)
+        {
+            if (defomation_velocity.type() != CV_64F)
+            {
+                defomation_velocity.convertTo(defomation_velocity, CV_64F);
+            }
+            util.savephase_white(jpg_path.toStdString().c_str(), "jet", defomation_velocity, mask);
+        }
         if (QThread::currentThread()->isInterruptionRequested())
         {
             //emit endProcess();
