@@ -107,13 +107,15 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
     if (port == 0) {
         m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
         if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-            m_outputData.reset();
-            m_previewData.reset();
-            m_outputImagePaths.clear();
-            m_outputJpgPaths.clear();
-            m_savedOutputFiles.clear();
-            setOutputData(0, nullptr);
-            setOutputData(1, nullptr);
+            if (!isRestoring()) {
+                m_outputData.reset();
+                m_previewData.reset();
+                m_outputImagePaths.clear();
+                m_outputJpgPaths.clear();
+                m_savedOutputFiles.clear();
+                setOutputData(0, nullptr);
+                setOutputData(1, nullptr);
+            }
         }
         updateMasterImageCombo();
         if (m_inputData && m_outputNodeName.isEmpty()) {
@@ -130,9 +132,11 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
                 m_demPathEdit->setText(m_demPath);
             }
         } else {
-            m_demPath.clear();
-            if (m_demPathEdit) {
-                m_demPathEdit->clear();
+            if (!isRestoring()) {
+                m_demPath.clear();
+                if (m_demPathEdit) {
+                    m_demPathEdit->clear();
+                }
             }
         }
     }

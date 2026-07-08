@@ -4,6 +4,7 @@
 #include "Export.hpp"
 #include "BasicGraphicsScene.hpp"
 #include "NodeData.hpp"
+#include <QTimer>
 
 #include <unordered_map>
 #include <memory>
@@ -146,6 +147,9 @@ public Q_SLOTS:
     /// Used when a source node is connected in auto mode
     void triggerAutoExecution();
 
+private Q_SLOTS:
+    void updateSmoothProgress();
+
 Q_SIGNALS:
     void executionStarted();
 
@@ -222,6 +226,10 @@ protected:
     // (vs. manually by the user clicking Start). Allows skipping overwrite popups in auto mode.
     bool _isAutoTriggered = false;
     bool _deferAutomaticCompletion = false;
+
+    double _targetProgress = 0.0;
+    double _currentShownProgress = 0.0;
+    QTimer* _progressTimer = nullptr;
 };
 
 } // namespace QtNodes

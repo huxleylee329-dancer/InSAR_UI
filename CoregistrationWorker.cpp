@@ -737,6 +737,8 @@ int CoregistrationWorker::Registration_copy(
 		double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
 		emit updateProcess(int(start_p), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
 		std::atomic<int> completed_blocks(0);
+		int init_pct = static_cast<int>(start_p);
+		std::atomic<int> max_reported_pct(init_pct);
 		int total_blocks = m * n;
 		int mm, nn;
 		mm = images_rows.at<int>(ii, 0) / blocksize;
@@ -777,10 +779,17 @@ int CoregistrationWorker::Registration_copy(
 						double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
 						double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
 						double current_prog = start_p + block_ratio * (end_p - start_p);
-						#pragma omp critical
-						{
-							emit updateProcess(int(current_prog), QStringLiteral("第%1对图像配准中：%2%")
-								.arg(ii + 1).arg(int(block_ratio * 100)));
+						int progress_pct = int(current_prog);
+						int prev = max_reported_pct.load();
+						while (progress_pct > prev && !max_reported_pct.compare_exchange_weak(prev, progress_pct)) {
+							// Keep trying
+						}
+						if (progress_pct > prev) {
+							#pragma omp critical(coreg_progress_1)
+							{
+								emit updateProcess(progress_pct, QStringLiteral("第%1对图像配准中：%2%")
+									.arg(ii + 1).arg(int(block_ratio * 100)));
+							}
 						}
 					}
 				}
@@ -830,10 +839,17 @@ int CoregistrationWorker::Registration_copy(
 						double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
 						double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
 						double current_prog = start_p + block_ratio * (end_p - start_p);
-						#pragma omp critical
-						{
-							emit updateProcess(int(current_prog), QStringLiteral("第%1对图像配准中：%2%")
-								.arg(ii + 1).arg(int(block_ratio * 100)));
+						int progress_pct = int(current_prog);
+						int prev = max_reported_pct.load();
+						while (progress_pct > prev && !max_reported_pct.compare_exchange_weak(prev, progress_pct)) {
+							// Keep trying
+						}
+						if (progress_pct > prev) {
+							#pragma omp critical(coreg_progress_2)
+							{
+								emit updateProcess(progress_pct, QStringLiteral("第%1对图像配准中：%2%")
+									.arg(ii + 1).arg(int(block_ratio * 100)));
+							}
 						}
 					}
 				}

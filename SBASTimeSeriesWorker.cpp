@@ -300,6 +300,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     emit updateProcess(70, QStringLiteral("时间序列分析(1/2)……"));
     std::atomic<int> completed_rows(0);
     std::atomic<bool> cancel_flag(false);
+    std::atomic<int> max_reported_pct(70);
     int step_val = std::max(1, phase.rows / 10);
 
 #pragma omp parallel for schedule(guided)
@@ -342,7 +343,16 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         int current_completed = ++completed_rows;
         if (current_completed % step_val == 0) {
             int progress = 70 + (current_completed * 5 / phase.rows);
-            emit updateProcess(progress, QStringLiteral("时间序列分析(1/2)……"));
+            int prev = max_reported_pct.load();
+            while (progress > prev && !max_reported_pct.compare_exchange_weak(prev, progress)) {
+                // Keep trying
+            }
+            if (progress > prev) {
+                #pragma omp critical(sbas_ts_progress_1)
+                {
+                    emit updateProcess(progress, QStringLiteral("时间序列分析(1/2)……"));
+                }
+            }
         }
     }
 
@@ -402,6 +412,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     emit updateProcess(75, QStringLiteral("时间序列分析(2/2)……"));
     std::atomic<int> completed_rows2(0);
     std::atomic<bool> cancel_flag2(false);
+    std::atomic<int> max_reported_pct2(75);
     int step_val2 = std::max(1, phase.rows / 10);
 
 #pragma omp parallel for schedule(guided)
@@ -467,7 +478,16 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         int current_completed = ++completed_rows2;
         if (current_completed % step_val2 == 0) {
             int progress = 75 + (current_completed * 5 / phase.rows);
-            emit updateProcess(progress, QStringLiteral("时间序列分析(2/2)……"));
+            int prev = max_reported_pct2.load();
+            while (progress > prev && !max_reported_pct2.compare_exchange_weak(prev, progress)) {
+                // Keep trying
+            }
+            if (progress > prev) {
+                #pragma omp critical(sbas_ts_progress_2)
+                {
+                    emit updateProcess(progress, QStringLiteral("时间序列分析(2/2)……"));
+                }
+            }
         }
     }
 

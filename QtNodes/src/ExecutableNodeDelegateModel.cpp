@@ -3,6 +3,7 @@
 #include "NodeGraphicsObject.hpp"
 #include "BasicGraphicsScene.hpp"
 #include <QMessageBox>
+#include <QTimer>
 #include "DataFlowGraphModel.hpp"
 
 namespace QtNodes {
@@ -177,9 +178,65 @@ void ExecutableNodeDelegateModel::stop()
 
 void ExecutableNodeDelegateModel::setProgress(int percent)
 {
-    _progress = percent;
-    Q_EMIT progressUpdated(percent);
-    triggerVisualUpdate();
+    if (!_progressTimer) {
+        _progressTimer = new QTimer(this);
+        connect(_progressTimer, &QTimer::timeout, this, &ExecutableNodeDelegateModel::updateSmoothProgress);
+    }
+
+    // Set target progress, ensuring it is monotonic
+    if (percent > _targetProgress) {
+        _targetProgress = percent;
+    }
+    
+    if (percent == 0) {
+        _targetProgress = 0.0;
+        _currentShownProgress = 0.0;
+        _progress = 0;
+        _progressTimer->stop();
+        Q_EMIT progressUpdated(0);
+        triggerVisualUpdate();
+        return;
+    }
+
+    if (!_progressTimer->isActive() && _state == ExecutionState::Running && _progress < 100) {
+        _progressTimer->start(30); // 30ms interval
+    }
+}
+
+void ExecutableNodeDelegateModel::updateSmoothProgress()
+{
+    if (_state != ExecutionState::Running || _progress >= 100) {
+        if (_progressTimer) {
+            _progressTimer->stop();
+        }
+        return;
+    }
+
+    double diff = _targetProgress - _currentShownProgress;
+    if (diff > 0.01) {
+        double k = 0.05; // smoothing factor
+        _currentShownProgress += diff * k;
+
+        double min_step = 0.05;
+        if (diff * k < min_step) {
+            _currentShownProgress += min_step;
+        }
+
+        if (_currentShownProgress > _targetProgress) {
+            _currentShownProgress = _targetProgress;
+        }
+
+        int newProg = qRound(_currentShownProgress);
+        if (newProg != _progress) {
+            _progress = newProg;
+            Q_EMIT progressUpdated(_progress);
+            triggerVisualUpdate();
+        }
+    } else {
+        if (_currentShownProgress >= _targetProgress && _progressTimer) {
+            _progressTimer->stop();
+        }
+    }
 }
 
 void ExecutableNodeDelegateModel::triggerAutoExecution()
@@ -362,7 +419,16 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
     _state = state;
     if (state == ExecutionState::Idle) {
         _progress = 0;
+        _targetProgress = 0.0;
+        _currentShownProgress = 0.0;
+        if (_progressTimer) {
+            _progressTimer->stop();
+        }
         Q_EMIT progressUpdated(0);
+    } else if (state == ExecutionState::Completed || state == ExecutionState::Stopped || state == ExecutionState::Error) {
+        if (_progressTimer) {
+            _progressTimer->stop();
+        }
     }
     Q_EMIT executionStateChanged();
     triggerVisualUpdate();

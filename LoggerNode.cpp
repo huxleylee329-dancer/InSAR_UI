@@ -155,10 +155,20 @@ QString LoggerNode::formatLogEntry(const LogEntry& entry) const
 {
     QString color;
     switch (entry.level) {
-        case InSARLogManager::LevelInfo: color = ""; break; // 空字符串代表使用系统/主题默认文本颜色
-        case InSARLogManager::LevelWarning: color = "orange"; break;
-        case InSARLogManager::LevelError: color = "red"; break;
-        default: color = ""; break;
+        case InSARLogManager::LevelWarning: 
+            color = "orange"; 
+            break;
+        case InSARLogManager::LevelError: 
+            color = "red"; 
+            break;
+        case InSARLogManager::LevelInfo:
+        default: 
+            if (m_textBrowser) {
+                color = m_textBrowser->palette().color(QPalette::Text).name();
+            } else {
+                color = "";
+            }
+            break;
     }
 
     // Escape HTML to prevent injection if logs contain < or >
