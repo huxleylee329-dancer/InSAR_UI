@@ -1,4 +1,4 @@
-﻿#ifndef NOTENODE_H
+#ifndef NOTENODE_H
 #define NOTENODE_H
 
 #include <QtNodes/NodeData>

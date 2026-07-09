@@ -94,7 +94,8 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	std::vector<std::string> SAR_images_regis;
 	QList<QString> origin;
 	bool found_project = false;
-	QMetaObject::invokeMethod(model, [=, &SAR_images, &SAR_images_regis, &origin, &found_project]() {
+	QString demPath;
+	QMetaObject::invokeMethod(model, [=, &SAR_images, &SAR_images_regis, &origin, &found_project, &demPath]() {
 		QList<QStandardItem*> foundProjects = model->findItems(dstProject);
 		if (foundProjects.isEmpty()) return;
 		found_project = true;
@@ -118,6 +119,12 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				}
 			}
 		}
+
+		// 在 GUI 线程安全地查询项目全局默认高程数据路径
+		auto* iface = NodeUtils::getProjectContext(nullptr);
+		if (iface) {
+			demPath = NodeUtils::getGlobalDemPath(iface);
+		}
 	}, Qt::BlockingQueuedConnection);
 
 	if (!found_project)
@@ -134,12 +141,14 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Starting S1 TOPS Back-Geocoding. Total images: %1, Master Index: %2, ESD Enabled: %3")
 		.arg(images_number).arg(masterIndex).arg(b_ESD ? "True" : "False"));
 
-	//外部DEM文件夹
-	QString appPath = QCoreApplication::applicationDirPath();
-	QString demPath = appPath + "/dem";
-	QDir appDir(appPath);
-	if (!appDir.exists("dem")) appDir.mkdir("dem");
-
+	// 优先使用项目全局高程路径，如为空则回退到运行程序下的 dem 文件夹
+	if (demPath.isEmpty()) {
+		QString appPath = QCoreApplication::applicationDirPath();
+		demPath = appPath + "/dem";
+	}
+	if (!QDir(demPath).exists()) {
+		QDir().mkpath(demPath);
+	}
 	//后向地理编码配准
 	Sentinel1BackGeocoding backgeocoding; FormatConversion conversion;
 	ComplexMat slaveSLC, tmp;

@@ -26,7 +26,7 @@ public slots:
     );
 
 private:
-    bool downloadTile(const QString& url, const QString& savePath);
+    int downloadTile(const QString& url, const QString& savePath);
 };
 
 #endif // DEM_SOURCE_WORKER_H

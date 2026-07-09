@@ -319,6 +319,9 @@
     <ClCompile Include="DEMSourceDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EarthdataLoginDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DemWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -976,6 +979,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\DEMSourceDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\EarthdataLoginDialog.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\DemWorker.h">

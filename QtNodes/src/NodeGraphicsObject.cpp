@@ -102,10 +102,15 @@ void NodeGraphicsObject::embedQWidget()
     if (auto w = _graphModel.nodeData(_nodeId, NodeRole::Widget).value<QWidget *>()) {
         // Set object name for QSS targeting
         w->setObjectName("NodeEmbeddedWidget");
+        w->setAttribute(Qt::WA_InputMethodEnabled, true);
 
         _proxyWidget = new QGraphicsProxyWidget(this);
-
         _proxyWidget->setWidget(w);
+
+        // 显式在 setWidget 之后设置代理部件的输入法和焦点标志，防止被 setWidget 覆盖
+        _proxyWidget->setFlag(QGraphicsItem::ItemAcceptsInputMethod, true);
+        _proxyWidget->setFlag(QGraphicsItem::ItemIsFocusable, true);
+        _proxyWidget->setFocusPolicy(Qt::StrongFocus);
 
         _proxyWidget->setPreferredWidth(5);
 
@@ -147,7 +152,50 @@ QRectF NodeGraphicsObject::boundingRect() const
 {
     AbstractNodeGeometry &geometry = nodeScene()->nodeGeometry();
     return geometry.boundingRect(_nodeId);
-    //return NodeGeometry(_nodeId, _graphModel, nodeScene()).boundingRect();
+}
+
+QPainterPath NodeGraphicsObject::shape() const
+{
+    QPainterPath path;
+    AbstractNodeGeometry &geometry = nodeScene()->nodeGeometry();
+    QSize s = geometry.size(_nodeId);
+
+    // 1. 添加节点主体部分（使用带圆角的矩形以完美贴合视窗边界）
+    QRectF bodyRect(0, 0, s.width(), s.height());
+    double radius = 3.0; // 与 DefaultNodePainter 中的画圆角半径一致
+    path.addRoundedRect(bodyRect, radius, radius);
+
+    // 2. 如果是可执行节点，且节点处于选中状态（因为耳朵只有在选中时才会被绘制），则将顶部耳朵加入判定区域
+    auto *execGeo = dynamic_cast<ExecutableNodeGeometry*>(&geometry);
+    if (execGeo) {
+        if (isSelected()) {
+            path.addRect(execGeo->leftEarRect(_nodeId));
+            path.addRect(execGeo->rightEarRect(_nodeId));
+        }
+        path.addRect(execGeo->progressBarRect(_nodeId));
+    }
+
+    // 3. 将所有插孔（Ports）的圆形感应区域添加进 Path 中以确保它们能准确响应鼠标 Hover 和连线
+    for (PortType portType : {PortType::In, PortType::Out}) {
+        unsigned int nPorts = 0;
+        if (portType == PortType::In) {
+            nPorts = _graphModel.nodeData<PortCount>(_nodeId, NodeRole::InPortCount);
+        } else {
+            nPorts = _graphModel.nodeData<PortCount>(_nodeId, NodeRole::OutPortCount);
+        }
+
+        QJsonDocument json = QJsonDocument::fromVariant(_graphModel.nodeData(_nodeId, NodeRole::Style));
+        NodeStyle nodeStyle(json.object());
+        double diameter = nodeStyle.ConnectionPointDiameter;
+        double r = diameter / 2.0;
+
+        for (PortIndex portIndex = 0; portIndex < nPorts; ++portIndex) {
+            QPointF p = geometry.portPosition(_nodeId, portType, portIndex);
+            path.addEllipse(p, r, r);
+        }
+    }
+
+    return path;
 }
 
 void NodeGraphicsObject::setGeometryChanged()

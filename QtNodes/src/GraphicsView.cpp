@@ -24,6 +24,7 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
 #include <QtCore/QMimeData>
+#include <QtCore/QTimer>
 #include <QtWidgets/QApplication>
 
 #include <QtCore/QDebug>
@@ -67,6 +68,12 @@ GraphicsView::GraphicsView(QWidget *parent)
     // re-calculation when expanding the all QGraphicsItems common rect.
     int maxSize = 32767;
     setSceneRect(-maxSize, -maxSize, (maxSize * 2), (maxSize * 2));
+
+    // 启用输入法支持以允许输入中文
+    setAttribute(Qt::WA_InputMethodEnabled, true);
+    if (viewport()) {
+        viewport()->setAttribute(Qt::WA_InputMethodEnabled, true);
+    }
 }
 
 GraphicsView::GraphicsView(BasicGraphicsScene *scene, QWidget *parent)
@@ -93,6 +100,16 @@ QAction *GraphicsView::groupSelectionAction() const
 void GraphicsView::setScene(BasicGraphicsScene *scene)
 {
     QGraphicsView::setScene(scene);
+
+    if (scene) {
+        // 监听场景焦点变化，强制在每次焦点切换后重新开启输入法，防止被 Qt 内部机制误关
+        connect(scene, &QGraphicsScene::focusItemChanged, this, [this](QGraphicsItem *, QGraphicsItem *, Qt::FocusReason) {
+            setAttribute(Qt::WA_InputMethodEnabled, true);
+            if (viewport()) {
+                viewport()->setAttribute(Qt::WA_InputMethodEnabled, true);
+            }
+        });
+    }
 
     {
         // setup actions
@@ -234,6 +251,16 @@ void GraphicsView::wheelEvent(QWheelEvent *event)
         scaleUp();
     else
         scaleDown();
+
+    // 缩放后，将模拟鼠标移动事件延迟到下一轮事件循环（队列尾部）执行
+    // 确保在 QGraphicsScene 坐标系统与 BSP 树完全更新后，进行 100% 精确的悬停检测与光标刷新
+    QTimer::singleShot(0, this, [this]() {
+        if (viewport()) {
+            QPoint const mousePos = mapFromGlobal(QCursor::pos());
+            QMouseEvent moveEvent(QEvent::MouseMove, mousePos, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(viewport(), &moveEvent);
+        }
+    });
 }
 
 double GraphicsView::getScale() const
@@ -342,15 +369,20 @@ void GraphicsView::onGroupSelectedObjects()
 
 void GraphicsView::keyPressEvent(QKeyEvent *event)
 {
+    // 检查当前是否有文本框等控件正在编辑，如果是则不改变拖拽模式，防止干扰中文输入法切换
+    QWidget *focusW = QApplication::focusWidget();
+    bool isEditing = focusW && focusW != this && focusW != viewport();
+
     switch (event->key()) {
     case Qt::Key_Shift:
-        setDragMode(QGraphicsView::RubberBandDrag);
+        if (!isEditing) {
+            setDragMode(QGraphicsView::RubberBandDrag);
+        }
         break;
 
     case Qt::Key_Tab: {
         // 仅在没有其他文本框获取焦点时触发搜索弹窗
-        QWidget *focusW = QApplication::focusWidget();
-        if (!focusW || focusW == this || focusW == viewport()) {
+        if (!isEditing) {
             showNodeSearchPopup(QCursor::pos());
         }
         break;
@@ -365,9 +397,15 @@ void GraphicsView::keyPressEvent(QKeyEvent *event)
 
 void GraphicsView::keyReleaseEvent(QKeyEvent *event)
 {
+    // 检查当前是否有文本框等控件正在编辑
+    QWidget *focusW = QApplication::focusWidget();
+    bool isEditing = focusW && focusW != this && focusW != viewport();
+
     switch (event->key()) {
     case Qt::Key_Shift:
-        setDragMode(QGraphicsView::ScrollHandDrag);
+        if (!isEditing) {
+            setDragMode(QGraphicsView::ScrollHandDrag);
+        }
         break;
 
     default:
@@ -645,5 +683,15 @@ void GraphicsView::updatePasteActionState()
 {
     if (_pasteAction) {
         _pasteAction->setEnabled(hasValidPasteData());
+    }
+}
+
+void GraphicsView::focusInEvent(QFocusEvent *event)
+{
+    QGraphicsView::focusInEvent(event);
+    // 强制在窗口或画布获取焦点时启用输入法
+    setAttribute(Qt::WA_InputMethodEnabled, true);
+    if (viewport()) {
+        viewport()->setAttribute(Qt::WA_InputMethodEnabled, true);
     }
 }

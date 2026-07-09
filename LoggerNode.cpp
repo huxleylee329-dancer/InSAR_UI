@@ -2,6 +2,7 @@
 #include "LoggerNode.h"
 #include <QHBoxLayout>
 #include <QScrollBar>
+#include <QTextCursor>
 
 namespace QtNodes {
 
@@ -146,9 +147,12 @@ void LoggerNode::onClearClicked()
 void LoggerNode::appendLogToView(const LogEntry& entry)
 {
     m_textBrowser->append(formatLogEntry(entry));
-    // Auto-scroll to bottom
-    QScrollBar *sb = m_textBrowser->verticalScrollBar();
-    sb->setValue(sb->maximum());
+
+    // 将光标移动到最后一行行首。这样既能保证垂直方向自动滚动到最下方，又能确保水平滚动条默认靠最左侧（0）
+    QTextCursor cursor = m_textBrowser->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    cursor.movePosition(QTextCursor::StartOfLine);
+    m_textBrowser->setTextCursor(cursor);
 }
 
 QString LoggerNode::formatLogEntry(const LogEntry& entry) const

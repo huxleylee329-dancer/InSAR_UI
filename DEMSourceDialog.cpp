@@ -1,5 +1,6 @@
 #include "DEMSourceDialog.h"
 #include "NodeUtils.h"
+#include "EarthdataLoginDialog.h"
 #include <QFormLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -7,6 +8,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QFileDialog>
+#include <QSettings>
 
 DEMSourceDialog::DEMSourceDialog(QWidget* parent)
     : QDialog(parent)
@@ -33,6 +35,18 @@ DEMSourceDialog::DEMSourceDialog(QWidget* parent)
     m_demSourceCombo->addItem("Copernicus DEM (30m)");
     m_demSourceCombo->addItem("ASTER GDEM v3 (30m)");
     formLayout->addRow(QStringLiteral("DEM 数据源:"), m_demSourceCombo);
+
+    // 账户状态与登录注销按钮
+    auto* loginLayout = new QHBoxLayout();
+    m_loginStatusLabel = new QLabel(this);
+    m_loginBtn = new QPushButton(QStringLiteral("登录"), this);
+    m_loginBtn->setFixedWidth(60);
+    m_logoutBtn = new QPushButton(QStringLiteral("注销"), this);
+    m_logoutBtn->setFixedWidth(60);
+    loginLayout->addWidget(m_loginStatusLabel);
+    loginLayout->addWidget(m_loginBtn);
+    loginLayout->addWidget(m_logoutBtn);
+    formLayout->addRow(QStringLiteral("账户状态:"), loginLayout);
 
     m_dstNodeEdit = new QLineEdit(this);
     m_dstNodeEdit->setText("External_DEM");
@@ -103,6 +117,23 @@ DEMSourceDialog::DEMSourceDialog(QWidget* parent)
     connect(m_resolutionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &DEMSourceDialog::onResolutionModeChanged);
     connect(m_browseCacheBtn, &QPushButton::clicked, this, &DEMSourceDialog::onBrowseCachePressed);
     connect(m_clearCacheBtn, &QPushButton::clicked, this, &DEMSourceDialog::onClearCachePressed);
+
+    // 绑定登录注销信号
+    connect(m_demSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &DEMSourceDialog::updateLoginStatus);
+    connect(m_loginBtn, &QPushButton::clicked, this, [this]() {
+        EarthdataLoginDialog dlg(this);
+        if (dlg.exec() == QDialog::Accepted) {
+            updateLoginStatus();
+        }
+    });
+    connect(m_logoutBtn, &QPushButton::clicked, this, [this]() {
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        settings.remove("DEM/EarthdataUser");
+        settings.remove("DEM/EarthdataPassword");
+        updateLoginStatus();
+    });
+
+    updateLoginStatus();
 }
 
 DEMSourceDialog::~DEMSourceDialog()
@@ -141,8 +172,9 @@ void DEMSourceDialog::onProjectChanged(int index)
             QString cacheDir;
             if (iface) {
                 cacheDir = NodeUtils::getGlobalDemPath(iface);
-            } else {
-                cacheDir = QFileInfo(projectPath).absolutePath() + "/cache";
+            }
+            if (cacheDir.isEmpty()) {
+                cacheDir = QFileInfo(projectPath).absolutePath() + "/.dem_cache";
             }
             m_cacheDirEdit->setText(QDir::toNativeSeparators(cacheDir));
             updateCacheSizeLabel();
@@ -221,6 +253,22 @@ void DEMSourceDialog::onStartPressed()
     }
 
     int demSource = m_demSourceCombo->currentIndex();
+    if (demSource != 2) // Copernicus DEM 不需要登录
+    {
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
+        QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
+        if (encryptedUser.isEmpty() || encryptedPass.isEmpty())
+        {
+            QMessageBox::warning(this, "Warning", QStringLiteral("所选 DEM 数据源需要 NASA Earthdata 账户登录，请先登录！"));
+            EarthdataLoginDialog dlg(this);
+            if (dlg.exec() != QDialog::Accepted)
+            {
+                return;
+            }
+            updateLoginStatus();
+        }
+    }
     
     // 解析分辨率参数
     int resIdx = m_resolutionCombo->currentIndex();
@@ -422,4 +470,41 @@ void DEMSourceDialog::updateCacheSizeLabel()
 
     double sizeMb = static_cast<double>(totalSize) / (1024.0 * 1024.0);
     m_cacheSizeLabel->setText(QStringLiteral("当前缓存: %1 MB").arg(QString::number(sizeMb, 'f', 2)));
+}
+
+void DEMSourceDialog::updateLoginStatus()
+{
+    int demSource = m_demSourceCombo->currentIndex();
+    if (demSource == 2) // Copernicus DEM
+    {
+        m_loginStatusLabel->setText(QStringLiteral("无需登录"));
+        m_loginStatusLabel->setStyleSheet("color: gray;");
+        m_loginBtn->setEnabled(false);
+        m_logoutBtn->setEnabled(false);
+        m_loginBtn->hide();
+        m_logoutBtn->hide();
+    }
+    else
+    {
+        m_loginBtn->show();
+        m_loginBtn->setEnabled(true);
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
+        if (encryptedUser.isEmpty())
+        {
+            m_loginStatusLabel->setText(QStringLiteral("未登录"));
+            m_loginStatusLabel->setStyleSheet("color: red;");
+            m_logoutBtn->setEnabled(false);
+            m_logoutBtn->hide();
+        }
+        else
+        {
+            QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
+            m_loginStatusLabel->setText(QStringLiteral("已保存(%1)").arg(username));
+            m_loginStatusLabel->setStyleSheet("color: green;");
+            m_logoutBtn->setEnabled(true);
+            m_logoutBtn->show();
+            m_loginBtn->hide();
+        }
+    }
 }

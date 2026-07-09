@@ -128,13 +128,17 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
     // Check if this is an executable node
     auto *execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
     if (!execModel) {
-        if (delegateModel->name() == QStringLiteral("ImageDisplay") || delegateModel->name() == QStringLiteral("LoggerNode")) {
+        if (delegateModel->name() == QStringLiteral("ImageDisplay") || 
+            delegateModel->name() == QStringLiteral("LoggerNode") ||
+            delegateModel->name() == QStringLiteral("NoteNode")) {
             bool isCompleted = false;
             
             if (auto* imgNode = dynamic_cast<ImageDisplayNode*>(delegateModel)) {
                 isCompleted = imgNode->hasLoadedImage();
             } else if (auto* logNode = dynamic_cast<LoggerNode*>(delegateModel)) {
                 isCompleted = logNode->hasLoadedLogs();
+            } else if (delegateModel->name() == QStringLiteral("NoteNode")) {
+                isCompleted = true;
             }
             
             auto &scene = *ngo.nodeScene();

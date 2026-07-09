@@ -76,13 +76,13 @@ DEMSourceWorker::~DEMSourceWorker()
 {
 }
 
-bool DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
+int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
 {
     QNetworkAccessManager manager;
     QNetworkRequest request((QUrl(url)));
     request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
 
-    // 从全局 Config.ini 读取 Earthdata 账号密码
+    // 从全局 Config.ini 读取 Earthdata 账号密码并直接设置 Authorization 头部以防重定向鉴权丢失
     QSettings settings("Config.ini", QSettings::IniFormat);
     QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
     QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
@@ -90,8 +90,11 @@ bool DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
     QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
     QString password = QString::fromUtf8(QByteArray::fromBase64(encryptedPass.toUtf8()));
 
+    QByteArray authHeader = "Basic " + QByteArray(QString("%1:%2").arg(username).arg(password).toUtf8()).toBase64();
+    request.setRawHeader("Authorization", authHeader);
+
     connect(&manager, &QNetworkAccessManager::authenticationRequired,
-            this, [&](QNetworkReply*, QAuthenticator* authenticator) {
+            this, [username, password](QNetworkReply*, QAuthenticator* authenticator) {
                 authenticator->setUser(username);
                 authenticator->setPassword(password);
             });
@@ -101,7 +104,7 @@ bool DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
     if (!tempFile.open(QIODevice::WriteOnly))
     {
         InSARLogManager::LogError("DEMSourceWorker", QString("Failed to open temp file for write: ") + tempPath);
-        return false;
+        return -1;
     }
 
     QNetworkReply* reply = manager.get(request);
@@ -118,7 +121,10 @@ bool DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
     tempFile.close();
 
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    if (reply->error() == QNetworkReply::NoError && (statusCode == 200 || statusCode == 206))
+    QNetworkReply::NetworkError err = reply->error();
+    QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+
+    if (err == QNetworkReply::NoError && (statusCode == 200 || statusCode == 206) && !contentType.contains("html", Qt::CaseInsensitive))
     {
         if (QFile::exists(savePath))
         {
@@ -126,16 +132,32 @@ bool DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
         }
         tempFile.rename(savePath);
         reply->deleteLater();
-        return true;
+        return 1;
     }
     else
     {
-        InSARLogManager::LogError("DEMSourceWorker", 
-            QString("Download failed: URL: %1, Status Code: %2, Error: %3")
-            .arg(url).arg(statusCode).arg(reply->errorString()));
         tempFile.remove();
         reply->deleteLater();
-        return false;
+
+        if (err == QNetworkReply::ContentNotFoundError || statusCode == 404)
+        {
+            return 0; // 404 Not Found (例如海洋瓦片不存在)
+        }
+        else if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
+        {
+            // 如果返回了 HTML 网页（且非 404），代表实际上跳转到了 URS 网页登录页（鉴权失败）
+            InSARLogManager::LogError("DEMSourceWorker", 
+                QString("Authentication challenge failed or redirected to HTML. URL: %1, Status Code: %2, Content-Type: %3, Error: %4")
+                .arg(url).arg(statusCode).arg(contentType).arg(reply->errorString()));
+            return -1;
+        }
+        else
+        {
+            InSARLogManager::LogError("DEMSourceWorker", 
+                QString("Download failed: URL: %1, Status Code: %2, Error: %3")
+                .arg(url).arg(statusCode).arg(reply->errorString()));
+            return -1;
+        }
     }
 }
 
@@ -265,13 +287,79 @@ void DEMSourceWorker::fetch_dem(
     // 3. 缓存目录及多源隔离初始化
     if (cacheDir.isEmpty())
     {
-        cacheDir = QCoreApplication::applicationDirPath() + "/dem";
+        QString projectDir = projectPath;
+        if (projectPath.endsWith(".insar", Qt::CaseInsensitive))
+        {
+            projectDir = QFileInfo(projectPath).absolutePath();
+        }
+        
+        if (!projectDir.isEmpty())
+        {
+            cacheDir = QDir::toNativeSeparators(projectDir + "/.dem_cache");
+        }
+        else
+        {
+            cacheDir = QDir::toNativeSeparators(QDir::currentPath() + "/.dem_cache");
+        }
     }
     
     QString subDirName = "srtm1";
     if (demSource == 1) subDirName = "srtm3";
     else if (demSource == 2) subDirName = "copernicus";
     else if (demSource == 3) subDirName = "aster";
+
+    // 3.5 验证 NASA Earthdata 登录凭据有效性（避免无效凭据导致将所有陆地瓦片当做海洋跳过）
+    if (demSource != 2)
+    {
+        emit updateProcess(8, QStringLiteral("正在验证 NASA Earthdata 登录凭据..."));
+        
+        QNetworkAccessManager manager;
+        QNetworkRequest request(QUrl("https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/SRTMGL1.003/N06E016.SRTMGL1.hgt/N06E016.SRTMGL1.hgt.zip"));
+        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
+        QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
+
+        QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
+        QString password = QString::fromUtf8(QByteArray::fromBase64(encryptedPass.toUtf8()));
+
+        QByteArray authHeader = "Basic " + QByteArray(QString("%1:%2").arg(username).arg(password).toUtf8()).toBase64();
+        request.setRawHeader("Authorization", authHeader);
+
+        connect(&manager, &QNetworkAccessManager::authenticationRequired,
+                this, [username, password](QNetworkReply*, QAuthenticator* authenticator) {
+                    authenticator->setUser(username);
+                    authenticator->setPassword(password);
+                });
+
+        QNetworkReply* reply = manager.head(request);
+
+        QEventLoop loop;
+        connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+
+        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        QNetworkReply::NetworkError err = reply->error();
+        QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+        reply->deleteLater();
+
+        if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
+        {
+            emit errorProcess(QStringLiteral("NASA Earthdata 登录凭据无效（用户名或密码错误），请重新登录！"));
+            return;
+        }
+        else if (statusCode == 404 || err == QNetworkReply::ContentNotFoundError)
+        {
+            emit errorProcess(QStringLiteral("NASA Earthdata 验证测试资源未找到 (404)，请检查验证测试 URL。"));
+            return;
+        }
+        else if (err != QNetworkReply::NoError && statusCode != 200 && statusCode != 206 && statusCode != 302)
+        {
+            // 若为其他网络连接错误则记警告日志，不强行终止（防代理配置问题，且本地可能有缓存）
+            InSARLogManager::LogWarning("DEMSourceWorker", QString("Earthdata credentials pre-check warning: %1 (status: %2)").arg(reply->errorString()).arg(statusCode));
+        }
+    }
 
     QString fullCachePath = cacheDir + "/" + subDirName;
     QDir().mkpath(fullCachePath);
@@ -348,12 +436,12 @@ void DEMSourceWorker::fetch_dem(
 
                 if (demSource == 0) // SRTM 1"
                 {
-                    downloadUrl = QString("https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/%1.SRTMGL1.hgt.zip").arg(tileName);
+                    downloadUrl = QString("https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/SRTMGL1.003/%1.SRTMGL1.hgt/%1.SRTMGL1.hgt.zip").arg(tileName);
                     targetZipOrTif = fullCachePath + "/" + tileName + ".SRTMGL1.hgt.zip";
                 }
                 else if (demSource == 1) // SRTM 3"
                 {
-                    downloadUrl = QString("https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL3.003/2000.02.11/%1.SRTMGL3.hgt.zip").arg(tileName);
+                    downloadUrl = QString("https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/SRTMGL3.003/%1.SRTMGL3.hgt/%1.SRTMGL3.hgt.zip").arg(tileName);
                     targetZipOrTif = fullCachePath + "/" + tileName + ".SRTMGL3.hgt.zip";
                 }
                 else if (demSource == 2) // Copernicus 30m
@@ -368,15 +456,16 @@ void DEMSourceWorker::fetch_dem(
                         .arg(qAbs(lon), 3, 10, QChar('0'));
                     downloadUrl = QString("https://copernicus-dem-30m.s3.amazonaws.com/%1/%2.tif").arg(tileAWS).arg(tileAWS);
                 }
-                else if (demSource == 3) // ASTER GDEM
+                else if (demSource == 3) // ASTER GDEM (新云端已改为直接分发单张 .tif，无需解压)
                 {
-                    downloadUrl = QString("https://e4ftl01.cr.usgs.gov/ASTT/ASTGTM.003/2000.03.01/ASTGTMV003_%1_dem.zip").arg(tileName);
-                    targetZipOrTif = fullCachePath + "/" + tileName + "_dem.zip";
+                    downloadUrl = QString("https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/ASTGTM.003/ASTGTMV003_%1_dem.tif").arg(tileName);
+                    targetZipOrTif = expectedFile; // 即 [tileName].tif
                 }
 
                 emit updateProcess(10 + (lat - startLat) * 30 / (endLat - startLat + 1), QStringLiteral("正在下载 DEM 瓦片 %1……").arg(tileName));
                 
-                if (downloadTile(downloadUrl, targetZipOrTif))
+                int dlResult = downloadTile(downloadUrl, targetZipOrTif);
+                if (dlResult == 1)
                 {
                     // 如果是 zip，解压它
                     if (targetZipOrTif.endsWith(".zip"))
@@ -384,12 +473,33 @@ void DEMSourceWorker::fetch_dem(
                         DigitalElevationModel::unzip(targetZipOrTif.toLocal8Bit().constData(), fullCachePath.toLocal8Bit().constData());
                         // 下载完后清理临时压缩包
                         QFile::remove(targetZipOrTif);
+
+                        // 对于 ASTER GDEM，解压出来的文件通常是 ASTGTMV003_%1_dem.tif，将其重命名为 expectedFile (%1.tif)
+                        if (demSource == 3)
+                        {
+                            QString unzippedTif = fullCachePath + "/ASTGTMV003_" + tileName + "_dem.tif";
+                            if (QFile::exists(unzippedTif))
+                            {
+                                QFile::rename(unzippedTif, expectedFile);
+                            }
+                        }
                     }
                     
                     if (QFile::exists(expectedFile))
                     {
                         tileFound = true;
                     }
+                }
+                else if (dlResult == 0)
+                {
+                    // 404 未找到（例如海洋瓦片），直接跳过此瓦片且不终止程序
+                    InSARLogManager::LogInfo("DEMSourceWorker", QString("Tile %1 not found on server (likely ocean), skipping.").arg(tileName));
+                    continue;
+                }
+                else
+                {
+                    emit errorProcess(QStringLiteral("获取 DEM 瓦片 %1 时发生网络或身份验证错误。").arg(tileName));
+                    return;
                 }
             }
 

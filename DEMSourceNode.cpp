@@ -7,6 +7,8 @@
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include "FormatConversion.h"
+#include "EarthdataLoginDialog.h"
+#include <QSettings>
 #include <gdal_priv.h>
 
 static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt)
@@ -82,9 +84,6 @@ DEMSourceNode::DEMSourceNode()
     auto* iface = NodeUtils::getProjectContext(nullptr);
     if (iface) {
         m_cacheDir = NodeUtils::getGlobalDemPath(iface);
-    } else {
-        QString appDir = QCoreApplication::applicationDirPath();
-        m_cacheDir = QDir::toNativeSeparators(appDir + "/dem");
     }
 }
 
@@ -170,26 +169,6 @@ std::shared_ptr<NodeData> DEMSourceNode::outData(PortIndex port)
     } else {
         data = m_imageInfoData;
     }
-
-    if (data) {
-        qDebug() << "[DEMSourceNode] outData: port =" << port 
-                 << ", type =" << data->type().id 
-                 << ", summary =" << data->getSummary();
-        if (port == 0) {
-            auto fileData = std::dynamic_pointer_cast<ImportedFileData>(data);
-            if (fileData) {
-                qDebug() << "  -> File paths =" << fileData->filePaths() 
-                         << ", nodeName =" << fileData->nodeName();
-            }
-        } else {
-            auto imgData = std::dynamic_pointer_cast<ImageInfoData>(data);
-            if (imgData) {
-                qDebug() << "  -> File path =" << imgData->filePath();
-            }
-        }
-    } else {
-        qDebug() << "[DEMSourceNode] outData: port =" << port << "is null";
-    }
     return data;
 }
 
@@ -252,6 +231,20 @@ void DEMSourceNode::setExecutionMode(ExecutionMode mode)
 
 void DEMSourceNode::createWidget()
 {
+    // 动态确定默认缓存目录，避免使用运行目录下的 dem，统一使用工程路径下的 .dem_cache
+    if (m_cacheDir.isEmpty())
+    {
+        QString projPath = projectPath();
+        if (!projPath.isEmpty())
+        {
+            if (projPath.endsWith(".insar", Qt::CaseInsensitive))
+            {
+                projPath = QFileInfo(projPath).absolutePath();
+            }
+            m_cacheDir = QDir::toNativeSeparators(projPath + "/.dem_cache");
+        }
+    }
+
     _widget = new QWidget();
     _widget->setObjectName("NodeEmbeddedWidget");
     _widget->setFixedWidth(300);
@@ -297,6 +290,37 @@ void DEMSourceNode::createWidget()
     });
     sourceLayout->addWidget(m_demSourceCombo);
     layout->addLayout(sourceLayout);
+
+    // 账户状态与登录注销按钮
+    auto* loginLayout = new QHBoxLayout();
+    QLabel* loginLabel = new QLabel(QStringLiteral("账户状态"));
+    loginLabel->setFixedWidth(labelWidth);
+    loginLayout->addWidget(loginLabel);
+
+    m_loginStatusLabel = new QLabel();
+    m_loginBtn = new QPushButton(QStringLiteral("登录"));
+    m_loginBtn->setFixedWidth(50);
+    m_logoutBtn = new QPushButton(QStringLiteral("注销"));
+    m_logoutBtn->setFixedWidth(50);
+
+    loginLayout->addWidget(m_loginStatusLabel);
+    loginLayout->addWidget(m_loginBtn);
+    loginLayout->addWidget(m_logoutBtn);
+    layout->addLayout(loginLayout);
+
+    connect(m_demSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &DEMSourceNode::updateLoginStatus);
+    connect(m_loginBtn, &QPushButton::clicked, this, [this]() {
+        EarthdataLoginDialog dlg(nullptr);
+        if (dlg.exec() == QDialog::Accepted) {
+            updateLoginStatus();
+        }
+    });
+    connect(m_logoutBtn, &QPushButton::clicked, this, [this]() {
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        settings.remove("DEM/EarthdataUser");
+        settings.remove("DEM/EarthdataPassword");
+        updateLoginStatus();
+    });
 
     // 2. 目标分辨率模式
     auto* resLayout = new QHBoxLayout();
@@ -433,6 +457,7 @@ void DEMSourceNode::createWidget()
     // 初始化控件状态
     onResolutionModeChanged(m_resMode);
     updateCacheSizeLabel();
+    updateLoginStatus();
 }
 
 void DEMSourceNode::onResolutionModeChanged(int index)
@@ -495,6 +520,32 @@ bool DEMSourceNode::prepareToStart()
     m_preparedDstNode = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName.trimmed();
     m_preparedSource = m_demSourceCombo ? m_demSourceCombo->currentIndex() : m_demSource;
     m_preparedCacheDir = m_cacheDirEdit ? m_cacheDirEdit->text().trimmed() : m_cacheDir;
+
+    // 检查 NASA Earthdata 登录状态（如果选择的源非 Copernicus 且未登录）
+    if (m_preparedSource != 2)
+    {
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
+        QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
+        if (encryptedUser.isEmpty() || encryptedPass.isEmpty())
+        {
+            if (_isAutoTriggered)
+            {
+                InSARLogManager::LogError("DEMSourceNode", "NASA Earthdata login required but credentials are missing. Skip execution.");
+                return false;
+            }
+            else
+            {
+                QMessageBox::warning(nullptr, "Warning", QStringLiteral("所选 DEM 数据源需要 NASA Earthdata 账户登录，请先登录！"));
+                EarthdataLoginDialog dlg(nullptr);
+                if (dlg.exec() != QDialog::Accepted)
+                {
+                    return false;
+                }
+                updateLoginStatus();
+            }
+        }
+    }
 
     int resIdx = m_resolutionCombo ? m_resolutionCombo->currentIndex() : m_resMode;
     if (resIdx == 0) m_preparedResolution = 0.0;
@@ -632,7 +683,7 @@ void DEMSourceNode::onProcessingFinished()
     QString tifPath = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.tif";
     QString jpgPath = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.jpg";
 
-    qDebug() << "[DEMSourceNode] onProcessingFinished: h5Path =" << h5Path << ", tifPath =" << tifPath << ", jpgPath =" << jpgPath;
+
 
     m_outputData = std::make_shared<ImportedFileData>(tifPath, m_preparedDstNode);
     m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
@@ -668,7 +719,7 @@ bool DEMSourceNode::validateAndRestoreOutput()
     QString targetTif = savePath + "/" + name + "/" + name + "_dem.tif";
     QString targetJpg = savePath + "/" + name + "/" + name + "_dem.jpg";
 
-    qDebug() << "[DEMSourceNode] validateAndRestoreOutput: Checking targetH5 =" << targetH5;
+
 
     if (QFile::exists(targetH5)) {
         if (!QFile::exists(targetTif)) {
@@ -780,6 +831,46 @@ XMLFile* DEMSourceNode::projectXml() const
 {
     auto iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectXml() : nullptr;
+}
+
+void DEMSourceNode::updateLoginStatus()
+{
+    if (!m_demSourceCombo || !m_loginStatusLabel || !m_loginBtn || !m_logoutBtn)
+        return;
+
+    int demSource = m_demSourceCombo->currentIndex();
+    if (demSource == 2) // Copernicus DEM 不需要登录
+    {
+        m_loginStatusLabel->setText(QStringLiteral("无需登录"));
+        m_loginStatusLabel->setStyleSheet("color: gray;");
+        m_loginBtn->setEnabled(false);
+        m_logoutBtn->setEnabled(false);
+        m_loginBtn->hide();
+        m_logoutBtn->hide();
+    }
+    else
+    {
+        m_loginBtn->show();
+        m_loginBtn->setEnabled(true);
+        QSettings settings("Config.ini", QSettings::IniFormat);
+        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
+        if (encryptedUser.isEmpty())
+        {
+            m_loginStatusLabel->setText(QStringLiteral("未登录"));
+            m_loginStatusLabel->setStyleSheet("color: red;");
+            m_logoutBtn->setEnabled(false);
+            m_logoutBtn->hide();
+        }
+        else
+        {
+            QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
+            m_loginStatusLabel->setText(QStringLiteral("已保存(%1)").arg(username));
+            m_loginStatusLabel->setStyleSheet("color: green;");
+            m_logoutBtn->setEnabled(true);
+            m_logoutBtn->show();
+            m_loginBtn->hide();
+        }
+    }
 }
 
 } // namespace QtNodes

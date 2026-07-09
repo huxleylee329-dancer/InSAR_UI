@@ -67,6 +67,11 @@ private:
     QLabel* m_cacheSizeLabel;
     QLineEdit* m_outputNodeNameEdit;
 
+    // 登录相关控件
+    QLabel* m_loginStatusLabel;
+    QPushButton* m_loginBtn;
+    QPushButton* m_logoutBtn;
+
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
     std::shared_ptr<ImportedFileData> m_outputData;
@@ -97,6 +102,7 @@ private:
     // Helper methods
     void createWidget();
     void updateCacheSizeLabel();
+    void updateLoginStatus();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);

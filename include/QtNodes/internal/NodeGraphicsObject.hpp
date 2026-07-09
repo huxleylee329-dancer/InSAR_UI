@@ -41,6 +41,8 @@ public:
 
     QRectF boundingRect() const override;
 
+    QPainterPath shape() const override;
+
     void setGeometryChanged();
 
     /// Visits all attached connections and corrects

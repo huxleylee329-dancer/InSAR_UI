@@ -8,6 +8,9 @@
 #include <QVBoxLayout>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QGraphicsProxyWidget>
+#include <QGraphicsScene>
+#include <QtNodes/internal/BasicGraphicsScene.hpp>
 
 NoteNode::NoteNode()
     : m_textEdit(nullptr)
@@ -16,7 +19,7 @@ NoteNode::NoteNode()
 
 NoteNode::~NoteNode()
 {
-    // m_textEdit is owned by QtNodes via QGraphicsProxyWidget, don't delete
+    // m_textEdit 由 QtNodes 在销毁 QGraphicsProxyWidget 时接管，无需手动 delete
 }
 
 QWidget *NoteNode::embeddedWidget()
@@ -24,12 +27,14 @@ QWidget *NoteNode::embeddedWidget()
     if (!m_textEdit)
     {
         m_textEdit = new QTextEdit();
+        // 开启输入法支持
+        m_textEdit->setAttribute(Qt::WA_InputMethodEnabled, true);
         m_textEdit->setPlaceholderText("Add a note...");
         m_textEdit->setPlainText("New note");
         m_textEdit->setMinimumWidth(180);
         m_textEdit->setMinimumHeight(80);
 
-        // Connect to text changes to notify the node that data has changed
+        // 监听文本修改以通知场景数据已更新并触发保存
         connect(m_textEdit, &QTextEdit::textChanged, this, &NoteNode::onTextChanged);
     }
     return m_textEdit;
@@ -58,9 +63,6 @@ void NoteNode::load(QJsonObject const &json)
             m_textEdit->setPlainText(text);
         else
         {
-            // If widget not created yet, we have a problem because embeddedWidget() creates it.
-            // Usually load() is called after the model is registered and possibly instantiated.
-            // However, it's safer to ensure widget is created if needed, or store the text temporarily.
             embeddedWidget(); 
             if (m_textEdit) m_textEdit->setPlainText(text);
         }
@@ -69,6 +71,23 @@ void NoteNode::load(QJsonObject const &json)
 
 void NoteNode::onTextChanged()
 {
-    // Emit the model's dataUpdated signal to indicate that the node has been modified
+    // 发送数据更新信号以通知节点工程已修改，触发保存
     Q_EMIT dataUpdated(0);
+
+    // 获取所在的场景并手动触发 modified 信号以将项目标记为 dirty 状态，防止直接退出而不保存
+    if (!m_textEdit)
+        return;
+
+    auto *proxy = m_textEdit->graphicsProxyWidget();
+    if (!proxy)
+        return;
+
+    auto *qscene = proxy->scene();
+    if (!qscene)
+        return;
+
+    if (auto *bscene = dynamic_cast<QtNodes::BasicGraphicsScene*>(qscene))
+    {
+        Q_EMIT bscene->modified(bscene);
+    }
 }

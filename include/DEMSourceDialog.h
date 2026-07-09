@@ -45,6 +45,7 @@ private slots:
     void onBrowseCachePressed();
     void onClearCachePressed();
     void updateCacheSizeLabel();
+    void updateLoginStatus();
 
 private:
     QComboBox* m_projectCombo;
@@ -57,6 +58,12 @@ private:
     QPushButton* m_browseCacheBtn;
     QPushButton* m_clearCacheBtn;
     QLabel* m_cacheSizeLabel;
+
+    // 登录相关控件
+    QLabel* m_loginStatusLabel;
+    QPushButton* m_loginBtn;
+    QPushButton* m_logoutBtn;
+
     QPushButton* m_startBtn;
     QPushButton* m_cancelBtn;
     QProgressBar* m_progressBar;

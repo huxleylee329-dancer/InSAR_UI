@@ -104,6 +104,8 @@ protected:
 
     void showEvent(QShowEvent *event) override;
 
+    void focusInEvent(QFocusEvent *event) override;
+
 protected:
     BasicGraphicsScene *nodeScene();
 
