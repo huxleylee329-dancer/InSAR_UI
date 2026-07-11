@@ -4,6 +4,7 @@
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QSettings>
+#include "NodeUtils.h"
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
@@ -66,7 +67,7 @@ EarthdataLoginDialog::EarthdataLoginDialog(QWidget* parent)
     mainLayout->addLayout(btnLayout);
 
     // 从 Config.ini 加载已存用户名，方便用户重新输入密码
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
     if (!encryptedUser.isEmpty())
     {
@@ -253,7 +254,7 @@ void EarthdataLoginDialog::onCancelPressed()
 
 void EarthdataLoginDialog::saveCredentials(const QString& username, const QString& password)
 {
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     QString encryptedUser = QString::fromUtf8(username.toUtf8().toBase64());
     QString encryptedPass = QString::fromUtf8(password.toUtf8().toBase64());
     settings.setValue("DEM/EarthdataUser", encryptedUser);

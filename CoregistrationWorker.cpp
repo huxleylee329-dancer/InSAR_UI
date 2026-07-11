@@ -366,7 +366,6 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	if (!dir.exists(dstNode))
 		int ret = dir.mkdir(dstNode);
 
-	//外部DEM文件夹
     QString demPath = m_demPath;
     if (demPath.isEmpty()) {
         demPath = QDir::toNativeSeparators(savepath + "/.dem_cache");

@@ -7,18 +7,25 @@
 #include <QtWidgets/QHBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QPushButton>
+#include <QtWidgets/QFormLayout>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QTableWidget>
 #include <QtWidgets/QHeaderView>
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QRadioButton>
+#include <QTimer>
 #include "QtNodes/internal/NodeDataSnapshot.hpp"
 
 class ImageView;
+class QStackedWidget;
+class QButtonGroup;
+class QToolButton;
+class QFrame;
 
 namespace QtNodes {
 
+class ExecutableNodeDelegateModel;
 struct ParameterInfo;
 
 /// Detail window displaying 3-column view of node information
@@ -32,7 +39,7 @@ public:
     ~NodeDetailWindow() override = default;
 
     /// Load data into the detail window (static snapshot)
-    void loadData(const NodeDataSnapshot& snapshot);
+    void loadData(const NodeDataSnapshot& snapshot, ExecutableNodeDelegateModel* model = nullptr);
 
     // Update only the detection/SCR results table without full layout refresh
     void updateTableData(const NodeDataSnapshot& snapshot);
@@ -56,6 +63,7 @@ Q_SIGNALS:
 protected:
     void setupUI();
     QWidget* createTitleBar();
+    QWidget* createSidebar();
     QWidget* createInputSection();
     QWidget* createProcessingSection();
     QWidget* createOutputSection();
@@ -73,6 +81,16 @@ protected:
 
     // Section widgets
     QWidget* _titleBarWidget;
+    QWidget* _sidebarWidget = nullptr;
+    QStackedWidget* _stackedWidget = nullptr;
+    QWidget* _dataViewWidget = nullptr;
+    QWidget* _validationViewWidget = nullptr;
+    QWidget* _currentValidationWidget = nullptr;
+
+    QButtonGroup* _navGroup = nullptr;
+    QToolButton* _dataViewBtn = nullptr;
+    QToolButton* _validationBtn = nullptr;
+
     QWidget* _inputWidget;
     QWidget* _processingWidget;
     QWidget* _outputWidget;
@@ -122,6 +140,8 @@ protected:
     QLabel* _imageNameLabel = nullptr;
     QPushButton* _prevButton = nullptr;
     QPushButton* _nextButton = nullptr;
+
+    ExecutableNodeDelegateModel* _model = nullptr;
 
     void updatePreviewImage();
 
@@ -429,9 +449,94 @@ private:
     static constexpr int DETAIL_WINDOW_MIN_WIDTH = 1100;
     static constexpr int CONTENT_MAX_HEIGHT = 450;
 
+public:
     /// Theme detection
     static bool isDarkTheme(QWidget* parent);
     static QString getThemeStylesheet(QWidget* parent);
+};
+
+/// Common widget for parameter comparison in Validation view
+class NODE_EDITOR_PUBLIC ValidationComparisonTable : public QTableWidget
+{
+    Q_OBJECT
+public:
+    explicit ValidationComparisonTable(QWidget* parent = nullptr);
+    ~ValidationComparisonTable() override = default;
+
+    /// Clean table rows
+    void clearComparison();
+
+    /// Add a comparison row
+    /// @param name Parameter name
+    /// @param expected Expected value (e.g. parameter setting)
+    /// @param actual Actual value (e.g. extracted from H5)
+    void addComparison(const QString& name, const QString& expected, const QString& actual);
+    
+private:
+    void applyThemeStyle();
+};
+
+/// Overlay widget for async calculation wait state
+class NODE_EDITOR_PUBLIC ValidationLoadingOverlay : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit ValidationLoadingOverlay(QWidget* parent);
+    ~ValidationLoadingOverlay() override = default;
+
+    void startLoading(const QString& message = QObject::tr("正在计算特征值，请稍候..."), int timeoutMs = 30000);
+    void stopLoading();
+    void showTimeoutError(const QString& message = QObject::tr("计算超时，请重试。"));
+
+signals:
+    void retryRequested();
+    void timeoutOccurred();
+
+private slots:
+    void onTimeout();
+
+protected:
+    void resizeEvent(QResizeEvent* event) override;
+
+private:
+    QLabel* _messageLabel = nullptr;
+    QPushButton* _retryButton = nullptr;
+    QTimer* _timeoutTimer = nullptr;
+};
+
+/// Abstract base validation widget to avoid code duplication
+class NODE_EDITOR_PUBLIC BaseValidationWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit BaseValidationWidget(ExecutableNodeDelegateModel* node, QWidget* parent = nullptr);
+    ~BaseValidationWidget() override = default;
+
+protected:
+    void setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText);
+    
+    virtual void startAsyncValidation() = 0;
+    
+    // UI Helpers
+    QLabel* createFeatureLabel();
+    QLabel* createHeaderLabel(const QString& text);
+
+protected slots:
+    virtual void onTimeout();
+
+protected:
+    ExecutableNodeDelegateModel* m_baseNode = nullptr;
+    QFrame* m_statusCard = nullptr;
+    QLabel* m_statusTitle = nullptr;
+    QLabel* m_statusDesc = nullptr;
+    
+    ValidationComparisonTable* m_compTable = nullptr;
+    QFrame* m_featureCard = nullptr;
+    QFormLayout* m_featureLayout = nullptr;
+    
+    ValidationLoadingOverlay* m_loadingOverlay = nullptr;
+    
+    bool m_isTimedOut = false;
 };
 
 } // namespace QtNodes

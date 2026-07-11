@@ -2,6 +2,7 @@
 #include <qfiledialog.h>
 #include<qmessagebox.h>
 #include<qsettings.h>
+#include "NodeUtils.h"
 #include"qregularexpression.h"
 #include<opencv2/opencv.hpp>
 #include<opencv2/highgui.hpp>
@@ -47,7 +48,7 @@ void NewProject::on_savepushButton_pressed()
 }
 void NewProject::saveProjectSettings()
 {
-    QSettings settings(QString("Config.ini").arg(ui->savelineEdit->text()), QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     settings.beginGroup("Project");
     settings.setValue("projectname", ui->NamelineEdit->text());
     settings.setValue("SavePath", ui->savelineEdit->text());
@@ -56,7 +57,7 @@ void NewProject::saveProjectSettings()
 
 void NewProject::saveSystemSettings()
 {
-    QSettings *settings=new QSettings("Config.ini", QSettings::IniFormat);
+    QSettings *settings=new QSettings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     settings->beginGroup("Project");
     settings->setValue("SavePath", ui->savelineEdit->text());
     settings->endGroup();

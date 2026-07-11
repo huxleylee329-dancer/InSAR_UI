@@ -20,7 +20,43 @@
 #include "ImportTask.h"
 #include <opencv2/core.hpp>
 #include <QLoggingCategory>
+#include <windows.h>
+#include <stdio.h>
+#include <iostream>
+#include "NodeUtils.h"
 
+/**
+ * @brief 初始化调试控制台并重定向标准输出/标准错误
+ * 移除了控制台的关闭按钮以防止误操作导致整个主程序闪退
+ */
+static void setupDebugConsole()
+{
+    if (AllocConsole()) {
+        FILE* fpOut = nullptr;
+        FILE* fpErr = nullptr;
+        freopen_s(&fpOut, "CONOUT$", "w", stdout);
+        freopen_s(&fpErr, "CONOUT$", "w", stderr);
+        
+        // 关闭输出缓冲区，确保实时输出
+        setvbuf(stdout, NULL, _IONBF, 0);
+        setvbuf(stderr, NULL, _IONBF, 0);
+        
+        // 同步 C++ 标准流（std::cout, std::cerr）
+        std::ios::sync_with_stdio();
+        
+        // 禁用控制台窗口的关闭按钮（X），防止误点导致进程终止
+        HWND hwnd = GetConsoleWindow();
+        if (hwnd != NULL) {
+            HMENU hMenu = GetSystemMenu(hwnd, FALSE);
+            if (hMenu != NULL) {
+                DeleteMenu(hMenu, SC_CLOSE, MF_BYCOMMAND);
+            }
+        }
+        
+        // 设置控制台标题
+        SetConsoleTitleA("SatExplorer Debug Console");
+    }
+}
 
 // Global function to load QSS from file
 QString loadStyleSheet(const QString &fileName)
@@ -87,11 +123,17 @@ int main(int argc, char *argv[])
 
 
     // Load theme preference from Config.ini
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     QString theme = settings.value("Appearance/Theme", "light").toString();
 
     // Apply default theme
     applyTheme(theme);
+
+    // 根据配置决定是否开启全局调试控制台
+    bool showConsole = settings.value("Debug/ShowConsole", false).toBool();
+    if (showConsole) {
+        setupDebugConsole();
+    }
 
     QPixmap* k = new QPixmap(QString(CURSOR_UP_ICON));
 

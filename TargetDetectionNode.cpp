@@ -1,6 +1,7 @@
 #include "InSARLogManager.h"
 
 #include "TargetDetectionNode.h"
+#include "NodeUtils.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileInfo>
@@ -152,7 +153,7 @@ void TargetDetectionNode::createWidget()
     auto* modelLayout = new QHBoxLayout();
     modelLayout->addWidget(new QLabel(QStringLiteral("模型选择：")));
     m_modelComboBox = new QComboBox();
-    m_modelComboBox->addItem("SAR Ship Model 0429", QDir::currentPath() + "/sar_ship_model0429.onnx");
+    m_modelComboBox->addItem("SAR Ship Model 0429", NodeUtils::getModelPath("sar_ship_model0429.onnx"));
     m_selectedModelPath = m_modelComboBox->currentData().toString();
     // Helper to invalidate node state when parameters change
     auto invalidateNodeData = [this]() {

@@ -13,6 +13,7 @@
 #include <QFile>
 #include <QAbstractItemView>
 #include <QHeaderView>
+#include "NodeUtils.h"
 
 
 
@@ -36,7 +37,7 @@ BatchTargetRecognition::BatchTargetRecognition(QWidget* parent)
 
     ui->modelComboBox->addItem(
         "SAR Ship Model 0429",
-        QDir::currentPath() + "/sar_ship_model0429.onnx"
+        NodeUtils::getModelPath("sar_ship_model0429.onnx")
     );
 
 

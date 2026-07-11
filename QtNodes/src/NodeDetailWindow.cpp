@@ -1,9 +1,13 @@
 #include "QtNodes/internal/NodeDetailWindow.hpp"
+#include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QFormLayout>
 #include <QRadioButton>
+#include <QStackedWidget>
+#include <QToolButton>
 #include <QButtonGroup>
 #include <QScrollArea>
 #include <QFrame>
@@ -29,6 +33,14 @@ NodeDetailWindow::NodeDetailWindow(QWidget* parent)
     , _titleText(nullptr)
     , _titleState(nullptr)
     , _titleBarWidget(nullptr)
+    , _sidebarWidget(nullptr)
+    , _stackedWidget(nullptr)
+    , _dataViewWidget(nullptr)
+    , _validationViewWidget(nullptr)
+    , _currentValidationWidget(nullptr)
+    , _navGroup(nullptr)
+    , _dataViewBtn(nullptr)
+    , _validationBtn(nullptr)
     , _inputWidget(nullptr)
     , _processingWidget(nullptr)
     , _outputWidget(nullptr)
@@ -60,12 +72,24 @@ void NodeDetailWindow::setupUI()
     _titleBarWidget = createTitleBar();
     mainLayout->addWidget(_titleBarWidget);
 
-    // Content area with 3 columns
-    auto* contentLayout = new QHBoxLayout();
+    // Center area (Sidebar + StackedWidget)
+    auto* centerLayout = new QHBoxLayout();
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->setSpacing(0);
+
+    // 1. Sidebar on the left
+    _sidebarWidget = createSidebar();
+    centerLayout->addWidget(_sidebarWidget);
+
+    // 2. Stacked widget on the right
+    _stackedWidget = new QStackedWidget(this);
+    
+    // Page 0: Data View Widget
+    _dataViewWidget = new QWidget(this);
+    auto* contentLayout = new QHBoxLayout(_dataViewWidget);
     contentLayout->setSpacing(10);
     contentLayout->setContentsMargins(12, 12, 12, 12);
 
-    // Create three sections with separators
     _inputWidget = createInputSection();
     contentLayout->addWidget(_inputWidget);
 
@@ -81,7 +105,17 @@ void NodeDetailWindow::setupUI()
     _outputWidget = createOutputSection();
     contentLayout->addWidget(_outputWidget);
 
-    mainLayout->addLayout(contentLayout);
+    _stackedWidget->addWidget(_dataViewWidget);
+
+    // Page 1: Validation View Widget
+    _validationViewWidget = new QWidget(this);
+    auto* validationLayout = new QVBoxLayout(_validationViewWidget);
+    validationLayout->setContentsMargins(12, 12, 12, 12);
+    validationLayout->setSpacing(10);
+    _stackedWidget->addWidget(_validationViewWidget);
+
+    centerLayout->addWidget(_stackedWidget, 1);
+    mainLayout->addLayout(centerLayout, 1);
 
     // Footer
     _footerWidget = createFooter();
@@ -161,6 +195,108 @@ QWidget* NodeDetailWindow::createTitleBar()
     layout->addWidget(_titleCloseButton);
 
     return titleBar;
+}
+
+QWidget* NodeDetailWindow::createSidebar()
+{
+    bool isDark = isDarkTheme(this);
+    
+    QFrame* sidebar = new QFrame();
+    sidebar->setObjectName("Sidebar");
+    sidebar->setFixedWidth(54); // sidebar width
+    
+    QString sidebarStyle = isDark ? 
+        "QFrame#Sidebar { background-color: #111827; border-right: 1px solid #1F2937; }" :
+        "QFrame#Sidebar { background-color: #F3F4F6; border-right: 1px solid #D1D5DB; }";
+    sidebar->setStyleSheet(sidebarStyle);
+
+    QVBoxLayout* layout = new QVBoxLayout(sidebar);
+    layout->setContentsMargins(0, 16, 0, 0);
+    layout->setSpacing(12);
+    layout->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+
+    // 1. Data view button
+    _dataViewBtn = new QToolButton();
+    _dataViewBtn->setCheckable(true);
+    _dataViewBtn->setChecked(true);
+    _dataViewBtn->setText(QObject::tr("数据"));
+    _dataViewBtn->setToolTip(QObject::tr("查看输入输出数据"));
+    _dataViewBtn->setFixedSize(42, 42);
+    _dataViewBtn->setCursor(Qt::PointingHandCursor);
+
+    // 2. Validation view button
+    _validationBtn = new QToolButton();
+    _validationBtn->setCheckable(true);
+    _validationBtn->setText(QObject::tr("验证"));
+    _validationBtn->setToolTip(QObject::tr("数据正确性验证"));
+    _validationBtn->setFixedSize(42, 42);
+    _validationBtn->setCursor(Qt::PointingHandCursor);
+
+    // Button style sheets (sleek modern design)
+    QString btnStyle = isDark ?
+        "QToolButton {"
+        "  color: #9CA3AF;"
+        "  background-color: transparent;"
+        "  border: none;"
+        "  border-radius: 4px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+        "QToolButton:hover {"
+        "  color: #F3F4F6;"
+        "  background-color: #1F2937;"
+        "}"
+        "QToolButton:checked {"
+        "  color: #60A5FA;"
+        "  background-color: #1F2937;"
+        "  font-weight: 600;"
+        "}"
+        "QToolButton:disabled {"
+        "  color: #4B5563;"
+        "  background-color: transparent;"
+        "}" :
+        "QToolButton {"
+        "  color: #4B5563;"
+        "  background-color: transparent;"
+        "  border: none;"
+        "  border-radius: 4px;"
+        "  font-size: 11px;"
+        "  font-weight: 500;"
+        "}"
+        "QToolButton:hover {"
+        "  color: #111827;"
+        "  background-color: #E5E7EB;"
+        "}"
+        "QToolButton:checked {"
+        "  color: #2563EB;"
+        "  background-color: #E5E7EB;"
+        "  font-weight: 600;"
+        "}"
+        "QToolButton:disabled {"
+        "  color: #D1D5DB;"
+        "  background-color: transparent;"
+        "}";
+    
+    _dataViewBtn->setStyleSheet(btnStyle);
+    _validationBtn->setStyleSheet(btnStyle);
+
+    // Group the buttons to ensure exclusive selection
+    _navGroup = new QButtonGroup(this);
+    _navGroup->addButton(_dataViewBtn, 0);
+    _navGroup->addButton(_validationBtn, 1);
+    _navGroup->setExclusive(true);
+
+    layout->addWidget(_dataViewBtn);
+    layout->addWidget(_validationBtn);
+
+    // Connect page switching
+    connect(_navGroup, QOverload<int>::of(&QButtonGroup::buttonClicked), this, [this](int id) {
+        if (_stackedWidget) {
+            _stackedWidget->setCurrentIndex(id);
+        }
+    });
+
+    return sidebar;
 }
 
 QWidget* NodeDetailWindow::createFooter()
@@ -626,7 +762,7 @@ void NodeDetailWindow::renderParameterCard(QVBoxLayout* layout, const ParameterI
     layout->addWidget(card);
 }
 
-void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
+void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot, ExecutableNodeDelegateModel* model)
 {
     bool isDark = isDarkTheme(this);
 
@@ -1074,6 +1210,59 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot)
     }
     _outputLayout->addStretch(1);
 
+    // Store model pointer and manage executionStateChanged signal
+    if (_model) {
+        disconnect(_model, &ExecutableNodeDelegateModel::executionStateChanged, this, nullptr);
+    }
+    _model = model;
+    if (_model) {
+        connect(_model, &ExecutableNodeDelegateModel::executionStateChanged, this, [this]() {
+            if (_model && _validationBtn) {
+                bool isRunning = (_model->executionState() == ExecutionState::Running);
+                _validationBtn->setDisabled(isRunning);
+                if (isRunning && _stackedWidget && _stackedWidget->currentIndex() == 1) {
+                    _stackedWidget->setCurrentIndex(0);
+                    if (_dataViewBtn) {
+                        _dataViewBtn->setChecked(true);
+                    }
+                }
+            }
+        });
+    }
+
+    // ===== VALIDATION SECTION =====
+    if (model && model->supportsValidation()) {
+        if (_validationBtn) {
+            bool isRunning = (model->executionState() == ExecutionState::Running);
+            _validationBtn->setEnabled(!isRunning);
+            _validationBtn->setVisible(true);
+        }
+        if (_validationViewWidget) {
+            // Clean up old validation widget if any
+            if (_currentValidationWidget) {
+                _validationViewWidget->layout()->removeWidget(_currentValidationWidget);
+                _currentValidationWidget->deleteLater();
+                _currentValidationWidget = nullptr;
+            }
+            // Create and add new validation widget
+            _currentValidationWidget = model->createValidationWidget(_validationViewWidget);
+            if (_currentValidationWidget) {
+                _validationViewWidget->layout()->addWidget(_currentValidationWidget);
+            }
+        }
+    } else {
+        if (_validationBtn) {
+            _validationBtn->setEnabled(false);
+            _validationBtn->setVisible(false);
+        }
+        // Force switch back to Data view page if validation view is selected but not supported
+        if (_stackedWidget && _stackedWidget->currentIndex() == 1) {
+            _stackedWidget->setCurrentIndex(0);
+            if (_dataViewBtn) {
+                _dataViewBtn->setChecked(true);
+            }
+        }
+    }
 }
 
 void NodeDetailWindow::updateTableData(const NodeDataSnapshot& snapshot)
@@ -1125,6 +1314,14 @@ void NodeDetailWindow::updateTableData(const NodeDataSnapshot& snapshot)
 
 void NodeDetailWindow::clearData()
 {
+    if (_currentValidationWidget) {
+        if (_validationViewWidget && _validationViewWidget->layout()) {
+            _validationViewWidget->layout()->removeWidget(_currentValidationWidget);
+        }
+        _currentValidationWidget->deleteLater();
+        _currentValidationWidget = nullptr;
+    }
+
     std::function<void(QLayout*)> clearLayout = [&](QLayout* layout) {
         if (!layout) return;
         while (QLayoutItem* item = layout->takeAt(0)) {
@@ -1484,6 +1681,351 @@ void NodeDetailWindow::onClutterRoiCleared()
         _moveModeBtn->setChecked(true);
     }
     emit clutterRoiCleared();
+}
+
+// ==========================================
+// ValidationComparisonTable Implementation
+// ==========================================
+
+ValidationComparisonTable::ValidationComparisonTable(QWidget* parent)
+    : QTableWidget(parent)
+{
+    setColumnCount(4);
+    QStringList headers;
+    headers << QObject::tr("参数项") << QObject::tr("设置值") << QObject::tr("实际值") << QObject::tr("对比结论");
+    setHorizontalHeaderLabels(headers);
+    
+    setEditTriggers(QAbstractItemView::NoEditTriggers);
+    setSelectionBehavior(QAbstractItemView::SelectRows);
+    setSelectionMode(QAbstractItemView::NoSelection);
+    
+    horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    horizontalHeader()->setHighlightSections(false);
+    verticalHeader()->setVisible(false);
+    
+    applyThemeStyle();
+}
+
+void ValidationComparisonTable::clearComparison()
+{
+    setRowCount(0);
+}
+
+void ValidationComparisonTable::addComparison(const QString& name, const QString& expected, const QString& actual)
+{
+    int row = rowCount();
+    insertRow(row);
+    
+    auto* item0 = new QTableWidgetItem(name);
+    auto* item1 = new QTableWidgetItem(expected);
+    auto* item2 = new QTableWidgetItem(actual);
+    
+    // Determine matching
+    bool isMatch = false;
+    QString expTrim = expected.trimmed();
+    QString actTrim = actual.trimmed();
+    if (expTrim == actTrim) {
+        isMatch = true;
+    } else {
+        // Try numerical comparison
+        bool ok1, ok2;
+        double val1 = expTrim.toDouble(&ok1);
+        double val2 = actTrim.toDouble(&ok2);
+        if (ok1 && ok2 && std::abs(val1 - val2) < 1e-4) {
+            isMatch = true;
+        }
+    }
+    
+    QTableWidgetItem* item3 = nullptr;
+    bool isDark = NodeDetailWindow::isDarkTheme(this);
+    if (isMatch) {
+        item3 = new QTableWidgetItem(QObject::tr("一致"));
+        item3->setForeground(QBrush(QColor(isDark ? "#34D399" : "#10B981"))); // Green
+    } else {
+        item3 = new QTableWidgetItem(QObject::tr("不一致"));
+        item3->setForeground(QBrush(QColor(isDark ? "#F87171" : "#EF4444"))); // Red
+    }
+    
+    // Stylize cells
+    QString textColor = isDark ? "#D1D5DB" : "#374151";
+    QBrush textBrush = QColor(textColor);
+    item0->setForeground(textBrush);
+    item1->setForeground(textBrush);
+    item2->setForeground(textBrush);
+    
+    setItem(row, 0, item0);
+    setItem(row, 1, item1);
+    setItem(row, 2, item2);
+    setItem(row, 3, item3);
+}
+
+void ValidationComparisonTable::applyThemeStyle()
+{
+    bool isDark = NodeDetailWindow::isDarkTheme(this);
+    
+    // Modern elegant borderless header and rows style
+    QString style = isDark ?
+        "QTableWidget {"
+        "  background-color: #1F2937;"
+        "  alternate-background-color: #374151;"
+        "  border: 1px solid #374151;"
+        "  border-radius: 4px;"
+        "  gridline-color: #374151;"
+        "}"
+        "QHeaderView::section {"
+        "  background-color: #111827;"
+        "  color: #9CA3AF;"
+        "  padding: 6px;"
+        "  border: none;"
+        "  border-bottom: 1px solid #374151;"
+        "  font-weight: bold;"
+        "  font-size: 11px;"
+        "}" :
+        "QTableWidget {"
+        "  background-color: #FFFFFF;"
+        "  alternate-background-color: #F9FAFB;"
+        "  border: 1px solid #E5E7EB;"
+        "  border-radius: 4px;"
+        "  gridline-color: #E5E7EB;"
+        "}"
+        "QHeaderView::section {"
+        "  background-color: #F3F4F6;"
+        "  color: #4B5563;"
+        "  padding: 6px;"
+        "  border: none;"
+        "  border-bottom: 1px solid #E5E7EB;"
+        "  font-weight: bold;"
+        "  font-size: 11px;"
+        "}";
+        
+    setStyleSheet(style);
+    setAlternatingRowColors(true);
+}
+
+// ==========================================
+// ValidationLoadingOverlay Implementation
+// ==========================================
+
+ValidationLoadingOverlay::ValidationLoadingOverlay(QWidget* parent)
+    : QWidget(parent)
+{
+    hide();
+    
+    // Background overlay container (transparent/semi-transparent black)
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(12);
+    layout->setAlignment(Qt::AlignCenter);
+    
+    _messageLabel = new QLabel(this);
+    _messageLabel->setAlignment(Qt::AlignCenter);
+    _messageLabel->setWordWrap(true);
+    layout->addWidget(_messageLabel);
+
+    _retryButton = new QPushButton(QObject::tr("重试"), this);
+    _retryButton->setFixedSize(80, 28);
+    _retryButton->hide();
+    layout->addWidget(_retryButton);
+
+    connect(_retryButton, &QPushButton::clicked, this, [this]() {
+        _retryButton->hide();
+        emit retryRequested();
+    });
+
+    _timeoutTimer = new QTimer(this);
+    _timeoutTimer->setSingleShot(true);
+    connect(_timeoutTimer, &QTimer::timeout, this, &ValidationLoadingOverlay::onTimeout);
+}
+
+void ValidationLoadingOverlay::startLoading(const QString& message, int timeoutMs)
+{
+    bool isDark = NodeDetailWindow::isDarkTheme(parentWidget());
+    
+    // Background overlay with dark tint and white/gray text
+    QString overlayBg = isDark ? "rgba(17, 24, 39, 0.75)" : "rgba(255, 255, 255, 0.75)";
+    QString textColor = isDark ? "#60A5FA" : "#2563EB"; // Blue text
+    
+    setStyleSheet(QString(
+        "QWidget {"
+        "  background-color: %1;"
+        "}"
+        "QLabel {"
+        "  color: %2;"
+        "  background-color: transparent;"
+        "  font-size: 13px;"
+        "  font-weight: 600;"
+        "}"
+        "QPushButton {"
+        "  background-color: %3;"
+        "  color: white;"
+        "  border: none;"
+        "  border-radius: 4px;"
+        "  font-weight: bold;"
+        "}"
+        "QPushButton:hover {"
+        "  background-color: %4;"
+        "}"
+    ).arg(overlayBg)
+     .arg(textColor)
+     .arg(isDark ? "#2563EB" : "#3B82F6")
+     .arg(isDark ? "#1D4ED8" : "#2563EB"));
+    
+    _messageLabel->setText(message);
+    _retryButton->hide();
+    
+    // Start timeout timer
+    _timeoutTimer->stop();
+    if (timeoutMs > 0) {
+        _timeoutTimer->start(timeoutMs);
+    }
+    
+    // Resize to parent immediately
+    if (parentWidget()) {
+        setGeometry(parentWidget()->rect());
+    }
+    
+    show();
+    raise();
+}
+
+void ValidationLoadingOverlay::stopLoading()
+{
+    _timeoutTimer->stop();
+    _retryButton->hide();
+    hide();
+}
+
+void ValidationLoadingOverlay::showTimeoutError(const QString& message)
+{
+    _timeoutTimer->stop();
+    _messageLabel->setText(message);
+    _messageLabel->setStyleSheet("color: #EF4444; font-size: 13px; font-weight: 600; background-color: transparent;");
+    _retryButton->show();
+    show();
+    raise();
+}
+
+void ValidationLoadingOverlay::onTimeout()
+{
+    showTimeoutError(QObject::tr("计算超时，后台处理时间过长或发生挂起。请检查工程数据后重试。"));
+    emit timeoutOccurred();
+}
+
+void ValidationLoadingOverlay::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    if (parentWidget()) {
+        setGeometry(parentWidget()->rect());
+    }
+}
+
+// ==========================================
+// BaseValidationWidget Implementation
+// ==========================================
+
+BaseValidationWidget::BaseValidationWidget(ExecutableNodeDelegateModel* node, QWidget* parent)
+    : QWidget(parent)
+    , m_baseNode(node)
+{
+}
+
+void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText)
+{
+    bool isDark = NodeDetailWindow::isDarkTheme(this);
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+    mainLayout->setContentsMargins(12, 12, 12, 12);
+    mainLayout->setSpacing(12);
+
+    // 1. Status overview card
+    m_statusCard = new QFrame(this);
+    m_statusCard->setFrameShape(QFrame::StyledPanel);
+    m_statusCard->setStyleSheet(isDark ?
+        "QFrame { background-color: rgba(55, 65, 81, 0.4); border: 1px solid #374151; border-radius: 6px; padding: 12px; }" :
+        "QFrame { background-color: rgba(243, 244, 246, 0.6); border: 1px solid #E5E7EB; border-radius: 6px; padding: 12px; }");
+
+    QVBoxLayout* cardLayout = new QVBoxLayout(m_statusCard);
+    cardLayout->setContentsMargins(0, 0, 0, 0);
+    cardLayout->setSpacing(4);
+
+    m_statusTitle = new QLabel(initialTitle, m_statusCard);
+    m_statusTitle->setStyleSheet(QString("font-size: 14px; font-weight: bold; color: %1;").arg(isDark ? "#60A5FA" : "#2563EB"));
+    m_statusDesc = new QLabel(initialDesc, m_statusCard);
+    m_statusDesc->setStyleSheet(QString("font-size: 11px; color: %1;").arg(isDark ? "#9CA3AF" : "#6B7280"));
+
+    cardLayout->addWidget(m_statusTitle);
+    cardLayout->addWidget(m_statusDesc);
+    mainLayout->addWidget(m_statusCard);
+
+    // 2. Main content area (Split into Comparison Table & Feature Calculation)
+    QHBoxLayout* contentLayout = new QHBoxLayout();
+    contentLayout->setSpacing(12);
+
+    // Left column: Parameter comparison table
+    QVBoxLayout* leftLayout = new QVBoxLayout();
+    leftLayout->setSpacing(6);
+    QLabel* tableTitle = new QLabel(QObject::tr("物理参数比对"), this);
+    tableTitle->setStyleSheet(QString("font-size: 12px; font-weight: bold; color: %1;").arg(isDark ? "#F3F4F6" : "#1F2937"));
+    leftLayout->addWidget(tableTitle);
+
+    m_compTable = new ValidationComparisonTable(this);
+    leftLayout->addWidget(m_compTable, 1);
+    contentLayout->addLayout(leftLayout, 1);
+
+    // Right column: Feature analysis panel
+    QVBoxLayout* rightLayout = new QVBoxLayout();
+    rightLayout->setSpacing(6);
+    QLabel* fTitle = new QLabel(featureTitleText, this);
+    fTitle->setStyleSheet(QString("font-size: 12px; font-weight: bold; color: %1;").arg(isDark ? "#F3F4F6" : "#1F2937"));
+    rightLayout->addWidget(fTitle);
+
+    m_featureCard = new QFrame(this);
+    m_featureCard->setStyleSheet(isDark ?
+        "QFrame { background-color: #1F2937; border: 1px solid #374151; border-radius: 4px; padding: 12px; }" :
+        "QFrame { background-color: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 4px; padding: 12px; }");
+    
+    m_featureLayout = new QFormLayout(m_featureCard);
+    m_featureLayout->setContentsMargins(8, 8, 8, 8);
+    m_featureLayout->setSpacing(10);
+    m_featureLayout->setLabelAlignment(Qt::AlignRight);
+
+    rightLayout->addWidget(m_featureCard, 1);
+    contentLayout->addLayout(rightLayout, 1);
+
+    mainLayout->addLayout(contentLayout, 1);
+
+    // 3. Loading Overlay
+    m_loadingOverlay = new ValidationLoadingOverlay(this);
+    
+    connect(m_loadingOverlay, &ValidationLoadingOverlay::retryRequested, this, [this]() {
+        m_isTimedOut = false;
+        startAsyncValidation();
+    });
+    
+    connect(m_loadingOverlay, &ValidationLoadingOverlay::timeoutOccurred, this, &BaseValidationWidget::onTimeout);
+}
+
+QLabel* BaseValidationWidget::createFeatureLabel()
+{
+    bool isDark = NodeDetailWindow::isDarkTheme(this);
+    QLabel* lbl = new QLabel(QObject::tr("正在计算..."), m_featureCard);
+    lbl->setStyleSheet(QString("font-weight: 600; color: %1;").arg(isDark ? "#F3F4F6" : "#111827"));
+    return lbl;
+}
+
+QLabel* BaseValidationWidget::createHeaderLabel(const QString& text)
+{
+    bool isDark = NodeDetailWindow::isDarkTheme(this);
+    QLabel* lbl = new QLabel(text);
+    lbl->setStyleSheet(QString("color: %1; font-weight: 500;").arg(isDark ? "#9CA3AF" : "#4B5563"));
+    return lbl;
+}
+
+void BaseValidationWidget::onTimeout()
+{
+    m_isTimedOut = true;
+    m_statusTitle->setText(QObject::tr("验证超时"));
+    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+    m_statusDesc->setText(QObject::tr("验证计算超时，后台未响应。可能发生进程挂起或文件过大。"));
 }
 
 } // namespace QtNodes

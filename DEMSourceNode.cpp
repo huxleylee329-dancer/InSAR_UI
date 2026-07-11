@@ -316,7 +316,7 @@ void DEMSourceNode::createWidget()
         }
     });
     connect(m_logoutBtn, &QPushButton::clicked, this, [this]() {
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         settings.remove("DEM/EarthdataUser");
         settings.remove("DEM/EarthdataPassword");
         updateLoginStatus();
@@ -524,7 +524,7 @@ bool DEMSourceNode::prepareToStart()
     // 检查 NASA Earthdata 登录状态（如果选择的源非 Copernicus 且未登录）
     if (m_preparedSource != 2)
     {
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
         QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
         if (encryptedUser.isEmpty() || encryptedPass.isEmpty())
@@ -852,7 +852,7 @@ void DEMSourceNode::updateLoginStatus()
     {
         m_loginBtn->show();
         m_loginBtn->setEnabled(true);
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
         if (encryptedUser.isEmpty())
         {

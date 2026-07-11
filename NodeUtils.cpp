@@ -1045,4 +1045,20 @@ bool setGlobalDemPath(IApplicationInterface* iface, const QString& path, bool as
     return true;
 }
 
+QString getConfigPath()
+{
+    return QCoreApplication::applicationDirPath() + "/Config.ini";
+}
+
+QString getModelPath(const QString& modelName)
+{
+    // 优先尝试从可执行文件同级目录 (bin/) 查找
+    QString binPath = QCoreApplication::applicationDirPath() + "/" + modelName;
+    if (QFileInfo::exists(binPath)) {
+        return binPath;
+    }
+    // 调试回退：如果 bin/ 里没有，从当前工作目录查找
+    return QDir::currentPath() + "/" + modelName;
+}
+
 } // namespace NodeUtils

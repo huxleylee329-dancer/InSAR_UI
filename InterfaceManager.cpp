@@ -3,6 +3,7 @@
 #include <FormatConversion.h>
 #include "tinyxml.h"
 #include <QSettings>
+#include "NodeUtils.h"
 #include <QToolBar>
 #include <QMainWindow>
 #include <QAction>
@@ -88,7 +89,7 @@ QString InterfaceManager::currentInterfaceId() const
 
 QString InterfaceManager::loadDefaultInterface() const
 {
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     return settings.value("Interface/Default", "").toString();
 }
 
@@ -97,7 +98,7 @@ void InterfaceManager::saveDefaultInterface(const QString &interfaceId) const
     // Do not save "welcome" as default interface
     if (interfaceId == "welcome") return;
 
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     settings.setValue("Interface/Default", interfaceId);
 }
 

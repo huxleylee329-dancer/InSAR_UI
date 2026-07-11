@@ -3,6 +3,7 @@
 #include"ImportTask.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
+#include "NodeUtils.h"
 #include<opencv2/highgui.hpp>
 #include<qmessagebox.h>
 Import_TSX::Import_TSX(QWidget* parent) :
@@ -22,7 +23,7 @@ Import_TSX::Import_TSX(QWidget* parent) :
     ui->comboBox_pol->addItem(QString("VV"));
     ui->comboBox_pol2->addItem(QString("HH"));
     ui->comboBox_pol2->addItem(QString("VV"));
-    QSettings settings(QString("Config.ini"), QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     settings.beginGroup("TSX");
     this->xml_path = settings.value("xml_Path").toString();
     settings.endGroup();
@@ -232,7 +233,7 @@ void Import_TSX::on_button_xml_browse_pressed()
 void Import_TSX::saveSystemSettings()
 {
     int count = 0;
-    QSettings settings(QString("Config.ini"), QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     settings.beginGroup("TSX");
      settings.setValue("xml_Path", ui->LineEdit_xml->text());
     settings.endGroup();

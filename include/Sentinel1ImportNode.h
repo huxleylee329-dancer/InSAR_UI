@@ -30,12 +30,14 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    bool supportsValidation() const override { return true; }
+    ::QWidget* createValidationWidget(::QWidget* parent) override;
+    QStringList getExpectedOutputFilePaths() const override;
 
 protected:
     // ImportNodeBase interface
     QWidget* createWidget() override;
     void executeImport() override;
-    QStringList getExpectedOutputFilePaths() const override;
     QString getOutputNodeName() const override;
 
     // Helper methods

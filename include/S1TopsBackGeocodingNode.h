@@ -12,6 +12,8 @@
 #include <QComboBox>
 #include <QLineEdit>
 #include <QCheckBox>
+#include <QPushButton>
+#include <QFileDialog>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QThread>
@@ -61,11 +63,17 @@ private:
     QCheckBox* m_esdCheckBox;
     QLineEdit* m_outputNodeNameEdit;
 
+    QLabel* m_demPathLabel = nullptr;
+    QLineEdit* m_demPathEdit = nullptr;
+    QPushButton* m_demBrowseBtn = nullptr;
+
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
+    std::shared_ptr<ImportedFileData> m_demInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     QString m_outputNodeName;
+    QString m_demPath;
     int m_masterIndex;
     bool m_useDefaultMaster;
     bool m_bESD;
@@ -75,6 +83,7 @@ private:
     QString m_preparedSavePath;
     QString m_preparedDstProject;
     QString m_preparedSrcNode;
+    QString m_preparedDemPath;
     int m_preparedMasterIndex;
     bool m_preparedBESD;
     int m_preparedImagesNumber;
@@ -88,6 +97,7 @@ private:
 
     // Helper methods
     void createWidget();
+    void updateParameterWidgetsEnableState();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);

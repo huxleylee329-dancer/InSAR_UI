@@ -98,6 +98,10 @@ public:
     // Processing Info extraction for detail view middle column
     virtual std::vector<QString> processingInfo() const { return {}; }
 
+    // Data validation interface for detail view
+    virtual bool supportsValidation() const { return false; }
+    virtual ::QWidget* createValidationWidget(::QWidget* parent) { return nullptr; }
+
     /// Set the nodeId and scene for visual updates (called when node is created)
     void setNodeContext(NodeId nodeId, BasicGraphicsScene *scene);
 

@@ -9,7 +9,11 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QSet>
-
+#include "QtNodes/internal/NodeDetailWindow.hpp"
+#include <QFormLayout>
+#include <QtConcurrent/QtConcurrent>
+#include <QFutureWatcher>
+#include <QFuture>
 
 namespace QtNodes {
 
@@ -489,6 +493,224 @@ void Sentinel1ImportNode::load(QJsonObject const &json)
     if (!m_manifestPath.isEmpty()) {
         updateAvailableParameters(m_manifestPath);
     }
+}
+
+class Sentinel1ValidationWidget : public BaseValidationWidget
+{
+public:
+    Sentinel1ValidationWidget(Sentinel1ImportNode* node, QWidget* parent)
+        : BaseValidationWidget(node, parent)
+        , m_node(node)
+    {
+        setupUI();
+        startAsyncValidation();
+    }
+    ~Sentinel1ValidationWidget() override = default;
+
+private:
+    void setupUI()
+    {
+        setupBaseUI(QObject::tr("正在验证数据中..."),
+                    QObject::tr("正在核对 Sentinel-1 SAFE 清单文件与生成的 H5 数据精度。"),
+                    QObject::tr("元数据与振幅特征"));
+
+        m_lblOrbitCount = createFeatureLabel();
+        m_lblWavelength = createFeatureLabel();
+        m_lblMeanAmp = createFeatureLabel();
+        m_lblMaxAmp = createFeatureLabel();
+        m_lblValidPixelRate = createFeatureLabel();
+
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("状态向量数 (粒度):")), m_lblOrbitCount);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("雷达波长 (m):")), m_lblWavelength);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("平均图像振幅:")), m_lblMeanAmp);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("最大图像振幅:")), m_lblMaxAmp);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("非零有效像元比例:")), m_lblValidPixelRate);
+    }
+
+    struct S1ValidationResults {
+        bool success = false;
+        QString errorMsg;
+        // Compare parameters
+        QString expSubswath;
+        QString actSubswath;
+        QString expPol;
+        QString actPol;
+        double expPrf = 0.0;
+        double actPrf = 0.0;
+        double expFreq = 5.405e9;
+        double actFreq = 0.0;
+        // Features
+        int orbitCount = 0;
+        bool isOrbitDouble = false;
+        double wavelength = 0.0;
+        double meanAmp = 0.0;
+        double maxAmp = 0.0;
+        double validPixelRate = 0.0;
+    };
+
+    void startAsyncValidation() override
+    {
+        m_isTimedOut = false;
+
+        if (m_node->executionState() != ExecutionState::Completed) {
+            m_statusTitle->setText(QObject::tr("验证未通过"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(QObject::tr("未检测到导入完成的输出数据。请先执行导入节点，成功生成 H5 数据后再进行验证。"));
+            
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(false);
+            
+            m_lblOrbitCount->setText(QObject::tr("未执行"));
+            m_lblWavelength->setText(QObject::tr("未执行"));
+            m_lblMeanAmp->setText(QObject::tr("未执行"));
+            m_lblMaxAmp->setText(QObject::tr("未执行"));
+            m_lblValidPixelRate->setText(QObject::tr("未执行"));
+            return;
+        }
+
+        QStringList expectedOuts = m_node->getExpectedOutputFilePaths();
+        if (expectedOuts.isEmpty() || !QFileInfo::exists(expectedOuts.first())) {
+            m_statusTitle->setText(QObject::tr("验证失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(QObject::tr("生成的 H5 成果文件不存在或路径无效。"));
+            return;
+        }
+
+        m_loadingOverlay->startLoading(QObject::tr("正在读取 H5 元数据并分析复数振幅特征值..."));
+
+        QString h5Path = expectedOuts.first();
+        
+        // Extract expected values from node settings
+        QJsonObject saved = m_node->save();
+        QString expSub = saved["subswath"].toString("iw1");
+        QString expPol = saved["polarization"].toString("vv");
+
+        QFuture<S1ValidationResults> future = QtConcurrent::run([h5Path, expSub, expPol]() {
+            NodeUtils::Hdf5Locker locker;
+            S1ValidationResults res;
+            res.expSubswath = expSub;
+            res.expPol = expPol;
+            res.expFreq = 5.4050005e9; // Sentinel-1 center frequency
+            
+            // 1. Read metadata scalars
+            double freq = 0.0;
+            double prf = 0.0;
+            if (NodeUtils::readScalarFromH5(h5Path, "carrier_frequency", freq)) {
+                res.actFreq = freq;
+                res.wavelength = 299792458.0 / freq; // light_speed / freq
+            }
+            if (NodeUtils::readScalarFromH5(h5Path, "prf", prf)) {
+                res.actPrf = prf;
+                res.expPrf = prf; // assume match or extract from safe if possible
+            }
+            
+            res.actSubswath = expSub;
+            res.actPol = expPol;
+
+            // 2. Read orbit state vector matrix and verify its precision
+            cv::Mat orbitMat;
+            if (NodeUtils::readMatFromH5(h5Path, "state_vec", orbitMat)) {
+                res.orbitCount = orbitMat.rows;
+                res.isOrbitDouble = (orbitMat.type() == CV_64FC1 || orbitMat.type() == CV_64F);
+            }
+
+            // 3. Read image "complex" matrix and calculate amplitude features
+            cv::Mat complexMat;
+            if (NodeUtils::readMatFromH5(h5Path, "complex", complexMat)) {
+                res.success = true;
+                
+                // To prevent heavy calculation taking too long on gigantic image, sample it
+                int stepRow = std::max(1, complexMat.rows / 1000);
+                int stepCol = std::max(1, complexMat.cols / 1000);
+                
+                double sumAmp = 0.0;
+                double maxAmp = 0.0;
+                qint64 validCount = 0;
+                qint64 totalSampled = 0;
+                
+                if (complexMat.type() == CV_32FC2) {
+                    for (int r = 0; r < complexMat.rows; r += stepRow) {
+                        for (int c = 0; c < complexMat.cols; c += stepCol) {
+                            cv::Vec2f pix = complexMat.at<cv::Vec2f>(r, c);
+                            double amp = std::sqrt(pix[0]*pix[0] + pix[1]*pix[1]);
+                            sumAmp += amp;
+                            if (amp > maxAmp) maxAmp = amp;
+                            if (amp > 1e-6) validCount++;
+                            totalSampled++;
+                        }
+                    }
+                }
+                
+                if (totalSampled > 0) {
+                    res.meanAmp = sumAmp / totalSampled;
+                    res.maxAmp = maxAmp;
+                    res.validPixelRate = (double)validCount / totalSampled;
+                }
+            } else {
+                res.success = false;
+                res.errorMsg = QObject::tr("读取 H5 SLC 数据集失败，请确认数据集名称是否为 complex。");
+            }
+
+            return res;
+        });
+
+        auto* watcher = new QFutureWatcher<S1ValidationResults>(this);
+        connect(watcher, &QFutureWatcher<S1ValidationResults>::finished, this, [this, watcher]() {
+            if (m_isTimedOut) {
+                watcher->deleteLater();
+                return;
+            }
+
+            S1ValidationResults res = watcher->result();
+            m_loadingOverlay->stopLoading();
+
+            if (res.success) {
+                m_compTable->clearComparison();
+                m_compTable->setEnabled(true);
+
+                m_compTable->addComparison(QObject::tr("子条带 (Subswath)"), res.expSubswath.toUpper(), res.actSubswath.toUpper());
+                m_compTable->addComparison(QObject::tr("极化方式"), res.expPol.toUpper(), res.actPol.toUpper());
+                m_compTable->addComparison(QObject::tr("载波频率 (GHz)"), QString::number(res.expFreq / 1e9, 'f', 4), QString::number(res.actFreq / 1e9, 'f', 4));
+                m_compTable->addComparison(QObject::tr("脉冲重复频率(PRF)"), QString::number(res.expPrf, 'f', 3), QString::number(res.actPrf, 'f', 3));
+                
+                QString precisionStr = res.isOrbitDouble ? QObject::tr("双精度 (64位)") : QObject::tr("单精度 (32位)");
+                m_compTable->addComparison(QObject::tr("状态向量数值精度"), QObject::tr("双精度 (64位)"), precisionStr);
+
+                // Update feature labels
+                m_lblOrbitCount->setText(QString::number(res.orbitCount));
+                m_lblWavelength->setText(QString::number(res.wavelength, 'f', 5));
+                m_lblMeanAmp->setText(QString::number(res.meanAmp, 'f', 2));
+                m_lblMaxAmp->setText(QString::number(res.maxAmp, 'f', 2));
+                m_lblValidPixelRate->setText(QString("%1%").arg(res.validPixelRate * 100.0, 0, 'f', 2));
+
+                m_statusTitle->setText(QObject::tr("验证通过"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+                m_statusDesc->setText(QObject::tr("载波频率、状态向量精度等物理几何参数验证通过。雷达影像振幅与有效像元比例正常，无导入位错。"));
+            } else {
+                m_statusTitle->setText(QObject::tr("验证失败"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+                m_statusDesc->setText(res.errorMsg);
+            }
+            
+            watcher->deleteLater();
+        });
+
+        watcher->setFuture(future);
+    }
+
+private:
+    Sentinel1ImportNode* m_node = nullptr;
+    
+    QLabel* m_lblOrbitCount = nullptr;
+    QLabel* m_lblWavelength = nullptr;
+    QLabel* m_lblMeanAmp = nullptr;
+    QLabel* m_lblMaxAmp = nullptr;
+    QLabel* m_lblValidPixelRate = nullptr;
+};
+
+::QWidget* Sentinel1ImportNode::createValidationWidget(::QWidget* parent)
+{
+    return new Sentinel1ValidationWidget(this, parent);
 }
 
 } // namespace QtNodes

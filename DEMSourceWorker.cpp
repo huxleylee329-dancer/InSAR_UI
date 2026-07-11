@@ -83,7 +83,7 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
     request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
 
     // 从全局 Config.ini 读取 Earthdata 账号密码并直接设置 Authorization 头部以防重定向鉴权丢失
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
     QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
 
@@ -126,6 +126,17 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
 
     if (err == QNetworkReply::NoError && (statusCode == 200 || statusCode == 206) && !contentType.contains("html", Qt::CaseInsensitive))
     {
+        // 增加下载内容一致性校验：确保下载文件大小与 Content-Length 一致
+        qint64 expectedSize = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+        qint64 actualSize = tempFile.size();
+        if (expectedSize > 0 && actualSize != expectedSize)
+        {
+            InSARLogManager::LogError("DEMSourceWorker", QString("Downloaded file size mismatch. Expected: %1, Actual: %2").arg(expectedSize).arg(actualSize));
+            tempFile.remove();
+            reply->deleteLater();
+            return -1;
+        }
+
         if (QFile::exists(savePath))
         {
             QFile::remove(savePath);
@@ -143,11 +154,16 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
         {
             return 0; // 404 Not Found (例如海洋瓦片不存在)
         }
-        else if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
+        else if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401 || statusCode == 403)
         {
+            // 自动将登录状态修改为未登录（从配置文件中移除凭据），迫使再次登录
+            QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+            settings.remove("DEM/EarthdataUser");
+            settings.remove("DEM/EarthdataPassword");
+
             // 如果返回了 HTML 网页（且非 404），代表实际上跳转到了 URS 网页登录页（鉴权失败）
             InSARLogManager::LogError("DEMSourceWorker", 
-                QString("Authentication challenge failed or redirected to HTML. URL: %1, Status Code: %2, Content-Type: %3, Error: %4")
+                QString("Authentication challenge failed or redirected to HTML. Credentials removed from Config.ini. URL: %1, Status Code: %2, Content-Type: %3, Error: %4")
                 .arg(url).arg(statusCode).arg(contentType).arg(reply->errorString()));
             return -1;
         }
@@ -248,12 +264,17 @@ void DEMSourceWorker::fetch_dem(
             bool read_para_ok = false;
             {
                 NodeUtils::Hdf5Locker locker;
-                read_para_ok = (NodeUtils::readScalarFromH5(src_file, "range_len", sceneWidth) &&
-                                NodeUtils::readScalarFromH5(src_file, "azimuth_len", sceneHeight) &&
-                                NodeUtils::readScalarFromH5(src_file, "offset_row", offset_row) &&
-                                NodeUtils::readScalarFromH5(src_file, "offset_col", offset_col) &&
-                                NodeUtils::readMatFromH5(src_file, "lon_coefficient", lon_coef) &&
-                                NodeUtils::readMatFromH5(src_file, "lat_coefficient", lat_coef));
+                if (NodeUtils::readScalarFromH5(src_file, "range_len", sceneWidth) &&
+                    NodeUtils::readScalarFromH5(src_file, "azimuth_len", sceneHeight) &&
+                    NodeUtils::readMatFromH5(src_file, "lon_coefficient", lon_coef) &&
+                    NodeUtils::readMatFromH5(src_file, "lat_coefficient", lat_coef))
+                {
+                    read_para_ok = true;
+                    offset_row = 0;
+                    offset_col = 0;
+                    NodeUtils::readScalarFromH5(src_file, "offset_row", offset_row);
+                    NodeUtils::readScalarFromH5(src_file, "offset_col", offset_col);
+                }
             }
             if (read_para_ok)
             {
@@ -317,7 +338,7 @@ void DEMSourceWorker::fetch_dem(
         QNetworkRequest request(QUrl("https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/SRTMGL1.003/N06E016.SRTMGL1.hgt/N06E016.SRTMGL1.hgt.zip"));
         request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
 
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
         QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
 
@@ -344,8 +365,13 @@ void DEMSourceWorker::fetch_dem(
         QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
         reply->deleteLater();
 
-        if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
+        if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401 || statusCode == 403)
         {
+            // 自动将登录状态修改为未登录（从配置文件中移除凭据）
+            QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+            settings.remove("DEM/EarthdataUser");
+            settings.remove("DEM/EarthdataPassword");
+
             emit errorProcess(QStringLiteral("NASA Earthdata 登录凭据无效（用户名或密码错误），请重新登录！"));
             return;
         }
@@ -363,6 +389,57 @@ void DEMSourceWorker::fetch_dem(
 
     QString fullCachePath = cacheDir + "/" + subDirName;
     QDir().mkpath(fullCachePath);
+
+    // 启动前清理缓存目录下的重复文件，防止用户手动复制重命名绕过下载
+    {
+        QDir dir(fullCachePath);
+        QStringList filters;
+        if (demSource == 0 || demSource == 1) filters << "*.hgt";
+        else filters << "*.tif";
+        QFileInfoList list = dir.entryInfoList(filters, QDir::Files);
+        
+        QStringList toDelete;
+        for (int i = 0; i < list.size(); ++i)
+        {
+            for (int j = i + 1; j < list.size(); ++j)
+            {
+                QFileInfo fi1 = list[i];
+                QFileInfo fi2 = list[j];
+                if (fi1.size() == fi2.size() && fi1.size() > 0)
+                {
+                    QFile f1(fi1.absoluteFilePath());
+                    QFile f2(fi2.absoluteFilePath());
+                    if (f1.open(QIODevice::ReadOnly) && f2.open(QIODevice::ReadOnly))
+                    {
+                        QByteArray b1 = f1.read(4096);
+                        QByteArray b2 = f2.read(4096);
+                        if (b1 == b2)
+                        {
+                            bool identical = true;
+                            while (!f1.atEnd() && !f2.atEnd())
+                            {
+                                if (f1.read(65536) != f2.read(65536))
+                                {
+                                    identical = false;
+                                    break;
+                                }
+                            }
+                            if (identical)
+                            {
+                                InSARLogManager::LogWarning("DEMSourceWorker", QStringLiteral("检测到缓存中的重复文件内容：%1 与 %2。将进行清理以强行重新下载。").arg(fi1.fileName()).arg(fi2.fileName()));
+                                if (!toDelete.contains(fi1.absoluteFilePath())) toDelete.append(fi1.absoluteFilePath());
+                                if (!toDelete.contains(fi2.absoluteFilePath())) toDelete.append(fi2.absoluteFilePath());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (const QString& path : toDelete)
+        {
+            QFile::remove(path);
+        }
+    }
 
     // 4. 计算瓦片跨度并准备下载/检索
     int startLon = qFloor(min_lon);
@@ -401,11 +478,26 @@ void DEMSourceWorker::fetch_dem(
                 expectedFile += ".tif";
             }
 
-            // 检查缓存
+            // 检查缓存并验证其物理完整性
             bool tileFound = false;
             if (QFile::exists(expectedFile))
             {
-                tileFound = true;
+                bool valid = true;
+                qint64 size = QFileInfo(expectedFile).size();
+                if (demSource == 0 && size != 25934402) {
+                    valid = false;
+                } else if (demSource == 1 && size != 2884802) {
+                    valid = false;
+                } else if (size < 10240) {
+                    valid = false;
+                }
+
+                if (valid) {
+                    tileFound = true;
+                } else {
+                    InSARLogManager::LogWarning("DEMSourceWorker", QStringLiteral("检测到损坏的高程瓦片缓存 %1（大小：%2 字节），将删除并重新下载。").arg(expectedFile).arg(size));
+                    QFile::remove(expectedFile);
+                }
             }
             else
             {
@@ -422,7 +514,17 @@ void DEMSourceWorker::fetch_dem(
                     {
                         if (QFile::exists(expectedFile))
                         {
-                            tileFound = true;
+                            bool valid = true;
+                            qint64 size = QFileInfo(expectedFile).size();
+                            if (demSource == 0 && size != 25934402) valid = false;
+                            else if (demSource == 1 && size != 2884802) valid = false;
+
+                            if (valid) {
+                                tileFound = true;
+                            } else {
+                                InSARLogManager::LogWarning("DEMSourceWorker", QStringLiteral("解压的缓存文件 %1 校验失败（大小：%2 字节），予以删除。").arg(expectedFile).arg(size));
+                                QFile::remove(expectedFile);
+                            }
                         }
                     }
                 }
@@ -470,9 +572,27 @@ void DEMSourceWorker::fetch_dem(
                     // 如果是 zip，解压它
                     if (targetZipOrTif.endsWith(".zip"))
                     {
-                        DigitalElevationModel::unzip(targetZipOrTif.toLocal8Bit().constData(), fullCachePath.toLocal8Bit().constData());
+                        int unzipRet = DigitalElevationModel::unzip(targetZipOrTif.toLocal8Bit().constData(), fullCachePath.toLocal8Bit().constData());
                         // 下载完后清理临时压缩包
                         QFile::remove(targetZipOrTif);
+
+                        // 校验解压后文件是否真实存在且大小正确
+                        bool valid = false;
+                        if (unzipRet == 0 && QFile::exists(expectedFile))
+                        {
+                            qint64 size = QFileInfo(expectedFile).size();
+                            if (demSource == 0 && size == 25934402) valid = true;
+                            else if (demSource == 1 && size == 2884802) valid = true;
+                        }
+
+                        if (!valid)
+                        {
+                            if (QFile::exists(expectedFile)) {
+                                QFile::remove(expectedFile);
+                            }
+                            emit errorProcess(QStringLiteral("高程瓦片 %1 解压校验失败，下载数据可能损坏或鉴权过期！").arg(tileName));
+                            return;
+                        }
 
                         // 对于 ASTER GDEM，解压出来的文件通常是 ASTGTMV003_%1_dem.tif，将其重命名为 expectedFile (%1.tif)
                         if (demSource == 3)

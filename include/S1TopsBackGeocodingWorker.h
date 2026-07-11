@@ -8,6 +8,8 @@ public:
     explicit S1TopsBackGeocodingWorker(QObject* parent = nullptr);
     ~S1TopsBackGeocodingWorker();
 
+    void setDemPath(const QString& path) { m_demPath = path; }
+
 public slots:
     void S1_TOPS_BackGeocoding(
         int images_number,
@@ -19,4 +21,7 @@ public slots:
         QStandardItemModel* model,
         bool b_ESD = true
     );
+
+private:
+    QString m_demPath;
 };

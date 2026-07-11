@@ -26,6 +26,9 @@ class Sentinel1BatchImportNode : public ImportNodeBase
 public:
     Sentinel1BatchImportNode();
     ~Sentinel1BatchImportNode() = default;
+    // 启用验证面板
+    bool supportsValidation() const override { return true; }
+    ::QWidget* createValidationWidget(::QWidget* parent) override;
 
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Sentinel-1 Batch Import"); }
@@ -33,13 +36,13 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    QStringList getExpectedOutputFilePaths() const override;
 
 protected:
     // ImportNodeBase interface
     QWidget* createWidget() override;
     void executeImport() override;
     bool prepareToStart() override;
-    QStringList getExpectedOutputFilePaths() const override;
     QString getOutputNodeName() const override;
 
     // Helper methods

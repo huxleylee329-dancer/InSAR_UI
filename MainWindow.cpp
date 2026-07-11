@@ -238,7 +238,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     m_workspaceUI->tabWidget()->setTabsClosable(true);
 
     // Load initial theme from Config.ini
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     m_currentTheme = settings.value("Appearance/Theme", "light").toString();
 
     // 创建最近打开子菜单并插入文件菜单（插入在第一个分隔线之前，使其与“新建/打开”归为一组）
@@ -1381,7 +1381,7 @@ void MainWindow::addToRecentProjects(const QString& path)
     if (path.isEmpty())
         return;
 
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
 
     // 移除已存在的相同路径，避免重复
@@ -1405,7 +1405,7 @@ void MainWindow::updateRecentMenu()
 {
     m_recentMenu->clear();
 
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
 
     if (recent.isEmpty()) {
@@ -1437,7 +1437,7 @@ void MainWindow::updateRecentMenu()
     m_recentMenu->addSeparator();
     QAction* clearAction = m_recentMenu->addAction("清除最近列表");
     connect(clearAction, &QAction::triggered, this, [this]() {
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         settings.remove("Recent/Projects");
         updateRecentMenu();
         if (m_welcomeUI)
@@ -1476,7 +1476,7 @@ void MainWindow::handleInvalidRecentProject(const QString& filePath)
     );
 
     if (reply == QMessageBox::Yes) {
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
         recent.removeAll(filePath);
         settings.setValue("Recent/Projects", recent);
@@ -2099,7 +2099,7 @@ void MainWindow::setTheme(const QString &theme)
     m_currentTheme = theme;
 
     // Save to Config.ini
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     settings.setValue("Appearance/Theme", theme);
     settings.sync();
 
@@ -2391,7 +2391,7 @@ void MainWindow::setupInterfaceSwitchingMenu()
     showToolBarAction->setCheckable(true);
 
     // 从配置文件中读取工具栏显隐设置并应用
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     bool showToolBar = settings.value("Appearance/ShowToolBar", true).toBool();
     showToolBarAction->setChecked(showToolBar);
 
@@ -2399,7 +2399,7 @@ void MainWindow::setupInterfaceSwitchingMenu()
         for (QToolBar* toolbar : findChildren<QToolBar*>()) {
             toolbar->setVisible(checked);
         }
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         settings.setValue("Appearance/ShowToolBar", checked);
         settings.sync();
     });
@@ -2416,7 +2416,7 @@ void MainWindow::setupInterfaceSwitchingMenu()
 
     connect(showStatusBarAction, &QAction::triggered, this, [this](bool checked) {
         statusBar()->setVisible(checked);
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         settings.setValue("Appearance/ShowStatusBar", checked);
         settings.sync();
     });

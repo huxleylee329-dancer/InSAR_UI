@@ -80,7 +80,6 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Invalid parameters for BackGeocoding.");
 		return;
 	}
-	NodeUtils::Hdf5Locker locker;
 	int ret;
 	QDir dir(savePath);
 	if (!dir.exists(dstNode)) {
@@ -94,7 +93,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	std::vector<std::string> SAR_images_regis;
 	QList<QString> origin;
 	bool found_project = false;
-	QString demPath;
+	QString demPath = m_demPath;
 	QMetaObject::invokeMethod(model, [=, &SAR_images, &SAR_images_regis, &origin, &found_project, &demPath]() {
 		QList<QStandardItem*> foundProjects = model->findItems(dstProject);
 		if (foundProjects.isEmpty()) return;
@@ -120,10 +119,12 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			}
 		}
 
-		// 在 GUI 线程安全地查询项目全局默认高程数据路径
-		auto* iface = NodeUtils::getProjectContext(nullptr);
-		if (iface) {
-			demPath = NodeUtils::getGlobalDemPath(iface);
+		// 如果外部未传入DEM路径，在 GUI 线程安全地查询项目全局默认高程数据路径
+		if (demPath.isEmpty()) {
+			auto* iface = NodeUtils::getProjectContext(nullptr);
+			if (iface) {
+				demPath = NodeUtils::getGlobalDemPath(iface);
+			}
 		}
 	}, Qt::BlockingQueuedConnection);
 
@@ -146,8 +147,14 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		QString appPath = QCoreApplication::applicationDirPath();
 		demPath = appPath + "/dem";
 	}
-	if (!QDir(demPath).exists()) {
-		QDir().mkpath(demPath);
+	// 只有当 demPath 不是文件路径且目录不存在时，才创建目录
+	if (!demPath.isEmpty()) {
+		bool isFile = demPath.endsWith(".tif", Qt::CaseInsensitive) || 
+		              demPath.endsWith(".tiff", Qt::CaseInsensitive) || 
+		              demPath.endsWith(".h5", Qt::CaseInsensitive);
+		if (!isFile && !QDir(demPath).exists()) {
+			QDir().mkpath(demPath);
+		}
 	}
 	//后向地理编码配准
 	Sentinel1BackGeocoding backgeocoding; FormatConversion conversion;
@@ -156,6 +163,8 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	std::string tmpDem = demPath.toStdString();
 	std::replace(tmpDem.begin(), tmpDem.end(), '/', '\\');
 
+	{
+		NodeUtils::Hdf5Locker locker;
 	ret = backgeocoding.loadData(SAR_images);
 	ret = backgeocoding.setDEMPath(tmpDem.c_str());
 	ret = backgeocoding.loadOutFiles(SAR_images_regis);
@@ -503,6 +512,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", 0);
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", rows);
 		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
+	}
 	}
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration parameters copied successfully to H5 files.");
 

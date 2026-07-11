@@ -168,4 +168,15 @@ QString getGlobalDemPath(IApplicationInterface* iface);
  */
 bool setGlobalDemPath(IApplicationInterface* iface, const QString& path, bool askUser = false);
 
+/**
+ * @brief 获取应用程序的配置文件 (Config.ini) 的绝对路径，使其始终位于可执行文件同级目录下
+ */
+QString getConfigPath();
+
+/**
+ * @brief 获取 ONNX 模型的绝对路径（带开发调试回退机制）
+ * @param modelName 模型文件名（如 "sar_ship_model0429.onnx"）
+ */
+QString getModelPath(const QString& modelName);
+
 } // namespace NodeUtils

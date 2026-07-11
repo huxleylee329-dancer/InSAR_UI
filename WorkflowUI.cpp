@@ -1721,7 +1721,7 @@ void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::Execu
     _detailOverlay->setGeometry(m_view->viewport()->rect());
 
     // Load data into detail window
-    _detailWindow->loadData(snapshot);
+    _detailWindow->loadData(snapshot, execModel);
 
     // Create and setup animation controller
     _animationController = new QtNodes::NodeDetailAnimationController(this);

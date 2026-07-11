@@ -6,6 +6,7 @@
 #include "icon_utils.h"
 
 #include <QSettings>
+#include "NodeUtils.h"
 #include <QTreeWidgetItemIterator>
 #include <QStyle>
 #include <QFileInfo>
@@ -139,7 +140,7 @@ NodeLibraryWidget::NodeLibraryWidget(QWidget *parent) : QWidget(parent)
     , m_registry(nullptr)
     , m_currentTheme("light")
 {
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     m_currentTheme = settings.value("Appearance/Theme", "light").toString();
     setupUi();
 }

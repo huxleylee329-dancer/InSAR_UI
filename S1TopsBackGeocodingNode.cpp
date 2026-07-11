@@ -29,6 +29,7 @@ S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
     , m_esdCheckBox(nullptr)
     , m_outputNodeNameEdit(nullptr)
     , m_inputData(nullptr)
+    , m_demInputData(nullptr)
     , m_outputData(nullptr)
     , m_masterIndex(1)
     , m_useDefaultMaster(true)
@@ -66,45 +67,60 @@ S1TopsBackGeocodingNode::~S1TopsBackGeocodingNode()
 unsigned int S1TopsBackGeocodingNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 1;  // One input port (Sentinel-1 SLC data)
+        return 2;  // 0: S1 SLC Data, 1: Optional DEM File
     else
         return 2;  // Two output ports (0: Results, 1: Preview)
 }
 
 NodeDataType S1TopsBackGeocodingNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::Out)
+    if (portType == PortType::In)
+    {
+        if (portIndex == 0)
+            return NodeDataType{"imported_file", "S1 SLC Data"};
+        else
+            return NodeDataType{"imported_file", "DEM File"};
+    }
+    else
     {
         if (portIndex == 0)
             return NodeDataType{"imported_file", "S1 Back-Geocoded Data"};
         else if (portIndex == 1)
             return NodeDataType{"image_info", "Image Info"};
     }
-    Q_UNUSED(portIndex);
-    return NodeDataType{"imported_file", "S1 SLC Data"};
+    return NodeDataType();
 }
 
 bool S1TopsBackGeocodingNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
 {
     Q_UNUSED(portIndex);
-    return portType == PortType::Out;
+    Q_UNUSED(portType);
+    return true;
 }
 
 QString S1TopsBackGeocodingNode::portCaption(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::Out)
+    if (portType == PortType::In)
+    {
+        if (portIndex == 0)
+            return tr("输入图像");
+        else
+            return tr("DEM ?");
+    }
+    else
     {
         if (portIndex == 0)
             return tr("成果 *");
         else if (portIndex == 1)
             return tr("预览 ?");
     }
-    Q_UNUSED(portIndex);
     return QString();
 }
 
 bool S1TopsBackGeocodingNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
+    if (portType == PortType::In && portIndex == 1)
+        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -117,24 +133,39 @@ std::shared_ptr<NodeData> S1TopsBackGeocodingNode::outData(PortIndex port)
 
 void S1TopsBackGeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
-    m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
-    updateLabels();
+    if (port == 0) {
+        m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        updateLabels();
 
-    // Generate default output name if not set
-    if (m_inputData && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty())
-    {
-        m_outputNodeNameEdit->setText(generateDefaultOutputName());
+        // Generate default output name if not set
+        if (m_inputData && m_outputNodeNameEdit && m_outputNodeNameEdit->text().isEmpty())
+        {
+            m_outputNodeNameEdit->setText(generateDefaultOutputName());
+        }
+
+        if (!m_inputData)
+        {
+            m_outputData.reset();
+            m_imageInfoData.reset();
+        }
+    } else if (port == 1) {
+        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (m_demInputData) {
+            m_demPath = m_demInputData->filePath();
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+        } else {
+            if (!isRestoring()) {
+                m_demPath.clear();
+                if (m_demPathEdit) {
+                    m_demPathEdit->clear();
+                }
+            }
+        }
     }
 
+        updateParameterWidgetsEnableState(); // 更新 DEM 连接状态对应的控件可用性
     // Delegate to base class to handle execution mode
     ExecutableNodeDelegateModel::setInData(data, port);
-
-    if (!m_inputData)
-    {
-        m_outputData.reset();
-        m_imageInfoData.reset();
-    }
 }
 
 ::QWidget* S1TopsBackGeocodingNode::embeddedWidget()
@@ -155,6 +186,7 @@ QJsonObject S1TopsBackGeocodingNode::save() const
     modelJson["masterIndex"] = m_masterIndex;
     modelJson["useDefaultMaster"] = m_useDefaultMaster;
     modelJson["bESD"] = m_bESD;
+    modelJson["demPath"] = m_demPath;
 
     return modelJson;
 }
@@ -183,6 +215,13 @@ void S1TopsBackGeocodingNode::load(QJsonObject const &json)
     if (!vEsd.isUndefined())
     {
         m_bESD = vEsd.toBool();
+    }
+
+    QJsonValue vDemPath = json["demPath"];
+    if (!vDemPath.isUndefined())
+    {
+        m_demPath = vDemPath.toString();
+        if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
     }
 
     ExecutableNodeDelegateModel::load(json);
@@ -310,18 +349,99 @@ void S1TopsBackGeocodingNode::createWidget()
     nodeNameLayout->addWidget(m_outputNodeNameEdit);
     layout->addLayout(nodeNameLayout);
 
+    // DEM 路径选择
+    auto* demLayout = new QHBoxLayout();
+    m_demPathLabel = new QLabel("DEM高程数据");
+    m_demPathLabel->setFixedWidth(80);
+    m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
+
+    if (m_demPath.isEmpty()) {
+        auto* iface = NodeUtils::getProjectContext(_widget);
+        if (iface) {
+            m_demPath = NodeUtils::getGlobalDemPath(iface);
+        }
+    }
+
+    m_demPathEdit = new QLineEdit();
+    m_demPathEdit->setObjectName("demPathEdit");
+    m_demPathEdit->setText(m_demPath);
+    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff, *.zip)..."));
+    m_demPathEdit->setStyleSheet(
+        "QLineEdit:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        QString text = m_demPathEdit->text().trimmed();
+        if (m_demPath != text) {
+            m_demPath = text;
+            invalidateNodeData();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
+    m_demBrowseBtn->setStyleSheet(
+        "QPushButton:disabled {"
+        "  background-color: rgba(120, 120, 120, 0.1);"
+        "  color: #888888;"
+        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
+        "}"
+    );
+    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
+        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif *.zip)");
+        if (!file.isEmpty()) {
+            m_demPath = file;
+            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+            invalidateNodeData();
+            auto* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
+            }
+        }
+    });
+
+    demLayout->addWidget(m_demPathLabel);
+    demLayout->addWidget(m_demPathEdit);
+    demLayout->addWidget(m_demBrowseBtn);
+    layout->addLayout(demLayout);
+
     // Bottom spacer
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     // Populate master image combobox initially if input data is already connected
     updateLabels();
+    updateParameterWidgetsEnableState();
 }
 
 void S1TopsBackGeocodingNode::updateLabels()
 {
     // Update master image combo
     updateMasterImageCombo();
+    updateParameterWidgetsEnableState();
 }
+
+void S1TopsBackGeocodingNode::updateParameterWidgetsEnableState()
+{
+    bool isExec = m_thread && m_thread->isRunning();
+    bool enableWidgets = !isExec;
+    bool hasDemConn = (m_demInputData != nullptr);
+
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
+    if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(enableWidgets);
+    if (m_masterImageCombo) m_masterImageCombo->setEnabled(enableWidgets && !m_useDefaultMaster);
+    if (m_esdCheckBox) m_esdCheckBox->setEnabled(enableWidgets);
+
+    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !hasDemConn);
+}
+
 
 void S1TopsBackGeocodingNode::updateMasterImageCombo()
 {
@@ -543,10 +663,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
             Q_EMIT dataUpdated(1);
 
             // Update UI
-            m_outputNodeNameEdit->setEnabled(true);
-            if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
-            if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-            if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
+            updateParameterWidgetsEnableState();
 
             // Notify base class that we're finished
             setState(ExecutionState::Running);
@@ -570,10 +687,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
         Q_EMIT dataUpdated(1);
 
         // Update UI
-        m_outputNodeNameEdit->setEnabled(true);
-        if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
-        if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-        if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
+        updateParameterWidgetsEnableState();
 
         // Notify base class that we're finished
         setState(ExecutionState::Running);
@@ -602,10 +716,7 @@ void S1TopsBackGeocodingNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
-    m_outputNodeNameEdit->setEnabled(true);
-    if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
-    if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-    if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
+    updateParameterWidgetsEnableState();
     setState(ExecutionState::Error);
 }
 
@@ -694,6 +805,7 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     m_preparedSrcNode = m_inputData->nodeName();
     m_preparedMasterIndex = m_masterIndex;
     m_preparedBESD = m_esdCheckBox ? m_esdCheckBox->isChecked() : true;
+    m_preparedDemPath = m_demPath;
 
     // 覆盖提示判断
     QStringList pathsToCheck;
@@ -774,10 +886,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
         // 不调用 onProcessingFinished()，因为它会在 UI 主线程上执行重度 HDF5 读取，
         // 若文件损坏会直接崩溃。改为安全地调用 validateAndRestoreOutput()。
         m_outputNodeName = m_preparedDstNode;
-        m_outputNodeNameEdit->setEnabled(true);
-        if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(true);
-        if (m_masterImageCombo) m_masterImageCombo->setEnabled(!m_useDefaultMaster);
-        if (m_esdCheckBox) m_esdCheckBox->setEnabled(true);
+        updateParameterWidgetsEnableState();
         
         setProgress(100);
         if (validateAndRestoreOutput()) {
@@ -796,6 +905,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
     // Create thread
     m_thread = new QThread();
     m_workerThread = new S1TopsBackGeocodingWorker();
+    m_workerThread->setDemPath(m_preparedDemPath);
     m_workerThread->moveToThread(m_thread);
 
     // Connect signals
@@ -821,10 +931,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
 
     // Start thread
     m_thread->start();
-    m_outputNodeNameEdit->setEnabled(false);
-    if (m_defaultMasterCheckBox) m_defaultMasterCheckBox->setEnabled(false);
-    if (m_masterImageCombo) m_masterImageCombo->setEnabled(false);
-    if (m_esdCheckBox) m_esdCheckBox->setEnabled(false);
+    updateParameterWidgetsEnableState();
 
     // 在下一个事件循环中强行将状态重置为 Running，防止基类 setInData 在 Automatic 模式下将其强行设为 Idle
     QTimer::singleShot(0, this, [this]() {

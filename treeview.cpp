@@ -551,7 +551,7 @@ void TreeView::rowsInserted(const QModelIndex &parent, int start, int end)
 
     // Only colorize newly inserted items, not the entire tree
     if (m_cachedTheme.isEmpty()) {
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         m_cachedTheme = settings.value("Appearance/Theme", "light").toString();
     }
     bool isDark = m_cachedTheme == "dark";

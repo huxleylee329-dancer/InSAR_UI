@@ -7,12 +7,18 @@
 #include "ImportDataTypes.h"
 #include "NodeUtils.h"
 #include "FormatConversion.h"
+#include "NodeDetailWindow.hpp"
 #include <QFile>
 #include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
 #include <QRegularExpression>
 #include <QSet>
+#include <QtConcurrent/QtConcurrentRun>
+#include <QFutureWatcher>
+#include <QLabel>
+#include <QFrame>
+#include <QVBoxLayout>
 
 namespace QtNodes {
 
@@ -235,7 +241,21 @@ void Sentinel1BatchImportNode::executeImport()
     for (size_t i = 0; i < m_preparedOriginalNameList.size(); ++i) {
         ImportTask task;
         task.filename = m_preparedImportNameList[i];
-        task.arguments = QStringList{ m_preparedOriginalNameList[i], subswath, pol };
+        QStringList args = QStringList{ m_preparedOriginalNameList[i], subswath, pol };
+        
+        // 自动发现同目录下的精轨文件 (.EOF) 并追加为第4个参数
+        QFileInfo manifestInfo(m_preparedOriginalNameList[i]);
+        QDir safeDir = manifestInfo.dir();
+        QStringList eofFilters;
+        eofFilters << "*.EOF" << "*.eofs";
+        QStringList eofFiles = safeDir.entryList(eofFilters, QDir::Files);
+        if (!eofFiles.isEmpty()) {
+            QString podPath = safeDir.absoluteFilePath(eofFiles.first());
+            args.append(podPath);
+            InSARLogManager::LogInfo("Sentinel1BatchImportNode", "自动发现精轨文件: " + podPath);
+        }
+        
+        task.arguments = args;
         tasks.push_back(task);
     }
 
@@ -541,5 +561,109 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
 
     updateAvailableParameters();
 }
+
+// ============================================================================
+// Sentinel1BatchValidationWidget - Validation view for Sentinel1BatchImportNode
+// ============================================================================
+class Sentinel1BatchValidationWidget : public QWidget
+{
+public:
+    explicit Sentinel1BatchValidationWidget(Sentinel1BatchImportNode* node, QWidget* parent = nullptr)
+        : QWidget(parent), m_node(node)
+    {
+        setupUI();
+        startAsyncValidation();
+    }
+    ~Sentinel1BatchValidationWidget() override = default;
+
+private:
+    void setupUI()
+    {
+        bool isDark = NodeDetailWindow::isDarkTheme(this);
+        QVBoxLayout* mainLayout = new QVBoxLayout(this);
+        mainLayout->setContentsMargins(12, 12, 12, 12);
+        mainLayout->setSpacing(12);
+
+        // Status card
+        QFrame* statusCard = new QFrame(this);
+        statusCard->setFrameShape(QFrame::StyledPanel);
+        statusCard->setStyleSheet(isDark ?
+            "QFrame { background-color: rgba(55, 65, 81, 0.4); border: 1px solid #374151; border-radius: 6px; padding: 12px; }" :
+            "QFrame { background-color: rgba(243, 244, 246, 0.6); border: 1px solid #E5E7EB; border-radius: 6px; padding: 12px; }");
+        QVBoxLayout* cardLayout = new QVBoxLayout(statusCard);
+        cardLayout->setContentsMargins(0,0,0,0);
+        cardLayout->setSpacing(4);
+        m_statusTitle = new QLabel(tr("验证中..."), statusCard);
+        m_statusTitle->setStyleSheet(QString("font-size: 14px; font-weight: bold; color: %1;").arg(isDark ? "#60A5FA" : "#2563EB"));
+        m_statusDesc = new QLabel(tr("正在检查批量导入的结果。"), statusCard);
+        m_statusDesc->setStyleSheet(QString("font-size: 11px; color: %1;").arg(isDark ? "#9CA3AF" : "#6B7280"));
+        cardLayout->addWidget(m_statusTitle);
+        cardLayout->addWidget(m_statusDesc);
+        mainLayout->addWidget(statusCard);
+
+        // List of output files
+        m_fileList = new QListWidget(this);
+        mainLayout->addWidget(m_fileList);
+    }
+
+    void startAsyncValidation()
+    {
+        if (m_node->executionState() != ExecutionState::Completed) {
+            m_statusTitle->setText(tr("验证未通过"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(tr("节点未完成执行，请先运行批量导入节点。"));
+            return;
+        }
+        QStringList expected = m_node->getExpectedOutputFilePaths();
+        if (expected.isEmpty()) {
+            m_statusTitle->setText(tr("验证失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(tr("未生成任何输出文件。"));
+            return;
+        }
+        // Start background check for existence and basic metadata
+        QFuture<void> future = QtConcurrent::run([this, expected]() {
+            QStringList existing;
+            for (const QString& path : expected) {
+                if (QFileInfo::exists(path)) {
+                    existing.append(path);
+                }
+            }
+            QMetaObject::invokeMethod(this, [this, existing]() {
+                m_fileList->clear();
+                for (const QString& p : existing) {
+                    m_fileList->addItem(p);
+                }
+                if (!existing.isEmpty()) {
+                    m_statusTitle->setText(tr("验证通过"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+                    m_statusDesc->setText(tr("成功检测到已生成的 H5 文件。"));
+                } else {
+                    m_statusTitle->setText(tr("验证失败"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+                    m_statusDesc->setText(tr("未找到生成的 H5 文件，请检查导入过程。"));
+                }
+            }, Qt::QueuedConnection);
+        });
+        // Keep future alive
+        m_watcher.setFuture(future);
+    }
+
+    Sentinel1BatchImportNode* m_node = nullptr;
+    QLabel* m_statusTitle = nullptr;
+    QLabel* m_statusDesc = nullptr;
+    QListWidget* m_fileList = nullptr;
+    QFutureWatcher<void> m_watcher;
+};
+
+// Implementation of createValidationWidget for Sentinel1BatchImportNode
+::QWidget* Sentinel1BatchImportNode::createValidationWidget(::QWidget* parent)
+{
+    return new Sentinel1BatchValidationWidget(this, parent);
+}
+
+// ============================================================================
+// End of added validation widget implementation
+// ============================================================================
 
 } // namespace QtNodes

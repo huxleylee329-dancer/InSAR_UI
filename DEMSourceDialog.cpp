@@ -127,7 +127,7 @@ DEMSourceDialog::DEMSourceDialog(QWidget* parent)
         }
     });
     connect(m_logoutBtn, &QPushButton::clicked, this, [this]() {
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         settings.remove("DEM/EarthdataUser");
         settings.remove("DEM/EarthdataPassword");
         updateLoginStatus();
@@ -255,7 +255,7 @@ void DEMSourceDialog::onStartPressed()
     int demSource = m_demSourceCombo->currentIndex();
     if (demSource != 2) // Copernicus DEM 不需要登录
     {
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
         QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
         if (encryptedUser.isEmpty() || encryptedPass.isEmpty())
@@ -488,7 +488,7 @@ void DEMSourceDialog::updateLoginStatus()
     {
         m_loginBtn->show();
         m_loginBtn->setEnabled(true);
-        QSettings settings("Config.ini", QSettings::IniFormat);
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
         QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
         if (encryptedUser.isEmpty())
         {

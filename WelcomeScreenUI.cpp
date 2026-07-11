@@ -3,6 +3,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QSettings>
+#include "NodeUtils.h"
 #include <QListWidgetItem>
 #include <QFile>
 #include <QFileInfo>
@@ -167,7 +168,7 @@ void WelcomeScreenUI::setupUi()
 
 void WelcomeScreenUI::loadRecentProjects()
 {
-    QSettings settings("Config.ini", QSettings::IniFormat);
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     QStringList recent = settings.value("Recent/Projects", QStringList()).toStringList();
 
     // Clear existing recent projects

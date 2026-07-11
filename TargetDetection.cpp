@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QDebug>
 #include <opencv2/opencv.hpp>
+#include "NodeUtils.h"
 
 
 #include "InSARLogManager.h"
@@ -32,7 +33,7 @@ TargetDetection::TargetDetection(QWidget* parent)
     ui->modelComboBox->clear();
     ui->modelComboBox->addItem(
         "SAR Ship Model 0429",
-        QDir::currentPath() + "/sar_ship_model0429.onnx"
+        NodeUtils::getModelPath("sar_ship_model0429.onnx")
     );
 
     ui->ResultIndexlabel->setText("--");

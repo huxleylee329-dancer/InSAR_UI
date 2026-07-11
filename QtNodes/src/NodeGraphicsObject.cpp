@@ -187,7 +187,8 @@ QPainterPath NodeGraphicsObject::shape() const
         QJsonDocument json = QJsonDocument::fromVariant(_graphModel.nodeData(_nodeId, NodeRole::Style));
         NodeStyle nodeStyle(json.object());
         double diameter = nodeStyle.ConnectionPointDiameter;
-        double r = diameter / 2.0;
+        // 增加连线判定容差缓冲垫，使用与 checkPortHit 一致的 2.0 * ConnectionPointDiameter 容差半径
+        double r = 2.0 * diameter;
 
         for (PortIndex portIndex = 0; portIndex < nPorts; ++portIndex) {
             QPointF p = geometry.portPosition(_nodeId, portType, portIndex);
