@@ -225,7 +225,21 @@ void ConnectionGraphicsObject::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
     auto requiredPort = _connectionState.requiredPort();
 
     if (requiredPort != PortType::None) {
+        // 先把终点设置为鼠标当前位置，确保 canConnect 判定能用最新的光标距离，避开吸附粘连 bug
         setEndPoint(requiredPort, event->pos());
+
+        if (ngo) {
+            NodeConnectionInteraction interaction(*ngo, *this, *nodeScene());
+            PortIndex targetPortIndex = InvalidPortIndex;
+            if (interaction.canConnect(&targetPortIndex)) {
+                // 如果满足 16 像素的连接距离判定，则将端点劫持并强行吸附至端口几何中心
+                // 避开私有方法限制，直接调用几何公共接口计算端口场景坐标
+                AbstractNodeGeometry &geometry = nodeScene()->nodeGeometry();
+                QPointF portScenePos = geometry.portScenePosition(ngo->nodeId(), requiredPort, targetPortIndex, ngo->sceneTransform());
+                QPointF targetPoint = this->mapFromScene(portScenePos);
+                setEndPoint(requiredPort, targetPoint);
+            }
+        }
     }
 
     //-------------------

@@ -538,7 +538,7 @@ void WorkspaceUI::setupToolbar()
     connect(m_btnGcp, &QToolButton::clicked, this, [this]() {
         MainWindow* mainWin = qobject_cast<MainWindow*>(window());
         if (mainWin) {
-            mainWin->on_actionGCP_Manager_triggered();
+            mainWin->slot_actionGCP_Manager_triggered();
         }
     });
 }

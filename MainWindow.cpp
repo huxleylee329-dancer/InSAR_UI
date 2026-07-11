@@ -200,6 +200,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     , m_statusInterfaceLabel(nullptr)
     , m_statusProgressBar(nullptr)
     , m_actionGcpManager(nullptr)
+    , m_actionOrbitManager(nullptr)
     , m_actionPhaseElevationRegression(nullptr)
     , m_actionGacosOnlineService(nullptr)
     , m_actionTroposphericCorrection(nullptr)
@@ -284,6 +285,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
             if (!ui.menuSAR->isEnabled()) ui.menuSAR->setDisabled(0);
             if (!ui.menuExport->isEnabled()) ui.menuExport->setDisabled(0);
             if (m_actionGcpManager && !m_actionGcpManager->isEnabled()) m_actionGcpManager->setDisabled(0);
+            if (m_actionOrbitManager && !m_actionOrbitManager->isEnabled()) m_actionOrbitManager->setDisabled(0);
             if (m_menuTools) m_menuTools->menuAction()->setEnabled(true);
             if (m_menuAtmosphericCorrection) m_menuAtmosphericCorrection->menuAction()->setEnabled(true);
             if (m_actionPhaseElevationRegression) m_actionPhaseElevationRegression->setEnabled(true);
@@ -307,8 +309,14 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     m_actionGcpManager->setIcon(QIcon(GCP_ICON));
     m_menuTools->addAction(m_actionGcpManager);
 
+    m_actionOrbitManager = new QAction(QStringLiteral("Sentinel-1 精密轨道管理器"), this);
+    m_actionOrbitManager->setObjectName("actionOrbitManager");
+    m_actionOrbitManager->setIcon(QIcon(":/SatExplorer/svg/toolbox.svg"));
+    m_menuTools->addAction(m_actionOrbitManager);
+
     // 挂接槽信号
-    connect(m_actionGcpManager, &QAction::triggered, this, &MainWindow::on_actionGCP_Manager_triggered);
+    connect(m_actionGcpManager, &QAction::triggered, this, &MainWindow::slot_actionGCP_Manager_triggered);
+    connect(m_actionOrbitManager, &QAction::triggered, this, &MainWindow::slot_actionOrbit_Manager_triggered);
 
     // 插入到“数据导出”的后面
     QList<QAction*> actions = menuBar()->actions();
@@ -327,28 +335,29 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     m_actionPhaseElevationRegression = new QAction(QStringLiteral("经验性相位-高程回归"), this);
     m_actionPhaseElevationRegression->setObjectName("actionPhaseElevationRegression");
     m_menuAtmosphericCorrection->addAction(m_actionPhaseElevationRegression);
-    connect(m_actionPhaseElevationRegression, &QAction::triggered, this, &MainWindow::on_actionPhaseElevationRegression_triggered);
+    connect(m_actionPhaseElevationRegression, &QAction::triggered, this, &MainWindow::slot_actionPhaseElevationRegression_triggered);
 
     m_actionGacosOnlineService = new QAction(QStringLiteral("GACOS 在线服务"), this);
     m_actionGacosOnlineService->setObjectName("actionGacosOnlineService");
     m_menuAtmosphericCorrection->addAction(m_actionGacosOnlineService);
-    connect(m_actionGacosOnlineService, &QAction::triggered, this, &MainWindow::on_actionGacosOnlineService_triggered);
+    connect(m_actionGacosOnlineService, &QAction::triggered, this, &MainWindow::slot_actionGacosOnlineService_triggered);
 
     m_actionTroposphericCorrection = new QAction(QStringLiteral("ERA5 对流层校正"), this);
     m_actionTroposphericCorrection->setObjectName("actionTroposphericCorrection");
     m_menuAtmosphericCorrection->addAction(m_actionTroposphericCorrection);
-    connect(m_actionTroposphericCorrection, &QAction::triggered, this, &MainWindow::on_actionTroposphericCorrection_triggered);
+    connect(m_actionTroposphericCorrection, &QAction::triggered, this, &MainWindow::slot_actionTroposphericCorrection_triggered);
 
     m_actionIonosphericCorrection = new QAction(QStringLiteral("电离层 Split-Spectrum 校正"), this);
     m_actionIonosphericCorrection->setObjectName("actionIonosphericCorrection");
     m_menuAtmosphericCorrection->addAction(m_actionIonosphericCorrection);
-    connect(m_actionIonosphericCorrection, &QAction::triggered, this, &MainWindow::on_actionIonosphericCorrection_triggered);
+    connect(m_actionIonosphericCorrection, &QAction::triggered, this, &MainWindow::slot_actionIonosphericCorrection_triggered);
 
     // 在无工程打开时，默认禁用
     m_actionPhaseElevationRegression->setEnabled(false);
     m_actionGacosOnlineService->setEnabled(false);
     m_actionTroposphericCorrection->setEnabled(false);
     m_actionIonosphericCorrection->setEnabled(false);
+    m_actionOrbitManager->setEnabled(false);
 
     // 插入到 DInSAR 后面（数据导出前面），符合地理数据处理先后逻辑流程
     QList<QAction*> newActions = menuBar()->actions();
@@ -2704,7 +2713,7 @@ void MainWindow::updateStatusBarInterface(const QString& interfaceId)
     m_statusInterfaceLabel->setStyleSheet(style);
 }
 
-void MainWindow::on_actionGCP_Manager_triggered()
+void MainWindow::slot_actionGCP_Manager_triggered()
 {
     // 如果控制点标注界面当前已经显示，再次触发则将其隐藏以实现 Toggle 效果
     if (m_gcpDockWidget && m_gcpDockWidget->isVisible()) {
@@ -2854,7 +2863,7 @@ void MainWindow::showGCPDockWidget(const QString& h5Path)
     m_gcpDockWidget->loadDataset(h5Path);
 }
 
-void MainWindow::on_actionPhaseElevationRegression_triggered()
+void MainWindow::slot_actionPhaseElevationRegression_triggered()
 {
     PhaseElevationRegression_ui* regis = new PhaseElevationRegression_ui();
     connect(this, &MainWindow::sendModel, regis, &PhaseElevationRegression_ui::ShowProjectList);
@@ -2864,7 +2873,7 @@ void MainWindow::on_actionPhaseElevationRegression_triggered()
     regis->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
-void MainWindow::on_actionGacosOnlineService_triggered()
+void MainWindow::slot_actionGacosOnlineService_triggered()
 {
     GacosOnlineService_ui* gacos = new GacosOnlineService_ui();
     connect(this, &MainWindow::sendModel, gacos, &GacosOnlineService_ui::ShowProjectList);
@@ -2874,7 +2883,7 @@ void MainWindow::on_actionGacosOnlineService_triggered()
     gacos->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
-void MainWindow::on_actionTroposphericCorrection_triggered()
+void MainWindow::slot_actionTroposphericCorrection_triggered()
 {
     TroposphericCorrection_ui* tropo = new TroposphericCorrection_ui();
     connect(this, &MainWindow::sendModel, tropo, &TroposphericCorrection_ui::ShowProjectList);
@@ -2884,7 +2893,7 @@ void MainWindow::on_actionTroposphericCorrection_triggered()
     tropo->setAttribute(Qt::WA_DeleteOnClose, true);
 }
 
-void MainWindow::on_actionIonosphericCorrection_triggered()
+void MainWindow::slot_actionIonosphericCorrection_triggered()
 {
     IonosphericCorrection_ui* iono = new IonosphericCorrection_ui();
     connect(this, &MainWindow::sendModel, iono, &IonosphericCorrection_ui::ShowProjectList);
@@ -2893,3 +2902,13 @@ void MainWindow::on_actionIonosphericCorrection_triggered()
     connect(iono, &IonosphericCorrection_ui::sendCopy, m_workspaceUI, &WorkspaceUI::updateProjectModel);
     iono->setAttribute(Qt::WA_DeleteOnClose, true);
 }
+
+void MainWindow::slot_actionOrbit_Manager_triggered()
+{
+    OrbitSourceDialog* orbitSourceDlg = new OrbitSourceDialog(this);
+    connect(this, &MainWindow::sendModel, orbitSourceDlg, &OrbitSourceDialog::ShowProjectList);
+    emit sendModel(m_interfaceManager->projectModel());
+    orbitSourceDlg->show();
+    orbitSourceDlg->setAttribute(Qt::WA_DeleteOnClose, true);
+}
+

@@ -4,6 +4,7 @@
 #include <QStandardItemModel>
 #include "include/icon_source.h"
 #include <QApplication>
+#include <QThread>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QDir>
@@ -17,22 +18,72 @@
 #include <Utils.h>
 #include <cmath>
 
+#include <QMap>
+#include <memory>
+
 namespace NodeUtils {
+
+static QMutex g_hdf5GlobalMutex(QMutex::Recursive);
+static QMutex g_fileLocksMapMutex(QMutex::Recursive);
+static QMap<QString, std::shared_ptr<QMutex>> g_fileLocks;
 
 QMutex* getHdf5Mutex()
 {
-    static QMutex mutex(QMutex::Recursive);
-    return &mutex;
+    return &g_hdf5GlobalMutex;
+}
+
+// 获取或创建特定文件的局部锁
+static QMutex* getMutexForFile(const QString& filePath)
+{
+    if (filePath.isEmpty()) return &g_hdf5GlobalMutex;
+    
+    // 路径标准化：消除斜杠差异、统一小写，避免物理上的同一文件因路径写法差异造成锁失效
+    QString normPath = QDir::toNativeSeparators(filePath).toLower();
+    
+    QMutexLocker mapLocker(&g_fileLocksMapMutex);
+    if (!g_fileLocks.contains(normPath)) {
+        g_fileLocks[normPath] = std::make_shared<QMutex>(QMutex::Recursive);
+    }
+    return g_fileLocks[normPath].get();
 }
 
 Hdf5Locker::Hdf5Locker()
+    : m_mutex(&g_hdf5GlobalMutex)
+    , m_isLocked(false)
 {
-    getHdf5Mutex()->lock();
+    m_mutex->lock();
+    m_isLocked = true;
+}
+
+Hdf5Locker::Hdf5Locker(const QString& filePath, int timeoutMs)
+    : m_isLocked(false)
+{
+    m_mutex = getMutexForFile(filePath);
+    if (timeoutMs < 0) {
+        m_mutex->lock();
+        m_isLocked = true;
+    } else {
+        m_isLocked = m_mutex->tryLock(timeoutMs);
+    }
+}
+
+Hdf5Locker::Hdf5Locker(const std::string& filePath, int timeoutMs)
+    : m_isLocked(false)
+{
+    m_mutex = getMutexForFile(QString::fromStdString(filePath));
+    if (timeoutMs < 0) {
+        m_mutex->lock();
+        m_isLocked = true;
+    } else {
+        m_isLocked = m_mutex->tryLock(timeoutMs);
+    }
 }
 
 Hdf5Locker::~Hdf5Locker()
 {
-    getHdf5Mutex()->unlock();
+    if (m_isLocked && m_mutex) {
+        m_mutex->unlock();
+    }
 }
 
 IApplicationInterface* getProjectContext(QWidget* widget)
@@ -791,7 +842,11 @@ bool readMatFromH5(const QString& filePath,
         return false;
     }
 
-    NodeUtils::Hdf5Locker locker;
+    NodeUtils::Hdf5Locker locker(filePath, 50);
+    if (!locker.isLocked()) {
+        if (errMsg) *errMsg = QStringLiteral("获取 H5 文件锁超时 (文件忙): %1").arg(filePath);
+        return false;
+    }
     FormatConversion FC;
 
     int rc = FC.read_array_from_h5(filePath.toStdString().c_str(),
@@ -823,7 +878,11 @@ bool readScalarFromH5(const QString& filePath, const QString& dataset, int& valu
         return false;
     }
 
-    NodeUtils::Hdf5Locker locker;
+    NodeUtils::Hdf5Locker locker(filePath, 50);
+    if (!locker.isLocked()) {
+        if (errMsg) *errMsg = QStringLiteral("获取 H5 文件锁超时 (文件忙): %1").arg(filePath);
+        return false;
+    }
     FormatConversion FC;
 
     int rc = FC.read_int_from_h5(filePath.toStdString().c_str(),
@@ -848,7 +907,11 @@ bool readScalarFromH5(const QString& filePath, const QString& dataset, double& v
         return false;
     }
 
-    NodeUtils::Hdf5Locker locker;
+    NodeUtils::Hdf5Locker locker(filePath, 50);
+    if (!locker.isLocked()) {
+        if (errMsg) *errMsg = QStringLiteral("获取 H5 文件锁超时 (文件忙): %1").arg(filePath);
+        return false;
+    }
     FormatConversion FC;
 
     int rc = FC.read_double_from_h5(filePath.toStdString().c_str(),
@@ -899,7 +962,11 @@ bool readStringFromH5(const QString& filePath,
         return false;
     }
 
-    NodeUtils::Hdf5Locker locker;
+    NodeUtils::Hdf5Locker locker(filePath, 50);
+    if (!locker.isLocked()) {
+        if (errMsg) *errMsg = QStringLiteral("获取 H5 文件锁超时 (文件忙): %1").arg(filePath);
+        return false;
+    }
     FormatConversion FC;
 
     int rc = FC.read_str_from_h5(filePath.toStdString().c_str(),
@@ -930,7 +997,7 @@ bool writeMatToH5(const QString& filePath,
         return false;
     }
 
-    NodeUtils::Hdf5Locker locker;
+    NodeUtils::Hdf5Locker locker(filePath);
     FormatConversion FC;
 
     // write_array_to_h5 底层接口接收 cv::Mat&，我们使用 const_cast 去除 const 限制
@@ -1059,6 +1126,16 @@ QString getModelPath(const QString& modelName)
     }
     // 调试回退：如果 bin/ 里没有，从当前工作目录查找
     return QDir::currentPath() + "/" + modelName;
+}
+
+void safeThreadWait(QThread* thread, int timeoutMs)
+{
+    if (!thread) return;
+    while (thread->isRunning())
+    {
+        thread->wait(timeoutMs);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    }
 }
 
 } // namespace NodeUtils

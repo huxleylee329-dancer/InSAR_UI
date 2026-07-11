@@ -165,7 +165,13 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 
 	{
 		NodeUtils::Hdf5Locker locker;
-	ret = backgeocoding.loadData(SAR_images);
+		ret = backgeocoding.loadData(SAR_images);
+	}
+	if (ret < 0) {
+		emit errorProcess("Failed to load Sentinel-1 images metadata.");
+		return;
+	}
+	emit updateProcess(11, QStringLiteral("主从影像数据元数据加载完毕……"));
 	ret = backgeocoding.setDEMPath(tmpDem.c_str());
 	ret = backgeocoding.loadOutFiles(SAR_images_regis);
 	ret = backgeocoding.setMasterIndex(masterIndex);
@@ -173,38 +179,51 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Number of loaded images is less than 2.");
 		return;
 	}
-	ret = conversion.read_slc_from_h5(backgeocoding.su[masterIndex - 1]->h5File.c_str(), tmp);
+	{
+		NodeUtils::Hdf5Locker locker(backgeocoding.su[masterIndex - 1]->h5File);
+		ret = conversion.read_slc_from_h5(backgeocoding.su[masterIndex - 1]->h5File.c_str(), tmp);
+	}
 	if (ret < 0) {
 		emit errorProcess("Failed to read master SLC from H5.");
 		return;
 	}
+	emit updateProcess(12, QStringLiteral("主影像 SLC 数据读取完毕，正在初始化配准空间……"));
 	tmp.convertTo(tmp, CV_32F);
-	ret = conversion.creat_new_h5(backgeocoding.outFiles[masterIndex - 1].c_str());
+	{
+		NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[masterIndex - 1]);
+		ret = conversion.creat_new_h5(backgeocoding.outFiles[masterIndex - 1].c_str());
+		if (ret >= 0) {
+			ret = conversion.write_slc_to_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), tmp);
+		}
+	}
 	if (ret < 0) {
-		emit errorProcess("Failed to create master registration H5 file.");
+		emit errorProcess("Failed to create or write master registration H5 file.");
 		return;
 	}
-	ret = conversion.write_slc_to_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), tmp);
-	if (ret < 0) {
-		emit errorProcess("Failed to write master SLC to H5 file.");
-		return;
-	}
+	emit updateProcess(14, QStringLiteral("主影像注册 H5 空间初始化完毕……"));
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Successfully loaded Master SLC data and set DEM path.");
-	tmp.re = 0.0; tmp.im = 0.0;
+
+	// 从影像不再预写入整个全 0 的大矩阵，改为调用 create_empty_dataset 延迟分配物理磁盘空间
 	for (int i = 0; i < backgeocoding.numOfImages; i++)
 	{
 		if (i == masterIndex - 1) continue;
-		ret = conversion.creat_new_h5(backgeocoding.outFiles[i].c_str());
-		if (ret < 0) {
-			emit errorProcess("Failed to create slave registration H5 file: " + QString::fromStdString(backgeocoding.outFiles[i]));
-			return;
+		emit updateProcess(14 + i, QStringLiteral("正在初始化从影像 %1/%2 的 H5 空间……").arg(i + 1).arg(backgeocoding.numOfImages));
+		{
+			NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[i]);
+			ret = conversion.creat_new_h5(backgeocoding.outFiles[i].c_str());
+			if (ret >= 0) {
+				ret = conversion.create_empty_dataset(backgeocoding.outFiles[i].c_str(), "s_re", tmp.GetRows(), tmp.GetCols(), CV_32F);
+			}
+			if (ret >= 0) {
+				ret = conversion.create_empty_dataset(backgeocoding.outFiles[i].c_str(), "s_im", tmp.GetRows(), tmp.GetCols(), CV_32F);
+			}
 		}
-		ret = conversion.write_slc_to_h5(backgeocoding.outFiles[i].c_str(), tmp);
 		if (ret < 0) {
-			emit errorProcess("Failed to write empty SLC to H5 file: " + QString::fromStdString(backgeocoding.outFiles[i]));
+			emit errorProcess("Failed to create empty datasets in slave registration H5 file: " + QString::fromStdString(backgeocoding.outFiles[i]));
 			return;
 		}
 	}
+	emit updateProcess(18, QStringLiteral("所有从影像 H5 空间初始化完毕，准备执行后向投影……"));
 
 	cv::Mat start(backgeocoding.su[masterIndex - 1]->burstCount, 1, CV_32S), end(backgeocoding.su[masterIndex - 1]->burstCount, 1, CV_32S);
 	start.at<int>(0, 0) = 1;
@@ -296,17 +315,18 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			slaveSLC.convertTo(slaveSLC, CV_32F);
 			char str[256];
 			sprintf(str, "burst_%d_coef", i + 1);
-			conversion.write_array_to_h5(backgeocoding.outFiles[j].c_str(), str, coef);
-			ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_re", slaveSLC.re,
-				offset_row, 0, linesPerBurst, samplesPerBurst);
-			if (ret < 0) {
-				emit errorProcess("Failed to write slave SLC real part to H5.");
-				return;
+			{
+				NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[j]);
+				conversion.write_array_to_h5(backgeocoding.outFiles[j].c_str(), str, coef);
+				ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_re", slaveSLC.re,
+					offset_row, 0, linesPerBurst, samplesPerBurst);
+				if (ret >= 0) {
+					ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_im", slaveSLC.im,
+						offset_row, 0, linesPerBurst, samplesPerBurst);
+				}
 			}
-			ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_im", slaveSLC.im,
-				offset_row, 0, linesPerBurst, samplesPerBurst);
 			if (ret < 0) {
-				emit errorProcess("Failed to write slave SLC imag part to H5.");
+				emit errorProcess("Failed to write slave SLC real or imag part to H5.");
 				return;
 			}
 		}
@@ -333,27 +353,39 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			{
 				int offset_col = 0;
 				offset_row = (i - 1) * linesPerBurst + backgeocoding.su[masterIndex - 1]->lastValidLine.at<int>(i - 1, 0) - overlapMat.at<int>(i - 1, 0);
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_master_up.re);
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_master_up.im);
+				{
+					NodeUtils::Hdf5Locker locker_master(backgeocoding.outFiles[masterIndex - 1]);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_master_up.re);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_master_up.im);
+				}
 
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_slave_up.re);
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_slave_up.im);
+				{
+					NodeUtils::Hdf5Locker locker_slave(backgeocoding.outFiles[j]);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_slave_up.re);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_slave_up.im);
+				}
 
 				offset_row = linesPerBurst * i + backgeocoding.su[masterIndex - 1]->firstValidLine.at<int>(i, 0) - 1;
 
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_master_down.re);
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_master_down.im);
+				{
+					NodeUtils::Hdf5Locker locker_master(backgeocoding.outFiles[masterIndex - 1]);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_master_down.re);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[masterIndex - 1].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_master_down.im);
+				}
 
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_slave_down.re);
-				conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
-					samplesPerBurst, overlap_slave_down.im);
+				{
+					NodeUtils::Hdf5Locker locker_slave(backgeocoding.outFiles[j]);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_re", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_slave_down.re);
+					conversion.read_subarray_from_h5(backgeocoding.outFiles[j].c_str(), "s_im", offset_row, offset_col, overlapMat.at<int>(i - 1, 0),
+						samplesPerBurst, overlap_slave_down.im);
+				}
 
 				overlap_master_up.convertTo(overlap_master_up, CV_64F);
 				overlap_master_down.convertTo(overlap_master_down, CV_64F);
@@ -399,7 +431,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			cv::minMaxLoc(output, &t1, &t2, NULL, &p);
 			double offset = out_x.at<double>(p.x);
 			double offset_a = offset / (2 * 3.1415926535 * 4500) * 486;
-			conversion.write_double_to_h5(backgeocoding.outFiles[j].c_str(), "offset_a", offset_a);
+			{
+				NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[j]);
+				conversion.write_double_to_h5(backgeocoding.outFiles[j].c_str(), "offset_a", offset_a);
+			}
 			InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Slave image %1 (index %2) ESD azimuth offset calculated: %3")
 				.arg(origin[j]).arg(j + 1).arg(offset_a));
 		}
@@ -411,7 +446,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			{
 				if (j == masterIndex - 1) continue;
 				double offset_a = 0.0;
-				conversion.read_double_from_h5(backgeocoding.outFiles[j].c_str(), "offset_a", &offset_a);
+				{
+					NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[j]);
+					conversion.read_double_from_h5(backgeocoding.outFiles[j].c_str(), "offset_a", &offset_a);
+				}
 				//偏移低于0.001像素则不予补偿
 				if (fabs(offset_a) < 0.001) continue;
 				if (!backgeocoding.burstOffsetComputed)
@@ -432,8 +470,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				ret = backgeocoding.performDerampDemod(derampDemodPhase, slaveSLC);
 				char str[256];
 				sprintf(str, "burst_%d_coef", i + 1);
-				
-				conversion.read_array_from_h5(backgeocoding.outFiles[j].c_str(), str, coef);
+				{
+					NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[j]);
+					conversion.read_array_from_h5(backgeocoding.outFiles[j].c_str(), str, coef);
+				}
 				
 				a0Rg = coef.at<double>(0);
 				a1Rg = coef.at<double>(1);
@@ -451,16 +491,17 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				slaveSLC.Mul(tmp, slaveSLC, true);//reramp
 				slaveSLC.convertTo(slaveSLC, CV_32F);
 
-				ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_re", slaveSLC.re,
-					offset_row, 0, linesPerBurst, samplesPerBurst);
-				if (ret < 0) {
-					emit errorProcess("Failed to write ESD compensated SLC real part to H5.");
-					return;
+				{
+					NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[j]);
+					ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_re", slaveSLC.re,
+						offset_row, 0, linesPerBurst, samplesPerBurst);
+					if (ret >= 0) {
+						ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_im", slaveSLC.im,
+							offset_row, 0, linesPerBurst, samplesPerBurst);
+					}
 				}
-				ret = conversion.write_subarray_to_h5(backgeocoding.outFiles[j].c_str(), "s_im", slaveSLC.im,
-					offset_row, 0, linesPerBurst, samplesPerBurst);
 				if (ret < 0) {
-					emit errorProcess("Failed to write ESD compensated SLC imag part to H5.");
+					emit errorProcess("Failed to write ESD compensated SLC real or imag part to H5.");
 					return;
 				}
 			}
@@ -478,8 +519,11 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	{
 		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Debursting image %1/%2: %3")
 			.arg(i + 1).arg(backgeocoding.numOfImages).arg(origin[i]));
-		conversion.read_slc_from_h5(backgeocoding.outFiles[i].c_str(), slaveSLC);
-		conversion.creat_new_h5(backgeocoding.outFiles[i].c_str());
+		{
+			NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[i]);
+			conversion.read_slc_from_h5(backgeocoding.outFiles[i].c_str(), slaveSLC);
+			conversion.creat_new_h5(backgeocoding.outFiles[i].c_str());
+		}
 		slc = slaveSLC(cv::Range(backgeocoding.start.at<int>(0, 0), backgeocoding.end.at<int>(0, 0)),
 			cv::Range(0, backgeocoding.su[masterIndex - 1]->samplesPerBurst));
 		for (int j = 1; j < backgeocoding.su[masterIndex - 1]->burstCount; j++)
@@ -489,7 +533,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			cv::vconcat(slc.re, tmp.re, slc.re);
 			cv::vconcat(slc.im, tmp.im, slc.im);
 		}
-		conversion.write_slc_to_h5(backgeocoding.outFiles[i].c_str(), slc);
+		{
+			NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[i]);
+			conversion.write_slc_to_h5(backgeocoding.outFiles[i].c_str(), slc);
+		}
 		emit updateProcess(90 + 10 / burstCount * (i + 1), QStringLiteral("deburst……"));
 	}
 
@@ -505,14 +552,17 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	/*写入辅助参数到h5*/
 	for (int i = 0; i < images_number; i++)
 	{
-		FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
-		FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
-		FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
-		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", 0);
-		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", 0);
-		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", rows);
-		FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
-	}
+		{
+			NodeUtils::Hdf5Locker locker_src(SAR_images.at(i));
+			NodeUtils::Hdf5Locker locker_dst(SAR_images_regis.at(i));
+			FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
+			FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
+			FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
+			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", 0);
+			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", 0);
+			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", rows);
+			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
+		}
 	}
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration parameters copied successfully to H5 files.");
 

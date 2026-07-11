@@ -41,9 +41,9 @@ QRectF AbstractNodeGeometry::boundingRect(NodeId const nodeId) const
     QMargins margins(widthMargin, heightMargin, widthMargin, heightMargin);
     */
 
-    // 新代码：使用固定 10 像素边距
-    // New code: Use fixed 10 pixel margin
-    int fixedMargin = 10;
+    // 新代码：使用固定 20 像素边距（确保能完全包含端口的圆形感应区域，避免 shape() 范围超出 boundingRect() 导致在其外部边缘悬浮时出现错误的移动画布手形光标）
+    // New code: Use fixed 20 pixel margin to ensure it fully encloses port interaction radius, preventing incorrect hand cursor rendering
+    int fixedMargin = 20;
     QMargins margins(fixedMargin, fixedMargin, fixedMargin, fixedMargin);
 
     QRectF r(QPointF(0, 0), s);

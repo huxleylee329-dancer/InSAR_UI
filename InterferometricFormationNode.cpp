@@ -328,6 +328,7 @@ void InterferometricFormationNode::createWidget()
             }
             m_isDeflat = val;
             invalidateNodeData();
+            updateParameterWidgetsEnableState();
         }
     });
     deflatLayout->addWidget(m_deflatCheckBox);
@@ -350,6 +351,7 @@ void InterferometricFormationNode::createWidget()
             }
             m_isTopoRemoval = val;
             invalidateNodeData();
+            updateParameterWidgetsEnableState();
         }
     });
     topoRemovalLayout->addWidget(m_topoRemovalCheckBox);
@@ -553,6 +555,7 @@ void InterferometricFormationNode::createWidget()
     layout->addSpacerItem(new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     updateLabels();
+    updateParameterWidgetsEnableState();
 }
 
 void InterferometricFormationNode::onCoherenceStateChanged(int state)
@@ -1231,9 +1234,12 @@ void InterferometricFormationNode::updateParameterWidgetsEnableState()
     if (m_multilookAzEdit) m_multilookAzEdit->setEnabled(enableWidgets);
 
     bool hasDemConn = (m_demInputData != nullptr);
-    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !hasDemConn);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !hasDemConn);
+    bool demNeeded = m_isDeflat || m_isTopoRemoval;
+    bool demEnabled = enableWidgets && demNeeded && !hasDemConn;
+
+    if (m_demPathLabel) m_demPathLabel->setEnabled(demEnabled);
+    if (m_demPathEdit) m_demPathEdit->setEnabled(demEnabled);
+    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(demEnabled);
 }
 
 } // namespace QtNodes

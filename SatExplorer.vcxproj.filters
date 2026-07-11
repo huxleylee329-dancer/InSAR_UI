@@ -328,6 +328,12 @@
     <ClCompile Include="DEMSourceWorker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="OrbitSourceDialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="OrbitSourceWorker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="GeocodingNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -988,6 +994,12 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\DEMSourceWorker.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\OrbitSourceDialog.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\OrbitSourceWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\GeocodingNode.h">

@@ -157,6 +157,7 @@ QRectF NodeGraphicsObject::boundingRect() const
 QPainterPath NodeGraphicsObject::shape() const
 {
     QPainterPath path;
+    path.setFillRule(Qt::WindingFill); // 设置为非零环绕规则（WindingFill）以对图形求并集，避免默认的奇偶规则（OddEvenFill）在端口圆圈与节点矩形重叠区域产生镂空
     AbstractNodeGeometry &geometry = nodeScene()->nodeGeometry();
     QSize s = geometry.size(_nodeId);
 

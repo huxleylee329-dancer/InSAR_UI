@@ -105,7 +105,7 @@ QString S1TopsBackGeocodingNode::portCaption(PortType portType, PortIndex portIn
         if (portIndex == 0)
             return tr("输入图像");
         else
-            return tr("DEM ?");
+            return tr("DEM");
     }
     else
     {
@@ -119,8 +119,6 @@ QString S1TopsBackGeocodingNode::portCaption(PortType portType, PortIndex portIn
 
 bool S1TopsBackGeocodingNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::In && portIndex == 1)
-        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -557,6 +555,12 @@ bool S1TopsBackGeocodingNode::validateInputs() const
         return false;
     }
 
+    // Validate DEM path
+    if (m_demPath.isEmpty())
+    {
+        return false;
+    }
+
     // Validate project context
     if (!projectModel() || projectPath().isEmpty() || projectName().isEmpty())
     {
@@ -771,7 +775,7 @@ void S1TopsBackGeocodingNode::stopExecution()
     {
         m_thread->requestInterruption();
         m_thread->quit();
-        m_thread->wait();
+        NodeUtils::safeThreadWait(m_thread);
     }
 }
 

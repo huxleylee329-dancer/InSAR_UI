@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QThread>
+#include <QPointer>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
 #include <memory>
@@ -89,8 +90,8 @@ private:
     int m_preparedImagesNumber;
 
     // Worker thread
-    S1TopsBackGeocodingWorker* m_workerThread;
-    QThread* m_thread;
+    QPointer<S1TopsBackGeocodingWorker> m_workerThread;
+    QPointer<QThread> m_thread;
 
     // Remedy watcher for missing JPG regeneration
     QFutureWatcher<void> m_remedyWatcher;

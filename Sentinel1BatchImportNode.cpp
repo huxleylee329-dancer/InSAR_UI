@@ -19,6 +19,10 @@
 #include <QLabel>
 #include <QFrame>
 #include <QVBoxLayout>
+#include <QSettings>
+#include <QDate>
+#include <QDateTime>
+#include <QFileDialog>
 
 namespace QtNodes {
 
@@ -29,8 +33,13 @@ Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     , m_subswathCombo(nullptr)
     , m_polarizationCombo(nullptr)
     , m_projectLabel(nullptr)
+    , m_enableOrbitCheckBox(nullptr)
+    , m_orbitDirEdit(nullptr)
+    , m_orbitBrowseBtn(nullptr)
     , m_manifestPaths()
     , m_outputNodeName("S1_Batch_Import")
+    , m_enableOrbitMatch(true)
+    , m_orbitDir("")
 {
 }
 
@@ -150,6 +159,55 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     nameRow->addWidget(m_outputNodeNameEdit);
     configLayout->addLayout(nameRow);
 
+    // 精轨自动匹配 CheckBox
+    m_enableOrbitCheckBox = new QCheckBox("自动挂载精密轨道(EOF)");
+    m_enableOrbitCheckBox->setChecked(m_enableOrbitMatch);
+    configLayout->addWidget(m_enableOrbitCheckBox);
+
+    // 精轨路径选择行
+    auto* orbitRow = new QHBoxLayout();
+    orbitRow->addWidget(new QLabel("轨道目录："));
+
+    m_orbitDirEdit = new QLineEdit();
+    m_orbitDirEdit->setReadOnly(true);
+    m_orbitDirEdit->setPlaceholderText("(优先就近, 其次匹配此目录)");
+
+    // 读取并回填默认路径
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+    QString lastOrbitDir = settings.value(QString("Orbit/ProjectDir_%1").arg(projectName()), "").toString();
+    if (lastOrbitDir.isEmpty())
+    {
+        lastOrbitDir = settings.value("Orbit/LastMatchDir", "").toString();
+    }
+    if (lastOrbitDir.isEmpty())
+    {
+        lastOrbitDir = QDir::currentPath() + "/orbits";
+    }
+    m_orbitDir = lastOrbitDir;
+    m_orbitDirEdit->setText(QDir::toNativeSeparators(m_orbitDir));
+    orbitRow->addWidget(m_orbitDirEdit);
+
+    m_orbitBrowseBtn = new QPushButton("浏览...");
+    m_orbitBrowseBtn->setFixedWidth(50);
+    orbitRow->addWidget(m_orbitBrowseBtn);
+
+    configLayout->addLayout(orbitRow);
+
+    // 联动使能与信号连接
+    m_orbitDirEdit->setEnabled(m_enableOrbitMatch);
+    m_orbitBrowseBtn->setEnabled(m_enableOrbitMatch);
+
+    connect(m_enableOrbitCheckBox, &QCheckBox::toggled, this, [this, invalidateNodeData](bool checked) {
+        if (m_enableOrbitMatch != checked) {
+            m_enableOrbitMatch = checked;
+            m_orbitDirEdit->setEnabled(checked);
+            m_orbitBrowseBtn->setEnabled(checked);
+            invalidateNodeData();
+        }
+    });
+
+    connect(m_orbitBrowseBtn, &QPushButton::clicked, this, &Sentinel1BatchImportNode::onOrbitBrowseClicked);
+
     bottomSection->addLayout(configLayout);
     mainLayout->addLayout(bottomSection, 4);
 
@@ -220,6 +278,96 @@ bool Sentinel1BatchImportNode::prepareToStart()
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
 }
 
+static QString findMatchedEofFile(const QString& manifestOrSafePath, const QString& projName)
+{
+    // 1. 优先就近查找：去 manifest.safe 的同级或上级 .SAFE 目录下寻找是否存在 *.EOF
+    QFileInfo manifestInfo(manifestOrSafePath);
+    QDir safeDir = manifestInfo.dir(); // 一般为 .SAFE/
+    QStringList eofFilters;
+    eofFilters << "*.EOF" << "*.eofs";
+    QStringList eofFiles = safeDir.entryList(eofFilters, QDir::Files);
+    if (!eofFiles.isEmpty())
+    {
+        return safeDir.absoluteFilePath(eofFiles.first());
+    }
+
+    // 如果上级是 .SAFE 且里面也没有，向上多找一层
+    if (manifestInfo.fileName().toLower() == "manifest.safe")
+    {
+        QDir parentDir = safeDir;
+        parentDir.cdUp();
+        QStringList parentEofFiles = parentDir.entryList(eofFilters, QDir::Files);
+        if (!parentEofFiles.isEmpty())
+        {
+            return parentDir.absoluteFilePath(parentEofFiles.first());
+        }
+    }
+
+    // 2. 如果就近没找到，提取影像的平台与拍摄日期做全局精轨库扫描匹配
+    QString pathLower = manifestOrSafePath.toLower();
+    QString platform = "S1A";
+    if (pathLower.contains("s1b")) platform = "S1B";
+
+    // 匹配日期，S1 命名标准中成像时间在第 5 段：如 S1A_IW_SLC__1SDV_20251204T015841_...
+    QRegularExpression dateRe("(20\\d{6})t(\\d{6})");
+    QRegularExpressionMatch dateMatch = dateRe.match(pathLower);
+    if (!dateMatch.hasMatch()) return QString();
+
+    QString dateStr = dateMatch.captured(1); // "20251204"
+    QString timeStr = dateMatch.captured(2); // "015841"
+
+    QDate centerDate = QDate::fromString(dateStr, "yyyyMMdd");
+    if (!centerDate.isValid()) return QString();
+
+    QDate prevDate = centerDate.addDays(-1);
+    QDate nextDate = centerDate.addDays(1);
+
+    // 3. 读取精轨缓存文件夹
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+    QString cacheDir;
+    if (!projName.isEmpty()) {
+        cacheDir = settings.value(QString("Orbit/ProjectDir_%1").arg(projName), "").toString();
+    }
+    if (cacheDir.isEmpty()) {
+        cacheDir = settings.value("Orbit/LastMatchDir", "").toString();
+    }
+    if (cacheDir.isEmpty() || !QDir(cacheDir).exists()) return QString();
+
+    QDir globalDir(cacheDir);
+
+    // A. 尝试精确定位 POEORB (精密轨道)
+    QString poePattern = QString("*%1*V%2T215942_%3T000142*.EOF")
+                            .arg(platform)
+                            .arg(prevDate.toString("yyyyMMdd"))
+                            .arg(nextDate.toString("yyyyMMdd"));
+    QStringList poeMatches = globalDir.entryList(QStringList{poePattern}, QDir::Files);
+    if (!poeMatches.isEmpty())
+    {
+        return globalDir.absoluteFilePath(poeMatches.first());
+    }
+
+    // B. 如果未找到 POEORB，尝试匹配包含成像时刻的 RESORB (重构轨道)
+    QString resorbPattern = QString("*%1*RESORB*V%2*.EOF").arg(platform).arg(dateStr);
+    QStringList resorbMatches = globalDir.entryList(QStringList{resorbPattern}, QDir::Files);
+    for (const QString& resFile : resorbMatches)
+    {
+        QRegularExpression valRe("V(\\d{8}T\\d{6})_(\\d{8}T\\d{6})");
+        QRegularExpressionMatch valMatch = valRe.match(resFile);
+        if (valMatch.hasMatch())
+        {
+            QDateTime startVal = QDateTime::fromString(valMatch.captured(1), "yyyyMMddTHHmmss");
+            QDateTime endVal = QDateTime::fromString(valMatch.captured(2), "yyyyMMddTHHmmss");
+            QDateTime imgTime = QDateTime::fromString(dateStr + "T" + timeStr, "yyyyMMddTHHmmss");
+            if (imgTime >= startVal && imgTime <= endVal)
+            {
+                return globalDir.absoluteFilePath(resFile);
+            }
+        }
+    }
+
+    return QString();
+}
+
 void Sentinel1BatchImportNode::executeImport()
 {
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
@@ -243,16 +391,13 @@ void Sentinel1BatchImportNode::executeImport()
         task.filename = m_preparedImportNameList[i];
         QStringList args = QStringList{ m_preparedOriginalNameList[i], subswath, pol };
         
-        // 自动发现同目录下的精轨文件 (.EOF) 并追加为第4个参数
-        QFileInfo manifestInfo(m_preparedOriginalNameList[i]);
-        QDir safeDir = manifestInfo.dir();
-        QStringList eofFilters;
-        eofFilters << "*.EOF" << "*.eofs";
-        QStringList eofFiles = safeDir.entryList(eofFilters, QDir::Files);
-        if (!eofFiles.isEmpty()) {
-            QString podPath = safeDir.absoluteFilePath(eofFiles.first());
-            args.append(podPath);
-            InSARLogManager::LogInfo("Sentinel1BatchImportNode", "自动发现精轨文件: " + podPath);
+        // 自动发现和匹配精轨文件 (.EOF)（两级匹配：就近查找 + 全局缓存检索）
+        if (m_enableOrbitMatch) {
+            QString matchedEof = findMatchedEofFile(m_preparedOriginalNameList[i], projectName());
+            if (!matchedEof.isEmpty()) {
+                args.append(matchedEof);
+                InSARLogManager::LogInfo("Sentinel1BatchImportNode", "已成功挂载精轨文件: " + matchedEof);
+            }
         }
         
         task.arguments = args;
@@ -501,6 +646,31 @@ void Sentinel1BatchImportNode::onRemoveFilesClicked()
     }
 }
 
+void Sentinel1BatchImportNode::onOrbitBrowseClicked()
+{
+    QString dir = QFileDialog::getExistingDirectory(nullptr, "选择精密轨道(EOF)存放目录", m_orbitDir);
+    if (!dir.isEmpty())
+    {
+        m_orbitDir = QDir::toNativeSeparators(dir);
+        if (m_orbitDirEdit)
+        {
+            m_orbitDirEdit->setText(m_orbitDir);
+        }
+
+        // 记忆到全局 Config 和项目专属 Config
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+        settings.setValue("Orbit/LastMatchDir", m_orbitDir);
+        if (!projectName().isEmpty())
+        {
+            settings.setValue(QString("Orbit/ProjectDir_%1").arg(projectName()), m_orbitDir);
+        }
+
+        int outCount = nPorts(PortType::Out);
+        for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
+        invalidateExecution();
+    }
+}
+
 QJsonObject Sentinel1BatchImportNode::save() const
 {
     QJsonObject json = ExecutableNodeDelegateModel::save();
@@ -511,6 +681,8 @@ QJsonObject Sentinel1BatchImportNode::save() const
     json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
     json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
     json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName;
+    json["enableOrbitMatch"] = m_enableOrbitCheckBox ? m_enableOrbitCheckBox->isChecked() : m_enableOrbitMatch;
+    json["orbitDir"] = m_orbitDirEdit ? m_orbitDirEdit->text().trimmed() : m_orbitDir;
     return json;
 }
 
@@ -534,6 +706,8 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
     if (m_polarization.isEmpty()) {
         m_polarization = "vv";
     }
+    m_enableOrbitMatch = json["enableOrbitMatch"].toBool(true);
+    m_orbitDir = json["orbitDir"].toString();
 
     // 同步 UI 控件到最新反序列化的值，防止基类 load() 触发的 validateAndRestoreOutput() 读到旧的 UI 控件值
     if (m_fileListWidget) {
@@ -556,6 +730,12 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
         int idx = m_polarizationCombo->findText(m_polarization);
         if (idx >= 0) m_polarizationCombo->setCurrentIndex(idx);
     }
+
+    if (m_enableOrbitCheckBox)
+        m_enableOrbitCheckBox->setChecked(m_enableOrbitMatch);
+
+    if (m_orbitDirEdit)
+        m_orbitDirEdit->setText(QDir::toNativeSeparators(m_orbitDir));
 
     ExecutableNodeDelegateModel::load(json);
 

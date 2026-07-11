@@ -3,6 +3,7 @@
 #include "ui_MainWindow.h"
 #include "Unwrap_ui.h"
 #include "DEMSourceDialog.h"
+#include "OrbitSourceDialog.h"
 #include "Dem_ui.h"
 #include "PhaseElevationRegression_ui.h"
 #include "GacosOnlineService_ui.h"
@@ -128,10 +129,11 @@ private slots:
     void on_actionDenoise_triggered();
     void on_actionUnwrap_triggered();
     void on_actionDEM_triggered();
-    void on_actionPhaseElevationRegression_triggered();
-    void on_actionGacosOnlineService_triggered();
-    void on_actionTroposphericCorrection_triggered();
-    void on_actionIonosphericCorrection_triggered();
+    void slot_actionPhaseElevationRegression_triggered();
+    void slot_actionGacosOnlineService_triggered();
+    void slot_actionTroposphericCorrection_triggered();
+    void slot_actionIonosphericCorrection_triggered();
+    void slot_actionOrbit_Manager_triggered();
     void on_actionExternal_DEM_triggered();
     void on_actiongeocode_triggered();
     void on_actionS1_swath_merge_triggered();
@@ -169,7 +171,7 @@ private slots:
     void on_actionCleanOrphanedFiles_triggered();
 
 public slots:
-    void on_actionGCP_Manager_triggered();
+    void slot_actionGCP_Manager_triggered();
 private:
     void setupThemeMenu();
     void setTheme(const QString &theme);
@@ -210,6 +212,7 @@ private:
     void updateFileMenuState();
 
     QAction* m_actionGcpManager;
+    QAction* m_actionOrbitManager;
     QAction* m_actionPhaseElevationRegression;
     QAction* m_actionGacosOnlineService;
     QAction* m_actionTroposphericCorrection;

@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QLineEdit>
+#include <QCheckBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <vector>
@@ -52,6 +53,7 @@ protected:
 private slots:
     void onAddFilesClicked();
     void onRemoveFilesClicked();
+    void onOrbitBrowseClicked();
 
 private:
     // UI elements
@@ -60,12 +62,17 @@ private:
     QComboBox* m_subswathCombo;
     QComboBox* m_polarizationCombo;
     QLabel* m_projectLabel;
+    QCheckBox* m_enableOrbitCheckBox;
+    QLineEdit* m_orbitDirEdit;
+    QPushButton* m_orbitBrowseBtn;
 
     // State
     QStringList m_manifestPaths;
     QString m_outputNodeName;
     QString m_subswath = "iw1";
     QString m_polarization = "vv";
+    bool m_enableOrbitMatch = true;
+    QString m_orbitDir;
 
     std::vector<QString> m_preparedOriginalNameList;
     std::vector<QString> m_preparedImportNameList;

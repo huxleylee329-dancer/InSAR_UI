@@ -3,6 +3,13 @@
 #include"ImportTask.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
+#include"NodeUtils.h"
+#include<QDir>
+#include<QFileInfo>
+#include<QSettings>
+#include<QRegularExpression>
+#include<QDate>
+#include<QDateTime>
 #include<opencv2/highgui.hpp>
 #include<qmessagebox.h>
 #include "tinyxml.h"
@@ -370,6 +377,96 @@ void import_sentinel::on_pushButton_POD_pressed()
     }
 }
 
+static QString findMatchedEofFile(const QString& manifestOrSafePath, const QString& projName)
+{
+    // 1. 优先就近查找：去 manifest.safe 的同级或上级 .SAFE 目录下寻找是否存在 *.EOF
+    QFileInfo manifestInfo(manifestOrSafePath);
+    QDir safeDir = manifestInfo.dir(); // 一般为 .SAFE/
+    QStringList eofFilters;
+    eofFilters << "*.EOF" << "*.eofs";
+    QStringList eofFiles = safeDir.entryList(eofFilters, QDir::Files);
+    if (!eofFiles.isEmpty())
+    {
+        return safeDir.absoluteFilePath(eofFiles.first());
+    }
+
+    // 如果上级是 .SAFE 且里面也没有，向上多找一层
+    if (manifestInfo.fileName().toLower() == "manifest.safe")
+    {
+        QDir parentDir = safeDir;
+        parentDir.cdUp();
+        QStringList parentEofFiles = parentDir.entryList(eofFilters, QDir::Files);
+        if (!parentEofFiles.isEmpty())
+        {
+            return parentDir.absoluteFilePath(parentEofFiles.first());
+        }
+    }
+
+    // 2. 如果就近没找到，提取影像的平台与拍摄日期做全局精轨库扫描匹配
+    QString pathLower = manifestOrSafePath.toLower();
+    QString platform = "S1A";
+    if (pathLower.contains("s1b")) platform = "S1B";
+
+    // 匹配日期，S1 命名标准中成像时间在第 5 段：如 S1A_IW_SLC__1SDV_20251204T015841_...
+    QRegularExpression dateRe("(20\\d{6})t(\\d{6})");
+    QRegularExpressionMatch dateMatch = dateRe.match(pathLower);
+    if (!dateMatch.hasMatch()) return QString();
+
+    QString dateStr = dateMatch.captured(1); // "20251204"
+    QString timeStr = dateMatch.captured(2); // "015841"
+
+    QDate centerDate = QDate::fromString(dateStr, "yyyyMMdd");
+    if (!centerDate.isValid()) return QString();
+
+    QDate prevDate = centerDate.addDays(-1);
+    QDate nextDate = centerDate.addDays(1);
+
+    // 3. 读取精轨缓存文件夹
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+    QString cacheDir;
+    if (!projName.isEmpty()) {
+        cacheDir = settings.value(QString("Orbit/ProjectDir_%1").arg(projName), "").toString();
+    }
+    if (cacheDir.isEmpty()) {
+        cacheDir = settings.value("Orbit/LastMatchDir", "").toString();
+    }
+    if (cacheDir.isEmpty() || !QDir(cacheDir).exists()) return QString();
+
+    QDir globalDir(cacheDir);
+
+    // A. 尝试精确定位 POEORB (精密轨道)
+    QString poePattern = QString("*%1*V%2T215942_%3T000142*.EOF")
+                            .arg(platform)
+                            .arg(prevDate.toString("yyyyMMdd"))
+                            .arg(nextDate.toString("yyyyMMdd"));
+    QStringList poeMatches = globalDir.entryList(QStringList{poePattern}, QDir::Files);
+    if (!poeMatches.isEmpty())
+    {
+        return globalDir.absoluteFilePath(poeMatches.first());
+    }
+
+    // B. 如果未找到 POEORB，尝试匹配包含成像时刻的 RESORB (重构轨道)
+    QString resorbPattern = QString("*%1*RESORB*V%2*.EOF").arg(platform).arg(dateStr);
+    QStringList resorbMatches = globalDir.entryList(QStringList{resorbPattern}, QDir::Files);
+    for (const QString& resFile : resorbMatches)
+    {
+        QRegularExpression valRe("V(\\d{8}T\\d{6})_(\\d{8}T\\d{6})");
+        QRegularExpressionMatch valMatch = valRe.match(resFile);
+        if (valMatch.hasMatch())
+        {
+            QDateTime startVal = QDateTime::fromString(valMatch.captured(1), "yyyyMMddTHHmmss");
+            QDateTime endVal = QDateTime::fromString(valMatch.captured(2), "yyyyMMddTHHmmss");
+            QDateTime imgTime = QDateTime::fromString(dateStr + "T" + timeStr, "yyyyMMddTHHmmss");
+            if (imgTime >= startVal && imgTime <= endVal)
+            {
+                return globalDir.absoluteFilePath(resFile);
+            }
+        }
+    }
+
+    return QString();
+}
+
 void import_sentinel::on_buttonBox_2_accepted()
 {
     //检查导入文件list是否为空
@@ -433,7 +530,16 @@ void import_sentinel::on_buttonBox_2_accepted()
     for (size_t i = 0; i < original_namelist.size(); ++i) {
         ImportTask task;
         task.filename = import_namelist[i];
-        task.arguments = QStringList{ original_namelist[i], subswath, polarization };
+        QStringList args = QStringList{ original_namelist[i], subswath, polarization };
+        
+        // 自动发现和匹配精轨文件 (.EOF)
+        QString matchedEof = findMatchedEofFile(original_namelist[i], ui->ComboBox_dst_project_2->currentText());
+        if (!matchedEof.isEmpty())
+        {
+            args.append(matchedEof);
+        }
+        
+        task.arguments = args;
         tasks.push_back(task);
     }
 

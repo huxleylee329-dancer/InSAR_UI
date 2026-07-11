@@ -44,6 +44,13 @@ static void setupDebugConsole()
         // 同步 C++ 标准流（std::cout, std::cerr）
         std::ios::sync_with_stdio();
         
+        // 禁用控制台的快速编辑模式（QuickEdit Mode），防止用户误点控制台导致输出线程挂起
+        HANDLE hInput = GetStdHandle(STD_INPUT_HANDLE);
+        DWORD prev_mode;
+        if (GetConsoleMode(hInput, &prev_mode)) {
+            SetConsoleMode(hInput, prev_mode & ~ENABLE_QUICK_EDIT_MODE);
+        }
+        
         // 禁用控制台窗口的关闭按钮（X），防止误点导致进程终止
         HWND hwnd = GetConsoleWindow();
         if (hwnd != NULL) {

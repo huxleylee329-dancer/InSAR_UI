@@ -11,6 +11,7 @@ class QWidget;
 class IApplicationInterface;
 
 class QStandardItem;
+class QThread;
 
 namespace NodeUtils {
 
@@ -18,8 +19,18 @@ QMutex* getHdf5Mutex();
 
 class Hdf5Locker {
 public:
-    Hdf5Locker();
+    // timeoutMs 默认为 -1（代表阻塞式死等）
+    // UI 读取时建议指定合理的超时（如 50ms）以防界面卡死
+    Hdf5Locker(const QString& filePath, int timeoutMs = -1);
+    Hdf5Locker(const std::string& filePath, int timeoutMs = -1);
+    Hdf5Locker(); // 兼容原先无参数调用，使用全局静态大锁并死等
     ~Hdf5Locker();
+
+    bool isLocked() const { return m_isLocked; }
+
+private:
+    QMutex* m_mutex;
+    bool m_isLocked;
 };
 
 /**
@@ -178,5 +189,10 @@ QString getConfigPath();
  * @param modelName 模型文件名（如 "sar_ship_model0429.onnx"）
  */
 QString getModelPath(const QString& modelName);
+
+/**
+ * @brief 安全的、带事件循环轮询的非阻塞线程等待函数，防止因日志管道满或阻塞导致的双向死锁
+ */
+void safeThreadWait(QThread* thread, int timeoutMs = 50);
 
 } // namespace NodeUtils
