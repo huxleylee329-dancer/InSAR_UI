@@ -44,7 +44,22 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
     QString manifest_file = arguments[0];
     QString subswath      = arguments[1];
     QString polarization  = arguments[2];
-    QString pod_file      = arguments.size() > 3 ? arguments[3] : "";
+
+    // 智能识别 arguments[3]：EOF 文件路径 vs burst 起始编号
+    // EOF 路径包含 ".EOF" 扩展名或路径分隔符；burst 编号为纯数字字符串
+    QString pod_file;
+    int burstArgStart = 3;
+    if (arguments.size() > 3 && arguments[3].contains(".EOF", Qt::CaseInsensitive)) {
+        pod_file = arguments[3];
+        burstArgStart = 4;
+    }
+
+    int start_burst = -1;
+    int end_burst = -1;
+    if (arguments.size() > burstArgStart + 1) {
+        start_burst = arguments[burstArgStart].toInt();
+        end_burst = arguments[burstArgStart + 1].toInt();
+    }
 
     FormatConversion conversion;
     S1ProgressContext context;
@@ -59,7 +74,9 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         outputPath.toStdString().c_str(),
         pod_file.isEmpty() ? nullptr : pod_file.toStdString().c_str(),
         onS1DllProgress,
-        &context
+        &context,
+        start_burst,
+        end_burst
     );
 
     return ret >= 0;

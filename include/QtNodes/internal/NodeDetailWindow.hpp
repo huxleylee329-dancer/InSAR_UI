@@ -87,6 +87,11 @@ protected:
     QWidget* _validationViewWidget = nullptr;
     QWidget* _currentValidationWidget = nullptr;
 
+    // 干涉测量分析选项卡组件（第3个选项卡）
+    QWidget* _interferometryViewWidget = nullptr;
+    QToolButton* _interferometryBtn = nullptr;
+    QWidget* _currentInterferometryWidget = nullptr;
+
     QButtonGroup* _navGroup = nullptr;
     QToolButton* _dataViewBtn = nullptr;
     QToolButton* _validationBtn = nullptr;

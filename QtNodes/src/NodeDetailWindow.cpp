@@ -114,6 +114,13 @@ void NodeDetailWindow::setupUI()
     validationLayout->setSpacing(10);
     _stackedWidget->addWidget(_validationViewWidget);
 
+    // Page 2: 干涉测量分析视图（第3个选项卡）
+    _interferometryViewWidget = new QWidget(this);
+    auto* interferometryLayout = new QVBoxLayout(_interferometryViewWidget);
+    interferometryLayout->setContentsMargins(12, 12, 12, 12);
+    interferometryLayout->setSpacing(10);
+    _stackedWidget->addWidget(_interferometryViewWidget);
+
     centerLayout->addWidget(_stackedWidget, 1);
     mainLayout->addLayout(centerLayout, 1);
 
@@ -280,14 +287,27 @@ QWidget* NodeDetailWindow::createSidebar()
     _dataViewBtn->setStyleSheet(btnStyle);
     _validationBtn->setStyleSheet(btnStyle);
 
+    // 3. 干涉测量分析按钮（第3个选项卡）
+    _interferometryBtn = new QToolButton();
+    _interferometryBtn->setCheckable(true);
+    _interferometryBtn->setText(QObject::tr("干涉"));
+    _interferometryBtn->setToolTip(QObject::tr("干涉测量分析：评估影像对是否适合进行InSAR处理"));
+    _interferometryBtn->setFixedSize(42, 42);
+    _interferometryBtn->setCursor(Qt::PointingHandCursor);
+    _interferometryBtn->setStyleSheet(btnStyle);
+    _interferometryBtn->setEnabled(false);        // 初始禁用，loadData 时由节点决定是否启用
+    _interferometryBtn->setVisible(false);         // 初始隐藏
+
     // Group the buttons to ensure exclusive selection
     _navGroup = new QButtonGroup(this);
     _navGroup->addButton(_dataViewBtn, 0);
     _navGroup->addButton(_validationBtn, 1);
+    _navGroup->addButton(_interferometryBtn, 2);   // 注册为第3个按钮（id=2）
     _navGroup->setExclusive(true);
 
     layout->addWidget(_dataViewBtn);
     layout->addWidget(_validationBtn);
+    layout->addWidget(_interferometryBtn);
 
     // Connect page switching
     connect(_navGroup, QOverload<int>::of(&QButtonGroup::buttonClicked), this, [this](int id) {
@@ -1217,10 +1237,22 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot, ExecutableNode
     _model = model;
     if (_model) {
         connect(_model, &ExecutableNodeDelegateModel::executionStateChanged, this, [this]() {
+            // 运行时禁用验证选项卡
             if (_model && _validationBtn) {
                 bool isRunning = (_model->executionState() == ExecutionState::Running);
                 _validationBtn->setDisabled(isRunning);
                 if (isRunning && _stackedWidget && _stackedWidget->currentIndex() == 1) {
+                    _stackedWidget->setCurrentIndex(0);
+                    if (_dataViewBtn) {
+                        _dataViewBtn->setChecked(true);
+                    }
+                }
+            }
+            // 运行时禁用干涉测量选项卡
+            if (_model && _interferometryBtn) {
+                bool isRunning = (_model->executionState() == ExecutionState::Running);
+                _interferometryBtn->setDisabled(isRunning);
+                if (isRunning && _stackedWidget && _stackedWidget->currentIndex() == 2) {
                     _stackedWidget->setCurrentIndex(0);
                     if (_dataViewBtn) {
                         _dataViewBtn->setChecked(true);
@@ -1257,6 +1289,40 @@ void NodeDetailWindow::loadData(const NodeDataSnapshot& snapshot, ExecutableNode
         }
         // Force switch back to Data view page if validation view is selected but not supported
         if (_stackedWidget && _stackedWidget->currentIndex() == 1) {
+            _stackedWidget->setCurrentIndex(0);
+            if (_dataViewBtn) {
+                _dataViewBtn->setChecked(true);
+            }
+        }
+    }
+
+    // ===== 干涉测量分析选项卡 =====
+    if (model && model->supportsInterferometry()) {
+        if (_interferometryBtn) {
+            bool isRunning = (model->executionState() == ExecutionState::Running);
+            _interferometryBtn->setEnabled(!isRunning);
+            _interferometryBtn->setVisible(true);
+        }
+        if (_interferometryViewWidget) {
+            // 清理旧的干涉测量控件
+            if (_currentInterferometryWidget) {
+                _interferometryViewWidget->layout()->removeWidget(_currentInterferometryWidget);
+                _currentInterferometryWidget->deleteLater();
+                _currentInterferometryWidget = nullptr;
+            }
+            // 创建并添加新的干涉测量控件
+            _currentInterferometryWidget = model->createInterferometryWidget(_interferometryViewWidget);
+            if (_currentInterferometryWidget) {
+                _interferometryViewWidget->layout()->addWidget(_currentInterferometryWidget);
+            }
+        }
+    } else {
+        if (_interferometryBtn) {
+            _interferometryBtn->setEnabled(false);
+            _interferometryBtn->setVisible(false);
+        }
+        // 如果当前正在查看干涉测量选项卡但不再支持，切回数据视图
+        if (_stackedWidget && _stackedWidget->currentIndex() == 2) {
             _stackedWidget->setCurrentIndex(0);
             if (_dataViewBtn) {
                 _dataViewBtn->setChecked(true);
@@ -1320,6 +1386,15 @@ void NodeDetailWindow::clearData()
         }
         _currentValidationWidget->deleteLater();
         _currentValidationWidget = nullptr;
+    }
+
+    // 清理干涉测量选项卡控件（先解除父子托管再删除，杜绝双重释放）
+    if (_currentInterferometryWidget) {
+        if (_stackedWidget) {
+            _stackedWidget->removeWidget(_currentInterferometryWidget);
+        }
+        _currentInterferometryWidget->deleteLater();
+        _currentInterferometryWidget = nullptr;
     }
 
     std::function<void(QLayout*)> clearLayout = [&](QLayout* layout) {

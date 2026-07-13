@@ -102,11 +102,14 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     // Processing info for detail view middle column
     snapshot.processingInfo = model->processingInfo();
 
-    // Capture preview image path
-    snapshot.previewImagePaths = model->previewImagePaths();
-    
-    // Capture detection results
-    snapshot.detectionResults = model->detectionResults();
+    // Capture preview image path and detection results only if completed
+    if (model->executionState() == ExecutionState::Completed) {
+        snapshot.previewImagePaths = model->previewImagePaths();
+        snapshot.detectionResults = model->detectionResults();
+    } else {
+        snapshot.previewImagePaths.clear();
+        snapshot.detectionResults.clear();
+    }
     snapshot.supportsRoiSelection = model->supportsRoiSelection();
     snapshot.detailTableHeaders = model->detailTableHeaders();
     snapshot.hasCustomRoi = model->hasCustomRoi();

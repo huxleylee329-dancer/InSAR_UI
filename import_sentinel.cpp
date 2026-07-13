@@ -435,7 +435,7 @@ static QString findMatchedEofFile(const QString& manifestOrSafePath, const QStri
     QDir globalDir(cacheDir);
 
     // A. 尝试精确定位 POEORB (精密轨道)
-    QString poePattern = QString("*%1*V%2T215942_%3T000142*.EOF")
+    QString poePattern = QString("*%1*V%2*_%3*.EOF")
                             .arg(platform)
                             .arg(prevDate.toString("yyyyMMdd"))
                             .arg(nextDate.toString("yyyyMMdd"));

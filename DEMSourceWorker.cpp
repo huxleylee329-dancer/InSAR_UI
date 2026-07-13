@@ -250,6 +250,11 @@ void DEMSourceWorker::fetch_dem(
         if (read_src_ok)
         {
             src_file = save_path + "/" + QString(source_file.c_str());
+            // 如果拼接出的文件不存在（如 source_1 存储的是绝对路径且不可访问），则回退使用输入 H5 本身
+            if (!QFile::exists(src_file))
+            {
+                src_file = firstInput;
+            }
         }
         else
         {

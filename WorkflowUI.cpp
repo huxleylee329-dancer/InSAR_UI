@@ -153,6 +153,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
     };
 
     order.leafItems["Preprocessing/Sentinel-1"] = QList<PaletteOrder::LeafItem>{
+        {"Apply Orbit File", "Apply Orbit File"},
         {"Deburst", "S1 Deburst"},     // Sentinel-1 预处理：去突刺
         {"Frame Merge", "S1 Frame Merge"},  // 帧拼接
         {"Swath Merge", "S1 Swath Merge"},   // 条带拼接

@@ -102,6 +102,11 @@ public:
     virtual bool supportsValidation() const { return false; }
     virtual ::QWidget* createValidationWidget(::QWidget* parent) { return nullptr; }
 
+    // 干涉测量分析选项卡接口（第3个选项卡）
+    // 用于评估两个影像是否适合进行 InSAR 干涉处理
+    virtual bool supportsInterferometry() const { return false; }
+    virtual ::QWidget* createInterferometryWidget(::QWidget* parent) { return nullptr; }
+
     /// Set the nodeId and scene for visual updates (called when node is created)
     void setNodeContext(NodeId nodeId, BasicGraphicsScene *scene);
 

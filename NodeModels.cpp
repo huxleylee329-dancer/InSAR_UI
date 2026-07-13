@@ -19,6 +19,7 @@
 #include "S1FrameMergeNode.h"
 #include "S1SwathMergeNode.h"
 #include "S1TopsBackGeocodingNode.h"
+#include "Sentinel1OrbitNode.h"
 #include "GenericSARImportNode.h"
 #include "GenericSARBatchImportNode.h"
 #include "GeneralSARLoadingNode.h"
@@ -106,6 +107,7 @@ std::shared_ptr<NodeDelegateModelRegistry> registerInSARNodeModels()
     registry->registerModel<S1FrameMergeNode>("Preprocessing/Sentinel-1/Frame Merge");
     registry->registerModel<S1SwathMergeNode>("Preprocessing/Sentinel-1/Swath Merge");
     registry->registerModel<S1TopsBackGeocodingNode>("Preprocessing/Sentinel-1/Back-Geocoding");
+    registry->registerModel<Sentinel1OrbitNode>("Preprocessing/Sentinel-1/Apply Orbit File");
 
     // ============================================================================
     // SAR Enhancement Nodes (in SAR)

@@ -163,6 +163,9 @@ void DEMSourceNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
 std::shared_ptr<NodeData> DEMSourceNode::outData(PortIndex port)
 {
+    if (executionState() != ExecutionState::Completed)
+        return nullptr;
+
     std::shared_ptr<NodeData> data;
     if (port == 0) {
         data = m_outputData;
@@ -596,8 +599,13 @@ void DEMSourceNode::stopExecution()
 
 void DEMSourceNode::processAutomatically()
 {
+    if (m_workerThread || m_thread) {
+        deferAutomaticCompletion();
+        return;
+    }
     if (prepareToStart()) {
         executeProcessing();
+        deferAutomaticCompletion();
     } else {
         setState(ExecutionState::Idle);
     }
@@ -643,6 +651,7 @@ void DEMSourceNode::executeProcessing()
 
     m_thread->start();
     setState(ExecutionState::Running);
+    deferAutomaticCompletion();
 
     emit startDemFetch(
         m_preparedSavePath,
@@ -690,9 +699,11 @@ void DEMSourceNode::onProcessingFinished()
 
     m_remedyWatcher.disconnect();
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
+        setState(ExecutionState::Completed);
+        setProgress(100);
+        Q_EMIT computingFinished();
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
-        setState(ExecutionState::Completed);
         updateCacheSizeLabel();
     });
 

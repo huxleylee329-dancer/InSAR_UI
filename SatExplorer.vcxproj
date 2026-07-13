@@ -460,6 +460,9 @@
     <ClCompile Include="DEMSourceNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Sentinel1OrbitNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="DEMSourceDialog.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1180,6 +1183,9 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\DEMSourceNode.h">
+      <Filter>Header Files</Filter>
+    </QtMoc>
+    <QtMoc Include="include\Sentinel1OrbitNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\DEMSourceDialog.h">

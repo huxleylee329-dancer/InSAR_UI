@@ -41,7 +41,14 @@ QString OrbitSourceWorker::getOriginalGranuleName(const QString& h5FilePath, con
     {
         QString rawPath = QString::fromStdString(sourceFileStr);
         QFileInfo fi(rawPath);
-        granuleName = fi.completeBaseName(); // 得到 S1A_IW_SLC...
+        if (fi.fileName().toLower() == "manifest.safe")
+        {
+            granuleName = fi.dir().dirName(); // 获取 .SAFE 目录名，如 S1A_IW_SLC__...
+        }
+        else
+        {
+            granuleName = fi.completeBaseName();
+        }
     }
 
     // 兜底读取 comment 属性
@@ -124,8 +131,34 @@ int OrbitSourceWorker::downloadFile(const QString& url, const QString& savePath)
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     QNetworkReply::NetworkError err = reply->error();
 
+    // 检测 HTML 重定向（鉴权失效时 NASA 返回 URS 登录页）
+    QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+    if (!contentType.isEmpty() && contentType.contains("html", Qt::CaseInsensitive))
+    {
+        qDebug() << "[OrbitWorker] Auth failed: got HTML instead of EOF, clearing credentials";
+        tempFile.remove();
+        reply->deleteLater();
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+        settings.remove("DEM/EarthdataUser");
+        settings.remove("DEM/EarthdataPassword");
+        return -1;
+    }
+
     if (err == QNetworkReply::NoError && (statusCode == 200 || statusCode == 302))
     {
+        qint64 expectedSize = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
+        qint64 actualSize = tempFile.size();
+        qDebug() << "[OrbitWorker] download:" << savePath
+                 << "expectedSize:" << expectedSize << "actualSize:" << actualSize
+                 << "contentType:" << contentType;
+        if (expectedSize > 0 && actualSize != expectedSize)
+        {
+            qDebug() << "[OrbitWorker] Size mismatch!";
+            tempFile.remove();
+            reply->deleteLater();
+            return -1;
+        }
+
         if (QFile::exists(savePath))
         {
             QFile::remove(savePath);
@@ -155,7 +188,11 @@ void OrbitSourceWorker::fetch_orbits(
     QStandardItemModel* model
 )
 {
-    stop_flag = false;
+    qDebug() << "[OrbitWorker] fetch_orbits() called";
+    qDebug() << "[OrbitWorker]   projectPath:" << projectPath;
+    qDebug() << "[OrbitWorker]   cacheDir:" << cacheDir;
+    qDebug() << "[OrbitWorker]   filePaths:" << filePaths;
+    qDebug() << "[OrbitWorker]   orbitSource:" << orbitSource;
     emit updateProcess(0, QStringLiteral("开始检索精密轨道数据……"));
 
     QString projectDir = projectPath;
@@ -179,13 +216,15 @@ void OrbitSourceWorker::fetch_orbits(
 
         QString h5File = filePaths.at(i);
         QString granule = getOriginalGranuleName(h5File, projectDir);
+        qDebug() << "[OrbitWorker] h5File:" << h5File;
+        qDebug() << "[OrbitWorker]   granule:" << granule;
 
         emit updateProcess(10 + i * 80 / total, QStringLiteral("正在解析影像 [%1] 的成像时间……").arg(QFileInfo(h5File).fileName()));
 
         // 解析卫星平台 (S1A 或 S1B) 与成像日期
-        QString platform = "S1A";
+        QString platform; // 空字符串 = 不按平台过滤
         QString dateStr; // YYYYMMDD
-        
+
         if (granule.contains("S1A", Qt::CaseInsensitive)) platform = "S1A";
         else if (granule.contains("S1B", Qt::CaseInsensitive)) platform = "S1B";
 
@@ -198,8 +237,6 @@ void OrbitSourceWorker::fetch_orbits(
         }
         else
         {
-            // 如果无法从 granule 提取，尝试从 H5 的数据集中读出成像日期（比如 utc_time 矩阵或者 orbital 元数据）
-            // 这里我们采用保守的猜测，或者继续匹配 H5 文件名中的数字
             QRegularExpression dateFallbackRe("(\\d{8})");
             QRegularExpressionMatch dateFallbackMatch = dateFallbackRe.match(QFileInfo(h5File).fileName());
             if (dateFallbackMatch.hasMatch())
@@ -207,6 +244,18 @@ void OrbitSourceWorker::fetch_orbits(
                 dateStr = dateFallbackMatch.captured(1);
             }
         }
+        qDebug() << "[OrbitWorker]   platform:" << platform << "dateStr:" << dateStr;
+
+        // 从 H5 读取精确成像时刻（用于 RESORB 时效窗口校验）
+        QDateTime imgTime;
+        {
+            std::string acqTimeStr;
+            NodeUtils::Hdf5Locker locker;
+            if (NodeUtils::readStringFromH5(h5File, "acquisition_start_time", acqTimeStr)) {
+                imgTime = QDateTime::fromString(QString::fromStdString(acqTimeStr), Qt::ISODate);
+            }
+        }
+        qDebug() << "[OrbitWorker]   imgTime:" << imgTime.toString(Qt::ISODate);
 
         if (dateStr.isEmpty())
         {
@@ -214,186 +263,159 @@ void OrbitSourceWorker::fetch_orbits(
             continue;
         }
 
-        // 计算精轨生效时间区间：前一天 到 后一天
+        // 计算精轨生效时间区间
         QDate centerDate = QDate::fromString(dateStr, "yyyyMMdd");
         QDate prevDate = centerDate.addDays(-1);
         QDate nextDate = centerDate.addDays(1);
-
-        QString prevDateStr = prevDate.toString("yyyy-MM-dd");
-        QString nextDateStr = nextDate.toString("yyyy-MM-dd");
-
-        QString searchUrl;
-        if (orbitSource == 0) // NASA ASF
-        {
-            // 通过 ASF API 查找该天的 AUX_POEORB 辅助数据
-            searchUrl = QString("https://api.daac.asf.alaska.edu/services/search/param?platform=S1&processingLevel=AUX_POEORB&start=%1T20:00:00Z&end=%2T04:00:00Z&output=json")
-                            .arg(prevDateStr)
-                            .arg(nextDateStr);
-        }
-        else // ESA CDSE
-        {
-            // 通过 CDSE OData 查找
-            searchUrl = QString("https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=contains(Name,'AUX_POEORB') and contains(Name,'V%1') and contains(Name,'%2')&$format=json")
-                            .arg(prevDate.toString("yyyyMMdd"))
-                            .arg(platform);
-        }
-
-        // 发起 API 查询
-        QNetworkAccessManager queryManager;
-        QNetworkRequest queryRequest((QUrl(searchUrl)));
-        QNetworkReply* queryReply = queryManager.get(queryRequest);
-
-        QEventLoop loop;
-        connect(queryReply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-        loop.exec();
 
         bool foundEof = false;
         QString downloadUrl;
         QString eofFileName;
 
-        if (queryReply->error() == QNetworkReply::NoError)
+        // 直接抓取 ASF S1QC POEORB 目录列表（不依赖 API）
         {
-            QByteArray responseData = queryReply->readAll();
-            QJsonDocument doc = QJsonDocument::fromJson(responseData);
-            
-            if (orbitSource == 0) // ASF JSON 结构
-            {
-                QJsonArray results = doc.array();
-                if (results.isEmpty() && doc.isObject()) {
-                    results = doc.object().value("results").toArray();
-                }
-                
-                // 遍历搜索出来的所有 POEORB 文件，进行精确匹配
-                for (int r = 0; r < results.size(); ++r)
-                {
-                    QJsonObject item = results.at(r).toObject();
-                    QString fileName = item.value("fileName").toString();
-                    
-                    // 必须满足：同一个平台(S1A/S1B)，且覆盖了该影像的成像时间范围 (前一天 21:59 到 后一天 00:01)
-                    QString targetValidity = QString("V%1T215942_%2T000142")
-                                                .arg(prevDate.toString("yyyyMMdd"))
-                                                .arg(nextDate.toString("yyyyMMdd"));
-                                                
-                    if (fileName.contains(platform, Qt::CaseInsensitive) && fileName.contains(targetValidity, Qt::CaseInsensitive))
-                    {
-                        downloadUrl = item.value("downloadUrl").toString();
-                        eofFileName = fileName;
-                        foundEof = true;
-                        break;
-                    }
-                }
-            }
-            else // CDSE OData JSON 结构
-            {
-                QJsonObject obj = doc.object();
-                QJsonArray valueArr = obj.value("value").toArray();
-                for (int r = 0; r < valueArr.size(); ++r)
-                {
-                    QJsonObject item = valueArr.at(r).toObject();
-                    QString name = item.value("Name").toString();
-                    QString id = item.value("Id").toString();
-                    
-                    QString targetValidity = QString("V%1T215942_%2T000142")
-                                                .arg(prevDate.toString("yyyyMMdd"))
-                                                .arg(nextDate.toString("yyyyMMdd"));
-                                                
-                    if (name.contains(platform, Qt::CaseInsensitive) && name.contains(targetValidity, Qt::CaseInsensitive))
-                    {
-                        downloadUrl = QString("https://zipper.dataspace.copernicus.eu/odata/v1/Products(%1)/$value").arg(id);
-                        eofFileName = name;
-                        foundEof = true;
-                        break;
-                    }
-                }
-            }
-        }
-        queryReply->deleteLater();
+            // S1QC 公开目录：https://s1qc.asf.alaska.edu/aux_poeorb/
+            QString listingUrl = "https://s1qc.asf.alaska.edu/aux_poeorb/";
+            qDebug() << "[OrbitWorker] fetching listing:" << listingUrl;
 
-        // 如果没有找到 POEORB (精密轨道)，尝试寻找 RESORB (重构轨道，发布速度更快，精度在10cm内)
-        if (!foundEof)
-        {
-            InSARLogManager::LogInfo("OrbitSourceWorker", QString("未检索到 %1 在 %2 日期的精密轨道(POEORB)，尝试搜索重构轨道(RESORB)...").arg(platform).arg(dateStr));
-            
-            QString resorbUrl;
-            if (orbitSource == 0)
+            QNetworkAccessManager listingManager;
+            QNetworkRequest listingRequest((QUrl(listingUrl)));
+            listingRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+            QNetworkReply* listingReply = listingManager.get(listingRequest);
+
+            QEventLoop loop;
+            connect(listingReply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+
+            if (listingReply->error() == QNetworkReply::NoError)
             {
-                resorbUrl = QString("https://api.daac.asf.alaska.edu/services/search/param?platform=S1&processingLevel=AUX_RESORB&start=%1T00:00:00Z&end=%2T23:59:59Z&output=json")
-                                .arg(centerDate.toString("yyyy-MM-dd"))
-                                .arg(centerDate.toString("yyyy-MM-dd"));
+                QString html = QString::fromUtf8(listingReply->readAll());
+                qDebug() << "[OrbitWorker] listing HTML size:" << html.size();
+
+                // 从 HTML 中提取所有 .EOF 文件名的 <a href="..."> 链接
+                QRegularExpression hrefRe("<a\\s+href=\"([^\"]+\\.EOF)\"", QRegularExpression::CaseInsensitiveOption);
+                QRegularExpressionMatchIterator it = hrefRe.globalMatch(html);
+
+                // 使用正则匹配新旧版本 ESA POEORB 命名规范
+                // 旧版：V{prev}T215942_{next}T000142（2020 年前）
+                // 新版：V{prev}T225942_{next}T005942（2021 年后，约推后 1 小时）
+                QRegularExpression valRe(
+                    QString("V%1T\\d{6}_%2T\\d{6}").arg(
+                        prevDate.toString("yyyyMMdd"),
+                        nextDate.toString("yyyyMMdd")),
+                    QRegularExpression::CaseInsensitiveOption);
+                qDebug() << "[OrbitWorker] POEORB regex:" << valRe.pattern() << "platform:" << platform;
+
+                while (it.hasNext())
+                {
+                    QRegularExpressionMatch m = it.next();
+                    QString fname = m.captured(1);
+                    bool platOk = platform.isEmpty() || fname.contains(platform, Qt::CaseInsensitive);
+                    bool valOk = fname.contains(valRe);
+                    if (platOk && valOk)
+                    {
+                        eofFileName = fname;
+                        downloadUrl = listingUrl + fname;
+                        foundEof = true;
+                        qDebug() << "[OrbitWorker] POEORB matched:" << fname;
+                        break;
+                    }
+                }
+
+                if (!foundEof) {
+                    qDebug() << "[OrbitWorker] no POEORB match in listing, total EOF files found:" << hrefRe.globalMatch(html).hasNext();
+                }
             }
             else
             {
-                resorbUrl = QString("https://catalogue.dataspace.copernicus.eu/odata/v1/Products?$filter=contains(Name,'AUX_RESORB') and contains(Name,'V%1') and contains(Name,'%2')&$format=json")
-                                .arg(dateStr)
-                                .arg(platform);
+                qDebug() << "[OrbitWorker] listing fetch error:" << listingReply->error() << listingReply->errorString();
             }
+            listingReply->deleteLater();
+        }
 
-            QNetworkReply* resReply = queryManager.get(QNetworkRequest(QUrl(resorbUrl)));
+        // 如果没有找到 POEORB (精密轨道)，尝试寻找 RESORB (重构轨道)
+        if (!foundEof)
+        {
+            qDebug() << "[OrbitWorker] POEORB not found, trying RESORB from s1qc...";
+            InSARLogManager::LogInfo("OrbitSourceWorker", QString("未检索到 POEORB，尝试搜索 RESORB..."));
+
+            QString resorbListingUrl = "https://s1qc.asf.alaska.edu/aux_resorb/";
+            qDebug() << "[OrbitWorker] fetching RESORB listing:" << resorbListingUrl;
+
+            QNetworkAccessManager resManager;
+            QNetworkRequest resRequest((QUrl(resorbListingUrl)));
+            resRequest.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
+            QNetworkReply* resReply = resManager.get(resRequest);
+
             QEventLoop resLoop;
             connect(resReply, &QNetworkReply::finished, &resLoop, &QEventLoop::quit);
             resLoop.exec();
 
             if (resReply->error() == QNetworkReply::NoError)
             {
-                QByteArray resData = resReply->readAll();
-                QJsonDocument resDoc = QJsonDocument::fromJson(resData);
-                if (orbitSource == 0)
+                QString html = QString::fromUtf8(resReply->readAll());
+                qDebug() << "[OrbitWorker] RESORB listing HTML size:" << html.size();
+
+                QRegularExpression hrefRe("<a\\s+href=\"([^\"]+\\.EOF)\"", QRegularExpression::CaseInsensitiveOption);
+                QRegularExpressionMatchIterator it = hrefRe.globalMatch(html);
+
+                // RESORB 时效窗口精确匹配：提取 V{start}_{end} 字段，校验成像时刻是否在区间内
+                QRegularExpression resValidityRe("V(\\d{8}T\\d{6})_(\\d{8}T\\d{6})");
+                while (it.hasNext())
                 {
-                    QJsonArray resResults = resDoc.array();
-                    if (resResults.isEmpty() && resDoc.isObject()) {
-                        resResults = resDoc.object().value("results").toArray();
-                    }
-                    
-                    // 重构轨道可能有多个覆盖不同时刻的文件，挑选包含成像时间的那个
-                    for (int r = 0; r < resResults.size(); ++r)
+                    QRegularExpressionMatch m = it.next();
+                    QString fname = m.captured(1);
+                    bool platOk = platform.isEmpty() || fname.contains(platform, Qt::CaseInsensitive);
+                    if (!platOk) continue;
+
+                    QRegularExpressionMatch vm = resValidityRe.match(fname);
+                    if (!vm.hasMatch()) continue;
+                    QDateTime startVal = QDateTime::fromString(vm.captured(1), "yyyyMMddTHHmmss");
+                    QDateTime endVal   = QDateTime::fromString(vm.captured(2), "yyyyMMddTHHmmss");
+
+                    bool timeOk = imgTime.isValid()
+                        ? (imgTime >= startVal && imgTime <= endVal)
+                        : fname.contains(dateStr);  // 无采集时间时回退到日期匹配
+                    if (timeOk)
                     {
-                        QJsonObject item = resResults.at(r).toObject();
-                        QString fileName = item.value("fileName").toString();
-                        
-                        // 提取重构轨道的 V 覆盖区间，看是否包含成像时分秒
-                        // 示例：S1A_OPER_AUX_RESORB_OPOD_20251204T032011_V20251204T015841_20251204T053341.EOF
-                        QRegularExpression validityRe("V(\\d{8}T\\d{6})_(\\d{8}T\\d{6})");
-                        QRegularExpressionMatch valMatch = validityRe.match(fileName);
-                        if (valMatch.hasMatch() && fileName.contains(platform, Qt::CaseInsensitive))
-                        {
-                            QDateTime startVal = QDateTime::fromString(valMatch.captured(1), "yyyyMMddTHHmmss");
-                            QDateTime endVal = QDateTime::fromString(valMatch.captured(2), "yyyyMMddTHHmmss");
-                            
-                            // 从 granule 中解析成像时刻
-                            QRegularExpression timeRe("\\d{8}T(\\d{6})");
-                            QRegularExpressionMatch timeMatch = timeRe.match(granule);
-                            if (timeMatch.hasMatch())
-                            {
-                                QDateTime imgTime = QDateTime::fromString(dateStr + "T" + timeMatch.captured(1), "yyyyMMddTHHmmss");
-                                if (imgTime >= startVal && imgTime <= endVal)
-                                {
-                                    downloadUrl = item.value("downloadUrl").toString();
-                                    eofFileName = fileName;
-                                    foundEof = true;
-                                    break;
-                                }
-                            }
-                        }
+                        eofFileName = fname;
+                        downloadUrl = resorbListingUrl + fname;
+                        foundEof = true;
+                        qDebug() << "[OrbitWorker] RESORB matched:" << fname;
+                        break;
                     }
                 }
+            }
+            else
+            {
+                qDebug() << "[OrbitWorker] RESORB listing error:" << resReply->error();
             }
             resReply->deleteLater();
         }
 
         if (foundEof && !downloadUrl.isEmpty())
         {
-            emit updateProcess(10 + i * 80 / total, QStringLiteral("正在下载轨道文件 %1...").arg(eofFileName));
             QString finalSavePath = cacheDir + "/" + eofFileName;
 
-            int dlResult = downloadFile(downloadUrl, finalSavePath);
-            if (dlResult == 1)
+            // 检查本地缓存是否已存在该同名轨道文件且大小非空
+            if (QFile::exists(finalSavePath) && QFileInfo(finalSavePath).size() > 0)
             {
                 successCount++;
-                InSARLogManager::LogInfo("OrbitSourceWorker", QString("成功下载并缓存轨道文件：%1").arg(eofFileName));
+                InSARLogManager::LogInfo("OrbitSourceWorker", QString("精密轨道文件已在本地缓存中存在，跳过下载：%1").arg(eofFileName));
             }
             else
             {
-                InSARLogManager::LogError("OrbitSourceWorker", QString("轨道文件下载失败：%1").arg(eofFileName));
+                emit updateProcess(10 + i * 80 / total, QStringLiteral("正在下载轨道文件 %1...").arg(eofFileName));
+                int dlResult = downloadFile(downloadUrl, finalSavePath);
+                if (dlResult == 1)
+                {
+                    successCount++;
+                    InSARLogManager::LogInfo("OrbitSourceWorker", QString("成功下载并缓存轨道文件：%1").arg(eofFileName));
+                }
+                else
+                {
+                    InSARLogManager::LogError("OrbitSourceWorker", QString("轨道文件下载失败：%1").arg(eofFileName));
+                }
             }
         }
         else
@@ -402,6 +424,7 @@ void OrbitSourceWorker::fetch_orbits(
         }
     }
 
+    qDebug() << "[OrbitWorker] fetch_orbits() done, successCount:" << successCount << "/" << total;
     emit updateProcess(100, QStringLiteral("精密轨道数据下载完成！成功匹配数：%1/%2").arg(successCount).arg(total));
     emit endProcess();
 }

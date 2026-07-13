@@ -2000,8 +2000,13 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
         // Processing info is cleared (no status/mode info since shown in Basic Info section)
         // This section is reserved for future use (e.g., processing logs, messages, etc.)
         m_nodeData.processingInfo.clear();
-        m_nodeData.previewImagePaths = execModel->previewImagePaths();
-        m_nodeData.detectionResults = execModel->detectionResults();
+        if (m_nodeData.executionState == QtNodes::ExecutionState::Completed) {
+            m_nodeData.previewImagePaths = execModel->previewImagePaths();
+            m_nodeData.detectionResults = execModel->detectionResults();
+        } else {
+            m_nodeData.previewImagePaths.clear();
+            m_nodeData.detectionResults.clear();
+        }
     } else {
         // Non-executable node - just capture port metadata
         int inputPortCount = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::InPortCount).toInt();
