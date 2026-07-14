@@ -20,7 +20,8 @@ public:
         QString folder,
         QString filename,
         QString project_name,
-        QStandardItemModel* model
+        QStandardItemModel* model,
+        void* contextPtr = nullptr
     );
     ~GenericSARImportTask() override;
 
@@ -42,6 +43,7 @@ private:
     QStandardItemModel* m_model;
     
     bool m_stopFlag = false;
+    void* m_contextPtr;
 };
 
 // Task for Batch Import
@@ -55,7 +57,8 @@ public:
         std::vector<QString> import_namelist,
         QString dst_node,
         QString dst_project,
-        QStandardItemModel* model
+        QStandardItemModel* model,
+        void* contextPtr = nullptr
     );
     ~GenericSARBatchImportTask() override;
 
@@ -77,6 +80,7 @@ private:
     QStandardItemModel* m_model;
     
     bool m_stopFlag = false;
+    void* m_contextPtr;
 };
 
 #endif // GENERICSARIMPORTTASK_H

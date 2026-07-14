@@ -25,6 +25,15 @@ public slots:
         QStandardItemModel* model
     );
 
+signals:
+    void demFetchFinished(
+        const QString& outputH5Path,
+        const QString& dstNode,
+        const QString& projectName,
+        int demSource,
+        double targetResolution
+    );
+
 private:
     int downloadTile(const QString& url, const QString& savePath);
 };

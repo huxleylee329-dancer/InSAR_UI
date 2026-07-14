@@ -403,7 +403,9 @@ void DemNode::executeProcessing()
         setState(ExecutionState::Running);
         setProgress(100);
         if (validateAndRestoreOutput()) {
-            finishExecution();
+            if (!m_remedyWatcher.isRunning()) {
+                finishExecution();
+            }
         } else {
             setState(ExecutionState::Error);
         }
@@ -497,13 +499,25 @@ void DemNode::onProcessingFinished()
 
     if (!h5Paths.isEmpty())
     {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+        }
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
+            QStringList validJpgPaths;
+            for (const QString& path : jpgPaths) {
+                if (QFile::exists(path)) {
+                    validJpgPaths.append(path);
+                }
+            }
+            if (!validJpgPaths.isEmpty()) {
+                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_imageInfoData);
+            } else {
+                m_imageInfoData.reset();
+                setOutputData(1, nullptr);
+            }
             Q_EMIT dataUpdated(1);
 
             m_outputNodeNameEdit->setEnabled(true);
@@ -632,15 +646,32 @@ bool DemNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+        }
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfoData);
+            QStringList validJpgPaths;
+            for (const QString& path : expectedJpgPaths) {
+                if (QFile::exists(path)) {
+                    validJpgPaths.append(path);
+                }
+            }
+            if (!validJpgPaths.isEmpty()) {
+                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_imageInfoData);
+            } else {
+                m_imageInfoData.reset();
+                setOutputData(1, nullptr);
+            }
             Q_EMIT dataUpdated(1);
             InSARLogManager::LogInfo("DemNode", "validateAndRestoreOutput background rendering completed.");
+
+            if (executionState() == ExecutionState::Running) {
+                setProgress(100);
+                finishExecution();
+            }
         });
 
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {

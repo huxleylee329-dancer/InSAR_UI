@@ -41,6 +41,13 @@ private slots:
     void onProgressUpdate(int progress, const QString& message);
     void onError(const QString& error);
     void onFinished();
+    void onDemFetchFinished(
+        const QString& outputH5Path,
+        const QString& dstNode,
+        const QString& projectName,
+        int demSource,
+        double targetResolution
+    );
     void onResolutionModeChanged(int index);
     void onBrowseCachePressed();
     void onClearCachePressed();

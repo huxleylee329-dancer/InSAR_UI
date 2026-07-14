@@ -104,7 +104,13 @@ private:
     void updateCacheSizeLabel();
     void updateLoginStatus();
     void onProgressUpdate(int progress, const QString& message);
-    void onProcessingFinished();
+    void onProcessingFinished(
+        const QStringList& newH5Paths,
+        int podApplyOk,
+        int podApplyFail,
+        int podSkipped,
+        const QString& targetDirName
+    );
     void onError(const QString& error);
     bool validateInputs() const;
     void updateWidgetSize();
@@ -128,6 +134,7 @@ signals:
         QStringList filePaths,
         int orbitSource,
         QString cacheDir,
+        QString targetDirName,
         QStandardItemModel* model
     );
 };

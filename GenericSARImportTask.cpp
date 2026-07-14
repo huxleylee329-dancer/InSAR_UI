@@ -6,19 +6,23 @@
 #include <QDir>
 #include <QThread>
 #include "icon_source.h"
+#include "IApplicationInterface.h"
+#include "NodeUtils.h"
 GenericSARImportTask::GenericSARImportTask(
     QString xml_filename,
     QString project_path,
     QString folder,
     QString filename,
     QString project_name,
-    QStandardItemModel* model
+    QStandardItemModel* model,
+    void* contextPtr
 ) : m_xmlFilename(xml_filename),
     m_projectPath(project_path),
     m_folder(folder),
     m_filename(filename),
     m_projectName(project_name),
-    m_model(model)
+    m_model(model),
+    m_contextPtr(contextPtr)
 {
 }
 
@@ -165,27 +169,43 @@ void GenericSARImportTask::run()
 				img_path->setText(image_path);
 			}
 			
-			XMLFile DOC;
-			QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(m_projectName);
-			int ret = DOC.XMLFile_load(xmlFileLoadPath.toStdString().c_str());
-			if (ret < 0 || m_stopFlag)
-			{
-				localRet = -1;
-				return;
+			IApplicationInterface* iface = static_cast<IApplicationInterface*>(m_contextPtr);
+			if (!iface) {
+				iface = NodeUtils::getProjectContext(nullptr);
 			}
-			
-			ret = DOC.XMLFile_add_origin(m_folder.toStdString().c_str(), m_filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
-			if (ret < 0 || m_stopFlag)
-			{
-				localRet = -1;
-				return;
-			}
-			
-			ret = DOC.XMLFile_save(xmlFileLoadPath.toStdString().c_str());
-			if (ret < 0 || m_stopFlag)
-			{
-				localRet = -1;
-				return;
+			if (iface && iface->projectXml()) {
+				XMLFile* xml = iface->projectXml();
+				int ret = xml->XMLFile_add_origin(m_folder.toStdString().c_str(), m_filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+				if (ret < 0 || m_stopFlag) {
+					localRet = -1;
+					return;
+				}
+				ret = xml->XMLFile_save(iface->projectPath().toStdString().c_str());
+				if (ret < 0 || m_stopFlag) {
+					localRet = -1;
+					return;
+				}
+			} else {
+				XMLFile DOC;
+				QString xmlFileLoadPath = QString("%1/%2").arg(pro_path).arg(m_projectName);
+				int ret = DOC.XMLFile_load(xmlFileLoadPath.toStdString().c_str());
+				if (ret < 0 || m_stopFlag)
+				{
+					localRet = -1;
+					return;
+				}
+				ret = DOC.XMLFile_add_origin(m_folder.toStdString().c_str(), m_filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+				if (ret < 0 || m_stopFlag)
+				{
+					localRet = -1;
+					return;
+				}
+				ret = DOC.XMLFile_save(xmlFileLoadPath.toStdString().c_str());
+				if (ret < 0 || m_stopFlag)
+				{
+					localRet = -1;
+					return;
+				}
 			}
 		}, Qt::BlockingQueuedConnection);
 	} else {
@@ -212,13 +232,15 @@ GenericSARBatchImportTask::GenericSARBatchImportTask(
     std::vector<QString> import_namelist,
     QString dst_node,
     QString dst_project,
-    QStandardItemModel* model
+    QStandardItemModel* model,
+    void* contextPtr
 ) : m_savepath(savepath),
     m_originalFileList(original_file_list),
     m_importNamelist(import_namelist),
     m_dstNode(dst_node),
     m_dstProject(dst_project),
-    m_model(model)
+    m_model(model),
+    m_contextPtr(contextPtr)
 {
 }
 
@@ -374,24 +396,42 @@ void GenericSARBatchImportTask::run()
 					origin->appendRow(img);
 					origin->setChild(origin->rowCount() - 1, 1, img_path);
 
-					XMLFile DOC;
-					int ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
-					if (ret < 0 || m_stopFlag)
-					{
-						localRet = -2; // XML load error
-						return;
+					IApplicationInterface* iface = static_cast<IApplicationInterface*>(m_contextPtr);
+					if (!iface) {
+						iface = NodeUtils::getProjectContext(nullptr);
 					}
-					ret = DOC.XMLFile_add_origin(m_dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
-					if (ret < 0 || m_stopFlag)
-					{
-						localRet = -3; // XML add error
-						return;
-					}
-					ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
-					if (ret < 0 || m_stopFlag)
-					{
-						localRet = -4; // XML save error
-						return;
+					if (iface && iface->projectXml()) {
+						XMLFile* xml = iface->projectXml();
+						int ret = xml->XMLFile_add_origin(m_dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+						if (ret < 0 || m_stopFlag) {
+							localRet = -3;
+							return;
+						}
+						ret = xml->XMLFile_save(iface->projectPath().toStdString().c_str());
+						if (ret < 0 || m_stopFlag) {
+							localRet = -4;
+							return;
+						}
+					} else {
+						XMLFile DOC;
+						int ret = DOC.XMLFile_load(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
+						if (ret < 0 || m_stopFlag)
+						{
+							localRet = -2; // XML load error
+							return;
+						}
+						ret = DOC.XMLFile_add_origin(m_dstNode.toStdString().c_str(), filename.toStdString().c_str(), relative_path.toStdString().c_str(), "Generic_SAR");
+						if (ret < 0 || m_stopFlag)
+						{
+							localRet = -3; // XML add error
+							return;
+						}
+						ret = DOC.XMLFile_save(QString("%1/%2").arg(pro_path).arg(m_dstProject).toStdString().c_str());
+						if (ret < 0 || m_stopFlag)
+						{
+							localRet = -4; // XML save error
+							return;
+						}
 					}
 				}
 				else

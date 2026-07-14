@@ -171,12 +171,16 @@ QStringList ALOS2ImportNode::getExpectedOutputFilePaths() const
 
 QString ALOS2ImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
+    if (m_outputNodeNameEdit)
     {
-        return "ALOS2_Batch_Import";
+        QString name = m_outputNodeNameEdit->text().trimmed();
+        if (name.isEmpty())
+        {
+            return "ALOS2_Batch_Import";
+        }
+        return name;
     }
-    return name;
+    return m_outputNodeName.isEmpty() ? "ALOS2_Batch_Import" : m_outputNodeName;
 }
 
 QString ALOS2ImportNode::generateOutputFileName(const QString& imgPath) const

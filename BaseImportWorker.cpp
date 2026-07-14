@@ -2,6 +2,7 @@
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
+#include "IApplicationInterface.h"
 #include <FormatConversion.h>
 #include <QDir>
 #include <QFile>
@@ -37,7 +38,8 @@ void BaseImportWorker::import_patch(
     const std::vector<ImportTask>& tasks,
     const QString& dst_node,
     const QString& dst_project,
-    QStandardItemModel* model
+    QStandardItemModel* model,
+    void* contextPtr
 )
 {
     if (savepath.isEmpty() || dst_node.isEmpty() || dst_project.isEmpty() || tasks.empty() || model == nullptr)
@@ -129,32 +131,7 @@ void BaseImportWorker::import_patch(
             return;
         }
 
-        if (isNewChild)
-        {
-            XMLFile DOC;
-            QString xml_path = QString("%1/%2").arg(pro_path).arg(dst_project);
-            int ret = DOC.XMLFile_load(xml_path.toStdString().c_str());
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                handleError(QStringLiteral("保存项目配置文件失败。"), h5_path, savepath + "/" + dst_node);
-                return;
-            }
-
-            ret = DOC.XMLFile_add_origin(dst_node.toStdString().c_str(), task.filename.toStdString().c_str(), relative_path.toStdString().c_str(), satelliteFormatTag().toStdString().c_str());
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                handleError(QStringLiteral("保存项目配置文件失败。"), h5_path, savepath + "/" + dst_node);
-                return;
-            }
-            ret = DOC.XMLFile_save(xml_path.toStdString().c_str());
-            if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                handleError(QStringLiteral("保存项目配置文件失败。"), h5_path, savepath + "/" + dst_node);
-                return;
-            }
-        }
-
-        // 更新树模型节点（仅 UI 数据呈现操作在 UI 主线程进行）
+        // 更新树模型节点并更新 XML（仅 UI 与 XML 挂载操作在 UI 主线程进行）
         QMetaObject::invokeMethod(model, [=]() {
             if (model->findItems(dst_project).isEmpty()) return;
             QStandardItem* project = model->findItems(dst_project)[0];
@@ -166,6 +143,43 @@ void BaseImportWorker::import_patch(
             if (!created)
             {
                 origin->setChild(img->row(), 1, new QStandardItem(h5_path));
+            }
+
+            if (isNewChild)
+            {
+                // 主线程中安全更新 XML 配置文件
+                IApplicationInterface* iface = static_cast<IApplicationInterface*>(contextPtr);
+                if (!iface)
+                {
+                    iface = NodeUtils::getProjectContext(nullptr);
+                }
+                if (iface && iface->projectXml())
+                {
+                    XMLFile* xml = iface->projectXml();
+                    xml->XMLFile_add_origin(
+                        dst_node.toStdString().c_str(), 
+                        task.filename.toStdString().c_str(), 
+                        relative_path.toStdString().c_str(), 
+                        satelliteFormatTag().toStdString().c_str()
+                    );
+                    xml->XMLFile_save(iface->projectPath().toStdString().c_str());
+                }
+                else
+                {
+                    // 降级兜底处理：若无上下文，加载局部文件保存
+                    XMLFile DOC;
+                    QString xml_path = QString("%1/%2").arg(pro_path).arg(dst_project);
+                    if (DOC.XMLFile_load(xml_path.toStdString().c_str()) >= 0)
+                    {
+                        DOC.XMLFile_add_origin(
+                            dst_node.toStdString().c_str(), 
+                            task.filename.toStdString().c_str(), 
+                            relative_path.toStdString().c_str(), 
+                            satelliteFormatTag().toStdString().c_str()
+                        );
+                        DOC.XMLFile_save(xml_path.toStdString().c_str());
+                    }
+                }
             }
         }, Qt::BlockingQueuedConnection);
 

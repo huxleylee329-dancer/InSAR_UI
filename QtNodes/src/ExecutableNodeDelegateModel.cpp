@@ -72,6 +72,31 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
                 return;
             }
 
+            // A multi-input node must not start until every required input has data.
+            // Optional inputs are deliberately excluded from this readiness gate.
+            bool allRequiredInputsReady = true;
+            unsigned int inPortCount = nPorts(PortType::In);
+            for (PortIndex index = 0; index < inPortCount; ++index)
+            {
+                if (portIsOptional(PortType::In, index))
+                {
+                    continue;
+                }
+
+                auto inputIt = _inputData.find(index);
+                if (inputIt == _inputData.end() || inputIt->second == nullptr)
+                {
+                    allRequiredInputsReady = false;
+                    break;
+                }
+            }
+
+            if (!allRequiredInputsReady)
+            {
+                setState(ExecutionState::Pending);
+                return;
+            }
+
             // For automatic mode: set running state and zero progress before execution
             setState(ExecutionState::Running);
             _progress = 0;
@@ -435,7 +460,7 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
 
     // Dirty propagation: if this node becomes non-Completed (Idle, Running, Error, etc.),
     // all downstream nodes should also become Idle, and old output data should be cleared
-    if (!_isRestoring && state != ExecutionState::Completed && _scene != nullptr) {
+    if (!_isRestoring && state != ExecutionState::Completed && state != ExecutionState::Warning && _scene != nullptr) {
         // Clear own output data and propagate nullptr downstream to break old data chains
         unsigned int outCount = nPorts(PortType::Out);
         for (PortIndex idx = 0; idx < outCount; ++idx) {

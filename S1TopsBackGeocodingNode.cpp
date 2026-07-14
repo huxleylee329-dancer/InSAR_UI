@@ -1,4 +1,4 @@
-#include "InSARLogManager.h"
+﻿#include "InSARLogManager.h"
 #include "S1TopsBackGeocodingNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
@@ -15,6 +15,7 @@
 #include <QRegularExpression>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QJsonArray>
 #include <QTimer>
 #include <QFile>
 #include <QtConcurrent/QtConcurrent>
@@ -186,6 +187,24 @@ QJsonObject S1TopsBackGeocodingNode::save() const
     modelJson["bESD"] = m_bESD;
     modelJson["demPath"] = m_demPath;
 
+    QStringList outputPaths = m_savedOutputPaths;
+    if (m_outputData && !m_outputData->filePaths().isEmpty()) {
+        outputPaths = m_outputData->filePaths();
+    }
+    if (!outputPaths.isEmpty()) {
+        QJsonArray outputArray;
+        for (const QString& path : outputPaths) {
+            outputArray.append(path);
+        }
+        modelJson["outputPaths"] = outputArray;
+
+        QString masterOutputPath = m_savedMasterOutputPath;
+        if (masterOutputPath.isEmpty() || !outputPaths.contains(masterOutputPath)) {
+            masterOutputPath = outputPaths.first();
+        }
+        modelJson["masterOutputPath"] = masterOutputPath;
+    }
+
     return modelJson;
 }
 
@@ -221,6 +240,16 @@ void S1TopsBackGeocodingNode::load(QJsonObject const &json)
         m_demPath = vDemPath.toString();
         if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
     }
+
+    m_savedOutputPaths.clear();
+    QJsonArray outputArray = json["outputPaths"].toArray();
+    for (const QJsonValue& value : outputArray) {
+        QString path = value.toString();
+        if (!path.isEmpty()) {
+            m_savedOutputPaths.append(path);
+        }
+    }
+    m_savedMasterOutputPath = json["masterOutputPath"].toString();
 
     ExecutableNodeDelegateModel::load(json);
 
@@ -582,80 +611,328 @@ void S1TopsBackGeocodingNode::onProgressUpdate(int progress, const QString& mess
     setProgress(progress);
 }
 
-void S1TopsBackGeocodingNode::onProcessingFinished()
+QStringList S1TopsBackGeocodingNode::moveMasterToFront(const QStringList& paths, int masterIndex) const
 {
-    // Create output data
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
+    QStringList orderedPaths = paths;
+    int masterPosition = masterIndex - 1;
+    if (masterPosition > 0 && masterPosition < orderedPaths.size()) {
+        orderedPaths.prepend(orderedPaths.takeAt(masterPosition));
+    }
+    return orderedPaths;
+}
 
-    // 生成预览图
-    QStringList h5Paths;
+QStringList S1TopsBackGeocodingNode::jpgPathsFromH5Paths(const QStringList& h5Paths) const
+{
     QStringList jpgPaths;
-    QStandardItemModel* model = projectModel();
-    if (model)
-    {
-        QList<QStandardItem*> foundProjects = model->findItems(projectName());
-        if (!foundProjects.isEmpty())
-        {
-            QStandardItem* projectItem = foundProjects.first();
-            QString srcNode = m_inputData->nodeName();
-            for (int i = 0; i < projectItem->rowCount(); ++i)
-            {
-                QStandardItem* nodeItem = projectItem->child(i, 0);
-                if (nodeItem && nodeItem->text() == srcNode)
-                {
-                    for (int j = 0; j < nodeItem->rowCount(); ++j)
-                    {
-                        QStandardItem* childItem = nodeItem->child(j, 0);
-                        if (childItem) {
-                            QString origin_name = childItem->text();
-                            QString h5Path = outputPath + origin_name + "_regis.h5";
-                            QString jpgPath = outputPath + origin_name + "_regis.jpg";
-                            h5Paths.append(h5Path);
-                            jpgPaths.append(jpgPath);
+    for (const QString& h5Path : h5Paths) {
+        QFileInfo fi(h5Path);
+        jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
+    }
+    return jpgPaths;
+}
+
+QString S1TopsBackGeocodingNode::resolveSavedOutputPath(const QString& path, const QString& dstNode) const
+{
+    if (path.isEmpty())
+        return QString();
+
+    QFileInfo savedInfo(path);
+    if (savedInfo.isAbsolute() && savedInfo.exists())
+        return savedInfo.absoluteFilePath();
+
+    QString relativePath = QDir::fromNativeSeparators(path);
+    while (relativePath.startsWith('/')) {
+        relativePath.remove(0, 1);
+    }
+
+    QString candidate;
+    if (relativePath.contains('/')) {
+        candidate = QDir(projectPath()).absoluteFilePath(relativePath);
+    } else {
+        candidate = QDir(projectPath() + "/" + dstNode).absoluteFilePath(relativePath);
+    }
+    if (QFileInfo::exists(candidate))
+        return QFileInfo(candidate).absoluteFilePath();
+
+    QString relocatedPath = QDir(projectPath() + "/" + dstNode).absoluteFilePath(savedInfo.fileName());
+    return QFileInfo::exists(relocatedPath) ? QFileInfo(relocatedPath).absoluteFilePath() : QString();
+}
+
+QStringList S1TopsBackGeocodingNode::restoreOrderedH5Paths(const QString& dstNode) const
+{
+    QStringList orderedPaths;
+    int restoreSource = 0;
+    int restoredMasterIndex = m_masterIndex;
+
+    // 新工程优先使用节点保存的权威输出顺序
+    if (!m_savedOutputPaths.isEmpty()) {
+        bool allExist = true;
+        for (const QString& savedPath : m_savedOutputPaths) {
+            QString resolvedPath = resolveSavedOutputPath(savedPath, dstNode);
+            if (resolvedPath.isEmpty()) {
+                allExist = false;
+                break;
+            }
+            orderedPaths.append(resolvedPath);
+        }
+        if (!allExist) {
+            orderedPaths.clear();
+        } else {
+            restoreSource = 1;
+        }
+    }
+
+    // 旧工程优先保留 XML 中 Data 元素的物理顺序
+    if (orderedPaths.isEmpty()) {
+        XMLFile* xml = projectXml();
+        TiXmlElement* root = nullptr;
+        if (xml && xml->get_root(root) >= 0 && root) {
+            for (TiXmlElement* node = root->FirstChildElement("DataNode"); node;
+                 node = node->NextSiblingElement("DataNode")) {
+                const char* nameAttr = node->Attribute("name");
+                if (!nameAttr || QString::fromUtf8(nameAttr) != dstNode)
+                    continue;
+
+                TiXmlElement* params = node->FirstChildElement("Data_Processing_Parameters");
+                TiXmlElement* masterElem = params ? params->FirstChildElement("master_image") : nullptr;
+                if (masterElem && masterElem->GetText()) {
+                    int xmlMasterIndex = QString::fromUtf8(masterElem->GetText()).toInt();
+                    if (xmlMasterIndex > 0) {
+                        restoredMasterIndex = xmlMasterIndex;
+                    }
+                }
+
+                for (TiXmlElement* data = node->FirstChildElement("Data"); data;
+                     data = data->NextSiblingElement("Data")) {
+                    TiXmlElement* pathElem = data->FirstChildElement("Data_Path");
+                    if (!pathElem || !pathElem->GetText())
+                        continue;
+                    QString resolvedPath = resolveSavedOutputPath(QString::fromUtf8(pathElem->GetText()), dstNode);
+                    if (!resolvedPath.isEmpty() && !orderedPaths.contains(resolvedPath)) {
+                        orderedPaths.append(resolvedPath);
+                    }
+                }
+                break;
+            }
+        }
+        if (!orderedPaths.isEmpty()) {
+            restoreSource = 2;
+        }
+    }
+
+    // XML 缺失时保留当前项目树的子项顺序
+    if (orderedPaths.isEmpty()) {
+        QStandardItemModel* model = projectModel();
+        if (model) {
+            QList<QStandardItem*> projects = model->findItems(projectName());
+            if (!projects.isEmpty()) {
+                QStandardItem* project = projects.first();
+                for (int i = 0; i < project->rowCount(); ++i) {
+                    QStandardItem* node = project->child(i, 0);
+                    if (!node || node->text() != dstNode)
+                        continue;
+                    for (int j = 0; j < node->rowCount(); ++j) {
+                        QStandardItem* pathItem = node->child(j, 1);
+                        QString resolvedPath = pathItem
+                            ? resolveSavedOutputPath(pathItem->text(), dstNode) : QString();
+                        if (!resolvedPath.isEmpty() && !orderedPaths.contains(resolvedPath)) {
+                            orderedPaths.append(resolvedPath);
                         }
                     }
                     break;
                 }
             }
         }
-    }
-
-    if (h5Paths.isEmpty())
-    {
-        QDir dir(outputPath);
-        if (dir.exists()) {
-            QStringList filters;
-            filters << "*_regis.h5";
-            QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
-            h5Files.sort();
-            for (const QString& h5File : h5Files) {
-                h5Paths.append(dir.absoluteFilePath(h5File));
-            }
+        if (!orderedPaths.isEmpty()) {
+            restoreSource = 3;
         }
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    // 树和 XML 都不可用时，按上游列表顺序推导旧工程输出路径
+    if (orderedPaths.isEmpty() && m_inputData) {
+        QDir outputDir(projectPath() + "/" + dstNode);
+        for (const QString& inputPath : m_inputData->filePaths()) {
+            QString candidate = outputDir.absoluteFilePath(QFileInfo(inputPath).baseName() + "_regis.h5");
+            if (QFileInfo::exists(candidate)) {
+                orderedPaths.append(QFileInfo(candidate).absoluteFilePath());
+            }
+        }
+        if (!orderedPaths.isEmpty()) {
+            restoreSource = 4;
+        }
+    }
+
+    // 最后才使用目录枚举，旧工程无法从磁盘恢复历史添加顺序
+    if (orderedPaths.isEmpty()) {
+        QDir outputDir(projectPath() + "/" + dstNode);
+        const QStringList h5Files = outputDir.entryList(QStringList{"*_regis.h5"}, QDir::Files);
+        for (const QString& h5File : h5Files) {
+            orderedPaths.append(outputDir.absoluteFilePath(h5File));
+        }
+        if (!orderedPaths.isEmpty()) {
+            restoreSource = 5;
+            InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
+                "旧工程缺少输出顺序信息，已使用目录顺序恢复。");
+        }
+    }
+
+    QString resolvedMasterPath;
+    if (!m_savedMasterOutputPath.isEmpty()) {
+        resolvedMasterPath = resolveSavedOutputPath(m_savedMasterOutputPath, dstNode);
+    }
+
+    if (!resolvedMasterPath.isEmpty()) {
+        int masterPosition = orderedPaths.indexOf(resolvedMasterPath);
+        if (masterPosition > 0) {
+            orderedPaths.prepend(orderedPaths.takeAt(masterPosition));
+        }
+    } else if (restoreSource >= 2 && restoreSource <= 4) {
+        orderedPaths = moveMasterToFront(orderedPaths, restoredMasterIndex);
+    } else if (restoreSource == 5 && m_masterIndex > 1) {
+        InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
+            "目录恢复无法确认历史主影像身份，已保留目录顺序。");
+    }
+
+    return orderedPaths;
+}
+
+void S1TopsBackGeocodingNode::syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode)
+{
+    QStandardItemModel* model = projectModel();
+    if (!model)
+        return;
+
+    QList<QStandardItem*> projects = model->findItems(projectName());
+    if (projects.isEmpty())
+        return;
+
+    QStandardItem* project = projects.first();
+    QStandardItem* resultNode = NodeUtils::findOrCreateProjectNode(
+        project, dstNode, "complex-2.0", FOLDER_ICON);
+    if (!resultNode)
+        return;
+
+    resultNode->setToolTip(projectName());
+    resultNode->removeRows(0, resultNode->rowCount());
+    for (const QString& h5Path : h5Paths) {
+        QFileInfo fi(h5Path);
+        NodeUtils::findOrCreateChildItem(
+            resultNode, fi.baseName(), "complex", fi.absoluteFilePath(), IMAGEDATA_ICON);
+    }
+}
+
+void S1TopsBackGeocodingNode::syncProjectXmlOrder(
+    const QStringList& h5Paths, const QString& dstNode)
+{
+    XMLFile* xml = projectXml();
+    TiXmlElement* root = nullptr;
+    if (!xml || xml->get_root(root) < 0 || !root)
+        return;
+
+    TiXmlElement* dataNode = nullptr;
+    for (TiXmlElement* node = root->FirstChildElement("DataNode"); node;
+         node = node->NextSiblingElement("DataNode")) {
+        const char* nameAttr = node->Attribute("name");
+        if (nameAttr && QString::fromUtf8(nameAttr) == dstNode) {
+            dataNode = node;
+            break;
+        }
+    }
+
+    if (!dataNode) {
+        dataNode = new TiXmlElement("DataNode");
+        dataNode->SetAttribute("name", dstNode.toStdString().c_str());
+        dataNode->SetAttribute("data_processing", "coregistration");
+        dataNode->SetAttribute("rank", "complex-2.0");
+        int dataNodeIndex = 1;
+        for (TiXmlElement* node = root->FirstChildElement("DataNode"); node;
+             node = node->NextSiblingElement("DataNode")) {
+            ++dataNodeIndex;
+        }
+        dataNode->SetAttribute("index", QString::number(dataNodeIndex).toStdString().c_str());
+        root->LinkEndChild(dataNode);
+    }
+    dataNode->SetAttribute("data_count", QString::number(h5Paths.size()).toStdString().c_str());
+
+    TiXmlElement* data = dataNode->FirstChildElement("Data");
+    while (data) {
+        TiXmlElement* next = data->NextSiblingElement("Data");
+        dataNode->RemoveChild(data);
+        data = next;
+    }
+
+    TiXmlElement* params = dataNode->FirstChildElement("Data_Processing_Parameters");
+    if (!params) {
+        params = new TiXmlElement("Data_Processing_Parameters");
+        dataNode->LinkEndChild(params);
+    }
+    TiXmlElement* masterElem = params->FirstChildElement("master_image");
+    if (!masterElem) {
+        masterElem = new TiXmlElement("master_image");
+        params->LinkEndChild(masterElem);
+    }
+    masterElem->Clear();
+    // Data 已规范为主影像首位，XML 中的主影像索引也统一为 1
+    masterElem->LinkEndChild(new TiXmlText("1"));
+
+    for (int i = 0; i < h5Paths.size(); ++i) {
+        QFileInfo fi(h5Paths.at(i));
+        TiXmlElement dataElem("Data");
+
+        TiXmlElement* nameElem = new TiXmlElement("Data_Name");
+        nameElem->LinkEndChild(new TiXmlText(fi.baseName().toStdString().c_str()));
+        dataElem.LinkEndChild(nameElem);
+        TiXmlElement* rankElem = new TiXmlElement("Data_Rank");
+        rankElem->LinkEndChild(new TiXmlText("complex-2.0"));
+        dataElem.LinkEndChild(rankElem);
+        TiXmlElement* indexElem = new TiXmlElement("Data_Index");
+        indexElem->LinkEndChild(new TiXmlText(QString::number(i + 1).toStdString().c_str()));
+        dataElem.LinkEndChild(indexElem);
+        TiXmlElement* pathElem = new TiXmlElement("Data_Path");
+        pathElem->LinkEndChild(new TiXmlText(
+            QString("/%1/%2").arg(dstNode, fi.fileName()).toStdString().c_str()));
+        dataElem.LinkEndChild(pathElem);
+        TiXmlElement* rowElem = new TiXmlElement("Row_Offset");
+        rowElem->LinkEndChild(new TiXmlText("0"));
+        dataElem.LinkEndChild(rowElem);
+        TiXmlElement* colElem = new TiXmlElement("Col_Offset");
+        colElem->LinkEndChild(new TiXmlText("0"));
+        dataElem.LinkEndChild(colElem);
+
+        dataNode->InsertBeforeChild(params, dataElem);
+    }
+
+    QString xmlPath = projectPath();
+    if (!xmlPath.endsWith(".insar", Qt::CaseInsensitive)) {
+        xmlPath = QDir(xmlPath).absoluteFilePath(projectName());
+    }
+    xml->XMLFile_save(xmlPath.toStdString().c_str());
+}
+
+void S1TopsBackGeocodingNode::onProcessingFinished(
+    const QStringList& regisH5Paths,
+    const QString& dstNode,
+    const QString& dstProject,
+    const QString& savePath,
+    int masterIndex
+)
+{
+    Q_UNUSED(dstProject);
+    Q_UNUSED(savePath);
+
+    // Worker 保持原输入顺序计算，Node 仅在输出阶段把主影像稳定移到首位
+    QStringList orderedH5Paths = moveMasterToFront(regisH5Paths, masterIndex);
+    m_savedOutputPaths = orderedH5Paths;
+    m_savedMasterOutputPath = orderedH5Paths.isEmpty() ? QString() : orderedH5Paths.first();
+
+    syncProjectXmlOrder(orderedH5Paths, dstNode);
+    syncProjectTreeOrder(orderedH5Paths, dstNode);
+
+    QStringList jpgPaths = jpgPathsFromH5Paths(orderedH5Paths);
+    m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, dstNode);
     setOutputData(0, m_outputData);
 
-    // Clean up thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
-    if (!h5Paths.isEmpty())
+    if (!orderedH5Paths.isEmpty())
     {
         m_remedyWatcher.cancel();
         m_remedyWatcher.waitForFinished();
@@ -666,10 +943,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
 
-            // Update UI
             updateParameterWidgetsEnableState();
-
-            // Notify base class that we're finished
             setState(ExecutionState::Running);
             setProgress(100);
             InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
@@ -677,9 +951,9 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
             Q_EMIT dataUpdated(0);
         });
 
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths]() {
-            for (int i = 0; i < h5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], "complex");
+        QFuture<void> future = QtConcurrent::run([orderedH5Paths, jpgPaths]() {
+            for (int i = 0; i < orderedH5Paths.size(); ++i) {
+                NodeUtils::generateJpgPreviewFromH5(orderedH5Paths[i], jpgPaths[i], "complex");
             }
         });
         m_remedyWatcher.setFuture(future);
@@ -690,10 +964,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
         setOutputData(1, nullptr);
         Q_EMIT dataUpdated(1);
 
-        // Update UI
         updateParameterWidgetsEnableState();
-
-        // Notify base class that we're finished
         setState(ExecutionState::Running);
         setProgress(100);
         InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
@@ -704,21 +975,8 @@ void S1TopsBackGeocodingNode::onProcessingFinished()
 
 void S1TopsBackGeocodingNode::onError(const QString& error)
 {
-    Q_UNUSED(error);
-    // Clean up thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    InSARLogManager::LogError("S1TopsBackGeocodingNode", "Execution failed: " + error);
+    qDebug() << "[RegistrationNode] Error:" << error;
 
     updateParameterWidgetsEnableState();
     setState(ExecutionState::Error);
@@ -775,7 +1033,6 @@ void S1TopsBackGeocodingNode::stopExecution()
     {
         m_thread->requestInterruption();
         m_thread->quit();
-        NodeUtils::safeThreadWait(m_thread);
     }
 }
 
@@ -912,6 +1169,13 @@ void S1TopsBackGeocodingNode::executeProcessing()
     m_workerThread->setDemPath(m_preparedDemPath);
     m_workerThread->moveToThread(m_thread);
 
+    connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
+    connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
+    connect(m_thread, &QThread::finished, this, [this]() {
+        m_workerThread = nullptr;
+        m_thread = nullptr;
+    });
+
     // Connect signals
     connect(this, &S1TopsBackGeocodingNode::startBackGeocoding, m_workerThread, &S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding);
     
@@ -927,11 +1191,11 @@ void S1TopsBackGeocodingNode::executeProcessing()
         Q_EMIT startBackGeocoding(images_number, masterIndex, savePath, dstProject, srcNode, dstNode, projectModel(), b_ESD);
     });
     connect(m_workerThread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1TopsBackGeocodingNode::onProgressUpdate);
-    connect(m_workerThread, &S1TopsBackGeocodingWorker::endProcess, this, &S1TopsBackGeocodingNode::onProcessingFinished);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::registrationFinished, this, &S1TopsBackGeocodingNode::onProcessingFinished);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::endProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, this, &S1TopsBackGeocodingNode::onError);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::sendModel, this, &S1TopsBackGeocodingNode::onModelUpdated);
-    connect(m_workerThread, &S1TopsBackGeocodingWorker::destroyed, m_thread, &QThread::quit);
-    connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread
     m_thread->start();
@@ -952,334 +1216,84 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     if (dstNode.isEmpty())
         return false;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
+    QStringList orderedH5Paths = restoreOrderedH5Paths(dstNode);
+    if (orderedH5Paths.isEmpty())
+        return false;
 
-    // 检查目录是否存在
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        // 查找所有匹配 "*_regis.h5" 的文件
-        QStringList filters;
-        filters << "*_regis.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
+    m_savedOutputPaths = orderedH5Paths;
+    m_savedMasterOutputPath = orderedH5Paths.first();
+    m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, dstNode);
+    setOutputData(0, m_outputData);
+    Q_EMIT dataUpdated(0);
 
-        if (!h5Files.isEmpty()) {
-            QStringList h5Paths;
-            for (const QString& h5File : h5Files) {
-                h5Paths.append(dir.absoluteFilePath(h5File));
-            }
-            h5Paths.sort();
-            m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
-            setOutputData(0, m_outputData);
-            Q_EMIT dataUpdated(0);
-
-            // 双路输出：Port 1 预览输出
-            // 收集已有 JPG 并查找缺失的 JPG
-            QStringList existingJpgPaths;
-            QStringList missingH5s;
-            QStringList missingJpgs;
-            QStringList allJpgPaths;
-
-            for (const QString& h5File : h5Files) {
-                QString h5Path = dir.absoluteFilePath(h5File);
-                QFileInfo fi(h5Path);
-                QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-                allJpgPaths.append(jpgPath);
-
-                if (QFile::exists(jpgPath)) {
-                    existingJpgPaths.append(jpgPath);
-                } else {
-                    missingH5s.append(h5Path);
-                    missingJpgs.append(jpgPath);
-                }
-            }
-
-            // 先把已有的预览显示出来（如果有的话），或者清空旧的预览
-            if (!existingJpgPaths.isEmpty()) {
-                m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgPaths);
-                setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
-            } else {
-                m_imageInfoData.reset();
-                setOutputData(1, nullptr);
-                Q_EMIT dataUpdated(1);
-            }
-
-            // 如果有缺失的 JPG 且 H5 存在，启动后台异步补救生成
-            if (!missingH5s.isEmpty()) {
-                m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
-                m_remedyWatcher.disconnect();
-
-                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
-                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                    setOutputData(1, m_imageInfoData);
-                    Q_EMIT dataUpdated(1);
-                });
-
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-                    for (int i = 0; i < missingH5s.size(); ++i) {
-                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                    }
-                });
-                m_remedyWatcher.setFuture(future);
-            }
-
-            // == 树视图 (Model) 与 XML 自愈补录逻辑 ==
-            QStandardItemModel* projModelPtr = projectModel();
-            if (projModelPtr) {
-                QList<QStandardItem*> foundProjects = projModelPtr->findItems(projectName());
-                if (!foundProjects.isEmpty()) {
-                    QStandardItem* projectItem = foundProjects.first();
-
-                    // 1. 查找或建立配准根节点
-                    QStandardItem* regis = nullptr;
-                    for (int i = 0; i < projectItem->rowCount(); i++) {
-                        if (projectItem->child(i, 0)->text() == dstNode) {
-                            regis = projectItem->child(i, 0);
-                            break;
-                        }
-                    }
-
-                    if (!regis) {
-                        regis = new QStandardItem(dstNode);
-                        regis->setToolTip(projectName());
-                        int insert = 0;
-                        for (; insert < projectItem->rowCount(); insert++) {
-                            if (projectItem->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                                projectItem->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                                projectItem->child(insert, 1)->text().compare("complex-2.0") == 0)
-                                continue;
-                            else
-                                break;
-                        }
-                        regis->setIcon(QIcon(FOLDER_ICON));
-                        projectItem->insertRow(insert, regis);
-                        QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
-                        projectItem->setChild(insert, 1, regis_Rank);
-                    }
-
-                    // 2. 将扫描到的各图像文件添加进模型
-                    for (const QString& h5File : h5Files) {
-                        QString h5Path = dir.absoluteFilePath(h5File);
-                        QFileInfo fileinfo(h5Path);
-                        QString regis_name = fileinfo.baseName();
-
-                        QStandardItem* item_img = nullptr;
-                        for (int j = 0; j < regis->rowCount(); j++) {
-                            if (regis->child(j, 0)->text() == regis_name) {
-                                item_img = regis->child(j, 0);
-                                break;
-                            }
-                        }
-
-                        if (!item_img) {
-                            QStandardItem* regis_images_name = new QStandardItem(regis_name);
-                            regis_images_name->setToolTip("complex");
-                            QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-                            regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-                            regis->appendRow(regis_images_name);
-                            regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
-                        } else {
-                            regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-                        }
-                    }
-                }
-            }
-
-            // 3. XML 永久保存自愈
-            XMLFile* xml = projectXml();
-            if (xml) {
-                bool xmlModified = false;
-                TiXmlElement* root = nullptr;
-                xml->get_root(root);
-                if (root) {
-                    // 检查 DataNode 中是否已包含此成果节点
-                    bool dataNodeExists = false;
-                    for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
-                        const char* nameAttr = p->Attribute("name");
-                        if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode) {
-                            dataNodeExists = true;
-                            break;
-                        }
-                    }
-
-                    // 如果 XML 中不存在该数据节点，则补录
-                    if (!dataNodeExists) {
-                        // 我们直接在 EXE 端用 TinyXML 实现自愈写入，彻底规避旧版 FormatConversion_d.dll 的崩溃 Bug
-                        for (const QString& h5File : h5Files) {
-                            QString h5Path = dir.absoluteFilePath(h5File);
-                            QFileInfo fileinfo(h5Path);
-                            QString relativePath = QString("/%1/%2").arg(dstNode).arg(fileinfo.fileName());
-                            
-                            // 查找或创建该 DataNode
-                            TiXmlElement* dataNodeElem = nullptr;
-                            for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
-                                const char* nameAttr = p->Attribute("name");
-                                if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode) {
-                                    dataNodeElem = p;
-                                    break;
-                                }
-                            }
-                            
-                            if (!dataNodeElem) {
-                                // 创建新的 DataNode
-                                dataNodeElem = new TiXmlElement("DataNode");
-                                dataNodeElem->SetAttribute("name", dstNode.toStdString().c_str());
-                                dataNodeElem->SetAttribute("data_count", "1");
-                                dataNodeElem->SetAttribute("data_processing", "coregistration");
-                                dataNodeElem->SetAttribute("rank", "complex-2.0");
-                                
-                                int index = 1;
-                                TiXmlElement* root_child = root->FirstChildElement();
-                                if (root_child) {
-                                    root_child = root_child->NextSiblingElement(); // 略过 project_info
-                                }
-                                
-                                TiXmlElement* insertBeforeNode = nullptr;
-                                for (TiXmlElement* p = root_child; p != nullptr; p = p->NextSiblingElement(), index++) {
-                                    const char* rankAttr = p->Attribute("rank");
-                                    if (rankAttr && (strcmp(rankAttr, "complex-0.0") == 0 ||
-                                                     strcmp(rankAttr, "complex-1.0") == 0 ||
-                                                     strcmp(rankAttr, "complex-2.0") == 0)) {
-                                        continue;
-                                    } else {
-                                        insertBeforeNode = p;
-                                        break;
-                                    }
-                                }
-                                dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
-                                
-                                TiXmlElement* dataElem = new TiXmlElement("Data");
-                                
-                                TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
-                                dataNameNode->LinkEndChild(new TiXmlText(fileinfo.baseName().toStdString().c_str()));
-                                dataElem->LinkEndChild(dataNameNode);
-                                
-                                TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
-                                dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
-                                dataElem->LinkEndChild(dataRankNode);
-                                
-                                TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
-                                dataIndexNode->LinkEndChild(new TiXmlText("1"));
-                                dataElem->LinkEndChild(dataIndexNode);
-                                
-                                TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
-                                dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
-                                dataElem->LinkEndChild(dataPathNode);
-                                
-                                TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
-                                rowOffsetNode->LinkEndChild(new TiXmlText("0"));
-                                dataElem->LinkEndChild(rowOffsetNode);
-                                
-                                TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
-                                colOffsetNode->LinkEndChild(new TiXmlText("0"));
-                                dataElem->LinkEndChild(colOffsetNode);
-                                
-                                dataNodeElem->LinkEndChild(dataElem);
-                                
-                                TiXmlElement* paramsElem = new TiXmlElement("Data_Processing_Parameters");
-                                TiXmlElement* masterImageElem = new TiXmlElement("master_image");
-                                masterImageElem->LinkEndChild(new TiXmlText(QString::number(m_masterIndex > 0 ? m_masterIndex : 1).toStdString().c_str()));
-                                paramsElem->LinkEndChild(masterImageElem);
-                                dataNodeElem->LinkEndChild(paramsElem);
-                                
-                                if (insertBeforeNode) {
-                                    root->InsertBeforeChild(insertBeforeNode, *dataNodeElem);
-                                    delete dataNodeElem; // InsertBeforeChild 做的是拷贝，需要销毁原堆对象
-                                    
-                                    // 刷新后续节点的 index
-                                    for (TiXmlElement* p = insertBeforeNode; p != nullptr; p = p->NextSiblingElement()) {
-                                        index++;
-                                        p->SetAttribute("index", QString::number(index).toStdString().c_str());
-                                    }
-                                } else {
-                                    root->LinkEndChild(dataNodeElem);
-                                }
-                            } else {
-                                // 成果节点已存在，追加新的 Data 元素
-                                const char* countAttr = dataNodeElem->Attribute("data_count");
-                                int count = countAttr ? QString(countAttr).toInt() : 0;
-                                count++;
-                                dataNodeElem->SetAttribute("data_count", QString::number(count).toStdString().c_str());
-                                
-                                TiXmlElement* lastChildNode = dataNodeElem->LastChild() ? dataNodeElem->LastChild()->ToElement() : nullptr;
-                                
-                                TiXmlElement* dataElem = new TiXmlElement("Data");
-                                
-                                TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
-                                dataNameNode->LinkEndChild(new TiXmlText(fileinfo.baseName().toStdString().c_str()));
-                                dataElem->LinkEndChild(dataNameNode);
-                                
-                                TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
-                                dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
-                                dataElem->LinkEndChild(dataRankNode);
-                                
-                                TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
-                                dataIndexNode->LinkEndChild(new TiXmlText(QString::number(count).toStdString().c_str()));
-                                dataElem->LinkEndChild(dataIndexNode);
-                                
-                                TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
-                                dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
-                                dataElem->LinkEndChild(dataPathNode);
-                                
-                                TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
-                                rowOffsetNode->LinkEndChild(new TiXmlText("0"));
-                                dataElem->LinkEndChild(rowOffsetNode);
-                                
-                                TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
-                                colOffsetNode->LinkEndChild(new TiXmlText("0"));
-                                dataElem->LinkEndChild(colOffsetNode);
-                                
-                                if (lastChildNode) {
-                                    dataNodeElem->InsertBeforeChild(lastChildNode, *dataElem);
-                                    delete dataElem; // 销毁堆对象
-                                } else {
-                                    dataNodeElem->LinkEndChild(dataElem);
-                                }
-                            }
-                            xmlModified = true;
-                        }
-                    }
-                }
-                if (xmlModified) {
-                    QString xmlPath = projectPath() + "/" + projectName();
-                    xml->XMLFile_save(xmlPath.toStdString().c_str());
-                }
-            }
-
-            // 4. 刷新左侧树视图
-            auto iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                iface->refreshProjectTree();
-            }
-
-            return true;
+    QStringList allJpgPaths = jpgPathsFromH5Paths(orderedH5Paths);
+    QStringList missingH5s;
+    QStringList missingJpgs;
+    for (int i = 0; i < orderedH5Paths.size(); ++i) {
+        if (!QFileInfo::exists(allJpgPaths[i])) {
+            missingH5s.append(orderedH5Paths[i]);
+            missingJpgs.append(allJpgPaths[i]);
         }
     }
 
-    return false;
+    if (missingH5s.isEmpty()) {
+        m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+        setOutputData(1, m_imageInfoData);
+    } else {
+        // 缺失预览补齐前不输出子集，避免 H5 与 JPG 按索引错位
+        m_imageInfoData.reset();
+        setOutputData(1, nullptr);
+    }
+    Q_EMIT dataUpdated(1);
+
+    if (!missingH5s.isEmpty()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+        m_remedyWatcher.disconnect();
+
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
+            m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+        });
+
+        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+            for (int i = 0; i < missingH5s.size(); ++i) {
+                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+            }
+        });
+        m_remedyWatcher.setFuture(future);
+    }
+
+    syncProjectTreeOrder(orderedH5Paths, dstNode);
+    syncProjectXmlOrder(orderedH5Paths, dstNode);
+
+    auto iface = NodeUtils::getProjectContext(_widget);
+    if (iface) {
+        iface->refreshProjectTree();
+    }
+    return true;
 }
 
 QStringList S1TopsBackGeocodingNode::previewImagePaths() const
 {
-    QStringList existingPaths;
-    QString dstNode = m_outputNodeName.trimmed();
-    if (dstNode.isEmpty())
-        return existingPaths;
-
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*_regis.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString h5Path = dir.absoluteFilePath(h5File);
-            QFileInfo fi(h5Path);
-            QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-            if (QFile::exists(jpgPath)) {
-                existingPaths << jpgPath;
+    QStringList h5Paths;
+    if (m_outputData && !m_outputData->filePaths().isEmpty()) {
+        h5Paths = m_outputData->filePaths();
+    } else if (!m_savedOutputPaths.isEmpty()) {
+        QString dstNode = m_outputNodeName.trimmed();
+        for (const QString& savedPath : m_savedOutputPaths) {
+            QString resolvedPath = resolveSavedOutputPath(savedPath, dstNode);
+            if (!resolvedPath.isEmpty()) {
+                h5Paths.append(resolvedPath);
             }
+        }
+    }
+
+    QStringList existingPaths;
+    for (const QString& jpgPath : jpgPathsFromH5Paths(h5Paths)) {
+        if (QFileInfo::exists(jpgPath)) {
+            existingPaths.append(jpgPath);
         }
     }
     return existingPaths;

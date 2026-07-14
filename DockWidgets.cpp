@@ -494,6 +494,10 @@ void NodeLibraryWidget::updateTreeIcons(const QString &theme)
                 iconPath = ":/SatExplorer/svg/ionosphere.svg";
                 iconColor = isDark ? QColor("#80E8FF") : QColor("#00687A");
             }
+            else if (modelName == "Sentinel1Orbit") {
+                iconPath = ":/SatExplorer/svg/apply_orbit_file.svg";
+                iconColor = isDark ? QColor("#D0BCFF") : QColor("#6750A4");
+            }
             else if (modelName == "Geocoding" || modelName == "ExportKML") {
                 // Export category - Green
                 iconColor = isDark ? QColor("#47D8A4") : QColor("#0F7D5C");

@@ -420,12 +420,15 @@ void ImportNodeBase::startWorker(BaseImportWorker* worker, const std::vector<Imp
 
     m_thread->start();
 
+    IApplicationInterface* iface = NodeUtils::getProjectContext(embeddedWidget());
+
     bool success = QMetaObject::invokeMethod(m_worker, "import_patch",
         Q_ARG(QString, projectPath()),
         Q_ARG(std::vector<ImportTask>, tasks),
         Q_ARG(QString, getOutputNodeName()),
         Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()));
+        Q_ARG(QStandardItemModel*, projectModel()),
+        Q_ARG(void*, iface));
     if (!success) {
         qWarning() << "ImportNodeBase::startWorker - Failed to invoke BaseImportWorker::import_patch asynchronously!";
     }

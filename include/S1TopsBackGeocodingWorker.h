@@ -22,6 +22,15 @@ public slots:
         bool b_ESD = true
     );
 
+signals:
+    void registrationFinished(
+        const QStringList& regisH5Paths,
+        const QString& dstNode,
+        const QString& dstProject,
+        const QString& savePath,
+        int masterIndex
+    );
+
 private:
     QString m_demPath;
 };

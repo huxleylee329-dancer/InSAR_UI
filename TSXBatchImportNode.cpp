@@ -211,12 +211,16 @@ QStringList TSXBatchImportNode::getExpectedOutputFilePaths() const
 
 QString TSXBatchImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
+    if (m_outputNodeNameEdit)
     {
-        return "TSX_Batch_Import";
+        QString name = m_outputNodeNameEdit->text().trimmed();
+        if (name.isEmpty())
+        {
+            return "TSX_Batch_Import";
+        }
+        return name;
     }
-    return name;
+    return m_outputNodeName.isEmpty() ? "TSX_Batch_Import" : m_outputNodeName;
 }
 
 QString TSXBatchImportNode::generateOutputFileName(const QString& xmlPath) const

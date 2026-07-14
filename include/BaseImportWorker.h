@@ -20,7 +20,8 @@ public slots:
         const std::vector<ImportTask>& tasks,
         const QString& dst_node,
         const QString& dst_project,
-        QStandardItemModel* model
+        QStandardItemModel* model,
+        void* contextPtr = nullptr
     );
 
     // 辅助函数：更新导入进度（子类可在 convertToH5 内部调用，也可在静态回调中使用）

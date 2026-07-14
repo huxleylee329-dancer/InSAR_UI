@@ -8,6 +8,8 @@
 #include <qmessagebox.h>
 
 #include "InSARLogManager.h"
+#include "NodeUtils.h"
+#include "IApplicationInterface.h"
 Import_GenericSAR::Import_GenericSAR(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::ImportGenericSAR),
@@ -151,7 +153,8 @@ void Import_GenericSAR::on_buttonBox_accepted()
         ui->lineEdit_dst_node->text(),
         ui->LineEdit_dst_filename->text(),
         ui->comboBox_dst_project->currentText(),
-        this->copy
+        this->copy,
+        NodeUtils::getProjectContext(this)
     );
     import_GenericSAR_thread->setAutoDelete(true);
 
@@ -299,7 +302,8 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
         import_namelist, //导入文件名b    
         ui->lineEdit_dst_node_2->text(), //导入节点名
         ui->comboBox_dst_project_2->currentText(), //导入工程名
-        this->copy
+        this->copy,
+        NodeUtils::getProjectContext(this)
     );
     import_GenericSAR_thread2->setAutoDelete(true);
 

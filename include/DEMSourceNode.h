@@ -104,7 +104,13 @@ private:
     void updateCacheSizeLabel();
     void updateLoginStatus();
     void onProgressUpdate(int progress, const QString& message);
-    void onProcessingFinished();
+    void onProcessingFinished(
+        const QString& outputH5Path,
+        const QString& dstNode,
+        const QString& projectName,
+        int demSource,
+        double targetResolution
+    );
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;

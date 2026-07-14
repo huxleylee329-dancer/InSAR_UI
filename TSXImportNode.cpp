@@ -199,12 +199,16 @@ QStringList TSXImportNode::getExpectedOutputFilePaths() const
 
 QString TSXImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
+    if (m_outputNodeNameEdit)
     {
-        return generateOutputFileName();
+        QString name = m_outputNodeNameEdit->text().trimmed();
+        if (name.isEmpty())
+        {
+            return generateOutputFileName();
+        }
+        return name;
     }
-    return name;
+    return m_outputNodeName.isEmpty() ? generateOutputFileName() : m_outputNodeName;
 }
 
 QString TSXImportNode::generateOutputFileName() const

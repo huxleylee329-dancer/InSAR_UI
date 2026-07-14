@@ -337,12 +337,16 @@ QStringList Sentinel1BatchImportNode::getExpectedOutputFilePaths() const
 
 QString Sentinel1BatchImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
+    if (m_outputNodeNameEdit)
     {
-        return "S1_Batch_Import";
+        QString name = m_outputNodeNameEdit->text().trimmed();
+        if (name.isEmpty())
+        {
+            return "S1_Batch_Import";
+        }
+        return name;
     }
-    return name;
+    return m_outputNodeName.isEmpty() ? "S1_Batch_Import" : m_outputNodeName;
 }
 
 QString Sentinel1BatchImportNode::generateImportName(const QString& manifestPath) const
@@ -355,8 +359,8 @@ QString Sentinel1BatchImportNode::generateImportName(const QString& manifestPath
     if (match.hasMatch())
     {
         QString date = match.captured(0);
-        QString subswath = m_subswathCombo->currentText();
-        QString pol = m_polarizationCombo->currentText();
+        QString subswath = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
+        QString pol = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
         return QString("%1_%2%3").arg(date).arg(subswath).arg(pol);
     }
     return QString();
@@ -489,13 +493,22 @@ void Sentinel1BatchImportNode::onRemoveFilesClicked()
                                     QStandardItem* fileItem = nodeItem->child(j, 0);
                                     QString fileName = fileItem ? fileItem->text() : "";
 
-                                    XMLFile xml;
-                                    QString xmlPath = projectPath() + "/" + projectName();
-                                    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) >= 0) {
-                                        xml.XMLFile_remove_node(getOutputNodeName().toStdString().c_str(),
+                                    auto* iface = getProjectContext();
+                                    if (iface && iface->projectXml()) {
+                                        XMLFile* xml = iface->projectXml();
+                                        xml->XMLFile_remove_node(getOutputNodeName().toStdString().c_str(),
                                                               fileName.toStdString().c_str(),
                                                               importedPath.toStdString().c_str());
-                                        xml.XMLFile_save(xmlPath.toStdString().c_str());
+                                        xml->XMLFile_save(iface->projectPath().toStdString().c_str());
+                                    } else {
+                                        XMLFile xml;
+                                        QString xmlPath = projectPath() + "/" + projectName();
+                                        if (xml.XMLFile_load(xmlPath.toStdString().c_str()) >= 0) {
+                                            xml.XMLFile_remove_node(getOutputNodeName().toStdString().c_str(),
+                                                                  fileName.toStdString().c_str(),
+                                                                  importedPath.toStdString().c_str());
+                                            xml.XMLFile_save(xmlPath.toStdString().c_str());
+                                        }
                                     }
 
                                     if (QFile::exists(importedPath)) {

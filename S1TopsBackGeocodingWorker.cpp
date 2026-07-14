@@ -141,6 +141,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	emit updateProcess(10, QStringLiteral("开始后向地理编码配准……"));
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Starting S1 TOPS Back-Geocoding. Total images: %1, Master Index: %2, ESD Enabled: %3")
 		.arg(images_number).arg(masterIndex).arg(b_ESD ? "True" : "False"));
+	for (size_t i = 0; i < SAR_images.size(); ++i) {
+		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("  Input Image [%1]: %2 -> Output: %3")
+			.arg(i + 1).arg(QString::fromStdString(SAR_images[i])).arg(QString::fromStdString(SAR_images_regis[i])));
+	}
 
 	// 优先使用项目全局高程路径，如为空则回退到运行程序下的 dem 文件夹
 	if (demPath.isEmpty()) {
@@ -279,14 +283,18 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			if (j == masterIndex - 1) continue;
 			if (!backgeocoding.burstOffsetComputed)
 			{
-				ret = backgeocoding.computeBurstOffset(); if (ret < 0) return;
+				ret = backgeocoding.computeBurstOffset();
+				if (ret < 0) {
+					emit errorProcess("Failed to compute burst offset.");
+					return;
+				}
 			}
 			int mBurstIndex = i + 1; int slaveImageIndex = j + 1;
 			int sBurstIndex = mBurstIndex + backgeocoding.su[slaveImageIndex - 1]->burstOffset;
 			if (sBurstIndex < 1 || sBurstIndex > backgeocoding.su[slaveImageIndex - 1]->burstCount) {
 				continue;
 			}
-			double a0Rg, a1Rg, a2Rg, a0Az, a1Az, a2Az;
+			double a0Rg = 0.0, a1Rg = 0.0, a2Rg = 0.0, a0Az = 0.0, a1Az = 0.0, a2Az = 0.0;
 			cv::Mat coef(1, 6, CV_64F);
 			ret = backgeocoding.su[slaveImageIndex - 1]->getBurst(sBurstIndex, slaveSLC);
 			if (slaveSLC.type() != CV_64F) slaveSLC.convertTo(slaveSLC, CV_64F);
@@ -296,8 +304,18 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			ret = backgeocoding.computeSlavePosition(slaveImageIndex, mBurstIndex);
 			cv::Mat slaveAzimuthOffset, slaveRangeOffset;
 			ret = backgeocoding.computeSlaveOffset(slaveAzimuthOffset, slaveRangeOffset);
-			ret = backgeocoding.fitSlaveOffset(slaveAzimuthOffset, &a0Az, &a1Az, &a2Az);
-			ret = backgeocoding.fitSlaveOffset(slaveRangeOffset, &a0Rg, &a1Rg, &a2Rg);
+			
+			int fitRetAz = backgeocoding.fitSlaveOffset(slaveAzimuthOffset, &a0Az, &a1Az, &a2Az);
+			if (fitRetAz < 0) {
+				InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", QString("Failed to fit slave azimuth offset for burst %1, slave %2. Using default 0.0.").arg(mBurstIndex).arg(slaveImageIndex));
+				a0Az = 0.0; a1Az = 0.0; a2Az = 0.0;
+			}
+			int fitRetRg = backgeocoding.fitSlaveOffset(slaveRangeOffset, &a0Rg, &a1Rg, &a2Rg);
+			if (fitRetRg < 0) {
+				InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", QString("Failed to fit slave range offset for burst %1, slave %2. Using default 0.0.").arg(mBurstIndex).arg(slaveImageIndex));
+				a0Rg = 0.0; a1Rg = 0.0; a2Rg = 0.0;
+			}
+
 			coef.at<double>(0) = a0Rg;
 			coef.at<double>(1) = a1Rg;
 			coef.at<double>(2) = a2Rg;
@@ -420,16 +438,24 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			cv::Mat output, out_x;
 			phase0 = phase0.reshape(0, 1);
 			util.hist(phase0, -PI, PI, 0.1, out_x, output);
+			if (output.type() != CV_64F) output.convertTo(output, CV_64F);
+			if (out_x.type() != CV_64F) out_x.convertTo(out_x, CV_64F);
+
 			//拉格朗日插值
 			double x0, x1, x2, x3, y0, y1, y2, y3, x; x = 31;
 			x0 = 29; x1 = 30; x2 = 32; x3 = 33;
-			y0 = output.at<double>(29); y1 = output.at<double>(30); y2 = output.at<double>(32); y3 = output.at<double>(33);
-			output.at<double>(31) = (x - x1) * (x - x2) * (x - x3) / ((x0 - x1) * (x0 - x2) * (x0 - x3)) * y0 +
-				(x - x0) * (x - x2) * (x - x3) / ((x1 - x0) * (x1 - x2) * (x1 - x3)) * y1 +
-				(x - x0) * (x - x1) * (x - x3) / ((x2 - x0) * (x2 - x1) * (x2 - x3)) * y2 +
-				(x - x0) * (x - x1) * (x - x2) / ((x3 - x0) * (x3 - x1) * (x3 - x2)) * y3;
+			if (output.total() > 33) {
+				y0 = output.at<double>(29); y1 = output.at<double>(30); y2 = output.at<double>(32); y3 = output.at<double>(33);
+				output.at<double>(31) = (x - x1) * (x - x2) * (x - x3) / ((x0 - x1) * (x0 - x2) * (x0 - x3)) * y0 +
+					(x - x0) * (x - x2) * (x - x3) / ((x1 - x0) * (x1 - x2) * (x1 - x3)) * y1 +
+					(x - x0) * (x - x1) * (x - x3) / ((x2 - x0) * (x2 - x1) * (x2 - x3)) * y2 +
+					(x - x0) * (x - x1) * (x - x2) / ((x3 - x0) * (x3 - x1) * (x3 - x2)) * y3;
+			}
 			cv::minMaxLoc(output, &t1, &t2, NULL, &p);
-			double offset = out_x.at<double>(p.x);
+			double offset = 0.0;
+			if (p.x >= 0 && p.x < out_x.total()) {
+				offset = out_x.at<double>(p.x);
+			}
 			double offset_a = offset / (2 * 3.1415926535 * 4500) * 486;
 			{
 				NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[j]);
@@ -461,7 +487,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				if (sBurstIndex < 1 || sBurstIndex > backgeocoding.su[slaveImageIndex - 1]->burstCount) {
 					continue;
 				}
-				double a0Rg, a1Rg, a2Rg, a0Az, a1Az, a2Az;
+				double a0Rg = 0.0, a1Rg = 0.0, a2Rg = 0.0, a0Az = 0.0, a1Az = 0.0, a2Az = 0.0;
 				cv::Mat coef(1, 6, CV_64F);
 				ret = backgeocoding.su[slaveImageIndex - 1]->getBurst(sBurstIndex, slaveSLC);
 				if (slaveSLC.type() != CV_64F) slaveSLC.convertTo(slaveSLC, CV_64F);
@@ -475,12 +501,25 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 					conversion.read_array_from_h5(backgeocoding.outFiles[j].c_str(), str, coef);
 				}
 				
-				a0Rg = coef.at<double>(0);
-				a1Rg = coef.at<double>(1);
-				a2Rg = coef.at<double>(2);
-				a0Az = coef.at<double>(3) + offset_a;
-				a1Az = coef.at<double>(4);
-				a2Az = coef.at<double>(5);
+				if (coef.rows == 1 && coef.cols == 6)
+				{
+					a0Rg = coef.at<double>(0);
+					a1Rg = coef.at<double>(1);
+					a2Rg = coef.at<double>(2);
+					a0Az = coef.at<double>(3) + offset_a;
+					a1Az = coef.at<double>(4);
+					a2Az = coef.at<double>(5);
+				}
+				else
+				{
+					InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", QString("Failed to read valid registration coefficients from H5 for burst %1, slave %2. Using default 0.0.").arg(i + 1).arg(j + 1));
+					a0Rg = 0.0;
+					a1Rg = 0.0;
+					a2Rg = 0.0;
+					a0Az = offset_a;
+					a1Az = 0.0;
+					a2Az = 0.0;
+				}
 				ret = backgeocoding.performBilinearResampling(slaveSLC, backgeocoding.su[masterIndex - 1]->linesPerBurst, backgeocoding.su[masterIndex - 1]->samplesPerBurst,
 					a0Rg, a1Rg, a2Rg, a0Az, a1Az, a2Az);
 				tmp.SetRe(derampDemodPhase); tmp.SetIm(derampDemodPhase);
@@ -522,6 +561,16 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		{
 			NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[i]);
 			conversion.read_slc_from_h5(backgeocoding.outFiles[i].c_str(), slaveSLC);
+		}
+		int expectedRows = backgeocoding.su[masterIndex - 1]->linesPerBurst * backgeocoding.su[masterIndex - 1]->burstCount;
+		if (slaveSLC.isEmpty() || slaveSLC.GetRows() < expectedRows)
+		{
+			emit errorProcess(QString("Slave SLC image %1 has invalid dimensions (rows: %2, expected: %3). Deburst failed. Please check if DEM covers the full image or if registration succeeded.")
+				.arg(origin[i]).arg(slaveSLC.GetRows()).arg(expectedRows));
+			return;
+		}
+		{
+			NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[i]);
 			conversion.creat_new_h5(backgeocoding.outFiles[i].c_str());
 		}
 		slc = slaveSLC(cv::Range(backgeocoding.start.at<int>(0, 0), backgeocoding.end.at<int>(0, 0)),
@@ -530,8 +579,12 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		{
 			tmp = slaveSLC(cv::Range(backgeocoding.start.at<int>(j, 0), backgeocoding.end.at<int>(j, 0)),
 				cv::Range(0, backgeocoding.su[masterIndex - 1]->samplesPerBurst));
-			cv::vconcat(slc.re, tmp.re, slc.re);
-			cv::vconcat(slc.im, tmp.im, slc.im);
+			// 使用临时变量存储拼接结果，避免 OpenCV vconcat 目标矩阵与输入矩阵相同导致的内存重叠/重分配异常
+			cv::Mat concat_re, concat_im;
+			cv::vconcat(slc.re, tmp.re, concat_re);
+			cv::vconcat(slc.im, tmp.im, concat_im);
+			slc.re = concat_re;
+			slc.im = concat_im;
 		}
 		{
 			NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[i]);
@@ -543,9 +596,19 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	FormatConversion FC;
 	/*获取主星参数*/
 	cv::Mat outArray;
-	int rows, cols;
-	FC.read_array_from_h5(SAR_images_regis.at(masterIndex - 1).c_str(), "s_re", outArray);
-	rows = outArray.rows; cols = outArray.cols;
+	const std::string& masterOutputPath = SAR_images_regis.at(masterIndex - 1);
+	int readRet = 0;
+	{
+		NodeUtils::Hdf5Locker locker(masterOutputPath);
+		readRet = FC.read_array_from_h5(masterOutputPath.c_str(), "s_re", outArray);
+	}
+	if (readRet != 0 || outArray.empty())
+	{
+		emit errorProcess("Failed to read valid s_re dataset from master output H5.");
+		return;
+	}
+	int rows = outArray.rows;
+	int cols = outArray.cols;
 	offset_row = 0;
 	int offset_col = 0;
 
@@ -566,220 +629,13 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	}
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration parameters copied successfully to H5 files.");
 
-	QMetaObject::invokeMethod(model, [=]() {
-		QList<QStandardItem*> foundProjects = model->findItems(dstProject);
-		if (foundProjects.isEmpty()) return;
-		QStandardItem* project = foundProjects.first();
+	QStringList regisH5Paths;
+	for (const auto& pathStr : SAR_images_regis)
+	{
+		regisH5Paths.append(QString::fromStdString(pathStr));
+	}
 
-		/*建立配准根节点*/
-		QStandardItem* regis = NULL;
-		for (int i = 0; i < project->rowCount(); i++)
-		{
-			if (project->child(i, 0)->text() == dstNode)
-			{
-				regis = project->child(i, 0);
-				break;
-			}
-		}
-
-		if (!regis)
-		{
-			regis = new QStandardItem(dstNode);
-			regis->setToolTip(dstProject);
-			int insert = 0;
-			for (; insert < project->rowCount(); insert++)
-			{
-				if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-					project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-					project->child(insert, 1)->text().compare("complex-2.0") == 0)
-					continue;
-				else
-					break;
-			}
-			regis->setIcon(QIcon(FOLDER_ICON));
-			project->insertRow(insert, regis);
-			QStandardItem* regis_Rank = new QStandardItem("complex-2.0");
-			project->setChild(insert, 1, regis_Rank);
-		}
-
-		/*添加图像到model中并复制h5参数*/
-		for (int i = 0; i < images_number; i++)
-		{
-			QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
-			QString regis_name = fileinfo.baseName();
-			QStandardItem* item_img = NULL;
-			for (int j = 0; j < regis->rowCount(); j++)
-			{
-				if (regis->child(j, 0)->text() == regis_name)
-				{
-					item_img = regis->child(j, 0);
-					break;
-				}
-			}
-
-			if (!item_img)
-			{
-				QStandardItem* regis_images_name = new QStandardItem(regis_name);
-				regis_images_name->setToolTip("complex");
-				QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-				regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-				regis->appendRow(regis_images_name);
-				regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
-			}
-			else
-			{
-				regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-			}
-		}
-
-		/*写入XML*/
-		XMLFile xmlfile;
-		if (xmlfile.XMLFile_load((savePath + "/" + dstProject).toStdString().c_str()) >= 0)
-		{
-			TiXmlElement* root = nullptr;
-			xmlfile.get_root(root);
-			if (root)
-			{
-				for (int i = 0; i < images_number; i++)
-				{
-					QString relativePath = QString("/%1/%2").arg(dstNode).arg(origin.at(i) + "_regis.h5");
-					QString dataName = origin.at(i) + "_regis";
-					
-					// 查找是否已存在该 DataNode
-					TiXmlElement* dataNodeElem = nullptr;
-					for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
-						const char* nameAttr = p->Attribute("name");
-						if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode) {
-							dataNodeElem = p;
-							break;
-						}
-					}
-					
-					if (!dataNodeElem) {
-						// 创建新的 DataNode
-						dataNodeElem = new TiXmlElement("DataNode");
-						dataNodeElem->SetAttribute("name", dstNode.toStdString().c_str());
-						dataNodeElem->SetAttribute("data_count", "1");
-						dataNodeElem->SetAttribute("data_processing", "coregistration");
-						dataNodeElem->SetAttribute("rank", "complex-2.0");
-						
-						int index = 1;
-						TiXmlElement* root_child = root->FirstChildElement();
-						if (root_child) {
-							root_child = root_child->NextSiblingElement(); // 略过 project_info
-						}
-						
-						TiXmlElement* insertBeforeNode = nullptr;
-						for (TiXmlElement* p = root_child; p != nullptr; p = p->NextSiblingElement(), index++) {
-							const char* rankAttr = p->Attribute("rank");
-							if (rankAttr && (strcmp(rankAttr, "complex-0.0") == 0 ||
-											 strcmp(rankAttr, "complex-1.0") == 0 ||
-											 strcmp(rankAttr, "complex-2.0") == 0)) {
-								continue;
-							} else {
-								insertBeforeNode = p;
-								break;
-							}
-						}
-						dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
-						
-						TiXmlElement* dataElem = new TiXmlElement("Data");
-						
-						TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
-						dataNameNode->LinkEndChild(new TiXmlText(dataName.toStdString().c_str()));
-						dataElem->LinkEndChild(dataNameNode);
-						
-						TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
-						dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
-						dataElem->LinkEndChild(dataRankNode);
-						
-						TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
-						dataIndexNode->LinkEndChild(new TiXmlText("1"));
-						dataElem->LinkEndChild(dataIndexNode);
-						
-						TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
-						dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
-						dataElem->LinkEndChild(dataPathNode);
-						
-						TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
-						rowOffsetNode->LinkEndChild(new TiXmlText("0"));
-						dataElem->LinkEndChild(rowOffsetNode);
-						
-						TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
-						colOffsetNode->LinkEndChild(new TiXmlText("0"));
-						dataElem->LinkEndChild(colOffsetNode);
-						
-						dataNodeElem->LinkEndChild(dataElem);
-						
-						TiXmlElement* paramsElem = new TiXmlElement("Data_Processing_Parameters");
-						TiXmlElement* masterImageElem = new TiXmlElement("master_image");
-						masterImageElem->LinkEndChild(new TiXmlText(QString::number(masterIndex).toStdString().c_str()));
-						paramsElem->LinkEndChild(masterImageElem);
-						dataNodeElem->LinkEndChild(paramsElem);
-						
-						if (insertBeforeNode) {
-							root->InsertBeforeChild(insertBeforeNode, *dataNodeElem);
-							delete dataNodeElem;
-							
-							for (TiXmlElement* p = insertBeforeNode; p != nullptr; p = p->NextSiblingElement()) {
-								index++;
-								p->SetAttribute("index", QString::number(index).toStdString().c_str());
-							}
-						} else {
-							root->LinkEndChild(dataNodeElem);
-						}
-					} else {
-						// 成果节点已存在，追加新的 Data 元素
-						const char* countAttr = dataNodeElem->Attribute("data_count");
-						int count = countAttr ? QString(countAttr).toInt() : 0;
-						count++;
-						dataNodeElem->SetAttribute("data_count", QString::number(count).toStdString().c_str());
-						
-						TiXmlElement* lastChildNode = dataNodeElem->LastChild() ? dataNodeElem->LastChild()->ToElement() : nullptr;
-						
-						TiXmlElement* dataElem = new TiXmlElement("Data");
-						
-						TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
-						dataNameNode->LinkEndChild(new TiXmlText(dataName.toStdString().c_str()));
-						dataElem->LinkEndChild(dataNameNode);
-						
-						TiXmlElement* dataRankNode = new TiXmlElement("Data_Rank");
-						dataRankNode->LinkEndChild(new TiXmlText("complex-2.0"));
-						dataElem->LinkEndChild(dataRankNode);
-						
-						TiXmlElement* dataIndexNode = new TiXmlElement("Data_Index");
-						dataIndexNode->LinkEndChild(new TiXmlText(QString::number(count).toStdString().c_str()));
-						dataElem->LinkEndChild(dataIndexNode);
-						
-						TiXmlElement* dataPathNode = new TiXmlElement("Data_Path");
-						dataPathNode->LinkEndChild(new TiXmlText(relativePath.toStdString().c_str()));
-						dataElem->LinkEndChild(dataPathNode);
-						
-						TiXmlElement* rowOffsetNode = new TiXmlElement("Row_Offset");
-						rowOffsetNode->LinkEndChild(new TiXmlText("0"));
-						dataElem->LinkEndChild(rowOffsetNode);
-						
-						TiXmlElement* colOffsetNode = new TiXmlElement("Col_Offset");
-						colOffsetNode->LinkEndChild(new TiXmlText("0"));
-						dataElem->LinkEndChild(colOffsetNode);
-						
-						if (lastChildNode) {
-							dataNodeElem->InsertBeforeChild(lastChildNode, *dataElem);
-							delete dataElem;
-						} else {
-							dataNodeElem->LinkEndChild(dataElem);
-						}
-					}
-				}
-			}
-			xmlfile.XMLFile_save((savePath + "/" + dstProject).toStdString().c_str());
-			InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration results successfully saved in project XML file.");
-		}
-		else
-		{
-			InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", "Failed to load project XML file: " + savePath + "/" + dstProject);
-		}
-	}, Qt::BlockingQueuedConnection);
+	emit registrationFinished(regisH5Paths, dstNode, dstProject, savePath, masterIndex);
 	emit sendModel(model);
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();

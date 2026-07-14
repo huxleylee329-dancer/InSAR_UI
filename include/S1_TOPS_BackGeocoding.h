@@ -14,6 +14,13 @@ public slots:
     void ShowProjectList(QStandardItemModel*);
     void updateProcess(int, QString);
     void endProcess();
+    void onRegistrationFinished(
+        const QStringList& regisH5Paths,
+        const QString& dstNode,
+        const QString& dstProject,
+        const QString& savePath,
+        int masterIndex
+    );
     void endThread();
     void StopThread();
     void TransitModel(QStandardItemModel*);

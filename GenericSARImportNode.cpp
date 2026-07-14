@@ -135,7 +135,8 @@ void GenericSARImportNode::executeImport()
         getOutputNodeName(),
         m_preparedOutputFileName,
         projectName(),
-        projectModel()
+        projectModel(),
+        getProjectContext()
     );
 
     connect(m_task, &GenericSARImportTask::updateProcess,

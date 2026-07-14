@@ -1,6 +1,7 @@
 #include "OrbitSourceDialog.h"
 #include "NodeUtils.h"
 #include "EarthdataLoginDialog.h"
+#include "CDSELoginDialog.h"
 #include <QFormLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -43,7 +44,7 @@ OrbitSourceDialog::OrbitSourceDialog(QWidget* parent)
     loginLayout->addWidget(m_loginStatusLabel);
     loginLayout->addWidget(m_loginBtn);
     loginLayout->addWidget(m_logoutBtn);
-    formLayout->addRow(QStringLiteral("Earthdata 账户:"), loginLayout);
+    formLayout->addRow(QStringLiteral("数据源账户:"), loginLayout);
 
     // 缓存文件夹配置
     auto* cacheLayout = new QHBoxLayout();
@@ -98,17 +99,28 @@ OrbitSourceDialog::OrbitSourceDialog(QWidget* parent)
     connect(m_browseCacheBtn, &QPushButton::clicked, this, &OrbitSourceDialog::onBrowseCachePressed);
     connect(m_clearCacheBtn, &QPushButton::clicked, this, &OrbitSourceDialog::onClearCachePressed);
 
+    connect(m_orbitSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, [this](int) { updateLoginStatus(); });
+
     // 绑定登录注销信号
     connect(m_loginBtn, &QPushButton::clicked, this, [this]() {
-        EarthdataLoginDialog dlg(this);
-        if (dlg.exec() == QDialog::Accepted) {
+        const bool useCdse = m_orbitSourceCombo->currentIndex() == 1;
+        const int result = useCdse
+            ? CDSELoginDialog(this).exec()
+            : EarthdataLoginDialog(this).exec();
+        if (result == QDialog::Accepted) {
             updateLoginStatus();
         }
     });
     connect(m_logoutBtn, &QPushButton::clicked, this, [this]() {
         QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-        settings.remove("DEM/EarthdataUser");
-        settings.remove("DEM/EarthdataPassword");
+        if (m_orbitSourceCombo->currentIndex() == 1) {
+            settings.remove("Orbit/CDSEUser");
+            settings.remove("Orbit/CDSEPassword");
+        } else {
+            settings.remove("DEM/EarthdataUser");
+            settings.remove("DEM/EarthdataPassword");
+        }
         updateLoginStatus();
     });
 
@@ -118,6 +130,9 @@ OrbitSourceDialog::OrbitSourceDialog(QWidget* parent)
 
 OrbitSourceDialog::~OrbitSourceDialog()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread) {
         m_thread->quit();
         m_thread->wait();
@@ -189,10 +204,11 @@ void OrbitSourceDialog::updateSlcCombo()
             {
                 for (int j = 0; j < nodeItem->rowCount(); ++j)
                 {
-                    QStandardItem* fileItem = nodeItem->child(j);
-                    if (fileItem)
+                    QStandardItem* fileItem = nodeItem->child(j, 0);
+                    QStandardItem* pathItem = nodeItem->child(j, 1);
+                    if (fileItem && pathItem && QFileInfo(pathItem->text()).suffix().compare("h5", Qt::CaseInsensitive) == 0)
                     {
-                        m_slcCombo->addItem(fileItem->text(), fileItem->toolTip()); // tooltip 存的是绝对路径
+                        m_slcCombo->addItem(fileItem->text(), pathItem->text());
                     }
                 }
             }
@@ -211,11 +227,18 @@ void OrbitSourceDialog::onStartPressed()
         return;
     }
 
-    // 检查是否登录 Earthdata
+    // 检查所选数据源的账户
+    const int selectedSource = m_orbitSourceCombo->currentIndex();
     QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-    if (settings.value("DEM/EarthdataUser", "").toString().isEmpty())
+    const bool useCdse = selectedSource == 1;
+    const QString userKey = useCdse ? "Orbit/CDSEUser" : "DEM/EarthdataUser";
+    const QString passKey = useCdse ? "Orbit/CDSEPassword" : "DEM/EarthdataPassword";
+    if (settings.value(userKey, "").toString().isEmpty()
+        || settings.value(passKey, "").toString().isEmpty())
     {
-        QMessageBox::warning(this, QStringLiteral("提示"), QStringLiteral("下载精密轨道需要登录 NASA Earthdata 账户。请先登录！"));
+        QMessageBox::warning(this, QStringLiteral("提示"),
+            QStringLiteral("请先登录所选的 %1 轨道数据源账户。")
+                .arg(useCdse ? QStringLiteral("ESA CDSE") : QStringLiteral("NASA Earthdata")));
         return;
     }
 
@@ -283,9 +306,10 @@ void OrbitSourceDialog::onStartPressed()
     m_thread = new QThread(this);
     m_worker = new OrbitSourceWorker();
     m_worker->moveToThread(m_thread);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
 
-    connect(m_thread, &QThread::started, [this, projectPath, projName, targetFiles, cacheDir]() {
-        emit startOrbitFetch(projectPath, projName, targetFiles, m_orbitSourceCombo->currentIndex(), cacheDir, m_model);
+    connect(m_thread, &QThread::started, [this, projectPath, projName, targetFiles, cacheDir, selectedSource]() {
+        emit startOrbitFetch(projectPath, projName, targetFiles, selectedSource, cacheDir, m_model);
     });
 
     connect(this, &OrbitSourceDialog::startOrbitFetch, m_worker, &OrbitSourceWorker::fetch_orbits);
@@ -330,11 +354,7 @@ void OrbitSourceDialog::onFinished()
         m_thread->deleteLater();
         m_thread = nullptr;
     }
-    if (m_worker)
-    {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
+    m_worker = nullptr;
 
     updateCacheSizeLabel();
 }
@@ -393,11 +413,14 @@ void OrbitSourceDialog::updateCacheSizeLabel()
 void OrbitSourceDialog::updateLoginStatus()
 {
     QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-    QString user = settings.value("DEM/EarthdataUser", "").toString();
+    const bool useCdse = m_orbitSourceCombo->currentIndex() == 1;
+    const QString userKey = useCdse ? "Orbit/CDSEUser" : "DEM/EarthdataUser";
+    QString user = settings.value(userKey, "").toString();
     if (!user.isEmpty())
     {
         QString plainUser = QString::fromUtf8(QByteArray::fromBase64(user.toUtf8()));
-        m_loginStatusLabel->setText(QStringLiteral("已授权 (%1)").arg(plainUser));
+        m_loginStatusLabel->setText(QStringLiteral("%1 已授权 (%2)")
+            .arg(useCdse ? QStringLiteral("CDSE") : QStringLiteral("Earthdata"), plainUser));
         m_loginStatusLabel->setStyleSheet("color: green; font-weight: bold;");
         m_loginBtn->hide();
         m_logoutBtn->show();

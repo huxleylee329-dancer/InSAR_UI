@@ -644,7 +644,7 @@ void DEMSourceNode::executeProcessing()
 
     connect(m_workerThread, &DEMSourceWorker::updateProcess, this, &DEMSourceNode::onProgressUpdate);
     connect(m_workerThread, &DEMSourceWorker::errorProcess, this, &DEMSourceNode::onError);
-    connect(m_workerThread, &DEMSourceWorker::endProcess, this, &DEMSourceNode::onProcessingFinished);
+    connect(m_workerThread, &DEMSourceWorker::demFetchFinished, this, &DEMSourceNode::onProcessingFinished);
     connect(m_workerThread, &DEMSourceWorker::sendModel, this, &DEMSourceNode::onModelUpdated);
 
     connect(this, &DEMSourceNode::startDemFetch, m_workerThread, &DEMSourceWorker::fetch_dem);
@@ -678,33 +678,138 @@ void DEMSourceNode::onError(const QString& error)
     m_thread = nullptr;
 
     setState(ExecutionState::Error);
-    QMessageBox::critical(nullptr, "Error", error);
+    InSARLogManager::LogError("DEMSourceNode", "Execution failed: " + error);
+
+    if (executionMode() == ExecutionMode::Manual)
+    {
+        QMessageBox::critical(nullptr, "Error", error);
+    }
 }
 
-void DEMSourceNode::onProcessingFinished()
+void DEMSourceNode::onProcessingFinished(
+    const QString& outputH5Path,
+    const QString& dstNode,
+    const QString& projectName,
+    int demSource,
+    double targetResolution
+)
 {
     stopExecution();
     m_workerThread = nullptr;
     m_thread = nullptr;
 
-    QString savePath = m_preparedSavePath;
-    QString h5Path = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.h5";
-    QString tifPath = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.tif";
-    QString jpgPath = savePath + "/" + m_preparedDstNode + "/" + m_preparedDstNode + "_dem.jpg";
+    QString h5Path = outputH5Path;
+    QString tifPath = h5Path.left(h5Path.lastIndexOf('.')) + ".tif";
+    QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
 
-
-
-    m_outputData = std::make_shared<ImportedFileData>(tifPath, m_preparedDstNode);
+    m_outputData = std::make_shared<ImportedFileData>(tifPath, dstNode);
     m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
 
+    // 主线程更新全局 XML 并保存
+    XMLFile* xml = projectXml();
+    if (xml)
+    {
+        std::string srcName = "SRTM1";
+        if (demSource == 1) srcName = "SRTM3";
+        else if (demSource == 2) srcName = "Copernicus";
+        else if (demSource == 3) srcName = "ASTER";
+
+        QString outputH5Name = QFileInfo(h5Path).fileName();
+        xml->XMLFile_add_dem(
+            dstNode.toStdString().c_str(), 
+            (dstNode + "_dem").toStdString().c_str(),
+            ("/" + dstNode + "/" + outputH5Name).toStdString().c_str(),
+            0, 0, srcName.c_str(), targetResolution
+        );
+        xml->XMLFile_save(projectPath().toStdString().c_str());
+    }
+
+    // 主线程挂载项目树 UI
+    QStandardItemModel* model = projectModel();
+    if (model)
+    {
+        QStandardItem* project = nullptr;
+        QList<QStandardItem*> foundProjects = model->findItems(projectName);
+        if (!foundProjects.isEmpty())
+        {
+            project = foundProjects.first();
+        }
+
+        if (project)
+        {
+            QStandardItem* demNode = nullptr;
+            for (int i = 0; i < project->rowCount(); ++i)
+            {
+                if (project->child(i, 0)->text() == dstNode)
+                {
+                    demNode = project->child(i, 0);
+                    break;
+                }
+            }
+
+            if (!demNode)
+            {
+                demNode = new QStandardItem(dstNode);
+                demNode->setToolTip(projectName);
+                demNode->setIcon(QIcon(FOLDER_ICON));
+                int insertIndex = 0;
+                for (; insertIndex < project->rowCount(); ++insertIndex)
+                {
+                    QString t = project->child(insertIndex, 1)->text();
+                    if (t == "complex-0.0" || t == "complex-1.0" || t == "complex-2.0" || 
+                        t == "phase-1.0" || t == "phase-2.0" || t == "phase-3.0" || t == "dem-1.0")
+                    {
+                        continue;
+                    }
+                    break;
+                }
+                project->insertRow(insertIndex, demNode);
+                project->setChild(insertIndex, 1, new QStandardItem("dem-1.0"));
+            }
+
+            QStandardItem* itemImg = nullptr;
+            QString imgName = dstNode + "_dem";
+            for (int j = 0; j < demNode->rowCount(); ++j)
+            {
+                if (demNode->child(j, 0)->text() == imgName)
+                {
+                    itemImg = demNode->child(j, 0);
+                    break;
+                }
+            }
+
+            if (!itemImg)
+            {
+                QStandardItem* image = new QStandardItem(imgName);
+                image->setToolTip("dem");
+                image->setIcon(QIcon(IMAGEDATA_ICON));
+                demNode->appendRow(image);
+                demNode->setChild(demNode->rowCount() - 1, 1, new QStandardItem(outputH5Path));
+            }
+            else
+            {
+                demNode->setChild(itemImg->row(), 1, new QStandardItem(outputH5Path));
+            }
+        }
+    }
+
     m_remedyWatcher.disconnect();
-    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPath]() {
+        if (!QFile::exists(jpgPath)) {
+            m_imageInfoData.reset();
+            setOutputData(1, nullptr);
+        }
         setState(ExecutionState::Completed);
         setProgress(100);
         Q_EMIT computingFinished();
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
         updateCacheSizeLabel();
+        
+        auto iface = NodeUtils::getProjectContext(_widget);
+        if (iface) {
+            iface->refreshProjectTree();
+        }
     });
 
     // 异步生成预览图
@@ -733,54 +838,90 @@ bool DEMSourceNode::validateAndRestoreOutput()
 
 
     if (QFile::exists(targetH5)) {
-        if (!QFile::exists(targetTif)) {
-            FormatConversion FC;
-            cv::Mat dem;
-            double min_lon = 0, max_lon = 0, min_lat = 0, max_lat = 0;
-            bool read_success = false;
-            {
-                NodeUtils::Hdf5Locker locker;
-                read_success = (NodeUtils::readMatFromH5(targetH5, "dem", dem) &&
-                                NodeUtils::readScalarFromH5(targetH5, "dem_min_lon", min_lon) &&
-                                NodeUtils::readScalarFromH5(targetH5, "dem_max_lon", max_lon) &&
-                                NodeUtils::readScalarFromH5(targetH5, "dem_min_lat", min_lat) &&
-                                NodeUtils::readScalarFromH5(targetH5, "dem_max_lat", max_lat));
-            }
-            if (read_success)
-            {
-                double res_lon = (max_lon - min_lon) / dem.cols;
-                double res_lat = (max_lat - min_lat) / dem.rows;
-                double new_gt[6] = { min_lon, res_lon, 0.0, max_lat, 0.0, -res_lat };
-                const char* wkt_projection = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]";
-                write_dem_to_tif(targetTif, dem, new_gt, wkt_projection);
-            }
-        }
+        bool needsTif = !QFile::exists(targetTif);
+        bool needsJpg = !QFile::exists(targetJpg);
 
-        m_outputData = std::make_shared<ImportedFileData>(targetTif, name);
-        m_imageInfoData = std::make_shared<ImageInfoData>(targetJpg);
-
-        if (!QFile::exists(targetJpg)) {
-            // 后台异步生成缺失的预览图
-            m_remedyWatcher.cancel();
-            m_remedyWatcher.waitForFinished();
+        if (needsTif || needsJpg) {
             m_remedyWatcher.disconnect();
+            if (m_remedyWatcher.isRunning()) {
+                m_remedyWatcher.cancel();
+            }
 
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
-                Q_EMIT dataUpdated(1);
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, targetTif, targetJpg, name]() {
+                bool tifExists = QFile::exists(targetTif);
+                bool jpgExists = QFile::exists(targetJpg);
+
+                if (tifExists) {
+                    m_outputData = std::make_shared<ImportedFileData>(targetTif, name);
+                    setOutputData(0, m_outputData);
+                    Q_EMIT dataUpdated(0);
+                } else {
+                    m_outputData.reset();
+                    setOutputData(0, nullptr);
+                    Q_EMIT dataUpdated(0);
+                }
+
+                if (jpgExists) {
+                    m_imageInfoData = std::make_shared<ImageInfoData>(targetJpg);
+                    setOutputData(1, m_imageInfoData);
+                    Q_EMIT dataUpdated(1);
+                } else {
+                    m_imageInfoData.reset();
+                    setOutputData(1, nullptr);
+                    Q_EMIT dataUpdated(1);
+                }
+
+                if (executionState() == ExecutionState::Running) {
+                    if (tifExists) {
+                        setState(ExecutionState::Completed);
+                        setProgress(100);
+                        Q_EMIT computingFinished();
+                    } else {
+                        setState(ExecutionState::Error);
+                        InSARLogManager::LogError("DEMSourceNode", "TIFF generation failed during background recovery.");
+                    }
+                }
             });
 
-            m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
-                NodeUtils::generateJpgPreviewFromH5(targetH5, targetJpg, "dem");
-            }));
-        }
+            QFuture<void> future = QtConcurrent::run([targetH5, targetTif, targetJpg, needsTif, needsJpg]() {
+                if (needsTif) {
+                    cv::Mat dem;
+                    double min_lon = 0, max_lon = 0, min_lat = 0, max_lat = 0;
+                    bool read_success = false;
+                    {
+                        NodeUtils::Hdf5Locker locker;
+                        read_success = (NodeUtils::readMatFromH5(targetH5, "dem", dem) &&
+                                        NodeUtils::readScalarFromH5(targetH5, "dem_min_lon", min_lon) &&
+                                        NodeUtils::readScalarFromH5(targetH5, "dem_max_lon", max_lon) &&
+                                        NodeUtils::readScalarFromH5(targetH5, "dem_min_lat", min_lat) &&
+                                        NodeUtils::readScalarFromH5(targetH5, "dem_max_lat", max_lat));
+                    }
+                    if (read_success) {
+                        double res_lon = (max_lon - min_lon) / dem.cols;
+                        double res_lat = (max_lat - min_lat) / dem.rows;
+                        double new_gt[6] = { min_lon, res_lon, 0.0, max_lat, 0.0, -res_lat };
+                        const char* wkt_projection = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]";
+                        write_dem_to_tif(targetTif, dem, new_gt, wkt_projection);
+                    }
+                }
+                if (needsJpg) {
+                    NodeUtils::generateJpgPreviewFromH5(targetH5, targetJpg, "dem");
+                }
+            });
+            m_remedyWatcher.setFuture(future);
 
-        setState(ExecutionState::Completed);
-        updateCacheSizeLabel();
-
-        Q_EMIT dataUpdated(0);
-        if (QFile::exists(targetJpg)) {
+            if (executionState() != ExecutionState::Running) {
+                setState(ExecutionState::Completed);
+            }
+        } else {
+            m_outputData = std::make_shared<ImportedFileData>(targetTif, name);
+            m_imageInfoData = std::make_shared<ImageInfoData>(targetJpg);
+            Q_EMIT dataUpdated(0);
             Q_EMIT dataUpdated(1);
+            setState(ExecutionState::Completed);
         }
+
+        updateCacheSizeLabel();
         return true;
     }
 

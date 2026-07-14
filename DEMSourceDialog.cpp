@@ -1,6 +1,9 @@
 #include "DEMSourceDialog.h"
+#include "IApplicationInterface.h"
 #include "NodeUtils.h"
 #include "EarthdataLoginDialog.h"
+#include "icon_source.h"
+#include "FormatConversion.h"
 #include <QFormLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -335,6 +338,7 @@ void DEMSourceDialog::onStartPressed()
     connect(m_worker, &DEMSourceWorker::updateProcess, this, &DEMSourceDialog::onProgressUpdate);
     connect(m_worker, &DEMSourceWorker::errorProcess, this, &DEMSourceDialog::onError);
     connect(m_worker, &DEMSourceWorker::endProcess, this, &DEMSourceDialog::onFinished);
+    connect(m_worker, &DEMSourceWorker::demFetchFinished, this, &DEMSourceDialog::onDemFetchFinished);
 
     connect(this, &DEMSourceDialog::startDemFetch, m_worker, &DEMSourceWorker::fetch_dem);
 
@@ -398,6 +402,130 @@ void DEMSourceDialog::onFinished()
     QMessageBox::information(this, QStringLiteral("成功"), QStringLiteral("DEM 数据下载与拼接裁剪完成，并已成功导入项目！"));
     emit sendCopy(m_model);
     accept();
+}
+
+void DEMSourceDialog::onDemFetchFinished(
+    const QString& outputH5Path,
+    const QString& dstNode,
+    const QString& projectName,
+    int demSource,
+    double targetResolution
+)
+{
+    // 1. 主线程更新全局 XML 并保存
+    auto* iface = NodeUtils::getProjectContext(this);
+    std::string srcName = "SRTM1";
+    if (demSource == 1) srcName = "SRTM3";
+    else if (demSource == 2) srcName = "Copernicus";
+    else if (demSource == 3) srcName = "ASTER";
+    QString outputH5Name = QFileInfo(outputH5Path).fileName();
+
+    if (iface && iface->projectXml())
+    {
+        XMLFile* xml = iface->projectXml();
+        xml->XMLFile_add_dem(
+            dstNode.toStdString().c_str(),
+            (dstNode + "_dem").toStdString().c_str(),
+            ("/" + dstNode + "/" + outputH5Name).toStdString().c_str(),
+            0, 0, srcName.c_str(), targetResolution
+        );
+        xml->XMLFile_save(iface->projectPath().toStdString().c_str());
+    }
+    else if (m_model)
+    {
+        // 兜底处理
+        QString projectPath;
+        for (int i = 0; i < m_model->rowCount(); ++i) {
+            if (m_model->item(i, 0)->text() == projectName) {
+                projectPath = m_model->item(i, 1)->text();
+                break;
+            }
+        }
+        if (!projectPath.isEmpty()) {
+            XMLFile xml;
+            QString xml_path = projectPath;
+            if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
+                xml_path += ".Insar";
+            }
+            if (xml.XMLFile_load(xml_path.toStdString().c_str()) == 0) {
+                xml.XMLFile_add_dem(
+                    dstNode.toStdString().c_str(),
+                    (dstNode + "_dem").toStdString().c_str(),
+                    ("/" + dstNode + "/" + outputH5Name).toStdString().c_str(),
+                    0, 0, srcName.c_str(), targetResolution
+                );
+                xml.XMLFile_save(xml_path.toStdString().c_str());
+            }
+        }
+    }
+
+    // 2. 主线程挂载项目树 UI
+    if (m_model)
+    {
+        QStandardItem* project = nullptr;
+        QList<QStandardItem*> foundProjects = m_model->findItems(projectName);
+        if (!foundProjects.isEmpty())
+        {
+            project = foundProjects.first();
+        }
+
+        if (project)
+        {
+            QStandardItem* demNode = nullptr;
+            for (int i = 0; i < project->rowCount(); ++i)
+            {
+                if (project->child(i, 0)->text() == dstNode)
+                {
+                    demNode = project->child(i, 0);
+                    break;
+                }
+            }
+
+            if (!demNode)
+            {
+                demNode = new QStandardItem(dstNode);
+                demNode->setToolTip(projectName);
+                demNode->setIcon(QIcon(FOLDER_ICON));
+                int insertIndex = 0;
+                for (; insertIndex < project->rowCount(); ++insertIndex)
+                {
+                    QString t = project->child(insertIndex, 1)->text();
+                    if (t == "complex-0.0" || t == "complex-1.0" || t == "complex-2.0" ||
+                        t == "phase-1.0" || t == "phase-2.0" || t == "phase-3.0" || t == "dem-1.0")
+                    {
+                        continue;
+                    }
+                    break;
+                }
+                project->insertRow(insertIndex, demNode);
+                project->setChild(insertIndex, 1, new QStandardItem("dem-1.0"));
+            }
+
+            QStandardItem* itemImg = nullptr;
+            QString imgName = dstNode + "_dem";
+            for (int j = 0; j < demNode->rowCount(); ++j)
+            {
+                if (demNode->child(j, 0)->text() == imgName)
+                {
+                    itemImg = demNode->child(j, 0);
+                    break;
+                }
+            }
+
+            if (!itemImg)
+            {
+                QStandardItem* image = new QStandardItem(imgName);
+                image->setToolTip("dem");
+                image->setIcon(QIcon(IMAGEDATA_ICON));
+                demNode->appendRow(image);
+                demNode->setChild(demNode->rowCount() - 1, 1, new QStandardItem(outputH5Path));
+            }
+            else
+            {
+                demNode->setChild(itemImg->row(), 1, new QStandardItem(outputH5Path));
+            }
+        }
+    }
 }
 
 void DEMSourceDialog::onResolutionModeChanged(int index)

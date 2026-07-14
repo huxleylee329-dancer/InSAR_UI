@@ -156,12 +156,16 @@ QStringList AIRSATImportNode::getExpectedOutputFilePaths() const
 
 QString AIRSATImportNode::getOutputNodeName() const
 {
-    QString name = m_outputNodeNameEdit->text().trimmed();
-    if (name.isEmpty())
+    if (m_outputNodeNameEdit)
     {
-        return "AIRSAT_Import";
+        QString name = m_outputNodeNameEdit->text().trimmed();
+        if (name.isEmpty())
+        {
+            return "AIRSAT_Import";
+        }
+        return name;
     }
-    return name;
+    return m_outputNodeName.isEmpty() ? "AIRSAT_Import" : m_outputNodeName;
 }
 
 QString AIRSATImportNode::generateOutputFileName(const QString& filePath) const

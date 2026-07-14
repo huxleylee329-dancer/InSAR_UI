@@ -157,7 +157,6 @@ void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldN
             QStandardItem* nodeItem = projItem->child(i, 0);
             if (nodeItem && nodeItem->text() == oldNodeName) {
                 projItem->removeRow(i);
-                break;
             }
         }
     }

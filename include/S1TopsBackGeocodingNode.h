@@ -73,6 +73,8 @@ private:
     std::shared_ptr<ImportedFileData> m_demInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
+    QStringList m_savedOutputPaths;
+    QString m_savedMasterOutputPath;
     QString m_outputNodeName;
     QString m_demPath;
     int m_masterIndex;
@@ -100,13 +102,25 @@ private:
     void createWidget();
     void updateParameterWidgetsEnableState();
     void onProgressUpdate(int progress, const QString& message);
-    void onProcessingFinished();
+    void onProcessingFinished(
+        const QStringList& regisH5Paths,
+        const QString& dstNode,
+        const QString& dstProject,
+        const QString& savePath,
+        int masterIndex
+    );
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateLabels();
     void updateMasterImageCombo();
     QString generateDefaultOutputName() const;
+    QStringList moveMasterToFront(const QStringList& paths, int masterIndex) const;
+    QStringList jpgPathsFromH5Paths(const QStringList& h5Paths) const;
+    QString resolveSavedOutputPath(const QString& path, const QString& dstNode) const;
+    QStringList restoreOrderedH5Paths(const QString& dstNode) const;
+    void syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode);
+    void syncProjectXmlOrder(const QStringList& h5Paths, const QString& dstNode);
     void executeProcessing();
 
     // Context helpers

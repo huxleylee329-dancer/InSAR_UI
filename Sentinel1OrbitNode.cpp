@@ -9,6 +9,7 @@
 #include "FormatConversion.h"
 #include "tinyxml.h"
 #include "EarthdataLoginDialog.h"
+#include "CDSELoginDialog.h"
 #include "NodeDetailWindow.hpp"
 #include <QSettings>
 #include <QVBoxLayout>
@@ -112,7 +113,7 @@ bool Sentinel1OrbitNode::portIsOptional(PortType portType, PortIndex portIndex) 
 
 std::shared_ptr<NodeData> Sentinel1OrbitNode::outData(PortIndex port)
 {
-    if (executionState() != ExecutionState::Completed)
+    if (executionState() != ExecutionState::Completed && executionState() != ExecutionState::Warning)
         return nullptr;
     if (port == 0)
         return m_outputData;
@@ -271,10 +272,13 @@ bool Sentinel1OrbitNode::validateAndRestoreOutput()
             break;
         }
         int r = 0, c = 0;
-        if (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "fine_state_vec", &r, &c) != 0 || r < 5)
         {
-            allHaveOrbit = false;
-            break;
+            NodeUtils::Hdf5Locker locker(h5Path);
+            if (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "fine_state_vec", &r, &c) != 0 || r < 5)
+            {
+                allHaveOrbit = false;
+                break;
+            }
         }
     }
     if (allHaveOrbit)
@@ -285,9 +289,9 @@ bool Sentinel1OrbitNode::validateAndRestoreOutput()
             expectedJpgPaths.append(h5.left(h5.lastIndexOf('.')) + ".jpg");
         }
         m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
+        setState(ExecutionState::Completed);
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
-        setState(ExecutionState::Completed);
         updateCacheSizeLabel();
         return true;
     }
@@ -316,30 +320,33 @@ bool Sentinel1OrbitNode::prepareToStart()
     qDebug() << "[OrbitNode] cacheDir:" << m_preparedCacheDir;
     qDebug() << "[OrbitNode] orbitSource:" << m_preparedSource;
 
-    // 检查 NASA Earthdata 登录状态
+    // 根据所选数据源检查对应账户
     QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-    QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
-    QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
-    qDebug() << "[OrbitNode] Earthdata user present:" << !encryptedUser.isEmpty() << "pass present:" << !encryptedPass.isEmpty();
-    if (encryptedUser.isEmpty() || encryptedPass.isEmpty())
+    const bool useCdse = (m_preparedSource == 1);
+    const QString userKey = useCdse ? "Orbit/CDSEUser" : "DEM/EarthdataUser";
+    const QString passKey = useCdse ? "Orbit/CDSEPassword" : "DEM/EarthdataPassword";
+    const QString sourceLabel = useCdse ? QStringLiteral("ESA CDSE") : QStringLiteral("NASA Earthdata");
+    const bool credentialsMissing = settings.value(userKey, "").toString().isEmpty()
+        || settings.value(passKey, "").toString().isEmpty();
+    if (credentialsMissing)
     {
         if (_isAutoTriggered)
         {
-            qDebug() << "[OrbitNode] auto-triggered, no credentials, skipping";
-            InSARLogManager::LogError("Sentinel1OrbitNode", "NASA Earthdata login required but credentials are missing. Skip execution.");
+            InSARLogManager::LogError("Sentinel1OrbitNode",
+                QString("%1 login required but credentials are missing. Skip execution.").arg(sourceLabel));
             return false;
         }
-        else
+
+        QMessageBox::warning(nullptr, QStringLiteral("提示"),
+            QStringLiteral("所选轨道数据源需要登录 %1 账户。请先登录。").arg(sourceLabel));
+        const int loginResult = useCdse
+            ? CDSELoginDialog(nullptr).exec()
+            : EarthdataLoginDialog(nullptr).exec();
+        if (loginResult != QDialog::Accepted)
         {
-            QMessageBox::warning(nullptr, QStringLiteral("提示"), QStringLiteral("下载精密轨道需要登录 NASA Earthdata 账户。请先登录！"));
-            EarthdataLoginDialog dlg(nullptr);
-            if (dlg.exec() != QDialog::Accepted)
-            {
-                qDebug() << "[OrbitNode] user cancelled login dialog";
-                return false;
-            }
-            updateLoginStatus();
+            return false;
         }
+        updateLoginStatus();
     }
 
     // 检查输出冲突并提示覆盖/复用 (SOP 移植规范 #3)
@@ -455,9 +462,9 @@ void Sentinel1OrbitNode::executeProcessing()
 
     connect(m_workerThread, &OrbitSourceWorker::updateProcess, this, &Sentinel1OrbitNode::onProgressUpdate);
     connect(m_workerThread, &OrbitSourceWorker::errorProcess, this, &Sentinel1OrbitNode::onError);
-    connect(m_workerThread, &OrbitSourceWorker::endProcess, this, &Sentinel1OrbitNode::onProcessingFinished);
+    connect(m_workerThread, &OrbitSourceWorker::applyOrbitsFinished, this, &Sentinel1OrbitNode::onProcessingFinished);
 
-    connect(this, &Sentinel1OrbitNode::startOrbitFetch, m_workerThread, &OrbitSourceWorker::fetch_orbits);
+    connect(this, &Sentinel1OrbitNode::startOrbitFetch, m_workerThread, &OrbitSourceWorker::fetch_and_apply_orbits);
 
     m_thread->start();
     setState(ExecutionState::Running);
@@ -470,6 +477,7 @@ void Sentinel1OrbitNode::executeProcessing()
         m_preparedFilePaths,
         m_preparedSource,
         m_preparedCacheDir,
+        targetDirName,
         projectModel()
     );
 }
@@ -512,6 +520,7 @@ void Sentinel1OrbitNode::createWidget()
                 return;
             }
             m_orbitSource = index;
+            updateLoginStatus();
             invalidateNodeData();
         }
     });
@@ -536,15 +545,24 @@ void Sentinel1OrbitNode::createWidget()
     layout->addLayout(loginLayout);
 
     connect(m_loginBtn, &QPushButton::clicked, this, [this]() {
-        EarthdataLoginDialog dlg(nullptr);
-        if (dlg.exec() == QDialog::Accepted) {
+        const bool useCdse = m_orbitSourceCombo && m_orbitSourceCombo->currentIndex() == 1;
+        const int result = useCdse
+            ? CDSELoginDialog(nullptr).exec()
+            : EarthdataLoginDialog(nullptr).exec();
+        if (result == QDialog::Accepted) {
             updateLoginStatus();
         }
     });
     connect(m_logoutBtn, &QPushButton::clicked, this, [this]() {
         QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-        settings.remove("DEM/EarthdataUser");
-        settings.remove("DEM/EarthdataPassword");
+        const bool useCdse = m_orbitSourceCombo && m_orbitSourceCombo->currentIndex() == 1;
+        if (useCdse) {
+            settings.remove("Orbit/CDSEUser");
+            settings.remove("Orbit/CDSEPassword");
+        } else {
+            settings.remove("DEM/EarthdataUser");
+            settings.remove("DEM/EarthdataPassword");
+        }
         updateLoginStatus();
     });
 
@@ -653,11 +671,16 @@ void Sentinel1OrbitNode::updateLoginStatus()
     if (!m_loginStatusLabel || !m_loginBtn || !m_logoutBtn) return;
 
     QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-    QString user = settings.value("DEM/EarthdataUser", "").toString();
+    const bool useCdse = m_orbitSourceCombo
+        ? m_orbitSourceCombo->currentIndex() == 1
+        : m_orbitSource == 1;
+    const QString userKey = useCdse ? "Orbit/CDSEUser" : "DEM/EarthdataUser";
+    QString user = settings.value(userKey, "").toString();
     if (!user.isEmpty())
     {
         QString plainUser = QString::fromUtf8(QByteArray::fromBase64(user.toUtf8()));
-        m_loginStatusLabel->setText(QStringLiteral("已授权 (%1)").arg(plainUser));
+        m_loginStatusLabel->setText(QStringLiteral("%1 已授权 (%2)")
+            .arg(useCdse ? QStringLiteral("CDSE") : QStringLiteral("Earthdata"), plainUser));
         m_loginStatusLabel->setStyleSheet("color: green; font-weight: bold;");
         m_loginBtn->hide();
         m_logoutBtn->show();
@@ -677,7 +700,13 @@ void Sentinel1OrbitNode::onProgressUpdate(int progress, const QString& message)
     setProgress(progress);
 }
 
-void Sentinel1OrbitNode::onProcessingFinished()
+void Sentinel1OrbitNode::onProcessingFinished(
+    const QStringList& newH5Paths,
+    int podApplyOk,
+    int podApplyFail,
+    int podSkipped,
+    const QString& targetDirName
+)
 {
     qDebug() << "[OrbitNode] onProcessingFinished()";
     stopExecution();
@@ -689,174 +718,12 @@ void Sentinel1OrbitNode::onProcessingFinished()
     settings.setValue("Orbit/LastMatchDir", m_preparedCacheDir);
     settings.setValue(QString("Orbit/ProjectDir_%1").arg(m_preparedProjectName), m_preparedCacheDir);
 
-    // 将下载的精密轨道写入拷贝后的 H5 文件
-    qDebug() << "[OrbitNode] m_inputData:" << (m_inputData ? "valid" : "null");
-    int podApplyOk = 0, podApplyFail = 0, podSkipped = 0;
-    QStringList newH5Paths;
-    QString targetDirName = m_outputNodeName.isEmpty() ? "S1_Orbit" : m_outputNodeName;
-
-    if (m_inputData) {
-        QString projectDir = QFileInfo(m_preparedSavePath).path();
-        QString targetDirPath = projectDir + "/" + targetDirName;
-        QDir().mkpath(targetDirPath);
-
-        // 如果覆盖，先清理项目中的旧数据
-        auto* iface = NodeUtils::getProjectContext(_widget);
-        if (iface) {
-            NodeUtils::removeDataNodeFromProject(iface, targetDirName);
-        }
-
-        qDebug() << "[OrbitNode] cacheDir for EOF matching:" << m_preparedCacheDir;
-        FormatConversion FC;
-        for (const QString& h5Path : m_inputData->filePaths()) {
-            qDebug() << "[OrbitNode] processing H5:" << h5Path;
-
-            // 从原始 H5 读取传感器平台与成像时间（用于 EOF 文件匹配），彻底防 read_POD 独占冲突
-            std::string startTimeStr, stopTimeStr, sensorStr, source1Str;
-            {
-                NodeUtils::Hdf5Locker locker;
-                NodeUtils::readStringFromH5(h5Path, "acquisition_start_time", startTimeStr);
-                NodeUtils::readStringFromH5(h5Path, "acquisition_stop_time", stopTimeStr);
-                NodeUtils::readStringFromH5(h5Path, "sensor", sensorStr);
-                NodeUtils::readStringFromH5(h5Path, "source_1", source1Str);
-            }
-            qDebug() << "[OrbitNode]   startTimeStr:" << QString::fromStdString(startTimeStr);
-            qDebug() << "[OrbitNode]   sensorStr:" << QString::fromStdString(sensorStr);
-            qDebug() << "[OrbitNode]   source1Str:" << QString::fromStdString(source1Str);
-
-            // 在缓存目录中匹配 EOF 文件（日期优先，platform 仅作辅助过滤）
-            QDir cacheDir(m_preparedCacheDir);
-            QString sensorQ = QString::fromStdString(sensorStr).toUpper();
-            QString source1Q = QString::fromStdString(source1Str).toUpper();
-            QString platform = "";
-
-            // 优先通过 source_1 确定平台，彻底解决 burst 混淆问题
-            if (source1Q.contains("S1A")) {
-                platform = "S1A";
-            } else if (source1Q.contains("S1B")) {
-                platform = "S1B";
-            }
-
-            // 兜底通过 sensor 属性确定
-            if (platform.isEmpty()) {
-                if (sensorQ == "SENTINEL" || sensorQ.isEmpty()) {
-                    // burst H5: sensor 为 "sentinel" 无法区分 A/B，尝试双平台
-                } else if (sensorQ.contains("SENTINEL-1A") || sensorQ == "S1A") {
-                    platform = "S1A";
-                } else if (sensorQ.contains("SENTINEL-1B") || sensorQ == "S1B") {
-                    platform = "S1B";
-                }
-            }
-            QString datePart = QString::fromStdString(startTimeStr).left(10).remove('-');
-            // POEORB 文件名有效期窗口为 D-1 ~ D+1，不含 D 日期本身
-            QDate d = QDate::fromString(datePart, "yyyyMMdd");
-            QString datePrev = d.addDays(-1).toString("yyyyMMdd");
-            QString dateNext = d.addDays(1).toString("yyyyMMdd");
-            QString platPrefix = platform.isEmpty() ? "*" : platform;
-
-            // 优先 POEORB 通配符匹配（文件系统过滤）
-            // 兼容新旧 ESA 命名规范（2021 前后），用 * 代替时分秒
-            QString poePattern = QString("*%1*V%2*_%3*.EOF")
-                .arg(platPrefix, datePrev, dateNext);
-            QStringList candidates = cacheDir.entryList({poePattern}, QDir::Files);
-
-            // 回落 RESORB 通配符匹配 + 时效窗口精确校验
-            if (candidates.isEmpty()) {
-                QString resPattern = QString("*%1*%2*.EOF").arg(platPrefix, datePart);
-                QStringList resCandidates = cacheDir.entryList({resPattern}, QDir::Files);
-                // 解析采集时刻，用于 RESORB 时间窗口校验
-                QDateTime acqTime = QDateTime::fromString(
-                    QString::fromStdString(startTimeStr), Qt::ISODate);
-                QRegularExpression resValidityRe("V(\\d{8}T\\d{6})_(\\d{8}T\\d{6})");
-                for (const QString& f : resCandidates) {
-                    // 跳过非 RESORB 文件（POEORB 虽已在上层被 filtered 但仍需防御）
-                    if (!f.contains("RESORB", Qt::CaseInsensitive)) continue;
-                    QRegularExpressionMatch vm = resValidityRe.match(f);
-                    if (!vm.hasMatch()) { candidates.append(f); continue; }  // 无法解析则直接接受
-                    QDateTime s = QDateTime::fromString(vm.captured(1), "yyyyMMddTHHmmss");
-                    QDateTime e = QDateTime::fromString(vm.captured(2), "yyyyMMddTHHmmss");
-                    if (acqTime.isValid() && acqTime >= s && acqTime <= e) {
-                        candidates.append(f);
-                    }
-                }
-            }
-
-            QString matchedEof = candidates.isEmpty() ? QString() : cacheDir.absoluteFilePath(candidates.first());
-
-            // 拷贝 H5 文件到新目录下
-            QString newH5Path = targetDirPath + "/" + QFileInfo(h5Path).fileName();
-            if (QFile::exists(newH5Path)) {
-                QFile::remove(newH5Path);
-            }
-            if (!QFile::copy(h5Path, newH5Path)) {
-                qDebug() << "[OrbitNode] failed to copy H5 file from" << h5Path << "to" << newH5Path;
-                podApplyFail++;
-                continue;
-            }
-
-            // 拷贝对应的预览 JPG 文件（如果有的话）
-            QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
-            QString newJpgPath = newH5Path.left(newH5Path.lastIndexOf('.')) + ".jpg";
-            if (QFile::exists(jpgPath)) {
-                if (QFile::exists(newJpgPath)) {
-                    QFile::remove(newJpgPath);
-                }
-                QFile::copy(jpgPath, newJpgPath);
-            }
-
-            newH5Paths.append(newH5Path);
-
-            if (!matchedEof.isEmpty()) {
-                int ret;
-                {
-                    NodeUtils::Hdf5Locker locker;  // 全局 HDF5 锁，防止与验证 tab 等并发读冲突
-                    double start_t = 0.0, stop_t = 1e12;
-                    int rStart = FC.utc2gps(startTimeStr.c_str(), &start_t);
-                    int rStop = FC.utc2gps(stopTimeStr.c_str(), &stop_t);
-
-                    QString nativeEof = QDir::toNativeSeparators(matchedEof);
-                    QString nativeH5 = QDir::toNativeSeparators(newH5Path);
-
-                    InSARLogManager::LogInfo("Sentinel1OrbitNode", 
-                        QString("开始写入精密轨道. H5影像: %1, 匹配轨道文件: %2, 覆盖成像时间: %3 ~ %4")
-                            .arg(QFileInfo(newH5Path).fileName())
-                            .arg(QFileInfo(matchedEof).fileName())
-                            .arg(QString::fromStdString(startTimeStr))
-                            .arg(QString::fromStdString(stopTimeStr)));
-
-                    ret = FC.read_POD(
-                        nativeEof.toLocal8Bit().constData(),
-                        start_t, stop_t,
-                        nativeH5.toLocal8Bit().constData()
-                    );
-                    if (ret >= 0) {
-                        QString orbitType = "Precise (POE)";
-                        if (QFileInfo(matchedEof).fileName().contains("RESORB", Qt::CaseInsensitive)) {
-                            orbitType = "Reconstructed (RES)";
-                        }
-                        FC.write_str_to_h5(
-                            nativeH5.toLocal8Bit().constData(),
-                            "orbit_type",
-                            orbitType.toStdString().c_str()
-                        );
-                    }
-                }
-                if (ret >= 0) {
-                    podApplyOk++;
-                    InSARLogManager::LogInfo("Sentinel1OrbitNode",
-                        "精密轨道已写入: " + newH5Path + " <- " + QFileInfo(matchedEof).fileName());
-                } else {
-                    podApplyFail++;
-                    InSARLogManager::LogError("Sentinel1OrbitNode",
-                        QString("精密轨道写入失败: %1, read_POD 返回值: %2").arg(newH5Path).arg(ret));
-                }
-            } else {
-                podSkipped++;
-                InSARLogManager::LogWarning("Sentinel1OrbitNode",
-                    QString("未匹配到轨道文件: %1").arg(QFileInfo(h5Path).fileName()));
-            }
-        }
+    // 如果覆盖，先清理项目中的旧数据
+    auto* iface = NodeUtils::getProjectContext(_widget);
+    if (iface) {
+        NodeUtils::removeDataNodeFromProject(iface, targetDirName);
     }
+
     qDebug() << "[OrbitNode] POD apply results: ok=" << podApplyOk << "fail=" << podApplyFail << "skipped=" << podSkipped;
 
     // 传播输出数据
@@ -867,12 +734,14 @@ void Sentinel1OrbitNode::onProcessingFinished()
             newJpgPaths.append(h5.left(h5.lastIndexOf('.')) + ".jpg");
         }
         m_previewData = std::make_shared<ImageInfoData>(newJpgPaths);
+        setOutputData(0, m_outputData);
+        setOutputData(1, m_previewData);
     } else {
         m_outputData.reset();
         m_previewData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
     }
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
 
     // 写入项目 XML 并刷新项目树
     if (podApplyOk > 0) {
@@ -1031,7 +900,7 @@ void Sentinel1OrbitNode::onProcessingFinished()
         setState(ExecutionState::Error);
         if (!_isAutoTriggered) {
             QMessageBox::warning(nullptr, QStringLiteral("轨道应用失败"),
-                QStringLiteral("精密轨道下载或写入失败（%1/%2 跳过）。\n请检查网络连接与 Earthdata 认证。")
+                QStringLiteral("所选数据源的轨道下载或写入失败（%1/%2 跳过）。\n请检查网络连接和账户认证。")
                     .arg(podSkipped).arg(total));
         }
         qDebug() << "[OrbitNode] all failed, state=Error";
@@ -1204,7 +1073,7 @@ private:
 
     void startAsyncValidation()
     {
-        if (!m_node || m_node->executionState() != ExecutionState::Completed) {
+        if (!m_node || (m_node->executionState() != ExecutionState::Completed && m_node->executionState() != ExecutionState::Warning)) {
             m_statusTitle->setText(tr("验证未通过"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             m_statusDesc->setText(tr("节点未完成执行，请先运行 Apply Orbit File。"));
