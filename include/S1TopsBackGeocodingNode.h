@@ -52,6 +52,10 @@ public:
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
+    bool supportsInterferometry() const override { return true; }
+    ::QWidget* createInterferometryWidget(::QWidget* parent) override;
+    QStringList getOrderedH5Paths() const;
+    QStringList getInputH5Paths() const;
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -70,7 +74,7 @@ private:
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
-    std::shared_ptr<ImportedFileData> m_demInputData;
+    std::shared_ptr<DEMFileData> m_demInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     QStringList m_savedOutputPaths;

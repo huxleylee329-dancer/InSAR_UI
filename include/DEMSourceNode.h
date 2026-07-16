@@ -28,6 +28,7 @@ namespace QtNodes {
 class DEMSourceNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
+    friend class DEMSourceValidationWidget;
 
 public:
     DEMSourceNode();
@@ -47,6 +48,15 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+
+    // 启用验证面板
+    bool supportsValidation() const override { return true; }
+    ::QWidget* createValidationWidget(::QWidget* parent) override;
+
+    // 获取预期输出文件路径
+    QStringList getExpectedOutputFilePaths() const;
+    // 获取输入数据供校验使用
+    std::shared_ptr<ImportedFileData> getInputData() const { return m_inputData; }
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;

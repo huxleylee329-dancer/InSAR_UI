@@ -22,6 +22,9 @@
 #include <QFileInfo>
 #include "ImageView.h"
 #include "QtNodes/internal/StyleCollection.hpp"
+#include <QStyledItemDelegate>
+#include <QHelpEvent>
+#include <QToolTip>
 
 namespace QtNodes {
 
@@ -1759,12 +1762,45 @@ void NodeDetailWindow::onClutterRoiCleared()
 }
 
 // ==========================================
+// ElidedToolTipDelegate - Only show tooltip on overflow
+// ==========================================
+class ElidedToolTipDelegate : public QStyledItemDelegate
+{
+public:
+    explicit ElidedToolTipDelegate(QObject* parent = nullptr) : QStyledItemDelegate(parent) {}
+
+    bool helpEvent(QHelpEvent* event, QAbstractItemView* view, const QStyleOptionViewItem& option, const QModelIndex& index) override
+    {
+        if (event && event->type() == QEvent::ToolTip) {
+            QString text = index.data(Qt::DisplayRole).toString();
+            QFontMetrics fm(option.font);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 11, 0)
+            int textWidth = fm.horizontalAdvance(text);
+#else
+            int textWidth = fm.width(text);
+#endif
+            int rectWidth = option.rect.width();
+
+            // 如果文字显示宽度超过了单元格宽度（留8像素Padding间距），则悬浮显示Tooltip，否则隐藏
+            if (textWidth > rectWidth - 8) {
+                QToolTip::showText(event->globalPos(), text, view);
+            } else {
+                QToolTip::hideText();
+            }
+            return true;
+        }
+        return QStyledItemDelegate::helpEvent(event, view, option, index);
+    }
+};
+
+// ==========================================
 // ValidationComparisonTable Implementation
 // ==========================================
 
 ValidationComparisonTable::ValidationComparisonTable(QWidget* parent)
     : QTableWidget(parent)
 {
+    setItemDelegate(new ElidedToolTipDelegate(this));
     setColumnCount(4);
     QStringList headers;
     headers << QObject::tr("参数项") << QObject::tr("设置值") << QObject::tr("实际值") << QObject::tr("对比结论");
@@ -1827,7 +1863,7 @@ void ValidationComparisonTable::addComparison(const QString& name, const QString
     item0->setForeground(textBrush);
     item1->setForeground(textBrush);
     item2->setForeground(textBrush);
-    
+
     setItem(row, 0, item0);
     setItem(row, 1, item1);
     setItem(row, 2, item2);
@@ -2044,7 +2080,7 @@ void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QStrin
 
     m_compTable = new ValidationComparisonTable(this);
     leftLayout->addWidget(m_compTable, 1);
-    contentLayout->addLayout(leftLayout, 1);
+    contentLayout->addLayout(leftLayout, 3);
 
     // Right column: Feature analysis panel
     QVBoxLayout* rightLayout = new QVBoxLayout();
@@ -2064,7 +2100,7 @@ void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QStrin
     m_featureLayout->setLabelAlignment(Qt::AlignRight);
 
     rightLayout->addWidget(m_featureCard, 1);
-    contentLayout->addLayout(rightLayout, 1);
+    contentLayout->addLayout(rightLayout, 2);
 
     mainLayout->addLayout(contentLayout, 1);
 

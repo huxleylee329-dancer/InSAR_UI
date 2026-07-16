@@ -877,6 +877,24 @@ static std::vector<CompareItem> performComparison(
     
     results.push_back({gPlatform, QStringLiteral("成像开始时间"), xmlStart, QString::fromStdString(h5Start), startMatch ? "PASS" : "FAILED"});
 
+    // 入射角中心值 (inc_center)
+    double h5IncCenter = 0.0;
+    {
+        NodeUtils::Hdf5Locker locker(h5Path);
+        NodeUtils::readScalarFromH5(h5Path, "inc_center", h5IncCenter);
+    }
+    double xmlIncCenter = 0.0;
+    if (xmlLoaded) {
+        TiXmlElement* incNode = findElementRecursive(xmlRoot, "incidenceAngleMidSwath");
+        if (incNode && incNode->GetText()) {
+            xmlIncCenter = QString(incNode->GetText()).toDouble();
+        }
+    }
+    results.push_back({gPlatform, QStringLiteral("入射角中心值 (inc_center)"),
+                       xmlLoaded ? QString::number(xmlIncCenter, 'f', 6) + "°" : QStringLiteral("未读取"),
+                       QString::number(h5IncCenter, 'f', 6) + "°",
+                       (xmlLoaded && floatCompare(xmlIncCenter, h5IncCenter, 1e-4)) ? "PASS" : "FAILED"});
+
     // ---------------------------------------------------------
     // 2. 斜距几何参数
     // ---------------------------------------------------------
@@ -941,6 +959,22 @@ static std::vector<CompareItem> performComparison(
                        xmlLoaded ? QString::number(xmlPrf, 'f', 3) + " Hz" : QStringLiteral("未读取"), 
                        QString::number(h5Prf, 'f', 3) + " Hz", 
                        (xmlLoaded && floatCompare(xmlPrf, h5Prf)) ? "PASS" : "FAILED"});
+
+    // 物理分辨率参数 (azimuth_resolution & range_resolution)
+    double h5AzRes = 0.0, h5RgRes = 0.0;
+    {
+        NodeUtils::Hdf5Locker locker(h5Path);
+        NodeUtils::readScalarFromH5(h5Path, "azimuth_resolution", h5AzRes);
+        NodeUtils::readScalarFromH5(h5Path, "range_resolution", h5RgRes);
+    }
+    results.push_back({gGeom, QStringLiteral("方位向物理分辨率 (azimuth_res)"),
+                       QStringLiteral("预期: 20.0 m"),
+                       QString::number(h5AzRes, 'f', 1) + " m",
+                       floatCompare(h5AzRes, 20.0) ? "PASS" : "FAILED"});
+    results.push_back({gGeom, QStringLiteral("距离向物理分辨率 (range_res)"),
+                       QStringLiteral("预期: 5.0 m"),
+                       QString::number(h5RgRes, 'f', 1) + " m",
+                       floatCompare(h5RgRes, 5.0) ? "PASS" : "FAILED"});
 
     // ---------------------------------------------------------
     // 3. 定位多项式与轨道（五场景交叉验证）
@@ -1020,6 +1054,26 @@ static std::vector<CompareItem> performComparison(
         }
     }
     results.push_back({gOrbit, QStringLiteral("轨道向量个数 & 存储精度"), rawOrbitStr, h5OrbitStr, orbitStatus});
+
+    // 轨道物理平均高度 (orbit_altitude)
+    double h5OrbitAltitude = 0.0;
+    {
+        NodeUtils::Hdf5Locker locker(h5Path);
+        NodeUtils::readScalarFromH5(h5Path, "orbit_altitude", h5OrbitAltitude);
+    }
+    double xmlOrbitAltitude = 0.0;
+    if (xmlLoaded && !xmlOrbits.empty()) {
+        double sumAlt = 0.0;
+        for (const auto& pt : xmlOrbits) {
+            double dist = std::sqrt(pt[0]*pt[0] + pt[1]*pt[1] + pt[2]*pt[2]);
+            sumAlt += (dist - 6378137.0);
+        }
+        xmlOrbitAltitude = sumAlt / xmlOrbits.size();
+    }
+    results.push_back({gOrbit, QStringLiteral("轨道物理平均高度 (orbit_altitude)"),
+                       xmlLoaded ? QString::number(xmlOrbitAltitude, 'f', 3) + " m" : QStringLiteral("未读取"),
+                       QString::number(h5OrbitAltitude, 'f', 3) + " m",
+                       (xmlLoaded && floatCompare(xmlOrbitAltitude, h5OrbitAltitude, 5.0)) ? "PASS" : "FAILED"});
 
     // 定位多项式系数
     cv::Mat lonCoef, latCoef;
@@ -1214,20 +1268,39 @@ static std::vector<CompareItem> performComparison(
     }
 
     // ---------------------------------------------------------
-    // 5. 元数据忽略报告
+    // 5. 多普勒参数拟合
     // ---------------------------------------------------------
-    QString gOmit = QStringLiteral("元数据忽略报告");
-
-    bool hasDoppler = false;
-    int r = 0, c = 0;
+    QString gDoppler = QStringLiteral("多普勒参数拟合");
+    bool hasDopplerCentroid = false;
+    bool hasDopplerCoeffA = false;
+    bool hasDopplerCoeffB = false;
+    int r1 = 0, c1 = 0;
+    int r2 = 0, c2 = 0;
+    int r3 = 0, c3 = 0;
     {
         NodeUtils::Hdf5Locker locker(h5Path);
-        hasDoppler = (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "doppler_centroid", &r, &c) == 0);
+        hasDopplerCentroid = (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "doppler_centroid", &r1, &c1) == 0);
+        hasDopplerCoeffA = (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "doppler_coefficient_a", &r2, &c2) == 0);
+        hasDopplerCoeffB = (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "doppler_coefficient_b", &r3, &c3) == 0);
     }
-    results.push_back({gOmit, QStringLiteral("多普勒中心频率 (dopplerCentroid)"), 
-                       QStringLiteral("原始 XML 含有倾斜频率多项式"), 
-                       hasDoppler ? QStringLiteral("已保留") : QStringLiteral("未独立存储"), 
-                       "IGNORED"});
+    QString dopplerStatus = (hasDopplerCentroid && hasDopplerCoeffA && hasDopplerCoeffB) ? "PASS" : "FAILED";
+    QString dopplerH5Desc = QStringLiteral("已存入 (Centroid: %1x%2, Coeff A: %3x%4, Coeff B: %5x%6)")
+                            .arg(r1).arg(c1).arg(r2).arg(c2).arg(r3).arg(c3);
+    if (dopplerStatus == "FAILED") {
+        dopplerH5Desc = QStringLiteral("未完整写入 (Centroid: %1, Coeff A: %2, Coeff B: %3)")
+                        .arg(hasDopplerCentroid ? "Y" : "N")
+                        .arg(hasDopplerCoeffA ? "Y" : "N")
+                        .arg(hasDopplerCoeffB ? "Y" : "N");
+    }
+    results.push_back({gDoppler, QStringLiteral("多普勒三维系数矩阵 (Centroid / Coeff A / Coeff B)"),
+                       QStringLiteral("原始 XML 动态多项式矩阵"),
+                       dopplerH5Desc,
+                       dopplerStatus});
+
+    // ---------------------------------------------------------
+    // 6. 元数据忽略报告
+    // ---------------------------------------------------------
+    QString gOmit = QStringLiteral("元数据忽略报告");
 
     results.push_back({gOmit, QStringLiteral("绝对定标查找表 (calibration LUTs)"), 
                        QStringLiteral("原始 XML 含有定标表"), 

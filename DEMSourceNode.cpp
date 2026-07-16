@@ -10,6 +10,8 @@
 #include "EarthdataLoginDialog.h"
 #include <QSettings>
 #include <gdal_priv.h>
+#include "Utils.h"
+#include "QtNodes/internal/NodeDetailWindow.hpp"
 
 static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt)
 {
@@ -108,7 +110,7 @@ NodeDataType DEMSourceNode::dataType(PortType portType, PortIndex portIndex) con
     else
     {
         if (portIndex == 0)
-            return NodeDataType{"imported_file", "Imported File"};
+            return NodeDataType{"dem_file", "DEM File"};
         else
             return NodeDataType{"image_info", "Image Info"};
     }
@@ -240,10 +242,6 @@ void DEMSourceNode::createWidget()
         QString projPath = projectPath();
         if (!projPath.isEmpty())
         {
-            if (projPath.endsWith(".insar", Qt::CaseInsensitive))
-            {
-                projPath = QFileInfo(projPath).absolutePath();
-            }
             m_cacheDir = QDir::toNativeSeparators(projPath + "/.dem_cache");
         }
     }
@@ -702,7 +700,7 @@ void DEMSourceNode::onProcessingFinished(
     QString tifPath = h5Path.left(h5Path.lastIndexOf('.')) + ".tif";
     QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
 
-    m_outputData = std::make_shared<ImportedFileData>(tifPath, dstNode);
+    m_outputData = std::make_shared<DEMFileData>(tifPath, dstNode);
     m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
 
     // 主线程更新全局 XML 并保存
@@ -721,7 +719,7 @@ void DEMSourceNode::onProcessingFinished(
             ("/" + dstNode + "/" + outputH5Name).toStdString().c_str(),
             0, 0, srcName.c_str(), targetResolution
         );
-        xml->XMLFile_save(projectPath().toStdString().c_str());
+        xml->XMLFile_save(NodeUtils::getProjectFilePath(_widget).toStdString().c_str());
     }
 
     // 主线程挂载项目树 UI
@@ -852,7 +850,7 @@ bool DEMSourceNode::validateAndRestoreOutput()
                 bool jpgExists = QFile::exists(targetJpg);
 
                 if (tifExists) {
-                    m_outputData = std::make_shared<ImportedFileData>(targetTif, name);
+                    m_outputData = std::make_shared<DEMFileData>(targetTif, name);
                     setOutputData(0, m_outputData);
                     Q_EMIT dataUpdated(0);
                 } else {
@@ -914,7 +912,7 @@ bool DEMSourceNode::validateAndRestoreOutput()
                 setState(ExecutionState::Completed);
             }
         } else {
-            m_outputData = std::make_shared<ImportedFileData>(targetTif, name);
+            m_outputData = std::make_shared<DEMFileData>(targetTif, name);
             m_imageInfoData = std::make_shared<ImageInfoData>(targetJpg);
             Q_EMIT dataUpdated(0);
             Q_EMIT dataUpdated(1);
@@ -953,24 +951,7 @@ QStandardItemModel* DEMSourceNode::projectModel() const
 
 QString DEMSourceNode::projectPath() const
 {
-    IApplicationInterface* iface = nullptr;
-    if (_widget) iface = NodeUtils::getProjectContext(_widget);
-    if (!iface) {
-        for (QWidget* w : QApplication::topLevelWidgets()) {
-            if (auto* mainWin = qobject_cast<MainWindow*>(w)) {
-                if (mainWin->workspaceUI()) { iface = mainWin->workspaceUI(); break; }
-                if (mainWin->interfaceManager()) { iface = mainWin->interfaceManager()->currentInterface(); if (iface) break; }
-            }
-        }
-    }
-    if (iface) {
-        QString fullPath = iface->projectPath();
-        if (fullPath.endsWith(".insar", Qt::CaseInsensitive)) {
-            return QFileInfo(fullPath).absolutePath();
-        }
-        return fullPath;
-    }
-    return QString();
+    return NodeUtils::getProjectDirectory(_widget);
 }
 
 QString DEMSourceNode::projectName() const
@@ -1023,6 +1004,486 @@ void DEMSourceNode::updateLoginStatus()
             m_loginBtn->hide();
         }
     }
+}
+
+QStringList DEMSourceNode::getExpectedOutputFilePaths() const
+{
+    QString savePath = projectPath();
+    QString name = m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName;
+    QString targetH5 = savePath + "/" + name + "/" + name + "_dem.h5";
+    QString targetTif = savePath + "/" + name + "/" + name + "_dem.tif";
+    return QStringList() << targetH5 << targetTif;
+}
+
+// 提取输入图像地理边界的辅助函数
+static bool getInputImageBounds(const QString& firstInput, const QString& save_path,
+                                double& min_lon, double& max_lon, double& min_lat, double& max_lat)
+{
+    FormatConversion FC;
+    cv::Mat mat_lon, mat_lat;
+    bool mapped_check = false;
+    {
+        NodeUtils::Hdf5Locker locker;
+        mapped_check = (NodeUtils::readMatFromH5(firstInput, "mapped_lon", mat_lon) &&
+                        NodeUtils::readMatFromH5(firstInput, "mapped_lat", mat_lat));
+    }
+    if (mapped_check)
+    {
+        double min_lon_val, max_lon_val, min_lat_val, max_lat_val;
+        cv::minMaxLoc(mat_lon, &min_lon_val, &max_lon_val);
+        cv::minMaxLoc(mat_lat, &min_lat_val, &max_lat_val);
+        min_lon = min_lon_val;
+        max_lon = max_lon_val;
+        min_lat = min_lat_val;
+        max_lat = max_lat_val;
+        return true;
+    }
+
+    std::string source_file;
+    QString src_file;
+    bool read_src_ok = false;
+    {
+        NodeUtils::Hdf5Locker locker;
+        read_src_ok = NodeUtils::readStringFromH5(firstInput, "source_1", source_file);
+    }
+    if (read_src_ok)
+    {
+        src_file = save_path + "/" + QString(source_file.c_str());
+        if (!QFile::exists(src_file))
+        {
+            src_file = firstInput;
+        }
+    }
+    else
+    {
+        src_file = firstInput;
+    }
+
+    if (QFile::exists(src_file))
+    {
+        int sceneHeight = 0, sceneWidth = 0, offset_row = 0, offset_col = 0;
+        cv::Mat lon_coef, lat_coef;
+        bool read_para_ok = false;
+        {
+            NodeUtils::Hdf5Locker locker;
+            if (NodeUtils::readScalarFromH5(src_file, "range_len", sceneWidth) &&
+                NodeUtils::readScalarFromH5(src_file, "azimuth_len", sceneHeight) &&
+                NodeUtils::readMatFromH5(src_file, "lon_coefficient", lon_coef) &&
+                NodeUtils::readMatFromH5(src_file, "lat_coefficient", lat_coef))
+            {
+                read_para_ok = true;
+                offset_row = 0;
+                offset_col = 0;
+                NodeUtils::readScalarFromH5(src_file, "offset_row", offset_row);
+                NodeUtils::readScalarFromH5(src_file, "offset_col", offset_col);
+            }
+        }
+        if (read_para_ok)
+        {
+            double lonMax = 0, lonMin = 0, latMax = 0, latMin = 0;
+            if (Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
+                &lonMax, &latMax, &lonMin, &latMin) == 0)
+            {
+                min_lon = lonMin;
+                max_lon = lonMax;
+                min_lat = latMin;
+                max_lat = latMax;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// ============================================================================
+// DEMSourceValidationWidget - 外部 DEM 数据验证选项卡组件
+// ============================================================================
+class DEMSourceValidationWidget : public BaseValidationWidget
+{
+public:
+    DEMSourceValidationWidget(DEMSourceNode* node, QWidget* parent)
+        : BaseValidationWidget(node, parent)
+        , m_node(node)
+    {
+        setupUI();
+        startAsyncValidation();
+    }
+    ~DEMSourceValidationWidget() override = default;
+
+private:
+    void setupUI()
+    {
+        setupBaseUI(QObject::tr("正在验证数据中..."),
+                    QObject::tr("正在读取并核对 DEM 文件的投影、高程范围及几何范围。"),
+                    QObject::tr("高程特征与有效性"));
+
+        m_lblElevationRange = createFeatureLabel();
+        m_lblValidPixelRate = createFeatureLabel();
+        m_lblDemResolution = createFeatureLabel();
+        m_lblCrsInfo = createFeatureLabel();
+        m_lblBoundsCheck = createFeatureLabel();
+
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("高程数值范围:")), m_lblElevationRange);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("有效像元比例:")), m_lblValidPixelRate);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("DEM 像元行列数:")), m_lblDemResolution);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("空间参考系(CRS):")), m_lblCrsInfo);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("地理范围包容性:")), m_lblBoundsCheck);
+    }
+
+    struct DEMValidationResults {
+        bool success = false;
+        QString errorMsg;
+        
+        // 用于比对的期望参数
+        QString expSource;
+        QString actSource;
+        double expRes = 0.0;
+        double actRes = 0.0;
+        int expResMode = 0;
+        
+        // 范围包围框
+        double expMinLon = 0.0, expMaxLon = 0.0;
+        double expMinLat = 0.0, expMaxLat = 0.0;
+        double actMinLon = 0.0, actMaxLon = 0.0;
+        double actMinLat = 0.0, actMaxLat = 0.0;
+        bool hasInputBounds = false;
+        
+        // 特征值
+        int rows = 0;
+        int cols = 0;
+        QString crsWkt;
+        double minElev = 0.0;
+        double maxElev = 0.0;
+        double validRate = 0.0;
+        bool hasData = false;
+        
+        bool boundsPass = false;
+        bool crsPass = false;
+    };
+
+    void startAsyncValidation() override
+    {
+        m_isTimedOut = false;
+
+        if (m_node->executionState() != ExecutionState::Completed) {
+            m_statusTitle->setText(QObject::tr("验证未通过"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(QObject::tr("未检测到获取完成的 DEM 数据。请先运行该节点，成功生成 DEM 数据后再进行验证。"));
+            
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(false);
+            
+            m_lblElevationRange->setText(QObject::tr("未执行"));
+            m_lblValidPixelRate->setText(QObject::tr("未执行"));
+            m_lblDemResolution->setText(QObject::tr("未执行"));
+            m_lblCrsInfo->setText(QObject::tr("未执行"));
+            m_lblBoundsCheck->setText(QObject::tr("未执行"));
+            return;
+        }
+
+        QStringList expectedOuts = m_node->getExpectedOutputFilePaths();
+        if (expectedOuts.size() < 2 || !QFileInfo::exists(expectedOuts[0])) {
+            m_statusTitle->setText(QObject::tr("验证失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(QObject::tr("生成的 DEM 成果 H5 文件不存在或路径无效。"));
+            return;
+        }
+
+        m_loadingOverlay->startLoading(QObject::tr("正在加载 DEM 文件并计算高程特征值..."));
+
+        QString h5Path = expectedOuts[0];
+        QString tifPath = expectedOuts[1];
+        
+        auto inData = m_node->getInputData();
+        QString firstInput = (inData && !inData->filePaths().isEmpty()) ? inData->filePaths().first() : "";
+        QString save_path = m_node->projectPath();
+
+        // 获取参数用于比对
+        QJsonObject saved = m_node->save();
+        int expSrcIdx = saved["demSource"].toInt(0);
+        int expResM = saved["resMode"].toInt(0);
+        double expCustRes = saved["customResolution"].toDouble(0.0);
+
+        QFuture<DEMValidationResults> future = QtConcurrent::run([h5Path, tifPath, expSrcIdx, expResM, expCustRes, firstInput, save_path]() {
+            DEMValidationResults res;
+            res.expResMode = expResM;
+            
+            // 期望数据源
+            if (expSrcIdx == 0) res.expSource = "SRTM1";
+            else if (expSrcIdx == 1) res.expSource = "SRTM3";
+            else if (expSrcIdx == 2) res.expSource = "Copernicus";
+            else if (expSrcIdx == 3) res.expSource = "ASTER";
+            
+            // 期望分辨率
+            if (expResM == 0) res.expRes = (expSrcIdx == 1) ? 90.0 : 30.0;
+            else if (expResM == 1) res.expRes = 30.0;
+            else if (expResM == 2) res.expRes = 90.0;
+            else res.expRes = expCustRes;
+
+            // 1. 读取输入影像地理边界 (期望覆盖范围)
+            double inMinLon = 0, inMaxLon = 0, inMinLat = 0, inMaxLat = 0;
+            if (!firstInput.isEmpty()) {
+                res.hasInputBounds = getInputImageBounds(firstInput, save_path, inMinLon, inMaxLon, inMinLat, inMaxLat);
+                if (res.hasInputBounds) {
+                    res.expMinLon = inMinLon;
+                    res.expMaxLon = inMaxLon;
+                    res.expMinLat = inMinLat;
+                    res.expMaxLat = inMaxLat;
+                }
+            }
+
+            // 2. 读取 H5 成果元数据及 DEM 矩阵
+            double demMinLon = 0.0, demMaxLon = 0.0, demMinLat = 0.0, demMaxLat = 0.0;
+            std::string dem_source_str;
+            cv::Mat dem;
+            bool read_h5_ok = false;
+            {
+                NodeUtils::Hdf5Locker locker;
+                read_h5_ok = (NodeUtils::readMatFromH5(h5Path, "dem", dem) &&
+                              NodeUtils::readScalarFromH5(h5Path, "dem_min_lon", demMinLon) &&
+                              NodeUtils::readScalarFromH5(h5Path, "dem_max_lon", demMaxLon) &&
+                              NodeUtils::readScalarFromH5(h5Path, "dem_min_lat", demMinLat) &&
+                              NodeUtils::readScalarFromH5(h5Path, "dem_max_lat", demMaxLat) &&
+                              NodeUtils::readStringFromH5(h5Path, "dem_source", dem_source_str));
+            }
+
+            if (read_h5_ok) {
+                res.actSource = QString::fromStdString(dem_source_str);
+                res.actMinLon = demMinLon;
+                res.actMaxLon = demMaxLon;
+                res.actMinLat = demMinLat;
+                res.actMaxLat = demMaxLat;
+                res.cols = dem.cols;
+                res.rows = dem.rows;
+            }
+
+            // 3. 读取 TIFF 获取 CRS 详细信息 (使用 GDAL)
+            if (QFile::exists(tifPath)) {
+                GDALAllRegister();
+                GDALDataset* poDS = (GDALDataset*)GDALOpen(tifPath.toLocal8Bit().constData(), GA_ReadOnly);
+                if (poDS) {
+                    if (!read_h5_ok) {
+                        res.cols = poDS->GetRasterXSize();
+                        res.rows = poDS->GetRasterYSize();
+                    }
+                    const char* projRef = poDS->GetProjectionRef();
+                    if (projRef && strlen(projRef) > 0) {
+                        res.crsWkt = QString::fromLocal8Bit(projRef);
+                    } else {
+                        res.crsWkt = "WGS 84";
+                    }
+                    
+                    double adfGeoTransform[6];
+                    if (poDS->GetGeoTransform(adfGeoTransform) == CE_None && !read_h5_ok) {
+                        res.actMinLon = adfGeoTransform[0];
+                        res.actMaxLat = adfGeoTransform[3];
+                        res.actMaxLon = res.actMinLon + adfGeoTransform[1] * res.cols;
+                        res.actMinLat = res.actMaxLat + adfGeoTransform[5] * res.rows;
+                    }
+                    GDALClose(poDS);
+                }
+            } else {
+                res.crsWkt = "WGS 84";
+            }
+
+            // 计算实际分辨率
+            if (res.cols > 0 && res.rows > 0) {
+                double lonResDeg = (res.actMaxLon - res.actMinLon) / res.cols;
+                res.actRes = lonResDeg * 111000.0; // 粗略转换为米
+            }
+
+            // 4. 统计分析 DEM 矩阵高程值范围和有效像元比例
+            if (!dem.empty()) {
+                cv::Mat doubleDem;
+                if (dem.type() != CV_64F) {
+                    dem.convertTo(doubleDem, CV_64F);
+                } else {
+                    doubleDem = dem;
+                }
+
+                double minElev = 99999.0;
+                double maxElev = -99999.0;
+                qint64 validCount = 0;
+                qint64 totalCount = 0;
+                
+                int dRows = doubleDem.rows;
+                int dCols = doubleDem.cols;
+                int step = 1;
+                // 如果像元数大于 400 万，采用跨步采样提高统计速度
+                if (dRows * dCols > 4000000) {
+                    step = std::max(1, (dRows * dCols) / 4000000);
+                }
+
+                for (int r = 0; r < dRows; r += step) {
+                    for (int c = 0; c < dCols; c += step) {
+                        double val = doubleDem.at<double>(r, c);
+                        totalCount++;
+                        // 过滤掉 NoData 填充值 -32767.0 与 -9999.0
+                        if (val != -32767.0 && val != -9999.0 && val > -1000.0 && val < 9000.0) {
+                            validCount++;
+                            if (val < minElev) minElev = val;
+                            if (val > maxElev) maxElev = val;
+                        }
+                    }
+                }
+
+                if (validCount > 0) {
+                    res.minElev = minElev;
+                    res.maxElev = maxElev;
+                    res.validRate = (double)validCount / totalCount;
+                    res.hasData = true;
+                    res.success = true;
+                } else {
+                    res.errorMsg = QObject::tr("DEM 数据全部为 NoData (无效高程值)。");
+                }
+            } else {
+                res.errorMsg = QObject::tr("无法从 H5 成果文件中加载 DEM 数据集。");
+            }
+
+            // 校验坐标系投影
+            res.crsPass = res.crsWkt.contains("WGS 84", Qt::CaseInsensitive) || 
+                          res.crsWkt.contains("WGS84", Qt::CaseInsensitive);
+
+            // 校验包容性
+            if (res.hasInputBounds) {
+                bool lonOk = (res.actMinLon <= res.expMinLon + 1e-4) && (res.actMaxLon >= res.expMaxLon - 1e-4);
+                bool latOk = (res.actMinLat <= res.expMinLat + 1e-4) && (res.actMaxLat >= res.expMaxLat - 1e-4);
+                res.boundsPass = lonOk && latOk;
+            } else {
+                res.boundsPass = true;
+            }
+
+            return res;
+        });
+
+        auto* watcher = new QFutureWatcher<DEMValidationResults>(this);
+        connect(watcher, &QFutureWatcher<DEMValidationResults>::finished, this, [this, watcher]() {
+            if (m_isTimedOut) {
+                watcher->deleteLater();
+                return;
+            }
+
+            DEMValidationResults res = watcher->result();
+            m_loadingOverlay->stopLoading();
+
+            if (res.success) {
+                m_compTable->clearComparison();
+                m_compTable->setEnabled(true);
+
+                // 1. 数据源比对
+                m_compTable->addComparison(QObject::tr("DEM 数据源"), res.expSource, res.actSource.toUpper());
+
+                // 2. 几何范围比对
+                QString expLonStr, actLonStr;
+                if (res.hasInputBounds) {
+                    if (res.boundsPass) {
+                        // 如果校验通过，显示为一致的经度范围，使表格展示为“一致”
+                        QString rangeStr = QString("[%1°, %2°]").arg(res.actMinLon, 0, 'f', 4).arg(res.actMaxLon, 0, 'f', 4);
+                        expLonStr = rangeStr;
+                        actLonStr = rangeStr;
+                    } else {
+                        // 如果不通过，展示要求的扩展包围框与实际包围框，以高亮“不一致”
+                        expLonStr = QString("≥ [%1°, %2°]").arg(res.expMinLon - 0.05, 0, 'f', 4).arg(res.expMaxLon + 0.05, 0, 'f', 4);
+                        actLonStr = QString("[%1°, %2°]").arg(res.actMinLon, 0, 'f', 4).arg(res.actMaxLon, 0, 'f', 4);
+                    }
+                } else {
+                    expLonStr = QObject::tr("不限");
+                    actLonStr = QString("[%1°, %2°]").arg(res.actMinLon, 0, 'f', 4).arg(res.actMaxLon, 0, 'f', 4);
+                }
+                m_compTable->addComparison(QObject::tr("经度覆盖范围"), expLonStr, actLonStr);
+
+                QString expLatStr, actLatStr;
+                if (res.hasInputBounds) {
+                    if (res.boundsPass) {
+                        QString rangeStr = QString("[%1°, %2°]").arg(res.actMinLat, 0, 'f', 4).arg(res.actMaxLat, 0, 'f', 4);
+                        expLatStr = rangeStr;
+                        actLatStr = rangeStr;
+                    } else {
+                        expLatStr = QString("≥ [%1°, %2°]").arg(res.expMinLat - 0.05, 0, 'f', 4).arg(res.expMaxLat + 0.05, 0, 'f', 4);
+                        actLatStr = QString("[%1°, %2°]").arg(res.actMinLat, 0, 'f', 4).arg(res.actMaxLat, 0, 'f', 4);
+                    }
+                } else {
+                    expLatStr = QObject::tr("不限");
+                    actLatStr = QString("[%1°, %2°]").arg(res.actMinLat, 0, 'f', 4).arg(res.actMaxLat, 0, 'f', 4);
+                }
+                m_compTable->addComparison(QObject::tr("纬度覆盖范围"), expLatStr, actLatStr);
+
+                // 3. 分辨率比对
+                QString expResStr, actResStr;
+                double targetRes = res.expRes;
+                bool resMatch = (std::abs(res.actRes - targetRes) / targetRes < 0.15);
+                if (resMatch) {
+                    QString resStr = QString("%1m").arg(targetRes, 0, 'f', 1);
+                    expResStr = resStr;
+                    actResStr = resStr;
+                } else {
+                    expResStr = res.expResMode == 0 ? QObject::tr("原始分辨率") : QString("%1m").arg(targetRes, 0, 'f', 1);
+                    actResStr = QString("%1m").arg(res.actRes, 0, 'f', 1);
+                }
+                m_compTable->addComparison(QObject::tr("目标网格分辨率"), expResStr, actResStr);
+
+                // 4. CRS 比对
+                QString actCrsName = res.crsPass ? "WGS 84" : QObject::tr("非标准 (或投影像元)");
+                m_compTable->addComparison(QObject::tr("坐标系统 (CRS)"), "WGS 84", actCrsName);
+
+                // 刷新界面标签
+                m_lblElevationRange->setText(QString("%1m ~ %2m").arg(res.minElev, 0, 'f', 1).arg(res.maxElev, 0, 'f', 1));
+                m_lblValidPixelRate->setText(QString("%1%").arg(res.validRate * 100.0, 0, 'f', 2));
+                m_lblDemResolution->setText(QString("%1 × %2").arg(res.cols).arg(res.rows));
+                
+                QString crsDisp = QObject::tr("WGS 84 (EPSG:4326)");
+                if (!res.crsPass) {
+                    crsDisp = res.crsWkt.left(50) + (res.crsWkt.length() > 50 ? "..." : "");
+                }
+                m_lblCrsInfo->setText(crsDisp);
+
+                if (res.hasInputBounds) {
+                    m_lblBoundsCheck->setText(res.boundsPass ? QObject::tr("完全包含 (有效)") : QObject::tr("未完全包含 (警告)"));
+                    m_lblBoundsCheck->setStyleSheet(res.boundsPass ? "color: #10B981; font-weight: bold;" : "color: #F59E0B; font-weight: bold;");
+                } else {
+                    m_lblBoundsCheck->setText(QObject::tr("未连接输入图像 (仅校验 DEM)"));
+                    m_lblBoundsCheck->setStyleSheet("color: #6B7280;");
+                }
+
+                // 更新状态说明
+                if (!res.boundsPass) {
+                    m_statusTitle->setText(QObject::tr("校验范围不匹配"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                    m_statusDesc->setText(QObject::tr("下载 of DEM 地理范围未完全包含输入影像。请检查上游数据或手动扩展下载范围。"));
+                } else if (res.validRate < 0.95) {
+                    m_statusTitle->setText(QObject::tr("高程有效率偏低"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                    m_statusDesc->setText(QObject::tr("DEM 中包含较多无效像元（NoData，占比 %1%）。如果位于沿海或海洋，这属于正常现象。").arg(QString::number((1.0 - res.validRate) * 100.0, 'f', 1)));
+                } else {
+                    m_statusTitle->setText(QObject::tr("验证通过"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+                    m_statusDesc->setText(QObject::tr("DEM 文件的坐标系 (WGS 84)、高程区间与覆盖空间范围均核对一致，像元无位错。"));
+                }
+            } else {
+                m_statusTitle->setText(QObject::tr("验证失败"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+                m_statusDesc->setText(res.errorMsg);
+            }
+
+            watcher->deleteLater();
+        });
+
+        watcher->setFuture(future);
+    }
+
+private:
+    DEMSourceNode* m_node = nullptr;
+    
+    QLabel* m_lblElevationRange = nullptr;
+    QLabel* m_lblValidPixelRate = nullptr;
+    QLabel* m_lblDemResolution = nullptr;
+    QLabel* m_lblCrsInfo = nullptr;
+    QLabel* m_lblBoundsCheck = nullptr;
+};
+
+::QWidget* DEMSourceNode::createValidationWidget(::QWidget* parent)
+{
+    return new DEMSourceValidationWidget(this, parent);
 }
 
 } // namespace QtNodes

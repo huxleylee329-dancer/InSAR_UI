@@ -23,6 +23,13 @@
 #include "InSARLogManager.h"
 #include <Utils.h>
 #include <FormatConversion.h>
+#include <Registration.h>
+#include "ImageView.h"
+#include "QtNodes/internal/NodeDetailWindow.hpp"
+#include <QTableWidget>
+#include <QComboBox>
+#include <QHeaderView>
+#include <QLabel>
 
 namespace QtNodes {
 
@@ -1397,6 +1404,331 @@ void CutNode::load(QJsonObject const &json)
         updateLabels();
         updateWidgetSize();
     }
+}
+
+// ============================================================================
+// CutRegistrationEvalWidget - AOI Crop 配准评估选项卡组件
+// ============================================================================
+struct CropEvalThreadResult {
+    int retCode;
+    CropEvalResult evalResult;
+};
+
+class CutRegistrationEvalWidget : public QWidget
+{
+public:
+    explicit CutRegistrationEvalWidget(CutNode* node, QWidget* parent = nullptr)
+        : QWidget(parent)
+        , m_node(node)
+        , m_hasResults(false)
+    {
+        m_outputPaths = m_node->getOutputPaths();
+
+        // 绑定唯一的临时路径以防多节点运行冲突
+        QString tempDir = QDir::tempPath();
+        m_tempCoherenceJpg = tempDir + QString("/crop_coherence_%1.jpg").arg(reinterpret_cast<quintptr>(m_node));
+        m_tempPhaseJpg = tempDir + QString("/crop_phase_%1.jpg").arg(reinterpret_cast<quintptr>(m_node));
+
+        // 界面布局
+        auto* mainLayout = new QHBoxLayout(this);
+        mainLayout->setContentsMargins(12, 12, 12, 12);
+        mainLayout->setSpacing(12);
+
+        // 左侧栏：评估参数与定量指标显示
+        auto* leftContainer = new QWidget();
+        auto* leftLayout = new QVBoxLayout(leftContainer);
+        leftLayout->setContentsMargins(0, 0, 0, 0);
+        leftLayout->setSpacing(10);
+
+        auto* selectionLayout = new QHBoxLayout();
+        auto* selLabel = new QLabel(tr("分析影像对:"));
+        selLabel->setStyleSheet("font-weight: bold;");
+        selectionLayout->addWidget(selLabel);
+
+        m_slaveCombo = new QComboBox();
+        if (m_outputPaths.size() > 1) {
+            QString masterName = QFileInfo(m_outputPaths[0]).completeBaseName();
+            for (int i = 1; i < m_outputPaths.size(); ++i) {
+                QString slaveName = QFileInfo(m_outputPaths[i]).completeBaseName();
+                m_slaveCombo->addItem(QString("%1 -> %2").arg(slaveName).arg(masterName));
+            }
+        } else {
+            m_slaveCombo->addItem(tr("无可配准的副影像"));
+            m_slaveCombo->setEnabled(false);
+        }
+        selectionLayout->addWidget(m_slaveCombo, 1);
+        leftLayout->addLayout(selectionLayout);
+
+        // 状态评估卡片
+        m_statusCard = new QFrame();
+        m_statusCard->setFrameShape(QFrame::StyledPanel);
+        m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
+        
+        auto* cardLayout = new QVBoxLayout(m_statusCard);
+        cardLayout->setContentsMargins(10, 8, 10, 8);
+        cardLayout->setSpacing(4);
+
+        m_statusCardTitle = new QLabel(tr("未评估"));
+        m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
+        cardLayout->addWidget(m_statusCardTitle);
+
+        m_statusCardDesc = new QLabel(tr("请点击评估获取相干性及对齐精度诊断结果。"));
+        m_statusCardDesc->setWordWrap(true);
+        m_statusCardDesc->setStyleSheet("font-size: 11px; color: #9CA3AF;");
+        cardLayout->addWidget(m_statusCardDesc);
+
+        leftLayout->addWidget(m_statusCard);
+
+        // 定量指标统计表
+        auto* metricsFrame = new QFrame();
+        metricsFrame->setFrameShape(QFrame::StyledPanel);
+        bool isDark = NodeDetailWindow::isDarkTheme(this);
+        metricsFrame->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 4px;")
+            .arg(isDark ? "#374151" : "#FFFFFF")
+            .arg(isDark ? "#4B5563" : "#E5E7EB"));
+        
+        auto* formLayout = new QFormLayout(metricsFrame);
+        formLayout->setContentsMargins(12, 12, 12, 12);
+        formLayout->setSpacing(10);
+        formLayout->setLabelAlignment(Qt::AlignLeft);
+
+        auto createValueLabel = [isDark]() {
+            auto* label = new QLabel("-");
+            label->setStyleSheet(QString("font-size: 12px; font-weight: bold; color: %1;").arg(isDark ? "#F3F4F6" : "#1F2937"));
+            return label;
+        };
+
+        m_meanCohLabel = createValueLabel();
+        m_medianCohLabel = createValueLabel();
+        m_maxCohLabel = createValueLabel();
+        m_highCohPctLabel = createValueLabel();
+
+        auto addFormRow = [formLayout, isDark](const QString& title, QWidget* valueWidget) {
+            auto* label = new QLabel(title);
+            label->setStyleSheet(QString("font-size: 11px; color: %1;").arg(isDark ? "#9CA3AF" : "#6B7280"));
+            formLayout->addRow(label, valueWidget);
+        };
+
+        addFormRow(tr("相干系数平均值:"), m_meanCohLabel);
+        addFormRow(tr("相干系数中位数:"), m_medianCohLabel);
+        addFormRow(tr("相干系数最大值:"), m_maxCohLabel);
+        addFormRow(tr("高相干像素比例 (>0.5):"), m_highCohPctLabel);
+
+        leftLayout->addWidget(metricsFrame);
+
+        m_statusLabel = new QLabel(tr("准备就绪。请选择影像对开始评估。"));
+        m_statusLabel->setWordWrap(true);
+        m_statusLabel->setStyleSheet(isDark ? "color: #9CA3AF; font-size: 11px;" : "color: #6B7280; font-size: 11px;");
+        leftLayout->addWidget(m_statusLabel);
+
+        leftLayout->addStretch(1);
+        mainLayout->addWidget(leftContainer, 4);
+
+        // 右侧栏：大图显示与双模选择
+        auto* rightContainer = new QWidget();
+        auto* rightLayout = new QVBoxLayout(rightContainer);
+        rightLayout->setContentsMargins(0, 0, 0, 0);
+        rightLayout->setSpacing(8);
+
+        auto* modeLayout = new QHBoxLayout();
+        auto* modeLabel = new QLabel(tr("显示模式:"));
+        modeLabel->setStyleSheet("font-weight: bold;");
+        modeLayout->addWidget(modeLabel);
+
+        m_visualModeCombo = new QComboBox();
+        m_visualModeCombo->addItem(tr("全图干涉相位图"), 0);
+        m_visualModeCombo->addItem(tr("全图相干性系数图"), 1);
+        modeLayout->addWidget(m_visualModeCombo, 1);
+        rightLayout->addLayout(modeLayout);
+
+        m_imageView = new ImageView();
+        m_imageView->setMinimumSize(256, 256);
+        m_imageView->setStyleSheet(QString("border: 1px solid %1; border-radius: 4px;")
+            .arg(isDark ? "#4B5563" : "#D1D5DB"));
+        rightLayout->addWidget(m_imageView, 1);
+
+        mainLayout->addWidget(rightContainer, 5);
+
+        // 绑定信号槽
+        connect(m_slaveCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CutRegistrationEvalWidget::onSlaveChanged);
+        connect(m_visualModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CutRegistrationEvalWidget::onVisualModeChanged);
+        connect(&m_watcher, &QFutureWatcher<CropEvalThreadResult>::finished, this, &CutRegistrationEvalWidget::onEvaluationFinished);
+
+        // 自动计算初始评估
+        if (m_outputPaths.size() > 1) {
+            QTimer::singleShot(200, [this]() {
+                startEvaluation();
+            });
+        }
+    }
+
+    ~CutRegistrationEvalWidget() override
+    {
+        m_watcher.cancel();
+        m_watcher.waitForFinished();
+        
+        // 销毁时清理生成的临时图像文件，遵守“垃圾代码与临时文件清理”规则
+        if (QFile::exists(m_tempCoherenceJpg)) QFile::remove(m_tempCoherenceJpg);
+        if (QFile::exists(m_tempPhaseJpg)) QFile::remove(m_tempPhaseJpg);
+    }
+
+private:
+    void onSlaveChanged(int index)
+    {
+        Q_UNUSED(index);
+        startEvaluation();
+    }
+
+    void onVisualModeChanged(int index)
+    {
+        Q_UNUSED(index);
+        updateImageView();
+    }
+
+    void startEvaluation()
+    {
+        if (m_watcher.isRunning()) {
+            return;
+        }
+
+        int slaveIndex = m_slaveCombo->currentIndex() + 1;
+        if (m_outputPaths.size() <= 1 || slaveIndex < 1 || slaveIndex >= m_outputPaths.size()) {
+            return;
+        }
+
+        m_statusLabel->setText(tr("正在计算裁剪区全图相干性与干涉相位，请稍候..."));
+        m_imageView->setImage(QImage());
+        
+        // 重置指标标签
+        m_meanCohLabel->setText("-");
+        m_medianCohLabel->setText("-");
+        m_maxCohLabel->setText("-");
+        m_highCohPctLabel->setText("-");
+        m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
+        m_statusCardTitle->setText(tr("未评估"));
+        m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
+        m_statusCardDesc->setText(tr("请等待评估获取相干性及对齐精度诊断结果。"));
+
+        QString masterPath = m_outputPaths[0];
+        QString slavePath = m_outputPaths[slaveIndex];
+
+        if (!QFile::exists(masterPath) || !QFile::exists(slavePath)) {
+            m_statusLabel->setText(tr("错误：主图像或副图像裁剪文件不存在，请确保节点已成功运行！"));
+            return;
+        }
+
+        m_slaveCombo->setEnabled(false);
+
+        QString cohJpg = m_tempCoherenceJpg;
+        QString phaseJpg = m_tempPhaseJpg;
+
+        QFuture<CropEvalThreadResult> future = QtConcurrent::run([masterPath, slavePath, cohJpg, phaseJpg]() {
+            NodeUtils::Hdf5Locker locker(masterPath);
+            CropEvalThreadResult res;
+            res.retCode = AnalyzeCropRegistration(
+                masterPath.toLocal8Bit().constData(),
+                slavePath.toLocal8Bit().constData(),
+                cohJpg.toLocal8Bit().constData(),
+                phaseJpg.toLocal8Bit().constData(),
+                -1.0, -1.0, -1.0, -1.0,
+                &res.evalResult
+            );
+            return res;
+        });
+
+        m_watcher.setFuture(future);
+    }
+
+    void onEvaluationFinished()
+    {
+        m_slaveCombo->setEnabled(true);
+
+        CropEvalThreadResult threadRes = m_watcher.result();
+        if (threadRes.retCode != 0) {
+            m_statusLabel->setText(tr("裁剪配准评估失败，错误码：%1").arg(threadRes.retCode));
+            return;
+        }
+
+        m_evalResult = threadRes.evalResult;
+        m_hasResults = true;
+        m_statusLabel->setText(tr("配准评估完成。"));
+
+        // 填充指标数据
+        m_meanCohLabel->setText(QString::number(m_evalResult.meanCoherence, 'f', 4));
+        m_medianCohLabel->setText(QString::number(m_evalResult.medianCoherence, 'f', 4));
+        m_maxCohLabel->setText(QString::number(m_evalResult.maxCoherence, 'f', 4));
+        m_highCohPctLabel->setText(QString("%1%").arg(QString::number(m_evalResult.highCoherencePct * 100.0, 'f', 2)));
+
+        // 动态样式刷新
+        bool isDark = NodeDetailWindow::isDarkTheme(this);
+        if (m_evalResult.assessmentStatus == 0) {
+            m_statusCardTitle->setText(tr("通过 (PASS)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+            m_statusCardDesc->setText(tr("全图相干性优秀，主副影像配准成功，完全满足干涉处理要求。"));
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #10B981; border-radius: 4px;")
+                .arg(isDark ? "#064E3B" : "#D1FAE5"));
+        } else if (m_evalResult.assessmentStatus == 1) {
+            m_statusCardTitle->setText(tr("提醒 (WARNING)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+            m_statusCardDesc->setText(tr("全图相干性一般。局部可能存在轻微失相干，或包含水体、森林。建议核对质量。"));
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #F59E0B; border-radius: 4px;")
+                .arg(isDark ? "#78350F" : "#FEF3C7"));
+        } else {
+            m_statusCardTitle->setText(tr("异常 (FAILED)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusCardDesc->setText(tr("全图严重失相干！主副影像配准失败，请检查前期流程参数与 ESD 设定。"));
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
+                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
+        }
+
+        updateImageView();
+    }
+
+    void updateImageView()
+    {
+        if (!m_hasResults) {
+            m_imageView->setImage(QImage());
+            return;
+        }
+
+        int mode = m_visualModeCombo->currentData().toInt();
+        QString imgPath = (mode == 0) ? m_tempPhaseJpg : m_tempCoherenceJpg;
+
+        if (QFile::exists(imgPath)) {
+            m_imageView->loadImage(imgPath);
+        } else {
+            m_imageView->setImage(QImage());
+        }
+    }
+
+    CutNode* m_node;
+    QStringList m_outputPaths;
+    QComboBox* m_slaveCombo;
+    QComboBox* m_visualModeCombo;
+    ImageView* m_imageView;
+    
+    QFrame* m_statusCard;
+    QLabel* m_statusCardTitle;
+    QLabel* m_statusCardDesc;
+    
+    QLabel* m_meanCohLabel;
+    QLabel* m_medianCohLabel;
+    QLabel* m_maxCohLabel;
+    QLabel* m_highCohPctLabel;
+    QLabel* m_statusLabel;
+
+    QString m_tempCoherenceJpg;
+    QString m_tempPhaseJpg;
+
+    CropEvalResult m_evalResult;
+    bool m_hasResults;
+    QFutureWatcher<CropEvalThreadResult> m_watcher;
+};
+
+// 选项卡页面工厂实现
+::QWidget* CutNode::createInterferometryWidget(::QWidget* parent)
+{
+    return new CutRegistrationEvalWidget(this, parent);
 }
 
 } // namespace QtNodes

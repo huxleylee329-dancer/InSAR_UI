@@ -45,6 +45,9 @@ public:
     void createWidget();
     QStringList previewImagePaths() const override;
     bool supportsRoiSelection() const override;
+    bool supportsInterferometry() const override { return true; }
+    ::QWidget* createInterferometryWidget(::QWidget* parent) override;
+    QStringList getOutputPaths() const { return m_outputPaths; }
     void processRoiSelection(const QRectF& sceneRect, int imageIndex) override;
     void clearRoiSelection() override;
     bool hasCustomRoi() const override { return m_boxSelected; }

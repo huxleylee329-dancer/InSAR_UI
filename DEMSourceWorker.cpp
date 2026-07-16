@@ -51,6 +51,8 @@ static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const d
 #include <QCoreApplication>
 #include <QtMath>
 #include <QTextStream>
+#include <QMap>
+#include <QRegularExpression>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Dem_d.lib")
@@ -399,50 +401,161 @@ void DEMSourceWorker::fetch_dem(
     {
         QDir dir(fullCachePath);
         QStringList filters;
-        if (demSource == 0 || demSource == 1) filters << "*.hgt";
-        else filters << "*.tif";
+        QString ext;
+        if (demSource == 0 || demSource == 1)
+        {
+            filters << "*.hgt";
+            ext = ".hgt";
+        }
+        else
+        {
+            filters << "*.tif";
+            ext = ".tif";
+        }
         QFileInfoList list = dir.entryInfoList(filters, QDir::Files);
         
-        QStringList toDelete;
-        for (int i = 0; i < list.size(); ++i)
+        // 1. 按照经纬度 Key 进行分组，避免 O(n²) 全量二进制比较
+        QMap<QString, QList<QFileInfo>> groups;
+        QRegularExpression keyRegex("([NSns]\\d{2}[EWew]\\d{3})");
+        for (const QFileInfo& fi : list)
         {
-            for (int j = i + 1; j < list.size(); ++j)
+            QRegularExpressionMatch match = keyRegex.match(fi.fileName());
+            QString key;
+            if (match.hasMatch())
             {
-                QFileInfo fi1 = list[i];
-                QFileInfo fi2 = list[j];
-                if (fi1.size() == fi2.size() && fi1.size() > 0)
+                key = match.captured(1).toUpper();
+            }
+            else
+            {
+                key = fi.baseName().toUpper();
+            }
+            groups[key].append(fi);
+        }
+
+        // 用于辅助检查两个文件内容是否完全一致的 lambda 函数
+        auto isIdentical = [](const QString& path1, const QString& path2, qint64 size1, qint64 size2) -> bool {
+            if (size1 != size2) return false;
+            if (size1 == 0) return true; // 都是空文件视为一致
+            QFile f1(path1);
+            QFile f2(path2);
+            if (!f1.open(QIODevice::ReadOnly) || !f2.open(QIODevice::ReadOnly))
+            {
+                return false;
+            }
+            QByteArray b1 = f1.read(4096);
+            QByteArray b2 = f2.read(4096);
+            if (b1 != b2)
+            {
+                return false;
+            }
+            while (!f1.atEnd() && !f2.atEnd())
+            {
+                if (f1.read(65536) != f2.read(65536))
                 {
-                    QFile f1(fi1.absoluteFilePath());
-                    QFile f2(fi2.absoluteFilePath());
-                    if (f1.open(QIODevice::ReadOnly) && f2.open(QIODevice::ReadOnly))
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        QStringList toDelete;
+
+        // 2. 遍历每个分组，挑选唯一的保留文件并标记其余副本
+        for (auto it = groups.begin(); it != groups.end(); ++it)
+        {
+            const QString& key = it.key();
+            const QList<QFileInfo>& groupList = it.value();
+            if (groupList.size() <= 1)
+            {
+                continue; // 只有一个文件，无需对比
+            }
+
+            QString canonicalName = key + ext;
+            QFileInfo keepFileInfo;
+            bool foundKeep = false;
+
+            // 优先保留满足规范文件名且大小 > 0 的文件
+            for (const QFileInfo& fi : groupList)
+            {
+                if (fi.fileName().compare(canonicalName, Qt::CaseInsensitive) == 0 && fi.size() > 0)
+                {
+                    keepFileInfo = fi;
+                    foundKeep = true;
+                    break;
+                }
+            }
+
+            // 没有规范文件名时，保留首个大小 > 0 的有效文件
+            if (!foundKeep)
+            {
+                for (const QFileInfo& fi : groupList)
+                {
+                    if (fi.size() > 0)
                     {
-                        QByteArray b1 = f1.read(4096);
-                        QByteArray b2 = f2.read(4096);
-                        if (b1 == b2)
-                        {
-                            bool identical = true;
-                            while (!f1.atEnd() && !f2.atEnd())
-                            {
-                                if (f1.read(65536) != f2.read(65536))
-                                {
-                                    identical = false;
-                                    break;
-                                }
-                            }
-                            if (identical)
-                            {
-                                InSARLogManager::LogWarning("DEMSourceWorker", QStringLiteral("检测到缓存中的重复文件内容：%1 与 %2。将进行清理以强行重新下载。").arg(fi1.fileName()).arg(fi2.fileName()));
-                                if (!toDelete.contains(fi1.absoluteFilePath())) toDelete.append(fi1.absoluteFilePath());
-                                if (!toDelete.contains(fi2.absoluteFilePath())) toDelete.append(fi2.absoluteFilePath());
-                            }
-                        }
+                        keepFileInfo = fi;
+                        foundKeep = true;
+                        break;
+                    }
+                }
+            }
+
+            // 如果全部为空文件，则优先保留符合规范文件名的空文件，否则保留第一个
+            if (!foundKeep)
+            {
+                for (const QFileInfo& fi : groupList)
+                {
+                    if (fi.fileName().compare(canonicalName, Qt::CaseInsensitive) == 0)
+                    {
+                        keepFileInfo = fi;
+                        foundKeep = true;
+                        break;
+                    }
+                }
+                if (!foundKeep && !groupList.isEmpty())
+                {
+                    keepFileInfo = groupList.first();
+                    foundKeep = true;
+                }
+            }
+
+            // 将该分组内除保留文件外，且内容一致的其余所有副本加入删除列表（不允许把保留的文件加入删除集合）
+            if (foundKeep)
+            {
+                for (const QFileInfo& fi : groupList)
+                {
+                    if (fi.absoluteFilePath() == keepFileInfo.absoluteFilePath())
+                    {
+                        continue;
+                    }
+                    if (isIdentical(fi.absoluteFilePath(), keepFileInfo.absoluteFilePath(), fi.size(), keepFileInfo.size()))
+                    {
+                        InSARLogManager::LogWarning("DEMSourceWorker", QStringLiteral("检测到缓存中的重复文件内容：%1 与 %2。将进行清理。").arg(fi.fileName()).arg(keepFileInfo.fileName()));
+                        toDelete.append(fi.absoluteFilePath());
                     }
                 }
             }
         }
+
+        // 去重删除列表
+        toDelete.removeDuplicates();
+
+        // 3. 执行删除并报告明确错误
+        bool deleteSuccess = true;
+        QStringList failedPaths;
         for (const QString& path : toDelete)
         {
-            QFile::remove(path);
+            if (!QFile::remove(path))
+            {
+                InSARLogManager::LogError("DEMSourceWorker", QStringLiteral("清理重复缓存文件失败：%1").arg(path));
+                failedPaths.append(path);
+                deleteSuccess = false;
+            }
+        }
+
+        if (!deleteSuccess)
+        {
+            emit errorProcess(QStringLiteral("清理本地缓存重复文件失败：%1").arg(failedPaths.join(", ")));
+            return;
         }
     }
 

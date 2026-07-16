@@ -32,6 +32,7 @@ public:
 	void setClutterRoiRect(const QRectF& rect);
 	
 	void loadImage(const QString& path);
+	void setImage(const QImage& image);
 	void fitImage();
 	void resetZoom();
 	void zoomIn();

@@ -459,18 +459,9 @@ void ClutterSuppressionNode::onSaveImageToProjectRequested(
         dataNode->appendRow({ nameItem, pathItem });
 
         // Update XML for persistence
-        QString projPath = projectPath();
-        if (!projPath.isEmpty()) {
+        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
             QString relativePath = "/" + nodeName + "/" + finalFileName;
-            XMLFile localXml;
-            localXml.XMLFile_load(projPath.toStdString().c_str());
-            localXml.XMLFile_add_origin(
-                nodeName.toStdString().c_str(),
-                displayName.toStdString().c_str(),
-                relativePath.toStdString().c_str(),
-                tag.toStdString().c_str()
-            );
-            localXml.XMLFile_save(projPath.toStdString().c_str());
+            NodeUtils::addOriginNodeToProjectXml(iface, nodeName, displayName, relativePath, tag);
         }
     } else {
         dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));

@@ -73,7 +73,7 @@ private:
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
-    std::shared_ptr<ImportedFileData> m_demInputData;
+    std::shared_ptr<DEMFileData> m_demInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     

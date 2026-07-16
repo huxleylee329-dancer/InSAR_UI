@@ -61,7 +61,7 @@ NodeDataType DemNode::dataType(PortType portType, PortIndex portIndex) const
     else
     {
         if (portIndex == 0)
-            return NodeDataType{"imported_file", "Imported File"};
+            return NodeDataType{"dem_file", "DEM File"};
         else
             return NodeDataType{"image_info", "Image Info"};
     }
@@ -494,7 +494,7 @@ void DemNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
     if (!h5Paths.isEmpty())
@@ -621,7 +621,7 @@ bool DemNode::validateAndRestoreOutput()
         types.append("dem");
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 

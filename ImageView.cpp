@@ -148,6 +148,28 @@ void ImageView::loadImage(const QString& path)
 	viewport()->update();
 }
 
+void ImageView::setImage(const QImage& image)
+{
+	if (!scene()) {
+		setScene(new QGraphicsScene(this));
+	}
+	scene()->clear();
+	m_roiRectItem = nullptr;
+	m_targetRectItem = nullptr;
+	m_clutterRectItem = nullptr;
+	
+	QPixmap pixmap = QPixmap::fromImage(image);
+	scene()->addPixmap(pixmap);
+	
+	if (!m_storedRoi.isNull()) setRoiRect(m_storedRoi);
+	if (!m_storedTargetRoi.isNull()) setTargetRoiRect(m_storedTargetRoi);
+	if (!m_storedClutterRoi.isNull()) setClutterRoiRect(m_storedClutterRoi);
+	
+	scene()->setSceneRect(pixmap.rect());
+	m_needsFit = true;
+	viewport()->update();
+}
+
 void ImageView::fitImage()
 {
 	if (scene() && !scene()->sceneRect().isEmpty()) {

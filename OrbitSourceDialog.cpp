@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QSettings>
+#include <QCoreApplication>
 
 OrbitSourceDialog::OrbitSourceDialog(QWidget* parent)
     : QDialog(parent)
@@ -60,7 +61,7 @@ OrbitSourceDialog::OrbitSourceDialog(QWidget* parent)
     QString lastOrbitDir = settings.value("Orbit/LastMatchDir", "").toString();
     if (lastOrbitDir.isEmpty())
     {
-        lastOrbitDir = QDir::currentPath() + "/orbits";
+        lastOrbitDir = QCoreApplication::applicationDirPath() + "/orbits";
     }
     m_cacheDirEdit->setText(QDir::toNativeSeparators(lastOrbitDir));
 

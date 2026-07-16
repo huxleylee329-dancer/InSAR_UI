@@ -1,4 +1,4 @@
-﻿#include "InSARLogManager.h"
+#include "InSARLogManager.h"
 #include "S1TopsBackGeocodingNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
@@ -20,6 +20,22 @@
 #include <QFile>
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
+#include <Registration.h>
+#include "ImageView.h"
+#include "QtNodes/internal/NodeDetailWindow.hpp"
+#include <QTableWidget>
+#include <QComboBox>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QFutureWatcher>
+#include <QColor>
+#include <QFont>
+#include <algorithm>
+#include <vector>
+#include <cmath>
+#include <opencv2/opencv.hpp>
 
 namespace QtNodes {
 
@@ -80,7 +96,7 @@ NodeDataType S1TopsBackGeocodingNode::dataType(PortType portType, PortIndex port
         if (portIndex == 0)
             return NodeDataType{"imported_file", "S1 SLC Data"};
         else
-            return NodeDataType{"imported_file", "DEM File"};
+            return NodeDataType{"dem_file", "DEM File"};
     }
     else
     {
@@ -148,7 +164,7 @@ void S1TopsBackGeocodingNode::setInData(std::shared_ptr<NodeData> data, PortInde
             m_imageInfoData.reset();
         }
     } else if (port == 1) {
-        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        m_demInputData = std::dynamic_pointer_cast<DEMFileData>(data);
         if (m_demInputData) {
             m_demPath = m_demInputData->filePath();
             if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
@@ -902,10 +918,7 @@ void S1TopsBackGeocodingNode::syncProjectXmlOrder(
         dataNode->InsertBeforeChild(params, dataElem);
     }
 
-    QString xmlPath = projectPath();
-    if (!xmlPath.endsWith(".insar", Qt::CaseInsensitive)) {
-        xmlPath = QDir(xmlPath).absoluteFilePath(projectName());
-    }
+    QString xmlPath = NodeUtils::getProjectFilePath(_widget);
     xml->XMLFile_save(xmlPath.toStdString().c_str());
 }
 
@@ -999,15 +1012,7 @@ QStandardItemModel* S1TopsBackGeocodingNode::projectModel() const
 
 QString S1TopsBackGeocodingNode::projectPath() const
 {
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        QString fullPath = iface->projectPath();
-        if (fullPath.endsWith(".insar", Qt::CaseInsensitive)) {
-            return QFileInfo(fullPath).absolutePath();
-        }
-        return fullPath;
-    }
-    return QString();
+    return NodeUtils::getProjectDirectory(_widget);
 }
 
 QString S1TopsBackGeocodingNode::projectName() const
@@ -1275,7 +1280,7 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     return true;
 }
 
-QStringList S1TopsBackGeocodingNode::previewImagePaths() const
+QStringList S1TopsBackGeocodingNode::getOrderedH5Paths() const
 {
     QStringList h5Paths;
     if (m_outputData && !m_outputData->filePaths().isEmpty()) {
@@ -1289,7 +1294,17 @@ QStringList S1TopsBackGeocodingNode::previewImagePaths() const
             }
         }
     }
+    return h5Paths;
+}
 
+QStringList S1TopsBackGeocodingNode::getInputH5Paths() const
+{
+    return m_inputData ? m_inputData->filePaths() : QStringList();
+}
+
+QStringList S1TopsBackGeocodingNode::previewImagePaths() const
+{
+    QStringList h5Paths = getOrderedH5Paths();
     QStringList existingPaths;
     for (const QString& jpgPath : jpgPathsFromH5Paths(h5Paths)) {
         if (QFileInfo::exists(jpgPath)) {
@@ -1297,6 +1312,676 @@ QStringList S1TopsBackGeocodingNode::previewImagePaths() const
         }
     }
     return existingPaths;
+}
+
+// 基于影像强度分块格网化自动选取高反射强度控制点
+static int selectHighIntensityPoints(const QString& masterPath, Point2D points[5])
+{
+    FormatConversion FC;
+    int rows = 0, cols = 0;
+    if (FC.get_dataset_dims(masterPath.toLocal8Bit().constData(), "s_re", &rows, &cols) != 0)
+    {
+        return 0;
+    }
+
+    // 1. 估算全局阈值 (75% 分位数)
+    // 均匀在图像中选取 20 行进行采样，避免读取整张图导致内存和计算压力过大
+    std::vector<float> sample_amplitudes;
+    int num_sample_rows = 20;
+    for (int i = 0; i < num_sample_rows; ++i)
+    {
+        int r = (rows / (num_sample_rows + 1)) * (i + 1);
+        cv::Mat row_re, row_im;
+        if (FC.read_subarray_from_h5(masterPath.toLocal8Bit().constData(), "s_re", r, 0, 1, cols, row_re) == 0 &&
+            FC.read_subarray_from_h5(masterPath.toLocal8Bit().constData(), "s_im", r, 0, 1, cols, row_im) == 0)
+        {
+            cv::Mat amp;
+            cv::magnitude(row_re, row_im, amp);
+            for (int c = 0; c < cols; c += 10) // 步长 10 降采样采样点
+            {
+                float val = amp.at<float>(0, c);
+                if (val > 0.0f)
+                {
+                    sample_amplitudes.push_back(val);
+                }
+            }
+        }
+    }
+
+    float global_min_threshold = 0.0f;
+    if (!sample_amplitudes.empty())
+    {
+        auto m = sample_amplitudes.begin() + sample_amplitudes.size() * 0.75;
+        std::nth_element(sample_amplitudes.begin(), m, sample_amplitudes.end());
+        global_min_threshold = *m;
+    }
+
+    // 2. 划分 3x3 网格空间，共 9 个格网块
+    int cell_w = cols / 3;
+    int cell_h = rows / 3;
+
+    struct Candidate {
+        float val = -1.0f;
+        int x = 0;
+        int y = 0;
+    };
+    std::vector<Candidate> candidates(9);
+
+    // 3. 分块读取，粗糙寻优 (每块高度 2048 行，以节省内存)
+    int block_height = 2048;
+    for (int r = 0; r < rows; r += block_height)
+    {
+        int rows_to_read = std::min(block_height, rows - r);
+        cv::Mat block_re, block_im;
+        if (FC.read_subarray_from_h5(masterPath.toLocal8Bit().constData(), "s_re", r, 0, rows_to_read, cols, block_re) != 0 ||
+            FC.read_subarray_from_h5(masterPath.toLocal8Bit().constData(), "s_im", r, 0, rows_to_read, cols, block_im) != 0)
+        {
+            continue;
+        }
+
+        cv::Mat amp;
+        cv::magnitude(block_re, block_im, amp);
+
+        // 粗糙扫描：步长 10 像素以提升速度
+        for (int y = 0; y < amp.rows; y += 10)
+        {
+            int global_y = r + y;
+            for (int x = 0; x < amp.cols; x += 10)
+            {
+                float val = amp.at<float>(y, x);
+                int gy = std::min(global_y / cell_h, 2);
+                int gx = std::min(x / cell_w, 2);
+                int cell_idx = gy * 3 + gx;
+
+                if (val > candidates[cell_idx].val)
+                {
+                    candidates[cell_idx].val = val;
+                    candidates[cell_idx].x = x;
+                    candidates[cell_idx].y = global_y;
+                }
+            }
+        }
+    }
+
+    // 4. 精细寻优 (在粗糙最亮点附近 64x64 区域读取原始分辨率寻找确切最亮点)
+    std::vector<Candidate> valid_points;
+    for (int i = 0; i < 9; ++i)
+    {
+        if (candidates[i].val < global_min_threshold || candidates[i].val <= 0.0f)
+        {
+            continue;
+        }
+
+        int coarse_x = candidates[i].x;
+        int coarse_y = candidates[i].y;
+
+        int win_size = 64;
+        int start_x = std::max(0, coarse_x - win_size / 2);
+        int start_y = std::max(0, coarse_y - win_size / 2);
+        int read_w = std::min(cols - start_x, win_size);
+        int read_h = std::min(rows - start_y, win_size);
+
+        cv::Mat win_re, win_im;
+        if (FC.read_subarray_from_h5(masterPath.toLocal8Bit().constData(), "s_re", start_y, start_x, read_h, read_w, win_re) == 0 &&
+            FC.read_subarray_from_h5(masterPath.toLocal8Bit().constData(), "s_im", start_y, start_x, read_h, read_w, win_im) == 0)
+        {
+            cv::Mat win_amp;
+            cv::magnitude(win_re, win_im, win_amp);
+
+            double minVal, maxVal;
+            cv::Point minLoc, maxLoc;
+            cv::minMaxLoc(win_amp, &minVal, &maxVal, &minLoc, &maxLoc);
+
+            Candidate refined;
+            refined.val = (float)maxVal;
+            refined.x = start_x + maxLoc.x;
+            refined.y = start_y + maxLoc.y;
+            valid_points.push_back(refined);
+        }
+    }
+
+    // 5. 对候选点按振幅大小进行降序排序
+    std::sort(valid_points.begin(), valid_points.end(), [](const Candidate& a, const Candidate& b) {
+        return a.val > b.val;
+    });
+
+    // 6. 填充最终的 5 个点
+    int count = 0;
+    for (size_t i = 0; i < valid_points.size() && count < 5; ++i)
+    {
+        points[count].x = valid_points[i].x;
+        points[count].y = valid_points[i].y;
+        count++;
+    }
+
+    // 如果选出的高质量点不足 5 个，使用默认的中心和四角格子点进行排重填充
+    if (count < 5)
+    {
+        Point2D default_pts[5];
+        default_pts[0].x = cols / 5.0;       default_pts[0].y = rows / 5.0;
+        default_pts[1].x = cols * 4.0 / 5.0; default_pts[1].y = rows / 5.0;
+        default_pts[2].x = cols / 2.0;       default_pts[2].y = rows / 2.0;
+        default_pts[3].x = cols / 5.0;       default_pts[3].y = rows * 4.0 / 5.0;
+        default_pts[4].x = cols * 4.0 / 5.0; default_pts[4].y = rows * 4.0 / 5.0;
+
+        for (int i = 0; i < 5 && count < 5; ++i)
+        {
+            bool duplicate = false;
+            for (int j = 0; j < count; ++j)
+            {
+                if (std::abs(points[j].x - default_pts[i].x) < 10.0 &&
+                    std::abs(points[j].y - default_pts[i].y) < 10.0)
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate)
+            {
+                points[count].x = default_pts[i].x;
+                points[count].y = default_pts[i].y;
+                count++;
+            }
+        }
+    }
+
+    return count;
+}
+
+// ============================================================================
+// S1TopsRegistrationEvalWidget - S1 TOPS Back-Geocoding 配准评估选项卡组件
+// ============================================================================
+struct EvalThreadResult {
+    int retCode;
+    Point2D points[5];
+    AlignmentResult results[5];
+    double inputCoherence[5];
+};
+
+class S1TopsRegistrationEvalWidget : public QWidget
+{
+public:
+    explicit S1TopsRegistrationEvalWidget(S1TopsBackGeocodingNode* node, QWidget* parent = nullptr)
+        : QWidget(parent)
+        , m_node(node)
+        , m_hasResults(false)
+    {
+        // 初始化结果指针为 nullptr
+        for (int i = 0; i < 5; ++i) {
+            m_results[i].heatmap_rgb = nullptr;
+            m_results[i].overlay_rgb = nullptr;
+            m_results[i].imageWidth = 0;
+            m_results[i].imageHeight = 0;
+            m_inputCoherence[i] = -1.0;
+        }
+
+        m_h5Paths = m_node->getOrderedH5Paths();
+
+        // 界面布局
+        auto* mainLayout = new QHBoxLayout(this);
+        mainLayout->setContentsMargins(12, 12, 12, 12);
+        mainLayout->setSpacing(12);
+
+        // 左侧栏：影像选择与分析数据表格
+        auto* leftContainer = new QWidget();
+        auto* leftLayout = new QVBoxLayout(leftContainer);
+        leftLayout->setContentsMargins(0, 0, 0, 0);
+        leftLayout->setSpacing(8);
+
+        auto* selectionLayout = new QHBoxLayout();
+        auto* selLabel = new QLabel(tr("已配准影像对:"));
+        selLabel->setStyleSheet("font-weight: bold;");
+        selectionLayout->addWidget(selLabel);
+
+        m_slaveCombo = new QComboBox();
+        if (m_h5Paths.size() > 1) {
+            QString masterName = QFileInfo(m_h5Paths[0]).completeBaseName();
+            for (int i = 1; i < m_h5Paths.size(); ++i) {
+                QString slaveName = QFileInfo(m_h5Paths[i]).completeBaseName();
+                m_slaveCombo->addItem(QString("%1 -> %2").arg(slaveName).arg(masterName));
+            }
+        } else {
+            m_slaveCombo->addItem(tr("无可配准的副影像"));
+            m_slaveCombo->setEnabled(false);
+        }
+        selectionLayout->addWidget(m_slaveCombo, 1);
+        leftLayout->addLayout(selectionLayout);
+
+        // 状态评估卡片
+        m_statusCard = new QFrame();
+        m_statusCard->setFrameShape(QFrame::StyledPanel);
+        m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
+        
+        auto* cardLayout = new QVBoxLayout(m_statusCard);
+        cardLayout->setContentsMargins(10, 8, 10, 8);
+        cardLayout->setSpacing(4);
+
+        m_statusCardTitle = new QLabel(tr("未评估"));
+        m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
+        cardLayout->addWidget(m_statusCardTitle);
+
+        m_statusCardDesc = new QLabel(tr("请等待评估获取相干性及对齐精度诊断结果。"));
+        m_statusCardDesc->setWordWrap(true);
+        m_statusCardDesc->setStyleSheet("font-size: 11px; color: #9CA3AF;");
+        cardLayout->addWidget(m_statusCardDesc);
+
+        leftLayout->addWidget(m_statusCard);
+
+        m_resultsTable = new QTableWidget();
+        m_resultsTable->setColumnCount(6);
+        m_resultsTable->setHorizontalHeaderLabels({
+            tr("测试区域"), tr("相干性(配准前)"), tr("相干性(配准后)"), tr("最佳相干性"), tr("残余偏移(Y, X)"), tr("相关系数")
+        });
+        m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        m_resultsTable->verticalHeader()->setVisible(false);
+        m_resultsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        m_resultsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+        m_resultsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+        
+        // 设置表格交替背景色和样式
+        m_resultsTable->setAlternatingRowColors(true);
+        bool isDark = NodeDetailWindow::isDarkTheme(this);
+        QString tableStyle = isDark ?
+            "QTableWidget { background-color: #1F2937; alternate-background-color: #374151; gridline-color: #4B5563; }"
+            "QTableWidget::item { color: #D1D5DB; }" :
+            "QTableWidget { background-color: #FFFFFF; alternate-background-color: #F9FAFB; gridline-color: #E5E7EB; }"
+            "QTableWidget::item { color: #374151; }";
+        m_resultsTable->setStyleSheet(tableStyle);
+        leftLayout->addWidget(m_resultsTable, 1);
+
+        m_statusLabel = new QLabel(tr("准备就绪。请选择影像对开始评估。"));
+        m_statusLabel->setWordWrap(true);
+        m_statusLabel->setStyleSheet(isDark ? "color: #9CA3AF;" : "color: #6B7280;");
+        leftLayout->addWidget(m_statusLabel);
+
+        mainLayout->addWidget(leftContainer, 4);
+
+        // 右侧栏：图像展示与模式切换
+        auto* rightContainer = new QWidget();
+        auto* rightLayout = new QVBoxLayout(rightContainer);
+        rightLayout->setContentsMargins(0, 0, 0, 0);
+        rightLayout->setSpacing(8);
+
+        auto* modeLayout = new QHBoxLayout();
+        auto* modeLabel = new QLabel(tr("显示模式:"));
+        modeLabel->setStyleSheet("font-weight: bold;");
+        modeLayout->addWidget(modeLabel);
+        
+        m_visualModeCombo = new QComboBox();
+        m_visualModeCombo->addItem(tr("2D 相干性热力图"), 0);
+        m_visualModeCombo->addItem(tr("红-青对齐叠合图"), 1);
+        modeLayout->addWidget(m_visualModeCombo, 1);
+        rightLayout->addLayout(modeLayout);
+
+        m_imageView = new ImageView();
+        m_imageView->setMinimumSize(256, 256);
+        m_imageView->setStyleSheet(QString("border: 1px solid %1; border-radius: 4px;")
+            .arg(isDark ? "#4B5563" : "#D1D5DB"));
+        rightLayout->addWidget(m_imageView, 1);
+
+        mainLayout->addWidget(rightContainer, 5);
+
+        // 信号槽连接
+        connect(m_slaveCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &S1TopsRegistrationEvalWidget::onSlaveChanged);
+        connect(m_visualModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &S1TopsRegistrationEvalWidget::onVisualModeChanged);
+        connect(m_resultsTable, &QTableWidget::itemSelectionChanged, this, &S1TopsRegistrationEvalWidget::onTableSelectionChanged);
+        connect(&m_watcher, &QFutureWatcher<EvalThreadResult>::finished, this, &S1TopsRegistrationEvalWidget::onEvaluationFinished);
+
+        // 自动触发初始评估
+        if (m_h5Paths.size() > 1) {
+            QTimer::singleShot(200, [this]() {
+                startEvaluation();
+            });
+        }
+    }
+
+    ~S1TopsRegistrationEvalWidget() override
+    {
+        m_watcher.cancel();
+        m_watcher.waitForFinished();
+        clearCachedResults();
+    }
+
+private:
+    void onSlaveChanged(int index)
+    {
+        Q_UNUSED(index);
+        startEvaluation();
+    }
+
+    void onVisualModeChanged(int index)
+    {
+        Q_UNUSED(index);
+        updateImageView();
+    }
+
+    void onTableSelectionChanged()
+    {
+        updateImageView();
+    }
+
+    void startEvaluation()
+    {
+        if (m_watcher.isRunning()) {
+            return;
+        }
+
+        int slaveIndex = m_slaveCombo->currentIndex() + 1;
+        if (m_h5Paths.size() <= 1 || slaveIndex < 1 || slaveIndex >= m_h5Paths.size()) {
+            return;
+        }
+
+        m_statusLabel->setText(tr("正在进行配准评估，计算较耗时，请稍候..."));
+        m_imageView->setImage(QImage());
+        m_resultsTable->setRowCount(0);
+        clearCachedResults();
+
+        m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
+        m_statusCardTitle->setText(tr("未评估"));
+        m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
+        m_statusCardDesc->setText(tr("请等待评估获取相干性及对齐精度诊断结果。"));
+
+        QString masterPath = m_h5Paths[0];
+        QString slavePath = m_h5Paths[slaveIndex];
+
+        if (!QFile::exists(masterPath) || !QFile::exists(slavePath)) {
+            m_statusLabel->setText(tr("错误：主图像或副图像文件不存在！"));
+            return;
+        }
+
+        m_slaveCombo->setEnabled(false);
+
+        // 获取配准前的输入 H5 路径
+        QStringList inputPaths = m_node->getInputH5Paths();
+        QString inputMasterPath = !inputPaths.isEmpty() ? inputPaths[0] : "";
+        QString inputSlavePath = (inputPaths.size() > slaveIndex) ? inputPaths[slaveIndex] : "";
+
+        // 异步计算
+        QFuture<EvalThreadResult> future = QtConcurrent::run([masterPath, slavePath, inputMasterPath, inputSlavePath]() {
+            NodeUtils::Hdf5Locker locker(masterPath);
+            std::unique_ptr<NodeUtils::Hdf5Locker> inputLocker;
+            if (!inputMasterPath.isEmpty() && QFile::exists(inputMasterPath)) {
+                inputLocker = std::make_unique<NodeUtils::Hdf5Locker>(inputMasterPath);
+            }
+
+            EvalThreadResult threadRes;
+            threadRes.retCode = -1;
+            for (int i = 0; i < 5; ++i) {
+                threadRes.results[i].heatmap_rgb = nullptr;
+                threadRes.results[i].overlay_rgb = nullptr;
+                threadRes.results[i].imageWidth = 0;
+                threadRes.results[i].imageHeight = 0;
+                threadRes.inputCoherence[i] = -1.0;
+            }
+
+            int detectRet = selectHighIntensityPoints(masterPath, threadRes.points);
+            if (detectRet < 5) {
+                FormatConversion FC;
+                int rows = 0, cols = 0;
+                if (FC.get_dataset_dims(masterPath.toLocal8Bit().constData(), "s_re", &rows, &cols) == 0) {
+                    threadRes.points[0].x = cols / 5.0;       threadRes.points[0].y = rows / 5.0;
+                    threadRes.points[1].x = cols * 4.0 / 5.0; threadRes.points[1].y = rows / 5.0;
+                    threadRes.points[2].x = cols / 2.0;       threadRes.points[2].y = rows / 2.0;
+                    threadRes.points[3].x = cols / 5.0;       threadRes.points[3].y = rows * 4.0 / 5.0;
+                    threadRes.points[4].x = cols * 4.0 / 5.0; threadRes.points[4].y = rows * 4.0 / 5.0;
+                } else {
+                    threadRes.points[0].x = 500;  threadRes.points[0].y = 500;
+                    threadRes.points[1].x = 2500; threadRes.points[1].y = 500;
+                    threadRes.points[2].x = 1500; threadRes.points[2].y = 1500;
+                    threadRes.points[3].x = 500;  threadRes.points[3].y = 2500;
+                    threadRes.points[4].x = 2500; threadRes.points[4].y = 2500;
+                }
+            }
+
+            // 计算配准后的残余偏移与相干性
+            threadRes.retCode = CalculateOffsetAndCoherence(
+                masterPath.toLocal8Bit().constData(),
+                slavePath.toLocal8Bit().constData(),
+                threadRes.points, 5, 200, 206, threadRes.results
+            );
+
+            // 计算配准前的 0 位移相干性
+            if (threadRes.retCode == 0 && !inputMasterPath.isEmpty() && !inputSlavePath.isEmpty() &&
+                QFile::exists(inputMasterPath) && QFile::exists(inputSlavePath)) {
+                AlignmentResult inputRes[5];
+                for (int i = 0; i < 5; ++i) {
+                    inputRes[i].heatmap_rgb = nullptr;
+                    inputRes[i].overlay_rgb = nullptr;
+                    inputRes[i].imageWidth = 0;
+                    inputRes[i].imageHeight = 0;
+                }
+                int inputRet = CalculateOffsetAndCoherence(
+                    inputMasterPath.toLocal8Bit().constData(),
+                    inputSlavePath.toLocal8Bit().constData(),
+                    threadRes.points, 5, 200, 202, inputRes
+                );
+                if (inputRet == 0) {
+                    for (int i = 0; i < 5; ++i) {
+                        threadRes.inputCoherence[i] = inputRes[i].coherenceZeroShift;
+                    }
+                }
+                FreeAlignmentResults(inputRes, 5);
+            }
+
+            return threadRes;
+        });
+
+        m_watcher.setFuture(future);
+    }
+
+    void onEvaluationFinished()
+    {
+        m_slaveCombo->setEnabled(true);
+
+        EvalThreadResult threadRes = m_watcher.result();
+        if (threadRes.retCode != 0) {
+            m_statusLabel->setText(tr("配准评估计算失败，错误码：%1").arg(threadRes.retCode));
+            FreeAlignmentResults(threadRes.results, 5);
+            return;
+        }
+
+        for (int i = 0; i < 5; ++i) {
+            m_points[i] = threadRes.points[i];
+            m_results[i] = threadRes.results[i];
+            m_inputCoherence[i] = threadRes.inputCoherence[i];
+        }
+        m_hasResults = true;
+
+        m_statusLabel->setText(tr("配准评估完成。请在表格中选择采样区域查看细节。"));
+
+        // 统计所有 5 个区域的数据，判定整体配准效果
+        int perfectCount = 0;   // 偏移为 0 的个数（包含低置信度点）
+        int warningCount = 0;   // 偏移在 [-2, 2] 内但非 0 的个数
+        int failedCount = 0;    // 偏移绝对值 > 2 的个数
+        double sumCoh = 0.0;
+        double sumPreCoh = 0.0;
+        int preCohValidCount = 0;
+        
+        for (int i = 0; i < 5; ++i) {
+            sumCoh += m_results[i].coherenceZeroShift;
+            if (m_inputCoherence[i] >= 0.0) {
+                sumPreCoh += m_inputCoherence[i];
+                preCohValidCount++;
+            }
+            
+            double maxCorr = m_results[i].maxCorrelation;
+            int dy = std::abs(m_results[i].offsetY);
+            int dx = std::abs(m_results[i].offsetX);
+            
+            if (maxCorr < 0.15) {
+                // 如果相关系数过低（低于 0.15），代表此处强度图匹配失效，偏移量结果纯属随机斑噪。
+                // 此时忽略其对 FAILED 的统计贡献，防止噪声误导，默认认为物理对齐良好（由相干性判定主导）
+                perfectCount++;
+            } else {
+                if (dy == 0 && dx == 0) {
+                    perfectCount++;
+                } else if (dy <= 2 && dx <= 2) {
+                    warningCount++;
+                } else {
+                    failedCount++;
+                }
+            }
+        }
+        double meanCoh = sumCoh / 5.0;
+        double meanPreCoh = (preCohValidCount > 0) ? (sumPreCoh / preCohValidCount) : -1.0;
+
+        bool isDark = NodeDetailWindow::isDarkTheme(this);
+        // 合理放宽相干性阈值以适应 Sentinel-1 自然失相干情况 (底噪约 0.20)
+        if (failedCount == 0 && perfectCount == 5 && meanCoh >= 0.22) {
+            m_statusCardTitle->setText(tr("通过 (PASS)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+            
+            QString desc = tr("配准精度优秀。所有置信采样区域的配准残余偏差均为 0。");
+            if (meanPreCoh >= 0.0) {
+                desc += tr("平均相干系数由配准前的 %1 显著提升至配准后的 %2，配准对齐效果极佳。")
+                    .arg(meanPreCoh, 0, 'f', 4).arg(meanCoh, 0, 'f', 4);
+            } else {
+                desc += tr("配准后平均相干系数为 %1，完全满足后续干涉测量要求。").arg(meanCoh, 0, 'f', 4);
+            }
+            m_statusCardDesc->setText(desc);
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #10B981; border-radius: 4px;")
+                .arg(isDark ? "#064E3B" : "#D1FAE5"));
+        } else if (failedCount > 0 || meanCoh < 0.18) {
+            m_statusCardTitle->setText(tr("异常 (FAILED)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            
+            QString desc = tr("配准未达标或发生严重偏差！");
+            if (meanPreCoh >= 0.0) {
+                desc += tr("配准后平均相干系数（%1）较配准前（%2）无明显改善，或有置信测试区域偏移量超过 2 像素。建议开启 ESD 改正重新运行。")
+                    .arg(meanCoh, 0, 'f', 4).arg(meanPreCoh, 0, 'f', 4);
+            } else {
+                desc += tr("有置信区域偏移量超过 2 像素或平均相干系数过低，建议开启 ESD 改正重新运行。");
+            }
+            m_statusCardDesc->setText(desc);
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
+                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
+        } else {
+            m_statusCardTitle->setText(tr("提醒 (WARNING)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+            
+            QString desc = tr("配准精度一般。部分置信测试区域存在 1~2 像素的小幅偏差。");
+            if (meanPreCoh >= 0.0) {
+                desc += tr("配准后平均相干系数为 %1（配准前为 %2），可能由于地形起伏大或局部时间失相干导致。")
+                    .arg(meanCoh, 0, 'f', 4).arg(meanPreCoh, 0, 'f', 4);
+            } else {
+                desc += tr("可能由于地形起伏大或局部时间失相干导致。");
+            }
+            m_statusCardDesc->setText(desc);
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #F59E0B; border-radius: 4px;")
+                .arg(isDark ? "#78350F" : "#FEF3C7"));
+        }
+
+        // 填充表格
+        m_resultsTable->setRowCount(5);
+        for (int i = 0; i < 5; ++i) {
+            m_resultsTable->setItem(i, 0, new QTableWidgetItem(QString(tr("区域 %1 (%2, %3)")).arg(i + 1).arg(m_points[i].x).arg(m_points[i].y)));
+            
+            // 1. 配准前 0 位移相干性
+            QString preCohStr = (m_inputCoherence[i] < 0.0) ? tr("N/A") : QString::number(m_inputCoherence[i], 'f', 4);
+            auto* itemPreCoh = new QTableWidgetItem(preCohStr);
+            itemPreCoh->setForeground(Qt::gray);
+            m_resultsTable->setItem(i, 1, itemPreCoh);
+ 
+            // 2. 配准后 0 位移相干性
+            auto* itemPostCoh = new QTableWidgetItem(QString::number(m_results[i].coherenceZeroShift, 'f', 4));
+            itemPostCoh->setFont(QFont("", -1, QFont::Bold));
+            itemPostCoh->setForeground(Qt::green);
+            m_resultsTable->setItem(i, 2, itemPostCoh);
+ 
+            // 3. 最佳相干性
+            m_resultsTable->setItem(i, 3, new QTableWidgetItem(QString::number(m_results[i].coherenceOptimal, 'f', 4)));
+ 
+            // 4. 残余偏移
+            auto* itemOffset = new QTableWidgetItem();
+            if (m_results[i].maxCorrelation < 0.15) {
+                itemOffset->setText(QString("(%1, %2)*").arg(m_results[i].offsetY).arg(m_results[i].offsetX));
+                itemOffset->setToolTip(tr("当前区域互相关匹配系数过低（低于 0.15），测得偏移量不具有置信度，仅供参考。"));
+                itemOffset->setForeground(Qt::gray);
+            } else {
+                itemOffset->setText(QString("(%1, %2)").arg(m_results[i].offsetY).arg(m_results[i].offsetX));
+                if (m_results[i].offsetY == 0 && m_results[i].offsetX == 0) {
+                    itemOffset->setForeground(Qt::green);
+                } else if (std::abs(m_results[i].offsetY) <= 2 && std::abs(m_results[i].offsetX) <= 2) {
+                    itemOffset->setForeground(Qt::yellow);
+                } else {
+                    itemOffset->setForeground(Qt::red);
+                }
+            }
+            m_resultsTable->setItem(i, 4, itemOffset);
+ 
+            // 5. 相关系数
+            m_resultsTable->setItem(i, 5, new QTableWidgetItem(QString::number(m_results[i].maxCorrelation, 'f', 4)));
+        }
+
+        m_resultsTable->selectRow(0);
+    }
+
+    void clearCachedResults()
+    {
+        if (m_hasResults) {
+            FreeAlignmentResults(m_results, 5);
+            m_hasResults = false;
+        }
+        for (int i = 0; i < 5; ++i) {
+            m_results[i].heatmap_rgb = nullptr;
+            m_results[i].overlay_rgb = nullptr;
+            m_results[i].imageWidth = 0;
+            m_results[i].imageHeight = 0;
+            m_inputCoherence[i] = -1.0;
+        }
+    }
+
+    void updateImageView()
+    {
+        if (!m_hasResults) {
+            m_imageView->setImage(QImage());
+            return;
+        }
+
+        int row = m_resultsTable->currentRow();
+        if (row < 0 || row >= 5) {
+            m_imageView->setImage(QImage());
+            return;
+        }
+
+        int mode = m_visualModeCombo->currentData().toInt();
+        unsigned char* rgb_data = (mode == 0) ? m_results[row].heatmap_rgb : m_results[row].overlay_rgb;
+        int w = m_results[row].imageWidth;
+        int h = m_results[row].imageHeight;
+
+        if (rgb_data && w > 0 && h > 0) {
+            // 深拷贝构建以防 DLL 释放引发悬空指针
+            QImage img(rgb_data, w, h, w * 3, QImage::Format_RGB888);
+            m_imageView->setImage(img.copy());
+        } else {
+            m_imageView->setImage(QImage());
+        }
+    }
+
+    S1TopsBackGeocodingNode* m_node;
+    QStringList m_h5Paths;
+    QComboBox* m_slaveCombo;
+    QTableWidget* m_resultsTable;
+    QComboBox* m_visualModeCombo;
+    ImageView* m_imageView;
+    QLabel* m_statusLabel;
+    
+    QFrame* m_statusCard;
+    QLabel* m_statusCardTitle;
+    QLabel* m_statusCardDesc;
+
+    Point2D m_points[5];
+    AlignmentResult m_results[5];
+    double m_inputCoherence[5];
+    bool m_hasResults;
+
+    QFutureWatcher<EvalThreadResult> m_watcher;
+};
+
+// 接口实现
+::QWidget* S1TopsBackGeocodingNode::createInterferometryWidget(::QWidget* parent)
+{
+    return new S1TopsRegistrationEvalWidget(this, parent);
 }
 
 } // namespace QtNodes

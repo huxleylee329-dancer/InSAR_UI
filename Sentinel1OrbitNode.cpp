@@ -19,6 +19,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QStandardItemModel>
 #include <QDebug>
@@ -60,7 +61,7 @@ Sentinel1OrbitNode::Sentinel1OrbitNode()
     m_cacheDir = settings.value("Orbit/LastMatchDir", "").toString();
     if (m_cacheDir.isEmpty())
     {
-        m_cacheDir = QDir::currentPath() + "/orbits";
+        m_cacheDir = QCoreApplication::applicationDirPath() + "/orbits";
     }
     m_cacheDir = QDir::toNativeSeparators(m_cacheDir);
 }
@@ -218,7 +219,7 @@ void Sentinel1OrbitNode::load(QJsonObject const &json)
         m_cacheDir = settings.value("Orbit/LastMatchDir", "").toString();
         if (m_cacheDir.isEmpty())
         {
-            m_cacheDir = QDir::currentPath() + "/orbits";
+            m_cacheDir = QCoreApplication::applicationDirPath() + "/orbits";
         }
     }
     m_cacheDir = QDir::toNativeSeparators(m_cacheDir);
@@ -252,7 +253,7 @@ bool Sentinel1OrbitNode::validateAndRestoreOutput()
         expectedPaths = m_savedOutputPaths;
     } else if (m_inputData && !m_inputData->filePaths().isEmpty()) {
         // 向后兼容：旧工程无 outputPaths，从 m_inputData 推导
-        QString projectDir = QFileInfo(projectPath()).path();
+        QString projectDir = NodeUtils::projectDirectory(projectPath());
         QString targetDirPath = projectDir + "/" + targetDirName;
         for (const QString& h5Path : m_inputData->filePaths())
         {
@@ -355,7 +356,7 @@ bool Sentinel1OrbitNode::prepareToStart()
         targetDirName = m_inputData->nodeName() + "_Orbit";
     }
 
-    QString projectDir = QFileInfo(m_preparedSavePath).path();
+    QString projectDir = NodeUtils::projectDirectory(m_preparedSavePath);
     QString targetDirPath = projectDir + "/" + targetDirName;
 
     m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;

@@ -151,6 +151,25 @@ private:
     QString _nodeName;       // Node name in project tree
 };
 
+// ============================================================================
+// DEMFileData - Data type for DEM files
+// ============================================================================
+class DEMFileData : public ImportedFileData
+{
+public:
+    using ImportedFileData::ImportedFileData;
+
+    NodeDataType type() const override
+    {
+        return NodeDataType{"dem_file", "DEM File"};
+    }
+
+    bool sameType(NodeData const &nodeData) const override
+    {
+        return dynamic_cast<DEMFileData const *>(&nodeData) != nullptr;
+    }
+};
+
 } // namespace QtNodes
 
 #endif // IMPORTDATA_TYPES_H

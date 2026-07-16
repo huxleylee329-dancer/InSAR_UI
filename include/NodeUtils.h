@@ -51,6 +51,23 @@ IApplicationInterface* getProjectContext(QWidget* widget);
  */
 void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldNodeName);
 
+/**
+ * @brief 向工程 XML 中安全添加数据节点 (Origin 类型)，自适应内存同步与磁盘保存
+ */
+bool addOriginNodeToProjectXml(IApplicationInterface* iface,
+                               const QString& nodeName,
+                               const QString& displayName,
+                               const QString& relativePath,
+                               const QString& tag);
+
+/**
+ * @brief 向工程 XML 中安全添加数据节点 (SBAS 类型)，自适应内存同步与磁盘保存
+ */
+bool addSBASNodeToProjectXml(IApplicationInterface* iface,
+                             const QString& nodeName,
+                             const QString& dataName,
+                             const QString& relativePath);
+
 enum class OverwriteResult {
     NoConflict,
     Overwrite,
@@ -194,5 +211,20 @@ QString getModelPath(const QString& modelName);
  * @brief 安全的、带事件循环轮询的非阻塞线程等待函数，防止因日志管道满或阻塞导致的双向死锁
  */
 void safeThreadWait(QThread* thread, int timeoutMs = 50);
+
+/**
+ * @brief 获取项目工程文件的绝对文件路径 (如 "D:/proj/test.insar")
+ */
+QString getProjectFilePath(QWidget* widget);
+
+/**
+ * @brief 获取项目文件所在的绝对目录路径 (如 "D:/proj")
+ */
+QString getProjectDirectory(QWidget* widget);
+
+/**
+ * @brief 将项目工程文件路径转换为所在的工程目录。如果输入已是目录，则原样返回。
+ */
+QString projectDirectory(const QString& projectPath);
 
 } // namespace NodeUtils

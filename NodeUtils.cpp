@@ -161,35 +161,126 @@ void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldN
         }
     }
 
-    // Also remove from XML file
-    // Determine the XML file path. projectPath() from IApplicationInterface
-    // returns the full path to the .Insar file (e.g. "D:/projects/test.Insar")
+    // 同时从 XML 文件中移除
+    // 确定 XML 文件路径。IApplicationInterface 的 projectPath()
+    // 返回 .Insar 文件的全路径 (例如 "D:/projects/test.Insar")
     QString xmlPath = projPath;
-    // If projPath doesn't end with projName, construct it
+    // 如果 projPath 不以 projName 结尾，则构建它
     if (!xmlPath.endsWith(projName)) {
-        // projPath is the directory, projName is the filename
+        // projPath 为目录，projName 为文件名
         xmlPath = projPath + "/" + projName;
     }
 
-    XMLFile xml;
-    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) >= 0) {
-        // Find and remove the DataNode element with the old name
-        TiXmlElement* root = nullptr;
-        xml.get_root(root);
-        if (root) {
-            for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; ) {
-                const char* nameAttr = p->Attribute("name");
-                if (nameAttr && QString(nameAttr) == oldNodeName) {
-                    TiXmlElement* toDelete = p;
-                    p = p->NextSiblingElement();
-                    root->RemoveChild(toDelete);
-                } else {
-                    p = p->NextSiblingElement();
-                }
+    // 优先获取并修改全局内存中的 XMLFile 实例，确保内存与磁盘实时同步
+    XMLFile* xml = iface->projectXml();
+    bool isGlobalXml = (xml != nullptr);
+    XMLFile localXml;
+
+    if (!isGlobalXml) {
+        if (localXml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+            return;
+        }
+        xml = &localXml;
+    }
+
+    // 查找并移除匹配名称的 DataNode 元素
+    TiXmlElement* root = nullptr;
+    xml->get_root(root);
+    if (root) {
+        for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; ) {
+            const char* nameAttr = p->Attribute("name");
+            if (nameAttr && QString(nameAttr) == oldNodeName) {
+                TiXmlElement* toDelete = p;
+                p = p->NextSiblingElement();
+                root->RemoveChild(toDelete);
+            } else {
+                p = p->NextSiblingElement();
             }
         }
-        xml.XMLFile_save(xmlPath.toStdString().c_str());
     }
+    xml->XMLFile_save(xmlPath.toStdString().c_str());
+}
+
+bool addOriginNodeToProjectXml(IApplicationInterface* iface,
+                               const QString& nodeName,
+                               const QString& displayName,
+                               const QString& relativePath,
+                               const QString& tag)
+{
+    if (!iface || nodeName.isEmpty()) return false;
+
+    QString projPath = iface->projectPath();
+    QString projName = iface->projectName();
+    if (projPath.isEmpty() || projName.isEmpty()) return false;
+
+    QString xmlPath = projPath;
+    if (!xmlPath.endsWith(projName)) {
+        xmlPath = projPath + "/" + projName;
+    }
+
+    XMLFile* xml = iface->projectXml();
+    bool isGlobalXml = (xml != nullptr);
+    XMLFile localXml;
+
+    if (!isGlobalXml) {
+        if (localXml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+            return false;
+        }
+        xml = &localXml;
+    }
+
+    int ret = xml->XMLFile_add_origin(
+        nodeName.toStdString().c_str(),
+        displayName.toStdString().c_str(),
+        relativePath.toStdString().c_str(),
+        tag.toStdString().c_str()
+    );
+
+    if (ret >= 0) {
+        xml->XMLFile_save(xmlPath.toStdString().c_str());
+        return true;
+    }
+    return false;
+}
+
+bool addSBASNodeToProjectXml(IApplicationInterface* iface,
+                             const QString& nodeName,
+                             const QString& dataName,
+                             const QString& relativePath)
+{
+    if (!iface || nodeName.isEmpty()) return false;
+
+    QString projPath = iface->projectPath();
+    QString projName = iface->projectName();
+    if (projPath.isEmpty() || projName.isEmpty()) return false;
+
+    QString xmlPath = projPath;
+    if (!xmlPath.endsWith(projName)) {
+        xmlPath = projPath + "/" + projName;
+    }
+
+    XMLFile* xml = iface->projectXml();
+    bool isGlobalXml = (xml != nullptr);
+    XMLFile localXml;
+
+    if (!isGlobalXml) {
+        if (localXml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+            return false;
+        }
+        xml = &localXml;
+    }
+
+    int ret = xml->XMLFile_add_SBAS(
+        nodeName.toStdString().c_str(),
+        dataName.toStdString().c_str(),
+        relativePath.toStdString().c_str()
+    );
+
+    if (ret >= 0) {
+        xml->XMLFile_save(xmlPath.toStdString().c_str());
+        return true;
+    }
+    return false;
 }
 
 OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QString& nodeName, const QStringList& filePaths, QWidget* parent)
@@ -1135,6 +1226,27 @@ void safeThreadWait(QThread* thread, int timeoutMs)
         thread->wait(timeoutMs);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     }
+}
+
+QString getProjectFilePath(QWidget* widget)
+{
+    auto* iface = getProjectContext(widget);
+    return iface ? iface->projectPath() : QString();
+}
+
+QString getProjectDirectory(QWidget* widget)
+{
+    return projectDirectory(getProjectFilePath(widget));
+}
+
+QString projectDirectory(const QString& projectPath)
+{
+    if (projectPath.isEmpty()) return QString();
+    if (projectPath.endsWith(".insar", Qt::CaseInsensitive))
+    {
+        return QFileInfo(projectPath).absolutePath();
+    }
+    return projectPath;
 }
 
 } // namespace NodeUtils

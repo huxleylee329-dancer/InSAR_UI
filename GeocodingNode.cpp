@@ -63,7 +63,7 @@ NodeDataType GeocodingNode::dataType(PortType portType, PortIndex portIndex) con
         if (portIndex == 0)
             return NodeDataType{"imported_file", "Imported File"};
         else
-            return NodeDataType{"imported_file", "DEM File"};
+            return NodeDataType{"dem_file", "DEM File"};
     }
     else
     {
@@ -149,7 +149,7 @@ void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             }
         }
     } else if (port == 1) {
-        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        m_demInputData = std::dynamic_pointer_cast<DEMFileData>(data);
         if (m_demInputData) {
             m_demPath = m_demInputData->filePath();
             if (m_demPathEdit) m_demPathEdit->setText(m_demPath);

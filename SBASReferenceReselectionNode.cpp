@@ -496,26 +496,11 @@ void SBASReferenceReselectionNode::generateStaticPreviewJpg()
             setState(ExecutionState::Completed);
 
             // Add node to XML and tree model (SOP rule 14)
-            QString projPath = projectPath();
-            QString projName = projectName();
-            QString xmlPath = projPath + "/" + projName;
-
-            XMLFile xmlfile;
-            if (xmlfile.XMLFile_load(xmlPath.toStdString().c_str()) == 0)
-            {
-                QString relativeH5Path = QString("/%1/SBAS_time_series.h5").arg(m_outputNodeName);
-                xmlfile.XMLFile_add_SBAS(
-                    m_outputNodeName.toStdString().c_str(),
-                    "SBAS_time_series",
-                    relativeH5Path.toStdString().c_str()
-                );
-                xmlfile.XMLFile_save(xmlPath.toStdString().c_str());
-            }
-
-            // Refresh project tree (SOP Rule 14 helper)
             IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
             if (iface)
             {
+                QString relativeH5Path = QString("/%1/SBAS_time_series.h5").arg(m_outputNodeName);
+                NodeUtils::addSBASNodeToProjectXml(iface, m_outputNodeName, "SBAS_time_series", relativeH5Path);
                 iface->refreshProjectTree();
             }
 
