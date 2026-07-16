@@ -29,6 +29,13 @@ ImportNodeBase::ImportNodeBase()
 
 ImportNodeBase::~ImportNodeBase()
 {
+    // 安全断开并取消 remedyWatcher，避免悬空回调
+    m_remedyWatcher.disconnect();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+    }
+
     // 统一清理工作线程
     if (m_worker) {
         if (m_thread && m_thread->isRunning()) {
@@ -233,6 +240,12 @@ void ImportNodeBase::stopExecution()
 {
     m_stopRequested = true;
 
+    // 安全取消并断开 remedyWatcher，防范重新执行或销毁时的野指针和竞态条件
+    m_remedyWatcher.disconnect();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+
     // 停止 Worker
     if (m_worker) {
         m_worker->StopProcess();
@@ -281,20 +294,57 @@ bool ImportNodeBase::validateAndRestoreOutput()
     }
 
     if (!missingH5s.isEmpty()) {
-        // 异步生成预览
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
+        // 异步生成预览，先断开前一个 watcher，防止重置或二次运行竞态
         m_remedyWatcher.disconnect();
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+        }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfo = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfo);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths, missingJpgs]() {
+            QStringList validJpgPaths;
+            bool anyFailed = false;
+
+            // 检查本次新生成的 JPG
+            for (const QString& path : missingJpgs) {
+                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
+                    anyFailed = true;
+                }
+            }
+
+            // 收集所有最终有效的 JPG
+            for (const QString& path : expectedJpgPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    validJpgPaths.append(path);
+                }
+            }
+
+            // 只有 JPG 确实存在且生成成功时，才能把路径加入 ImageInfoData
+            if (!validJpgPaths.isEmpty()) {
+                m_imageInfo = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_imageInfo);
+            } else {
+                m_imageInfo.reset();
+                setOutputData(1, nullptr);
+            }
             Q_EMIT dataUpdated(1);
+
+            // 明确区分：H5 成果已恢复，但预览失败时，状态显示为 Warning
+            if (anyFailed) {
+                setState(ExecutionState::Warning);
+                InSARLogManager::LogWarning(getOutputNodeName() + "Node", "Import recovery completed, but some preview JPG files failed to generate.");
+            } else {
+                setState(ExecutionState::Completed);
+            }
         });
 
         QString type = previewDataType();
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, type]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
+                // 已存在且有效的 JPG 跳过重生成
+                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
+                    continue;
+                }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], type);
             }
         });
@@ -348,17 +398,35 @@ void ImportNodeBase::onImportFinished()
         Q_EMIT dataUpdated(0);
     }
 
-    // 装载 Port 1 预览数据（JPG 已由 Worker 生成）
+    // 装载 Port 1 预览数据（过滤并检查实际成功且存在的 JPG 文件）
     if (!m_importedFilePaths.isEmpty()) {
-        QStringList jpgPaths;
+        QStringList validJpgPaths;
+        bool anyFailed = false;
         for (const QString& h5Path : m_importedFilePaths) {
             QFileInfo fi(h5Path);
             QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-            jpgPaths.append(jpgPath);
+            if (QFile::exists(jpgPath) && QFileInfo(jpgPath).size() > 0) {
+                validJpgPaths.append(jpgPath);
+            } else {
+                anyFailed = true;
+            }
         }
-        m_imageInfo = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfo);
+
+        // 只有生成成功的 JPG 才加入 ImageInfoData
+        if (!validJpgPaths.isEmpty()) {
+            m_imageInfo = std::make_shared<ImageInfoData>(validJpgPaths);
+            setOutputData(1, m_imageInfo);
+        } else {
+            m_imageInfo.reset();
+            setOutputData(1, nullptr);
+        }
         Q_EMIT dataUpdated(1);
+
+        // 如果主处理已完成，但有 JPG 预览失败，状态设为 Warning，而不显示“全部成功”
+        if (anyFailed) {
+            setState(ExecutionState::Warning);
+            InSARLogManager::LogWarning(getOutputNodeName() + "Node", "Import finished, but some preview JPG files failed to generate.");
+        }
     }
 
     // 清理线程
@@ -375,7 +443,18 @@ void ImportNodeBase::onImportFinished()
 
     InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute completed.");
 
-    finishExecution();
+    // 如果上面设置了 Warning，则不要调用 finishExecution 将其覆盖为 Completed
+    if (executionState() != ExecutionState::Warning) {
+        finishExecution();
+    } else {
+        // Warning 也要触发完成相关的状态通知
+        _progress = 100;
+        Q_EMIT progressUpdated(100);
+        Q_EMIT executionFinished();
+        Q_EMIT executionStateChanged();
+        Q_EMIT computingFinished();
+        triggerVisualUpdate();
+    }
 }
 
 void ImportNodeBase::onThreadError(const QString& error)

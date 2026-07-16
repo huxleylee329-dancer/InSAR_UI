@@ -73,7 +73,7 @@ NodeDataType InterferometricFormationNode::dataType(PortType portType, PortIndex
         if (portIndex == 0)
             return NodeDataType{"imported_file", "Imported File"};
         else
-            return NodeDataType{"imported_file", "DEM File"};
+            return NodeDataType{"dem_file", "DEM File"};
     }
     else
     {
@@ -808,27 +808,56 @@ void InterferometricFormationNode::onProcessingFinished()
 
     if (!h5Paths.isEmpty())
     {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+        }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Paths, jpgPaths]() {
+            QStringList validJpgPaths;
+            bool anyFailed = false;
+            for (const QString& path : jpgPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    validJpgPaths.append(path);
+                } else {
+                    anyFailed = true;
+                }
+            }
+
+            if (!validJpgPaths.isEmpty()) {
+                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_imageInfoData);
+            } else {
+                m_imageInfoData.reset();
+                setOutputData(1, nullptr);
+            }
             Q_EMIT dataUpdated(1);
 
             // Update UI state
             updateParameterWidgetsEnableState();
 
-            setState(ExecutionState::Running);
-            setProgress(100);
-            InSARLogManager::LogInfo("InterferometricFormationNode", "executeProcessing completed.");
-            finishExecution();
-            Q_EMIT dataUpdated(0);
+            if (anyFailed) {
+                setState(ExecutionState::Warning);
+                InSARLogManager::LogWarning("InterferometricFormationNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
+                setProgress(100);
+                Q_EMIT computingFinished();
+                Q_EMIT dataUpdated(0);
+            } else {
+                setState(ExecutionState::Running);
+                setProgress(100);
+                InSARLogManager::LogInfo("InterferometricFormationNode", "executeProcessing completed.");
+                finishExecution();
+                Q_EMIT dataUpdated(0);
+            }
         });
 
         QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
             for (int i = 0; i < h5Paths.size(); ++i) {
+                // 已存在且有效的 JPG 跳过重生成
+                if (QFileInfo::exists(jpgPaths[i]) && QFileInfo(jpgPaths[i]).size() > 0) {
+                    continue;
+                }
                 NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
             }
         });
@@ -920,6 +949,13 @@ void InterferometricFormationNode::execute()
 
 void InterferometricFormationNode::stopExecution()
 {
+    // 安全断开并取消 remedyWatcher，避免重新执行与析构时的竞态与崩溃
+    m_remedyWatcher.disconnect();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+    }
+
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
@@ -1155,20 +1191,51 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        // Regenerate missing JPGs in the background
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+        }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfoData);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths, missingJpgs]() {
+            QStringList validJpgPaths;
+            bool anyFailed = false;
+            for (const QString& path : missingJpgs) {
+                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
+                    anyFailed = true;
+                }
+            }
+
+            for (const QString& path : expectedJpgPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    validJpgPaths.append(path);
+                }
+            }
+
+            // 仅输出生成成功的 JPG，防止不存在的路径传入下游
+            if (!validJpgPaths.isEmpty()) {
+                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_imageInfoData);
+            } else {
+                m_imageInfoData.reset();
+                setOutputData(1, nullptr);
+            }
             Q_EMIT dataUpdated(1);
-            InSARLogManager::LogInfo("InterferometricFormationNode", "validateAndRestoreOutput background rendering completed.");
+
+            if (anyFailed) {
+                setState(ExecutionState::Warning);
+                InSARLogManager::LogWarning("InterferometricFormationNode", "Output recovery finished with warnings. Some preview images failed to generate.");
+            } else {
+                setState(ExecutionState::Completed);
+            }
         });
 
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
+                // 已存在且有效的 JPG 跳过重生成
+                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
+                    continue;
+                }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
             }
         });

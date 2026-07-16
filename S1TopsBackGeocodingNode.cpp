@@ -51,6 +51,8 @@ S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
     , m_masterIndex(1)
     , m_useDefaultMaster(true)
     , m_bESD(true)
+    , m_bRangeRefine(false)
+    , m_rangeRefineCheckBox(nullptr)
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
@@ -58,9 +60,12 @@ S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
 
 S1TopsBackGeocodingNode::~S1TopsBackGeocodingNode()
 {
-    // Clean up remedy watcher
-    m_remedyWatcher.cancel();
-    m_remedyWatcher.waitForFinished();
+    // 安全断开并等待 remedyWatcher，防止析构时的悬空指针回调崩溃
+    m_remedyWatcher.disconnect();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+    }
 
     // Clean up worker thread
     if (m_workerThread)
@@ -201,6 +206,7 @@ QJsonObject S1TopsBackGeocodingNode::save() const
     modelJson["masterIndex"] = m_masterIndex;
     modelJson["useDefaultMaster"] = m_useDefaultMaster;
     modelJson["bESD"] = m_bESD;
+    modelJson["bRangeRefine"] = m_bRangeRefine;
     modelJson["demPath"] = m_demPath;
 
     QStringList outputPaths = m_savedOutputPaths;
@@ -250,6 +256,12 @@ void S1TopsBackGeocodingNode::load(QJsonObject const &json)
         m_bESD = vEsd.toBool();
     }
 
+    QJsonValue vRangeRefine = json["bRangeRefine"];
+    if (!vRangeRefine.isUndefined())
+    {
+        m_bRangeRefine = vRangeRefine.toBool();
+    }
+
     QJsonValue vDemPath = json["demPath"];
     if (!vDemPath.isUndefined())
     {
@@ -279,6 +291,9 @@ void S1TopsBackGeocodingNode::load(QJsonObject const &json)
 
     if (m_esdCheckBox)
         m_esdCheckBox->setChecked(m_bESD);
+
+    if (m_rangeRefineCheckBox)
+        m_rangeRefineCheckBox->setChecked(m_bRangeRefine);
 }
 
 void S1TopsBackGeocodingNode::createWidget()
@@ -368,6 +383,28 @@ void S1TopsBackGeocodingNode::createWidget()
     });
     esdLayout->addWidget(m_esdCheckBox);
     layout->addLayout(esdLayout);
+
+    // 距离向幅度精化
+    auto* rangeRefineLayout = new QHBoxLayout();
+    QLabel* rangeRefineLabel = new QLabel(tr("距离向振幅精配准"));
+    rangeRefineLayout->addWidget(rangeRefineLabel);
+    m_rangeRefineCheckBox = new QCheckBox();
+    m_rangeRefineCheckBox->setChecked(m_bRangeRefine);
+    connect(m_rangeRefineCheckBox, &QCheckBox::stateChanged, this, [this, invalidateNodeData](int state) {
+        bool val = (state == Qt::Checked);
+        if (m_bRangeRefine != val) {
+            if (!confirmParameterChange()) {
+                m_rangeRefineCheckBox->blockSignals(true);
+                m_rangeRefineCheckBox->setChecked(m_bRangeRefine);
+                m_rangeRefineCheckBox->blockSignals(false);
+                return;
+            }
+            m_bRangeRefine = val;
+            invalidateNodeData();
+        }
+    });
+    rangeRefineLayout->addWidget(m_rangeRefineCheckBox);
+    layout->addLayout(rangeRefineLayout);
 
     // 目标节点名
     auto* nodeNameLayout = new QHBoxLayout();
@@ -947,25 +984,59 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
 
     if (!orderedH5Paths.isEmpty())
     {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+        }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, orderedH5Paths, jpgPaths]() {
+            QStringList validJpgPaths;
+            bool anyFailed = false;
+            for (const QString& path : jpgPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    validJpgPaths.append(path);
+                } else {
+                    anyFailed = true;
+                }
+            }
+
+            // 只有确实存在且生成成功的 JPG 路径才能加入 ImageInfoData
+            if (!validJpgPaths.isEmpty()) {
+                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_imageInfoData);
+            } else {
+                m_imageInfoData.reset();
+                setOutputData(1, nullptr);
+            }
             Q_EMIT dataUpdated(1);
 
             updateParameterWidgetsEnableState();
-            setState(ExecutionState::Running);
-            setProgress(100);
-            InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
-            finishExecution();
-            Q_EMIT dataUpdated(0);
+
+            // 区分 JPG 预览生成失败
+            if (anyFailed) {
+                setState(ExecutionState::Warning);
+                InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
+                
+                // Warning 状态也要通知完成
+                setProgress(100);
+                Q_EMIT computingFinished();
+                Q_EMIT dataUpdated(0);
+            } else {
+                setState(ExecutionState::Running); // 确保 finishExecution() 能通过状态校验
+                setProgress(100);
+                InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
+                finishExecution();
+                Q_EMIT dataUpdated(0);
+            }
         });
 
         QFuture<void> future = QtConcurrent::run([orderedH5Paths, jpgPaths]() {
             for (int i = 0; i < orderedH5Paths.size(); ++i) {
+                // 已存在且有效的 JPG 跳过重生成
+                if (QFileInfo::exists(jpgPaths[i]) && QFileInfo(jpgPaths[i]).size() > 0) {
+                    continue;
+                }
                 NodeUtils::generateJpgPreviewFromH5(orderedH5Paths[i], jpgPaths[i], "complex");
             }
         });
@@ -1034,6 +1105,12 @@ void S1TopsBackGeocodingNode::execute()
 
 void S1TopsBackGeocodingNode::stopExecution()
 {
+    // 安全断开并取消 remedyWatcher，防止重新执行时的竞态与崩溃
+    m_remedyWatcher.disconnect();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
@@ -1071,6 +1148,7 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     m_preparedSrcNode = m_inputData->nodeName();
     m_preparedMasterIndex = m_masterIndex;
     m_preparedBESD = m_esdCheckBox ? m_esdCheckBox->isChecked() : true;
+    m_preparedBRangeRefine = m_rangeRefineCheckBox ? m_rangeRefineCheckBox->isChecked() : false;
     m_preparedDemPath = m_demPath;
 
     // 覆盖提示判断
@@ -1172,6 +1250,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
     m_thread = new QThread();
     m_workerThread = new S1TopsBackGeocodingWorker();
     m_workerThread->setDemPath(m_preparedDemPath);
+    m_workerThread->setRangeRefine(m_preparedBRangeRefine);
     m_workerThread->moveToThread(m_thread);
 
     connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
@@ -1252,18 +1331,51 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     Q_EMIT dataUpdated(1);
 
     if (!missingH5s.isEmpty()) {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+            m_remedyWatcher.waitForFinished();
+        }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-            setOutputData(1, m_imageInfoData);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths, missingJpgs]() {
+            QStringList validJpgPaths;
+            bool anyFailed = false;
+            for (const QString& path : missingJpgs) {
+                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
+                    anyFailed = true;
+                }
+            }
+
+            for (const QString& path : allJpgPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    validJpgPaths.append(path);
+                }
+            }
+
+            // 仅输出生成成功的 JPG，防止不存在的路径传入下游
+            if (!validJpgPaths.isEmpty()) {
+                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_imageInfoData);
+            } else {
+                m_imageInfoData.reset();
+                setOutputData(1, nullptr);
+            }
             Q_EMIT dataUpdated(1);
+
+            if (anyFailed) {
+                setState(ExecutionState::Warning);
+                InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "Output recovery finished with warnings. Some preview images failed to generate.");
+            } else {
+                setState(ExecutionState::Completed);
+            }
         });
 
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
+                // 已存在有效 JPG 则跳过重生成
+                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
+                    continue;
+                }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
             }
         });
@@ -1534,16 +1646,7 @@ public:
         selectionLayout->addWidget(selLabel);
 
         m_slaveCombo = new QComboBox();
-        if (m_h5Paths.size() > 1) {
-            QString masterName = QFileInfo(m_h5Paths[0]).completeBaseName();
-            for (int i = 1; i < m_h5Paths.size(); ++i) {
-                QString slaveName = QFileInfo(m_h5Paths[i]).completeBaseName();
-                m_slaveCombo->addItem(QString("%1 -> %2").arg(slaveName).arg(masterName));
-            }
-        } else {
-            m_slaveCombo->addItem(tr("无可配准的副影像"));
-            m_slaveCombo->setEnabled(false);
-        }
+        updateSlaveCombo();
         selectionLayout->addWidget(m_slaveCombo, 1);
         leftLayout->addLayout(selectionLayout);
 
@@ -1627,6 +1730,15 @@ public:
         connect(m_resultsTable, &QTableWidget::itemSelectionChanged, this, &S1TopsRegistrationEvalWidget::onTableSelectionChanged);
         connect(&m_watcher, &QFutureWatcher<EvalThreadResult>::finished, this, &S1TopsRegistrationEvalWidget::onEvaluationFinished);
 
+        // 监听节点数据更新信号，动态刷新评估界面
+        connect(m_node, &S1TopsBackGeocodingNode::dataUpdated, this, [this](unsigned int port) {
+            if (port == 0) {
+                m_h5Paths = m_node->getOrderedH5Paths();
+                updateSlaveCombo();
+                startEvaluation();
+            }
+        });
+
         // 自动触发初始评估
         if (m_h5Paths.size() > 1) {
             QTimer::singleShot(200, [this]() {
@@ -1643,6 +1755,24 @@ public:
     }
 
 private:
+    void updateSlaveCombo()
+    {
+        m_slaveCombo->blockSignals(true);
+        m_slaveCombo->clear();
+        if (m_h5Paths.size() > 1) {
+            QString masterName = QFileInfo(m_h5Paths[0]).completeBaseName();
+            for (int i = 1; i < m_h5Paths.size(); ++i) {
+                QString slaveName = QFileInfo(m_h5Paths[i]).completeBaseName();
+                m_slaveCombo->addItem(QString("%1 -> %2").arg(slaveName).arg(masterName));
+            }
+            m_slaveCombo->setEnabled(true);
+        } else {
+            m_slaveCombo->addItem(tr("无可配准的副影像"));
+            m_slaveCombo->setEnabled(false);
+        }
+        m_slaveCombo->blockSignals(false);
+    }
+
     void onSlaveChanged(int index)
     {
         Q_UNUSED(index);
@@ -1824,6 +1954,26 @@ private:
         }
         double meanCoh = sumCoh / 5.0;
         double meanPreCoh = (preCohValidCount > 0) ? (sumPreCoh / preCohValidCount) : -1.0;
+
+        // 临时调试：输出配准后相干性与精度评估报告
+        printf("[InSAR_DEBUG_COREG] [UI] ============ Post-Registration Coherence & Offset Assessment Report ============\n");
+        printf("[InSAR_DEBUG_COREG] [UI] Overall Assessment: %s\n", 
+               (failedCount == 0 && perfectCount == 5 && meanCoh >= 0.22) ? "PASS - Excellent Registration Quality" :
+               (failedCount > 0 || meanCoh < 0.18) ? "FAILED - Large Residual Offsets or Low Coherence" :
+               "WARNING - Moderate Registration Quality");
+        printf("[InSAR_DEBUG_COREG] [UI] Global Mean Coherence: Pre-Reg = %.4f, Post-Reg = %.4f (Change: %+.4f)\n", 
+               meanPreCoh, meanCoh, (meanPreCoh >= 0.0 ? (meanCoh - meanPreCoh) : 0.0));
+        printf("[InSAR_DEBUG_COREG] [UI] ---------------- Sample Points Details ----------------\n");
+        for (int i = 0; i < 5; ++i) {
+            printf("[InSAR_DEBUG_COREG] [UI]  * Sample Point %d (X: %d, Y: %d)\n", 
+                   i + 1, m_points[i].x, m_points[i].y);
+            printf("[InSAR_DEBUG_COREG] [UI]    - Coherence: Pre-Reg = %.4f, Post-Reg = %.4f, Optimal = %.4f\n", 
+                   m_inputCoherence[i], m_results[i].coherenceZeroShift, m_results[i].coherenceOptimal);
+            printf("[InSAR_DEBUG_COREG] [UI]    - Correlation: Residual Offset (X: %d, Y: %d), Correlation Coeff = %.4f%s\n", 
+                   m_results[i].offsetX, m_results[i].offsetY, m_results[i].maxCorrelation,
+                   (m_results[i].maxCorrelation < 0.15) ? " (Low Confidence Point*, ignored)" : "");
+        }
+        printf("[InSAR_DEBUG_COREG] [UI] =========================================================================\n");
 
         bool isDark = NodeDetailWindow::isDarkTheme(this);
         // 合理放宽相干性阈值以适应 Sentinel-1 自然失相干情况 (底噪约 0.20)

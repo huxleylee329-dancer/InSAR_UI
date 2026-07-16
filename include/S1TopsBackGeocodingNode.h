@@ -66,6 +66,7 @@ private:
     QComboBox* m_masterImageCombo;
     QCheckBox* m_defaultMasterCheckBox;
     QCheckBox* m_esdCheckBox;
+    QCheckBox* m_rangeRefineCheckBox;
     QLineEdit* m_outputNodeNameEdit;
 
     QLabel* m_demPathLabel = nullptr;
@@ -84,6 +85,7 @@ private:
     int m_masterIndex;
     bool m_useDefaultMaster;
     bool m_bESD;
+    bool m_bRangeRefine;
 
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
@@ -93,6 +95,7 @@ private:
     QString m_preparedDemPath;
     int m_preparedMasterIndex;
     bool m_preparedBESD;
+    bool m_preparedBRangeRefine;
     int m_preparedImagesNumber;
 
     // Worker thread

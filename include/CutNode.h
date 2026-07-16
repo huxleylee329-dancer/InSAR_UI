@@ -86,6 +86,7 @@ private:
     void updateLabels();
     void updateWidgetSize();
     void updateParameterWidgetsEnableState();
+    QString generateDefaultOutputName() const;
     QStringList resolvedInputH5Paths() const;
     QStringList resolvedInputPreviewPaths() const;
 

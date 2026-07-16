@@ -60,7 +60,7 @@ NodeDataType CoregistrationNode::dataType(PortType portType, PortIndex portIndex
         if (portIndex == 0)
             return NodeDataType{"imported_file", "Imported File"};
         else
-            return NodeDataType{"imported_file", "DEM File"};
+            return NodeDataType{"dem_file", "DEM File"};
     }
     else
     {

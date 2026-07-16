@@ -9,6 +9,7 @@ public:
     ~S1TopsBackGeocodingWorker();
 
     void setDemPath(const QString& path) { m_demPath = path; }
+    void setRangeRefine(bool enable) { m_bRangeRefine = enable; }
 
 public slots:
     void S1_TOPS_BackGeocoding(
@@ -33,4 +34,5 @@ signals:
 
 private:
     QString m_demPath;
+    bool m_bRangeRefine = false;
 };

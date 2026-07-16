@@ -114,6 +114,15 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     Q_UNUSED(port);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
+    if (m_inputData && !m_inputData->filePaths().isEmpty() && !isRestoring()) {
+        if (m_outputNodeName == "AOI_Crop" || m_outputNodeName.isEmpty()) {
+            m_outputNodeName = generateDefaultOutputName();
+            if (m_outputNodeNameEdit) {
+                m_outputNodeNameEdit->setText(m_outputNodeName);
+            }
+        }
+    }
+
     if (m_inputData && !m_inputData->filePaths().isEmpty()) {
         if (!isRestoring()) {
             // 从第一个H5文件的gcps自动提取中心经纬度作为默认值
@@ -154,7 +163,7 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
                         m_boxSelected = false;
                         m_lon = new_lon;
                         m_lat = new_lat;
-                        m_coordsSet = true;
+                        m_coordsSet = false;
                         m_lastInputLon = new_lon;
                         m_lastInputLat = new_lat;
                         if (m_lonEdit) m_lonEdit->setText(QString::number(m_lon, 'f', 6));
@@ -266,8 +275,9 @@ void CutNode::createWidget()
     m_leftSpin->setSingleStep(0.05);
     m_leftSpin->setValue(m_left);
     connect(m_leftSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, invalidateNodeData](double val) {
-        if (m_left != val) {
+        if (m_left != val || !m_coordsSet) {
             m_left = val;
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -277,8 +287,9 @@ void CutNode::createWidget()
     m_rightSpin->setSingleStep(0.05);
     m_rightSpin->setValue(m_right);
     connect(m_rightSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, invalidateNodeData](double val) {
-        if (m_right != val) {
+        if (m_right != val || !m_coordsSet) {
             m_right = val;
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -288,8 +299,9 @@ void CutNode::createWidget()
     m_topSpin->setSingleStep(0.05);
     m_topSpin->setValue(m_top);
     connect(m_topSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, invalidateNodeData](double val) {
-        if (m_top != val) {
+        if (m_top != val || !m_coordsSet) {
             m_top = val;
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -299,8 +311,9 @@ void CutNode::createWidget()
     m_bottomSpin->setSingleStep(0.05);
     m_bottomSpin->setValue(m_bottom);
     connect(m_bottomSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this, invalidateNodeData](double val) {
-        if (m_bottom != val) {
+        if (m_bottom != val || !m_coordsSet) {
             m_bottom = val;
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -323,9 +336,9 @@ void CutNode::createWidget()
     m_lonEdit->setText(QString::number(m_lon, 'f', 6));
     connect(m_lonEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         double val = m_lonEdit->text().toDouble();
-        if (m_lon != val) {
+        if (m_lon != val || !m_coordsSet) {
             m_lon = val;
-            m_coordsSet = (m_lon != 0.0 || m_lat != 0.0);
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -334,9 +347,9 @@ void CutNode::createWidget()
     m_latEdit->setText(QString::number(m_lat, 'f', 6));
     connect(m_latEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         double val = m_latEdit->text().toDouble();
-        if (m_lat != val) {
+        if (m_lat != val || !m_coordsSet) {
             m_lat = val;
-            m_coordsSet = (m_lon != 0.0 || m_lat != 0.0);
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -345,8 +358,9 @@ void CutNode::createWidget()
     m_widthEdit->setText(QString::number(m_width, 'f', 1));
     connect(m_widthEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         double val = m_widthEdit->text().toDouble();
-        if (m_width != val) {
+        if (m_width != val || !m_coordsSet) {
             m_width = val;
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -355,8 +369,9 @@ void CutNode::createWidget()
     m_heightEdit->setText(QString::number(m_height, 'f', 1));
     connect(m_heightEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         double val = m_heightEdit->text().toDouble();
-        if (m_height != val) {
+        if (m_height != val || !m_coordsSet) {
             m_height = val;
+            m_coordsSet = true;
             invalidateNodeData();
         }
     });
@@ -432,6 +447,10 @@ void CutNode::onModeChanged(int index)
         updateParameterWidgetsEnableState();
     }
 
+    if (m_mode == 0) {
+        m_coordsSet = true;
+    }
+
     if (m_outputData) m_outputData.reset();
     if (m_previewData) m_previewData.reset();
     setOutputData(0, nullptr);
@@ -473,6 +492,15 @@ bool CutNode::isReady() const
             return false;
         }
         if (m_outputNodeName.trimmed().isEmpty()) {
+            return false;
+        }
+    }
+
+    if (isAutoTriggered()) {
+        if (m_mode == 1 && !m_coordsSet) {
+            return false;
+        }
+        if (m_mode == 0 && !m_coordsSet) {
             return false;
         }
     }
@@ -659,6 +687,15 @@ void CutNode::executeProcessing()
 
 void CutNode::stopExecution()
 {
+    // 安全查找并清理动态分配的 remedyWatcher，防止悬空回调和内存越界
+    QFutureWatcher<void>* watcher = findChild<QFutureWatcher<void>*>("remedyWatcher");
+    if (watcher) {
+        watcher->disconnect();
+        if (watcher->isRunning()) {
+            watcher->cancel();
+        }
+    }
+
     if (m_thread && m_thread->isRunning()) {
         m_thread->requestInterruption();
         m_thread->quit();
@@ -708,22 +745,76 @@ void CutNode::onProcessingFinished()
 
     
     if (!missingH5s.isEmpty()) {
+        // 安全清理老 remedyWatcher，防止重新执行的竞态条件覆盖 m_previewData
+        QFutureWatcher<void>* oldWatcher = findChild<QFutureWatcher<void>*>("remedyWatcher");
+        if (oldWatcher) {
+            oldWatcher->disconnect();
+            if (oldWatcher->isRunning()) {
+                oldWatcher->cancel();
+                oldWatcher->waitForFinished();
+            }
+            oldWatcher->deleteLater();
+        }
+
+        auto* watcher = new QFutureWatcher<void>(this);
+        watcher->setObjectName("remedyWatcher");
+
+        connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPaths, missingJpgs]() {
+            watcher->deleteLater();
+            QStringList validJpgPaths;
+            bool anyFailed = false;
+            for (const QString& path : missingJpgs) {
+                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
+                    anyFailed = true;
+                }
+            }
+
+            for (const QString& path : jpgPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    validJpgPaths.append(path);
+                }
+            }
+
+            // 只有 JPG 存在且生成成功时才加入
+            if (!validJpgPaths.isEmpty()) {
+                m_previewData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_previewData);
+            } else {
+                m_previewData.reset();
+                setOutputData(1, nullptr);
+            }
+            Q_EMIT dataUpdated(1);
+
+            if (anyFailed) {
+                setState(ExecutionState::Warning);
+                InSARLogManager::LogWarning("CutNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
+            }
+        });
+
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
-                bool ok = NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                            }
-        });
-        auto* watcher = new QFutureWatcher<void>(this);
-        connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPaths]() {
-            watcher->deleteLater();
-            m_previewData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_previewData);
-            Q_EMIT dataUpdated(1);
+                // 已存在有效 JPG 则跳过
+                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
+                    continue;
+                }
+                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+            }
         });
         watcher->setFuture(future);
     } else {
-        m_previewData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_previewData);
+        QStringList validJpgPaths;
+        for (const QString& path : jpgPaths) {
+            if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                validJpgPaths.append(path);
+            }
+        }
+        if (!validJpgPaths.isEmpty()) {
+            m_previewData = std::make_shared<ImageInfoData>(validJpgPaths);
+            setOutputData(1, m_previewData);
+        } else {
+            m_previewData.reset();
+            setOutputData(1, nullptr);
+        }
     }
 
     m_isExecuting = false;
@@ -798,12 +889,12 @@ bool CutNode::validateAndRestoreOutput()
             expectedJpgPaths.append(projDir + "/" + nodeName + "/" + outBase + ".jpg");
         }
     } else {
-                return false;
+        return false;
     }
 
     // Verify files exist
     for (const QString& path : expectedH5Paths) {
-                if (!QFile::exists(path)) return false;
+        if (!QFile::exists(path)) return false;
     }
 
     m_outputPaths = expectedH5Paths;
@@ -812,29 +903,84 @@ bool CutNode::validateAndRestoreOutput()
     QStringList missingH5s;
     QStringList missingJpgs;
     for (int i = 0; i < expectedH5Paths.size(); ++i) {
-        if (!QFile::exists(expectedJpgPaths[i])) {
+        if (!QFile::exists(expectedJpgPaths[i]) || QFileInfo(expectedJpgPaths[i]).size() == 0) {
             missingH5s.append(expectedH5Paths[i]);
             missingJpgs.append(expectedJpgPaths[i]);
         }
     }
 
     if (!missingH5s.isEmpty()) {
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-            for (int i = 0; i < missingH5s.size(); ++i) {
-                bool ok = NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                            }
-        });
+        // 安全清理老 remedyWatcher
+        QFutureWatcher<void>* oldWatcher = findChild<QFutureWatcher<void>*>("remedyWatcher");
+        if (oldWatcher) {
+            oldWatcher->disconnect();
+            if (oldWatcher->isRunning()) {
+                oldWatcher->cancel();
+                oldWatcher->waitForFinished();
+            }
+            oldWatcher->deleteLater();
+        }
+
         auto* watcher = new QFutureWatcher<void>(this);
-        connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, expectedJpgPaths]() {
-                        watcher->deleteLater();
-            m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_previewData);
-                        Q_EMIT dataUpdated(1);
+        watcher->setObjectName("remedyWatcher");
+
+        connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, expectedJpgPaths, missingJpgs]() {
+            watcher->deleteLater();
+            QStringList validJpgPaths;
+            bool anyFailed = false;
+            for (const QString& path : missingJpgs) {
+                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
+                    anyFailed = true;
+                }
+            }
+
+            for (const QString& path : expectedJpgPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    validJpgPaths.append(path);
+                }
+            }
+
+            if (!validJpgPaths.isEmpty()) {
+                m_previewData = std::make_shared<ImageInfoData>(validJpgPaths);
+                setOutputData(1, m_previewData);
+            } else {
+                m_previewData.reset();
+                setOutputData(1, nullptr);
+            }
+            Q_EMIT dataUpdated(1);
+
+            if (anyFailed) {
+                setState(ExecutionState::Warning);
+                InSARLogManager::LogWarning("CutNode", "Output recovery finished with warnings. Some preview images failed to generate.");
+            } else {
+                setState(ExecutionState::Completed);
+            }
+        });
+
+        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+            for (int i = 0; i < missingH5s.size(); ++i) {
+                // 已存在有效 JPG 则跳过
+                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
+                    continue;
+                }
+                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+            }
         });
         watcher->setFuture(future);
     } else {
-                m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-        setOutputData(1, m_previewData);
+        QStringList validJpgPaths;
+        for (const QString& path : expectedJpgPaths) {
+            if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                validJpgPaths.append(path);
+            }
+        }
+        if (!validJpgPaths.isEmpty()) {
+            m_previewData = std::make_shared<ImageInfoData>(validJpgPaths);
+            setOutputData(1, m_previewData);
+        } else {
+            m_previewData.reset();
+            setOutputData(1, nullptr);
+        }
         Q_EMIT dataUpdated(1);
     }
 
@@ -1108,6 +1254,14 @@ QStringList CutNode::resolvedInputH5Paths() const
     return paths;
 }
 
+QString CutNode::generateDefaultOutputName() const
+{
+    if (m_inputData) {
+        return m_inputData->nodeName() + "_Crop";
+    }
+    return "AOI_Crop";
+}
+
 QStringList CutNode::resolvedInputPreviewPaths() const
 {
     QStringList paths;
@@ -1319,6 +1473,7 @@ QJsonObject CutNode::save() const
     modelJson["top"] = m_top;
     modelJson["bottom"] = m_bottom;
     modelJson["boxSelected"] = m_boxSelected;
+    modelJson["coordsSet"] = m_coordsSet;
 
     modelJson["saveToProject"] = m_saveToProject;
     modelJson["outputNodeName"] = m_outputNodeName;
@@ -1346,6 +1501,7 @@ void CutNode::load(QJsonObject const &json)
     m_top = json["top"].toDouble(0.25);
     m_bottom = json["bottom"].toDouble(0.75);
     m_boxSelected = json["boxSelected"].toBool(false);
+    m_coordsSet = json.contains("coordsSet") ? json["coordsSet"].toBool() : true;
     
     m_saveToProject = json["saveToProject"].toBool(true);
     m_outputNodeName = json["outputNodeName"].toString("AOI_Crop");
@@ -1674,9 +1830,9 @@ private:
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #F59E0B; border-radius: 4px;")
                 .arg(isDark ? "#78350F" : "#FEF3C7"));
         } else {
-            m_statusCardTitle->setText(tr("异常 (FAILED)"));
+            m_statusCardTitle->setText(tr("低相干 (LOW COHERENCE)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusCardDesc->setText(tr("全图严重失相干！主副影像配准失败，请检查前期流程参数与 ESD 设定。"));
+            m_statusCardDesc->setText(tr("地表相干性较低，请注意解缠质量。"));
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
                 .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
         }

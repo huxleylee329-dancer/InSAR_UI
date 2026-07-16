@@ -8,35 +8,6 @@
 #include "NodeUtils.h"
 #include <gdal_priv.h>
 
-static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt)
-{
-    GDALAllRegister();
-    GDALDriver* poDriver = GetGDALDriverManager()->GetDriverByName("GTiff");
-    if (!poDriver) return false;
-
-    int cols = dem.cols;
-    int rows = dem.rows;
-    GDALDataset* poDstDS = poDriver->Create(tifPath.toLocal8Bit().constData(), cols, rows, 1, GDT_Float32, nullptr);
-    if (!poDstDS) return false;
-
-    poDstDS->SetGeoTransform(const_cast<double*>(gt));
-    poDstDS->SetProjection(wkt);
-
-    GDALRasterBand* poBand = poDstDS->GetRasterBand(1);
-    poBand->SetNoDataValue(-32767.0);
-    
-    cv::Mat floatDem;
-    if (dem.type() != CV_32F) {
-        dem.convertTo(floatDem, CV_32F);
-    } else {
-        floatDem = dem;
-    }
-
-    CPLErr err = poBand->RasterIO(GF_Write, 0, 0, cols, rows, floatDem.data, cols, rows, GDT_Float32, 0, 0);
-    GDALClose(poDstDS);
-
-    return err == CE_None;
-}
 
 #include <QDir>
 #include <QFileInfo>
@@ -53,6 +24,8 @@ static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const d
 #include <QTextStream>
 #include <QMap>
 #include <QRegularExpression>
+#include <QTimer>
+
 
 #ifdef _DEBUG
 #pragma comment(lib, "Dem_d.lib")
@@ -118,13 +91,52 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
 
     QEventLoop loop;
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec(); // 阻塞当前线程直到下载完毕
+
+    QTimer timeoutTimer;
+    timeoutTimer.setSingleShot(true);
+    connect(&timeoutTimer, &QTimer::timeout, reply, [&]() {
+        InSARLogManager::LogWarning("DEMSourceWorker", QString("Download tile timeout: %1").arg(url));
+        reply->abort();
+    });
+
+    QTimer cancelCheckTimer;
+    connect(&cancelCheckTimer, &QTimer::timeout, this, [&]() {
+        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+        {
+            InSARLogManager::LogInfo("DEMSourceWorker", "User requested stop during tile download.");
+            reply->abort();
+        }
+    });
+
+    timeoutTimer.start(60000); // 60s
+    cancelCheckTimer.start(200); // 200ms
+
+    loop.exec(); // 阻塞当前线程直到下载完毕、超时或被取消
+
+    timeoutTimer.stop();
+    cancelCheckTimer.stop();
 
     tempFile.close();
 
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     QNetworkReply::NetworkError err = reply->error();
     QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+
+    if (err == QNetworkReply::OperationCanceledError)
+    {
+        tempFile.remove();
+        reply->deleteLater();
+        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+        {
+            InSARLogManager::LogInfo("DEMSourceWorker", "Download canceled by user.");
+        }
+        else
+        {
+            InSARLogManager::LogError("DEMSourceWorker", QString("Download timeout. URL: %1").arg(url));
+        }
+        return -1;
+    }
+
 
     if (err == QNetworkReply::NoError && (statusCode == 200 || statusCode == 206) && !contentType.contains("html", Qt::CaseInsensitive))
     {
@@ -365,12 +377,48 @@ void DEMSourceWorker::fetch_dem(
 
         QEventLoop loop;
         connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+
+        QTimer timeoutTimer;
+        timeoutTimer.setSingleShot(true);
+        connect(&timeoutTimer, &QTimer::timeout, reply, [&]() {
+            InSARLogManager::LogWarning("DEMSourceWorker", "Earthdata credentials pre-check timeout.");
+            reply->abort();
+        });
+
+        QTimer cancelCheckTimer;
+        connect(&cancelCheckTimer, &QTimer::timeout, this, [&]() {
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+            {
+                InSARLogManager::LogInfo("DEMSourceWorker", "User requested stop during pre-check.");
+                reply->abort();
+            }
+        });
+
+        timeoutTimer.start(10000); // 10s
+        cancelCheckTimer.start(200); // 200ms
+
         loop.exec();
+
+        timeoutTimer.stop();
+        cancelCheckTimer.stop();
 
         int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         QNetworkReply::NetworkError err = reply->error();
         QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
         reply->deleteLater();
+
+        if (err == QNetworkReply::OperationCanceledError)
+        {
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+            {
+                emit errorProcess(QStringLiteral("验证凭据任务已被用户中断。"));
+            }
+            else
+            {
+                emit errorProcess(QStringLiteral("NASA Earthdata 登录凭据验证超时，请检查网络连接！"));
+            }
+            return;
+        }
 
         if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401 || statusCode == 403)
         {
@@ -904,7 +952,15 @@ void DEMSourceWorker::fetch_dem(
     // 7.5 写入 TIF 成果文件（供下游工作流节点使用）
     QString outputTifName = dstNode + "_dem.tif";
     QString outputTifPath = save_path + "/" + dstNode + "/" + outputTifName;
-    write_dem_to_tif(outputTifPath, cropped_dem, new_gt, wkt_projection);
+    if (!NodeUtils::writeDemToTif(outputTifPath, cropped_dem, new_gt, wkt_projection))
+    {
+        if (!vrtPath.isEmpty() && QFile::exists(vrtPath))
+        {
+            QFile::remove(vrtPath);
+        }
+        emit errorProcess(QStringLiteral("写入 DEM TIF 成果文件失败，目标路径：%1").arg(outputTifPath));
+        return;
+    }
 
     // 写入经纬度辅助 2D 矩阵
     int rows = cropped_dem.rows;

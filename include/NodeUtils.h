@@ -227,4 +227,9 @@ QString getProjectDirectory(QWidget* widget);
  */
 QString projectDirectory(const QString& projectPath);
 
+/**
+ * @brief 将 DEM 高程矩阵数据写入 TIF 成果文件
+ */
+bool writeDemToTif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt);
+
 } // namespace NodeUtils

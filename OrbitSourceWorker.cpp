@@ -1,6 +1,7 @@
 #include "OrbitSourceWorker.h"
 #include "NodeUtils.h"
 #include "InSARLogManager.h"
+#include "tinyxml.h"
 #include "FormatConversion.h"
 #include "CDSELoginDialog.h"
 #include <QAuthenticator>
@@ -212,6 +213,14 @@ bool OrbitSourceWorker::findCachedOrbit(const QString& cacheDir, const SlcInfo& 
         candidate.downloadUrl = QUrl::fromLocalFile(file.absoluteFilePath());
         candidate.isPrecise = precise;
         if (!parseOrbitValidity(name, candidate.validStart, candidate.validEnd) || !productCovers(candidate, info)) {
+            continue;
+        }
+        QString xmlError;
+        if (!validateOrbitXml(file.absoluteFilePath(), candidate.validStart, candidate.validEnd, xmlError)) {
+            InSARLogManager::LogWarning("OrbitSourceWorker",
+                QStringLiteral("缓存轨道文件完整性校验失败，已自动清理并跳过：%1。错误信息：%2")
+                .arg(file.fileName()).arg(xmlError));
+            QFile::remove(file.absoluteFilePath());
             continue;
         }
         matches.append(candidate);
@@ -595,6 +604,90 @@ bool OrbitSourceWorker::verifyDownloadedFile(const OrbitProduct& product, const 
             return false;
         }
     }
+    QString xmlError;
+    if (!validateOrbitXml(filePath, start, end, xmlError)) {
+        errorMessage = QStringLiteral("轨道文件 XML 完整性验证失败：%1").arg(xmlError);
+        return false;
+    }
+    return true;
+}
+
+bool OrbitSourceWorker::validateOrbitXml(const QString& filePath, const QDateTime& expectedStart,
+    const QDateTime& expectedEnd, QString& errorMessage) const
+{
+    TiXmlDocument doc;
+    if (!doc.LoadFile(filePath.toLocal8Bit().constData())) {
+        errorMessage = QStringLiteral("无法作为 XML 解析，文件可能已损坏或非 XML 格式。");
+        return false;
+    }
+
+    TiXmlElement* root = doc.RootElement();
+    if (!root || strcmp(root->Value(), "Earth_Explorer_File") != 0) {
+        errorMessage = QStringLiteral("缺少根元素 <Earth_Explorer_File>。");
+        return false;
+    }
+
+    TiXmlElement* header = root->FirstChildElement("Earth_Explorer_Header");
+    if (!header) {
+        errorMessage = QStringLiteral("缺少 <Earth_Explorer_Header> 节点。");
+        return false;
+    }
+
+    TiXmlElement* fixedHeader = header->FirstChildElement("Fixed_Header");
+    if (!fixedHeader) {
+        errorMessage = QStringLiteral("缺少 <Fixed_Header> 节点。");
+        return false;
+    }
+
+    TiXmlElement* valPeriod = fixedHeader->FirstChildElement("Validity_Period");
+    if (!valPeriod) {
+        errorMessage = QStringLiteral("缺少 <Validity_Period> 节点。");
+        return false;
+    }
+
+    TiXmlElement* valStartElem = valPeriod->FirstChildElement("Validity_Start");
+    TiXmlElement* valStopElem = valPeriod->FirstChildElement("Validity_Stop");
+    if (!valStartElem || !valStopElem) {
+        errorMessage = QStringLiteral("缺少 <Validity_Start> 或 <Validity_Stop> 节点。");
+        return false;
+    }
+
+    const char* valStartText = valStartElem->GetText();
+    const char* valStopText = valStopElem->GetText();
+    if (!valStartText || !valStopText) {
+        errorMessage = QStringLiteral("读取 Validity_Start/Stop 文本内容为空。");
+        return false;
+    }
+
+    QString startStr = QString::fromUtf8(valStartText).trimmed();
+    if (startStr.startsWith("UTC=", Qt::CaseInsensitive)) {
+        startStr = startStr.mid(4);
+    }
+    QDateTime fileValidStart = QDateTime::fromString(startStr, "yyyy-MM-ddTHH:mm:ss");
+    fileValidStart.setTimeSpec(Qt::UTC);
+
+    QString stopStr = QString::fromUtf8(valStopText).trimmed();
+    if (stopStr.startsWith("UTC=", Qt::CaseInsensitive)) {
+        stopStr = stopStr.mid(4);
+    }
+    QDateTime fileValidEnd = QDateTime::fromString(stopStr, "yyyy-MM-ddTHH:mm:ss");
+    fileValidEnd.setTimeSpec(Qt::UTC);
+
+    if (!fileValidStart.isValid() || !fileValidEnd.isValid()) {
+        errorMessage = QStringLiteral("解析文件的 Validity 字段为时间格式失败。");
+        return false;
+    }
+
+    // 允许 1 秒以内的误差，主要是由于可能存在的微小舍入或字符串格式差异
+    if (qAbs(fileValidStart.secsTo(expectedStart)) > 1 || qAbs(fileValidEnd.secsTo(expectedEnd)) > 1) {
+        errorMessage = QStringLiteral("文件内容 validity 时间与文件名解析结果不匹配。文件: %1 - %2, 预估: %3 - %4")
+            .arg(fileValidStart.toString("yyyyMMddTHHmmss"))
+            .arg(fileValidEnd.toString("yyyyMMddTHHmmss"))
+            .arg(expectedStart.toString("yyyyMMddTHHmmss"))
+            .arg(expectedEnd.toString("yyyyMMddTHHmmss"));
+        return false;
+    }
+
     return true;
 }
 

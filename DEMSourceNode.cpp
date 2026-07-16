@@ -13,35 +13,6 @@
 #include "Utils.h"
 #include "QtNodes/internal/NodeDetailWindow.hpp"
 
-static bool write_dem_to_tif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt)
-{
-    GDALAllRegister();
-    GDALDriver* poDriver = GetGDALDriverManager()->GetDriverByName("GTiff");
-    if (!poDriver) return false;
-
-    int cols = dem.cols;
-    int rows = dem.rows;
-    GDALDataset* poDstDS = poDriver->Create(tifPath.toLocal8Bit().constData(), cols, rows, 1, GDT_Float32, nullptr);
-    if (!poDstDS) return false;
-
-    poDstDS->SetGeoTransform(const_cast<double*>(gt));
-    poDstDS->SetProjection(wkt);
-
-    GDALRasterBand* poBand = poDstDS->GetRasterBand(1);
-    poBand->SetNoDataValue(-32767.0);
-    
-    cv::Mat floatDem;
-    if (dem.type() != CV_32F) {
-        dem.convertTo(floatDem, CV_32F);
-    } else {
-        floatDem = dem;
-    }
-
-    CPLErr err = poBand->RasterIO(GF_Write, 0, 0, cols, rows, floatDem.data, cols, rows, GDT_Float32, 0, 0);
-    GDALClose(poDstDS);
-
-    return err == CE_None;
-}
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -586,6 +557,13 @@ void DEMSourceNode::execute()
 
 void DEMSourceNode::stopExecution()
 {
+    // 安全断开并取消 remedyWatcher，防止析构和重新执行的野指针与竞态崩溃
+    m_remedyWatcher.disconnect();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+    }
+
     if (m_workerThread && m_thread)
     {
         m_workerThread->StopProcess();
@@ -701,7 +679,10 @@ void DEMSourceNode::onProcessingFinished(
     QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
 
     m_outputData = std::make_shared<DEMFileData>(tifPath, dstNode);
-    m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+    // 先将预览重置，待 finished 回调确认生成成功后再加载，杜绝不存在的 JPG 路径发布给下游
+    m_imageInfoData.reset();
+    setOutputData(0, m_outputData);
+    setOutputData(1, nullptr);
 
     // 主线程更新全局 XML 并保存
     XMLFile* xml = projectXml();
@@ -792,12 +773,28 @@ void DEMSourceNode::onProcessingFinished(
     }
 
     m_remedyWatcher.disconnect();
-    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPath]() {
-        if (!QFile::exists(jpgPath)) {
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.waitForFinished();
+    }
+
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
+        bool jpgExists = QFile::exists(jpgPath) && QFileInfo(jpgPath).size() > 0;
+        if (jpgExists) {
+            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+            setOutputData(1, m_imageInfoData);
+        } else {
             m_imageInfoData.reset();
             setOutputData(1, nullptr);
+            InSARLogManager::LogWarning("DEMSourceNode", "DEM preview JPG failed to generate: " + jpgPath);
         }
-        setState(ExecutionState::Completed);
+
+        // TIF 成功但 JPG 失败时状态显示为 Warning，而不是 Completed
+        if (!jpgExists) {
+            setState(ExecutionState::Warning);
+        } else {
+            setState(ExecutionState::Completed);
+        }
         setProgress(100);
         Q_EMIT computingFinished();
         Q_EMIT dataUpdated(0);
@@ -810,8 +807,11 @@ void DEMSourceNode::onProcessingFinished(
         }
     });
 
-    // 异步生成预览图
+    // 异步生成预览图，已存在则跳过重生成
     m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
+        if (QFileInfo::exists(jpgPath) && QFileInfo(jpgPath).size() > 0) {
+            return;
+        }
         NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
     }));
 }
@@ -843,11 +843,13 @@ bool DEMSourceNode::validateAndRestoreOutput()
             m_remedyWatcher.disconnect();
             if (m_remedyWatcher.isRunning()) {
                 m_remedyWatcher.cancel();
+                m_remedyWatcher.waitForFinished();
             }
 
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, targetTif, targetJpg, name]() {
-                bool tifExists = QFile::exists(targetTif);
-                bool jpgExists = QFile::exists(targetJpg);
+            auto writeTifSuccess = std::make_shared<bool>(true);
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, targetTif, targetJpg, name, writeTifSuccess]() {
+                bool tifExists = QFile::exists(targetTif) && *writeTifSuccess;
+                bool jpgExists = QFile::exists(targetJpg) && QFileInfo(targetJpg).size() > 0;
 
                 if (tifExists) {
                     m_outputData = std::make_shared<DEMFileData>(targetTif, name);
@@ -869,19 +871,24 @@ bool DEMSourceNode::validateAndRestoreOutput()
                     Q_EMIT dataUpdated(1);
                 }
 
-                if (executionState() == ExecutionState::Running) {
+                if (executionState() == ExecutionState::Running || executionState() == ExecutionState::Completed) {
                     if (tifExists) {
-                        setState(ExecutionState::Completed);
+                        if (!jpgExists) {
+                            setState(ExecutionState::Warning);
+                            InSARLogManager::LogWarning("DEMSourceNode", "DEM recovery finished with warning: JPG preview generation failed.");
+                        } else {
+                            setState(ExecutionState::Completed);
+                        }
                         setProgress(100);
                         Q_EMIT computingFinished();
                     } else {
                         setState(ExecutionState::Error);
-                        InSARLogManager::LogError("DEMSourceNode", "TIFF generation failed during background recovery.");
+                        InSARLogManager::LogError("DEMSourceNode", "TIFF generation failed during background recovery. Target path: " + targetTif);
                     }
                 }
             });
 
-            QFuture<void> future = QtConcurrent::run([targetH5, targetTif, targetJpg, needsTif, needsJpg]() {
+            QFuture<void> future = QtConcurrent::run([targetH5, targetTif, targetJpg, needsTif, needsJpg, writeTifSuccess]() {
                 if (needsTif) {
                     cv::Mat dem;
                     double min_lon = 0, max_lon = 0, min_lat = 0, max_lat = 0;
@@ -899,10 +906,18 @@ bool DEMSourceNode::validateAndRestoreOutput()
                         double res_lat = (max_lat - min_lat) / dem.rows;
                         double new_gt[6] = { min_lon, res_lon, 0.0, max_lat, 0.0, -res_lat };
                         const char* wkt_projection = "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]";
-                        write_dem_to_tif(targetTif, dem, new_gt, wkt_projection);
+                        if (!NodeUtils::writeDemToTif(targetTif, dem, new_gt, wkt_projection)) {
+                            *writeTifSuccess = false;
+                        }
+                    } else {
+                        *writeTifSuccess = false;
                     }
                 }
                 if (needsJpg) {
+                    // 已存在有效 JPG 则跳过重生成
+                    if (QFileInfo::exists(targetJpg) && QFileInfo(targetJpg).size() > 0) {
+                        return;
+                    }
                     NodeUtils::generateJpgPreviewFromH5(targetH5, targetJpg, "dem");
                 }
             });

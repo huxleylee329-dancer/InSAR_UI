@@ -372,6 +372,12 @@ void OrbitSourceDialog::onBrowseCachePressed()
 
 void OrbitSourceDialog::onClearCachePressed()
 {
+    if (m_thread && m_thread->isRunning())
+    {
+        QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("当前轨道下载任务正在运行中，无法执行缓存清理！"));
+        return;
+    }
+
     QString cacheDir = m_cacheDirEdit->text().trimmed();
     if (cacheDir.isEmpty() || !QDir(cacheDir).exists()) return;
 
@@ -380,7 +386,7 @@ void OrbitSourceDialog::onClearCachePressed()
     {
         QDir dir(cacheDir);
         QStringList filters;
-        filters << "*.EOF" << "*.part";
+        filters << "*.EOF" << "*.part" << "*.EOF.bad";
         for (const QString& file : dir.entryList(filters, QDir::Files))
         {
             dir.remove(file);
@@ -401,7 +407,7 @@ void OrbitSourceDialog::updateCacheSizeLabel()
     qint64 totalSize = 0;
     QDir dir(cacheDir);
     QStringList filters;
-    filters << "*.EOF" << "*.part";
+    filters << "*.EOF" << "*.part" << "*.EOF.bad";
     for (const QString& file : dir.entryList(filters, QDir::Files))
     {
         totalSize += QFileInfo(cacheDir + "/" + file).size();

@@ -605,11 +605,15 @@ void Sentinel1OrbitNode::createWidget()
 
     m_clearCacheBtn = new QPushButton(QStringLiteral("清理缓存"));
     connect(m_clearCacheBtn, &QPushButton::clicked, this, [this]() {
+        if (m_thread && m_thread->isRunning()) {
+            QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("当前轨道下载任务正在运行中，无法执行缓存清理！"));
+            return;
+        }
         if (QMessageBox::question(nullptr, QStringLiteral("确认"), QStringLiteral("确定要清空该目录下的所有轨道文件吗？")) == QMessageBox::Yes) {
             QDir dir(m_cacheDir);
             if (dir.exists()) {
                 QStringList filters;
-                filters << "*.EOF" << "*.part";
+                filters << "*.EOF" << "*.part" << "*.EOF.bad";
                 for (const QString& file : dir.entryList(filters, QDir::Files)) {
                     dir.remove(file);
                 }
@@ -658,7 +662,7 @@ void Sentinel1OrbitNode::updateCacheSizeLabel()
         QDirIterator it(m_cacheDir, QDir::Files);
         while (it.hasNext()) {
             it.next();
-            if (it.fileName().endsWith(".EOF") || it.fileName().endsWith(".part")) {
+            if (it.fileName().endsWith(".EOF") || it.fileName().endsWith(".part") || it.fileName().endsWith(".EOF.bad")) {
                 sizeMB += it.fileInfo().size();
             }
         }

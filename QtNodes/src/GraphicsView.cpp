@@ -416,6 +416,24 @@ void GraphicsView::keyReleaseEvent(QKeyEvent *event)
 
 void GraphicsView::mousePressEvent(QMouseEvent *event)
 {
+    // Check if the click is inside a QGraphicsProxyWidget
+    QGraphicsItem *item = itemAt(event->pos());
+    bool clickOnWidget = false;
+    while (item) {
+        if (dynamic_cast<QGraphicsProxyWidget*>(item)) {
+            clickOnWidget = true;
+            break;
+        }
+        item = item->parentItem();
+    }
+
+    if (!clickOnWidget) {
+        QWidget *focusW = QApplication::focusWidget();
+        if (focusW && focusW != this && focusW != viewport()) {
+            focusW->clearFocus();
+        }
+    }
+
     QGraphicsView::mousePressEvent(event);
     if (event->button() == Qt::LeftButton) {
         _clickPos = mapToScene(event->pos());

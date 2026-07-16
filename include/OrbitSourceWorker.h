@@ -106,6 +106,8 @@ private:
     bool downloadOrbitFile(OrbitSource source, const OrbitProduct& product, const QString& savePath,
         QString& errorMessage, bool allowAuthRetry = true);
     bool verifyDownloadedFile(const OrbitProduct& product, const QString& filePath, QString& errorMessage) const;
+    bool validateOrbitXml(const QString& filePath, const QDateTime& expectedStart,
+        const QDateTime& expectedEnd, QString& errorMessage) const;
     void clearCdseCredentials();
 };
 

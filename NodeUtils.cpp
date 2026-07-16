@@ -1,4 +1,5 @@
 #include "include/NodeUtils.h"
+#include <gdal_priv.h>
 #include <QWidget>
 #include <QStandardItem>
 #include <QStandardItemModel>
@@ -1247,6 +1248,43 @@ QString projectDirectory(const QString& projectPath)
         return QFileInfo(projectPath).absolutePath();
     }
     return projectPath;
+}
+
+bool writeDemToTif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt)
+{
+    Hdf5Locker locker(tifPath);
+
+    GDALAllRegister();
+    GDALDriver* poDriver = GetGDALDriverManager()->GetDriverByName("GTiff");
+    if (!poDriver) return false;
+
+    int cols = dem.cols;
+    int rows = dem.rows;
+    GDALDataset* poDstDS = poDriver->Create(tifPath.toLocal8Bit().constData(), cols, rows, 1, GDT_Float32, nullptr);
+    if (!poDstDS) return false;
+
+    poDstDS->SetGeoTransform(const_cast<double*>(gt));
+    if (wkt) poDstDS->SetProjection(wkt);
+
+    GDALRasterBand* poBand = poDstDS->GetRasterBand(1);
+    poBand->SetNoDataValue(-32767.0);
+    
+    cv::Mat floatDem;
+    if (dem.type() != CV_32F) {
+        dem.convertTo(floatDem, CV_32F);
+    } else {
+        floatDem = dem;
+    }
+
+    CPLErr err = poBand->RasterIO(GF_Write, 0, 0, cols, rows, floatDem.data, cols, rows, GDT_Float32, 0, 0);
+    GDALClose(poDstDS);
+
+    if (err != CE_None) {
+        QFile::remove(tifPath);
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace NodeUtils
