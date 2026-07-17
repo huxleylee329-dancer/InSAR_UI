@@ -65,10 +65,14 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
 
         if (_mode == ExecutionMode::Automatic) {
             // If the incoming data is null, an upstream node was invalidated.
-            // Use setState(Idle) to: (1) update our visual, (2) clear our own stale output data,
-            // and (3) cascade the invalidation to our downstream nodes via dataUpdated(nullptr).
+            // 根据所有必需端口是否已连齐，决定将其状态设为 Pending 还是 Idle。
+            // 这样当上游重置或仍在运行时，连齐的节点会进入 Pending 状态等待。
             if (nodeData == nullptr) {
-                setState(ExecutionState::Idle);
+                if (allRequiredPortsConnected()) {
+                    setState(ExecutionState::Pending);
+                } else {
+                    setState(ExecutionState::Idle);
+                }
                 return;
             }
 
@@ -93,7 +97,13 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
 
             if (!allRequiredInputsReady)
             {
-                setState(ExecutionState::Pending);
+                // 如果必需端口已经全部连接，则将其设为 Pending（等待数据）状态；
+                // 如果未连齐，则保持 Idle 状态，避免在连线不完整时误导用户为等待中。
+                if (allRequiredPortsConnected()) {
+                    setState(ExecutionState::Pending);
+                } else {
+                    setState(ExecutionState::Idle);
+                }
                 return;
             }
 
@@ -537,6 +547,84 @@ void ExecutableNodeDelegateModel::setParameter(const QString& paramName, const Q
     // Default implementation: do nothing (parameters are read-only)
     Q_UNUSED(paramName);
     Q_UNUSED(value);
+}
+
+bool ExecutableNodeDelegateModel::allRequiredPortsConnected() const
+{
+    unsigned int inPortCount = nPorts(PortType::In);
+    if (inPortCount == 0) {
+        return true;
+    }
+
+    if (_scene == nullptr) {
+        return false;
+    }
+
+    auto &graphModel = _scene->graphModel();
+    for (PortIndex index = 0; index < inPortCount; ++index) {
+        if (portIsOptional(PortType::In, index)) {
+            continue;
+        }
+
+        auto connections = graphModel.connections(_nodeId, PortType::In, index);
+        if (connections.empty()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void ExecutableNodeDelegateModel::inputConnectionCreated(ConnectionId const &connectionId)
+{
+    Q_UNUSED(connectionId);
+    if (_isRestoring) return;
+
+    if (_mode == ExecutionMode::Automatic) {
+        // 当连接建立时，如果所有必需的端口已接齐，则节点应该更新为 Pending 状态以排队等待数据
+        if (_state == ExecutionState::Idle || _state == ExecutionState::Pending) {
+            if (allRequiredPortsConnected()) {
+                setState(ExecutionState::Pending);
+            } else {
+                setState(ExecutionState::Idle);
+            }
+        }
+    }
+}
+
+void ExecutableNodeDelegateModel::inputConnectionDeleted(ConnectionId const &connectionId)
+{
+    if (_isRestoring) return;
+
+    // 当输入连接断开时，我们需要清除缓存的数据
+    PortIndex portIndex = connectionId.inPortIndex;
+    _inputData[portIndex] = nullptr;
+
+    if (_mode == ExecutionMode::Automatic) {
+        // 如果断开连接后，必需端口不再全部接齐，则退回到 Idle 状态
+        if (!allRequiredPortsConnected()) {
+            setState(ExecutionState::Idle);
+        } else {
+            // 如果可选端口断开或者依然连齐，则评估数据是否就绪
+            bool allRequiredInputsReady = true;
+            unsigned int inPortCount = nPorts(PortType::In);
+            for (PortIndex index = 0; index < inPortCount; ++index) {
+                if (portIsOptional(PortType::In, index)) {
+                    continue;
+                }
+                auto inputIt = _inputData.find(index);
+                if (inputIt == _inputData.end() || inputIt->second == nullptr) {
+                    allRequiredInputsReady = false;
+                    break;
+                }
+            }
+
+            if (!allRequiredInputsReady) {
+                setState(ExecutionState::Pending);
+            }
+        }
+    } else if (_mode == ExecutionMode::Manual) {
+        invalidateExecution();
+    }
 }
 
 } // namespace QtNodes

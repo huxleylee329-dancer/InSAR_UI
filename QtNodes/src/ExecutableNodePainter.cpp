@@ -29,7 +29,7 @@ namespace {
     // State background colors - LIGHT THEME (ui2.md Section 87-97)
     constexpr QColor COLOR_IDLE_START_L{249, 249, 249}; // #F9F9F9 (main background)
     constexpr QColor COLOR_IDLE_END_L{233, 233, 233};   // #E9E9E9
-    constexpr QColor COLOR_PENDING_L{0, 95, 172};       // #005FAC (ready/running)
+    constexpr QColor COLOR_PENDING_L{226, 232, 240};    // #E2E8F0 (pending/ready)
     constexpr QColor COLOR_RUNNING_START_L{0, 95, 172}; // #005FAC
     constexpr QColor COLOR_RUNNING_END_L{0, 120, 215};  // #0078D7 (hover)
     constexpr QColor COLOR_COMPLETED_L{16, 185, 129};   // #10B981
@@ -44,7 +44,7 @@ namespace {
     // State background colors - DARK THEME (ui2.md Section 102-110)
     constexpr QColor COLOR_IDLE_START_D{26, 28, 28};    // #1A1C1C (main background)
     constexpr QColor COLOR_IDLE_END_D{43, 43, 43};      // #2B2B2B
-    constexpr QColor COLOR_PENDING_D{0, 120, 215};      // #0078D7 (ready/running)
+    constexpr QColor COLOR_PENDING_D{51, 65, 85};       // #334155 (pending/ready)
     constexpr QColor COLOR_RUNNING_START_D{0, 120, 215};// #0078D7
     constexpr QColor COLOR_RUNNING_END_D{0, 120, 215};  // #0078D7
     constexpr QColor COLOR_COMPLETED_D{74, 169, 207};   // #4AA9CF
@@ -98,7 +98,7 @@ ExecutableNodePainter::ExecutableNodePainter()
 
     // Load state icons for card footer (18x18)
     _pixmapStateIdle = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/pause.svg"), QColor(113, 119, 132), QSize(18, 18));
-    _pixmapStatePending = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/hourglass.svg"), QColor(59, 130, 246), QSize(18, 18));
+    _pixmapStatePending = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/hourglass.svg"), QColor(100, 116, 139), QSize(18, 18));
     _pixmapStateRunning = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/sync.svg"), QColor(59, 130, 246), QSize(18, 18));
     _pixmapStateCompleted = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/check-circle.svg"), QColor(16, 185, 129), QSize(18, 18));
     _pixmapStateStopped = loadAndColorizeIcon(QStringLiteral(":/SatExplorer/svg/stop.svg"), QColor(245, 158, 11), QSize(18, 18));
@@ -807,9 +807,9 @@ void ExecutableNodePainter::drawCardFooter(QPainter *painter, NodeGraphicsObject
         stateIcon = &_pixmapStateIdle;
         break;
     case ExecutionState::Pending:
-        bgColor = themedColor(QColor(221, 236, 255), QColor(30, 58, 138), context);
-        textColor = themedColor(QColor(0, 95, 172), QColor(96, 165, 250), context);
-        borderColor = themedColor(QColor(196, 222, 255), QColor(70, 70, 70), context);
+        bgColor = themedColor(QColor(226, 232, 240), QColor(51, 65, 85), context);
+        textColor = themedColor(QColor(100, 116, 139), QColor(148, 163, 184), context);
+        borderColor = themedColor(QColor(203, 213, 225), QColor(71, 85, 105), context);
         stateIcon = &_pixmapStatePending;
         break;
     case ExecutionState::Running:

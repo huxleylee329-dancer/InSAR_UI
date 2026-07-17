@@ -248,7 +248,12 @@ void ImageView::mousePressEvent(QMouseEvent* event)
 {
 	if (m_roiSelectionMode != RoiSelectionMode::None && event->button() == Qt::LeftButton) {
 		if (scene()) {
-			m_roiStartPos = mapToScene(event->pos());
+			// 限制绘制起点坐标在图片场景边界内
+			QPointF rawPos = mapToScene(event->pos());
+			QRectF sceneRect = scene()->sceneRect();
+			double clampedX = qBound(sceneRect.left(), rawPos.x(), sceneRect.right());
+			double clampedY = qBound(sceneRect.top(), rawPos.y(), sceneRect.bottom());
+			m_roiStartPos = QPointF(clampedX, clampedY);
 			m_isDrawingRoi = true;
 			
 			QGraphicsRectItem** activeRectItem = &m_roiRectItem;
@@ -288,7 +293,13 @@ void ImageView::mousePressEvent(QMouseEvent* event)
 void ImageView::mouseMoveEvent(QMouseEvent* event)
 {
 	if (m_roiSelectionMode != RoiSelectionMode::None && m_isDrawingRoi) {
-		QPointF currentPos = mapToScene(event->pos());
+		// 限制绘制终点坐标在图片场景边界内
+		QPointF rawPos = mapToScene(event->pos());
+		QRectF sceneRect = scene()->sceneRect();
+		double clampedX = qBound(sceneRect.left(), rawPos.x(), sceneRect.right());
+		double clampedY = qBound(sceneRect.top(), rawPos.y(), sceneRect.bottom());
+		QPointF currentPos(clampedX, clampedY);
+		
 		QRectF rect(qMin(m_roiStartPos.x(), currentPos.x()),
 					qMin(m_roiStartPos.y(), currentPos.y()),
 					qAbs(currentPos.x() - m_roiStartPos.x()),

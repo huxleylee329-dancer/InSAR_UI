@@ -156,6 +156,10 @@ public Q_SLOTS:
     /// Used when a source node is connected in auto mode
     void triggerAutoExecution();
 
+    void inputConnectionCreated(ConnectionId const &connectionId) override;
+
+    void inputConnectionDeleted(ConnectionId const &connectionId) override;
+
 private Q_SLOTS:
     void updateSmoothProgress();
 
@@ -206,6 +210,9 @@ protected:
     /// Check if node is in Pending state (ports connected but no data, or multi-port not all have data)
     /// Port with no connection is considered Idle, not Pending
     bool isPending() const;
+
+    /// 检查所有必需（非可选）的输入端口是否都已经连线
+    bool allRequiredPortsConnected() const;
 
 protected:
     void setState(ExecutionState state);

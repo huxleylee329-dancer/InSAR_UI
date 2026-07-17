@@ -1174,7 +1174,7 @@ void PropertyEditor::generateBasicInfoSection()
         QString stateColor = "#64748B";  // gray (default)
         switch (m_nodeData.executionState) {
             case QtNodes::ExecutionState::Idle: stateColor = darkTheme ? "#94A3B8" : "#94A3B8"; break;
-            case QtNodes::ExecutionState::Pending: stateColor = "#10B981"; break;
+            case QtNodes::ExecutionState::Pending: stateColor = darkTheme ? "#94A3B8" : "#64748B"; break;
             case QtNodes::ExecutionState::Running: stateColor = darkTheme ? "#4AA9CF" : "#3B82F6"; break;
             case QtNodes::ExecutionState::Completed: stateColor = "#10B981"; break;
             case QtNodes::ExecutionState::Stopped: stateColor = "#F59E0B"; break;

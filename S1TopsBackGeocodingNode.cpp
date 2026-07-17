@@ -67,6 +67,9 @@ S1TopsBackGeocodingNode::~S1TopsBackGeocodingNode()
         m_remedyWatcher.waitForFinished();
     }
 
+    // 强行中止并清除运行中线程，消灭残留
+    stopExecution();
+
     // Clean up worker thread
     if (m_workerThread)
     {
@@ -1115,6 +1118,7 @@ void S1TopsBackGeocodingNode::stopExecution()
     {
         m_thread->requestInterruption();
         m_thread->quit();
+        m_thread->wait();
     }
 }
 
@@ -1224,6 +1228,11 @@ bool S1TopsBackGeocodingNode::prepareToStart()
 void S1TopsBackGeocodingNode::executeProcessing()
 {
     InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing started.");
+
+    // 检测是否有运行中的线程，有的话先安全终止，消灭重入隐患
+    if (m_workerThread || m_thread) {
+        stopExecution();
+    }
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         // 直接复用磁盘上的现有数据，不重新计算

@@ -227,6 +227,7 @@ tools/
 # Claude related
 screenshot/
 .claude/skills/
+.worktrees/
 docs/
 .antigravitycli/
 code-simplifier-skill/

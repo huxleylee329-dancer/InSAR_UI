@@ -1418,7 +1418,10 @@ void CutNode::updateLabels()
     }
 
     if (m_boundsLabel) {
-        if (m_boxSelected) {
+        bool hasInput = (m_inputData && !m_inputData->filePaths().isEmpty());
+        if (!hasInput) {
+            m_boundsLabel->setText(QStringLiteral("请连接输入数据以在详情页进行图像框选"));
+        } else if (m_boxSelected) {
             m_boundsLabel->setText(QString("L: %1, R: %2, T: %3, B: %4")
                 .arg(m_left, 0, 'f', 2)
                 .arg(m_right, 0, 'f', 2)
@@ -1441,21 +1444,24 @@ void CutNode::updateWidgetSize()
 
 void CutNode::updateParameterWidgetsEnableState()
 {
-    bool hasInput = (m_inputData && !m_inputData->filePaths().isEmpty());
     bool isExec = m_isExecuting;
-    bool enableWidgets = hasInput && !isExec;
+    bool enableBase = !isExec; // 只要非运行状态，基础设置控件均可用，支持无输入或断开输入时预设参数
+    bool hasInput = (m_inputData && !m_inputData->filePaths().isEmpty());
 
-    if (m_modeCombo) m_modeCombo->setEnabled(enableWidgets);
-    if (m_lonEdit) m_lonEdit->setEnabled(enableWidgets && (m_mode == 1));
-    if (m_latEdit) m_latEdit->setEnabled(enableWidgets && (m_mode == 1));
-    if (m_widthEdit) m_widthEdit->setEnabled(enableWidgets && (m_mode == 1));
-    if (m_heightEdit) m_heightEdit->setEnabled(enableWidgets && (m_mode == 1));
-    if (m_leftSpin) m_leftSpin->setEnabled(enableWidgets && (m_mode == 0));
-    if (m_rightSpin) m_rightSpin->setEnabled(enableWidgets && (m_mode == 0));
-    if (m_topSpin) m_topSpin->setEnabled(enableWidgets && (m_mode == 0));
-    if (m_bottomSpin) m_bottomSpin->setEnabled(enableWidgets && (m_mode == 0));
-    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(enableWidgets);
-    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets && m_saveToProject);
+    if (m_modeCombo) m_modeCombo->setEnabled(enableBase);
+    if (m_lonEdit) m_lonEdit->setEnabled(enableBase && (m_mode == 1));
+    if (m_latEdit) m_latEdit->setEnabled(enableBase && (m_mode == 1));
+    if (m_widthEdit) m_widthEdit->setEnabled(enableBase && (m_mode == 1));
+    if (m_heightEdit) m_heightEdit->setEnabled(enableBase && (m_mode == 1));
+    if (m_leftSpin) m_leftSpin->setEnabled(enableBase && (m_mode == 0));
+    if (m_rightSpin) m_rightSpin->setEnabled(enableBase && (m_mode == 0));
+    if (m_topSpin) m_topSpin->setEnabled(enableBase && (m_mode == 0));
+    if (m_bottomSpin) m_bottomSpin->setEnabled(enableBase && (m_mode == 0));
+    if (m_saveToProjectCheckBox) m_saveToProjectCheckBox->setEnabled(enableBase);
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableBase && m_saveToProject);
+
+    if (m_previewCombo) m_previewCombo->setEnabled(enableBase && hasInput && (m_mode == 2));
+    if (m_previewBtn) m_previewBtn->setEnabled(enableBase && hasInput && (m_mode == 2));
 }
 
 QJsonObject CutNode::save() const
