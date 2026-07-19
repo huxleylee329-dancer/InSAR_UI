@@ -556,12 +556,18 @@ void CutNode::execute()
 bool CutNode::prepareToStart()
 {
     if (m_isExecuting) {
+        setStartFailureMessage(QStringLiteral("裁剪任务正在运行，请等待当前任务完成。"));
         return false;
     }
     if (!isReady()) {
         if (m_mode == 1 && m_lon == 0.0 && m_lat == 0.0) {
+            setStartFailureMessage(QStringLiteral("坐标模式需要先填写并确认中心经纬度。"));
             InSARLogManager::LogWarning("CutNode", "prepareToStart skipped: lon/lat not set (still 0.0). Please enter coordinates and press Enter to confirm.");
+        } else if (m_mode == 2 && !m_boxSelected) {
+            setStartFailureMessage(QStringLiteral("框选模式需要先在详情视图完成框选。"));
+            InSARLogManager::LogWarning("CutNode", "prepareToStart skipped: box selection is required in box selection mode.");
         } else {
+            setStartFailureMessage(QStringLiteral("请检查输入数据和输出配置是否完整。"));
             InSARLogManager::LogWarning("CutNode", "prepareToStart skipped: node not ready.");
         }
         return false;
@@ -737,7 +743,7 @@ void CutNode::onProcessingFinished()
     QStringList missingH5s;
     QStringList missingJpgs;
     for (int i = 0; i < m_outputPaths.size(); ++i) {
-        if (!QFile::exists(jpgPaths[i])) {
+        if (!NodeUtils::isJpgPreviewCurrent(m_outputPaths[i], jpgPaths[i])) {
             missingH5s.append(m_outputPaths[i]);
             missingJpgs.append(jpgPaths[i]);
         }
@@ -786,6 +792,7 @@ void CutNode::onProcessingFinished()
             Q_EMIT dataUpdated(1);
 
             if (anyFailed) {
+                setLastWarningMessage(QStringLiteral("Some preview images failed to generate."));
                 setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning("CutNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
             }
@@ -794,9 +801,6 @@ void CutNode::onProcessingFinished()
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
                 // 已存在有效 JPG 则跳过
-                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
-                    continue;
-                }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
             }
         });
@@ -903,7 +907,7 @@ bool CutNode::validateAndRestoreOutput()
     QStringList missingH5s;
     QStringList missingJpgs;
     for (int i = 0; i < expectedH5Paths.size(); ++i) {
-        if (!QFile::exists(expectedJpgPaths[i]) || QFileInfo(expectedJpgPaths[i]).size() == 0) {
+        if (!NodeUtils::isJpgPreviewCurrent(expectedH5Paths[i], expectedJpgPaths[i])) {
             missingH5s.append(expectedH5Paths[i]);
             missingJpgs.append(expectedJpgPaths[i]);
         }
@@ -950,6 +954,7 @@ bool CutNode::validateAndRestoreOutput()
             Q_EMIT dataUpdated(1);
 
             if (anyFailed) {
+                setLastWarningMessage(QStringLiteral("Some preview images failed to generate during output recovery."));
                 setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning("CutNode", "Output recovery finished with warnings. Some preview images failed to generate.");
             } else {
@@ -960,9 +965,6 @@ bool CutNode::validateAndRestoreOutput()
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
                 // 已存在有效 JPG 则跳过
-                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
-                    continue;
-                }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
             }
         });

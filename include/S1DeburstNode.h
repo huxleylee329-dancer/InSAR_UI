@@ -56,6 +56,7 @@ public:
     QStringList previewImagePaths() const override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
 
@@ -79,6 +80,7 @@ private:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
     void onModelUpdated(QStandardItemModel* model);
     // 接收 Worker 的 sendResults 信号，用原生 TinyXML 完成 XML 落盘（SOP 避坑经验 #9）
     void onResultsReceived(const QString& dstNode, const QStringList& deburstH5Paths, const QStringList& originNames);

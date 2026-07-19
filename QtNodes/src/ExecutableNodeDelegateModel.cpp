@@ -15,6 +15,8 @@ ExecutableNodeDelegateModel::ExecutableNodeDelegateModel()
     , _progress(0)
     , _nodeId(NodeId())
     , _scene(nullptr)
+    , _lastErrorMessage("")
+    , _lastWarningMessage("")
 {
 }
 
@@ -183,7 +185,11 @@ void ExecutableNodeDelegateModel::start()
         return;
     }
 
+    _startFailureMessage.clear();
     if (!prepareToStart()) {
+        if (!_startFailureMessage.isEmpty()) {
+            Q_EMIT executionStartRejected(_startFailureMessage);
+        }
         return;
     }
 
@@ -204,6 +210,10 @@ void ExecutableNodeDelegateModel::stop()
     }
 
     stopExecution();
+    if (stopExecutionIsAsynchronous()) {
+        return;
+    }
+
     _state = ExecutionState::Stopped;
     Q_EMIT executionStopped();
     Q_EMIT executionStateChanged();
@@ -411,6 +421,9 @@ QJsonObject ExecutableNodeDelegateModel::save() const
 
     modelJson["execution-mode"] = static_cast<int>(_mode);
     modelJson["execution-state"] = static_cast<int>(_state);
+    if (_state == ExecutionState::Warning) {
+        modelJson["last-warning-message"] = _lastWarningMessage;
+    }
 
     return modelJson;
 }
@@ -424,15 +437,22 @@ void ExecutableNodeDelegateModel::load(QJsonObject const &json)
         _mode = static_cast<ExecutionMode>(v.toInt());
     }
 
-    // 恢复状态：只有当保存的是Completed状态且验证通过才恢复
+    // 恢复状态：只有当保存的是 Completed 或 Warning 状态且输出验证通过才恢复。
+    // Warning 表示结果已生成但存在需要保留的提示，因此与 Completed 一样恢复输出。
     QJsonValue stateValue = json["execution-state"];
     if (!stateValue.isUndefined()) {
         ExecutionState savedState = static_cast<ExecutionState>(stateValue.toInt());
-        if (savedState == ExecutionState::Completed) {
+        if (savedState == ExecutionState::Completed || savedState == ExecutionState::Warning) {
             // 调用子类验证输出数据
             if (validateAndRestoreOutput()) {
-                _state = ExecutionState::Completed;
+                _state = savedState;
                 _progress = 100;
+                if (savedState == ExecutionState::Warning) {
+                    QString savedWarningMessage = json["last-warning-message"].toString();
+                    if (!savedWarningMessage.isEmpty()) {
+                        _lastWarningMessage = savedWarningMessage;
+                    }
+                }
                 // 发送信号通知UI更新状态显示
                 Q_EMIT progressUpdated(_progress);
                 Q_EMIT executionStateChanged();
@@ -445,6 +465,20 @@ void ExecutableNodeDelegateModel::load(QJsonObject const &json)
     }
 }
 
+void ExecutableNodeDelegateModel::refreshStateAfterRestoration()
+{
+    // Restoring suppresses input and connection callbacks, so automatic nodes
+    // need one explicit readiness check after the complete graph is available.
+    if (_mode != ExecutionMode::Automatic || _state != ExecutionState::Idle ||
+        nPorts(PortType::In) == 0) {
+        return;
+    }
+
+    if (allRequiredPortsConnected()) {
+        setState(ExecutionState::Pending);
+    }
+}
+
 void ExecutableNodeDelegateModel::setState(ExecutionState state)
 {
     if (_state == state) {
@@ -452,6 +486,12 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
     }
     
     _state = state;
+    if (state != ExecutionState::Error) {
+        _lastErrorMessage = "";
+    }
+    if (state != ExecutionState::Warning) {
+        _lastWarningMessage = "";
+    }
     if (state == ExecutionState::Idle) {
         _progress = 0;
         _targetProgress = 0.0;

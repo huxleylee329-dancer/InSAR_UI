@@ -111,7 +111,7 @@ void GeocodingWorker::GeocodingWithDem(
         return;
     }
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-        emit errorProcess(QStringLiteral("任务已被中止。"));
+        Q_EMIT cancelled();
         return;
     }
 
@@ -223,6 +223,10 @@ void GeocodingWorker::GeocodingWithDem(
             ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
             ret = flat.demMapping(dem, mappedDem, mapped_lat, mapped_lon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
                 prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, geocodingProgressCallback);
+            if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                Q_EMIT cancelled();
+                return;
+            }
             //多视操作
             if (multilook_rg > 1 || multilook_az > 1)
             {
@@ -254,7 +258,7 @@ void GeocodingWorker::GeocodingWithDem(
         for (int i = 0; i < input_files.size(); i++)
         {
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-                emit errorProcess(QStringLiteral("任务已被中止。"));
+                Q_EMIT cancelled();
                 return;
             }
 
@@ -397,6 +401,10 @@ void GeocodingWorker::GeocodingWithDem(
             ret = Utils::getSRTMDEM(demPath.toStdString().c_str(), dem2, &lon_upperleft2, &lat_upperleft2, lonMin2, lonMax2, latMin2, latMax2);
             ret = flat.demMapping(dem2, mappedDem2, mapped_lat, mapped_lon, lon_upperleft2, lat_upperleft2, offset_row2, offset_col2, sceneHeight2, sceneWidth2,
                 prf2, rangeSpacing2, wavelength2, nearRangeTime2, start2, end2, statevec2, 20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, geocodingProgressCallback);
+            if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                Q_EMIT cancelled();
+                return;
+            }
         }
 
         //多视操作
@@ -430,7 +438,7 @@ void GeocodingWorker::GeocodingWithDem(
         for (int i = 0; i < input_files.size(); i++)
         {
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-                emit errorProcess(QStringLiteral("任务已被中止。"));
+                Q_EMIT cancelled();
                 return;
             }
 

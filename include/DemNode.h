@@ -92,6 +92,7 @@ private:
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    void onCancelled();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
@@ -110,6 +111,7 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool stopExecutionIsAsynchronous() const override { return true; }
 
 signals:
     void startDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);

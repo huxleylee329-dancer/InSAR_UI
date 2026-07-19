@@ -358,15 +358,11 @@ void S1SwathMergeNode::onProcessingFinished()
     // Clean up thread
     if (m_thread)
     {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
         m_thread = nullptr;
     }
 
     if (m_worker)
     {
-        m_worker->deleteLater();
         m_worker = nullptr;
     }
 
@@ -394,20 +390,31 @@ void S1SwathMergeNode::onError(const QString& error)
     // Clean up thread
     if (m_thread)
     {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
         m_thread = nullptr;
     }
 
     if (m_worker)
     {
-        m_worker->deleteLater();
         m_worker = nullptr;
     }
 
     m_outputNodeNameEdit->setEnabled(true);
     setState(ExecutionState::Error);
+}
+
+void S1SwathMergeNode::onCancelled()
+{
+    InSARLogManager::LogInfo("S1SwathMergeNode", "Swath merge cancellation cleanup completed.");
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    m_outputNodeNameEdit->setEnabled(true);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void S1SwathMergeNode::onModelUpdated(QStandardItemModel* model)
@@ -459,13 +466,11 @@ void S1SwathMergeNode::stopExecution()
 {
     if (m_worker)
     {
-        // worker should be stopped if there is a stop method, but worker relies on thread interruption
+        m_worker->StopProcess();
     }
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 
@@ -582,9 +587,13 @@ void S1SwathMergeNode::executeProcessing()
     });
     connect(m_worker, &S1SwathMergeWorker::updateProcess, this, &S1SwathMergeNode::onProgressUpdate);
     connect(m_worker, &S1SwathMergeWorker::endProcess, this, &S1SwathMergeNode::onProcessingFinished);
+    connect(m_worker, &S1SwathMergeWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &S1SwathMergeWorker::errorProcess, this, &S1SwathMergeNode::onError);
+    connect(m_worker, &S1SwathMergeWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &S1SwathMergeWorker::cancelled, this, &S1SwathMergeNode::onCancelled);
+    connect(m_worker, &S1SwathMergeWorker::cancelled, m_thread, &QThread::quit);
     connect(m_worker, &S1SwathMergeWorker::sendModel, this, &S1SwathMergeNode::onModelUpdated);
-    connect(m_worker, &QObject::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread

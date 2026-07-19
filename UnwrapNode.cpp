@@ -385,9 +385,13 @@ void UnwrapNode::executeProcessing()
     });
     connect(m_workerThread, &UnwrapWorker::updateProcess, this, &UnwrapNode::onProgressUpdate);
     connect(m_workerThread, &UnwrapWorker::endProcess, this, &UnwrapNode::onProcessingFinished);
+    connect(m_workerThread, &UnwrapWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &UnwrapWorker::cancelled, this, &UnwrapNode::onCancelled);
     connect(m_workerThread, &UnwrapWorker::errorProcess, this, &UnwrapNode::onError);
+    connect(m_workerThread, &UnwrapWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &UnwrapWorker::sendModel, this, &UnwrapNode::onModelUpdated);
     connect(m_workerThread, &UnwrapWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_workerThread, &UnwrapWorker::cancelled, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Dynamic recovery of Running state for Automatic execution mode (SOP Rule 5)
@@ -501,22 +505,20 @@ void UnwrapNode::onProcessingFinished()
     }
 }
 
+void UnwrapNode::onCancelled()
+{
+    InSARLogManager::LogInfo("UnwrapNode", "Unwrap cancellation cleanup completed.");
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    m_outputNodeNameEdit->setEnabled(true);
+    m_methodCombo->setEnabled(true);
+    if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
+}
+
 void UnwrapNode::onError(const QString& error)
 {
     Q_UNUSED(error);
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
     m_outputNodeNameEdit->setEnabled(true);
     m_methodCombo->setEnabled(true);
     if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
@@ -685,12 +687,6 @@ void UnwrapNode::stopExecution()
     if (m_workerThread)
     {
         m_workerThread->StopProcess();
-    }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 

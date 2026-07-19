@@ -466,7 +466,17 @@ void NodeGraphicsObject::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
         } else if (execGeo->hitTestDetailButton(_nodeId, pos) || execGeo->hitTestCardDetailButton(_nodeId, pos)) {
             setToolTip("Detail View");
         } else {
-            setToolTip("");
+            if (execModel && execModel->executionState() == ExecutionState::Error) {
+                QString errMsg = execModel->lastErrorMessage();
+                setToolTip(errMsg.isEmpty() ? QObject::tr("Execution Error") : errMsg);
+            } else if (execModel && execModel->executionState() == ExecutionState::Warning) {
+                QString warningMsg = execModel->lastWarningMessage();
+                setToolTip(warningMsg.isEmpty()
+                    ? QObject::tr("Execution completed with warnings")
+                    : warningMsg);
+            } else {
+                setToolTip("");
+            }
         }
     }
 

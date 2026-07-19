@@ -35,7 +35,7 @@ protected:
     // progressMax: 当前任务的进度上界 (0-100)
     // 返回值: true 成功，false 失败
     virtual bool convertToH5(const QStringList& arguments, const QString& outputPath,
-                             int progressMin, int progressMax) = 0;
+                             int progressMin, int progressMax, QString& outErrorMsg) = 0;
 
     // 子类必须实现的 XML 标签标识（如 "CSG-2", "TSX", "sentinel" 等）
     virtual QString satelliteFormatTag() const = 0;

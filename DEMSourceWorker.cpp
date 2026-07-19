@@ -51,7 +51,7 @@ DEMSourceWorker::~DEMSourceWorker()
 {
 }
 
-int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
+int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, bool allowRetry)
 {
     QNetworkAccessManager manager;
     QNetworkRequest request((QUrl(url)));
@@ -121,6 +121,8 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     QNetworkReply::NetworkError err = reply->error();
     QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+    QString finalUrl = reply->url().toString();
+    QString errorString = reply->errorString();
 
     if (err == QNetworkReply::OperationCanceledError)
     {
@@ -168,24 +170,35 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath)
         {
             return 0; // 404 Not Found (例如海洋瓦片不存在)
         }
-        else if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401 || statusCode == 403)
+        else if (err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
         {
-            // 自动将登录状态修改为未登录（从配置文件中移除凭据），迫使再次登录
-            QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-            settings.remove("DEM/EarthdataUser");
-            settings.remove("DEM/EarthdataPassword");
+            if (allowRetry)
+            {
+                InSARLogManager::LogInfo("DEMSourceWorker", QString("Retrying DEM tile download after authentication response: %1").arg(url));
+                return downloadTile(url, savePath, false);
+            }
 
-            // 如果返回了 HTML 网页（且非 404），代表实际上跳转到了 URS 网页登录页（鉴权失败）
-            InSARLogManager::LogError("DEMSourceWorker", 
-                QString("Authentication challenge failed or redirected to HTML. Credentials removed from Config.ini. URL: %1, Status Code: %2, Content-Type: %3, Error: %4")
-                .arg(url).arg(statusCode).arg(contentType).arg(reply->errorString()));
+            InSARLogManager::LogError("DEMSourceWorker",
+                QString("Earthdata authentication failed. URL: %1, Status Code: %2, Error: %3")
+                .arg(url).arg(statusCode).arg(errorString));
             return -1;
         }
         else
         {
-            InSARLogManager::LogError("DEMSourceWorker", 
-                QString("Download failed: URL: %1, Status Code: %2, Error: %3")
-                .arg(url).arg(statusCode).arg(reply->errorString()));
+            QString errorMessage = QString("Download failed: URL: %1, Final URL: %2, Status Code: %3, Content-Type: %4, Error: %5")
+                .arg(url).arg(finalUrl).arg(statusCode).arg(contentType).arg(errorString);
+            InSARLogManager::LogWarning("DEMSourceWorker", errorMessage);
+
+            const bool retryable = allowRetry &&
+                (statusCode == 0 || statusCode == 302 || statusCode == 303 || statusCode == 307 || statusCode == 308 ||
+                 err == QNetworkReply::TemporaryNetworkFailureError || err == QNetworkReply::ConnectionRefusedError ||
+                 err == QNetworkReply::RemoteHostClosedError || err == QNetworkReply::UnknownNetworkError);
+            if (retryable)
+            {
+                InSARLogManager::LogInfo("DEMSourceWorker", QString("Retrying DEM tile download once: %1").arg(url));
+                return downloadTile(url, savePath, false);
+            }
+
             return -1;
         }
     }
@@ -347,100 +360,6 @@ void DEMSourceWorker::fetch_dem(
     if (demSource == 1) subDirName = "srtm3";
     else if (demSource == 2) subDirName = "copernicus";
     else if (demSource == 3) subDirName = "aster";
-
-    // 3.5 验证 NASA Earthdata 登录凭据有效性（避免无效凭据导致将所有陆地瓦片当做海洋跳过）
-    if (demSource != 2)
-    {
-        emit updateProcess(8, QStringLiteral("正在验证 NASA Earthdata 登录凭据..."));
-        
-        QNetworkAccessManager manager;
-        QNetworkRequest request(QUrl("https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/SRTMGL1.003/N06E016.SRTMGL1.hgt/N06E016.SRTMGL1.hgt.zip"));
-        request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
-
-        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
-        QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
-
-        QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
-        QString password = QString::fromUtf8(QByteArray::fromBase64(encryptedPass.toUtf8()));
-
-        QByteArray authHeader = "Basic " + QByteArray(QString("%1:%2").arg(username).arg(password).toUtf8()).toBase64();
-        request.setRawHeader("Authorization", authHeader);
-
-        connect(&manager, &QNetworkAccessManager::authenticationRequired,
-                this, [username, password](QNetworkReply*, QAuthenticator* authenticator) {
-                    authenticator->setUser(username);
-                    authenticator->setPassword(password);
-                });
-
-        QNetworkReply* reply = manager.head(request);
-
-        QEventLoop loop;
-        connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-
-        QTimer timeoutTimer;
-        timeoutTimer.setSingleShot(true);
-        connect(&timeoutTimer, &QTimer::timeout, reply, [&]() {
-            InSARLogManager::LogWarning("DEMSourceWorker", "Earthdata credentials pre-check timeout.");
-            reply->abort();
-        });
-
-        QTimer cancelCheckTimer;
-        connect(&cancelCheckTimer, &QTimer::timeout, this, [&]() {
-            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                InSARLogManager::LogInfo("DEMSourceWorker", "User requested stop during pre-check.");
-                reply->abort();
-            }
-        });
-
-        timeoutTimer.start(10000); // 10s
-        cancelCheckTimer.start(200); // 200ms
-
-        loop.exec();
-
-        timeoutTimer.stop();
-        cancelCheckTimer.stop();
-
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        QNetworkReply::NetworkError err = reply->error();
-        QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
-        reply->deleteLater();
-
-        if (err == QNetworkReply::OperationCanceledError)
-        {
-            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-            {
-                emit errorProcess(QStringLiteral("验证凭据任务已被用户中断。"));
-            }
-            else
-            {
-                emit errorProcess(QStringLiteral("NASA Earthdata 登录凭据验证超时，请检查网络连接！"));
-            }
-            return;
-        }
-
-        if (contentType.contains("html", Qt::CaseInsensitive) || err == QNetworkReply::AuthenticationRequiredError || statusCode == 401 || statusCode == 403)
-        {
-            // 自动将登录状态修改为未登录（从配置文件中移除凭据）
-            QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-            settings.remove("DEM/EarthdataUser");
-            settings.remove("DEM/EarthdataPassword");
-
-            emit errorProcess(QStringLiteral("NASA Earthdata 登录凭据无效（用户名或密码错误），请重新登录！"));
-            return;
-        }
-        else if (statusCode == 404 || err == QNetworkReply::ContentNotFoundError)
-        {
-            emit errorProcess(QStringLiteral("NASA Earthdata 验证测试资源未找到 (404)，请检查验证测试 URL。"));
-            return;
-        }
-        else if (err != QNetworkReply::NoError && statusCode != 200 && statusCode != 206 && statusCode != 302)
-        {
-            // 若为其他网络连接错误则记警告日志，不强行终止（防代理配置问题，且本地可能有缓存）
-            InSARLogManager::LogWarning("DEMSourceWorker", QString("Earthdata credentials pre-check warning: %1 (status: %2)").arg(reply->errorString()).arg(statusCode));
-        }
-    }
 
     QString fullCachePath = cacheDir + "/" + subDirName;
     QDir().mkpath(fullCachePath);
@@ -622,7 +541,7 @@ void DEMSourceWorker::fetch_dem(
         {
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
-                emit errorProcess(QStringLiteral("任务已被中断。"));
+                emit cancelled();
                 return;
             }
 
@@ -923,7 +842,15 @@ void DEMSourceWorker::fetch_dem(
 
     if (ret != 0)
     {
+        if (isStopRequested()) {
+            emit cancelled();
+            return;
+        }
         emit errorProcess(QStringLiteral("裁剪 DEM 数据失败：") + QString::fromLocal8Bit(manager.error_msg));
+        return;
+    }
+    if (isStopRequested()) {
+        emit cancelled();
         return;
     }
 
@@ -939,7 +866,15 @@ void DEMSourceWorker::fetch_dem(
 
     if (ret != 0)
     {
+        if (isStopRequested()) {
+            emit cancelled();
+            return;
+        }
         emit errorProcess(QStringLiteral("坐标系转换至地心坐标(ECEF)失败。"));
+        return;
+    }
+    if (isStopRequested()) {
+        emit cancelled();
         return;
     }
 
@@ -1025,12 +960,13 @@ void DEMSourceWorker::fetch_dem(
 
     if (!write_success)
     {
+        if (isStopRequested()) {
+            emit cancelled();
+            return;
+        }
         emit errorProcess(QStringLiteral("创建或写入输出 H5 文件失败。"));
         return;
     }
-
-    // 发送信号至主线程，由主线程安全地挂载项目树 UI 并更新 XML
-    emit demFetchFinished(outputH5Path, dstNode, projectName, demSource, targetResolution);
 
     // 清理临时 .vrt 文件
     if (!vrtPath.isEmpty() && QFile::exists(vrtPath))
@@ -1038,7 +974,14 @@ void DEMSourceWorker::fetch_dem(
         QFile::remove(vrtPath);
     }
 
+    if (isStopRequested()) {
+        emit cancelled();
+        return;
+    }
+
     emit updateProcess(100, QStringLiteral("外部 DEM 获取完成。"));
     emit sendModel(model);
+    // 清理完成后再通知主线程挂载输出，取消时不会提前暴露部分结果。
+    emit demFetchFinished(outputH5Path, dstNode, projectName, demSource, targetResolution);
     emit endProcess();
 }

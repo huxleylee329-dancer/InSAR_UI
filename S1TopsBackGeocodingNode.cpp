@@ -967,14 +967,30 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
     const QString& dstNode,
     const QString& dstProject,
     const QString& savePath,
-    int masterIndex
+    int masterIndex,
+    bool hasQualityWarning,
+    const QStringList& qualityWarnings
 )
 {
     Q_UNUSED(dstProject);
     Q_UNUSED(savePath);
 
+    m_processingWarning = hasQualityWarning;
+    m_processingQualityWarnings = qualityWarnings;
+    if (m_processingWarning) {
+        InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
+            QStringLiteral("后向地理编码配准完成，但结果包含几何质量告警：\n%1")
+                .arg(m_processingQualityWarnings.join('\n')));
+    }
+
     // Worker 保持原输入顺序计算，Node 仅在输出阶段把主影像稳定移到首位
     QStringList orderedH5Paths = moveMasterToFront(regisH5Paths, masterIndex);
+    for (const QString& path : orderedH5Paths) {
+        if (!isCompleteBackGeocodingOutput(path)) {
+            onError(QStringLiteral("配准输出未完成或无效：%1").arg(path));
+            return;
+        }
+    }
     m_savedOutputPaths = orderedH5Paths;
     m_savedMasterOutputPath = orderedH5Paths.isEmpty() ? QString() : orderedH5Paths.first();
 
@@ -1016,11 +1032,21 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
 
             updateParameterWidgetsEnableState();
 
-            // 区分 JPG 预览生成失败
-            if (anyFailed) {
+            const bool hasWarning = m_processingWarning || anyFailed;
+            if (hasWarning) {
+                QString warningMessage = m_processingQualityWarnings.join('\n');
+                if (anyFailed) {
+                    if (!warningMessage.isEmpty()) {
+                        warningMessage.append('\n');
+                    }
+                    warningMessage.append(QStringLiteral("Some preview images could not be generated."));
+                }
+                setLastWarningMessage(warningMessage);
                 setState(ExecutionState::Warning);
-                InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
-                
+                if (anyFailed) {
+                    InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
+                }
+
                 // Warning 状态也要通知完成
                 setProgress(100);
                 Q_EMIT computingFinished();
@@ -1037,9 +1063,6 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
         QFuture<void> future = QtConcurrent::run([orderedH5Paths, jpgPaths]() {
             for (int i = 0; i < orderedH5Paths.size(); ++i) {
                 // 已存在且有效的 JPG 跳过重生成
-                if (QFileInfo::exists(jpgPaths[i]) && QFileInfo(jpgPaths[i]).size() > 0) {
-                    continue;
-                }
                 NodeUtils::generateJpgPreviewFromH5(orderedH5Paths[i], jpgPaths[i], "complex");
             }
         });
@@ -1065,8 +1088,25 @@ void S1TopsBackGeocodingNode::onError(const QString& error)
     InSARLogManager::LogError("S1TopsBackGeocodingNode", "Execution failed: " + error);
     qDebug() << "[RegistrationNode] Error:" << error;
 
-    updateParameterWidgetsEnableState();
+    setLastErrorMessage(error);
     setState(ExecutionState::Error);
+    Q_EMIT executionError(error);
+    updateParameterWidgetsEnableState();
+}
+
+void S1TopsBackGeocodingNode::onCancelled(const QStringList& cleanupFailures)
+{
+    if (!cleanupFailures.isEmpty()) {
+        InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
+            QStringLiteral("后向地理编码已取消，但部分临时输出未能清理：%1").arg(cleanupFailures.join(", ")));
+    } else {
+        InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "Back-geocoding cancelled by user.");
+    }
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    updateParameterWidgetsEnableState();
 }
 
 void S1TopsBackGeocodingNode::onModelUpdated(QStandardItemModel* model)
@@ -1114,11 +1154,9 @@ void S1TopsBackGeocodingNode::stopExecution()
         m_remedyWatcher.cancel();
     }
 
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
+    if (m_workerThread) {
+        // 直接调用线程安全接口；不能排队到忙碌的 Worker 线程。
+        m_workerThread->requestCancel();
     }
 }
 
@@ -1254,12 +1292,15 @@ void S1TopsBackGeocodingNode::executeProcessing()
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
 
     setProgress(0);
+    m_processingWarning = false;
+    m_processingQualityWarnings.clear();
 
     // Create thread
     m_thread = new QThread();
     m_workerThread = new S1TopsBackGeocodingWorker();
     m_workerThread->setDemPath(m_preparedDemPath);
     m_workerThread->setRangeRefine(m_preparedBRangeRefine);
+    m_workerThread->prepareForStart();
     m_workerThread->moveToThread(m_thread);
 
     connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
@@ -1286,6 +1327,8 @@ void S1TopsBackGeocodingNode::executeProcessing()
     connect(m_workerThread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1TopsBackGeocodingNode::onProgressUpdate);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::registrationFinished, this, &S1TopsBackGeocodingNode::onProcessingFinished);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::cancelled, this, &S1TopsBackGeocodingNode::onCancelled);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, this, &S1TopsBackGeocodingNode::onError);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::sendModel, this, &S1TopsBackGeocodingNode::onModelUpdated);
@@ -1303,6 +1346,36 @@ void S1TopsBackGeocodingNode::executeProcessing()
     });
 }
 
+bool S1TopsBackGeocodingNode::isCompleteBackGeocodingOutput(const QString& path) const
+{
+    if (!QFileInfo::exists(path)) {
+        return false;
+    }
+
+    FormatConversion conversion;
+    int complete = 0;
+    int azimuthLen = 0;
+    int rangeLen = 0;
+    int realRows = 0;
+    int realCols = 0;
+    int imagRows = 0;
+    int imagCols = 0;
+    {
+        NodeUtils::Hdf5Locker locker(path.toStdString());
+        if (conversion.read_int_from_h5(path.toStdString().c_str(), "s1_tops_back_geocoding_complete", &complete) != 0 || complete != 1 ||
+            conversion.get_dataset_dims(path.toStdString().c_str(), "s_re", &realRows, &realCols) != 0 ||
+            conversion.get_dataset_dims(path.toStdString().c_str(), "s_im", &imagRows, &imagCols) != 0 ||
+            conversion.read_int_from_h5(path.toStdString().c_str(), "azimuth_len", &azimuthLen) != 0 ||
+            conversion.read_int_from_h5(path.toStdString().c_str(), "range_len", &rangeLen) != 0) {
+            return false;
+        }
+    }
+
+    return realRows > 0 && realCols > 0 && imagRows > 0 && imagCols > 0 &&
+        realRows == imagRows && realCols == imagCols &&
+        realRows == azimuthLen && realCols == rangeLen;
+}
+
 bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
 {
     QString dstNode = m_outputNodeName.trimmed();
@@ -1312,6 +1385,14 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     QStringList orderedH5Paths = restoreOrderedH5Paths(dstNode);
     if (orderedH5Paths.isEmpty())
         return false;
+
+    for (const QString& path : orderedH5Paths) {
+        if (!isCompleteBackGeocodingOutput(path)) {
+            InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
+                QStringLiteral("拒绝恢复未完成或无效的后向地理编码输出：%1").arg(path));
+            return false;
+        }
+    }
 
     m_savedOutputPaths = orderedH5Paths;
     m_savedMasterOutputPath = orderedH5Paths.first();
@@ -1323,7 +1404,7 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     QStringList missingH5s;
     QStringList missingJpgs;
     for (int i = 0; i < orderedH5Paths.size(); ++i) {
-        if (!QFileInfo::exists(allJpgPaths[i])) {
+        if (!NodeUtils::isJpgPreviewCurrent(orderedH5Paths[i], allJpgPaths[i])) {
             missingH5s.append(orderedH5Paths[i]);
             missingJpgs.append(allJpgPaths[i]);
         }
@@ -1372,6 +1453,7 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
             Q_EMIT dataUpdated(1);
 
             if (anyFailed) {
+                setLastWarningMessage(QStringLiteral("Back-geocoding products were restored, but some preview images could not be generated."));
                 setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "Output recovery finished with warnings. Some preview images failed to generate.");
             } else {
@@ -1382,9 +1464,6 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
                 // 已存在有效 JPG 则跳过重生成
-                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
-                    continue;
-                }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
             }
         });
@@ -1553,11 +1632,22 @@ static int selectHighIntensityPoints(const QString& masterPath, Point2D points[5
             cv::Point minLoc, maxLoc;
             cv::minMaxLoc(win_amp, &minVal, &maxVal, &minLoc, &maxLoc);
 
-            Candidate refined;
-            refined.val = (float)maxVal;
-            refined.x = start_x + maxLoc.x;
-            refined.y = start_y + maxLoc.y;
-            valid_points.push_back(refined);
+            // 计算局部空间对比度（强度变异系数 Da = stddev / mean），用来排除大面积均匀分布但易失相干的区域（如水体、植被等）
+            cv::Scalar meanVal, stdDevVal;
+            cv::meanStdDev(win_amp, meanVal, stdDevVal);
+            double mean = meanVal[0];
+            double stddev = stdDevVal[0];
+            double spatialContrast = (mean > 0.0) ? (stddev / mean) : 0.0;
+
+            // 只有当局部对比度大于阈值（如 0.30）时，才认为该点具备较强的结构特征（可能是人工建筑或裸石等高相干源）
+            if (spatialContrast >= 0.30)
+            {
+                Candidate refined;
+                refined.val = (float)maxVal;
+                refined.x = start_x + maxLoc.x;
+                refined.y = start_y + maxLoc.y;
+                valid_points.push_back(refined);
+            }
         }
     }
 
@@ -1682,7 +1772,7 @@ public:
         m_resultsTable = new QTableWidget();
         m_resultsTable->setColumnCount(6);
         m_resultsTable->setHorizontalHeaderLabels({
-            tr("测试区域"), tr("相干性(配准前)"), tr("相干性(配准后)"), tr("最佳相干性"), tr("残余偏移(Y, X)"), tr("相关系数")
+            tr("测试区域"), tr("相干性(配准前)"), tr("相干性(配准后)"), tr("偏移处相干性(Max-Corr)"), tr("残余偏移(Y, X)"), tr("相关系数")
         });
         m_resultsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         m_resultsTable->verticalHeader()->setVisible(false);
@@ -1933,22 +2023,28 @@ private:
         int warningCount = 0;   // 偏移在 [-2, 2] 内但非 0 的个数
         int failedCount = 0;    // 偏移绝对值 > 2 的个数
         double sumCoh = 0.0;
+        int validCohCount = 0;
         double sumPreCoh = 0.0;
         int preCohValidCount = 0;
         
         for (int i = 0; i < 5; ++i) {
-            sumCoh += m_results[i].coherenceZeroShift;
+            double maxCorr = m_results[i].maxCorrelation;
+            double postCoh = m_results[i].coherenceZeroShift;
+            
+            if (maxCorr >= 0.15) {
+                sumCoh += postCoh;
+                validCohCount++;
+            }
             if (m_inputCoherence[i] >= 0.0) {
                 sumPreCoh += m_inputCoherence[i];
                 preCohValidCount++;
             }
             
-            double maxCorr = m_results[i].maxCorrelation;
             int dy = std::abs(m_results[i].offsetY);
             int dx = std::abs(m_results[i].offsetX);
             
-            if (maxCorr < 0.15) {
-                // 如果相关系数过低（低于 0.15），代表此处强度图匹配失效，偏移量结果纯属随机斑噪。
+            if (maxCorr < 0.15 || postCoh < 0.20) {
+                // 如果相关系数过低（低于 0.15）或相干性过低（低于 0.20），说明当前区域是噪声区，偏移量不具有置信度
                 // 此时忽略其对 FAILED 的统计贡献，防止噪声误导，默认认为物理对齐良好（由相干性判定主导）
                 perfectCount++;
             } else {
@@ -1961,28 +2057,43 @@ private:
                 }
             }
         }
-        double meanCoh = sumCoh / 5.0;
+        double meanCoh = (validCohCount > 0) ? (sumCoh / validCohCount) : 0.0;
+        // 如果所有采样点都是低相关，则退回到全局平均，防止零除
+        if (validCohCount == 0) {
+            double tempSum = 0.0;
+            for (int i = 0; i < 5; ++i) tempSum += m_results[i].coherenceZeroShift;
+            meanCoh = tempSum / 5.0;
+        }
         double meanPreCoh = (preCohValidCount > 0) ? (sumPreCoh / preCohValidCount) : -1.0;
 
-        // 临时调试：输出配准后相干性与精度评估报告
-        printf("[InSAR_DEBUG_COREG] [UI] ============ Post-Registration Coherence & Offset Assessment Report ============\n");
-        printf("[InSAR_DEBUG_COREG] [UI] Overall Assessment: %s\n", 
+        // 临时调试：输出配准后相干性与精度评估报告（附带具体的阶段标识，便于在大量调试日志中快速归类定位）
+        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] ============ Coherence & Offset Assessment Report ============\n");
+        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] Overall Assessment: %s\n", 
                (failedCount == 0 && perfectCount == 5 && meanCoh >= 0.22) ? "PASS - Excellent Registration Quality" :
                (failedCount > 0 || meanCoh < 0.18) ? "FAILED - Large Residual Offsets or Low Coherence" :
                "WARNING - Moderate Registration Quality");
-        printf("[InSAR_DEBUG_COREG] [UI] Global Mean Coherence: Pre-Reg = %.4f, Post-Reg = %.4f (Change: %+.4f)\n", 
+        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] Global Mean Coherence: Pre-Reg = %.4f, Post-Reg = %.4f (Change: %+.4f)\n", 
                meanPreCoh, meanCoh, (meanPreCoh >= 0.0 ? (meanCoh - meanPreCoh) : 0.0));
-        printf("[InSAR_DEBUG_COREG] [UI] ---------------- Sample Points Details ----------------\n");
+        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] ---------------- Sample Points Details ----------------\n");
         for (int i = 0; i < 5; ++i) {
-            printf("[InSAR_DEBUG_COREG] [UI]  * Sample Point %d (X: %d, Y: %d)\n", 
+            printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification]  * Sample Point %d (X: %d, Y: %d)\n", 
                    i + 1, m_points[i].x, m_points[i].y);
-            printf("[InSAR_DEBUG_COREG] [UI]    - Coherence: Pre-Reg = %.4f, Post-Reg = %.4f, Optimal = %.4f\n", 
+            printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification]    - Coherence: Pre-Reg = %.4f, Post-Reg = %.4f, Coh @ Max-Corr Offset = %.4f\n", 
                    m_inputCoherence[i], m_results[i].coherenceZeroShift, m_results[i].coherenceOptimal);
-            printf("[InSAR_DEBUG_COREG] [UI]    - Correlation: Residual Offset (X: %d, Y: %d), Correlation Coeff = %.4f%s\n", 
+            printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification]    - Correlation: Residual Offset (X: %d, Y: %d), Correlation Coeff = %.4f%s\n", 
                    m_results[i].offsetX, m_results[i].offsetY, m_results[i].maxCorrelation,
-                   (m_results[i].maxCorrelation < 0.15) ? " (Low Confidence Point*, ignored)" : "");
+                   (m_results[i].maxCorrelation < 0.15 || m_results[i].coherenceZeroShift < 0.20) ? " (Low Confidence Point*, ignored)" : "");
         }
-        printf("[InSAR_DEBUG_COREG] [UI] =========================================================================\n");
+        printf("[InSAR_DEBUG_COREG] [Stage: Post-Registration Verification] =========================================================================\n");
+
+        // 智能诊断判定：幅相不一致（当相干性偏低，且最大相关偏置处的相干性反而小于零偏置相干性时，说明互相关可能受到相位噪声伪匹配的干扰）
+        bool hasMismatch = false;
+        for (int i = 0; i < 5; ++i) {
+            if (m_results[i].coherenceZeroShift < 0.25 && m_results[i].coherenceOptimal < m_results[i].coherenceZeroShift) {
+                hasMismatch = true;
+                break;
+            }
+        }
 
         bool isDark = NodeDetailWindow::isDarkTheme(this);
         // 合理放宽相干性阈值以适应 Sentinel-1 自然失相干情况 (底噪约 0.20)
@@ -1996,6 +2107,9 @@ private:
                     .arg(meanPreCoh, 0, 'f', 4).arg(meanCoh, 0, 'f', 4);
             } else {
                 desc += tr("配准后平均相干系数为 %1，完全满足后续干涉测量要求。").arg(meanCoh, 0, 'f', 4);
+            }
+            if (hasMismatch) {
+                desc += tr("\n提示：检测到部分区域幅相不一致（可能存在相位噪声匹配干扰），建议在相干性较稳定的区域手动重新选点。");
             }
             m_statusCardDesc->setText(desc);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #10B981; border-radius: 4px;")
@@ -2011,6 +2125,9 @@ private:
             } else {
                 desc += tr("有置信区域偏移量超过 2 像素或平均相干系数过低，建议开启 ESD 改正重新运行。");
             }
+            if (hasMismatch) {
+                desc += tr("\n提示：检测到部分区域幅相不一致（可能存在相位噪声匹配干扰），建议在相干性较稳定的区域手动重新选点。");
+            }
             m_statusCardDesc->setText(desc);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
                 .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
@@ -2024,6 +2141,9 @@ private:
                     .arg(meanCoh, 0, 'f', 4).arg(meanPreCoh, 0, 'f', 4);
             } else {
                 desc += tr("可能由于地形起伏大或局部时间失相干导致。");
+            }
+            if (hasMismatch) {
+                desc += tr("\n提示：检测到部分区域幅相不一致（可能存在相位噪声匹配干扰），建议在相干性较稳定的区域手动重新选点。");
             }
             m_statusCardDesc->setText(desc);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #F59E0B; border-radius: 4px;")
@@ -2045,16 +2165,29 @@ private:
             auto* itemPostCoh = new QTableWidgetItem(QString::number(m_results[i].coherenceZeroShift, 'f', 4));
             itemPostCoh->setFont(QFont("", -1, QFont::Bold));
             itemPostCoh->setForeground(Qt::green);
-            m_resultsTable->setItem(i, 2, itemPostCoh);
  
-            // 3. 最佳相干性
-            m_resultsTable->setItem(i, 3, new QTableWidgetItem(QString::number(m_results[i].coherenceOptimal, 'f', 4)));
+            // 3. 偏移处相干性(Max-Corr)
+            auto* itemOptCoh = new QTableWidgetItem(QString::number(m_results[i].coherenceOptimal, 'f', 4));
+
+            // 对低相干性区域（可能处于失相干区，如水体或密集植被）进行温和背景标记与 Tooltip 警告
+            if (m_results[i].coherenceZeroShift < 0.25 || m_results[i].coherenceOptimal < 0.25) {
+                QColor lowCohBg = isDark ? QColor(80, 60, 20) : QColor(254, 243, 199);
+                itemPostCoh->setBackground(QBrush(lowCohBg));
+                itemOptCoh->setBackground(QBrush(lowCohBg));
+                
+                QString tooltipText = tr("该采样点处于低相干区域，配准和相干性评估易受随机相位噪声干扰，评估数据仅供参考。");
+                itemPostCoh->setToolTip(tooltipText);
+                itemOptCoh->setToolTip(tooltipText);
+            }
+            
+            m_resultsTable->setItem(i, 2, itemPostCoh);
+            m_resultsTable->setItem(i, 3, itemOptCoh);
  
             // 4. 残余偏移
             auto* itemOffset = new QTableWidgetItem();
-            if (m_results[i].maxCorrelation < 0.15) {
+            if (m_results[i].maxCorrelation < 0.15 || m_results[i].coherenceZeroShift < 0.20) {
                 itemOffset->setText(QString("(%1, %2)*").arg(m_results[i].offsetY).arg(m_results[i].offsetX));
-                itemOffset->setToolTip(tr("当前区域互相关匹配系数过低（低于 0.15），测得偏移量不具有置信度，仅供参考。"));
+                itemOffset->setToolTip(tr("当前区域评估可信度过低（互相关或相干性过低），测得偏移量不具有置信度，仅供参考。"));
                 itemOffset->setForeground(Qt::gray);
             } else {
                 itemOffset->setText(QString("(%1, %2)").arg(m_results[i].offsetY).arg(m_results[i].offsetX));

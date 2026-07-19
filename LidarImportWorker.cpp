@@ -12,7 +12,7 @@ LidarImportWorker::~LidarImportWorker()
 }
 
 bool LidarImportWorker::convertToH5(const QStringList& arguments, const QString& outputPath,
-                                   int progressMin, int progressMax)
+                                   int progressMin, int progressMax, QString& outErrorMsg)
 {
     if (arguments.size() < 3) return false;
 

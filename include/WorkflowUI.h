@@ -147,6 +147,11 @@ private slots:
     void onGroupSelection();
     void onNodeCreated(QtNodes::NodeId const nodeId);
 
+    // Toast notifications slots
+    void showNotificationToast(const QString& caption, const QString& message, QtNodes::NodeId nodeId, bool startRejected = false);
+    void locateNode(QtNodes::NodeId nodeId);
+    void repositionToasts();
+
 signals:
     // 工作流被修改信号
     void workflowModified();
@@ -255,6 +260,33 @@ private:
     QtNodes::NodeDetailWindow *_detailWindow = nullptr;
     QtNodes::NodeDetailOverlay *_detailOverlay = nullptr;
     QtNodes::NodeDetailAnimationController *_animationController = nullptr;
+
+    // Toast notifications queue
+    QList<QWidget*> m_toasts;
+};
+
+#include <functional>
+class QGraphicsOpacityEffect;
+
+class NotificationToast : public QWidget
+{
+    Q_OBJECT
+public:
+    NotificationToast(QWidget* parent, const QString& caption, const QString& message,
+                      QtNodes::NodeId nodeId = -1, std::function<void(QtNodes::NodeId)> locateCallback = nullptr,
+                      bool startRejected = false);
+    ~NotificationToast() override;
+
+public slots:
+    void fadeOut();
+
+protected:
+    void paintEvent(QPaintEvent* event) override;
+
+private:
+    QtNodes::NodeId m_nodeId;
+    std::function<void(QtNodes::NodeId)> m_locateCallback;
+    QGraphicsOpacityEffect* m_opacityEffect = nullptr;
 };
 
 #endif // WORKFLOWUI_H

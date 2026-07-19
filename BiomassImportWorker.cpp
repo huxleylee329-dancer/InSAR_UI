@@ -11,7 +11,7 @@ BiomassImportWorker::~BiomassImportWorker()
 }
 
 bool BiomassImportWorker::convertToH5(const QStringList& arguments, const QString& outputPath,
-                                     int progressMin, int progressMax)
+                                     int progressMin, int progressMax, QString& outErrorMsg)
 {
     if (arguments.size() < 5) return false;
 

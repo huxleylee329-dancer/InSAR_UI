@@ -12,4 +12,7 @@ public:
 
 public slots:
     void Dem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
+
+signals:
+    void cancelled();
 };

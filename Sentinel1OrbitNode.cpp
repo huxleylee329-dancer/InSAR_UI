@@ -394,9 +394,6 @@ void Sentinel1OrbitNode::stopExecution()
     if (m_workerThread && m_thread)
     {
         m_workerThread->StopProcess();
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 
@@ -463,7 +460,11 @@ void Sentinel1OrbitNode::executeProcessing()
 
     connect(m_workerThread, &OrbitSourceWorker::updateProcess, this, &Sentinel1OrbitNode::onProgressUpdate);
     connect(m_workerThread, &OrbitSourceWorker::errorProcess, this, &Sentinel1OrbitNode::onError);
+    connect(m_workerThread, &OrbitSourceWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &OrbitSourceWorker::cancelled, this, &Sentinel1OrbitNode::onCancelled);
+    connect(m_workerThread, &OrbitSourceWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &OrbitSourceWorker::applyOrbitsFinished, this, &Sentinel1OrbitNode::onProcessingFinished);
+    connect(m_workerThread, &OrbitSourceWorker::applyOrbitsFinished, m_thread, &QThread::quit);
 
     connect(this, &Sentinel1OrbitNode::startOrbitFetch, m_workerThread, &OrbitSourceWorker::fetch_and_apply_orbits);
 
@@ -714,7 +715,6 @@ void Sentinel1OrbitNode::onProcessingFinished(
 )
 {
     qDebug() << "[OrbitNode] onProcessingFinished()";
-    stopExecution();
     m_workerThread = nullptr;
     m_thread = nullptr;
 
@@ -896,6 +896,8 @@ void Sentinel1OrbitNode::onProcessingFinished(
         // 部分成功 → Warning
         setProgress(100);
         Q_EMIT progressUpdated(100);
+        setLastWarningMessage(QStringLiteral("Orbit data was applied to %1 of %2 input files; %3 files failed or were skipped.")
+            .arg(podApplyOk).arg(total).arg(podApplyFail + podSkipped));
         setState(ExecutionState::Warning);
         qDebug() << "[OrbitNode] partial success, state=Warning";
     } else {
@@ -915,18 +917,23 @@ void Sentinel1OrbitNode::onProcessingFinished(
 
 void Sentinel1OrbitNode::onError(const QString& error)
 {
-    qDebug() << "[OrbitNode] onError:" << error;
-    stopExecution();
     m_workerThread = nullptr;
     m_thread = nullptr;
 
     setProgress(0);
     Q_EMIT progressUpdated(0);
+    setLastErrorMessage(error);
     setState(ExecutionState::Error);
-    if (!_isAutoTriggered)
-    {
-        QMessageBox::critical(nullptr, "Error", error);
-    }
+    Q_EMIT executionError(error);
+}
+
+void Sentinel1OrbitNode::onCancelled()
+{
+    m_workerThread = nullptr;
+    m_thread = nullptr;
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 bool Sentinel1OrbitNode::validateInputs() const

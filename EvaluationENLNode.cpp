@@ -214,7 +214,6 @@ void EvaluationENLNode::stopExecution()
     if (m_stopFlagPtr) {
         *m_stopFlagPtr = true;
     }
-    setState(ExecutionState::Stopped);
 }
 
 void EvaluationENLNode::processAutomatically()
@@ -388,6 +387,8 @@ void EvaluationENLNode::onEvaluationFinished()
     ENLResultData data = m_watcher->result();
     if (data.isCancelled) {
         setState(ExecutionState::Stopped);
+        Q_EMIT executionStopped();
+        Q_EMIT computingFinished();
         return;
     }
     

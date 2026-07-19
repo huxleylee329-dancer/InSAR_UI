@@ -97,6 +97,8 @@ private:
     bool m_preparedBESD;
     bool m_preparedBRangeRefine;
     int m_preparedImagesNumber;
+    bool m_processingWarning = false;
+    QStringList m_processingQualityWarnings;
 
     // Worker thread
     QPointer<S1TopsBackGeocodingWorker> m_workerThread;
@@ -114,8 +116,11 @@ private:
         const QString& dstNode,
         const QString& dstProject,
         const QString& savePath,
-        int masterIndex
+        int masterIndex,
+        bool hasQualityWarning,
+        const QStringList& qualityWarnings
     );
+    void onCancelled(const QStringList& cleanupFailures);
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
@@ -126,6 +131,7 @@ private:
     QStringList jpgPathsFromH5Paths(const QStringList& h5Paths) const;
     QString resolveSavedOutputPath(const QString& path, const QString& dstNode) const;
     QStringList restoreOrderedH5Paths(const QString& dstNode) const;
+    bool isCompleteBackGeocodingOutput(const QString& path) const;
     void syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode);
     void syncProjectXmlOrder(const QStringList& h5Paths, const QString& dstNode);
     void executeProcessing();
@@ -140,6 +146,7 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool stopExecutionIsAsynchronous() const override { return true; }
 
 signals:
     void startBackGeocoding(int images_number, int masterIndex, QString savePath, QString dstProject,

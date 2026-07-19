@@ -619,7 +619,11 @@ void CoregistrationNode::executeProcessing()
 
     connect(m_worker, &CoregistrationWorker::updateProcess, this, &CoregistrationNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_worker, &CoregistrationWorker::endProcess, this, &CoregistrationNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(m_worker, &CoregistrationWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &CoregistrationWorker::cancelled, this, &CoregistrationNode::onCancelled, Qt::QueuedConnection);
+    connect(m_worker, &CoregistrationWorker::cancelled, m_thread, &QThread::quit);
     connect(m_worker, &CoregistrationWorker::errorProcess, this, &CoregistrationNode::onError, Qt::QueuedConnection);
+    connect(m_worker, &CoregistrationWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &CoregistrationWorker::sendModel, this, &CoregistrationNode::onModelUpdated, Qt::QueuedConnection);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
@@ -669,16 +673,7 @@ void CoregistrationNode::stopExecution()
     if (m_worker) {
         m_worker->StopProcess();
     }
-    if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
-    }
-    m_isExecuting = false;
-    m_worker = nullptr;
-    m_thread = nullptr;
     updateParameterWidgetsEnableState();
-    setState(ExecutionState::Stopped);
 }
 
 void CoregistrationNode::onProgressUpdate(int progress, const QString& message)
@@ -690,13 +685,6 @@ void CoregistrationNode::onProgressUpdate(int progress, const QString& message)
 void CoregistrationNode::onProcessingFinished()
 {
     InSARLogManager::LogInfo("CoregistrationNode", "Coregistration process finished. Generating previews...");
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-    }
-    m_worker = nullptr;
-    m_thread = nullptr;
 
     // Generate preview JPGs asynchronously
     QStringList h5Paths = m_outputImagePaths;
@@ -735,13 +723,6 @@ void CoregistrationNode::onError(const QString& error)
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
 
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-    }
-    m_worker = nullptr;
-    m_thread = nullptr;
-
     m_isExecuting = false;
     updateParameterWidgetsEnableState();
 
@@ -751,6 +732,22 @@ void CoregistrationNode::onError(const QString& error)
     m_outputJpgPaths.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
+}
+
+void CoregistrationNode::onCancelled()
+{
+    InSARLogManager::LogInfo("CoregistrationNode", "Coregistration cancellation cleanup completed.");
+    m_isExecuting = false;
+    m_outputData.reset();
+    m_previewData.reset();
+    m_outputImagePaths.clear();
+    m_outputJpgPaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    updateParameterWidgetsEnableState();
 }
 
 void CoregistrationNode::onModelUpdated(QStandardItemModel* model)

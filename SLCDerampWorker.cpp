@@ -240,7 +240,7 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     ret = conversion.utc2gps(end_time.c_str(), &end);
     
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-        emit errorProcess(QStringLiteral("用户取消操作"));
+        Q_EMIT cancelled();
         return;
     }
 
@@ -266,7 +266,7 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     for (int i = 0; i < image_number; i++)
     {
         if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-            emit errorProcess(QStringLiteral("用户取消操作"));
+            Q_EMIT cancelled();
             return;
         }
 

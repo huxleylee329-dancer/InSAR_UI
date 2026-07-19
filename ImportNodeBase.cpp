@@ -331,6 +331,7 @@ bool ImportNodeBase::validateAndRestoreOutput()
 
             // 明确区分：H5 成果已恢复，但预览失败时，状态显示为 Warning
             if (anyFailed) {
+                setLastWarningMessage(QStringLiteral("Import data was restored, but some preview images could not be generated."));
                 setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning(getOutputNodeName() + "Node", "Import recovery completed, but some preview JPG files failed to generate.");
             } else {
@@ -424,6 +425,7 @@ void ImportNodeBase::onImportFinished()
 
         // 如果主处理已完成，但有 JPG 预览失败，状态设为 Warning，而不显示“全部成功”
         if (anyFailed) {
+            setLastWarningMessage(QStringLiteral("Import completed, but some preview images could not be generated."));
             setState(ExecutionState::Warning);
             InSARLogManager::LogWarning(getOutputNodeName() + "Node", "Import finished, but some preview JPG files failed to generate.");
         }
@@ -527,6 +529,7 @@ void ImportNodeBase::onProgressUpdate(int progress, const QString& message)
 
 void ImportNodeBase::onError(const QString& error)
 {
+    setLastErrorMessage(error);
     setState(ExecutionState::Error);
     Q_EMIT executionError(error);
 }

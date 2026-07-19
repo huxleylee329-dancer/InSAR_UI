@@ -15,4 +15,7 @@ public:
 public slots:
     void SBAS_reference_reselection(QString save_path, QString srcNode, QString times_series_h5,
                                     int ref_row, int ref_col, QList<QPoint> GCPs);
+
+signals:
+    void cancelled();
 };

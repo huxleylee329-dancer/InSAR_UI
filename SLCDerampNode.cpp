@@ -898,7 +898,11 @@ void SLCDerampNode::executeProcessing()
     });
     connect(m_worker, &SLCDerampWorker::updateProcess, this, &SLCDerampNode::onProgressUpdate);
     connect(m_worker, &SLCDerampWorker::endProcess, this, &SLCDerampNode::onProcessingFinished);
+    connect(m_worker, &SLCDerampWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &SLCDerampWorker::cancelled, this, &SLCDerampNode::onCancelled);
+    connect(m_worker, &SLCDerampWorker::cancelled, m_thread, &QThread::quit);
     connect(m_worker, &SLCDerampWorker::errorProcess, this, &SLCDerampNode::onError);
+    connect(m_worker, &SLCDerampWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &SLCDerampWorker::sendModel, this, &SLCDerampNode::onModelUpdated);
     connect(m_worker, &SLCDerampWorker::sendResults, this, &SLCDerampNode::onResultsReceived);
     connect(m_worker, &SLCDerampWorker::destroyed, m_thread, &QThread::quit);
@@ -959,12 +963,14 @@ void SLCDerampNode::stopExecution()
     {
         m_worker->StopProcess();
     }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
-    }
+}
+
+void SLCDerampNode::onCancelled()
+{
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    updateParameterWidgetsEnableState();
 }
 
 void SLCDerampNode::processAutomatically()

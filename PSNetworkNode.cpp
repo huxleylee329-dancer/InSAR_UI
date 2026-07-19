@@ -252,7 +252,7 @@ bool PSNetworkNode::prepareToStart()
 {
     if (!validateInputs()) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
-        setState(ExecutionState::Warning);
+        setState(ExecutionState::Error);
         return false;
     }
 

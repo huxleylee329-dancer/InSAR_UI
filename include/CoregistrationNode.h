@@ -47,6 +47,7 @@ public:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool stopExecutionIsAsynchronous() const override { return true; }
 
     // Serialization
     QJsonObject save() const override;
@@ -59,6 +60,7 @@ protected:
 private Q_SLOTS:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    void onCancelled();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     void updateMasterImageCombo();

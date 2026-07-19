@@ -62,6 +62,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
     bool prepareToStart() override;
@@ -122,6 +123,7 @@ private:
         double targetResolution
     );
     void onError(const QString& error);
+    void onCancelled();
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();

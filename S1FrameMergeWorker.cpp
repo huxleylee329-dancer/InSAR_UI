@@ -9,6 +9,24 @@
 #include <QFileInfo>
 #include <QThread>
 #include <QIcon>
+#include <atomic>
+
+namespace {
+std::atomic<S1FrameMergeWorker*> g_frameMergeWorker{ nullptr };
+
+bool __stdcall frameMergeProgressCallback(int progress, const char* message)
+{
+    S1FrameMergeWorker* worker = g_frameMergeWorker.load(std::memory_order_acquire);
+    if (!worker || worker->isStopRequested()) {
+        return false;
+    }
+
+    const QString text = message ? QString::fromLocal8Bit(message) : QString();
+    emit worker->updateProcess(30 + progress * 60 / 100,
+        QStringLiteral("正在拼接帧数据：%1% %2").arg(progress).arg(text));
+    return true;
+}
+}
 
 S1FrameMergeWorker::S1FrameMergeWorker(QObject* parent)
     : BaseWorker(parent)
@@ -30,6 +48,10 @@ void S1FrameMergeWorker::S1_frame_merge(
 )
 {
     NodeUtils::Hdf5Locker locker;
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
     InSARLogManager::LogInfo("S1FrameMergeWorker", QString("S1_frame_merge started. Project: %1").arg(project_name));
     if (!model) {
         emit errorProcess(QStringLiteral("项目模型为空"));
@@ -90,8 +112,21 @@ void S1FrameMergeWorker::S1_frame_merge(
     int ret;
     Utils util;
     QString merged_h5 = save_path + "/" + dstNode + "/" + filename + ".h5";
+    const QString bmp_path = save_path + "/" + dstNode + "/" + filename + ".jpg";
+    const auto finishCancelled = [this, &merged_h5, &bmp_path]() {
+        QFile::remove(merged_h5);
+        QFile::remove(bmp_path);
+        emit cancelled();
+    };
 
-    ret = util.S1_frame_merge(IW1_h5.toStdString().c_str(), IW2_h5.toStdString().c_str(), merged_h5.toStdString().c_str());
+    g_frameMergeWorker.store(this, std::memory_order_release);
+    ret = util.S1_frame_merge(IW1_h5.toStdString().c_str(), IW2_h5.toStdString().c_str(),
+        merged_h5.toStdString().c_str(), frameMergeProgressCallback);
+    g_frameMergeWorker.store(nullptr, std::memory_order_release);
+    if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+        finishCancelled();
+        return;
+    }
     if (ret < 0)
     {
         InSARLogManager::LogError("S1FrameMergeWorker", QStringLiteral("输入不符合要求，请重试！"));
@@ -101,8 +136,11 @@ void S1FrameMergeWorker::S1_frame_merge(
 
     InSARLogManager::LogInfo("S1FrameMergeWorker", "Frames merged successfully. Generating preview image...");
     // 拼接成功后，生成 JPG 预览图（在后台线程中执行）
-    QString bmp_path = save_path + "/" + dstNode + "/" + filename + ".jpg";
     NodeUtils::generateJpgPreviewFromH5(merged_h5, bmp_path, "complex");
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        finishCancelled();
+        return;
+    }
 
     emit updateProcess(90, QStringLiteral("正在拼接……"));
 

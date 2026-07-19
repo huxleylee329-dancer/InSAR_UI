@@ -95,6 +95,7 @@ DemWorker::~DemWorker()
 
 void DemWorker::Dem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
+    const auto finishCancelled = [this]() { Q_EMIT cancelled(); };
     NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("DemWorker", QString("DEM Generation task started. Output folder: %1, Method: %2, Iterations: %3").arg(file_name).arg(method).arg(times));
 
@@ -231,8 +232,9 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
         for (int i = 0; i < image_number; i++)
         {
             t_activeDemImageIndex = i;
-            if (QThread::currentThread()->isInterruptionRequested())
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解析高程中……").arg(i + 1));
@@ -259,6 +261,10 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
 
             Mat phase_dem;
             ret = dem.dem_newton_iter(inputH5.toStdString().c_str(), phase_dem, save_path.toStdString().c_str(), times, 1, demProgressCallback);
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("高程迭代反演算法失败，请确保上游\"干涉形成\"节点开启了\"平地消除(IsDeflat)\"。"));
                 return;
@@ -305,8 +311,9 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             NodeUtils::readMatFromH5(phasePath, "multilook_az", tmp);
             NodeUtils::writeMatToH5(demPath, "multilook_az", tmp);
             
-            if (QThread::currentThread()->isInterruptionRequested())
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
+                finishCancelled();
                 return;
             }
             

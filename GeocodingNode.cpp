@@ -462,7 +462,11 @@ void GeocodingNode::executeProcessing()
     });
     connect(m_workerThread, &GeocodingWorker::updateProcess, this, &GeocodingNode::onProgressUpdate);
     connect(m_workerThread, &GeocodingWorker::endProcess, this, &GeocodingNode::onProcessingFinished);
+    connect(m_workerThread, &GeocodingWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &GeocodingWorker::cancelled, this, &GeocodingNode::onCancelled);
+    connect(m_workerThread, &GeocodingWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &GeocodingWorker::errorProcess, this, &GeocodingNode::onError);
+    connect(m_workerThread, &GeocodingWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &GeocodingWorker::sendModel, this, &GeocodingNode::onModelUpdated);
     connect(m_workerThread, &GeocodingWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
@@ -529,19 +533,6 @@ void GeocodingNode::onProcessingFinished()
     }
 
     // Clean up worker thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
     updateParameterWidgetsEnableState();
 
     m_outputNodeName = dstNode;
@@ -577,6 +568,15 @@ void GeocodingNode::onProcessingFinished()
         setProgress(100);
         finishExecution();
     }
+}
+
+void GeocodingNode::onCancelled()
+{
+    InSARLogManager::LogInfo("GeocodingNode", "Geocoding cancellation cleanup completed.");
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    updateParameterWidgetsEnableState();
 }
 
 void GeocodingNode::onError(const QString& error)
@@ -778,12 +778,6 @@ void GeocodingNode::stopExecution()
 {
     if (m_workerThread) {
         m_workerThread->StopProcess();
-    }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 

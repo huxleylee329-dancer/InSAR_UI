@@ -79,6 +79,16 @@ void S1DeburstWorker::S1_Deburst(
         return;
     }
 
+    const auto finishCancelled = [this, &SAR_images_deburst]() {
+        for (const std::string& outputPath : SAR_images_deburst) {
+            const QString h5Path = QString::fromStdString(outputPath);
+            const QFileInfo fileInfo(h5Path);
+            QFile::remove(h5Path);
+            QFile::remove(fileInfo.absolutePath() + "/" + fileInfo.baseName() + ".jpg");
+        }
+        emit cancelled();
+    };
+
     emit updateProcess(10, QStringLiteral("开始burst拼接……"));
     InSARLogManager::LogInfo("S1DeburstWorker", QString("Starting burst splicing. Total images: %1, Source Node: %2, Destination Node: %3")
         .arg(SAR_images.size()).arg(srcNode).arg(dstNode));
@@ -87,18 +97,26 @@ void S1DeburstWorker::S1_Deburst(
     {
         if (QThread::currentThread()->isInterruptionRequested())
         {
-            emit errorProcess(QStringLiteral("用户取消操作"));
+            finishCancelled();
             return;
         }
         InSARLogManager::LogInfo("S1DeburstWorker", QString("Processing image %1/%2: %3")
             .arg(i).arg(SAR_images.size()).arg(origin[i - 1]));
         Sentinel1Utils su(SAR_images[i - 1].c_str());
         ret = su.init();
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            finishCancelled();
+            return;
+        }
         if (ret < 0) {
             emit errorProcess(QStringLiteral("Sentinel1Utils 初始化失败"));
             return;
         }
         ret = su.deburst(SAR_images_deburst[i - 1].c_str());
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            finishCancelled();
+            return;
+        }
         if (ret < 0) {
             emit errorProcess(QStringLiteral("deburst 拼接失败"));
             return;
@@ -110,13 +128,17 @@ void S1DeburstWorker::S1_Deburst(
         QFileInfo fi(h5Path);
         QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
         NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "complex");
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            finishCancelled();
+            return;
+        }
 
         emit updateProcess(int(10.0 + 80.0 / SAR_images.size() * i), QStringLiteral("burst拼接进度%1%").arg(int(10.0 + 80.0 / SAR_images.size() * i)));
     }
     
     if (QThread::currentThread()->isInterruptionRequested())
     {
-        emit errorProcess(QStringLiteral("用户取消操作"));
+        finishCancelled();
         return;
     }
 

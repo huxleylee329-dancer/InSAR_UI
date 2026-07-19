@@ -86,6 +86,7 @@ private:
     void updateParameterWidgetsEnableState();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    void onCancelled();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     void onResultsReceived(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames);
@@ -103,6 +104,7 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool stopExecutionIsAsynchronous() const override { return true; }
 
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;

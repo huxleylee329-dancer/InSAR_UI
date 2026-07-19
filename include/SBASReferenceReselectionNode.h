@@ -49,6 +49,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
@@ -83,6 +84,7 @@ private:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
     bool validateInputs() const;
     void updateLabels();
     void updateWidgetSize();

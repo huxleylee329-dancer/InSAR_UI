@@ -26,6 +26,7 @@ public slots:
     );
 
 signals:
+    void cancelled();
     void demFetchFinished(
         const QString& outputH5Path,
         const QString& dstNode,
@@ -35,7 +36,7 @@ signals:
     );
 
 private:
-    int downloadTile(const QString& url, const QString& savePath);
+    int downloadTile(const QString& url, const QString& savePath, bool allowRetry = true);
 };
 
 #endif // DEM_SOURCE_WORKER_H

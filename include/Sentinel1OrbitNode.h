@@ -112,6 +112,7 @@ private:
         const QString& targetDirName
     );
     void onError(const QString& error);
+    void onCancelled();
     bool validateInputs() const;
     void updateWidgetSize();
     void executeProcessing();
@@ -126,6 +127,7 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool stopExecutionIsAsynchronous() const override { return true; }
 
 signals:
     void startOrbitFetch(

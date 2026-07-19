@@ -56,6 +56,7 @@ public:
     QStringList previewImagePaths() const override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
 
@@ -82,6 +83,7 @@ private:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;

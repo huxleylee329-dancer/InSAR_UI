@@ -96,6 +96,9 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
  */
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type = "complex");
 
+// A valid preview must represent the current version of its H5 source.
+bool isJpgPreviewCurrent(const QString& h5Path, const QString& jpgPath);
+
 /**
  * @brief 从 H5 科学数据文件中提取幅值并生成 JPG 预览图，带进度回调接口
  * @param h5Path H5文件路径

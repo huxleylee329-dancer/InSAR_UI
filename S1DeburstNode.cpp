@@ -288,19 +288,8 @@ void S1DeburstNode::onProcessingFinished()
     }
 
     // Clean up thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_worker)
-    {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
+    m_worker = nullptr;
+    m_thread = nullptr;
 
     // Update UI
     m_outputNodeNameEdit->setEnabled(true);
@@ -317,22 +306,26 @@ void S1DeburstNode::onError(const QString& error)
 {
     InSARLogManager::LogError("S1DeburstNode", "Execution error: " + error);
     // Clean up thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_worker)
-    {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
+    m_worker = nullptr;
+    m_thread = nullptr;
 
     m_outputNodeNameEdit->setEnabled(true);
     setState(ExecutionState::Error);
+}
+
+void S1DeburstNode::onCancelled()
+{
+    InSARLogManager::LogInfo("S1DeburstNode", "Deburst cancellation reached a safe boundary.");
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    m_outputNodeNameEdit->setEnabled(true);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
@@ -531,8 +524,6 @@ void S1DeburstNode::stopExecution()
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 
@@ -622,11 +613,15 @@ void S1DeburstNode::executeProcessing()
     });
     connect(m_worker, &S1DeburstWorker::updateProcess, this, &S1DeburstNode::onProgressUpdate);
     connect(m_worker, &S1DeburstWorker::endProcess, this, &S1DeburstNode::onProcessingFinished);
+    connect(m_worker, &S1DeburstWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &S1DeburstWorker::errorProcess, this, &S1DeburstNode::onError);
+    connect(m_worker, &S1DeburstWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &S1DeburstWorker::cancelled, this, &S1DeburstNode::onCancelled);
+    connect(m_worker, &S1DeburstWorker::cancelled, m_thread, &QThread::quit);
     connect(m_worker, &S1DeburstWorker::sendModel, this, &S1DeburstNode::onModelUpdated);
     // sendResults: Worker 完成后回传路径列表，由 Node 端用原生 TinyXML 写 XML（SOP 避坑经验 #9）
     connect(m_worker, &S1DeburstWorker::sendResults, this, &S1DeburstNode::onResultsReceived);
-    connect(m_worker, &S1DeburstWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread

@@ -364,10 +364,11 @@ bool DemNode::prepareToStart()
     }
 
     if (!hasFlatPhase) {
-        QMessageBox::warning(nullptr, QStringLiteral("无法执行高程反演"),
-            QStringLiteral("输入的解缠相位文件中未包含平地相位消除系数(flat_phase_coefficient)。\n\n"
-                           "请确保上游的\"干涉形成 (Interferometric Formation)\"节点在运行时已勾选\"平地消除 (IsDeflat)\"选项，并重新运行后续节点。"));
+        QString errorMsg = QStringLiteral("输入的解缠相位文件中未包含平地相位消除系数(flat_phase_coefficient)。"
+                                          "请确保上游\"干涉形成 (Interferometric Formation)\"节点在运行时已勾选\"平地消除 (IsDeflat)\"选项，并重新运行后续节点。");
+        setLastErrorMessage(errorMsg);
         setState(ExecutionState::Error);
+        Q_EMIT executionError(errorMsg);
         return false;
     }
 
@@ -430,7 +431,11 @@ void DemNode::executeProcessing()
     });
     connect(m_workerThread, &DemWorker::updateProcess, this, &DemNode::onProgressUpdate);
     connect(m_workerThread, &DemWorker::endProcess, this, &DemNode::onProcessingFinished);
+    connect(m_workerThread, &DemWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &DemWorker::cancelled, this, &DemNode::onCancelled);
+    connect(m_workerThread, &DemWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &DemWorker::errorProcess, this, &DemNode::onError);
+    connect(m_workerThread, &DemWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &DemWorker::sendModel, this, &DemNode::onModelUpdated);
     connect(m_workerThread, &DemWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
@@ -560,26 +565,24 @@ void DemNode::onProcessingFinished()
 
 void DemNode::onError(const QString& error)
 {
-    Q_UNUSED(error);
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
-
     m_outputNodeNameEdit->setEnabled(true);
     m_methodCombo->setEnabled(true);
     if (m_timesEdit) m_timesEdit->setEnabled(true);
     onMethodChanged(m_method - 1);
 
+    setLastErrorMessage(error);
     setState(ExecutionState::Error);
+    Q_EMIT executionError(error);
+}
+
+void DemNode::onCancelled()
+{
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    m_outputNodeNameEdit->setEnabled(true);
+    m_methodCombo->setEnabled(true);
+    if (m_timesEdit) m_timesEdit->setEnabled(true);
 }
 
 void DemNode::onModelUpdated(QStandardItemModel* model)
@@ -759,12 +762,6 @@ void DemNode::stopExecution()
     if (m_workerThread)
     {
         m_workerThread->StopProcess();
-    }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 

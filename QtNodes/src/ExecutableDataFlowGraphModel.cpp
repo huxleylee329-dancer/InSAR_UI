@@ -98,12 +98,13 @@ void ExecutableDataFlowGraphModel::load(QJsonObject const &json)
     DataFlowGraphModel::load(json);
     _isRestoring = false;
 
-    // After restoration is complete, clear the restoring flag on all nodes
-    // and trigger visual updates to reflect the restored state
+    // Input and connection callbacks are suppressed during restoration. Once
+    // all connections exist, recalculate readiness for automatic nodes.
     for (auto const nodeId : allNodeIds()) {
         auto *execModel = delegateModel<ExecutableNodeDelegateModel>(nodeId);
         if (execModel) {
             execModel->setRestoring(false);
+            execModel->refreshStateAfterRestoration();
             execModel->triggerVisualUpdate();
         }
     }

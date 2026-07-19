@@ -340,14 +340,8 @@ void S1FrameMergeNode::onProcessingFinished()
     setOutputData(0, m_outputData);
     validateAndRestoreOutput();
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread = nullptr;
-    }
-
     m_worker = nullptr;
+    m_thread = nullptr;
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setEnabled(true);
@@ -362,19 +356,29 @@ void S1FrameMergeNode::onProcessingFinished()
 void S1FrameMergeNode::onError(const QString& error)
 {
     // Clean up thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread = nullptr;
-    }
-
     m_worker = nullptr;
+    m_thread = nullptr;
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setEnabled(true);
     setState(ExecutionState::Error);
     InSARLogManager::LogError("S1FrameMergeNode", "Error during frame merge: " + error);
+}
+
+void S1FrameMergeNode::onCancelled()
+{
+    InSARLogManager::LogInfo("S1FrameMergeNode", "Frame merge cancellation cleanup completed.");
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    if (m_outputNodeNameEdit)
+        m_outputNodeNameEdit->setEnabled(true);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
@@ -424,11 +428,12 @@ void S1FrameMergeNode::execute()
 
 void S1FrameMergeNode::stopExecution()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 
@@ -576,7 +581,11 @@ void S1FrameMergeNode::executeProcessing()
     });
     connect(m_worker, &S1FrameMergeWorker::updateProcess, this, &S1FrameMergeNode::onProgressUpdate);
     connect(m_worker, &S1FrameMergeWorker::endProcess, this, &S1FrameMergeNode::onProcessingFinished);
+    connect(m_worker, &S1FrameMergeWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &S1FrameMergeWorker::errorProcess, this, &S1FrameMergeNode::onError);
+    connect(m_worker, &S1FrameMergeWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &S1FrameMergeWorker::cancelled, this, &S1FrameMergeNode::onCancelled);
+    connect(m_worker, &S1FrameMergeWorker::cancelled, m_thread, &QThread::quit);
     connect(m_worker, &S1FrameMergeWorker::sendModel, this, &S1FrameMergeNode::onModelUpdated);
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);

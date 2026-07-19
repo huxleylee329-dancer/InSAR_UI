@@ -203,6 +203,7 @@ private:
     QLabel* m_statusProjectLabel;
     QLabel* m_statusInterfaceLabel;
     QProgressBar* m_statusProgressBar;
+    QString m_runningNodeCaption;
 
     void initStatusBar();
     void updateStatusBarProject(const QString& filePath);

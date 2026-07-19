@@ -547,7 +547,11 @@ void DenoiseNode::executeProcessing()
     });
     connect(m_workerThread, &DenoiseWorker::updateProcess, this, &DenoiseNode::onProgressUpdate);
     connect(m_workerThread, &DenoiseWorker::endProcess, this, &DenoiseNode::onProcessingFinished);
+    connect(m_workerThread, &DenoiseWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &DenoiseWorker::cancelled, this, &DenoiseNode::onCancelled);
+    connect(m_workerThread, &DenoiseWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &DenoiseWorker::errorProcess, this, &DenoiseNode::onError);
+    connect(m_workerThread, &DenoiseWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &DenoiseWorker::sendModel, this, &DenoiseNode::onModelUpdated);
     connect(m_workerThread, &DenoiseWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
@@ -867,12 +871,15 @@ void DenoiseNode::stopExecution()
     {
         m_workerThread->StopProcess();
     }
-    if (m_thread && m_thread->isRunning())
-    {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
-    }
+}
+
+void DenoiseNode::onCancelled()
+{
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    m_outputNodeNameEdit->setEnabled(true);
+    m_methodCombo->setEnabled(true);
 }
 
 void DenoiseNode::processAutomatically()

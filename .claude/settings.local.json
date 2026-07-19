@@ -6,7 +6,9 @@
       "Bash(find:*)",
       "Bash(test:*)",
       "Bash(grep:*)",
-      "Bash(git show *)"
+      "Bash(git show *)",
+      "Skill(code-review)",
+      "Bash(git diff *)"
     ]
   }
 }

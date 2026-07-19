@@ -40,6 +40,7 @@ public:
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
+    void inputConnectionDeleted(ConnectionId const& connectionId) override;
     ::QWidget* embeddedWidget() override;
 
     QJsonObject save() const override;

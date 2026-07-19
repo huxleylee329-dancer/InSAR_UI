@@ -78,14 +78,16 @@ void BaseImportWorker::import_patch(
         int progressMin = startRange;
         int progressMax = startRange + (endRange - startRange) * 0.8;
         bool success = false;
+        QString subErrorMsg;
         {
             NodeUtils::Hdf5Locker hdf5Locker;
-            success = convertToH5(task.arguments, h5_path, progressMin, progressMax);
+            success = convertToH5(task.arguments, h5_path, progressMin, progressMax, subErrorMsg);
         }
 
         if (!success || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
         {
-            handleError("Conversion to H5 failed or interrupted.", h5_path, savepath + "/" + dst_node);
+            QString finalErrorMsg = subErrorMsg.isEmpty() ? "Conversion to H5 failed or interrupted." : subErrorMsg;
+            handleError(finalErrorMsg, h5_path, savepath + "/" + dst_node);
             return;
         }
 

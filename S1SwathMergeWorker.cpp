@@ -8,6 +8,24 @@
 #include <QFileInfo>
 #include <QThread>
 #include <QIcon>
+#include <atomic>
+
+namespace {
+std::atomic<S1SwathMergeWorker*> g_swathMergeWorker{ nullptr };
+
+bool __stdcall swathMergeProgressCallback(int progress, const char* message)
+{
+    S1SwathMergeWorker* worker = g_swathMergeWorker.load(std::memory_order_acquire);
+    if (!worker || worker->isStopRequested()) {
+        return false;
+    }
+
+    const QString text = message ? QString::fromLocal8Bit(message) : QString();
+    emit worker->updateProcess(30 + progress * 60 / 100,
+        QStringLiteral("正在拼接子带：%1% %2").arg(progress).arg(text));
+    return true;
+}
+}
 
 S1SwathMergeWorker::S1SwathMergeWorker(QObject* parent)
     : BaseWorker(parent)
@@ -31,6 +49,10 @@ void S1SwathMergeWorker::S1_swath_merge(
 )
 {
     NodeUtils::Hdf5Locker locker;
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
     InSARLogManager::LogInfo("S1SwathMergeWorker", QString("S1_swath_merge started. Project: %1").arg(project_name));
     if (!model) {
         emit errorProcess(QStringLiteral("项目模型为空"));
@@ -89,11 +111,23 @@ void S1SwathMergeWorker::S1_swath_merge(
     emit updateProcess(30, QStringLiteral("正在拼接……"));
     
     QString merged_h5 = save_path + "/" + dstNode + "/merged_phase.h5";
+    const QString bmp_path = save_path + "/" + dstNode + "/merged_phase.jpg";
+    const auto finishCancelled = [this, &merged_h5, &bmp_path]() {
+        QFile::remove(merged_h5);
+        QFile::remove(bmp_path);
+        emit cancelled();
+    };
     InSARLogManager::LogInfo("S1SwathMergeWorker", QString("Merging swaths into: %1").arg(merged_h5));
     
     Utils util;
-    int ret = util.S1_subswath_merge(IW1_h5.toStdString().c_str(), IW2_h5.toStdString().c_str(), IW3_h5.toStdString().c_str(), 
-        merged_h5.toStdString().c_str());
+    g_swathMergeWorker.store(this, std::memory_order_release);
+    int ret = util.S1_subswath_merge(IW1_h5.toStdString().c_str(), IW2_h5.toStdString().c_str(), IW3_h5.toStdString().c_str(),
+        merged_h5.toStdString().c_str(), swathMergeProgressCallback);
+    g_swathMergeWorker.store(nullptr, std::memory_order_release);
+    if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+        finishCancelled();
+        return;
+    }
     if (ret < 0)
     {
         InSARLogManager::LogError("S1SwathMergeWorker", QStringLiteral("输入不符合要求，请重试！"));
@@ -103,8 +137,11 @@ void S1SwathMergeWorker::S1_swath_merge(
 
     InSARLogManager::LogInfo("S1SwathMergeWorker", "Swaths merged successfully. Generating preview image...");
     // 生成 JPG 预览图 (类型为 phase)
-    QString bmp_path = save_path + "/" + dstNode + "/merged_phase.jpg";
     NodeUtils::generateJpgPreviewFromH5(merged_h5, bmp_path, "phase");
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        finishCancelled();
+        return;
+    }
 
     emit updateProcess(90, QStringLiteral("正在拼接……"));
 

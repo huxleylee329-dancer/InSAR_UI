@@ -102,6 +102,26 @@ void BaselinePreviewNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
     updateLabels();
 
     ExecutableNodeDelegateModel::setInData(data, port);
+
+    // 恢复工程时基类会抑制输入状态更新；无效输入不能保留已完成状态。
+    if (filePaths.isEmpty() && executionState() == ExecutionState::Completed) {
+        setState(ExecutionState::Idle);
+    }
+}
+
+void BaselinePreviewNode::inputConnectionDeleted(ConnectionId const& connectionId)
+{
+    // 该节点的输出使用私有缓存，断开输入时需显式清理，不能只依赖基类输出缓存。
+    m_inputData.reset();
+    m_outputData.reset();
+    m_temporalBaselines.clear();
+    m_spatialBaselines.clear();
+    setOutputData(0, nullptr);
+    if (m_showChartBtn) m_showChartBtn->setEnabled(false);
+    updateMasterImageCombo();
+    updateLabels();
+
+    ExecutableNodeDelegateModel::inputConnectionDeleted(connectionId);
 }
 
 ::QWidget* BaselinePreviewNode::embeddedWidget()

@@ -1821,6 +1821,7 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
     auto execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
     if (!execModel) return;
 
+    QPointer<QtNodes::ExecutableNodeDelegateModel> weakModel(execModel);
     QString caption = execModel->caption();
 
     // 连接节点的进度和执行信号
@@ -1836,12 +1837,246 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
         Q_EMIT nodeExecutionFinished(caption);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionError, this, [this, caption](const QString& error) {
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionError, this, [this, caption, nodeId, weakModel](const QString& error) {
+        if (weakModel) {
+            weakModel->setLastErrorMessage(error);
+        }
         Q_EMIT nodeExecutionError(caption, error);
+        this->showNotificationToast(caption, error, nodeId);
+    }, Qt::QueuedConnection);
+
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStartRejected, this, [this, caption, nodeId](const QString& reason) {
+        this->showNotificationToast(caption, reason, nodeId, true);
     }, Qt::QueuedConnection);
 
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStopped, this, [this, caption]() {
         Q_EMIT nodeExecutionFinished(caption);
     }, Qt::QueuedConnection);
+
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStateChanged, this, [this, caption, weakModel]() {
+        if (weakModel && weakModel->executionState() == QtNodes::ExecutionState::Idle) {
+            Q_EMIT nodeExecutionFinished(caption);
+        }
+    }, Qt::QueuedConnection);
 }
+
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
+#include <QTimer>
+#include <QPainter>
+#include <QStyleOption>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+
+// ============================================================================
+// NotificationToast Implementation
+// ============================================================================
+
+NotificationToast::NotificationToast(QWidget* parent, const QString& caption, const QString& message,
+                                     QtNodes::NodeId nodeId, std::function<void(QtNodes::NodeId)> locateCallback,
+                                     bool startRejected)
+    : QWidget(parent)
+    , m_nodeId(nodeId)
+    , m_locateCallback(locateCallback)
+{
+    setFixedWidth(320);
+    setMinimumHeight(64);
+    setAttribute(Qt::WA_DeleteOnClose);
+    
+    auto* mainLayout = new QHBoxLayout(this);
+    mainLayout->setContentsMargins(12, 10, 12, 10);
+    mainLayout->setSpacing(10);
+    
+    // 左侧粗红条指示器
+    QString accentColor = startRejected ? QStringLiteral("#F59E0B") : QStringLiteral("#EF4444");
+    auto* colorBar = new QWidget(this);
+    colorBar->setFixedWidth(4);
+    colorBar->setStyleSheet(QStringLiteral("background-color: %1; border-radius: 2px;").arg(accentColor));
+    mainLayout->addWidget(colorBar);
+    
+    // 内容文本
+    auto* textLayout = new QVBoxLayout();
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(4);
+    
+    auto* titleLabel = new QLabel(
+        (startRejected ? QStringLiteral("节点 [%1] 未运行") : QStringLiteral("节点 [%1] 执行失败")).arg(caption), this);
+    titleLabel->setStyleSheet("font-weight: bold; color: #FFFFFF; font-size: 12px; border: none; background: transparent;");
+    
+    auto* descLabel = new QLabel(message, this);
+    descLabel->setWordWrap(true);
+    descLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    descLabel->setStyleSheet("color: #D1D5DB; font-size: 11px; border: none; background: transparent;");
+    
+    textLayout->addWidget(titleLabel);
+    textLayout->addWidget(descLabel);
+    mainLayout->addLayout(textLayout, 1); // 占据左侧全部可用空间
+    
+    // 右侧按钮动作区 (只保留定位按钮)
+    auto* btnLayout = new QVBoxLayout();
+    btnLayout->setSpacing(0);
+    btnLayout->setAlignment(Qt::AlignBottom | Qt::AlignRight); // 让定位按钮居右下
+    
+    if (m_nodeId >= 0 && m_locateCallback) {
+        auto* locateBtn = new QPushButton(QStringLiteral("定位"), this);
+        locateBtn->setFixedSize(32, 20); // 缩窄按钮，保留“定位”文字所需的最小显示宽度
+        locateBtn->setStyleSheet("QPushButton { border: 1px solid #4B5563; border-radius: 3px; padding: 0px; margin: 0px; color: #D1D5DB; font-size: 10px; background: transparent; }"
+                                 "QPushButton:hover { border-color: #EF4444; color: #FFFFFF; background-color: rgba(239, 68, 68, 0.15); }");
+        connect(locateBtn, &QPushButton::clicked, this, [this]() {
+            m_locateCallback(m_nodeId);
+        });
+        btnLayout->addWidget(locateBtn, 0, Qt::AlignRight);
+    }
+    
+    mainLayout->addLayout(btnLayout, 0); // 按钮区不拉伸，紧贴右侧
+    mainLayout->setContentsMargins(12, 10, 12, 10);
+    titleLabel->setContentsMargins(0, 0, 26, 0); // 仅标题为右上角关闭按钮预留空间
+    mainLayout->activate();
+    setFixedHeight(mainLayout->sizeHint().height());
+    
+    // 关闭按钮独立置顶，避免被布局中的文本区域遮挡
+    auto* closeBtn = new QToolButton(this);
+    closeBtn->setText(QStringLiteral("×"));
+    closeBtn->setFixedSize(20, 20);
+    closeBtn->setStyleSheet("QToolButton { border: none; padding: 0px; margin: 0px; color: #F9FAFB; font-size: 18px; font-weight: bold; background: transparent; }"
+                            "QToolButton:hover { color: #FFFFFF; background-color: rgba(255, 255, 255, 0.12); border-radius: 3px; }");
+    connect(closeBtn, &QToolButton::clicked, this, &QWidget::close);
+    closeBtn->setGeometry(width() - 26, 6, 20, 20);
+    closeBtn->raise();
+    
+    // 隔离子控件的样式继承，仅将灰底红框圆角样式作用于卡片外壳本身
+    setObjectName("NotificationToast");
+    setStyleSheet(QStringLiteral("QWidget#NotificationToast { background-color: rgba(31, 41, 55, 0.96); border: 1px solid %1; border-radius: 6px; }")
+        .arg(startRejected ? QStringLiteral("rgba(245, 158, 11, 0.55)") : QStringLiteral("rgba(239, 68, 68, 0.45)")));
+    
+    // 淡入淡出特效
+    m_opacityEffect = new QGraphicsOpacityEffect(this);
+    setGraphicsEffect(m_opacityEffect);
+    
+    auto* fadeIn = new QPropertyAnimation(m_opacityEffect, "opacity");
+    fadeIn->setDuration(250);
+    fadeIn->setStartValue(0.0);
+    fadeIn->setEndValue(1.0);
+    fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
+    
+    // 8 秒后自动淡出
+    QTimer::singleShot(8000, this, &NotificationToast::fadeOut);
+}
+
+NotificationToast::~NotificationToast()
+{
+}
+
+void NotificationToast::fadeOut()
+{
+    if (!m_opacityEffect) {
+        close();
+        return;
+    }
+    auto* fadeOutAnim = new QPropertyAnimation(m_opacityEffect, "opacity");
+    fadeOutAnim->setDuration(400);
+    fadeOutAnim->setStartValue(m_opacityEffect->opacity());
+    fadeOutAnim->setEndValue(0.0);
+    connect(fadeOutAnim, &QPropertyAnimation::finished, this, &QWidget::close);
+    fadeOutAnim->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void NotificationToast::paintEvent(QPaintEvent* event)
+{
+    QStyleOption opt;
+    opt.init(this);
+    QPainter p(this);
+    style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
+    QWidget::paintEvent(event);
+}
+
+// ============================================================================
+// WorkflowUI Toast Notifications Slots
+// ============================================================================
+
+void WorkflowUI::showNotificationToast(const QString& caption, const QString& message, QtNodes::NodeId nodeId, bool startRejected)
+{
+    if (!m_view || !m_view->viewport()) return;
+    
+    auto* toast = new NotificationToast(m_view->viewport(), caption, message, nodeId, [this](QtNodes::NodeId id) {
+        this->locateNode(id);
+    }, startRejected);
+    
+    m_toasts.append(toast);
+    
+    // 隐藏状态下先重设大小，防止初始宽高为 0
+    toast->adjustSize();
+    
+    // 初始化位置：先放置在视口外右侧，滑入
+    int initX = m_view->viewport()->width();
+    int initY = 20;
+    toast->move(initX, initY);
+    toast->show();
+    
+    // show 之后再次强制自适应计算，确保折行后高度被撑开
+    toast->adjustSize();
+    
+    repositionToasts();
+    
+    connect(toast, &QObject::destroyed, this, [this, toast]() {
+        m_toasts.removeAll(toast);
+        repositionToasts();
+    });
+}
+
+void WorkflowUI::repositionToasts()
+{
+    if (!m_view || !m_view->viewport()) return;
+    
+    int rightMargin = 20;
+    int topMargin = 20;
+    int spacing = 10;
+    int toastWidth = 320;
+    
+    int targetX = m_view->viewport()->width() - toastWidth - rightMargin;
+    int currentY = topMargin;
+    
+    for (int i = 0; i < m_toasts.size(); ++i) {
+        QWidget* toast = m_toasts[i];
+        if (toast) {
+            toast->adjustSize(); // 确保重排时使用的是排版好后的真实折行高度
+            QPoint targetPos(targetX, currentY);
+            
+            auto* anim = new QPropertyAnimation(toast, "pos");
+            anim->setDuration(250);
+            anim->setStartValue(toast->pos());
+            anim->setEndValue(targetPos);
+            anim->setEasingCurve(QEasingCurve::OutQuad);
+            anim->start(QAbstractAnimation::DeleteWhenStopped);
+            
+            currentY += toast->height() + spacing;
+        }
+    }
+}
+
+void WorkflowUI::locateNode(QtNodes::NodeId nodeId)
+{
+    if (!m_graphModel || !m_view) return;
+    
+    // 1. 先重置缩放为 100% 默认大小，使定位时节点大小合理
+    m_view->onResetZoom();
+    
+    // 2. 然后居中定位该节点
+    QVariant val = m_graphModel->nodeData(nodeId, QtNodes::NodeRole::Position);
+    if (val.isValid()) {
+        QPointF nodePos = val.value<QPointF>();
+        m_view->centerOn(nodePos);
+        
+        if (m_scene) {
+            m_scene->clearSelection();
+            auto* gObj = m_scene->nodeGraphicsObject(nodeId);
+            if (gObj) {
+                gObj->setSelected(true);
+            }
+        }
+    }
+}
+
 

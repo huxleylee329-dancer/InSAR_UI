@@ -24,5 +24,6 @@ public slots:
 
 signals:
     // 特有信号：回传计算结果，由调用方完成 XML 写入
+    void cancelled();
     void sendResult(QString dstNode, QString filename, QString savePath, QString projectName);
 };

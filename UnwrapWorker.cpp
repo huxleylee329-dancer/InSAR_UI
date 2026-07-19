@@ -92,6 +92,10 @@ UnwrapWorker::~UnwrapWorker()
 
 void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
+    const auto finishCancelled = [this]() {
+        InSARLogManager::LogInfo("UnwrapWorker", "Unwrap cancelled by user.");
+        Q_EMIT cancelled();
+    };
     UnwrapThreadLocalGuard guard(this, model ? 1 : 1); // We will update total images count after we read image_number
     InSARLogManager::LogInfo("UnwrapWorker", QString("Unwrap task started. Output folder: %1, Method: %2").arg(file_name).arg(method));
 
@@ -272,6 +276,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             t_unwrapLastLoggedProgress = -10;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
@@ -281,9 +286,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
             Mat phase_unwrap;
             ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap, unwrapProgressCallback);
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
+                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                    finishCancelled();
+                }
                 return;
             }
             // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
@@ -302,6 +314,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             t_unwrapLastLoggedProgress = -10;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
@@ -315,9 +328,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = util.residue(phase, residue);
             QString app_path = QCoreApplication::applicationDirPath();
             ret = unwrap.MCF(phase, phase_unwrap, coherence, residue, (absolute_path + "/MCF.net").toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
+                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                    finishCancelled();
+                }
                 return;
             }
             // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
@@ -336,6 +356,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             t_unwrapLastLoggedProgress = -10;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
@@ -346,9 +367,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
             ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), absolute_path.toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
+                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                    finishCancelled();
+                }
                 return;
             }
             // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
@@ -368,6 +396,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             t_unwrapLastLoggedProgress = -10;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
@@ -378,9 +407,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
             ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold, absolute_path.toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
+                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                    finishCancelled();
+                }
                 return;
             }
             // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿

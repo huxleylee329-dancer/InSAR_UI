@@ -40,6 +40,7 @@ public slots:
     );
 
 signals:
+    void cancelled();
     void applyOrbitsFinished(
         const QStringList& newH5Paths,
         int podApplyOk,

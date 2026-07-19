@@ -37,7 +37,7 @@ Sentinel1ImportWorker::~Sentinel1ImportWorker()
 }
 
 bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QString& outputPath,
-                                       int progressMin, int progressMax)
+                                       int progressMin, int progressMax, QString& outErrorMsg)
 {
     if (arguments.size() < 3) return false;
 
@@ -78,6 +78,10 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         start_burst,
         end_burst
     );
+
+    if (ret < 0) {
+        outErrorMsg = QString("底转换 DLL 执行失败，错误码：%1。请核对爆块(Burst)范围或原始数据文件是否损坏。").arg(ret);
+    }
 
     return ret >= 0;
 }

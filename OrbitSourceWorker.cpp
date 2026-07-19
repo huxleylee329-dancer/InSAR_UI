@@ -825,7 +825,10 @@ bool OrbitSourceWorker::resolveAndDownloadOrbit(OrbitSource source, const QStrin
             ? findCdseOrbit(info, precise, product, searchError)
             : findAsfOrbit(info, precise, product, searchError);
         if (!found) {
-            if (isStopRequested() || searchError.contains("超时") || searchError.contains("失败")
+            if (isStopRequested()) {
+                return false;
+            }
+            if (searchError.contains("超时") || searchError.contains("失败")
                 || searchError.contains("凭据") || searchError.contains("认证") || searchError.contains("429")) {
                 errorMessage = searchError;
                 return false;
@@ -872,7 +875,7 @@ void OrbitSourceWorker::fetch_orbits(QString projectPath, QString projectName, Q
     int successCount = 0;
     for (int i = 0; i < filePaths.size(); ++i) {
         if (isStopRequested()) {
-            emit errorProcess(QStringLiteral("用户中止了轨道下载。"));
+            Q_EMIT cancelled();
             return;
         }
         emit updateProcess(10 + i * 80 / filePaths.size(),
@@ -887,7 +890,11 @@ void OrbitSourceWorker::fetch_orbits(QString projectPath, QString projectName, Q
                 .arg(QFileInfo(filePaths.at(i)).fileName(), QFileInfo(eofPath).fileName()));
         } else {
             InSARLogManager::LogWarning("OrbitSourceWorker", itemError);
-            if (isStopRequested() || itemError.contains("超时") || itemError.contains("失败")
+            if (isStopRequested()) {
+                emit cancelled();
+                return;
+            }
+            if (itemError.contains("超时") || itemError.contains("失败")
                 || itemError.contains("凭据") || itemError.contains("认证") || itemError.contains("429")) {
                 emit errorProcess(itemError);
                 return;
@@ -927,6 +934,10 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
     QHash<QString, QString> matchedOrbits;
     QHash<QString, bool> preciseFlags;
     for (int i = 0; i < filePaths.size(); ++i) {
+        if (isStopRequested()) {
+            emit cancelled();
+            return;
+        }
         emit updateProcess(5 + i * 50 / filePaths.size(),
             QStringLiteral("正在匹配影像 %1 的轨道文件……").arg(QFileInfo(filePaths.at(i)).fileName()));
         QString eofPath;
@@ -938,7 +949,11 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
             preciseFlags.insert(filePaths.at(i), precise);
         } else {
             InSARLogManager::LogWarning("OrbitSourceWorker", itemError);
-            if (isStopRequested() || itemError.contains("超时") || itemError.contains("失败")
+            if (isStopRequested()) {
+                emit cancelled();
+                return;
+            }
+            if (itemError.contains("超时") || itemError.contains("失败")
                 || itemError.contains("凭据") || itemError.contains("认证") || itemError.contains("429")) {
                 emit errorProcess(itemError);
                 return;
@@ -960,7 +975,7 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
     FormatConversion conversion;
     for (int i = 0; i < filePaths.size(); ++i) {
         if (isStopRequested()) {
-            emit errorProcess(QStringLiteral("用户中止了轨道应用。"));
+            Q_EMIT cancelled();
             return;
         }
         const QString h5Path = filePaths.at(i);
@@ -974,6 +989,10 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
             NodeUtils::readStringFromH5(h5Path, "acquisition_start_time", startText);
             NodeUtils::readStringFromH5(h5Path, "acquisition_stop_time", stopText);
         }
+        if (isStopRequested()) {
+            emit cancelled();
+            return;
+        }
 
         const QString newH5Path = QDir(targetDirPath).absoluteFilePath(QFileInfo(h5Path).fileName());
         if (QFile::exists(newH5Path) && !QFile::remove(newH5Path)) {
@@ -983,6 +1002,10 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
         if (!QFile::copy(h5Path, newH5Path)) {
             podApplyFail++;
             continue;
+        }
+        if (isStopRequested()) {
+            emit cancelled();
+            return;
         }
 
         const QString sourceJpg = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
@@ -1016,6 +1039,10 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
                 conversion.write_str_to_h5(nativeH5.toLocal8Bit().constData(), "orbit_type",
                     orbitType.toStdString().c_str());
             }
+        }
+        if (isStopRequested()) {
+            emit cancelled();
+            return;
         }
         if (result >= 0) {
             podApplyOk++;

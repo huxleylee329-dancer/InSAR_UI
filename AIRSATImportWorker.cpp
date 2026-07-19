@@ -11,7 +11,7 @@ AIRSATImportWorker::~AIRSATImportWorker()
 }
 
 bool AIRSATImportWorker::convertToH5(const QStringList& arguments, const QString& outputPath,
-                                    int progressMin, int progressMax)
+                                     int progressMin, int progressMax, QString& outErrorMsg)
 {
     if (arguments.size() < 2) return false;
 

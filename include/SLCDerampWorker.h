@@ -30,6 +30,7 @@ public slots:
     );
 
 signals:
+    void cancelled();
     // 特有信号：回传 SLC 去斜坡结果
     void sendResults(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames);
 };

@@ -29,4 +29,7 @@ public slots:
         QStandardItemModel* model,
         QString dem_path
     );
+
+signals:
+    void cancelled();
 };

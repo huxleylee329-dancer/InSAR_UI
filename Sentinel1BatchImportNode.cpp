@@ -34,6 +34,8 @@
 
 namespace QtNodes {
 
+static TiXmlElement* findElementRecursive(TiXmlElement* parent, const std::string& name);
+
 Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
@@ -178,9 +180,11 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     burstRow->addWidget(new QLabel("爆块范围："));
     m_startBurstSpin = new QSpinBox();
     m_startBurstSpin->setRange(0, 99);
+    m_startBurstSpin->setKeyboardTracking(false);
     m_startBurstSpin->setValue(m_startBurst);
     m_endBurstSpin = new QSpinBox();
     m_endBurstSpin->setRange(0, 99);
+    m_endBurstSpin->setKeyboardTracking(false);
     m_endBurstSpin->setValue(m_endBurst);
     
     burstRow->addWidget(m_startBurstSpin);
@@ -204,6 +208,9 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     connect(m_startBurstSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, invalidateNodeData](int val) {
         if (m_startBurst != val) {
             m_startBurst = val;
+            if (m_endBurstSpin && m_endBurstSpin->value() < val) {
+                m_endBurstSpin->setValue(val);
+            }
             invalidateNodeData();
         }
     });
@@ -211,6 +218,9 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     connect(m_endBurstSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, invalidateNodeData](int val) {
         if (m_endBurst != val) {
             m_endBurst = val;
+            if (m_startBurstSpin && m_startBurstSpin->value() > val) {
+                m_startBurstSpin->setValue(val);
+            }
             invalidateNodeData();
         }
     });
@@ -227,6 +237,16 @@ QWidget* Sentinel1BatchImportNode::createWidget()
 
 bool Sentinel1BatchImportNode::prepareToStart()
 {
+    // 强制把 SpinBox 的最新输入解析并同步到变量中，防止用户直接点击画布上的虚拟 Play 按钮而未触发 focusOut 失去焦点导致值滞留
+    if (m_startBurstSpin) {
+        m_startBurstSpin->interpretText();
+        m_startBurst = m_startBurstSpin->value();
+    }
+    if (m_endBurstSpin) {
+        m_endBurstSpin->interpretText();
+        m_endBurst = m_endBurstSpin->value();
+    }
+
     // Safety check: Ensure project is open
     auto* model = projectModel();
     QString path = projectPath();
@@ -266,6 +286,81 @@ bool Sentinel1BatchImportNode::prepareToStart()
         }
         m_preparedOriginalNameList.push_back(manifestPath);
         m_preparedImportNameList.push_back(importName);
+    }
+
+    // 增加对爆块(Burst)及极化/子带的前置校验
+    if (!m_importAllBursts)
+    {
+        if (m_startBurst > m_endBurst)
+        {
+            onError(QStringLiteral("爆块(Burst)起始编号(%1)不能大于结束编号(%2)！").arg(m_startBurst).arg(m_endBurst));
+            return false;
+        }
+
+        QString subswath = m_subswathCombo->currentText();
+        QString pol = m_polarizationCombo->currentText();
+
+        for (const QString& manifestPath : m_manifestPaths)
+        {
+            QFileInfo manifestInfo(manifestPath);
+            QDir safeDir = manifestInfo.dir();
+            QDir annDir(safeDir.filePath("annotation"));
+            if (!annDir.exists())
+            {
+                onError(QStringLiteral("清单文件对应的 annotation 目录不存在：%1").arg(annDir.absolutePath()));
+                return false;
+            }
+
+            QStringList xmlFilters;
+            xmlFilters << QString("*-%1-slc-%2-*.xml").arg(subswath.toLower()).arg(pol.toLower());
+            QStringList entries = annDir.entryList(xmlFilters, QDir::Files);
+            if (entries.isEmpty())
+            {
+                onError(QStringLiteral("在 %1 中未找到子带 %2 极化 %3 的元数据XML文件！请检查子带/极化选择是否正确。")
+                    .arg(manifestInfo.fileName()).arg(subswath).arg(pol));
+                return false;
+            }
+
+            QString xmlPath = annDir.absoluteFilePath(entries.first());
+            XMLFile xmldoc;
+            TiXmlElement* xmlRoot = nullptr;
+            if (xmldoc.XMLFile_load(xmlPath.toStdString().c_str()) >= 0)
+            {
+                xmldoc.get_root(xmlRoot);
+                if (xmlRoot)
+                {
+                    int burstCount = 0;
+                    TiXmlElement* listNode = findElementRecursive(xmlRoot, "burstList");
+                    if (listNode)
+                    {
+                        for (TiXmlElement* bNode = listNode->FirstChildElement("burst"); bNode; bNode = bNode->NextSiblingElement("burst"))
+                        {
+                            burstCount++;
+                        }
+                    }
+
+                    if (m_endBurst >= burstCount)
+                    {
+                        onError(QStringLiteral("输入的结束爆块编号(%1)超出了文件 %2 的最大爆块数(%3)！有效编号范围应为 0-%4。")
+                            .arg(m_endBurst)
+                            .arg(manifestInfo.fileName())
+                            .arg(burstCount)
+                            .arg(burstCount - 1));
+                        return false;
+                    }
+                }
+                else
+                {
+                    onError(QStringLiteral("无法读取元数据XML文件的根节点：%1").arg(xmlPath));
+                    return false;
+                }
+            }
+            else
+            {
+                onError(QStringLiteral("无法加载元数据XML文件：%1").arg(xmlPath));
+                return false;
+            }
+        }
     }
 
     m_preparedOutputNodeName = getOutputNodeName();

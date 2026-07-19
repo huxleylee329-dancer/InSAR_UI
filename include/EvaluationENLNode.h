@@ -66,6 +66,7 @@ public:
     void load(QJsonObject const &json) override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool validateAndRestoreOutput() override;
 
 private slots:

@@ -419,7 +419,11 @@ void SBASReferenceReselectionNode::executeProcessing()
 
     connect(m_worker, &SBASReferenceReselectionWorker::updateProcess, this, &SBASReferenceReselectionNode::onProgressUpdate);
     connect(m_worker, &SBASReferenceReselectionWorker::endProcess, this, &SBASReferenceReselectionNode::onProcessingFinished);
+    connect(m_worker, &SBASReferenceReselectionWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &SBASReferenceReselectionWorker::errorProcess, this, &SBASReferenceReselectionNode::onError);
+    connect(m_worker, &SBASReferenceReselectionWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &SBASReferenceReselectionWorker::cancelled, this, &SBASReferenceReselectionNode::onCancelled);
+    connect(m_worker, &SBASReferenceReselectionWorker::cancelled, m_thread, &QThread::quit);
 
     m_thread->start();
     Q_EMIT startProcess();
@@ -456,10 +460,23 @@ void SBASReferenceReselectionNode::onError(const QString& error)
     
     if (m_thread)
     {
-        m_thread->quit();
-        m_thread->wait();
         m_thread = nullptr;
     }
+}
+
+void SBASReferenceReselectionNode::onCancelled()
+{
+    InSARLogManager::LogInfo("SBASReferenceReselectionNode", "Reference reselection cancellation completed.");
+    m_thread = nullptr;
+    m_worker = nullptr;
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    m_resultLabel->setText(QStringLiteral("已取消"));
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void SBASReferenceReselectionNode::onProcessingFinished()
@@ -469,8 +486,6 @@ void SBASReferenceReselectionNode::onProcessingFinished()
 
     if (m_thread)
     {
-        m_thread->quit();
-        m_thread->wait();
         m_thread = nullptr;
     }
 

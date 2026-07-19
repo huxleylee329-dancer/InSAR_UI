@@ -357,7 +357,9 @@ void TreeView::CleanOrphanedFiles()
     QStringList orphanedFiles;
     
     for (const QString& dirName : allDirs) {
-        if (dirName == "temp" || dirName == ".temp" || dirName == "logs") {
+        // 内部缓存目录不属于节点输出，不能作为孤立目录清理。
+        if (dirName == "temp" || dirName == ".temp" || dirName == "logs" ||
+            dirName.compare(".dem_cache", Qt::CaseInsensitive) == 0) {
             continue;
         }
         if (!activeNodeNames.contains(dirName)) {

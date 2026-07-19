@@ -305,6 +305,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 InSARLogManager::LogInfo("InterferometricFormationWorker", "Task cancelled by interruption request.");
+                emit cancelled();
                 return;
             }
             QString slave_regis_name = origin_node->child(i, 0)->text();
@@ -360,6 +361,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 
                 if (ret_deflat == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Deflat process cancelled by user.");
+                    emit cancelled();
                     return;
                 }
                 else if (ret_deflat < 0) {
@@ -382,6 +384,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
 
                 if (ret_topo == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Topography simulation cancelled by user.");
+                    emit cancelled();
                     return;
                 }
                 else if (ret_topo < 0) {
@@ -456,12 +459,14 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
                 {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Task cancelled by interruption request inside coherence block.");
+                    emit cancelled();
                     return;
                 }
                 Mat coherence;
                 int ret_coh = util.phase_coherence(phase, win_width, win_height, coherence, DeflatProgressCallbackImpl);
                 if (ret_coh == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Coherence calculation cancelled by user.");
+                    emit cancelled();
                     return;
                 }
                 else if (ret_coh < 0) {

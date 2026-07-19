@@ -178,11 +178,17 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 
 	Mat offset_row_out, offset_col_out;
     int ret = Registration_copy(SAR_images, SAR_images_regis, offset_row_out, offset_col_out, index, interp_times, block_size);
-    if (ret<0 || QThread::currentThread()->isInterruptionRequested())
+    if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
     {
-		InSARLogManager::LogError("CoregistrationWorker", QString("Task failed or interrupted in: ") + QString(__FUNCTION__));
+		Q_EMIT cancelled();
 		return;
     }
+    if (ret < 0)
+    {
+		InSARLogManager::LogError("CoregistrationWorker", QString("Task failed in: ") + QString(__FUNCTION__));
+		Q_EMIT errorProcess(QStringLiteral("配准计算失败。"));
+		return;
+	}
     /*建立配准根节点*/
     QStandardItem* regis = NodeUtils::findOrCreateProjectNode(project, file_name, "complex-2.0");
     if (regis)
@@ -226,8 +232,9 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 	emit updateProcess(90, QStringLiteral("写入辅助参数……"));
     for (int i = 0; i < image_number; i++)
     {
-		if (QThread::currentThread()->isInterruptionRequested())
+		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
 		{
+			Q_EMIT cancelled();
 			return;
 		}
         if (regis && regis->model()) {
@@ -329,8 +336,9 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
     for (int i = 0; i < image_number; i++)
     {
-		if (QThread::currentThread()->isInterruptionRequested())
+		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
 		{
+			Q_EMIT cancelled();
 			return;
 		}
         QString outName = resolveOutputFileName(origin.at(i));
@@ -471,6 +479,7 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	{
 		if (i == masterIndex - 1) continue;
 		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+			Q_EMIT cancelled();
 			return;
 		}
 		int offset_r, offset_c;
@@ -537,8 +546,9 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	QString temporal_baseline, B_parallel, B_effect;
 	for (int i = 0; i < images_number; i++)
 	{
-		if (QThread::currentThread()->isInterruptionRequested())
+		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
 		{
+			Q_EMIT cancelled();
 			return;
 		}
 		if (regis && regis->model()) {
@@ -583,8 +593,9 @@ void CoregistrationWorker::DEMAssistCoregistration(
 
 	for (int i = 0; i < images_number; i++)
 	{
-		if (QThread::currentThread()->isInterruptionRequested())
+		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
 		{
+			Q_EMIT cancelled();
 			return;
 		}
         QString outName = resolveOutputFileName(origin.at(i));
@@ -629,6 +640,9 @@ int CoregistrationWorker::Registration_copy(
 	//获取各图像的尺寸，并创建输出h5文件
 	FormatConversion conversion;
 	int ret, type;
+	const auto cancellationRequested = [this]() {
+		return isStopRequested() || QThread::currentThread()->isInterruptionRequested();
+	};
 	int n_images = SAR_images.size();
 	int num_slaves = n_images - 1;
 	int slave_idx = 0;
@@ -657,7 +671,8 @@ int CoregistrationWorker::Registration_copy(
 				}
 			}
 		}
-		if (!step_ok || QThread::currentThread()->isInterruptionRequested()) return -1;
+		if (cancellationRequested()) return -2;
+		if (!step_ok) return -1;
 	}
 	//分块读取数据并求取偏移量
 	Utils util; Registration regis;
@@ -687,6 +702,7 @@ int CoregistrationWorker::Registration_copy(
 	if (rows * cols < 20000 * 20000) b_block = false;
 	for (int ii = 0; ii < n_images; ii++)
 	{
+		if (cancellationRequested()) return -2;
 		if (ii == Master_index - 1)
 		{
 			offset_row_out.at<int>(ii, 0) = 0;
@@ -698,14 +714,16 @@ int CoregistrationWorker::Registration_copy(
 			if (!master_read)
 			{
 				ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master_w);
-				if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+				if (cancellationRequested()) return -2;
+				if (ret < 0) return -1;
 				master_read = true;
 				type = master_w.type();
 				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//写主图像
 			}
 
 			ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave_w);
-			if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+			if (cancellationRequested()) return -2;
+			if (ret < 0) return -1;
 			if (type != slave_w.type())
 			{
 				fprintf(stderr, "stack_coregistration(): images type mismatch!\n");
@@ -722,7 +740,8 @@ int CoregistrationWorker::Registration_copy(
 			if (!master_read)
 			{
 				ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master_w);
-				if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+				if (cancellationRequested()) return -2;
+				if (ret < 0) return -1;
 				master_read = true;
 				type = master_w.type();
 				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//写主图像
@@ -790,6 +809,7 @@ int CoregistrationWorker::Registration_copy(
 					}
 				}
 			}
+			if (cancellationRequested()) return -2;
 
 		}
 		else
@@ -807,24 +827,31 @@ int CoregistrationWorker::Registration_copy(
 					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
 					{
 						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, master.im);
-						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+						if (cancellationRequested()) return -2;
+						if (ret < 0) return -1;
 						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, master.re);
-						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+						if (cancellationRequested()) return -2;
+						if (ret < 0) return -1;
 						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, slave.im);
-						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+						if (cancellationRequested()) return -2;
+						if (ret < 0) return -1;
 						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, slave.re);
-						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+						if (cancellationRequested()) return -2;
+						if (ret < 0) return -1;
 
 						//计算偏移量
 						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
 						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
 
 						ret = regis.interp_paddingzero(master, master_interp, interp_times);
-						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+						if (cancellationRequested()) return -2;
+						if (ret < 0) return -1;
 						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
-						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+						if (cancellationRequested()) return -2;
+						if (ret < 0) return -1;
 						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
-						if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+						if (cancellationRequested()) return -2;
+						if (ret < 0) return -1;
 						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
 						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
 					}
@@ -850,6 +877,7 @@ int CoregistrationWorker::Registration_copy(
 					}
 				}
 			}
+			if (cancellationRequested()) return -2;
 		}
 
 
@@ -992,13 +1020,17 @@ int CoregistrationWorker::Registration_copy(
 
 		ComplexMat slave1;
 		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested()) return -1;
+		if (cancellationRequested()) return -2;
+		if (ret < 0) return -1;
 		int rows_slave = slave1.GetRows(); int cols_slave = slave1.GetCols();
 		type = slave1.type();
 		ComplexMat slave_tmp; slave_tmp.re = Mat::zeros(rows, cols, type); slave_tmp.im = Mat::zeros(rows, cols, type);
 #pragma omp parallel for schedule(guided)
 		for (int i = 0; i < rows; i++)
 		{
+			if (isStopRequested()) {
+				continue;
+			}
 			double x, y, iiii, jjjj; Mat tmp(1, 3, CV_64F); Mat result;
 			int mm0, nn0, mm1, nn1;
 			double offset_rows, offset_cols, upper, lower;
@@ -1081,9 +1113,11 @@ int CoregistrationWorker::Registration_copy(
 
 			}
 		}
+		if (cancellationRequested()) return -2;
 
 		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
-		if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) return -1;
+		if (cancellationRequested()) return -2;
+		if (ret < 0) return -1;
 		double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
 		emit updateProcess(int(end_p), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
 		slave_idx++;

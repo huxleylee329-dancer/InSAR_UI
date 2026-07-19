@@ -259,4 +259,5 @@ void EarthdataLoginDialog::saveCredentials(const QString& username, const QStrin
     QString encryptedPass = QString::fromUtf8(password.toUtf8().toBase64());
     settings.setValue("DEM/EarthdataUser", encryptedUser);
     settings.setValue("DEM/EarthdataPassword", encryptedPass);
+    settings.sync();
 }

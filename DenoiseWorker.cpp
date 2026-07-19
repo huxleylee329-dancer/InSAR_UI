@@ -94,6 +94,7 @@ DenoiseWorker::~DenoiseWorker()
 
 void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
 {
+    const auto finishCancelled = [this]() { Q_EMIT cancelled(); };
     InSARLogManager::LogInfo("DenoiseWorker", QString("Denoise task started. Output folder: %1").arg(file_name));
 
     if (para.size() < 5 ||
@@ -226,6 +227,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             t_currentImageIndex = i;
             if (QThread::currentThread()->isInterruptionRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
@@ -237,6 +239,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             }
             Mat phase_filter;
             ret = filter.slope_adaptive_filter(phase, phase_filter, slop_win, pre_win, denoiseProgressCallback);
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("斜坡自适应滤波处理失败，请检查图像数据或窗口参数"));
                 return;
@@ -336,6 +342,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             t_currentImageIndex = i;
             if (QThread::currentThread()->isInterruptionRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
@@ -347,6 +354,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             }
             Mat phase_filter;
             ret = filter.Goldstein_filter(phase, phase_filter, alpha, goldstein_win, n_pad, denoiseProgressCallback);
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("Goldstein滤波处理失败，请检查图像数据或窗口参数"));
                 return;
@@ -446,6 +457,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
         {
             if (QThread::currentThread()->isInterruptionRequested())
             {
+                finishCancelled();
                 return;
             }
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像滤波中……").arg(i + 1));
@@ -458,6 +470,10 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
             Mat phase_filter;
             ret = filter.filter_dl(dl_path.toStdString().c_str(), tmp_path.toStdString().c_str(),
                 model_path.toStdString().c_str(), phase, phase_filter);
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                finishCancelled();
+                return;
+            }
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("深度学习滤波处理失败，请检查深度学习依赖或环境"));
                 return;

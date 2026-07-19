@@ -794,15 +794,11 @@ void InterferometricFormationNode::onProcessingFinished()
     // Clean up thread
     if (m_thread)
     {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
         m_thread = nullptr;
     }
 
     if (m_workerThread)
     {
-        m_workerThread->deleteLater();
         m_workerThread = nullptr;
     }
 
@@ -838,6 +834,7 @@ void InterferometricFormationNode::onProcessingFinished()
             updateParameterWidgetsEnableState();
 
             if (anyFailed) {
+                setLastWarningMessage(QStringLiteral("Interferometric products were generated, but some preview images could not be generated."));
                 setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning("InterferometricFormationNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
                 setProgress(100);
@@ -902,6 +899,29 @@ void InterferometricFormationNode::onError(const QString& error)
     setState(ExecutionState::Error);
 }
 
+void InterferometricFormationNode::onCancelled()
+{
+    InSARLogManager::LogInfo("InterferometricFormationNode", "Interferometric cancellation cleanup completed.");
+    const QString outputName = m_preparedFileName;
+    auto* iface = NodeUtils::getProjectContext(_widget);
+    if (iface && !outputName.isEmpty()) {
+        NodeUtils::removeDataNodeFromProject(iface, outputName);
+    }
+    if (!outputName.isEmpty()) {
+        QDir(projectPath() + "/" + outputName).removeRecursively();
+    }
+    m_workerThread = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    updateParameterWidgetsEnableState();
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+}
+
 void InterferometricFormationNode::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
@@ -949,18 +969,9 @@ void InterferometricFormationNode::execute()
 
 void InterferometricFormationNode::stopExecution()
 {
-    // 安全断开并取消 remedyWatcher，避免重新执行与析构时的竞态与崩溃
-    m_remedyWatcher.disconnect();
-    if (m_remedyWatcher.isRunning()) {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-    }
-
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 
@@ -1090,9 +1101,13 @@ void InterferometricFormationNode::executeProcessing()
     });
     connect(m_workerThread, &InterferometricFormationWorker::updateProcess, this, &InterferometricFormationNode::onProgressUpdate);
     connect(m_workerThread, &InterferometricFormationWorker::endProcess, this, &InterferometricFormationNode::onProcessingFinished);
+    connect(m_workerThread, &InterferometricFormationWorker::endProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &InterferometricFormationWorker::errorProcess, this, &InterferometricFormationNode::onError);
+    connect(m_workerThread, &InterferometricFormationWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &InterferometricFormationWorker::cancelled, this, &InterferometricFormationNode::onCancelled);
+    connect(m_workerThread, &InterferometricFormationWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &InterferometricFormationWorker::sendModel, this, &InterferometricFormationNode::onModelUpdated);
-    connect(m_workerThread, &InterferometricFormationWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     m_thread->start();
@@ -1223,6 +1238,7 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
             Q_EMIT dataUpdated(1);
 
             if (anyFailed) {
+                setLastWarningMessage(QStringLiteral("Interferometric products were restored, but some preview images could not be generated."));
                 setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning("InterferometricFormationNode", "Output recovery finished with warnings. Some preview images failed to generate.");
             } else {

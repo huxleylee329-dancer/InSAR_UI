@@ -82,7 +82,7 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     {
         if (QThread::currentThread()->isInterruptionRequested())
         {
-            emit errorProcess(QStringLiteral("任务被中断"));
+            emit cancelled();
             return;
         }
         QString pFile = QString::fromStdString(phaseFiles[i]);
@@ -217,7 +217,7 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
 
     if (QThread::currentThread()->isInterruptionRequested())
     {
-        emit errorProcess(QStringLiteral("任务被中断"));
+        emit cancelled();
         return;
     }
 

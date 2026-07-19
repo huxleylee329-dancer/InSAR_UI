@@ -142,8 +142,19 @@ public:
     /// Check if the node is currently being restored from a project
     bool isRestoring() const { return _isRestoring; }
 
+    /// Recalculate the waiting state after all project connections are restored.
+    void refreshStateAfterRestoration();
+
     /// Check if the node was automatically triggered by upstream propagation
     bool isAutoTriggered() const { return _isAutoTriggered; }
+
+    /// Get/Set the last execution error message
+    QString lastErrorMessage() const { return _lastErrorMessage; }
+    void setLastErrorMessage(QString const& errorMsg) { _lastErrorMessage = errorMsg; }
+
+    /// Get/Set the reason for a successful execution with warnings.
+    QString lastWarningMessage() const { return _lastWarningMessage; }
+    void setLastWarningMessage(QString const& warningMsg) { _lastWarningMessage = warningMsg; }
 
 public Q_SLOTS:
     void start();
@@ -172,6 +183,8 @@ Q_SIGNALS:
 
     void executionError(QString const &error);
 
+    void executionStartRejected(QString const &reason);
+
     void progressUpdated(int percent);
 
     void modeChanged(ExecutionMode newMode);
@@ -192,6 +205,12 @@ protected:
     virtual void processAutomatically() = 0;
 
     virtual bool prepareToStart() { return true; }
+
+    /// 返回 true 表示 stopExecution() 仅请求异步停止，实际停止状态由子类完成信号更新。
+    virtual bool stopExecutionIsAsynchronous() const { return false; }
+
+    /// 设置手动启动校验失败时向用户展示的原因。
+    void setStartFailureMessage(QString const& message) { _startFailureMessage = message; }
 
     void finishExecution();
 
@@ -246,6 +265,9 @@ protected:
     double _targetProgress = 0.0;
     double _currentShownProgress = 0.0;
     QTimer* _progressTimer = nullptr;
+    QString _lastErrorMessage;
+    QString _lastWarningMessage;
+    QString _startFailureMessage;
 };
 
 } // namespace QtNodes

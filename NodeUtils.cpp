@@ -6,6 +6,7 @@
 #include "include/icon_source.h"
 #include <QApplication>
 #include <QThread>
+#include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QDir>
@@ -369,10 +370,21 @@ bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, con
     return generateJpgPreviewFromH5WithProgress(h5Path, jpgPath, type, nullptr);
 }
 
+bool isJpgPreviewCurrent(const QString& h5Path, const QString& jpgPath)
+{
+    QFileInfo h5Info(h5Path);
+    QFileInfo jpgInfo(jpgPath);
+    return h5Info.exists() && jpgInfo.exists() && jpgInfo.size() > 0 &&
+        jpgInfo.lastModified() >= h5Info.lastModified();
+}
+
 bool generateJpgPreviewFromH5WithProgress(const QString& h5Path, const QString& jpgPath, const QString& type, std::function<void(int, int)> cb)
 {
     Hdf5Locker locker;
     if (h5Path.isEmpty() || jpgPath.isEmpty())
+        return false;
+
+    if (QFile::exists(jpgPath) && !QFile::remove(jpgPath))
         return false;
 
     Utils util;

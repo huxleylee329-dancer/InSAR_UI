@@ -62,7 +62,14 @@ DEMSourceNode::DEMSourceNode()
 
 DEMSourceNode::~DEMSourceNode()
 {
-    stopExecution();
+    if (m_workerThread) {
+        m_workerThread->StopProcess();
+    }
+    if (m_thread) {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 
 unsigned int DEMSourceNode::nPorts(PortType portType) const
@@ -557,19 +564,9 @@ void DEMSourceNode::execute()
 
 void DEMSourceNode::stopExecution()
 {
-    // 安全断开并取消 remedyWatcher，防止析构和重新执行的野指针与竞态崩溃
-    m_remedyWatcher.disconnect();
-    if (m_remedyWatcher.isRunning()) {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-    }
-
-    if (m_workerThread && m_thread)
+    if (m_workerThread)
     {
         m_workerThread->StopProcess();
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
 }
 
@@ -620,7 +617,11 @@ void DEMSourceNode::executeProcessing()
 
     connect(m_workerThread, &DEMSourceWorker::updateProcess, this, &DEMSourceNode::onProgressUpdate);
     connect(m_workerThread, &DEMSourceWorker::errorProcess, this, &DEMSourceNode::onError);
+    connect(m_workerThread, &DEMSourceWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &DEMSourceWorker::cancelled, this, &DEMSourceNode::onCancelled);
+    connect(m_workerThread, &DEMSourceWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &DEMSourceWorker::demFetchFinished, this, &DEMSourceNode::onProcessingFinished);
+    connect(m_workerThread, &DEMSourceWorker::demFetchFinished, m_thread, &QThread::quit);
     connect(m_workerThread, &DEMSourceWorker::sendModel, this, &DEMSourceNode::onModelUpdated);
 
     connect(this, &DEMSourceNode::startDemFetch, m_workerThread, &DEMSourceWorker::fetch_dem);
@@ -649,17 +650,13 @@ void DEMSourceNode::onProgressUpdate(int progress, const QString& message)
 
 void DEMSourceNode::onError(const QString& error)
 {
-    stopExecution();
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    setLastErrorMessage(error);
     setState(ExecutionState::Error);
     InSARLogManager::LogError("DEMSourceNode", "Execution failed: " + error);
-
-    if (executionMode() == ExecutionMode::Manual)
-    {
-        QMessageBox::critical(nullptr, "Error", error);
-    }
+    Q_EMIT executionError(error);
 }
 
 void DEMSourceNode::onProcessingFinished(
@@ -670,7 +667,6 @@ void DEMSourceNode::onProcessingFinished(
     double targetResolution
 )
 {
-    stopExecution();
     m_workerThread = nullptr;
     m_thread = nullptr;
 
@@ -791,6 +787,7 @@ void DEMSourceNode::onProcessingFinished(
 
         // TIF 成功但 JPG 失败时状态显示为 Warning，而不是 Completed
         if (!jpgExists) {
+            setLastWarningMessage(QStringLiteral("DEM data was generated, but its preview image could not be generated."));
             setState(ExecutionState::Warning);
         } else {
             setState(ExecutionState::Completed);
@@ -814,6 +811,20 @@ void DEMSourceNode::onProcessingFinished(
         }
         NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
     }));
+}
+
+void DEMSourceNode::onCancelled()
+{
+    InSARLogManager::LogInfo("DEMSourceNode", "DEM fetch cancellation cleanup completed.");
+    m_workerThread = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void DEMSourceNode::onModelUpdated(QStandardItemModel* model)
@@ -874,6 +885,7 @@ bool DEMSourceNode::validateAndRestoreOutput()
                 if (executionState() == ExecutionState::Running || executionState() == ExecutionState::Completed) {
                     if (tifExists) {
                         if (!jpgExists) {
+                            setLastWarningMessage(QStringLiteral("DEM data was restored, but its preview image could not be generated."));
                             setState(ExecutionState::Warning);
                             InSARLogManager::LogWarning("DEMSourceNode", "DEM recovery finished with warning: JPG preview generation failed.");
                         } else {
