@@ -54,7 +54,12 @@ SBASTimeSeriesNode::SBASTimeSeriesNode()
 
 SBASTimeSeriesNode::~SBASTimeSeriesNode()
 {
-    stopExecution();
+    if (m_worker) m_worker->StopProcess();
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 
 unsigned int SBASTimeSeriesNode::nPorts(PortType portType) const
@@ -378,7 +383,11 @@ void SBASTimeSeriesNode::executeProcessing()
 
     connect(m_worker, &SBASTimeSeriesWorker::updateProcess, this, &SBASTimeSeriesNode::onProgressUpdate);
     connect(m_worker, &SBASTimeSeriesWorker::endProcess, this, &SBASTimeSeriesNode::onProcessingFinished);
+    connect(m_worker, &SBASTimeSeriesWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &SBASTimeSeriesWorker::errorProcess, this, &SBASTimeSeriesNode::onError);
+    connect(m_worker, &SBASTimeSeriesWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &SBASTimeSeriesWorker::cancelled, this, &SBASTimeSeriesNode::onCancelled);
+    connect(m_worker, &SBASTimeSeriesWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -397,13 +406,9 @@ void SBASTimeSeriesNode::executeProcessing()
 
 void SBASTimeSeriesNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
+    if (m_worker) {
+        m_worker->StopProcess();
     }
-    m_thread = nullptr;
-    m_worker = nullptr;
 }
 
 void SBASTimeSeriesNode::processAutomatically()
@@ -423,14 +428,32 @@ void SBASTimeSeriesNode::onProgressUpdate(int progress, const QString& message)
 
 void SBASTimeSeriesNode::onError(const QString& error)
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogError("SBASTimeSeriesNode", "Error during SBAS analysis: " + error);
     setState(ExecutionState::Error);
     finishExecution();
-    stopExecution();
+}
+
+void SBASTimeSeriesNode::onCancelled()
+{
+    InSARLogManager::LogInfo("SBASTimeSeriesNode", "SBAS time-series cancellation cleanup completed.");
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void SBASTimeSeriesNode::onProcessingFinished()
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing completed.");
     QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
@@ -451,7 +474,6 @@ void SBASTimeSeriesNode::onProcessingFinished()
 
     Q_EMIT dataUpdated(0);
     finishExecution();
-    stopExecution();
 }
 
 bool SBASTimeSeriesNode::validateAndRestoreOutput()

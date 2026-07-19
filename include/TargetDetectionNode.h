@@ -53,12 +53,14 @@ public:
     void load(QJsonObject const &json) override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool validateAndRestoreOutput() override;
 
 private Q_SLOTS:
     void onProgressUpdate(int progress, const QString& message);
     void onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg);
     void onError(const QString& error);
+    void onCancelled();
     void onAskUserError(const QString& message, bool* skip);
 
 private:

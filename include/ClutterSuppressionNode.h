@@ -53,6 +53,7 @@ public:
     void load(QJsonObject const &json) override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool validateAndRestoreOutput() override;
 
 
@@ -62,6 +63,7 @@ private Q_SLOTS:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
     void onModelUpdated(QStandardItemModel* model);
     void onAskUserError(const QString& message, bool* skip);
     void onSaveImageToProjectRequested(

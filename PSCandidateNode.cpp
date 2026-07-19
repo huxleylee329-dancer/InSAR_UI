@@ -32,7 +32,12 @@ PSCandidateNode::PSCandidateNode()
 
 PSCandidateNode::~PSCandidateNode()
 {
-    stopExecution();
+    if (m_worker) m_worker->StopProcess();
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 
 unsigned int PSCandidateNode::nPorts(PortType portType) const
@@ -308,7 +313,11 @@ void PSCandidateNode::executeProcessing()
 
     connect(m_worker, &PSCandidateWorker::updateProcess, this, &PSCandidateNode::onProgressUpdate);
     connect(m_worker, &PSCandidateWorker::endProcess, this, &PSCandidateNode::onProcessingFinished);
+    connect(m_worker, &PSCandidateWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &PSCandidateWorker::errorProcess, this, &PSCandidateNode::onError);
+    connect(m_worker, &PSCandidateWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSCandidateWorker::cancelled, this, &PSCandidateNode::onCancelled);
+    connect(m_worker, &PSCandidateWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -327,13 +336,9 @@ void PSCandidateNode::executeProcessing()
 
 void PSCandidateNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
+    if (m_worker) {
+        m_worker->StopProcess();
     }
-    m_thread = nullptr;
-    m_worker = nullptr;
 }
 
 void PSCandidateNode::onProgressUpdate(int progress, const QString& message)
@@ -346,17 +351,35 @@ void PSCandidateNode::onProgressUpdate(int progress, const QString& message)
 
 void PSCandidateNode::onError(const QString& error)
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogError("PSCandidateNode", "Error in candidate selection: " + error);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("计算出错: ") + error);
     }
     setState(ExecutionState::Error);
     finishExecution();
-    stopExecution();
+}
+
+void PSCandidateNode::onCancelled()
+{
+    InSARLogManager::LogInfo("PSCandidateNode", "PS candidate selection cancellation cleanup completed.");
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void PSCandidateNode::onProcessingFinished()
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogInfo("PSCandidateNode", "executeProcessing completed successfully.");
     
     QString rawPath = projectPath();
@@ -393,7 +416,6 @@ void PSCandidateNode::onProcessingFinished()
     updateLabels();
 
     Q_EMIT dataUpdated(0);
-    stopExecution();
 }
 
 bool PSCandidateNode::validateAndRestoreOutput()

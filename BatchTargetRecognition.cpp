@@ -1,5 +1,4 @@
 #include "BatchTargetRecognition.h"
-#include "SARProcessor.h"
 #include <QMessageBox>
 #include <QVBoxLayout>
 #include <QPixmap>
@@ -13,6 +12,7 @@
 #include <QFile>
 #include <QAbstractItemView>
 #include <QHeaderView>
+#include <QThreadPool>
 #include "NodeUtils.h"
 
 
@@ -22,8 +22,7 @@ BatchTargetRecognition::BatchTargetRecognition(QWidget* parent)
     : QWidget(parent),
       ui(new Ui::BatchTargetRecognition),
       copy(nullptr),
-      previewLabel(nullptr),
-      stopRequested(false)
+      previewLabel(nullptr)
 {
     ui->setupUi(this);
 
@@ -60,6 +59,9 @@ BatchTargetRecognition::BatchTargetRecognition(QWidget* parent)
 
 BatchTargetRecognition::~BatchTargetRecognition()
 {
+    if (m_task) {
+        m_task->stop();
+    }
     delete ui;
 }
 
@@ -78,12 +80,18 @@ void BatchTargetRecognition::ShowProjectList(QStandardItemModel* model)
 
 void BatchTargetRecognition::on_addImageButton_clicked()
 {
+    if (m_task) {
+        return;
+    }
     collectImagesFromCurrentNode();
 }
 
 
 void BatchTargetRecognition::on_clearImageButton_clicked()
 {
+    if (m_task) {
+        return;
+    }
     batchItems.clear();
     ui->resultTableWidget->setRowCount(0);
     ui->progressBar->setValue(0);
@@ -104,6 +112,9 @@ void BatchTargetRecognition::on_clearImageButton_clicked()
 
 void BatchTargetRecognition::on_runDetectionButton_clicked()
 {
+    if (m_task) {
+        return;
+    }
     if (batchItems.isEmpty())
     {
         QMessageBox::warning(this, "Warning", "Please add input data first.");
@@ -118,46 +129,39 @@ void BatchTargetRecognition::on_runDetectionButton_clicked()
         return;
     }
 
-    stopRequested = false;
     float thresholdValue = threshold();
-
-    for (int i = 0; i < batchItems.size(); ++i)
-    {
-        if (stopRequested)
-            break;
-
-        BatchTargetItem& item = batchItems[i];
-
-        float shipProb = 0.0f;
-        QString resultText;
-
-        bool ok = runSingleDetection(item.imagePath, modelPath, thresholdValue, shipProb, resultText);
-        if (!ok)
-            continue;
-
-        item.prediction = resultText;
-        item.confidence = shipProb;
-        item.correct = !item.truth.isEmpty() && item.truth == item.prediction;
-
-        ui->resultTableWidget->setItem(i, 0, new QTableWidgetItem(item.fileName));
-        ui->resultTableWidget->setItem(i, 1, new QTableWidgetItem(item.truth));
-        ui->resultTableWidget->setItem(i, 2, new QTableWidgetItem(item.prediction));
-        ui->resultTableWidget->setItem(i, 3, new QTableWidgetItem(QString::number(item.confidence * 100.0f, 'f', 2) + "%"));
-        ui->resultTableWidget->setItem(i, 4, new QTableWidgetItem(item.correct ? "Yes" : "No"));
-
-        updateCurrentSampleDisplay(item);
-        showPreviewImage(item.imagePath);
-        updateStatistics();
-
-        ui->progressBar->setValue(i + 1);
-        QApplication::processEvents();
+    QStringList imagePaths;
+    for (const BatchTargetItem& item : batchItems) {
+        imagePaths.append(item.imagePath);
     }
+
+    ui->resultTableWidget->setRowCount(batchItems.size());
+    ui->progressBar->setValue(0);
+    m_task = new TargetDetectionTask(imagePaths, modelPath, thresholdValue);
+
+    connect(m_task, &TargetDetectionTask::updateProcess, this, [this](int progress, const QString&) {
+        ui->progressBar->setValue(progress);
+    }, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::sendTargetDetectionResult,
+            this, &BatchTargetRecognition::onDetectionResult, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::endProcess,
+            this, &BatchTargetRecognition::onDetectionFinished, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::cancelled,
+            this, &BatchTargetRecognition::onDetectionCancelled, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::errorProcess,
+            this, &BatchTargetRecognition::onDetectionError, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::askUserError,
+            this, &BatchTargetRecognition::onDetectionAskUserError, Qt::BlockingQueuedConnection);
+
+    QThreadPool::globalInstance()->start(m_task);
 }
 
 
 void BatchTargetRecognition::on_stopDetectionButton_clicked()
 {
-    stopRequested = true;
+    if (m_task) {
+        m_task->stop();
+    }
 }
 
 
@@ -409,25 +413,49 @@ void BatchTargetRecognition::showPreviewImage(const QString& imagePath)
 }
 
 
-bool BatchTargetRecognition::runSingleDetection(const QString& imagePath,
-                                                const QString& modelPath,
-                                                float thresholdValue,
-                                                float& shipProb,
-                                                QString& resultText)
+void BatchTargetRecognition::onDetectionResult(int imageIndex, bool success, float shipProb,
+                                                QString resultText, QString errorMsg)
 {
-    char resultBuf[256] = {0};
-    bool ok = SARProcessor::DetectShip(
-        imagePath.toLocal8Bit().constData(),
-        modelPath.toLocal8Bit().constData(),
-        thresholdValue,
-        shipProb,
-        resultBuf,
-        sizeof(resultBuf)
-    );
-    if (!ok) {
-        InSARLogManager::LogWarning("UI", resultBuf);
-        return false;
+    if (imageIndex < 0 || imageIndex >= batchItems.size()) {
+        return;
     }
-    resultText = QString::fromLocal8Bit(resultBuf);
-    return true;
+
+    BatchTargetItem& item = batchItems[imageIndex];
+    item.prediction = success ? resultText : QStringLiteral("Error");
+    item.confidence = success ? shipProb : 0.0f;
+    item.correct = success && !item.truth.isEmpty() && item.truth == item.prediction;
+
+    ui->resultTableWidget->setItem(imageIndex, 0, new QTableWidgetItem(item.fileName));
+    ui->resultTableWidget->setItem(imageIndex, 1, new QTableWidgetItem(item.truth));
+    ui->resultTableWidget->setItem(imageIndex, 2, new QTableWidgetItem(item.prediction));
+    ui->resultTableWidget->setItem(imageIndex, 3, new QTableWidgetItem(
+        success ? QString::number(shipProb * 100.0f, 'f', 2) + "%" : errorMsg));
+    ui->resultTableWidget->setItem(imageIndex, 4, new QTableWidgetItem(item.correct ? "Yes" : "No"));
+
+    updateCurrentSampleDisplay(item);
+    showPreviewImage(item.imagePath);
+    updateStatistics();
+}
+
+void BatchTargetRecognition::onDetectionFinished()
+{
+    m_task = nullptr;
+    ui->progressBar->setValue(100);
+}
+
+void BatchTargetRecognition::onDetectionCancelled()
+{
+    m_task = nullptr;
+}
+
+void BatchTargetRecognition::onDetectionError(const QString& error)
+{
+    InSARLogManager::LogError("BatchTargetRecognition", error);
+    m_task = nullptr;
+}
+
+void BatchTargetRecognition::onDetectionAskUserError(const QString& message, bool* skip)
+{
+    InSARLogManager::LogWarning("BatchTargetRecognition", message);
+    *skip = true;
 }

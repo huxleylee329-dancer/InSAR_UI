@@ -4,7 +4,7 @@
 #include <QObject>
 #include <QRunnable>
 #include <QStringList>
-#include <QMutex>
+#include <atomic>
 
 class TargetDetectionTask : public QObject, public QRunnable
 {
@@ -19,6 +19,7 @@ public:
     void run() override;
 
 signals:
+    void cancelled();
     void updateProcess(int progress, QString message);
     void endProcess();
     void errorProcess(QString error_msg);
@@ -30,8 +31,7 @@ private:
     QString m_modelPath;
     float m_thresholdValue;
     
-    QMutex m_lock;
-    bool m_stopFlag;
+    std::atomic_bool m_stopFlag{false};
 };
 
 #endif // TARGETDETECTIONTASK_H

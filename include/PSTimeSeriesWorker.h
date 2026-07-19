@@ -1,6 +1,7 @@
 #pragma once
 #include "BaseWorker.h"
 #include <QStringList>
+#include <atomic>
 
 class PSTimeSeriesWorker : public BaseWorker
 {
@@ -8,6 +9,8 @@ class PSTimeSeriesWorker : public BaseWorker
 public:
     explicit PSTimeSeriesWorker(QObject* parent = nullptr);
     ~PSTimeSeriesWorker();
+    void StopProcess() override;
+    bool cancellationRequested() const noexcept;
 
 public slots:
     void ps_time_series(
@@ -19,4 +22,10 @@ public slots:
         QString dstNode,
         QStringList filePaths
     );
+
+signals:
+    void cancelled();
+
+private:
+    std::atomic_bool m_cancelRequested{false};
 };

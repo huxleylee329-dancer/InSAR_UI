@@ -8,6 +8,13 @@
 #include <QFileInfo>
 #include <QDir>
 
+namespace {
+bool __stdcall isCancellationRequested(void* context)
+{
+    return static_cast<std::atomic_bool*>(context)->load(std::memory_order_relaxed);
+}
+}
+
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #pragma comment(lib, "ComplexMat_d.lib")
@@ -29,6 +36,17 @@ PSCandidateWorker::~PSCandidateWorker()
 {
 }
 
+void PSCandidateWorker::StopProcess()
+{
+    BaseWorker::StopProcess();
+    m_cancelRequested.store(true, std::memory_order_relaxed);
+}
+
+bool PSCandidateWorker::cancellationRequested() const noexcept
+{
+    return m_cancelRequested.load(std::memory_order_relaxed);
+}
+
 void PSCandidateWorker::select_candidates(
     double da_threshold,
     int min_ps_count,
@@ -48,6 +66,23 @@ void PSCandidateWorker::select_candidates(
         return;
     }
 
+    const QString outputDir = (projectPath.endsWith(".insar", Qt::CaseInsensitive)
+        ? QFileInfo(projectPath).absolutePath() : projectPath) + "/" + dstNode;
+    const QString outputH5 = outputDir + "/PS_candidates.h5";
+    const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
+    const auto finishCancelled = [this, &outputDir]() {
+        QDir dir(outputDir);
+        if (dir.exists() && !dir.removeRecursively()) {
+            InSARLogManager::LogWarning("PSCandidateWorker", "Cancellation cleanup left output directory: " + outputDir);
+        }
+        emit cancelled();
+    };
+
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+
     int num_images = filePaths.size();
     FormatConversion FC;
     cv::Mat sum_amplitude, sum_amplitude_sq;
@@ -56,8 +91,8 @@ void PSCandidateWorker::select_candidates(
     int cols = 0;
 
     for (int i = 0; i < num_images; ++i) {
-        if (QThread::currentThread()->isInterruptionRequested()) {
-            emit errorProcess(QStringLiteral("用户中止了计算"));
+        if (cancellationRequested()) {
+            finishCancelled();
             return;
         }
 
@@ -94,7 +129,13 @@ void PSCandidateWorker::select_candidates(
 
     PSI psi;
     cv::Mat ps_mask, amplitude_dispersion;
-    int ret = psi.compute_ps_candidates(sum_amplitude, sum_amplitude_sq, num_images, da_threshold, ps_mask, amplitude_dispersion);
+    int ret = psi.compute_ps_candidates(
+        sum_amplitude, sum_amplitude_sq, num_images, da_threshold, ps_mask, amplitude_dispersion,
+        &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+    if (ret == -2 || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
     if (ret != 0) {
         emit errorProcess(QStringLiteral("DLL 计算 PS 候选点失败"));
         return;
@@ -110,19 +151,22 @@ void PSCandidateWorker::select_candidates(
     }
 
     // 保存输出到 H5 文件
-    QString rawPath = projectPath;
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString outDir = dir + "/" + dstNode;
-    QDir().mkpath(outDir);
+    QDir().mkpath(outputDir);
 
-    QString h5Path = outDir + "/PS_candidates.h5";
-    ret = FC.write_array_to_h5(h5Path.toStdString().c_str(), "amplitude_dispersion", amplitude_dispersion);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "ps_mask", ps_mask);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "ps_count", ps_count);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "multilook_rg", multilook_rg);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "multilook_az", multilook_az);
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+    ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "amplitude_dispersion", amplitude_dispersion);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_mask", ps_mask);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", ps_count);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "multilook_rg", multilook_rg);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "multilook_az", multilook_az);
+
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     if (ret != 0) {
         emit errorProcess(QStringLiteral("写入 PS_candidates.h5 失败"));

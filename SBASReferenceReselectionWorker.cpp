@@ -18,6 +18,13 @@
 using namespace std;
 using namespace cv;
 
+namespace {
+bool __stdcall isCancellationRequested(void* context)
+{
+    return static_cast<std::atomic_bool*>(context)->load(std::memory_order_relaxed);
+}
+}
+
 SBASReferenceReselectionWorker::SBASReferenceReselectionWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -27,6 +34,17 @@ SBASReferenceReselectionWorker::~SBASReferenceReselectionWorker()
 {
 }
 
+void SBASReferenceReselectionWorker::StopProcess()
+{
+    BaseWorker::StopProcess();
+    m_cancelRequested.store(true, std::memory_order_relaxed);
+}
+
+bool SBASReferenceReselectionWorker::cancellationRequested() const noexcept
+{
+    return m_cancelRequested.load(std::memory_order_relaxed);
+}
+
 void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_path, QString srcNode, QString times_series_h5,
                                                                 int ref_row, int ref_col, QList<QPoint> GCPs)
 {
@@ -34,6 +52,12 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     Utils util; SBAS sbas; FormatConversion conversion;
     int ret;
     string times_series_h5_std = times_series_h5.toStdString();
+    const auto finishCancelled = [this]() { emit cancelled(); };
+
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
     
     Mat formation_matrix, mask, temporal_baseline, reflattening_mask;
     ret = NodeUtils::readMatFromH5(times_series_h5, "formation_matrix", formation_matrix) ? 0 : -1;
@@ -42,6 +66,14 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     }
     if (ret == 0) {
         ret = NodeUtils::readMatFromH5(times_series_h5, "temporal_baseline", temporal_baseline, CV_64F) ? 0 : -1;
+    }
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+    if (ret != 0) {
+        emit errorProcess(QStringLiteral("读取 SBAS 时序输入失败"));
+        return;
     }
     
     //确定应用程序路径
@@ -80,18 +112,36 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     emit updateProcess(10, QStringLiteral("轨道精炼和重去平……"));
     for (int i = 0; i < phaseFiles.size(); i++)
     {
-        if (QThread::currentThread()->isInterruptionRequested())
+        if (cancellationRequested())
         {
-            emit cancelled();
+            finishCancelled();
             return;
         }
         QString pFile = QString::fromStdString(phaseFiles[i]);
         NodeUtils::readMatFromH5(pFile, "unwrapped_phase_1", phase, CV_64F);
         NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
-        sbas.refinement_and_reflattening(phase, reflattening_mask, coherence, 0.0);
+        ret = sbas.refinement_and_reflattening(
+            phase, reflattening_mask, coherence, 0.0,
+            &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+        if (ret == -2 || cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
+        if (ret != 0) {
+            emit errorProcess(QStringLiteral("轨道精炼和重去平失败"));
+            return;
+        }
         phase = phase - phase.at<double>(ref_row, ref_col);
         if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
+        if (cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0, phase.rows, phase.cols);
+        if (cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
     }
 
     /*最小二乘法求解线性形变速率和高程残差*/
@@ -122,6 +172,10 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     double nearRange, theta = 32.412, spacing, wavelength, B_spatial, B_temporal;
     for (int i = 0; i < M; i++)
     {
+        if (cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         Mat temp;
         QString pFile = QString::fromStdString(phaseFiles[i]);
         NodeUtils::readScalarFromH5(pFile, "offset_col", offset_col);
@@ -159,6 +213,9 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
 #pragma omp parallel for schedule(guided)
     for (int i = 0; i < phase.rows; i++)
     {
+        if (m_cancelRequested.load(std::memory_order_relaxed)) {
+            continue;
+        }
         Mat temp(M, 1, CV_64F), temp_coh(M, M, CV_64F); temp = 0.0, temp_coh = 0.0; double coh;
         for (int j = 0; j < phase.cols; j++)
         {
@@ -215,9 +272,9 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
         }
     }
 
-    if (QThread::currentThread()->isInterruptionRequested())
+    if (cancellationRequested())
     {
-        emit cancelled();
+        finishCancelled();
         return;
     }
 
@@ -230,6 +287,10 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     Mat time_series(valide_count, N + 1, CV_64F); time_series = 0.0; valide_count = 0;
     for (int i = 0; i < nr; i++)
     {
+        if ((i & 31) == 0 && cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         for (int j = 0; j < nc; j++)
         {
             if (mask.at<int>(i, j) == 1)
@@ -262,17 +323,28 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
     cv::minMaxLoc(time_series, &min_def, &max_def);
     Max.at<double>(0, 0) = max_def;
     Min.at<double>(0, 0) = min_def;
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "max_deformation", Max, 0, 0, 1, 1);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "min_deformation", Min, 0, 0, 1, 1);
     Mat ref_i(1, 1, CV_32S), ref_j(1, 1, CV_32S);
     ref_i.at<int>(0, 0) = ref_row;
     ref_j.at<int>(0, 0) = ref_col;
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "ref_row", ref_i, 0, 0, 1, 1);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "ref_col", ref_j, 0, 0, 1, 1);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "deformation_time_series", time_series, 0, 0, time_series.rows, time_series.cols);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "temporal_coherence", temporal_coh, 0, 0, temporal_coh.rows, temporal_coh.cols);
     v = v / 4 / PI * wavelength;
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "defomation_velocity", v, 0, 0, v.rows, v.cols);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "residue_topography", z, 0, 0, v.rows, v.cols);
 
     InSARLogManager::LogInfo("SBASReferenceReselectionWorker", "SBAS Reference Reselection completed successfully.");

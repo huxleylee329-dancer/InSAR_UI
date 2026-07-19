@@ -22,6 +22,13 @@
 using namespace std;
 using namespace cv;
 
+namespace {
+bool __stdcall isCancellationRequested(void* context)
+{
+    return static_cast<std::atomic_bool*>(context)->load(std::memory_order_relaxed);
+}
+}
+
 SBASTimeSeriesWorker::SBASTimeSeriesWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -29,6 +36,17 @@ SBASTimeSeriesWorker::SBASTimeSeriesWorker(QObject* parent)
 
 SBASTimeSeriesWorker::~SBASTimeSeriesWorker()
 {
+}
+
+void SBASTimeSeriesWorker::StopProcess()
+{
+    BaseWorker::StopProcess();
+    m_cancelRequested.store(true, std::memory_order_relaxed);
+}
+
+bool SBASTimeSeriesWorker::cancellationRequested() const noexcept
+{
+    return m_cancelRequested.load(std::memory_order_relaxed);
 }
 
 void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double temporal_thresh, double spatial_thresh,
@@ -55,6 +73,22 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     {    
         InSARLogManager::LogWarning("UI", QStringLiteral("打开csv文件失败，请检查路径是否正确!"));
         emit errorProcess(QStringLiteral("打开csv文件失败，请检查路径是否正确!"));
+        return;
+    }
+
+    const QString outputDir = projectPath + "/" + dstNode;
+    const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
+    const auto finishCancelled = [this, &csv_file, &outputDir]() {
+        csv_file.close();
+        QDir dir(outputDir);
+        if (dir.exists() && !dir.removeRecursively()) {
+            InSARLogManager::LogWarning("SBASTimeSeriesWorker", "Cancellation cleanup left output directory: " + outputDir);
+        }
+        emit cancelled();
+    };
+
+    if (cancellationRequested()) {
+        finishCancelled();
         return;
     }
 
@@ -86,13 +120,26 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     util.spatialTemporalBaselineEstimation(SAR_images, 1, temporal, spatial);
     sbas.get_formation_matrix(spatial, temporal, spatial_thresh, temporal_thresh_low, temporal_thresh / 365.0,
         formation_matrix, spatial_baseline, temporal_baseline);
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
     QString ifgSavePath = save_path + "/" + dstNode;
     string path1 = ifgSavePath.toStdString();
     std::replace(path1.begin(), path1.end(), '/', '\\');
     QDir dir(save_path);
     if (!dir.exists(dstNode)) dir.mkdir(dstNode);
-    sbas.generate_interferograms(SAR_images, formation_matrix, spatial_baseline, temporal_baseline, multilook_az, multilook_rg,
-        path1.c_str(), true, alpha);
+    ret = sbas.generate_interferograms(
+        SAR_images, formation_matrix, spatial_baseline, temporal_baseline, multilook_az, multilook_rg,
+        path1.c_str(), true, alpha, &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+    if (ret == -2 || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+    if (ret != 0) {
+        emit errorProcess(QStringLiteral("生成干涉图失败"));
+        return;
+    }
 
     /*计算高相干点*/
     vector<SBAS_edge> edges;
@@ -122,7 +169,17 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     if (unwrap_method == 1)
     {
         /*生成高相干三角网络*/
-        sbas.generate_high_coherence_mask(phaseFiles, 3, 3, coherence_thresh, 0.5, mask);
+        ret = sbas.generate_high_coherence_mask(
+            phaseFiles, 3, 3, coherence_thresh, 0.5, mask,
+            &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+        if (ret == -2 || cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
+        if (ret != 0) {
+            emit errorProcess(QStringLiteral("生成高相干掩膜失败"));
+            return;
+        }
         int nonzero = cv::countNonZero(mask);
         string node_file = path1 + "\\high_coherence.node";
         string edge_file = path1 + "\\high_coherence.1.edge";
@@ -139,8 +196,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         //三角网络解缠
         for (int i = 0; i < phaseFiles.size(); i++)
         {
-            if (QThread::currentThread()->isInterruptionRequested()) {
+            if (cancellationRequested()) {
                 InSARLogManager::LogInfo("SBASTimeSeriesWorker", "Task interrupted during unwrap.");
+                finishCancelled();
                 return;
             }
             QString pFile = QString::fromStdString(phaseFiles[i]);
@@ -161,9 +219,23 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 unwrap.mcf_delaunay(mcf_problem.c_str(), appPath.c_str());
                 sbas.readDIMACS(mcf_solution.c_str(), nodes, edges, triangles, obj);
             }
-            sbas.floodFillUnwrap(nodes, edges, 1, false);
+            ret = sbas.floodFillUnwrap(
+                nodes, edges, 1, false,
+                &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+            if (ret == -2 || cancellationRequested()) {
+                finishCancelled();
+                return;
+            }
+            if (ret != 0) {
+                emit errorProcess(QStringLiteral("洪泛解缠失败"));
+                return;
+            }
             sbas.retrieve_unwrapped_phase(nodes, phase);
             if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
+            if (cancellationRequested()) {
+                finishCancelled();
+                return;
+            }
             conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
             for (int j = 0; j < nodes.size(); j++)
             {
@@ -179,8 +251,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         mask = 1;
         for (int i = 0; i < phaseFiles.size(); i++)
         {
-            if (QThread::currentThread()->isInterruptionRequested()) {
+            if (cancellationRequested()) {
                 InSARLogManager::LogInfo("SBASTimeSeriesWorker", "Task interrupted during unwrap.");
+                finishCancelled();
                 return;
             }
             QString pFile = QString::fromStdString(phaseFiles[i]);
@@ -200,6 +273,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             {
                 unwrap.MCF(phase, phase2, coherence, residue, mcf_problem.c_str(), appPath.c_str());
             }
+            if (cancellationRequested()) {
+                finishCancelled();
+                return;
+            }
             if (phase2.type() != CV_32F) phase2.convertTo(phase2, CV_32F);
             conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase2);
             int process = double(i + 1) / phaseFiles.size() * 100.0 * 0.5;
@@ -207,7 +284,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         }
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     /*第一次轨道精炼和重去平*/
     emit updateProcess(65, QStringLiteral("轨道精炼和重去平……"));
@@ -231,13 +311,30 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         QString pFile = QString::fromStdString(phaseFiles[i]);
         NodeUtils::readMatFromH5(pFile, "unwrapped_phase_1", phase, CV_64F);
         NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
-        sbas.refinement_and_reflattening(phase, mask, coherence, refinement_coh_thresh);
+        ret = sbas.refinement_and_reflattening(
+            phase, mask, coherence, refinement_coh_thresh,
+            &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+        if (ret == -2 || cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
+        if (ret != 0) {
+            emit errorProcess(QStringLiteral("轨道精炼和重去平失败"));
+            return;
+        }
         phase = phase - phase.at<double>(ref_i, ref_j);
         if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
+        if (cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase);
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     /*最小二乘法求解线性形变速率和高程残差*/
     int M = phaseFiles.size();
@@ -306,7 +403,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
 #pragma omp parallel for schedule(guided)
     for (int i = 0; i < phase.rows; i++)
     {
-        if (cancel_flag || QThread::currentThread()->isInterruptionRequested()) {
+        if (cancel_flag || cancellationRequested()) {
             cancel_flag = true;
             continue;
         }
@@ -356,7 +453,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         }
     }
 
-    if (cancel_flag || QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancel_flag || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     /*第二次轨道精炼和重去平*/
     v = v / 4 / PI * wavelength;
@@ -399,15 +499,32 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             QString pFile = QString::fromStdString(phaseFiles[i]);
             NodeUtils::readMatFromH5(pFile, "unwrapped_phase_1", phase, CV_64F);
             NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
-            sbas.refinement_and_reflattening(phase, refinement_mask, coherence, refinement_coh_thresh);
+            ret = sbas.refinement_and_reflattening(
+                phase, refinement_mask, coherence, refinement_coh_thresh,
+                &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+            if (ret == -2 || cancellationRequested()) {
+                finishCancelled();
+                return;
+            }
+            if (ret != 0) {
+                emit errorProcess(QStringLiteral("轨道精炼和重去平失败"));
+                return;
+            }
             phase = phase - phase.at<double>(ref_i, ref_j);
             phase.copyTo(phase_vec[i]);
             if (phase.type() != CV_32F) phase.convertTo(phase, CV_32F);
+            if (cancellationRequested()) {
+                finishCancelled();
+                return;
+            }
             conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0, phase.rows, phase.cols);
         }
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     emit updateProcess(75, QStringLiteral("时间序列分析(2/2)……"));
     std::atomic<int> completed_rows2(0);
@@ -418,7 +535,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
 #pragma omp parallel for schedule(guided)
     for (int i = 0; i < phase.rows; i++)
     {
-        if (cancel_flag2 || QThread::currentThread()->isInterruptionRequested()) {
+        if (cancel_flag2 || cancellationRequested()) {
             cancel_flag2 = true;
             continue;
         }
@@ -491,7 +608,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         }
     }
 
-    if (cancel_flag2 || QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancel_flag2 || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     //保存时序分析结果
     emit updateProcess(80, QStringLiteral("结果筛选……"));
@@ -501,11 +621,19 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     out_mask = 0; mask_count_map = 0;
     string times_series_h5 = path1 + "\\SBAS_time_series.h5";
     conversion.creat_new_h5(times_series_h5.c_str());
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
     int nr, nc;
     nr = mask.rows; nc = mask.cols;
     int valide_count = 0;
     for (int i = 0; i < nr; i++)
     {
+        if ((i & 31) == 0 && cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         for (int j = 0; j < nc; j++)
         {
             if (temporal_coh.at<double>(i, j) > temporal_coherence_thresh) 
@@ -523,6 +651,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         int count_temp = 0;
         for (int i = 0; i < nr; i++)
         {
+            if ((i & 31) == 0 && cancellationRequested()) {
+                finishCancelled();
+                return;
+            }
             for (int j = 0; j < nc; j++)
             {
                 if (out_mask.at<int>(i, j) == 1)
@@ -567,30 +699,48 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     }
     csv_file.close();
     
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     emit updateProcess(95, QStringLiteral("结果保存……"));
     Mat mapped_lat, mapped_lon;
     double max_def, min_def;
     
     conversion.write_int_to_h5(times_series_h5.c_str(), "ref_row", ref_i);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_int_to_h5(times_series_h5.c_str(), "ref_col", ref_j);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_int_to_h5(times_series_h5.c_str(), "multilook_rg", multilook_rg);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_int_to_h5(times_series_h5.c_str(), "multilook_az", multilook_az);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "temporal_baseline", temporal);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "spatial_baseline", spatial);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "formation_matrix", formation_matrix);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "mask", out_mask);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "mask_count_map", mask_count_map);
+    if (cancellationRequested()) { finishCancelled(); return; }
     time_series = time_series / 4 / PI * wavelength;
     cv::minMaxLoc(time_series, &min_def, &max_def);
     conversion.write_double_to_h5(times_series_h5.c_str(), "max_deformation", max_def);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_double_to_h5(times_series_h5.c_str(), "min_deformation", min_def);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "deformation_time_series", time_series);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "temporal_coherence", temporal_coh);
+    if (cancellationRequested()) { finishCancelled(); return; }
     v = v / 4 / PI * wavelength;
     conversion.write_array_to_h5(times_series_h5.c_str(), "defomation_velocity", v);
+    if (cancellationRequested()) { finishCancelled(); return; }
     conversion.write_array_to_h5(times_series_h5.c_str(), "residue_topography", z);
+    if (cancellationRequested()) { finishCancelled(); return; }
     for (int ii = 0; ii < phaseFiles.size(); ii++)
     {
         QString pFile = QString::fromStdString(phaseFiles[ii]);
@@ -609,7 +759,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 }
             }
             conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lat", lat_new);
+            if (cancellationRequested()) { finishCancelled(); return; }
             conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lon", lon_new);
+            if (cancellationRequested()) { finishCancelled(); return; }
             break;
         }
     }

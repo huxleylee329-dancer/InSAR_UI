@@ -240,11 +240,8 @@ void SpeckleDenoiseNode::stopExecution()
     if (m_task)
     {
         m_task->stop();
-        m_task = nullptr;
+        return;
     }
-    m_isExecuting = false;
-    updateParameterWidgetsEnableState();
-    setState(ExecutionState::Stopped);
 }
 
 void SpeckleDenoiseNode::processAutomatically()
@@ -293,7 +290,8 @@ void SpeckleDenoiseNode::executeProcessing()
     if (m_task)
     {
         m_task->stop();
-        m_task = nullptr;
+        deferAutomaticCompletion();
+        return;
     }
 
     if (!isReady()) {
@@ -352,6 +350,7 @@ void SpeckleDenoiseNode::executeProcessing()
     connect(m_task, &BM3DEnhancementTask::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::cancelled, this, &SpeckleDenoiseNode::onCancelled, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::BlockingQueuedConnection);
     connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &SpeckleDenoiseNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
@@ -418,6 +417,32 @@ void SpeckleDenoiseNode::onError(const QString& error)
     m_outputImagePaths.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
+}
+
+void SpeckleDenoiseNode::onCancelled()
+{
+    m_task = nullptr;
+    m_isExecuting = false;
+    for (const QString& outputPath : m_outputImagePaths) QFile::remove(outputPath);
+    if (m_saveToProject) {
+        const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("Denoise") : m_outputNodeName.trimmed();
+        QString outputRoot = projectPath();
+        if (outputRoot.endsWith(".insar", Qt::CaseInsensitive)) {
+            outputRoot = QFileInfo(outputRoot).absolutePath();
+        }
+        QDir(outputRoot + "/" + nodeName).removeRecursively();
+    }
+    NodeUtils::removeDataNodeFromProject(
+        NodeUtils::getProjectContext(_widget),
+        m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("Denoise") : m_outputNodeName.trimmed());
+    m_outputImagePaths.clear();
+    m_outputData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    updateParameterWidgetsEnableState();
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void SpeckleDenoiseNode::onSaveImageToProjectRequested(

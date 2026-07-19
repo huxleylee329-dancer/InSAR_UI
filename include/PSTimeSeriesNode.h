@@ -47,6 +47,7 @@ public:
     bool prepareToStart() override;
 
 protected:
+    bool stopExecutionIsAsynchronous() const override { return true; }
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
     void execute() override;
@@ -89,6 +90,7 @@ private:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
     bool validateInputs() const;
     void updateLabels();
     void updateWidgetSize();

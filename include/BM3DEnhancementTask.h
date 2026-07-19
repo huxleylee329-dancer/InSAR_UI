@@ -4,8 +4,8 @@
 #include <QObject>
 #include <QRunnable>
 #include <QStringList>
-#include <QMutex>
 #include <QStandardItemModel>
+#include <atomic>
 #include "FormatConversion.h"
 
 // BM3D增强类型枚举
@@ -33,12 +33,10 @@ public:
 
     void stop();
     void run() override;
-    bool isStopped() {
-        QMutexLocker locker(&m_lock);
-        return m_stopFlag;
-    }
+    bool isStopped() const noexcept { return m_stopFlag.load(std::memory_order_relaxed); }
 
 signals:
+    void cancelled();
     void updateProcess(int progress, QString message);
     void endProcess();
     void errorProcess(QString error_msg);
@@ -80,8 +78,7 @@ private:
     bool m_saveToProject;
     XMLFile* m_projectXml;
 
-    QMutex m_lock;
-    bool m_stopFlag;
+    std::atomic_bool m_stopFlag{false};
 };
 
 #endif // BM3DENHANCEMENTTASK_H

@@ -472,7 +472,8 @@ void SpeckleDenoise::on_imageTypeComboBox_currentIndexChanged(int index)
 cv::Mat SpeckleDenoise::runBm3dCoreLogic(const cv::Mat& inputGray) const
 {
     if (inputGray.empty()) return cv::Mat();
-    return SARProcessor::DenoiseGray(inputGray, 0.0);
+    cv::Mat output;
+    return SARProcessor::DenoiseGray(inputGray, 0.0, output) == 0 ? output : cv::Mat();
 }
 
 cv::Mat SpeckleDenoise::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const

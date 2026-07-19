@@ -236,11 +236,8 @@ void ClutterSuppressionNode::stopExecution()
     if (m_task)
     {
         m_task->stop();
-        m_task = nullptr;
+        return;
     }
-    m_isExecuting = false;
-    updateParameterWidgetsEnableState();
-    setState(ExecutionState::Stopped);
 }
 
 void ClutterSuppressionNode::processAutomatically()
@@ -288,7 +285,8 @@ void ClutterSuppressionNode::executeProcessing()
     if (m_task)
     {
         m_task->stop();
-        m_task = nullptr;
+        deferAutomaticCompletion();
+        return;
     }
 
     if (!isReady()) {
@@ -347,6 +345,7 @@ void ClutterSuppressionNode::executeProcessing()
     connect(m_task, &BM3DEnhancementTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::cancelled, this, &ClutterSuppressionNode::onCancelled, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::BlockingQueuedConnection);
     connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &ClutterSuppressionNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
@@ -413,6 +412,32 @@ void ClutterSuppressionNode::onError(const QString& error)
     m_outputImagePaths.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
+}
+
+void ClutterSuppressionNode::onCancelled()
+{
+    m_task = nullptr;
+    m_isExecuting = false;
+    for (const QString& outputPath : m_outputImagePaths) QFile::remove(outputPath);
+    if (m_saveToProject) {
+        const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("ClutterSuppression") : m_outputNodeName.trimmed();
+        QString outputRoot = projectPath();
+        if (outputRoot.endsWith(".insar", Qt::CaseInsensitive)) {
+            outputRoot = QFileInfo(outputRoot).absolutePath();
+        }
+        QDir(outputRoot + "/" + nodeName).removeRecursively();
+    }
+    NodeUtils::removeDataNodeFromProject(
+        NodeUtils::getProjectContext(_widget),
+        m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("ClutterSuppression") : m_outputNodeName.trimmed());
+    m_outputImagePaths.clear();
+    m_outputData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    updateParameterWidgetsEnableState();
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void ClutterSuppressionNode::onSaveImageToProjectRequested(

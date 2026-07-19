@@ -6,6 +6,8 @@
 #include <QVector>
 #include <QLabel>
 #include <QString>
+#include <QPointer>
+#include "TargetDetectionTask.h"
 
 struct BatchTargetItem
 {
@@ -38,8 +40,12 @@ private slots:
     void on_exportResultButton_clicked();
     void on_projectComboBox_currentIndexChanged(int index);
     void on_nodeComboBox_currentIndexChanged(int index);
-
     void on_resultTableWidget_cellClicked(int row, int column);
+    void onDetectionResult(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg);
+    void onDetectionFinished();
+    void onDetectionCancelled();
+    void onDetectionError(const QString& error);
+    void onDetectionAskUserError(const QString& message, bool* skip);
 
 
 private:
@@ -57,14 +63,8 @@ private:
     void updateCurrentSampleDisplay(const BatchTargetItem& item);
     void showPreviewImage(const QString& imagePath);
 
-    bool runSingleDetection(const QString& imagePath,
-                            const QString& modelPath,
-                            float thresholdValue,
-                            float& shipProb,
-                            QString& resultText);
-
     QVector<BatchTargetItem> batchItems;
     QLabel* previewLabel;
-    bool stopRequested;
+    QPointer<TargetDetectionTask> m_task;
 
 };

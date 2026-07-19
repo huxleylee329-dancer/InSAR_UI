@@ -335,7 +335,6 @@ void TargetDetectionNode::stopExecution()
     {
         m_task->stop();
     }
-    setState(ExecutionState::Stopped);
 }
 
 void TargetDetectionNode::processAutomatically()
@@ -374,7 +373,8 @@ void TargetDetectionNode::executeProcessing()
     if (m_task)
     {
         m_task->stop();
-        m_task = nullptr; // Note: QThreadPool auto-deletes the task when it finishes.
+        deferAutomaticCompletion();
+        return;
     }
 
     if (!isReady()) {
@@ -406,6 +406,7 @@ void TargetDetectionNode::executeProcessing()
     connect(m_task, &TargetDetectionTask::updateProcess, this, &TargetDetectionNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::sendTargetDetectionResult, this, &TargetDetectionNode::onDetectionFinished, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::errorProcess, this, &TargetDetectionNode::onError, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::cancelled, this, &TargetDetectionNode::onCancelled, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::BlockingQueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
@@ -508,6 +509,18 @@ void TargetDetectionNode::onError(const QString& error)
     m_task = nullptr;
 
     m_outputData.reset();
+}
+
+void TargetDetectionNode::onCancelled()
+{
+    m_task = nullptr;
+    m_savedResults.clear();
+    if (m_resultsTable) m_resultsTable->setRowCount(0);
+    if (m_modelComboBox) m_modelComboBox->setEnabled(true);
+    if (m_thresholdEdit) m_thresholdEdit->setEnabled(true);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 QJsonObject TargetDetectionNode::save() const

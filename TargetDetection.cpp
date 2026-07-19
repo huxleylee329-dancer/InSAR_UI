@@ -266,7 +266,7 @@ bool TargetDetection::runDetectionTask(const QString& imagePath,
                                          QString& errorMsg)
 {
     char resultBuf[256] = {0};
-    bool ok = SARProcessor::DetectShip(
+    const int ret = SARProcessor::DetectShip(
         imagePath.toLocal8Bit().constData(),
         modelPath.toLocal8Bit().constData(),
         thresholdValue,
@@ -274,7 +274,7 @@ bool TargetDetection::runDetectionTask(const QString& imagePath,
         resultBuf,
         sizeof(resultBuf)
     );
-    if (!ok) {
+    if (ret != 0) {
         errorMsg = QString::fromLocal8Bit(resultBuf);
         return false;
     }

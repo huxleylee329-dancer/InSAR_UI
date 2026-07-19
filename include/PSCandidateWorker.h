@@ -1,6 +1,7 @@
 #pragma once
 #include "BaseWorker.h"
 #include <QStringList>
+#include <atomic>
 
 class PSCandidateWorker : public BaseWorker
 {
@@ -8,6 +9,8 @@ class PSCandidateWorker : public BaseWorker
 public:
     explicit PSCandidateWorker(QObject* parent = nullptr);
     ~PSCandidateWorker();
+    void StopProcess() override;
+    bool cancellationRequested() const noexcept;
 
 public slots:
     void select_candidates(
@@ -20,4 +23,10 @@ public slots:
         QString dstNode,
         QStringList filePaths
     );
+
+signals:
+    void cancelled();
+
+private:
+    std::atomic_bool m_cancelRequested{false};
 };

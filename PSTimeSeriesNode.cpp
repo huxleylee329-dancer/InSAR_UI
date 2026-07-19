@@ -31,7 +31,12 @@ PSTimeSeriesNode::PSTimeSeriesNode()
 
 PSTimeSeriesNode::~PSTimeSeriesNode()
 {
-    stopExecution();
+    if (m_worker) m_worker->StopProcess();
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 
 unsigned int PSTimeSeriesNode::nPorts(PortType portType) const
@@ -300,7 +305,11 @@ void PSTimeSeriesNode::executeProcessing()
 
     connect(m_worker, &PSTimeSeriesWorker::updateProcess, this, &PSTimeSeriesNode::onProgressUpdate);
     connect(m_worker, &PSTimeSeriesWorker::endProcess, this, &PSTimeSeriesNode::onProcessingFinished);
+    connect(m_worker, &PSTimeSeriesWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &PSTimeSeriesWorker::errorProcess, this, &PSTimeSeriesNode::onError);
+    connect(m_worker, &PSTimeSeriesWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSTimeSeriesWorker::cancelled, this, &PSTimeSeriesNode::onCancelled);
+    connect(m_worker, &PSTimeSeriesWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -319,13 +328,9 @@ void PSTimeSeriesNode::executeProcessing()
 
 void PSTimeSeriesNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
+    if (m_worker) {
+        m_worker->StopProcess();
     }
-    m_thread = nullptr;
-    m_worker = nullptr;
 }
 
 void PSTimeSeriesNode::onProgressUpdate(int progress, const QString& message)
@@ -338,17 +343,35 @@ void PSTimeSeriesNode::onProgressUpdate(int progress, const QString& message)
 
 void PSTimeSeriesNode::onError(const QString& error)
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogError("PSTimeSeriesNode", "Error in time series inversion: " + error);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("计算出错: ") + error);
     }
     setState(ExecutionState::Error);
     finishExecution();
-    stopExecution();
+}
+
+void PSTimeSeriesNode::onCancelled()
+{
+    InSARLogManager::LogInfo("PSTimeSeriesNode", "PS time-series cancellation cleanup completed.");
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void PSTimeSeriesNode::onProcessingFinished()
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogInfo("PSTimeSeriesNode", "executeProcessing completed successfully.");
     
     QString rawPath = projectPath();
@@ -385,7 +408,6 @@ void PSTimeSeriesNode::onProcessingFinished()
     updateLabels();
 
     Q_EMIT dataUpdated(0);
-    stopExecution();
 }
 
 bool PSTimeSeriesNode::validateAndRestoreOutput()

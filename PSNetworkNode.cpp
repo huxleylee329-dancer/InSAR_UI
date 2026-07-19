@@ -31,7 +31,12 @@ PSNetworkNode::PSNetworkNode()
 
 PSNetworkNode::~PSNetworkNode()
 {
-    stopExecution();
+    if (m_worker) m_worker->StopProcess();
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
 }
 
 unsigned int PSNetworkNode::nPorts(PortType portType) const
@@ -328,7 +333,11 @@ void PSNetworkNode::executeProcessing()
 
     connect(m_worker, &PSNetworkWorker::updateProcess, this, &PSNetworkNode::onProgressUpdate);
     connect(m_worker, &PSNetworkWorker::endProcess, this, &PSNetworkNode::onProcessingFinished);
+    connect(m_worker, &PSNetworkWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &PSNetworkWorker::errorProcess, this, &PSNetworkNode::onError);
+    connect(m_worker, &PSNetworkWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSNetworkWorker::cancelled, this, &PSNetworkNode::onCancelled);
+    connect(m_worker, &PSNetworkWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -347,13 +356,9 @@ void PSNetworkNode::executeProcessing()
 
 void PSNetworkNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
+    if (m_worker) {
+        m_worker->StopProcess();
     }
-    m_thread = nullptr;
-    m_worker = nullptr;
 }
 
 void PSNetworkNode::onProgressUpdate(int progress, const QString& message)
@@ -366,17 +371,35 @@ void PSNetworkNode::onProgressUpdate(int progress, const QString& message)
 
 void PSNetworkNode::onError(const QString& error)
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogError("PSNetworkNode", "Error in network construction: " + error);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("计算出错: ") + error);
     }
     setState(ExecutionState::Error);
     finishExecution();
-    stopExecution();
+}
+
+void PSNetworkNode::onCancelled()
+{
+    InSARLogManager::LogInfo("PSNetworkNode", "PS network cancellation cleanup completed.");
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void PSNetworkNode::onProcessingFinished()
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
     InSARLogManager::LogInfo("PSNetworkNode", "executeProcessing completed successfully.");
     
     QString rawPath = projectPath();
@@ -413,7 +436,6 @@ void PSNetworkNode::onProcessingFinished()
     updateLabels();
 
     Q_EMIT dataUpdated(0);
-    stopExecution();
 }
 
 bool PSNetworkNode::validateAndRestoreOutput()

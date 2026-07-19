@@ -4,67 +4,17 @@
 #include "icon_source.h"
 #include "SARProcessor.h"
 #include <QFileInfo>
+#include <QFile>
 #include <QDir>
 #include <QDebug>
 #include <opencv2/opencv.hpp>
-#include <QThread>
-#include <QElapsedTimer>
 
-thread_local BM3DEnhancementTask* t_currentBM3DTask = nullptr;
-thread_local int t_bm3dBaseProgress = 0;
-thread_local int t_bm3dProgressStep = 100;
-thread_local int t_bm3dLastLoggedProgress = -10;
-
-static bool __stdcall bm3dProgressCallback(int progress, const char* message)
+namespace {
+bool __stdcall isCancellationRequested(void* context)
 {
-    thread_local QElapsedTimer s_cbTimer;
-    thread_local bool s_timerStarted = false;
-    if (!s_timerStarted) {
-        s_cbTimer.start();
-        s_timerStarted = true;
-    }
-    if (progress != 0 && progress != 100 && s_cbTimer.elapsed() < 100) {
-        return true;
-    }
-    s_cbTimer.restart();
-
-    if (t_currentBM3DTask)
-    {
-        if (t_currentBM3DTask->isStopped())
-        {
-            return false;
-        }
-
-        int mapped_prog = t_bm3dBaseProgress + progress * t_bm3dProgressStep / 100;
-
-        QString msgStr = QString::fromLocal8Bit(message);
-        emit t_currentBM3DTask->updateProcess(mapped_prog, QStringLiteral("BM3D处理中：%1% (%2)")
-            .arg(progress).arg(msgStr));
-
-        if (progress == 0 || progress == 100 || (progress - t_bm3dLastLoggedProgress) >= 10)
-        {
-            InSARLogManager::LogInfo("BM3DEnhancementTask", QString("BM3D progress: %1% (Total: %2%) - %3")
-                .arg(progress).arg(mapped_prog).arg(msgStr));
-            t_bm3dLastLoggedProgress = progress;
-        }
-    }
-    return true;
+    return static_cast<std::atomic_bool*>(context)->load(std::memory_order_relaxed);
 }
-
-struct BM3DThreadLocalGuard {
-    BM3DThreadLocalGuard(BM3DEnhancementTask* task, int baseProg, int progStep) {
-        t_currentBM3DTask = task;
-        t_bm3dBaseProgress = baseProg;
-        t_bm3dProgressStep = progStep;
-        t_bm3dLastLoggedProgress = -10;
-    }
-    ~BM3DThreadLocalGuard() {
-        t_currentBM3DTask = nullptr;
-        t_bm3dBaseProgress = 0;
-        t_bm3dProgressStep = 100;
-        t_bm3dLastLoggedProgress = -10;
-    }
-};
+}
 
 BM3DEnhancementTask::BM3DEnhancementTask(
     EnhancementType type,
@@ -94,19 +44,16 @@ BM3DEnhancementTask::BM3DEnhancementTask(
 
 void BM3DEnhancementTask::stop()
 {
-    QMutexLocker locker(&m_lock);
-    m_stopFlag = true;
+    m_stopFlag.store(true, std::memory_order_relaxed);
 }
 
 void BM3DEnhancementTask::run()
 {
     for (int i = 0; i < m_inputPaths.size(); ++i) {
-        m_lock.lock();
-        if (m_stopFlag) {
-            m_lock.unlock();
-            break;
+        if (isStopped()) {
+            emit cancelled();
+            return;
         }
-        m_lock.unlock();
 
         int baseProgress = i * 100 / m_inputPaths.size();
         int progressStep = 100 / m_inputPaths.size();
@@ -116,6 +63,11 @@ void BM3DEnhancementTask::run()
             m_fileNames.isEmpty() ? QString() : m_fileNames[i],
             m_projectPath, m_projectName, m_model, m_saveToProject, m_projectXml, outError, baseProgress, progressStep
         );
+
+        if (isStopped()) {
+            emit cancelled();
+            return;
+        }
 
         if (!ok) {
             bool skip = false;
@@ -130,6 +82,11 @@ void BM3DEnhancementTask::run()
 
         int overallProgress = (i + 1) * 100 / m_inputPaths.size();
         emit updateProcess(overallProgress, QStringLiteral("批处理进度: %1/%2").arg(i + 1).arg(m_inputPaths.size()));
+    }
+
+    if (isStopped()) {
+        emit cancelled();
+        return;
     }
 
     emit sendModel(m_model);
@@ -176,18 +133,29 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
         outError = QStringLiteral("无法读取输入图像");
         return false;
     }
+    if (isStopped()) {
+        return false;
+    }
 
     emit updateProcess(baseProgress + progressStep * 0.4, processMsg);
 
-    BM3DThreadLocalGuard guard(this, baseProgress + progressStep * 0.4, progressStep * 0.4);
-    cv::Mat output8U = SARProcessor::DenoiseGray(inputGray, 0.0, bm3dProgressCallback);
+    cv::Mat output8U;
+    const int ret = SARProcessor::DenoiseGray(
+        inputGray, 0.0, output8U,
+        &isCancellationRequested, &m_stopFlag, nullptr, nullptr);
 
-    if (output8U.empty()) {
+    if (ret == -2 || isStopped()) {
+        return false;
+    }
+    if (ret != 0 || output8U.empty()) {
         outError = QStringLiteral("BM3D处理失败");
         return false;
     }
 
     emit updateProcess(baseProgress + progressStep * 0.8, QStringLiteral("后处理及保存..."));
+    if (isStopped()) {
+        return false;
+    }
 
     if (saveToProject) {
         if (!model) {
@@ -217,12 +185,20 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
         }
         QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
         cv::imwrite(finalPath.toStdString(), output8U);
+        if (isStopped()) {
+            QFile::remove(finalPath);
+            return false;
+        }
 
         QString displayName = fileName.isEmpty() ? defaultDisplay : fileName;
 
         emit saveImageToProjectRequested(projectName, nodeName, displayName, finalPath, tag, finalFileName);
     } else {
         cv::imwrite(outputPath.toStdString(), output8U);
+        if (isStopped()) {
+            QFile::remove(outputPath);
+            return false;
+        }
     }
 
     emit updateProcess(100, QStringLiteral("处理完成"));

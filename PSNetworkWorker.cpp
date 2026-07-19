@@ -10,6 +10,13 @@
 #include <QDir>
 #include <cmath>
 
+namespace {
+bool __stdcall isCancellationRequested(void* context)
+{
+    return static_cast<std::atomic_bool*>(context)->load(std::memory_order_relaxed);
+}
+}
+
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #pragma comment(lib, "ComplexMat_d.lib")
@@ -31,6 +38,17 @@ PSNetworkWorker::~PSNetworkWorker()
 {
 }
 
+void PSNetworkWorker::StopProcess()
+{
+    BaseWorker::StopProcess();
+    m_cancelRequested.store(true, std::memory_order_relaxed);
+}
+
+bool PSNetworkWorker::cancellationRequested() const noexcept
+{
+    return m_cancelRequested.load(std::memory_order_relaxed);
+}
+
 void PSNetworkWorker::build_network(
     double max_edge_length,
     int ref_row,
@@ -50,6 +68,23 @@ void PSNetworkWorker::build_network(
         return;
     }
 
+    const QString outputDir = (projectPath.endsWith(".insar", Qt::CaseInsensitive)
+        ? QFileInfo(projectPath).absolutePath() : projectPath) + "/" + dstNode;
+    const QString outputH5 = outputDir + "/PS_network.h5";
+    const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
+    const auto finishCancelled = [this, &outputDir]() {
+        QDir dir(outputDir);
+        if (dir.exists() && !dir.removeRecursively()) {
+            InSARLogManager::LogWarning("PSNetworkWorker", "Cancellation cleanup left output directory: " + outputDir);
+        }
+        emit cancelled();
+    };
+
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+
     FormatConversion FC;
     cv::Mat ps_mask;
     int ret = 0;
@@ -59,6 +94,10 @@ void PSNetworkWorker::build_network(
         emit errorProcess(QStringLiteral("读取 PS 候选点掩膜失败: ") + candidatesH5);
         return;
     }
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     emit updateProcess(10, QStringLiteral("正在构建 Delaunay 三角网..."));
 
@@ -66,7 +105,13 @@ void PSNetworkWorker::build_network(
     PSI psi;
     std::vector<PS_Point> ps_points;
     std::vector<PS_Edge> edges;
-    ret = psi.build_ps_network(ps_mask, ps_points, edges, max_edge_length);
+    ret = psi.build_ps_network(
+        ps_mask, ps_points, edges, max_edge_length,
+        &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+    if (ret == -2 || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
     if (ret != 0 || ps_points.empty()) {
         emit errorProcess(QStringLiteral("DLL 三角网构建失败"));
         return;
@@ -84,6 +129,10 @@ void PSNetworkWorker::build_network(
     int target_col = (ref_col == -1) ? cols / 2 : ref_col;
     double min_dist = 9999999.0;
     for (int i = 0; i < ps_count; ++i) {
+        if ((i & 1023) == 0 && cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         double dist = std::sqrt(std::pow(ps_points[i].row - target_row, 2) + std::pow(ps_points[i].col - target_col, 2));
         if (dist < min_dist) {
             min_dist = dist;
@@ -98,8 +147,8 @@ void PSNetworkWorker::build_network(
     cv::Mat ps_slc_data = cv::Mat::zeros(ps_count, num_images, CV_32FC2);
 
     for (int k = 0; k < num_images; ++k) {
-        if (QThread::currentThread()->isInterruptionRequested()) {
-            emit errorProcess(QStringLiteral("用户中止了计算"));
+        if (cancellationRequested()) {
+            finishCancelled();
             return;
         }
 
@@ -120,11 +169,18 @@ void PSNetworkWorker::build_network(
 
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < ps_count; ++i) {
+            if (m_cancelRequested.load(std::memory_order_relaxed)) {
+                continue;
+            }
             int r = ps_points[i].row;
             int c = ps_points[i].col;
             float re_val = slc_re.at<float>(r, c);
             float im_val = slc_im.at<float>(r, c);
             ps_slc_data.at<cv::Vec2f>(i, k) = cv::Vec2f(re_val, im_val);
+        }
+        if (cancellationRequested()) {
+            finishCancelled();
+            return;
         }
     }
 
@@ -178,8 +234,16 @@ void PSNetworkWorker::build_network(
     } else {
         NodeUtils::readScalarFromH5(masterPath, "inc_center", inc_center);
     }
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     for (int i = 0; i < num_images; ++i) {
+        if (cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         if (i == 0) {
             temporal_baseline.at<float>(i) = 0.0f;
             spatial_baseline.at<float>(i) = 0.0f;
@@ -221,7 +285,13 @@ void PSNetworkWorker::build_network(
 
     // 6. 调用 DLL 计算边相位差
     cv::Mat edge_phase_diff;
-    ret = psi.compute_ps_phase_diff(ps_points, edges, ps_slc_data, formation_matrix, edge_phase_diff);
+    ret = psi.compute_ps_phase_diff(
+        ps_points, edges, ps_slc_data, formation_matrix, edge_phase_diff,
+        &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+    if (ret == -2 || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
     if (ret != 0) {
         emit errorProcess(QStringLiteral("DLL 计算边相位差失败"));
         return;
@@ -230,14 +300,7 @@ void PSNetworkWorker::build_network(
     emit updateProcess(90, QStringLiteral("正在写入 PS_network.h5 成果..."));
 
     // 7. 保存网络成果
-    QString rawPath = projectPath;
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString outDir = dir + "/" + dstNode;
-    QDir().mkpath(outDir);
-
-    QString h5Path = outDir + "/PS_network.h5";
+    QDir().mkpath(outputDir);
     
     // 准备点集坐标矩阵
     cv::Mat ps_coords(ps_count, 2, CV_32SC1);
@@ -253,25 +316,34 @@ void PSNetworkWorker::build_network(
         edge_nodes.at<int>(i, 1) = edges[i].end2;
     }
 
-    ret = FC.write_array_to_h5(h5Path.toStdString().c_str(), "ps_coordinates", ps_coords);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "edges", edge_nodes);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "edge_phase_diff", edge_phase_diff);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "temporal_baseline", temporal_baseline);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "spatial_baseline", spatial_baseline);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "formation_matrix", formation_matrix);
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+    ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_coordinates", ps_coords);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "edges", edge_nodes);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "edge_phase_diff", edge_phase_diff);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_baseline", temporal_baseline);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "spatial_baseline", spatial_baseline);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "formation_matrix", formation_matrix);
     
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "ps_count", ps_count);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "edge_count", edge_count);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "ref_index", ref_index);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", ps_count);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "edge_count", edge_count);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_index", ref_index);
 
     // 写入雷达元数据
-    ret += FC.write_double_to_h5(h5Path.toStdString().c_str(), "carrier_frequency", carrier_frequency);
-    ret += FC.write_double_to_h5(h5Path.toStdString().c_str(), "inc_center", inc_center);
-    ret += FC.write_double_to_h5(h5Path.toStdString().c_str(), "slant_range_first_pixel", slant_range_first_pixel);
-    ret += FC.write_double_to_h5(h5Path.toStdString().c_str(), "range_spacing", range_spacing);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "offset_col", offset_col);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "rows", rows);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "cols", cols);
+    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "carrier_frequency", carrier_frequency);
+    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "inc_center", inc_center);
+    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "slant_range_first_pixel", slant_range_first_pixel);
+    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "range_spacing", range_spacing);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "offset_col", offset_col);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "rows", rows);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "cols", cols);
+
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     if (ret != 0) {
         emit errorProcess(QStringLiteral("写入 PS_network.h5 失败"));

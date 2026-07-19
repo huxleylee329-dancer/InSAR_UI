@@ -431,9 +431,9 @@ void SBASReferenceReselectionNode::executeProcessing()
 
 void SBASReferenceReselectionNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning())
+    if (m_worker)
     {
-        m_thread->requestInterruption();
+        m_worker->StopProcess();
         m_resultLabel->setText(QStringLiteral("已请求取消..."));
     }
 }
@@ -471,6 +471,7 @@ void SBASReferenceReselectionNode::onCancelled()
     m_worker = nullptr;
     m_outputData.reset();
     m_previewData.reset();
+    QDir(projectPath() + "/" + m_outputNodeName).removeRecursively();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
     m_resultLabel->setText(QStringLiteral("已取消"));

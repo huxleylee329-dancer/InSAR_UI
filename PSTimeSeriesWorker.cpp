@@ -7,6 +7,13 @@
 #include <QThread>
 #include <QFileInfo>
 #include <QDir>
+
+namespace {
+bool __stdcall isCancellationRequested(void* context)
+{
+    return static_cast<std::atomic_bool*>(context)->load(std::memory_order_relaxed);
+}
+}
 #include <cmath>
 #include <algorithm>
 
@@ -31,6 +38,17 @@ PSTimeSeriesWorker::~PSTimeSeriesWorker()
 {
 }
 
+void PSTimeSeriesWorker::StopProcess()
+{
+    BaseWorker::StopProcess();
+    m_cancelRequested.store(true, std::memory_order_relaxed);
+}
+
+bool PSTimeSeriesWorker::cancellationRequested() const noexcept
+{
+    return m_cancelRequested.load(std::memory_order_relaxed);
+}
+
 void PSTimeSeriesWorker::ps_time_series(
     double coherence_threshold,
     double max_deformation_rate,
@@ -46,6 +64,23 @@ void PSTimeSeriesWorker::ps_time_series(
 
     if (filePaths.isEmpty()) {
         emit errorProcess(QStringLiteral("输入文件路径为空"));
+        return;
+    }
+
+    const QString outputDir = (projectPath.endsWith(".insar", Qt::CaseInsensitive)
+        ? QFileInfo(projectPath).absolutePath() : projectPath) + "/" + dstNode;
+    const QString outputH5 = outputDir + "/PS_time_series.h5";
+    const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
+    const auto finishCancelled = [this, &outputDir]() {
+        QDir dir(outputDir);
+        if (dir.exists() && !dir.removeRecursively()) {
+            InSARLogManager::LogWarning("PSTimeSeriesWorker", "Cancellation cleanup left output directory: " + outputDir);
+        }
+        emit cancelled();
+    };
+
+    if (cancellationRequested()) {
+        finishCancelled();
         return;
     }
 
@@ -79,6 +114,10 @@ void PSTimeSeriesWorker::ps_time_series(
         emit errorProcess(QStringLiteral("读取 PS 网络元数据失败"));
         return;
     }
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     // 2. 读取数组和矩阵
     cv::Mat ps_coords, edge_nodes, edge_phase_diff, temporal_baseline, spatial_baseline, formation_matrix;
@@ -93,12 +132,20 @@ void PSTimeSeriesWorker::ps_time_series(
         emit errorProcess(QStringLiteral("读取 PS 网络大矩阵数据失败"));
         return;
     }
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     emit updateProcess(30, QStringLiteral("正在重建网格拓扑..."));
 
     // 3. 重建点集和边集对象
     std::vector<PS_Point> ps_points(ps_count);
     for (int i = 0; i < ps_count; ++i) {
+        if ((i & 1023) == 0 && cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         ps_points[i].row = ps_coords.at<int>(i, 0);
         ps_points[i].col = ps_coords.at<int>(i, 1);
         ps_points[i].index = i;
@@ -106,6 +153,10 @@ void PSTimeSeriesWorker::ps_time_series(
 
     std::vector<PS_Edge> edges(edge_count);
     for (int e = 0; e < edge_count; ++e) {
+        if ((e & 1023) == 0 && cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
         edges[e].num = e;
         edges[e].end1 = edge_nodes.at<int>(e, 0);
         edges[e].end2 = edge_nodes.at<int>(e, 1);
@@ -132,8 +183,14 @@ void PSTimeSeriesWorker::ps_time_series(
         edges, ps_points, edge_phase_diff, formation_matrix,
         temporal_baseline, spatial_baseline, num_images,
         ref_index, wavelength, slant_range, theta,
-        deformation_time_series, deformation_velocity, temporal_coherence, topographic_residual
+        deformation_time_series, deformation_velocity, temporal_coherence, topographic_residual,
+        &isCancellationRequested, &m_cancelRequested, nullptr, nullptr
     );
+
+    if (ret == -2 || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     if (ret != 0) {
         emit errorProcess(QStringLiteral("时序反演计算失败"));
@@ -151,8 +208,14 @@ void PSTimeSeriesWorker::ps_time_series(
         coherence_threshold, rows, cols,
         final_ps_mask, mask_count_map,
         filtered_velocity, filtered_coherence,
-        filtered_topographic_residual, filtered_time_series
+        filtered_topographic_residual, filtered_time_series,
+        &isCancellationRequested, &m_cancelRequested, nullptr, nullptr
     );
+
+    if (ret == -2 || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     if (ret != 0) {
         emit errorProcess(QStringLiteral("过滤 PS 结果数据失败"));
@@ -174,14 +237,7 @@ void PSTimeSeriesWorker::ps_time_series(
     emit updateProcess(90, QStringLiteral("正在写入 PS_time_series.h5 成果..."));
 
     // 6. 保存过滤后时序结果到 H5
-    QString rawPath = projectPath;
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString outDir = dir + "/" + dstNode;
-    QDir().mkpath(outDir);
-
-    QString h5Path = outDir + "/PS_time_series.h5";
+    QDir().mkpath(outputDir);
 
     if (!temporal_coherence.empty() && temporal_coherence.type() != CV_64F) {
         temporal_coherence.convertTo(temporal_coherence, CV_64F);
@@ -198,24 +254,33 @@ void PSTimeSeriesWorker::ps_time_series(
         }
     }
 
-    ret = FC.write_array_to_h5(h5Path.toStdString().c_str(), "ps_coordinates", filtered_coords);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "deformation_velocity", filtered_velocity);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "temporal_coherence", filtered_coherence);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "topographic_residual", filtered_topographic_residual);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "deformation_time_series", filtered_time_series);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "mask", final_ps_mask);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "mask_count_map", mask_count_map);
-    ret += FC.write_array_to_h5(h5Path.toStdString().c_str(), "temporal_baseline", temporal_baseline);
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+    ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_coordinates", filtered_coords);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "deformation_velocity", filtered_velocity);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_coherence", filtered_coherence);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "topographic_residual", filtered_topographic_residual);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "deformation_time_series", filtered_time_series);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "mask", final_ps_mask);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "mask_count_map", mask_count_map);
+    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_baseline", temporal_baseline);
 
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "ps_count", filtered_ps_count);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "num_images", num_images);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", filtered_ps_count);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "num_images", num_images);
     int ref_row_val = ps_points[ref_index].row;
     int ref_col_val = ps_points[ref_index].col;
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "ref_row", ref_row_val);
-    ret += FC.write_int_to_h5(h5Path.toStdString().c_str(), "ref_col", ref_col_val);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_row", ref_row_val);
+    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_col", ref_col_val);
 
-    ret += FC.write_double_to_h5(h5Path.toStdString().c_str(), "max_deformation", max_def);
-    ret += FC.write_double_to_h5(h5Path.toStdString().c_str(), "min_deformation", min_def);
+    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "max_deformation", max_def);
+    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "min_deformation", min_def);
+
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
 
     if (ret != 0) {
         emit errorProcess(QStringLiteral("写入 PS_time_series.h5 失败"));
