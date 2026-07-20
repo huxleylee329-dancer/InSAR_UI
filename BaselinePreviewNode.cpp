@@ -356,12 +356,15 @@ void BaselinePreviewNode::executeProcessing()
     connect(m_worker, &BaselineWorker::updateProcess, this, &BaselinePreviewNode::onProgressUpdate);
     connect(m_worker, &BaselineWorker::sendBL, this, &BaselinePreviewNode::onProcessingFinished);
     connect(m_worker, &BaselineWorker::errorProcess, this, &BaselinePreviewNode::onError);
+    connect(m_worker, &BaselineWorker::cancelled, this, &BaselinePreviewNode::onCancelled);
+    connect(m_worker, &BaselineWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
     setState(ExecutionState::Running);
     setProgress(0);
+    deferAutomaticCompletion();
 
     // SOP: Force execution state back to Running in automatic mode next cycle
     QTimer::singleShot(0, this, [this]() {
@@ -393,21 +396,34 @@ void BaselinePreviewNode::processAutomatically()
 
 void BaselinePreviewNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(message);
     setProgress(progress);
 }
 
 void BaselinePreviewNode::onError(const QString& error)
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("BaselinePreviewNode", "Error during baseline estimate: " + error);
     setState(ExecutionState::Error);
     if (m_showChartBtn) m_showChartBtn->setEnabled(false);
     finishExecution();
-    stopExecution();
 }
 
 void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, QList<double> spatial_baseline, int index)
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_temporalBaselines = temporal_baseline;
     m_spatialBaselines = spatial_baseline;
     m_masterIndex = index;
@@ -436,7 +452,18 @@ void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, 
 
     Q_EMIT dataUpdated(0);
     finishExecution();
+}
+
+void BaselinePreviewNode::onCancelled()
+{
     stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void BaselinePreviewNode::showChart()

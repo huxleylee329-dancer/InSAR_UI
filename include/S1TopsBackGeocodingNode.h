@@ -20,7 +20,9 @@
 #include <QPointer>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QVector>
 #include <memory>
+#include <vector>
 
 class IApplicationInterface;
 class XMLFile;
@@ -56,6 +58,7 @@ public:
     ::QWidget* createInterferometryWidget(::QWidget* parent) override;
     QStringList getOrderedH5Paths() const;
     QStringList getInputH5Paths() const;
+    std::vector<QString> processingInfo() const override;
 
 protected:
     bool validateAndRestoreOutput() override;
@@ -63,6 +66,15 @@ protected:
     bool prepareToStart() override;
 
 private:
+    struct RegistrationOffsetSummary
+    {
+        QString slaveName;
+        double azimuthOffset = 0.0;
+        double rangeOffset = 0.0;
+        bool hasAzimuthOffset = false;
+        bool hasRangeOffset = false;
+    };
+
     QComboBox* m_masterImageCombo;
     QCheckBox* m_defaultMasterCheckBox;
     QCheckBox* m_esdCheckBox;
@@ -99,6 +111,8 @@ private:
     int m_preparedImagesNumber;
     bool m_processingWarning = false;
     QStringList m_processingQualityWarnings;
+    QVector<RegistrationOffsetSummary> m_registrationOffsets;
+    QStringList m_registrationOverviewPaths;
 
     // Worker thread
     QPointer<S1TopsBackGeocodingWorker> m_workerThread;
@@ -129,6 +143,8 @@ private:
     QString generateDefaultOutputName() const;
     QStringList moveMasterToFront(const QStringList& paths, int masterIndex) const;
     QStringList jpgPathsFromH5Paths(const QStringList& h5Paths) const;
+    QStringList registrationOverviewPathsFromH5Paths(const QStringList& h5Paths) const;
+    void updateRegistrationOffsets(const QStringList& h5Paths);
     QString resolveSavedOutputPath(const QString& path, const QString& dstNode) const;
     QStringList restoreOrderedH5Paths(const QString& dstNode) const;
     bool isCompleteBackGeocodingOutput(const QString& path) const;
@@ -147,6 +163,7 @@ private:
     void stopExecution() override;
     void processAutomatically() override;
     bool stopExecutionIsAsynchronous() const override { return true; }
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
     void startBackGeocoding(int images_number, int masterIndex, QString savePath, QString dstProject,

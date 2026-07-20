@@ -48,6 +48,7 @@ public:
     void stopExecution() override;
     void processAutomatically() override;
     bool stopExecutionIsAsynchronous() const override { return true; }
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
     // Serialization
     QJsonObject save() const override;

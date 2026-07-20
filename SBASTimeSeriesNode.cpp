@@ -401,6 +401,7 @@ void SBASTimeSeriesNode::executeProcessing()
         }
     });
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
@@ -423,6 +424,9 @@ void SBASTimeSeriesNode::processAutomatically()
 void SBASTimeSeriesNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
@@ -430,6 +434,10 @@ void SBASTimeSeriesNode::onError(const QString& error)
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("SBASTimeSeriesNode", "Error during SBAS analysis: " + error);
     setState(ExecutionState::Error);
     finishExecution();
@@ -440,6 +448,10 @@ void SBASTimeSeriesNode::onCancelled()
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "SBAS time-series cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_previewData.reset();
     setOutputData(0, nullptr);
@@ -454,6 +466,10 @@ void SBASTimeSeriesNode::onProcessingFinished()
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing completed.");
     QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
@@ -468,12 +484,13 @@ void SBASTimeSeriesNode::onProcessingFinished()
     setState(ExecutionState::Running);
 
     // Asynchronously generate preview JPG (SOP rule 7)
-    generateStaticPreviewJpg();
+    if (!generateStaticPreviewJpg(true)) {
+        finishExecution();
+    }
 
     updateLabels();
 
     Q_EMIT dataUpdated(0);
-    finishExecution();
 }
 
 bool SBASTimeSeriesNode::validateAndRestoreOutput()
@@ -494,22 +511,30 @@ bool SBASTimeSeriesNode::validateAndRestoreOutput()
     return false;
 }
 
-void SBASTimeSeriesNode::generateStaticPreviewJpg()
+bool SBASTimeSeriesNode::generateStaticPreviewJpg(bool completeExecution)
 {
     QString outDir = projectPath() + "/" + m_outputNodeName;
     QString h5Path = outDir + "/SBAS_time_series.h5";
     QString jpgPath = outDir + "/SBAS_time_series.jpg";
 
-    if (!QFileInfo::exists(h5Path)) return;
+    if (!QFileInfo::exists(h5Path)) return false;
 
     // Use QFutureWatcher to do background JPG generation without blocking UI thread (SOP Pitfall 7)
     QFutureWatcher<void>* watcher = new QFutureWatcher<void>(this);
-    connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPath]() {
+    connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPath, completeExecution]() {
+        if (discardObsoleteAutomaticExecution()) {
+            watcher->deleteLater();
+            return;
+        }
+
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
             Q_EMIT dataUpdated(1);
         }
         watcher->deleteLater();
+        if (completeExecution) {
+            finishExecution();
+        }
     });
 
     watcher->setFuture(QtConcurrent::run([h5Path, jpgPath]() {
@@ -523,6 +548,7 @@ void SBASTimeSeriesNode::generateStaticPreviewJpg()
             util.savephase_white(jpgPath.toStdString().c_str(), "jet", defomation_velocity, mask);
         }
     }));
+    return true;
 }
 
 QJsonObject SBASTimeSeriesNode::save() const

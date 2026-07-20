@@ -7,6 +7,7 @@
 #include<QScrollBar>
 #include<QGraphicsRectItem>
 #include<QGraphicsPixmapItem>
+#include<QColor>
 #include<QFile>
 
 ImageView::ImageView(QWidget* parent) :
@@ -119,11 +120,66 @@ void ImageView::setClutterRoiRect(const QRectF& rect)
 	m_clutterRectItem->setRect(rect);
 }
 
+void ImageView::setOverlayRects(const QVector<QRectF>& rects, int highlightedIndex)
+{
+	m_storedOverlayRects = rects;
+	m_highlightedOverlayIndex = highlightedIndex;
+	redrawOverlayRects();
+}
+
+void ImageView::clearOverlayRects()
+{
+	m_storedOverlayRects.clear();
+	m_highlightedOverlayIndex = -1;
+	clearOverlayGraphics();
+}
+
+void ImageView::clearOverlayGraphics()
+{
+	for (QGraphicsRectItem* item : m_overlayRectItems) {
+		if (scene()) scene()->removeItem(item);
+		delete item;
+	}
+	m_overlayRectItems.clear();
+	for (QGraphicsSimpleTextItem* item : m_overlayLabelItems) {
+		if (scene()) scene()->removeItem(item);
+		delete item;
+	}
+	m_overlayLabelItems.clear();
+}
+
+void ImageView::redrawOverlayRects()
+{
+	clearOverlayGraphics();
+	if (!scene()) return;
+
+	for (int i = 0; i < m_storedOverlayRects.size(); ++i) {
+		const bool highlighted = (i == m_highlightedOverlayIndex);
+		auto* rectItem = new QGraphicsRectItem(m_storedOverlayRects.at(i));
+		QPen pen(highlighted ? QColor("#FACC15") : QColor("#F8FAFC"));
+		pen.setWidth(highlighted ? 3 : 1);
+		pen.setCosmetic(true);
+		rectItem->setPen(pen);
+		rectItem->setZValue(10.0);
+		scene()->addItem(rectItem);
+		m_overlayRectItems.append(rectItem);
+
+		auto* labelItem = new QGraphicsSimpleTextItem(QString::number(i + 1));
+		labelItem->setBrush(highlighted ? QColor("#FACC15") : QColor("#F8FAFC"));
+		const QRectF labelBounds = labelItem->boundingRect();
+		labelItem->setPos(m_storedOverlayRects.at(i).center() - labelBounds.center());
+		labelItem->setZValue(11.0);
+		scene()->addItem(labelItem);
+		m_overlayLabelItems.append(labelItem);
+	}
+}
+
 void ImageView::loadImage(const QString& path)
 {
 	if (!scene()) {
 		setScene(new QGraphicsScene(this));
 	}
+	clearOverlayGraphics();
 	scene()->clear();
 	m_roiRectItem = nullptr;
 	m_targetRectItem = nullptr;
@@ -142,6 +198,7 @@ void ImageView::loadImage(const QString& path)
 	if (!m_storedRoi.isNull()) setRoiRect(m_storedRoi);
 	if (!m_storedTargetRoi.isNull()) setTargetRoiRect(m_storedTargetRoi);
 	if (!m_storedClutterRoi.isNull()) setClutterRoiRect(m_storedClutterRoi);
+	redrawOverlayRects();
 	
 	scene()->setSceneRect(pixmap.rect());
 	m_needsFit = true;
@@ -153,6 +210,7 @@ void ImageView::setImage(const QImage& image)
 	if (!scene()) {
 		setScene(new QGraphicsScene(this));
 	}
+	clearOverlayGraphics();
 	scene()->clear();
 	m_roiRectItem = nullptr;
 	m_targetRectItem = nullptr;
@@ -164,6 +222,7 @@ void ImageView::setImage(const QImage& image)
 	if (!m_storedRoi.isNull()) setRoiRect(m_storedRoi);
 	if (!m_storedTargetRoi.isNull()) setTargetRoiRect(m_storedTargetRoi);
 	if (!m_storedClutterRoi.isNull()) setClutterRoiRect(m_storedClutterRoi);
+	redrawOverlayRects();
 	
 	scene()->setSceneRect(pixmap.rect());
 	m_needsFit = true;

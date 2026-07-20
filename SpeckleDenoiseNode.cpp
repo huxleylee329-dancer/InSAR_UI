@@ -362,11 +362,20 @@ void SpeckleDenoiseNode::executeProcessing()
 void SpeckleDenoiseNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void SpeckleDenoiseNode::onProcessingFinished()
 {
+    m_task = nullptr;
+    m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     if (m_saveToProject) {
         m_outputImagePaths.clear(); 
         
@@ -397,14 +406,18 @@ void SpeckleDenoiseNode::onProcessingFinished()
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 
-    m_task = nullptr;
-
     InSARLogManager::LogInfo("SpeckleDenoiseNode", "executeProcessing completed.");
     finishExecution();
 }
 
 void SpeckleDenoiseNode::onError(const QString& error)
 {
+    m_task = nullptr;
+    m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("SpeckleDenoiseNode", error);
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
@@ -412,7 +425,6 @@ void SpeckleDenoiseNode::onError(const QString& error)
     m_isExecuting = false;
     updateParameterWidgetsEnableState();
 
-    m_task = nullptr;
     m_outputData.reset();
     m_outputImagePaths.clear();
     setOutputData(0, nullptr);
@@ -423,6 +435,10 @@ void SpeckleDenoiseNode::onCancelled()
 {
     m_task = nullptr;
     m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     for (const QString& outputPath : m_outputImagePaths) QFile::remove(outputPath);
     if (m_saveToProject) {
         const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("Denoise") : m_outputNodeName.trimmed();
@@ -454,6 +470,8 @@ void SpeckleDenoiseNode::onSaveImageToProjectRequested(
     const QString& finalFileName
 )
 {
+    if (isAutomaticExecutionObsolete()) return;
+
     QStandardItemModel* model = projectModel();
     if (!model) return;
 

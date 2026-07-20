@@ -96,12 +96,13 @@ private:
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    void onCancelled();
     void onError(const QString& error);
     bool validateInputs() const;
     void updateLabels();
     void updateWidgetSize();
     void executeProcessing();
-    void generateStaticPreviewJpg();
+    void generateStaticPreviewJpg(bool completeExecution = false);
     QString projectPath() const;
     QString projectName() const;
 
@@ -110,6 +111,7 @@ private:
     void stopExecution() override;
     void processAutomatically() override;
     bool prepareToStart() override;
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 private:
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;

@@ -17,4 +17,5 @@ public slots:
 signals:
     // 特有信号：回传基线数据
     void sendBL(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
+    void cancelled();
 };

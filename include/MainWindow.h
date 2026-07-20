@@ -14,6 +14,7 @@
 #include "tinyxml.h"
 #include <ColorBar.h>
 #include "qprogressdialog.h"
+#include "QtNodes/internal/Definitions.hpp"
 
 class WorkspaceUI;
 class WorkflowUI;
@@ -203,7 +204,8 @@ private:
     QLabel* m_statusProjectLabel;
     QLabel* m_statusInterfaceLabel;
     QProgressBar* m_statusProgressBar;
-    QString m_runningNodeCaption;
+    QtNodes::NodeId m_runningNodeId;
+    bool m_hasRunningNode;
 
     void initStatusBar();
     void updateStatusBarProject(const QString& filePath);

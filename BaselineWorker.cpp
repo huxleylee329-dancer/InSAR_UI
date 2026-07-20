@@ -101,6 +101,7 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
         if (QThread::currentThread()->isInterruptionRequested())
         {
             InSARLogManager::LogInfo("BaselineWorker", "Baseline Estimate interrupted by user.");
+            emit cancelled();
             return;
         }
 

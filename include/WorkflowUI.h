@@ -156,11 +156,13 @@ signals:
     // 工作流被修改信号
     void workflowModified();
 
-    // 节点运行状态与进度信号
-    void nodeProgressUpdated(const QString& nodeCaption, int percent);
-    void nodeExecutionStarted(const QString& nodeCaption);
-    void nodeExecutionFinished(const QString& nodeCaption);
-    void nodeExecutionError(const QString& nodeCaption, const QString& error);
+    // 节点运行状态与进度信号。NodeId 用于可靠地关联全局状态栏任务，caption 仅用于显示。
+    void nodeProgressUpdated(QtNodes::NodeId nodeId, const QString& nodeCaption, int percent);
+    void nodeExecutionStarted(QtNodes::NodeId nodeId, const QString& nodeCaption);
+    void nodeExecutionFinished(QtNodes::NodeId nodeId, const QString& nodeCaption);
+    void nodeExecutionStopped(QtNodes::NodeId nodeId, const QString& nodeCaption);
+    void nodeExecutionError(QtNodes::NodeId nodeId, const QString& nodeCaption, const QString& error);
+    void nodeExecutionStartRejected(QtNodes::NodeId nodeId, const QString& nodeCaption, const QString& reason);
 
 private:
     void setupUi();

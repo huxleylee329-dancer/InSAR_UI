@@ -6,6 +6,7 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QDir>
+#include <QThread>
 #include <cmath>
 #include <algorithm>
 
@@ -27,6 +28,11 @@ void GCPManagerWorker::evaluate_gcps(
     double thresholdSigma,
     int minQuality)
 {
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
+
     emit updateProcess(10, QStringLiteral("开始读取影像多项式系数与分辨率参数..."));
 
     // 1. 获取 HDF5 文件锁保护，防止多线程死锁与重入冲突
@@ -70,6 +76,11 @@ void GCPManagerWorker::evaluate_gcps(
         }
     }
 
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
+
     emit updateProcess(40, QStringLiteral("参数加载完成，执行控制点清洗与残差解算..."));
 
     // 筛选出可以参与评估的已标注点 ( row 和 col 不是 NaN )
@@ -104,6 +115,11 @@ void GCPManagerWorker::evaluate_gcps(
     // C. 生成格式化的分析报告文本
     std::string reportText;
     manager.generate_evaluation_report(evalResult, activeGcps, reportText);
+
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
 
     emit updateProcess(70, QStringLiteral("计算完成，开始写入临时输出 H5 结果数据集..."));
 
@@ -162,6 +178,11 @@ void GCPManagerWorker::evaluate_gcps(
         NodeUtils::writeScalarToH5(outputH5Path, "mean_residual_azimuth", evalResult.mean_residual_azimuth);
         NodeUtils::writeScalarToH5(outputH5Path, "rms_residual_2d", evalResult.rms_residual_2d);
         NodeUtils::writeScalarToH5(outputH5Path, "rms_residual_3d", evalResult.rms_residual_3d);
+    }
+
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
     }
 
     emit updateProcess(100, QStringLiteral("GCP 精度评估和输出已成功完成！"));

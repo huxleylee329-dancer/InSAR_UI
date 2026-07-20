@@ -139,7 +139,10 @@ void IonosphericCorrectionWorker::doCorrection(
     // 处理每对 SLC 影像
     for (int idx = 0; idx < image_count; idx++)
     {
-        if (QThread::currentThread()->isInterruptionRequested()) return;
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            emit cancelled();
+            return;
+        }
 
         int progress = 10 + idx * 80 / image_count;
         emit updateProcess(progress, QStringLiteral("电离层校正第%1/%2幅……").arg(idx + 1).arg(image_count));

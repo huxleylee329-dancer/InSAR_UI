@@ -301,6 +301,8 @@ void IonosphericCorrectionNode::executeProcessing()
     connect(m_workerThread, &IonosphericCorrectionWorker::updateProcess, this, &IonosphericCorrectionNode::onProgressUpdate);
     connect(m_workerThread, &IonosphericCorrectionWorker::endProcess, this, &IonosphericCorrectionNode::onProcessingFinished);
     connect(m_workerThread, &IonosphericCorrectionWorker::errorProcess, this, &IonosphericCorrectionNode::onError);
+    connect(m_workerThread, &IonosphericCorrectionWorker::cancelled, this, &IonosphericCorrectionNode::onCancelled);
+    connect(m_workerThread, &IonosphericCorrectionWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &IonosphericCorrectionWorker::sendModel, this, &IonosphericCorrectionNode::onModelUpdated);
     connect(m_workerThread, &IonosphericCorrectionWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
@@ -313,10 +315,11 @@ void IonosphericCorrectionNode::executeProcessing()
     m_subbandRatioSpin->setEnabled(false);
     m_filterStrengthSpin->setEnabled(false);
     m_outputTECCheck->setEnabled(false);
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
-void IonosphericCorrectionNode::onProgressUpdate(int progress, const QString& message) { Q_UNUSED(message); setProgress(progress); }
+void IonosphericCorrectionNode::onProgressUpdate(int progress, const QString& message) { Q_UNUSED(message); if (!isAutomaticExecutionObsolete()) setProgress(progress); }
 
 void IonosphericCorrectionNode::onProcessingFinished()
 {
@@ -337,12 +340,15 @@ void IonosphericCorrectionNode::onProcessingFinished()
     if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
     if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
 
+    if (discardObsoleteAutomaticExecution()) return;
+
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
     if (!h5Paths.isEmpty()) {
         m_remedyWatcher.cancel(); m_remedyWatcher.waitForFinished(); m_remedyWatcher.disconnect();
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) return;
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
             setOutputData(1, m_imageInfoData); Q_EMIT dataUpdated(1);
             m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
@@ -366,13 +372,28 @@ void IonosphericCorrectionNode::onError(const QString& error)
     Q_UNUSED(error);
     if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
     if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    if (discardObsoleteAutomaticExecution()) return;
     m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
     m_filterStrengthSpin->setEnabled(true); m_outputTECCheck->setEnabled(true);
     setState(ExecutionState::Error);
 }
 
+void IonosphericCorrectionNode::onCancelled()
+{
+    if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
+    if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    if (discardObsoleteAutomaticExecution()) return;
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
+    m_filterStrengthSpin->setEnabled(true); m_outputTECCheck->setEnabled(true);
+}
+
 void IonosphericCorrectionNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) return;
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) iface->refreshProjectTree();

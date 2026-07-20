@@ -177,7 +177,10 @@ void GacosOnlineServiceWorker::doGacosRequest(
     // 处理每幅干涉图
     for (int idx = 0; idx < image_count; idx++)
     {
-        if (QThread::currentThread()->isInterruptionRequested()) return;
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            emit cancelled();
+            return;
+        }
 
         int progress = 10 + idx * 80 / image_count;
         emit updateProcess(progress, QStringLiteral("处理第%1/%2幅干涉图……").arg(idx + 1).arg(image_count));
@@ -259,7 +262,10 @@ void GacosOnlineServiceWorker::doGacosRequest(
         bool completed = false;
         QString downloadUrl;
         for (int poll = 0; poll < 60; poll++) { // 最多轮询60次，每次30秒
-            if (QThread::currentThread()->isInterruptionRequested()) return;
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                emit cancelled();
+                return;
+            }
 
             QThread::sleep(30);
 

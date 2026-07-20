@@ -68,6 +68,7 @@ public:
 
     bool validateAndRestoreOutput() override;
     bool stopExecutionIsAsynchronous() const override { return true; }
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
     // Dual ROI overrides for detail view
     bool supportsTwoRois() const override { return true; }

@@ -32,4 +32,7 @@ public slots:
               QString src_node,
               QString dst_node,
               QStandardItemModel* model);
+
+signals:
+    void cancelled();
 };

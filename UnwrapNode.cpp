@@ -405,12 +405,16 @@ void UnwrapNode::executeProcessing()
     m_methodCombo->setEnabled(false);
     if (m_coherenceEdit) m_coherenceEdit->setEnabled(false);
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
 void UnwrapNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
@@ -453,6 +457,10 @@ void UnwrapNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
@@ -463,6 +471,10 @@ void UnwrapNode::onProcessingFinished()
         m_remedyWatcher.disconnect();
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
@@ -508,6 +520,20 @@ void UnwrapNode::onProcessingFinished()
 void UnwrapNode::onCancelled()
 {
     InSARLogManager::LogInfo("UnwrapNode", "Unwrap cancellation cleanup completed.");
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread) {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -519,6 +545,20 @@ void UnwrapNode::onCancelled()
 void UnwrapNode::onError(const QString& error)
 {
     Q_UNUSED(error);
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread) {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputNodeNameEdit->setEnabled(true);
     m_methodCombo->setEnabled(true);
     if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
@@ -529,6 +569,10 @@ void UnwrapNode::onError(const QString& error)
 
 void UnwrapNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {

@@ -209,6 +209,9 @@ protected:
     /// 返回 true 表示 stopExecution() 仅请求异步停止，实际停止状态由子类完成信号更新。
     virtual bool stopExecutionIsAsynchronous() const { return false; }
 
+    /// Opt in only after terminal callbacks discard obsolete results.
+    virtual bool supportsAutomaticRestartAfterInputChange() const { return false; }
+
     /// 设置手动启动校验失败时向用户展示的原因。
     void setStartFailureMessage(QString const& message) { _startFailureMessage = message; }
 
@@ -219,6 +222,12 @@ protected:
     void completeAutomaticExecution();
 
     void deferAutomaticCompletion();
+
+    /// Return true when an asynchronous callback belongs to an obsolete input.
+    /// Call this after releasing the worker/thread and before publishing results.
+    bool discardObsoleteAutomaticExecution();
+
+    bool isAutomaticExecutionObsolete() const { return _restartAfterInputChange; }
 
     /// Call this when input or source data changes in Manual mode
     void invalidateExecution();
@@ -261,6 +270,8 @@ protected:
     // (vs. manually by the user clicking Start). Allows skipping overwrite popups in auto mode.
     bool _isAutoTriggered = false;
     bool _deferAutomaticCompletion = false;
+    bool _restartAfterInputChange = false;
+    bool _restartScheduled = false;
 
     double _targetProgress = 0.0;
     double _currentShownProgress = 0.0;
@@ -268,6 +279,9 @@ protected:
     QString _lastErrorMessage;
     QString _lastWarningMessage;
     QString _startFailureMessage;
+
+private:
+    void restartAutomaticExecutionAfterInputChange();
 };
 
 } // namespace QtNodes

@@ -244,11 +244,20 @@ bool S1DeburstNode::validateInputs() const
 void S1DeburstNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void S1DeburstNode::onProcessingFinished()
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     QString dstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
@@ -309,6 +318,10 @@ void S1DeburstNode::onError(const QString& error)
     m_worker = nullptr;
     m_thread = nullptr;
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputNodeNameEdit->setEnabled(true);
     setState(ExecutionState::Error);
 }
@@ -318,6 +331,10 @@ void S1DeburstNode::onCancelled()
     InSARLogManager::LogInfo("S1DeburstNode", "Deburst cancellation reached a safe boundary.");
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_imageInfoData.reset();
     setOutputData(0, nullptr);
@@ -330,6 +347,10 @@ void S1DeburstNode::onCancelled()
 
 void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -342,6 +363,10 @@ void S1DeburstNode::onResultsReceived(
     const QStringList& deburstH5Paths,
     const QStringList& originNames)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     // 用全局 XML 句柄 + 原生 TinyXML 写入，绕过外部 DLL 接口（SOP 避坑经验 #9）
     // 注意：此槽通过 Qt 信号队列触发，运行在 UI 线程事件循环中，可安全访问 projectXml()
     XMLFile* xml = projectXml();
@@ -625,6 +650,7 @@ void S1DeburstNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread
+    deferAutomaticCompletion();
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
 

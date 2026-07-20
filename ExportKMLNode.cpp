@@ -305,10 +305,13 @@ void ExportKMLNode::executeProcessing()
     connect(m_worker, &ExportKMLWorker::updateProcess, this, &ExportKMLNode::onProgressUpdate);
     connect(m_worker, &ExportKMLWorker::endProcess, this, &ExportKMLNode::onProcessingFinished);
     connect(m_worker, &ExportKMLWorker::errorProcess, this, &ExportKMLNode::onError);
+    connect(m_worker, &ExportKMLWorker::cancelled, this, &ExportKMLNode::onCancelled);
+    connect(m_worker, &ExportKMLWorker::cancelled, m_thread, &QThread::quit);
 
     // Update state and progress before starting
     setState(ExecutionState::Running);
     setProgress(0);
+    deferAutomaticCompletion();
     m_thread->start();
     Q_EMIT startProcess();
 }
@@ -336,20 +339,33 @@ void ExportKMLNode::processAutomatically()
 
 void ExportKMLNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     m_resultLabel->setText(QString("%1%: %2").arg(progress).arg(message));
 }
 
 void ExportKMLNode::onError(const QString& error)
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("ExportKMLNode", "Error during KML export: " + error);
     m_resultLabel->setText(QStringLiteral("失败: ") + error);
     setState(ExecutionState::Error);
     finishExecution();
-    stopExecution();
 }
 
 void ExportKMLNode::onProcessingFinished()
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("ExportKMLNode", "executeProcessing completed.");
     m_resultLabel->setText(QStringLiteral("导出完成！"));
 
@@ -358,7 +374,19 @@ void ExportKMLNode::onProcessingFinished()
     setState(ExecutionState::Running);
     finishExecution();
     Q_EMIT dataUpdated(0);
+}
+
+void ExportKMLNode::onCancelled()
+{
     stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    m_resultLabel->setText(QStringLiteral("已取消"));
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 bool ExportKMLNode::validateAndRestoreOutput()

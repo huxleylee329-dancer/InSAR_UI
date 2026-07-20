@@ -1,6 +1,8 @@
 #pragma once
 #include<QGraphicsView>
 #include <QGraphicsRectItem>
+#include <QGraphicsSimpleTextItem>
+#include <QVector>
 
 class ImageView : public QGraphicsView
 {
@@ -30,6 +32,8 @@ public:
 	void setRoiRect(const QRectF& rect);
 	void setTargetRoiRect(const QRectF& rect);
 	void setClutterRoiRect(const QRectF& rect);
+	void setOverlayRects(const QVector<QRectF>& rects, int highlightedIndex = -1);
+	void clearOverlayRects();
 	
 	void loadImage(const QString& path);
 	void setImage(const QImage& image);
@@ -63,12 +67,18 @@ private:
 	QGraphicsRectItem* m_roiRectItem;
 	QGraphicsRectItem* m_targetRectItem;
 	QGraphicsRectItem* m_clutterRectItem;
+	QVector<QGraphicsRectItem*> m_overlayRectItems;
+	QVector<QGraphicsSimpleTextItem*> m_overlayLabelItems;
 	
 	QPointF m_roiStartPos;
 	QRectF m_storedRoi;
 	QRectF m_storedTargetRoi;
 	QRectF m_storedClutterRoi;
+	QVector<QRectF> m_storedOverlayRects;
+	int m_highlightedOverlayIndex = -1;
 	bool m_needsFit;
 
 	void updateTransformationMode();
+	void redrawOverlayRects();
+	void clearOverlayGraphics();
 };

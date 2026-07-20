@@ -87,6 +87,7 @@ private:
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished(QList<double> temporal_baseline, QList<double> spatial_baseline, int index);
+    void onCancelled();
     void onError(const QString& error);
     bool validateInputs() const;
     void updateLabels();
@@ -100,6 +101,7 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
     void startEstimate(int index, QStringList filePaths);

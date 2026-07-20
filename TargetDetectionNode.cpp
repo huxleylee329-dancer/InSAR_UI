@@ -405,6 +405,12 @@ void TargetDetectionNode::executeProcessing()
 
     connect(m_task, &TargetDetectionTask::updateProcess, this, &TargetDetectionNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::sendTargetDetectionResult, this, &TargetDetectionNode::onDetectionFinished, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::endProcess, this, [this]() {
+        if (isAutomaticExecutionObsolete()) {
+            m_task = nullptr;
+            discardObsoleteAutomaticExecution();
+        }
+    }, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::errorProcess, this, &TargetDetectionNode::onError, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::cancelled, this, &TargetDetectionNode::onCancelled, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::BlockingQueuedConnection);
@@ -417,11 +423,18 @@ void TargetDetectionNode::executeProcessing()
 
 void TargetDetectionNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     QString fileName = "";
     if (m_inputData && imageIndex < m_inputData->filePaths().size()) {
         fileName = QFileInfo(m_inputData->filePaths()[imageIndex]).fileName();
@@ -500,13 +513,16 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
 
 void TargetDetectionNode::onError(const QString& error)
 {
+    m_task = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
     
     if (m_modelComboBox) m_modelComboBox->setEnabled(true);
     if (m_thresholdEdit) m_thresholdEdit->setEnabled(true);
-
-    m_task = nullptr;
 
     m_outputData.reset();
 }
@@ -514,6 +530,10 @@ void TargetDetectionNode::onError(const QString& error)
 void TargetDetectionNode::onCancelled()
 {
     m_task = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_savedResults.clear();
     if (m_resultsTable) m_resultsTable->setRowCount(0);
     if (m_modelComboBox) m_modelComboBox->setEnabled(true);

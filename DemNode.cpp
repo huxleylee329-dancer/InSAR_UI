@@ -451,12 +451,16 @@ void DemNode::executeProcessing()
     m_methodCombo->setEnabled(false);
     if (m_timesEdit) m_timesEdit->setEnabled(false);
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
 void DemNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
@@ -499,6 +503,10 @@ void DemNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
@@ -510,6 +518,10 @@ void DemNode::onProcessingFinished()
         }
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
             QStringList validJpgPaths;
             for (const QString& path : jpgPaths) {
                 if (QFile::exists(path)) {
@@ -565,6 +577,20 @@ void DemNode::onProcessingFinished()
 
 void DemNode::onError(const QString& error)
 {
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread) {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputNodeNameEdit->setEnabled(true);
     m_methodCombo->setEnabled(true);
     if (m_timesEdit) m_timesEdit->setEnabled(true);
@@ -577,6 +603,20 @@ void DemNode::onError(const QString& error)
 
 void DemNode::onCancelled()
 {
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread) {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -587,6 +627,10 @@ void DemNode::onCancelled()
 
 void DemNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {

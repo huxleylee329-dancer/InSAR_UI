@@ -116,6 +116,7 @@ private:
     void stopExecution() override;
     void processAutomatically() override;
     bool stopExecutionIsAsynchronous() const override { return true; }
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;

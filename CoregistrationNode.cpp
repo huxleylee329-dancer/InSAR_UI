@@ -679,11 +679,20 @@ void CoregistrationNode::stopExecution()
 void CoregistrationNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void CoregistrationNode::onProcessingFinished()
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("CoregistrationNode", "Coregistration process finished. Generating previews...");
 
     // Generate preview JPGs asynchronously
@@ -696,12 +705,16 @@ void CoregistrationNode::onProcessingFinished()
 
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Paths, jpgPaths]() {
         InSARLogManager::LogInfo("CoregistrationNode", "Coregistration JPG preview generation finished.");
+        m_isExecuting = false;
+        if (discardObsoleteAutomaticExecution()) {
+            return;
+        }
+
         m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_outputNodeName.trimmed());
         m_previewData = std::make_shared<ImageInfoData>(jpgPaths);
         setOutputData(0, m_outputData);
         setOutputData(1, m_previewData);
 
-        m_isExecuting = false;
         updateParameterWidgetsEnableState();
 
         Q_EMIT dataUpdated(0);
@@ -719,11 +732,17 @@ void CoregistrationNode::onProcessingFinished()
 
 void CoregistrationNode::onError(const QString& error)
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
+    m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("CoregistrationNode", error);
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
 
-    m_isExecuting = false;
     updateParameterWidgetsEnableState();
 
     m_outputData.reset();
@@ -737,7 +756,13 @@ void CoregistrationNode::onError(const QString& error)
 void CoregistrationNode::onCancelled()
 {
     InSARLogManager::LogInfo("CoregistrationNode", "Coregistration cancellation cleanup completed.");
+    m_worker = nullptr;
+    m_thread = nullptr;
     m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_previewData.reset();
     m_outputImagePaths.clear();
@@ -752,6 +777,10 @@ void CoregistrationNode::onCancelled()
 
 void CoregistrationNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto* iface = NodeUtils::getProjectContext(_widget);
     if (iface) {

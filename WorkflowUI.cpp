@@ -1728,7 +1728,10 @@ void WorkflowUI::openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::Execu
     _animationController = new QtNodes::NodeDetailAnimationController(this);
     connect(_animationController, &QtNodes::NodeDetailAnimationController::openAnimationCompleted,
             [this]() {
-                // Animation complete, detail window now visible and interactive
+                // The animation changes the view size, so fit after the final layout pass.
+                if (_detailWindow) {
+                    QTimer::singleShot(0, _detailWindow, &QtNodes::NodeDetailWindow::fitPreviewImage);
+                }
             });
     connect(_animationController, &QtNodes::NodeDetailAnimationController::closeAnimationCompleted,
             this, &WorkflowUI::cleanupDetailWindow);
@@ -1825,38 +1828,33 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
     QString caption = execModel->caption();
 
     // 连接节点的进度和执行信号
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStarted, this, [this, caption]() {
-        Q_EMIT nodeExecutionStarted(caption);
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStarted, this, [this, nodeId, caption]() {
+        Q_EMIT nodeExecutionStarted(nodeId, caption);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::progressUpdated, this, [this, caption](int percent) {
-        Q_EMIT nodeProgressUpdated(caption, percent);
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::progressUpdated, this, [this, nodeId, caption](int percent) {
+        Q_EMIT nodeProgressUpdated(nodeId, caption, percent);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionFinished, this, [this, caption]() {
-        Q_EMIT nodeExecutionFinished(caption);
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionFinished, this, [this, nodeId, caption]() {
+        Q_EMIT nodeExecutionFinished(nodeId, caption);
     }, Qt::QueuedConnection);
 
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionError, this, [this, caption, nodeId, weakModel](const QString& error) {
         if (weakModel) {
             weakModel->setLastErrorMessage(error);
         }
-        Q_EMIT nodeExecutionError(caption, error);
+        Q_EMIT nodeExecutionError(nodeId, caption, error);
         this->showNotificationToast(caption, error, nodeId);
     }, Qt::QueuedConnection);
 
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStartRejected, this, [this, caption, nodeId](const QString& reason) {
+        Q_EMIT nodeExecutionStartRejected(nodeId, caption, reason);
         this->showNotificationToast(caption, reason, nodeId, true);
     }, Qt::QueuedConnection);
 
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStopped, this, [this, caption]() {
-        Q_EMIT nodeExecutionFinished(caption);
-    }, Qt::QueuedConnection);
-
-    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStateChanged, this, [this, caption, weakModel]() {
-        if (weakModel && weakModel->executionState() == QtNodes::ExecutionState::Idle) {
-            Q_EMIT nodeExecutionFinished(caption);
-        }
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStopped, this, [this, nodeId, caption]() {
+        Q_EMIT nodeExecutionStopped(nodeId, caption);
     }, Qt::QueuedConnection);
 }
 

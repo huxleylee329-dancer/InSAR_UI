@@ -1589,6 +1589,13 @@ void NodeDetailWindow::updatePreviewImage()
     }
 }
 
+void NodeDetailWindow::fitPreviewImage()
+{
+    if (_imageView) {
+        _imageView->fitImage();
+    }
+}
+
 void NodeDetailWindow::onPrevPreviewClicked()
 {
     if (_currentPreviewIndex > 0) {
@@ -1657,9 +1664,7 @@ void NodeDetailWindow::onZoomOutClicked()
 
 void NodeDetailWindow::onFitImageClicked()
 {
-    if (_imageView) {
-        _imageView->fitImage();
-    }
+    fitPreviewImage();
 }
 
 void NodeDetailWindow::onRoiToggled(bool checked)

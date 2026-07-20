@@ -571,12 +571,16 @@ void DenoiseNode::executeProcessing()
     if (m_nPadEdit) m_nPadEdit->setEnabled(false);
     if (m_alphaEdit) m_alphaEdit->setEnabled(false);
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
 void DenoiseNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
@@ -619,6 +623,10 @@ void DenoiseNode::onProcessingFinished()
         m_workerThread = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
@@ -629,6 +637,10 @@ void DenoiseNode::onProcessingFinished()
         m_remedyWatcher.disconnect();
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
@@ -695,6 +707,10 @@ void DenoiseNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputNodeNameEdit->setEnabled(true);
     m_methodCombo->setEnabled(true);
     if (m_prefilterWinEdit) m_prefilterWinEdit->setEnabled(true);
@@ -709,6 +725,10 @@ void DenoiseNode::onError(const QString& error)
 
 void DenoiseNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -875,6 +895,20 @@ void DenoiseNode::stopExecution()
 
 void DenoiseNode::onCancelled()
 {
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread) {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();

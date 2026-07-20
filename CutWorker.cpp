@@ -83,6 +83,7 @@ void CutWorker::Cut(QList<double> para,
         if (QThread::currentThread()->isInterruptionRequested())
         {
             QDir(save_path + "/" + dst_node).removeRecursively();
+            emit cancelled();
             return;
         }
         ComplexMat SLC;
@@ -263,6 +264,7 @@ void CutWorker::Cut2(double h5_left,
         if (QThread::currentThread()->isInterruptionRequested())
         {
             QDir(save_path + "/" + dst_node).removeRecursively();
+            emit cancelled();
             return;
         }
 

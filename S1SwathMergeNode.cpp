@@ -350,6 +350,9 @@ bool S1SwathMergeNode::validateInputs() const
 void S1SwathMergeNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
@@ -364,6 +367,10 @@ void S1SwathMergeNode::onProcessingFinished()
     if (m_worker)
     {
         m_worker = nullptr;
+    }
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
     }
 
     // Set output node name to the final result name
@@ -398,6 +405,10 @@ void S1SwathMergeNode::onError(const QString& error)
         m_worker = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputNodeNameEdit->setEnabled(true);
     setState(ExecutionState::Error);
 }
@@ -407,6 +418,10 @@ void S1SwathMergeNode::onCancelled()
     InSARLogManager::LogInfo("S1SwathMergeNode", "Swath merge cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_imageInfoData.reset();
     setOutputData(0, nullptr);
@@ -419,6 +434,10 @@ void S1SwathMergeNode::onCancelled()
 
 void S1SwathMergeNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -597,6 +616,7 @@ void S1SwathMergeNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread
+    deferAutomaticCompletion();
     m_thread->start();
     m_outputNodeNameEdit->setEnabled(false);
 

@@ -316,6 +316,8 @@ void GacosOnlineServiceNode::executeProcessing()
     connect(m_workerThread, &GacosOnlineServiceWorker::updateProcess, this, &GacosOnlineServiceNode::onProgressUpdate);
     connect(m_workerThread, &GacosOnlineServiceWorker::endProcess, this, &GacosOnlineServiceNode::onProcessingFinished);
     connect(m_workerThread, &GacosOnlineServiceWorker::errorProcess, this, &GacosOnlineServiceNode::onError);
+    connect(m_workerThread, &GacosOnlineServiceWorker::cancelled, this, &GacosOnlineServiceNode::onCancelled);
+    connect(m_workerThread, &GacosOnlineServiceWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &GacosOnlineServiceWorker::sendModel, this, &GacosOnlineServiceNode::onModelUpdated);
     connect(m_workerThread, &GacosOnlineServiceWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
@@ -329,12 +331,14 @@ void GacosOnlineServiceNode::executeProcessing()
     m_emailEdit->setEnabled(false);
     m_dataFormatCombo->setEnabled(false);
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
 void GacosOnlineServiceNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) return;
     setProgress(progress);
 }
 
@@ -359,6 +363,8 @@ void GacosOnlineServiceNode::onProcessingFinished()
     if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
     if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
 
+    if (discardObsoleteAutomaticExecution()) return;
+
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
@@ -367,6 +373,7 @@ void GacosOnlineServiceNode::onProcessingFinished()
         m_remedyWatcher.waitForFinished();
         m_remedyWatcher.disconnect();
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) return;
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
@@ -404,6 +411,7 @@ void GacosOnlineServiceNode::onError(const QString& error)
     Q_UNUSED(error);
     if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
     if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    if (discardObsoleteAutomaticExecution()) return;
     m_outputNodeNameEdit->setEnabled(true);
     m_apiKeyEdit->setEnabled(true);
     m_emailEdit->setEnabled(true);
@@ -411,8 +419,24 @@ void GacosOnlineServiceNode::onError(const QString& error)
     setState(ExecutionState::Error);
 }
 
+void GacosOnlineServiceNode::onCancelled()
+{
+    if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
+    if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    if (discardObsoleteAutomaticExecution()) return;
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    m_outputNodeNameEdit->setEnabled(true);
+    m_apiKeyEdit->setEnabled(true);
+    m_emailEdit->setEnabled(true);
+    m_dataFormatCombo->setEnabled(true);
+}
+
 void GacosOnlineServiceNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) return;
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) iface->refreshProjectTree();

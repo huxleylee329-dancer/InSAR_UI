@@ -112,6 +112,7 @@ private:
     void stopExecution() override;
     void processAutomatically() override;
     bool stopExecutionIsAsynchronous() const override { return true; }
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
     void startDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);

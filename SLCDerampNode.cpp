@@ -538,11 +538,29 @@ void SLCDerampNode::updateWidgetSize()
 void SLCDerampNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void SLCDerampNode::onProcessingFinished()
 {
+    if (isAutomaticExecutionObsolete()) {
+        if (m_thread) {
+            m_thread->quit();
+            m_thread->wait();
+            m_thread->deleteLater();
+            m_thread = nullptr;
+        }
+        if (m_worker) {
+            m_worker->deleteLater();
+            m_worker = nullptr;
+        }
+        discardObsoleteAutomaticExecution();
+        return;
+    }
+
     QString dstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
@@ -596,6 +614,10 @@ void SLCDerampNode::onProcessingFinished()
         m_worker = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     // Update UI
     updateParameterWidgetsEnableState();
 
@@ -624,12 +646,20 @@ void SLCDerampNode::onError(const QString& error)
         m_worker = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     updateParameterWidgetsEnableState();
     setState(ExecutionState::Error);
 }
 
 void SLCDerampNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -642,6 +672,10 @@ void SLCDerampNode::onResultsReceived(
     const QStringList& h5Paths,
     const QStringList& originNames)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     // 用全局 XML 句柄 + 原生 TinyXML 写入，绕过外部 DLL 接口以避崩溃 (SOP 9)
     XMLFile* xml = projectXml();
     if (!xml)
@@ -909,6 +943,7 @@ void SLCDerampNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread
+    deferAutomaticCompletion();
     m_thread->start();
     updateParameterWidgetsEnableState();
 
@@ -967,6 +1002,20 @@ void SLCDerampNode::stopExecution()
 
 void SLCDerampNode::onCancelled()
 {
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_worker) {
+        m_worker->deleteLater();
+        m_worker = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();

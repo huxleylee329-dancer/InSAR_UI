@@ -15,6 +15,7 @@ public:
 signals:
     // 计算完成后的通知信号，传回计算后的控制点列表和报告文本，安全解耦 SQLite
     void evaluationFinished(const std::vector<GCPPoint>& updatedGcps, const GCPEvaluationResult& result, const QString& reportText);
+    void cancelled();
 
 public slots:
     // 执行异步评估

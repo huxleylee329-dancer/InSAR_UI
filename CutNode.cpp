@@ -642,6 +642,7 @@ void CutNode::executeProcessing()
 
     connect(m_worker, &CutWorker::updateProcess, this, &CutNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_worker, &CutWorker::endProcess, this, &CutNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(m_worker, &CutWorker::cancelled, this, &CutNode::onCancelled, Qt::QueuedConnection);
     connect(m_worker, &CutWorker::errorProcess, this, &CutNode::onError, Qt::QueuedConnection);
     connect(m_worker, &CutWorker::sendModel, this, &CutNode::onModelUpdated, Qt::QueuedConnection);
 
@@ -714,11 +715,21 @@ void CutNode::stopExecution()
 void CutNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void CutNode::onProcessingFinished()
 {
+    m_isExecuting = false;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("CutNode", "onProcessingFinished.");
 
     QString dstNodeName = m_outputNodeName.trimmed();
@@ -836,13 +847,16 @@ void CutNode::onProcessingFinished()
 
 void CutNode::onError(const QString& error)
 {
-    InSARLogManager::LogError("CutNode", error);
-    Q_EMIT executionError(error);
-    setState(ExecutionState::Error);
-
     m_isExecuting = false;
     m_thread = nullptr;
     m_worker = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    InSARLogManager::LogError("CutNode", error);
+    Q_EMIT executionError(error);
+    setState(ExecutionState::Error);
 
     updateParameterWidgetsEnableState();
 
@@ -850,8 +864,27 @@ void CutNode::onError(const QString& error)
     m_previewData.reset();
 }
 
+void CutNode::onCancelled()
+{
+    m_isExecuting = false;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    updateParameterWidgetsEnableState();
+}
+
 void CutNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     if (auto* iface = NodeUtils::getProjectContext(_widget)) {
         iface->refreshProjectTree();

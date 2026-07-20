@@ -164,7 +164,10 @@ void PhaseElevationRegressionWorker::doRegression(
     // 处理每幅干涉图
     for (int idx = 0; idx < image_count; idx++)
     {
-        if (QThread::currentThread()->isInterruptionRequested()) break;
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            emit cancelled();
+            return;
+        }
 
         int progress = 10 + idx * 80 / image_count;
         emit updateProcess(progress, QStringLiteral("校正第%1/%2幅干涉图……").arg(idx + 1).arg(image_count));

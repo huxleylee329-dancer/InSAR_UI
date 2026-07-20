@@ -11,6 +11,7 @@ public:
 
 signals:
     void sendResults(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames);
+    void cancelled();
 
 public slots:
     void refine_orbit(

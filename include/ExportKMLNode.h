@@ -54,6 +54,7 @@ private:
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    void onCancelled();
     void onError(const QString& error);
     bool validateInputs() const;
     void updateLabels();
@@ -86,6 +87,7 @@ private:
     void stopExecution() override;
     void processAutomatically() override;
     bool prepareToStart() override;
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 private:
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;

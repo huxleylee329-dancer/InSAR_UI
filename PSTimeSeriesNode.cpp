@@ -323,6 +323,7 @@ void PSTimeSeriesNode::executeProcessing()
         }
     });
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
@@ -335,6 +336,10 @@ void PSTimeSeriesNode::stopExecution()
 
 void PSTimeSeriesNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     setProgress(progress);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("正在反演 (%1%): %2").arg(progress).arg(message));
@@ -345,6 +350,10 @@ void PSTimeSeriesNode::onError(const QString& error)
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("PSTimeSeriesNode", "Error in time series inversion: " + error);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("计算出错: ") + error);
@@ -358,6 +367,10 @@ void PSTimeSeriesNode::onCancelled()
     InSARLogManager::LogInfo("PSTimeSeriesNode", "PS time-series cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_previewData.reset();
     setOutputData(0, nullptr);
@@ -372,6 +385,10 @@ void PSTimeSeriesNode::onProcessingFinished()
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("PSTimeSeriesNode", "executeProcessing completed successfully.");
     
     QString rawPath = projectPath();

@@ -66,6 +66,13 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
         }
 
         if (_mode == ExecutionMode::Automatic) {
+            const bool inputChangedWhileRunning = supportsAutomaticRestartAfterInputChange()
+                && (_state == ExecutionState::Running);
+            if (inputChangedWhileRunning) {
+                _restartAfterInputChange = true;
+                stopExecution();
+            }
+
             // If the incoming data is null, an upstream node was invalidated.
             // 根据所有必需端口是否已连齐，决定将其状态设为 Pending 还是 Idle。
             // 这样当上游重置或仍在运行时，连齐的节点会进入 Pending 状态等待。
@@ -106,6 +113,13 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
                 } else {
                     setState(ExecutionState::Idle);
                 }
+                return;
+            }
+
+            // An active asynchronous task must acknowledge cancellation before
+            // it is allowed to restart with the updated input snapshot.
+            if (inputChangedWhileRunning) {
+                setState(ExecutionState::Pending);
                 return;
             }
 
@@ -319,6 +333,69 @@ void ExecutableNodeDelegateModel::finishExecution()
 void ExecutableNodeDelegateModel::deferAutomaticCompletion()
 {
     _deferAutomaticCompletion = true;
+}
+
+bool ExecutableNodeDelegateModel::discardObsoleteAutomaticExecution()
+{
+    if (!_restartAfterInputChange) {
+        return false;
+    }
+
+    if (!_restartScheduled) {
+        _restartScheduled = true;
+        QTimer::singleShot(0, this, [this]() {
+            restartAutomaticExecutionAfterInputChange();
+        });
+    }
+    return true;
+}
+
+void ExecutableNodeDelegateModel::restartAutomaticExecutionAfterInputChange()
+{
+    _restartScheduled = false;
+    if (!_restartAfterInputChange || _mode != ExecutionMode::Automatic) {
+        return;
+    }
+
+    _restartAfterInputChange = false;
+    if (!allRequiredPortsConnected()) {
+        setState(ExecutionState::Idle);
+        return;
+    }
+
+    for (PortIndex index = 0; index < nPorts(PortType::In); ++index) {
+        if (portIsOptional(PortType::In, index)) {
+            continue;
+        }
+        auto inputIt = _inputData.find(index);
+        if (inputIt == _inputData.end() || inputIt->second == nullptr) {
+            setState(ExecutionState::Pending);
+            return;
+        }
+    }
+
+    setState(ExecutionState::Running);
+    _progress = 0;
+    _isAutoTriggered = true;
+    _deferAutomaticCompletion = false;
+    processAutomatically();
+    _isAutoTriggered = false;
+
+    if (_deferAutomaticCompletion || _state != ExecutionState::Running) {
+        _deferAutomaticCompletion = false;
+        return;
+    }
+
+    bool hasOutput = false;
+    for (auto const &pair : _outputData) {
+        if (pair.second != nullptr) {
+            hasOutput = true;
+            break;
+        }
+    }
+    setState(hasOutput || nPorts(PortType::Out) == 0
+        ? ExecutionState::Completed
+        : ExecutionState::Idle);
 }
 
 void ExecutableNodeDelegateModel::completeAutomaticExecution()
@@ -634,6 +711,12 @@ void ExecutableNodeDelegateModel::inputConnectionCreated(ConnectionId const &con
 void ExecutableNodeDelegateModel::inputConnectionDeleted(ConnectionId const &connectionId)
 {
     if (_isRestoring) return;
+
+    if (_mode == ExecutionMode::Automatic && supportsAutomaticRestartAfterInputChange()
+        && _state == ExecutionState::Running) {
+        _restartAfterInputChange = true;
+        stopExecution();
+    }
 
     // 当输入连接断开时，我们需要清除缓存的数据
     PortIndex portIndex = connectionId.inPortIndex;

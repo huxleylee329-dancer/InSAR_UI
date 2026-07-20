@@ -468,14 +468,22 @@ void OrbitRefinementNode::initDatabase()
 
 void OrbitRefinementNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(message);
     setProgress(progress);
 }
 
 void OrbitRefinementNode::onProcessingFinished()
 {
-    QString dstNode = m_outputNodeNameEdit->text().trimmed();
-    if (dstNode.isEmpty()) dstNode = generateDefaultOutputName();
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    QString dstNode = m_outputNodeName;
     QString outputPath = projectPath() + "/" + dstNode + "/";
 
     // 1. 扫描输出目录，构建输出影像数据对象 (Port 0)
@@ -490,6 +498,12 @@ void OrbitRefinementNode::onProcessingFinished()
             h5Paths.append(dir.absoluteFilePath(file));
         }
     }
+
+    QStringList originNames;
+    for (const QString& h5Path : h5Paths) {
+        originNames.append(QFileInfo(h5Path).baseName());
+    }
+    onResultsReceived(dstNode, h5Paths, originNames);
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
@@ -517,18 +531,6 @@ void OrbitRefinementNode::onProcessingFinished()
         }
     }
 
-    // 3. 清理线程与 Worker
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_worker) {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
-
     // 开启 GUI 参数编辑
     m_outputNodeNameEdit->setEnabled(true);
     m_masterIndexSpin->setEnabled(true);
@@ -548,25 +550,34 @@ void OrbitRefinementNode::onProcessingFinished()
 
 void OrbitRefinementNode::onError(const QString& error)
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("OrbitRefinementNode", "Worker 执行出错：" + error);
     m_statusLabel->setText(QStringLiteral("计算出错：%1").arg(error));
-
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_worker) {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
 
     m_outputNodeNameEdit->setEnabled(true);
     m_masterIndexSpin->setEnabled(true);
     m_polyDegreeCombo->setEnabled(true);
 
     setState(ExecutionState::Error);
+}
+
+void OrbitRefinementNode::onCancelled()
+{
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    m_outputNodeNameEdit->setEnabled(true);
+    m_masterIndexSpin->setEnabled(true);
+    m_polyDegreeCombo->setEnabled(true);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 bool OrbitRefinementNode::validateInputs() const
@@ -653,39 +664,45 @@ void OrbitRefinementNode::executeProcessing()
     // 2. 覆盖运行前，清理工程 XML 的旧记录和左侧树视图以避影分身 (SOP 14)
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
 
+    initDatabase();
+    QStringList inputFilePaths = m_inputData->filePaths();
+    QString dbPath = m_db->databasePath();
+    int masterIndex = m_masterIndex;
+    int polyDegree = m_polyDegree;
+
     // 3. 创建线程与 Worker
     m_thread = new QThread();
     m_worker = new OrbitRefinementWorker();
     m_worker->moveToThread(m_thread);
+    OrbitRefinementWorker* worker = m_worker;
 
     // 4. 连接信号槽
-    connect(m_thread, &QThread::started, [this, savePath, projName, dstNode]() {
-        initDatabase();
-        m_worker->refine_orbit(
+    connect(m_thread, &QThread::started, [worker, savePath, projName, dstNode, inputFilePaths, dbPath, masterIndex, polyDegree]() {
+        worker->refine_orbit(
             savePath + "/" + projName,
             projName,
             dstNode,
-            m_inputData->filePaths(),
-            m_db->databasePath(),
-            m_masterIndex,
-            m_polyDegree
+            inputFilePaths,
+            dbPath,
+            masterIndex,
+            polyDegree
         );
     });
 
     connect(m_worker, &OrbitRefinementWorker::updateProcess, this, &OrbitRefinementNode::onProgressUpdate);
     connect(m_worker, &OrbitRefinementWorker::endProcess, this, &OrbitRefinementNode::onProcessingFinished);
     connect(m_worker, &OrbitRefinementWorker::errorProcess, this, &OrbitRefinementNode::onError);
+    connect(m_worker, &OrbitRefinementWorker::cancelled, this, &OrbitRefinementNode::onCancelled);
+    connect(m_worker, &OrbitRefinementWorker::cancelled, m_thread, &QThread::quit);
     
     // 自愈刷新项目树
     connect(m_worker, &OrbitRefinementWorker::sendModel, this, &OrbitRefinementNode::onModelUpdated);
     
-    // 采用复用全局 XML 句柄 + 原生 TinyXML 写入以避崩溃 (SOP 9)
-    connect(m_worker, &OrbitRefinementWorker::sendResults, this, &OrbitRefinementNode::onResultsReceived);
-
     connect(m_worker, &OrbitRefinementWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // 启动线程
+    deferAutomaticCompletion();
     m_thread->start();
     
     // 锁定界面参数修改
@@ -707,6 +724,10 @@ void OrbitRefinementNode::onResultsReceived(
     const QStringList& originNames
 )
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     XMLFile* xml = projectXml();
     if (!xml) {
         InSARLogManager::LogError("OrbitRefinementNode", "onResultsReceived: projectXml() 为空，跳过 XML 写入。");
@@ -866,6 +887,10 @@ void OrbitRefinementNode::onResultsReceived(
 
 void OrbitRefinementNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -929,6 +954,14 @@ void OrbitRefinementNode::stopExecution()
         m_thread->requestInterruption();
         m_thread->quit();
         m_thread->wait();
+    }
+    if (m_thread) {
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_worker) {
+        m_worker->deleteLater();
+        m_worker = nullptr;
     }
 }
 

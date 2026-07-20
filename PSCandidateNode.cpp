@@ -331,6 +331,7 @@ void PSCandidateNode::executeProcessing()
         }
     });
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
@@ -343,6 +344,10 @@ void PSCandidateNode::stopExecution()
 
 void PSCandidateNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     setProgress(progress);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("正在计算 (%1%): %2").arg(progress).arg(message));
@@ -353,6 +358,10 @@ void PSCandidateNode::onError(const QString& error)
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("PSCandidateNode", "Error in candidate selection: " + error);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("计算出错: ") + error);
@@ -366,6 +375,10 @@ void PSCandidateNode::onCancelled()
     InSARLogManager::LogInfo("PSCandidateNode", "PS candidate selection cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_previewData.reset();
     setOutputData(0, nullptr);
@@ -380,6 +393,10 @@ void PSCandidateNode::onProcessingFinished()
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("PSCandidateNode", "executeProcessing completed successfully.");
     
     QString rawPath = projectPath();

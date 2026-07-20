@@ -778,6 +778,78 @@ static bool floatCompare(double a, double b, double eps = 1e-5) {
     return std::abs(a - b) < eps;
 }
 
+static QString normalizeTimestamp(const QString& timestamp)
+{
+    QString normalized = timestamp;
+    return normalized.replace(QRegularExpression("[^0-9]"), "");
+}
+
+static bool timestampsMatch(const QString& expected, const QString& actual)
+{
+    const QString expectedDigits = normalizeTimestamp(expected);
+    const QString actualDigits = normalizeTimestamp(actual);
+    return !expectedDigits.isEmpty() && !actualDigits.isEmpty()
+        && (expectedDigits == actualDigits
+            || expectedDigits.startsWith(actualDigits)
+            || actualDigits.startsWith(expectedDigits));
+}
+
+static bool extractExpectedAcquisitionStartTime(
+    TiXmlElement* xmlRoot,
+    bool importAllBursts,
+    int startBurst,
+    QString& expectedTime,
+    QString& sourceDescription)
+{
+    expectedTime.clear();
+    if (!xmlRoot) {
+        sourceDescription = QStringLiteral("原始 XML 未加载");
+        return false;
+    }
+
+    if (importAllBursts) {
+        TiXmlElement* startNode = findElementRecursive(xmlRoot, "startTime");
+        if (!startNode) {
+            startNode = findElementRecursive(xmlRoot, "productImageStart");
+        }
+        if (startNode && startNode->GetText()) {
+            expectedTime = startNode->GetText();
+            sourceDescription = QStringLiteral("整景");
+            return true;
+        }
+
+        sourceDescription = QStringLiteral("原始 XML 缺少整景开始时间");
+        return false;
+    }
+
+    TiXmlElement* burstList = findElementRecursive(xmlRoot, "burstList");
+    if (!burstList || startBurst < 0) {
+        sourceDescription = QStringLiteral("原始 XML 缺少 Burst 列表");
+        return false;
+    }
+
+    int burstIndex = 0;
+    for (TiXmlElement* burst = burstList->FirstChildElement("burst"); burst;
+         burst = burst->NextSiblingElement("burst"), ++burstIndex) {
+        if (burstIndex != startBurst) {
+            continue;
+        }
+
+        TiXmlElement* azimuthTime = burst->FirstChildElement("azimuthTime");
+        if (azimuthTime && azimuthTime->GetText()) {
+            expectedTime = azimuthTime->GetText();
+            sourceDescription = QStringLiteral("选中 Burst %1").arg(startBurst);
+            return true;
+        }
+
+        sourceDescription = QStringLiteral("选中 Burst %1 缺少 azimuthTime").arg(startBurst);
+        return false;
+    }
+
+    sourceDescription = QStringLiteral("选中 Burst %1 超出原始 XML 范围").arg(startBurst);
+    return false;
+}
+
 // 精轨缓存扫描辅助函数
 // 根据影像的平台与日期，扫描本地目录及 Config.ini 中配置的精轨缓存目录
 // 判断是否存在可用的精轨 EOF 文件（POEORB 或 RESORB）
@@ -953,24 +1025,22 @@ static std::vector<CompareItem> performComparison(
         NodeUtils::readStringFromH5(h5Path, "acquisition_start_time", h5Start);
         NodeUtils::readStringFromH5(h5Path, "acquisition_stop_time", h5Stop);
     }
-    QString xmlStart = QStringLiteral("未知"), xmlStop = QStringLiteral("未知");
-    if (xmlLoaded) {
-        TiXmlElement* startNode = findElementRecursive(xmlRoot, "startTime");
-        if (!startNode) startNode = findElementRecursive(xmlRoot, "productImageStart");
-        if (startNode && startNode->GetText()) xmlStart = startNode->GetText();
-
-        TiXmlElement* stopNode = findElementRecursive(xmlRoot, "stopTime");
-        if (!stopNode) stopNode = findElementRecursive(xmlRoot, "productImageStop");
-        if (stopNode && stopNode->GetText()) xmlStop = stopNode->GetText();
-    }
-    
+    QString expectedStart;
+    QString startSource;
+    const bool hasExpectedStart = extractExpectedAcquisitionStartTime(
+        xmlRoot, importAllBursts, startBurst, expectedStart, startSource);
     QString h5StartStr = QString::fromStdString(h5Start);
-    QString startNumOnly = h5StartStr.replace(QRegularExpression("[^0-9]"), "");
-    QString xmlStartNum = xmlStart;
-    xmlStartNum = xmlStartNum.replace(QRegularExpression("[^0-9]"), "");
-    bool startMatch = (!startNumOnly.isEmpty() && xmlStartNum.startsWith(startNumOnly));
-    
-    results.push_back({gPlatform, QStringLiteral("成像开始时间"), xmlStart, QString::fromStdString(h5Start), startMatch ? "PASS" : "FAILED"});
+    const QString startLabel = importAllBursts
+        ? QStringLiteral("成像开始时间（整景）")
+        : QStringLiteral("成像开始时间（选中 Burst %1）").arg(startBurst);
+    const QString expectedStartDisplay = hasExpectedStart
+        ? expectedStart
+        : QStringLiteral("未读取（%1）").arg(startSource);
+    const QString startStatus = (!hasExpectedStart || h5StartStr.isEmpty())
+        ? "WARNING"
+        : (timestampsMatch(expectedStart, h5StartStr) ? "PASS" : "FAILED");
+
+    results.push_back({gPlatform, startLabel, expectedStartDisplay, h5StartStr, startStatus});
 
     // 入射角中心值 (inc_center)
     double h5IncCenter = 0.0;

@@ -401,12 +401,15 @@ void DeformationRateFieldNode::executeProcessing()
     connect(m_worker, &DeformationRateFieldWorker::updateProcess, this, &DeformationRateFieldNode::onProgressUpdate);
     connect(m_worker, &DeformationRateFieldWorker::endProcess, this, &DeformationRateFieldNode::onProcessingFinished);
     connect(m_worker, &DeformationRateFieldWorker::errorProcess, this, &DeformationRateFieldNode::onError);
+    connect(m_worker, &DeformationRateFieldWorker::cancelled, this, &DeformationRateFieldNode::onCancelled);
+    connect(m_worker, &DeformationRateFieldWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
     setState(ExecutionState::Running);
     setProgress(0);
+    deferAutomaticCompletion();
 
     QTimer::singleShot(0, this, [this]() {
         if (m_thread && m_thread->isRunning()) {
@@ -439,38 +442,53 @@ void DeformationRateFieldNode::processAutomatically()
 
 void DeformationRateFieldNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(message);
     setProgress(progress);
 }
 
 void DeformationRateFieldNode::onError(const QString& error)
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("DeformationRateFieldNode", "Error during rate field analysis: " + error);
     setState(ExecutionState::Error);
     finishExecution();
-    stopExecution();
 }
 
 void DeformationRateFieldNode::onProcessingFinished()
 {
-    InSARLogManager::LogInfo("DeformationRateFieldNode", "executeProcessing completed.");
-    QString h5Path = projectPath() + "/" + m_outputNodeName + "/DeformationRateField.h5";
-    m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
-
-    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        iface->refreshProjectTree();
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
     }
 
-    setProgress(100);
-    setState(ExecutionState::Completed);
+    InSARLogManager::LogInfo("DeformationRateFieldNode", "executeProcessing completed.");
+    QString h5Path = projectPath() + "/" + m_outputNodeName + "/DeformationRateField.h5";
+    if (!QFileInfo::exists(h5Path)) {
+        onError(QStringLiteral("未生成形变速率场输出文件"));
+        return;
+    }
 
-    generateStaticPreviewJpg();
-    updateLabels();
+    generateStaticPreviewJpg(true);
+}
 
-    Q_EMIT dataUpdated(0);
-    finishExecution();
+void DeformationRateFieldNode::onCancelled()
+{
     stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 bool DeformationRateFieldNode::validateAndRestoreOutput()
@@ -489,7 +507,7 @@ bool DeformationRateFieldNode::validateAndRestoreOutput()
     return false;
 }
 
-void DeformationRateFieldNode::generateStaticPreviewJpg()
+void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
 {
     QString outDir = projectPath() + "/" + m_outputNodeName;
     QString h5Path = outDir + "/DeformationRateField.h5";
@@ -498,15 +516,37 @@ void DeformationRateFieldNode::generateStaticPreviewJpg()
     if (!QFileInfo::exists(h5Path)) return;
 
     QFutureWatcher<void>* watcher = new QFutureWatcher<void>(this);
-    connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPath]() {
+    connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, h5Path, jpgPath, completeExecution]() {
+        if (discardObsoleteAutomaticExecution()) {
+            watcher->deleteLater();
+            return;
+        }
+
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
             Q_EMIT dataUpdated(1);
         }
+
+        if (completeExecution) {
+            m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+
+            IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+            if (iface) {
+                QString relativePath = QString("/%1/DeformationRateField.h5").arg(m_outputNodeName);
+                NodeUtils::addSBASNodeToProjectXml(iface, m_outputNodeName, "DeformationRateField", relativePath);
+                iface->refreshProjectTree();
+            }
+
+            setProgress(100);
+            setState(ExecutionState::Running);
+            updateLabels();
+            Q_EMIT dataUpdated(0);
+            finishExecution();
+        }
         watcher->deleteLater();
     });
 
-    watcher->setFuture(QtConcurrent::run([h5Path, jpgPath, outDir, this]() {
+    watcher->setFuture(QtConcurrent::run([h5Path, jpgPath, outDir]() {
         NodeUtils::Hdf5Locker locker;
         
         if (QFileInfo::exists(jpgPath)) return;

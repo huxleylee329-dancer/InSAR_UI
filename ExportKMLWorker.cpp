@@ -65,7 +65,7 @@ void ExportKMLWorker::exportKML(QString h5Path, QString outFolder, QString fileN
     if (QThread::currentThread()->isInterruptionRequested())
     {
         QFile::remove(jpgPath);
-        emit errorProcess(QStringLiteral("已取消"));
+        emit cancelled();
         return;
     }
     
@@ -79,7 +79,7 @@ void ExportKMLWorker::exportKML(QString h5Path, QString outFolder, QString fileN
     {
         QFile::remove(jpgPath);
         QFile::remove(colorbarPath);
-        emit errorProcess(QStringLiteral("已取消"));
+        emit cancelled();
         return;
     }
     

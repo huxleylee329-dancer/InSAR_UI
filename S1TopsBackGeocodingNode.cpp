@@ -18,6 +18,7 @@
 #include <QJsonArray>
 #include <QTimer>
 #include <QFile>
+#include <QDateTime>
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <Registration.h>
@@ -32,12 +33,53 @@
 #include <QFutureWatcher>
 #include <QColor>
 #include <QFont>
+#include <QImage>
 #include <algorithm>
 #include <vector>
 #include <cmath>
 #include <opencv2/opencv.hpp>
 
 namespace QtNodes {
+
+namespace {
+
+bool generateRegistrationOverviewPreview(const QString& masterJpgPath,
+                                         const QString& slaveJpgPath,
+                                         const QString& overviewJpgPath)
+{
+    QImage master(masterJpgPath);
+    QImage slave(slaveJpgPath);
+    if (master.isNull() || slave.isNull()) {
+        return false;
+    }
+
+    const int maxDimension = 1600;
+    QSize targetSize = master.size();
+    if (targetSize.width() > maxDimension || targetSize.height() > maxDimension) {
+        targetSize.scale(maxDimension, maxDimension, Qt::KeepAspectRatio);
+    }
+
+    master = master.convertToFormat(QImage::Format_ARGB32).scaled(
+        targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    slave = slave.convertToFormat(QImage::Format_ARGB32).scaled(
+        targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+
+    QImage overview(targetSize, QImage::Format_ARGB32);
+    for (int y = 0; y < targetSize.height(); ++y) {
+        const QRgb* masterLine = reinterpret_cast<const QRgb*>(master.constScanLine(y));
+        const QRgb* slaveLine = reinterpret_cast<const QRgb*>(slave.constScanLine(y));
+        QRgb* overviewLine = reinterpret_cast<QRgb*>(overview.scanLine(y));
+        for (int x = 0; x < targetSize.width(); ++x) {
+            const int masterGray = qGray(masterLine[x]);
+            const int slaveGray = qGray(slaveLine[x]);
+            overviewLine[x] = qRgba(masterGray, slaveGray, slaveGray, 255);
+        }
+    }
+
+    return overview.save(overviewJpgPath, "JPG", 92);
+}
+
+} // namespace
 
 S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
     : ExecutableNodeDelegateModel()
@@ -230,6 +272,25 @@ QJsonObject S1TopsBackGeocodingNode::save() const
         modelJson["masterOutputPath"] = masterOutputPath;
     }
 
+    modelJson["processingWarning"] = m_processingWarning;
+    QJsonArray qualityWarnings;
+    for (const QString& warning : m_processingQualityWarnings) {
+        qualityWarnings.append(warning);
+    }
+    modelJson["processingQualityWarnings"] = qualityWarnings;
+
+    QJsonArray registrationOffsets;
+    for (const RegistrationOffsetSummary& offset : m_registrationOffsets) {
+        QJsonObject offsetJson;
+        offsetJson["slaveName"] = offset.slaveName;
+        offsetJson["azimuthOffset"] = offset.azimuthOffset;
+        offsetJson["rangeOffset"] = offset.rangeOffset;
+        offsetJson["hasAzimuthOffset"] = offset.hasAzimuthOffset;
+        offsetJson["hasRangeOffset"] = offset.hasRangeOffset;
+        registrationOffsets.append(offsetJson);
+    }
+    modelJson["registrationOffsets"] = registrationOffsets;
+
     return modelJson;
 }
 
@@ -281,6 +342,29 @@ void S1TopsBackGeocodingNode::load(QJsonObject const &json)
         }
     }
     m_savedMasterOutputPath = json["masterOutputPath"].toString();
+
+    m_processingWarning = json["processingWarning"].toBool(false);
+    m_processingQualityWarnings.clear();
+    for (const QJsonValue& warning : json["processingQualityWarnings"].toArray()) {
+        if (warning.isString()) {
+            m_processingQualityWarnings.append(warning.toString());
+        }
+    }
+
+    m_registrationOffsets.clear();
+    for (const QJsonValue& value : json["registrationOffsets"].toArray()) {
+        if (!value.isObject()) {
+            continue;
+        }
+        const QJsonObject offsetJson = value.toObject();
+        RegistrationOffsetSummary offset;
+        offset.slaveName = offsetJson["slaveName"].toString();
+        offset.azimuthOffset = offsetJson["azimuthOffset"].toDouble();
+        offset.rangeOffset = offsetJson["rangeOffset"].toDouble();
+        offset.hasAzimuthOffset = offsetJson["hasAzimuthOffset"].toBool(false);
+        offset.hasRangeOffset = offsetJson["hasRangeOffset"].toBool(false);
+        m_registrationOffsets.append(offset);
+    }
 
     ExecutableNodeDelegateModel::load(json);
 
@@ -663,6 +747,10 @@ bool S1TopsBackGeocodingNode::validateInputs() const
 
 void S1TopsBackGeocodingNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(message);
     setProgress(progress);
 }
@@ -685,6 +773,44 @@ QStringList S1TopsBackGeocodingNode::jpgPathsFromH5Paths(const QStringList& h5Pa
         jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
     }
     return jpgPaths;
+}
+
+QStringList S1TopsBackGeocodingNode::registrationOverviewPathsFromH5Paths(const QStringList& h5Paths) const
+{
+    QStringList overviewPaths;
+    if (h5Paths.size() < 2) {
+        return overviewPaths;
+    }
+
+    const QFileInfo masterInfo(h5Paths.first());
+    for (int i = 1; i < h5Paths.size(); ++i) {
+        const QFileInfo slaveInfo(h5Paths.at(i));
+        overviewPaths.append(masterInfo.absolutePath() + "/" + masterInfo.baseName() +
+            "__" + slaveInfo.baseName() + "_registration_overview.jpg");
+    }
+    return overviewPaths;
+}
+
+void S1TopsBackGeocodingNode::updateRegistrationOffsets(const QStringList& h5Paths)
+{
+    m_registrationOffsets.clear();
+    if (h5Paths.size() < 2) {
+        return;
+    }
+
+    FormatConversion conversion;
+    for (int i = 1; i < h5Paths.size(); ++i) {
+        RegistrationOffsetSummary summary;
+        summary.slaveName = QFileInfo(h5Paths.at(i)).baseName();
+        {
+            NodeUtils::Hdf5Locker locker(h5Paths.at(i));
+            summary.hasAzimuthOffset = conversion.read_double_from_h5(
+                h5Paths.at(i).toStdString().c_str(), "offset_a", &summary.azimuthOffset) == 0;
+            summary.hasRangeOffset = conversion.read_double_from_h5(
+                h5Paths.at(i).toStdString().c_str(), "offset_r", &summary.rangeOffset) == 0;
+        }
+        m_registrationOffsets.append(summary);
+    }
 }
 
 QString S1TopsBackGeocodingNode::resolveSavedOutputPath(const QString& path, const QString& dstNode) const
@@ -972,6 +1098,10 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
     const QStringList& qualityWarnings
 )
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(dstProject);
     Q_UNUSED(savePath);
 
@@ -993,6 +1123,8 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
     }
     m_savedOutputPaths = orderedH5Paths;
     m_savedMasterOutputPath = orderedH5Paths.isEmpty() ? QString() : orderedH5Paths.first();
+    m_registrationOverviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
+    updateRegistrationOffsets(orderedH5Paths);
 
     syncProjectXmlOrder(orderedH5Paths, dstNode);
     syncProjectTreeOrder(orderedH5Paths, dstNode);
@@ -1009,7 +1141,12 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
             m_remedyWatcher.waitForFinished();
         }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, orderedH5Paths, jpgPaths]() {
+        const QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, orderedH5Paths, jpgPaths, overviewPaths]() {
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
             QStringList validJpgPaths;
             bool anyFailed = false;
             for (const QString& path : jpgPaths) {
@@ -1018,6 +1155,23 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
                 } else {
                     anyFailed = true;
                 }
+            }
+
+            m_registrationOverviewPaths.clear();
+            bool overviewFailed = false;
+            for (const QString& path : overviewPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    m_registrationOverviewPaths.append(path);
+                } else {
+                    overviewFailed = true;
+                }
+            }
+            if (overviewFailed) {
+                const QString overviewWarning = QStringLiteral("Some registration overview images could not be generated.");
+                if (!m_processingQualityWarnings.contains(overviewWarning)) {
+                    m_processingQualityWarnings.append(overviewWarning);
+                }
+                m_processingWarning = true;
             }
 
             // 只有确实存在且生成成功的 JPG 路径才能加入 ImageInfoData
@@ -1032,7 +1186,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
 
             updateParameterWidgetsEnableState();
 
-            const bool hasWarning = m_processingWarning || anyFailed;
+            const bool hasWarning = m_processingWarning || anyFailed || overviewFailed;
             if (hasWarning) {
                 QString warningMessage = m_processingQualityWarnings.join('\n');
                 if (anyFailed) {
@@ -1060,10 +1214,12 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
             }
         });
 
-        QFuture<void> future = QtConcurrent::run([orderedH5Paths, jpgPaths]() {
+        QFuture<void> future = QtConcurrent::run([orderedH5Paths, jpgPaths, overviewPaths]() {
             for (int i = 0; i < orderedH5Paths.size(); ++i) {
-                // 已存在且有效的 JPG 跳过重生成
                 NodeUtils::generateJpgPreviewFromH5(orderedH5Paths[i], jpgPaths[i], "complex");
+            }
+            for (int i = 1; i < jpgPaths.size() && i - 1 < overviewPaths.size(); ++i) {
+                generateRegistrationOverviewPreview(jpgPaths.first(), jpgPaths[i], overviewPaths[i - 1]);
             }
         });
         m_remedyWatcher.setFuture(future);
@@ -1085,6 +1241,10 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
 
 void S1TopsBackGeocodingNode::onError(const QString& error)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     InSARLogManager::LogError("S1TopsBackGeocodingNode", "Execution failed: " + error);
     qDebug() << "[RegistrationNode] Error:" << error;
 
@@ -1096,6 +1256,10 @@ void S1TopsBackGeocodingNode::onError(const QString& error)
 
 void S1TopsBackGeocodingNode::onCancelled(const QStringList& cleanupFailures)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     if (!cleanupFailures.isEmpty()) {
         InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
             QStringLiteral("后向地理编码已取消，但部分临时输出未能清理：%1").arg(cleanupFailures.join(", ")));
@@ -1111,6 +1275,10 @@ void S1TopsBackGeocodingNode::onCancelled(const QStringList& cleanupFailures)
 
 void S1TopsBackGeocodingNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -1149,7 +1317,9 @@ void S1TopsBackGeocodingNode::execute()
 void S1TopsBackGeocodingNode::stopExecution()
 {
     // 安全断开并取消 remedyWatcher，防止重新执行时的竞态与崩溃
-    m_remedyWatcher.disconnect();
+    if (!isAutomaticExecutionObsolete()) {
+        m_remedyWatcher.disconnect();
+    }
     if (m_remedyWatcher.isRunning()) {
         m_remedyWatcher.cancel();
     }
@@ -1308,6 +1478,9 @@ void S1TopsBackGeocodingNode::executeProcessing()
     connect(m_thread, &QThread::finished, this, [this]() {
         m_workerThread = nullptr;
         m_thread = nullptr;
+        if (isAutomaticExecutionObsolete()) {
+            discardObsoleteAutomaticExecution();
+        }
     });
 
     // Connect signals
@@ -1334,6 +1507,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
     connect(m_workerThread, &S1TopsBackGeocodingWorker::sendModel, this, &S1TopsBackGeocodingNode::onModelUpdated);
 
     // Start thread
+    deferAutomaticCompletion();
     m_thread->start();
     updateParameterWidgetsEnableState();
 
@@ -1396,17 +1570,27 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
 
     m_savedOutputPaths = orderedH5Paths;
     m_savedMasterOutputPath = orderedH5Paths.first();
+    m_registrationOverviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
+    updateRegistrationOffsets(orderedH5Paths);
     m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, dstNode);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 
     QStringList allJpgPaths = jpgPathsFromH5Paths(orderedH5Paths);
+    QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
     QStringList missingH5s;
     QStringList missingJpgs;
     for (int i = 0; i < orderedH5Paths.size(); ++i) {
         if (!NodeUtils::isJpgPreviewCurrent(orderedH5Paths[i], allJpgPaths[i])) {
             missingH5s.append(orderedH5Paths[i]);
             missingJpgs.append(allJpgPaths[i]);
+        }
+    }
+    bool needsOverview = false;
+    for (const QString& overviewPath : overviewPaths) {
+        if (!QFileInfo::exists(overviewPath) || QFileInfo(overviewPath).size() == 0) {
+            needsOverview = true;
+            break;
         }
     }
 
@@ -1420,14 +1604,14 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     }
     Q_EMIT dataUpdated(1);
 
-    if (!missingH5s.isEmpty()) {
+    if (!missingH5s.isEmpty() || needsOverview) {
         m_remedyWatcher.disconnect();
         if (m_remedyWatcher.isRunning()) {
             m_remedyWatcher.cancel();
             m_remedyWatcher.waitForFinished();
         }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths, missingJpgs]() {
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths, missingJpgs, overviewPaths]() {
             QStringList validJpgPaths;
             bool anyFailed = false;
             for (const QString& path : missingJpgs) {
@@ -1442,6 +1626,16 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
                 }
             }
 
+            m_registrationOverviewPaths.clear();
+            bool overviewFailed = false;
+            for (const QString& path : overviewPaths) {
+                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
+                    m_registrationOverviewPaths.append(path);
+                } else {
+                    overviewFailed = true;
+                }
+            }
+
             // 仅输出生成成功的 JPG，防止不存在的路径传入下游
             if (!validJpgPaths.isEmpty()) {
                 m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
@@ -1452,7 +1646,7 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
             }
             Q_EMIT dataUpdated(1);
 
-            if (anyFailed) {
+            if (anyFailed || overviewFailed) {
                 setLastWarningMessage(QStringLiteral("Back-geocoding products were restored, but some preview images could not be generated."));
                 setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "Output recovery finished with warnings. Some preview images failed to generate.");
@@ -1461,10 +1655,13 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
             }
         });
 
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, allJpgPaths, overviewPaths]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
                 // 已存在有效 JPG 则跳过重生成
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+            }
+            for (int i = 1; i < allJpgPaths.size() && i - 1 < overviewPaths.size(); ++i) {
+                generateRegistrationOverviewPreview(allJpgPaths.first(), allJpgPaths[i], overviewPaths[i - 1]);
             }
         });
         m_remedyWatcher.setFuture(future);
@@ -1502,10 +1699,65 @@ QStringList S1TopsBackGeocodingNode::getInputH5Paths() const
     return m_inputData ? m_inputData->filePaths() : QStringList();
 }
 
+std::vector<QString> S1TopsBackGeocodingNode::processingInfo() const
+{
+    std::vector<QString> info;
+    const QStringList h5Paths = getOrderedH5Paths();
+    if (h5Paths.isEmpty()) {
+        info.push_back(tr("配准状态：等待处理完成"));
+        return info;
+    }
+
+    const QString status = m_processingWarning
+        ? tr("配准质量：提醒")
+        : tr("配准质量：通过");
+    info.push_back(status);
+    info.push_back(tr("主影像：%1；从影像：%2 幅")
+        .arg(QFileInfo(h5Paths.first()).baseName())
+        .arg(qMax(0, h5Paths.size() - 1)));
+    info.push_back(tr("精配准：ESD %1；距离向振幅精配准 %2")
+        .arg(m_bESD ? tr("已启用") : tr("未启用"))
+        .arg(m_bRangeRefine ? tr("已启用") : tr("未启用")));
+
+    if (!m_registrationOverviewPaths.isEmpty() ||
+        !registrationOverviewPathsFromH5Paths(h5Paths).isEmpty()) {
+        info.push_back(tr("全图配准概览：主影像（红）/ 从影像（青）"));
+    }
+
+    for (const RegistrationOffsetSummary& offset : m_registrationOffsets) {
+        const QString azimuth = offset.hasAzimuthOffset
+            ? QString::number(offset.azimuthOffset, 'f', 4)
+            : tr("未应用");
+        const QString range = offset.hasRangeOffset
+            ? QString::number(offset.rangeOffset, 'f', 4)
+            : tr("未应用");
+        info.push_back(tr("%1：方位补偿 %2；距离补偿 %3")
+            .arg(offset.slaveName, azimuth, range));
+    }
+
+    if (!m_processingQualityWarnings.isEmpty()) {
+        info.push_back(tr("质量告警：%1 项").arg(m_processingQualityWarnings.size()));
+        const int warningCount = qMin(2, m_processingQualityWarnings.size());
+        for (int i = 0; i < warningCount; ++i) {
+            info.push_back(m_processingQualityWarnings.at(i));
+        }
+    }
+
+    return info;
+}
+
 QStringList S1TopsBackGeocodingNode::previewImagePaths() const
 {
     QStringList h5Paths = getOrderedH5Paths();
     QStringList existingPaths;
+    const QStringList overviewPaths = m_registrationOverviewPaths.isEmpty()
+        ? registrationOverviewPathsFromH5Paths(h5Paths)
+        : m_registrationOverviewPaths;
+    for (const QString& overviewPath : overviewPaths) {
+        if (QFileInfo::exists(overviewPath)) {
+            existingPaths.append(overviewPath);
+        }
+    }
     for (const QString& jpgPath : jpgPathsFromH5Paths(h5Paths)) {
         if (QFileInfo::exists(jpgPath)) {
             existingPaths.append(jpgPath);
@@ -1702,8 +1954,160 @@ static int selectHighIntensityPoints(const QString& masterPath, Point2D points[5
 // ============================================================================
 // S1TopsRegistrationEvalWidget - S1 TOPS Back-Geocoding 配准评估选项卡组件
 // ============================================================================
+struct FullCoherenceResult {
+    int retCode = -1;
+    int slaveIndex = -1;
+    int sourceRows = 0;
+    int sourceCols = 0;
+    QString imagePath;
+    QImage image;
+};
+
+static QString fullCoherencePreviewPath(const QString& masterPath, const QString& slavePath)
+{
+    const QFileInfo masterInfo(masterPath);
+    const QFileInfo slaveInfo(slavePath);
+    return masterInfo.absolutePath() + "/" + masterInfo.baseName() + "__" +
+        slaveInfo.baseName() + "_full_coherence.jpg";
+}
+
+static bool isFullCoherencePreviewCurrent(const QString& masterPath,
+                                          const QString& slavePath,
+                                          const QString& previewPath)
+{
+    const QFileInfo previewInfo(previewPath);
+    if (!previewInfo.exists() || previewInfo.size() == 0) {
+        return false;
+    }
+    return previewInfo.lastModified() >= QFileInfo(masterPath).lastModified() &&
+        previewInfo.lastModified() >= QFileInfo(slavePath).lastModified();
+}
+
+static FullCoherenceResult generateFullCoherencePreview(const QString& masterPath,
+                                                        const QString& slavePath,
+                                                        int slaveIndex)
+{
+    FullCoherenceResult result;
+    result.slaveIndex = slaveIndex;
+    result.imagePath = fullCoherencePreviewPath(masterPath, slavePath);
+
+    FormatConversion conversion;
+    int masterRows = 0;
+    int masterCols = 0;
+    int slaveRows = 0;
+    int slaveCols = 0;
+    NodeUtils::Hdf5Locker locker;
+    if (conversion.get_dataset_dims(masterPath.toStdString().c_str(), "s_re", &masterRows, &masterCols) != 0 ||
+        conversion.get_dataset_dims(slavePath.toStdString().c_str(), "s_re", &slaveRows, &slaveCols) != 0 ||
+        masterRows <= 0 || masterCols <= 0 || masterRows != slaveRows || masterCols != slaveCols) {
+        return result;
+    }
+    result.sourceRows = masterRows;
+    result.sourceCols = masterCols;
+
+    const int maxDimension = 1024;
+    const int downsample = qMax(1, static_cast<int>(std::ceil(
+        qMax(masterRows, masterCols) / static_cast<double>(maxDimension))));
+    const int previewRows = masterRows / downsample;
+    const int previewCols = masterCols / downsample;
+    if (previewRows < 2 || previewCols < 2) {
+        return result;
+    }
+
+    cv::Mat masterReal(previewRows, previewCols, CV_32F);
+    cv::Mat masterImag(previewRows, previewCols, CV_32F);
+    cv::Mat slaveReal(previewRows, previewCols, CV_32F);
+    cv::Mat slaveImag(previewRows, previewCols, CV_32F);
+    const int usableRows = previewRows * downsample;
+    const int usableCols = previewCols * downsample;
+    const int maxBlockPixels = 2 * 1024 * 1024;
+    const int requestedBlockRows = qMax(downsample, maxBlockPixels / usableCols);
+    const int blockRows = qMax(downsample, (requestedBlockRows / downsample) * downsample);
+
+    for (int sourceRow = 0; sourceRow < usableRows; sourceRow += blockRows) {
+        int rowsToRead = qMin(blockRows, usableRows - sourceRow);
+        rowsToRead -= rowsToRead % downsample;
+        if (rowsToRead <= 0) {
+            continue;
+        }
+
+        cv::Mat masterRealBlock;
+        cv::Mat masterImagBlock;
+        cv::Mat slaveRealBlock;
+        cv::Mat slaveImagBlock;
+        if (conversion.read_subarray_from_h5(masterPath.toStdString().c_str(), "s_re", sourceRow, 0,
+                                              rowsToRead, usableCols, masterRealBlock) != 0 ||
+            conversion.read_subarray_from_h5(masterPath.toStdString().c_str(), "s_im", sourceRow, 0,
+                                              rowsToRead, usableCols, masterImagBlock) != 0 ||
+            conversion.read_subarray_from_h5(slavePath.toStdString().c_str(), "s_re", sourceRow, 0,
+                                              rowsToRead, usableCols, slaveRealBlock) != 0 ||
+            conversion.read_subarray_from_h5(slavePath.toStdString().c_str(), "s_im", sourceRow, 0,
+                                              rowsToRead, usableCols, slaveImagBlock) != 0) {
+            return result;
+        }
+
+        masterRealBlock.convertTo(masterRealBlock, CV_32F);
+        masterImagBlock.convertTo(masterImagBlock, CV_32F);
+        slaveRealBlock.convertTo(slaveRealBlock, CV_32F);
+        slaveImagBlock.convertTo(slaveImagBlock, CV_32F);
+
+        const int outputRows = rowsToRead / downsample;
+        const cv::Size outputSize(previewCols, outputRows);
+        const int outputRow = sourceRow / downsample;
+        cv::resize(masterRealBlock, masterReal.rowRange(outputRow, outputRow + outputRows), outputSize, 0, 0, cv::INTER_AREA);
+        cv::resize(masterImagBlock, masterImag.rowRange(outputRow, outputRow + outputRows), outputSize, 0, 0, cv::INTER_AREA);
+        cv::resize(slaveRealBlock, slaveReal.rowRange(outputRow, outputRow + outputRows), outputSize, 0, 0, cv::INTER_AREA);
+        cv::resize(slaveImagBlock, slaveImag.rowRange(outputRow, outputRow + outputRows), outputSize, 0, 0, cv::INTER_AREA);
+    }
+
+    cv::Mat realInterferogram = masterReal.mul(slaveReal) + masterImag.mul(slaveImag);
+    cv::Mat imagInterferogram = masterImag.mul(slaveReal) - masterReal.mul(slaveImag);
+    cv::Mat masterPower = masterReal.mul(masterReal) + masterImag.mul(masterImag);
+    cv::Mat slavePower = slaveReal.mul(slaveReal) + slaveImag.mul(slaveImag);
+
+    const int windowWidth = qMax(3, qMin(9, previewCols | 1));
+    const int windowHeight = qMax(3, qMin(9, previewRows | 1));
+    const cv::Size window(windowWidth, windowHeight);
+    cv::Mat sumReal;
+    cv::Mat sumImag;
+    cv::Mat sumMasterPower;
+    cv::Mat sumSlavePower;
+    cv::boxFilter(realInterferogram, sumReal, CV_32F, window, cv::Point(-1, -1), false, cv::BORDER_REFLECT_101);
+    cv::boxFilter(imagInterferogram, sumImag, CV_32F, window, cv::Point(-1, -1), false, cv::BORDER_REFLECT_101);
+    cv::boxFilter(masterPower, sumMasterPower, CV_32F, window, cv::Point(-1, -1), false, cv::BORDER_REFLECT_101);
+    cv::boxFilter(slavePower, sumSlavePower, CV_32F, window, cv::Point(-1, -1), false, cv::BORDER_REFLECT_101);
+
+    cv::Mat numerator;
+    cv::sqrt(sumReal.mul(sumReal) + sumImag.mul(sumImag), numerator);
+    cv::Mat denominator;
+    cv::sqrt(sumMasterPower.mul(sumSlavePower), denominator);
+    denominator += 1.0e-6f;
+    cv::Mat coherence;
+    cv::divide(numerator, denominator, coherence);
+    cv::min(coherence, 1.0, coherence);
+    cv::max(coherence, 0.0, coherence);
+
+    cv::Mat coherence8;
+    coherence.convertTo(coherence8, CV_8U, 255.0);
+    cv::Mat coherenceColor;
+    cv::applyColorMap(coherence8, coherenceColor, cv::COLORMAP_JET);
+    cv::Mat coherenceRgb;
+    cv::cvtColor(coherenceColor, coherenceRgb, cv::COLOR_BGR2RGB);
+    result.image = QImage(coherenceRgb.data, coherenceRgb.cols, coherenceRgb.rows,
+                          static_cast<int>(coherenceRgb.step), QImage::Format_RGB888).copy();
+    if (!result.image.save(result.imagePath, "JPG", 92)) {
+        result.image = QImage();
+        return result;
+    }
+
+    result.retCode = 0;
+    return result;
+}
+
 struct EvalThreadResult {
     int retCode;
+    int sourceRows = 0;
+    int sourceCols = 0;
     Point2D points[5];
     AlignmentResult results[5];
     double inputCoherence[5];
@@ -1770,6 +2174,10 @@ public:
         leftLayout->addWidget(m_statusCard);
 
         m_resultsTable = new QTableWidget();
+        QFont resultsTableFont(QStringLiteral("Microsoft YaHei"));
+        resultsTableFont.setPointSize(9);
+        m_resultsTable->setFont(resultsTableFont);
+        m_resultsTable->horizontalHeader()->setFont(resultsTableFont);
         m_resultsTable->setColumnCount(6);
         m_resultsTable->setHorizontalHeaderLabels({
             tr("测试区域"), tr("相干性(配准前)"), tr("相干性(配准后)"), tr("偏移处相干性(Max-Corr)"), tr("残余偏移(Y, X)"), tr("相关系数")
@@ -1810,10 +2218,17 @@ public:
         modeLayout->addWidget(modeLabel);
         
         m_visualModeCombo = new QComboBox();
-        m_visualModeCombo->addItem(tr("2D 相干性热力图"), 0);
-        m_visualModeCombo->addItem(tr("红-青对齐叠合图"), 1);
+        m_visualModeCombo->addItem(tr("局部 2D 相干性热力图"), 0);
+        m_visualModeCombo->addItem(tr("局部 红-青对齐叠合图"), 1);
+        m_visualModeCombo->addItem(tr("全图相干性热力图"), 2);
         modeLayout->addWidget(m_visualModeCombo, 1);
         rightLayout->addLayout(modeLayout);
+
+        m_fullCoherenceStatusLabel = new QLabel();
+        m_fullCoherenceStatusLabel->setWordWrap(true);
+        m_fullCoherenceStatusLabel->setStyleSheet(isDark ? "color: #9CA3AF;" : "color: #6B7280;");
+        m_fullCoherenceStatusLabel->hide();
+        rightLayout->addWidget(m_fullCoherenceStatusLabel);
 
         m_imageView = new ImageView();
         m_imageView->setMinimumSize(256, 256);
@@ -1828,13 +2243,22 @@ public:
         connect(m_visualModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &S1TopsRegistrationEvalWidget::onVisualModeChanged);
         connect(m_resultsTable, &QTableWidget::itemSelectionChanged, this, &S1TopsRegistrationEvalWidget::onTableSelectionChanged);
         connect(&m_watcher, &QFutureWatcher<EvalThreadResult>::finished, this, &S1TopsRegistrationEvalWidget::onEvaluationFinished);
+        connect(&m_fullCoherenceWatcher, &QFutureWatcher<FullCoherenceResult>::finished,
+                this, &S1TopsRegistrationEvalWidget::onFullCoherenceFinished);
 
         // 监听节点数据更新信号，动态刷新评估界面
         connect(m_node, &S1TopsBackGeocodingNode::dataUpdated, this, [this](unsigned int port) {
             if (port == 0) {
                 m_h5Paths = m_node->getOrderedH5Paths();
+                m_fullCoherenceImage = QImage();
+                m_fullCoherenceSlaveIndex = -1;
+                m_fullCoherenceSourceRows = 0;
+                m_fullCoherenceSourceCols = 0;
                 updateSlaveCombo();
                 startEvaluation();
+                if (m_visualModeCombo->currentData().toInt() == 2) {
+                    startFullCoherenceForCurrentSlave();
+                }
             }
         });
 
@@ -1850,6 +2274,8 @@ public:
     {
         m_watcher.cancel();
         m_watcher.waitForFinished();
+        m_fullCoherenceWatcher.cancel();
+        m_fullCoherenceWatcher.waitForFinished();
         clearCachedResults();
     }
 
@@ -1876,11 +2302,17 @@ private:
     {
         Q_UNUSED(index);
         startEvaluation();
+        if (m_visualModeCombo->currentData().toInt() == 2) {
+            startFullCoherenceForCurrentSlave();
+        }
     }
 
     void onVisualModeChanged(int index)
     {
         Q_UNUSED(index);
+        if (m_visualModeCombo->currentData().toInt() == 2) {
+            startFullCoherenceForCurrentSlave();
+        }
         updateImageView();
     }
 
@@ -1901,7 +2333,9 @@ private:
         }
 
         m_statusLabel->setText(tr("正在进行配准评估，计算较耗时，请稍候..."));
-        m_imageView->setImage(QImage());
+        if (m_visualModeCombo->currentData().toInt() != 2) {
+            m_imageView->setImage(QImage());
+        }
         m_resultsTable->setRowCount(0);
         clearCachedResults();
 
@@ -1943,16 +2377,17 @@ private:
                 threadRes.inputCoherence[i] = -1.0;
             }
 
+            FormatConversion FC;
+            FC.get_dataset_dims(masterPath.toLocal8Bit().constData(), "s_re",
+                                &threadRes.sourceRows, &threadRes.sourceCols);
             int detectRet = selectHighIntensityPoints(masterPath, threadRes.points);
             if (detectRet < 5) {
-                FormatConversion FC;
-                int rows = 0, cols = 0;
-                if (FC.get_dataset_dims(masterPath.toLocal8Bit().constData(), "s_re", &rows, &cols) == 0) {
-                    threadRes.points[0].x = cols / 5.0;       threadRes.points[0].y = rows / 5.0;
-                    threadRes.points[1].x = cols * 4.0 / 5.0; threadRes.points[1].y = rows / 5.0;
-                    threadRes.points[2].x = cols / 2.0;       threadRes.points[2].y = rows / 2.0;
-                    threadRes.points[3].x = cols / 5.0;       threadRes.points[3].y = rows * 4.0 / 5.0;
-                    threadRes.points[4].x = cols * 4.0 / 5.0; threadRes.points[4].y = rows * 4.0 / 5.0;
+                if (threadRes.sourceRows > 0 && threadRes.sourceCols > 0) {
+                    threadRes.points[0].x = threadRes.sourceCols / 5.0;       threadRes.points[0].y = threadRes.sourceRows / 5.0;
+                    threadRes.points[1].x = threadRes.sourceCols * 4.0 / 5.0; threadRes.points[1].y = threadRes.sourceRows / 5.0;
+                    threadRes.points[2].x = threadRes.sourceCols / 2.0;       threadRes.points[2].y = threadRes.sourceRows / 2.0;
+                    threadRes.points[3].x = threadRes.sourceCols / 5.0;       threadRes.points[3].y = threadRes.sourceRows * 4.0 / 5.0;
+                    threadRes.points[4].x = threadRes.sourceCols * 4.0 / 5.0; threadRes.points[4].y = threadRes.sourceRows * 4.0 / 5.0;
                 } else {
                     threadRes.points[0].x = 500;  threadRes.points[0].y = 500;
                     threadRes.points[1].x = 2500; threadRes.points[1].y = 500;
@@ -1998,6 +2433,124 @@ private:
         m_watcher.setFuture(future);
     }
 
+    void startFullCoherenceForCurrentSlave()
+    {
+        const int slaveIndex = m_slaveCombo->currentIndex() + 1;
+        if (m_h5Paths.size() <= 1 || slaveIndex < 1 || slaveIndex >= m_h5Paths.size()) {
+            return;
+        }
+
+        m_requestedFullCoherenceSlaveIndex = slaveIndex;
+        m_fullCoherenceStatusLabel->show();
+
+        const QString masterPath = m_h5Paths.first();
+        const QString slavePath = m_h5Paths.at(slaveIndex);
+        if (m_fullCoherenceSlaveIndex == slaveIndex && !m_fullCoherenceImage.isNull()) {
+            updateFullCoherenceOverlay();
+            return;
+        }
+        const QString previewPath = fullCoherencePreviewPath(masterPath, slavePath);
+        if (isFullCoherencePreviewCurrent(masterPath, slavePath, previewPath)) {
+            QImage cachedImage(previewPath);
+            if (!cachedImage.isNull()) {
+                m_fullCoherenceImage = cachedImage;
+                m_fullCoherenceSlaveIndex = slaveIndex;
+                m_fullCoherenceStatusLabel->setText(tr("已加载全图相干性热力图（9 x 9 局部窗口）。"));
+                m_imageView->clearOverlayRects();
+                m_imageView->setImage(m_fullCoherenceImage);
+                updateFullCoherenceOverlay();
+                return;
+            }
+        }
+
+        if (m_fullCoherenceWatcher.isRunning()) {
+            m_fullCoherenceStatusLabel->setText(tr("正在计算其他影像对的全图相干性，当前请求将随后执行..."));
+            return;
+        }
+
+        m_activeFullCoherenceSlaveIndex = slaveIndex;
+        m_fullCoherenceStatusLabel->setText(tr("正在计算全图相干性热力图，请稍候..."));
+        m_imageView->clearOverlayRects();
+        m_imageView->setImage(QImage());
+        QFuture<FullCoherenceResult> future = QtConcurrent::run(
+            [masterPath, slavePath, slaveIndex]() {
+                return generateFullCoherencePreview(masterPath, slavePath, slaveIndex);
+            });
+        m_fullCoherenceWatcher.setFuture(future);
+    }
+
+    void updateFullCoherenceOverlay()
+    {
+        if (!m_hasResults || m_fullCoherenceImage.isNull() ||
+            m_fullCoherenceSourceRows <= 0 || m_fullCoherenceSourceCols <= 0) {
+            m_imageView->clearOverlayRects();
+            return;
+        }
+
+        const double scaleX = m_fullCoherenceImage.width() /
+            static_cast<double>(m_fullCoherenceSourceCols);
+        const double scaleY = m_fullCoherenceImage.height() /
+            static_cast<double>(m_fullCoherenceSourceRows);
+        const double localWindowSize = 200.0;
+        const double halfWindow = localWindowSize / 2.0;
+        const double minimumMarkerWidth = qMin(18.0, static_cast<double>(m_fullCoherenceImage.width()));
+        const double minimumMarkerHeight = qMin(18.0, static_cast<double>(m_fullCoherenceImage.height()));
+        QVector<QRectF> sampleRects;
+        sampleRects.reserve(5);
+        for (int i = 0; i < 5; ++i) {
+            const double left = qBound(0.0, m_points[i].x - halfWindow,
+                static_cast<double>(m_fullCoherenceSourceCols));
+            const double top = qBound(0.0, m_points[i].y - halfWindow,
+                static_cast<double>(m_fullCoherenceSourceRows));
+            const double right = qBound(0.0, m_points[i].x + halfWindow,
+                static_cast<double>(m_fullCoherenceSourceCols));
+            const double bottom = qBound(0.0, m_points[i].y + halfWindow,
+                static_cast<double>(m_fullCoherenceSourceRows));
+            const QRectF actualRect(left * scaleX, top * scaleY,
+                qMax(1.0, (right - left) * scaleX),
+                qMax(1.0, (bottom - top) * scaleY));
+            const double visualWidth = qMax(actualRect.width(), minimumMarkerWidth);
+            const double visualHeight = qMax(actualRect.height(), minimumMarkerHeight);
+            const double visualLeft = qBound(0.0, actualRect.center().x() - visualWidth / 2.0,
+                qMax(0.0, static_cast<double>(m_fullCoherenceImage.width()) - visualWidth));
+            const double visualTop = qBound(0.0, actualRect.center().y() - visualHeight / 2.0,
+                qMax(0.0, static_cast<double>(m_fullCoherenceImage.height()) - visualHeight));
+            sampleRects.append(QRectF(visualLeft, visualTop, visualWidth, visualHeight));
+        }
+
+        m_imageView->setOverlayRects(sampleRects, m_resultsTable->currentRow());
+    }
+
+    void onFullCoherenceFinished()
+    {
+        const FullCoherenceResult result = m_fullCoherenceWatcher.result();
+        const int completedSlaveIndex = result.slaveIndex;
+        m_activeFullCoherenceSlaveIndex = -1;
+
+        if (result.retCode == 0 && !result.image.isNull()) {
+            m_fullCoherenceImage = result.image;
+            m_fullCoherenceSlaveIndex = result.slaveIndex;
+            m_fullCoherenceSourceRows = result.sourceRows;
+            m_fullCoherenceSourceCols = result.sourceCols;
+            if (m_visualModeCombo->currentData().toInt() == 2 &&
+                m_slaveCombo->currentIndex() + 1 == result.slaveIndex) {
+                m_fullCoherenceStatusLabel->setText(tr("全图相干性热力图已生成（9 x 9 局部窗口）。"));
+                m_imageView->clearOverlayRects();
+                m_imageView->setImage(m_fullCoherenceImage);
+                updateFullCoherenceOverlay();
+            }
+        } else if (m_visualModeCombo->currentData().toInt() == 2 &&
+                   m_slaveCombo->currentIndex() + 1 == result.slaveIndex) {
+            m_fullCoherenceStatusLabel->setText(tr("全图相干性热力图计算失败。"));
+            m_imageView->setImage(QImage());
+        }
+
+        if (m_visualModeCombo->currentData().toInt() == 2 &&
+            m_requestedFullCoherenceSlaveIndex != completedSlaveIndex) {
+            startFullCoherenceForCurrentSlave();
+        }
+    }
+
     void onEvaluationFinished()
     {
         m_slaveCombo->setEnabled(true);
@@ -2014,7 +2567,12 @@ private:
             m_results[i] = threadRes.results[i];
             m_inputCoherence[i] = threadRes.inputCoherence[i];
         }
+        m_fullCoherenceSourceRows = threadRes.sourceRows;
+        m_fullCoherenceSourceCols = threadRes.sourceCols;
         m_hasResults = true;
+        if (m_visualModeCombo->currentData().toInt() == 2) {
+            updateFullCoherenceOverlay();
+        }
 
         m_statusLabel->setText(tr("配准评估完成。请在表格中选择采样区域查看细节。"));
 
@@ -2163,7 +2721,9 @@ private:
  
             // 2. 配准后 0 位移相干性
             auto* itemPostCoh = new QTableWidgetItem(QString::number(m_results[i].coherenceZeroShift, 'f', 4));
-            itemPostCoh->setFont(QFont("", -1, QFont::Bold));
+            QFont boldResultsFont = m_resultsTable->font();
+            boldResultsFont.setBold(true);
+            itemPostCoh->setFont(boldResultsFont);
             itemPostCoh->setForeground(Qt::green);
  
             // 3. 偏移处相干性(Max-Corr)
@@ -2205,6 +2765,19 @@ private:
             m_resultsTable->setItem(i, 5, new QTableWidgetItem(QString::number(m_results[i].maxCorrelation, 'f', 4)));
         }
 
+        for (int row = 0; row < m_resultsTable->rowCount(); ++row) {
+            for (int col = 0; col < m_resultsTable->columnCount(); ++col) {
+                QTableWidgetItem* item = m_resultsTable->item(row, col);
+                if (!item) {
+                    continue;
+                }
+                const QString previousTooltip = item->toolTip();
+                item->setToolTip(previousTooltip.isEmpty()
+                    ? item->text()
+                    : item->text() + "\n" + previousTooltip);
+            }
+        }
+
         m_resultsTable->selectRow(0);
     }
 
@@ -2225,6 +2798,14 @@ private:
 
     void updateImageView()
     {
+        const int mode = m_visualModeCombo->currentData().toInt();
+        if (mode == 2) {
+            startFullCoherenceForCurrentSlave();
+            return;
+        }
+
+        m_fullCoherenceStatusLabel->hide();
+        m_imageView->clearOverlayRects();
         if (!m_hasResults) {
             m_imageView->setImage(QImage());
             return;
@@ -2236,7 +2817,6 @@ private:
             return;
         }
 
-        int mode = m_visualModeCombo->currentData().toInt();
         unsigned char* rgb_data = (mode == 0) ? m_results[row].heatmap_rgb : m_results[row].overlay_rgb;
         int w = m_results[row].imageWidth;
         int h = m_results[row].imageHeight;
@@ -2257,6 +2837,7 @@ private:
     QComboBox* m_visualModeCombo;
     ImageView* m_imageView;
     QLabel* m_statusLabel;
+    QLabel* m_fullCoherenceStatusLabel = nullptr;
     
     QFrame* m_statusCard;
     QLabel* m_statusCardTitle;
@@ -2268,6 +2849,13 @@ private:
     bool m_hasResults;
 
     QFutureWatcher<EvalThreadResult> m_watcher;
+    QFutureWatcher<FullCoherenceResult> m_fullCoherenceWatcher;
+    QImage m_fullCoherenceImage;
+    int m_fullCoherenceSlaveIndex = -1;
+    int m_fullCoherenceSourceRows = 0;
+    int m_fullCoherenceSourceCols = 0;
+    int m_activeFullCoherenceSlaveIndex = -1;
+    int m_requestedFullCoherenceSlaveIndex = -1;
 };
 
 // 接口实现

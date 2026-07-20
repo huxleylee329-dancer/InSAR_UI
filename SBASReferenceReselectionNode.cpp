@@ -425,6 +425,7 @@ void SBASReferenceReselectionNode::executeProcessing()
     connect(m_worker, &SBASReferenceReselectionWorker::cancelled, this, &SBASReferenceReselectionNode::onCancelled);
     connect(m_worker, &SBASReferenceReselectionWorker::cancelled, m_thread, &QThread::quit);
 
+    deferAutomaticCompletion();
     m_thread->start();
     Q_EMIT startProcess();
 }
@@ -449,19 +450,25 @@ void SBASReferenceReselectionNode::processAutomatically()
 
 void SBASReferenceReselectionNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     m_resultLabel->setText(QString("%1%: %2").arg(progress).arg(message));
 }
 
 void SBASReferenceReselectionNode::onError(const QString& error)
 {
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("SBASReferenceReselectionNode", "Error during SBAS reselection: " + error);
     m_resultLabel->setText(QStringLiteral("失败: ") + error);
     setState(ExecutionState::Error);
     
-    if (m_thread)
-    {
-        m_thread = nullptr;
-    }
 }
 
 void SBASReferenceReselectionNode::onCancelled()
@@ -469,6 +476,10 @@ void SBASReferenceReselectionNode::onCancelled()
     InSARLogManager::LogInfo("SBASReferenceReselectionNode", "Reference reselection cancellation completed.");
     m_thread = nullptr;
     m_worker = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_previewData.reset();
     QDir(projectPath() + "/" + m_outputNodeName).removeRecursively();
@@ -482,13 +493,14 @@ void SBASReferenceReselectionNode::onCancelled()
 
 void SBASReferenceReselectionNode::onProcessingFinished()
 {
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("SBASReferenceReselectionNode", "executeProcessing completed.");
     m_resultLabel->setText(QStringLiteral("重新计算完成，生成预览图..."));
-
-    if (m_thread)
-    {
-        m_thread = nullptr;
-    }
 
     generateStaticPreviewJpg();
 }
@@ -501,6 +513,11 @@ void SBASReferenceReselectionNode::generateStaticPreviewJpg()
 
     QFutureWatcher<bool>* watcher = new QFutureWatcher<bool>(this);
     connect(watcher, &QFutureWatcher<bool>::finished, this, [this, watcher, h5Path, jpgPath]() {
+        if (discardObsoleteAutomaticExecution()) {
+            watcher->deleteLater();
+            return;
+        }
+
         bool ok = watcher->result();
         watcher->deleteLater();
 

@@ -401,6 +401,10 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
 void EvaluationSCRNode::onEvaluationFinished()
 {
     if (!m_watcher) return;
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
     
     SCRResultData data = m_watcher->result();
     if (data.isCancelled) {

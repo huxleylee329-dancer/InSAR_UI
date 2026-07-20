@@ -78,6 +78,7 @@ private:
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    void onCancelled();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
@@ -94,6 +95,7 @@ private:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
     void startCorrection(QString era5Dir, QString save_path, QString project_name,

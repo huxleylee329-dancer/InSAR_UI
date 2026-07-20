@@ -357,11 +357,20 @@ void ClutterSuppressionNode::executeProcessing()
 void ClutterSuppressionNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void ClutterSuppressionNode::onProcessingFinished()
 {
+    m_task = nullptr;
+    m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     if (m_saveToProject) {
         m_outputImagePaths.clear();
         
@@ -392,21 +401,23 @@ void ClutterSuppressionNode::onProcessingFinished()
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
 
-    m_task = nullptr;
-
     InSARLogManager::LogInfo("ClutterSuppressionNode", "executeProcessing completed.");
     finishExecution();
 }
 
 void ClutterSuppressionNode::onError(const QString& error)
 {
+    m_task = nullptr;
+    m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
     
     m_isExecuting = false;
     updateParameterWidgetsEnableState();
-
-    m_task = nullptr;
 
     m_outputData.reset();
     m_outputImagePaths.clear();
@@ -418,6 +429,10 @@ void ClutterSuppressionNode::onCancelled()
 {
     m_task = nullptr;
     m_isExecuting = false;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     for (const QString& outputPath : m_outputImagePaths) QFile::remove(outputPath);
     if (m_saveToProject) {
         const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("ClutterSuppression") : m_outputNodeName.trimmed();
@@ -449,6 +464,8 @@ void ClutterSuppressionNode::onSaveImageToProjectRequested(
     const QString& finalFileName
 )
 {
+    if (isAutomaticExecutionObsolete()) return;
+
     QStandardItemModel* model = projectModel();
     if (!model) return;
 

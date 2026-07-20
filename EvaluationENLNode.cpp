@@ -383,6 +383,10 @@ void EvaluationENLNode::calculateAndDisplayENL()
 void EvaluationENLNode::onEvaluationFinished()
 {
     if (!m_watcher) return;
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
     
     ENLResultData data = m_watcher->result();
     if (data.isCancelled) {

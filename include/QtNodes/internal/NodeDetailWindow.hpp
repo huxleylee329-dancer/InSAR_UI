@@ -47,6 +47,9 @@ public:
     /// Clear all displayed data
     void clearData();
 
+    /// Fit the current preview image after the detail window has reached its final size.
+    void fitPreviewImage();
+
 Q_SIGNALS:
     /// Emitted when close button is clicked (triggers reverse animation)
     void closeRequested();

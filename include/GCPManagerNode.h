@@ -60,6 +60,7 @@ private slots:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onEvaluationFinished(const std::vector<GCPPoint>& updatedGcps, const GCPEvaluationResult& result, const QString& reportText);
+    void onCancelled();
     void onError(const QString& error);
 
 private:
@@ -98,6 +99,14 @@ private:
     // Worker 线程
     GCPManagerWorker* m_worker;
     QThread* m_thread;
+    std::vector<GCPPoint> m_pendingGcps;
+    QString m_pendingReportText;
+    double m_pendingRmsResidual2d = 0.0;
+    int m_pendingNumGcpUsed = 0;
+    int m_pendingNumGcpRejected = 0;
+    bool m_hasPendingEvaluation = false;
+
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
     void startProcess(

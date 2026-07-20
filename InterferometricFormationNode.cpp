@@ -694,11 +694,21 @@ bool InterferometricFormationNode::validateInputs() const
 void InterferometricFormationNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void InterferometricFormationNode::onProcessingFinished()
 {
+    if (isAutomaticExecutionObsolete()) {
+        m_workerThread = nullptr;
+        m_thread = nullptr;
+        discardObsoleteAutomaticExecution();
+        return;
+    }
+
     QString dstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
@@ -811,6 +821,10 @@ void InterferometricFormationNode::onProcessingFinished()
         }
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Paths, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
             QStringList validJpgPaths;
             bool anyFailed = false;
             for (const QString& path : jpgPaths) {
@@ -894,6 +908,10 @@ void InterferometricFormationNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     updateParameterWidgetsEnableState();
     
     setState(ExecutionState::Error);
@@ -912,6 +930,10 @@ void InterferometricFormationNode::onCancelled()
     }
     m_workerThread = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_imageInfoData.reset();
     setOutputData(0, nullptr);
@@ -924,6 +946,10 @@ void InterferometricFormationNode::onCancelled()
 
 void InterferometricFormationNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -1110,6 +1136,7 @@ void InterferometricFormationNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
+    deferAutomaticCompletion();
     m_thread->start();
     
     // Disable inputs UI

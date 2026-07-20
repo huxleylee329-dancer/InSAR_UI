@@ -313,11 +313,20 @@ bool S1FrameMergeNode::validateInputs() const
 void S1FrameMergeNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
 void S1FrameMergeNode::onProcessingFinished()
 {
+    m_worker = nullptr;
+    m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     QString dstNode = m_outputNodeNameEdit && !m_outputNodeNameEdit->text().isEmpty()
         ? m_outputNodeNameEdit->text()
         : (m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName);
@@ -342,6 +351,10 @@ void S1FrameMergeNode::onProcessingFinished()
 
     m_worker = nullptr;
     m_thread = nullptr;
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setEnabled(true);
@@ -370,6 +383,10 @@ void S1FrameMergeNode::onCancelled()
     InSARLogManager::LogInfo("S1FrameMergeNode", "Frame merge cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_imageInfoData.reset();
     setOutputData(0, nullptr);
@@ -383,6 +400,10 @@ void S1FrameMergeNode::onCancelled()
 
 void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
@@ -591,6 +612,7 @@ void S1FrameMergeNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread
+    deferAutomaticCompletion();
     m_thread->start();
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setEnabled(false);

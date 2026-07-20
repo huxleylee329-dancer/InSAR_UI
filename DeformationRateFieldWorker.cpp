@@ -183,7 +183,10 @@ void DeformationRateFieldWorker::analyze_rate_field(
         temporal_coherence.convertTo(temporal_coherence, CV_64F);
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
 
     emit updateProcess(20, QStringLiteral("执行速率场分析计算..."));
 
@@ -236,7 +239,10 @@ void DeformationRateFieldWorker::analyze_rate_field(
         return;
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
 
     emit updateProcess(50, QStringLiteral("评估速率场质量分级..."));
 
@@ -264,7 +270,10 @@ void DeformationRateFieldWorker::analyze_rate_field(
         return;
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
 
     emit updateProcess(65, QStringLiteral("保存速率分析成果文件..."));
 
@@ -295,7 +304,10 @@ void DeformationRateFieldWorker::analyze_rate_field(
         FC.write_str_to_h5(outH5.toStdString().c_str(), "sbas_h5_path", sbasH5.toStdString().c_str());
     }
 
-    if (QThread::currentThread()->isInterruptionRequested()) return;
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
 
     emit updateProcess(80, QStringLiteral("生成可视化渲染图像..."));
 
@@ -459,6 +471,11 @@ void DeformationRateFieldWorker::analyze_rate_field(
         csvFile.close();
     }
 
+    if (QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
+
     // Update Project Model (Workspace UI integration)
     if (model) {
         QMetaObject::invokeMethod(qApp, [=]() {
@@ -528,13 +545,6 @@ void DeformationRateFieldWorker::analyze_rate_field(
             }
         }, Qt::BlockingQueuedConnection);
         emit sendModel(model);
-    } else {
-        // Workflow mode: just update project XML
-        XMLFile xmlfile;
-        xmlfile.XMLFile_load((projDir + "/" + projectName).toStdString().c_str());
-        QString relativePath = QString("/%1/DeformationRateField.h5").arg(dstNode);
-        xmlfile.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "DeformationRateField", relativePath.toStdString().c_str());
-        xmlfile.XMLFile_save((projDir + "/" + projectName).toStdString().c_str());
     }
 
     InSARLogManager::LogInfo("DeformationRateFieldWorker", "Deformation Rate Field Analysis completed successfully.");

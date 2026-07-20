@@ -96,19 +96,15 @@ void GCPManagerNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         m_inputNodeLabel->setText(m_inputData->nodeName());
         initDatabase();
         updateLabels();
-        
-        if (executionState() == ExecutionState::Pending || executionState() == ExecutionState::Idle) {
-            setState(ExecutionState::Idle);
-        }
     } else {
         m_inputNodeLabel->setText(QStringLiteral("等待输入"));
-        setState(ExecutionState::Pending);
-        invalidateExecution();
         m_outputData.reset();
         m_reportData.reset();
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
     }
+
+    ExecutableNodeDelegateModel::setInData(data, port);
 }
 
 ::QWidget* GCPManagerNode::embeddedWidget()
@@ -261,6 +257,7 @@ void GCPManagerNode::execute()
 
     setState(ExecutionState::Running);
     m_statusLabel->setText(QStringLiteral("状态：正在读取数据并执行评估..."));
+    m_hasPendingEvaluation = false;
 
     // 1. 创建子线程及 Worker
     m_thread = new QThread(this);
@@ -274,10 +271,13 @@ void GCPManagerNode::execute()
     connect(m_worker, &BaseWorker::updateProcess, this, &GCPManagerNode::onProgressUpdate);
     connect(m_worker, &BaseWorker::endProcess, this, &GCPManagerNode::onProcessingFinished);
     connect(m_worker, &BaseWorker::errorProcess, this, &GCPManagerNode::onError);
+    connect(m_worker, &GCPManagerWorker::cancelled, this, &GCPManagerNode::onCancelled);
+    connect(m_worker, &GCPManagerWorker::cancelled, m_thread, &QThread::quit);
     
     // 安全解耦：计算完成时将内存点集同步发回，主线程批量入库
     connect(m_worker, &GCPManagerWorker::evaluationFinished, this, &GCPManagerNode::onEvaluationFinished);
 
+    deferAutomaticCompletion();
     m_thread->start();
 
     // 3. 提取所有的控制点传给子线程 (完全不在子线程做 SQLite I/O)
@@ -307,19 +307,27 @@ void GCPManagerNode::stopExecution()
     if (m_worker) {
         m_worker->StopProcess();
     }
-    if (m_thread) {
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->requestInterruption();
         m_thread->quit();
         m_thread->wait();
     }
-    setState(ExecutionState::Stopped);
-    m_statusLabel->setText(QStringLiteral("状态：已停止"));
+    if (m_thread) {
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_worker) {
+        m_worker->deleteLater();
+        m_worker = nullptr;
+    }
 }
 
 void GCPManagerNode::processAutomatically()
 {
-    // 如果是自动运行模式，直接拉起计算
-    if (m_inputData) {
-        start();
+    if (prepareToStart()) {
+        execute();
+    } else {
+        setState(ExecutionState::Idle);
     }
 }
 
@@ -334,6 +342,10 @@ bool GCPManagerNode::prepareToStart()
 
 void GCPManagerNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     setProgress(progress);
     m_statusLabel->setText(QStringLiteral("进度：%1%\n%2").arg(progress).arg(message));
     updateWidgetSize();
@@ -341,13 +353,34 @@ void GCPManagerNode::onProgressUpdate(int progress, const QString& message)
 
 void GCPManagerNode::onProcessingFinished()
 {
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-        m_worker = nullptr;
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
     }
+
+    if (!m_hasPendingEvaluation) {
+        onError(QStringLiteral("控制点评估未返回结果"));
+        return;
+    }
+
+    if (m_db && m_db->isOpen()) {
+        m_db->updateGCPs(m_pendingGcps);
+    }
+
+    QString reportPath = getReportTxtPath();
+    QFile file(reportPath);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream out(&file);
+        out << m_pendingReportText;
+    }
+
+    m_outputData = std::make_shared<ImportedFileData>(getOutputH5Path(), m_outputNodeName);
+    QMap<QString, QString> meta;
+    meta["RMS_2D"] = QString::number(m_pendingRmsResidual2d, 'f', 3) + " m";
+    meta["Total_GCPs"] = QString::number(m_pendingNumGcpUsed + m_pendingNumGcpRejected);
+    meta["Rejected_GCPs"] = QString::number(m_pendingNumGcpRejected);
+    m_reportData = std::make_shared<ImageInfoData>(reportPath, meta);
+    m_hasPendingEvaluation = false;
 
     setState(ExecutionState::Completed);
     updateLabels();
@@ -362,43 +395,46 @@ void GCPManagerNode::onProcessingFinished()
 
 void GCPManagerNode::onEvaluationFinished(const std::vector<GCPPoint>& updatedGcps, const GCPEvaluationResult& result, const QString& reportText)
 {
-    // 1. 在主线程中安全写库并使用事务保护
-    if (m_db && m_db->isOpen()) {
-        m_db->updateGCPs(updatedGcps);
+    if (isAutomaticExecutionObsolete()) {
+        return;
     }
 
-    // 2. 将报告文本写入本地 Txt 文件中
-    QString reportPath = getReportTxtPath();
-    QFile file(reportPath);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream out(&file);
-        out << reportText;
-        file.close();
-    }
+    m_pendingGcps = updatedGcps;
+    m_pendingReportText = reportText;
+    m_pendingRmsResidual2d = result.rms_residual_2d;
+    m_pendingNumGcpUsed = result.num_gcp_used;
+    m_pendingNumGcpRejected = result.num_gcp_rejected;
+    m_hasPendingEvaluation = true;
 
-    // 3. 构建端口输出对象
-    m_outputData = std::make_shared<ImportedFileData>(getOutputH5Path(), m_outputNodeName);
-    
-    QMap<QString, QString> meta;
-    meta["RMS_2D"] = QString::number(result.rms_residual_2d, 'f', 3) + " m";
-    meta["Total_GCPs"] = QString::number(result.num_gcp_used + result.num_gcp_rejected);
-    meta["Rejected_GCPs"] = QString::number(result.num_gcp_rejected);
-    m_reportData = std::make_shared<ImageInfoData>(reportPath, meta);
+    // Persistent results are committed only after the terminal callback accepts this run.
 }
 
 void GCPManagerNode::onError(const QString& error)
 {
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-        m_worker = nullptr;
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
     }
 
+    m_hasPendingEvaluation = false;
     setState(ExecutionState::Error);
     m_statusLabel->setText(QStringLiteral("评估失败：%1").arg(error));
     Q_EMIT executionError(error);
+    updateWidgetSize();
+}
+
+void GCPManagerNode::onCancelled()
+{
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    m_hasPendingEvaluation = false;
+    setState(ExecutionState::Stopped);
+    m_statusLabel->setText(QStringLiteral("状态：已停止"));
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
     updateWidgetSize();
 }
 

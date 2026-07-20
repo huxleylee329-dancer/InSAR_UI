@@ -351,6 +351,7 @@ void PSNetworkNode::executeProcessing()
         }
     });
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
@@ -363,6 +364,10 @@ void PSNetworkNode::stopExecution()
 
 void PSNetworkNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     setProgress(progress);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("正在构建 (%1%): %2").arg(progress).arg(message));
@@ -373,6 +378,10 @@ void PSNetworkNode::onError(const QString& error)
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("PSNetworkNode", "Error in network construction: " + error);
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("计算出错: ") + error);
@@ -386,6 +395,10 @@ void PSNetworkNode::onCancelled()
     InSARLogManager::LogInfo("PSNetworkNode", "PS network cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_previewData.reset();
     setOutputData(0, nullptr);
@@ -400,6 +413,10 @@ void PSNetworkNode::onProcessingFinished()
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("PSNetworkNode", "executeProcessing completed successfully.");
     
     QString rawPath = projectPath();

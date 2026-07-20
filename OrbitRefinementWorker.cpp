@@ -54,6 +54,11 @@ void OrbitRefinementWorker::refine_orbit(
     }
 
     // 3. 路径安全解析：提取工程所在的物理根目录
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
+
     QString projectDir = QFileInfo(projectPath).absolutePath();
     QDir dir(projectDir);
     if (!dir.exists(dstNode)) {
@@ -129,6 +134,11 @@ void OrbitRefinementWorker::refine_orbit(
         return;
     }
 
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
+
     if (!state_vec.empty() && state_vec.type() != CV_64F) {
         state_vec.convertTo(state_vec, CV_64F);
     }
@@ -189,6 +199,11 @@ void OrbitRefinementWorker::refine_orbit(
     emit updateProcess(60, QStringLiteral("正在回写控制点残差至数据库……"));
 
     // 回写最新的拟合残差到项目 SQLite 数据库
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
+
     if (!db.updateGCPs(gcps)) {
         InSARLogManager::LogError("OrbitRefinementWorker", "回写控制点残差至数据库失败！");
     } else {
@@ -200,6 +215,11 @@ void OrbitRefinementWorker::refine_orbit(
     // 复制所有 H5 图像至输出路径并覆写主影像的轨道参数
     QStringList outputFilePaths;
     for (int i = 0; i < filePaths.size(); i++) {
+        if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+            emit cancelled();
+            return;
+        }
+
         QString srcPath = filePaths.at(i);
         QFileInfo fileInfo(srcPath);
         QString dstPath = QString("%1/%2/%3.h5").arg(projectDir).arg(dstNode).arg(fileInfo.baseName());
@@ -241,6 +261,11 @@ void OrbitRefinementWorker::refine_orbit(
         }
     }
     emit updateProcess(90, QStringLiteral("正在广播输出结果信号……"));
+
+    if (isStopRequested() || QThread::currentThread()->isInterruptionRequested()) {
+        emit cancelled();
+        return;
+    }
 
     QStringList originNames;
     for (const QString& srcPath : filePaths) {

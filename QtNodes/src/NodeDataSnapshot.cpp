@@ -103,7 +103,9 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
     snapshot.processingInfo = model->processingInfo();
 
     // Capture preview image path and detection results if completed or if it supports ROI selection/Two ROIs
-    if (model->executionState() == ExecutionState::Completed || model->supportsRoiSelection() || model->supportsTwoRois()) {
+    if (model->executionState() == ExecutionState::Completed ||
+        model->executionState() == ExecutionState::Warning ||
+        model->supportsRoiSelection() || model->supportsTwoRois()) {
         snapshot.previewImagePaths = model->previewImagePaths();
         snapshot.detectionResults = model->detectionResults();
     } else {

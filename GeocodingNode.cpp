@@ -480,12 +480,16 @@ void GeocodingNode::executeProcessing()
     // Disable inputs during execution
     updateParameterWidgetsEnableState();
 
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
 void GeocodingNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
     setProgress(progress);
 }
 
@@ -532,6 +536,20 @@ void GeocodingNode::onProcessingFinished()
         }
     }
 
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread) {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     // Clean up worker thread
     updateParameterWidgetsEnableState();
 
@@ -547,6 +565,10 @@ void GeocodingNode::onProcessingFinished()
         m_remedyWatcher.disconnect();
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
@@ -573,6 +595,20 @@ void GeocodingNode::onProcessingFinished()
 void GeocodingNode::onCancelled()
 {
     InSARLogManager::LogInfo("GeocodingNode", "Geocoding cancellation cleanup completed.");
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread->deleteLater();
+        m_thread = nullptr;
+    }
+    if (m_workerThread) {
+        m_workerThread->deleteLater();
+        m_workerThread = nullptr;
+    }
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -597,6 +633,10 @@ void GeocodingNode::onError(const QString& error)
         m_workerThread = nullptr;
     }
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     updateParameterWidgetsEnableState();
 
     setState(ExecutionState::Error);
@@ -604,6 +644,10 @@ void GeocodingNode::onError(const QString& error)
 
 void GeocodingNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {

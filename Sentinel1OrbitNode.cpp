@@ -153,12 +153,6 @@ void Sentinel1OrbitNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
             }
         }
 
-        // 如果节点状态已为 Completed，则向下游传播数据
-        if (executionState() == ExecutionState::Completed)
-        {
-            Q_EMIT dataUpdated(0);
-            Q_EMIT dataUpdated(1);
-        }
     }
     else
     {
@@ -718,6 +712,10 @@ void Sentinel1OrbitNode::onProcessingFinished(
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     // 保存本次使用的路径到全局 Config 和项目专属 Config
     QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     settings.setValue("Orbit/LastMatchDir", m_preparedCacheDir);
@@ -920,6 +918,10 @@ void Sentinel1OrbitNode::onError(const QString& error)
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setProgress(0);
     Q_EMIT progressUpdated(0);
     setLastErrorMessage(error);
@@ -931,6 +933,11 @@ void Sentinel1OrbitNode::onCancelled()
 {
     m_workerThread = nullptr;
     m_thread = nullptr;
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();

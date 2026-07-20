@@ -284,6 +284,8 @@ void TroposphericCorrectionNode::executeProcessing()
     connect(m_workerThread, &TroposphericCorrectionWorker::updateProcess, this, &TroposphericCorrectionNode::onProgressUpdate);
     connect(m_workerThread, &TroposphericCorrectionWorker::endProcess, this, &TroposphericCorrectionNode::onProcessingFinished);
     connect(m_workerThread, &TroposphericCorrectionWorker::errorProcess, this, &TroposphericCorrectionNode::onError);
+    connect(m_workerThread, &TroposphericCorrectionWorker::cancelled, this, &TroposphericCorrectionNode::onCancelled);
+    connect(m_workerThread, &TroposphericCorrectionWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &TroposphericCorrectionWorker::sendModel, this, &TroposphericCorrectionNode::onModelUpdated);
     connect(m_workerThread, &TroposphericCorrectionWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
@@ -295,10 +297,11 @@ void TroposphericCorrectionNode::executeProcessing()
     m_outputNodeNameEdit->setEnabled(false);
     m_era5DirEdit->setEnabled(false);
     m_browseBtn->setEnabled(false);
+    deferAutomaticCompletion();
     m_thread->start();
 }
 
-void TroposphericCorrectionNode::onProgressUpdate(int progress, const QString& message) { Q_UNUSED(message); setProgress(progress); }
+void TroposphericCorrectionNode::onProgressUpdate(int progress, const QString& message) { Q_UNUSED(message); if (!isAutomaticExecutionObsolete()) setProgress(progress); }
 
 void TroposphericCorrectionNode::onProcessingFinished()
 {
@@ -319,12 +322,15 @@ void TroposphericCorrectionNode::onProcessingFinished()
     if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
     if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
 
+    if (discardObsoleteAutomaticExecution()) return;
+
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
     if (!h5Paths.isEmpty()) {
         m_remedyWatcher.cancel(); m_remedyWatcher.waitForFinished(); m_remedyWatcher.disconnect();
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+            if (discardObsoleteAutomaticExecution()) return;
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
             setOutputData(1, m_imageInfoData); Q_EMIT dataUpdated(1);
             m_outputNodeNameEdit->setEnabled(true); m_era5DirEdit->setEnabled(true); m_browseBtn->setEnabled(true);
@@ -346,12 +352,26 @@ void TroposphericCorrectionNode::onError(const QString& error)
     Q_UNUSED(error);
     if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
     if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    if (discardObsoleteAutomaticExecution()) return;
     m_outputNodeNameEdit->setEnabled(true); m_era5DirEdit->setEnabled(true); m_browseBtn->setEnabled(true);
     setState(ExecutionState::Error);
 }
 
+void TroposphericCorrectionNode::onCancelled()
+{
+    if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
+    if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    if (discardObsoleteAutomaticExecution()) return;
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    m_outputNodeNameEdit->setEnabled(true); m_era5DirEdit->setEnabled(true); m_browseBtn->setEnabled(true);
+}
+
 void TroposphericCorrectionNode::onModelUpdated(QStandardItemModel* model)
 {
+    if (isAutomaticExecutionObsolete()) return;
     Q_UNUSED(model);
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) iface->refreshProjectTree();

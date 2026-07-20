@@ -30,4 +30,7 @@ public slots:
         int      arrowSpacing,
         QStandardItemModel* model = nullptr
     );
+
+signals:
+    void cancelled();
 };

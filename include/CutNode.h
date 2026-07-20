@@ -59,6 +59,7 @@ public:
     void execute() override;
     void stopExecution() override;
     void processAutomatically() override;
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
     // Serialization
     QJsonObject save() const override;
@@ -73,6 +74,7 @@ private Q_SLOTS:
     void onBoxSelected(double left, double right, double top, double bottom);
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    void onCancelled();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
 

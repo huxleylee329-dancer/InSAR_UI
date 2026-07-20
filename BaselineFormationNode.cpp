@@ -406,12 +406,15 @@ void BaselineFormationNode::executeProcessing()
     connect(m_worker, &BaselineWorker::updateProcess, this, &BaselineFormationNode::onProgressUpdate);
     connect(m_worker, &BaselineWorker::sendBL, this, &BaselineFormationNode::onProcessingFinished);
     connect(m_worker, &BaselineWorker::errorProcess, this, &BaselineFormationNode::onError);
+    connect(m_worker, &BaselineWorker::cancelled, this, &BaselineFormationNode::onCancelled);
+    connect(m_worker, &BaselineWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
     setState(ExecutionState::Running);
     setProgress(0);
+    deferAutomaticCompletion();
 
     QTimer::singleShot(0, this, [this]() {
         if (m_thread && m_thread->isRunning()) {
@@ -442,21 +445,34 @@ void BaselineFormationNode::processAutomatically()
 
 void BaselineFormationNode::onProgressUpdate(int progress, const QString& message)
 {
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
     Q_UNUSED(message);
     setProgress(progress);
 }
 
 void BaselineFormationNode::onError(const QString& error)
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogError("BaselineFormationNode", "Error during baseline formation: " + error);
     setState(ExecutionState::Error);
     if (m_showChartBtn) m_showChartBtn->setEnabled(false);
     finishExecution();
-    stopExecution();
 }
 
 void BaselineFormationNode::onProcessingFinished(QList<double> temporal_baseline, QList<double> spatial_baseline, int index)
 {
+    stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     InSARLogManager::LogInfo("BaselineFormationNode", "executeProcessing completed.");
     m_temporalBaselines = temporal_baseline;
     m_spatialBaselines = spatial_baseline;
@@ -534,7 +550,18 @@ void BaselineFormationNode::onProcessingFinished(QList<double> temporal_baseline
 
     Q_EMIT dataUpdated(0);
     finishExecution();
+}
+
+void BaselineFormationNode::onCancelled()
+{
     stopExecution();
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void BaselineFormationNode::showChart()

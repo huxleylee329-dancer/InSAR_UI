@@ -13,6 +13,9 @@ public:
 public slots:
     void exportKML(QString h5Path, QString outFolder, QString fileName);
 
+signals:
+    void cancelled();
+
 private:
     void paintColorbar(double mMin, double mMax, QString save_path);
 };

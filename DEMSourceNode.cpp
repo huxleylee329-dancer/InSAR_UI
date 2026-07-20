@@ -653,6 +653,10 @@ void DEMSourceNode::onError(const QString& error)
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     setLastErrorMessage(error);
     setState(ExecutionState::Error);
     InSARLogManager::LogError("DEMSourceNode", "Execution failed: " + error);
@@ -669,6 +673,10 @@ void DEMSourceNode::onProcessingFinished(
 {
     m_workerThread = nullptr;
     m_thread = nullptr;
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
 
     QString h5Path = outputH5Path;
     QString tifPath = h5Path.left(h5Path.lastIndexOf('.')) + ".tif";
@@ -818,6 +826,11 @@ void DEMSourceNode::onCancelled()
     InSARLogManager::LogInfo("DEMSourceNode", "DEM fetch cancellation cleanup completed.");
     m_workerThread = nullptr;
     m_thread = nullptr;
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     m_outputData.reset();
     m_imageInfoData.reset();
     setOutputData(0, nullptr);

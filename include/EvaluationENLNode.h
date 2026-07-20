@@ -67,6 +67,7 @@ public:
 
 protected:
     bool stopExecutionIsAsynchronous() const override { return true; }
+    bool supportsAutomaticRestartAfterInputChange() const override { return true; }
     bool validateAndRestoreOutput() override;
 
 private slots:
