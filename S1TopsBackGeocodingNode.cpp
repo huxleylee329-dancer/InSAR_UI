@@ -1468,6 +1468,9 @@ void S1TopsBackGeocodingNode::executeProcessing()
     // Create thread
     m_thread = new QThread();
     m_workerThread = new S1TopsBackGeocodingWorker();
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    m_workerThread->setTaskLogContext(logContext);
     m_workerThread->setDemPath(m_preparedDemPath);
     m_workerThread->setRangeRefine(m_preparedBRangeRefine);
     m_workerThread->prepareForStart();

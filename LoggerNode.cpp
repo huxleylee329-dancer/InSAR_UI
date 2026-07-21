@@ -1,6 +1,7 @@
 #include "InSARLogManager.h"
 #include "LoggerNode.h"
 #include <QHBoxLayout>
+#include <QRegularExpression>
 #include <QScrollBar>
 #include <QTextCursor>
 
@@ -84,11 +85,24 @@ void LoggerNode::loadExistingLogs()
             if (line.isEmpty()) continue;
 
             LogEntry entry;
-            entry.rawLine = line;
-            if (line.contains("[INFO]")) entry.level = InSARLogManager::LevelInfo;
-            else if (line.contains("[WARNING]")) entry.level = InSARLogManager::LevelWarning;
-            else if (line.contains("[ERROR]")) entry.level = InSARLogManager::LevelError;
-            else entry.level = InSARLogManager::LevelInfo;
+            static const QRegularExpression logPattern(
+                QStringLiteral("^\\[(.+)\\] \\[(INFO|WARNING|ERROR|DEBUG)\\] \\[(.*)\\] (.*)$"));
+            const QRegularExpressionMatch match = logPattern.match(line);
+            entry.targets = LogTarget::UserProjectLog;
+            if (match.hasMatch()) {
+                entry.timestamp = match.captured(1);
+                entry.source = match.captured(3);
+                entry.message = match.captured(4);
+                const QString level = match.captured(2);
+                if (level == QStringLiteral("WARNING")) entry.level = InSARLogManager::LevelWarning;
+                else if (level == QStringLiteral("ERROR")) entry.level = InSARLogManager::LevelError;
+                else if (level == QStringLiteral("DEBUG")) entry.level = InSARLogManager::LevelDebug;
+                else entry.level = InSARLogManager::LevelInfo;
+            } else {
+                entry.level = InSARLogManager::LevelInfo;
+                entry.source = QStringLiteral("legacy");
+                entry.message = line;
+            }
             
             m_allLogs.append(entry);
         }
@@ -110,7 +124,7 @@ void LoggerNode::onLogAppended(const LogEntry& entry)
     QString searchText = m_searchEdit->text();
 
     bool matchLevel = (filterLevel == -1 || entry.level == filterLevel);
-    bool matchSearch = (searchText.isEmpty() || entry.rawLine.contains(searchText, Qt::CaseInsensitive));
+    bool matchSearch = (searchText.isEmpty() || InSARLogManager::formatEntry(entry).contains(searchText, Qt::CaseInsensitive));
 
     if (matchLevel && matchSearch) {
         appendLogToView(entry);
@@ -130,7 +144,7 @@ void LoggerNode::onFilterChanged()
 
     for (const auto& entry : m_allLogs) {
         bool matchLevel = (filterLevel == -1 || entry.level == filterLevel);
-        bool matchSearch = (searchText.isEmpty() || entry.rawLine.contains(searchText, Qt::CaseInsensitive));
+        bool matchSearch = (searchText.isEmpty() || InSARLogManager::formatEntry(entry).contains(searchText, Qt::CaseInsensitive));
 
         if (matchLevel && matchSearch) {
             appendLogToView(entry);
@@ -176,7 +190,7 @@ QString LoggerNode::formatLogEntry(const LogEntry& entry) const
     }
 
     // Escape HTML to prevent injection if logs contain < or >
-    QString safeLine = entry.rawLine.toHtmlEscaped();
+    QString safeLine = InSARLogManager::formatEntry(entry).toHtmlEscaped();
     
     if (color.isEmpty()) {
         return safeLine;

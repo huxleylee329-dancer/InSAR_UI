@@ -693,11 +693,22 @@ bool InterferometricFormationNode::validateInputs() const
 
 void InterferometricFormationNode::onProgressUpdate(int progress, const QString& message)
 {
-    Q_UNUSED(message);
     if (isAutomaticExecutionObsolete()) {
         return;
     }
     setProgress(progress);
+
+    if (m_heartbeatTimer.isValid() && m_heartbeatTimer.elapsed() >= 30000) {
+        TaskLogContext logContext;
+        logContext.displayName = caption();
+        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
+                                      "InterferometricFormationNode",
+                                      QStringLiteral("干涉形成处理中：%1（%2%）。").arg(message).arg(progress),
+                                      LogTargets(LogTarget::UserProjectLog),
+                                      QStringLiteral("heartbeat"), QStringLiteral("running"),
+                                      m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
+        m_heartbeatTimer.restart();
+    }
 }
 
 void InterferometricFormationNode::onProcessingFinished()
@@ -850,14 +861,29 @@ void InterferometricFormationNode::onProcessingFinished()
             if (anyFailed) {
                 setLastWarningMessage(QStringLiteral("Interferometric products were generated, but some preview images could not be generated."));
                 setState(ExecutionState::Warning);
-                InSARLogManager::LogWarning("InterferometricFormationNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
+                TaskLogContext logContext;
+                logContext.displayName = caption();
+                InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelWarning,
+                                              "InterferometricFormationNode",
+                                              QStringLiteral("干涉形成完成，但部分预览图生成失败。"),
+                                              LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                                              QStringLiteral("completed"), QStringLiteral("completed_with_warnings"),
+                                              m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
                 setProgress(100);
                 Q_EMIT computingFinished();
                 Q_EMIT dataUpdated(0);
             } else {
                 setState(ExecutionState::Running);
                 setProgress(100);
-                InSARLogManager::LogInfo("InterferometricFormationNode", "executeProcessing completed.");
+                TaskLogContext logContext;
+                logContext.displayName = caption();
+                InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
+                                              "InterferometricFormationNode",
+                                              QStringLiteral("干涉形成完成。输出：%1")
+                                                  .arg(h5Paths.join(QStringLiteral(", "))),
+                                              LogTargets(LogTarget::UserProjectLog),
+                                              QStringLiteral("completed"), QStringLiteral("completed"),
+                                              m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
                 finishExecution();
                 Q_EMIT dataUpdated(0);
             }
@@ -893,7 +919,6 @@ void InterferometricFormationNode::onProcessingFinished()
 
 void InterferometricFormationNode::onError(const QString& error)
 {
-    Q_UNUSED(error);
     if (m_thread)
     {
         m_thread->quit();
@@ -913,13 +938,19 @@ void InterferometricFormationNode::onError(const QString& error)
     }
 
     updateParameterWidgetsEnableState();
-    
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelError,
+                                  "InterferometricFormationNode",
+                                  QStringLiteral("干涉形成失败：%1").arg(error),
+                                  LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                                  QStringLiteral("completed"), QStringLiteral("failed"),
+                                  m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
     setState(ExecutionState::Error);
 }
 
 void InterferometricFormationNode::onCancelled()
 {
-    InSARLogManager::LogInfo("InterferometricFormationNode", "Interferometric cancellation cleanup completed.");
     const QString outputName = m_preparedFileName;
     auto* iface = NodeUtils::getProjectContext(_widget);
     if (iface && !outputName.isEmpty()) {
@@ -939,6 +970,13 @@ void InterferometricFormationNode::onCancelled()
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
     updateParameterWidgetsEnableState();
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
+                                  "InterferometricFormationNode", QStringLiteral("干涉形成任务已取消。"),
+                                  LogTargets(LogTarget::UserProjectLog),
+                                  QStringLiteral("completed"), QStringLiteral("cancelled"),
+                                  m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -1087,7 +1125,16 @@ bool InterferometricFormationNode::prepareToStart()
 
 void InterferometricFormationNode::executeProcessing()
 {
-    InSARLogManager::LogInfo("InterferometricFormationNode", "executeProcessing started.");
+    m_executionTimer.start();
+    m_heartbeatTimer.start();
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
+                                  "InterferometricFormationNode",
+                                  QStringLiteral("干涉形成任务开始：%1 幅输入影像。")
+                                      .arg(m_inputData ? m_inputData->filePaths().size() : 0),
+                                  LogTargets(LogTarget::UserProjectLog),
+                                  QStringLiteral("starting"), QStringLiteral("running"));
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = m_preparedFileName;
@@ -1125,6 +1172,12 @@ void InterferometricFormationNode::executeProcessing()
                                     m_preparedDstNode, m_preparedFileName, projectModel(),
                                     m_preparedDemPath);
     });
+    connect(m_thread, &QThread::started, this, [logContext]() {
+        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug,
+                                      "InterferometricFormationWorker", QStringLiteral("干涉形成 Worker 已启动。"),
+                                      LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+                                      QStringLiteral("worker_started"), QStringLiteral("running"));
+    }, Qt::QueuedConnection);
     connect(m_workerThread, &InterferometricFormationWorker::updateProcess, this, &InterferometricFormationNode::onProgressUpdate);
     connect(m_workerThread, &InterferometricFormationWorker::endProcess, this, &InterferometricFormationNode::onProcessingFinished);
     connect(m_workerThread, &InterferometricFormationWorker::endProcess, m_thread, &QThread::quit);
@@ -1138,6 +1191,10 @@ void InterferometricFormationNode::executeProcessing()
 
     deferAutomaticCompletion();
     m_thread->start();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
+                                  "InterferometricFormationNode", QStringLiteral("干涉形成任务已提交。"),
+                                  LogTargets(LogTarget::UserProjectLog),
+                                  QStringLiteral("queued"), QStringLiteral("queued"));
     
     // Disable inputs UI
     updateParameterWidgetsEnableState();

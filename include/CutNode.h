@@ -11,6 +11,7 @@
 #include <QComboBox>
 #include <QPushButton>
 #include <QDoubleSpinBox>
+#include <QElapsedTimer>
 #include <QThread>
 
 class QStandardItemModel;
@@ -153,6 +154,7 @@ private:
 
     // Flag for delayed execution state correction (Automatic mode pitfall)
     bool m_isExecuting = false;
+    QElapsedTimer m_executionTimer;
 
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QStringList m_preparedInputPaths;

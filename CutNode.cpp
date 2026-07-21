@@ -603,13 +603,19 @@ bool CutNode::prepareToStart()
 
 void CutNode::executeProcessing()
 {
-    InSARLogManager::LogInfo("CutNode", "executeProcessing started.");
-
     if (m_isExecuting) {
-        InSARLogManager::LogInfo("CutNode", "executeProcessing skipped: already executing.");
+        InSARLogManager::LogDebug("CutNode", "executeProcessing skipped: already executing.", "lifecycle");
         return;
     }
 
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo, "CutNode",
+                                  QStringLiteral("裁剪任务开始。"),
+                                  LogTargets(LogTarget::UserProjectLog),
+                                  QStringLiteral("starting"), QStringLiteral("running"));
+
+    m_executionTimer.start();
     setProgress(0);
     m_outputPaths = m_preparedOutputPaths;
 
@@ -647,6 +653,12 @@ void CutNode::executeProcessing()
     connect(m_worker, &CutWorker::sendModel, this, &CutNode::onModelUpdated, Qt::QueuedConnection);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    connect(m_thread, &QThread::started, this, [logContext]() {
+        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug, "CutWorker",
+                                      QStringLiteral("裁剪 Worker 已启动。"),
+                                      LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+                                      QStringLiteral("worker_started"), QStringLiteral("running"));
+    }, Qt::QueuedConnection);
 
     m_thread->start();
     m_isExecuting = true;
@@ -689,7 +701,10 @@ void CutNode::executeProcessing()
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
 
-    InSARLogManager::LogInfo("CutNode", "executeProcessing completed.");
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo, "CutNode",
+                                  QStringLiteral("裁剪任务已提交。"),
+                                  LogTargets(LogTarget::UserProjectLog),
+                                  QStringLiteral("queued"), QStringLiteral("queued"));
 }
 
 void CutNode::stopExecution()
@@ -730,16 +745,45 @@ void CutNode::onProcessingFinished()
         return;
     }
 
-    InSARLogManager::LogInfo("CutNode", "onProcessingFinished.");
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug, "CutWorker",
+                                  QStringLiteral("裁剪 Worker 已完成，开始校验输出产物。"),
+                                  LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+                                  QStringLiteral("worker_finished"), QStringLiteral("running"),
+                                  m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
 
     QString dstNodeName = m_outputNodeName.trimmed();
-    QString projDir = projectPath();
-    if (projDir.endsWith(".insar", Qt::CaseInsensitive)) {
-        projDir = QFileInfo(projDir).absolutePath();
+    QStringList invalidH5Paths;
+    for (const QString& path : m_outputPaths) {
+        const QFileInfo fileInfo(path);
+        if (!fileInfo.exists() || fileInfo.size() <= 0) {
+            invalidH5Paths.append(path);
+        }
+    }
+    if (!invalidH5Paths.isEmpty()) {
+        const QString error = QStringLiteral("裁剪输出产物校验失败：%1")
+                                  .arg(invalidH5Paths.join(QStringLiteral(", ")));
+        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelError, "CutNode", error,
+                                      LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                                      QStringLiteral("artifact_validated"), QStringLiteral("failed"),
+                                      m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
+        m_outputData.reset();
+        m_previewData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
+        setState(ExecutionState::Error);
+        Q_EMIT executionError(error);
+        updateParameterWidgetsEnableState();
+        return;
     }
 
-        for (const QString& p : m_outputPaths)
-        
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug, "CutNode",
+                                  QStringLiteral("裁剪输出产物校验通过。"),
+                                  LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+                                  QStringLiteral("artifact_validated"), QStringLiteral("running"),
+                                  m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
+
     // Set outputs
     m_outputData = std::make_shared<ImportedFileData>(m_outputPaths, dstNodeName);
     setOutputData(0, m_outputData);
@@ -761,6 +805,34 @@ void CutNode::onProcessingFinished()
     }
 
     
+    const auto finishWithStatus = [this, logContext](bool hasWarnings) {
+        m_isExecuting = false;
+        m_thread = nullptr;
+        m_worker = nullptr;
+        updateParameterWidgetsEnableState();
+        Q_EMIT dataUpdated(0);
+        Q_EMIT dataUpdated(1);
+
+        const qint64 elapsedMs = m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1;
+        const QString outputs = m_outputPaths.join(QStringLiteral(", "));
+        if (hasWarnings) {
+            setState(ExecutionState::Warning);
+            InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelWarning, "CutNode",
+                                          QStringLiteral("裁剪完成，但预览图生成存在告警。输出：%1").arg(outputs),
+                                          LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                                          QStringLiteral("completed"), QStringLiteral("completed_with_warnings"), elapsedMs);
+            Q_EMIT computingFinished();
+            return;
+        }
+
+        setState(ExecutionState::Running);
+        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo, "CutNode",
+                                      QStringLiteral("裁剪完成。输出：%1").arg(outputs),
+                                      LogTargets(LogTarget::UserProjectLog),
+                                      QStringLiteral("completed"), QStringLiteral("completed"), elapsedMs);
+        finishExecution();
+    };
+
     if (!missingH5s.isEmpty()) {
         // 安全清理老 remedyWatcher，防止重新执行的竞态条件覆盖 m_previewData
         QFutureWatcher<void>* oldWatcher = findChild<QFutureWatcher<void>*>("remedyWatcher");
@@ -776,7 +848,7 @@ void CutNode::onProcessingFinished()
         auto* watcher = new QFutureWatcher<void>(this);
         watcher->setObjectName("remedyWatcher");
 
-        connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPaths, missingJpgs]() {
+        connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPaths, missingJpgs, finishWithStatus]() {
             watcher->deleteLater();
             QStringList validJpgPaths;
             bool anyFailed = false;
@@ -804,9 +876,8 @@ void CutNode::onProcessingFinished()
 
             if (anyFailed) {
                 setLastWarningMessage(QStringLiteral("Some preview images failed to generate."));
-                setState(ExecutionState::Warning);
-                InSARLogManager::LogWarning("CutNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
             }
+            finishWithStatus(anyFailed);
         });
 
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
@@ -832,17 +903,9 @@ void CutNode::onProcessingFinished()
         }
     }
 
-    m_isExecuting = false;
-    m_thread = nullptr;
-    m_worker = nullptr;
-
-    updateParameterWidgetsEnableState();
-
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
-
-    setState(ExecutionState::Running);
-    finishExecution();
+    if (missingH5s.isEmpty()) {
+        finishWithStatus(false);
+    }
 }
 
 void CutNode::onError(const QString& error)
@@ -854,7 +917,12 @@ void CutNode::onError(const QString& error)
         return;
     }
 
-    InSARLogManager::LogError("CutNode", error);
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelError, "CutNode", error,
+                                  LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                                  QStringLiteral("completed"), QStringLiteral("failed"),
+                                  m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
     Q_EMIT executionError(error);
     setState(ExecutionState::Error);
 
@@ -874,6 +942,13 @@ void CutNode::onCancelled()
     }
 
     setState(ExecutionState::Stopped);
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo, "CutNode",
+                                  QStringLiteral("裁剪任务已取消。"),
+                                  LogTargets(LogTarget::UserProjectLog),
+                                  QStringLiteral("completed"), QStringLiteral("cancelled"),
+                                  m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
     updateParameterWidgetsEnableState();

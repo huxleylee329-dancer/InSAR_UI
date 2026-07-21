@@ -53,6 +53,7 @@
 #include <QToolButton>
 #include <QPointer>
 #include <QLayout>
+#include <QUuid>
 
 #include "InSARLogManager.h"
 // ============================================================================
@@ -1829,6 +1830,20 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
 
     // 连接节点的进度和执行信号
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStarted, this, [this, nodeId, caption]() {
+        if (m_activeWorkflowRunId.isEmpty()) {
+            m_activeWorkflowRunId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            m_activeWorkflowNodes.clear();
+            m_workflowSucceededNodes = m_workflowWarningNodes = m_workflowFailedNodes = 0;
+            m_workflowRunTimer.start();
+            InSARLogManager::instance().setActiveWorkflowRunId(m_activeWorkflowRunId);
+            TaskLogContext context;
+            context.runId = m_activeWorkflowRunId;
+            context.displayName = QStringLiteral("工作流");
+            InSARLogManager::LogTaskEvent(context, InSARLogManager::LevelInfo, "WorkflowUI",
+                                          QStringLiteral("工作流运行开始。"), LogTargets(LogTarget::UserProjectLog),
+                                          QStringLiteral("starting"), QStringLiteral("running"));
+        }
+        m_activeWorkflowNodes.insert(nodeId);
         Q_EMIT nodeExecutionStarted(nodeId, caption);
     }, Qt::QueuedConnection);
 
@@ -1842,18 +1857,49 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
             return;
         }
 
+        const auto finishRun = [this]() {
+            if (!m_activeWorkflowNodes.isEmpty() || m_activeWorkflowRunId.isEmpty()) return;
+            QTimer::singleShot(100, this, [this]() {
+            if (!m_activeWorkflowNodes.isEmpty() || m_activeWorkflowRunId.isEmpty()) return;
+            TaskLogContext context;
+            context.runId = m_activeWorkflowRunId;
+            context.displayName = QStringLiteral("工作流");
+            const QString summary = QStringLiteral("工作流运行结束：成功节点 %1，告警节点 %2，失败节点 %3，总耗时 %4 ms。")
+                .arg(m_workflowSucceededNodes).arg(m_workflowWarningNodes).arg(m_workflowFailedNodes)
+                .arg(m_workflowRunTimer.isValid() ? m_workflowRunTimer.elapsed() : 0);
+            InSARLogManager::LogTaskEvent(context,
+                                          m_workflowFailedNodes > 0 ? InSARLogManager::LevelError : InSARLogManager::LevelInfo,
+                                          "WorkflowUI", summary,
+                                          LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                                          QStringLiteral("completed"),
+                                          m_workflowFailedNodes > 0 ? QStringLiteral("failed") : QStringLiteral("completed"));
+            InSARLogManager::flushRun(m_activeWorkflowRunId);
+            InSARLogManager::instance().setActiveWorkflowRunId(QString());
+            m_activeWorkflowRunId.clear();
+            });
+        };
         switch (weakModel->executionState()) {
         case QtNodes::ExecutionState::Completed:
+            if (m_activeWorkflowNodes.remove(nodeId)) ++m_workflowSucceededNodes;
+            finishRun();
+            Q_EMIT nodeExecutionFinished(nodeId, caption);
+            break;
         case QtNodes::ExecutionState::Warning:
+            if (m_activeWorkflowNodes.remove(nodeId)) ++m_workflowWarningNodes;
+            finishRun();
             Q_EMIT nodeExecutionFinished(nodeId, caption);
             break;
         case QtNodes::ExecutionState::Idle:
         case QtNodes::ExecutionState::Pending:
         case QtNodes::ExecutionState::Stopped:
         case QtNodes::ExecutionState::Disabled:
+            m_activeWorkflowNodes.remove(nodeId);
+            finishRun();
             Q_EMIT nodeExecutionStopped(nodeId, caption);
             break;
         case QtNodes::ExecutionState::Error:
+            if (m_activeWorkflowNodes.remove(nodeId)) ++m_workflowFailedNodes;
+            finishRun();
             Q_EMIT nodeExecutionTerminalState(nodeId);
             break;
         default:

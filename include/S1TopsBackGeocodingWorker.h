@@ -1,10 +1,12 @@
 #pragma once
 #include "BaseWorker.h"
+#include "InSARLogManager.h"
 #include <atomic>
 #include <memory>
 #include <mutex>
 
 class Sentinel1BackGeocoding;
+struct InSARDiagnosticEvent;
 
 class S1TopsBackGeocodingWorker : public BaseWorker
 {
@@ -15,6 +17,7 @@ public:
 
     void setDemPath(const QString& path) { m_demPath = path; }
     void setRangeRefine(bool enable) { m_bRangeRefine = enable; }
+    void setTaskLogContext(const TaskLogContext& context) { m_taskLogContext = context; }
 
     /// 在启动任务前重置本次任务的停止请求。
     void prepareForStart();
@@ -47,6 +50,8 @@ signals:
     void cancelled(const QStringList& cleanupFailures);
 
 private:
+    static void __stdcall onNativeDiagnostic(const InSARDiagnosticEvent* event, void* userData) noexcept;
+    void appendNativeDiagnostic(const InSARDiagnosticEvent* event) noexcept;
     std::shared_ptr<Sentinel1BackGeocoding> activeBackGeocoding() const;
 
     QString m_demPath;
@@ -54,4 +59,5 @@ private:
     std::atomic<bool> m_stopRequested{false};
     mutable std::mutex m_backGeocodingMutex;
     std::shared_ptr<Sentinel1BackGeocoding> m_backGeocoding;
+    TaskLogContext m_taskLogContext;
 };

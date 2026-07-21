@@ -31,6 +31,11 @@
 
 namespace {
 
+QString nativeText(const char* value)
+{
+    return value ? QString::fromUtf8(value) : QString();
+}
+
 QString zeroDopplerReasonText(int reason)
 {
     switch (reason) {
@@ -124,6 +129,38 @@ S1TopsBackGeocodingWorker::S1TopsBackGeocodingWorker(QObject* parent)
 
 S1TopsBackGeocodingWorker::~S1TopsBackGeocodingWorker()
 {
+}
+
+void __stdcall S1TopsBackGeocodingWorker::onNativeDiagnostic(const InSARDiagnosticEvent* event, void* userData) noexcept
+{
+    try {
+        if (event && userData) {
+            static_cast<S1TopsBackGeocodingWorker*>(userData)->appendNativeDiagnostic(event);
+        }
+    } catch (...) {
+        // Native callbacks must never propagate exceptions across the DLL boundary.
+    }
+}
+
+void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEvent* event) noexcept
+{
+    InSARLogManager::LogLevel level = InSARLogManager::LevelDebug;
+    if (event->severity == INSAR_DIAGNOSTIC_WARNING) level = InSARLogManager::LevelWarning;
+    else if (event->severity == INSAR_DIAGNOSTIC_ERROR) level = InSARLogManager::LevelError;
+    else if (event->severity == INSAR_DIAGNOSTIC_INFO) level = InSARLogManager::LevelInfo;
+
+    QString message = nativeText(event->message);
+    const QString detail = nativeText(event->detail);
+    const QString h5File = nativeText(event->h5File);
+    const QString dataset = nativeText(event->dataset);
+    if (!detail.isEmpty()) message += QStringLiteral("; %1").arg(detail);
+    if (!h5File.isEmpty()) message += QStringLiteral(" [h5=%1]").arg(h5File);
+    if (!dataset.isEmpty()) message += QStringLiteral(" [dataset=%1]").arg(dataset);
+
+    LogTargets targets = LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile;
+    if (level == InSARLogManager::LevelError) targets |= LogTarget::UserProjectLog;
+    InSARLogManager::LogTaskEvent(m_taskLogContext, level, "Sentinel1BackGeocoding", message,
+                                  targets, nativeText(event->phase), QString(), event->elapsedMs);
 }
 
 void S1TopsBackGeocodingWorker::prepareForStart()
@@ -249,6 +286,11 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		backGeocodingPtr->requestCancel();
 	}
 	Sentinel1BackGeocoding& backgeocoding = *backGeocodingPtr;
+	backgeocoding.setDiagnosticCallback(&S1TopsBackGeocodingWorker::onNativeDiagnostic, this);
+	struct DiagnosticCallbackResetGuard {
+		Sentinel1BackGeocoding& instance;
+		~DiagnosticCallbackResetGuard() { instance.setDiagnosticCallback(nullptr, nullptr); }
+	} diagnosticCallbackResetGuard{ backgeocoding };
 	const auto cancellationRequested = [this, &backgeocoding]() {
 		return m_stopRequested.load(std::memory_order_acquire) || backgeocoding.isCancelRequested();
 	};
@@ -739,10 +781,11 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 						res[k].heatmap_rgb = nullptr;
 						res[k].overlay_rgb = nullptr;
 					}
-					int calcRet = CalculateOffsetAndCoherence(
+					int calcRet = CalculateOffsetAndCoherenceWithDiagnostics(
 						masterPath.c_str(),
 						slavePath.c_str(),
-						pts, 5, 200, 206, res
+						pts, 5, 200, 206, res,
+						&S1TopsBackGeocodingWorker::onNativeDiagnostic, this
 					);
 					if (calcRet == 0)
 					{
@@ -1149,6 +1192,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	}
 
 	cleanupGuard.dismiss();
+	backgeocoding.setDiagnosticCallback(nullptr, nullptr);
 	QStringList regisH5Paths;
 	for (const auto& pathStr : SAR_images_regis)
 	{

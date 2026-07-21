@@ -533,6 +533,8 @@ void DEMSourceWorker::fetch_dem(
     int endLat = qFloor(max_lat);
 
     QStringList cachedFiles;
+    QStringList missingTiles;
+    const int requestedTileCount = (endLat - startLat + 1) * (endLon - startLon + 1);
     emit updateProcess(10, QStringLiteral("检索本地缓存及下载瓦片中……"));
 
     for (int lat = startLat; lat <= endLat; ++lat)
@@ -698,7 +700,8 @@ void DEMSourceWorker::fetch_dem(
                 else if (dlResult == 0)
                 {
                     // 404 未找到（例如海洋瓦片），直接跳过此瓦片且不终止程序
-                    InSARLogManager::LogInfo("DEMSourceWorker", QString("Tile %1 not found on server (likely ocean), skipping.").arg(tileName));
+                    missingTiles.append(tileName);
+                    InSARLogManager::LogDebug("DEMSourceWorker", QString("Tile %1 not found on server (likely ocean), skipping.").arg(tileName), "dem.tile");
                     continue;
                 }
                 else
@@ -982,6 +985,8 @@ void DEMSourceWorker::fetch_dem(
     emit updateProcess(100, QStringLiteral("外部 DEM 获取完成。"));
     emit sendModel(model);
     // 清理完成后再通知主线程挂载输出，取消时不会提前暴露部分结果。
-    emit demFetchFinished(outputH5Path, dstNode, projectName, demSource, targetResolution);
+    const bool outputValidated = QFileInfo(outputH5Path).exists() && QFileInfo(outputH5Path).size() > 0;
+    emit demFetchFinished(outputH5Path, dstNode, projectName, demSource, targetResolution,
+                          cachedFiles, missingTiles, requestedTileCount, outputValidated);
     emit endProcess();
 }

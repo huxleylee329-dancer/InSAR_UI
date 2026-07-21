@@ -13,6 +13,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardItemModel>
+#include <QSet>
+#include <QElapsedTimer>
 #include "PaletteOrder.h"
 
 // ADS (Qt Advanced Docking System)
@@ -239,6 +241,12 @@ private:
 
     // State
     QString m_currentFilePath;
+    QString m_activeWorkflowRunId;
+    QSet<QtNodes::NodeId> m_activeWorkflowNodes;
+    int m_workflowSucceededNodes = 0;
+    int m_workflowWarningNodes = 0;
+    int m_workflowFailedNodes = 0;
+    QElapsedTimer m_workflowRunTimer;
 
     // Project context
     QStandardItemModel* m_projectModel;

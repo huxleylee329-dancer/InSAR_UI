@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <iostream>
 #include "NodeUtils.h"
+#include "InSARLogManager.h"
 
 /**
  * @brief 初始化调试控制台并重定向标准输出/标准错误
@@ -141,6 +142,9 @@ int main(int argc, char *argv[])
     if (showConsole) {
         setupDebugConsole();
     }
+    const bool writeDiagnosticLog = settings.value("Debug/WriteDiagnosticLog", showConsole).toBool();
+    InSARLogManager::instance().configureDiagnosticSinks(showConsole, writeDiagnosticLog);
+    InSARLogManager::installQtMessageHandler();
 
     QPixmap* k = new QPixmap(QString(CURSOR_UP_ICON));
 

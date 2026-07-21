@@ -18,6 +18,7 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <memory>
 
@@ -103,6 +104,8 @@ private:
 
     // Remedy watcher for missing JPG regeneration
     QFutureWatcher<void> m_remedyWatcher;
+    QElapsedTimer m_executionTimer;
+    QElapsedTimer m_heartbeatTimer;
 
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;

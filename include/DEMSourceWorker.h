@@ -32,7 +32,11 @@ signals:
         const QString& dstNode,
         const QString& projectName,
         int demSource,
-        double targetResolution
+        double targetResolution,
+        const QStringList& availableTiles,
+        const QStringList& missingTiles,
+        int requestedTileCount,
+        bool outputValidated
     );
 
 private:

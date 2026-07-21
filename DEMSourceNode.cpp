@@ -668,13 +668,37 @@ void DEMSourceNode::onProcessingFinished(
     const QString& dstNode,
     const QString& projectName,
     int demSource,
-    double targetResolution
+    double targetResolution,
+    const QStringList& availableTiles,
+    const QStringList& missingTiles,
+    int requestedTileCount,
+    bool outputValidated
 )
 {
     m_workerThread = nullptr;
     m_thread = nullptr;
 
     if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    TaskLogContext logContext;
+    logContext.displayName = caption();
+    const double coverage = requestedTileCount > 0
+        ? 100.0 * availableTiles.size() / requestedTileCount : 0.0;
+    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，瓦片覆盖率 %3%，缺失：%4，输出：%5，校验：%6。")
+        .arg(availableTiles.size()).arg(requestedTileCount).arg(coverage, 0, 'f', 1)
+        .arg(missingTiles.isEmpty() ? QStringLiteral("无") : missingTiles.join(QStringLiteral(", ")))
+        .arg(outputH5Path).arg(outputValidated ? QStringLiteral("通过") : QStringLiteral("失败"));
+    InSARLogManager::LogTaskEvent(logContext,
+                                  outputValidated ? InSARLogManager::LevelInfo : InSARLogManager::LevelError,
+                                  "DEMSourceNode", summary,
+                                  outputValidated ? LogTargets(LogTarget::UserProjectLog)
+                                                  : (LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole),
+                                  QStringLiteral("artifact_validated"),
+                                  outputValidated ? QStringLiteral("completed") : QStringLiteral("failed"));
+    if (!outputValidated) {
+        onError(QStringLiteral("DEM 输出 H5 校验失败：%1").arg(outputH5Path));
         return;
     }
 
