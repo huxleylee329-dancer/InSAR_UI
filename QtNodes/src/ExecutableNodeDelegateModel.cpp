@@ -49,11 +49,15 @@ void ExecutableNodeDelegateModel::setExecutionMode(ExecutionMode mode)
 
 void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, PortIndex const portIndex)
 {
+    const std::uint64_t incomingRevision = inputRevisionFromGraph(portIndex);
     // Check if data actually changed
     auto it = _inputData.find(portIndex);
-    if (it == _inputData.end() || it->second != nodeData) {
+    auto revisionIt = _inputRevisions.find(portIndex);
+    if (it == _inputData.end() || it->second != nodeData ||
+        revisionIt == _inputRevisions.end() || revisionIt->second != incomingRevision) {
         // Data changed
         _inputData[portIndex] = nodeData;
+        _inputRevisions[portIndex] = incomingRevision;
 
         // Skip state changes and auto-execution during restoration
         if (_isRestoring) {
@@ -126,6 +130,7 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
             // For automatic mode: set running state and zero progress before execution
             setState(ExecutionState::Running);
             _progress = 0;
+            Q_EMIT executionStarted();
 
             // Let subclass do the automatic processing (sets output data if inputs are complete)
             // Mark as auto-triggered so executeProcessing() can skip overwrite popups
@@ -376,6 +381,7 @@ void ExecutableNodeDelegateModel::restartAutomaticExecutionAfterInputChange()
 
     setState(ExecutionState::Running);
     _progress = 0;
+    Q_EMIT executionStarted();
     _isAutoTriggered = true;
     _deferAutomaticCompletion = false;
     processAutomatically();
@@ -408,6 +414,7 @@ void ExecutableNodeDelegateModel::completeAutomaticExecution()
 
     _state = ExecutionState::Running;
     _progress = 0;
+    Q_EMIT executionStarted();
     Q_EMIT executionStateChanged();
     triggerVisualUpdate();
 
@@ -477,6 +484,33 @@ std::shared_ptr<NodeData> ExecutableNodeDelegateModel::getInputData(PortIndex po
 void ExecutableNodeDelegateModel::setOutputData(PortIndex portIndex, std::shared_ptr<NodeData> data)
 {
     _outputData[portIndex] = data;
+    auto it = _lastRevisionedOutputData.find(portIndex);
+    if (it == _lastRevisionedOutputData.end() || it->second != data) {
+        _lastRevisionedOutputData[portIndex] = data;
+        ++_outputRevisions[portIndex];
+    }
+}
+
+std::uint64_t ExecutableNodeDelegateModel::outputRevision(PortIndex portIndex) const
+{
+    auto it = _outputRevisions.find(portIndex);
+    return it == _outputRevisions.end() ? 0 : it->second;
+}
+
+void ExecutableNodeDelegateModel::synchronizeOutputRevision(PortIndex portIndex)
+{
+    std::shared_ptr<NodeData> data = outData(portIndex);
+    auto it = _lastRevisionedOutputData.find(portIndex);
+    if (it == _lastRevisionedOutputData.end() || it->second != data) {
+        _lastRevisionedOutputData[portIndex] = data;
+        ++_outputRevisions[portIndex];
+    }
+}
+
+void ExecutableNodeDelegateModel::markOutputArtifactChanged(PortIndex portIndex)
+{
+    _lastRevisionedOutputData[portIndex] = outData(portIndex);
+    ++_outputRevisions[portIndex];
 }
 
 std::shared_ptr<NodeData> ExecutableNodeDelegateModel::getOutputData(PortIndex portIndex)
@@ -591,6 +625,7 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
         // Clear own output data and propagate nullptr downstream to break old data chains
         unsigned int outCount = nPorts(PortType::Out);
         for (PortIndex idx = 0; idx < outCount; ++idx) {
+            invalidateOutputArtifact(idx);
             auto it = _outputData.find(idx);
             if (it != _outputData.end()) {
                 if (it->second != nullptr) {
@@ -604,6 +639,33 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
         // which calls setPortData(nullptr) -> setInData(nullptr) on downstream nodes.
         // The setInData(nullptr) early-exit in Automatic mode will then set those nodes to Idle.
     }
+}
+
+std::uint64_t ExecutableNodeDelegateModel::inputRevisionFromGraph(PortIndex portIndex) const
+{
+    if (_scene == nullptr) {
+        return 0;
+    }
+
+    auto *graph = dynamic_cast<DataFlowGraphModel*>(&_scene->graphModel());
+    if (graph == nullptr) {
+        return 0;
+    }
+
+    auto const &connections = graph->connections(_nodeId, PortType::In, portIndex);
+    if (connections.size() != 1) {
+        return 0;
+    }
+
+    ConnectionId const &connection = *connections.begin();
+    auto *source = graph->delegateModel<ExecutableNodeDelegateModel>(connection.outNodeId);
+    return source == nullptr ? 0 : source->outputRevision(connection.outPortIndex);
+}
+
+void ExecutableNodeDelegateModel::invalidateOutputArtifact(PortIndex portIndex)
+{
+    _lastRevisionedOutputData[portIndex].reset();
+    ++_outputRevisions[portIndex];
 }
 
 bool ExecutableNodeDelegateModel::isPending() const

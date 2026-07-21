@@ -198,6 +198,7 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     , m_statusProjectLabel(nullptr)
     , m_statusInterfaceLabel(nullptr)
     , m_statusProgressBar(nullptr)
+    , m_activeStatusTaskId(QtNodes::InvalidNodeId)
     , m_actionGcpManager(nullptr)
     , m_actionOrbitManager(nullptr)
     , m_actionPhaseElevationRegression(nullptr)
@@ -206,8 +207,6 @@ MainWindow::MainWindow(QString str, QWidget* parent)
     , m_actionIonosphericCorrection(nullptr)
     , m_menuTools(nullptr)
     , m_menuAtmosphericCorrection(nullptr)
-    , m_runningNodeId(QtNodes::InvalidNodeId)
-    , m_hasRunningNode(false)
 {
     ui.setupUi(this);
     initStatusBar();
@@ -2288,71 +2287,55 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     // 连接工作流节点的进度和状态信号到 MainWindow 状态栏。
     // NodeId 是任务身份，caption 只用于展示，避免同名节点或延迟事件改写当前任务状态。
     connect(m_workflowUI, &WorkflowUI::nodeExecutionStarted, this, [this](QtNodes::NodeId nodeId, const QString& caption) {
-        m_runningNodeId = nodeId;
-        m_hasRunningNode = true;
-        if (m_statusProgressBar) {
-            m_statusProgressBar->setValue(0);
-            m_statusProgressBar->show();
-        }
+        m_runningStatusTasks.insert(nodeId, {caption, 0});
+        showStatusBarTask(nodeId);
         statusBar()->showMessage(QStringLiteral("正在运行节点: %1...").arg(caption));
     });
 
     connect(m_workflowUI, &WorkflowUI::nodeProgressUpdated, this, [this](QtNodes::NodeId nodeId, const QString& caption, int percent) {
-        if (!m_hasRunningNode || m_runningNodeId != nodeId) {
+        auto it = m_runningStatusTasks.find(nodeId);
+        if (it == m_runningStatusTasks.end()) {
             return;
         }
-
-        if (m_statusProgressBar) {
-            m_statusProgressBar->setValue(percent);
-            if (!m_statusProgressBar->isVisible()) {
-                m_statusProgressBar->show();
-            }
-        }
+        it->caption = caption;
+        it->progress = percent;
+        showStatusBarTask(nodeId);
         statusBar()->showMessage(QStringLiteral("节点 %1 正在处理: %2%").arg(caption).arg(percent));
     });
 
     connect(m_workflowUI, &WorkflowUI::nodeExecutionFinished, this, [this](QtNodes::NodeId nodeId, const QString& caption) {
-        if (!m_hasRunningNode || m_runningNodeId != nodeId) {
+        if (!m_runningStatusTasks.contains(nodeId)) {
             return;
         }
-        if (m_statusProgressBar) {
-            m_statusProgressBar->setValue(100);
-            m_statusProgressBar->hide();
-        }
+        removeStatusBarTask(nodeId);
         statusBar()->showMessage(QStringLiteral("节点 %1 执行完成").arg(caption), 4000);
-        m_runningNodeId = QtNodes::InvalidNodeId;
-        m_hasRunningNode = false;
     });
 
     connect(m_workflowUI, &WorkflowUI::nodeExecutionStopped, this, [this](QtNodes::NodeId nodeId, const QString& caption) {
-        if (!m_hasRunningNode || m_runningNodeId != nodeId) {
+        if (!m_runningStatusTasks.contains(nodeId)) {
             return;
         }
-        if (m_statusProgressBar) {
-            m_statusProgressBar->setValue(0);
-            m_statusProgressBar->hide();
-        }
+        removeStatusBarTask(nodeId);
         statusBar()->showMessage(QStringLiteral("节点 %1 已停止").arg(caption), 4000);
-        m_runningNodeId = QtNodes::InvalidNodeId;
-        m_hasRunningNode = false;
     });
 
     connect(m_workflowUI, &WorkflowUI::nodeExecutionError, this, [this](QtNodes::NodeId nodeId, const QString& caption, const QString& error) {
-        if (!m_hasRunningNode || m_runningNodeId != nodeId) {
+        if (!m_runningStatusTasks.contains(nodeId)) {
             return;
         }
-        if (m_statusProgressBar) {
-            m_statusProgressBar->setValue(0);
-            m_statusProgressBar->hide();
-        }
+        removeStatusBarTask(nodeId);
         statusBar()->showMessage(QStringLiteral("节点 %1 执行出错: %2").arg(caption).arg(error), 6000);
-        m_runningNodeId = QtNodes::InvalidNodeId;
-        m_hasRunningNode = false;
+    });
+
+    connect(m_workflowUI, &WorkflowUI::nodeExecutionTerminalState, this, [this](QtNodes::NodeId nodeId) {
+        if (m_runningStatusTasks.contains(nodeId)) {
+            removeStatusBarTask(nodeId);
+        }
     });
 
     connect(m_workflowUI, &WorkflowUI::nodeExecutionStartRejected, this, [this](QtNodes::NodeId nodeId, const QString& caption, const QString& reason) {
         Q_UNUSED(nodeId);
-        if (!m_hasRunningNode) {
+        if (m_runningStatusTasks.isEmpty()) {
             statusBar()->showMessage(QStringLiteral("节点 %1 未启动: %2").arg(caption).arg(reason), 6000);
         }
     });
@@ -2694,6 +2677,39 @@ void MainWindow::initStatusBar()
 
     // 4. 左侧默认消息
     bar->showMessage(QStringLiteral("就绪"));
+}
+
+void MainWindow::showStatusBarTask(QtNodes::NodeId nodeId)
+{
+    auto it = m_runningStatusTasks.constFind(nodeId);
+    if (it == m_runningStatusTasks.constEnd()) {
+        return;
+    }
+
+    m_activeStatusTaskId = nodeId;
+    if (m_statusProgressBar) {
+        m_statusProgressBar->setValue(it->progress);
+        m_statusProgressBar->show();
+    }
+}
+
+void MainWindow::removeStatusBarTask(QtNodes::NodeId nodeId)
+{
+    const bool removedActiveTask = (m_activeStatusTaskId == nodeId);
+    m_runningStatusTasks.remove(nodeId);
+
+    if (m_runningStatusTasks.isEmpty()) {
+        m_activeStatusTaskId = QtNodes::InvalidNodeId;
+        if (m_statusProgressBar) {
+            m_statusProgressBar->setValue(0);
+            m_statusProgressBar->hide();
+        }
+        return;
+    }
+
+    if (removedActiveTask) {
+        showStatusBarTask(m_runningStatusTasks.constBegin().key());
+    }
 }
 
 void MainWindow::updateStatusBarProject(const QString& filePath)

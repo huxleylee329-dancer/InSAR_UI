@@ -165,6 +165,7 @@ void SBASReferenceReselectionNode::setInData(std::shared_ptr<NodeData> data, Por
     }
     
     updateLabels();
+    ExecutableNodeDelegateModel::setInData(data, port);
 }
 
 ::QWidget* SBASReferenceReselectionNode::embeddedWidget()

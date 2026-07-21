@@ -97,6 +97,7 @@ void ExportKMLNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     }
     
     updateLabels();
+    ExecutableNodeDelegateModel::setInData(data, port);
 }
 
 ::QWidget* ExportKMLNode::embeddedWidget()

@@ -18,6 +18,23 @@ NodeDelegateModelType *delegateModelConst(const DataFlowGraphModel* model, NodeI
     return const_cast<DataFlowGraphModel*>(model)->delegateModel<NodeDelegateModelType>(nodeId);
 }
 
+static QVariant outputDataForPropagation(ExecutableDataFlowGraphModel const *graph,
+                                          NodeId nodeId,
+                                          PortIndex portIndex)
+{
+    auto *source = delegateModelConst<ExecutableNodeDelegateModel>(graph, nodeId);
+    if (source != nullptr) {
+        // A non-terminal node must never expose its previous artifact downstream.
+        if (source->executionState() != ExecutionState::Completed &&
+            source->executionState() != ExecutionState::Warning) {
+            return QVariant{};
+        }
+        source->synchronizeOutputRevision(portIndex);
+    }
+
+    return graph->portData(nodeId, PortType::Out, portIndex, PortRole::Data);
+}
+
 ExecutableDataFlowGraphModel::ExecutableDataFlowGraphModel(std::shared_ptr<NodeDelegateModelRegistry> registry,
                                   BasicGraphicsScene *scene)
     : DataFlowGraphModel(std::move(registry))
@@ -112,8 +129,19 @@ void ExecutableDataFlowGraphModel::load(QJsonObject const &json)
 
 void ExecutableDataFlowGraphModel::addConnection(ConnectionId const connectionId)
 {
-    // Always call base class to create the connection
-    DataFlowGraphModel::addConnection(connectionId);
+    // Keep connection creation and its initial propagation on the executable
+    // path so a Running source cannot expose a stale artifact to a new child.
+    _connectivity.insert(connectionId);
+    sendConnectionCreation(connectionId);
+
+    QVariant const portDataToPropagate = outputDataForPropagation(this,
+                                                                   connectionId.outNodeId,
+                                                                   connectionId.outPortIndex);
+    setPortData(connectionId.inNodeId,
+                PortType::In,
+                connectionId.inPortIndex,
+                portDataToPropagate,
+                PortRole::Data);
 
     // If we are restoring from project, skip automatic execution triggers
     if (_isRestoring) {
@@ -167,7 +195,7 @@ void ExecutableDataFlowGraphModel::propagateFromNode(NodeId nodeId, PortIndex po
                                                                     PortType::Out,
                                                                     portIndex);
 
-    QVariant const portDataToPropagate = portData(nodeId, PortType::Out, portIndex, PortRole::Data);
+    QVariant const portDataToPropagate = outputDataForPropagation(this, nodeId, portIndex);
 
     for (auto const &cn : connected) {
         setPortData(cn.inNodeId, PortType::In, cn.inPortIndex, portDataToPropagate, PortRole::Data);
@@ -184,7 +212,7 @@ void ExecutableDataFlowGraphModel::onOutPortDataUpdated(NodeId const nodeId, Por
                                                                     PortType::Out,
                                                                     portIndex);
 
-    QVariant const portDataToPropagate = portData(nodeId, PortType::Out, portIndex, PortRole::Data);
+    QVariant const portDataToPropagate = outputDataForPropagation(this, nodeId, portIndex);
 
     for (auto const &cn : connected) {
         setPortData(cn.inNodeId, PortType::In, cn.inPortIndex, portDataToPropagate, PortRole::Data);

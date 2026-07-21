@@ -13,6 +13,7 @@
 #include "InterfaceManager.h"
 #include "tinyxml.h"
 #include <ColorBar.h>
+#include <QtCore/QHash>
 #include "qprogressdialog.h"
 #include "QtNodes/internal/Definitions.hpp"
 
@@ -204,12 +205,19 @@ private:
     QLabel* m_statusProjectLabel;
     QLabel* m_statusInterfaceLabel;
     QProgressBar* m_statusProgressBar;
-    QtNodes::NodeId m_runningNodeId;
-    bool m_hasRunningNode;
+    struct StatusBarTask
+    {
+        QString caption;
+        int progress = 0;
+    };
+    QHash<QtNodes::NodeId, StatusBarTask> m_runningStatusTasks;
+    QtNodes::NodeId m_activeStatusTaskId;
 
     void initStatusBar();
     void updateStatusBarProject(const QString& filePath);
     void updateStatusBarInterface(const QString& interfaceId);
+    void showStatusBarTask(QtNodes::NodeId nodeId);
+    void removeStatusBarTask(QtNodes::NodeId nodeId);
 
     // 更新“文件”菜单项状态
     void updateFileMenuState();

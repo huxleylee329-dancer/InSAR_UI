@@ -1836,6 +1836,31 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
         Q_EMIT nodeProgressUpdated(nodeId, caption, percent);
     }, Qt::QueuedConnection);
 
+    connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStateChanged, this,
+            [this, nodeId, caption, weakModel]() {
+        if (!weakModel) {
+            return;
+        }
+
+        switch (weakModel->executionState()) {
+        case QtNodes::ExecutionState::Completed:
+        case QtNodes::ExecutionState::Warning:
+            Q_EMIT nodeExecutionFinished(nodeId, caption);
+            break;
+        case QtNodes::ExecutionState::Idle:
+        case QtNodes::ExecutionState::Pending:
+        case QtNodes::ExecutionState::Stopped:
+        case QtNodes::ExecutionState::Disabled:
+            Q_EMIT nodeExecutionStopped(nodeId, caption);
+            break;
+        case QtNodes::ExecutionState::Error:
+            Q_EMIT nodeExecutionTerminalState(nodeId);
+            break;
+        default:
+            break;
+        }
+    }, Qt::QueuedConnection);
+
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionFinished, this, [this, nodeId, caption]() {
         Q_EMIT nodeExecutionFinished(nodeId, caption);
     }, Qt::QueuedConnection);

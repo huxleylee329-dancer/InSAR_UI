@@ -157,18 +157,15 @@ void OrbitRefinementNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
         initDatabase();
         updateLabels();
         
-        if (executionState() == ExecutionState::Pending || executionState() == ExecutionState::Idle) {
-            setState(ExecutionState::Idle);
-        }
     } else {
         m_inputNodeLabel->setText(QStringLiteral("等待输入"));
-        setState(ExecutionState::Pending);
-        invalidateExecution();
         m_outputData.reset();
         m_imageInfoData.reset();
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
     }
+
+    ExecutableNodeDelegateModel::setInData(data, port);
 }
 
 bool OrbitRefinementNode::portCaptionVisible(PortType portType, PortIndex portIndex) const

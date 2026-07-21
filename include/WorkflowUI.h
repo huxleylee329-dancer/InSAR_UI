@@ -162,6 +162,7 @@ signals:
     void nodeExecutionFinished(QtNodes::NodeId nodeId, const QString& nodeCaption);
     void nodeExecutionStopped(QtNodes::NodeId nodeId, const QString& nodeCaption);
     void nodeExecutionError(QtNodes::NodeId nodeId, const QString& nodeCaption, const QString& error);
+    void nodeExecutionTerminalState(QtNodes::NodeId nodeId);
     void nodeExecutionStartRejected(QtNodes::NodeId nodeId, const QString& nodeCaption, const QString& reason);
 
 private:

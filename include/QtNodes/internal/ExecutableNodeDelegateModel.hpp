@@ -8,6 +8,7 @@
 
 #include <unordered_map>
 #include <memory>
+#include <cstdint>
 
 namespace QtNodes {
 
@@ -121,6 +122,15 @@ public:
     std::shared_ptr<NodeData> getInputData(PortIndex portIndex);
     void setOutputData(PortIndex portIndex, std::shared_ptr<NodeData> data);
     std::shared_ptr<NodeData> getOutputData(PortIndex portIndex);
+
+    /// Runtime-only artifact generation for a given output port.
+    std::uint64_t outputRevision(PortIndex portIndex) const;
+
+    /// Detect direct output assignments made by legacy nodes before propagation.
+    void synchronizeOutputRevision(PortIndex portIndex);
+
+    /// Use when an existing output object is changed in place.
+    void markOutputArtifactChanged(PortIndex portIndex);
 
     QJsonObject save() const override;
 
@@ -255,6 +265,9 @@ protected:
     ExecutionState _state;
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _inputData;
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _outputData;
+    std::unordered_map<PortIndex, std::uint64_t> _inputRevisions;
+    std::unordered_map<PortIndex, std::uint64_t> _outputRevisions;
+    std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _lastRevisionedOutputData;
 
     // Widget managed by NodeDelegateModel base class (ownership handled by base)
     ::QWidget *_widget;
@@ -281,6 +294,8 @@ protected:
     QString _startFailureMessage;
 
 private:
+    std::uint64_t inputRevisionFromGraph(PortIndex portIndex) const;
+    void invalidateOutputArtifact(PortIndex portIndex);
     void restartAutomaticExecutionAfterInputChange();
 };
 
