@@ -1845,7 +1845,7 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
         }
         m_activeWorkflowNodes.insert(nodeId);
         Q_EMIT nodeExecutionStarted(nodeId, caption);
-    }, Qt::QueuedConnection);
+    });
 
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::progressUpdated, this, [this, nodeId, caption](int percent) {
         Q_EMIT nodeProgressUpdated(nodeId, caption, percent);

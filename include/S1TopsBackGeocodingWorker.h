@@ -17,6 +17,7 @@ public:
 
     void setDemPath(const QString& path) { m_demPath = path; }
     void setRangeRefine(bool enable) { m_bRangeRefine = enable; }
+    void setRecoverRefinementTransaction(bool enable) { m_recoverRefinementTransaction = enable; }
     void setTaskLogContext(const TaskLogContext& context) { m_taskLogContext = context; }
 
     /// 在启动任务前重置本次任务的停止请求。
@@ -56,6 +57,7 @@ private:
 
     QString m_demPath;
     bool m_bRangeRefine = false;
+    bool m_recoverRefinementTransaction = false;
     std::atomic<bool> m_stopRequested{false};
     mutable std::mutex m_backGeocodingMutex;
     std::shared_ptr<Sentinel1BackGeocoding> m_backGeocoding;

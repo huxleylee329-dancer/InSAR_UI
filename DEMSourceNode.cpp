@@ -684,10 +684,10 @@ void DEMSourceNode::onProcessingFinished(
 
     TaskLogContext logContext;
     logContext.displayName = caption();
-    const double coverage = requestedTileCount > 0
+    const double tileAvailability = requestedTileCount > 0
         ? 100.0 * availableTiles.size() / requestedTileCount : 0.0;
-    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，瓦片覆盖率 %3%，缺失：%4，输出：%5，校验：%6。")
-        .arg(availableTiles.size()).arg(requestedTileCount).arg(coverage, 0, 'f', 1)
+    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，请求瓦片可用率 %3%，缺失：%4，输出：%5，输出数据集校验：%6。")
+        .arg(availableTiles.size()).arg(requestedTileCount).arg(tileAvailability, 0, 'f', 1)
         .arg(missingTiles.isEmpty() ? QStringLiteral("无") : missingTiles.join(QStringLiteral(", ")))
         .arg(outputH5Path).arg(outputValidated ? QStringLiteral("通过") : QStringLiteral("失败"));
     InSARLogManager::LogTaskEvent(logContext,

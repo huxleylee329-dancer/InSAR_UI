@@ -14,8 +14,10 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QJsonObject>
+#include <QJsonDocument>
 #include <QJsonValue>
 #include <QJsonArray>
+#include <QMessageBox>
 #include <QTimer>
 #include <QFile>
 #include <QDateTime>
@@ -752,7 +754,9 @@ void S1TopsBackGeocodingNode::onProgressUpdate(int progress, const QString& mess
     }
 
     Q_UNUSED(message);
-    setProgress(progress);
+    // Reserve the last two percent for the node-owned preview stage. The
+    // native worker has already published valid H5 output when it reports 100.
+    setProgress(qBound(0, progress, 98));
 }
 
 QStringList S1TopsBackGeocodingNode::moveMasterToFront(const QStringList& paths, int masterIndex) const
@@ -1108,9 +1112,9 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
     m_processingWarning = hasQualityWarning;
     m_processingQualityWarnings = qualityWarnings;
     if (m_processingWarning) {
-        InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
-            QStringLiteral("后向地理编码配准完成，但结果包含几何质量告警：\n%1")
-                .arg(m_processingQualityWarnings.join('\n')));
+        InSARLogManager::LogDebug("S1TopsBackGeocodingNode",
+            QStringLiteral("Worker quality warnings: %1").arg(m_processingQualityWarnings.join(" | ")),
+            "quality.summary");
     }
 
     // Worker 保持原输入顺序计算，Node 仅在输出阶段把主影像稳定移到首位
@@ -1142,7 +1146,16 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
         }
 
         const QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, orderedH5Paths, jpgPaths, overviewPaths]() {
+        const std::shared_ptr<QElapsedTimer> previewTimer = std::make_shared<QElapsedTimer>();
+        previewTimer->start();
+        setProgress(99);
+        InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
+            QStringLiteral("最终配准 H5 已发布，正在生成预览：%1 个 H5 预览，%2 张配准概览图。")
+                .arg(orderedH5Paths.size()).arg(overviewPaths.size()),
+            LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+            QStringLiteral("preview"), QStringLiteral("running"), QStringLiteral("running"));
+
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, orderedH5Paths, jpgPaths, overviewPaths, previewTimer]() {
             if (discardObsoleteAutomaticExecution()) {
                 return;
             }
@@ -1184,6 +1197,18 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
             }
             Q_EMIT dataUpdated(1);
 
+            const qint64 previewElapsedMs = previewTimer->isValid() ? previewTimer->elapsed() : -1;
+            InSARLogManager::LogDiagnostic(
+                anyFailed || overviewFailed ? InSARLogManager::LevelWarning : InSARLogManager::LevelInfo,
+                "S1 TOPS Back-Geocoding",
+                QStringLiteral("预览生成完成：H5 预览 %1/%2，配准概览图 %3/%4。")
+                    .arg(validJpgPaths.size()).arg(jpgPaths.size())
+                    .arg(m_registrationOverviewPaths.size()).arg(overviewPaths.size()),
+                LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                QStringLiteral("preview"), QStringLiteral("completed"),
+                anyFailed || overviewFailed ? QStringLiteral("completed_with_warnings") : QStringLiteral("completed"),
+                previewElapsedMs);
+
             updateParameterWidgetsEnableState();
 
             const bool hasWarning = m_processingWarning || anyFailed || overviewFailed;
@@ -1196,19 +1221,20 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
                     warningMessage.append(QStringLiteral("Some preview images could not be generated."));
                 }
                 setLastWarningMessage(warningMessage);
-                setState(ExecutionState::Warning);
-                if (anyFailed) {
-                    InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "executeProcessing completed with warnings. Some preview images failed to generate.");
-                }
+                InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "S1 TOPS Back-Geocoding",
+                    QStringLiteral("后向地理编码完成，但包含告警：%1 输出：%2")
+                        .arg(warningMessage.simplified(), orderedH5Paths.join("; ")),
+                    LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"),
+                    QStringLiteral("completed_with_warnings"),
+                    m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
 
-                // Warning 状态也要通知完成
-                setProgress(100);
-                Q_EMIT computingFinished();
-                Q_EMIT dataUpdated(0);
+                finishExecutionWithWarning();
             } else {
-                setState(ExecutionState::Running); // 确保 finishExecution() 能通过状态校验
                 setProgress(100);
-                InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
+                InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
+                    QStringLiteral("后向地理编码完成。输出：%1").arg(orderedH5Paths.join("; ")),
+                    LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("completed"),
+                    m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
                 finishExecution();
                 Q_EMIT dataUpdated(0);
             }
@@ -1231,9 +1257,11 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
         Q_EMIT dataUpdated(1);
 
         updateParameterWidgetsEnableState();
-        setState(ExecutionState::Running);
         setProgress(100);
-        InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing completed.");
+        InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
+            QStringLiteral("后向地理编码完成。输出：%1").arg(orderedH5Paths.join("; ")),
+            LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("completed"),
+            m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
         finishExecution();
         Q_EMIT dataUpdated(0);
     }
@@ -1245,8 +1273,11 @@ void S1TopsBackGeocodingNode::onError(const QString& error)
         return;
     }
 
-    InSARLogManager::LogError("S1TopsBackGeocodingNode", "Execution failed: " + error);
-    qDebug() << "[RegistrationNode] Error:" << error;
+    InSARLogManager::LogDiagnostic(InSARLogManager::LevelError, "S1 TOPS Back-Geocoding",
+        QStringLiteral("后向地理编码失败：%1").arg(error),
+        LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+        QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("failed"),
+        m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
 
     setLastErrorMessage(error);
     setState(ExecutionState::Error);
@@ -1261,10 +1292,15 @@ void S1TopsBackGeocodingNode::onCancelled(const QStringList& cleanupFailures)
     }
 
     if (!cleanupFailures.isEmpty()) {
-        InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
-            QStringLiteral("后向地理编码已取消，但部分临时输出未能清理：%1").arg(cleanupFailures.join(", ")));
+        InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "S1 TOPS Back-Geocoding",
+            QStringLiteral("后向地理编码已取消，但部分临时输出未能清理：%1").arg(cleanupFailures.join(", ")),
+            LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("cancelled"),
+            m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
     } else {
-        InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "Back-geocoding cancelled by user.");
+        InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
+            QStringLiteral("后向地理编码已取消。"), LogTargets(LogTarget::UserProjectLog),
+            QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("cancelled"),
+            m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
     }
 
     setState(ExecutionState::Stopped);
@@ -1362,6 +1398,53 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     m_preparedBESD = m_esdCheckBox ? m_esdCheckBox->isChecked() : true;
     m_preparedBRangeRefine = m_rangeRefineCheckBox ? m_rangeRefineCheckBox->isChecked() : false;
     m_preparedDemPath = m_demPath;
+    m_preparedRecoverRefinementTransaction = false;
+    m_preparedCleanOutputDirectory = false;
+
+    const QString refinementManifestPath = QDir(m_preparedSavePath).filePath(
+        m_preparedDstNode + QStringLiteral("/refinement_transaction.json"));
+    QFile refinementManifest(refinementManifestPath);
+    if (refinementManifest.exists()) {
+        if (!refinementManifest.open(QIODevice::ReadOnly)) {
+            InSARLogManager::LogError("S1TopsBackGeocodingNode",
+                QString("Unable to read refinement transaction manifest: %1").arg(refinementManifestPath));
+            return false;
+        }
+        QJsonParseError parseError = {};
+        const QJsonDocument document = QJsonDocument::fromJson(refinementManifest.readAll(), &parseError);
+        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+            InSARLogManager::LogError("S1TopsBackGeocodingNode",
+                QString("Refinement transaction manifest is invalid: %1").arg(refinementManifestPath));
+            return false;
+        }
+        const QString state = document.object().value(QStringLiteral("state")).toString();
+        if (state == QStringLiteral("in_progress") || state == QStringLiteral("failed")) {
+            if (_isAutoTriggered) {
+                // Automatic execution follows an explicit upstream rerun. Recover this
+                // node's interrupted transaction before its output is replaced.
+                m_preparedRecoverRefinementTransaction = true;
+                InSARLogManager::LogInfo("S1TopsBackGeocodingNode",
+                    QString("Automatic rerun will recover and replace the previous refinement transaction: %1")
+                        .arg(refinementManifestPath));
+            }
+            else {
+            QMessageBox confirmation(QMessageBox::Warning, QStringLiteral("检测到未完成的精化事务"),
+                QStringLiteral("输出目录中存在未完成或失败的精化事务。\n\n"
+                    "“清理并重新运行”会调用 DLL 回滚/清理该事务及临时文件，然后重新执行配准。\n"
+                    "不会发布当前遗留输出。"), QMessageBox::Cancel, _widget);
+            QPushButton* recoverAndRun = confirmation.addButton(QStringLiteral("清理并重新运行"), QMessageBox::AcceptRole);
+            confirmation.setDefaultButton(recoverAndRun);
+            confirmation.exec();
+            if (confirmation.clickedButton() != recoverAndRun) return false;
+            m_preparedRecoverRefinementTransaction = true;
+            }
+        }
+        else if (state != QStringLiteral("complete")) {
+            InSARLogManager::LogError("S1TopsBackGeocodingNode",
+                QString("Refinement transaction manifest has an unsupported state '%1': %2").arg(state, refinementManifestPath));
+            return false;
+        }
+    }
 
     // 覆盖提示判断
     QStringList pathsToCheck;
@@ -1392,7 +1475,7 @@ bool S1TopsBackGeocodingNode::prepareToStart()
         }
     }
 
-    if (_isAutoTriggered) {
+    if (m_preparedRecoverRefinementTransaction || _isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
         m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
@@ -1401,6 +1484,8 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
         return false;
     }
+    m_preparedCleanOutputDirectory =
+        m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite;
 
     m_preparedImagesNumber = 0;
     model = projectModel();
@@ -1435,7 +1520,10 @@ bool S1TopsBackGeocodingNode::prepareToStart()
 
 void S1TopsBackGeocodingNode::executeProcessing()
 {
-    InSARLogManager::LogInfo("S1TopsBackGeocodingNode", "executeProcessing started.");
+    m_executionTimer.start();
+    InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
+        QStringLiteral("后向地理编码任务已提交。"), LogTargets(LogTarget::UserProjectLog),
+        QStringLiteral("lifecycle"), QStringLiteral("queued"), QStringLiteral("queued"));
 
     // 检测是否有运行中的线程，有的话先安全终止，消灭重入隐患
     if (m_workerThread || m_thread) {
@@ -1458,6 +1546,14 @@ void S1TopsBackGeocodingNode::executeProcessing()
         return;
     }
 
+    // A complete result can be discarded at once. An interrupted transaction
+    // remains until the worker has recovered it with the DLL.
+    if (m_preparedCleanOutputDirectory && !m_preparedRecoverRefinementTransaction &&
+        !clearPreparedOutputDirectory()) {
+        onError(QStringLiteral("Failed to clean the previous back-geocoding output directory."));
+        return;
+    }
+
     // 清理旧数据，防止反复执行导致UI Tree数据累加
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
 
@@ -1468,11 +1564,14 @@ void S1TopsBackGeocodingNode::executeProcessing()
     // Create thread
     m_thread = new QThread();
     m_workerThread = new S1TopsBackGeocodingWorker();
-    TaskLogContext logContext;
+    TaskLogContext logContext = InSARLogManager::currentTaskContext();
+    logContext.nodeId = name();
     logContext.displayName = caption();
+    logContext.scope = QStringLiteral("task");
     m_workerThread->setTaskLogContext(logContext);
     m_workerThread->setDemPath(m_preparedDemPath);
     m_workerThread->setRangeRefine(m_preparedBRangeRefine);
+    m_workerThread->setRecoverRefinementTransaction(m_preparedRecoverRefinementTransaction);
     m_workerThread->prepareForStart();
     m_workerThread->moveToThread(m_thread);
 
@@ -1498,6 +1597,9 @@ void S1TopsBackGeocodingNode::executeProcessing()
     bool b_ESD = m_preparedBESD;
     
     connect(m_thread, &QThread::started, [this, images_number, masterIndex, savePath, dstProject, srcNode, dstNode, b_ESD]() {
+        InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
+            QStringLiteral("后向地理编码 Worker 已启动。"), LogTargets(LogTarget::UserProjectLog),
+            QStringLiteral("lifecycle"), QStringLiteral("worker_started"), QStringLiteral("running"));
         Q_EMIT startBackGeocoding(images_number, masterIndex, savePath, dstProject, srcNode, dstNode, projectModel(), b_ESD);
     });
     connect(m_workerThread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1TopsBackGeocodingNode::onProgressUpdate);
@@ -1523,6 +1625,35 @@ void S1TopsBackGeocodingNode::executeProcessing()
     });
 }
 
+bool S1TopsBackGeocodingNode::clearPreparedOutputDirectory()
+{
+    const QString relativeOutputDirectory = QDir::cleanPath(
+        QDir::fromNativeSeparators(m_preparedDstNode));
+    if (relativeOutputDirectory.isEmpty() || relativeOutputDirectory == QStringLiteral(".") ||
+        relativeOutputDirectory == QStringLiteral("..") || relativeOutputDirectory.startsWith(QStringLiteral("../")) ||
+        relativeOutputDirectory.contains('/') || QDir::isAbsolutePath(relativeOutputDirectory)) {
+        InSARLogManager::LogError("S1TopsBackGeocodingNode",
+            QString("Refusing to clear an unsafe back-geocoding output directory name: %1")
+                .arg(m_preparedDstNode));
+        return false;
+    }
+
+    QDir outputDirectory(QDir(m_preparedSavePath).filePath(relativeOutputDirectory));
+    if (!outputDirectory.exists()) {
+        return true;
+    }
+    if (!outputDirectory.removeRecursively()) {
+        InSARLogManager::LogError("S1TopsBackGeocodingNode",
+            QString("Failed to clear previous back-geocoding output directory: %1")
+                .arg(outputDirectory.absolutePath()));
+        return false;
+    }
+
+    InSARLogManager::LogInfo("S1TopsBackGeocodingNode",
+        QString("Cleared previous back-geocoding output before rerun: %1")
+            .arg(outputDirectory.absolutePath()));
+    return true;
+}
 bool S1TopsBackGeocodingNode::isCompleteBackGeocodingOutput(const QString& path) const
 {
     if (!QFileInfo::exists(path)) {
@@ -2627,25 +2758,25 @@ private:
         }
         double meanPreCoh = (preCohValidCount > 0) ? (sumPreCoh / preCohValidCount) : -1.0;
 
-        // 临时调试：输出配准后相干性与精度评估报告（附带具体的阶段标识，便于在大量调试日志中快速归类定位）
-        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] ============ Coherence & Offset Assessment Report ============\n");
-        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] Overall Assessment: %s\n", 
-               (failedCount == 0 && perfectCount == 5 && meanCoh >= 0.22) ? "PASS - Excellent Registration Quality" :
-               (failedCount > 0 || meanCoh < 0.18) ? "FAILED - Large Residual Offsets or Low Coherence" :
-               "WARNING - Moderate Registration Quality");
-        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] Global Mean Coherence: Pre-Reg = %.4f, Post-Reg = %.4f (Change: %+.4f)\n", 
-               meanPreCoh, meanCoh, (meanPreCoh >= 0.0 ? (meanCoh - meanPreCoh) : 0.0));
-        printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification] ---------------- Sample Points Details ----------------\n");
+        const QString assessment = (failedCount == 0 && perfectCount == 5 && meanCoh >= 0.22)
+            ? QStringLiteral("pass")
+            : (failedCount > 0 || meanCoh < 0.18) ? QStringLiteral("failed") : QStringLiteral("warning");
+        InSARLogManager::LogDebug("S1TopsRegistrationEvalWidget",
+            QString("Coherence assessment: status=%1, preMean=%2, postMean=%3, change=%4, perfect=%5, warning=%6, failed=%7")
+                .arg(assessment).arg(meanPreCoh, 0, 'f', 4).arg(meanCoh, 0, 'f', 4)
+                .arg(meanPreCoh >= 0.0 ? meanCoh - meanPreCoh : 0.0, 0, 'f', 4)
+                .arg(perfectCount).arg(warningCount).arg(failedCount),
+            "registration.assessment");
         for (int i = 0; i < 5; ++i) {
-            printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification]  * Sample Point %d (X: %d, Y: %d)\n", 
-                   i + 1, m_points[i].x, m_points[i].y);
-            printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification]    - Coherence: Pre-Reg = %.4f, Post-Reg = %.4f, Coh @ Max-Corr Offset = %.4f\n", 
-                   m_inputCoherence[i], m_results[i].coherenceZeroShift, m_results[i].coherenceOptimal);
-            printf("[InSAR_DEBUG_COREG] [UI] [Stage: Post-Registration Verification]    - Correlation: Residual Offset (X: %d, Y: %d), Correlation Coeff = %.4f%s\n", 
-                   m_results[i].offsetX, m_results[i].offsetY, m_results[i].maxCorrelation,
-                   (m_results[i].maxCorrelation < 0.15 || m_results[i].coherenceZeroShift < 0.20) ? " (Low Confidence Point*, ignored)" : "");
+            InSARLogManager::LogDebug("S1TopsRegistrationEvalWidget",
+                QString("Assessment sample=%1, point=(%2,%3), coherence={pre=%4, post=%5, optimal=%6}, residualOffset=(%7,%8), correlation=%9, lowConfidence=%10")
+                    .arg(i + 1).arg(m_points[i].x).arg(m_points[i].y)
+                    .arg(m_inputCoherence[i], 0, 'f', 4).arg(m_results[i].coherenceZeroShift, 0, 'f', 4)
+                    .arg(m_results[i].coherenceOptimal, 0, 'f', 4).arg(m_results[i].offsetX).arg(m_results[i].offsetY)
+                    .arg(m_results[i].maxCorrelation, 0, 'f', 4)
+                    .arg((m_results[i].maxCorrelation < 0.15 || m_results[i].coherenceZeroShift < 0.20) ? "true" : "false"),
+                "registration.assessment.sample");
         }
-        printf("[InSAR_DEBUG_COREG] [Stage: Post-Registration Verification] =========================================================================\n");
 
         // 智能诊断判定：幅相不一致（当相干性偏低，且最大相关偏置处的相干性反而小于零偏置相干性时，说明互相关可能受到相位噪声伪匹配的干扰）
         bool hasMismatch = false;

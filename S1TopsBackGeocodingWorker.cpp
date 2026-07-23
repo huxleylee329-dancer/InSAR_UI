@@ -112,6 +112,11 @@ struct BackGeocodingOutputCleanupGuard {
 		dismissed = true;
 	}
 
+	void resetForFreshOutput() {
+		preExistingOutputs.clear();
+		outputDirExisted = false;
+	}
+
 	QStringList outputPaths;
 	QSet<QString> preExistingOutputs;
 	QString savePath;
@@ -144,6 +149,12 @@ void __stdcall S1TopsBackGeocodingWorker::onNativeDiagnostic(const InSARDiagnost
 
 void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEvent* event) noexcept
 {
+    const QString phase = nativeText(event->phase);
+    if (phase == QStringLiteral("progress.update") && event->statusCode >= 0 && event->statusCode <= 100) {
+        Q_EMIT updateProcess(event->statusCode, nativeText(event->message));
+        return;
+    }
+
     InSARLogManager::LogLevel level = InSARLogManager::LevelDebug;
     if (event->severity == INSAR_DIAGNOSTIC_WARNING) level = InSARLogManager::LevelWarning;
     else if (event->severity == INSAR_DIAGNOSTIC_ERROR) level = InSARLogManager::LevelError;
@@ -158,9 +169,13 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
     if (!dataset.isEmpty()) message += QStringLiteral(" [dataset=%1]").arg(dataset);
 
     LogTargets targets = LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile;
-    if (level == InSARLogManager::LevelError) targets |= LogTarget::UserProjectLog;
+    if (level == InSARLogManager::LevelError ||
+        phase == QStringLiteral("refinement.cleanup_verified") ||
+        phase == QStringLiteral("refinement.cleanup_residual")) {
+        targets |= LogTarget::UserProjectLog;
+    }
     InSARLogManager::LogTaskEvent(m_taskLogContext, level, "Sentinel1BackGeocoding", message,
-                                  targets, nativeText(event->phase), QString(), event->elapsedMs);
+                                  targets, phase, QString(), event->elapsedMs);
 }
 
 void S1TopsBackGeocodingWorker::prepareForStart()
@@ -196,6 +211,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	bool b_ESD
 )
 {
+	ScopedTaskLogContext taskLogContextGuard(m_taskLogContext);
 	if (images_number < 2 ||
 		masterIndex < 1 ||
 		masterIndex > images_number ||
@@ -306,15 +322,17 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		finishCancelled();
 		return;
 	}
-	emit updateProcess(10, QStringLiteral("开始后向地理编码配准……"));
-	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Starting S1 TOPS Back-Geocoding. Total images: %1, Master Index: %2, ESD Enabled: %3")
-		.arg(images_number).arg(masterIndex).arg(b_ESD ? "True" : "False"));
+    emit updateProcess(10, QStringLiteral("Starting Sentinel-1 back-geocoding..."));
+	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", QStringLiteral("Worker execution started: images=%1, master=%2, esd=%3, rangeRefinement=%4")
+		.arg(images_number).arg(masterIndex).arg(b_ESD ? QStringLiteral("启用") : QStringLiteral("关闭"))
+		.arg(m_bRangeRefine ? QStringLiteral("启用") : QStringLiteral("关闭")), "worker.started");
 	for (size_t i = 0; i < SAR_images.size(); ++i) {
-		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("  Input Image [%1]: %2 -> Output: %3")
-			.arg(i + 1).arg(QString::fromStdString(SAR_images[i])).arg(QString::fromStdString(SAR_images_regis[i])));
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", QString("Input image=%1, source=%2, output=%3")
+			.arg(i + 1).arg(QString::fromStdString(SAR_images[i])).arg(QString::fromStdString(SAR_images_regis[i])),
+			"coregistration.input");
 	}
 
-	// 临时调试：输出配准环境诊断信息到 Console
+	// Keep environment details out of project.log while retaining them for diagnosis.
 	cv::Mat test_orbit;
 	bool hasPreciseOrbit = false;
 	{
@@ -322,19 +340,19 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		FormatConversion temp_conv;
 		hasPreciseOrbit = (temp_conv.read_array_from_h5(SAR_images[0].c_str(), "fine_state_vec", test_orbit) == 0);
 	}
-	printf("[InSAR_DEBUG_COREG] [Worker] ============ Coregistration Environment Diagnostics ============\n");
-	printf("[InSAR_DEBUG_COREG] [Worker] 1. Precise Orbit Detection (POEORB/RESORB): %s\n", hasPreciseOrbit ? "Precise Orbit Loaded (fine_state_vec available)" : "No Precise Orbit (using default orbit)");
-	printf("[InSAR_DEBUG_COREG] [Worker] 2. ESD Azimuth Refinement: %s\n", b_ESD ? "ENABLED" : "DISABLED");
-	printf("[InSAR_DEBUG_COREG] [Worker] 3. Range Amplitude Refinement: %s\n", m_bRangeRefine ? "ENABLED" : "DISABLED");
-	printf("[InSAR_DEBUG_COREG] [Worker] 4. Resampling Interpolator: Sinc Interpolation (8-point windowed kernel)\n");
-	printf("[InSAR_DEBUG_COREG] [Worker] ==================================================================\n");
+	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+		QString("Coregistration environment: preciseOrbit=%1, esd=%2, rangeRefinement=%3, interpolator=sinc(kernelRadius=4)")
+			.arg(hasPreciseOrbit ? "loaded" : "unavailable")
+			.arg(b_ESD ? "enabled" : "disabled")
+			.arg(m_bRangeRefine ? "enabled" : "disabled"),
+		"coregistration.environment");
 
-	// 优先使用项目全局高程路径，如为空则回退到运行程序下的 dem 文件夹
+	// 优先使用项目全局高程路径，如为空则回退到运行程序下�?dem 文件�?
 	if (demPath.isEmpty()) {
 		QString appPath = QCoreApplication::applicationDirPath();
 		demPath = appPath + "/dem";
 	}
-	// 只有当 demPath 不是文件路径且目录不存在时，才创建目录
+	// 只有�?demPath 不是文件路径且目录不存在时，才创建目�?
 	if (!demPath.isEmpty()) {
 		bool isFile = demPath.endsWith(".tif", Qt::CaseInsensitive) || 
 		              demPath.endsWith(".tiff", Qt::CaseInsensitive) || 
@@ -344,11 +362,134 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		}
 	}
 	//后向地理编码配准
+	std::string tmpDem = demPath.toStdString();
+	std::replace(tmpDem.begin(), tmpDem.end(), '/', '\\');
+	std::vector<SentinelRefinementImageResult> refinementImages(images_number - 1);
+	SentinelRefinementOptions refinementOptions = {};
+	refinementOptions.version = SENTINEL_REFINEMENT_OPTIONS_VERSION;
+	refinementOptions.structSize = sizeof(refinementOptions);
+	refinementOptions.enableEsd = b_ESD ? 1 : 0;
+	refinementOptions.esdRangeMultilook = 16;
+	refinementOptions.esdAzimuthMultilook = 4;
+	refinementOptions.esdCoherenceThreshold = 0.4;
+	refinementOptions.esdHistogramBinSize = 0.1;
+	refinementOptions.esdDopplerRateHz = 4500.0;
+	refinementOptions.esdAzimuthBandwidthHz = 486.0;
+	refinementOptions.rangeSamplePointCount = 5;
+	refinementOptions.rangeTemplateSize = 200;
+	refinementOptions.rangeSearchSize = 206;
+	refinementOptions.rangeOffsetMode = m_bRangeRefine ? SENTINEL_RANGE_OFFSET_ESTIMATE : SENTINEL_RANGE_OFFSET_NONE;
+	SentinelRefinementResult refinementResult = {};
+	refinementResult.version = SENTINEL_REFINEMENT_RESULT_VERSION;
+	refinementResult.structSize = sizeof(refinementResult);
+	refinementResult.images = refinementImages.data();
+	refinementResult.imageCapacity = static_cast<int>(refinementImages.size());
+	ret = backgeocoding.init(SAR_images, SAR_images_regis, tmpDem.c_str(), masterIndex,
+		&S1TopsBackGeocodingWorker::onNativeDiagnostic, this);
+	if (ret != 0) {
+		SentinelRefinementTransactionStatus transactionStatus = {};
+		transactionStatus.version = SENTINEL_REFINEMENT_TRANSACTION_STATUS_VERSION;
+		transactionStatus.structSize = sizeof(transactionStatus);
+		if (backgeocoding.getPostRegistrationRefinementTransactionStatus(transactionStatus) == 0 &&
+			(transactionStatus.state == SENTINEL_REFINEMENT_TRANSACTION_IN_PROGRESS ||
+				transactionStatus.state == SENTINEL_REFINEMENT_TRANSACTION_FAILED)) {
+			if (m_recoverRefinementTransaction) {
+				InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+					"User-confirmed refinement recovery started.");
+				const int recoveryResult = backgeocoding.recoverPostRegistrationRefinementTransaction();
+				SentinelRefinementTransactionStatus recoveredStatus = {};
+				recoveredStatus.version = SENTINEL_REFINEMENT_TRANSACTION_STATUS_VERSION;
+				recoveredStatus.structSize = sizeof(recoveredStatus);
+				if (recoveryResult != 0 ||
+					backgeocoding.getPostRegistrationRefinementTransactionStatus(recoveredStatus) != 0 ||
+					recoveredStatus.state != SENTINEL_REFINEMENT_TRANSACTION_NONE) {
+					emit errorProcess(QStringLiteral("Failed to recover the previous Sentinel-1 refinement transaction: %1").arg(recoveryResult));
+					return;
+				}
+				InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+                    "Refinement recovery completed. Clearing the previous node output before rerun.");
+                QDir recoveredOutputDirectory(QDir(savePath).filePath(dstNode));
+                if (recoveredOutputDirectory.exists() && !recoveredOutputDirectory.removeRecursively()) {
+                    emit errorProcess(QStringLiteral("Failed to clear the recovered Sentinel-1 output directory: %1")
+                        .arg(recoveredOutputDirectory.absolutePath()));
+                    return;
+                }
+                if (!QDir(savePath).mkdir(dstNode)) {
+                    emit errorProcess(QStringLiteral("Failed to recreate the Sentinel-1 output directory: %1")
+                        .arg(QDir(savePath).filePath(dstNode)));
+                    return;
+                }
+                cleanupGuard.resetForFreshOutput();
+                InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+                    "Previous output cleared. Retrying Sentinel-1 initialization.");
+				ret = backgeocoding.init(SAR_images, SAR_images_regis, tmpDem.c_str(), masterIndex,
+					&S1TopsBackGeocodingWorker::onNativeDiagnostic, this);
+			}
+			if (ret != 0) {
+				InSARLogManager::LogWarning("S1TopsBackGeocodingWorker",
+					QString("Refinement transaction requires explicit recovery: state=%1, outputs=%2, verified=%3.")
+						.arg(transactionStatus.state).arg(transactionStatus.outputCount).arg(transactionStatus.verifiedOutputCount));
+				emit errorProcess(QStringLiteral("Sentinel-1 refinement transaction is incomplete or failed. Recover or clean it explicitly before retrying."));
+				return;
+			}
+		}
+	}
+	if (ret != 0) { emit errorProcess(QStringLiteral("Failed to initialize Sentinel-1 registration: %1").arg(ret)); return; }
+	ret = backgeocoding.backGeoCodingCoregistration(&refinementOptions, &refinementResult,
+		&S1TopsBackGeocodingWorker::onNativeDiagnostic, this);
+	if (ret == -2 || cancellationRequested()) { finishCancelled(); return; }
+	if (ret != 0) { emit errorProcess(QStringLiteral("Sentinel-1 registration transaction failed: %1").arg(ret)); return; }
+
+	const bool hasRangeOffsets = refinementOptions.rangeOffsets != nullptr;
+	const bool expectsCoreOnlyBaseline = refinementOptions.enableEsd == 0 &&
+		refinementOptions.rangeOffsetMode == SENTINEL_RANGE_OFFSET_NONE &&
+		!hasRangeOffsets && refinementOptions.rangeOffsetCount == 0;
+	QString executionPathName;
+	switch (refinementResult.executionPath) {
+	case SENTINEL_EXECUTION_PATH_CORE_ONLY_BASELINE:
+		executionPathName = QStringLiteral("core_only_baseline");
+		break;
+	case SENTINEL_EXECUTION_PATH_POST_REGISTRATION_REFINEMENT:
+		executionPathName = QStringLiteral("post_registration_refinement");
+		break;
+	default:
+		executionPathName = QStringLiteral("unspecified_or_unknown");
+		break;
+	}
+	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+		QString("Refinement execution: path=%1 (%2), enableEsd=%3, rangeOffsetMode=%4, hasRangeOffsets=%5, rangeOffsetCount=%6.")
+			.arg(executionPathName).arg(refinementResult.executionPath).arg(refinementOptions.enableEsd)
+			.arg(refinementOptions.rangeOffsetMode).arg(hasRangeOffsets ? "true" : "false").arg(refinementOptions.rangeOffsetCount));
+	const int expectedExecutionPath = expectsCoreOnlyBaseline ?
+		SENTINEL_EXECUTION_PATH_CORE_ONLY_BASELINE : SENTINEL_EXECUTION_PATH_POST_REGISTRATION_REFINEMENT;
+	if (refinementResult.executionPath != expectedExecutionPath) {
+		emit errorProcess(QStringLiteral("Sentinel-1 refinement returned an unexpected execution path: %1 (expected %2).")
+			.arg(refinementResult.executionPath).arg(expectedExecutionPath));
+		return;
+	}
+
+	bool hasRefinementWarning = false;
+	QStringList refinementWarnings;
+	for (int i = 0; i < refinementResult.imageCount; ++i) {
+		const SentinelRefinementImageResult& image = refinementResult.images[i];
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+			QString("Refinement result: image=%1, offset_a=%2, offset_r=%3, esdQuality=%4, rangeQuality=%5, warningFlags=%6")
+				.arg(image.imageIndex).arg(image.esdAzimuthOffset, 0, 'g', 12).arg(image.rangeOffset, 0, 'g', 12)
+				.arg(image.esdQualityCode).arg(image.rangeQualityCode).arg(image.warningFlags),
+			"refinement.result");
+
+		const bool esdWarning = b_ESD && image.esdQualityCode >= 3;
+		const bool rangeWarning = m_bRangeRefine && image.rangeQualityCode >= 3;
+		if (esdWarning || rangeWarning) {
+			hasRefinementWarning = true;
+            refinementWarnings.append(QStringLiteral("Slave image %1 refinement reported a quality warning.").arg(image.imageIndex));
+		}
+	}
+
+#if 0
 	FormatConversion conversion;
 	ComplexMat slaveSLC, tmp;
 	Utils util;
-	std::string tmpDem = demPath.toStdString();
-	std::replace(tmpDem.begin(), tmpDem.end(), '/', '\\');
 
 	{
 		NodeUtils::Hdf5Locker locker;
@@ -358,7 +499,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Failed to load Sentinel-1 images metadata.");
 		return;
 	}
-	emit updateProcess(11, QStringLiteral("主从影像数据元数据加载完毕……"));
+    emit updateProcess(11, QStringLiteral("Sentinel-1 metadata loaded..."));
 	ret = backgeocoding.setDEMPath(tmpDem.c_str());
 	if (ret < 0) {
 		emit errorProcess("Failed to set DEM path.");
@@ -390,7 +531,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Failed to read master SLC from H5.");
 		return;
 	}
-	emit updateProcess(12, QStringLiteral("主影像 SLC 数据读取完毕，正在初始化配准空间……"));
+    emit updateProcess(12, QStringLiteral("Master SLC loaded; initializing registration workspace..."));
 	tmp.convertTo(tmp, CV_32F);
 	{
 		NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[masterIndex - 1]);
@@ -410,14 +551,14 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Failed to create or write master registration H5 file.");
 		return;
 	}
-	emit updateProcess(14, QStringLiteral("主影像注册 H5 空间初始化完毕……"));
+    emit updateProcess(14, QStringLiteral("Master registration H5 initialized..."));
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Successfully loaded Master SLC data and set DEM path.");
 
-	// 从影像不再预写入整个全 0 的大矩阵，改为调用 create_empty_dataset 延迟分配物理磁盘空间
+	// 从影像不再预写入整个�?0 的大矩阵，改为调�?create_empty_dataset 延迟分配物理磁盘空间
 	for (int i = 0; i < backgeocoding.numOfImages; i++)
 	{
 		if (i == masterIndex - 1) continue;
-		emit updateProcess(14 + i, QStringLiteral("正在初始化从影像 %1/%2 的 H5 空间……").arg(i + 1).arg(backgeocoding.numOfImages));
+        emit updateProcess(14 + i, QStringLiteral("Initializing slave image %1/%2 H5 workspace...").arg(i + 1).arg(backgeocoding.numOfImages));
 		{
 			NodeUtils::Hdf5Locker locker(backgeocoding.outFiles[i]);
 			ret = conversion.creat_new_h5(backgeocoding.outFiles[i].c_str());
@@ -440,7 +581,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			return;
 		}
 	}
-	emit updateProcess(18, QStringLiteral("所有从影像 H5 空间初始化完毕，准备执行后向投影……"));
+    emit updateProcess(18, QStringLiteral("Slave H5 workspaces initialized; preparing back projection..."));
 
 	cv::Mat start(backgeocoding.su[masterIndex - 1]->burstCount, 1, CV_32S), end(backgeocoding.su[masterIndex - 1]->burstCount, 1, CV_32S);
 	start.at<int>(0, 0) = 1;
@@ -636,9 +777,54 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			finishCancelled();
 			return;
 		}
-		emit updateProcess(10.0 + 50.0 / burstCount * (i + 1), QStringLiteral("后向地理编码配准……"));
+        emit updateProcess(10.0 + 50.0 / burstCount * (i + 1), QStringLiteral("Back-geocoding registration..."));
 	}
 
+	if (b_ESD || m_bRangeRefine)
+	{
+		std::vector<SentinelRefinementImageResult> refinementImages(backgeocoding.numOfImages - 1);
+		SentinelRefinementOptions options = {};
+		options.version = SENTINEL_REFINEMENT_OPTIONS_VERSION;
+		options.structSize = sizeof(options);
+		options.enableEsd = b_ESD ? 1 : 0;
+		options.esdRangeMultilook = 16;
+		options.esdAzimuthMultilook = 4;
+		options.esdCoherenceThreshold = 0.4;
+		options.esdHistogramBinSize = 0.1;
+		options.esdDopplerRateHz = 4500.0;
+		options.esdAzimuthBandwidthHz = 486.0;
+		options.rangeSamplePointCount = 5;
+		options.rangeTemplateSize = 200;
+		options.rangeSearchSize = 206;
+		options.rangeOffsetMode = m_bRangeRefine ? SENTINEL_RANGE_OFFSET_ESTIMATE : SENTINEL_RANGE_OFFSET_NONE;
+		options.rangeOffsets = nullptr;
+		options.rangeOffsetCount = 0;
+		options.transactionDirectory = nullptr;
+
+		SentinelRefinementResult refinementResult = {};
+		refinementResult.version = SENTINEL_REFINEMENT_RESULT_VERSION;
+		refinementResult.structSize = sizeof(refinementResult);
+		refinementResult.images = refinementImages.data();
+		refinementResult.imageCapacity = static_cast<int>(refinementImages.size());
+		ret = backgeocoding.applyPostRegistrationRefinement(options, refinementResult,
+			&S1TopsBackGeocodingWorker::onNativeDiagnostic, this);
+		if (ret == -2 || cancellationRequested()) { finishCancelled(); return; }
+		if (ret != 0) {
+			emit errorProcess(QStringLiteral("Post-registration refinement transaction failed: %1").arg(ret));
+			return;
+		}
+		for (int i = 0; i < refinementResult.imageCount; ++i) {
+			const SentinelRefinementImageResult& image = refinementResult.images[i];
+			InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+				QString("Refinement image=%1, offset_a=%2, offset_r=%3, esdQuality=%4, rangeQuality=%5, warnings=%6")
+					.arg(image.imageIndex).arg(image.esdAzimuthOffset).arg(image.rangeOffset)
+					.arg(image.esdQualityCode).arg(image.rangeQualityCode).arg(image.warningFlags), "refinement.result");
+		}
+	}
+
+	// Legacy UI-side refinement retained only in source history; the active
+	// implementation is the DLL transaction above.
+#if 0
 	if (b_ESD || m_bRangeRefine)
 	{
 		if (b_ESD)
@@ -732,7 +918,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				if (output.type() != CV_64F) output.convertTo(output, CV_64F);
 				if (out_x.type() != CV_64F) out_x.convertTo(out_x, CV_64F);
 
-				//拉格朗日插值
+				//拉格朗日插�?
 				double x0, x1, x2, x3, y0, y1, y2, y3, x; x = 31;
 				x0 = 29; x1 = 30; x2 = 32; x3 = 33;
 				if (output.total() > 33) {
@@ -803,10 +989,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 							}
 						}
 
-						// 2. 多点一致性投票判定
+						// 2. 多点一致性投票判�?
 						if (validCount >= 2)
 						{
-							// 检查所有有效偏差的最大最小值差值是否 <= 1
+							// 检查所有有效偏差的最大最小值差值是�?<= 1
 							int min_val = *std::min_element(validOffsets.begin(), validOffsets.end());
 							int max_val = *std::max_element(validOffsets.begin(), validOffsets.end());
 							if (max_val - min_val <= 1)
@@ -815,14 +1001,14 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 							}
 							else
 							{
-								// 偏差不一致，判定为含噪伪匹配，放弃纠偏，安全回退到 0
+								// 偏差不一致，判定为含噪伪匹配，放弃纠偏，安全回退�?0
 								offset_r = 0.0;
 								InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", "Range offsets are inconsistent, skipping Range correction.");
 							}
 						}
 						else if (validCount == 1)
 						{
-							// 单个有效点，需要其相关系数更高（如 >= 0.20）以确保置信度
+							// 单个有效点，需要其相关系数更高（如 >= 0.20）以确保置信�?
 							int idx = -1;
 							for (int k = 0; k < 5; ++k) {
 								if (res[k].maxCorrelation >= 0.15 && std::abs(res[k].offsetX) <= 1) {
@@ -853,7 +1039,9 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				}
 				InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Slave image %1 (index %2) Range matching offset calculated: %3")
 					.arg(origin[j]).arg(j + 1).arg(offset_r));
-				printf("[InSAR_DEBUG_COREG] [Worker] [Stage: Pre-Fit Range Offset Estimation] S1_TOPS_BackGeocoding(): Slave %d Range matching offset calculated = %f\n", j + 1, offset_r);
+				InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+					QString("Range refinement result: slaveImage=%1, offset=%2")
+						.arg(j + 1).arg(offset_r, 0, 'g', 12), "range.result");
 			}
 		}
 
@@ -966,9 +1154,11 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			offset_row += linesPerBurst;
 			backgeocoding.isMasterRgAzComputed = false;
 
-			emit updateProcess(60 + 30 / burstCount * (i + 1), QStringLiteral("增强谱分集校正……"));
+            emit updateProcess(60 + 30 / burstCount * (i + 1), QStringLiteral("Enhanced spectral diversity correction..."));
 		}
 	}
+
+#endif
 
 	//deburst
 	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Starting Deburst processing for %1 images...").arg(backgeocoding.numOfImages));
@@ -1014,7 +1204,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			}
 			tmp = slaveSLC(cv::Range(backgeocoding.start.at<int>(j, 0), backgeocoding.end.at<int>(j, 0)),
 				cv::Range(0, backgeocoding.su[masterIndex - 1]->samplesPerBurst));
-			// 使用临时变量存储拼接结果，避免 OpenCV vconcat 目标矩阵与输入矩阵相同导致的内存重叠/重分配异常
+			// 使用临时变量存储拼接结果，避�?OpenCV vconcat 目标矩阵与输入矩阵相同导致的内存重叠/重分配异�?
 			cv::Mat concat_re, concat_im;
 			cv::vconcat(slc.re, tmp.re, concat_re);
 			cv::vconcat(slc.im, tmp.im, concat_im);
@@ -1029,9 +1219,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			finishCancelled();
 			return;
 		}
-		emit updateProcess(90 + 10 / burstCount * (i + 1), QStringLiteral("deburst……"));
+        emit updateProcess(90 + 10 / burstCount * (i + 1), QStringLiteral("Debursting..."));
 	}
 
+#endif
 	FormatConversion FC;
 	/*获取主星参数*/
 	cv::Mat outArray;
@@ -1052,7 +1243,6 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	}
 	int rows = outArray.rows;
 	int cols = outArray.cols;
-	offset_row = 0;
 	int offset_col = 0;
 
 	/*写入辅助参数到h5*/
@@ -1078,7 +1268,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			return;
 		}
 	}
-	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", "Registration parameters copied successfully to H5 files.");
+	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", "Copied registration metadata and completion parameters to output H5 files.", "output.metadata");
 
 	std::vector<SentinelBurstQualityStatus> burstQualityStatus;
 	ret = backgeocoding.getBurstQualityStatus(burstQualityStatus);
@@ -1086,33 +1276,34 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Failed to retrieve Back-Geocoding quality status.");
 		return;
 	}
-	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
 		QString("Back-Geocoding quality status: return=%1, entries=%2.")
-			.arg(ret).arg(static_cast<qulonglong>(burstQualityStatus.size())));
+			.arg(ret).arg(static_cast<qulonglong>(burstQualityStatus.size())), "quality.summary");
 
 	for (const SentinelBurstQualityStatus& status : burstQualityStatus)
 	{
-		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
 			QString("Burst quality: image=%1, burst=%2, code=%3, valid=%4/%5, zeroDopplerFailures=%6, rangeOrBurstFailures=%7, fitPoints=%8, fitRms=%9.")
 				.arg(status.imageIndex).arg(status.burstIndex).arg(status.qualityCode)
 				.arg(status.validPoints).arg(status.attemptedPoints)
 				.arg(status.zeroDopplerFailures).arg(status.rangeOrBurstFailures)
-				.arg(status.fitPointCount).arg(status.fitRms, 0, 'g', 8));
+				.arg(status.fitPointCount).arg(status.fitRms, 0, 'g', 8), "quality.burst");
 	}
 
 	std::vector<SentinelZeroDopplerFailureStatistic> zeroDopplerStatistics;
 	const int zeroDopplerStatisticsRet = backgeocoding.getZeroDopplerFailureStatistics(zeroDopplerStatistics);
 	if (zeroDopplerStatisticsRet < 0) {
-		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
-			"Zero-Doppler failure statistics are unavailable for this task.");
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+			"Zero-Doppler failure statistics are unavailable for this task.", "quality.zero_doppler");
 	} else {
-		InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
 			QString("Zero-Doppler failure statistics: return=%1, groups=%2.")
-				.arg(zeroDopplerStatisticsRet).arg(static_cast<qulonglong>(zeroDopplerStatistics.size())));
+				.arg(zeroDopplerStatisticsRet).arg(static_cast<qulonglong>(zeroDopplerStatistics.size())), "quality.zero_doppler");
 	}
 
-	bool hasQualityWarning = false;
-	QStringList qualityWarnings;
+	bool hasQualityWarning = hasRefinementWarning;
+	QStringList qualityWarnings = refinementWarnings;
+	qint64 zeroDopplerFailureCount = 0;
 	for (const SentinelZeroDopplerFailureStatistic& statistic : zeroDopplerStatistics)
 	{
 		if (statistic.count <= 0) {
@@ -1120,28 +1311,34 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		}
 
 		hasQualityWarning = true;
-		const QString warning = zeroDopplerStatisticText(statistic);
-		qualityWarnings.append(warning);
-		InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", warning);
+		zeroDopplerFailureCount += statistic.count;
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", zeroDopplerStatisticText(statistic), "quality.zero_doppler");
+	}
+	if (zeroDopplerFailureCount > 0) {
+        qualityWarnings.append(QStringLiteral("Detected %1 zero-Doppler solver failures; affected bursts were handled by the quality policy.").arg(zeroDopplerFailureCount));
 	}
 
 	if (!zeroDopplerStatistics.empty()) {
 		SentinelZeroDopplerDiagnostic lastDiagnostic;
 		const int lastDiagnosticRet = backgeocoding.getLastZeroDopplerDiagnostic(lastDiagnostic);
 		if (lastDiagnosticRet == 0) {
-			InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
+			InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
 				QString("Last zero-Doppler diagnostic: image=%1, burst=%2, line=%3, sample=%4, %5, %6, return=%7, stateVectors=%8.")
 					.arg(lastDiagnostic.imageIndex).arg(lastDiagnostic.burstIndex)
 					.arg(lastDiagnostic.line).arg(lastDiagnostic.sample)
 					.arg(zeroDopplerReasonText(lastDiagnostic.reason))
 					.arg(zeroDopplerCallPathText(lastDiagnostic.callPath))
-					.arg(lastDiagnostic.returnCode).arg(lastDiagnostic.stateVectorCount));
+					.arg(lastDiagnostic.returnCode).arg(lastDiagnostic.stateVectorCount), "quality.zero_doppler");
 		} else {
-			InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
-				"No last zero-Doppler diagnostic is available.");
+			InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+				"No last zero-Doppler diagnostic is available.", "quality.zero_doppler");
 		}
 	}
 
+	int partialInvalidBurstCount = 0;
+	int zeroOffsetFallbackCount = 0;
+	double minValidRatio = 1.0;
+	double maxValidRatio = 0.0;
 	for (const SentinelBurstQualityStatus& status : burstQualityStatus)
 	{
 		if (status.qualityCode == SENTINEL_BURST_FAILED)
@@ -1155,19 +1352,23 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			status.qualityCode == SENTINEL_BURST_WARNING_ZERO_OFFSET_FALLBACK)
 		{
 			hasQualityWarning = true;
-			QString warning;
 			if (status.qualityCode == SENTINEL_BURST_WARNING_PARTIAL_INVALID) {
-				warning = QStringLiteral("从影像 %1、主 Burst %2 存在局部无效投影：有效 %3/%4，零多普勒失败 %5，其他投影失败 %6。")
-					.arg(status.imageIndex).arg(status.burstIndex).arg(status.validPoints)
-					.arg(status.attemptedPoints).arg(status.zeroDopplerFailures).arg(status.rangeOrBurstFailures);
+				++partialInvalidBurstCount;
+				const double validRatio = status.attemptedPoints > 0
+					? static_cast<double>(status.validPoints) / status.attemptedPoints : 0.0;
+				minValidRatio = qMin(minValidRatio, validRatio);
+				maxValidRatio = qMax(maxValidRatio, validRatio);
 			}
 			else {
-				warning = QStringLiteral("从影像 %1、主 Burst %2 的 Burst 偏移估计缺少足够控制点，已回退使用 0 偏移。")
-					.arg(status.imageIndex).arg(status.burstIndex);
+				++zeroOffsetFallbackCount;
 			}
-			qualityWarnings.append(warning);
-			InSARLogManager::LogWarning("S1TopsBackGeocodingWorker", warning);
 		}
+	}
+	if (partialInvalidBurstCount > 0) {
+        qualityWarnings.append(QStringLiteral("%1 bursts have geometric projection failures; valid coverage %2%-%3%.").arg(partialInvalidBurstCount).arg(minValidRatio * 100.0, 0, 'f', 1).arg(maxValidRatio * 100.0, 0, 'f', 1));
+	}
+	if (zeroOffsetFallbackCount > 0) {
+        qualityWarnings.append(QStringLiteral("%1 bursts fell back to zero burst offset.").arg(zeroOffsetFallbackCount));
 	}
 
 	if (cancellationRequested()) {
@@ -1201,6 +1402,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 
 	emit registrationFinished(regisH5Paths, dstNode, dstProject, savePath, masterIndex, hasQualityWarning, qualityWarnings);
 	emit sendModel(model);
-	InSARLogManager::LogInfo("S1TopsBackGeocodingWorker", QString("Task completed: ") + QString(__FUNCTION__));
+	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", QString("Worker finished: outputs=%1, qualityWarnings=%2")
+		.arg(regisH5Paths.join("; ")).arg(qualityWarnings.size()), "worker.finished");
 	emit endProcess();
 }

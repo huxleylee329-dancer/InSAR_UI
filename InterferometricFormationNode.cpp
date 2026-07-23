@@ -831,7 +831,7 @@ void InterferometricFormationNode::onProcessingFinished()
             m_remedyWatcher.waitForFinished();
         }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Paths, jpgPaths]() {
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, uniqueH5Paths, h5Paths, jpgPaths]() {
             if (discardObsoleteAutomaticExecution()) {
                 return;
             }
@@ -860,7 +860,6 @@ void InterferometricFormationNode::onProcessingFinished()
 
             if (anyFailed) {
                 setLastWarningMessage(QStringLiteral("Interferometric products were generated, but some preview images could not be generated."));
-                setState(ExecutionState::Warning);
                 TaskLogContext logContext;
                 logContext.displayName = caption();
                 InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelWarning,
@@ -869,18 +868,15 @@ void InterferometricFormationNode::onProcessingFinished()
                                               LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
                                               QStringLiteral("completed"), QStringLiteral("completed_with_warnings"),
                                               m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-                setProgress(100);
-                Q_EMIT computingFinished();
-                Q_EMIT dataUpdated(0);
+                finishExecutionWithWarning();
             } else {
-                setState(ExecutionState::Running);
                 setProgress(100);
                 TaskLogContext logContext;
                 logContext.displayName = caption();
                 InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
                                               "InterferometricFormationNode",
                                               QStringLiteral("干涉形成完成。输出：%1")
-                                                  .arg(h5Paths.join(QStringLiteral(", "))),
+                                                  .arg(uniqueH5Paths.join(QStringLiteral(", "))),
                                               LogTargets(LogTarget::UserProjectLog),
                                               QStringLiteral("completed"), QStringLiteral("completed"),
                                               m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);

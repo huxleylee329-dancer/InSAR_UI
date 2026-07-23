@@ -335,6 +335,25 @@ void ExecutableNodeDelegateModel::finishExecution()
     }
 }
 
+void ExecutableNodeDelegateModel::finishExecutionWithWarning()
+{
+    if (_state != ExecutionState::Running) {
+        return;
+    }
+
+    _progress = 100;
+    Q_EMIT progressUpdated(_progress);
+    _state = ExecutionState::Warning;
+    Q_EMIT executionFinished();
+    Q_EMIT executionStateChanged();
+    Q_EMIT computingFinished();
+    triggerVisualUpdate();
+
+    for (auto const &pair : _outputData) {
+        Q_EMIT dataUpdated(pair.first);
+    }
+}
+
 void ExecutableNodeDelegateModel::deferAutomaticCompletion()
 {
     _deferAutomaticCompletion = true;

@@ -227,6 +227,10 @@ protected:
 
     void finishExecution();
 
+    /// Complete a successful task that produced usable outputs with warnings.
+    /// Output ports are propagated just like a normal completion.
+    void finishExecutionWithWarning();
+
     /// Complete automatic execution for source nodes with no inputs
     /// Call this after you've set output data in automatic mode
     void completeAutomaticExecution();

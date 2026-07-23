@@ -100,9 +100,6 @@
     <ClCompile Include="import_sentinel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="InSAR_IPC.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Baseline.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1535,9 +1532,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\icon_source.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\InSAR_IPC.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\NodeDataTypes.h">

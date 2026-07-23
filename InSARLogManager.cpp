@@ -320,16 +320,18 @@ void InSARLogManager::LogTaskEvent(const TaskLogContext& context, LogLevel level
                                    LogTargets targets, const QString& phase,
                                    const QString& status, qint64 elapsedMs)
 {
+    const TaskLogContext fallback = currentTaskContext();
     LogEntry entry;
     entry.level = level;
     entry.targets = targets;
     entry.source = source;
     entry.message = message;
     entry.timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
-    entry.runId = context.runId;
-    entry.nodeId = context.nodeId;
-    entry.displayName = context.displayName;
-    entry.scope = context.scope;
+    entry.runId = context.runId.isEmpty() ? fallback.runId : context.runId;
+    entry.nodeId = context.nodeId.isEmpty() ? fallback.nodeId : context.nodeId;
+    entry.displayName = context.displayName.isEmpty() ? fallback.displayName : context.displayName;
+    entry.scope = context.scope == QStringLiteral("application") && !fallback.scope.isEmpty()
+        ? fallback.scope : context.scope;
     entry.phase = phase;
     entry.status = status;
     entry.elapsedMs = elapsedMs;

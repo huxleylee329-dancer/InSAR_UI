@@ -20,6 +20,7 @@
 #include <QPointer>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QElapsedTimer>
 #include <QVector>
 #include <memory>
 #include <vector>
@@ -108,11 +109,14 @@ private:
     int m_preparedMasterIndex;
     bool m_preparedBESD;
     bool m_preparedBRangeRefine;
+    bool m_preparedRecoverRefinementTransaction = false;
+    bool m_preparedCleanOutputDirectory = false;
     int m_preparedImagesNumber;
     bool m_processingWarning = false;
     QStringList m_processingQualityWarnings;
     QVector<RegistrationOffsetSummary> m_registrationOffsets;
     QStringList m_registrationOverviewPaths;
+    QElapsedTimer m_executionTimer;
 
     // Worker thread
     QPointer<S1TopsBackGeocodingWorker> m_workerThread;
@@ -150,6 +154,7 @@ private:
     bool isCompleteBackGeocodingOutput(const QString& path) const;
     void syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode);
     void syncProjectXmlOrder(const QStringList& h5Paths, const QString& dstNode);
+    bool clearPreparedOutputDirectory();
     void executeProcessing();
 
     // Context helpers

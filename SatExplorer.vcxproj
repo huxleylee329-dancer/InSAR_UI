@@ -204,9 +204,6 @@
     <ClCompile Include="Interferometric_Formation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="InSAR_IPC.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -932,9 +929,6 @@
       <Filter>Header Files</Filter>
     </QtMoc>
     <QtMoc Include="include\Import_GenericSAR.h" />
-    <ClInclude Include="include\InSAR_IPC.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <QtMoc Include="include\S1_TOPS_BackGeocoding.h">
       <Filter>Header Files</Filter>
     </QtMoc>

@@ -142,7 +142,18 @@ int main(int argc, char *argv[])
     if (showConsole) {
         setupDebugConsole();
     }
-    const bool writeDiagnosticLog = settings.value("Debug/WriteDiagnosticLog", showConsole).toBool();
+
+    // Keep persisted diagnostic evidence independent of the temporary console.
+    // Migrate the short-lived Debug key when present so existing developer
+    // configurations retain their intended behavior.
+    const QString diagnosticFileKey = QStringLiteral("Logging/DiagnosticFileEnabled");
+    bool writeDiagnosticLog = false;
+    if (settings.contains(diagnosticFileKey)) {
+        writeDiagnosticLog = settings.value(diagnosticFileKey).toBool();
+    } else {
+        writeDiagnosticLog = settings.value("Debug/WriteDiagnosticLog", false).toBool();
+        settings.setValue(diagnosticFileKey, writeDiagnosticLog);
+    }
     InSARLogManager::instance().configureDiagnosticSinks(showConsole, writeDiagnosticLog);
     InSARLogManager::installQtMessageHandler();
 
