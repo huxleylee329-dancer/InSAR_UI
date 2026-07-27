@@ -97,13 +97,17 @@ private:
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
+    void onGeocodingGenerated(const GeocodingFileResult& result);
     bool validateInputs() const;
     void updateWidgetSize();
     void updateParameterWidgetsEnableState();
     void onTypeChanged(int index);
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void cleanUpThreadAndWorker();
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& types, const QStringList& resultJpgPaths,
+                                bool completeExecution);
 
     // Context helpers
     QStandardItemModel* projectModel() const;
@@ -122,13 +126,20 @@ private:
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
     QStringList m_preparedOutputPaths;
+    QStringList m_preparedInputPaths;
+    QString m_preparedProductLevel;
+    int m_preparedMasterIndex = 0;
+    int m_preparedType = 1;
+    int m_preparedMultiRg = 1;
+    int m_preparedMultiAz = 1;
     QString m_preparedDemPath;
-    int m_preparedType = 0;
-    int m_preparedMultiRg = 0;
-    int m_preparedMultiAz = 0;
+    bool m_xmlDirty = false;
 
 signals:
-    void startGeocoding(int type, int multi_rg, int multi_az, QString project, QString srcNode, QString dstNode, QStandardItemModel* model, QString dem_path);
+    void startGeocoding(int type, int multi_rg, int multi_az, QString savePath, QStringList inputPaths,
+        QString productLevel, int masterIndex, QString dstNode);
+    void startGeocodingWithDem(int type, int multi_rg, int multi_az, QString savePath, QStringList inputPaths,
+        QString productLevel, int masterIndex, QString dstNode, QString demPath);
 };
 
 } // namespace QtNodes

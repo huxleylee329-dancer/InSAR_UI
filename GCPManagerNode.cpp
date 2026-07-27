@@ -39,10 +39,7 @@ GCPManagerNode::GCPManagerNode()
 
 GCPManagerNode::~GCPManagerNode()
 {
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-    }
+    stopExecution();
 }
 
 unsigned int GCPManagerNode::nPorts(PortType portType) const
@@ -100,6 +97,8 @@ void GCPManagerNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
         m_inputNodeLabel->setText(QStringLiteral("等待输入"));
         m_outputData.reset();
         m_reportData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
     }
@@ -260,6 +259,7 @@ void GCPManagerNode::execute()
     m_hasPendingEvaluation = false;
 
     // 1. 创建子线程及 Worker
+    stopExecution();
     m_thread = new QThread(this);
     m_worker = new GCPManagerWorker();
     m_worker->moveToThread(m_thread);
@@ -272,10 +272,13 @@ void GCPManagerNode::execute()
     connect(m_worker, &BaseWorker::endProcess, this, &GCPManagerNode::onProcessingFinished);
     connect(m_worker, &BaseWorker::errorProcess, this, &GCPManagerNode::onError);
     connect(m_worker, &GCPManagerWorker::cancelled, this, &GCPManagerNode::onCancelled);
+    connect(m_worker, &BaseWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &BaseWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &GCPManagerWorker::cancelled, m_thread, &QThread::quit);
     
     // 安全解耦：计算完成时将内存点集同步发回，主线程批量入库
     connect(m_worker, &GCPManagerWorker::evaluationFinished, this, &GCPManagerNode::onEvaluationFinished);
+    connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
     deferAutomaticCompletion();
     m_thread->start();
@@ -312,13 +315,17 @@ void GCPManagerNode::stopExecution()
         m_thread->quit();
         m_thread->wait();
     }
-    if (m_thread) {
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_worker) {
-        m_worker->deleteLater();
-        m_worker = nullptr;
+    m_thread = nullptr;
+    m_worker = nullptr;
+}
+
+void GCPManagerNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
     }
 }
 
@@ -353,7 +360,7 @@ void GCPManagerNode::onProgressUpdate(int progress, const QString& message)
 
 void GCPManagerNode::onProcessingFinished()
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -382,13 +389,11 @@ void GCPManagerNode::onProcessingFinished()
     m_reportData = std::make_shared<ImageInfoData>(reportPath, meta);
     m_hasPendingEvaluation = false;
 
-    setState(ExecutionState::Completed);
+    setOutputData(0, m_outputData);
+    setOutputData(1, m_reportData);
+    setState(ExecutionState::Running);
     updateLabels();
     updateWidgetSize();
-    
-    // 发送端口数据更新广播
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
     
     finishExecution();
 }
@@ -411,7 +416,7 @@ void GCPManagerNode::onEvaluationFinished(const std::vector<GCPPoint>& updatedGc
 
 void GCPManagerNode::onError(const QString& error)
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -425,7 +430,7 @@ void GCPManagerNode::onError(const QString& error)
 
 void GCPManagerNode::onCancelled()
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -466,6 +471,8 @@ bool GCPManagerNode::validateAndRestoreOutput()
         } else {
             m_reportData = std::make_shared<ImageInfoData>(outH5, meta);
         }
+        setOutputData(0, m_outputData);
+        setOutputData(1, m_reportData);
         
         setState(ExecutionState::Completed);
         initDatabase();
@@ -539,7 +546,7 @@ void GCPManagerNode::setParameter(const QString& paramName, const QString& value
             modified = true;
         }
     } 
-    else if (paramName == QStringLiteral("最小质量等级")) {
+    else if (paramName == QStringLiteral("鏈€灏忚川閲忕瓑绾?")) {
         int val = value.toInt(&ok);
         if (ok && (val >= 0 && val <= 2) && val != m_minQuality) {
             m_minQuality = val;
@@ -550,7 +557,7 @@ void GCPManagerNode::setParameter(const QString& paramName, const QString& value
             modified = true;
         }
     } 
-    else if (paramName == QStringLiteral("输出目录名")) {
+    else if (paramName == QStringLiteral("杈撳嚭鐩綍鍚?")) {
         QString trimmed = value.trimmed();
         if (trimmed != m_outputNodeName) {
             m_outputNodeName = trimmed;
@@ -568,6 +575,8 @@ void GCPManagerNode::invalidateNodeData()
     invalidateExecution();
     m_outputData.reset();
     m_reportData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
     updateWidgetSize();

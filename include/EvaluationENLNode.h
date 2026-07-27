@@ -114,6 +114,8 @@ private:
     // Async support
     QFutureWatcher<ENLResultData>* m_watcher = nullptr;
     std::shared_ptr<std::atomic<bool>> m_stopFlagPtr;
+    bool m_evaluationActive = false;
+    bool m_restartPending = false;
 };
 
 } // namespace QtNodes

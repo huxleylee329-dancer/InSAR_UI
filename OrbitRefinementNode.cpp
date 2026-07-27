@@ -161,6 +161,8 @@ void OrbitRefinementNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
         m_inputNodeLabel->setText(QStringLiteral("等待输入"));
         m_outputData.reset();
         m_imageInfoData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
     }
@@ -395,7 +397,7 @@ void OrbitRefinementNode::createWidget()
 
     // 4. 目标节点名
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入")); // 占位符对齐规范 (SOP 11)
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")); // 鍗犱綅绗﹀榻愯鑼?"(SOP 11)
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
@@ -475,7 +477,7 @@ void OrbitRefinementNode::onProgressUpdate(int progress, const QString& message)
 
 void OrbitRefinementNode::onProcessingFinished()
 {
-    stopExecution();
+    releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -538,8 +540,6 @@ void OrbitRefinementNode::onProcessingFinished()
     InSARLogManager::LogInfo("OrbitRefinementNode", "轨道精炼计算及绘图完成。");
     
     finishExecution();
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
     
     // 更新标签显示
     updateLabels();
@@ -547,7 +547,7 @@ void OrbitRefinementNode::onProcessingFinished()
 
 void OrbitRefinementNode::onError(const QString& error)
 {
-    stopExecution();
+    releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -564,7 +564,7 @@ void OrbitRefinementNode::onError(const QString& error)
 
 void OrbitRefinementNode::onCancelled()
 {
-    stopExecution();
+    releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -690,12 +690,14 @@ void OrbitRefinementNode::executeProcessing()
     connect(m_worker, &OrbitRefinementWorker::endProcess, this, &OrbitRefinementNode::onProcessingFinished);
     connect(m_worker, &OrbitRefinementWorker::errorProcess, this, &OrbitRefinementNode::onError);
     connect(m_worker, &OrbitRefinementWorker::cancelled, this, &OrbitRefinementNode::onCancelled);
+    connect(m_worker, &OrbitRefinementWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &OrbitRefinementWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &OrbitRefinementWorker::cancelled, m_thread, &QThread::quit);
     
     // 自愈刷新项目树
-    connect(m_worker, &OrbitRefinementWorker::sendModel, this, &OrbitRefinementNode::onModelUpdated);
     
     connect(m_worker, &OrbitRefinementWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // 启动线程
@@ -727,7 +729,7 @@ void OrbitRefinementNode::onResultsReceived(
 
     XMLFile* xml = projectXml();
     if (!xml) {
-        InSARLogManager::LogError("OrbitRefinementNode", "onResultsReceived: projectXml() 为空，跳过 XML 写入。");
+        InSARLogManager::LogError("OrbitRefinementNode", "onResultsReceived: projectXml() 涓虹┖锛岃烦杩?XML 鍐欏叆銆?");
         return;
     }
 
@@ -952,13 +954,17 @@ void OrbitRefinementNode::stopExecution()
         m_thread->quit();
         m_thread->wait();
     }
-    if (m_thread) {
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_worker) {
-        m_worker->deleteLater();
-        m_worker = nullptr;
+    m_thread = nullptr;
+    m_worker = nullptr;
+}
+
+void OrbitRefinementNode::releaseFinishedThreadResources()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
     }
 }
 
@@ -972,3 +978,4 @@ void OrbitRefinementNode::processAutomatically()
 }
 
 } // namespace QtNodes
+

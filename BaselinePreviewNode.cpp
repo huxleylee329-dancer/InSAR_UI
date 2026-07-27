@@ -185,7 +185,7 @@ void BaselinePreviewNode::createWidget()
 
     // Row 6: Show Chart Button
     QHBoxLayout* btnLayout = new QHBoxLayout();
-    m_showChartBtn = new QPushButton(QStringLiteral("查看基线图"));
+    m_showChartBtn = new QPushButton(QStringLiteral("鏌ョ湅鍩虹嚎鍥?"));
     m_showChartBtn->setEnabled(false); // Disabled until run completes
     QFont btnFont = m_showChartBtn->font();
     btnFont.setBold(true);
@@ -250,7 +250,7 @@ void BaselinePreviewNode::updateLabels()
             if (m_inputData && m_masterIndex >= 1 && m_masterIndex <= filePaths.size()) {
                 masterName = QFileInfo(filePaths.at(m_masterIndex - 1)).fileName();
             }
-            m_resultLabel->setText(QStringLiteral("主图像: %1\n最大时间基线: %2 天\n最大空间基线: %3 米")
+            m_resultLabel->setText(QStringLiteral("涓诲浘鍍? %1\n鏈€澶ф椂闂村熀绾? %2 澶‐n鏈€澶х┖闂村熀绾? %3 绫?")
                 .arg(masterName)
                 .arg(QString::number(maxTemp, 'f', 1))
                 .arg(QString::number(maxSpat, 'f', 1)));
@@ -357,6 +357,8 @@ void BaselinePreviewNode::executeProcessing()
     connect(m_worker, &BaselineWorker::sendBL, this, &BaselinePreviewNode::onProcessingFinished);
     connect(m_worker, &BaselineWorker::errorProcess, this, &BaselinePreviewNode::onError);
     connect(m_worker, &BaselineWorker::cancelled, this, &BaselinePreviewNode::onCancelled);
+    connect(m_worker, &BaselineWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &BaselineWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &BaselineWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
@@ -387,6 +389,16 @@ void BaselinePreviewNode::stopExecution()
     m_worker = nullptr;
 }
 
+void BaselinePreviewNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
+    }
+}
+
 void BaselinePreviewNode::processAutomatically()
 {
     if (validateInputs()) {
@@ -406,7 +418,7 @@ void BaselinePreviewNode::onProgressUpdate(int progress, const QString& message)
 
 void BaselinePreviewNode::onError(const QString& error)
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -419,7 +431,7 @@ void BaselinePreviewNode::onError(const QString& error)
 
 void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, QList<double> spatial_baseline, int index)
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -442,6 +454,7 @@ void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, 
 
     QJsonDocument doc(blObj);
     m_outputData = std::make_shared<BaselineData>(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+    setOutputData(0, m_outputData);
 
     setProgress(100);
     setState(ExecutionState::Running);
@@ -450,13 +463,12 @@ void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, 
     generateStaticPreviewJpg();
     updateLabels();
 
-    Q_EMIT dataUpdated(0);
     finishExecution();
 }
 
 void BaselinePreviewNode::onCancelled()
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -505,6 +517,7 @@ bool BaselinePreviewNode::validateAndRestoreOutput()
 
         QJsonDocument doc(blObj);
         m_outputData = std::make_shared<BaselineData>(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+        setOutputData(0, m_outputData);
 
         if (m_showChartBtn) m_showChartBtn->setEnabled(true);
         setState(ExecutionState::Completed);
@@ -685,3 +698,5 @@ QString BaselinePreviewNode::projectPath() const
 }
 
 } // namespace QtNodes
+
+

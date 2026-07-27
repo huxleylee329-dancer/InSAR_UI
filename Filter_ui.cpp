@@ -4,9 +4,12 @@
 #include<qcheckbox.h>
 #include<qscrollarea.h>
 #include <QThread>
+#include <QCoreApplication>
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include <FormatConversion.h>
+#include "NodeUtils.h"
 Filter_ui::Filter_ui(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::Filter)
@@ -83,15 +86,75 @@ void Filter_ui::StopThread()
     //        copy->findItems(ui->comboBox->currentText())[0]->setStatusTip(NOT_IN_PROCESS);
     //}
 }
-void Filter_ui::TransitModel(QStandardItemModel* model)
+void Filter_ui::persistDenoiseResult(const DenoiseFileResult& result,
+                                     const QList<int>& para,
+                                     double alpha,
+                                     const QString& projectName,
+                                     const QString& savePath)
 {
-    this->copy = model;
-    //if (copy)
-    //{
-    //    if (copy->findItems(ui->comboBox->currentText())[0])
-    //        copy->findItems(ui->comboBox->currentText())[0]->setStatusTip(NOT_IN_PROCESS);
-    //}
-    emit sendCopy(model);
+    if (!copy || para.size() < 5) {
+        return;
+    }
+
+    const QList<QStandardItem*> projects = copy->findItems(projectName);
+    if (projects.isEmpty()) {
+        return;
+    }
+
+    QStandardItem* denoiseNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), result.fileName, "phase-1.0");
+    if (!denoiseNode) {
+        return;
+    }
+    denoiseNode->setToolTip(projectName);
+
+    QStandardItem* outputItem = nullptr;
+    for (int i = 0; i < denoiseNode->rowCount(); ++i) {
+        QStandardItem* nameItem = denoiseNode->child(i, 0);
+        if (nameItem && nameItem->text() == result.filterName) {
+            outputItem = nameItem;
+            break;
+        }
+    }
+    if (!outputItem) {
+        outputItem = new QStandardItem(result.filterName);
+        outputItem->setToolTip("phase");
+        outputItem->setIcon(QIcon(IMAGEDATA_ICON));
+        denoiseNode->appendRow(outputItem);
+        denoiseNode->setChild(denoiseNode->rowCount() - 1, 1, new QStandardItem(result.filterPath));
+    } else {
+        denoiseNode->setChild(outputItem->row(), 1, new QStandardItem(result.filterPath));
+    }
+
+    QString xmlPath = savePath + "/" + projectName;
+    if (!xmlPath.endsWith(".Insar", Qt::CaseInsensitive)) {
+        xmlPath += ".Insar";
+    }
+    XMLFile xml;
+    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+        return;
+    }
+
+    const int method = para.at(4);
+    if (method == 1) {
+        xml.XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
+            result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "Slope",
+            para.at(1), para.at(0), 0, 0, 0, "", "", "");
+    } else if (method == 2) {
+        xml.XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
+            result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "Goldstein",
+            0, 0, para.at(2), para.at(3), alpha, "", "", "");
+    } else if (method == 3) {
+        const QString applicationPath = QCoreApplication::applicationDirPath();
+        const QString modelPath = applicationPath + "\\other\\net.pt";
+        const QString outputPath = QDir::toNativeSeparators(savePath + "/" + result.fileName);
+        xml.XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
+            result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "DL",
+            0, 0, 0, 0, 0, applicationPath.toStdString().c_str(), modelPath.toStdString().c_str(),
+            outputPath.toStdString().c_str());
+    }
+    xml.XMLFile_save(xmlPath.toStdString().c_str());
+    emit sendCopy(copy);
 }
 
 void Filter_ui::ChangeVision(bool Editable)
@@ -292,6 +355,38 @@ void Filter_ui::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
+    const QString projectName = ui->comboBox->currentText();
+    const QString outputNode = ui->file_name->text();
+    QStringList phaseNames;
+    QStringList phasePaths;
+    const QList<QStandardItem*> projects = copy ? copy->findItems(projectName) : QList<QStandardItem*>();
+    QStandardItem* sourceNode = nullptr;
+    if (!projects.isEmpty()) {
+        QStandardItem* project = projects.first();
+        for (int i = 0; i < project->rowCount(); ++i) {
+            QStandardItem* node = project->child(i, 0);
+            if (node && node->text() == ui->comboBox_2->currentText()) {
+                sourceNode = node;
+                break;
+            }
+        }
+    }
+    if (sourceNode) {
+        for (int i = 0; i < sourceNode->rowCount(); ++i) {
+            QStandardItem* nameItem = sourceNode->child(i, 0);
+            QStandardItem* pathItem = sourceNode->child(i, 1);
+            if (!nameItem || !pathItem || !pathItem->text().endsWith(".h5", Qt::CaseInsensitive)) {
+                continue;
+            }
+            phaseNames.append(nameItem->text());
+            phasePaths.append(pathItem->text());
+        }
+    }
+    if (phasePaths.isEmpty()) {
+        QMessageBox::warning(NULL, "Warning!", "No phase H5 files were found in the selected node.");
+        return;
+    }
+
     Filter_thread = new DenoiseWorker;
     Filter_thread->moveToThread(new QThread(this));
     //this->Process->setAutoClose(true);
@@ -304,19 +399,24 @@ void Filter_ui::on_buttonBox_accepted()
     //para.push_back(ui->alpha->text().toInt());
     para.push_back(ui->n_pad->text().toInt());
     para.push_back(this->method);
+    const double alpha = ui->alpha->text().toDouble();
+    const QString savePath = this->save_path;
    // para.push_back(this->image_number);
     //this->thread()->msleep(1);
     connect(this, &Filter_ui::operate, Filter_thread, &DenoiseWorker::Denoise, Qt::QueuedConnection);
+    connect(Filter_thread, &DenoiseWorker::denoiseGenerated, this,
+        [this, para, alpha, projectName, savePath](const DenoiseFileResult& result) {
+            persistDenoiseResult(result, para, alpha, projectName, savePath);
+        });
     connect(Filter_thread, &DenoiseWorker::updateProcess, this, &Filter_ui::updateProcess);
     connect(Filter_thread->thread(), &QThread::finished, Filter_thread, &DenoiseWorker::deleteLater);
     connect(Filter_thread, &DenoiseWorker::endProcess, this, &Filter_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Filter_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Filter_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Filter_thread, &DenoiseWorker::sendModel, this, &Filter_ui::TransitModel);
     Filter_thread->thread()->start();
     ChangeVision(false);
     //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);
-    emit operate(para, ui->alpha->text().toDouble(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->file_name->text(), this->copy);
+    emit operate(para, alpha, savePath, outputNode, phaseNames, phasePaths);
 }
 
 void Filter_ui::on_buttonBox_rejected()

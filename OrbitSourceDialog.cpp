@@ -309,8 +309,8 @@ void OrbitSourceDialog::onStartPressed()
     m_worker->moveToThread(m_thread);
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
 
-    connect(m_thread, &QThread::started, [this, projectPath, projName, targetFiles, cacheDir, selectedSource]() {
-        emit startOrbitFetch(projectPath, projName, targetFiles, selectedSource, cacheDir, m_model);
+    connect(m_thread, &QThread::started, [this, projectPath, targetFiles, cacheDir, selectedSource]() {
+        emit startOrbitFetch(projectPath, targetFiles, selectedSource, cacheDir);
     });
 
     connect(this, &OrbitSourceDialog::startOrbitFetch, m_worker, &OrbitSourceWorker::fetch_orbits);

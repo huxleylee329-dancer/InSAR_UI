@@ -1,11 +1,13 @@
 #include"S1_swath_merge.h"
 #include"ui_S1SwathMerge.h"
 #include"icon_source.h"
+#include "NodeUtils.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
 #include<qscrollarea.h>
 #include<qmessagebox.h>
 #include<QFile>
+#include<QFileInfo>
 #include<QDir>
 #include "FormatConversion.h"
 
@@ -108,12 +110,6 @@ void S1_swath_merge::StopThread()
     }
     S1_swath_merge_worker = nullptr;
 }
-void S1_swath_merge::TransitModel(QStandardItemModel* model)
-{
-    this->copy = model;
-    emit sendCopy(model);
-}
-
 void S1_swath_merge::ChangeVision(bool Editable)
 {
     if (Editable)
@@ -404,6 +400,31 @@ void S1_swath_merge::on_buttonBox_accepted()
     }
 
 
+    const auto selectedPath = [project](const QString& nodeName, int dataIndex) -> QString {
+        if (dataIndex < 0)
+            return QString();
+        for (int i = 0; i < project->rowCount(); ++i)
+        {
+            QStandardItem* node = project->child(i, 0);
+            if (!node || node->text() != nodeName || node->rowCount() <= dataIndex)
+                continue;
+            QStandardItem* pathItem = node->child(dataIndex, 1);
+            return pathItem ? pathItem->text() : QString();
+        }
+        return QString();
+    };
+    const QString firstH5Path = selectedPath(
+        ui->comboBox_IW1_node->currentText(), ui->comboBox_IW1_data->currentIndex());
+    const QString secondH5Path = selectedPath(
+        ui->comboBox_IW2_node->currentText(), ui->comboBox_IW2_data->currentIndex());
+    const QString thirdH5Path = selectedPath(
+        ui->comboBox_IW3_node->currentText(), ui->comboBox_IW3_data->currentIndex());
+    if (firstH5Path.isEmpty() || secondH5Path.isEmpty() || thirdH5Path.isEmpty())
+    {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("Selected input image file was not found."));
+        return;
+    }
+
     S1_swath_merge_worker = new S1SwathMergeWorker();
     S1_swath_merge_thread = new QThread(this);
     S1_swath_merge_worker->moveToThread(S1_swath_merge_thread);
@@ -417,20 +438,16 @@ void S1_swath_merge::on_buttonBox_accepted()
     connect(S1_swath_merge_worker, &S1SwathMergeWorker::errorProcess, this, &S1_swath_merge::errorProcess);
     connect(this, &QWidget::destroyed, this, &S1_swath_merge::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_swath_merge::StopThread);
-    connect(S1_swath_merge_worker, &S1SwathMergeWorker::sendModel, this, &S1_swath_merge::TransitModel);
     connect(S1_swath_merge_worker, &S1SwathMergeWorker::sendResult, this, &S1_swath_merge::handleResult);
     S1_swath_merge_thread->start();
     ChangeVision(false);
     operate(
-        ui->comboBox_IW1_data->currentIndex() + 1,
-        ui->comboBox_IW2_data->currentIndex() + 1,
-        ui->comboBox_IW3_data->currentIndex() + 1,
         ui->comboBox_project->currentText(),
-        ui->comboBox_IW1_node->currentText(),
-        ui->comboBox_IW2_node->currentText(),
-        ui->comboBox_IW3_node->currentText(),
+        save_path,
         ui->lineEdit_dstNode->text(),
-        this->copy
+        firstH5Path,
+        secondH5Path,
+        thirdH5Path
     );
 }
 
@@ -442,6 +459,7 @@ void S1_swath_merge::on_buttonBox_rejected()
 void S1_swath_merge::handleResult(
     const QString& dstNode,
     const QString& filename,
+    const QString& mergedH5Path,
     const QString& savePath,
     const QString& projectName)
 {
@@ -449,7 +467,21 @@ void S1_swath_merge::handleResult(
         return;
 
     QString xml_path = savePath + "/" + projectName;
-    QString relative_path = "/" + dstNode + "/" + filename + ".h5";
+    QString relative_path = "/" + dstNode + "/" + QFileInfo(mergedH5Path).fileName();
+
+    const QList<QStandardItem*> projects = copy ? copy->findItems(projectName) : QList<QStandardItem*>();
+    if (!projects.isEmpty()) {
+        QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+            projects.first(), dstNode, "phase-1.0", FOLDER_ICON);
+        if (outputNode) {
+            outputNode->setToolTip(projectName);
+            QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
+                outputNode, filename, "phase", mergedH5Path, IMAGEDATA_ICON);
+            if (imageItem) {
+                outputNode->setChild(imageItem->row(), 1, new QStandardItem(mergedH5Path));
+            }
+        }
+    }
 
     XMLFile xml;
     if (xml.XMLFile_load(xml_path.toStdString().c_str()) == 0)

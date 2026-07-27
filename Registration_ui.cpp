@@ -5,8 +5,10 @@
 #include<qcheckbox.h>
 #include<qscrollarea.h>
 #include<FormatConversion.h>
+#include "NodeUtils.h"
 #include<qmessagebox.h>
 #include<QFile>
+#include<QFileInfo>
 #include<QDir>
 #include<QThread>
 #ifdef _DEBUG
@@ -103,6 +105,46 @@ void Registration_ui::TransitModel(QStandardItemModel* model)
 {
     this->copy = model;
     emit sendCopy(model);
+}
+
+void Registration_ui::persistGeneratedOutput(const QStringList& outputNames, const QStringList& outputPaths,
+                                             const QList<int>& offsetRows, const QList<int>& offsetCols,
+                                             const QString& temporalBaseline, const QString& effectiveBaseline,
+                                             const QString& parallelBaseline)
+{
+    if (!copy || outputNames.size() != outputPaths.size() || outputPaths.size() != offsetRows.size() ||
+        outputPaths.size() != offsetCols.size()) {
+        return;
+    }
+    const QList<QStandardItem*> projects = copy->findItems(m_activeProjectName);
+    if (projects.isEmpty()) {
+        return;
+    }
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), m_activeOutputNode, "complex-2.0", FOLDER_ICON);
+    if (!outputNode) {
+        return;
+    }
+    outputNode->setToolTip(m_activeProjectName);
+
+    XMLFile xml;
+    const QString xmlPath = save_path + "/" + m_activeProjectName;
+    xml.XMLFile_load(xmlPath.toStdString().c_str());
+    for (int i = 0; i < outputPaths.size(); ++i) {
+        QStandardItem* item = NodeUtils::findOrCreateChildItem(
+            outputNode, outputNames[i], "complex", outputPaths[i], IMAGEDATA_ICON);
+        if (item) {
+            outputNode->setChild(item->row(), 1, new QStandardItem(outputPaths[i]));
+        }
+        const QString relativePath = QString("/%1/%2").arg(m_activeOutputNode, QFileInfo(outputPaths[i]).fileName());
+        xml.XMLFile_add_regis(m_activeOutputNode.toStdString().c_str(), outputNames[i].toStdString().c_str(),
+            relativePath.toStdString().c_str(), offsetRows[i], offsetCols[i], m_activeMasterIndex,
+            m_activeInterpTimes, m_activeBlockSize, temporalBaseline.toStdString().c_str(),
+            effectiveBaseline.toStdString().c_str(), parallelBaseline.toStdString().c_str());
+    }
+    xml.XMLFile_save(xmlPath.toStdString().c_str());
+    emit sendCopy(copy);
 }
 
 void Registration_ui::ChangeVision(bool Editable)
@@ -419,18 +461,53 @@ void Registration_ui::on_buttonBox_accepted()
     para.push_back(interp);
     para.push_back(block_size);
     para.push_back(this->image_number);
+    QStringList inputPaths;
+    const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+    if (projects.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到工程节点。"));
+        return;
+    }
+    QStandardItem* sourceNode = nullptr;
+    for (int i = 0; i < projects.first()->rowCount(); ++i) {
+        if (projects.first()->child(i, 0)->text() == ui->comboBox_2->currentText()) {
+            sourceNode = projects.first()->child(i, 0);
+            break;
+        }
+    }
+    if (!sourceNode) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到输入数据节点。"));
+        return;
+    }
+    for (int i = 0; i < sourceNode->rowCount(); ++i) {
+        QStandardItem* pathItem = sourceNode->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty()) inputPaths.append(pathItem->text());
+    }
+    if (inputPaths.size() < 2) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("输入影像不足。"));
+        return;
+    }
+    m_activeProjectName = ui->comboBox->currentText();
+    m_activeOutputNode = ui->fileedit->text();
+    m_activeMasterIndex = index;
+    m_activeInterpTimes = interp;
+    m_activeBlockSize = block_size;
     //this->thread()->msleep(1);
     connect(this, &Registration_ui::operate, Registration_thread, &CoregistrationWorker::Regis, Qt::QueuedConnection);
     connect(Registration_thread, &CoregistrationWorker::updateProcess, this, &Registration_ui::updateProcess);
     connect(Registration_thread->thread(), &QThread::finished, Registration_thread, &CoregistrationWorker::deleteLater);
+    connect(Registration_thread, &CoregistrationWorker::outputsGenerated, this,
+        [this](const QStringList& names, const QStringList& paths, const QList<int>& rows,
+               const QList<int>& cols, const QString& temporal, const QString& effective,
+               const QString& parallel) {
+            persistGeneratedOutput(names, paths, rows, cols, temporal, effective, parallel);
+        }, Qt::QueuedConnection);
     connect(Registration_thread, &CoregistrationWorker::endProcess, this, &Registration_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Registration_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Registration_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Registration_thread, &CoregistrationWorker::sendModel, this, &Registration_ui::TransitModel);
     Registration_thread->thread()->start();
     ChangeVision(false);
     //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);
-    emit operate(para, this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->fileedit->text(), this->copy);
+    emit operate(para, this->save_path, m_activeProjectName, m_activeOutputNode, inputPaths);
 }
 
 void Registration_ui::on_buttonBox_rejected()
@@ -477,6 +554,26 @@ void Registration_ui::on_buttonBox_2_accepted()
     }
 
     int index = ui->comboBox_masterIndex2->currentIndex() + 1;
+    QStringList inputPaths;
+    for (int i = 0; i < project->rowCount(); ++i) {
+        if (project->child(i, 0)->text() == ui->comboBox_node->currentText()) {
+            QStandardItem* sourceNode = project->child(i, 0);
+            for (int j = 0; j < sourceNode->rowCount(); ++j) {
+                QStandardItem* pathItem = sourceNode->child(j, 1);
+                if (pathItem && !pathItem->text().isEmpty()) inputPaths.append(pathItem->text());
+            }
+            break;
+        }
+    }
+    if (inputPaths.size() < 2) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("输入影像不足。"));
+        return;
+    }
+    m_activeProjectName = ui->comboBox_project->currentText();
+    m_activeOutputNode = ui->lineEdit_dstNode->text();
+    m_activeMasterIndex = index;
+    m_activeInterpTimes = -1;
+    m_activeBlockSize = -1;
     Registration_thread = new CoregistrationWorker;
     Registration_thread->moveToThread(new QThread(this));
     ui->progressBar_2->setValue(0);
@@ -484,14 +581,18 @@ void Registration_ui::on_buttonBox_2_accepted()
     connect(this, &Registration_ui::operate2, Registration_thread, &CoregistrationWorker::DEMAssistCoregistration, Qt::QueuedConnection);
     connect(Registration_thread, &CoregistrationWorker::updateProcess, this, &Registration_ui::updateProcess);
     connect(Registration_thread->thread(), &QThread::finished, Registration_thread, &CoregistrationWorker::deleteLater);
+    connect(Registration_thread, &CoregistrationWorker::outputsGenerated, this,
+        [this](const QStringList& names, const QStringList& paths, const QList<int>& rows,
+               const QList<int>& cols, const QString& temporal, const QString& effective,
+               const QString& parallel) {
+            persistGeneratedOutput(names, paths, rows, cols, temporal, effective, parallel);
+        }, Qt::QueuedConnection);
     connect(Registration_thread, &CoregistrationWorker::endProcess, this, &Registration_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Registration_ui::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Registration_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Registration_thread, &CoregistrationWorker::sendModel, this, &Registration_ui::TransitModel);
     Registration_thread->thread()->start();
     ChangeVision(false);
-    emit operate2(index, this->save_path, ui->comboBox_project->currentText(),
-        ui->comboBox_node->currentText(), ui->lineEdit_dstNode->text(), this->copy);
+    emit operate2(index, this->save_path, m_activeProjectName, m_activeOutputNode, inputPaths);
 }
 
 void Registration_ui::on_buttonBox_2_rejected()

@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "import_AIRSAT.h"
 #include "ImportTask.h"
+#include "ImportOutputPersistence.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <opencv2/highgui.hpp>
@@ -301,7 +302,10 @@ void import_AIRSAT::on_buttonBox_accepted()
     connect(import_AIRSAT_thread, &AIRSATImportWorker::errorProcess, this, &import_AIRSAT::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_AIRSAT::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_AIRSAT::StopThread);
-    connect(import_AIRSAT_thread, &AIRSATImportWorker::sendModel, this, &import_AIRSAT::TransitModel);
+    connect(import_AIRSAT_thread, &AIRSATImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
     thread->start();
 
     // 构造 ImportTask 列表
@@ -316,8 +320,6 @@ void import_AIRSAT::on_buttonBox_accepted()
     QMetaObject::invokeMethod(import_AIRSAT_thread, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node->text()),
-        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node->text()));
     ChangeVision(false);
 }

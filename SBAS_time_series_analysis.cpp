@@ -10,6 +10,7 @@
 #include<QFile>
 #include<QDir>
 #include<QThread>
+#include "NodeUtils.h"
 SBAS_time_series_analysis::SBAS_time_series_analysis(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::SbasTimeSeriesAnalysis)
@@ -314,6 +315,34 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     ui->progressBar->show();
     
     connect(this, &SBAS_time_series_analysis::operate, SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::SBAS_time_series, Qt::QueuedConnection);
+    connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::sbasGenerated, this, [this](const SBASTimeSeriesResult& res) {
+        if (!copy) return;
+        QList<QStandardItem*> foundProjects = copy->findItems(ui->comboBox_project->currentText());
+        if (foundProjects.isEmpty()) return;
+        QStandardItem* project = foundProjects[0];
+
+        QStandardItem* sbasNode = NodeUtils::findOrCreateProjectNode(project, res.dstNode, "SBAS-1.0");
+        if (sbasNode) {
+            sbasNode->setToolTip(ui->comboBox_project->currentText());
+            QStandardItem* itemImg = nullptr;
+            for (int j = 0; j < sbasNode->rowCount(); j++) {
+                if (sbasNode->child(j, 0)->text() == "SBAS_time_series") {
+                    itemImg = sbasNode->child(j, 0);
+                    break;
+                }
+            }
+            if (!itemImg) {
+                QStandardItem* sbasNameItem = new QStandardItem("SBAS_time_series");
+                sbasNameItem->setToolTip("SBAS");
+                QStandardItem* sbasPathItem = new QStandardItem(res.timesSeriesH5Path);
+                sbasNameItem->setIcon(QIcon(IMAGEDATA_ICON));
+                sbasNode->appendRow(sbasNameItem);
+                sbasNode->setChild(sbasNode->rowCount() - 1, 1, sbasPathItem);
+            } else {
+                sbasNode->setChild(itemImg->row(), 1, new QStandardItem(res.timesSeriesH5Path));
+            }
+        }
+    });
     connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::updateProcess, this, &SBAS_time_series_analysis::updateProcess);
     connect(thread, &QThread::finished, SBAS_time_series_analysis_thread, &QObject::deleteLater);
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
@@ -324,7 +353,6 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     });
     connect(this, &QWidget::destroyed, this, &SBAS_time_series_analysis::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SBAS_time_series_analysis::StopThread);
-    connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::sendModel, this, &SBAS_time_series_analysis::TransitModel);
     
     thread->start();
     ChangeVision(false);
@@ -363,8 +391,7 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
         ui->comboBox_project->currentText(),
         ui->lineEdit_dstNode->text(),
         ui->csv_path->text(),
-        filePaths,
-        this->copy
+        filePaths
     );
 
 }

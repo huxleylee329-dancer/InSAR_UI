@@ -1,7 +1,7 @@
 #pragma once
 
 #include "BaseWorker.h"
-#include <QStandardItemModel>
+#include <QStringList>
 
 /**
  * @brief ERA5 对流层校正 Worker
@@ -19,8 +19,9 @@ public:
 public slots:
     void doCorrection(QString era5Dir, QString save_path, QString project_name,
                       QString node_name, QString file_name,
-                      QStandardItemModel* model);
+                      QStringList phaseNames, QStringList phasePaths);
 
 signals:
     void cancelled();
+    void outputsGenerated(const QStringList& outputNames, const QStringList& outputPaths);
 };

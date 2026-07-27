@@ -1,4 +1,5 @@
 #include "include/NodeUtils.h"
+#include "InSARLogManager.h"
 #include <gdal_priv.h>
 #include <QWidget>
 #include <QStandardItem>
@@ -363,6 +364,33 @@ OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QStr
     }
 
     return OverwriteResult::NoConflict;
+}
+
+bool removeOutputFiles(const QStringList& filePaths)
+{
+    bool allSuccess = true;
+    for (const QString& path : filePaths) {
+        if (path.isEmpty()) continue;
+        if (QFile::exists(path)) {
+            if (!QFile::remove(path)) {
+                InSARLogManager::LogWarning("NodeUtils", QString("无法物理删除旧文件：%1，文件可能正被占用。").arg(path));
+                allSuccess = false;
+            }
+        }
+
+        if (path.endsWith(".h5", Qt::CaseInsensitive)) {
+            QString jpgPath = path;
+            jpgPath.chop(3);
+            jpgPath += ".jpg";
+            if (QFile::exists(jpgPath)) {
+                if (!QFile::remove(jpgPath)) {
+                    InSARLogManager::LogWarning("NodeUtils", QString("无法物理删除旧预览图：%1，文件可能正被占用。").arg(jpgPath));
+                    allSuccess = false;
+                }
+            }
+        }
+    }
+    return allSuccess;
 }
 
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type)

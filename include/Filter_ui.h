@@ -16,7 +16,6 @@ public slots:
     void endProcess();
     void endThread();
     void StopThread();
-    void TransitModel(QStandardItemModel*);
 private:
     Ui::Filter* ui;
     QStandardItemModel* copy;
@@ -25,8 +24,10 @@ private:
     int method;
     int image_number;
     void ChangeVision(bool Editable);
+    void persistDenoiseResult(const DenoiseFileResult& result, const QList<int>& para,
+                              double alpha, const QString& projectName, const QString& savePath);
 signals:
-    void operate(QList<int>, double, QString, QString, QString, QString, QStandardItemModel*);
+    void operate(QList<int>, double, QString, QString, QStringList, QStringList);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_currentIndexChanged();

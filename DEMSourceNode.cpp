@@ -143,7 +143,7 @@ void DEMSourceNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
 std::shared_ptr<NodeData> DEMSourceNode::outData(PortIndex port)
 {
-    if (executionState() != ExecutionState::Completed)
+    if (executionState() != ExecutionState::Completed && executionState() != ExecutionState::Warning)
         return nullptr;
 
     std::shared_ptr<NodeData> data;
@@ -622,8 +622,6 @@ void DEMSourceNode::executeProcessing()
     connect(m_workerThread, &DEMSourceWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &DEMSourceWorker::demFetchFinished, this, &DEMSourceNode::onProcessingFinished);
     connect(m_workerThread, &DEMSourceWorker::demFetchFinished, m_thread, &QThread::quit);
-    connect(m_workerThread, &DEMSourceWorker::sendModel, this, &DEMSourceNode::onModelUpdated);
-
     connect(this, &DEMSourceNode::startDemFetch, m_workerThread, &DEMSourceWorker::fetch_dem);
 
     m_thread->start();
@@ -637,8 +635,7 @@ void DEMSourceNode::executeProcessing()
         m_inputData->filePaths(),
         m_preparedSource,
         m_preparedResolution,
-        m_preparedCacheDir,
-        projectModel()
+        m_preparedCacheDir
     );
 }
 
@@ -800,10 +797,14 @@ void DEMSourceNode::onProcessingFinished(
         }
     }
 
-    m_remedyWatcher.disconnect();
+    m_remedyWatcher.disconnect(this);
     if (m_remedyWatcher.isRunning()) {
         m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Path, jpgPath);
+        });
+        return;
     }
 
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
@@ -817,17 +818,15 @@ void DEMSourceNode::onProcessingFinished(
             InSARLogManager::LogWarning("DEMSourceNode", "DEM preview JPG failed to generate: " + jpgPath);
         }
 
-        // TIF 成功但 JPG 失败时状态显示为 Warning，而不是 Completed
+        // TIF 成功但 JPG 失败时以 Warning 完成，两个输出端口仍由完成辅助函数统一发布。
         if (!jpgExists) {
             setLastWarningMessage(QStringLiteral("DEM data was generated, but its preview image could not be generated."));
-            setState(ExecutionState::Warning);
+            setState(ExecutionState::Running);
+            finishExecutionWithWarning();
         } else {
-            setState(ExecutionState::Completed);
+            setState(ExecutionState::Running);
+            finishExecution();
         }
-        setProgress(100);
-        Q_EMIT computingFinished();
-        Q_EMIT dataUpdated(0);
-        Q_EMIT dataUpdated(1);
         updateCacheSizeLabel();
         
         auto iface = NodeUtils::getProjectContext(_widget);
@@ -838,6 +837,42 @@ void DEMSourceNode::onProcessingFinished(
 
     // 异步生成预览图，已存在则跳过重生成
     m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
+        if (QFileInfo::exists(jpgPath) && QFileInfo(jpgPath).size() > 0) {
+            return;
+        }
+        NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
+    }));
+}
+
+void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString& jpgPath)
+{
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
+        bool jpgExists = QFile::exists(jpgPath) && QFileInfo(jpgPath).size() > 0;
+        if (jpgExists) {
+            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
+            setOutputData(1, m_imageInfoData);
+        } else {
+            m_imageInfoData.reset();
+            setOutputData(1, nullptr);
+            InSARLogManager::LogWarning("DEMSourceNode", "DEM preview JPG failed to generate: " + jpgPath);
+        }
+
+        if (!jpgExists) {
+            setLastWarningMessage(QStringLiteral("DEM data was generated, but its preview image could not be generated."));
+            setState(ExecutionState::Running);
+            finishExecutionWithWarning();
+        } else {
+            setState(ExecutionState::Running);
+            finishExecution();
+        }
+        updateCacheSizeLabel();
+
+        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+            iface->refreshProjectTree();
+        }
+    });
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Path, jpgPath]() {
         if (QFileInfo::exists(jpgPath) && QFileInfo(jpgPath).size() > 0) {
             return;
         }
@@ -864,15 +899,6 @@ void DEMSourceNode::onCancelled()
     Q_EMIT computingFinished();
 }
 
-void DEMSourceNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        iface->refreshProjectTree();
-    }
-}
-
 bool DEMSourceNode::validateAndRestoreOutput()
 {
     QString savePath = projectPath();
@@ -888,10 +914,14 @@ bool DEMSourceNode::validateAndRestoreOutput()
         bool needsJpg = !QFile::exists(targetJpg);
 
         if (needsTif || needsJpg) {
-            m_remedyWatcher.disconnect();
+            m_remedyWatcher.disconnect(this);
             if (m_remedyWatcher.isRunning()) {
                 m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
+                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
+                    m_remedyWatcher.disconnect(this);
+                    QTimer::singleShot(0, this, [this]() { validateAndRestoreOutput(); });
+                });
+                return true;
             }
 
             auto writeTifSuccess = std::make_shared<bool>(true);
@@ -978,6 +1008,8 @@ bool DEMSourceNode::validateAndRestoreOutput()
         } else {
             m_outputData = std::make_shared<DEMFileData>(targetTif, name);
             m_imageInfoData = std::make_shared<ImageInfoData>(targetJpg);
+            setOutputData(0, m_outputData);
+            setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(0);
             Q_EMIT dataUpdated(1);
             setState(ExecutionState::Completed);

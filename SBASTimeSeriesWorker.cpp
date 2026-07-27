@@ -32,6 +32,7 @@ bool __stdcall isCancellationRequested(void* context)
 SBASTimeSeriesWorker::SBASTimeSeriesWorker(QObject* parent)
     : BaseWorker(parent)
 {
+    qRegisterMetaType<SBASTimeSeriesResult>("SBASTimeSeriesResult");
 }
 
 SBASTimeSeriesWorker::~SBASTimeSeriesWorker()
@@ -54,7 +55,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                                             double coherence_thresh, double temporal_coherence_thresh,
                                             double refinement_coh_thresh, double refinemen_def_thresh,
                                             QString projectPath, QString projectName, QString dstNode, QString csvPath,
-                                            QStringList filePaths, QStandardItemModel* model)
+                                            QStringList filePaths)
 {
     /*创建csv文件*/
     QDir csv(csvPath);
@@ -92,7 +93,6 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         return;
     }
 
-    NodeUtils::Hdf5Locker locker;
     Utils util; SBAS sbas; FormatConversion conversion; Unwrap unwrap;
     int ret;
     vector<string> SAR_images;
@@ -620,7 +620,10 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     mask.copyTo(mask_count_map);
     out_mask = 0; mask_count_map = 0;
     string times_series_h5 = path1 + "\\SBAS_time_series.h5";
-    conversion.creat_new_h5(times_series_h5.c_str());
+    {
+        NodeUtils::Hdf5Locker h5Lock;
+        conversion.creat_new_h5(times_series_h5.c_str());
+    }
     if (cancellationRequested()) {
         finishCancelled();
         return;
@@ -766,94 +769,14 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         }
     }
     
-    // 如果有传入 QStandardItemModel，则是旧版 Workspace UI 弹窗在调用，我们需要更新项目树
-    if (model)
-    {
-        QString times_series_h5_forward = QString::fromStdString(times_series_h5).replace('\\', '/');
-        QMetaObject::invokeMethod(model, [=]() {
-            QList<QStandardItem*> foundProjects = model->findItems(projectName);
-            if (foundProjects.isEmpty()) return;
-            QStandardItem* project = foundProjects[0];
+    QString times_series_h5_forward = QString::fromStdString(times_series_h5).replace('\\', '/');
+    QString relativePath = QString("/%1/SBAS_time_series.h5").arg(dstNode);
 
-            QStandardItem* SBAS_series = NULL;
-            for (int i = 0; i < project->rowCount(); i++)
-            {
-                if (project->child(i, 0)->text() == dstNode)
-                {
-                    SBAS_series = project->child(i, 0);
-                    break;
-                }
-            }
-
-            if (!SBAS_series)
-            {
-                SBAS_series = new QStandardItem(dstNode);
-                SBAS_series->setToolTip(projectName);
-                int insert = 0;
-                for (; insert < project->rowCount(); insert++)
-                {
-                    if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                        project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                        project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                        project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                        project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
-                        project->child(insert, 1)->text().compare("phase-2.0") == 0 ||
-                        project->child(insert, 1)->text().compare("phase-3.0") == 0 ||
-                        project->child(insert, 1)->text().compare("dem-1.0") == 0 ||
-                        project->child(insert, 1)->text().compare("SBAS-1.0") == 0
-                        )
-                        continue;
-                    else
-                        break;
-                }
-                SBAS_series->setIcon(QIcon(FOLDER_ICON));
-                project->insertRow(insert, SBAS_series);
-                QStandardItem* SBAS_series_Rank = new QStandardItem("SBAS-1.0");
-                project->setChild(insert, 1, SBAS_series_Rank);
-            }
-
-            QStandardItem* item_img = NULL;
-            for (int j = 0; j < SBAS_series->rowCount(); j++)
-            {
-                if (SBAS_series->child(j, 0)->text() == "SBAS_time_series")
-                {
-                    item_img = SBAS_series->child(j, 0);
-                    break;
-                }
-            }
-
-            if (!item_img)
-            {
-                QStandardItem* SBAS_series_name = new QStandardItem(QString("SBAS_time_series"));
-                SBAS_series_name->setToolTip("SBAS");
-                QStandardItem* SBAS_series_name_path = new QStandardItem(times_series_h5_forward);
-                SBAS_series_name->setIcon(QIcon(IMAGEDATA_ICON));
-                SBAS_series->appendRow(SBAS_series_name);
-                SBAS_series->setChild(SBAS_series->rowCount() - 1, 1, SBAS_series_name_path);
-
-                /*写入XML*/
-                XMLFile xmlfile;
-                xmlfile.XMLFile_load((save_path + "/" + projectName).toStdString().c_str());
-                QString relativePath = QString("/%1/SBAS_time_series.h5").arg(dstNode);
-                xmlfile.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
-                xmlfile.XMLFile_save((save_path + "/" + projectName).toStdString().c_str());
-            }
-            else
-            {
-                SBAS_series->setChild(item_img->row(), 1, new QStandardItem(times_series_h5_forward));
-            }
-        }, Qt::BlockingQueuedConnection);
-        emit sendModel(model);
-    }
-    else
-    {
-        /* 仅在工作流节点执行时，直接向XML写入记录 */
-        XMLFile xmlfile;
-        xmlfile.XMLFile_load((save_path + "/" + projectName).toStdString().c_str());
-        QString relativePath = QString("/%1/SBAS_time_series.h5").arg(dstNode);
-        xmlfile.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "SBAS_time_series", relativePath.toStdString().c_str());
-        xmlfile.XMLFile_save((save_path + "/" + projectName).toStdString().c_str());
-    }
+    SBASTimeSeriesResult sbasRes;
+    sbasRes.dstNode = dstNode;
+    sbasRes.timesSeriesH5Path = times_series_h5_forward;
+    sbasRes.relativePath = relativePath;
+    Q_EMIT sbasGenerated(sbasRes);
 
     InSARLogManager::LogInfo("SBASTimeSeriesWorker", "SBAS Time Series analysis completed successfully.");
     emit endProcess();

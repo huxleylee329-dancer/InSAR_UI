@@ -1,7 +1,7 @@
 #pragma once
 
 #include "BaseWorker.h"
-#include <QStandardItemModel>
+#include <QStringList>
 
 /**
  * @brief 电离层 Split-Spectrum 校正 Worker
@@ -20,8 +20,9 @@ public slots:
     void doCorrection(double subbandRatio, double filterStrength, bool outputTEC,
                       QString save_path, QString project_name,
                       QString node_name, QString file_name,
-                      QStandardItemModel* model);
+                      QStringList slcNames, QStringList slcPaths);
 
 signals:
     void cancelled();
+    void outputsGenerated(const QStringList& outputNames, const QStringList& outputPaths);
 };

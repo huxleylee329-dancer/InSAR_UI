@@ -8,6 +8,7 @@
 #include "WorkspaceUI.h"
 #include "NodeUtils.h"
 #include "InSARLogManager.h"
+#include "ImportOutputPersistence.h"
 
 #include <QApplication>
 #include <QThread>
@@ -179,6 +180,7 @@ void ImportNodeBase::execute()
     }
 
     m_stopRequested = false;
+    m_generatedOutputPaths.clear();
 
     // 如果准备阶段确定加载已存在文件，直接跳转完成，不启动 Worker
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
@@ -195,7 +197,7 @@ void ImportNodeBase::execute()
     setProgress(0);
     setState(ExecutionState::Running);
 
-    InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute started.");
+    InSARLogManager::LogInfo(name(), "execute started.");
 
     // Call the legacy executeImport() method
 
@@ -275,7 +277,6 @@ bool ImportNodeBase::validateAndRestoreOutput()
     QString nodeName = getOutputNodeName();
     m_importedFiles = std::make_shared<ImportedFileData>(expectedPaths, nodeName);
     setOutputData(0, m_importedFiles);
-    Q_EMIT dataUpdated(0);
 
     // 恢复 Port 1 预览
     QStringList expectedJpgPaths;
@@ -333,7 +334,7 @@ bool ImportNodeBase::validateAndRestoreOutput()
             if (anyFailed) {
                 setLastWarningMessage(QStringLiteral("Import data was restored, but some preview images could not be generated."));
                 setState(ExecutionState::Warning);
-                InSARLogManager::LogWarning(getOutputNodeName() + "Node", "Import recovery completed, but some preview JPG files failed to generate.");
+                InSARLogManager::LogWarning(name(), "Import recovery completed, but some preview JPG files failed to generate.");
             } else {
                 setState(ExecutionState::Completed);
             }
@@ -353,7 +354,6 @@ bool ImportNodeBase::validateAndRestoreOutput()
     } else {
         m_imageInfo = std::make_shared<ImageInfoData>(expectedJpgPaths);
         setOutputData(1, m_imageInfo);
-        Q_EMIT dataUpdated(1);
     }
 
     return true;
@@ -388,15 +388,21 @@ void ImportNodeBase::onImportProgress(int progress, const QString& message)
 
 void ImportNodeBase::onImportFinished()
 {
+    if (m_outputPersistenceFailed) {
+        onThreadError(QStringLiteral("Unable to save imported outputs to the project."));
+        return;
+    }
+
     // 更新导入文件路径
-    m_importedFilePaths = getExpectedOutputFilePaths();
+    m_importedFilePaths = m_generatedOutputPaths.isEmpty()
+        ? getExpectedOutputFilePaths()
+        : m_generatedOutputPaths;
     QString nodeName = getOutputNodeName();
 
     // 装载 Port 0 数据
     if (!m_importedFilePaths.isEmpty() && !nodeName.isEmpty()) {
         m_importedFiles = std::make_shared<ImportedFileData>(m_importedFilePaths, nodeName);
         setOutputData(0, m_importedFiles);
-        Q_EMIT dataUpdated(0);
     }
 
     // 装载 Port 1 预览数据（过滤并检查实际成功且存在的 JPG 文件）
@@ -421,13 +427,12 @@ void ImportNodeBase::onImportFinished()
             m_imageInfo.reset();
             setOutputData(1, nullptr);
         }
-        Q_EMIT dataUpdated(1);
 
         // 如果主处理已完成，但有 JPG 预览失败，状态设为 Warning，而不显示“全部成功”
         if (anyFailed) {
             setLastWarningMessage(QStringLiteral("Import completed, but some preview images could not be generated."));
             setState(ExecutionState::Warning);
-            InSARLogManager::LogWarning(getOutputNodeName() + "Node", "Import finished, but some preview JPG files failed to generate.");
+            InSARLogManager::LogWarning(name(), "Import finished, but some preview JPG files failed to generate.");
         }
     }
 
@@ -443,7 +448,7 @@ void ImportNodeBase::onImportFinished()
         m_worker = nullptr;
     }
 
-    InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute completed.");
+    InSARLogManager::LogInfo(name(), "execute completed.");
 
     // 如果上面设置了 Warning，则不要调用 finishExecution 将其覆盖为 Completed
     if (executionState() != ExecutionState::Warning) {
@@ -476,6 +481,28 @@ void ImportNodeBase::onThreadError(const QString& error)
     }
 }
 
+void ImportNodeBase::onOutputsGenerated(const QString& dstNode,
+                                        const QStringList& outputNames,
+                                        const QStringList& outputPaths,
+                                        const QString& dataType,
+                                        const QString& satelliteFormat)
+{
+    IApplicationInterface* iface = getProjectContext();
+    if (!ImportOutputPersistence::persist(projectModel(), projectName(), projectPath(), dstNode,
+            outputNames, outputPaths, dataType, satelliteFormat,
+            iface ? iface->projectXml() : nullptr)) {
+        m_outputPersistenceFailed = true;
+        InSARLogManager::LogError(name(), "Unable to save imported outputs to the project.");
+        return;
+    }
+
+    m_generatedOutputPaths = outputPaths;
+
+    if (iface) {
+        iface->refreshProjectTree();
+    }
+}
+
 void ImportNodeBase::onModelUpdated(QStandardItemModel* model)
 {
     Q_UNUSED(model);
@@ -490,6 +517,8 @@ void ImportNodeBase::startWorker(BaseImportWorker* worker, const std::vector<Imp
     if (!worker) return;
 
     m_worker = worker;
+    m_outputPersistenceFailed = false;
+    m_generatedOutputPaths.clear();
     m_thread = new QThread(this);
     m_worker->moveToThread(m_thread);
 
@@ -497,19 +526,15 @@ void ImportNodeBase::startWorker(BaseImportWorker* worker, const std::vector<Imp
     connect(m_worker, &BaseImportWorker::updateProcess, this, &ImportNodeBase::onImportProgress);
     connect(m_worker, &BaseImportWorker::endProcess, this, &ImportNodeBase::onImportFinished);
     connect(m_worker, &BaseImportWorker::errorProcess, this, &ImportNodeBase::onThreadError);
-    connect(m_worker, &BaseImportWorker::sendModel, this, &ImportNodeBase::onModelUpdated);
+    connect(m_worker, &BaseImportWorker::outputsGenerated,
+            this, &ImportNodeBase::onOutputsGenerated);
 
     m_thread->start();
-
-    IApplicationInterface* iface = NodeUtils::getProjectContext(embeddedWidget());
 
     bool success = QMetaObject::invokeMethod(m_worker, "import_patch",
         Q_ARG(QString, projectPath()),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, getOutputNodeName()),
-        Q_ARG(QString, projectName()),
-        Q_ARG(QStandardItemModel*, projectModel()),
-        Q_ARG(void*, iface));
+        Q_ARG(QString, getOutputNodeName()));
     if (!success) {
         qWarning() << "ImportNodeBase::startWorker - Failed to invoke BaseImportWorker::import_patch asynchronously!";
     }

@@ -4,6 +4,7 @@
 #include "ui_S1Deburst.h"
 #include "S1DeburstWorker.h"
 #include <QThread>
+#include <QStringList>
 
 class S1_Deburst : public QWidget
 {
@@ -28,7 +29,7 @@ private:
     int image_number;
     void ChangeVision(bool Editable);
 signals:
-    void operate(QString, QString, QString, QString, QStandardItemModel*);
+    void operate(QString, QString, QString, QStringList);
     void sendCopy(QStandardItemModel*);
 private slots:
     /*工程选择按钮响应函数*/

@@ -4,10 +4,11 @@
 #include "icon_source.h"
 #include <FormatConversion.h>
 #include <QDir>
+#include <QFileInfo>
 #include <QThread>
 #include <QElapsedTimer>
+#include <memory>
 #include <QCoreApplication>
-#include <QStandardItem>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
@@ -76,23 +77,16 @@ GacosOnlineServiceWorker::~GacosOnlineServiceWorker()
 void GacosOnlineServiceWorker::doGacosRequest(
     QString apiKey, QString email, int dataFormat,
     QString save_path, QString project_name,
-    QString node_name, QString file_name,
-    QStandardItemModel* model)
+    QString file_name, QStringList inputPaths)
 {
     currentWorker = this;
-    NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("GacosOnlineServiceWorker",
         QString("GACOS请求开始. 输出: %1, 格式: %2").arg(file_name).arg(dataFormat == 0 ? "GeoTIFF" : "Binary"));
 
     if (save_path.isEmpty() || project_name.isEmpty() ||
-        node_name.isEmpty() || file_name.isEmpty() || apiKey.isEmpty())
+        file_name.isEmpty() || apiKey.isEmpty() || inputPaths.isEmpty())
     {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
-        return;
-    }
-
-    if (!model) {
-        emit errorProcess(QStringLiteral("项目模型为空"));
         return;
     }
 
@@ -103,49 +97,24 @@ void GacosOnlineServiceWorker::doGacosRequest(
     dir.mkdir(file_name);
 
     // 获取输入干涉图信息
-    QList<QString> phase_names;
-    QList<QString> phase_paths;
-    QList<QString> output_names;
-    QList<QString> relative_output_paths;
-    QList<QString> absolute_output_paths;
-    bool found_project = false;
-    bool found_node = false;
+    QStringList phase_names;
+    QStringList phase_paths;
+    QStringList output_names;
+    QStringList absolute_output_paths;
 
     emit updateProcess(5, QStringLiteral("读取输入数据……"));
 
-    QMetaObject::invokeMethod(model, [&]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) return;
-        found_project = true;
-        QStandardItem* project = foundProjects.first();
-
-        for (int i = 0; i < project->rowCount(); i++) {
-            if (project->child(i, 0)->text() == node_name) {
-                found_node = true;
-                QStandardItem* node = project->child(i, 0);
-                for (int j = 0; j < node->rowCount(); j++) {
-                    if (node->child(j, 0)->toolTip() == "phase") {
-                        QString origin_name = node->child(j, 0)->text();
-                        phase_names.append(origin_name);
-                        phase_paths.append(node->child(j, 1)->text());
-                        QString change_name = origin_name + "_gacos_aps";
-                        output_names.append(change_name);
-                        relative_output_paths.append("/" + file_name + "/" + change_name + ".h5");
-                        absolute_output_paths.append(save_path + "/" + file_name + "/" + change_name + ".h5");
-                    }
-                }
-                break;
-            }
+    for (const QString& inputPath : inputPaths) {
+        if (inputPath.isEmpty() || !QFileInfo::exists(inputPath)) {
+            emit errorProcess(QStringLiteral("Input phase file does not exist."));
+            return;
         }
-    }, Qt::BlockingQueuedConnection);
-
-    if (!found_project) {
-        emit errorProcess(QStringLiteral("未找到工程: ") + project_name);
-        return;
-    }
-    if (!found_node) {
-        emit errorProcess(QStringLiteral("未找到数据节点: ") + node_name);
-        return;
+        const QString phaseName = QFileInfo(inputPath).baseName();
+        const QString outputName = phaseName + "_gacos_aps";
+        phase_names.append(phaseName);
+        phase_paths.append(inputPath);
+        output_names.append(outputName);
+        absolute_output_paths.append(save_path + "/" + file_name + "/" + outputName + ".h5");
     }
 
     int image_count = phase_paths.size();
@@ -156,18 +125,6 @@ void GacosOnlineServiceWorker::doGacosRequest(
 
     FormatConversion FC;
     int ret = 0;
-
-    // 加载项目 XML
-    QString xml_path = save_path + "/" + project_name;
-    if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
-        xml_path += ".Insar";
-    }
-
-    XMLFile temp_xml;
-    if (temp_xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
-        emit errorProcess(QStringLiteral("加载项目XML失败: ") + xml_path);
-        return;
-    }
 
     std::vector<bool> process_ok(image_count, false);
 
@@ -187,34 +144,32 @@ void GacosOnlineServiceWorker::doGacosRequest(
 
         // 读取原始相位获取尺寸
         Mat phase;
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "phase", phase);
-        if (ret < 0) continue;
-
-        int rows = phase.rows;
-        int cols = phase.cols;
-
-        // 读取地理坐标范围
         Mat lat_mat, lon_mat;
         double lat_min = 0, lat_max = 0, lon_min = 0, lon_max = 0;
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat);
-        if (ret == 0) {
+        string source_1_str, source_2_str;
+        double carrier_frequency = 0;
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "phase", phase);
+            if (ret < 0) continue;
+            FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat);
+            FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat);
+            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", source_1_str);
+            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", source_2_str);
+            FC.read_double_from_h5(phase_paths[idx].toStdString().c_str(), "carrier_frequency", &carrier_frequency);
+        }
+        if (!lat_mat.empty()) {
             double minVal, maxVal;
             cv::minMaxLoc(lat_mat, &minVal, &maxVal);
             lat_min = minVal;
             lat_max = maxVal;
         }
-        ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat);
-        if (ret == 0) {
+        if (!lon_mat.empty()) {
             double minVal, maxVal;
             cv::minMaxLoc(lon_mat, &minVal, &maxVal);
             lon_min = minVal;
             lon_max = maxVal;
         }
-
-        // 读取时间戳
-        string source_1_str, source_2_str;
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", source_1_str);
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", source_2_str);
 
         // === 阶段1: 提交 GACOS 作业 ===
         emit updateProcess(progress, QStringLiteral("提交GACOS作业（第%1幅）……").arg(idx + 1));
@@ -330,11 +285,8 @@ void GacosOnlineServiceWorker::doGacosRequest(
         // 调用独立算法 DLL 解析下载文件并计算 GACOS 改正相位
         // 获取雷达波长 (米)
         double wavelength = 0.055465763; // 默认值
-        double carrier_frequency = 0;
-        if (0 == FC.read_double_from_h5(phase_paths[idx].toStdString().c_str(), "carrier_frequency", &carrier_frequency)) {
-            if (carrier_frequency > 0) {
-                wavelength = 299792458.0 / carrier_frequency;
-            }
+        if (carrier_frequency > 0) {
+            wavelength = 299792458.0 / carrier_frequency;
         }
 
         // 预分配输出矩阵 (双重保险)
@@ -359,27 +311,28 @@ void GacosOnlineServiceWorker::doGacosRequest(
             continue;
         }
 
-        // 写入输出 H5
-        ret = FC.creat_new_h5(absolute_output_paths[idx].toStdString().c_str());
-        if (ret < 0) {
-            QFile::remove(localDownloadPath);
-            continue;
+        // Write the output and its metadata while holding the HDF5 lock.
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = FC.creat_new_h5(absolute_output_paths[idx].toStdString().c_str());
+            if (ret < 0) {
+                QFile::remove(localDownloadPath);
+                continue;
+            }
+
+            string tmp_str;
+            Mat tmp;
+            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", tmp_str);
+            FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
+            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", tmp_str);
+            FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
+            FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "phase", aps_phase);
+
+            if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", tmp))
+                FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lat", tmp);
+            if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", tmp))
+                FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lon", tmp);
         }
-
-        // 复制元数据
-        string tmp_str;
-        Mat tmp;
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", tmp_str);
-        FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
-        FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", tmp_str);
-        FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
-
-        FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "phase", aps_phase);
-
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", tmp))
-            FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lat", tmp);
-        if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", tmp))
-            FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lon", tmp);
 
         process_ok[idx] = true;
 
@@ -387,35 +340,21 @@ void GacosOnlineServiceWorker::doGacosRequest(
         QFile::remove(localDownloadPath);
     }
 
-    // 更新项目树和 XML
-    QMetaObject::invokeMethod(model, [&]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) return;
-        QStandardItem* project = foundProjects.first();
-
-        QStandardItem* gacos_node = NodeUtils::findOrCreateProjectNode(
-            project, file_name, "phase-2.5", FOLDER_ICON);
-
-        XMLFile local_xml;
-        local_xml.XMLFile_load(xml_path.toStdString().c_str());
-
-        for (int i = 0; i < image_count; i++) {
-            if (!process_ok[i]) continue;
-
-            local_xml.XMLFile_add_unwrap(
-                file_name.toStdString().c_str(),
-                output_names[i].toStdString().c_str(),
-                relative_output_paths[i].toStdString().c_str(),
-                0, 0, "GACOS", 0);
-
-            NodeUtils::findOrCreateChildItem(
-                gacos_node, output_names[i], "phase",
-                absolute_output_paths[i], IMAGEDATA_ICON);
+    QStringList generatedNames;
+    QStringList generatedPaths;
+    for (int i = 0; i < image_count; ++i) {
+        if (process_ok[i]) {
+            generatedNames.append(output_names[i]);
+            generatedPaths.append(absolute_output_paths[i]);
         }
-        local_xml.XMLFile_save(xml_path.toStdString().c_str());
-    }, Qt::BlockingQueuedConnection);
+    }
+    if (generatedPaths.isEmpty()) {
+        emit errorProcess(QStringLiteral("GACOS did not generate any output files."));
+        currentWorker = nullptr;
+        return;
+    }
 
-    emit sendModel(model);
+    emit outputsGenerated(file_name, generatedNames, generatedPaths, save_path, project_name);
     currentWorker = nullptr;
     InSARLogManager::LogInfo("GacosOnlineServiceWorker", "GACOS处理完成");
     emit endProcess();

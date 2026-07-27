@@ -220,6 +220,33 @@ void S1_Deburst::on_buttonBox_accepted()
     }
 
 
+    QStringList inputPaths;
+    const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+    if (projects.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到工程节点。"));
+        return;
+    }
+    QStandardItem* sourceNode = nullptr;
+    for (int i = 0; i < projects.first()->rowCount(); ++i) {
+        if (projects.first()->child(i, 0)->text() == ui->comboBox_2->currentText()) {
+            sourceNode = projects.first()->child(i, 0);
+            break;
+        }
+    }
+    if (!sourceNode) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到输入数据节点。"));
+        return;
+    }
+    for (int i = 0; i < sourceNode->rowCount(); ++i) {
+        QStandardItem* pathItem = sourceNode->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty()) {
+            inputPaths.append(pathItem->text());
+        }
+    }
+    if (inputPaths.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("输入影像为空。"));
+        return;
+    }
     S1_Deburst_worker = new S1DeburstWorker;
     m_thread = new QThread(this);
     S1_Deburst_worker->moveToThread(m_thread);
@@ -231,12 +258,10 @@ void S1_Deburst::on_buttonBox_accepted()
     connect(S1_Deburst_worker, &S1DeburstWorker::endProcess, this, &S1_Deburst::endProcess);
     connect(this, &QWidget::destroyed, this, &S1_Deburst::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_Deburst::StopThread);
-    connect(S1_Deburst_worker, &S1DeburstWorker::sendModel, this, &S1_Deburst::TransitModel);
-    // 接收 sendResults，完成 Workspace UI 路径的 XML 写入
     connect(S1_Deburst_worker, &S1DeburstWorker::sendResults, this, &S1_Deburst::handleResults);
     m_thread->start();
     ChangeVision(false);
-    emit operate(this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->fileedit->text(), this->copy);
+    emit operate(this->save_path, ui->comboBox->currentText(), ui->fileedit->text(), inputPaths);
 }
 
 void S1_Deburst::on_buttonBox_rejected()

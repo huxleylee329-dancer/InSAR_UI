@@ -16,19 +16,20 @@ public slots:
     void updateProcess(int value, QString information);
     void endProcess();
     void StopThread();
-    void TransitModel(QStandardItemModel* model);
 
 signals:
     void operate(QString apiKey, QString email, int dataFormat,
                  QString save_path, QString project_name,
-                 QString node_name, QString file_name,
-                 QStandardItemModel* model);
+                 QString file_name, QStringList inputPaths);
     void sendCopy(QStandardItemModel* model);
 
 private slots:
     void on_comboBox_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
+    void handleResults(const QString& dstNode, const QStringList& outputNames,
+                       const QStringList& outputPaths, const QString& savePath,
+                       const QString& projectName);
 
 private:
     Ui::GacosOnlineService* ui;

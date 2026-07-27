@@ -4,6 +4,13 @@
 #include <QStringList>
 #include <atomic>
 
+struct SBASTimeSeriesResult {
+    QString dstNode;
+    QString timesSeriesH5Path;
+    QString relativePath;
+};
+Q_DECLARE_METATYPE(SBASTimeSeriesResult)
+
 class SBASTimeSeriesWorker : public BaseWorker
 {
     Q_OBJECT
@@ -20,10 +27,11 @@ public slots:
                           double coherence_thresh, double temporal_coherence_thresh,
                           double refinement_coh_thresh, double refinemen_def_thresh,
                           QString projectPath, QString projectName, QString dstNode, QString csvPath,
-                          QStringList filePaths, QStandardItemModel* model = nullptr);
+                          QStringList filePaths);
 
 signals:
     void cancelled();
+    void sbasGenerated(const SBASTimeSeriesResult& result);
 
 private:
     std::atomic_bool m_cancelRequested{false};

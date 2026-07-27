@@ -70,6 +70,7 @@ private:
     void invalidateNodeData(); // GCP数据失效与下游传播
     void updateWidgetSize();   // 尺寸同步更新自愈
     QString getOutputH5Path() const;
+    void cleanUpThreadAndWorker();
     QString getReportTxtPath() const;
     QString projectDir() const;
 

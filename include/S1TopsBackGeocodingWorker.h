@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <QStringList>
 
 class Sentinel1BackGeocoding;
 struct InSARDiagnosticEvent;
@@ -28,13 +29,11 @@ public:
 
 public slots:
     void S1_TOPS_BackGeocoding(
-        int images_number,
         int masterIndex,
         QString savePath,
         QString dstProject,
-        QString srcNode,
         QString dstNode,
-        QStandardItemModel* model,
+        QStringList inputPaths,
         bool b_ESD = true
     );
 

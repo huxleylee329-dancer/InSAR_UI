@@ -8,7 +8,6 @@
 #include <QThread>
 #include <QElapsedTimer>
 #include <QCoreApplication>
-#include <QStandardItem>
 #include <cmath>
 #include <AtmosphericCorrection.h>
 
@@ -60,9 +59,10 @@ void PhaseElevationRegressionWorker::doRegression(
     int polyOrder, int windowSize, double coherenceThresh,
     QString save_path, QString project_name,
     QString node_name, QString file_name,
-    QStandardItemModel* model)
+    QStringList phase_names, QStringList phase_paths)
 {
-    NodeUtils::Hdf5Locker locker;
+    Q_UNUSED(project_name);
+    Q_UNUSED(node_name);
     InSARLogManager::LogInfo("PhaseElevationRegressionWorker",
         QString("回归校正开始. 输出: %1, 阶数: %2, 窗口: %3, 相干阈值: %4")
         .arg(file_name).arg(polyOrder).arg(windowSize).arg(coherenceThresh));
@@ -74,63 +74,32 @@ void PhaseElevationRegressionWorker::doRegression(
         return;
     }
 
-    if (!model) {
-        emit errorProcess(QStringLiteral("项目模型为空"));
+    // 创建输出目录
+    const QString outputDirectoryPath = save_path + "/" + file_name;
+    QDir outputDirectory(outputDirectoryPath);
+    if (outputDirectory.exists() && !outputDirectory.removeRecursively()) {
+        emit errorProcess(QStringLiteral("无法清理已有输出目录: ") + outputDirectoryPath);
+        return;
+    }
+    if (!QDir().mkpath(outputDirectoryPath)) {
+        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDirectoryPath);
         return;
     }
 
-    // 创建输出目录
-    QDir dir(save_path);
-    QString absolute_path = save_path + "/" + file_name;
-    if (dir.exists(file_name)) {
-        dir.remove(file_name);
-    }
-    dir.mkdir(file_name);
-
     // 从项目树中获取输入相位文件列表
-    QList<QString> phase_names;
-    QList<QString> phase_paths;
     QList<QString> output_names;
-    QList<QString> relative_output_paths;
     QList<QString> absolute_output_paths;
-    bool found_project = false;
-    bool found_node = false;
 
     emit updateProcess(5, QStringLiteral("准备数据……"));
 
-    QMetaObject::invokeMethod(model, [&]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) return;
-        found_project = true;
-        QStandardItem* project = foundProjects.first();
-
-        for (int i = 0; i < project->rowCount(); i++) {
-            if (project->child(i, 0)->text() == node_name) {
-                found_node = true;
-                QStandardItem* node = project->child(i, 0);
-                for (int j = 0; j < node->rowCount(); j++) {
-                    if (node->child(j, 0)->toolTip() == "phase") {
-                        QString origin_name = node->child(j, 0)->text();
-                        phase_names.append(origin_name);
-                        phase_paths.append(node->child(j, 1)->text());
-                        QString change_name = origin_name + "_atmos";
-                        output_names.append(change_name);
-                        relative_output_paths.append("/" + file_name + "/" + change_name + ".h5");
-                        absolute_output_paths.append(save_path + "/" + file_name + "/" + change_name + ".h5");
-                    }
-                }
-                break;
-            }
-        }
-    }, Qt::BlockingQueuedConnection);
-
-    if (!found_project) {
-        emit errorProcess(QStringLiteral("未找到工程: ") + project_name);
+    if (phase_names.size() != phase_paths.size()) {
+        emit errorProcess(QStringLiteral("输入干涉图快照无效"));
         return;
     }
-    if (!found_node) {
-        emit errorProcess(QStringLiteral("未找到数据节点: ") + node_name);
-        return;
+    for (int i = 0; i < phase_paths.size(); ++i) {
+        const QString outputName = phase_names[i] + "_atmos";
+        output_names.append(outputName);
+        absolute_output_paths.append(outputDirectoryPath + "/" + outputName + ".h5");
     }
 
     int image_count = phase_paths.size();
@@ -142,18 +111,6 @@ void PhaseElevationRegressionWorker::doRegression(
     FormatConversion FC;
     Utils util;
     int ret = 0;
-
-    // 加载项目 XML
-    QString xml_path = save_path + "/" + project_name;
-    if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
-        xml_path += ".Insar";
-    }
-
-    XMLFile temp_xml;
-    if (temp_xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
-        emit errorProcess(QStringLiteral("加载项目XML失败: ") + xml_path);
-        return;
-    }
 
     std::vector<int> offset_rows(image_count, 0);
     std::vector<int> offset_cols(image_count, 0);
@@ -240,7 +197,10 @@ void PhaseElevationRegressionWorker::doRegression(
         }
 
         // 写入校正后的 H5 文件
-        ret = FC.creat_new_h5(absolute_output_paths[idx].toStdString().c_str());
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = FC.creat_new_h5(absolute_output_paths[idx].toStdString().c_str());
+        }
         if (ret < 0) continue;
 
         // 复制元数据
@@ -289,38 +249,26 @@ void PhaseElevationRegressionWorker::doRegression(
         process_ok[idx] = true;
     }
 
-    currentWorker = nullptr;
-
-    // 更新项目树和 XML
-    QMetaObject::invokeMethod(model, [&]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) return;
-        QStandardItem* project = foundProjects.first();
-
-        QStandardItem* atmos_node = NodeUtils::findOrCreateProjectNode(
-            project, file_name, "phase-2.5", FOLDER_ICON);
-
-        XMLFile local_xml;
-        local_xml.XMLFile_load(xml_path.toStdString().c_str());
-
-        for (int i = 0; i < image_count; i++) {
-            if (!process_ok[i]) continue;
-
-            local_xml.XMLFile_add_unwrap(
-                file_name.toStdString().c_str(),
-                output_names[i].toStdString().c_str(),
-                relative_output_paths[i].toStdString().c_str(),
-                offset_rows[i], offset_cols[i],
-                "PhaseElevationRegression", 0);
-
-            NodeUtils::findOrCreateChildItem(
-                atmos_node, output_names[i], "phase",
-                absolute_output_paths[i], IMAGEDATA_ICON);
+    QStringList generatedNames;
+    QStringList generatedPaths;
+    QList<int> generatedOffsetRows;
+    QList<int> generatedOffsetCols;
+    for (int i = 0; i < image_count; ++i) {
+        if (process_ok[i]) {
+            generatedNames.append(output_names[i]);
+            generatedPaths.append(absolute_output_paths[i]);
+            generatedOffsetRows.append(offset_rows[i]);
+            generatedOffsetCols.append(offset_cols[i]);
         }
-        local_xml.XMLFile_save(xml_path.toStdString().c_str());
-    }, Qt::BlockingQueuedConnection);
+    }
+    if (generatedPaths.isEmpty()) {
+        currentWorker = nullptr;
+        emit errorProcess(QStringLiteral("回归校正未生成任何输出文件"));
+        return;
+    }
 
-    emit sendModel(model);
+    currentWorker = nullptr;
     InSARLogManager::LogInfo("PhaseElevationRegressionWorker", "回归校正完成");
+    emit outputsGenerated(generatedNames, generatedPaths, generatedOffsetRows, generatedOffsetCols);
     emit endProcess();
 }

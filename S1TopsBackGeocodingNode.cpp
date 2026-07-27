@@ -501,7 +501,7 @@ void S1TopsBackGeocodingNode::createWidget()
     nodeNameLabel->setFixedWidth(80);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputNodeNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -1139,10 +1139,20 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
 
     if (!orderedH5Paths.isEmpty())
     {
-        m_remedyWatcher.disconnect();
+        m_remedyWatcher.disconnect(this);
         if (m_remedyWatcher.isRunning()) {
             m_remedyWatcher.cancel();
-            m_remedyWatcher.waitForFinished();
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                    [this, regisH5Paths, dstNode, dstProject, savePath, masterIndex,
+                     hasQualityWarning, qualityWarnings]() {
+                m_remedyWatcher.disconnect(this);
+                QTimer::singleShot(0, this, [this, regisH5Paths, dstNode, dstProject, savePath,
+                                              masterIndex, hasQualityWarning, qualityWarnings]() {
+                    onProcessingFinished(regisH5Paths, dstNode, dstProject, savePath, masterIndex,
+                                         hasQualityWarning, qualityWarnings);
+                });
+            });
+            return;
         }
 
         const QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
@@ -1195,8 +1205,6 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
                 m_imageInfoData.reset();
                 setOutputData(1, nullptr);
             }
-            Q_EMIT dataUpdated(1);
-
             const qint64 previewElapsedMs = previewTimer->isValid() ? previewTimer->elapsed() : -1;
             InSARLogManager::LogDiagnostic(
                 anyFailed || overviewFailed ? InSARLogManager::LevelWarning : InSARLogManager::LevelInfo,
@@ -1236,7 +1244,6 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
                     LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("completed"),
                     m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
                 finishExecution();
-                Q_EMIT dataUpdated(0);
             }
         });
 
@@ -1254,7 +1261,6 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
     {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
-        Q_EMIT dataUpdated(1);
 
         updateParameterWidgetsEnableState();
         setProgress(100);
@@ -1263,7 +1269,6 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
             LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("completed"),
             m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
         finishExecution();
-        Q_EMIT dataUpdated(0);
     }
 }
 
@@ -1400,6 +1405,11 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     m_preparedDemPath = m_demPath;
     m_preparedRecoverRefinementTransaction = false;
     m_preparedCleanOutputDirectory = false;
+    m_preparedInputPaths = m_inputData->filePaths();
+    if (m_preparedInputPaths.size() < 2) {
+        InSARLogManager::LogError("S1TopsBackGeocodingNode", "At least two input files are required for Back-Geocoding.");
+        return false;
+    }
 
     const QString refinementManifestPath = QDir(m_preparedSavePath).filePath(
         m_preparedDstNode + QStringLiteral("/refinement_transaction.json"));
@@ -1448,31 +1458,13 @@ bool S1TopsBackGeocodingNode::prepareToStart()
 
     // 覆盖提示判断
     QStringList pathsToCheck;
-    QStandardItemModel* model = projectModel();
-    if (model)
-    {
-        QList<QStandardItem*> foundProjects = model->findItems(m_preparedDstProject);
-        if (!foundProjects.isEmpty())
-        {
-            QStandardItem* projectItem = foundProjects.first();
-            for (int i = 0; i < projectItem->rowCount(); ++i)
-            {
-                QStandardItem* nodeItem = projectItem->child(i, 0);
-                if (nodeItem && nodeItem->text() == m_preparedSrcNode)
-                {
-                    int temp_images_number = nodeItem->rowCount();
-                    for (int j = 0; j < temp_images_number; ++j)
-                    {
-                        QStandardItem* childItem = nodeItem->child(j, 0);
-                        if (childItem) {
-                            QString origin_name = childItem->text();
-                            pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + origin_name + "_regis.h5");
-                        }
-                    }
-                    break;
-                }
-            }
+    for (const QString& inputPath : m_preparedInputPaths) {
+        const QString originName = QFileInfo(inputPath).baseName();
+        if (originName.isEmpty()) {
+            InSARLogManager::LogError("S1TopsBackGeocodingNode", "Input path does not have a valid file name: " + inputPath);
+            return false;
         }
+        pathsToCheck.append(QDir(m_preparedSavePath).filePath(m_preparedDstNode + "/" + originName + "_regis.h5"));
     }
 
     if (m_preparedRecoverRefinementTransaction || _isAutoTriggered) {
@@ -1487,27 +1479,7 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     m_preparedCleanOutputDirectory =
         m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite;
 
-    m_preparedImagesNumber = 0;
-    model = projectModel();
-    if (model)
-    {
-        QList<QStandardItem*> foundProjects = model->findItems(m_preparedDstProject);
-        if (!foundProjects.isEmpty())
-        {
-            QStandardItem* projectItem = foundProjects.first();
-            for (int i = 0; i < projectItem->rowCount(); ++i)
-            {
-                QStandardItem* nodeItem = projectItem->child(i, 0);
-                if (nodeItem) {
-                    if (nodeItem->text() == m_preparedSrcNode)
-                    {
-                        m_preparedImagesNumber = nodeItem->rowCount();
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    m_preparedImagesNumber = m_preparedInputPaths.size();
 
     if (m_preparedImagesNumber < 2)
     {
@@ -1588,19 +1560,18 @@ void S1TopsBackGeocodingNode::executeProcessing()
     // Connect signals
     connect(this, &S1TopsBackGeocodingNode::startBackGeocoding, m_workerThread, &S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding);
     
-    int images_number = m_preparedImagesNumber;
     int masterIndex = m_preparedMasterIndex;
     QString savePath = m_preparedSavePath;
     QString dstProject = m_preparedDstProject;
-    QString srcNode = m_preparedSrcNode;
     QString dstNode = m_preparedDstNode;
+    QStringList inputPaths = m_preparedInputPaths;
     bool b_ESD = m_preparedBESD;
     
-    connect(m_thread, &QThread::started, [this, images_number, masterIndex, savePath, dstProject, srcNode, dstNode, b_ESD]() {
+    connect(m_thread, &QThread::started, [this, masterIndex, savePath, dstProject, dstNode, inputPaths, b_ESD]() {
         InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
             QStringLiteral("后向地理编码 Worker 已启动。"), LogTargets(LogTarget::UserProjectLog),
             QStringLiteral("lifecycle"), QStringLiteral("worker_started"), QStringLiteral("running"));
-        Q_EMIT startBackGeocoding(images_number, masterIndex, savePath, dstProject, srcNode, dstNode, projectModel(), b_ESD);
+        Q_EMIT startBackGeocoding(masterIndex, savePath, dstProject, dstNode, inputPaths, b_ESD);
     });
     connect(m_workerThread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1TopsBackGeocodingNode::onProgressUpdate);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::registrationFinished, this, &S1TopsBackGeocodingNode::onProcessingFinished);
@@ -1609,7 +1580,6 @@ void S1TopsBackGeocodingNode::executeProcessing()
     connect(m_workerThread, &S1TopsBackGeocodingWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, this, &S1TopsBackGeocodingNode::onError);
     connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_workerThread, &S1TopsBackGeocodingWorker::sendModel, this, &S1TopsBackGeocodingNode::onModelUpdated);
 
     // Start thread
     deferAutomaticCompletion();
@@ -1708,7 +1678,6 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     updateRegistrationOffsets(orderedH5Paths);
     m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, dstNode);
     setOutputData(0, m_outputData);
-    Q_EMIT dataUpdated(0);
 
     QStringList allJpgPaths = jpgPathsFromH5Paths(orderedH5Paths);
     QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
@@ -1739,10 +1708,14 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     Q_EMIT dataUpdated(1);
 
     if (!missingH5s.isEmpty() || needsOverview) {
-        m_remedyWatcher.disconnect();
+        m_remedyWatcher.disconnect(this);
         if (m_remedyWatcher.isRunning()) {
             m_remedyWatcher.cancel();
-            m_remedyWatcher.waitForFinished();
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
+                m_remedyWatcher.disconnect(this);
+                QTimer::singleShot(0, this, [this]() { validateAndRestoreOutput(); });
+            });
+            return true;
         }
 
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths, missingJpgs, overviewPaths]() {
@@ -1846,12 +1819,12 @@ std::vector<QString> S1TopsBackGeocodingNode::processingInfo() const
         ? tr("配准质量：提醒")
         : tr("配准质量：通过");
     info.push_back(status);
-    info.push_back(tr("主影像：%1；从影像：%2 幅")
+    info.push_back(tr("涓诲奖鍍忥細%1锛涗粠褰卞儚锛?2 骞?")
         .arg(QFileInfo(h5Paths.first()).baseName())
         .arg(qMax(0, h5Paths.size() - 1)));
     info.push_back(tr("精配准：ESD %1；距离向振幅精配准 %2")
-        .arg(m_bESD ? tr("已启用") : tr("未启用"))
-        .arg(m_bRangeRefine ? tr("已启用") : tr("未启用")));
+        .arg(m_bESD ? tr("宸插惎鐢?") : tr("鏈惎鐢?"))
+        .arg(m_bRangeRefine ? tr("宸插惎鐢?") : tr("鏈惎鐢?")));
 
     if (!m_registrationOverviewPaths.isEmpty() ||
         !registrationOverviewPathsFromH5Paths(h5Paths).isEmpty()) {
@@ -1861,16 +1834,16 @@ std::vector<QString> S1TopsBackGeocodingNode::processingInfo() const
     for (const RegistrationOffsetSummary& offset : m_registrationOffsets) {
         const QString azimuth = offset.hasAzimuthOffset
             ? QString::number(offset.azimuthOffset, 'f', 4)
-            : tr("未应用");
+            : tr("鏈簲鐢?");
         const QString range = offset.hasRangeOffset
             ? QString::number(offset.rangeOffset, 'f', 4)
-            : tr("未应用");
+            : tr("鏈簲鐢?");
         info.push_back(tr("%1：方位补偿 %2；距离补偿 %3")
             .arg(offset.slaveName, azimuth, range));
     }
 
     if (!m_processingQualityWarnings.isEmpty()) {
-        info.push_back(tr("质量告警：%1 项").arg(m_processingQualityWarnings.size()));
+        info.push_back(tr("璐ㄩ噺鍛婅锛?1 椤?").arg(m_processingQualityWarnings.size()));
         const int warningCount = qMin(2, m_processingQualityWarnings.size());
         for (int i = 0; i < warningCount; ++i) {
             info.push_back(m_processingQualityWarnings.at(i));
@@ -2296,7 +2269,7 @@ public:
         cardLayout->setContentsMargins(10, 8, 10, 8);
         cardLayout->setSpacing(4);
 
-        m_statusCardTitle = new QLabel(tr("未评估"));
+        m_statusCardTitle = new QLabel(tr("鏈瘎浼?"));
         m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
         cardLayout->addWidget(m_statusCardTitle);
 
@@ -2474,7 +2447,7 @@ private:
         clearCachedResults();
 
         m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
-        m_statusCardTitle->setText(tr("未评估"));
+        m_statusCardTitle->setText(tr("鏈瘎浼?"));
         m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
         m_statusCardDesc->setText(tr("请等待评估获取相干性及对齐精度诊断结果。"));
 
@@ -2589,7 +2562,7 @@ private:
             if (!cachedImage.isNull()) {
                 m_fullCoherenceImage = cachedImage;
                 m_fullCoherenceSlaveIndex = slaveIndex;
-                m_fullCoherenceStatusLabel->setText(tr("已加载全图相干性热力图（9 x 9 局部窗口）。"));
+                m_fullCoherenceStatusLabel->setText(tr("宸插姞杞藉叏鍥剧浉骞叉€х儹鍔涘浘锛? x 9 灞€閮ㄧ獥鍙ｏ級銆?"));
                 m_imageView->clearOverlayRects();
                 m_imageView->setImage(m_fullCoherenceImage);
                 updateFullCoherenceOverlay();
@@ -2668,7 +2641,7 @@ private:
             m_fullCoherenceSourceCols = result.sourceCols;
             if (m_visualModeCombo->currentData().toInt() == 2 &&
                 m_slaveCombo->currentIndex() + 1 == result.slaveIndex) {
-                m_fullCoherenceStatusLabel->setText(tr("全图相干性热力图已生成（9 x 9 局部窗口）。"));
+                m_fullCoherenceStatusLabel->setText(tr("已加载全图相干性热力图（9 x 9 局部窗口）。"));
                 m_imageView->clearOverlayRects();
                 m_imageView->setImage(m_fullCoherenceImage);
                 updateFullCoherenceOverlay();
@@ -2795,7 +2768,7 @@ private:
             
             QString desc = tr("配准精度优秀。所有置信采样区域的配准残余偏差均为 0。");
             if (meanPreCoh >= 0.0) {
-                desc += tr("平均相干系数由配准前的 %1 显著提升至配准后的 %2，配准对齐效果极佳。")
+                desc += tr("骞冲潎鐩稿共绯绘暟鐢遍厤鍑嗗墠鐨?%1 鏄捐憲鎻愬崌鑷抽厤鍑嗗悗鐨?%2锛岄厤鍑嗗榻愭晥鏋滄瀬浣炽€?")
                     .arg(meanPreCoh, 0, 'f', 4).arg(meanCoh, 0, 'f', 4);
             } else {
                 desc += tr("配准后平均相干系数为 %1，完全满足后续干涉测量要求。").arg(meanCoh, 0, 'f', 4);
@@ -2812,10 +2785,10 @@ private:
             
             QString desc = tr("配准未达标或发生严重偏差！");
             if (meanPreCoh >= 0.0) {
-                desc += tr("配准后平均相干系数（%1）较配准前（%2）无明显改善，或有置信测试区域偏移量超过 2 像素。建议开启 ESD 改正重新运行。")
+                desc += tr("閰嶅噯鍚庡钩鍧囩浉骞茬郴鏁帮紙%1锛夎緝閰嶅噯鍓嶏紙%2锛夋棤鏄庢樉鏀瑰杽锛屾垨鏈夌疆淇℃祴璇曞尯鍩熷亸绉婚噺瓒呰繃 2 鍍忕礌銆傚缓璁紑鍚?ESD 鏀规閲嶆柊杩愯銆?")
                     .arg(meanCoh, 0, 'f', 4).arg(meanPreCoh, 0, 'f', 4);
             } else {
-                desc += tr("有置信区域偏移量超过 2 像素或平均相干系数过低，建议开启 ESD 改正重新运行。");
+                desc += tr("鏈夌疆淇″尯鍩熷亸绉婚噺瓒呰繃 2 鍍忕礌鎴栧钩鍧囩浉骞茬郴鏁拌繃浣庯紝寤鸿寮€鍚?ESD 鏀规閲嶆柊杩愯銆?");
             }
             if (hasMismatch) {
                 desc += tr("\n提示：检测到部分区域幅相不一致（可能存在相位噪声匹配干扰），建议在相干性较稳定的区域手动重新选点。");
@@ -2827,9 +2800,9 @@ private:
             m_statusCardTitle->setText(tr("提醒 (WARNING)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
             
-            QString desc = tr("配准精度一般。部分置信测试区域存在 1~2 像素的小幅偏差。");
+            QString desc = tr("閰嶅噯绮惧害涓€鑸€傞儴鍒嗙疆淇℃祴璇曞尯鍩熷瓨鍦?1~2 鍍忕礌鐨勫皬骞呭亸宸€?");
             if (meanPreCoh >= 0.0) {
-                desc += tr("配准后平均相干系数为 %1（配准前为 %2），可能由于地形起伏大或局部时间失相干导致。")
+                desc += tr("閰嶅噯鍚庡钩鍧囩浉骞茬郴鏁颁负 %1锛堥厤鍑嗗墠涓?%2锛夛紝鍙兘鐢变簬鍦板舰璧蜂紡澶ф垨灞€閮ㄦ椂闂村け鐩稿共瀵艰嚧銆?")
                     .arg(meanCoh, 0, 'f', 4).arg(meanPreCoh, 0, 'f', 4);
             } else {
                 desc += tr("可能由于地形起伏大或局部时间失相干导致。");
@@ -2999,3 +2972,4 @@ private:
 }
 
 } // namespace QtNodes
+

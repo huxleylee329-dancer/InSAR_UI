@@ -1,6 +1,17 @@
 #pragma once
 
 #include "BaseWorker.h"
+#include <QMetaType>
+#include <QStringList>
+
+struct DemFileResult {
+    QString demName;
+    QString relativeDemPath;
+    QString absoluteDemPath;
+    int offsetRow = 0;
+    int offsetCol = 0;
+};
+Q_DECLARE_METATYPE(DemFileResult)
 
 class DemWorker : public BaseWorker
 {
@@ -11,8 +22,10 @@ public:
     ~DemWorker();
 
 public slots:
-    void Dem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
+    void Dem(int method, int times, QString savePath, QString outputNode,
+             QStringList phaseNames, QStringList phasePaths);
 
 signals:
     void cancelled();
+    void demFileGenerated(const DemFileResult& result);
 };

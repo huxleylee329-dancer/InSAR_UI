@@ -94,6 +94,7 @@ private:
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void releaseFinishedThreadResources();
 
     // Get project context interface
     QStandardItemModel* projectModel() const;

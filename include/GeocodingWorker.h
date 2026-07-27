@@ -1,6 +1,15 @@
 #pragma once
 #include "BaseWorker.h"
 
+struct GeocodingFileResult {
+    QString dstNode;
+    QString geocodeName;
+    QString geocodePath;
+    QString relativePath;
+    QString rankLevel;
+};
+Q_DECLARE_METATYPE(GeocodingFileResult)
+
 class GeocodingWorker : public BaseWorker
 {
     Q_OBJECT
@@ -13,23 +22,26 @@ public slots:
         int type,
         int multi_rg,
         int multi_az,
-        QString project_name,
-        QString srcNode,
-        QString dstNode,
-        QStandardItemModel* model
+        QString savePath,
+        QStringList inputPaths,
+        QString productLevel,
+        int masterIndex,
+        QString dstNode
     );
 
     void GeocodingWithDem(
         int type,
         int multi_rg,
         int multi_az,
-        QString project_name,
-        QString srcNode,
+        QString savePath,
+        QStringList inputPaths,
+        QString productLevel,
+        int masterIndex,
         QString dstNode,
-        QStandardItemModel* model,
-        QString dem_path
+        QString demPath
     );
 
 signals:
     void cancelled();
+    void geocodingGenerated(const GeocodingFileResult& result);
 };

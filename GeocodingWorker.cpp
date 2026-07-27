@@ -3,7 +3,6 @@
 #include "icon_source.h"
 #include "Package.h"
 #include <FormatConversion.h>
-#include "tinyxml.h"
 #include <Utils.h>
 #include <Deflat.h>
 #include <Filter.h>
@@ -75,6 +74,7 @@ struct GeocodingThreadLocalGuard {
 GeocodingWorker::GeocodingWorker(QObject* parent)
     : BaseWorker(parent)
 {
+    qRegisterMetaType<GeocodingFileResult>("GeocodingFileResult");
 }
 
 GeocodingWorker::~GeocodingWorker()
@@ -85,76 +85,67 @@ void GeocodingWorker::Geocoding(
     int type,
     int multi_rg,
     int multi_az,
-    QString project_name,
-    QString srcNode,
-    QString dstNode,
-    QStandardItemModel* model
+    QString savePath,
+    QStringList inputPaths,
+    QString productLevel,
+    int masterIndex,
+    QString dstNode
 )
 {
-    GeocodingWithDem(type, multi_rg, multi_az, project_name, srcNode, dstNode, model, QString());
+    GeocodingWithDem(type, multi_rg, multi_az, savePath, inputPaths, productLevel, masterIndex, dstNode, QString());
 }
 
 void GeocodingWorker::GeocodingWithDem(
     int type,
     int multi_rg,
     int multi_az,
-    QString project_name,
-    QString srcNode,
+    QString savePath,
+    QStringList inputPaths,
+    QString productLevel,
+    int masterIndex,
     QString dstNode,
-    QStandardItemModel* model,
-    QString dem_path
+    QString demPath
 )
 {
     GeocodingThreadLocalGuard guard(this);
-    if (!model) {
-        emit errorProcess(QStringLiteral("模型指针为空！"));
-        return;
-    }
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         Q_EMIT cancelled();
         return;
     }
 
-    QStandardItem* project = model->findItems(project_name)[0];
-    if (!project) {
-        emit errorProcess(QStringLiteral("未找到工程节点！"));
-        return;
-    }
-    QString save_path = model->item(project->row(), 1)->text();
+    const QString save_path = savePath;
+
     QDir dir(save_path);
     if (!dir.exists(dstNode))
         dir.mkdir(dstNode);
+
     // 外部DEM文件夹或文件路径
-    QString demPath = dem_path;
     if (demPath.isEmpty()) {
         demPath = QDir::toNativeSeparators(save_path + "/.dem_cache");
     }
 
     std::vector<std::string> input_files;
     std::vector<std::string> output_files;
-    QList<QString> origin;
-    QString product_level;
-    for (int i = 0; i < project->rowCount(); i++)
-    {
-        QStandardItem* images = project->child(i, 0);
-        if (images->text() == srcNode)
-        {
-            product_level = project->child(i, 1)->text();
-            for (int j = 0; j < images->rowCount(); j++)
-            {
-                QFileInfo fileinfo(images->child(j, 1)->text());
-                QString origin_name = fileinfo.baseName();
-                origin.append(origin_name);
-                input_files.push_back(images->child(j, 1)->text().toStdString());
-                output_files.push_back(QString("%1/%2/%3_geocoded.h5").arg(save_path).arg(dstNode)
-                    .arg(origin_name).toStdString());
-            }
-            break;
-        }
+    const QString product_level = productLevel;
+    for (const QString& inputPath : inputPaths) {
+        QFileInfo fileinfo(inputPath);
+        const QString originName = fileinfo.baseName();
+        input_files.push_back(inputPath.toStdString());
+        output_files.push_back(QString("%1/%2/%3_geocoded.h5").arg(save_path).arg(dstNode)
+            .arg(originName).toStdString());
+    }
+
+    if (type == 1 && product_level.isEmpty()) {
+        emit errorProcess(QStringLiteral("No product level was provided for geocoding."));
+        return;
+    }
+    if (type == 2 && (masterIndex < 0 || masterIndex >= static_cast<int>(input_files.size()))) {
+        emit errorProcess(QStringLiteral("The geocoding master image index is out of range."));
+        return;
     }
 
     if (input_files.empty()) {
-        emit errorProcess(QStringLiteral("未找到输入文件！"));
+        emit errorProcess(QStringLiteral("未在工程XML中找到输入文件！"));
         return;
     }
 
@@ -338,20 +329,6 @@ void GeocodingWorker::GeocodingWithDem(
         ComplexMat slc;
         geocode_Rank_level = "amplitude-1.1";
 
-        QString project_xmlfile = save_path + "/" + project_name;
-        TiXmlElement* pnode = NULL, * pchild = NULL;
-        XMLFile xmldoc;
-        xmldoc.XMLFile_load(project_xmlfile.toStdString().c_str());
-        xmldoc.find_node("DataNode", pnode);
-        while (pnode)
-        {
-            if (0 == strcmp(pnode->Attribute("name"), srcNode.toStdString().c_str())) break;
-            pnode = pnode->NextSiblingElement();
-        }
-        xmldoc._find_node(pnode, "master_image", pchild);
-        int masterIndex = 1;
-        if (pchild) ret = sscanf(pchild->GetText(), "%d", &masterIndex);
-
         double lonMax2 = 0, lonMin2 = 0, latMax2 = 0, latMin2 = 0, lon_upperleft2 = 0, lat_upperleft2 = 0, rangeSpacing2 = 0,
             nearRangeTime2 = 0, wavelength2 = 0, prf2 = 0, start2 = 0, end2 = 0;
         int sceneHeight2 = 0, sceneWidth2 = 0, offset_row2 = 0, offset_col2 = 0;
@@ -360,12 +337,12 @@ void GeocodingWorker::GeocodingWithDem(
 
         {
             NodeUtils::Hdf5Locker locker;
-            QString inputH5 = QString::fromStdString(input_files[masterIndex - 1]);
+            QString inputH5 = QString::fromStdString(input_files[masterIndex]);
             ret = (NodeUtils::readMatFromH5(inputH5, "mapped_lon", mapped_lon) &&
                    NodeUtils::readMatFromH5(inputH5, "mapped_lat", mapped_lat)) ? 0 : -1;
             if (ret != 0)
             {
-                master_file2 = input_files[masterIndex - 1];
+                master_file2 = input_files[masterIndex];
                 QString masterH5 = QString::fromStdString(master_file2);
                 if (NodeUtils::readScalarFromH5(masterH5, "range_len", sceneWidth2) &&
                     NodeUtils::readScalarFromH5(masterH5, "azimuth_len", sceneHeight2) &&
@@ -464,78 +441,20 @@ void GeocodingWorker::GeocodingWithDem(
             emit updateProcess(process, QStringLiteral("正在地理编码……"));
         }
     }
-    /*建立地理编码根节点*/
-    if (model) {
-        QMetaObject::invokeMethod(model, [=]() {
-            QStandardItem* geocode = NULL;
-            for (int i = 0; i < project->rowCount(); i++)
-            {
-                if (project->child(i, 0)->text() == dstNode)
-                {
-                    geocode = project->child(i, 0);
-                    break;
-                }
-            }
+    for (int i = 0; i < input_files.size(); i++)
+    {
+        QFileInfo fileinfo = QFileInfo(QString(output_files.at(i).c_str()));
+        QString geocode_name = fileinfo.baseName();
 
-            if (!geocode)
-            {
-                geocode = new QStandardItem(dstNode);
-                geocode->setToolTip(project_name);
-                geocode->setIcon(QIcon(FOLDER_ICON));
-                project->appendRow(geocode);
-                QStandardItem* geocode_Rank = new QStandardItem(geocode_Rank_level);
-                project->setChild(project->rowCount() - 1, 1, geocode_Rank);
-            }
-
-            XMLFile xml;
-            QString xml_path = save_path + "/" + project_name;
-            xml.XMLFile_load(xml_path.toStdString().c_str());
-            for (int i = 0; i < input_files.size(); i++)
-            {
-                QFileInfo fileinfo = QFileInfo(QString(output_files.at(i).c_str()));
-                QString geocode_name = fileinfo.baseName();
-                QStandardItem* item_img = NULL;
-                for (int j = 0; j < geocode->rowCount(); j++)
-                {
-                    if (geocode->child(j, 0)->text() == geocode_name)
-                    {
-                        item_img = geocode->child(j, 0);
-                        break;
-                    }
-                }
-
-                if (!item_img)
-                {
-                    QStandardItem* geocode_images_name = new QStandardItem(geocode_name);
-                    if (product_level == QString("coherence-1.0")) geocode_images_name->setToolTip("coherence");
-                    else if (product_level == QString("phase-1.0") ||
-                        product_level == QString("phase-2.0") ||
-                        product_level == QString("phase-3.0")
-                        )
-                    {
-                        geocode_images_name->setToolTip("phase");
-                    }
-                    else if (product_level == QString("dem-1.0")) geocode_images_name->setToolTip("dem");
-                    else if (product_level == QString("SBAS-1.0")) geocode_images_name->setToolTip("SBAS");
-                    else geocode_images_name->setToolTip("amplitude");
-                    QStandardItem* geocode_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-                    geocode_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-                    geocode->appendRow(geocode_images_name);
-                    geocode->setChild(geocode->rowCount() - 1, 1, geocode_images_path);
-
-                    xml.XMLFile_add_geocoding(dstNode.toStdString().c_str(), geocode_name.toStdString().c_str(),
-                        ("/" + dstNode + "/" + geocode_name + ".h5").toStdString().c_str(), geocode_Rank_level.toStdString().c_str());
-                }
-                else
-                {
-                    geocode->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-                }
-            }
-            xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-        }, Qt::BlockingQueuedConnection);
+        GeocodingFileResult gRes;
+        gRes.dstNode = dstNode;
+        gRes.geocodeName = geocode_name;
+        gRes.geocodePath = fileinfo.absoluteFilePath();
+        gRes.relativePath = "/" + dstNode + "/" + geocode_name + ".h5";
+        gRes.rankLevel = geocode_Rank_level;
+        Q_EMIT geocodingGenerated(gRes);
     }
 
-    emit sendModel(model);
     emit updateProcess(100, QStringLiteral("完成……"));
     InSARLogManager::LogInfo("GeocodingWorker", QString("Task completed: ") + QString(__FUNCTION__));
     emit endProcess();

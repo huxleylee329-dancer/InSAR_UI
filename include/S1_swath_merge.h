@@ -18,8 +18,8 @@ public slots:
     void errorProcess(QString error_msg);
     void endThread();
     void StopThread();
-    void TransitModel(QStandardItemModel*);
-    void handleResult(const QString& dstNode, const QString& filename, const QString& savePath, const QString& projectName);
+    void handleResult(const QString& dstNode, const QString& filename, const QString& mergedH5Path,
+                      const QString& savePath, const QString& projectName);
 private:
     Ui::S1SwathMerge* ui;
     QStandardItemModel* copy;
@@ -30,7 +30,8 @@ private:
     int image_number;
     void ChangeVision(bool Editable);
 signals:
-    void operate(int index1, int index2, int index3, QString project, QString node1, QString node2, QString node3, QString dstNode, QStandardItemModel*);
+    void operate(QString projectName, QString savePath, QString dstNode,
+                 QString firstH5Path, QString secondH5Path, QString thirdH5Path);
     void sendCopy(QStandardItemModel*);
 private slots:
     /*工程选择按钮响应函数*/

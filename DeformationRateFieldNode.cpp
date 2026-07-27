@@ -5,6 +5,7 @@
 #include "MainWindow.h"
 #include "WorkspaceUI.h"
 #include "InSARLogManager.h"
+#include "icon_source.h"
 #include <QTimer>
 #include <QJsonDocument>
 #include <QMessageBox>
@@ -178,7 +179,7 @@ void DeformationRateFieldNode::createWidget()
 
     m_modelTypeCombo = new QComboBox();
     m_modelTypeCombo->addItem(QStringLiteral("线性拟合"), 1);
-    m_modelTypeCombo->addItem(QStringLiteral("二次多项式"), 2);
+    m_modelTypeCombo->addItem(QStringLiteral("浜屾澶氶」寮?"), 2);
     m_modelTypeCombo->setCurrentIndex(m_modelType - 1);
     addParamRow(QStringLiteral("速率模型:"), m_modelTypeCombo);
 
@@ -204,9 +205,9 @@ void DeformationRateFieldNode::createWidget()
     addParamRow(QStringLiteral("中质不确阈值:"), m_uncertaintyThreshMidEdit);
 
     m_colorMapCombo = new QComboBox();
-    m_colorMapCombo->addItem(QStringLiteral("蓝-白-红"), 0);
-    m_colorMapCombo->addItem(QStringLiteral("热力图"), 1);
-    m_colorMapCombo->addItem(QStringLiteral("彩虹色"), 2);
+    m_colorMapCombo->addItem(QStringLiteral("钃?鐧?绾?"), 0);
+    m_colorMapCombo->addItem(QStringLiteral("鐑姏鍥?"), 1);
+    m_colorMapCombo->addItem(QStringLiteral("褰╄櫣鑹?"), 2);
     m_colorMapCombo->setCurrentIndex(m_colorMap);
     addParamRow(QStringLiteral("可视化色带:"), m_colorMapCombo);
 
@@ -229,7 +230,7 @@ void DeformationRateFieldNode::createWidget()
     mainLayout->addLayout(arrowLayout);
 
     m_outputNodeNameEdit = new QLineEdit(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     addParamRow(QStringLiteral("目标节点名:"), m_outputNodeNameEdit);
 
     m_resultLabel = new QLabel(QStringLiteral("状态：等待分析"));
@@ -368,6 +369,8 @@ void DeformationRateFieldNode::executeProcessing()
 {
     InSARLogManager::LogInfo("DeformationRateFieldNode", "executeProcessing started.");
     stopExecution();
+    m_generatedOutputPath.clear();
+    m_resultPublishingFailed = false;
 
     m_thread = new QThread(this);
     m_worker = new DeformationRateFieldWorker();
@@ -377,8 +380,9 @@ void DeformationRateFieldNode::executeProcessing()
     QString projName = projectName();
     QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
 
-    connect(m_thread, &QThread::started, m_worker, [this, projPath, projName, filePaths]() {
-        m_worker->analyze_rate_field(
+    DeformationRateFieldWorker* worker = m_worker;
+    connect(m_thread, &QThread::started, m_worker, [worker, this, projPath, projName, filePaths]() {
+        worker->analyze_rate_field(
             projPath,
             projName,
             m_outputNodeName,
@@ -393,8 +397,7 @@ void DeformationRateFieldNode::executeProcessing()
             m_showContour,
             m_contourInterval,
             m_showArrow,
-            m_arrowSpacing,
-            nullptr
+            m_arrowSpacing
         );
     });
 
@@ -402,6 +405,10 @@ void DeformationRateFieldNode::executeProcessing()
     connect(m_worker, &DeformationRateFieldWorker::endProcess, this, &DeformationRateFieldNode::onProcessingFinished);
     connect(m_worker, &DeformationRateFieldWorker::errorProcess, this, &DeformationRateFieldNode::onError);
     connect(m_worker, &DeformationRateFieldWorker::cancelled, this, &DeformationRateFieldNode::onCancelled);
+    connect(m_worker, &DeformationRateFieldWorker::outputsGenerated,
+            this, &DeformationRateFieldNode::onResultsGenerated);
+    connect(m_worker, &DeformationRateFieldWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &DeformationRateFieldWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &DeformationRateFieldWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
@@ -431,6 +438,16 @@ void DeformationRateFieldNode::stopExecution()
     m_worker = nullptr;
 }
 
+void DeformationRateFieldNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
+    }
+}
+
 void DeformationRateFieldNode::processAutomatically()
 {
     if (prepareToStart()) {
@@ -452,7 +469,7 @@ void DeformationRateFieldNode::onProgressUpdate(int progress, const QString& mes
 
 void DeformationRateFieldNode::onError(const QString& error)
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -464,13 +481,17 @@ void DeformationRateFieldNode::onError(const QString& error)
 
 void DeformationRateFieldNode::onProcessingFinished()
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
 
+    if (m_resultPublishingFailed) {
+        return;
+    }
+
     InSARLogManager::LogInfo("DeformationRateFieldNode", "executeProcessing completed.");
-    QString h5Path = projectPath() + "/" + m_outputNodeName + "/DeformationRateField.h5";
+    QString h5Path = m_generatedOutputPath;
     if (!QFileInfo::exists(h5Path)) {
         onError(QStringLiteral("未生成形变速率场输出文件"));
         return;
@@ -479,9 +500,60 @@ void DeformationRateFieldNode::onProcessingFinished()
     generateStaticPreviewJpg(true);
 }
 
+void DeformationRateFieldNode::onResultsGenerated(const QString& dstNode, const QString& outputH5Path)
+{
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+    if (dstNode != m_outputNodeName || outputH5Path.isEmpty() || !QFileInfo::exists(outputH5Path)) {
+        m_resultPublishingFailed = true;
+        onError(QStringLiteral("Rate field worker returned an invalid output path."));
+        return;
+    }
+
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    QStandardItemModel* model = iface ? iface->projectModel() : nullptr;
+    const QList<QStandardItem*> projects = model ? model->findItems(projectName()) : QList<QStandardItem*>();
+    if (!iface || projects.isEmpty()) {
+        m_resultPublishingFailed = true;
+        onError(QStringLiteral("Project context is unavailable while publishing the rate field output."));
+        return;
+    }
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), dstNode, "SBAS-1.0", FOLDER_ICON);
+    if (!outputNode) {
+        m_resultPublishingFailed = true;
+        onError(QStringLiteral("Unable to create the rate field output node."));
+        return;
+    }
+
+    bool created = false;
+    QStandardItem* outputItem = NodeUtils::findOrCreateChildItem(
+        outputNode, "DeformationRateField", "SBAS", outputH5Path, IMAGEDATA_ICON, &created);
+    if (!outputItem) {
+        m_resultPublishingFailed = true;
+        onError(QStringLiteral("Unable to create the rate field output item."));
+        return;
+    }
+    if (!created) {
+        outputNode->setChild(outputItem->row(), 1, new QStandardItem(outputH5Path));
+    } else {
+        const QString relativePath = QString("/%1/DeformationRateField.h5").arg(dstNode);
+        if (!NodeUtils::addSBASNodeToProjectXml(iface, dstNode, "DeformationRateField", relativePath)) {
+            m_resultPublishingFailed = true;
+            onError(QStringLiteral("Unable to save the rate field output to project XML."));
+            return;
+        }
+    }
+
+    m_generatedOutputPath = outputH5Path;
+    iface->refreshProjectTree();
+}
+
 void DeformationRateFieldNode::onCancelled()
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -496,6 +568,7 @@ bool DeformationRateFieldNode::validateAndRestoreOutput()
     QString h5Path = projectPath() + "/" + m_outputNodeName + "/DeformationRateField.h5";
     if (QFileInfo::exists(h5Path)) {
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+        setOutputData(0, m_outputData);
         generateStaticPreviewJpg();
 
         setState(ExecutionState::Completed);
@@ -524,23 +597,26 @@ void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
 
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
-            Q_EMIT dataUpdated(1);
+            setOutputData(1, m_previewData);
+            if (!completeExecution) {
+                Q_EMIT dataUpdated(1);
+            }
+        } else {
+            m_previewData.reset();
+            setOutputData(1, nullptr);
+            if (!completeExecution) {
+                Q_EMIT dataUpdated(1);
+            }
         }
 
         if (completeExecution) {
             m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
 
-            IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                QString relativePath = QString("/%1/DeformationRateField.h5").arg(m_outputNodeName);
-                NodeUtils::addSBASNodeToProjectXml(iface, m_outputNodeName, "DeformationRateField", relativePath);
-                iface->refreshProjectTree();
-            }
-
             setProgress(100);
             setState(ExecutionState::Running);
             updateLabels();
-            Q_EMIT dataUpdated(0);
+            setOutputData(0, m_outputData);
+            setOutputData(1, m_previewData);
             finishExecution();
         }
         watcher->deleteLater();
@@ -744,3 +820,4 @@ QString DeformationRateFieldNode::projectName() const
 }
 
 } // namespace QtNodes
+

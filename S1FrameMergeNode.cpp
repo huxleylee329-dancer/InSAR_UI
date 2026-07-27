@@ -253,7 +253,7 @@ void S1FrameMergeNode::createWidget()
     nodeNameLabel->setFixedWidth(85);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -327,27 +327,23 @@ void S1FrameMergeNode::onProcessingFinished()
         return;
     }
 
-    QString dstNode = m_outputNodeNameEdit && !m_outputNodeNameEdit->text().isEmpty()
-        ? m_outputNodeNameEdit->text()
-        : (m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName);
-    m_outputNodeName = dstNode;
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
-    QStringList h5Paths;
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
-        h5Files.sort();
-        for (const QString& h5File : h5Files) {
-            h5Paths.append(dir.absoluteFilePath(h5File));
-        }
+    if (m_generatedOutputPath.isEmpty() || !QFileInfo::exists(m_generatedOutputPath)) {
+        onError(QStringLiteral("Frame merge did not return a valid output file."));
+        return;
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    const QString dstNode = m_outputNodeName;
+    const QFileInfo outputInfo(m_generatedOutputPath);
+    const QString previewPath = outputInfo.absolutePath() + "/" + outputInfo.baseName() + ".jpg";
+    m_outputData = std::make_shared<ImportedFileData>(QStringList() << m_generatedOutputPath, dstNode);
     setOutputData(0, m_outputData);
-    validateAndRestoreOutput();
+    if (QFile::exists(previewPath)) {
+        m_imageInfoData = std::make_shared<ImageInfoData>(QStringList() << previewPath);
+        setOutputData(1, m_imageInfoData);
+    } else {
+        m_imageInfoData.reset();
+        setOutputData(1, nullptr);
+    }
 
     m_worker = nullptr;
     m_thread = nullptr;
@@ -363,7 +359,6 @@ void S1FrameMergeNode::onProcessingFinished()
     setProgress(100);
     InSARLogManager::LogInfo("S1FrameMergeNode", "executeProcessing completed.");
     finishExecution();
-    Q_EMIT dataUpdated(0);
 }
 
 void S1FrameMergeNode::onError(const QString& error)
@@ -398,13 +393,45 @@ void S1FrameMergeNode::onCancelled()
     Q_EMIT computingFinished();
 }
 
-void S1FrameMergeNode::onModelUpdated(QStandardItemModel* model)
+void S1FrameMergeNode::onResultReceived(
+    const QString& dstNode,
+    const QString& filename,
+    const QString& mergedH5Path,
+    const QString& savePath,
+    const QString& projectName)
 {
     if (isAutomaticExecutionObsolete()) {
         return;
     }
 
-    Q_UNUSED(model);
+    m_generatedOutputPath = mergedH5Path;
+    QStandardItemModel* model = projectModel();
+    const QList<QStandardItem*> projects = model ? model->findItems(projectName) : QList<QStandardItem*>();
+    if (projects.isEmpty()) {
+        InSARLogManager::LogError("S1FrameMergeNode", "Project tree root was not found.");
+        return;
+    }
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), dstNode, "complex-0.0", FOLDER_ICON);
+    if (!outputNode) {
+        InSARLogManager::LogError("S1FrameMergeNode", "Unable to create frame merge output node.");
+        return;
+    }
+    outputNode->setToolTip(projectName);
+    QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
+        outputNode, filename, "complex", mergedH5Path, IMAGEDATA_ICON);
+    if (imageItem) {
+        outputNode->setChild(imageItem->row(), 1, new QStandardItem(mergedH5Path));
+    }
+
+    if (XMLFile* xml = projectXml()) {
+        const QString relativePath = QString("/%1/%2").arg(dstNode, QFileInfo(mergedH5Path).fileName());
+        xml->XMLFile_add_origin(dstNode.toStdString().c_str(), filename.toStdString().c_str(),
+            relativePath.toStdString().c_str(), "sentinel");
+        const QString xmlPath = savePath + "/" + projectName;
+        xml->XMLFile_save(xmlPath.toStdString().c_str());
+    }
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
         iface->refreshProjectTree();
@@ -492,32 +519,15 @@ bool S1FrameMergeNode::prepareToStart()
     QString outputPath = savePath + "/" + dstNode + "/";
 
     QStringList pathsToCheck;
-    QStandardItemModel* model = projectModel();
-    if (model)
+    const QStringList inputPaths1 = m_inputs[0]->filePaths();
+    const QStringList inputPaths2 = m_inputs[1]->filePaths();
+    if (inputPaths1.size() >= m_index1 && inputPaths2.size() >= m_index2)
     {
-        QString h5Path1;
-        QString h5Path2;
-        QList<QStandardItem*> foundProjects = model->findItems(dstProject);
-        if (!foundProjects.isEmpty())
-        {
-            QStandardItem* projectItem = foundProjects.first();
-            for (int i = 0; i < projectItem->rowCount(); ++i)
-            {
-                QStandardItem* nodeItem = projectItem->child(i, 0);
-                if (!nodeItem)
-                    continue;
-                if (nodeItem->text() == m_inputs[0]->nodeName() && nodeItem->rowCount() >= m_index1)
-                    h5Path1 = nodeItem->child(m_index1 - 1, 1)->text();
-                if (nodeItem->text() == m_inputs[1]->nodeName() && nodeItem->rowCount() >= m_index2)
-                    h5Path2 = nodeItem->child(m_index2 - 1, 1)->text();
-            }
-        }
-        if (!h5Path1.isEmpty() && !h5Path2.isEmpty())
-        {
-            QString outputBaseName = QFileInfo(h5Path1).baseName() + "_" + QFileInfo(h5Path2).baseName();
-            pathsToCheck.append(outputPath + outputBaseName + ".h5");
-            pathsToCheck.append(outputPath + outputBaseName + ".jpg");
-        }
+        const QString h5Path1 = inputPaths1[m_index1 - 1];
+        const QString h5Path2 = inputPaths2[m_index2 - 1];
+        const QString outputBaseName = QFileInfo(h5Path1).baseName() + "_" + QFileInfo(h5Path2).baseName();
+        pathsToCheck.append(outputPath + outputBaseName + ".h5");
+        pathsToCheck.append(outputPath + outputBaseName + ".jpg");
     }
 
     m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
@@ -555,8 +565,6 @@ void S1FrameMergeNode::executeProcessing()
             setState(ExecutionState::Running);
             setProgress(100);
             finishExecution();
-            Q_EMIT dataUpdated(0);
-            Q_EMIT dataUpdated(1);
             return;
         }
         else
@@ -585,10 +593,19 @@ void S1FrameMergeNode::executeProcessing()
     setState(ExecutionState::Running);
 
     QString project = projectName();
-    QString node1 = m_inputs[0]->nodeName();
-    QString node2 = m_inputs[1]->nodeName();
-    int index1 = m_index1;
-    int index2 = m_index2;
+    const QStringList inputPaths1 = m_inputs[0]->filePaths();
+    const QStringList inputPaths2 = m_inputs[1]->filePaths();
+    if (inputPaths1.size() < m_index1 || inputPaths2.size() < m_index2) {
+        onError(QStringLiteral("Selected input image index is invalid."));
+        return;
+    }
+    const QString firstH5Path = inputPaths1[m_index1 - 1];
+    const QString secondH5Path = inputPaths2[m_index2 - 1];
+    if (firstH5Path.isEmpty() || secondH5Path.isEmpty()) {
+        onError(QStringLiteral("Selected input image file was not found."));
+        return;
+    }
+    m_generatedOutputPath.clear();
 
     // Create thread
     m_thread = new QThread();
@@ -597,8 +614,8 @@ void S1FrameMergeNode::executeProcessing()
 
     // Connect signals
     connect(this, &S1FrameMergeNode::startFrameMerge, m_worker, &S1FrameMergeWorker::S1_frame_merge);
-    connect(m_thread, &QThread::started, [this, index1, index2, project, node1, node2, dstNode]() {
-        Q_EMIT startFrameMerge(index1, index2, project, node1, node2, dstNode, projectModel());
+    connect(m_thread, &QThread::started, [this, project, savePath, dstNode, firstH5Path, secondH5Path]() {
+        Q_EMIT startFrameMerge(project, savePath, dstNode, firstH5Path, secondH5Path);
     });
     connect(m_worker, &S1FrameMergeWorker::updateProcess, this, &S1FrameMergeNode::onProgressUpdate);
     connect(m_worker, &S1FrameMergeWorker::endProcess, this, &S1FrameMergeNode::onProcessingFinished);
@@ -607,7 +624,7 @@ void S1FrameMergeNode::executeProcessing()
     connect(m_worker, &S1FrameMergeWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &S1FrameMergeWorker::cancelled, this, &S1FrameMergeNode::onCancelled);
     connect(m_worker, &S1FrameMergeWorker::cancelled, m_thread, &QThread::quit);
-    connect(m_worker, &S1FrameMergeWorker::sendModel, this, &S1FrameMergeNode::onModelUpdated);
+    connect(m_worker, &S1FrameMergeWorker::sendResult, this, &S1FrameMergeNode::onResultReceived);
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
@@ -649,7 +666,6 @@ bool S1FrameMergeNode::validateAndRestoreOutput()
             h5Paths.sort();
             m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
-            Q_EMIT dataUpdated(0);
 
             QStringList existingJpgPaths;
             QStringList missingH5s;
@@ -673,11 +689,9 @@ bool S1FrameMergeNode::validateAndRestoreOutput()
             if (!existingJpgPaths.isEmpty()) {
                 m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgPaths);
                 setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
             } else {
                 m_imageInfoData.reset();
                 setOutputData(1, nullptr);
-                Q_EMIT dataUpdated(1);
             }
 
             if (!missingH5s.isEmpty() && !m_remedyWatcher.isRunning()) {
@@ -935,3 +949,4 @@ QStringList S1FrameMergeNode::previewImagePaths() const
 }
 
 } // namespace QtNodes
+

@@ -6,7 +6,6 @@
 #include <QDir>
 #include <QThread>
 #include <QElapsedTimer>
-#include <QStandardItem>
 #include <cmath>
 #include <complex>
 #include <vector>
@@ -60,10 +59,11 @@ void IonosphericCorrectionWorker::doCorrection(
     double subbandRatio, double filterStrength, bool outputTEC,
     QString save_path, QString project_name,
     QString node_name, QString file_name,
-    QStandardItemModel* model)
+    QStringList slc_names, QStringList slc_paths)
 {
     currentWorker = this;
-    NodeUtils::Hdf5Locker locker;
+    Q_UNUSED(project_name);
+    Q_UNUSED(node_name);
     InSARLogManager::LogInfo("IonosphericCorrectionWorker",
         QString("电离层校正开始. 输出: %1, 子频带比例: %2, 滤波强度: %3")
         .arg(file_name).arg(subbandRatio).arg(filterStrength));
@@ -74,65 +74,36 @@ void IonosphericCorrectionWorker::doCorrection(
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
     }
-    if (!model) {
-        emit errorProcess(QStringLiteral("项目模型为空"));
+
+    // 创建输出目录
+    const QString outputDirectoryPath = save_path + "/" + file_name;
+    QDir outputDirectory(outputDirectoryPath);
+    if (outputDirectory.exists() && !outputDirectory.removeRecursively()) {
+        emit errorProcess(QStringLiteral("无法清理已有输出目录: ") + outputDirectoryPath);
+        return;
+    }
+    if (!QDir().mkpath(outputDirectoryPath)) {
+        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDirectoryPath);
         return;
     }
 
-    // 创建输出目录
-    QDir dir(save_path);
-    if (dir.exists(file_name)) dir.remove(file_name);
-    dir.mkdir(file_name);
-
     // 获取输入文件列表（已配准的主从 SLC 影像对）
-    QList<QString> slc_names, slc_paths, output_names, rel_paths, abs_paths;
-    bool found_project = false, found_node = false;
+    QList<QString> output_names, abs_paths;
 
     emit updateProcess(5, QStringLiteral("准备数据……"));
 
-    QMetaObject::invokeMethod(model, [&]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) return;
-        found_project = true;
-        QStandardItem* project = foundProjects.first();
-
-        for (int i = 0; i < project->rowCount(); i++) {
-            if (project->child(i, 0)->text() == node_name) {
-                found_node = true;
-                QStandardItem* node = project->child(i, 0);
-                for (int j = 0; j < node->rowCount(); j++) {
-                    if (node->child(j, 0)->toolTip() == "complex") {
-                        QString origin = node->child(j, 0)->text();
-                        slc_names.append(origin);
-                        slc_paths.append(node->child(j, 1)->text());
-                        QString out_name = origin + "_iono";
-                        output_names.append(out_name);
-                        rel_paths.append("/" + file_name + "/" + out_name + ".h5");
-                        abs_paths.append(save_path + "/" + file_name + "/" + out_name + ".h5");
-                    }
-                }
-                break;
-            }
-        }
-    }, Qt::BlockingQueuedConnection);
-
-    if (!found_project) { emit errorProcess(QStringLiteral("未找到工程: ") + project_name); return; }
-    if (!found_node) { emit errorProcess(QStringLiteral("未找到数据节点: ") + node_name); return; }
+    if (slc_names.size() != slc_paths.size()) { emit errorProcess(QStringLiteral("输入影像快照无效")); return; }
+    for (int i = 0; i < slc_paths.size(); ++i) {
+        const QString outName = slc_names[i] + "_iono";
+        output_names.append(outName);
+        abs_paths.append(outputDirectoryPath + "/" + outName + ".h5");
+    }
 
     int image_count = slc_paths.size();
     if (image_count == 0) { emit errorProcess(QStringLiteral("没有可处理的SLC影像")); return; }
 
     FormatConversion FC;
     int ret = 0;
-
-    QString xml_path = save_path + "/" + project_name;
-    if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) xml_path += ".Insar";
-
-    XMLFile temp_xml;
-    if (temp_xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
-        emit errorProcess(QStringLiteral("加载项目XML失败: ") + xml_path);
-        return;
-    }
 
     std::vector<bool> process_ok(image_count, false);
 
@@ -149,7 +120,10 @@ void IonosphericCorrectionWorker::doCorrection(
 
         if (idx == 0) {
             // Master 图像作为参考，不进行电离层相位校正，直接拷贝
-            ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
+            {
+                NodeUtils::Hdf5Locker locker;
+                ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
+            }
             if (ret < 0) continue;
 
             QString srcH5 = slc_paths[idx];
@@ -242,7 +216,10 @@ void IonosphericCorrectionWorker::doCorrection(
         }
 
         // 写入输出 H5
-        ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
+        {
+            NodeUtils::Hdf5Locker locker;
+            ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
+        }
         if (ret < 0) continue;
 
         // 复制元数据
@@ -282,31 +259,22 @@ void IonosphericCorrectionWorker::doCorrection(
         process_ok[idx] = true;
     }
 
-    // 更新项目树
-    QMetaObject::invokeMethod(model, [&]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) return;
-        QStandardItem* project = foundProjects.first();
-
-        QStandardItem* iono_node = NodeUtils::findOrCreateProjectNode(
-            project, file_name, "complex-1.5", FOLDER_ICON);
-
-        XMLFile local_xml;
-        local_xml.XMLFile_load(xml_path.toStdString().c_str());
-
-        for (int i = 0; i < image_count; i++) {
-            if (!process_ok[i]) continue;
-            local_xml.XMLFile_add_unwrap(file_name.toStdString().c_str(),
-                output_names[i].toStdString().c_str(), rel_paths[i].toStdString().c_str(),
-                0, 0, "Ionospheric_Correction", 0);
-            NodeUtils::findOrCreateChildItem(iono_node, output_names[i], "complex",
-                abs_paths[i], IMAGEDATA_ICON);
+    QStringList generatedNames;
+    QStringList generatedPaths;
+    for (int i = 0; i < image_count; ++i) {
+        if (process_ok[i]) {
+            generatedNames.append(output_names[i]);
+            generatedPaths.append(abs_paths[i]);
         }
-        local_xml.XMLFile_save(xml_path.toStdString().c_str());
-    }, Qt::BlockingQueuedConnection);
+    }
+    if (generatedPaths.isEmpty()) {
+        currentWorker = nullptr;
+        emit errorProcess(QStringLiteral("电离层校正未生成任何输出文件"));
+        return;
+    }
 
-    emit sendModel(model);
     currentWorker = nullptr;
     InSARLogManager::LogInfo("IonosphericCorrectionWorker", "电离层校正完成");
+    emit outputsGenerated(generatedNames, generatedPaths);
     emit endProcess();
 }

@@ -133,12 +133,10 @@ private:
 signals:
     void startOrbitFetch(
         QString projectPath,
-        QString projectName,
         QStringList filePaths,
         int orbitSource,
         QString cacheDir,
-        QString targetDirName,
-        QStandardItemModel* model
+        QString targetDirName
     );
 };
 

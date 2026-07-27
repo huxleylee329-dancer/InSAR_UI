@@ -20,7 +20,6 @@ signals:
     void updateProcess(int progress, const QString& message);
     void endProcess();
     void errorProcess(const QString& errorMsg);
-    void sendModel(QStandardItemModel* model);
 
 public slots:
     // 统一下沉的中断接口

@@ -2,6 +2,7 @@
 
 #include "BaseWorker.h"
 #include <QList>
+#include <QStringList>
 #include <vector>
 #include <string>
 #include <opencv2/opencv.hpp>
@@ -21,11 +22,15 @@ public:
     void setStage(double start, double width) { m_stageStart = start; m_stageWidth = width; }
 
 public slots:
-    void Regis(QList<int> para, QString save_path, QString project_name, QString Cut_name, QString file_name, QStandardItemModel* model);
-    void DEMAssistCoregistration(int masterIndex, QString savepath, QString project, QString srcNode, QString dstNode, QStandardItemModel* model);
+    void Regis(QList<int> para, QString savePath, QString projectName, QString dstNode, QStringList inputPaths);
+    void DEMAssistCoregistration(int masterIndex, QString savePath, QString projectName, QString dstNode, QStringList inputPaths);
 
 signals:
     void cancelled();
+    void outputsGenerated(const QStringList& outputNames, const QStringList& outputPaths,
+                          const QList<int>& offsetRows, const QList<int>& offsetCols,
+                          const QString& temporalBaseline, const QString& effectiveBaseline,
+                          const QString& parallelBaseline);
 
 private:
     int Registration_copy(std::vector<std::string>& SAR_images, std::vector<std::string>& SAR_images_out, cv::Mat& offset_row_out, cv::Mat& offset_col_out, int Master_index, int interp_times, int blocksize);

@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "import_LiDAR.h"
 #include "ImportTask.h"
+#include "ImportOutputPersistence.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <qmessagebox.h>
@@ -261,7 +262,10 @@ void import_LiDAR::on_buttonBox_accepted()
     connect(import_lidar_thread, &LidarImportWorker::errorProcess, this, &import_LiDAR::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_LiDAR::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_LiDAR::StopThread);
-    connect(import_lidar_thread, &LidarImportWorker::sendModel, this, &import_LiDAR::TransitModel);
+    connect(import_lidar_thread, &LidarImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
 
     thread->start();
 
@@ -277,9 +281,7 @@ void import_LiDAR::on_buttonBox_accepted()
     QMetaObject::invokeMethod(import_lidar_thread, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node->text()),
-        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node->text()));
 
     ChangeVision(false);
 }

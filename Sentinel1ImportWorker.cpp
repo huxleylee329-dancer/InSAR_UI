@@ -1,5 +1,47 @@
 #include "Sentinel1ImportWorker.h"
 #include <FormatConversion.h>
+#include "InSARLogManager.h"
+#include "NodeUtils.h"
+#include <string>
+
+namespace {
+
+bool validateAcquisitionTimeRange(const QString& h5Path, QString& errorMessage)
+{
+    std::string startText;
+    std::string stopText;
+    QString readError;
+    if (!NodeUtils::readStringFromH5(h5Path, "acquisition_start_time", startText, &readError) ||
+        !NodeUtils::readStringFromH5(h5Path, "acquisition_stop_time", stopText, &readError)) {
+        errorMessage = QStringLiteral("Unable to read Sentinel-1 acquisition time metadata from %1: %2")
+            .arg(h5Path, readError);
+        return false;
+    }
+
+    FormatConversion conversion;
+    double startGps = 0.0;
+    double stopGps = 0.0;
+    if (conversion.utc2gps(startText.c_str(), &startGps) != 0 ||
+        conversion.utc2gps(stopText.c_str(), &stopGps) != 0 ||
+        stopGps <= startGps) {
+        errorMessage = QStringLiteral("Invalid Sentinel-1 acquisition time range in %1: start=%2, stop=%3")
+            .arg(h5Path)
+            .arg(QString::fromStdString(startText))
+            .arg(QString::fromStdString(stopText));
+        return false;
+    }
+
+    InSARLogManager::LogInfo("Sentinel1ImportWorker",
+        QStringLiteral("Validated Sentinel-1 acquisition time metadata: file=%1, start=%2 (%3), stop=%4 (%5)")
+            .arg(h5Path)
+            .arg(QString::fromStdString(startText))
+            .arg(startGps, 0, 'f', 3)
+            .arg(QString::fromStdString(stopText))
+            .arg(stopGps, 0, 'f', 3));
+    return true;
+}
+
+} // namespace
 
 // 进度回调上下文
 struct S1ProgressContext
@@ -83,5 +125,9 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         outErrorMsg = QString("底转换 DLL 执行失败，错误码：%1。请核对爆块(Burst)范围或原始数据文件是否损坏。").arg(ret);
     }
 
-    return ret >= 0;
+    if (ret < 0) {
+        return false;
+    }
+
+    return validateAcquisitionTimeRange(outputPath, outErrorMsg);
 }

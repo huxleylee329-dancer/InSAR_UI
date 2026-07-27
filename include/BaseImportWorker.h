@@ -18,10 +18,7 @@ public slots:
     void import_patch(
         const QString& savepath,
         const std::vector<ImportTask>& tasks,
-        const QString& dst_node,
-        const QString& dst_project,
-        QStandardItemModel* model,
-        void* contextPtr = nullptr
+        const QString& dst_node
     );
 
     // 辅助函数：更新导入进度（子类可在 convertToH5 内部调用，也可在静态回调中使用）
@@ -49,4 +46,11 @@ protected:
 
 protected:
     QString m_satelliteName;
+
+signals:
+    void outputsGenerated(const QString& dstNode,
+                          const QStringList& outputNames,
+                          const QStringList& outputPaths,
+                          const QString& dataType,
+                          const QString& satelliteFormat);
 };

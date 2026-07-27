@@ -10,6 +10,7 @@
 #include<Utils.h>
 #include<qmessagebox.h>
 #include<QFile>
+#include<QFileInfo>
 #include<QDir>
 #include"FormatConversion.h"
 #include<QFileDialog>
@@ -118,15 +119,6 @@ void SLC_deramp::StopThread()
         m_thread->wait();
     }
 }
-void SLC_deramp::TransitModel(QStandardItemModel* model)
-{
-    this->copy = model;
-    emit sendCopy(model);
-}
-
-
-
-
 void SLC_deramp::ShowProjectList(QStandardItemModel* model)
 {
     this->copy = model;
@@ -352,7 +344,35 @@ void SLC_deramp::on_buttonBox_accepted()
     if (ret < 0) return;
     int index = 1;
     ret = sscanf(pchild->GetText(), "%d", &index);
-    //this->image_number = ui->comboBox_masterImage->count();
+    if (ret != 1 || index < 1) return;
+
+    QStandardItem* inputNode = nullptr;
+    for (int i = 0; i < project->rowCount(); ++i)
+    {
+        QStandardItem* node = project->child(i, 0);
+        if (node && node->text() == ui->comboBox_dst_node->currentText())
+        {
+            inputNode = node;
+            break;
+        }
+    }
+    if (!inputNode)
+        return;
+
+    QStringList inputPaths;
+    for (int i = 0; i < inputNode->rowCount(); ++i)
+    {
+        QStandardItem* pathItem = inputNode->child(i, 1);
+        if (pathItem && !pathItem->text().isEmpty())
+            inputPaths.append(pathItem->text());
+    }
+    if (inputPaths.isEmpty() || index > inputPaths.size())
+    {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("Selected input image file was not found."));
+        return;
+    }
+
+    m_masterIndex = index;
     m_thread = new QThread(this);
     m_worker = new SLCDerampWorker();
     m_worker->moveToThread(m_thread);
@@ -364,10 +384,11 @@ void SLC_deramp::on_buttonBox_accepted()
     connect(m_worker, &SLCDerampWorker::endProcess, this, &SLC_deramp::endProcess);
     connect(this, &QWidget::destroyed, this, &SLC_deramp::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SLC_deramp::StopThread);
-    connect(m_worker, &SLCDerampWorker::sendModel, this, &SLC_deramp::TransitModel);
+    connect(m_worker, &SLCDerampWorker::sendResults, this, &SLC_deramp::handleResults);
     m_thread->start();
     ChangeVision(false);
-    emit operate(index, ui->comboBox->currentText(), ui->comboBox_dst_node->currentText(), ui->lineEdit->text(), this->copy, m_demPathEdit->text().trimmed());
+    emit operate(index, ui->comboBox->currentText(), save_path, ui->lineEdit->text(),
+                 inputPaths, m_demPathEdit->text().trimmed());
 
 
 }
@@ -375,4 +396,94 @@ void SLC_deramp::on_buttonBox_accepted()
 void SLC_deramp::on_buttonBox_rejected()
 {
     this->close();
+}
+
+void SLC_deramp::handleResults(
+    const QString& dstNode,
+    const QStringList& h5Paths,
+    const QStringList& originNames,
+    const QString& savePath,
+    const QString& projectName)
+{
+    if (h5Paths.isEmpty() || h5Paths.size() != originNames.size())
+        return;
+
+    const QList<QStandardItem*> projects = copy ? copy->findItems(projectName) : QList<QStandardItem*>();
+    if (!projects.isEmpty()) {
+        QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+            projects.first(), dstNode, "complex-3.0", FOLDER_ICON);
+        if (outputNode) {
+            outputNode->setToolTip(projectName);
+            for (const QString& h5Path : h5Paths) {
+                const QString outputName = QFileInfo(h5Path).baseName();
+                QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
+                    outputNode, outputName, "complex", h5Path, IMAGEDATA_ICON);
+                if (imageItem) {
+                    outputNode->setChild(imageItem->row(), 1, new QStandardItem(h5Path));
+                }
+            }
+        }
+    }
+
+    XMLFile xml;
+    const QString xmlPath = savePath + "/" + projectName;
+    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) == 0) {
+        TiXmlElement* root = nullptr;
+        xml.get_root(root);
+        if (root) {
+            TiXmlElement* dataNode = nullptr;
+            for (TiXmlElement* item = root->FirstChildElement(); item; item = item->NextSiblingElement()) {
+                const char* name = item->Attribute("name");
+                if (name && strcmp(item->Value(), "DataNode") == 0 && QString(name) == dstNode) {
+                    dataNode = item;
+                    break;
+                }
+            }
+            if (!dataNode) {
+                dataNode = new TiXmlElement("DataNode");
+                dataNode->SetAttribute("name", dstNode.toStdString().c_str());
+                dataNode->SetAttribute("data_count", "0");
+                dataNode->SetAttribute("data_processing", "SLC_deramp");
+                dataNode->SetAttribute("rank", "complex-3.0");
+                root->LinkEndChild(dataNode);
+            }
+
+            int dataCount = 0;
+            for (TiXmlElement* item = dataNode->FirstChildElement("Data"); item; item = item->NextSiblingElement("Data")) {
+                ++dataCount;
+            }
+            for (int i = 0; i < h5Paths.size(); ++i) {
+                const QFileInfo fileInfo(h5Paths.at(i));
+                const QString outputName = originNames.at(i) + "_deramp";
+                bool exists = false;
+                for (TiXmlElement* item = dataNode->FirstChildElement("Data"); item; item = item->NextSiblingElement("Data")) {
+                    TiXmlElement* nameItem = item->FirstChildElement("Data_Name");
+                    if (nameItem && nameItem->GetText() && QString(nameItem->GetText()) == outputName) {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (exists)
+                    continue;
+
+                ++dataCount;
+                TiXmlElement* data = new TiXmlElement("Data");
+                TiXmlElement* name = new TiXmlElement("Data_Name");
+                name->LinkEndChild(new TiXmlText(outputName.toStdString().c_str()));
+                data->LinkEndChild(name);
+                TiXmlElement* rank = new TiXmlElement("Data_Rank");
+                rank->LinkEndChild(new TiXmlText("complex-3.0"));
+                data->LinkEndChild(rank);
+                TiXmlElement* dataIndex = new TiXmlElement("Data_Index");
+                dataIndex->LinkEndChild(new TiXmlText(QString::number(dataCount).toStdString().c_str()));
+                data->LinkEndChild(dataIndex);
+                TiXmlElement* path = new TiXmlElement("Data_Path");
+                path->LinkEndChild(new TiXmlText(QString("/%1/%2").arg(dstNode, fileInfo.fileName()).toStdString().c_str()));
+                data->LinkEndChild(path);
+                dataNode->LinkEndChild(data);
+            }
+            dataNode->SetAttribute("data_count", QString::number(dataCount).toStdString().c_str());
+            xml.XMLFile_save(xmlPath.toStdString().c_str());
+        }
+    }
 }

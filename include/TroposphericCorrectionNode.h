@@ -74,18 +74,27 @@ private:
     QString m_preparedProjectName;
     QString m_preparedSrcNode;
     QString m_preparedEra5Dir;
+    QStringList m_preparedPhaseNames;
+    QStringList m_preparedPhasePaths;
+    QStringList m_generatedOutputPaths;
 
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();
     QString generateDefaultOutputName() const;
     void executeProcessing();
     void browseEra5Dir();
+    void persistOutputToProject(const QString& outputNodeName,
+                                const QStringList& h5Paths);
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& types, const QStringList& resultJpgPaths,
+                                bool completeExecution);
+    void cleanUpThreadAndWorker();
+    void releaseFinishedThreadAndWorker();
 
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
@@ -100,7 +109,7 @@ private:
 signals:
     void startCorrection(QString era5Dir, QString save_path, QString project_name,
                          QString node_name, QString file_name,
-                         QStandardItemModel* model);
+                         QStringList phaseNames, QStringList phasePaths);
 };
 
 } // namespace QtNodes

@@ -7,6 +7,7 @@
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include "FormatConversion.h"
+#include "Utils.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -37,6 +38,7 @@ UnwrapNode::UnwrapNode()
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
+    qRegisterMetaType<UnwrapFileResult>("UnwrapFileResult");
     setExecutionMode(ExecutionMode::Automatic);
 }
 
@@ -231,7 +233,7 @@ void UnwrapNode::createWidget()
     // 5. 目标节点
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -323,14 +325,14 @@ bool UnwrapNode::prepareToStart()
     m_preparedSavePath = projectPath();
     m_preparedProjectName = projectName();
     m_preparedSrcNode = m_inputData->nodeName();
+    m_preparedPhasePaths = m_inputData->filePaths();
 
     m_preparedMethod = m_method;
     m_preparedThreshold = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
 
     // Precalculate output file paths for overwrite check
     QStringList pathsToCheck;
-    QStringList srcPaths = m_inputData->filePaths();
-    for (const QString& srcPath : srcPaths) {
+    for (const QString& srcPath : m_preparedPhasePaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_unwrapped";
         pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + changeName + ".h5");
@@ -374,6 +376,7 @@ void UnwrapNode::executeProcessing()
 
     setProgress(0);
     setState(ExecutionState::Running);
+    m_xmlDirty = false;
 
     m_thread = new QThread();
     m_workerThread = new UnwrapWorker();
@@ -381,17 +384,18 @@ void UnwrapNode::executeProcessing()
 
     connect(this, &UnwrapNode::startUnwrap, m_workerThread, &UnwrapWorker::Unwrap);
     connect(m_thread, &QThread::started, [this]() {
-        Q_EMIT startUnwrap(m_preparedMethod, m_preparedThreshold, m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode, projectModel());
+        Q_EMIT startUnwrap(m_preparedMethod, m_preparedThreshold, m_preparedSavePath, m_preparedDstNode, m_preparedPhasePaths);
     });
+    connect(m_workerThread, &UnwrapWorker::unwrapFileGenerated, this, &UnwrapNode::onUnwrapFileGenerated);
     connect(m_workerThread, &UnwrapWorker::updateProcess, this, &UnwrapNode::onProgressUpdate);
     connect(m_workerThread, &UnwrapWorker::endProcess, this, &UnwrapNode::onProcessingFinished);
     connect(m_workerThread, &UnwrapWorker::endProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &UnwrapWorker::cancelled, this, &UnwrapNode::onCancelled);
     connect(m_workerThread, &UnwrapWorker::errorProcess, this, &UnwrapNode::onError);
     connect(m_workerThread, &UnwrapWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_workerThread, &UnwrapWorker::sendModel, this, &UnwrapNode::onModelUpdated);
     connect(m_workerThread, &UnwrapWorker::destroyed, m_thread, &QThread::quit);
     connect(m_workerThread, &UnwrapWorker::cancelled, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_workerThread, &UnwrapWorker::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Dynamic recovery of Running state for Automatic execution mode (SOP Rule 5)
@@ -444,21 +448,20 @@ void UnwrapNode::onProcessingFinished()
     }
 
     // Clean up worker thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) {
         return;
+    }
+
+    if (m_xmlDirty) {
+        XMLFile* xml = projectXml();
+        const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
+        if (!xml || xmlPath.isEmpty() || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
+            onError(QStringLiteral("Failed to save project XML after phase unwrapping."));
+            return;
+        }
+        m_xmlDirty = false;
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
@@ -466,43 +469,12 @@ void UnwrapNode::onProcessingFinished()
 
     if (!h5Paths.isEmpty())
     {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            if (discardObsoleteAutomaticExecution()) {
-                return;
-            }
-
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-
-            m_outputNodeNameEdit->setEnabled(true);
-            m_methodCombo->setEnabled(true);
-            if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
-            onMethodChanged(m_method - 1);
-
-            setState(ExecutionState::Running);
-            setProgress(100);
-            InSARLogManager::LogInfo("UnwrapNode", "executeProcessing completed.");
-            finishExecution();
-            Q_EMIT dataUpdated(0);
-        });
-
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
-            for (int i = 0; i < h5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
     }
     else
     {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
-        Q_EMIT dataUpdated(1);
 
         m_outputNodeNameEdit->setEnabled(true);
         m_methodCombo->setEnabled(true);
@@ -513,23 +485,13 @@ void UnwrapNode::onProcessingFinished()
         setProgress(100);
         InSARLogManager::LogInfo("UnwrapNode", "executeProcessing completed (empty output list).");
         finishExecution();
-        Q_EMIT dataUpdated(0);
     }
 }
 
 void UnwrapNode::onCancelled()
 {
     InSARLogManager::LogInfo("UnwrapNode", "Unwrap cancellation cleanup completed.");
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -545,16 +507,7 @@ void UnwrapNode::onCancelled()
 void UnwrapNode::onError(const QString& error)
 {
     Q_UNUSED(error);
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -578,6 +531,51 @@ void UnwrapNode::onModelUpdated(QStandardItemModel* model)
     if (iface) {
         iface->refreshProjectTree();
     }
+}
+
+void UnwrapNode::onUnwrapFileGenerated(const UnwrapFileResult& result)
+{
+    if (isAutomaticExecutionObsolete()) {
+        return;
+    }
+
+    QStandardItemModel* model = projectModel();
+    if (!model) {
+        onError(QStringLiteral("Project model is unavailable while publishing unwrapped output."));
+        return;
+    }
+
+    const QList<QStandardItem*> projects = model->findItems(m_preparedProjectName);
+    if (projects.isEmpty()) {
+        onError(QStringLiteral("Project node is unavailable while publishing unwrapped output."));
+        return;
+    }
+
+    QStandardItem* unwrapNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), m_preparedDstNode, "phase-3.0", FOLDER_ICON);
+    if (!unwrapNode) {
+        onError(QStringLiteral("Unable to create the unwrapped output node."));
+        return;
+    }
+
+    unwrapNode->setToolTip(m_preparedProjectName);
+    NodeUtils::findOrCreateChildItem(
+        unwrapNode, result.unwrapName, "phase", result.absolutePath, IMAGEDATA_ICON);
+
+    XMLFile* xml = projectXml();
+    if (!xml) {
+        onError(QStringLiteral("Project XML is unavailable while publishing unwrapped output."));
+        return;
+    }
+    xml->XMLFile_add_unwrap(
+        m_preparedDstNode.toStdString().c_str(),
+        result.unwrapName.toStdString().c_str(),
+        result.relativePath.toStdString().c_str(),
+        result.offsetRow,
+        result.offsetCol,
+        result.method.toStdString().c_str(),
+        0);
+    m_xmlDirty = true;
 }
 
 bool UnwrapNode::validateAndRestoreOutput()
@@ -635,26 +633,59 @@ bool UnwrapNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-            InSARLogManager::LogInfo("UnwrapNode", "validateAndRestoreOutput background rendering completed.");
-        });
-
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
-            for (int i = 0; i < missingH5s.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
     }
 
     return true;
+}
+
+void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
+                                        const QStringList& generatedJpgPaths,
+                                        const QStringList& types,
+                                        const QStringList& resultJpgPaths,
+                                        bool completeExecution)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, resultJpgPaths, completeExecution]() {
+        if (completeExecution) {
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
+            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            m_outputNodeNameEdit->setEnabled(true);
+            m_methodCombo->setEnabled(true);
+            if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
+            onMethodChanged(m_method - 1);
+            setState(ExecutionState::Running);
+            setProgress(100);
+            InSARLogManager::LogInfo("UnwrapNode", "executeProcessing completed.");
+            finishExecution();
+        } else {
+            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+            InSARLogManager::LogInfo("UnwrapNode", "validateAndRestoreOutput background rendering completed.");
+        }
+    });
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, generatedJpgPaths, types]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], types[i]);
+        }
+    }));
 }
 
 QStringList UnwrapNode::previewImagePaths() const
@@ -732,6 +763,16 @@ void UnwrapNode::stopExecution()
     {
         m_workerThread->StopProcess();
     }
+    cleanUpThreadAndWorker();
+}
+
+void UnwrapNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+    if (thread && thread->isRunning())
+        thread->quit();
 }
 
 void UnwrapNode::processAutomatically()
@@ -747,3 +788,4 @@ void UnwrapNode::processAutomatically()
 }
 
 } // namespace QtNodes
+

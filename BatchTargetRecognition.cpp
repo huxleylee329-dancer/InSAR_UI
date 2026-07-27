@@ -151,7 +151,7 @@ void BatchTargetRecognition::on_runDetectionButton_clicked()
     connect(m_task, &TargetDetectionTask::errorProcess,
             this, &BatchTargetRecognition::onDetectionError, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::askUserError,
-            this, &BatchTargetRecognition::onDetectionAskUserError, Qt::BlockingQueuedConnection);
+            this, &BatchTargetRecognition::onDetectionAskUserError, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
 }
@@ -454,8 +454,10 @@ void BatchTargetRecognition::onDetectionError(const QString& error)
     m_task = nullptr;
 }
 
-void BatchTargetRecognition::onDetectionAskUserError(const QString& message, bool* skip)
+void BatchTargetRecognition::onDetectionAskUserError(quint64 requestId, const QString& message)
 {
     InSARLogManager::LogWarning("BatchTargetRecognition", message);
-    *skip = true;
+    if (m_task) {
+        m_task->resolveErrorDecision(requestId, true);
+    }
 }

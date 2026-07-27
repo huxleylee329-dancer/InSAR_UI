@@ -4,7 +4,6 @@
 #include <Utils.h>
 #include <FormatConversion.h>
 #include <Registration.h>
-#include "tinyxml.h"
 #include "NodeUtils.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -201,25 +200,22 @@ void S1TopsBackGeocodingWorker::requestCancel() noexcept
 }
 
 void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
-	int images_number,
 	int masterIndex,
 	QString savePath,
-	QString dstProject, 
-	QString srcNode,
+	QString dstProject,
 	QString dstNode,
-	QStandardItemModel* model,
+	QStringList inputPaths,
 	bool b_ESD
 )
 {
 	ScopedTaskLogContext taskLogContextGuard(m_taskLogContext);
+	const int images_number = inputPaths.size();
 	if (images_number < 2 ||
 		masterIndex < 1 ||
 		masterIndex > images_number ||
 		savePath.isEmpty() ||
-		dstProject.isEmpty() ||
 		dstNode.isEmpty() ||
-		srcNode.isEmpty() ||
-		!model
+		inputPaths.isEmpty()
 		)
 	{
 		emit errorProcess("Invalid parameters for BackGeocoding.");
@@ -229,53 +225,20 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	std::vector<std::string> SAR_images;
 	std::vector<std::string> SAR_images_regis;
 	QList<QString> origin;
-	bool found_project = false;
 	QString demPath = m_demPath;
-	QMetaObject::invokeMethod(model, [=, &SAR_images, &SAR_images_regis, &origin, &found_project, &demPath]() {
-		QList<QStandardItem*> foundProjects = model->findItems(dstProject);
-		if (foundProjects.isEmpty()) return;
-		found_project = true;
-		QStandardItem* project = foundProjects.first();
-		for (int i = 0; i < project->rowCount(); i++)
-		{
-			QStandardItem* images = project->child(i, 0);
-			if (images && images->text() == srcNode)
-			{
-				for (int j = 0; j < images->rowCount(); j++)
-				{
-					QStandardItem* pathItem = images->child(j, 1);
-					if (pathItem) {
-						QFileInfo fileinfo(pathItem->text());
-						QString origin_name = fileinfo.baseName();
-						origin.append(origin_name);
-						SAR_images.push_back(pathItem->text().toStdString());
-						SAR_images_regis.push_back(QString("%1/%2/%3_regis.h5").arg(savePath).arg(dstNode)
-							.arg(origin_name).toStdString());
-					}
-				}
-			}
+	for (const QString& inputPath : inputPaths) {
+		QFileInfo fileInfo(inputPath);
+		if (!fileInfo.exists() || fileInfo.baseName().isEmpty()) {
+			emit errorProcess(QStringLiteral("Invalid Sentinel-1 input path: %1").arg(inputPath));
+			return;
 		}
+		const QString originName = fileInfo.baseName();
+		origin.append(originName);
+		SAR_images.push_back(fileInfo.absoluteFilePath().toStdString());
+		SAR_images_regis.push_back(QDir(savePath).filePath(dstNode + "/" + originName + "_regis.h5").toStdString());
+	}
 
 		// 如果外部未传入DEM路径，在 GUI 线程安全地查询项目全局默认高程数据路径
-		if (demPath.isEmpty()) {
-			auto* iface = NodeUtils::getProjectContext(nullptr);
-			if (iface) {
-				demPath = NodeUtils::getGlobalDemPath(iface);
-			}
-		}
-	}, Qt::BlockingQueuedConnection);
-
-	if (!found_project)
-	{
-		emit errorProcess("Project node not found in project tree.");
-		return;
-	}
-	if (SAR_images.empty())
-	{
-		emit errorProcess("No input images found in the project tree under: " + srcNode);
-		return;
-	}
-
 	QStringList outputPaths;
 	QSet<QString> preExistingOutputs;
 	for (const std::string& outputPath : SAR_images_regis) {
@@ -1401,7 +1364,6 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	}
 
 	emit registrationFinished(regisH5Paths, dstNode, dstProject, savePath, masterIndex, hasQualityWarning, qualityWarnings);
-	emit sendModel(model);
 	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", QString("Worker finished: outputs=%1, qualityWarnings=%2")
 		.arg(regisH5Paths.join("; ")).arg(qualityWarnings.size()), "worker.finished");
 	emit endProcess();

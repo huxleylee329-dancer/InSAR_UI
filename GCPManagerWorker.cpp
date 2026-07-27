@@ -36,8 +36,6 @@ void GCPManagerWorker::evaluate_gcps(
     emit updateProcess(10, QStringLiteral("开始读取影像多项式系数与分辨率参数..."));
 
     // 1. 获取 HDF5 文件锁保护，防止多线程死锁与重入冲突
-    NodeUtils::Hdf5Locker locker;
-
     std::string inputH5 = inputH5Path.toStdString();
     std::string outputH5 = outputH5Path.toStdString();
 
@@ -129,9 +127,12 @@ void GCPManagerWorker::evaluate_gcps(
 
     // 创建新的结果 H5 快照
     FormatConversion conversion;
+    {
+        NodeUtils::Hdf5Locker locker;
     if (conversion.creat_new_h5(outputH5.c_str()) != 0) {
         emit errorProcess(QStringLiteral("无法创建输出的 GCPResults.h5 临时快照文件。"));
         return;
+    }
     }
 
     int nPoints = static_cast<int>(activeGcps.size());

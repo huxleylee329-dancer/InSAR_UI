@@ -249,7 +249,6 @@ bool SLCDerampNode::validateAndRestoreOutput()
             h5Paths.sort();
             m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
-            Q_EMIT dataUpdated(0);
 
             // 恢复 Port 1 预览数据 & 后台异步补救缺失的 JPG
             QStringList existingJpgPaths;
@@ -274,18 +273,23 @@ bool SLCDerampNode::validateAndRestoreOutput()
             if (!existingJpgPaths.isEmpty()) {
                 m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgPaths);
                 setOutputData(1, m_imageInfoData);
-                Q_EMIT dataUpdated(1);
             } else {
                 m_imageInfoData.reset();
                 setOutputData(1, nullptr);
-                Q_EMIT dataUpdated(1);
             }
 
             // 异步补录 JPG 预览
             if (!missingH5s.isEmpty()) {
                 m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
-                m_remedyWatcher.disconnect();
+                if (m_remedyWatcher.isRunning()) {
+                    m_remedyWatcher.disconnect(this);
+                    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
+                        m_remedyWatcher.disconnect(this);
+                        QTimer::singleShot(0, this, [this]() { validateAndRestoreOutput(); });
+                    });
+                    return true;
+                }
+                m_remedyWatcher.disconnect(this);
 
                 connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
                     InSARLogManager::LogInfo("SLCDerampNode", "Remedy preview generation finished. Updating Port 1.");
@@ -397,7 +401,7 @@ void SLCDerampNode::createWidget()
     nodeNameLabel->setFixedWidth(80);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputNodeNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -547,43 +551,28 @@ void SLCDerampNode::onProgressUpdate(int progress, const QString& message)
 void SLCDerampNode::onProcessingFinished()
 {
     if (isAutomaticExecutionObsolete()) {
-        if (m_thread) {
-            m_thread->quit();
-            m_thread->wait();
-            m_thread->deleteLater();
-            m_thread = nullptr;
-        }
-        if (m_worker) {
-            m_worker->deleteLater();
-            m_worker = nullptr;
-        }
+        releaseFinishedThreadAndWorker();
         discardObsoleteAutomaticExecution();
         return;
     }
 
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
-    QStringList h5Paths;
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*_deramp.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
-        h5Files.sort();
-        for (const QString& h5File : h5Files) {
-            h5Paths.append(dir.absoluteFilePath(h5File));
+    if (m_generatedOutputPaths.isEmpty()) {
+        onError(QStringLiteral("SLC deramp did not return output files."));
+        return;
+    }
+    for (const QString& h5Path : m_generatedOutputPaths) {
+        if (!QFileInfo::exists(h5Path)) {
+            onError(QStringLiteral("SLC deramp returned a missing output file."));
+            return;
         }
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData = std::make_shared<ImportedFileData>(m_generatedOutputPaths, m_outputNodeName);
     setOutputData(0, m_outputData);
 
     // 收集生成的预览图
     QStringList jpgPaths;
-    for (const QString& h5Path : h5Paths) {
+    for (const QString& h5Path : m_generatedOutputPaths) {
         QFileInfo fi(h5Path);
         QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
         if (QFile::exists(jpgPath)) {
@@ -599,20 +588,7 @@ void SLCDerampNode::onProcessingFinished()
         setOutputData(1, nullptr);
     }
 
-    // Clean up thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_worker)
-    {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
+    releaseFinishedThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -625,26 +601,12 @@ void SLCDerampNode::onProcessingFinished()
     setProgress(100);
     InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing completed.");
     finishExecution();
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
 }
 
 void SLCDerampNode::onError(const QString& error)
 {
     InSARLogManager::LogError("SLCDerampNode", "Execution error: " + error);
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-
-    if (m_worker)
-    {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
+    releaseFinishedThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -654,26 +616,44 @@ void SLCDerampNode::onError(const QString& error)
     setState(ExecutionState::Error);
 }
 
-void SLCDerampNode::onModelUpdated(QStandardItemModel* model)
-{
-    if (isAutomaticExecutionObsolete()) {
-        return;
-    }
-
-    Q_UNUSED(model);
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        iface->refreshProjectTree();
-    }
-}
-
 void SLCDerampNode::onResultsReceived(
     const QString& dstNode,
     const QStringList& h5Paths,
-    const QStringList& originNames)
+    const QStringList& originNames,
+    const QString& savePath,
+    const QString& projectName)
 {
     if (isAutomaticExecutionObsolete()) {
         return;
+    }
+
+    if (h5Paths.isEmpty() || h5Paths.size() != originNames.size()) {
+        InSARLogManager::LogError("SLCDerampNode", "Worker returned inconsistent deramp output metadata.");
+        return;
+    }
+    m_generatedOutputPaths = h5Paths;
+
+    QStandardItemModel* model = projectModel();
+    const QList<QStandardItem*> projects = model ? model->findItems(projectName) : QList<QStandardItem*>();
+    if (projects.isEmpty()) {
+        InSARLogManager::LogError("SLCDerampNode", "Project tree root was not found.");
+        return;
+    }
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), dstNode, "complex-3.0", FOLDER_ICON);
+    if (!outputNode) {
+        InSARLogManager::LogError("SLCDerampNode", "Unable to create deramp output node.");
+        return;
+    }
+    outputNode->setToolTip(projectName);
+    for (const QString& h5Path : h5Paths) {
+        const QString outputName = QFileInfo(h5Path).baseName();
+        QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
+            outputNode, outputName, "complex", h5Path, IMAGEDATA_ICON);
+        if (imageItem) {
+            outputNode->setChild(imageItem->row(), 1, new QStandardItem(h5Path));
+        }
     }
 
     // 用全局 XML 句柄 + 原生 TinyXML 写入，绕过外部 DLL 接口以避崩溃 (SOP 9)
@@ -812,9 +792,13 @@ void SLCDerampNode::onResultsReceived(
 
     if (xmlModified)
     {
-        QString xmlPath = projectPath() + "/" + projectName();
+        QString xmlPath = savePath + "/" + projectName;
         xml->XMLFile_save(xmlPath.toStdString().c_str());
         InSARLogManager::LogInfo("SLCDerampNode", "onResultsReceived: XML saved via native TinyXML.");
+    }
+
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
     }
 }
 
@@ -892,11 +876,12 @@ void SLCDerampNode::executeProcessing()
     InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing started.");
 
     // Retrieve input and output settings
-    QString srcNode = m_inputData->nodeName();
     QString dstNode = m_preparedDstNode;
     QString dstProject = projectName();
     QString savePath = projectPath();
     QString preparedDemPath = m_preparedDemPath;
+    const QStringList inputPaths = m_inputData->filePaths();
+    const int masterIndex = m_masterIndex;
 
     m_outputNodeName = dstNode;
 
@@ -919,6 +904,7 @@ void SLCDerampNode::executeProcessing()
 
     // 2. 覆盖运行前，清理工程 XML 的旧记录 and 左侧树视图以避影分身 (SOP 14)
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+    m_generatedOutputPaths.clear();
 
     // Create thread and worker
     m_thread = new QThread();
@@ -927,8 +913,8 @@ void SLCDerampNode::executeProcessing()
 
     // Connect signals
     connect(this, &SLCDerampNode::startDeramp, m_worker, &SLCDerampWorker::SLC_deramp_with_dem);
-    connect(m_thread, &QThread::started, [this, dstProject, srcNode, dstNode, preparedDemPath]() {
-        Q_EMIT startDeramp(m_masterIndex, dstProject, srcNode, dstNode, projectModel(), preparedDemPath);
+    connect(m_thread, &QThread::started, [this, masterIndex, dstProject, savePath, dstNode, inputPaths, preparedDemPath]() {
+        Q_EMIT startDeramp(masterIndex, dstProject, savePath, dstNode, inputPaths, preparedDemPath);
     });
     connect(m_worker, &SLCDerampWorker::updateProcess, this, &SLCDerampNode::onProgressUpdate);
     connect(m_worker, &SLCDerampWorker::endProcess, this, &SLCDerampNode::onProcessingFinished);
@@ -937,9 +923,9 @@ void SLCDerampNode::executeProcessing()
     connect(m_worker, &SLCDerampWorker::cancelled, m_thread, &QThread::quit);
     connect(m_worker, &SLCDerampWorker::errorProcess, this, &SLCDerampNode::onError);
     connect(m_worker, &SLCDerampWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_worker, &SLCDerampWorker::sendModel, this, &SLCDerampNode::onModelUpdated);
     connect(m_worker, &SLCDerampWorker::sendResults, this, &SLCDerampNode::onResultsReceived);
     connect(m_worker, &SLCDerampWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Start thread
@@ -1002,16 +988,7 @@ void SLCDerampNode::stopExecution()
 
 void SLCDerampNode::onCancelled()
 {
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_worker) {
-        m_worker->deleteLater();
-        m_worker = nullptr;
-    }
+    releaseFinishedThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -1020,6 +997,16 @@ void SLCDerampNode::onCancelled()
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
     updateParameterWidgetsEnableState();
+}
+
+void SLCDerampNode::releaseFinishedThreadAndWorker()
+{
+    QPointer<QThread> thread = m_thread;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
+    }
 }
 
 void SLCDerampNode::processAutomatically()
@@ -1048,3 +1035,4 @@ void SLCDerampNode::updateParameterWidgetsEnableState()
 }
 
 } // namespace QtNodes
+

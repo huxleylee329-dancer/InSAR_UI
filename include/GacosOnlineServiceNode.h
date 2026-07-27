@@ -83,17 +83,25 @@ private:
     QString m_preparedApiKey;
     QString m_preparedEmail;
     int m_preparedDataFormat = 0;
+    QStringList m_generatedOutputNames;
+    QStringList m_generatedOutputPaths;
 
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
+    void onResultsReceived(const QString& dstNode, const QStringList& outputNames,
+                           const QStringList& outputPaths, const QString& savePath,
+                           const QString& projectName);
     bool validateInputs() const;
     void updateWidgetSize();
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void releaseFinishedThreadResources();
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& types, const QStringList& resultJpgPaths,
+                                bool completeExecution);
 
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
@@ -108,8 +116,7 @@ private:
 signals:
     void startGacos(QString apiKey, QString email, int dataFormat,
                     QString save_path, QString project_name,
-                    QString node_name, QString file_name,
-                    QStandardItemModel* model);
+                    QString file_name, QStringList inputPaths);
 };
 
 } // namespace QtNodes

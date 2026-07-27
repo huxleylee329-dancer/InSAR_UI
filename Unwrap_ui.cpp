@@ -256,6 +256,33 @@ void Unwrap_ui::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
+
+    QStringList phasePaths;
+    if (copy) {
+        const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+        if (!projects.isEmpty()) {
+            QStandardItem* project = projects.first();
+            for (int i = 0; i < project->rowCount(); ++i) {
+                QStandardItem* node = project->child(i, 0);
+                if (!node || node->text() != ui->comboBox_2->currentText()) {
+                    continue;
+                }
+                for (int j = 0; j < node->rowCount(); ++j) {
+                    QStandardItem* typeItem = node->child(j, 0);
+                    QStandardItem* pathItem = node->child(j, 1);
+                    if (typeItem && pathItem && typeItem->toolTip() == "phase" && !pathItem->text().isEmpty()) {
+                        phasePaths.append(pathItem->text());
+                    }
+                }
+                break;
+            }
+        }
+    }
+    if (phasePaths.isEmpty()) {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("No phase input paths are available."));
+        return;
+    }
+
     m_thread = new QThread(this);
     Unwrap_worker = new UnwrapWorker();
     Unwrap_worker->moveToThread(m_thread);
@@ -269,11 +296,10 @@ void Unwrap_ui::on_buttonBox_accepted()
     connect(Unwrap_worker, &UnwrapWorker::endProcess, this, &Unwrap_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Unwrap_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Unwrap_ui::StopThread);
-    connect(Unwrap_worker, &UnwrapWorker::sendModel, this, &Unwrap_ui::TransitModel);
     
     m_thread->start();
     ChangeVision(false);
-    emit operate(this->method, ui->coherence_threshold->text().toDouble(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->file_name->text(), this->copy);
+    emit operate(this->method, ui->coherence_threshold->text().toDouble(), this->save_path, ui->file_name->text(), phasePaths);
 }
 
 void Unwrap_ui::on_buttonBox_rejected()

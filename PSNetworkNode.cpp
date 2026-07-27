@@ -181,7 +181,7 @@ void PSNetworkNode::createWidget()
     addParamRow(QStringLiteral("参考点列:"), m_refColEdit);
 
     m_outputNodeNameEdit = new QLineEdit(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入")); // SOP: standard placeholder
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")); // SOP: standard placeholder
     addParamRow(QStringLiteral("目标节点名:"), m_outputNodeNameEdit);
 
     // Row: Result Display
@@ -403,7 +403,7 @@ void PSNetworkNode::onCancelled()
     m_previewData.reset();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
-    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("宸插彇娑?"));
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -441,6 +441,7 @@ void PSNetworkNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+    setOutputData(0, m_outputData);
     
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("三角网络计算成功！结果保存在: ") + m_outputNodeName);
@@ -451,8 +452,6 @@ void PSNetworkNode::onProcessingFinished()
     setState(ExecutionState::Running);
     finishExecution();
     updateLabels();
-
-    Q_EMIT dataUpdated(0);
 }
 
 bool PSNetworkNode::validateAndRestoreOutput()
@@ -465,6 +464,7 @@ bool PSNetworkNode::validateAndRestoreOutput()
 
     if (QFileInfo::exists(h5Path)) {
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+        setOutputData(0, m_outputData);
         generateStaticPreviewJpg();
         
         setState(ExecutionState::Completed);
@@ -496,6 +496,7 @@ void PSNetworkNode::generateStaticPreviewJpg()
     connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPath]() {
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            setOutputData(1, m_previewData);
             Q_EMIT dataUpdated(1);
         }
         watcher->deleteLater();
@@ -665,3 +666,5 @@ void PSNetworkNode::processAutomatically()
 }
 
 } // namespace QtNodes
+
+

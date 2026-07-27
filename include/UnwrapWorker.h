@@ -2,6 +2,17 @@
 
 #include "BaseWorker.h"
 
+struct UnwrapFileResult
+{
+    QString unwrapName;
+    QString absolutePath;
+    QString relativePath;
+    int offsetRow = 0;
+    int offsetCol = 0;
+    QString method;
+};
+Q_DECLARE_METATYPE(UnwrapFileResult)
+
 class UnwrapWorker : public BaseWorker
 {
     Q_OBJECT
@@ -11,8 +22,9 @@ public:
     ~UnwrapWorker();
 
 public slots:
-    void Unwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
+    void Unwrap(int method, double coherenceThreshold, QString savePath, QString fileName, QStringList phasePaths);
 
 signals:
     void cancelled();
+    void unwrapFileGenerated(const UnwrapFileResult& result);
 };

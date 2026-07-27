@@ -101,6 +101,7 @@ private:
     void onProcessingFinished();
     void onError(const QString& error);
     void onCancelled();
+    void onSbasGenerated(const SBASTimeSeriesResult& result);
     bool validateInputs() const;
     void updateLabels();
     void updateWidgetSize();
@@ -116,6 +117,7 @@ private:
 
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    bool m_xmlDirty = false;
 
 signals:
     void startProcess();

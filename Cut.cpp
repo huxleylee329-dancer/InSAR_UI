@@ -1,4 +1,6 @@
 #include"Cut.h"
+#include"NodeUtils.h"
+#include"tinyxml.h"
 #include"icon_source.h"
 #include<qdialog.h>
 #include<qcheckbox.h>
@@ -102,13 +104,6 @@ void Cut::TransitModel(QStandardItemModel* model)
 }
 void Cut::ReceivePos(double left, double right, double top, double bottom)
 {
-    
-    isCutting = true;
-    h5_left = left;
-    h5_right = right;
-    h5_top = top;
-    h5_bottom = bottom;
-
     if (ui->comboBox_4->count() == 0)
     {
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("该工程无可处理数据，请先配准再进行框选裁剪或更换工程！"));
@@ -126,6 +121,54 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
         return;
     }
 
+    QString project_name = ui->comboBox_3->currentText();
+    QString src_node = ui->comboBox_4->currentText();
+    QString dst_node = ui->lineEdit_2->text();
+
+    QList<QStandardItem*> foundProjects = copy->findItems(project_name);
+    if (foundProjects.isEmpty())
+    {
+        QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未在项目中查找到该工程！"));
+        return;
+    }
+    QStandardItem* project = foundProjects[0];
+    QStandardItem* node = nullptr;
+    int src_node_index = -1;
+    for (int i = 0; i < project->rowCount(); i++)
+    {
+        if (project->child(i, 0)->text() == src_node)
+        {
+            node = project->child(i, 0);
+            src_node_index = i;
+            break;
+        }
+    }
+
+    if (src_node_index < 0 || !node)
+    {
+        QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未在工程中查找到源数据节点！"));
+        return;
+    }
+
+    QStringList inputPaths;
+    for (int i = 0; i < node->rowCount(); i++)
+    {
+        inputPaths.append(node->child(i, 1)->text());
+    }
+
+    if (inputPaths.isEmpty())
+    {
+        QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("源节点不包含任何可处理数据文件！"));
+        return;
+    }
+
+    // 所有前置校验通过后，才修改 isCutting 和 UI 状态
+    isCutting = true;
+    h5_left = left;
+    h5_right = right;
+    h5_top = top;
+    h5_bottom = bottom;
+
     ui->Preview->setText(QStringLiteral("正在裁剪..."));
     ui->Preview->repaint();
     ui->buttonBox_2->setDisabled(true);
@@ -135,23 +178,95 @@ void Cut::ReceivePos(double left, double right, double top, double bottom)
     ui->progressBar_2->setHidden(0);
     ui->progressBar_2->setMinimum(0);
     ui->progressBar_2->setMaximum(100);
-    Cut_thread = new CutWorker;
-    Cut_thread->moveToThread(new QThread(this));
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
-    connect(this, &Cut::operate2, Cut_thread, &CutWorker::Cut2, Qt::QueuedConnection);
+
+    Cut_thread = new CutWorker;
+    Cut_thread->moveToThread(new QThread(this));
+
+    QString src_data_rank = (project->child(src_node_index, 1)) ? project->child(src_node_index, 1)->text() : QString("complex-1.0");
+    QStandardItem* Images_Cut = NodeUtils::findOrCreateProjectNode(project, dst_node, src_data_rank);
+    if (Images_Cut)
+    {
+        Images_Cut->setToolTip(project_name);
+    }
+
+    QByteArray file_abs_path = QString("%1/%2").arg(this->save_path).arg(project_name.endsWith(".insar", Qt::CaseInsensitive) ? project_name : project_name + ".insar").toLocal8Bit();
+    auto doc = std::make_shared<XMLFile>();
+    doc->XMLFile_load(file_abs_path.data());
+
+    int master_index = -1;
+    TiXmlElement* DataNode = nullptr;
+    int ret = doc->find_node_with_attribute("DataNode", "name", src_node.toStdString().c_str(), DataNode);
+    if (ret == 0 && DataNode)
+    {
+        TiXmlElement* pnode = nullptr;
+        ret = doc->_find_node(DataNode, "master_image", pnode);
+        if (ret == 0 && pnode)
+        {
+            ret = sscanf(pnode->GetText(), "%d", &master_index);
+            if (ret != 1) master_index = -1;
+        }
+    }
+
     connect(Cut_thread, &CutWorker::updateProcess, this, &Cut::updateProcess);
     connect(Cut_thread->thread(), &QThread::finished, Cut_thread, &QObject::deleteLater);
     connect(Cut_thread->thread(), &QThread::finished, Cut_thread->thread(), &QObject::deleteLater);
-    connect(Cut_thread, &CutWorker::endProcess, this, &Cut::endProcess);
+
+    // 连接 fileCropped 信号以安全地在 GUI 线程更新树模型和 XML 内存
+    connect(Cut_thread, &CutWorker::fileCropped, this, [=](QString cutName, QString fullPath, int offsetRow, int offsetCol, int masterIdx, QString rank, QList<double> cPara) {
+        Q_UNUSED(cPara);
+        if (!Images_Cut) return;
+        QStandardItem* item_img = nullptr;
+        for (int j = 0; j < Images_Cut->rowCount(); j++)
+        {
+            if (Images_Cut->child(j, 0)->text() == cutName)
+            {
+                item_img = Images_Cut->child(j, 0);
+                break;
+            }
+        }
+
+        if (!item_img)
+        {
+            QStandardItem* Image_Cut_Name = new QStandardItem(cutName);
+            QStandardItem* Image_Cut_Path = new QStandardItem(fullPath);
+            Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
+            Images_Cut->appendRow(Image_Cut_Name);
+            Image_Cut_Name->setToolTip("complex");
+            Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
+
+            QByteArray dir_name = dst_node.toLocal8Bit();
+            QByteArray filename = cutName.toLocal8Bit();
+            QByteArray file_relative_path = QString("/%1/%2.h5").arg(dst_node).arg(cutName).toLocal8Bit();
+            doc->XMLFile_add_cut(dir_name.data(), masterIdx, filename.data(),
+                file_relative_path.data(),
+                offsetRow, offsetCol, 0, 0, 0, 0, rank.toStdString().c_str());
+        }
+        else
+        {
+            Images_Cut->setChild(item_img->row(), 1, new QStandardItem(fullPath));
+        }
+    }, Qt::QueuedConnection);
+
+    // 连接 endProcess 信号以安全保存 XML
+    connect(Cut_thread, &CutWorker::endProcess, this, [=]() {
+        doc->XMLFile_save(file_abs_path.data());
+        this->endProcess();
+    }, Qt::QueuedConnection);
+
     connect(this, &QWidget::destroyed, this, &Cut::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Cut::StopThread);
-    connect(Cut_thread, &CutWorker::sendModel, this, &Cut::TransitModel);
+    
     Cut_thread->thread()->start();
     ChangeVision(false);
     
-    emit operate2(h5_left, h5_right, h5_top, h5_bottom, this->save_path, ui->comboBox_3->currentText(), ui->comboBox_4->currentText(), ui->lineEdit_2->text(), this->copy);
-    
+    QMetaObject::invokeMethod(Cut_thread, [=]() {
+        Cut_thread->Cut2(h5_left, h5_right, h5_top, h5_bottom,
+                         this->save_path,
+                         project_name.endsWith(".insar", Qt::CaseInsensitive) ? project_name : project_name + ".insar",
+                         src_node, dst_node, inputPaths, src_data_rank, master_index);
+    }, Qt::QueuedConnection);
 }
 
 void Cut::cancelled()
@@ -359,30 +474,131 @@ void Cut::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("高度与宽度应为小数！"));
         return;
     }
+    QString project_name = ui->comboBox->currentText();
+    QString src_node = ui->comboBox_2->currentText();
+    QString dst_node = ui->lineEdit->text();
+
+    QList<QStandardItem*> foundProjects = copy->findItems(project_name);
+    if (foundProjects.isEmpty())
+    {
+        QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未在项目中查找到该工程！"));
+        return;
+    }
+    QStandardItem* project = foundProjects[0];
+    QStandardItem* node = nullptr;
+    int src_node_index = -1;
+    for (int i = 0; i < project->rowCount(); i++)
+    {
+        if (project->child(i, 0)->text() == src_node)
+        {
+            node = project->child(i, 0);
+            src_node_index = i;
+            break;
+        }
+    }
+
+    if (src_node_index < 0 || !node)
+    {
+        QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("未在工程中查找到源数据节点！"));
+        return;
+    }
+
+    QStringList inputPaths;
+    for (int i = 0; i < node->rowCount(); i++)
+    {
+        inputPaths.append(node->child(i, 1)->text());
+    }
+
+    if (inputPaths.isEmpty())
+    {
+        QMessageBox::warning(this, QStringLiteral("警告"), QStringLiteral("源节点不包含任何可处理数据文件！"));
+        return;
+    }
+
     ui->progressBar->setHidden(0);
     ui->progressBar->setMinimum(0);
     ui->progressBar->setMaximum(100);
-    Cut_thread = new CutWorker;
-    Cut_thread->moveToThread(new QThread(this));
     ui->progressBar->setValue(0);
     ui->progressBar->show();
+
+    Cut_thread = new CutWorker;
+    Cut_thread->moveToThread(new QThread(this));
+
     QList<double> para;
     para.push_back(ui->lon->text().toDouble());
     para.push_back(ui->lat->text().toDouble());
     para.push_back(ui->Width->text().toDouble());
     para.push_back(ui->Height->text().toDouble());
-    connect(this, &Cut::operate, Cut_thread, &CutWorker::Cut, Qt::QueuedConnection);
+
+    QStandardItem* Images_Cut = NodeUtils::findOrCreateProjectNode(project, dst_node, "complex-1.0");
+    if (Images_Cut)
+    {
+        Images_Cut->setToolTip(project_name);
+    }
+
+    QByteArray file_abs_path = QString("%1/%2").arg(this->save_path).arg(project_name.endsWith(".insar", Qt::CaseInsensitive) ? project_name : project_name + ".insar").toLocal8Bit();
+    auto doc = std::make_shared<XMLFile>();
+    doc->XMLFile_load(file_abs_path.data());
+
     connect(Cut_thread, &CutWorker::updateProcess, this, &Cut::updateProcess);
     connect(Cut_thread->thread(), &QThread::finished, Cut_thread, &QObject::deleteLater);
     connect(Cut_thread->thread(), &QThread::finished, Cut_thread->thread(), &QObject::deleteLater);
-    connect(Cut_thread, &CutWorker::endProcess, this, &Cut::endProcess);
+
+    // 连接 fileCropped 信号以安全地在 GUI 线程更新树模型和 XML 内存
+    connect(Cut_thread, &CutWorker::fileCropped, this, [=](QString cutName, QString fullPath, int offsetRow, int offsetCol, int masterIdx, QString rank, QList<double> cPara) {
+        Q_UNUSED(masterIdx);
+        Q_UNUSED(rank);
+        if (!Images_Cut) return;
+        QStandardItem* item_img = nullptr;
+        for (int j = 0; j < Images_Cut->rowCount(); j++)
+        {
+            if (Images_Cut->child(j, 0)->text() == cutName)
+            {
+                item_img = Images_Cut->child(j, 0);
+                break;
+            }
+        }
+
+        if (!item_img)
+        {
+            QStandardItem* Image_Cut_Name = new QStandardItem(cutName);
+            QStandardItem* Image_Cut_Path = new QStandardItem(fullPath);
+            Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
+            Images_Cut->appendRow(Image_Cut_Name);
+            Image_Cut_Name->setToolTip("complex");
+            Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
+
+            QByteArray dir_name = dst_node.toLocal8Bit();
+            QByteArray filename = cutName.toLocal8Bit();
+            QByteArray file_relative_path = QString("/%1/%2.h5").arg(dst_node).arg(cutName).toLocal8Bit();
+            doc->XMLFile_add_cut(dir_name.data(), -1, filename.data(),
+                file_relative_path.data(),
+                offsetRow, offsetCol, cPara.at(0), cPara.at(1),
+                cPara.at(2), cPara.at(3), "complex-1.0");
+        }
+        else
+        {
+            Images_Cut->setChild(item_img->row(), 1, new QStandardItem(fullPath));
+        }
+    }, Qt::QueuedConnection);
+
+    // 连接 endProcess 信号以安全保存 XML
+    connect(Cut_thread, &CutWorker::endProcess, this, [=]() {
+        doc->XMLFile_save(file_abs_path.data());
+        this->endProcess();
+    }, Qt::QueuedConnection);
+
     connect(this, &QWidget::destroyed, this, &Cut::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Cut::StopThread);
-    connect(Cut_thread, &CutWorker::sendModel, this, &Cut::TransitModel);
+    
     Cut_thread->thread()->start();
     ChangeVision(false);
-    //connect(thread, &MyThread::endProcess, this, &MainWindow::endProcess);
-    emit operate(para, this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->lineEdit->text(), this->copy);
+    
+    QMetaObject::invokeMethod(Cut_thread, [=]() {
+        Cut_thread->Cut(para, this->save_path,
+                        project_name.endsWith(".insar", Qt::CaseInsensitive) ? project_name : project_name + ".insar",
+                        src_node, dst_node, inputPaths, QString("complex-1.0"));
+    }, Qt::QueuedConnection);
 
     
 }

@@ -92,7 +92,7 @@ void ExportKMLNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     {
         if (m_inputNodeLabel)
         {
-            m_inputNodeLabel->setText(QStringLiteral("未连接"));
+            m_inputNodeLabel->setText(QStringLiteral("鏈繛鎺?"));
         }
     }
     
@@ -143,7 +143,7 @@ void ExportKMLNode::createWidget()
     };
 
     // Input node display
-    m_inputNodeLabel = new QLabel(QStringLiteral("未连接"), _widget);
+    m_inputNodeLabel = new QLabel(QStringLiteral("鏈繛鎺?"), _widget);
     m_inputNodeLabel->setStyleSheet("color: #888888; font-size: 11px;");
     addFormRow(QStringLiteral("输入节点:"), m_inputNodeLabel);
 
@@ -307,6 +307,8 @@ void ExportKMLNode::executeProcessing()
     connect(m_worker, &ExportKMLWorker::endProcess, this, &ExportKMLNode::onProcessingFinished);
     connect(m_worker, &ExportKMLWorker::errorProcess, this, &ExportKMLNode::onError);
     connect(m_worker, &ExportKMLWorker::cancelled, this, &ExportKMLNode::onCancelled);
+    connect(m_worker, &ExportKMLWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &ExportKMLWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &ExportKMLWorker::cancelled, m_thread, &QThread::quit);
 
     // Update state and progress before starting
@@ -329,6 +331,16 @@ void ExportKMLNode::stopExecution()
     m_worker = nullptr;
 }
 
+void ExportKMLNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
+    }
+}
+
 void ExportKMLNode::processAutomatically()
 {
     if (prepareToStart()) {
@@ -349,7 +361,7 @@ void ExportKMLNode::onProgressUpdate(int progress, const QString& message)
 
 void ExportKMLNode::onError(const QString& error)
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -362,7 +374,7 @@ void ExportKMLNode::onError(const QString& error)
 
 void ExportKMLNode::onProcessingFinished()
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -372,19 +384,19 @@ void ExportKMLNode::onProcessingFinished()
 
     QString kmlPath = m_outputPath + "/" + m_fileName + ".kml";
     m_outputData = std::make_shared<ImportedFileData>(kmlPath, m_fileName);
+    setOutputData(0, m_outputData);
     setState(ExecutionState::Running);
     finishExecution();
-    Q_EMIT dataUpdated(0);
 }
 
 void ExportKMLNode::onCancelled()
 {
-    stopExecution();
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
 
-    m_resultLabel->setText(QStringLiteral("已取消"));
+    m_resultLabel->setText(QStringLiteral("宸插彇娑?"));
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -396,6 +408,7 @@ bool ExportKMLNode::validateAndRestoreOutput()
     if (QFile::exists(kmlPath))
     {
         m_outputData = std::make_shared<ImportedFileData>(kmlPath, m_fileName);
+        setOutputData(0, m_outputData);
         m_resultLabel->setText(QStringLiteral("检测到已有导出文件，已恢复。"));
         setState(ExecutionState::Completed);
         Q_EMIT dataUpdated(0);
@@ -440,3 +453,4 @@ QString ExportKMLNode::projectPath() const
 }
 
 } // namespace QtNodes
+

@@ -45,7 +45,7 @@ private slots:
     void onDetectionFinished();
     void onDetectionCancelled();
     void onDetectionError(const QString& error);
-    void onDetectionAskUserError(const QString& message, bool* skip);
+    void onDetectionAskUserError(quint64 requestId, const QString& message);
 
 
 private:

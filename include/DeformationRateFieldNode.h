@@ -16,6 +16,7 @@
 #include <QThread>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QPointer>
 #include <memory>
 #include "NodeUtils.h"
 
@@ -89,8 +90,10 @@ private:
     QString m_outputNodeName;
 
     // Worker thread
-    DeformationRateFieldWorker* m_worker;
-    QThread* m_thread;
+    QPointer<DeformationRateFieldWorker> m_worker;
+    QPointer<QThread> m_thread;
+    QString m_generatedOutputPath;
+    bool m_resultPublishingFailed = false;
 
     // Helper methods
     void createWidget();
@@ -98,10 +101,12 @@ private:
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
+    void onResultsGenerated(const QString& dstNode, const QString& outputH5Path);
     bool validateInputs() const;
     void updateLabels();
     void updateWidgetSize();
     void executeProcessing();
+    void cleanUpThreadAndWorker();
     void generateStaticPreviewJpg(bool completeExecution = false);
     QString projectPath() const;
     QString projectName() const;

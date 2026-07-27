@@ -1,6 +1,7 @@
 #include"MainWindow.h"
 #include"import_CSK.h"
 #include"ImportTask.h"
+#include "ImportOutputPersistence.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include<opencv2/highgui.hpp>
@@ -249,7 +250,10 @@ void import_CSK::on_buttonBox_accepted()
     connect(import_CSK_thread, &CSKImportWorker::errorProcess, this, &import_CSK::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_CSK::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_CSK::StopThread);// , Qt::QueuedConnection);
-    connect(import_CSK_thread, &CSKImportWorker::sendModel, this, &import_CSK::TransitModel);
+    connect(import_CSK_thread, &CSKImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
     thread->start();
 
     // 构造 ImportTask 列表
@@ -264,8 +268,6 @@ void import_CSK::on_buttonBox_accepted()
     QMetaObject::invokeMethod(import_CSK_thread, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node->text()),
-        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node->text()));
     ChangeVision(false);
 }

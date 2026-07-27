@@ -3,6 +3,8 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QAbstractButton>
+#include <FormatConversion.h>
+#include "NodeUtils.h"
 #include "icon_source.h"
 
 PhaseElevationRegression_ui::PhaseElevationRegression_ui(QWidget* parent) :
@@ -40,6 +42,7 @@ void PhaseElevationRegression_ui::updateProcess(int value, QString information)
 
 void PhaseElevationRegression_ui::endProcess()
 {
+    persistGeneratedOutputs();
     if (m_worker != nullptr && m_worker->thread()->isRunning())
     {
         m_worker->thread()->quit();
@@ -179,6 +182,42 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
         return;
     }
 
+    QStringList phaseNames;
+    QStringList phasePaths;
+    if (!copy) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("项目模型不可用。"));
+        return;
+    }
+    const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+    if (projects.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程。"));
+        return;
+    }
+    QStandardItem* project = projects.first();
+    for (int i = 0; i < project->rowCount(); ++i) {
+        QStandardItem* node = project->child(i, 0);
+        if (!node || node->text() != ui->comboBox_2->currentText())
+            continue;
+        for (int j = 0; j < node->rowCount(); ++j) {
+            QStandardItem* image = node->child(j, 0);
+            QStandardItem* path = node->child(j, 1);
+            if (image && path && image->toolTip() == "phase") {
+                phaseNames.append(image->text());
+                phasePaths.append(path->text());
+            }
+        }
+        break;
+    }
+    if (phasePaths.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("没有可校正的干涉图。"));
+        return;
+    }
+
+    m_generatedOutputNames.clear();
+    m_generatedOutputPaths.clear();
+    m_generatedOffsetRows.clear();
+    m_generatedOffsetCols.clear();
+
     m_worker = new PhaseElevationRegressionWorker;
     m_worker->moveToThread(new QThread(this));
 
@@ -187,8 +226,15 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
 
     connect(this, &PhaseElevationRegression_ui::operate, m_worker, &PhaseElevationRegressionWorker::doRegression, Qt::QueuedConnection);
     connect(m_worker, &PhaseElevationRegressionWorker::updateProcess, this, &PhaseElevationRegression_ui::updateProcess);
+    connect(m_worker, &PhaseElevationRegressionWorker::outputsGenerated, this,
+        [this](const QStringList& names, const QStringList& paths,
+               const QList<int>& rows, const QList<int>& cols) {
+            m_generatedOutputNames = names;
+            m_generatedOutputPaths = paths;
+            m_generatedOffsetRows = rows;
+            m_generatedOffsetCols = cols;
+        });
     connect(m_worker, &PhaseElevationRegressionWorker::endProcess, this, &PhaseElevationRegression_ui::endProcess);
-    connect(m_worker, &PhaseElevationRegressionWorker::sendModel, this, &PhaseElevationRegression_ui::TransitModel);
     connect(m_worker->thread(), &QThread::finished, m_worker, &PhaseElevationRegressionWorker::deleteLater);
     connect(this, &QWidget::destroyed, this, &PhaseElevationRegression_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &PhaseElevationRegression_ui::StopThread);
@@ -202,7 +248,45 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
     emit operate(polyOrder, windowSize, coherenceThresh,
                  this->save_path, ui->comboBox->currentText(),
                  ui->comboBox_2->currentText(), ui->file_name->text(),
-                 this->copy);
+                 phaseNames, phasePaths);
+}
+
+void PhaseElevationRegression_ui::persistGeneratedOutputs()
+{
+    if (!copy || m_generatedOutputNames.size() != m_generatedOutputPaths.size() ||
+        m_generatedOutputPaths.size() != m_generatedOffsetRows.size() ||
+        m_generatedOutputPaths.size() != m_generatedOffsetCols.size() ||
+        m_generatedOutputPaths.isEmpty()) {
+        return;
+    }
+
+    const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+    if (projects.isEmpty())
+        return;
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), ui->file_name->text(), "phase-2.5", FOLDER_ICON);
+    if (!outputNode)
+        return;
+
+    XMLFile xml;
+    const QString xmlPath = save_path + "/" + ui->comboBox->currentText() + ".Insar";
+    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("输出已生成，但项目 XML 保存失败。"));
+        return;
+    }
+
+    for (int i = 0; i < m_generatedOutputPaths.size(); ++i) {
+        const QString relativePath = QString("/%1/%2.h5")
+            .arg(ui->file_name->text(), m_generatedOutputNames[i]);
+        NodeUtils::findOrCreateChildItem(outputNode, m_generatedOutputNames[i], "phase",
+            m_generatedOutputPaths[i], IMAGEDATA_ICON);
+        xml.XMLFile_add_unwrap(ui->file_name->text().toStdString().c_str(),
+            m_generatedOutputNames[i].toStdString().c_str(), relativePath.toStdString().c_str(),
+            m_generatedOffsetRows[i], m_generatedOffsetCols[i], "PhaseElevationRegression", 0);
+    }
+    xml.XMLFile_save(xmlPath.toStdString().c_str());
+    emit sendCopy(copy);
 }
 
 void PhaseElevationRegression_ui::on_buttonBox_rejected()

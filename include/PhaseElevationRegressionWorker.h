@@ -1,7 +1,8 @@
 #pragma once
 
 #include "BaseWorker.h"
-#include <QStandardItemModel>
+#include <QStringList>
+#include <QList>
 
 /**
  * @brief 经验性相位-高程回归校正 Worker
@@ -31,8 +32,10 @@ public slots:
     void doRegression(int polyOrder, int windowSize, double coherenceThresh,
                       QString save_path, QString project_name,
                       QString node_name, QString file_name,
-                      QStandardItemModel* model);
+                      QStringList phaseNames, QStringList phasePaths);
 
 signals:
     void cancelled();
+    void outputsGenerated(const QStringList& outputNames, const QStringList& outputPaths,
+                          const QList<int>& offsetRows, const QList<int>& offsetCols);
 };

@@ -31,8 +31,7 @@ signals:
         QStringList filePaths,
         int demSource,
         double targetResolution,
-        QString cacheDir,
-        QStandardItemModel* model
+        QString cacheDir
     );
 
 private slots:

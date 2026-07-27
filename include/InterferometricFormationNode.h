@@ -99,7 +99,7 @@ private:
     int m_multilookAz;
 
     // Worker thread
-    InterferometricFormationWorker* m_workerThread;
+    QPointer<InterferometricFormationWorker> m_workerThread;
     QPointer<QThread> m_thread;
 
     // Remedy watcher for missing JPG regeneration
@@ -112,6 +112,7 @@ private:
     QString m_preparedSavePath;
     QString m_preparedProjectName;
     QString m_preparedFileName;
+    QStringList m_preparedInputPaths;
     QString m_preparedDemPath;
     bool m_preparedIsDeflat = true;
     bool m_preparedIsTopoRemoval = false;
@@ -121,6 +122,7 @@ private:
     int m_preparedWinH = 5;
     int m_preparedMultilookRg = 1;
     int m_preparedMultilookAz = 1;
+    bool m_xmlDirty = false;
 
     // Helper methods
     void createWidget();
@@ -148,12 +150,14 @@ private:
     void stopExecution() override;
     void processAutomatically() override;
 
+    void onInterferogramGenerated(const InterferogramFileResult& result);
+
 signals:
     void startInterferometric(bool isdeflat, bool istopo_removal, bool iscoherence,
                               int master_index, int win_width, int win_height,
                               int multilook_rg, int multilook_az, QString save_path,
-                              QString project_name, QString node_name, QString file_name,
-                              QStandardItemModel* model, QString dem_path);
+                              QString file_name, QStringList input_paths,
+                              QString dem_path);
 };
 
 } // namespace QtNodes

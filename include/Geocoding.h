@@ -18,7 +18,8 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 signals:
-    void operate(int, int, int, QString, QString, QString, QStandardItemModel*, QString dem_path);
+    void operate(int type, int multiRg, int multiAz, QString savePath, QStringList inputPaths,
+        QString productLevel, int masterIndex, QString dstNode, QString demPath);
     void sendCopy(QStandardItemModel*);
 
 private:
@@ -29,6 +30,13 @@ private:
     QString projectFile;
     int image_number;
     void ChangeVision(bool Editable);
+    bool buildInputSnapshot(QStandardItem* project, const QString& srcNodeName, int type,
+        const QString& projectPath, QStringList& inputPaths, QString& productLevel, int& masterIndex) const;
+    void persistGeneratedResults();
+
+    QString m_activeProjectName;
+    QString m_activeProjectPath;
+    QList<GeocodingFileResult> m_generatedResults;
 
     QLabel* m_demPathLabel1 = nullptr;
     QLineEdit* m_demPathEdit1 = nullptr;

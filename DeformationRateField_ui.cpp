@@ -3,6 +3,7 @@
 #include "icon_source.h"
 #include "NodeUtils.h"
 #include "InSARLogManager.h"
+#include <FormatConversion.h>
 #include <QMessageBox>
 #include <QThread>
 #include <QCoreApplication>
@@ -157,6 +158,52 @@ void DeformationRateField_ui::TransitModel(QStandardItemModel* model)
     emit sendCopy(model);
 }
 
+void DeformationRateField_ui::handleResults(const QString& dstNode, const QString& outputH5Path)
+{
+    if (!copy || m_activeProjectName.isEmpty() || outputH5Path.isEmpty()) {
+        return;
+    }
+
+    const QList<QStandardItem*> projects = copy->findItems(m_activeProjectName);
+    if (projects.isEmpty()) {
+        return;
+    }
+
+    QString xmlPath = m_activeProjectPath;
+    if (!xmlPath.endsWith(m_activeProjectName)) {
+        xmlPath += "/" + m_activeProjectName;
+    }
+    XMLFile xml;
+    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+        QMessageBox::warning(this, "Error", QStringLiteral("Unable to load project XML for rate field output."));
+        return;
+    }
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), dstNode, "SBAS-1.0", FOLDER_ICON);
+    if (!outputNode) {
+        return;
+    }
+    outputNode->setToolTip(m_activeProjectName);
+
+    bool created = false;
+    QStandardItem* outputItem = NodeUtils::findOrCreateChildItem(
+        outputNode, "DeformationRateField", "SBAS", outputH5Path, IMAGEDATA_ICON, &created);
+    if (!outputItem) {
+        return;
+    }
+    if (!created) {
+        outputNode->setChild(outputItem->row(), 1, new QStandardItem(outputH5Path));
+    } else {
+        const QString relativePath = QString("/%1/DeformationRateField.h5").arg(dstNode);
+        xml.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "DeformationRateField",
+            relativePath.toStdString().c_str());
+        xml.XMLFile_save(xmlPath.toStdString().c_str());
+    }
+
+    emit sendCopy(copy);
+}
+
 void DeformationRateField_ui::setControlsEnabled(bool enabled)
 {
     ui->comboBox_project->setEnabled(enabled);
@@ -210,6 +257,8 @@ void DeformationRateField_ui::on_buttonBox_accepted()
     m_worker = new DeformationRateFieldWorker();
     m_thread = new QThread(this);
     m_worker->moveToThread(m_thread);
+    m_activeProjectName = ui->comboBox_project->currentText();
+    m_activeProjectPath = copy->item(project_item->row(), 1)->text();
 
     ui->progressBar->setValue(0);
     ui->progressBar->show();
@@ -219,22 +268,23 @@ void DeformationRateField_ui::on_buttonBox_accepted()
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
     connect(m_worker, &DeformationRateFieldWorker::endProcess, this, &DeformationRateField_ui::endProcess);
+    connect(m_worker, &DeformationRateFieldWorker::outputsGenerated,
+            this, &DeformationRateField_ui::handleResults);
     connect(m_worker, &DeformationRateFieldWorker::errorProcess, this, [this](QString err) {
         QMessageBox::warning(this, "Error", err);
         StopThread();
     });
     connect(this, &QWidget::destroyed, this, &DeformationRateField_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &DeformationRateField_ui::StopThread);
-    connect(m_worker, &DeformationRateFieldWorker::sendModel, this, &DeformationRateField_ui::TransitModel);
 
     m_thread->start();
     setControlsEnabled(false);
 
-    QString projPath = copy->item(project_item->row(), 1)->text();
+    QString projPath = m_activeProjectPath;
 
     emit operate(
         projPath,
-        ui->comboBox_project->currentText(),
+        m_activeProjectName,
         ui->lineEdit_dstNode->text(),
         filePaths,
         ui->comboBox_modelType->currentData().toInt(),
@@ -247,8 +297,7 @@ void DeformationRateField_ui::on_buttonBox_accepted()
         ui->checkBox_showContour->isChecked(),
         ui->lineEdit_contourInterval->text().toInt(),
         ui->checkBox_showArrow->isChecked(),
-        ui->lineEdit_arrowSpacing->text().toInt(),
-        this->copy
+        ui->lineEdit_arrowSpacing->text().toInt()
     );
 }
 

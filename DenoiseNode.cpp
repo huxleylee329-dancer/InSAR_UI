@@ -14,6 +14,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QStandardItemModel>
 #include <QMessageBox>
@@ -48,6 +49,7 @@ DenoiseNode::DenoiseNode()
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
+    qRegisterMetaType<DenoiseFileResult>("DenoiseFileResult");
     setExecutionMode(ExecutionMode::Automatic);
 }
 
@@ -258,7 +260,7 @@ void DenoiseNode::createWidget()
 
     // 4. Prefilter W (Slope)
     auto* prefilterLayout = new QHBoxLayout();
-    m_prefilterWinLabel = new QLabel("预滤波窗口");
+    m_prefilterWinLabel = new QLabel("棰勬护娉㈢獥鍙?");
     m_prefilterWinLabel->setFixedWidth(labelWidth);
     prefilterLayout->addWidget(m_prefilterWinLabel);
     m_prefilterWinEdit = new QLineEdit();
@@ -368,7 +370,7 @@ void DenoiseNode::createWidget()
     outputLayout->addWidget(outputLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -511,8 +513,11 @@ void DenoiseNode::executeProcessing()
 
     QString dstNode = m_preparedDstNode;
     QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
+    QStringList phasePaths = m_inputData->filePaths();
+    QStringList phaseNames;
+    for (const QString& phasePath : phasePaths) {
+        phaseNames.append(QFileInfo(phasePath).baseName());
+    }
 
     QList<int> para = m_preparedPara;
     double alpha = m_preparedAlpha;
@@ -542,9 +547,10 @@ void DenoiseNode::executeProcessing()
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &DenoiseNode::startDenoise, m_workerThread, &DenoiseWorker::Denoise);
-    connect(m_thread, &QThread::started, [this, para, alpha, savePath, dstProject, srcNode, dstNode]() {
-        Q_EMIT startDenoise(para, alpha, savePath, dstProject, srcNode, dstNode, projectModel());
+    connect(m_thread, &QThread::started, [this, para, alpha, savePath, dstNode, phaseNames, phasePaths]() {
+        Q_EMIT startDenoise(para, alpha, savePath, dstNode, phaseNames, phasePaths);
     });
+    connect(m_workerThread, &DenoiseWorker::denoiseGenerated, this, &DenoiseNode::onDenoiseGenerated);
     connect(m_workerThread, &DenoiseWorker::updateProcess, this, &DenoiseNode::onProgressUpdate);
     connect(m_workerThread, &DenoiseWorker::endProcess, this, &DenoiseNode::onProcessingFinished);
     connect(m_workerThread, &DenoiseWorker::endProcess, m_thread, &QThread::quit);
@@ -552,8 +558,8 @@ void DenoiseNode::executeProcessing()
     connect(m_workerThread, &DenoiseWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &DenoiseWorker::errorProcess, this, &DenoiseNode::onError);
     connect(m_workerThread, &DenoiseWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_workerThread, &DenoiseWorker::sendModel, this, &DenoiseNode::onModelUpdated);
     connect(m_workerThread, &DenoiseWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_workerThread, &DenoiseWorker::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Dynamic recovery of Running state for Automatic execution mode (SOP rule 139)
@@ -610,18 +616,7 @@ void DenoiseNode::onProcessingFinished()
     }
 
     // Clean up worker thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -632,47 +627,12 @@ void DenoiseNode::onProcessingFinished()
 
     if (!h5Paths.isEmpty())
     {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            if (discardObsoleteAutomaticExecution()) {
-                return;
-            }
-
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-
-            m_outputNodeNameEdit->setEnabled(true);
-            m_methodCombo->setEnabled(true);
-            if (m_prefilterWinEdit) m_prefilterWinEdit->setEnabled(true);
-            if (m_slopeWinEdit) m_slopeWinEdit->setEnabled(true);
-            if (m_goldsteinWinEdit) m_goldsteinWinEdit->setEnabled(true);
-            if (m_nPadEdit) m_nPadEdit->setEnabled(true);
-            if (m_alphaEdit) m_alphaEdit->setEnabled(true);
-            onMethodChanged(m_method - 1);
-
-            setState(ExecutionState::Running);
-            setProgress(100);
-            InSARLogManager::LogInfo("DenoiseNode", "executeProcessing completed.");
-            finishExecution();
-            Q_EMIT dataUpdated(0);
-        });
-
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
-            for (int i = 0; i < h5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
     }
     else
     {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
-        Q_EMIT dataUpdated(1);
 
         m_outputNodeNameEdit->setEnabled(true);
         m_methodCombo->setEnabled(true);
@@ -687,25 +647,13 @@ void DenoiseNode::onProcessingFinished()
         setProgress(100);
         InSARLogManager::LogInfo("DenoiseNode", "executeProcessing completed (empty output list).");
         finishExecution();
-        Q_EMIT dataUpdated(0);
     }
 }
 
 void DenoiseNode::onError(const QString& error)
 {
     Q_UNUSED(error);
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -723,18 +671,7 @@ void DenoiseNode::onError(const QString& error)
     setState(ExecutionState::Error);
 }
 
-void DenoiseNode::onModelUpdated(QStandardItemModel* model)
-{
-    if (isAutomaticExecutionObsolete()) {
-        return;
-    }
 
-    Q_UNUSED(model);
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        iface->refreshProjectTree();
-    }
-}
 
 bool DenoiseNode::validateAndRestoreOutput()
 {
@@ -768,7 +705,6 @@ bool DenoiseNode::validateAndRestoreOutput()
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
-    Q_EMIT dataUpdated(0);
 
     // Remedy missing JPG previews in background
     QStringList existingJpgPaths;
@@ -791,26 +727,60 @@ bool DenoiseNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-            InSARLogManager::LogInfo("DenoiseNode", "validateAndRestoreOutput background rendering completed.");
-        });
-
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
-            for (int i = 0; i < missingH5s.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
     }
 
     return true;
+}
+
+void DenoiseNode::startPreviewGeneration(const QStringList& h5Paths,
+                                         const QStringList& generatedJpgPaths,
+                                         const QStringList& types,
+                                         const QStringList& resultJpgPaths,
+                                         bool completeExecution)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, resultJpgPaths, completeExecution]() {
+        if (completeExecution) {
+            if (discardObsoleteAutomaticExecution()) return;
+            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            m_outputNodeNameEdit->setEnabled(true);
+            m_methodCombo->setEnabled(true);
+            if (m_prefilterWinEdit) m_prefilterWinEdit->setEnabled(true);
+            if (m_slopeWinEdit) m_slopeWinEdit->setEnabled(true);
+            if (m_goldsteinWinEdit) m_goldsteinWinEdit->setEnabled(true);
+            if (m_nPadEdit) m_nPadEdit->setEnabled(true);
+            if (m_alphaEdit) m_alphaEdit->setEnabled(true);
+            onMethodChanged(m_method - 1);
+            setState(ExecutionState::Running);
+            setProgress(100);
+            InSARLogManager::LogInfo("DenoiseNode", "executeProcessing completed.");
+            finishExecution();
+        } else {
+            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+            InSARLogManager::LogInfo("DenoiseNode", "validateAndRestoreOutput background rendering completed.");
+        }
+    });
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, generatedJpgPaths, types]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], types[i]);
+        }
+    }));
 }
 
 QStringList DenoiseNode::previewImagePaths() const
@@ -891,20 +861,21 @@ void DenoiseNode::stopExecution()
     {
         m_workerThread->StopProcess();
     }
+    cleanUpThreadAndWorker();
+}
+
+void DenoiseNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+    if (thread && thread->isRunning())
+        thread->quit();
 }
 
 void DenoiseNode::onCancelled()
 {
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -925,6 +896,65 @@ void DenoiseNode::processAutomatically()
     else
     {
         setState(ExecutionState::Idle);
+    }
+}
+
+void DenoiseNode::onDenoiseGenerated(const DenoiseFileResult& result)
+{
+    QStandardItemModel* model = projectModel();
+    if (!model) return;
+
+    QList<QStandardItem*> foundProjects = model->findItems(projectName());
+    if (foundProjects.isEmpty()) return;
+    QStandardItem* project = foundProjects[0];
+
+    QStandardItem* denoiseNode = NodeUtils::findOrCreateProjectNode(project, result.fileName, "phase-1.0");
+    if (denoiseNode) {
+        denoiseNode->setToolTip(projectName());
+        QStandardItem* itemImg = nullptr;
+        for (int j = 0; j < denoiseNode->rowCount(); j++) {
+            if (denoiseNode->child(j, 0)->text() == result.filterName) {
+                itemImg = denoiseNode->child(j, 0);
+                break;
+            }
+        }
+        if (!itemImg) {
+            QStandardItem* filterNameItem = new QStandardItem(result.filterName);
+            filterNameItem->setToolTip("phase");
+            QStandardItem* filterPathItem = new QStandardItem(result.filterPath);
+            filterNameItem->setIcon(QIcon(IMAGEDATA_ICON));
+            denoiseNode->appendRow(filterNameItem);
+            denoiseNode->setChild(denoiseNode->rowCount() - 1, 1, filterPathItem);
+        } else {
+            denoiseNode->setChild(itemImg->row(), 1, new QStandardItem(result.filterPath));
+        }
+    }
+
+    XMLFile* xml = projectXml();
+    if (xml && m_preparedPara.size() >= 5) {
+        const int method = m_preparedPara.at(4);
+        if (method == 1) {
+            xml->XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
+                result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "Slope",
+                m_preparedPara.at(1), m_preparedPara.at(0), 0, 0, 0, "", "", "");
+        } else if (method == 2) {
+            xml->XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
+                result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "Goldstein",
+                0, 0, m_preparedPara.at(2), m_preparedPara.at(3), m_preparedAlpha, "", "", "");
+        } else if (method == 3) {
+            const QString applicationPath = QCoreApplication::applicationDirPath();
+            const QString modelPath = applicationPath + "\\other\\net.pt";
+            const QString outputPath = QDir::toNativeSeparators(projectPath() + "/" + result.fileName);
+            xml->XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
+                result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "DL",
+                0, 0, 0, 0, 0, applicationPath.toStdString().c_str(), modelPath.toStdString().c_str(),
+                outputPath.toStdString().c_str());
+        }
+        xml->XMLFile_save((projectPath() + "/" + projectName()).toStdString().c_str());
+    }
+
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
     }
 }
 
@@ -949,8 +979,8 @@ private:
     void setupUI()
     {
         setupBaseUI(QObject::tr("正在验证数据中..."),
-                    QObject::tr("正在读取输入与输出 H5 数据以进行参数及特征值校验。"),
-                    QObject::tr("特征值分析"));
+                    QObject::tr("姝ｅ湪璇诲彇杈撳叆涓庤緭鍑?H5 鏁版嵁浠ヨ繘琛屽弬鏁板強鐗瑰緛鍊兼牎楠屻€?"),
+                    QObject::tr("鐗瑰緛鍊煎垎鏋?"));
 
         m_lblInWidth = createFeatureLabel();
         m_lblOutWidth = createFeatureLabel();
@@ -989,16 +1019,16 @@ private:
         if (m_node->executionState() != ExecutionState::Completed) {
             m_statusTitle->setText(QObject::tr("验证未通过"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusDesc->setText(QObject::tr("未检测到节点完成的输出数据。请先执行此节点，待执行成功后再进行验证。"));
+            m_statusDesc->setText(QObject::tr("未找到输入或输出文件的元数据，无法进行比对。"));
             
             m_compTable->clearComparison();
             m_compTable->setEnabled(false);
             
-            m_lblInWidth->setText(QObject::tr("未执行"));
-            m_lblOutWidth->setText(QObject::tr("未执行"));
-            m_lblInMean->setText(QObject::tr("未执行"));
-            m_lblOutMean->setText(QObject::tr("未执行"));
-            m_lblDiffStd->setText(QObject::tr("未执行"));
+            m_lblInWidth->setText(QObject::tr("鏈墽琛?"));
+            m_lblOutWidth->setText(QObject::tr("鏈墽琛?"));
+            m_lblInMean->setText(QObject::tr("鏈墽琛?"));
+            m_lblOutMean->setText(QObject::tr("鏈墽琛?"));
+            m_lblDiffStd->setText(QObject::tr("鏈墽琛?"));
             return;
         }
 

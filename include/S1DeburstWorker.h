@@ -13,9 +13,8 @@ public slots:
     void S1_Deburst(
         QString savePath,
         QString dstProject,
-        QString srcNode,
         QString dstNode,
-        QStandardItemModel* model
+        QStringList inputPaths
     );
 
 signals:

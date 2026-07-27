@@ -62,7 +62,7 @@ private Q_SLOTS:
     void onDetectionFinished(int imageIndex, bool success, float shipProb, QString resultText, QString errorMsg);
     void onError(const QString& error);
     void onCancelled();
-    void onAskUserError(const QString& message, bool* skip);
+    void onAskUserError(quint64 requestId, const QString& message);
 
 private:
     void executeProcessing();

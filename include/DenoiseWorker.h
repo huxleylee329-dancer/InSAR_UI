@@ -2,6 +2,16 @@
 
 #include "BaseWorker.h"
 
+struct DenoiseFileResult {
+    QString fileName;
+    QString filterName;
+    QString filterPath;
+    QString relativePath;
+    int offsetRow = 0;
+    int offsetCol = 0;
+};
+Q_DECLARE_METATYPE(DenoiseFileResult)
+
 class DenoiseWorker : public BaseWorker
 {
     Q_OBJECT
@@ -11,8 +21,10 @@ public:
     ~DenoiseWorker();
 
 public slots:
-    void Denoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
+    void Denoise(QList<int> para, double alpha, QString savePath, QString outputNode,
+                 QStringList phaseNames, QStringList phasePaths);
 
 signals:
     void cancelled();
+    void denoiseGenerated(const DenoiseFileResult& result);
 };

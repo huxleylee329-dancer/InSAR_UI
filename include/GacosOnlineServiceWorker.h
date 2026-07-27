@@ -1,7 +1,7 @@
 #pragma once
 
 #include "BaseWorker.h"
-#include <QStandardItemModel>
+#include <QStringList>
 #include <QtNetwork/QNetworkAccessManager>
 
 /**
@@ -31,9 +31,11 @@ public slots:
      */
     void doGacosRequest(QString apiKey, QString email, int dataFormat,
                         QString save_path, QString project_name,
-                        QString node_name, QString file_name,
-                        QStandardItemModel* model);
+                        QString file_name, QStringList inputPaths);
 
 signals:
     void cancelled();
+    void outputsGenerated(const QString& dstNode, const QStringList& outputNames,
+                          const QStringList& outputPaths, const QString& savePath,
+                          const QString& projectName);
 };

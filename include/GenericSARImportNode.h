@@ -47,10 +47,11 @@ private slots:
     void onImageBrowseClicked();
     void onImportProgress(int progress, const QString& message);
     void onThreadError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
-
-signals:
-    void startGenericSARImport(QString, QString, QString, QString, QString, QStandardItemModel*);
+    void onOutputsGenerated(const QString& dstNode,
+                            const QStringList& outputNames,
+                            const QStringList& outputPaths,
+                            const QString& dataType,
+                            const QString& satelliteFormat);
 
 private:
     QLineEdit* m_imageEdit;

@@ -301,8 +301,6 @@ void ClutterSuppressionNode::executeProcessing()
     bool saveToProject = m_saveToProject;
     QString projPath = projectPath();
     QString projName = projectName();
-    QStandardItemModel* model = projectModel();
-    XMLFile* projectXmlPtr = projectXml();
     
     QStringList outputPaths;
     QStringList fileNames;
@@ -337,7 +335,7 @@ void ClutterSuppressionNode::executeProcessing()
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
 
     m_isExecuting = true;
-    m_task = new BM3DEnhancementTask(EnhancementType::ClutterSuppression, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
+    m_task = new BM3DEnhancementTask(EnhancementType::ClutterSuppression, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, saveToProject);
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
@@ -346,8 +344,7 @@ void ClutterSuppressionNode::executeProcessing()
     connect(m_task, &BM3DEnhancementTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::cancelled, this, &ClutterSuppressionNode::onCancelled, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::sendModel, this, &ClutterSuppressionNode::onModelUpdated, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &ClutterSuppressionNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
@@ -397,9 +394,6 @@ void ClutterSuppressionNode::onProcessingFinished()
 
     m_isExecuting = false;
     updateParameterWidgetsEnableState();
-
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
 
     InSARLogManager::LogInfo("ClutterSuppressionNode", "executeProcessing completed.");
     finishExecution();
@@ -515,14 +509,6 @@ void ClutterSuppressionNode::onSaveImageToProjectRequested(
     }
 }
 
-void ClutterSuppressionNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-        iface->refreshProjectTree();
-    }
-}
-
 QStandardItemModel* ClutterSuppressionNode::projectModel() const
 {
     auto* iface = NodeUtils::getProjectContext(_widget);
@@ -539,12 +525,6 @@ QString ClutterSuppressionNode::projectName() const
 {
     auto* iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectName() : QString();
-}
-
-XMLFile* ClutterSuppressionNode::projectXml() const
-{
-    auto* iface = NodeUtils::getProjectContext(_widget);
-    return iface ? iface->projectXml() : nullptr;
 }
 
 QJsonObject ClutterSuppressionNode::save() const
@@ -605,15 +585,25 @@ QString ClutterSuppressionNode::generateOutputFileName() const
     return QStringLiteral("%1_clutter").arg(baseName);
 }
 
-void ClutterSuppressionNode::onAskUserError(const QString& message, bool* skip)
+void ClutterSuppressionNode::onAskUserError(quint64 requestId, const QString& message)
 {
+    bool skip = false;
+    if (isAutomaticExecutionObsolete() || executionState() != ExecutionState::Running) {
+        if (m_task) {
+            m_task->resolveErrorDecision(requestId, skip);
+        }
+        return;
+    }
     QMessageBox::StandardButton reply = QMessageBox::question(
         nullptr,
         QStringLiteral("错误"), // 错误
         message,
         QMessageBox::Yes | QMessageBox::No
     );
-    *skip = (reply == QMessageBox::Yes);
+    skip = (reply == QMessageBox::Yes);
+    if (m_task) {
+        m_task->resolveErrorDecision(requestId, skip);
+    }
 }
 
 bool ClutterSuppressionNode::validateAndRestoreOutput()

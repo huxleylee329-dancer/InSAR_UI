@@ -31,11 +31,9 @@ signals:
      */
     void startOrbitFetch(
         QString projectPath,
-        QString projectName,
         QStringList filePaths,
         int orbitSource,
-        QString cacheDir,
-        QStandardItemModel* model
+        QString cacheDir
     );
 
 private slots:

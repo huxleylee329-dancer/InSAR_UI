@@ -211,13 +211,12 @@ void DEMSourceWorker::fetch_dem(
     QStringList filePaths,
     int demSource,
     double targetResolution,
-    QString cacheDir,
-    QStandardItemModel* model
+    QString cacheDir
 )
 {
     InSARLogManager::LogInfo("DEMSourceWorker", QString("External DEM fetch started. Target node: %1, Source Type: %2").arg(dstNode).arg(demSource));
 
-    if (projectPath.isEmpty() || projectName.isEmpty() || dstNode.isEmpty() || filePaths.isEmpty() || !model)
+    if (projectPath.isEmpty() || projectName.isEmpty() || dstNode.isEmpty() || filePaths.isEmpty())
     {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
@@ -983,7 +982,6 @@ void DEMSourceWorker::fetch_dem(
     }
 
     emit updateProcess(100, QStringLiteral("外部 DEM 获取完成。"));
-    emit sendModel(model);
     // 清理完成后再通知主线程挂载输出，取消时不会提前暴露部分结果。
     const bool outputValidated = QFileInfo(outputH5Path).exists() && QFileInfo(outputH5Path).size() > 0;
     emit demFetchFinished(outputH5Path, dstNode, projectName, demSource, targetResolution,

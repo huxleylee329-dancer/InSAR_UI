@@ -9,7 +9,6 @@
 #include <QThread>
 #include <QElapsedTimer>
 #include <QCoreApplication>
-#include <QStandardItem>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
@@ -84,34 +83,28 @@ struct UnwrapThreadLocalGuard {
 UnwrapWorker::UnwrapWorker(QObject* parent)
     : BaseWorker(parent)
 {
+    qRegisterMetaType<UnwrapFileResult>("UnwrapFileResult");
 }
 
 UnwrapWorker::~UnwrapWorker()
 {
 }
 
-void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model)
+void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString file_name, QStringList phasePaths)
 {
     const auto finishCancelled = [this]() {
         InSARLogManager::LogInfo("UnwrapWorker", "Unwrap cancelled by user.");
         Q_EMIT cancelled();
     };
-    UnwrapThreadLocalGuard guard(this, model ? 1 : 1); // We will update total images count after we read image_number
+    UnwrapThreadLocalGuard guard(this, qMax(1, phasePaths.size()));
     InSARLogManager::LogInfo("UnwrapWorker", QString("Unwrap task started. Output folder: %1, Method: %2").arg(file_name).arg(method));
 
-    if (save_path.isEmpty() ||
-        project_name.isEmpty() ||
-        node_name.isEmpty() ||
-        file_name.isEmpty())
+    if (save_path.isEmpty() || file_name.isEmpty() || phasePaths.isEmpty())
     {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
     }
 
-    if (!model) {
-        emit errorProcess(QStringLiteral("项目模型为空"));
-        return;
-    }
 
     QString absolute_path = save_path + "/" + file_name;
     QDir target_dir(absolute_path);
@@ -126,52 +119,22 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     QList<QString> unwrap_name;
     QList<QString> relative_unwrap_path;
     QList<QString> absolute_unwrap_path;
-    bool found_project = false;
-    bool found_node = false;
-
     emit updateProcess(10, QStringLiteral("准备数据……"));
 
-    QMetaObject::invokeMethod(model, [=, &phase_name, &phase_path, &unwrap_name, &relative_unwrap_path, &absolute_unwrap_path, &found_project, &found_node]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) {
+    for (const QString& path : phasePaths) {
+        QFileInfo fileInfo(path);
+        if (!fileInfo.exists() || fileInfo.baseName().isEmpty()) {
+            emit errorProcess(QStringLiteral("Invalid phase input path: %1").arg(path));
             return;
         }
-        found_project = true;
-        QStandardItem* project = foundProjects.first();
-
-        for (int i = 0; i < project->rowCount(); i++)
-        {
-            if (project->child(i, 0)->text() == node_name)
-            {
-                found_node = true;
-                QStandardItem* node = project->child(i, 0);
-                for (int j = 0; j < node->rowCount(); j++)
-                {
-                    if (node->child(j, 0)->toolTip() == "phase")
-                    {
-                        QString origin_name = node->child(j, 0)->text();
-                        phase_name.append(node->child(j, 0)->text());
-                        phase_path.append(node->child(j, 1)->text());
-                        QString change_name = origin_name + "_unwrapped";
-                        unwrap_name.append(change_name);
-                        relative_unwrap_path.append("/" + file_name + "/" + change_name + ".h5");
-                        absolute_unwrap_path.append(save_path + "/" + file_name + "/" + change_name + ".h5");
-                    }
-                }
-                break;
-            }
-        }
-    }, Qt::BlockingQueuedConnection);
-
-    if (!found_project) {
-        emit errorProcess(QStringLiteral("未找到对应的工程: ") + project_name);
-        return;
+        const QString originName = fileInfo.baseName();
+        const QString changeName = originName + "_unwrapped";
+        phase_name.append(originName);
+        phase_path.append(fileInfo.absoluteFilePath());
+        unwrap_name.append(changeName);
+        relative_unwrap_path.append("/" + file_name + "/" + changeName + ".h5");
+        absolute_unwrap_path.append(QDir(save_path).filePath(file_name + "/" + changeName + ".h5"));
     }
-    if (!found_node) {
-        emit errorProcess(QStringLiteral("未找到指定的数据节点: ") + node_name);
-        return;
-    }
-
     int image_number = phase_name.size();
     if (image_number == 0) {
         emit errorProcess(QStringLiteral("没有可解缠的干涉图像"));
@@ -183,17 +146,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     FormatConversion FC;
     Utils util;
     
-    QString xml_path = save_path + "/" + project_name;
-    if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
-        xml_path += ".Insar";
-    }
-
-    XMLFile temp_xml;
-    if (temp_xml.XMLFile_load(xml_path.toStdString().c_str()) < 0) {
-        emit errorProcess(QStringLiteral("加载项目XML文件失败: ") + xml_path);
-        return;
-    }
-
     int ret = 0;
 
     std::vector<int> offset_rows(image_number, 0);
@@ -428,90 +380,25 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         }
     }
 
-    QMetaObject::invokeMethod(model, [=]() {
-        QList<QStandardItem*> foundProjects = model->findItems(project_name);
-        if (foundProjects.isEmpty()) return;
-        QStandardItem* project = foundProjects.first();
+    QString methodName = "SPD_Guided";
+    if (method == 2) methodName = "MCF";
+    else if (method == 3) methodName = "Snaphu";
+    else if (method == 4) methodName = "QualityGuided_MCF";
 
-        /*建立根节点*/
-        QStandardItem* Unwrap_node = NULL;
-        for (int i = 0; i < project->rowCount(); i++)
-        {
-            if (project->child(i, 0)->text() == file_name)
-            {
-                Unwrap_node = project->child(i, 0);
-                break;
-            }
+    for (int i = 0; i < image_number; ++i) {
+        if (!process_success[i]) {
+            continue;
         }
+        UnwrapFileResult result;
+        result.unwrapName = unwrap_name.at(i);
+        result.absolutePath = absolute_unwrap_path.at(i);
+        result.relativePath = relative_unwrap_path.at(i);
+        result.offsetRow = offset_rows[i];
+        result.offsetCol = offset_cols[i];
+        result.method = methodName;
+        Q_EMIT unwrapFileGenerated(result);
+    }
 
-        if (!Unwrap_node)
-        {
-            Unwrap_node = new QStandardItem(file_name);
-            Unwrap_node->setToolTip(project_name);
-            int insert = 0;
-            for (; insert < project->rowCount(); insert++)
-            {
-                if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-2.0") == 0 ||
-                    project->child(insert, 1)->text().compare("phase-3.0") == 0)
-                    continue;
-                else
-                    break;
-            }
-            Unwrap_node->setIcon(QIcon(FOLDER_ICON));
-            project->insertRow(insert, Unwrap_node);
-            QStandardItem* Unwrap_node_Rank = new QStandardItem("phase-3.0");
-            project->setChild(insert, 1, Unwrap_node_Rank);
-        }
-
-        XMLFile local_xml;
-        local_xml.XMLFile_load(xml_path.toStdString().c_str());
-
-        QString method_str = "SPD_Guided";
-        if (method == 2) method_str = "MCF";
-        else if (method == 3) method_str = "Snaphu";
-        else if (method == 4) method_str = "QualityGuided_MCF";
-
-        for (int i = 0; i < image_number; i++)
-        {
-            if (!process_success[i]) continue;
-
-            local_xml.XMLFile_add_unwrap(file_name.toStdString().c_str(), unwrap_name.at(i).toStdString().c_str(),
-                relative_unwrap_path.at(i).toStdString().c_str(), offset_rows[i], offset_cols[i], method_str.toStdString().c_str(), 0);
-
-            /*工程树*/
-            QStandardItem* item_img = NULL;
-            for (int j = 0; j < Unwrap_node->rowCount(); j++)
-            {
-                if (Unwrap_node->child(j, 0)->text() == unwrap_name.at(i))
-                {
-                    item_img = Unwrap_node->child(j, 0);
-                    break;
-                }
-            }
-
-            if (!item_img)
-            {
-                QStandardItem* image = new QStandardItem(unwrap_name.at(i));
-                image->setToolTip("phase");
-                image->setIcon(QIcon(IMAGEDATA_ICON));
-                Unwrap_node->appendRow(image);
-                QStandardItem* image_path = new QStandardItem(absolute_unwrap_path.at(i));
-                Unwrap_node->setChild(Unwrap_node->rowCount() - 1, 1, image_path);
-            }
-            else
-            {
-                Unwrap_node->setChild(item_img->row(), 1, new QStandardItem(absolute_unwrap_path.at(i)));
-            }
-        }
-        local_xml.XMLFile_save(xml_path.toStdString().c_str());
-    }, Qt::BlockingQueuedConnection);
-
-    emit sendModel(model);
     InSARLogManager::LogInfo("UnwrapWorker", QString("Task completed: ") + QString(__FUNCTION__));
     emit endProcess();
 }

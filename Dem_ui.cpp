@@ -7,6 +7,8 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include <FormatConversion.h>
+#include "NodeUtils.h"
 Dem_ui::Dem_ui(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::Dem)
@@ -64,10 +66,67 @@ void Dem_ui::StopThread()
         }
 
 }
-void Dem_ui::TransitModel(QStandardItemModel* model)
+void Dem_ui::persistDemResult(const DemFileResult& result,
+                              int times,
+                              const QString& projectName,
+                              const QString& savePath)
 {
-    this->copy = model;
-    emit sendCopy(model);
+    if (!copy) {
+        return;
+    }
+    const QList<QStandardItem*> projects = copy->findItems(projectName);
+    if (projects.isEmpty()) {
+        return;
+    }
+    QStandardItem* project = projects.first();
+    QStandardItem* demNode = nullptr;
+    for (int i = 0; i < project->rowCount(); ++i) {
+        QStandardItem* node = project->child(i, 0);
+        if (node && node->text() == result.relativeDemPath.section('/', 1, 1)) {
+            demNode = node;
+            break;
+        }
+    }
+    if (!demNode) {
+        const QString outputNode = result.relativeDemPath.section('/', 1, 1);
+        demNode = new QStandardItem(outputNode);
+        demNode->setToolTip(projectName);
+        demNode->setIcon(QIcon(FOLDER_ICON));
+        project->appendRow(demNode);
+        project->setChild(project->rowCount() - 1, 1, new QStandardItem("dem-1.0"));
+    }
+
+    QStandardItem* outputItem = nullptr;
+    for (int i = 0; i < demNode->rowCount(); ++i) {
+        QStandardItem* nameItem = demNode->child(i, 0);
+        if (nameItem && nameItem->text() == result.demName) {
+            outputItem = nameItem;
+            break;
+        }
+    }
+    if (!outputItem) {
+        outputItem = new QStandardItem(result.demName);
+        outputItem->setToolTip("dem");
+        outputItem->setIcon(QIcon(IMAGEDATA_ICON));
+        demNode->appendRow(outputItem);
+        demNode->setChild(demNode->rowCount() - 1, 1, new QStandardItem(result.absoluteDemPath));
+    } else {
+        demNode->setChild(outputItem->row(), 1, new QStandardItem(result.absoluteDemPath));
+    }
+
+    QString xmlPath = savePath + "/" + projectName;
+    if (!xmlPath.endsWith(".Insar", Qt::CaseInsensitive)) {
+        xmlPath += ".Insar";
+    }
+    XMLFile xml;
+    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+        return;
+    }
+    const QString outputNode = result.relativeDemPath.section('/', 1, 1);
+    xml.XMLFile_add_dem(outputNode.toStdString().c_str(), result.demName.toStdString().c_str(),
+        result.relativeDemPath.toStdString().c_str(), result.offsetRow, result.offsetCol, "Iteration", times);
+    xml.XMLFile_save(xmlPath.toStdString().c_str());
+    emit sendCopy(copy);
 }
 
 void Dem_ui::ChangeVision(bool Editable)
@@ -223,6 +282,38 @@ void Dem_ui::on_buttonBox_accepted()
         return;
     }
     
+    const QString projectName = ui->comboBox->currentText();
+    const QString outputNode = ui->file_name->text();
+    QStringList phaseNames;
+    QStringList phasePaths;
+    const QList<QStandardItem*> projects = copy ? copy->findItems(projectName) : QList<QStandardItem*>();
+    QStandardItem* sourceNode = nullptr;
+    if (!projects.isEmpty()) {
+        QStandardItem* project = projects.first();
+        for (int i = 0; i < project->rowCount(); ++i) {
+            QStandardItem* node = project->child(i, 0);
+            if (node && node->text() == ui->comboBox_2->currentText()) {
+                sourceNode = node;
+                break;
+            }
+        }
+    }
+    if (sourceNode) {
+        for (int i = 0; i < sourceNode->rowCount(); ++i) {
+            QStandardItem* nameItem = sourceNode->child(i, 0);
+            QStandardItem* pathItem = sourceNode->child(i, 1);
+            if (!nameItem || !pathItem || !pathItem->text().endsWith(".h5", Qt::CaseInsensitive)) {
+                continue;
+            }
+            phaseNames.append(nameItem->text());
+            phasePaths.append(pathItem->text());
+        }
+    }
+    if (phasePaths.isEmpty()) {
+        QMessageBox::warning(NULL, "Warning!", "No phase H5 files were found in the selected node.");
+        return;
+    }
+
     Dem_thread = new DemWorker;
     Dem_thread->moveToThread(new QThread(this));
     //this->Process->setAutoClose(true);
@@ -233,15 +324,20 @@ void Dem_ui::on_buttonBox_accepted()
     // para.push_back(this->image_number);
      //this->thread()->msleep(1);
     connect(this, &Dem_ui::operate, Dem_thread, &DemWorker::Dem, Qt::QueuedConnection);
+    const int times = ui->times->text().toInt();
+    const QString savePath = this->save_path;
+    connect(Dem_thread, &DemWorker::demFileGenerated, this,
+        [this, times, projectName, savePath](const DemFileResult& result) {
+            persistDemResult(result, times, projectName, savePath);
+        });
     connect(Dem_thread, &DemWorker::updateProcess, this, &Dem_ui::updateProcess);
     connect(Dem_thread->thread(), &QThread::finished, Dem_thread, &DemWorker::deleteLater);
     connect(Dem_thread, &DemWorker::endProcess, this, &Dem_ui::endProcess);
     connect(this, &QWidget::destroyed, this, &Dem_ui::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Dem_ui::StopThread);// , Qt::QueuedConnection);
-    connect(Dem_thread, &DemWorker::sendModel, this, &Dem_ui::TransitModel);
+    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Dem_ui::StopThread);
     Dem_thread->thread()->start();
     ChangeVision(false);
-    emit operate(this->method, ui->times->text().toInt(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(), ui->file_name->text(), this->copy);
+    emit operate(this->method, times, savePath, outputNode, phaseNames, phasePaths);
 }
 
 void Dem_ui::on_buttonBox_rejected()

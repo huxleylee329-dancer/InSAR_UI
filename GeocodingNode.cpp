@@ -7,6 +7,7 @@
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include "FormatConversion.h"
+#include "tinyxml.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -40,6 +41,7 @@ GeocodingNode::GeocodingNode()
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
+    qRegisterMetaType<GeocodingFileResult>("GeocodingFileResult");
     setExecutionMode(ExecutionMode::Automatic);
 }
 
@@ -121,7 +123,8 @@ void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             QString srcNode = m_inputData->nodeName();
             QStandardItemModel* model = projectModel();
             if (model) {
-                QStandardItem* project = model->findItems(projectName())[0];
+                QList<QStandardItem*> projects = model->findItems(projectName());
+                QStandardItem* project = projects.isEmpty() ? nullptr : projects.first();
                 if (project) {
                     for (int i = 0; i < project->rowCount(); i++) {
                         if (project->child(i, 0)->text() == srcNode) {
@@ -275,7 +278,7 @@ void GeocodingNode::createWidget()
     auto* outLabel = new QLabel(QStringLiteral("目标节点名:"));
     outLabel->setFixedWidth(80);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入")); // SOP Rule 11
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")); // SOP Rule 11
     m_outputNodeNameEdit->setText(m_outputNodeName);
     outRow->addWidget(outLabel);
     outRow->addWidget(m_outputNodeNameEdit);
@@ -400,10 +403,55 @@ bool GeocodingNode::prepareToStart()
 
     m_preparedDstNode = dstNode;
 
-    QStringList srcPaths = m_inputData->filePaths();
+    m_preparedInputPaths = m_inputData->filePaths();
+    m_preparedProductLevel.clear();
+    m_preparedMasterIndex = 0;
+
+    QStandardItemModel* model = projectModel();
+    if (!model) {
+        return false;
+    }
+    QList<QStandardItem*> projects = model->findItems(projectName());
+    if (projects.isEmpty()) {
+        return false;
+    }
+
+    const QString srcNode = m_inputData->nodeName();
+    QStandardItem* project = projects.first();
+    QStandardItem* sourceNode = nullptr;
+    for (int i = 0; i < project->rowCount(); ++i) {
+        if (project->child(i, 0) && project->child(i, 0)->text() == srcNode) {
+            sourceNode = project->child(i, 0);
+            if (project->child(i, 1)) {
+                m_preparedProductLevel = project->child(i, 1)->text();
+            }
+            break;
+        }
+    }
+    if (!sourceNode || (m_preparedType == 1 && m_preparedProductLevel.isEmpty())) {
+        return false;
+    }
+
+    if (m_preparedType == 2) {
+        XMLFile* xml = projectXml();
+        TiXmlElement* dataNode = nullptr;
+        if (xml && xml->find_node_with_attribute("DataNode", "name", srcNode.toStdString().c_str(), dataNode) == 0 && dataNode) {
+            TiXmlElement* masterElement = nullptr;
+            if (xml->_find_node(dataNode, "master_image", masterElement) == 0 && masterElement && masterElement->GetText()) {
+                bool ok = false;
+                const int xmlMasterIndex = QString::fromUtf8(masterElement->GetText()).toInt(&ok);
+                if (ok && xmlMasterIndex > 0) {
+                    m_preparedMasterIndex = xmlMasterIndex - 1;
+                }
+            }
+        }
+        if (m_preparedMasterIndex < 0 || m_preparedMasterIndex >= m_preparedInputPaths.size()) {
+            return false;
+        }
+    }
 
     m_preparedOutputPaths.clear();
-    for (const QString& srcPath : srcPaths) {
+    for (const QString& srcPath : m_preparedInputPaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_geocoded";
         m_preparedOutputPaths.append(savePath + "/" + dstNode + "/" + changeName + ".h5");
@@ -426,8 +474,9 @@ void GeocodingNode::executeProcessing()
 
     QString dstNode = m_preparedDstNode;
     QString savePath = projectPath();
-    QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
+    QStringList inputPaths = m_preparedInputPaths;
+    QString productLevel = m_preparedProductLevel;
+    int masterIndex = m_preparedMasterIndex;
     QString preparedDemPath = m_preparedDemPath;
 
     int type = m_preparedType;
@@ -451,15 +500,25 @@ void GeocodingNode::executeProcessing()
 
     // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+    m_xmlDirty = false;
 
     m_thread = new QThread();
     m_workerThread = new GeocodingWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &GeocodingNode::startGeocoding, m_workerThread, &GeocodingWorker::GeocodingWithDem);
-    connect(m_thread, &QThread::started, [this, type, multiRg, multiAz, dstProject, srcNode, dstNode, preparedDemPath]() {
-        Q_EMIT startGeocoding(type, multiRg, multiAz, dstProject, srcNode, dstNode, projectModel(), preparedDemPath);
-    });
+    if (preparedDemPath.isEmpty()) {
+        connect(this, &GeocodingNode::startGeocoding, m_workerThread, &GeocodingWorker::Geocoding);
+        connect(m_thread, &QThread::started, [this, type, multiRg, multiAz, savePath, inputPaths, productLevel, masterIndex, dstNode]() {
+            Q_EMIT startGeocoding(type, multiRg, multiAz, savePath, inputPaths, productLevel, masterIndex, dstNode);
+        });
+    } else {
+        connect(this, &GeocodingNode::startGeocodingWithDem, m_workerThread, &GeocodingWorker::GeocodingWithDem);
+        connect(m_thread, &QThread::started, [this, type, multiRg, multiAz, savePath, inputPaths, productLevel, masterIndex, dstNode, preparedDemPath]() {
+            Q_EMIT startGeocodingWithDem(type, multiRg, multiAz, savePath, inputPaths, productLevel, masterIndex, dstNode, preparedDemPath);
+        });
+    }
+
+    connect(m_workerThread, &GeocodingWorker::geocodingGenerated, this, &GeocodingNode::onGeocodingGenerated);
     connect(m_workerThread, &GeocodingWorker::updateProcess, this, &GeocodingNode::onProgressUpdate);
     connect(m_workerThread, &GeocodingWorker::endProcess, this, &GeocodingNode::onProcessingFinished);
     connect(m_workerThread, &GeocodingWorker::endProcess, m_thread, &QThread::quit);
@@ -467,8 +526,8 @@ void GeocodingNode::executeProcessing()
     connect(m_workerThread, &GeocodingWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &GeocodingWorker::errorProcess, this, &GeocodingNode::onError);
     connect(m_workerThread, &GeocodingWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_workerThread, &GeocodingWorker::sendModel, this, &GeocodingNode::onModelUpdated);
     connect(m_workerThread, &GeocodingWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_workerThread, &GeocodingWorker::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Dynamic recovery of Running state for Automatic execution mode (SOP Rule 5)
@@ -495,6 +554,19 @@ void GeocodingNode::onProgressUpdate(int progress, const QString& message)
 
 void GeocodingNode::onProcessingFinished()
 {
+    if (m_xmlDirty) {
+        XMLFile* xml = projectXml();
+        const QString xmlPath = projectPath() + "/" + projectName() + ".Insar";
+        if (!xml || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
+            onError(QStringLiteral("Failed to save project XML after geocoding."));
+            return;
+        }
+        m_xmlDirty = false;
+        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+            iface->refreshProjectTree();
+        }
+    }
+
     QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text().trimmed();
@@ -536,16 +608,7 @@ void GeocodingNode::onProcessingFinished()
         }
     }
 
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -556,35 +619,10 @@ void GeocodingNode::onProcessingFinished()
     m_outputNodeName = dstNode;
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
-    Q_EMIT dataUpdated(0);
 
     // Generate JPG previews asynchronously (SOP Rule 7)
     if (!h5Paths.isEmpty()) {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            if (discardObsoleteAutomaticExecution()) {
-                return;
-            }
-
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-            setState(ExecutionState::Running);
-            setProgress(100);
-            InSARLogManager::LogInfo("GeocodingNode", "Processing preview generation completed.");
-            finishExecution();
-            Q_EMIT dataUpdated(0);
-        });
-
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
-            for (int i = 0; i < h5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
     } else {
         setState(ExecutionState::Running);
         setProgress(100);
@@ -595,16 +633,7 @@ void GeocodingNode::onProcessingFinished()
 void GeocodingNode::onCancelled()
 {
     InSARLogManager::LogInfo("GeocodingNode", "Geocoding cancellation cleanup completed.");
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -620,18 +649,7 @@ void GeocodingNode::onError(const QString& error)
     InSARLogManager::LogError("GeocodingNode", "executeProcessing failed: " + error);
     Q_EMIT executionError(error);
 
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    cleanUpThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -642,17 +660,49 @@ void GeocodingNode::onError(const QString& error)
     setState(ExecutionState::Error);
 }
 
-void GeocodingNode::onModelUpdated(QStandardItemModel* model)
+void GeocodingNode::onGeocodingGenerated(const GeocodingFileResult& result)
 {
-    if (isAutomaticExecutionObsolete()) {
-        return;
+    XMLFile* xml = projectXml();
+    if (xml) {
+        xml->XMLFile_add_geocoding(result.dstNode.toStdString().c_str(), result.geocodeName.toStdString().c_str(),
+            result.relativePath.toStdString().c_str(), result.rankLevel.toStdString().c_str());
+        m_xmlDirty = true;
     }
 
-    Q_UNUSED(model);
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        iface->refreshProjectTree();
+    QStandardItemModel* model = projectModel();
+    if (!model) return;
+
+    QList<QStandardItem*> foundProjects = model->findItems(projectName());
+    if (foundProjects.isEmpty()) return;
+    QStandardItem* project = foundProjects[0];
+
+    QStandardItem* geocodeNode = NodeUtils::findOrCreateProjectNode(project, result.dstNode, result.rankLevel);
+    if (geocodeNode) {
+        geocodeNode->setToolTip(projectName());
+        QStandardItem* itemImg = nullptr;
+        for (int j = 0; j < geocodeNode->rowCount(); j++) {
+            if (geocodeNode->child(j, 0)->text() == result.geocodeName) {
+                itemImg = geocodeNode->child(j, 0);
+                break;
+            }
+        }
+        if (!itemImg) {
+            QStandardItem* geocodeNameItem = new QStandardItem(result.geocodeName);
+            if (result.rankLevel == "coherence-1.0") geocodeNameItem->setToolTip("coherence");
+            else if (result.rankLevel.startsWith("phase")) geocodeNameItem->setToolTip("phase");
+            else if (result.rankLevel == "dem-1.0") geocodeNameItem->setToolTip("dem");
+            else if (result.rankLevel == "SBAS-1.0") geocodeNameItem->setToolTip("SBAS");
+            else geocodeNameItem->setToolTip("amplitude");
+
+            QStandardItem* geocodePathItem = new QStandardItem(result.geocodePath);
+            geocodeNameItem->setIcon(QIcon(IMAGEDATA_ICON));
+            geocodeNode->appendRow(geocodeNameItem);
+            geocodeNode->setChild(geocodeNode->rowCount() - 1, 1, geocodePathItem);
+        } else {
+            geocodeNode->setChild(itemImg->row(), 1, new QStandardItem(result.geocodePath));
+        }
     }
+
 }
 
 bool GeocodingNode::validateAndRestoreOutput()
@@ -727,26 +777,52 @@ bool GeocodingNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-            InSARLogManager::LogInfo("GeocodingNode", "validateAndRestoreOutput background rendering completed.");
-        });
-
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
-            for (int i = 0; i < missingH5s.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
     }
 
     return true;
+}
+
+void GeocodingNode::startPreviewGeneration(const QStringList& h5Paths,
+                                           const QStringList& generatedJpgPaths,
+                                           const QStringList& types,
+                                           const QStringList& resultJpgPaths,
+                                           bool completeExecution)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, resultJpgPaths, completeExecution]() {
+        if (completeExecution) {
+            if (discardObsoleteAutomaticExecution()) return;
+            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            setState(ExecutionState::Running);
+            setProgress(100);
+            InSARLogManager::LogInfo("GeocodingNode", "Processing preview generation completed.");
+            finishExecution();
+        } else {
+            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(1, m_imageInfoData);
+            Q_EMIT dataUpdated(1);
+            InSARLogManager::LogInfo("GeocodingNode", "validateAndRestoreOutput background rendering completed.");
+        }
+    });
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, generatedJpgPaths, types]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], types[i]);
+        }
+    }));
 }
 
 QStringList GeocodingNode::previewImagePaths() const
@@ -823,6 +899,16 @@ void GeocodingNode::stopExecution()
     if (m_workerThread) {
         m_workerThread->StopProcess();
     }
+    cleanUpThreadAndWorker();
+}
+
+void GeocodingNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+    if (thread && thread->isRunning())
+        thread->quit();
 }
 
 void GeocodingNode::processAutomatically()

@@ -3,6 +3,7 @@
 #include <qstandarditemmodel.h>
 #include "ui_Unwrap.h"
 #include <QThread>
+#include <QStringList>
 
 class UnwrapWorker;
 
@@ -29,7 +30,7 @@ private:
     int image_number;
     void ChangeVision(bool Editable);
 signals:
-    void operate(int, double, QString, QString, QString, QString, QStandardItemModel*);
+    void operate(int, double, QString, QString, QStringList);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_currentIndexChanged();

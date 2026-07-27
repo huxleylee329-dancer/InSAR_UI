@@ -1,6 +1,7 @@
 #include"MainWindow.h"
 #include"import_sentinel.h"
 #include"ImportTask.h"
+#include "ImportOutputPersistence.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include"NodeUtils.h"
@@ -522,7 +523,10 @@ void import_sentinel::on_buttonBox_2_accepted()
     connect(import_sentinel_thread_2, &Sentinel1ImportWorker::endProcess, this, &import_sentinel::endProcess);
     connect(this, &QWidget::destroyed, this, &import_sentinel::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &import_sentinel::StopThread);// , Qt::QueuedConnection);
-    connect(import_sentinel_thread_2, &Sentinel1ImportWorker::sendModel, this, &import_sentinel::TransitModel);
+    connect(import_sentinel_thread_2, &Sentinel1ImportWorker::outputsGenerated, this,
+        [this, projectName = ui->ComboBox_dst_project_2->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
     thread2->start();
 
     // 构造 ImportTask 列表
@@ -546,9 +550,7 @@ void import_sentinel::on_buttonBox_2_accepted()
     QMetaObject::invokeMethod(import_sentinel_thread_2, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node_2->text()),
-        Q_ARG(QString, ui->ComboBox_dst_project_2->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node_2->text()));
     ChangeVision(false);
 }
 
@@ -606,7 +608,10 @@ void import_sentinel::on_buttonBox_accepted()
     connect(import_sentinel_thread, &Sentinel1ImportWorker::endProcess, this, &import_sentinel::endProcess);
     connect(this, &QWidget::destroyed, this, &import_sentinel::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_sentinel::StopThread);// , Qt::QueuedConnection);
-    connect(import_sentinel_thread, &Sentinel1ImportWorker::sendModel, this, &import_sentinel::TransitModel);
+    connect(import_sentinel_thread, &Sentinel1ImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
     thread->start();
 
     // 构造 ImportTask 列表（单文件导入）
@@ -621,9 +626,7 @@ void import_sentinel::on_buttonBox_accepted()
     QMetaObject::invokeMethod(import_sentinel_thread, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node->text()),
-        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node->text()));
     ChangeVision(false);
     
 }

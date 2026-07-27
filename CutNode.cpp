@@ -52,7 +52,6 @@ CutNode::~CutNode()
             m_thread->quit();
             m_thread->wait(5000);
         }
-        delete m_thread;  // 安全：线程已停止，且无parent
         m_thread = nullptr;
     }
     // m_worker由finished→deleteLater自动删除，此处无需处理
@@ -130,12 +129,9 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             if (!h5Paths.isEmpty()) {
                 cv::Mat gcps;
                 bool gcpReadSuccess = false;
-                {
-                    NodeUtils::Hdf5Locker locker;
-                    if (NodeUtils::readMatFromH5(h5Paths.first(), "gcps", gcps)
-                        && gcps.rows > 0 && gcps.cols >= 2) {
-                        gcpReadSuccess = true;
-                    }
+                if (NodeUtils::readMatFromH5(h5Paths.first(), "gcps", gcps)
+                    && gcps.rows > 0 && gcps.cols >= 2) {
+                    gcpReadSuccess = true;
                 }
 
                 if (gcpReadSuccess) {
@@ -187,12 +183,9 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             if (!h5Paths.isEmpty()) {
                 cv::Mat gcps;
                 bool gcpReadSuccess = false;
-                {
-                    NodeUtils::Hdf5Locker locker;
-                    if (NodeUtils::readMatFromH5(h5Paths.first(), "gcps", gcps)
-                        && gcps.rows > 0 && gcps.cols >= 2) {
-                        gcpReadSuccess = true;
-                    }
+                if (NodeUtils::readMatFromH5(h5Paths.first(), "gcps", gcps)
+                    && gcps.rows > 0 && gcps.cols >= 2) {
+                    gcpReadSuccess = true;
                 }
                 if (gcpReadSuccess) {
                     cv::Mat lon = gcps.col(0);
@@ -318,10 +311,10 @@ void CutNode::createWidget()
         }
     });
 
-    autoCenterForm->addRow(QStringLiteral("左边界(0~1)："), m_leftSpin);
-    autoCenterForm->addRow(QStringLiteral("右边界(0~1)："), m_rightSpin);
-    autoCenterForm->addRow(QStringLiteral("上边界(0~1)："), m_topSpin);
-    autoCenterForm->addRow(QStringLiteral("下边界(0~1)："), m_bottomSpin);
+    autoCenterForm->addRow(QStringLiteral("左边界 (0~1)："), m_leftSpin);
+    autoCenterForm->addRow(QStringLiteral("右边界 (0~1)："), m_rightSpin);
+    autoCenterForm->addRow(QStringLiteral("上边界 (0~1)："), m_topSpin);
+    autoCenterForm->addRow(QStringLiteral("下边界 (0~1)："), m_bottomSpin);
     layout->addWidget(m_autoCenterWidget);
 
     // =========================================================================
@@ -378,8 +371,8 @@ void CutNode::createWidget()
 
     coordForm->addRow(QStringLiteral("中心经度："), m_lonEdit);
     coordForm->addRow(QStringLiteral("中心纬度："), m_latEdit);
-    coordForm->addRow(QStringLiteral("裁剪宽(m)："), m_widthEdit);
-    coordForm->addRow(QStringLiteral("裁剪高(m)："), m_heightEdit);
+    coordForm->addRow(QStringLiteral("裁剪宽度 (m)："), m_widthEdit);
+    coordForm->addRow(QStringLiteral("裁剪高度 (m)："), m_heightEdit);
     layout->addWidget(m_coordinateWidget);
 
     // =========================================================================
@@ -615,30 +608,31 @@ void CutNode::executeProcessing()
                                   LogTargets(LogTarget::UserProjectLog),
                                   QStringLiteral("starting"), QStringLiteral("running"));
 
-    m_executionTimer.start();
-    setProgress(0);
-    m_outputPaths = m_preparedOutputPaths;
-
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         if (validateAndRestoreOutput()) {
+            setProgress(100);
             setState(ExecutionState::Completed);
             finishExecution();
             return;
         } else {
-            QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("加载已有文件失败，将重新计算！"));
+            InSARLogManager::LogWarning("CutNode", "LoadExisting output validation failed, falling back to recalculation.");
+            m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
         }
     }
 
-    // Clean up old files in destination directory
-    QString dstDir = m_preparedProjDir + "/" + m_preparedDstNodeName;
-    if (QDir(dstDir).exists()) {
-        QDir dir(dstDir);
-        for (const QFileInfo& fi : dir.entryInfoList({"*.h5", "*.jpg"}, QDir::Files)) {
-            QFile::remove(fi.absoluteFilePath());
+    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+        if (!NodeUtils::removeOutputFiles(m_preparedOutputPaths)) {
+            InSARLogManager::LogError("CutNode", "Failed to clean up old output files. Execution aborted.");
+            Q_EMIT executionError(QStringLiteral("无法清理旧输出文件，文件可能已被其他程序占用。"));
+            setState(ExecutionState::Error);
+            return;
         }
     }
 
-    // Clean up old project tree node if it exists
+    setProgress(0);
+    m_outputPaths = m_preparedOutputPaths;
+
+    m_executionTimer.start();
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNodeName);
 
     // Instantiate thread and worker
@@ -646,28 +640,136 @@ void CutNode::executeProcessing()
     m_thread = new QThread; // 不设parent，由析构函数显式管理
     m_worker->moveToThread(m_thread);
 
-    connect(m_worker, &CutWorker::updateProcess, this, &CutNode::onProgressUpdate, Qt::QueuedConnection);
-    connect(m_worker, &CutWorker::endProcess, this, &CutNode::onProcessingFinished, Qt::QueuedConnection);
-    connect(m_worker, &CutWorker::cancelled, this, &CutNode::onCancelled, Qt::QueuedConnection);
-    connect(m_worker, &CutWorker::errorProcess, this, &CutNode::onError, Qt::QueuedConnection);
-    connect(m_worker, &CutWorker::sendModel, this, &CutNode::onModelUpdated, Qt::QueuedConnection);
-
-    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
-    connect(m_thread, &QThread::started, this, [logContext]() {
-        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug, "CutWorker",
-                                      QStringLiteral("裁剪 Worker 已启动。"),
-                                      LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
-                                      QStringLiteral("worker_started"), QStringLiteral("running"));
-    }, Qt::QueuedConnection);
-
-    m_thread->start();
-    m_isExecuting = true;
-
     QString srcNodeName = m_inputData->nodeName();
     QString dstNodeName = m_preparedDstNodeName;
     QString projDir = m_preparedProjDir;
     QString projName = m_preparedProjName;
     QStandardItemModel* model = m_preparedModel;
+    QStringList inputPaths = resolvedInputH5Paths();
+
+    // Resolve the project tree node and source data rank on the GUI thread.
+    QStandardItem* project = nullptr;
+    if (model) {
+        QList<QStandardItem*> found = model->findItems(projName);
+        if (!found.isEmpty()) {
+            project = found[0];
+        }
+    }
+
+    QString src_data_rank = "complex-1.0";
+    if (m_mode != 1 && project) {
+        int src_node_index = -1;
+        for (int i = 0; i < project->rowCount(); i++)
+        {
+            if (project->child(i, 0)->text() == srcNodeName)
+            {
+                src_node_index = i;
+                break;
+            }
+        }
+        if (src_node_index >= 0) {
+            src_data_rank = project->child(src_node_index, 1)->text();
+        }
+    }
+
+    QStandardItem* Images_Cut = nullptr;
+    if (project) {
+        Images_Cut = NodeUtils::findOrCreateProjectNode(project, dstNodeName, m_mode == 1 ? "complex-1.0" : src_data_rank);
+        if (Images_Cut) {
+            Images_Cut->setToolTip(projName);
+        }
+    }
+
+    QByteArray file_abs_path = QString("%1/%2").arg(projDir).arg(projName.endsWith(".insar", Qt::CaseInsensitive) ? projName : projName + ".insar").toLocal8Bit();
+    auto doc = std::make_shared<XMLFile>();
+    doc->XMLFile_load(file_abs_path.data());
+
+    int master_index = -1;
+    if (m_mode != 1) {
+        TiXmlElement* DataNode = nullptr;
+        int ret = doc->find_node_with_attribute("DataNode", "name", srcNodeName.toStdString().c_str(), DataNode);
+        if (ret == 0 && DataNode)
+        {
+            TiXmlElement* pnode = nullptr;
+            ret = doc->_find_node(DataNode, "master_image", pnode);
+            if (ret == 0 && pnode)
+            {
+                ret = sscanf(pnode->GetText(), "%d", &master_index);
+                if (ret != 1) master_index = -1;
+            }
+        }
+    }
+
+    connect(m_worker, &CutWorker::updateProcess, this, &CutNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(m_worker, &CutWorker::cancelled, this, &CutNode::onCancelled, Qt::QueuedConnection);
+    connect(m_worker, &CutWorker::errorProcess, this, &CutNode::onError, Qt::QueuedConnection);
+    connect(m_worker, &CutWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &CutWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &CutWorker::cancelled, m_thread, &QThread::quit);
+
+    // Update the project tree and XML only from the GUI thread.
+    connect(m_worker, &CutWorker::fileCropped, this, [=](QString cutName, QString fullPath, int offsetRow, int offsetCol, int masterIdx, QString rank, QList<double> cPara) {
+        if (!Images_Cut) return;
+        QStandardItem* item_img = nullptr;
+        for (int j = 0; j < Images_Cut->rowCount(); j++)
+        {
+            if (Images_Cut->child(j, 0)->text() == cutName)
+            {
+                item_img = Images_Cut->child(j, 0);
+                break;
+            }
+        }
+
+        if (!item_img)
+        {
+            QStandardItem* Image_Cut_Name = new QStandardItem(cutName);
+            QStandardItem* Image_Cut_Path = new QStandardItem(fullPath);
+            Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
+            Images_Cut->appendRow(Image_Cut_Name);
+            Image_Cut_Name->setToolTip("complex");
+            Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
+
+            QByteArray dir_name = dstNodeName.toLocal8Bit();
+            QByteArray filename = cutName.toLocal8Bit();
+            QByteArray file_relative_path = QString("/%1/%2.h5").arg(dstNodeName).arg(cutName).toLocal8Bit();
+
+            if (cPara.size() == 4) {
+                doc->XMLFile_add_cut(dir_name.data(), -1, filename.data(),
+                    file_relative_path.data(),
+                    offsetRow, offsetCol, cPara.at(0), cPara.at(1),
+                    cPara.at(2), cPara.at(3), "complex-1.0");
+            } else {
+                doc->XMLFile_add_cut(dir_name.data(), masterIdx, filename.data(),
+                    file_relative_path.data(),
+                    offsetRow, offsetCol, 0, 0, 0, 0, rank.toStdString().c_str());
+            }
+        }
+        else
+        {
+            Images_Cut->setChild(item_img->row(), 1, new QStandardItem(fullPath));
+        }
+    }, Qt::QueuedConnection);
+
+    // Persist XML and refresh the project tree before publishing node outputs.
+    connect(m_worker, &CutWorker::endProcess, this, [=]() {
+        doc->XMLFile_save(file_abs_path.data());
+        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+            iface->refreshProjectTree();
+        }
+        onProcessingFinished();
+    }, Qt::QueuedConnection);
+
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
+    connect(m_thread, &QThread::started, this, [logContext]() {
+        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug, "CutWorker",
+                                       QStringLiteral("裁剪 Worker 已启动。"),
+                                       LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+                                       QStringLiteral("worker_started"), QStringLiteral("running"));
+    }, Qt::QueuedConnection);
+
+    m_thread->start();
+    m_isExecuting = true;
 
     if (m_mode == 1) { // Coordinate crop
         QList<double> para;
@@ -676,24 +778,18 @@ void CutNode::executeProcessing()
         para.append(m_width);
         para.append(m_height);
 
-        QMetaObject::invokeMethod(m_worker, "Cut", Qt::QueuedConnection,
-            Q_ARG(QList<double>, para),
-            Q_ARG(QString, projDir),
-            Q_ARG(QString, projName.endsWith(".insar", Qt::CaseInsensitive) ? projName : projName + ".insar"),
-            Q_ARG(QString, srcNodeName),
-            Q_ARG(QString, dstNodeName),
-            Q_ARG(QStandardItemModel*, model));
+        QMetaObject::invokeMethod(m_worker, [=]() {
+            m_worker->Cut(para, projDir,
+                          projName.endsWith(".insar", Qt::CaseInsensitive) ? projName : projName + ".insar",
+                          srcNodeName, dstNodeName, inputPaths, QString("complex-1.0"));
+        }, Qt::QueuedConnection);
     } else { // Auto center (0) and Box selection (2) crop via Cut2
-        QMetaObject::invokeMethod(m_worker, "Cut2", Qt::QueuedConnection,
-            Q_ARG(double, m_left),
-            Q_ARG(double, m_right),
-            Q_ARG(double, m_top),
-            Q_ARG(double, m_bottom),
-            Q_ARG(QString, projDir),
-            Q_ARG(QString, projName.endsWith(".insar", Qt::CaseInsensitive) ? projName : projName + ".insar"),
-            Q_ARG(QString, srcNodeName),
-            Q_ARG(QString, dstNodeName),
-            Q_ARG(QStandardItemModel*, model));
+        QMetaObject::invokeMethod(m_worker, [=]() {
+            m_worker->Cut2(m_left, m_right, m_top, m_bottom,
+                           projDir,
+                           projName.endsWith(".insar", Qt::CaseInsensitive) ? projName : projName + ".insar",
+                           srcNodeName, dstNodeName, inputPaths, src_data_rank, master_index);
+        }, Qt::QueuedConnection);
     }
 
     updateParameterWidgetsEnableState();
@@ -702,7 +798,7 @@ void CutNode::executeProcessing()
     deferAutomaticCompletion();
 
     InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo, "CutNode",
-                                  QStringLiteral("裁剪任务已提交。"),
+                                   QStringLiteral("裁剪任务已提交。"),
                                   LogTargets(LogTarget::UserProjectLog),
                                   QStringLiteral("queued"), QStringLiteral("queued"));
 }
@@ -720,9 +816,9 @@ void CutNode::stopExecution()
 
     if (m_thread && m_thread->isRunning()) {
         m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
+    cleanUpThreadAndWorker();
+
     m_isExecuting = false;
     setState(ExecutionState::Idle);
 }
@@ -739,8 +835,7 @@ void CutNode::onProgressUpdate(int progress, const QString& message)
 void CutNode::onProcessingFinished()
 {
     m_isExecuting = false;
-    m_thread = nullptr;
-    m_worker = nullptr;
+    releaseFinishedThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -779,7 +874,7 @@ void CutNode::onProcessingFinished()
     }
 
     InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug, "CutNode",
-                                  QStringLiteral("裁剪输出产物校验通过。"),
+                                   QStringLiteral("裁剪输出产物校验通过。"),
                                   LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
                                   QStringLiteral("artifact_validated"), QStringLiteral("running"),
                                   m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
@@ -810,18 +905,16 @@ void CutNode::onProcessingFinished()
         m_thread = nullptr;
         m_worker = nullptr;
         updateParameterWidgetsEnableState();
-        Q_EMIT dataUpdated(0);
-        Q_EMIT dataUpdated(1);
 
         const qint64 elapsedMs = m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1;
         const QString outputs = m_outputPaths.join(QStringLiteral(", "));
         if (hasWarnings) {
-            setState(ExecutionState::Warning);
+            setState(ExecutionState::Running);
             InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelWarning, "CutNode",
                                           QStringLiteral("裁剪完成，但预览图生成存在告警。输出：%1").arg(outputs),
                                           LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
                                           QStringLiteral("completed"), QStringLiteral("completed_with_warnings"), elapsedMs);
-            Q_EMIT computingFinished();
+            finishExecutionWithWarning();
             return;
         }
 
@@ -837,10 +930,14 @@ void CutNode::onProcessingFinished()
         // 安全清理老 remedyWatcher，防止重新执行的竞态条件覆盖 m_previewData
         QFutureWatcher<void>* oldWatcher = findChild<QFutureWatcher<void>*>("remedyWatcher");
         if (oldWatcher) {
-            oldWatcher->disconnect();
+            oldWatcher->disconnect(this);
             if (oldWatcher->isRunning()) {
                 oldWatcher->cancel();
-                oldWatcher->waitForFinished();
+                connect(oldWatcher, &QFutureWatcher<void>::finished, this, [this, oldWatcher]() {
+                    oldWatcher->deleteLater();
+                    QTimer::singleShot(0, this, [this]() { onProcessingFinished(); });
+                });
+                return;
             }
             oldWatcher->deleteLater();
         }
@@ -872,7 +969,6 @@ void CutNode::onProcessingFinished()
                 m_previewData.reset();
                 setOutputData(1, nullptr);
             }
-            Q_EMIT dataUpdated(1);
 
             if (anyFailed) {
                 setLastWarningMessage(QStringLiteral("Some preview images failed to generate."));
@@ -908,11 +1004,31 @@ void CutNode::onProcessingFinished()
     }
 }
 
+void CutNode::cleanUpThreadAndWorker()
+{
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread = nullptr;
+    }
+    m_worker = nullptr; // 宸查€氳繃 QThread::finished 鍏宠仈妲藉畨鍏ㄩ攢姣?
+}
+
+void CutNode::releaseFinishedThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_worker = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
+    }
+}
+
 void CutNode::onError(const QString& error)
 {
     m_isExecuting = false;
-    m_thread = nullptr;
-    m_worker = nullptr;
+    releaseFinishedThreadAndWorker();
+
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -935,8 +1051,8 @@ void CutNode::onError(const QString& error)
 void CutNode::onCancelled()
 {
     m_isExecuting = false;
-    m_thread = nullptr;
-    m_worker = nullptr;
+    releaseFinishedThreadAndWorker();
+
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -1025,10 +1141,14 @@ bool CutNode::validateAndRestoreOutput()
         // 安全清理老 remedyWatcher
         QFutureWatcher<void>* oldWatcher = findChild<QFutureWatcher<void>*>("remedyWatcher");
         if (oldWatcher) {
-            oldWatcher->disconnect();
+            oldWatcher->disconnect(this);
             if (oldWatcher->isRunning()) {
                 oldWatcher->cancel();
-                oldWatcher->waitForFinished();
+                connect(oldWatcher, &QFutureWatcher<void>::finished, this, [this, oldWatcher]() {
+                    oldWatcher->deleteLater();
+                    QTimer::singleShot(0, this, [this]() { validateAndRestoreOutput(); });
+                });
+                return true;
             }
             oldWatcher->deleteLater();
         }

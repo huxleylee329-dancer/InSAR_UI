@@ -4,6 +4,8 @@
 #include <QRegularExpression>
 #include <QFileDialog>
 #include <QAbstractButton>
+#include <FormatConversion.h>
+#include "NodeUtils.h"
 #include "icon_source.h"
 
 TroposphericCorrection_ui::TroposphericCorrection_ui(QWidget* parent) :
@@ -20,8 +22,8 @@ TroposphericCorrection_ui::TroposphericCorrection_ui(QWidget* parent) :
 
 TroposphericCorrection_ui::~TroposphericCorrection_ui()
 {
+    StopThread();
     emit sendCopy(copy);
-    m_worker = nullptr;
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
@@ -41,28 +43,32 @@ void TroposphericCorrection_ui::updateProcess(int value, QString information)
 
 void TroposphericCorrection_ui::endProcess()
 {
-    if (m_worker != nullptr && m_worker->thread()->isRunning())
-    {
-        m_worker->thread()->quit();
-        m_worker->thread()->wait();
-    }
-    m_worker = nullptr;
+    persistGeneratedOutputs();
+    cleanUpWorker();
     ui->progressBar->hide();
     this->close();
 }
 
 void TroposphericCorrection_ui::StopThread()
 {
-    if (m_worker != nullptr)
-    {
-        if (m_worker->thread()->isRunning())
-        {
-            m_worker->thread()->requestInterruption();
-            m_worker->thread()->quit();
-            m_worker->thread()->wait();
-        }
-        m_worker = nullptr;
-    }
+    if (m_worker && m_worker->thread() && m_worker->thread()->isRunning())
+        m_worker->thread()->requestInterruption();
+    cleanUpWorker();
+}
+
+void TroposphericCorrection_ui::onProcessingError(const QString& error)
+{
+    cleanUpWorker();
+    ui->progressBar->hide();
+    ChangeVision(true);
+    QMessageBox::warning(this, "Warning!", error);
+}
+
+void TroposphericCorrection_ui::onProcessingCancelled()
+{
+    cleanUpWorker();
+    ui->progressBar->hide();
+    ChangeVision(true);
 }
 
 void TroposphericCorrection_ui::TransitModel(QStandardItemModel* model)
@@ -185,6 +191,39 @@ void TroposphericCorrection_ui::on_buttonBox_accepted()
         return;
     }
 
+    QStringList phaseNames;
+    QStringList phasePaths;
+    if (!copy) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("项目模型不可用。"));
+        return;
+    }
+    const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+    if (projects.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("未找到当前工程。"));
+        return;
+    }
+    QStandardItem* project = projects.first();
+    for (int i = 0; i < project->rowCount(); ++i) {
+        QStandardItem* node = project->child(i, 0);
+        if (!node || node->text() != ui->comboBox_2->currentText())
+            continue;
+        for (int j = 0; j < node->rowCount(); ++j) {
+            QStandardItem* image = node->child(j, 0);
+            QStandardItem* path = node->child(j, 1);
+            if (image && path && image->toolTip() == "phase") {
+                phaseNames.append(image->text());
+                phasePaths.append(path->text());
+            }
+        }
+        break;
+    }
+    if (phasePaths.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("没有可校正的干涉图。"));
+        return;
+    }
+
+    m_generatedOutputNames.clear();
+    m_generatedOutputPaths.clear();
     m_worker = new TroposphericCorrectionWorker;
     m_worker->moveToThread(new QThread(this));
 
@@ -193,8 +232,14 @@ void TroposphericCorrection_ui::on_buttonBox_accepted()
 
     connect(this, &TroposphericCorrection_ui::operate, m_worker, &TroposphericCorrectionWorker::doCorrection, Qt::QueuedConnection);
     connect(m_worker, &TroposphericCorrectionWorker::updateProcess, this, &TroposphericCorrection_ui::updateProcess);
+    connect(m_worker, &TroposphericCorrectionWorker::outputsGenerated, this,
+        [this](const QStringList& outputNames, const QStringList& outputPaths) {
+            m_generatedOutputNames = outputNames;
+            m_generatedOutputPaths = outputPaths;
+        });
     connect(m_worker, &TroposphericCorrectionWorker::endProcess, this, &TroposphericCorrection_ui::endProcess);
-    connect(m_worker, &TroposphericCorrectionWorker::sendModel, this, &TroposphericCorrection_ui::TransitModel);
+    connect(m_worker, &TroposphericCorrectionWorker::errorProcess, this, &TroposphericCorrection_ui::onProcessingError);
+    connect(m_worker, &TroposphericCorrectionWorker::cancelled, this, &TroposphericCorrection_ui::onProcessingCancelled);
     connect(m_worker->thread(), &QThread::finished, m_worker, &TroposphericCorrectionWorker::deleteLater);
     connect(this, &QWidget::destroyed, this, &TroposphericCorrection_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &TroposphericCorrection_ui::StopThread);
@@ -205,7 +250,58 @@ void TroposphericCorrection_ui::on_buttonBox_accepted()
     emit operate(ui->lineEdit_era5dir->text(),
                  this->save_path, ui->comboBox->currentText(),
                  ui->comboBox_2->currentText(), ui->file_name->text(),
-                 this->copy);
+                 phaseNames, phasePaths);
+}
+
+void TroposphericCorrection_ui::cleanUpWorker()
+{
+    if (!m_worker)
+        return;
+
+    QThread* workerThread = m_worker->thread();
+    if (workerThread && workerThread->isRunning()) {
+        workerThread->quit();
+        workerThread->wait();
+    }
+    if (workerThread)
+        workerThread->deleteLater();
+    m_worker = nullptr;
+}
+
+void TroposphericCorrection_ui::persistGeneratedOutputs()
+{
+    if (!copy || m_generatedOutputNames.size() != m_generatedOutputPaths.size() ||
+        m_generatedOutputPaths.isEmpty()) {
+        return;
+    }
+
+    const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+    if (projects.isEmpty())
+        return;
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), ui->file_name->text(), "phase-2.5", FOLDER_ICON);
+    if (!outputNode)
+        return;
+
+    XMLFile xml;
+    const QString xmlPath = save_path + "/" + ui->comboBox->currentText() + ".Insar";
+    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+        QMessageBox::warning(this, "Warning!", QStringLiteral("输出已生成，但项目 XML 保存失败。"));
+        return;
+    }
+
+    for (int i = 0; i < m_generatedOutputPaths.size(); ++i) {
+        const QString relativePath = QString("/%1/%2.h5")
+            .arg(ui->file_name->text(), m_generatedOutputNames[i]);
+        NodeUtils::findOrCreateChildItem(outputNode, m_generatedOutputNames[i], "phase",
+            m_generatedOutputPaths[i], IMAGEDATA_ICON);
+        xml.XMLFile_add_unwrap(ui->file_name->text().toStdString().c_str(),
+            m_generatedOutputNames[i].toStdString().c_str(), relativePath.toStdString().c_str(),
+            0, 0, "ERA5_Tropospheric", 0);
+    }
+    xml.XMLFile_save(xmlPath.toStdString().c_str());
+    emit sendCopy(copy);
 }
 
 void TroposphericCorrection_ui::on_buttonBox_rejected()

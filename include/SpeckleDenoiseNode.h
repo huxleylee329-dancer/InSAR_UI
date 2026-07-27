@@ -64,8 +64,7 @@ private Q_SLOTS:
     void onProcessingFinished();
     void onError(const QString& error);
     void onCancelled();
-    void onModelUpdated(QStandardItemModel* model);
-    void onAskUserError(const QString& message, bool* skip);
+    void onAskUserError(quint64 requestId, const QString& message);
     void onSaveImageToProjectRequested(
         const QString& projectName,
         const QString& nodeName,
@@ -79,7 +78,6 @@ private:
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
-    XMLFile* projectXml() const;
 
     void executeProcessing();
     QString generateOutputFileName() const;

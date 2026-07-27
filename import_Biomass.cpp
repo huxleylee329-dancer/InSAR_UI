@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "import_Biomass.h"
 #include "ImportTask.h"
+#include "ImportOutputPersistence.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <qmessagebox.h>
@@ -276,7 +277,10 @@ void import_Biomass::on_buttonBox_accepted()
     connect(import_Biomass_thread, &BiomassImportWorker::errorProcess, this, &import_Biomass::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_Biomass::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_Biomass::StopThread);
-    connect(import_Biomass_thread, &BiomassImportWorker::sendModel, this, &import_Biomass::TransitModel);
+    connect(import_Biomass_thread, &BiomassImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
 
     thread->start();
 
@@ -292,9 +296,7 @@ void import_Biomass::on_buttonBox_accepted()
     QMetaObject::invokeMethod(import_Biomass_thread, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, dstNode),
-        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, dstNode));
 
     ChangeVision(false);
 }

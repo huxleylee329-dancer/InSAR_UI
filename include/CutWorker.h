@@ -18,7 +18,8 @@ public slots:
              QString project_name,
              QString src_node,
              QString dst_node,
-             QStandardItemModel* model);
+             QStringList inputPaths,
+             QString src_data_rank);
 
     /**
      * @brief Normalized ratio-based AOI crop (used by box-selection and auto-center)
@@ -31,8 +32,11 @@ public slots:
               QString project_name,
               QString src_node,
               QString dst_node,
-              QStandardItemModel* model);
+              QStringList inputPaths,
+              QString src_data_rank,
+              int master_index);
 
 signals:
     void cancelled();
+    void fileCropped(QString cutName, QString fullPath, int offsetRow, int offsetCol, int masterIndex, QString srcDataRank, QList<double> para);
 };

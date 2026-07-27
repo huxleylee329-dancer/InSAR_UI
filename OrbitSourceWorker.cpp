@@ -50,6 +50,48 @@ QString sourceName(int source)
 {
     return source == 1 ? QStringLiteral("ESA CDSE") : QStringLiteral("NASA ASF");
 }
+
+bool readAcquisitionTimeRange(const QString& h5Path, QString& startText, QString& stopText,
+                              double& startGps, double& stopGps, QString& errorMessage)
+{
+    std::string start;
+    std::string stop;
+    QString readError;
+    if (!NodeUtils::readStringFromH5(h5Path, "acquisition_start_time", start, &readError) ||
+        !NodeUtils::readStringFromH5(h5Path, "acquisition_stop_time", stop, &readError)) {
+        errorMessage = QStringLiteral("Unable to read acquisition time metadata from %1: %2")
+            .arg(h5Path, readError);
+        return false;
+    }
+
+    startText = QString::fromStdString(start);
+    stopText = QString::fromStdString(stop);
+    FormatConversion conversion;
+    if (conversion.utc2gps(start.c_str(), &startGps) != 0 ||
+        conversion.utc2gps(stop.c_str(), &stopGps) != 0 ||
+        stopGps <= startGps) {
+        errorMessage = QStringLiteral("Invalid acquisition time range in %1: start=%2, stop=%3")
+            .arg(h5Path)
+            .arg(startText)
+            .arg(stopText);
+        return false;
+    }
+    return true;
+}
+
+void logAcquisitionTimeRange(const QString& stage, const QString& h5Path,
+                             const QString& startText, const QString& stopText,
+                             double startGps, double stopGps)
+{
+    InSARLogManager::LogInfo("OrbitSourceWorker",
+        QStringLiteral("Acquisition time metadata %1: file=%2, start=%3 (%4), stop=%5 (%6)")
+            .arg(stage)
+            .arg(h5Path)
+            .arg(startText)
+            .arg(startGps, 0, 'f', 3)
+            .arg(stopText)
+            .arg(stopGps, 0, 'f', 3));
+}
 }
 
 OrbitSourceWorker::OrbitSourceWorker(QObject* parent)
@@ -848,11 +890,9 @@ bool OrbitSourceWorker::resolveAndDownloadOrbit(OrbitSource source, const QStrin
     return false;
 }
 
-void OrbitSourceWorker::fetch_orbits(QString projectPath, QString projectName, QStringList filePaths,
-    int orbitSource, QString cacheDir, QStandardItemModel* model)
+void OrbitSourceWorker::fetch_orbits(QString projectPath, QStringList filePaths,
+    int orbitSource, QString cacheDir)
 {
-    Q_UNUSED(projectName);
-    Q_UNUSED(model);
     OrbitSource source;
     QString errorMessage;
     if (!convertOrbitSource(orbitSource, source, errorMessage)) {
@@ -906,12 +946,9 @@ void OrbitSourceWorker::fetch_orbits(QString projectPath, QString projectName, Q
     emit endProcess();
 }
 
-void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString projectName,
-    QStringList filePaths, int orbitSource, QString cacheDir, QString targetDirName,
-    QStandardItemModel* model)
+void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath,
+    QStringList filePaths, int orbitSource, QString cacheDir, QString targetDirName)
 {
-    Q_UNUSED(projectName);
-    Q_UNUSED(model);
     OrbitSource source;
     QString errorMessage;
     if (!convertOrbitSource(orbitSource, source, errorMessage)) {
@@ -982,13 +1019,18 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
         emit updateProcess(60 + i * 35 / filePaths.size(),
             QStringLiteral("正在应用影像 %1 的轨道……").arg(QFileInfo(h5Path).fileName()));
 
-        std::string startText;
-        std::string stopText;
-        {
-            NodeUtils::Hdf5Locker locker(h5Path);
-            NodeUtils::readStringFromH5(h5Path, "acquisition_start_time", startText);
-            NodeUtils::readStringFromH5(h5Path, "acquisition_stop_time", stopText);
+        QString startText;
+        QString stopText;
+        double startGps = 0.0;
+        double stopGps = 0.0;
+        QString timeError;
+        if (!readAcquisitionTimeRange(h5Path, startText, stopText, startGps, stopGps, timeError)) {
+            InSARLogManager::LogError("OrbitSourceWorker", timeError);
+            emit errorProcess(timeError);
+            return;
         }
+        logAcquisitionTimeRange(QStringLiteral("before POD application"), h5Path,
+                                startText, stopText, startGps, stopGps);
         if (isStopRequested()) {
             emit cancelled();
             return;
@@ -1025,10 +1067,6 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
         int result = -1;
         {
             NodeUtils::Hdf5Locker locker(newH5Path);
-            double startGps = 0.0;
-            double stopGps = 1e12;
-            conversion.utc2gps(startText.c_str(), &startGps);
-            conversion.utc2gps(stopText.c_str(), &stopGps);
             const QString nativeEof = QDir::toNativeSeparators(eofPath);
             const QString nativeH5 = QDir::toNativeSeparators(newH5Path);
             result = conversion.read_POD(nativeEof.toLocal8Bit().constData(), startGps, stopGps,
@@ -1039,6 +1077,22 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath, QString proj
                 conversion.write_str_to_h5(nativeH5.toLocal8Bit().constData(), "orbit_type",
                     orbitType.toStdString().c_str());
             }
+        }
+        if (result >= 0) {
+            QString outputStartText;
+            QString outputStopText;
+            double outputStartGps = 0.0;
+            double outputStopGps = 0.0;
+            if (!readAcquisitionTimeRange(newH5Path, outputStartText, outputStopText,
+                                          outputStartGps, outputStopGps, timeError)) {
+                InSARLogManager::LogError("OrbitSourceWorker", timeError);
+                QFile::remove(newH5Path);
+                QFile::remove(targetJpg);
+                emit errorProcess(timeError);
+                return;
+            }
+            logAcquisitionTimeRange(QStringLiteral("after POD application"), newH5Path,
+                                    outputStartText, outputStopText, outputStartGps, outputStopGps);
         }
         if (isStopRequested()) {
             emit cancelled();

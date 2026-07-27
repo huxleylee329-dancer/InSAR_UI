@@ -7,6 +7,7 @@
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include "FormatConversion.h"
+#include "Utils.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -37,12 +38,14 @@ DemNode::DemNode()
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
+    qRegisterMetaType<DemFileResult>("DemFileResult");
     setExecutionMode(ExecutionMode::Automatic);
 }
 
 DemNode::~DemNode()
 {
     stopExecution();
+    cleanupThreadResources();
 }
 
 unsigned int DemNode::nPorts(PortType portType) const
@@ -198,7 +201,7 @@ void DemNode::createWidget()
     methodLayout->addWidget(methodLabel);
     m_methodCombo = new QComboBox();
     m_methodCombo->setEditable(false);
-    m_methodCombo->addItem("牛顿法");
+    m_methodCombo->addItem("鐗涢】娉?");
     m_methodCombo->setCurrentIndex(m_method - 1);
     connect(m_methodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
         int val = index + 1;
@@ -249,7 +252,7 @@ void DemNode::createWidget()
     outputLayout->addWidget(outputLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -364,8 +367,10 @@ bool DemNode::prepareToStart()
     }
 
     if (!hasFlatPhase) {
-        QString errorMsg = QStringLiteral("输入的解缠相位文件中未包含平地相位消除系数(flat_phase_coefficient)。"
-                                          "请确保上游\"干涉形成 (Interferometric Formation)\"节点在运行时已勾选\"平地消除 (IsDeflat)\"选项，并重新运行后续节点。");
+        QString errorMsg = QStringLiteral(
+            "输入的解缠相位文件中未包含平地相位消除系数 flat_phase_coefficient。"
+            "请确保上游\"干涉形成 (Interferometric Formation)\"节点在运行时已勾选"
+            "\"平地消除 (IsDeflat)\"选项，并重新运行后续节点。");
         setLastErrorMessage(errorMsg);
         setState(ExecutionState::Error);
         Q_EMIT executionError(errorMsg);
@@ -420,14 +425,23 @@ void DemNode::executeProcessing()
 
     setProgress(0);
     setState(ExecutionState::Running);
+    m_xmlDirty = false;
 
     m_thread = new QThread();
     m_workerThread = new DemWorker();
     m_workerThread->moveToThread(m_thread);
 
+    const QStringList phasePaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    QStringList phaseNames;
+    for (const QString& phasePath : phasePaths) {
+        phaseNames.append(QFileInfo(phasePath).baseName());
+    }
+
     connect(this, &DemNode::startDem, m_workerThread, &DemWorker::Dem);
-    connect(m_thread, &QThread::started, [this]() {
-        Q_EMIT startDem(m_preparedMethod, m_preparedTimes, m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode, projectModel());
+    connect(m_workerThread, &DemWorker::demFileGenerated, this, &DemNode::handleDemFileGenerated);
+    connect(m_thread, &QThread::started, [this, phaseNames, phasePaths]() {
+        Q_EMIT startDem(m_preparedMethod, m_preparedTimes, m_preparedSavePath, m_preparedDstNode,
+                        phaseNames, phasePaths);
     });
     connect(m_workerThread, &DemWorker::updateProcess, this, &DemNode::onProgressUpdate);
     connect(m_workerThread, &DemWorker::endProcess, this, &DemNode::onProcessingFinished);
@@ -436,8 +450,8 @@ void DemNode::executeProcessing()
     connect(m_workerThread, &DemWorker::cancelled, m_thread, &QThread::quit);
     connect(m_workerThread, &DemWorker::errorProcess, this, &DemNode::onError);
     connect(m_workerThread, &DemWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_workerThread, &DemWorker::sendModel, this, &DemNode::onModelUpdated);
     connect(m_workerThread, &DemWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     // Dynamic recovery of Running state for Automatic execution mode (SOP Rule 5)
@@ -490,21 +504,20 @@ void DemNode::onProcessingFinished()
     }
 
     // Clean up worker thread
-    if (m_thread)
-    {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread)
-    {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    releaseFinishedThreadResources();
 
     if (discardObsoleteAutomaticExecution()) {
         return;
+    }
+
+    if (m_xmlDirty) {
+        XMLFile* xml = projectXml();
+        const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
+        if (!xml || xmlPath.isEmpty() || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
+            onError(QStringLiteral("Failed to save project XML after DEM generation."));
+            return;
+        }
+        m_xmlDirty = false;
     }
 
     m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
@@ -535,8 +548,6 @@ void DemNode::onProcessingFinished()
                 m_imageInfoData.reset();
                 setOutputData(1, nullptr);
             }
-            Q_EMIT dataUpdated(1);
-
             m_outputNodeNameEdit->setEnabled(true);
             m_methodCombo->setEnabled(true);
             if (m_timesEdit) m_timesEdit->setEnabled(true);
@@ -546,7 +557,6 @@ void DemNode::onProcessingFinished()
             setProgress(100);
             InSARLogManager::LogInfo("DemNode", "executeProcessing completed.");
             finishExecution();
-            Q_EMIT dataUpdated(0);
         });
 
         QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
@@ -560,7 +570,6 @@ void DemNode::onProcessingFinished()
     {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
-        Q_EMIT dataUpdated(1);
 
         m_outputNodeNameEdit->setEnabled(true);
         m_methodCombo->setEnabled(true);
@@ -571,22 +580,105 @@ void DemNode::onProcessingFinished()
         setProgress(100);
         InSARLogManager::LogInfo("DemNode", "executeProcessing completed (empty output list).");
         finishExecution();
-        Q_EMIT dataUpdated(0);
+    }
+}
+
+void DemNode::handleDemFileGenerated(const DemFileResult& result)
+{
+    QStandardItemModel* model = projectModel();
+    if (!model) return;
+
+    QList<QStandardItem*> foundProjects = model->findItems(m_preparedProjectName);
+    if (foundProjects.isEmpty()) return;
+
+    QStandardItem* project = foundProjects.first();
+    QStandardItem* demNode = nullptr;
+
+    for (int i = 0; i < project->rowCount(); i++) {
+        if (project->child(i, 0)->text() == m_preparedDstNode) {
+            demNode = project->child(i, 0);
+            break;
+        }
+    }
+
+    if (!demNode) {
+        demNode = new QStandardItem(m_preparedDstNode);
+        demNode->setToolTip(m_preparedProjectName);
+        int insert = 0;
+        for (; insert < project->rowCount(); insert++) {
+            if (project->child(insert, 1) &&
+                (project->child(insert, 1)->text().startsWith("complex") ||
+                 project->child(insert, 1)->text().startsWith("phase") ||
+                 project->child(insert, 1)->text().startsWith("dem"))) {
+                continue;
+            } else {
+                break;
+            }
+        }
+        demNode->setIcon(QIcon(FOLDER_ICON));
+        project->insertRow(insert, demNode);
+        QStandardItem* demNodeRank = new QStandardItem("dem-1.0");
+        project->setChild(insert, 1, demNodeRank);
+    }
+
+    QStandardItem* itemImg = nullptr;
+    for (int j = 0; j < demNode->rowCount(); j++) {
+        if (demNode->child(j, 0)->text() == result.demName) {
+            itemImg = demNode->child(j, 0);
+            break;
+        }
+    }
+
+    if (!itemImg) {
+        QStandardItem* image = new QStandardItem(result.demName);
+        image->setToolTip("dem");
+        image->setIcon(QIcon(IMAGEDATA_ICON));
+        demNode->appendRow(image);
+        QStandardItem* imagePath = new QStandardItem(result.absoluteDemPath);
+        demNode->setChild(demNode->rowCount() - 1, 1, imagePath);
+    } else {
+        demNode->setChild(itemImg->row(), 1, new QStandardItem(result.absoluteDemPath));
+    }
+
+    XMLFile* xml = projectXml();
+    if (!xml) {
+        onError(QStringLiteral("Project XML is unavailable while publishing DEM output."));
+        return;
+    }
+    xml->XMLFile_add_dem(
+        m_preparedDstNode.toStdString().c_str(),
+        result.demName.toStdString().c_str(),
+        result.relativeDemPath.toStdString().c_str(),
+        result.offsetRow,
+        result.offsetCol,
+        "Iteration",
+        m_preparedTimes);
+    m_xmlDirty = true;
+}
+
+void DemNode::cleanupThreadResources()
+{
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread = nullptr;
+    }
+    m_workerThread = nullptr;
+}
+
+void DemNode::releaseFinishedThreadResources()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
     }
 }
 
 void DemNode::onError(const QString& error)
 {
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -603,16 +695,7 @@ void DemNode::onError(const QString& error)
 
 void DemNode::onCancelled()
 {
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -670,7 +753,9 @@ bool DemNode::validateAndRestoreOutput()
 
     m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
-    Q_EMIT dataUpdated(0);
+    if (executionState() != ExecutionState::Running) {
+        Q_EMIT dataUpdated(0);
+    }
 
     // Remedy missing JPG previews in background (SOP Rule 15)
     QStringList existingJpgPaths;
@@ -691,7 +776,9 @@ bool DemNode::validateAndRestoreOutput()
     if (missingH5s.isEmpty()) {
         m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgPaths);
         setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
+        if (executionState() != ExecutionState::Running) {
+            Q_EMIT dataUpdated(1);
+        }
     } else {
         m_remedyWatcher.disconnect();
         if (m_remedyWatcher.isRunning()) {
@@ -712,12 +799,13 @@ bool DemNode::validateAndRestoreOutput()
                 m_imageInfoData.reset();
                 setOutputData(1, nullptr);
             }
-            Q_EMIT dataUpdated(1);
             InSARLogManager::LogInfo("DemNode", "validateAndRestoreOutput background rendering completed.");
 
             if (executionState() == ExecutionState::Running) {
                 setProgress(100);
                 finishExecution();
+            } else {
+                Q_EMIT dataUpdated(1);
             }
         });
 

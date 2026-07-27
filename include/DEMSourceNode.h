@@ -129,12 +129,12 @@ private:
     );
     void onError(const QString& error);
     void onCancelled();
-    void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();
     void onResolutionModeChanged(int index);
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void startPreviewGeneration(const QString& h5Path, const QString& jpgPath);
 
     // Context helpers
     QStandardItemModel* projectModel() const;
@@ -155,8 +155,7 @@ signals:
         QStringList filePaths,
         int demSource,
         double targetResolution,
-        QString cacheDir,
-        QStandardItemModel* model
+        QString cacheDir
     );
 };
 

@@ -60,6 +60,7 @@ private:
     void updateLabels();
     void updateWidgetSize();
     void executeProcessing();
+    void cleanUpThreadAndWorker();
     QString projectPath() const;
 
     // UI elements

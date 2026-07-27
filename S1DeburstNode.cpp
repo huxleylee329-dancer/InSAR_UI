@@ -186,7 +186,7 @@ void S1DeburstNode::createWidget()
     nodeNameLabel->setFixedWidth(80);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputNodeNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -307,8 +307,6 @@ void S1DeburstNode::onProcessingFinished()
     setProgress(100);
     InSARLogManager::LogInfo("S1DeburstNode", "executeProcessing completed.");
     finishExecution();
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
 }
 
 void S1DeburstNode::onError(const QString& error)
@@ -345,19 +343,6 @@ void S1DeburstNode::onCancelled()
     Q_EMIT computingFinished();
 }
 
-void S1DeburstNode::onModelUpdated(QStandardItemModel* model)
-{
-    if (isAutomaticExecutionObsolete()) {
-        return;
-    }
-
-    Q_UNUSED(model);
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        iface->refreshProjectTree();
-    }
-}
-
 void S1DeburstNode::onResultsReceived(
     const QString& dstNode,
     const QStringList& deburstH5Paths,
@@ -365,6 +350,27 @@ void S1DeburstNode::onResultsReceived(
 {
     if (isAutomaticExecutionObsolete()) {
         return;
+    }
+
+    QStandardItemModel* model = projectModel();
+    const QList<QStandardItem*> projects = model ? model->findItems(projectName()) : QList<QStandardItem*>();
+    if (projects.isEmpty()) {
+        InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: project tree root is unavailable.");
+        return;
+    }
+    QStandardItem* deburstNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), dstNode, "complex-1.0", FOLDER_ICON);
+    if (!deburstNode) {
+        InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: failed to create output tree node.");
+        return;
+    }
+    deburstNode->setToolTip(projectName());
+    for (const QString& h5Path : deburstH5Paths) {
+        QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
+            deburstNode, QFileInfo(h5Path).baseName(), "complex", h5Path, IMAGEDATA_ICON);
+        if (imageItem) {
+            deburstNode->setChild(imageItem->row(), 1, new QStandardItem(h5Path));
+        }
     }
 
     // 用全局 XML 句柄 + 原生 TinyXML 写入，绕过外部 DLL 接口（SOP 避坑经验 #9）
@@ -506,6 +512,9 @@ void S1DeburstNode::onResultsReceived(
         xml->XMLFile_save(xmlPath.toStdString().c_str());
         InSARLogManager::LogInfo("S1DeburstNode", "onResultsReceived: XML saved via native TinyXML.");
     }
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
+    }
 }
 
 QStandardItemModel* S1DeburstNode::projectModel() const
@@ -605,7 +614,7 @@ void S1DeburstNode::executeProcessing()
     QString dstNode = m_preparedDstNode;
     QString savePath = projectPath();
     QString dstProject = projectName();
-    QString srcNode = m_inputData->nodeName();
+    const QStringList inputPaths = m_inputData->filePaths();
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting)
     {
@@ -633,8 +642,8 @@ void S1DeburstNode::executeProcessing()
 
     // Connect signals
     connect(this, &S1DeburstNode::startDeburst, m_worker, &S1DeburstWorker::S1_Deburst);
-    connect(m_thread, &QThread::started, [this, savePath, dstProject, srcNode, dstNode]() {
-        Q_EMIT startDeburst(savePath, dstProject, srcNode, dstNode, projectModel());
+    connect(m_thread, &QThread::started, [this, savePath, dstProject, dstNode, inputPaths]() {
+        Q_EMIT startDeburst(savePath, dstProject, dstNode, inputPaths);
     });
     connect(m_worker, &S1DeburstWorker::updateProcess, this, &S1DeburstNode::onProgressUpdate);
     connect(m_worker, &S1DeburstWorker::endProcess, this, &S1DeburstNode::onProcessingFinished);
@@ -643,7 +652,6 @@ void S1DeburstNode::executeProcessing()
     connect(m_worker, &S1DeburstWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &S1DeburstWorker::cancelled, this, &S1DeburstNode::onCancelled);
     connect(m_worker, &S1DeburstWorker::cancelled, m_thread, &QThread::quit);
-    connect(m_worker, &S1DeburstWorker::sendModel, this, &S1DeburstNode::onModelUpdated);
     // sendResults: Worker 完成后回传路径列表，由 Node 端用原生 TinyXML 写 XML（SOP 避坑经验 #9）
     connect(m_worker, &S1DeburstWorker::sendResults, this, &S1DeburstNode::onResultsReceived);
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
@@ -721,23 +729,7 @@ bool S1DeburstNode::validateAndRestoreOutput()
 
             // 异步补录 JPG 预览
             if (!missingH5s.isEmpty()) {
-                m_remedyWatcher.cancel();
-                m_remedyWatcher.waitForFinished();
-                m_remedyWatcher.disconnect();
-
-                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
-                    InSARLogManager::LogInfo("S1DeburstNode", "Remedy preview generation finished. Updating Port 1.");
-                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
-                    setOutputData(1, m_imageInfoData);
-                    Q_EMIT dataUpdated(1);
-                });
-
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-                    for (int i = 0; i < missingH5s.size(); ++i) {
-                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-                    }
-                });
-                m_remedyWatcher.setFuture(future);
+                startPreviewGeneration(missingH5s, missingJpgs, allJpgPaths);
             }
 
             // 恢复左侧树标准项目模型 (Standard Item Model Tree View)
@@ -949,6 +941,35 @@ bool S1DeburstNode::validateAndRestoreOutput()
     }
 
     return false;
+}
+
+void S1DeburstNode::startPreviewGeneration(const QStringList& h5Paths,
+                                           const QStringList& generatedJpgPaths,
+                                           const QStringList& resultJpgPaths)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, generatedJpgPaths, resultJpgPaths]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, resultJpgPaths);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, resultJpgPaths]() {
+        InSARLogManager::LogInfo("S1DeburstNode", "Remedy preview generation finished. Updating Port 1.");
+        m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+        setOutputData(1, m_imageInfoData);
+        Q_EMIT dataUpdated(1);
+    });
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, generatedJpgPaths]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], "complex");
+        }
+    }));
 }
 
 QStringList S1DeburstNode::previewImagePaths() const

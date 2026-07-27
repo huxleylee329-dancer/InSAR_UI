@@ -4,7 +4,6 @@
 
 #include "BaseWorker.h"
 #include <QStringList>
-#include <QStandardItemModel>
 
 class DEMSourceWorker : public BaseWorker
 {
@@ -21,8 +20,7 @@ public slots:
         QStringList filePaths,
         int demSource,
         double targetResolution,
-        QString cacheDir,
-        QStandardItemModel* model
+        QString cacheDir
     );
 
 signals:

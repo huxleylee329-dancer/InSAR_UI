@@ -21,6 +21,7 @@ public slots:
     void endProcess();
     void StopThread();
     void TransitModel(QStandardItemModel* model);
+    void handleResults(const QString& dstNode, const QString& outputH5Path);
 
 signals:
     void operate(
@@ -38,8 +39,7 @@ signals:
         bool     showContour,
         int      contourInterval,
         bool     showArrow,
-        int      arrowSpacing,
-        QStandardItemModel* model
+        int      arrowSpacing
     );
     void sendCopy(QStandardItemModel* model);
 
@@ -55,6 +55,8 @@ private:
     QThread* m_thread;
 
     QString save_path;
+    QString m_activeProjectName;
+    QString m_activeProjectPath;
 
     void updateSrcNodeCombo();
     void setControlsEnabled(bool enabled);

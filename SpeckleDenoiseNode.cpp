@@ -306,8 +306,6 @@ void SpeckleDenoiseNode::executeProcessing()
     bool saveToProject = m_saveToProject;
     QString projPath = projectPath();
     QString projName = projectName();
-    QStandardItemModel* model = projectModel();
-    XMLFile* projectXmlPtr = projectXml();
     
     QStringList outputPaths;
     QStringList fileNames;
@@ -342,7 +340,7 @@ void SpeckleDenoiseNode::executeProcessing()
     NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
 
     m_isExecuting = true;
-    m_task = new BM3DEnhancementTask(EnhancementType::SpeckleDenoise, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, model, saveToProject, projectXmlPtr);
+    m_task = new BM3DEnhancementTask(EnhancementType::SpeckleDenoise, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, saveToProject);
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
@@ -351,8 +349,7 @@ void SpeckleDenoiseNode::executeProcessing()
     connect(m_task, &BM3DEnhancementTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::cancelled, this, &SpeckleDenoiseNode::onCancelled, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::sendModel, this, &SpeckleDenoiseNode::onModelUpdated, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &SpeckleDenoiseNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
@@ -402,9 +399,6 @@ void SpeckleDenoiseNode::onProcessingFinished()
 
     m_isExecuting = false;
     updateParameterWidgetsEnableState();
-
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
 
     InSARLogManager::LogInfo("SpeckleDenoiseNode", "executeProcessing completed.");
     finishExecution();
@@ -521,14 +515,6 @@ void SpeckleDenoiseNode::onSaveImageToProjectRequested(
     }
 }
 
-void SpeckleDenoiseNode::onModelUpdated(QStandardItemModel* model)
-{
-    Q_UNUSED(model);
-    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-        iface->refreshProjectTree();
-    }
-}
-
 QStandardItemModel* SpeckleDenoiseNode::projectModel() const
 {
     auto* iface = NodeUtils::getProjectContext(_widget);
@@ -546,13 +532,6 @@ QString SpeckleDenoiseNode::projectName() const
     auto* iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectName() : QString();
 }
-
-XMLFile* SpeckleDenoiseNode::projectXml() const
-{
-    auto* iface = NodeUtils::getProjectContext(_widget);
-    return iface ? iface->projectXml() : nullptr;
-}
-
 
 QJsonObject SpeckleDenoiseNode::save() const
 {
@@ -614,15 +593,25 @@ QString SpeckleDenoiseNode::generateOutputFileName() const
     return QStringLiteral("%1_denoised").arg(baseName);
 }
 
-void SpeckleDenoiseNode::onAskUserError(const QString& message, bool* skip)
+void SpeckleDenoiseNode::onAskUserError(quint64 requestId, const QString& message)
 {
+    bool skip = false;
+    if (isAutomaticExecutionObsolete() || executionState() != ExecutionState::Running) {
+        if (m_task) {
+            m_task->resolveErrorDecision(requestId, skip);
+        }
+        return;
+    }
     QMessageBox::StandardButton reply = QMessageBox::question(
         nullptr,
         QStringLiteral("错误"), // 错误
         message,
         QMessageBox::Yes | QMessageBox::No
     );
-    *skip = (reply == QMessageBox::Yes);
+    skip = (reply == QMessageBox::Yes);
+    if (m_task) {
+        m_task->resolveErrorDecision(requestId, skip);
+    }
 }
 
 bool SpeckleDenoiseNode::validateAndRestoreOutput()

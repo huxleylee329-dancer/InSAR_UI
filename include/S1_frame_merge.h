@@ -18,7 +18,6 @@ public slots:
     void errorProcess(QString error_msg);
     void endThread();
     void StopThread();
-    void TransitModel(QStandardItemModel*);
 private:
     Ui::S1FrameMerge* ui;
     QStandardItemModel* copy;
@@ -28,7 +27,8 @@ private:
     int image_number;
     void ChangeVision(bool Editable);
 signals:
-    void operate(int index1, int index2, QString project, QString node1, QString node2, QString dstNode, QStandardItemModel*);
+    void operate(QString projectName, QString savePath, QString dstNode,
+                 QString firstH5Path, QString secondH5Path);
     void sendCopy(QStandardItemModel*);
 private slots:
     /*工程选择按鈕响应函数*/
@@ -38,5 +38,6 @@ private slots:
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
     // 接收 Worker 的 sendResult 信号，完成 Workspace UI 路径的 XML 写入
-    void handleResult(const QString& dstNode, const QString& filename, const QString& savePath, const QString& projectName);
+    void handleResult(const QString& dstNode, const QString& filename, const QString& mergedH5Path,
+                      const QString& savePath, const QString& projectName);
 };

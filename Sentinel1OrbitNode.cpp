@@ -32,6 +32,7 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QFutureWatcher>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace QtNodes {
@@ -284,6 +285,8 @@ bool Sentinel1OrbitNode::validateAndRestoreOutput()
             expectedJpgPaths.append(h5.left(h5.lastIndexOf('.')) + ".jpg");
         }
         m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
+        setOutputData(0, m_outputData);
+        setOutputData(1, m_previewData);
         setState(ExecutionState::Completed);
         Q_EMIT dataUpdated(0);
         Q_EMIT dataUpdated(1);
@@ -333,7 +336,7 @@ bool Sentinel1OrbitNode::prepareToStart()
         }
 
         QMessageBox::warning(nullptr, QStringLiteral("提示"),
-            QStringLiteral("所选轨道数据源需要登录 %1 账户。请先登录。").arg(sourceLabel));
+            QStringLiteral("鎵€閫夎建閬撴暟鎹簮闇€瑕佺櫥褰?%1 璐︽埛銆傝鍏堢櫥褰曘€?").arg(sourceLabel));
         const int loginResult = useCdse
             ? CDSELoginDialog(nullptr).exec()
             : EarthdataLoginDialog(nullptr).exec();
@@ -469,12 +472,10 @@ void Sentinel1OrbitNode::executeProcessing()
     qDebug() << "[OrbitNode] emitting startOrbitFetch";
     emit startOrbitFetch(
         m_preparedSavePath,
-        m_preparedProjectName,
         m_preparedFilePaths,
         m_preparedSource,
         m_preparedCacheDir,
-        targetDirName,
-        projectModel()
+        targetDirName
     );
 }
 
@@ -500,7 +501,7 @@ void Sentinel1OrbitNode::createWidget()
 
     // 1. 轨道数据源
     auto* sourceLayout = new QHBoxLayout();
-    QLabel* sourceLabel = new QLabel(QStringLiteral("轨道数据源"));
+    QLabel* sourceLabel = new QLabel(QStringLiteral("杞ㄩ亾鏁版嵁婧?"));
     sourceLabel->setFixedWidth(labelWidth);
     sourceLayout->addWidget(sourceLabel);
     m_orbitSourceCombo = new QComboBox();
@@ -625,7 +626,7 @@ void Sentinel1OrbitNode::createWidget()
     outputLabel->setFixedWidth(labelWidth);
     outputLayout->addWidget(outputLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     if (!m_outputNodeName.isEmpty()) {
         m_outputNodeNameEdit->setText(m_outputNodeName);
     }
@@ -687,7 +688,7 @@ void Sentinel1OrbitNode::updateLoginStatus()
     }
     else
     {
-        m_loginStatusLabel->setText(QStringLiteral("未登录"));
+        m_loginStatusLabel->setText(QStringLiteral("鏈櫥褰?"));
         m_loginStatusLabel->setStyleSheet("color: red; font-weight: bold;");
         m_loginBtn->show();
         m_logoutBtn->hide();
@@ -896,7 +897,8 @@ void Sentinel1OrbitNode::onProcessingFinished(
         Q_EMIT progressUpdated(100);
         setLastWarningMessage(QStringLiteral("Orbit data was applied to %1 of %2 input files; %3 files failed or were skipped.")
             .arg(podApplyOk).arg(total).arg(podApplyFail + podSkipped));
-        setState(ExecutionState::Warning);
+        setState(ExecutionState::Running);
+        finishExecutionWithWarning();
         qDebug() << "[OrbitNode] partial success, state=Warning";
     } else {
         // 全部失败 → Error
@@ -905,7 +907,7 @@ void Sentinel1OrbitNode::onProcessingFinished(
         setState(ExecutionState::Error);
         if (!_isAutoTriggered) {
             QMessageBox::warning(nullptr, QStringLiteral("轨道应用失败"),
-                QStringLiteral("所选数据源的轨道下载或写入失败（%1/%2 跳过）。\n请检查网络连接和账户认证。")
+                QStringLiteral("鎵€閫夋暟鎹簮鐨勮建閬撲笅杞芥垨鍐欏叆澶辫触锛?1/%2 璺宠繃锛夈€俓n璇锋鏌ョ綉缁滆繛鎺ュ拰璐︽埛璁よ瘉銆?")
                     .arg(podSkipped).arg(total));
         }
         qDebug() << "[OrbitNode] all failed, state=Error";
@@ -1104,22 +1106,28 @@ private:
         std::shared_ptr<NodeData> outData = m_node->outData(0);
         auto* fileData = dynamic_cast<ImportedFileData*>(outData.get());
         if (!fileData || fileData->filePaths().isEmpty()) {
-            m_statusTitle->setText(tr("无数据"));
+            m_statusTitle->setText(tr("鏃犳暟鎹?"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-            m_statusDesc->setText(tr("输出端口没有可用的 H5 文件。"));
+            m_statusDesc->setText(tr("杈撳嚭绔彛娌℃湁鍙敤鐨?H5 鏂囦欢銆?"));
             m_compareTable->setEnabled(false);
             return;
         }
 
         QStringList h5Paths = fileData->filePaths();
-        QFuture<void> future = QtConcurrent::run([this, h5Paths]() {
+        QFuture<void> future = QtConcurrent::run([this, guard = QPointer<Sentinel1OrbitValidationWidget>(this), h5Paths]() {
             QStringList existing;
             for (const QString& path : h5Paths) {
                 if (QFileInfo::exists(path)) {
                     existing.append(path);
                 }
             }
-            QMetaObject::invokeMethod(this, [this, existing]() {
+            if (!guard) {
+                return;
+            }
+            QMetaObject::invokeMethod(guard.data(), [this, guard, existing]() {
+                if (!guard) {
+                    return;
+                }
                 m_fileList->clear();
                 for (const QString& p : existing) {
                     QFileInfo fi(p);
@@ -1130,7 +1138,7 @@ private:
                 if (!existing.isEmpty()) {
                     m_statusTitle->setText(tr("就绪"));
                     m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
-                    m_statusDesc->setText(tr("已检测到 %1 个 H5 文件。请点击文件查看精密轨道验证结果。").arg(existing.size()));
+                    m_statusDesc->setText(tr("宸叉娴嬪埌 %1 涓?H5 鏂囦欢銆傝鐐瑰嚮鏂囦欢鏌ョ湅绮惧瘑杞ㄩ亾楠岃瘉缁撴灉銆?").arg(existing.size()));
                     m_compareTable->setEnabled(true);
                     m_fileList->setCurrentRow(0);
                 } else {
@@ -1199,19 +1207,19 @@ private:
         // 1. fine_state_vec 存在性
         QString grpOrbit = QStringLiteral("  精密轨道");
         if (item.hasFineStateVec) {
-            QString outVal = QStringLiteral("fine_state_vec: %1 行").arg(item.preciseRows);
+            QString outVal = QStringLiteral("fine_state_vec: %1 琛?").arg(item.preciseRows);
             if (!item.orbitType.isEmpty()) {
                 outVal += QString(" (%1)").arg(item.orbitType);
             }
             addRow(grpOrbit,
-                tr("fine_state_vec: 不存在"),
+                tr("fine_state_vec: 涓嶅瓨鍦?"),
                 outVal,
                 tr("PASS"),
                 "#10B981");
         } else {
             addRow(grpOrbit,
-                tr("fine_state_vec: 不存在"),
-                tr("fine_state_vec: 不存在"),
+                tr("fine_state_vec: 涓嶅瓨鍦?"),
+                tr("fine_state_vec: 涓嶅瓨鍦?"),
                 tr("FAILED"),
                 "#EF4444");
         }
@@ -1219,10 +1227,10 @@ private:
         // 2. 轨道向量点数
         QString grpPoints = QStringLiteral("  轨道点数");
         addRow(grpPoints,
-            QStringLiteral("广播轨道: %1 点").arg(item.broadcastRows),
+            QStringLiteral("骞挎挱杞ㄩ亾: %1 鐐?").arg(item.broadcastRows),
             item.hasFineStateVec
-                ? QStringLiteral("精密轨道: %1 点").arg(item.preciseRows)
-                : tr("精密轨道: 0 点"),
+                ? QStringLiteral("绮惧瘑杞ㄩ亾: %1 鐐?").arg(item.preciseRows)
+                : tr("绮惧瘑杞ㄩ亾: 0 鐐?"),
             item.hasFineStateVec && item.preciseRows >= 5 ? tr("PASS") : tr("WARNING"),
             item.hasFineStateVec && item.preciseRows >= 5 ? "#10B981" : "#F59E0B");
 
@@ -1281,9 +1289,9 @@ private:
         item.passed = item.hasFineStateVec && item.preciseRows >= 5;
 
         if (!item.hasFineStateVec) {
-            item.errorMsg = QStringLiteral("精密轨道未能写入 H5 文件。请检查 EOF 文件是否成功下载。");
+            item.errorMsg = QStringLiteral("绮惧瘑杞ㄩ亾鏈兘鍐欏叆 H5 鏂囦欢銆傝妫€鏌?EOF 鏂囦欢鏄惁鎴愬姛涓嬭浇銆?");
         } else if (item.preciseRows < 5) {
-            item.errorMsg = QStringLiteral("精密轨道点数不足（%1 < 5），可能为非精密轨道路径。").arg(item.preciseRows);
+            item.errorMsg = QStringLiteral("绮惧瘑杞ㄩ亾鐐规暟涓嶈冻锛?1 < 5锛夛紝鍙兘涓洪潪绮惧瘑杞ㄩ亾璺緞銆?").arg(item.preciseRows);
         }
 
         return item;
@@ -1307,3 +1315,4 @@ private:
 }
 
 } // namespace QtNodes
+

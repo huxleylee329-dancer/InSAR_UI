@@ -82,12 +82,13 @@ private:
     void onProcessingFinished();
     void onError(const QString& error);
     void onCancelled();
-    void onModelUpdated(QStandardItemModel* model);
     // 接收 Worker 的 sendResults 信号，用原生 TinyXML 完成 XML 落盘（SOP 避坑经验 #9）
     void onResultsReceived(const QString& dstNode, const QStringList& deburstH5Paths, const QStringList& originNames);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& resultJpgPaths);
 
     // Get project context interface
     QStandardItemModel* projectModel() const;
@@ -106,7 +107,7 @@ private:
 
 signals:
     void startDeburst(QString savePath, QString dstProject,
-                     QString srcNode, QString dstNode, QStandardItemModel* model);
+                     QString dstNode, QStringList inputPaths);
 };
 
 } // namespace QtNodes

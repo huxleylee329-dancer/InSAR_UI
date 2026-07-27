@@ -18,7 +18,7 @@ namespace QtNodes {
 
 EvaluationSCRNode::EvaluationSCRNode()
 {
-    m_detailTableHeaders = QStringList() << QStringLiteral("文件名") << QStringLiteral("原图SCR") << QStringLiteral("滤波后SCR") << QStringLiteral("性能提升");
+    m_detailTableHeaders = QStringList() << QStringLiteral("鏂囦欢鍚?") << QStringLiteral("鍘熷浘SCR") << QStringLiteral("婊ゆ尝鍚嶴CR") << QStringLiteral("鎬ц兘鎻愬崌");
     m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
     m_watcher = new QFutureWatcher<SCRResultData>(this);
     connect(m_watcher, &QFutureWatcher<SCRResultData>::finished, this, &EvaluationSCRNode::onEvaluationFinished);
@@ -75,9 +75,9 @@ void EvaluationSCRNode::createWidget()
     m_filteredScrLabel = new QLabel("--");
     m_improvementLabel = new QLabel("--");
     
-    singleLayout->addRow(QStringLiteral("原图SCR："), m_originalScrLabel); // 原图SCR：
-    singleLayout->addRow(QStringLiteral("滤波后SCR："), m_filteredScrLabel); // 滤波后SCR：
-    singleLayout->addRow(QStringLiteral("性能提升："), m_improvementLabel); // 性能提升：
+    singleLayout->addRow(QStringLiteral("鍘熷浘SCR锛?"), m_originalScrLabel); // 鍘熷浘SCR锛?"
+    singleLayout->addRow(QStringLiteral("婊ゆ尝鍚嶴CR锛?"), m_filteredScrLabel); // 婊ゆ尝鍚嶴CR锛?"
+    singleLayout->addRow(QStringLiteral("鎬ц兘鎻愬崌锛?"), m_improvementLabel); // 鎬ц兘鎻愬崌锛?"
 
     simpleLayout->addWidget(singleResultView);
 
@@ -149,7 +149,7 @@ QString EvaluationSCRNode::portCaption(PortType portType, PortIndex portIndex) c
 {
     if (portType == PortType::In) {
         if (portIndex == 0) return QStringLiteral("原图"); // 原图
-        if (portIndex == 1) return QStringLiteral("滤波后图像"); // 滤波后图像
+        if (portIndex == 1) return QStringLiteral("婊ゆ尝鍚庡浘鍍?"); // 婊ゆ尝鍚庡浘鍍?"
     }
     return QString();
 }
@@ -216,6 +216,7 @@ void EvaluationSCRNode::stopExecution()
     if (m_stopFlagPtr) {
         *m_stopFlagPtr = true;
     }
+    m_restartPending = false;
 }
 
 void EvaluationSCRNode::processAutomatically()
@@ -259,8 +260,9 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
     if (m_stopFlagPtr) {
         *m_stopFlagPtr = true;
     }
-    if (m_watcher) {
-        m_watcher->waitForFinished();
+    if (m_evaluationActive) {
+        m_restartPending = true;
+        return;
     }
 
     if (m_resultsTable) m_resultsTable->setRowCount(0);
@@ -295,6 +297,8 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
 
     setState(ExecutionState::Running);
     m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
+    m_restartPending = false;
+    m_evaluationActive = true;
 
     bool hasTargetRoi = m_hasTargetRoi;
     QRectF targetRoi = m_targetRoi;
@@ -382,11 +386,11 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         if (!(data.validOrigCount > 0 && data.validFiltCount > 0)) {
             QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
             if (maxCount > 0) {
-                QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
-                QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
-                if (origPath == "空路径" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                QString origPath = origPaths.isEmpty() ? "绌鸿矾寰?" : origPaths[0];
+                QString filtPath = filtPaths.isEmpty() ? "绌鸿矾寰?" : filtPaths[0];
+                if (origPath == "绌鸿矾寰?" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
                     errorMsg += QString("原图失败: %1\n").arg(origPath);
-                if (filtPath == "空路径" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                if (filtPath == "绌鸿矾寰?" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
                     errorMsg += QString("滤波图失败: %1").arg(filtPath);
             }
             data.errorMsg = errorMsg.arg(maxCount);
@@ -401,6 +405,13 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
 void EvaluationSCRNode::onEvaluationFinished()
 {
     if (!m_watcher) return;
+
+    m_evaluationActive = false;
+    if (m_restartPending) {
+        m_restartPending = false;
+        calculateAndDisplaySCR();
+        return;
+    }
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -438,7 +449,7 @@ void EvaluationSCRNode::onEvaluationFinished()
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
         
-        auto* avgItem = new QTableWidgetItem(QStringLiteral("平均值"));
+        auto* avgItem = new QTableWidgetItem(QStringLiteral("骞冲潎鍊?"));
         avgItem->setFont(QFont("", -1, QFont::Bold));
         m_resultsTable->setItem(row, 0, avgItem);
         m_resultsTable->setItem(row, 1, new QTableWidgetItem(origStr));
@@ -447,7 +458,8 @@ void EvaluationSCRNode::onEvaluationFinished()
     }
 
     QWidget* singleView = m_widget ? m_widget->findChild<QWidget*>("SingleResultView") : nullptr;
-    if (data.validOrigCount > 0 && data.validFiltCount > 0) {
+    const bool hasValidResults = data.validOrigCount > 0 && data.validFiltCount > 0;
+    if (hasValidResults) {
         if (data.totalCount <= 1) {
             if (singleView) singleView->show();
             QString origStr = data.validOrigCount > 0 ? QString::number(data.totalOrigScr / data.validOrigCount, 'f', 4) : "--";
@@ -491,8 +503,9 @@ void EvaluationSCRNode::onEvaluationFinished()
     triggerVisualUpdate();
 
     updateWidgetSize();
-
-    Q_EMIT dataUpdated(0);
+    if (!hasValidResults) {
+        Q_EMIT dataUpdated(0);
+    }
 }
 
 void EvaluationSCRNode::updateWidgetSize()
@@ -576,7 +589,7 @@ void EvaluationSCRNode::load(QJsonObject const &json)
             m_resultsTable->insertRow(row);
             
             QString col0Text = rowObj["col0"].toString();
-            if (col0Text == QStringLiteral("平均值")) {
+            if (col0Text == QStringLiteral("骞冲潎鍊?")) {
                 auto* avgItem = new QTableWidgetItem(col0Text);
                 avgItem->setFont(QFont("", -1, QFont::Bold));
                 m_resultsTable->setItem(row, 0, avgItem);
@@ -589,7 +602,7 @@ void EvaluationSCRNode::load(QJsonObject const &json)
         }
         
         int totalCount = resultsArray.size();
-        if (totalCount > 0 && resultsArray.last().toObject()["col0"].toString() == QStringLiteral("平均值")) {
+        if (totalCount > 0 && resultsArray.last().toObject()["col0"].toString() == QStringLiteral("骞冲潎鍊?")) {
             totalCount--;
         }
         
@@ -675,3 +688,5 @@ void EvaluationSCRNode::clearClutterRoiSelection()
 }
 
 } // namespace QtNodes
+
+

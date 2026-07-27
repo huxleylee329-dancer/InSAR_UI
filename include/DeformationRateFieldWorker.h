@@ -27,10 +27,10 @@ public slots:
         bool     showContour,
         int      contourInterval,
         bool     showArrow,
-        int      arrowSpacing,
-        QStandardItemModel* model = nullptr
+        int      arrowSpacing
     );
 
 signals:
     void cancelled();
+    void outputsGenerated(const QString& dstNode, const QString& outputH5Path);
 };

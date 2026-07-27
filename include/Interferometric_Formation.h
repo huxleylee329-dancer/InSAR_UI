@@ -20,7 +20,7 @@ public slots:
     void StopThread();
     void TransitModel(QStandardItemModel*);
 signals:
-    void operate(bool isdeflat, bool istopo_removal, bool iscoherence, int master_index, int win_r, int win_c, int multilook_rg, int multilook_az, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model, QString dem_path);
+    void operate(bool isdeflat, bool istopo_removal, bool iscoherence, int master_index, int win_r, int win_c, int multilook_rg, int multilook_az, QString save_path, QString file_name, QStringList input_paths, QString dem_path);
     void sendCopy(QStandardItemModel*);
 
 private:

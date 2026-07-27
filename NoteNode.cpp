@@ -91,3 +91,4 @@ void NoteNode::onTextChanged()
         Q_EMIT bscene->modified(bscene);
     }
 }
+

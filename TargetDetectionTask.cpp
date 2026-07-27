@@ -25,6 +25,48 @@ TargetDetectionTask::TargetDetectionTask(QStringList imagePaths, QString modelPa
 void TargetDetectionTask::stop()
 {
     m_stopFlag.store(true, std::memory_order_relaxed);
+    QMutexLocker locker(&m_decisionMutex);
+    m_decisionReady.wakeAll();
+}
+
+void TargetDetectionTask::resolveErrorDecision(quint64 requestId, bool skip)
+{
+    QMutexLocker locker(&m_decisionMutex);
+    if (requestId != m_pendingRequestId || m_hasDecision) {
+        return;
+    }
+    m_skipCurrentFile = skip;
+    m_hasDecision = true;
+    m_decisionReady.wakeAll();
+}
+
+bool TargetDetectionTask::waitForErrorDecision(const QString& errorMessage, bool& skip)
+{
+    quint64 requestId = 0;
+    {
+        QMutexLocker locker(&m_decisionMutex);
+        if (m_stopFlag.load(std::memory_order_relaxed)) {
+            return false;
+        }
+        requestId = ++m_nextRequestId;
+        m_pendingRequestId = requestId;
+        m_hasDecision = false;
+        m_skipCurrentFile = false;
+    }
+
+    emit askUserError(requestId, errorMessage);
+
+    QMutexLocker locker(&m_decisionMutex);
+    while (!m_hasDecision && !m_stopFlag.load(std::memory_order_relaxed)) {
+        m_decisionReady.wait(&m_decisionMutex);
+    }
+    if (m_stopFlag.load(std::memory_order_relaxed)) {
+        m_pendingRequestId = 0;
+        return false;
+    }
+    skip = m_skipCurrentFile;
+    m_pendingRequestId = 0;
+    return true;
 }
 
 void TargetDetectionTask::run()
@@ -63,11 +105,12 @@ void TargetDetectionTask::run()
 
         if (ret != 0) {
             QString errorMsg = QString::fromLocal8Bit(resultBuf);
-            bool skip = false;
             QString errMsg = QStringLiteral("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(m_imagePaths[i]).fileName(), errorMsg);
-            
-            // Blocking signal emit expects user interaction
-            emit askUserError(errMsg, &skip);
+            bool skip = false;
+            if (!waitForErrorDecision(errMsg, skip)) {
+                emit cancelled();
+                return;
+            }
             
             if (!skip) {
                 InSARLogManager::LogError("MyThread", QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_imagePaths[i]).fileName()));

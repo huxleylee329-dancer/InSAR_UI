@@ -28,7 +28,7 @@ private:
     double spatial_thresh;
     
 signals:
-    void operate(double, double, double, int, int, int, double, double, double, double, double, QString, QString, QString, QString, QStringList, QStandardItemModel*);
+    void operate(double, double, double, int, int, int, double, double, double, double, double, QString, QString, QString, QString, QStringList);
     void sendCopy(QStandardItemModel*);
     void sendBaseline(QList<double> temporal_baseline, QList<double> spatial_baseline, int index, double temporal_thresh, double spatial_thresh);
 

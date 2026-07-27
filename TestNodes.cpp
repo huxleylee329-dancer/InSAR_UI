@@ -526,3 +526,4 @@ void CardSimpleDisplayNode::setExecutionMode(ExecutionMode mode)
 }
 
 } // namespace QtNodes
+

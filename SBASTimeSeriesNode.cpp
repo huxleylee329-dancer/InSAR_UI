@@ -5,6 +5,8 @@
 #include "MainWindow.h"
 #include "WorkspaceUI.h"
 #include "InSARLogManager.h"
+#include "icon_source.h"
+#include "Utils.h"
 #include <QTimer>
 #include <QJsonDocument>
 #include <QMessageBox>
@@ -49,6 +51,7 @@ SBASTimeSeriesNode::SBASTimeSeriesNode()
     , m_worker(nullptr)
     , m_thread(nullptr)
 {
+    qRegisterMetaType<SBASTimeSeriesResult>("SBASTimeSeriesResult");
     setExecutionMode(ExecutionMode::Automatic);
 }
 
@@ -217,7 +220,7 @@ void SBASTimeSeriesNode::createWidget()
     addParamRow(QStringLiteral("精炼形变阈值:"), m_refinementDefThreshEdit);
 
     m_outputNodeNameEdit = new QLineEdit(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入")); // SOP: standard placeholder
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")); // SOP: standard placeholder
     addParamRow(QStringLiteral("目标节点名:"), m_outputNodeNameEdit);
 
     // Row: Result Display
@@ -349,6 +352,7 @@ void SBASTimeSeriesNode::executeProcessing()
 {
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing started.");
     stopExecution();
+    m_xmlDirty = false;
 
     m_thread = new QThread(this);
     m_worker = new SBASTimeSeriesWorker();
@@ -376,11 +380,11 @@ void SBASTimeSeriesNode::executeProcessing()
             projName,
             m_outputNodeName,
             csvPath,
-            filePaths,
-            nullptr // null model in Workflow Mode
+            filePaths
         );
     });
 
+    connect(m_worker, &SBASTimeSeriesWorker::sbasGenerated, this, &SBASTimeSeriesNode::onSbasGenerated);
     connect(m_worker, &SBASTimeSeriesWorker::updateProcess, this, &SBASTimeSeriesNode::onProgressUpdate);
     connect(m_worker, &SBASTimeSeriesWorker::endProcess, this, &SBASTimeSeriesNode::onProcessingFinished);
     connect(m_worker, &SBASTimeSeriesWorker::endProcess, m_thread, &QThread::quit);
@@ -456,7 +460,7 @@ void SBASTimeSeriesNode::onCancelled()
     m_previewData.reset();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
-    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("宸插彇娑?"));
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -470,9 +474,21 @@ void SBASTimeSeriesNode::onProcessingFinished()
         return;
     }
 
+    if (m_xmlDirty) {
+        IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+        const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
+        XMLFile* xml = iface ? iface->projectXml() : nullptr;
+        if (!xml || xmlPath.isEmpty() || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
+            onError(QStringLiteral("Failed to save project XML after SBAS analysis."));
+            return;
+        }
+        m_xmlDirty = false;
+    }
+
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing completed.");
     QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+    setOutputData(0, m_outputData);
 
     // Refresh project tree (SOP Rule 14 helper)
     IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
@@ -489,8 +505,53 @@ void SBASTimeSeriesNode::onProcessingFinished()
     }
 
     updateLabels();
+}
 
-    Q_EMIT dataUpdated(0);
+void SBASTimeSeriesNode::onSbasGenerated(const SBASTimeSeriesResult& result)
+{
+    QStandardItemModel* model = nullptr;
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    if (iface) {
+        model = iface->projectModel();
+    }
+    if (!model) return;
+
+    QList<QStandardItem*> foundProjects = model->findItems(projectName());
+    if (foundProjects.isEmpty()) return;
+    QStandardItem* project = foundProjects[0];
+
+    QStandardItem* sbasNode = NodeUtils::findOrCreateProjectNode(project, result.dstNode, "SBAS-1.0");
+    if (sbasNode) {
+        sbasNode->setToolTip(projectName());
+        QStandardItem* itemImg = nullptr;
+        for (int j = 0; j < sbasNode->rowCount(); j++) {
+            if (sbasNode->child(j, 0)->text() == "SBAS_time_series") {
+                itemImg = sbasNode->child(j, 0);
+                break;
+            }
+        }
+        if (!itemImg) {
+            QStandardItem* sbasNameItem = new QStandardItem("SBAS_time_series");
+            sbasNameItem->setToolTip("SBAS");
+            QStandardItem* sbasPathItem = new QStandardItem(result.timesSeriesH5Path);
+            sbasNameItem->setIcon(QIcon(IMAGEDATA_ICON));
+            sbasNode->appendRow(sbasNameItem);
+            sbasNode->setChild(sbasNode->rowCount() - 1, 1, sbasPathItem);
+        } else {
+            sbasNode->setChild(itemImg->row(), 1, new QStandardItem(result.timesSeriesH5Path));
+        }
+    }
+
+    XMLFile* xml = iface ? iface->projectXml() : nullptr;
+    if (!xml) {
+        onError(QStringLiteral("Project XML is unavailable while publishing SBAS output."));
+        return;
+    }
+    xml->XMLFile_add_SBAS(
+        result.dstNode.toStdString().c_str(),
+        "SBAS_time_series",
+        result.relativePath.toStdString().c_str());
+    m_xmlDirty = true;
 }
 
 bool SBASTimeSeriesNode::validateAndRestoreOutput()
@@ -498,6 +559,7 @@ bool SBASTimeSeriesNode::validateAndRestoreOutput()
     QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
     if (QFileInfo::exists(h5Path)) {
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+        setOutputData(0, m_outputData);
         
         // Asynchronously restore/generate JPG preview if missing (SOP rule 7)
         generateStaticPreviewJpg();
@@ -529,7 +591,13 @@ bool SBASTimeSeriesNode::generateStaticPreviewJpg(bool completeExecution)
 
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
-            Q_EMIT dataUpdated(1);
+            setOutputData(1, m_previewData);
+            if (!completeExecution) {
+                Q_EMIT dataUpdated(1);
+            }
+        } else if (completeExecution) {
+            m_previewData.reset();
+            setOutputData(1, nullptr);
         }
         watcher->deleteLater();
         if (completeExecution) {
@@ -658,3 +726,4 @@ QString SBASTimeSeriesNode::projectName() const
 }
 
 } // namespace QtNodes
+

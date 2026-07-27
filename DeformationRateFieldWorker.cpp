@@ -3,15 +3,12 @@
 #include "NodeUtils.h"
 #include "FormatConversion.h"
 #include "InSARLogManager.h"
-#include "icon_source.h"
-#include "Utils.h"
 #include <QThread>
 #include <QFileInfo>
 #include <QDir>
 #include <QDateTime>
 #include <QTextStream>
 #include <QFile>
-#include <QCoreApplication>
 #include <opencv2/opencv.hpp>
 #include <cmath>
 #include <vector>
@@ -116,9 +113,9 @@ void DeformationRateFieldWorker::analyze_rate_field(
     bool     showContour,
     int      contourInterval,
     bool     showArrow,
-    int      arrowSpacing,
-    QStandardItemModel* model
+    int      arrowSpacing
 ) {
+    Q_UNUSED(projectName);
     if (filePaths.isEmpty()) {
         emit errorProcess(QStringLiteral("无输入 SBAS H5 文件！"));
         return;
@@ -476,77 +473,7 @@ void DeformationRateFieldWorker::analyze_rate_field(
         return;
     }
 
-    // Update Project Model (Workspace UI integration)
-    if (model) {
-        QMetaObject::invokeMethod(qApp, [=]() {
-            QStandardItem* project = model->item(0, 0);
-            if (!project) return;
-            
-            QStandardItem* SBAS_series = nullptr;
-            for (int i = 0; i < project->rowCount(); i++) {
-                if (project->child(i, 0)->text() == dstNode) {
-                    SBAS_series = project->child(i, 0);
-                    break;
-                }
-            }
-
-            if (!SBAS_series) {
-                SBAS_series = new QStandardItem(dstNode);
-                SBAS_series->setToolTip(projectName);
-                int insert = 0;
-                for (; insert < project->rowCount(); insert++) {
-                    if (project->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                        project->child(insert, 1)->text().compare("complex-1.0") == 0 ||
-                        project->child(insert, 1)->text().compare("complex-2.0") == 0 ||
-                        project->child(insert, 1)->text().compare("complex-3.0") == 0 ||
-                        project->child(insert, 1)->text().compare("phase-1.0") == 0 ||
-                        project->child(insert, 1)->text().compare("phase-2.0") == 0 ||
-                        project->child(insert, 1)->text().compare("phase-3.0") == 0 ||
-                        project->child(insert, 1)->text().compare("dem-1.0") == 0 ||
-                        project->child(insert, 1)->text().compare("SBAS-1.0") == 0) {
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-                SBAS_series->setIcon(QIcon(FOLDER_ICON));
-                project->insertRow(insert, SBAS_series);
-                QStandardItem* SBAS_series_Rank = new QStandardItem("SBAS-1.0");
-                project->setChild(insert, 1, SBAS_series_Rank);
-            }
-
-            QString times_series_h5_forward = outH5;
-            times_series_h5_forward.replace("\\", "/");
-
-            QStandardItem* item_img = nullptr;
-            for (int j = 0; j < SBAS_series->rowCount(); j++) {
-                if (SBAS_series->child(j, 0)->text() == "DeformationRateField") {
-                    item_img = SBAS_series->child(j, 0);
-                    break;
-                }
-            }
-
-            if (!item_img) {
-                QStandardItem* rate_field_name = new QStandardItem(QString("DeformationRateField"));
-                rate_field_name->setToolTip("SBAS");
-                QStandardItem* rate_field_path = new QStandardItem(times_series_h5_forward);
-                rate_field_name->setIcon(QIcon(IMAGEDATA_ICON));
-                SBAS_series->appendRow(rate_field_name);
-                SBAS_series->setChild(SBAS_series->rowCount() - 1, 1, rate_field_path);
-
-                // Write to project XML
-                XMLFile xmlfile;
-                xmlfile.XMLFile_load((projectPath + "/" + projectName).toStdString().c_str());
-                QString relativePath = QString("/%1/DeformationRateField.h5").arg(dstNode);
-                xmlfile.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "DeformationRateField", relativePath.toStdString().c_str());
-                xmlfile.XMLFile_save((projectPath + "/" + projectName).toStdString().c_str());
-            } else {
-                SBAS_series->setChild(item_img->row(), 1, new QStandardItem(times_series_h5_forward));
-            }
-        }, Qt::BlockingQueuedConnection);
-        emit sendModel(model);
-    }
-
     InSARLogManager::LogInfo("DeformationRateFieldWorker", "Deformation Rate Field Analysis completed successfully.");
+    emit outputsGenerated(dstNode, outH5);
     emit endProcess();
 }

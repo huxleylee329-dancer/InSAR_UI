@@ -11,6 +11,8 @@
 #include<QLineEdit>
 #include<QPushButton>
 #include "NodeUtils.h"
+#include "tinyxml.h"
+#include "FormatConversion.h"
 Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::InterferometricFormation),
@@ -429,6 +431,45 @@ void Interferometric_Formation::on_buttonBox_accepted()
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("请注意文件夹名称应当为数字、字母及下划线的组合！"));
         return;
     }
+
+    if (!copy) {
+        QMessageBox::warning(this, "Warning!", "Project data is unavailable.");
+        return;
+    }
+    const QList<QStandardItem*> foundProjects = copy->findItems(ui->comboBox->currentText());
+    if (foundProjects.isEmpty()) {
+        QMessageBox::warning(this, "Warning!", "Current project was not found.");
+        return;
+    }
+    QStandardItem* sourceNode = nullptr;
+    QStandardItem* project = foundProjects.first();
+    for (int i = 0; i < project->rowCount(); ++i) {
+        QStandardItem* node = project->child(i, 0);
+        if (node && node->text() == ui->comboBox_2->currentText()) {
+            sourceNode = node;
+            break;
+        }
+    }
+    if (!sourceNode) {
+        QMessageBox::warning(this, "Warning!", "Input node was not found.");
+        return;
+    }
+    QStringList inputPaths;
+    for (int i = 0; i < sourceNode->rowCount(); ++i) {
+        QStandardItem* pathItem = sourceNode->child(i, 1);
+        if (!pathItem)
+            continue;
+        QString inputPath = pathItem->text();
+        if (QDir::isRelativePath(inputPath)) {
+            inputPath = QDir(save_path).absoluteFilePath(inputPath);
+        }
+        inputPaths.append(QDir::cleanPath(inputPath));
+    }
+    if (inputPaths.isEmpty() || ui->comboBox_3->currentIndex() >= inputPaths.size()) {
+        QMessageBox::warning(this, "Warning!", "Input image paths are invalid.");
+        return;
+    }
+
     Interferometric_Formation_thread = new QThread(this);
     Interferometric_Formation_worker = new InterferometricFormationWorker();
     Interferometric_Formation_worker->moveToThread(Interferometric_Formation_thread);
@@ -437,11 +478,95 @@ void Interferometric_Formation::on_buttonBox_accepted()
     ui->progressBar->show();
 
     connect(this, &Interferometric_Formation::operate, Interferometric_Formation_worker, &InterferometricFormationWorker::InterferometricWithDem);
+    connect(Interferometric_Formation_worker, &InterferometricFormationWorker::interferogramGenerated, this, [this](const InterferogramFileResult& res) {
+        if (!copy) return;
+        QList<QStandardItem*> foundProjects = copy->findItems(ui->comboBox->currentText());
+        if (foundProjects.isEmpty()) return;
+        QStandardItem* project = foundProjects.first();
+        QStandardItem* interfNode = NodeUtils::findOrCreateProjectNode(project, ui->file_name->text(), "phase-1.0");
+        if (interfNode) {
+            interfNode->setToolTip(ui->comboBox->currentText());
+        } else {
+            return;
+        }
+
+        if (res.isDeflat) {
+            QStandardItem* itemImg = nullptr;
+            for (int j = 0; j < interfNode->rowCount(); j++) {
+                if (interfNode->child(j, 0)->text() == res.phaseName) {
+                    itemImg = interfNode->child(j, 0);
+                    break;
+                }
+            }
+            if (!itemImg) {
+                QStandardItem* phaseItemName = new QStandardItem(res.phaseName);
+                phaseItemName->setToolTip("phase");
+                QStandardItem* phaseItemPath = new QStandardItem(res.h5Path);
+                phaseItemPath->setToolTip(QFileInfo(res.h5Path).fileName());
+                phaseItemName->setIcon(QIcon(IMAGEDATA_ICON));
+                interfNode->appendRow(phaseItemName);
+                interfNode->setChild(interfNode->rowCount() - 1, 1, phaseItemPath);
+            } else {
+                interfNode->setChild(itemImg->row(), 1, new QStandardItem(res.h5Path));
+            }
+        }
+
+        if (res.isCoherence) {
+            QStandardItem* itemCoh = nullptr;
+            for (int j = 0; j < interfNode->rowCount(); j++) {
+                if (interfNode->child(j, 0)->text() == res.cohName) {
+                    itemCoh = interfNode->child(j, 0);
+                    break;
+                }
+            }
+            if (!itemCoh) {
+                QStandardItem* cohItemName = new QStandardItem(res.cohName);
+                cohItemName->setToolTip("coherence");
+                QStandardItem* cohItemPath = new QStandardItem(res.h5Path);
+                cohItemPath->setToolTip(QFileInfo(res.h5Path).fileName());
+                cohItemName->setIcon(QIcon(IMAGEDATA_ICON));
+                interfNode->appendRow(cohItemName);
+                interfNode->setChild(interfNode->rowCount() - 1, 1, cohItemPath);
+            } else {
+                interfNode->setChild(itemCoh->row(), 1, new QStandardItem(res.h5Path));
+            }
+        }
+
+        QString xmlPath = QDir(save_path).absoluteFilePath(ui->comboBox->currentText());
+        if (!xmlPath.endsWith(".Insar", Qt::CaseInsensitive)) {
+            xmlPath += ".Insar";
+        }
+        XMLFile xml;
+        if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+            QMessageBox::warning(this, "Warning!", "Unable to load the project XML for output persistence.");
+            return;
+        }
+        xml.XMLFile_add_interferometric_phase(
+            ui->file_name->text().toStdString().c_str(),
+            res.phaseName.toStdString().c_str(),
+            res.relativePath.toStdString().c_str(),
+            res.masterName.toStdString().c_str(),
+            "phase-1.0", res.offsetRow, res.offsetCol, res.isDeflat,
+            res.isTopoRemoval, res.isCoherence, res.winWidth, res.winHeight,
+            res.multilookRg, res.multilookAz);
+        if (res.isCoherence) {
+            xml.XMLFile_add_interferometric_phase(
+                ui->file_name->text().toStdString().c_str(),
+                res.cohName.toStdString().c_str(),
+                res.relativePath.toStdString().c_str(),
+                res.masterName.toStdString().c_str(),
+                "coherence-1.0", res.offsetRow, res.offsetCol, res.isDeflat,
+                res.isTopoRemoval, res.isCoherence, res.winWidth, res.winHeight,
+                res.multilookRg, res.multilookAz);
+        }
+        if (xml.XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
+            QMessageBox::warning(this, "Warning!", "Unable to save interferometric output to the project XML.");
+        }
+    });
     connect(Interferometric_Formation_worker, &InterferometricFormationWorker::updateProcess, this, &Interferometric_Formation::updateProcess);
     connect(Interferometric_Formation_worker, &InterferometricFormationWorker::endProcess, this, &Interferometric_Formation::endProcess);
     connect(this, &QWidget::destroyed, this, &Interferometric_Formation::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Interferometric_Formation::StopThread);
-    connect(Interferometric_Formation_worker, &InterferometricFormationWorker::sendModel, this, &Interferometric_Formation::TransitModel);
     
     connect(Interferometric_Formation_thread, &QThread::finished, Interferometric_Formation_worker, &QObject::deleteLater);
     connect(Interferometric_Formation_thread, &QThread::finished, Interferometric_Formation_thread, &QObject::deleteLater);
@@ -451,8 +576,8 @@ void Interferometric_Formation::on_buttonBox_accepted()
     
     emit operate(ui->Isdeflat->isChecked(), ui->Istopo_removal->isChecked(), ui->iscoherence->isChecked(),
         ui->comboBox_3->currentIndex(), win_width, win_height, ui->multilook_rg->text().toInt(),
-        ui->multilook_az->text().toInt(), this->save_path, ui->comboBox->currentText(), ui->comboBox_2->currentText(),
-        ui->file_name->text(), this->copy, m_demPathEdit->text().trimmed());
+        ui->multilook_az->text().toInt(), this->save_path, ui->file_name->text(), inputPaths,
+        m_demPathEdit->text().trimmed());
 }
 
 void Interferometric_Formation::on_buttonBox_rejected()

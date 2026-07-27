@@ -88,6 +88,12 @@ enum class OverwriteResult {
 OverwriteResult checkAndPromptOverwrite(IApplicationInterface* iface, const QString& nodeName, const QStringList& filePaths, QWidget* parent = nullptr);
 
 /**
+ * @brief 物理删除指定路径列表中的文件（若是 .h5 则一并删除同名 .jpg 预览图）
+ * @return 若存在的文件无法删除则返回 false
+ */
+bool removeOutputFiles(const QStringList& filePaths);
+
+/**
  * @brief 从 H5 科学数据文件中提取幅值并生成 JPG 预览图（自动进行超大图降采样）
  * @param h5Path H5文件路径
  * @param jpgPath 输出JPG路径

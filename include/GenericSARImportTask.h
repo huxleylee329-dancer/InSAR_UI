@@ -5,9 +5,7 @@
 #include <QRunnable>
 #include <QString>
 #include <QStringList>
-#include <QStandardItemModel>
 #include <vector>
-#include "FormatConversion.h"
 
 // Task for Single Import
 class GenericSARImportTask : public QObject, public QRunnable
@@ -18,10 +16,7 @@ public:
         QString xml_filename,
         QString project_path,
         QString folder,
-        QString filename,
-        QString project_name,
-        QStandardItemModel* model,
-        void* contextPtr = nullptr
+        QString filename
     );
     ~GenericSARImportTask() override;
 
@@ -32,18 +27,18 @@ signals:
     void updateProcess(int progress, QString message);
     void endProcess();
     void errorProcess(QString error);
-    void sendModel(QStandardItemModel* model);
+    void outputsGenerated(const QString& dstNode,
+                          const QStringList& outputNames,
+                          const QStringList& outputPaths,
+                          const QString& dataType,
+                          const QString& satelliteFormat);
 
 private:
     QString m_xmlFilename;
     QString m_projectPath;
     QString m_folder;
     QString m_filename;
-    QString m_projectName;
-    QStandardItemModel* m_model;
-    
     bool m_stopFlag = false;
-    void* m_contextPtr;
 };
 
 // Task for Batch Import
@@ -55,10 +50,7 @@ public:
         QString savepath,
         std::vector<QString> original_file_list,
         std::vector<QString> import_namelist,
-        QString dst_node,
-        QString dst_project,
-        QStandardItemModel* model,
-        void* contextPtr = nullptr
+        QString dst_node
     );
     ~GenericSARBatchImportTask() override;
 
@@ -69,18 +61,18 @@ signals:
     void updateProcess(int progress, QString message);
     void endProcess();
     void errorProcess(QString error);
-    void sendModel(QStandardItemModel* model);
+    void outputsGenerated(const QString& dstNode,
+                          const QStringList& outputNames,
+                          const QStringList& outputPaths,
+                          const QString& dataType,
+                          const QString& satelliteFormat);
 
 private:
     QString m_savepath;
     std::vector<QString> m_originalFileList;
     std::vector<QString> m_importNamelist;
     QString m_dstNode;
-    QString m_dstProject;
-    QStandardItemModel* m_model;
-    
     bool m_stopFlag = false;
-    void* m_contextPtr;
 };
 
 #endif // GENERICSARIMPORTTASK_H

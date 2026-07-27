@@ -8,8 +8,7 @@
 #include <qmessagebox.h>
 
 #include "InSARLogManager.h"
-#include "NodeUtils.h"
-#include "IApplicationInterface.h"
+#include "ImportOutputPersistence.h"
 Import_GenericSAR::Import_GenericSAR(QWidget* parent) :
     QWidget(parent),
     ui(new Ui::ImportGenericSAR),
@@ -147,14 +146,13 @@ void Import_GenericSAR::on_buttonBox_accepted()
         import_GenericSAR_thread->stop();
     }
 
+    const QString destinationProject = ui->comboBox_dst_project->currentText();
+    const QString destinationPath = this->save_path;
     import_GenericSAR_thread = new GenericSARImportTask(
         ui->LineEdit_xml->text(),
-        this->save_path,
+        destinationPath,
         ui->lineEdit_dst_node->text(),
-        ui->LineEdit_dst_filename->text(),
-        ui->comboBox_dst_project->currentText(),
-        this->copy,
-        NodeUtils::getProjectContext(this)
+        ui->LineEdit_dst_filename->text()
     );
     import_GenericSAR_thread->setAutoDelete(true);
 
@@ -164,7 +162,15 @@ void Import_GenericSAR::on_buttonBox_accepted()
     connect(import_GenericSAR_thread, &GenericSARImportTask::endProcess, this, &Import_GenericSAR::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);
-    connect(import_GenericSAR_thread, &GenericSARImportTask::sendModel, this, &Import_GenericSAR::TransitModel);
+    connect(import_GenericSAR_thread, &GenericSARImportTask::outputsGenerated, this,
+        [this, destinationProject, destinationPath](const QString& dstNode,
+                                                     const QStringList& outputNames,
+                                                     const QStringList& outputPaths,
+                                                     const QString& dataType,
+                                                     const QString& satelliteFormat) {
+            persistOutputs(destinationProject, destinationPath, dstNode, outputNames, outputPaths,
+                           dataType, satelliteFormat);
+        }, Qt::QueuedConnection);
     
     QThreadPool::globalInstance()->start(import_GenericSAR_thread);
     ChangeVision(false);
@@ -208,9 +214,22 @@ void Import_GenericSAR::StopThread()
     }
 }
 
-void Import_GenericSAR::TransitModel(QStandardItemModel* model)
+void Import_GenericSAR::persistOutputs(const QString& projectName,
+                                       const QString& savePath,
+                                       const QString& dstNode,
+                                       const QStringList& outputNames,
+                                       const QStringList& outputPaths,
+                                       const QString& dataType,
+                                       const QString& satelliteFormat)
 {
-    emit sendCopy(model);
+    if (!ImportOutputPersistence::persist(copy, projectName, savePath, dstNode,
+            outputNames, outputPaths, dataType, satelliteFormat)) {
+        InSARLogManager::LogError("Import_GenericSAR", "Unable to save imported outputs to the project.");
+        QMessageBox::warning(this, "Warning!", "Unable to save imported outputs to the project.");
+        return;
+    }
+
+    emit sendCopy(copy);
 }
 
 void Import_GenericSAR::ChangeVision(bool Editable)
@@ -296,14 +315,13 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
         import_GenericSAR_thread2->stop();
     }
 
+    const QString destinationProject = ui->comboBox_dst_project_2->currentText();
+    const QString destinationPath = this->save_path;
     import_GenericSAR_thread2 = new GenericSARBatchImportTask(
-        this->save_path, //保存路径
-        original_namelist,//原始文件名
-        import_namelist, //导入文件名b    
-        ui->lineEdit_dst_node_2->text(), //导入节点名
-        ui->comboBox_dst_project_2->currentText(), //导入工程名
-        this->copy,
-        NodeUtils::getProjectContext(this)
+        destinationPath,
+        original_namelist,
+        import_namelist,
+        ui->lineEdit_dst_node_2->text()
     );
     import_GenericSAR_thread2->setAutoDelete(true);
 
@@ -314,7 +332,15 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
     connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::endProcess, this, &Import_GenericSAR::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);
-    connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::sendModel, this, &Import_GenericSAR::TransitModel);
+    connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::outputsGenerated, this,
+        [this, destinationProject, destinationPath](const QString& dstNode,
+                                                     const QStringList& outputNames,
+                                                     const QStringList& outputPaths,
+                                                     const QString& dataType,
+                                                     const QString& satelliteFormat) {
+            persistOutputs(destinationProject, destinationPath, dstNode, outputNames, outputPaths,
+                           dataType, satelliteFormat);
+        }, Qt::QueuedConnection);
     
     QThreadPool::globalInstance()->start(import_GenericSAR_thread2);
     ChangeVision(false);

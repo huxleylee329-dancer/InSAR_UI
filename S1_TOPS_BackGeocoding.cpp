@@ -329,6 +329,31 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
     }
 
 
+    QStringList inputPaths;
+    if (copy) {
+        const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
+        if (!projects.isEmpty()) {
+            QStandardItem* project = projects.first();
+            for (int i = 0; i < project->rowCount(); ++i) {
+                QStandardItem* node = project->child(i, 0);
+                if (!node || node->text() != ui->comboBox_2->currentText()) {
+                    continue;
+                }
+                for (int j = 0; j < node->rowCount(); ++j) {
+                    QStandardItem* pathItem = node->child(j, 1);
+                    if (pathItem && !pathItem->text().isEmpty()) {
+                        inputPaths.append(pathItem->text());
+                    }
+                }
+                break;
+            }
+        }
+    }
+    if (inputPaths.size() != image_number) {
+        QMessageBox::warning(NULL, "Warning!", QStringLiteral("Unable to snapshot all input image paths."));
+        return;
+    }
+
     S1_TOPS_BackGeocoding_thread = new S1TopsBackGeocodingWorker;
     S1_TOPS_BackGeocoding_thread->moveToThread(new QThread(this));
     ui->progressBar->setValue(0);
@@ -337,18 +362,19 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
     connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1_TOPS_BackGeocoding::updateProcess);
     connect(S1_TOPS_BackGeocoding_thread->thread(), &QThread::finished, S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::deleteLater);
     connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::endProcess, this, &S1_TOPS_BackGeocoding::endProcess);
-    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::registrationFinished, this, &S1_TOPS_BackGeocoding::onRegistrationFinished);
+    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::registrationFinished, this,
+        [this](const QStringList& paths, const QString& dstNode, const QString& dstProject,
+               const QString& savePath, int masterIndex, bool, const QStringList&) {
+            onRegistrationFinished(paths, dstNode, dstProject, savePath, masterIndex);
+        });
     connect(this, &QWidget::destroyed, this, &S1_TOPS_BackGeocoding::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_TOPS_BackGeocoding::StopThread);// , Qt::QueuedConnection);
-    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::sendModel, this, &S1_TOPS_BackGeocoding::TransitModel);
     S1_TOPS_BackGeocoding_thread->thread()->start();
     ChangeVision(false);
-    emit operate(this->image_number, 
-        index, this->save_path, 
+    emit operate(index, this->save_path,
         ui->comboBox->currentText(), 
-        ui->comboBox_2->currentText(),
-        ui->fileedit->text(), 
-        this->copy,
+        ui->fileedit->text(),
+        inputPaths,
         ui->checkBox->isChecked()
     );
 }

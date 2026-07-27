@@ -832,3 +832,4 @@ void ExecutableNodeDelegateModel::inputConnectionDeleted(ConnectionId const &con
 }
 
 } // namespace QtNodes
+

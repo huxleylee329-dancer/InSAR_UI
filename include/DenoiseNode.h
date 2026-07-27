@@ -102,12 +102,16 @@ private:
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
+    void onDenoiseGenerated(const DenoiseFileResult& result);
     bool validateInputs() const;
     void updateWidgetSize();
     void onMethodChanged(int index);
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void cleanUpThreadAndWorker();
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& types, const QStringList& resultJpgPaths,
+                                bool completeExecution);
 
     // Context helpers
     QStandardItemModel* projectModel() const;
@@ -130,7 +134,8 @@ private:
     double m_preparedAlpha = 0.0;
 
 signals:
-    void startDenoise(QList<int> para, double alpha, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
+    void startDenoise(QList<int> para, double alpha, QString savePath, QString outputNode,
+                      QStringList phaseNames, QStringList phasePaths);
 };
 
 } // namespace QtNodes

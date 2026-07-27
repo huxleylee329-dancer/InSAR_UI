@@ -247,8 +247,6 @@ void GeneralSARLoadingNode::executeImport()
     m_imageInfo = std::make_shared<ImageInfoData>(validPaths);
     setOutputData(0, m_imageInfo);
     setOutputData(1, m_imageInfo);
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
 
     finishExecution();
 }
@@ -330,3 +328,4 @@ bool GeneralSARLoadingNode::validateAndRestoreOutput()
 }
 
 } // namespace QtNodes
+

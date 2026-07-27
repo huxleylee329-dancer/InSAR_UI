@@ -1,6 +1,7 @@
 #include"MainWindow.h"
 #include"Import_TSX.h"
 #include"ImportTask.h"
+#include "ImportOutputPersistence.h"
 #include"icon_source.h"
 #include"qfiledialog.h"
 #include "NodeUtils.h"
@@ -335,7 +336,10 @@ void Import_TSX::on_buttonBox_accepted()
     connect(import_TSX_thread, &TSXImportWorker::endProcess, this, &Import_TSX::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_TSX::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
-    connect(import_TSX_thread, &TSXImportWorker::sendModel, this, &Import_TSX::TransitModel);
+    connect(import_TSX_thread, &TSXImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
     thread->start();
 
     // 构造 ImportTask
@@ -348,9 +352,7 @@ void Import_TSX::on_buttonBox_accepted()
     QMetaObject::invokeMethod(import_TSX_thread, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node->text()),
-        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node->text()));
     ChangeVision(false);
 
 }
@@ -417,7 +419,10 @@ void Import_TSX::on_buttonBox_2_accepted()
     connect(import_TSX_thread2, &TSXImportWorker::endProcess, this, &Import_TSX::endProcess);
     connect(this, &QWidget::destroyed, this, &Import_TSX::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_TSX::StopThread);// , Qt::QueuedConnection);
-    connect(import_TSX_thread2, &TSXImportWorker::sendModel, this, &Import_TSX::TransitModel);
+    connect(import_TSX_thread2, &TSXImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project_2->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
     thread2->start();
 
     // 构造 ImportTask 列表
@@ -433,9 +438,7 @@ void Import_TSX::on_buttonBox_2_accepted()
     QMetaObject::invokeMethod(import_TSX_thread2, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node_2->text()),
-        Q_ARG(QString, ui->comboBox_dst_project_2->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node_2->text()));
     ChangeVision(false);
 }
 

@@ -85,17 +85,30 @@ private:
     int m_preparedPolyOrder = 1;
     int m_preparedWindowSize = 0;
     double m_preparedCoherenceThresh = 0.3;
+    QStringList m_preparedPhaseNames;
+    QStringList m_preparedPhasePaths;
+    QStringList m_generatedOutputNames;
+    QStringList m_generatedOutputPaths;
+    QList<int> m_generatedOffsetRows;
+    QList<int> m_generatedOffsetCols;
 
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void persistOutputToProject(const QString& outputNodeName, const QStringList& h5Paths,
+                                const QStringList& outputNames, const QList<int>& offsetRows,
+                                const QList<int>& offsetCols);
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& types, const QStringList& resultJpgPaths,
+                                bool completeExecution);
+    void cleanUpThreadAndWorker();
+    void releaseFinishedThreadAndWorker();
 
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
@@ -111,7 +124,7 @@ signals:
     void startRegression(int polyOrder, int windowSize, double coherenceThresh,
                          QString save_path, QString project_name,
                          QString node_name, QString file_name,
-                         QStandardItemModel* model);
+                         QStringList phaseNames, QStringList phasePaths);
 };
 
 } // namespace QtNodes

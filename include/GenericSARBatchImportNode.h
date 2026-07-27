@@ -51,7 +51,11 @@ private slots:
     void onImportProgress(int progress, const QString& message);
     void onImportFinished();
     void onThreadError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
+    void onOutputsGenerated(const QString& dstNode,
+                            const QStringList& outputNames,
+                            const QStringList& outputPaths,
+                            const QString& dataType,
+                            const QString& satelliteFormat);
 
 private:
     QString generateImportName(const QString& imagePath) const;

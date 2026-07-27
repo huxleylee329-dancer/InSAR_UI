@@ -13,8 +13,8 @@
 #include <QDoubleSpinBox>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QStandardItemModel>
 
-class QStandardItemModel;
 class XMLFile;
 
 namespace QtNodes {
@@ -151,6 +151,8 @@ private:
     // Threading
     QThread* m_thread = nullptr;
     CutWorker* m_worker = nullptr;
+    void cleanUpThreadAndWorker();
+    void releaseFinishedThreadAndWorker();
 
     // Flag for delayed execution state correction (Automatic mode pitfall)
     bool m_isExecuting = false;

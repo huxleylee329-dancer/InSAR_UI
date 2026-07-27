@@ -351,8 +351,7 @@ void DEMSourceDialog::onStartPressed()
         filePaths,
         demSource,
         targetResolution,
-        cacheDir,
-        m_model
+        cacheDir
     );
 }
 

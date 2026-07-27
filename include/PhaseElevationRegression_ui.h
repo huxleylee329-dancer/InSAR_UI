@@ -22,7 +22,7 @@ signals:
     void operate(int polyOrder, int windowSize, double coherenceThresh,
                  QString save_path, QString project_name,
                  QString node_name, QString file_name,
-                 QStandardItemModel* model);
+                 QStringList phaseNames, QStringList phasePaths);
     void sendCopy(QStandardItemModel* model);
 
 private slots:
@@ -35,6 +35,11 @@ private:
     QStandardItemModel* copy;
     PhaseElevationRegressionWorker* m_worker;
     QString save_path;
+    QStringList m_generatedOutputNames;
+    QStringList m_generatedOutputPaths;
+    QList<int> m_generatedOffsetRows;
+    QList<int> m_generatedOffsetCols;
 
     void ChangeVision(bool Editable);
+    void persistGeneratedOutputs();
 };

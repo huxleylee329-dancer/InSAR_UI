@@ -1,6 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include<qstandarditemmodel.h>
+#include <QStringList>
 #include "ui_Registration.h"
 #include "CoregistrationWorker.h"
 
@@ -25,9 +26,18 @@ private:
     QString projectFile;
     int image_number;
     void ChangeVision(bool Editable);
+    void persistGeneratedOutput(const QStringList& outputNames, const QStringList& outputPaths,
+                                const QList<int>& offsetRows, const QList<int>& offsetCols,
+                                const QString& temporalBaseline, const QString& effectiveBaseline,
+                                const QString& parallelBaseline);
+    QString m_activeProjectName;
+    QString m_activeOutputNode;
+    int m_activeMasterIndex = 1;
+    int m_activeInterpTimes = -1;
+    int m_activeBlockSize = -1;
 signals:
-    void operate(QList<int>, QString, QString, QString, QString, QStandardItemModel*);
-    void operate2(int, QString, QString, QString, QString, QStandardItemModel*);
+    void operate(QList<int>, QString, QString, QString, QStringList);
+    void operate2(int, QString, QString, QString, QStringList);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_currentIndexChanged();

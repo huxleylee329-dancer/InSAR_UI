@@ -127,51 +127,45 @@ QString CoregistrationWorker::resolveOutputFileName(const QString& originalName)
     return pattern;
 }
 
-void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString project_name, QString Cut_name, QString file_name, QStandardItemModel* model)
+void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString project_name, QString file_name, QStringList inputPaths)
 {
 	if (para.size() != 4 ||
 		save_path.isEmpty() ||
 		project_name.isEmpty() ||
-		Cut_name.isEmpty() ||
-		file_name.isEmpty())
+		file_name.isEmpty() || inputPaths.size() < 2)
 	{
+		Q_EMIT errorProcess(QStringLiteral("Coregistration input is invalid."));
 		return;
 	}
-	QStandardItem* project = model->findItems(project_name)[0];
-	if (!project) return;
-	save_path = model->item(project->row(), 1)->text();
     QDir dir(save_path);
     if (!dir.exists(file_name))
         int ret = dir.mkdir(file_name);
     int index = para.at(0);
     int interp_times = para.at(1);
     int block_size = para.at(2);
-    int image_number = para.at(3);
+    int image_number = inputPaths.size();
+    if (index < 1 || index > image_number) {
+        Q_EMIT errorProcess(QStringLiteral("Coregistration master index is invalid."));
+        return;
+    }
     Utils util;
     vector<cv::String> SAR_images;
     vector<cv::String> SAR_images_regis;
     QList<QString> origin;
-    for (int i = 0; i < project->rowCount(); i++)
+    for (const QString& inputPath : inputPaths)
     {
-        QStandardItem* images = project->child(i,0);
-        if (images->text() == Cut_name)
-        {
-            for (int j = 0; j < images->rowCount(); j++)
-            {
-				QFileInfo fileinfo(images->child(j, 1)->text());
+				QFileInfo fileinfo(inputPath);
                 QString origin_name = fileinfo.baseName();
                 origin.append(origin_name);
-                SAR_images.push_back(images->child(j, 1)->text().toStdString());
+                SAR_images.push_back(inputPath.toStdString());
                 QString outName = resolveOutputFileName(origin_name);
                 if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
                     outName += ".h5";
                 }
                 SAR_images_regis.push_back(QString("%1/%2/%3").arg(save_path).arg(file_name)
                     .arg(outName).toStdString());
-            }
-			break;
-        }
     }
+	if (SAR_images.empty()) { emit errorProcess(QStringLiteral("没有可配准的输入影像")); return; }
 	emit updateProcess(10, QStringLiteral("开始进行配准……"));
 	int maxThreads = omp_get_num_procs();
 	omp_set_num_threads(maxThreads);
@@ -189,13 +183,6 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 		Q_EMIT errorProcess(QStringLiteral("配准计算失败。"));
 		return;
 	}
-    /*建立配准根节点*/
-    QStandardItem* regis = NodeUtils::findOrCreateProjectNode(project, file_name, "complex-2.0");
-    if (regis)
-    {
-        regis->setToolTip(project_name);
-    }
-    
     FormatConversion FC;
     /*获取主星参数*/
     Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
@@ -237,36 +224,6 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 			Q_EMIT cancelled();
 			return;
 		}
-        if (regis && regis->model()) {
-            QMetaObject::invokeMethod(regis->model(), [=]() {
-                QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
-                QString regis_name = fileinfo.baseName();
-                QStandardItem* item_img = NULL;
-                for (int j = 0; j < regis->rowCount(); j++)
-                {
-                    if (regis->child(j, 0)->text() == regis_name)
-                    {
-                        item_img = regis->child(j, 0);
-                        break;
-                    }
-                }
-
-                if (!item_img)
-                {
-                    QStandardItem* regis_images_name = new QStandardItem(regis_name);
-                    regis_images_name->setToolTip("complex");
-                    QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-                    regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-                    regis->appendRow(regis_images_name);
-                    regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
-                }
-                else
-                {
-                    regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-                }
-            }, Qt::QueuedConnection);
-        }
-
         /*写入辅助参数到h5*/
 		offset_row = offset_col = 0;
         {
@@ -330,44 +287,33 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 			
         }
     }
-    /*写入XML*/
-    XMLFile xmlfile;
-	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile.XMLFile_load((save_path + "/" + project_name).toStdString().c_str());
-    for (int i = 0; i < image_number; i++)
-    {
-		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-		{
-			Q_EMIT cancelled();
-			return;
-		}
-        QString outName = resolveOutputFileName(origin.at(i));
-        if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
-            outName += ".h5";
-        }
-        QString regis_name = QFileInfo(outName).baseName();
-        QString relativePath = QString("/%1/%2").arg(file_name).arg(outName);
-        xmlfile.XMLFile_add_regis(file_name.toStdString().c_str(), regis_name.toStdString().c_str(), relativePath.toStdString().c_str(),
-            Row_offset.at(i), Col_offset.at(i), index, interp_times, block_size,
-            temporal_baseline.toStdString().c_str(), B_effect.toStdString().c_str(), B_parallel.toStdString().c_str());
+	QStringList outputNames;
+    QStringList outputPaths;
+    QList<int> offsetRows;
+    QList<int> offsetCols;
+    for (int i = 0; i < image_number; ++i) {
+        outputNames.append(QFileInfo(QString::fromStdString(SAR_images_regis.at(i))).baseName());
+        outputPaths.append(QString::fromStdString(SAR_images_regis.at(i)));
+        offsetRows.append(Row_offset.at(i));
+        offsetCols.append(Col_offset.at(i));
     }
-	xmlfile.XMLFile_save((save_path + "/" + project_name).toStdString().c_str());
-    emit sendModel(model);
+    emit outputsGenerated(outputNames, outputPaths, offsetRows, offsetCols,
+        temporal_baseline, B_effect, B_parallel);
 	InSARLogManager::LogInfo("CoregistrationWorker", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }
 
 void CoregistrationWorker::DEMAssistCoregistration(
 	int masterIndex,
-	QString savepath, 
+	QString savepath,
 	QString project_name,
-	QString srcNode,
 	QString dstNode,
-	QStandardItemModel* model
+	QStringList inputPaths
 )
 {
-	if (savepath.isEmpty() || project_name.isEmpty() || srcNode.isEmpty() || dstNode.isEmpty() || !model)
+	if (savepath.isEmpty() || project_name.isEmpty() || dstNode.isEmpty() || inputPaths.size() < 2)
 	{
+		Q_EMIT errorProcess(QStringLiteral("DEM-assisted coregistration input is invalid."));
 		return;
 	}
 	QDir dir(savepath);
@@ -385,33 +331,20 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	vector<string> SAR_images;
 	vector<string> SAR_images_regis;
 	QList<QString> origin;
-	QStandardItem* project = model->findItems(project_name)[0];
-	if (!project) return;
-	savepath = model->item(project->row(), 1)->text();
-	int images_number;
-	for (int i = 0; i < project->rowCount(); i++)
+	const int images_number = inputPaths.size();
+	for (const QString& inputPath : inputPaths)
 	{
-		QStandardItem* images = project->child(i, 0);
-		if (images->text() == srcNode)
-		{
-			images_number = images->rowCount();
-			for (int j = 0; j < images_number; j++)
-			{
-				QFileInfo fileinfo(images->child(j, 1)->text());
-				QString origin_name = fileinfo.baseName();
-				origin.append(origin_name);
-				SAR_images.push_back(images->child(j, 1)->text().toStdString());
-                QString outName = resolveOutputFileName(origin_name);
-                if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
-                    outName += ".h5";
-                }
-				SAR_images_regis.push_back(QString("%1/%2/%3").arg(savepath).arg(dstNode)
-					.arg(outName).toStdString());
-			}
-			break;
-		}
+		QFileInfo fileinfo(inputPath);
+		const QString origin_name = fileinfo.baseName();
+		origin.append(origin_name);
+		SAR_images.push_back(inputPath.toStdString());
+        QString outName = resolveOutputFileName(origin_name);
+        if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
+            outName += ".h5";
+        }
+		SAR_images_regis.push_back(QString("%1/%2/%3").arg(savepath).arg(dstNode)
+			.arg(outName).toStdString());
 	}
-	if (SAR_images.size() < 2) return;
 
 	emit updateProcess(10, QStringLiteral("开始进行配准……"));
 	int maxThreads = omp_get_num_procs();
@@ -536,13 +469,6 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		emit updateProcess(10 + double(count) / double(images_number - 1) * 80, QStringLiteral("正在处理..."));
 	}
 
-	/*建立配准根节点*/
-	QStandardItem* regis = NodeUtils::findOrCreateProjectNode(project, dstNode, "complex-2.0");
-	if (regis)
-	{
-		regis->setToolTip(project_name);
-	}
-	
 	QString temporal_baseline, B_parallel, B_effect;
 	for (int i = 0; i < images_number; i++)
 	{
@@ -551,67 +477,22 @@ void CoregistrationWorker::DEMAssistCoregistration(
 			Q_EMIT cancelled();
 			return;
 		}
-		if (regis && regis->model()) {
-			QMetaObject::invokeMethod(regis->model(), [=]() {
-				QFileInfo fileinfo = QFileInfo(QString(SAR_images_regis.at(i).c_str()));
-				QString regis_name = fileinfo.baseName();
-				QStandardItem* item_img = NULL;
-				for (int j = 0; j < regis->rowCount(); j++)
-				{
-					if (regis->child(j, 0)->text() == regis_name)
-					{
-						item_img = regis->child(j, 0);
-						break;
-					}
-				}
-
-				if (!item_img)
-				{
-					QStandardItem* regis_images_name = new QStandardItem(regis_name);
-					regis_images_name->setToolTip("complex");
-					QStandardItem* regis_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-					regis_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-					regis->appendRow(regis_images_name);
-					regis->setChild(regis->rowCount() - 1, 1, regis_images_path);
-				}
-				else
-				{
-					regis->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-				}
-			}, Qt::QueuedConnection);
-		}
-		
 		temporal_baseline += "0 ";
 		B_parallel += "0 ";
 		B_effect += "0 ";
 	}
 
-	/*写入XML*/
-	XMLFile xmlfile;
-	emit updateProcess(95, QStringLiteral("写入工程文件……"));
-	xmlfile.XMLFile_load((QString(savepath) + "/" + project_name).toStdString().c_str());
-
-	for (int i = 0; i < images_number; i++)
-	{
-		if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
-		{
-			Q_EMIT cancelled();
-			return;
-		}
-        QString outName = resolveOutputFileName(origin.at(i));
-        if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
-            outName += ".h5";
-        }
-        QString regis_name = QFileInfo(outName).baseName();
-		QString relativePath = QString("/%1/%2").arg(dstNode).arg(outName);
-		xmlfile.XMLFile_add_regis(dstNode.toStdString().c_str(), regis_name.toStdString().c_str(),
-			relativePath.toStdString().c_str(),
-			Row_offset.at<int>(i, 0), Col_offset.at<int>(i, 0), masterIndex, -1, -1,
-			temporal_baseline.toStdString().c_str(), B_effect.toStdString().c_str(), B_parallel.toStdString().c_str());
-
-	}
-	xmlfile.XMLFile_save((QString(savepath) + "/" + project_name).toStdString().c_str());
-	emit sendModel(model);
+    QStringList outputNames, outputPaths;
+    QList<int> offsetRows, offsetCols;
+    for (int i = 0; i < images_number; ++i) {
+        const QString outName = QFileInfo(QString::fromStdString(SAR_images_regis[i])).baseName();
+        outputNames.append(outName);
+        outputPaths.append(QString::fromStdString(SAR_images_regis[i]));
+        offsetRows.append(Row_offset.at<int>(i, 0));
+        offsetCols.append(Col_offset.at<int>(i, 0));
+    }
+    emit outputsGenerated(outputNames, outputPaths, offsetRows, offsetCols,
+        temporal_baseline, B_effect, B_parallel);
 	InSARLogManager::LogInfo("CoregistrationWorker", QString("Task completed: ") + QString(__FUNCTION__));
 	emit endProcess();
 }

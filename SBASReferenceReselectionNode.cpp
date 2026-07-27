@@ -145,7 +145,7 @@ void SBASReferenceReselectionNode::setInData(std::shared_ptr<NodeData> data, Por
         }
         
         // Auto-generate output name if empty or default placeholder
-        if (m_outputNodeNameEdit && (m_outputNodeNameEdit->text().isEmpty() || m_outputNodeNameEdit->text() == QStringLiteral("自动生成或手动输入")))
+        if (m_outputNodeNameEdit && (m_outputNodeNameEdit->text().isEmpty() || m_outputNodeNameEdit->text() == QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")))
         {
             m_outputNodeName = upstreamNode + "_Reselect";
             m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -155,12 +155,12 @@ void SBASReferenceReselectionNode::setInData(std::shared_ptr<NodeData> data, Por
     {
         if (m_inputNodeLabel)
         {
-            m_inputNodeLabel->setText(QStringLiteral("未连接"));
+            m_inputNodeLabel->setText(QStringLiteral("鏈繛鎺?"));
         }
         m_outputNodeName.clear();
         if (m_outputNodeNameEdit)
         {
-            m_outputNodeNameEdit->setText(QStringLiteral("自动生成或手动输入"));
+            m_outputNodeNameEdit->setText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
         }
     }
     
@@ -210,7 +210,7 @@ void SBASReferenceReselectionNode::createWidget()
     };
 
     // Input node display
-    m_inputNodeLabel = new QLabel(QStringLiteral("未连接"), _widget);
+    m_inputNodeLabel = new QLabel(QStringLiteral("鏈繛鎺?"), _widget);
     m_inputNodeLabel->setStyleSheet("color: #888888; font-size: 11px;");
     addFormRow(QStringLiteral("输入节点:"), m_inputNodeLabel);
 
@@ -234,8 +234,8 @@ void SBASReferenceReselectionNode::createWidget()
 
     // Output node name
     m_outputNodeNameEdit = new QLineEdit(_widget);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
-    m_outputNodeNameEdit->setText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
+    m_outputNodeNameEdit->setText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     m_outputNodeNameEdit->setStyleSheet("color: white; background-color: #1F2937; border: 1px solid #4B5563; border-radius: 4px; padding: 2px; font-size: 11px;");
     connect(m_outputNodeNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_outputNodeName = text;
@@ -341,7 +341,7 @@ bool SBASReferenceReselectionNode::validateInputs() const
         return false;
     if (m_GCPs.isEmpty())
         return false;
-    if (m_outputNodeName.isEmpty() || m_outputNodeName == QStringLiteral("自动生成或手动输入"))
+    if (m_outputNodeName.isEmpty() || m_outputNodeName == QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"))
         return false;
     return true;
 }
@@ -486,7 +486,7 @@ void SBASReferenceReselectionNode::onCancelled()
     QDir(projectPath() + "/" + m_outputNodeName).removeRecursively();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
-    m_resultLabel->setText(QStringLiteral("已取消"));
+    m_resultLabel->setText(QStringLiteral("宸插彇娑?"));
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -526,8 +526,10 @@ void SBASReferenceReselectionNode::generateStaticPreviewJpg()
         {
             m_outputData = std::make_shared<ImportedFileData>(h5Path, m_outputNodeName);
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            setOutputData(0, m_outputData);
+            setOutputData(1, m_previewData);
             m_resultLabel->setText(QStringLiteral("计算并生成预览完成！"));
-            setState(ExecutionState::Completed);
+            setState(ExecutionState::Running);
 
             // Add node to XML and tree model (SOP rule 14)
             IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
@@ -538,12 +540,11 @@ void SBASReferenceReselectionNode::generateStaticPreviewJpg()
                 iface->refreshProjectTree();
             }
 
-            Q_EMIT dataUpdated(0);
-            Q_EMIT dataUpdated(1);
+            finishExecution();
         }
         else
         {
-            m_resultLabel->setText(QStringLiteral("预览图生成失败"));
+            m_resultLabel->setText(QStringLiteral("棰勮鍥剧敓鎴愬け璐?"));
             setState(ExecutionState::Error);
         }
     });
@@ -575,7 +576,8 @@ bool SBASReferenceReselectionNode::validateAndRestoreOutput()
     if (QFile::exists(h5Path))
     {
         m_outputData = std::make_shared<ImportedFileData>(h5Path, m_outputNodeName);
-        m_resultLabel->setText(QStringLiteral("已恢复现有成果。"));
+        setOutputData(0, m_outputData);
+        m_resultLabel->setText(QStringLiteral("宸叉仮澶嶇幇鏈夋垚鏋溿€?"));
         
         // Retrieve ref_row and ref_col from H5 if possible
         FormatConversion FC;
@@ -598,6 +600,7 @@ bool SBASReferenceReselectionNode::validateAndRestoreOutput()
         if (QFile::exists(jpgPath))
         {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            setOutputData(1, m_previewData);
             setState(ExecutionState::Completed);
             Q_EMIT dataUpdated(0);
             Q_EMIT dataUpdated(1);
@@ -685,3 +688,5 @@ QString SBASReferenceReselectionNode::projectName() const
 }
 
 } // namespace QtNodes
+
+

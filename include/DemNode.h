@@ -87,13 +87,17 @@ private:
     QString m_preparedSrcNode;
     int m_preparedMethod = 1;
     int m_preparedTimes = 20;
+    bool m_xmlDirty = false;
 
     // Helper methods
+    void cleanupThreadResources();
+    void releaseFinishedThreadResources();
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
+    void handleDemFileGenerated(const DemFileResult& result);
     void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();
@@ -115,7 +119,8 @@ private:
     bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
-    void startDem(int method, int times, QString save_path, QString project_name, QString node_name, QString file_name, QStandardItemModel* model);
+    void startDem(int method, int times, QString savePath, QString outputNode,
+                  QStringList phaseNames, QStringList phasePaths);
 };
 
 } // namespace QtNodes

@@ -4,7 +4,6 @@
 
 #include "BaseWorker.h"
 #include <QStringList>
-#include <QStandardItemModel>
 #include <QDateTime>
 #include <QHash>
 #include <QUrl>
@@ -22,21 +21,17 @@ public:
 public slots:
     void fetch_orbits(
         QString projectPath,
-        QString projectName,
         QStringList filePaths,
         int orbitSource,
-        QString cacheDir,
-        QStandardItemModel* model
+        QString cacheDir
     );
 
     void fetch_and_apply_orbits(
         QString projectPath,
-        QString projectName,
         QStringList filePaths,
         int orbitSource,
         QString cacheDir,
-        QString targetDirName,
-        QStandardItemModel* model
+        QString targetDirName
     );
 
 signals:

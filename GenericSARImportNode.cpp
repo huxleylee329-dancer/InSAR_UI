@@ -91,7 +91,7 @@ QWidget* GenericSARImportNode::createWidget()
     fileNameRow->addWidget(new QLabel("目标文件名："), 3);
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
-    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
+    m_outputFileNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
     connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
@@ -119,6 +119,9 @@ void GenericSARImportNode::executeImport()
         return;
     }
 
+    m_generatedOutputPaths.clear();
+    m_outputPersistenceFailed = false;
+
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
@@ -133,10 +136,7 @@ void GenericSARImportNode::executeImport()
         m_imagePath,
         projectPath(),
         getOutputNodeName(),
-        m_preparedOutputFileName,
-        projectName(),
-        projectModel(),
-        getProjectContext()
+        m_preparedOutputFileName
     );
 
     connect(m_task, &GenericSARImportTask::updateProcess,
@@ -145,8 +145,8 @@ void GenericSARImportNode::executeImport()
             this, &GenericSARImportNode::onImportFinished, Qt::QueuedConnection);
     connect(m_task, &GenericSARImportTask::errorProcess,
             this, &GenericSARImportNode::onThreadError, Qt::QueuedConnection);
-    connect(m_task, &GenericSARImportTask::sendModel,
-            this, &GenericSARImportNode::onModelUpdated, Qt::QueuedConnection);
+    connect(m_task, &GenericSARImportTask::outputsGenerated,
+            this, &GenericSARImportNode::onOutputsGenerated, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
 }
@@ -159,7 +159,7 @@ bool GenericSARImportNode::prepareToStart()
 
     if (!model || path.isEmpty() || name.isEmpty())
     {
-        onError("未检测到打开的项目，请先打开或新建一个项目。");
+        onError("鏈娴嬪埌鎵撳紑鐨勯」鐩紝璇峰厛鎵撳紑鎴栨柊寤轰竴涓」鐩€?");
         return false;
     }
 
@@ -178,7 +178,7 @@ bool GenericSARImportNode::prepareToStart()
     m_imagePath = m_imageEdit->text().trimmed();
     if (m_imagePath.isEmpty())
     {
-        onError("请选择一个 通用 SAR 图像文件。");
+        onError("璇烽€夋嫨涓€涓?閫氱敤 SAR 鍥惧儚鏂囦欢銆?");
         return false;
     }
 
@@ -264,17 +264,21 @@ void GenericSARImportNode::onImageBrowseClicked()
 void GenericSARImportNode::onImportFinished()
 {
     // 更新导入文件路径
-    m_importedFilePaths = getExpectedOutputFilePaths();
+    if (m_outputPersistenceFailed) {
+        onThreadError(QStringLiteral("Unable to save imported outputs to the project."));
+        return;
+    }
+
+    m_importedFilePaths = m_generatedOutputPaths.isEmpty()
+        ? getExpectedOutputFilePaths()
+        : m_generatedOutputPaths;
 
     // Port 0 & Port 1: 输出 ImageInfoData
     if (!m_importedFilePaths.isEmpty())
     {
         m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths);
         setOutputData(0, m_imageInfo);
-        Q_EMIT dataUpdated(0);
-
         setOutputData(1, m_imageInfo);
-        Q_EMIT dataUpdated(1);
     }
 
     finishExecution();
@@ -294,12 +298,13 @@ void GenericSARImportNode::onThreadError(const QString& error)
     m_task = nullptr;
 }
 
-void GenericSARImportNode::onModelUpdated(QStandardItemModel* model)
+void GenericSARImportNode::onOutputsGenerated(const QString& dstNode,
+                                               const QStringList& outputNames,
+                                               const QStringList& outputPaths,
+                                               const QString& dataType,
+                                               const QString& satelliteFormat)
 {
-    Q_UNUSED(model);
-    if (auto* iface = getProjectContext()) {
-        iface->refreshProjectTree();
-    }
+    ImportNodeBase::onOutputsGenerated(dstNode, outputNames, outputPaths, dataType, satelliteFormat);
 }
 
 QJsonObject GenericSARImportNode::save() const

@@ -85,7 +85,9 @@ private:
     void onProcessingFinished();
     void onError(const QString& error);
     void onCancelled();
-    void onModelUpdated(QStandardItemModel* model);
+    void onResultReceived(const QString& dstNode, const QString& filename,
+                          const QString& mergedH5Path, const QString& savePath,
+                          const QString& projectName);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
@@ -104,10 +106,11 @@ private:
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
+    QString m_generatedOutputPath;
 
 signals:
-    void startSwathMerge(int index1, int index2, int index3, QString project,
-                        QString node1, QString node2, QString node3, QString dstNode, QStandardItemModel*);
+    void startSwathMerge(QString projectName, QString savePath, QString dstNode,
+                         QString firstH5Path, QString secondH5Path, QString thirdH5Path);
 };
 
 } // namespace QtNodes

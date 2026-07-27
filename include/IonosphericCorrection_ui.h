@@ -17,12 +17,14 @@ public slots:
     void endProcess();
     void StopThread();
     void TransitModel(QStandardItemModel* model);
+    void onProcessingError(const QString& error);
+    void onProcessingCancelled();
 
 signals:
     void operate(double subbandRatio, double filterStrength, bool outputTEC,
                  QString save_path, QString project_name,
                  QString node_name, QString file_name,
-                 QStandardItemModel* model);
+                 QStringList slcNames, QStringList slcPaths);
     void sendCopy(QStandardItemModel* model);
 
 private slots:
@@ -35,6 +37,10 @@ private:
     QStandardItemModel* copy;
     IonosphericCorrectionWorker* m_worker;
     QString save_path;
+    QStringList m_generatedOutputNames;
+    QStringList m_generatedOutputPaths;
 
     void ChangeVision(bool Editable);
+    void cleanUpWorker();
+    void persistGeneratedOutputs();
 };

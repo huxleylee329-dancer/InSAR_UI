@@ -427,7 +427,7 @@ void CoregistrationNode::updateMasterImageCombo()
                 m_masterIndex = 1;
             }
         } else {
-            m_masterImageCombo->addItem(QStringLiteral("无数据输入"));
+            m_masterImageCombo->addItem(QStringLiteral("鏃犳暟鎹緭鍏?"));
         }
     }
     updateParameterWidgetsEnableState();
@@ -589,13 +589,19 @@ void CoregistrationNode::executeProcessing()
     m_savedOutputFiles = m_preparedOutputNames;
     m_outputImagePaths = m_preparedH5Paths;
     m_outputJpgPaths = m_preparedJpgPaths;
+    m_generatedOutputNames.clear();
+    m_generatedOutputPaths.clear();
+    m_generatedOffsetRows.clear();
+    m_generatedOffsetCols.clear();
+    m_generatedTemporalBaseline.clear();
+    m_generatedEffectiveBaseline.clear();
+    m_generatedParallelBaseline.clear();
 
     auto* iface = NodeUtils::getProjectContext(_widget);
     QString nodeName = m_outputNodeName.trimmed();
     QStringList inputPaths = m_inputData->filePaths();
     QString projDir = getRealSavePath();
     QString projName = projectName();
-    QStandardItemModel* model = projectModel();
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         if (validateAndRestoreOutput()) {
@@ -618,13 +624,25 @@ void CoregistrationNode::executeProcessing()
     m_worker->setFilePattern(m_outputFileName);
 
     connect(m_worker, &CoregistrationWorker::updateProcess, this, &CoregistrationNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(m_worker, &CoregistrationWorker::outputsGenerated, this,
+        [this](const QStringList& names, const QStringList& paths,
+               const QList<int>& rows, const QList<int>& cols,
+               const QString& temporalBaseline, const QString& effectiveBaseline,
+               const QString& parallelBaseline) {
+            m_generatedOutputNames = names;
+            m_generatedOutputPaths = paths;
+            m_generatedOffsetRows = rows;
+            m_generatedOffsetCols = cols;
+            m_generatedTemporalBaseline = temporalBaseline;
+            m_generatedEffectiveBaseline = effectiveBaseline;
+            m_generatedParallelBaseline = parallelBaseline;
+        }, Qt::QueuedConnection);
     connect(m_worker, &CoregistrationWorker::endProcess, this, &CoregistrationNode::onProcessingFinished, Qt::QueuedConnection);
     connect(m_worker, &CoregistrationWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &CoregistrationWorker::cancelled, this, &CoregistrationNode::onCancelled, Qt::QueuedConnection);
     connect(m_worker, &CoregistrationWorker::cancelled, m_thread, &QThread::quit);
     connect(m_worker, &CoregistrationWorker::errorProcess, this, &CoregistrationNode::onError, Qt::QueuedConnection);
     connect(m_worker, &CoregistrationWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_worker, &CoregistrationWorker::sendModel, this, &CoregistrationNode::onModelUpdated, Qt::QueuedConnection);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -646,18 +664,16 @@ void CoregistrationNode::executeProcessing()
             Q_ARG(QList<int>, para),
             Q_ARG(QString, projDir),
             Q_ARG(QString, projName),
-            Q_ARG(QString, m_inputData->nodeName()),
             Q_ARG(QString, nodeName),
-            Q_ARG(QStandardItemModel*, model));
+            Q_ARG(QStringList, inputPaths));
     } else {
         // Invoke DEMAssistCoregistration slot inside worker thread
         QMetaObject::invokeMethod(m_worker, "DEMAssistCoregistration", Qt::QueuedConnection,
             Q_ARG(int, masterIdx),
             Q_ARG(QString, projDir),
             Q_ARG(QString, projName),
-            Q_ARG(QString, m_inputData->nodeName()),
             Q_ARG(QString, nodeName),
-            Q_ARG(QStandardItemModel*, model));
+            Q_ARG(QStringList, inputPaths));
     }
 
     updateParameterWidgetsEnableState();
@@ -693,41 +709,30 @@ void CoregistrationNode::onProcessingFinished()
         return;
     }
 
+    if (m_generatedOutputPaths.isEmpty() ||
+        m_generatedOutputNames.size() != m_generatedOutputPaths.size() ||
+        m_generatedOffsetRows.size() != m_generatedOutputPaths.size() ||
+        m_generatedOffsetCols.size() != m_generatedOutputPaths.size()) {
+        onError(QStringLiteral("Coregistration did not return a complete output result."));
+        return;
+    }
+
+    m_savedOutputFiles = m_generatedOutputNames;
+    m_outputImagePaths = m_generatedOutputPaths;
+    m_outputJpgPaths.clear();
+    for (const QString& h5Path : m_outputImagePaths) {
+        m_outputJpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
+    }
+    persistOutputToProject(m_generatedOutputNames, m_generatedOutputPaths,
+        m_generatedOffsetRows, m_generatedOffsetCols, m_generatedTemporalBaseline,
+        m_generatedEffectiveBaseline, m_generatedParallelBaseline);
+
     InSARLogManager::LogInfo("CoregistrationNode", "Coregistration process finished. Generating previews...");
 
     // Generate preview JPGs asynchronously
     QStringList h5Paths = m_outputImagePaths;
     QStringList jpgPaths = m_outputJpgPaths;
-
-    m_remedyWatcher.cancel();
-    m_remedyWatcher.waitForFinished();
-    m_remedyWatcher.disconnect();
-
-    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Paths, jpgPaths]() {
-        InSARLogManager::LogInfo("CoregistrationNode", "Coregistration JPG preview generation finished.");
-        m_isExecuting = false;
-        if (discardObsoleteAutomaticExecution()) {
-            return;
-        }
-
-        m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_outputNodeName.trimmed());
-        m_previewData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(0, m_outputData);
-        setOutputData(1, m_previewData);
-
-        updateParameterWidgetsEnableState();
-
-        Q_EMIT dataUpdated(0);
-        Q_EMIT dataUpdated(1);
-        finishExecution();
-    });
-
-    QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths]() {
-        for (int i = 0; i < h5Paths.size(); ++i) {
-            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], "complex");
-        }
-    });
-    m_remedyWatcher.setFuture(future);
+    startPreviewGeneration(h5Paths, jpgPaths, jpgPaths, true);
 }
 
 void CoregistrationNode::onError(const QString& error)
@@ -775,15 +780,62 @@ void CoregistrationNode::onCancelled()
     updateParameterWidgetsEnableState();
 }
 
-void CoregistrationNode::onModelUpdated(QStandardItemModel* model)
+void CoregistrationNode::persistOutputToProject(const QStringList& outputNames,
+                                                const QStringList& outputPaths,
+                                                const QList<int>& offsetRows,
+                                                const QList<int>& offsetCols,
+                                                const QString& temporalBaseline,
+                                                const QString& effectiveBaseline,
+                                                const QString& parallelBaseline)
 {
-    if (isAutomaticExecutionObsolete()) {
+    if (outputNames.size() != outputPaths.size() ||
+        outputPaths.size() != offsetRows.size() ||
+        outputPaths.size() != offsetCols.size()) {
+        InSARLogManager::LogError("CoregistrationNode", "Generated output metadata is inconsistent.");
         return;
     }
 
-    Q_UNUSED(model);
-    auto* iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
+    QStandardItemModel* model = projectModel();
+    const QList<QStandardItem*> projects = model ? model->findItems(projectName()) : QList<QStandardItem*>();
+    if (projects.isEmpty()) {
+        InSARLogManager::LogError("CoregistrationNode", "Project tree root was not found.");
+        return;
+    }
+
+    const QString outputNodeName = m_outputNodeName.trimmed();
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), outputNodeName, "complex-2.0", FOLDER_ICON);
+    if (!outputNode) {
+        InSARLogManager::LogError("CoregistrationNode", "Unable to create coregistration output node.");
+        return;
+    }
+    outputNode->setToolTip(projectName());
+
+    XMLFile* xml = projectXml();
+    const int masterIndex = m_defaultFirstMaster ? 1 : m_masterIndex;
+    const int interpTimes = m_method == "Coarse" ? m_interpTimes : -1;
+    const int blockSize = m_method == "Coarse" ? m_blockSize : -1;
+    for (int i = 0; i < outputPaths.size(); ++i) {
+        QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
+            outputNode, outputNames[i], "complex", outputPaths[i], IMAGEDATA_ICON);
+        if (imageItem) {
+            outputNode->setChild(imageItem->row(), 1, new QStandardItem(outputPaths[i]));
+        }
+
+        if (xml) {
+            const QString relativePath = QString("/%1/%2").arg(outputNodeName, QFileInfo(outputPaths[i]).fileName());
+            xml->XMLFile_add_regis(outputNodeName.toStdString().c_str(), outputNames[i].toStdString().c_str(),
+                relativePath.toStdString().c_str(), offsetRows[i], offsetCols[i], masterIndex,
+                interpTimes, blockSize, temporalBaseline.toStdString().c_str(),
+                effectiveBaseline.toStdString().c_str(), parallelBaseline.toStdString().c_str());
+        }
+    }
+
+    if (xml) {
+        const QString xmlPath = projectPath() + "/" + projectName();
+        xml->XMLFile_save(xmlPath.toStdString().c_str());
+    }
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
         iface->refreshProjectTree();
     }
 }
@@ -909,23 +961,7 @@ bool CoregistrationNode::validateAndRestoreOutput()
     }
 
     if (!missingH5s.isEmpty()) {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            InSARLogManager::LogInfo("CoregistrationNode", "Remedy preview generation finished.");
-            m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_previewData);
-            Q_EMIT dataUpdated(1);
-        });
-
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
-            for (int i = 0; i < missingH5s.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(missingH5s, missingJpgs, expectedJpgPaths, false);
     } else {
         m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
         setOutputData(1, m_previewData);
@@ -933,7 +969,6 @@ bool CoregistrationNode::validateAndRestoreOutput()
 
     m_outputData = std::make_shared<ImportedFileData>(expectedH5Paths, nodeName);
     setOutputData(0, m_outputData);
-    Q_EMIT dataUpdated(0);
     if (missingH5s.isEmpty()) {
         Q_EMIT dataUpdated(1);
     }
@@ -1228,6 +1263,52 @@ bool CoregistrationNode::validateAndRestoreOutput()
     }
 
     return true;
+}
+
+void CoregistrationNode::startPreviewGeneration(const QStringList& h5Paths,
+                                                const QStringList& generatedJpgPaths,
+                                                const QStringList& resultJpgPaths,
+                                                bool completeExecution)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, generatedJpgPaths, resultJpgPaths, completeExecution]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, resultJpgPaths, completeExecution);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, h5Paths, resultJpgPaths, completeExecution]() {
+        if (completeExecution) {
+            InSARLogManager::LogInfo("CoregistrationNode", "Coregistration JPG preview generation finished.");
+            m_isExecuting = false;
+            if (discardObsoleteAutomaticExecution()) {
+                return;
+            }
+
+            m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_outputNodeName.trimmed());
+            m_previewData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(0, m_outputData);
+            setOutputData(1, m_previewData);
+            updateParameterWidgetsEnableState();
+            finishExecution();
+        } else {
+            InSARLogManager::LogInfo("CoregistrationNode", "Remedy preview generation finished.");
+            m_previewData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            setOutputData(1, m_previewData);
+            Q_EMIT dataUpdated(1);
+        }
+    });
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, generatedJpgPaths]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], "complex");
+        }
+    }));
 }
 
 QStandardItemModel* CoregistrationNode::projectModel() const

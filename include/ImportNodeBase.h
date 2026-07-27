@@ -73,6 +73,9 @@ protected slots:
     void onImportProgress(int progress, const QString& message);
     void onImportFinished();
     void onThreadError(const QString& error);
+    void onOutputsGenerated(const QString& dstNode, const QStringList& outputNames,
+                            const QStringList& outputPaths, const QString& dataType,
+                            const QString& satelliteFormat);
     void onModelUpdated(QStandardItemModel* model);
 
 protected:
@@ -116,6 +119,7 @@ protected:
     std::shared_ptr<ImportedFileData> m_importedFiles;
     std::shared_ptr<ImageInfoData> m_imageInfo;
     QStringList m_importedFilePaths;
+    QStringList m_generatedOutputPaths;
     QString m_outputFileName;
 
     // 异步预览生成
@@ -123,6 +127,7 @@ protected:
 
     // Flag for stop request
     bool m_stopRequested;
+    bool m_outputPersistenceFailed = false;
 };
 
 } // namespace QtNodes

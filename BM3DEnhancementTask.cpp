@@ -24,9 +24,7 @@ BM3DEnhancementTask::BM3DEnhancementTask(
     QStringList fileNames,
     QString projectPath,
     QString projectName,
-    QStandardItemModel* model,
-    bool saveToProject,
-    XMLFile* projectXml
+    bool saveToProject
 )
     : m_type(type)
     , m_inputPaths(inputPaths)
@@ -35,9 +33,7 @@ BM3DEnhancementTask::BM3DEnhancementTask(
     , m_fileNames(fileNames)
     , m_projectPath(projectPath)
     , m_projectName(projectName)
-    , m_model(model)
     , m_saveToProject(saveToProject)
-    , m_projectXml(projectXml)
     , m_stopFlag(false)
 {
 }
@@ -45,6 +41,48 @@ BM3DEnhancementTask::BM3DEnhancementTask(
 void BM3DEnhancementTask::stop()
 {
     m_stopFlag.store(true, std::memory_order_relaxed);
+    QMutexLocker locker(&m_decisionMutex);
+    m_decisionReady.wakeAll();
+}
+
+void BM3DEnhancementTask::resolveErrorDecision(quint64 requestId, bool skip)
+{
+    QMutexLocker locker(&m_decisionMutex);
+    if (requestId != m_pendingRequestId || m_hasDecision) {
+        return;
+    }
+    m_skipCurrentFile = skip;
+    m_hasDecision = true;
+    m_decisionReady.wakeAll();
+}
+
+bool BM3DEnhancementTask::waitForErrorDecision(const QString& errorMessage, bool& skip)
+{
+    quint64 requestId = 0;
+    {
+        QMutexLocker locker(&m_decisionMutex);
+        if (isStopped()) {
+            return false;
+        }
+        requestId = ++m_nextRequestId;
+        m_pendingRequestId = requestId;
+        m_hasDecision = false;
+        m_skipCurrentFile = false;
+    }
+
+    emit askUserError(requestId, errorMessage);
+
+    QMutexLocker locker(&m_decisionMutex);
+    while (!m_hasDecision && !isStopped()) {
+        m_decisionReady.wait(&m_decisionMutex);
+    }
+    if (isStopped()) {
+        m_pendingRequestId = 0;
+        return false;
+    }
+    skip = m_skipCurrentFile;
+    m_pendingRequestId = 0;
+    return true;
 }
 
 void BM3DEnhancementTask::run()
@@ -61,7 +99,7 @@ void BM3DEnhancementTask::run()
         bool ok = processBM3DEnhancement(
             m_inputPaths[i], m_outputPaths[i], m_nodeName,
             m_fileNames.isEmpty() ? QString() : m_fileNames[i],
-            m_projectPath, m_projectName, m_model, m_saveToProject, m_projectXml, outError, baseProgress, progressStep
+            m_projectPath, m_projectName, m_saveToProject, outError, baseProgress, progressStep
         );
 
         if (isStopped()) {
@@ -70,9 +108,12 @@ void BM3DEnhancementTask::run()
         }
 
         if (!ok) {
-            bool skip = false;
             QString msg = QStringLiteral("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(m_inputPaths[i]).fileName(), outError);
-            emit askUserError(msg, &skip);
+            bool skip = false;
+            if (!waitForErrorDecision(msg, skip)) {
+                emit cancelled();
+                return;
+            }
             if (!skip) {
                 InSARLogManager::LogError("BM3DEnhancementTask", QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
                 emit errorProcess(QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
@@ -89,7 +130,6 @@ void BM3DEnhancementTask::run()
         return;
     }
 
-    emit sendModel(m_model);
     emit endProcess();
 }
 
@@ -100,9 +140,7 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
     QString fileName,
     QString projectPath,
     QString projectName,
-    QStandardItemModel* model,
     bool saveToProject,
-    XMLFile* projectXml,
     QString& outError,
     int baseProgress,
     int progressStep
@@ -158,11 +196,6 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
     }
 
     if (saveToProject) {
-        if (!model) {
-            outError = QStringLiteral("Project model is null");
-            return false;
-        }
-
         QString projDirStr = projectPath;
         if (projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
             projDirStr = QFileInfo(projectPath).absolutePath();

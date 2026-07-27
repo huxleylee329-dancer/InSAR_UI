@@ -296,7 +296,7 @@ void TargetDetectionNode::createWidget()
                 m_expandLabel->hide();
             } else {
                 if (singleResultView) singleResultView->hide();
-                m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
+                m_summaryLabel->setText(QStringLiteral("妫€娴嬪畬鎴愶細鍏卞鐞?%1 寮犲浘鍍?").arg(totalCount));
                 m_summaryLabel->show();
                 m_expandLabel->show();
             }
@@ -413,7 +413,7 @@ void TargetDetectionNode::executeProcessing()
     }, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::errorProcess, this, &TargetDetectionNode::onError, Qt::QueuedConnection);
     connect(m_task, &TargetDetectionTask::cancelled, this, &TargetDetectionNode::onCancelled, Qt::QueuedConnection);
-    connect(m_task, &TargetDetectionTask::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::BlockingQueuedConnection);
+    connect(m_task, &TargetDetectionTask::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
     
@@ -482,7 +482,7 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
         } else {
             if (singleView) singleView->hide();
             if (m_summaryLabel) {
-                m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
+                m_summaryLabel->setText(QStringLiteral("妫€娴嬪畬鎴愶細鍏卞鐞?%1 寮犲浘鍍?").arg(totalCount));
                 m_summaryLabel->show();
             }
             if (m_expandLabel) {
@@ -499,7 +499,6 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
 
         m_outputData = m_inputData;
         setOutputData(0, m_outputData);
-        Q_EMIT dataUpdated(0);
         
         InSARLogManager::LogInfo("TargetDetectionNode", "executeProcessing completed.");
         finishExecution();
@@ -628,7 +627,7 @@ void TargetDetectionNode::load(QJsonObject const &json)
             } else {
                 if (singleView) singleView->hide();
                 if (m_summaryLabel) {
-                    m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
+                    m_summaryLabel->setText(QStringLiteral("妫€娴嬪畬鎴愶細鍏卞鐞?%1 寮犲浘鍍?").arg(totalCount));
                     m_summaryLabel->show();
                 }
                 if (m_expandLabel) m_expandLabel->show();
@@ -655,15 +654,25 @@ void TargetDetectionNode::load(QJsonObject const &json)
     }
 }
 
-void TargetDetectionNode::onAskUserError(const QString& message, bool* skip)
+void TargetDetectionNode::onAskUserError(quint64 requestId, const QString& message)
 {
+    bool skip = false;
+    if (isAutomaticExecutionObsolete() || executionState() != ExecutionState::Running) {
+        if (m_task) {
+            m_task->resolveErrorDecision(requestId, skip);
+        }
+        return;
+    }
     QMessageBox::StandardButton reply = QMessageBox::question(
         nullptr,
         QStringLiteral("错误"), // 错误
         message,
         QMessageBox::Yes | QMessageBox::No
     );
-    *skip = (reply == QMessageBox::Yes);
+    skip = (reply == QMessageBox::Yes);
+    if (m_task) {
+        m_task->resolveErrorDecision(requestId, skip);
+    }
 }
 
 bool TargetDetectionNode::validateAndRestoreOutput()
@@ -675,3 +684,4 @@ bool TargetDetectionNode::validateAndRestoreOutput()
 }
 
 } // namespace QtNodes
+

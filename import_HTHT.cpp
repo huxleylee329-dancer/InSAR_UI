@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "import_HTHT.h"
 #include "ImportTask.h"
+#include "ImportOutputPersistence.h"
 #include "icon_source.h"
 #include "qfiledialog.h"
 #include <qmessagebox.h>
@@ -291,7 +292,10 @@ void import_HTHT::on_buttonBox_accepted()
     connect(import_HTHT_thread, &HTHTImportWorker::errorProcess, this, &import_HTHT::errorProcess);
     connect(this, &QWidget::destroyed, this, &import_HTHT::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &import_HTHT::StopThread);
-    connect(import_HTHT_thread, &HTHTImportWorker::sendModel, this, &import_HTHT::TransitModel);
+    connect(import_HTHT_thread, &HTHTImportWorker::outputsGenerated, this,
+        [this, projectName = ui->comboBox_dst_project->currentText(), savePath = save_path](const QString& dstNode, const QStringList& names, const QStringList& paths, const QString& dataType, const QString& format) {
+            if (ImportOutputPersistence::persist(copy, projectName, savePath, dstNode, names, paths, dataType, format)) TransitModel(copy);
+        });
 
     thread->start();
 
@@ -307,8 +311,6 @@ void import_HTHT::on_buttonBox_accepted()
     QMetaObject::invokeMethod(import_HTHT_thread, "import_patch",
         Q_ARG(QString, this->save_path),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, ui->lineEdit_dst_node->text()),
-        Q_ARG(QString, ui->comboBox_dst_project->currentText()),
-        Q_ARG(QStandardItemModel*, this->copy));
+        Q_ARG(QString, ui->lineEdit_dst_node->text()));
     ChangeVision(false);
 }

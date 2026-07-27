@@ -1,6 +1,7 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
 #include <qstandarditemmodel.h>
+#include <QStringList>
 #include "ui_SlcDeramp.h"
 
 class SLCDerampWorker;
@@ -18,9 +19,9 @@ public slots:
     void endProcess();
     void endThread();
     void StopThread();
-    void TransitModel(QStandardItemModel*);
 signals:
-    void operate(int masterIndex, QString project_name, QString src_node, QString dst_node, QStandardItemModel* model, QString dem_path);
+    void operate(int masterIndex, QString projectName, QString savePath,
+                 QString dstNode, QStringList inputPaths, QString demPath);
     void sendCopy(QStandardItemModel*);
 
 private:
@@ -30,6 +31,7 @@ private:
     SLCDerampWorker* m_worker;
 
     QString save_path;
+    int m_masterIndex = 1;
     int method;
     int image_number;
     void ChangeVision(bool Editable);
@@ -43,4 +45,6 @@ private slots:
     void on_comboBox_dst_node_currentIndexChanged();
     void on_buttonBox_accepted();
     void on_buttonBox_rejected();
+    void handleResults(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames,
+                       const QString& savePath, const QString& projectName);
 };

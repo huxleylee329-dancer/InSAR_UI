@@ -1,5 +1,6 @@
 #pragma once
 #include <QtWidgets/QMainWindow>
+#include <QStringList>
 #include<qstandarditemmodel.h>
 #include "ui_S1TopsBackGeocoding.h"
 #include "S1TopsBackGeocodingWorker.h"
@@ -33,7 +34,7 @@ private:
     int image_number;
     void ChangeVision(bool Editable);
 signals:
-    void operate(int, int, QString, QString, QString, QString, QStandardItemModel*, bool);
+    void operate(int, QString, QString, QString, QStringList, bool);
     void sendCopy(QStandardItemModel*);
 private slots:
     /*工程选择按钮响应函数*/

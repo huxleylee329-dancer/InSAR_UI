@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QFutureWatcher>
+#include <QStandardItemModel>
 #include <QThread>
 
 namespace QtNodes {
@@ -63,7 +64,6 @@ private Q_SLOTS:
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
     void updateMasterImageCombo();
     void updateWidgetSize();
     void updateParameterWidgetsEnableState();
@@ -73,6 +73,12 @@ private:
     void executeProcessing();
     QString getRealSavePath() const;
     QString resolveOutputFileName(const QString& originalName) const;
+    void persistOutputToProject(const QStringList& outputNames, const QStringList& outputPaths,
+                                const QList<int>& offsetRows, const QList<int>& offsetCols,
+                                const QString& temporalBaseline, const QString& effectiveBaseline,
+                                const QString& parallelBaseline);
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& resultJpgPaths, bool completeExecution);
 
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
@@ -133,6 +139,13 @@ private:
     QStringList m_preparedH5Paths;
     QStringList m_preparedJpgPaths;
     QStringList m_preparedOutputNames;
+    QStringList m_generatedOutputNames;
+    QStringList m_generatedOutputPaths;
+    QList<int> m_generatedOffsetRows;
+    QList<int> m_generatedOffsetCols;
+    QString m_generatedTemporalBaseline;
+    QString m_generatedEffectiveBaseline;
+    QString m_generatedParallelBaseline;
 };
 
 } // namespace QtNodes

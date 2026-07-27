@@ -27,6 +27,14 @@ private:
     QPointer<GenericSARImportTask> import_GenericSAR_thread;
     QPointer<GenericSARBatchImportTask> import_GenericSAR_thread2;
 
+    void persistOutputs(const QString& projectName,
+                        const QString& savePath,
+                        const QString& dstNode,
+                        const QStringList& outputNames,
+                        const QStringList& outputPaths,
+                        const QString& dataType,
+                        const QString& satelliteFormat);
+
 signals:
     void sendCopy(QStandardItemModel* model);
 
@@ -42,7 +50,6 @@ private slots:
     void updateProcess(int, QString);
     void endProcess();
     void StopThread();
-    void TransitModel(QStandardItemModel*);
     void on_pushButton_add_pressed();
     void on_pushButton_remove_pressed();
 

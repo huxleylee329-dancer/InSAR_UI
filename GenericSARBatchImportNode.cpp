@@ -111,6 +111,9 @@ void GenericSARBatchImportNode::executeImport()
         return;
     }
 
+    m_generatedOutputPaths.clear();
+    m_outputPersistenceFailed = false;
+
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         setProgress(100);
         onImportFinished();
@@ -125,10 +128,7 @@ void GenericSARBatchImportNode::executeImport()
         projectPath(),
         m_preparedOriginalFileList,
         m_preparedImportNameList,
-        getOutputNodeName(),
-        projectName(),
-        projectModel(),
-        getProjectContext()
+        getOutputNodeName()
     );
 
     connect(m_task, &GenericSARBatchImportTask::updateProcess,
@@ -141,8 +141,8 @@ void GenericSARBatchImportNode::executeImport()
         m_task = nullptr;
         onThreadError(error);
     }, Qt::QueuedConnection);
-    connect(m_task, &GenericSARBatchImportTask::sendModel,
-            this, &GenericSARBatchImportNode::onModelUpdated, Qt::QueuedConnection);
+    connect(m_task, &GenericSARBatchImportTask::outputsGenerated,
+            this, &GenericSARBatchImportNode::onOutputsGenerated, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
 }
@@ -165,7 +165,7 @@ bool GenericSARBatchImportNode::prepareToStart()
 
     if (m_imagePaths.isEmpty())
     {
-        onError("请至少添加一个 通用 SAR 图像文件。");
+        onError("璇疯嚦灏戞坊鍔犱竴涓?閫氱敤 SAR 鍥惧儚鏂囦欢銆?");
         return false;
     }
 
@@ -428,15 +428,19 @@ void GenericSARBatchImportNode::onImportProgress(int progress, const QString& me
 
 void GenericSARBatchImportNode::onImportFinished()
 {
-    m_importedFilePaths = getExpectedOutputFilePaths();
+    if (m_outputPersistenceFailed) {
+        onThreadError(QStringLiteral("Unable to save imported outputs to the project."));
+        return;
+    }
+
+    m_importedFilePaths = m_generatedOutputPaths.isEmpty()
+        ? getExpectedOutputFilePaths()
+        : m_generatedOutputPaths;
 
     if (!m_importedFilePaths.isEmpty()) {
         m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths);
         setOutputData(0, m_imageInfo);
-        Q_EMIT dataUpdated(0);
-
         setOutputData(1, m_imageInfo);
-        Q_EMIT dataUpdated(1);
     }
 
     InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute completed.");
@@ -451,9 +455,13 @@ void GenericSARBatchImportNode::onThreadError(const QString& error)
     ImportNodeBase::onThreadError(error);
 }
 
-void GenericSARBatchImportNode::onModelUpdated(QStandardItemModel* model)
+void GenericSARBatchImportNode::onOutputsGenerated(const QString& dstNode,
+                                                    const QStringList& outputNames,
+                                                    const QStringList& outputPaths,
+                                                    const QString& dataType,
+                                                    const QString& satelliteFormat)
 {
-    ImportNodeBase::onModelUpdated(model);
+    ImportNodeBase::onOutputsGenerated(dstNode, outputNames, outputPaths, dataType, satelliteFormat);
 }
 
 NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex portIndex) const

@@ -112,6 +112,7 @@ private:
     bool m_preparedRecoverRefinementTransaction = false;
     bool m_preparedCleanOutputDirectory = false;
     int m_preparedImagesNumber;
+    QStringList m_preparedInputPaths;
     bool m_processingWarning = false;
     QStringList m_processingQualityWarnings;
     QVector<RegistrationOffsetSummary> m_registrationOffsets;
@@ -171,8 +172,8 @@ private:
     bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
-    void startBackGeocoding(int images_number, int masterIndex, QString savePath, QString dstProject,
-                            QString srcNode, QString dstNode, QStandardItemModel* model, bool b_ESD);
+    void startBackGeocoding(int masterIndex, QString savePath, QString dstProject,
+                            QString dstNode, QStringList inputPaths, bool b_ESD);
 };
 
 } // namespace QtNodes

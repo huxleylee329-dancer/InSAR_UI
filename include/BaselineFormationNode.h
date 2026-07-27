@@ -94,6 +94,7 @@ private:
     void updateWidgetSize();
     void updateMasterImageCombo();
     void executeProcessing();
+    void cleanUpThreadAndWorker();
     void showChart();
     QString projectPath() const;
 

@@ -88,11 +88,12 @@ private:
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
-    void onResultsReceived(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames);
+    void onResultsReceived(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames,
+                           const QString& savePath, const QString& projectName);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void releaseFinishedThreadAndWorker();
 
     // Get project context interface
     QStandardItemModel* projectModel() const;
@@ -111,11 +112,11 @@ private:
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
     QString m_preparedDemPath;
+    QStringList m_generatedOutputPaths;
 
 signals:
-    void startDeramp(int masterIndex, QString project_name,
-                     QString src_node, QString dst_node, QStandardItemModel* model,
-                     QString dem_path);
+    void startDeramp(int masterIndex, QString projectName, QString savePath,
+                     QString dstNode, QStringList inputPaths, QString demPath);
 };
 
 } // namespace QtNodes

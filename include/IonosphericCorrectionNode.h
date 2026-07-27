@@ -80,17 +80,27 @@ private:
     double m_preparedSubbandRatio = 0.3;
     double m_preparedFilterStrength = 1.0;
     bool m_preparedOutputTEC = false;
+    QStringList m_preparedSlcNames;
+    QStringList m_preparedSlcPaths;
+    QStringList m_generatedOutputNames;
+    QStringList m_generatedOutputPaths;
 
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onCancelled();
     void onError(const QString& error);
-    void onModelUpdated(QStandardItemModel* model);
     bool validateInputs() const;
     void updateWidgetSize();
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void persistOutputToProject(const QString& outputNodeName,
+                                const QStringList& h5Paths);
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
+                                const QStringList& types, const QStringList& resultJpgPaths,
+                                bool completeExecution);
+    void cleanUpThreadAndWorker();
+    void releaseFinishedThreadAndWorker();
 
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
@@ -106,7 +116,7 @@ signals:
     void startCorrection(double subbandRatio, double filterStrength, bool outputTEC,
                          QString save_path, QString project_name,
                          QString node_name, QString file_name,
-                         QStandardItemModel* model);
+                         QStringList slcNames, QStringList slcPaths);
 };
 
 } // namespace QtNodes

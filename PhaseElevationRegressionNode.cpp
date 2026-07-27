@@ -4,6 +4,7 @@
 #include "InterfaceManager.h"
 #include "WorkspaceUI.h"
 #include "NodeUtils.h"
+#include "Utils.h"
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include <QVBoxLayout>
@@ -74,7 +75,7 @@ bool PhaseElevationRegressionNode::portCaptionVisible(PortType portType, PortInd
 QString PhaseElevationRegressionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QStringLiteral("干涉图");
+        if (portIndex == 0) return QStringLiteral("骞叉秹鍥?");
         else return QStringLiteral("DEM ?");
     } else {
         if (portIndex == 0) return QStringLiteral("成果 *");
@@ -233,7 +234,7 @@ void PhaseElevationRegressionNode::createWidget()
     // 目标节点名称
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -339,6 +340,13 @@ void PhaseElevationRegressionNode::executeProcessing()
 
     setProgress(0);
     setState(ExecutionState::Running);
+    m_preparedPhasePaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    m_preparedPhaseNames.clear();
+    for (const QString& path : m_preparedPhasePaths)
+        m_preparedPhaseNames.append(QFileInfo(path).baseName());
+    if (m_preparedPhasePaths.isEmpty()) { onError(QStringLiteral("没有可校正的干涉图")); return; }
+    m_generatedOutputNames.clear(); m_generatedOutputPaths.clear();
+    m_generatedOffsetRows.clear(); m_generatedOffsetCols.clear();
 
     m_thread = new QThread();
     m_workerThread = new PhaseElevationRegressionWorker();
@@ -347,15 +355,24 @@ void PhaseElevationRegressionNode::executeProcessing()
     connect(this, &PhaseElevationRegressionNode::startRegression, m_workerThread, &PhaseElevationRegressionWorker::doRegression);
     connect(m_thread, &QThread::started, this, [this]() {
         Q_EMIT startRegression(m_preparedPolyOrder, m_preparedWindowSize, m_preparedCoherenceThresh,
-            m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode, projectModel());
+            m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode,
+            m_preparedPhaseNames, m_preparedPhasePaths);
     });
     connect(m_workerThread, &PhaseElevationRegressionWorker::updateProcess, this, &PhaseElevationRegressionNode::onProgressUpdate);
+    connect(m_workerThread, &PhaseElevationRegressionWorker::outputsGenerated, this,
+        [this](const QStringList& names, const QStringList& paths,
+               const QList<int>& rows, const QList<int>& cols) {
+            m_generatedOutputNames = names; m_generatedOutputPaths = paths;
+            m_generatedOffsetRows = rows; m_generatedOffsetCols = cols;
+        });
     connect(m_workerThread, &PhaseElevationRegressionWorker::endProcess, this, &PhaseElevationRegressionNode::onProcessingFinished);
     connect(m_workerThread, &PhaseElevationRegressionWorker::errorProcess, this, &PhaseElevationRegressionNode::onError);
     connect(m_workerThread, &PhaseElevationRegressionWorker::cancelled, this, &PhaseElevationRegressionNode::onCancelled);
+    connect(m_workerThread, &PhaseElevationRegressionWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &PhaseElevationRegressionWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &PhaseElevationRegressionWorker::cancelled, m_thread, &QThread::quit);
-    connect(m_workerThread, &PhaseElevationRegressionWorker::sendModel, this, &PhaseElevationRegressionNode::onModelUpdated);
     connect(m_workerThread, &PhaseElevationRegressionWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_workerThread, &PhaseElevationRegressionWorker::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     QTimer::singleShot(0, this, [this]() {
@@ -381,77 +398,30 @@ void PhaseElevationRegressionNode::onProgressUpdate(int progress, const QString&
 
 void PhaseElevationRegressionNode::onProcessingFinished()
 {
-    QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
-        ? generateDefaultOutputName() : m_outputNodeNameEdit->text().trimmed();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
-    QStringList h5Paths;
+    const QString dstNode = m_preparedDstNode;
+    const QStringList h5Paths = m_generatedOutputPaths;
     QStringList jpgPaths;
     QStringList types;
-
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString h5Path = dir.absoluteFilePath(h5File);
-            h5Paths.append(h5Path);
-            QString baseName = QFileInfo(h5File).baseName();
-            jpgPaths.append(outputPath + baseName + ".jpg");
-            types.append("phase");
-        }
+    for (const QString& h5Path : h5Paths) {
+        jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
+        types.append("phase");
     }
 
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    releaseFinishedThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) return;
 
+    if (h5Paths.isEmpty()) { onError(QStringLiteral("回归校正未生成有效输出")); return; }
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
+    persistOutputToProject(dstNode, h5Paths, m_generatedOutputNames,
+        m_generatedOffsetRows, m_generatedOffsetCols);
 
     if (!h5Paths.isEmpty()) {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            if (discardObsoleteAutomaticExecution()) return;
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-
-            m_outputNodeNameEdit->setEnabled(true);
-            m_polyOrderCombo->setEnabled(true);
-            m_windowSizeEdit->setEnabled(true);
-            m_coherenceThreshSpin->setEnabled(true);
-
-            setState(ExecutionState::Running);
-            setProgress(100);
-            InSARLogManager::LogInfo("PhaseElevationRegressionNode", "处理完成.");
-            finishExecution();
-            Q_EMIT dataUpdated(0);
-        });
-
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
-            for (int i = 0; i < h5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
     } else {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
-        Q_EMIT dataUpdated(1);
 
         m_outputNodeNameEdit->setEnabled(true);
         m_polyOrderCombo->setEnabled(true);
@@ -461,23 +431,13 @@ void PhaseElevationRegressionNode::onProcessingFinished()
         setState(ExecutionState::Running);
         setProgress(100);
         finishExecution();
-        Q_EMIT dataUpdated(0);
     }
 }
 
 void PhaseElevationRegressionNode::onError(const QString& error)
 {
     Q_UNUSED(error);
-    if (m_thread) {
-        m_thread->quit();
-        m_thread->wait();
-        m_thread->deleteLater();
-        m_thread = nullptr;
-    }
-    if (m_workerThread) {
-        m_workerThread->deleteLater();
-        m_workerThread = nullptr;
-    }
+    releaseFinishedThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) return;
 
@@ -491,8 +451,7 @@ void PhaseElevationRegressionNode::onError(const QString& error)
 
 void PhaseElevationRegressionNode::onCancelled()
 {
-    if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
-    if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    releaseFinishedThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) return;
 
     setState(ExecutionState::Stopped);
@@ -502,14 +461,6 @@ void PhaseElevationRegressionNode::onCancelled()
     m_polyOrderCombo->setEnabled(true);
     m_windowSizeEdit->setEnabled(true);
     m_coherenceThreshSpin->setEnabled(true);
-}
-
-void PhaseElevationRegressionNode::onModelUpdated(QStandardItemModel* model)
-{
-    if (isAutomaticExecutionObsolete()) return;
-    Q_UNUSED(model);
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) iface->refreshProjectTree();
 }
 
 bool PhaseElevationRegressionNode::validateAndRestoreOutput()
@@ -540,7 +491,6 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
-    Q_EMIT dataUpdated(0);
 
     QStringList existingJpgPaths;
     QStringList missingH5s;
@@ -562,25 +512,89 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        m_remedyWatcher.cancel();
-        m_remedyWatcher.waitForFinished();
-        m_remedyWatcher.disconnect();
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfoData);
-            Q_EMIT dataUpdated(1);
-        });
-
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
-            for (int i = 0; i < missingH5s.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
     }
 
     return true;
+}
+
+void PhaseElevationRegressionNode::persistOutputToProject(const QString& outputNodeName,
+                                                          const QStringList& h5Paths,
+                                                          const QStringList& outputNames,
+                                                          const QList<int>& offsetRows,
+                                                          const QList<int>& offsetCols)
+{
+    QStandardItemModel* model = projectModel();
+    if (!model || h5Paths.size() != outputNames.size() ||
+        h5Paths.size() != offsetRows.size() || h5Paths.size() != offsetCols.size())
+        return;
+
+    const QList<QStandardItem*> projects = model->findItems(projectName());
+    if (projects.isEmpty())
+        return;
+
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), outputNodeName, "phase-2.5", FOLDER_ICON);
+    XMLFile* xml = projectXml();
+    for (int i = 0; i < h5Paths.size(); ++i) {
+        const QString relativePath = QString("/%1/%2.h5").arg(outputNodeName, outputNames[i]);
+        NodeUtils::findOrCreateChildItem(outputNode, outputNames[i], "phase", h5Paths[i], IMAGEDATA_ICON);
+        if (xml) {
+            xml->XMLFile_add_unwrap(outputNodeName.toStdString().c_str(), outputNames[i].toStdString().c_str(),
+                relativePath.toStdString().c_str(), offsetRows[i], offsetCols[i],
+                "PhaseElevationRegression", 0);
+        }
+    }
+    if (xml) {
+        const QString xmlPath = projectPath() + "/" + projectName() + ".Insar";
+        xml->XMLFile_save(xmlPath.toStdString().c_str());
+    }
+    if (auto* iface = NodeUtils::getProjectContext(_widget))
+        iface->refreshProjectTree();
+}
+
+void PhaseElevationRegressionNode::startPreviewGeneration(const QStringList& h5Paths,
+                                                           const QStringList& generatedJpgPaths,
+                                                           const QStringList& types,
+                                                           const QStringList& resultJpgPaths,
+                                                           bool completeExecution)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, resultJpgPaths, completeExecution]() {
+        if (completeExecution && discardObsoleteAutomaticExecution()) return;
+        m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+        setOutputData(1, m_imageInfoData);
+        if (completeExecution) {
+            m_outputNodeNameEdit->setEnabled(true);
+            m_polyOrderCombo->setEnabled(true);
+            m_windowSizeEdit->setEnabled(true);
+            m_coherenceThreshSpin->setEnabled(true);
+            setState(ExecutionState::Running);
+            setProgress(100);
+            InSARLogManager::LogInfo("PhaseElevationRegressionNode", "处理完成.");
+            finishExecution();
+        } else {
+            Q_EMIT dataUpdated(1);
+        }
+    });
+    QFuture<void> future = QtConcurrent::run([h5Paths, generatedJpgPaths, types]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], types[i]);
+        }
+    });
+    m_remedyWatcher.setFuture(future);
 }
 
 QStringList PhaseElevationRegressionNode::previewImagePaths() const
@@ -644,6 +658,29 @@ XMLFile* PhaseElevationRegressionNode::projectXml() const
     return iface ? iface->projectXml() : nullptr;
 }
 
+void PhaseElevationRegressionNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+    if (!thread)
+        return;
+    if (thread->isRunning()) {
+        thread->quit();
+        thread->wait();
+    }
+}
+
+void PhaseElevationRegressionNode::releaseFinishedThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
+    }
+}
+
 void PhaseElevationRegressionNode::execute()
 {
     executeProcessing();
@@ -651,11 +688,9 @@ void PhaseElevationRegressionNode::execute()
 
 void PhaseElevationRegressionNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning()) {
+    if (m_thread && m_thread->isRunning())
         m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
-    }
+    cleanUpThreadAndWorker();
 }
 
 void PhaseElevationRegressionNode::processAutomatically()
@@ -668,3 +703,4 @@ void PhaseElevationRegressionNode::processAutomatically()
 }
 
 } // namespace QtNodes
+

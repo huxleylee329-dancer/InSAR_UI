@@ -4,6 +4,7 @@
 #include "InterfaceManager.h"
 #include "WorkspaceUI.h"
 #include "NodeUtils.h"
+#include "Utils.h"
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include <QVBoxLayout>
@@ -288,6 +289,13 @@ void IonosphericCorrectionNode::executeProcessing()
 
     setProgress(0);
     setState(ExecutionState::Running);
+    m_generatedOutputNames.clear();
+    m_generatedOutputPaths.clear();
+    m_preparedSlcPaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    m_preparedSlcNames.clear();
+    for (const QString& path : m_preparedSlcPaths)
+        m_preparedSlcNames.append(QFileInfo(path).baseName());
+    if (m_preparedSlcPaths.isEmpty()) { onError(QStringLiteral("没有可处理的 SLC 影像")); return; }
 
     m_thread = new QThread();
     m_workerThread = new IonosphericCorrectionWorker();
@@ -296,15 +304,23 @@ void IonosphericCorrectionNode::executeProcessing()
     connect(this, &IonosphericCorrectionNode::startCorrection, m_workerThread, &IonosphericCorrectionWorker::doCorrection);
     connect(m_thread, &QThread::started, this, [this]() {
         Q_EMIT startCorrection(m_preparedSubbandRatio, m_preparedFilterStrength, m_preparedOutputTEC,
-            m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode, projectModel());
+            m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode,
+            m_preparedSlcNames, m_preparedSlcPaths);
     });
     connect(m_workerThread, &IonosphericCorrectionWorker::updateProcess, this, &IonosphericCorrectionNode::onProgressUpdate);
+    connect(m_workerThread, &IonosphericCorrectionWorker::outputsGenerated, this,
+        [this](const QStringList& outputNames, const QStringList& outputPaths) {
+            m_generatedOutputNames = outputNames;
+            m_generatedOutputPaths = outputPaths;
+        });
     connect(m_workerThread, &IonosphericCorrectionWorker::endProcess, this, &IonosphericCorrectionNode::onProcessingFinished);
     connect(m_workerThread, &IonosphericCorrectionWorker::errorProcess, this, &IonosphericCorrectionNode::onError);
     connect(m_workerThread, &IonosphericCorrectionWorker::cancelled, this, &IonosphericCorrectionNode::onCancelled);
+    connect(m_workerThread, &IonosphericCorrectionWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_workerThread, &IonosphericCorrectionWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &IonosphericCorrectionWorker::cancelled, m_thread, &QThread::quit);
-    connect(m_workerThread, &IonosphericCorrectionWorker::sendModel, this, &IonosphericCorrectionNode::onModelUpdated);
     connect(m_workerThread, &IonosphericCorrectionWorker::destroyed, m_thread, &QThread::quit);
+    connect(m_thread, &QThread::finished, m_workerThread, &IonosphericCorrectionWorker::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
     QTimer::singleShot(0, this, [this]() {
@@ -323,55 +339,35 @@ void IonosphericCorrectionNode::onProgressUpdate(int progress, const QString& me
 
 void IonosphericCorrectionNode::onProcessingFinished()
 {
-    QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
-        ? generateDefaultOutputName() : m_outputNodeNameEdit->text().trimmed();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QStringList h5Paths, jpgPaths, types;
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters; filters << "*.h5";
-        for (const QString& f : dir.entryList(filters, QDir::Files)) {
-            h5Paths.append(dir.absoluteFilePath(f));
-            jpgPaths.append(outputPath + QFileInfo(f).baseName() + ".jpg");
-            types.append("complex");
-        }
+    const QString dstNode = m_preparedDstNode;
+    const QStringList h5Paths = m_generatedOutputPaths;
+    QStringList jpgPaths;
+    QStringList types;
+    for (const QString& h5Path : h5Paths) {
+        jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
+        types.append("complex");
     }
 
-    if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
-    if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    releaseFinishedThreadAndWorker();
 
     if (discardObsoleteAutomaticExecution()) return;
 
+    if (h5Paths.isEmpty()) {
+        onError(QStringLiteral("电离层校正未生成有效输出"));
+        return;
+    }
+
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
+    persistOutputToProject(dstNode, h5Paths);
 
-    if (!h5Paths.isEmpty()) {
-        m_remedyWatcher.cancel(); m_remedyWatcher.waitForFinished(); m_remedyWatcher.disconnect();
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
-            if (discardObsoleteAutomaticExecution()) return;
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-            setOutputData(1, m_imageInfoData); Q_EMIT dataUpdated(1);
-            m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
-            m_filterStrengthSpin->setEnabled(true); m_outputTECCheck->setEnabled(true);
-            setState(ExecutionState::Running); setProgress(100); finishExecution(); Q_EMIT dataUpdated(0);
-        });
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
-            for (int i = 0; i < h5Paths.size(); ++i) NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
-        });
-        m_remedyWatcher.setFuture(future);
-    } else {
-        m_imageInfoData.reset(); setOutputData(1, nullptr); Q_EMIT dataUpdated(1);
-        m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
-        m_filterStrengthSpin->setEnabled(true); m_outputTECCheck->setEnabled(true);
-        setState(ExecutionState::Running); setProgress(100); finishExecution(); Q_EMIT dataUpdated(0);
-    }
+    startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
 }
 
 void IonosphericCorrectionNode::onError(const QString& error)
 {
     Q_UNUSED(error);
-    if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
-    if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    releaseFinishedThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) return;
     m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
     m_filterStrengthSpin->setEnabled(true); m_outputTECCheck->setEnabled(true);
@@ -380,8 +376,7 @@ void IonosphericCorrectionNode::onError(const QString& error)
 
 void IonosphericCorrectionNode::onCancelled()
 {
-    if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
-    if (m_workerThread) { m_workerThread->deleteLater(); m_workerThread = nullptr; }
+    releaseFinishedThreadAndWorker();
     if (discardObsoleteAutomaticExecution()) return;
 
     setState(ExecutionState::Stopped);
@@ -389,14 +384,6 @@ void IonosphericCorrectionNode::onCancelled()
     Q_EMIT computingFinished();
     m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
     m_filterStrengthSpin->setEnabled(true); m_outputTECCheck->setEnabled(true);
-}
-
-void IonosphericCorrectionNode::onModelUpdated(QStandardItemModel* model)
-{
-    if (isAutomaticExecutionObsolete()) return;
-    Q_UNUSED(model);
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) iface->refreshProjectTree();
 }
 
 bool IonosphericCorrectionNode::validateAndRestoreOutput()
@@ -418,7 +405,9 @@ bool IonosphericCorrectionNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
-    setOutputData(0, m_outputData); Q_EMIT dataUpdated(0);
+    setOutputData(0, m_outputData);
+
+    persistOutputToProject(dstNode, h5Paths);
 
     QStringList missingH5s, missingJpgs, missingTypes, existingJpgs;
     for (int i = 0; i < expectedJpgPaths.size(); ++i) {
@@ -429,17 +418,77 @@ bool IonosphericCorrectionNode::validateAndRestoreOutput()
         m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgs);
         setOutputData(1, m_imageInfoData); Q_EMIT dataUpdated(1);
     } else {
-        m_remedyWatcher.cancel(); m_remedyWatcher.waitForFinished(); m_remedyWatcher.disconnect();
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
-            m_imageInfoData = std::make_shared<ImageInfoData>(expectedJpgPaths);
-            setOutputData(1, m_imageInfoData); Q_EMIT dataUpdated(1);
-        });
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
-            for (int i = 0; i < missingH5s.size(); ++i) NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
     }
     return true;
+}
+
+void IonosphericCorrectionNode::persistOutputToProject(const QString& outputNodeName,
+                                                        const QStringList& h5Paths)
+{
+    if (auto* model = projectModel()) {
+        const QList<QStandardItem*> projects = model->findItems(projectName());
+        if (!projects.isEmpty()) {
+            QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+                projects.first(), outputNodeName, "complex-1.5", FOLDER_ICON);
+            XMLFile* xml = projectXml();
+            for (const QString& h5Path : h5Paths) {
+                const QString name = QFileInfo(h5Path).baseName();
+                const QString relativePath = QString("/%1/%2.h5").arg(outputNodeName, name);
+                NodeUtils::findOrCreateChildItem(outputNode, name, "complex", h5Path, IMAGEDATA_ICON);
+                if (xml) {
+                    xml->XMLFile_add_unwrap(outputNodeName.toStdString().c_str(), name.toStdString().c_str(),
+                        relativePath.toStdString().c_str(), 0, 0, "Ionospheric_Correction", 0);
+                }
+            }
+            if (xml) {
+                const QString xmlPath = projectPath() + "/" + projectName() + ".Insar";
+                xml->XMLFile_save(xmlPath.toStdString().c_str());
+            }
+            if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+                iface->refreshProjectTree();
+            }
+        }
+    }
+}
+
+void IonosphericCorrectionNode::startPreviewGeneration(const QStringList& h5Paths,
+                                                        const QStringList& generatedJpgPaths,
+                                                        const QStringList& types,
+                                                        const QStringList& resultJpgPaths,
+                                                        bool completeExecution)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, resultJpgPaths, completeExecution]() {
+        if (completeExecution && discardObsoleteAutomaticExecution()) return;
+        m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+        setOutputData(1, m_imageInfoData);
+        if (completeExecution) {
+            m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);
+            m_filterStrengthSpin->setEnabled(true); m_outputTECCheck->setEnabled(true);
+            setState(ExecutionState::Running); setProgress(100); finishExecution();
+        } else {
+            Q_EMIT dataUpdated(1);
+        }
+    });
+    QFuture<void> future = QtConcurrent::run([h5Paths, generatedJpgPaths, types]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], types[i]);
+        }
+    });
+    m_remedyWatcher.setFuture(future);
 }
 
 QStringList IonosphericCorrectionNode::previewImagePaths() const
@@ -497,11 +546,38 @@ XMLFile* IonosphericCorrectionNode::projectXml() const
     return iface ? iface->projectXml() : nullptr;
 }
 
+void IonosphericCorrectionNode::cleanUpThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+
+    if (!thread)
+        return;
+
+    if (thread->isRunning()) {
+        thread->quit();
+        thread->wait();
+    }
+}
+
+void IonosphericCorrectionNode::releaseFinishedThreadAndWorker()
+{
+    QThread* thread = m_thread;
+    m_thread = nullptr;
+    m_workerThread = nullptr;
+    if (thread && thread->isRunning()) {
+        thread->quit();
+    }
+}
+
 void IonosphericCorrectionNode::execute() { executeProcessing(); }
 
 void IonosphericCorrectionNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning()) { m_thread->requestInterruption(); m_thread->quit(); m_thread->wait(); }
+    if (m_thread && m_thread->isRunning())
+        m_thread->requestInterruption();
+    cleanUpThreadAndWorker();
 }
 
 void IonosphericCorrectionNode::processAutomatically()

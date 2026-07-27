@@ -41,9 +41,9 @@ int ColorBar::SetData(QString Data_path, QString Type)
         Type == "dem") 
     {
         Mat V;
+        if (!NodeUtils::readMatFromH5(Data_path, Type, V))
         {
-            NodeUtils::Hdf5Locker locker;
-            NodeUtils::readMatFromH5(Data_path, Type, V);
+            return -1;
         }
         mType = Type;
         cv::minMaxLoc(V, &mMin, &mMax, NULL, NULL);
@@ -53,9 +53,9 @@ int ColorBar::SetData(QString Data_path, QString Type)
     else if (Type == "SBAS")
     {
         Mat V;
+        if (!NodeUtils::readMatFromH5(Data_path, "defomation_velocity", V))
         {
-            NodeUtils::Hdf5Locker locker;
-            NodeUtils::readMatFromH5(Data_path, "defomation_velocity", V);
+            return -1;
         }
         mType = Type;
         cv::minMaxLoc(V, &mMin, &mMax, NULL, NULL);
