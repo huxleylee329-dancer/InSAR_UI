@@ -279,6 +279,8 @@ void DemWorker::Dem(int method, int times, QString save_path, QString project_na
             }
 
             NodeUtils::writeMatToH5(outputH5, "dem", phase_dem);
+            NodeUtils::writeScalarToH5(outputH5, "dem_generation_method", method);
+            NodeUtils::writeScalarToH5(outputH5, "dem_generation_iterations", times);
             
             string tmp_str;
             Mat tmp;

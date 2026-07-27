@@ -19,6 +19,8 @@
 #include <QMessageBox>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>
+#include <algorithm>
+#include <cmath>
 #include "QtNodes/internal/NodeDetailWindow.hpp"
 
 namespace QtNodes {
@@ -952,33 +954,48 @@ private:
                     QObject::tr("正在读取输入与输出 H5 数据以进行参数及特征值校验。"),
                     QObject::tr("特征值分析"));
 
-        m_lblInWidth = createFeatureLabel();
-        m_lblOutWidth = createFeatureLabel();
-        m_lblInMean = createFeatureLabel();
-        m_lblOutMean = createFeatureLabel();
+        m_lblDiffMean = createFeatureLabel();
         m_lblDiffStd = createFeatureLabel();
+        m_lblDiffResultant = createFeatureLabel();
+        m_lblGradientSummary = createFeatureLabel();
+        m_lblResidueSummary = createFeatureLabel();
 
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("输入图像行列数:")), m_lblInWidth);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("输出图像行列数:")), m_lblOutWidth);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("输入相位均值 (rad):")), m_lblInMean);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("输出相位均值 (rad):")), m_lblOutMean);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("差值相位标准差 (rad):")), m_lblDiffStd);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差圆均值 (rad):")), m_lblDiffMean);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差圆标准差 (rad):")), m_lblDiffStd);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差集中度 R (0-1):")), m_lblDiffResultant);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位梯度 RMS (输入 -> 输出):")), m_lblGradientSummary);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("相位残差点密度 (输入 -> 输出):")), m_lblResidueSummary);
     }
+
+    struct PhaseQualityMetrics {
+        double gradientRms = 0.0;
+        double residueDensity = 0.0;
+        bool hasGradient = false;
+        bool hasResidueDensity = false;
+    };
 
     struct ValidationResults {
         bool success = false;
         QString errorMsg;
         // Compare values
         int expectedMethod = 1;
-        int actualMethod = 1;
+        int actualMethod = 0;
         int expectedPrefilter = 5;
-        int actualPrefilter = 5;
+        int actualPrefilter = 0;
+        int expectedSlopeWindow = 5;
+        int actualSlopeWindow = 0;
+        bool hasActualMethod = false;
+        bool hasActualPrefilter = false;
+        bool hasActualSlopeWindow = false;
         // Calculated features
         int inRows = 0, inCols = 0;
         int outRows = 0, outCols = 0;
-        double inMean = 0.0;
-        double outMean = 0.0;
-        double diffStd = 0.0;
+        double wrappedDiffMean = 0.0;
+        double wrappedDiffStd = 0.0;
+        double wrappedDiffResultant = 0.0;
+        bool hasWrappedDifference = false;
+        PhaseQualityMetrics inputQuality;
+        PhaseQualityMetrics outputQuality;
     };
 
     void startAsyncValidation() override
@@ -994,11 +1011,12 @@ private:
             m_compTable->clearComparison();
             m_compTable->setEnabled(false);
             
-            m_lblInWidth->setText(QObject::tr("未执行"));
-            m_lblOutWidth->setText(QObject::tr("未执行"));
-            m_lblInMean->setText(QObject::tr("未执行"));
-            m_lblOutMean->setText(QObject::tr("未执行"));
+            m_lblDiffMean->setText(QObject::tr("未执行"));
             m_lblDiffStd->setText(QObject::tr("未执行"));
+            m_lblDiffResultant->setText(QObject::tr("未执行"));
+            m_lblGradientSummary->setText(QObject::tr("未执行"));
+            m_lblResidueSummary->setText(QObject::tr("未执行"));
+
             return;
         }
 
@@ -1020,23 +1038,20 @@ private:
         // Settings to compare
         int expMethod = m_node->save()["method"].toInt(1);
         int expPrefilter = m_node->save()["prefilterWin"].toInt(5);
+        int expSlopeWindow = m_node->save()["slopeWin"].toInt(5);
 
         // Run validation in background
-        QFuture<ValidationResults> future = QtConcurrent::run([inH5, outH5, expMethod, expPrefilter]() {
+        QFuture<ValidationResults> future = QtConcurrent::run([inH5, outH5, expMethod, expPrefilter, expSlopeWindow]() {
             NodeUtils::Hdf5Locker locker;
             ValidationResults res;
             res.expectedMethod = expMethod;
             res.expectedPrefilter = expPrefilter;
+            res.expectedSlopeWindow = expSlopeWindow;
 
             // 1. Read metadata parameters from output H5
-            int actualPref = 5;
-            if (NodeUtils::readScalarFromH5(outH5, "multilook_rg", actualPref)) {
-                res.actualPrefilter = actualPref;
-            } else {
-                res.actualPrefilter = expPrefilter; // default if not found
-            }
-            
-            res.actualMethod = expMethod;
+            res.hasActualMethod = NodeUtils::readScalarFromH5(outH5, "denoise_method", res.actualMethod);
+            res.hasActualPrefilter = NodeUtils::readScalarFromH5(outH5, "denoise_slope_pre_win", res.actualPrefilter);
+            res.hasActualSlopeWindow = NodeUtils::readScalarFromH5(outH5, "denoise_slope_win", res.actualSlopeWindow);
             
             // 2. Read matrices
             cv::Mat inPhase, outPhase;
@@ -1050,18 +1065,110 @@ private:
                 res.outRows = outPhase.rows;
                 res.outCols = outPhase.cols;
 
-                // Compute statistics (mean)
-                cv::Scalar meanIn = cv::mean(inPhase);
-                cv::Scalar meanOut = cv::mean(outPhase);
-                res.inMean = meanIn[0];
-                res.outMean = meanOut[0];
+                const auto calculatePhaseQuality = [](const cv::Mat& phase) {
+                    const double pi = 3.14159265358979323846;
+                    const double twoPi = 2.0 * pi;
+                    const auto wrapDifference = [pi, twoPi](double delta) {
+                        if (delta > pi) {
+                            return delta - twoPi;
+                        }
+                        if (delta <= -pi) {
+                            return delta + twoPi;
+                        }
+                        return delta;
+                    };
 
-                // Compute phase difference standard deviation
-                cv::Mat diff;
-                cv::subtract(inPhase, outPhase, diff);
-                cv::Scalar diffMean, diffStd;
-                cv::meanStdDev(diff, diffMean, diffStd);
-                res.diffStd = diffStd[0];
+                    PhaseQualityMetrics metrics;
+                    double gradientSumSquares = 0.0;
+                    qint64 gradientCount = 0;
+                    for (int row = 0; row < phase.rows; ++row) {
+                        const float* values = phase.ptr<float>(row);
+                        const float* nextRow = row + 1 < phase.rows ? phase.ptr<float>(row + 1) : nullptr;
+                        for (int col = 0; col < phase.cols; ++col) {
+                            const double value = values[col];
+                            if (!std::isfinite(value)) {
+                                continue;
+                            }
+                            if (col + 1 < phase.cols && std::isfinite(values[col + 1])) {
+                                const double gradient = wrapDifference(static_cast<double>(values[col + 1]) - value);
+                                gradientSumSquares += gradient * gradient;
+                                ++gradientCount;
+                            }
+                            if (nextRow && std::isfinite(nextRow[col])) {
+                                const double gradient = wrapDifference(static_cast<double>(nextRow[col]) - value);
+                                gradientSumSquares += gradient * gradient;
+                                ++gradientCount;
+                            }
+                        }
+                    }
+                    if (gradientCount > 0) {
+                        metrics.gradientRms = std::sqrt(gradientSumSquares / gradientCount);
+                        metrics.hasGradient = true;
+                    }
+
+                    qint64 residueCount = 0;
+                    qint64 plaquetteCount = 0;
+                    for (int row = 0; row + 1 < phase.rows; ++row) {
+                        const float* top = phase.ptr<float>(row);
+                        const float* bottom = phase.ptr<float>(row + 1);
+                        for (int col = 0; col + 1 < phase.cols; ++col) {
+                            const double p00 = top[col];
+                            const double p01 = top[col + 1];
+                            const double p11 = bottom[col + 1];
+                            const double p10 = bottom[col];
+                            if (!std::isfinite(p00) || !std::isfinite(p01) || !std::isfinite(p11) || !std::isfinite(p10)) {
+                                continue;
+                            }
+
+                            const double closure = wrapDifference(p01 - p00)
+                                + wrapDifference(p11 - p01)
+                                + wrapDifference(p10 - p11)
+                                + wrapDifference(p00 - p10);
+                            if (std::abs(closure) > pi) {
+                                ++residueCount;
+                            }
+                            ++plaquetteCount;
+                        }
+                    }
+                    if (plaquetteCount > 0) {
+                        metrics.residueDensity = 100.0 * residueCount / plaquetteCount;
+                        metrics.hasResidueDensity = true;
+                    }
+                    return metrics;
+                };
+
+                res.inputQuality = calculatePhaseQuality(inPhase);
+                res.outputQuality = calculatePhaseQuality(outPhase);
+
+                if (inPhase.rows == outPhase.rows && inPhase.cols == outPhase.cols) {
+                    double sumSin = 0.0;
+                    double sumCos = 0.0;
+                    qint64 count = 0;
+
+                    for (int row = 0; row < inPhase.rows; ++row) {
+                        const float* inValues = inPhase.ptr<float>(row);
+                        const float* outValues = outPhase.ptr<float>(row);
+                        for (int col = 0; col < inPhase.cols; ++col) {
+                            const double inputValue = inValues[col];
+                            const double outputValue = outValues[col];
+                            if (!std::isfinite(inputValue) || !std::isfinite(outputValue)) {
+                                continue;
+                            }
+
+                            const double delta = outputValue - inputValue;
+                            sumSin += std::sin(delta);
+                            sumCos += std::cos(delta);
+                            ++count;
+                        }
+                    }
+
+                    if (count > 0) {
+                        res.wrappedDiffMean = std::atan2(sumSin, sumCos);
+                        res.wrappedDiffResultant = std::min(1.0, std::hypot(sumSin / count, sumCos / count));
+                        res.wrappedDiffStd = std::sqrt(-2.0 * std::log(std::max(res.wrappedDiffResultant, 1e-12)));
+                        res.hasWrappedDifference = true;
+                    }
+                }
             } else {
                 res.success = false;
                 res.errorMsg = QObject::tr("读取相位数据集失败，可能文件已损坏或格式不兼容。");
@@ -1086,18 +1193,45 @@ private:
                 m_compTable->setEnabled(true);
                 
                 QString methodStrExp = res.expectedMethod == 1 ? "Slope" : (res.expectedMethod == 2 ? "Goldstein" : "DL");
-                QString methodStrAct = res.actualMethod == 1 ? "Slope" : (res.actualMethod == 2 ? "Goldstein" : "DL");
+                QString methodStrAct = res.hasActualMethod
+                    ? (res.actualMethod == 1 ? "Slope" : (res.actualMethod == 2 ? "Goldstein" : (res.actualMethod == 3 ? "DL" : QObject::tr("未知"))))
+                    : QObject::tr("未记录（旧结果）");
                 m_compTable->addComparison(QObject::tr("滤波方法"), methodStrExp, methodStrAct);
-                m_compTable->addComparison(QObject::tr("平滑窗口大小"), QString::number(res.expectedPrefilter), QString::number(res.actualPrefilter));
+                if (res.expectedMethod == 1) {
+                    m_compTable->addComparison(QObject::tr("预滤波窗口大小"),
+                        QString::number(res.expectedPrefilter),
+                        res.hasActualPrefilter ? QString::number(res.actualPrefilter) : QObject::tr("未记录（旧结果）"));
+                    m_compTable->addComparison(QObject::tr("斜坡滤波窗口大小"),
+                        QString::number(res.expectedSlopeWindow),
+                        res.hasActualSlopeWindow ? QString::number(res.actualSlopeWindow) : QObject::tr("未记录（旧结果）"));
+                }
                 m_compTable->addComparison(QObject::tr("图像宽度 (列数)"), QString::number(res.inCols), QString::number(res.outCols));
                 m_compTable->addComparison(QObject::tr("图像高度 (行数)"), QString::number(res.inRows), QString::number(res.outRows));
 
                 // Update feature analysis labels
-                m_lblInWidth->setText(QString("%1 × %2").arg(res.inCols).arg(res.inRows));
-                m_lblOutWidth->setText(QString("%1 × %2").arg(res.outCols).arg(res.outRows));
-                m_lblInMean->setText(QString::number(res.inMean, 'f', 4));
-                m_lblOutMean->setText(QString::number(res.outMean, 'f', 4));
-                m_lblDiffStd->setText(QString::number(res.diffStd, 'f', 4));
+                m_lblDiffMean->setText(res.hasWrappedDifference
+                    ? QString::number(res.wrappedDiffMean, 'f', 4)
+                    : QObject::tr("图像尺寸不一致"));
+                m_lblDiffStd->setText(res.hasWrappedDifference
+                    ? QString::number(res.wrappedDiffStd, 'f', 4)
+                    : QObject::tr("图像尺寸不一致"));
+                m_lblDiffResultant->setText(res.hasWrappedDifference
+                    ? QString::number(res.wrappedDiffResultant, 'f', 4)
+                    : QObject::tr("图像尺寸不一致"));
+                const auto transitionText = [](double input, bool hasInput, double output, bool hasOutput,
+                    int precision, const QString& unitSuffix) {
+                    if (!hasInput || !hasOutput || input <= 0.0) {
+                        return QObject::tr("无有效数据");
+                    }
+                    const QString inputText = QString::number(input, 'f', precision) + unitSuffix;
+                    const QString outputText = QString::number(output, 'f', precision) + unitSuffix;
+                    const double reduction = 100.0 * (input - output) / input;
+                    return QString("%1 -> %2 (%3%)").arg(inputText).arg(outputText).arg(QString::number(reduction, 'f', 2));
+                };
+                m_lblGradientSummary->setText(transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
+                    res.outputQuality.gradientRms, res.outputQuality.hasGradient, 4, QString()));
+                m_lblResidueSummary->setText(transitionText(res.inputQuality.residueDensity, res.inputQuality.hasResidueDensity,
+                    res.outputQuality.residueDensity, res.outputQuality.hasResidueDensity, 3, QStringLiteral("%")));
 
                 // Final status card
                 m_statusTitle->setText(QObject::tr("验证通过"));
@@ -1118,11 +1252,12 @@ private:
 private:
     DenoiseNode* m_node = nullptr;
     
-    QLabel* m_lblInWidth = nullptr;
-    QLabel* m_lblOutWidth = nullptr;
-    QLabel* m_lblInMean = nullptr;
-    QLabel* m_lblOutMean = nullptr;
+    QLabel* m_lblDiffMean = nullptr;
     QLabel* m_lblDiffStd = nullptr;
+    QLabel* m_lblDiffResultant = nullptr;
+    QLabel* m_lblGradientSummary = nullptr;
+    QLabel* m_lblResidueSummary = nullptr;
+
 };
 
 ::QWidget* DenoiseNode::createValidationWidget(::QWidget* parent)

@@ -134,6 +134,7 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
 
             // Let subclass do the automatic processing (sets output data if inputs are complete)
             // Mark as auto-triggered so executeProcessing() can skip overwrite popups
+            _startFailureMessage.clear();
             _isAutoTriggered = true;
             _deferAutomaticCompletion = false;
             processAutomatically();
@@ -148,6 +149,9 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
             // or if it launched an asynchronous thread and is still Running,
             // we MUST NOT override its state with default completion logic!
             if (_state != ExecutionState::Running) {
+                if (!_startFailureMessage.isEmpty()) {
+                    Q_EMIT executionStartRejected(_startFailureMessage);
+                }
                 Q_EMIT executionStateChanged();
                 triggerVisualUpdate();
                 return;

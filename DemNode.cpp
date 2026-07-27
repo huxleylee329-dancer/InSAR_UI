@@ -16,11 +16,17 @@
 #include <QDir>
 #include <QApplication>
 #include <QDateTime>
+#include <QHash>
 #include <QStandardItemModel>
 #include <QDebug>
 #include <QMessageBox>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>
+#include <opencv2/core.hpp>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include "QtNodes/internal/NodeDetailWindow.hpp"
 
 namespace QtNodes {
 
@@ -307,7 +313,7 @@ bool DemNode::validateInputs() const
         return false;
     }
 
-    QString dstNode = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName;
+    QString dstNode = m_outputNodeName.trimmed();
     if (dstNode.isEmpty()) {
         return false;
     }
@@ -319,32 +325,55 @@ bool DemNode::validateInputs() const
     }
 
     // Check parameters
-    if (m_method == 1) {
-        bool ok = false;
-        int times = m_timesEdit ? m_timesEdit->text().toInt(&ok) : true;
-        if (!ok || times <= 0) {
-            return false;
-        }
+    if (m_method == 1 && m_times <= 0) {
+        return false;
     }
 
     return true;
 }
 
+bool DemNode::commitWidgetParametersForExecution()
+{
+    if (m_outputNodeNameEdit) {
+        m_outputNodeName = m_outputNodeNameEdit->text().trimmed();
+    }
+
+    if (!m_timesEdit) {
+        return true;
+    }
+
+    bool ok = false;
+    const int times = m_timesEdit->text().toInt(&ok);
+    if (!ok || times <= 0) {
+        setStartFailureMessage(QStringLiteral("迭代次数必须是正整数。"));
+        return false;
+    }
+
+    m_times = times;
+    return true;
+}
+
 bool DemNode::prepareToStart()
 {
-    if (!validateInputs())
+    if (!commitWidgetParametersForExecution()) {
         return false;
+    }
 
-    m_preparedDstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
+    if (!validateInputs()) {
+        setStartFailureMessage(QStringLiteral("请检查输入数据和输出配置是否完整。"));
+        return false;
+    }
+
+    m_preparedDstNode = m_outputNodeName.trimmed().isEmpty()
         ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text().trimmed();
+        : m_outputNodeName.trimmed();
 
     m_preparedSavePath = projectPath();
     m_preparedProjectName = projectName();
     m_preparedSrcNode = m_inputData->nodeName();
 
     m_preparedMethod = m_method;
-    m_preparedTimes = m_timesEdit ? m_timesEdit->text().toInt() : m_times;
+    m_preparedTimes = m_times;
 
     QStringList srcPaths = m_inputData->filePaths();
 
@@ -819,6 +848,385 @@ void DemNode::processAutomatically()
     {
         setState(ExecutionState::Idle);
     }
+}
+
+namespace {
+
+QString demGenerationMethodName(int method)
+{
+    switch (method) {
+    case 1: return QObject::tr("Newton 迭代反演");
+    default: return QObject::tr("未知方法 (%1)").arg(method);
+    }
+}
+
+struct DemGenerationImageDiagnostics
+{
+    QString inputName;
+    bool outputFound = false;
+    bool inputRead = false;
+    bool outputRead = false;
+    bool dimensionsMatch = false;
+    int inputRows = 0;
+    int inputCols = 0;
+    int outputRows = 0;
+    int outputCols = 0;
+    bool hasRecordedMethod = false;
+    int recordedMethod = 0;
+    bool hasRecordedIterations = false;
+    int recordedIterations = 0;
+    bool dependenciesComplete = false;
+    QStringList missingDependencies;
+    qint64 totalPixels = 0;
+    qint64 finitePixels = 0;
+    double minHeight = std::numeric_limits<double>::infinity();
+    double maxHeight = -std::numeric_limits<double>::infinity();
+    double sumHeight = 0.0;
+    double sumSquaredHeight = 0.0;
+};
+
+struct DemGenerationValidationResults
+{
+    bool success = false;
+    QString errorMessage;
+    int expectedMethod = 1;
+    int expectedIterations = 20;
+    bool hasRecordedMethod = false;
+    int recordedMethod = 0;
+    bool hasRecordedIterations = false;
+    int recordedIterations = 0;
+    bool metadataConsistent = true;
+    QList<DemGenerationImageDiagnostics> images;
+};
+
+class DemGenerationValidationWidget : public BaseValidationWidget
+{
+public:
+    DemGenerationValidationWidget(DemNode* node, QWidget* parent)
+        : BaseValidationWidget(node, parent)
+        , m_node(node)
+    {
+        setupUI();
+        startAsyncValidation();
+    }
+
+private:
+    void setupUI()
+    {
+        setupBaseUI(QObject::tr("正在诊断 DEM 反演结果..."),
+                    QObject::tr("正在核对输出完整性、参数记录、几何尺寸和高程数值有效性。"),
+                    QObject::tr("DEM 反演诊断汇总"),
+                    QObject::tr("DEM 参数与结果诊断"));
+
+        m_validPixelsLabel = createFeatureLabel();
+        m_heightRangeLabel = createFeatureLabel();
+        m_heightMomentsLabel = createFeatureLabel();
+        m_dimensionsLabel = createFeatureLabel();
+        m_dependenciesLabel = createFeatureLabel();
+        m_issuesLabel = createFeatureLabel();
+
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("有效 DEM 像元:")), m_validPixelsLabel);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("高程数值范围:")), m_heightRangeLabel);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("均值 / 标准差:")), m_heightMomentsLabel);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("尺寸匹配结果:")), m_dimensionsLabel);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("下游关键数据:")), m_dependenciesLabel);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("缺失或异常结果:")), m_issuesLabel);
+    }
+
+    void setNotExecutedState()
+    {
+        m_statusTitle->setText(QObject::tr("诊断不可用"));
+        m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+        m_statusDesc->setText(QObject::tr("请先成功执行 DEM Generation 节点，再查看诊断结果。"));
+        m_compTable->clearComparison();
+        m_compTable->setEnabled(false);
+        m_validPixelsLabel->setText(QObject::tr("未执行"));
+        m_heightRangeLabel->setText(QObject::tr("未执行"));
+        m_heightMomentsLabel->setText(QObject::tr("未执行"));
+        m_dimensionsLabel->setText(QObject::tr("未执行"));
+        m_dependenciesLabel->setText(QObject::tr("未执行"));
+        m_issuesLabel->setText(QObject::tr("未执行"));
+    }
+
+    void startAsyncValidation() override
+    {
+        m_isTimedOut = false;
+        if (m_node->executionState() != ExecutionState::Completed) {
+            setNotExecutedState();
+            return;
+        }
+
+        const auto inputData = m_node->inputDataForValidation();
+        const auto outputData = std::dynamic_pointer_cast<ImportedFileData>(m_node->outData(0));
+        if (!inputData || inputData->filePaths().isEmpty() || !outputData || outputData->filePaths().isEmpty()) {
+            m_statusTitle->setText(QObject::tr("诊断失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(QObject::tr("未找到完整的输入相位或输出 DEM H5 文件列表。"));
+            return;
+        }
+
+        const QJsonObject settings = m_node->save();
+        const QStringList inputPaths = inputData->filePaths();
+        const QStringList outputPaths = outputData->filePaths();
+        const int expectedMethod = settings.value("method").toInt(1);
+        const int expectedIterations = settings.value("times").toInt(20);
+        m_loadingOverlay->startLoading(QObject::tr("正在读取全部 DEM 结果并计算数值统计..."));
+
+        QFuture<DemGenerationValidationResults> future = QtConcurrent::run(
+            [inputPaths, outputPaths, expectedMethod, expectedIterations]() {
+                NodeUtils::Hdf5Locker locker;
+                DemGenerationValidationResults result;
+                result.expectedMethod = expectedMethod;
+                result.expectedIterations = expectedIterations;
+
+                QHash<QString, QString> outputsByBaseName;
+                for (const QString& outputPath : outputPaths) {
+                    outputsByBaseName.insert(QFileInfo(outputPath).baseName(), outputPath);
+                }
+
+                for (const QString& inputPath : inputPaths) {
+                    DemGenerationImageDiagnostics image;
+                    image.inputName = QFileInfo(inputPath).baseName();
+                    const QString outputPath = outputsByBaseName.value(image.inputName + QStringLiteral("_dem"));
+                    image.outputFound = !outputPath.isEmpty();
+                    if (!image.outputFound) {
+                        result.images.append(image);
+                        continue;
+                    }
+
+                    cv::Mat inputPhase;
+                    cv::Mat dem;
+                    image.inputRead = NodeUtils::readMatFromH5(inputPath, "phase", inputPhase) && !inputPhase.empty();
+                    image.outputRead = NodeUtils::readMatFromH5(outputPath, "dem", dem) && !dem.empty();
+                    if (image.inputRead) {
+                        image.inputRows = inputPhase.rows;
+                        image.inputCols = inputPhase.cols;
+                    }
+                    if (image.outputRead) {
+                        image.outputRows = dem.rows;
+                        image.outputCols = dem.cols;
+                    }
+                    image.dimensionsMatch = image.inputRead && image.outputRead && inputPhase.size() == dem.size();
+
+                    image.hasRecordedMethod = NodeUtils::readScalarFromH5(
+                        outputPath, "dem_generation_method", image.recordedMethod);
+                    image.hasRecordedIterations = NodeUtils::readScalarFromH5(
+                        outputPath, "dem_generation_iterations", image.recordedIterations);
+                    if (image.hasRecordedMethod) {
+                        if (!result.hasRecordedMethod) {
+                            result.hasRecordedMethod = true;
+                            result.recordedMethod = image.recordedMethod;
+                        } else if (result.recordedMethod != image.recordedMethod) {
+                            result.metadataConsistent = false;
+                        }
+                    }
+                    if (image.hasRecordedIterations) {
+                        if (!result.hasRecordedIterations) {
+                            result.hasRecordedIterations = true;
+                            result.recordedIterations = image.recordedIterations;
+                        } else if (result.recordedIterations != image.recordedIterations) {
+                            result.metadataConsistent = false;
+                        }
+                    }
+
+                    std::string source;
+                    cv::Mat auxiliary;
+                    const bool source1Present = NodeUtils::readStringFromH5(outputPath, "source_1", source);
+                    const bool source2Present = NodeUtils::readStringFromH5(outputPath, "source_2", source);
+                    const bool flatPhasePresent = NodeUtils::readMatFromH5(outputPath, "flat_phase_coefficient", auxiliary) && !auxiliary.empty();
+                    const bool rangeLengthPresent = NodeUtils::readMatFromH5(outputPath, "range_len", auxiliary) && !auxiliary.empty();
+                    const bool azimuthLengthPresent = NodeUtils::readMatFromH5(outputPath, "azimuth_len", auxiliary) && !auxiliary.empty();
+                    const bool multilookRangePresent = NodeUtils::readMatFromH5(outputPath, "multilook_rg", auxiliary) && !auxiliary.empty();
+                    const bool multilookAzimuthPresent = NodeUtils::readMatFromH5(outputPath, "multilook_az", auxiliary) && !auxiliary.empty();
+                    if (!source1Present) image.missingDependencies.append(QStringLiteral("source_1"));
+                    if (!source2Present) image.missingDependencies.append(QStringLiteral("source_2"));
+                    if (!flatPhasePresent) image.missingDependencies.append(QStringLiteral("flat_phase_coefficient"));
+                    if (!rangeLengthPresent) image.missingDependencies.append(QStringLiteral("range_len"));
+                    if (!azimuthLengthPresent) image.missingDependencies.append(QStringLiteral("azimuth_len"));
+                    if (!multilookRangePresent) image.missingDependencies.append(QStringLiteral("multilook_rg"));
+                    if (!multilookAzimuthPresent) image.missingDependencies.append(QStringLiteral("multilook_az"));
+                    image.dependenciesComplete = image.missingDependencies.isEmpty();
+
+                    if (image.outputRead) {
+                        cv::Mat demDouble;
+                        dem.convertTo(demDouble, CV_64F);
+                        image.totalPixels = static_cast<qint64>(demDouble.total());
+                        for (int row = 0; row < demDouble.rows; ++row) {
+                            const double* values = demDouble.ptr<double>(row);
+                            for (int column = 0; column < demDouble.cols; ++column) {
+                                const double value = values[column];
+                                if (!std::isfinite(value)) {
+                                    continue;
+                                }
+                                ++image.finitePixels;
+                                image.minHeight = std::min(image.minHeight, value);
+                                image.maxHeight = std::max(image.maxHeight, value);
+                                image.sumHeight += value;
+                                image.sumSquaredHeight += value * value;
+                            }
+                        }
+                    }
+
+                    result.images.append(image);
+                }
+
+                result.success = !result.images.isEmpty();
+                if (!result.success) {
+                    result.errorMessage = QObject::tr("没有可用于诊断的 DEM 影像。");
+                }
+                return result;
+            });
+
+        auto* watcher = new QFutureWatcher<DemGenerationValidationResults>(this);
+        connect(watcher, &QFutureWatcher<DemGenerationValidationResults>::finished, this, [this, watcher]() {
+            if (m_isTimedOut) {
+                watcher->deleteLater();
+                return;
+            }
+
+            const DemGenerationValidationResults result = watcher->result();
+            m_loadingOverlay->stopLoading();
+            if (!result.success) {
+                m_statusTitle->setText(QObject::tr("诊断失败"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+                m_statusDesc->setText(result.errorMessage);
+                watcher->deleteLater();
+                return;
+            }
+
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(true);
+            if (result.hasRecordedMethod) {
+                m_compTable->addComparison(QObject::tr("反演方法"), demGenerationMethodName(result.expectedMethod),
+                    demGenerationMethodName(result.recordedMethod));
+            } else {
+                m_compTable->addDiagnostic(QObject::tr("反演方法"),
+                    QObject::tr("当前设置：%1；输出未记录（旧结果）").arg(demGenerationMethodName(result.expectedMethod)));
+            }
+            if (result.hasRecordedIterations) {
+                m_compTable->addComparison(QObject::tr("Newton 迭代次数"), QString::number(result.expectedIterations),
+                    QString::number(result.recordedIterations));
+            } else {
+                m_compTable->addDiagnostic(QObject::tr("Newton 迭代次数"),
+                    QObject::tr("当前设置：%1；输出未记录（旧结果）").arg(result.expectedIterations));
+            }
+
+            int foundOutputs = 0;
+            int dimensionsMatch = 0;
+            int completeDependencies = 0;
+            int invalidResults = 0;
+            qint64 totalPixels = 0;
+            qint64 finitePixels = 0;
+            double minimumHeight = std::numeric_limits<double>::infinity();
+            double maximumHeight = -std::numeric_limits<double>::infinity();
+            double sumHeight = 0.0;
+            double sumSquaredHeight = 0.0;
+            QStringList issues;
+
+            for (const DemGenerationImageDiagnostics& image : result.images) {
+                foundOutputs += image.outputFound ? 1 : 0;
+                const QString expectedSize = image.inputRead
+                    ? QStringLiteral("%1 x %2").arg(image.inputCols).arg(image.inputRows)
+                    : QObject::tr("输入 phase 不可读");
+                QString actualSize;
+                if (!image.outputFound) {
+                    actualSize = QObject::tr("缺失输出");
+                    issues.append(image.inputName + QObject::tr(": 缺失输出"));
+                    ++invalidResults;
+                } else if (!image.outputRead) {
+                    actualSize = QObject::tr("输出 dem 不可读");
+                    issues.append(image.inputName + QObject::tr(": 输出 dem 不可读"));
+                    ++invalidResults;
+                } else {
+                    actualSize = QStringLiteral("%1 x %2").arg(image.outputCols).arg(image.outputRows);
+                    if (!image.dimensionsMatch) {
+                        issues.append(image.inputName + QObject::tr(": 尺寸不匹配"));
+                        ++invalidResults;
+                    } else {
+                        ++dimensionsMatch;
+                    }
+                    if (image.finitePixels == 0) {
+                        issues.append(image.inputName + QObject::tr(": 无有效 DEM 像元"));
+                        ++invalidResults;
+                    }
+                }
+                m_compTable->addComparison(image.inputName, expectedSize, actualSize);
+
+                if (image.dependenciesComplete) {
+                    ++completeDependencies;
+                } else if (image.outputFound) {
+                    issues.append(image.inputName + QObject::tr(": 缺少 ") + image.missingDependencies.join(QStringLiteral(", ")));
+                    ++invalidResults;
+                }
+
+                if (image.outputRead) {
+                    totalPixels += image.totalPixels;
+                    finitePixels += image.finitePixels;
+                    minimumHeight = std::min(minimumHeight, image.minHeight);
+                    maximumHeight = std::max(maximumHeight, image.maxHeight);
+                    sumHeight += image.sumHeight;
+                    sumSquaredHeight += image.sumSquaredHeight;
+                }
+            }
+
+            m_compTable->addComparison(QObject::tr("输入 / 输出影像数"),
+                QString::number(result.images.size()), QString::number(foundOutputs));
+            const double validRatio = totalPixels > 0 ? 100.0 * finitePixels / totalPixels : 0.0;
+            m_validPixelsLabel->setText(totalPixels > 0
+                ? QObject::tr("%1 / %2 (%3%)").arg(finitePixels).arg(totalPixels).arg(QString::number(validRatio, 'f', 2))
+                : QObject::tr("无可读取的 DEM 像元"));
+            m_heightRangeLabel->setText(finitePixels > 0
+                ? QObject::tr("%1 ~ %2").arg(QString::number(minimumHeight, 'g', 7), QString::number(maximumHeight, 'g', 7))
+                : QObject::tr("无有效 DEM 像元"));
+            if (finitePixels > 0) {
+                const double meanHeight = sumHeight / finitePixels;
+                const double variance = std::max(0.0, sumSquaredHeight / finitePixels - meanHeight * meanHeight);
+                m_heightMomentsLabel->setText(QObject::tr("%1 / %2")
+                    .arg(QString::number(meanHeight, 'g', 7), QString::number(std::sqrt(variance), 'g', 7)));
+            } else {
+                m_heightMomentsLabel->setText(QObject::tr("无有效 DEM 像元"));
+            }
+            m_dimensionsLabel->setText(QObject::tr("%1 / %2 匹配").arg(dimensionsMatch).arg(result.images.size()));
+            m_dependenciesLabel->setText(QObject::tr("%1 / %2 齐全").arg(completeDependencies).arg(result.images.size()));
+            m_issuesLabel->setText(issues.isEmpty() ? QObject::tr("未发现缺失或尺寸异常") : issues.join(QStringLiteral("\n")));
+
+            const bool parametersMatch = result.metadataConsistent
+                && (!result.hasRecordedMethod || result.recordedMethod == result.expectedMethod)
+                && (!result.hasRecordedIterations || result.recordedIterations == result.expectedIterations);
+            if (invalidResults > 0 || finitePixels == 0) {
+                m_statusTitle->setText(QObject::tr("需要复查"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                m_statusDesc->setText(QObject::tr("发现输出缺失、尺寸异常、无效高程或下游关键数据不完整。请检查对应影像和处理日志。"));
+            } else if (!parametersMatch) {
+                m_statusTitle->setText(QObject::tr("参数与结果不一致"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                m_statusDesc->setText(QObject::tr("当前反演参数与输出 H5 中记录的参数不一致；修改参数后需要重新执行节点。"));
+            } else {
+                m_statusTitle->setText(QObject::tr("诊断完成"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+                m_statusDesc->setText((!result.hasRecordedMethod || !result.hasRecordedIterations)
+                    ? QObject::tr("输出完整且数值可读。旧结果未记录反演参数，无法确认其与当前设置是否一致。")
+                    : QObject::tr("输出完整、尺寸匹配且高程数值可读。数值统计仅用于结果完整性诊断，不构成绝对高程精度评估。"));
+            }
+            watcher->deleteLater();
+        });
+        watcher->setFuture(future);
+    }
+
+    DemNode* m_node = nullptr;
+    QLabel* m_validPixelsLabel = nullptr;
+    QLabel* m_heightRangeLabel = nullptr;
+    QLabel* m_heightMomentsLabel = nullptr;
+    QLabel* m_dimensionsLabel = nullptr;
+    QLabel* m_dependenciesLabel = nullptr;
+    QLabel* m_issuesLabel = nullptr;
+};
+
+} // namespace
+
+::QWidget* DemNode::createValidationWidget(::QWidget* parent)
+{
+    return new DemGenerationValidationWidget(this, parent);
 }
 
 } // namespace QtNodes

@@ -8,6 +8,7 @@
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QPushButton>
 #include <QtWidgets/QFormLayout>
+#include <QtWidgets/QGridLayout>
 #include <QtWidgets/QScrollArea>
 #include <QtWidgets/QFrame>
 #include <QtWidgets/QTableWidget>
@@ -479,6 +480,9 @@ public:
     /// @param expected Expected value (e.g. parameter setting)
     /// @param actual Actual value (e.g. extracted from H5)
     void addComparison(const QString& name, const QString& expected, const QString& actual);
+
+    /// Add a read-only diagnostic value that does not affect parameter comparison.
+    void addDiagnostic(const QString& name, const QString& value);
     
 private:
     void applyThemeStyle();
@@ -521,7 +525,10 @@ public:
     ~BaseValidationWidget() override = default;
 
 protected:
-    void setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText);
+    void setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText,
+        const QString& comparisonTitleText = QString(), bool stackContentVertically = false,
+        bool scrollFeaturePanel = false);
+    QGridLayout* replaceFeatureFormWithGrid();
     
     virtual void startAsyncValidation() = 0;
     
@@ -541,6 +548,7 @@ protected:
     ValidationComparisonTable* m_compTable = nullptr;
     QFrame* m_featureCard = nullptr;
     QFormLayout* m_featureLayout = nullptr;
+    QScrollArea* m_featureScrollArea = nullptr;
     
     ValidationLoadingOverlay* m_loadingOverlay = nullptr;
     

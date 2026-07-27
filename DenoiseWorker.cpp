@@ -262,6 +262,9 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                     phase_filter.convertTo(phase_filter, CV_32F);
                 }
                 NodeUtils::writeMatToH5(filterPath, "phase", phase_filter);
+                NodeUtils::writeScalarToH5(filterPath, "denoise_method", method);
+                NodeUtils::writeScalarToH5(filterPath, "denoise_slope_pre_win", pre_win);
+                NodeUtils::writeScalarToH5(filterPath, "denoise_slope_win", slop_win);
                 
                 NodeUtils::readStringFromH5(phasePath, "source_1", tmp_str);
                 FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_1", tmp_str.c_str());
@@ -377,6 +380,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                     phase_filter.convertTo(phase_filter, CV_32F);
                 }
                 NodeUtils::writeMatToH5(filterPath, "phase", phase_filter);
+                NodeUtils::writeScalarToH5(filterPath, "denoise_method", method);
                 
                 NodeUtils::readStringFromH5(phasePath, "source_1", tmp_str);
                 FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_1", tmp_str.c_str());
@@ -489,6 +493,7 @@ void DenoiseWorker::Denoise(QList<int> para, double alpha, QString save_path, QS
                 /*写入h5*/
                 ret = FC.creat_new_h5(filterPath.toStdString().c_str());
                 NodeUtils::writeMatToH5(filterPath, "phase", phase_filter);
+                NodeUtils::writeScalarToH5(filterPath, "denoise_method", method);
                 
                 NodeUtils::readStringFromH5(phasePath, "source_1", tmp_str);
                 FC.write_str_to_h5(filterPath.toStdString().c_str(), "source_1", tmp_str.c_str());
