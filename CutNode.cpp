@@ -1894,6 +1894,8 @@ public:
         m_medianCohLabel = createValueLabel();
         m_maxCohLabel = createValueLabel();
         m_highCohPctLabel = createValueLabel();
+        m_offsetYLabel = createValueLabel();
+        m_offsetXLabel = createValueLabel();
 
         auto addFormRow = [formLayout, isDark](const QString& title, QWidget* valueWidget) {
             auto* label = new QLabel(title);
@@ -1905,6 +1907,8 @@ public:
         addFormRow(tr("相干系数中位数:"), m_medianCohLabel);
         addFormRow(tr("相干系数最大值:"), m_maxCohLabel);
         addFormRow(tr("高相干像素比例 (>0.5):"), m_highCohPctLabel);
+        addFormRow(tr("垂直残余偏移 (Y):"), m_offsetYLabel);
+        addFormRow(tr("水平残余偏移 (X):"), m_offsetXLabel);
 
         leftLayout->addWidget(metricsFrame);
 
@@ -1996,6 +2000,8 @@ private:
         m_medianCohLabel->setText("-");
         m_maxCohLabel->setText("-");
         m_highCohPctLabel->setText("-");
+        m_offsetYLabel->setText("-");
+        m_offsetXLabel->setText("-");
         m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
         m_statusCardTitle->setText(tr("未评估"));
         m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
@@ -2016,7 +2022,8 @@ private:
 
         QFuture<CropEvalThreadResult> future = QtConcurrent::run([masterPath, slavePath, cohJpg, phaseJpg]() {
             NodeUtils::Hdf5Locker locker(masterPath);
-            CropEvalThreadResult res;
+            CropEvalThreadResult res{};
+            res.evalResult.structSize = sizeof(CropEvalResult);
             res.retCode = AnalyzeCropRegistration(
                 masterPath.toLocal8Bit().constData(),
                 slavePath.toLocal8Bit().constData(),
@@ -2050,9 +2057,22 @@ private:
         m_medianCohLabel->setText(QString::number(m_evalResult.medianCoherence, 'f', 4));
         m_maxCohLabel->setText(QString::number(m_evalResult.maxCoherence, 'f', 4));
         m_highCohPctLabel->setText(QString("%1%").arg(QString::number(m_evalResult.highCoherencePct * 100.0, 'f', 2)));
+        
+        m_offsetYLabel->setText(QString::number(m_evalResult.offsetY, 'f', 2));
+        m_offsetXLabel->setText(QString::number(m_evalResult.offsetX, 'f', 2));
 
         // 动态样式刷新
         bool isDark = NodeDetailWindow::isDarkTheme(this);
+        
+        if (std::abs(m_evalResult.offsetY) > 0.5 || std::abs(m_evalResult.offsetX) > 0.5) {
+            m_offsetYLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
+            m_offsetXLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
+        } else {
+            QString defaultColor = QString("font-size: 12px; font-weight: bold; color: %1;").arg(isDark ? "#F3F4F6" : "#1F2937");
+            m_offsetYLabel->setStyleSheet(defaultColor);
+            m_offsetXLabel->setStyleSheet(defaultColor);
+        }
+
         if (m_evalResult.assessmentStatus == 0) {
             m_statusCardTitle->setText(tr("通过 (PASS)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
@@ -2107,6 +2127,8 @@ private:
     QLabel* m_medianCohLabel;
     QLabel* m_maxCohLabel;
     QLabel* m_highCohPctLabel;
+    QLabel* m_offsetYLabel;
+    QLabel* m_offsetXLabel;
     QLabel* m_statusLabel;
 
     QString m_tempCoherenceJpg;

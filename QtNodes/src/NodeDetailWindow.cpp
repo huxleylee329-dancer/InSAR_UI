@@ -1,5 +1,6 @@
 #include "QtNodes/internal/NodeDetailWindow.hpp"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
+#include <QBoxLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -18,6 +19,7 @@
 #include <QPixmap>
 #include <QStyle>
 #include <QSize>
+#include <QSizePolicy>
 #include <QDebug>
 #include <QFileInfo>
 #include "ImageView.h"
@@ -1875,6 +1877,29 @@ void ValidationComparisonTable::addComparison(const QString& name, const QString
     setItem(row, 3, item3);
 }
 
+void ValidationComparisonTable::addDiagnostic(const QString& name, const QString& value)
+{
+    const int row = rowCount();
+    insertRow(row);
+
+    auto* nameItem = new QTableWidgetItem(name);
+    auto* settingItem = new QTableWidgetItem(QStringLiteral("-"));
+    auto* valueItem = new QTableWidgetItem(value);
+    auto* conclusionItem = new QTableWidgetItem(QObject::tr("诊断"));
+
+    const bool isDark = NodeDetailWindow::isDarkTheme(this);
+    const QBrush textBrush = QColor(isDark ? "#D1D5DB" : "#374151");
+    nameItem->setForeground(textBrush);
+    settingItem->setForeground(textBrush);
+    valueItem->setForeground(textBrush);
+    conclusionItem->setForeground(QBrush(QColor(isDark ? "#60A5FA" : "#2563EB")));
+
+    setItem(row, 0, nameItem);
+    setItem(row, 1, settingItem);
+    setItem(row, 2, valueItem);
+    setItem(row, 3, conclusionItem);
+}
+
 void ValidationComparisonTable::applyThemeStyle()
 {
     bool isDark = NodeDetailWindow::isDarkTheme(this);
@@ -2045,7 +2070,8 @@ BaseValidationWidget::BaseValidationWidget(ExecutableNodeDelegateModel* node, QW
 {
 }
 
-void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText)
+void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText,
+    const QString& comparisonTitleText, bool stackContentVertically, bool scrollFeaturePanel)
 {
     bool isDark = NodeDetailWindow::isDarkTheme(this);
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
@@ -2066,26 +2092,34 @@ void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QStrin
     m_statusTitle = new QLabel(initialTitle, m_statusCard);
     m_statusTitle->setStyleSheet(QString("font-size: 14px; font-weight: bold; color: %1;").arg(isDark ? "#60A5FA" : "#2563EB"));
     m_statusDesc = new QLabel(initialDesc, m_statusCard);
+    m_statusDesc->setWordWrap(true);
     m_statusDesc->setStyleSheet(QString("font-size: 11px; color: %1;").arg(isDark ? "#9CA3AF" : "#6B7280"));
 
     cardLayout->addWidget(m_statusTitle);
     cardLayout->addWidget(m_statusDesc);
     mainLayout->addWidget(m_statusCard);
 
-    // 2. Main content area (Split into Comparison Table & Feature Calculation)
-    QHBoxLayout* contentLayout = new QHBoxLayout();
+    // 2. Main content area. Most validators use columns; diagnostics-heavy pages can opt into stacking.
+    QBoxLayout* contentLayout = stackContentVertically
+        ? static_cast<QBoxLayout*>(new QVBoxLayout())
+        : static_cast<QBoxLayout*>(new QHBoxLayout());
     contentLayout->setSpacing(12);
 
     // Left column: Parameter comparison table
     QVBoxLayout* leftLayout = new QVBoxLayout();
     leftLayout->setSpacing(6);
-    QLabel* tableTitle = new QLabel(QObject::tr("物理参数比对"), this);
+    const QString tableTitleText = comparisonTitleText.isEmpty() ? QObject::tr("物理参数比对") : comparisonTitleText;
+    QLabel* tableTitle = new QLabel(tableTitleText, this);
     tableTitle->setStyleSheet(QString("font-size: 12px; font-weight: bold; color: %1;").arg(isDark ? "#F3F4F6" : "#1F2937"));
     leftLayout->addWidget(tableTitle);
 
     m_compTable = new ValidationComparisonTable(this);
+    m_compTable->setMinimumWidth(0);
+    m_compTable->setMinimumHeight(0);
+    m_compTable->setSizePolicy(QSizePolicy::Expanding,
+        stackContentVertically ? QSizePolicy::Ignored : QSizePolicy::Expanding);
     leftLayout->addWidget(m_compTable, 1);
-    contentLayout->addLayout(leftLayout, 3);
+    contentLayout->addLayout(leftLayout, stackContentVertically ? 3 : 2);
 
     // Right column: Feature analysis panel
     QVBoxLayout* rightLayout = new QVBoxLayout();
@@ -2095,6 +2129,10 @@ void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QStrin
     rightLayout->addWidget(fTitle);
 
     m_featureCard = new QFrame(this);
+    m_featureCard->setMinimumWidth(0);
+    m_featureCard->setMinimumHeight(0);
+    m_featureCard->setSizePolicy(stackContentVertically ? QSizePolicy::Expanding : QSizePolicy::Ignored,
+        QSizePolicy::Preferred);
     m_featureCard->setStyleSheet(isDark ?
         "QFrame { background-color: #1F2937; border: 1px solid #374151; border-radius: 4px; padding: 12px; }" :
         "QFrame { background-color: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 4px; padding: 12px; }");
@@ -2103,9 +2141,23 @@ void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QStrin
     m_featureLayout->setContentsMargins(8, 8, 8, 8);
     m_featureLayout->setSpacing(10);
     m_featureLayout->setLabelAlignment(Qt::AlignRight);
+    m_featureLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    m_featureLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
 
-    rightLayout->addWidget(m_featureCard, 1);
-    contentLayout->addLayout(rightLayout, 2);
+    if (scrollFeaturePanel) {
+        m_featureScrollArea = new QScrollArea(this);
+        m_featureScrollArea->setWidgetResizable(true);
+        m_featureScrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        m_featureScrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        m_featureScrollArea->setMinimumHeight(120);
+        m_featureScrollArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        m_featureScrollArea->setStyleSheet("QScrollArea { border: none; background: transparent; }");
+        m_featureScrollArea->setWidget(m_featureCard);
+        rightLayout->addWidget(m_featureScrollArea, 1);
+    } else {
+        rightLayout->addWidget(m_featureCard, 1);
+    }
+    contentLayout->addLayout(rightLayout, stackContentVertically ? 2 : 3);
 
     mainLayout->addLayout(contentLayout, 1);
 
@@ -2120,10 +2172,27 @@ void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QStrin
     connect(m_loadingOverlay, &ValidationLoadingOverlay::timeoutOccurred, this, &BaseValidationWidget::onTimeout);
 }
 
+QGridLayout* BaseValidationWidget::replaceFeatureFormWithGrid()
+{
+    delete m_featureLayout;
+    m_featureLayout = nullptr;
+
+    QGridLayout* featureGrid = new QGridLayout(m_featureCard);
+    featureGrid->setContentsMargins(8, 8, 8, 8);
+    featureGrid->setHorizontalSpacing(24);
+    featureGrid->setVerticalSpacing(12);
+    featureGrid->setColumnStretch(0, 1);
+    featureGrid->setColumnStretch(1, 1);
+    return featureGrid;
+}
+
 QLabel* BaseValidationWidget::createFeatureLabel()
 {
     bool isDark = NodeDetailWindow::isDarkTheme(this);
     QLabel* lbl = new QLabel(QObject::tr("正在计算..."), m_featureCard);
+    lbl->setWordWrap(true);
+    lbl->setMinimumWidth(0);
+    lbl->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     lbl->setStyleSheet(QString("font-weight: 600; color: %1;").arg(isDark ? "#F3F4F6" : "#111827"));
     return lbl;
 }
@@ -2132,6 +2201,9 @@ QLabel* BaseValidationWidget::createHeaderLabel(const QString& text)
 {
     bool isDark = NodeDetailWindow::isDarkTheme(this);
     QLabel* lbl = new QLabel(text);
+    lbl->setWordWrap(true);
+    lbl->setMinimumWidth(0);
+    lbl->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     lbl->setStyleSheet(QString("color: %1; font-weight: 500;").arg(isDark ? "#9CA3AF" : "#4B5563"));
     return lbl;
 }

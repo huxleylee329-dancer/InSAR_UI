@@ -9,6 +9,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <atomic>
+#include <algorithm>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include "InSARLogManager.h"
@@ -110,6 +111,87 @@ CoregistrationWorker::~CoregistrationWorker()
 {
 }
 
+void CoregistrationWorker::ResampleSlaveInverseWithAffineOffset(const ComplexMat& slave, ComplexMat& out,
+    int outputRows, int outputCols, const Mat& coefRows, const Mat& coefCols,
+    double offsetX, double offsetY, double scaleX, double scaleY, CoregistrationWorker* worker)
+{
+    const int rowsSlave = slave.GetRows();
+    const int colsSlave = slave.GetCols();
+    const int type = slave.type();
+    out.re = Mat::zeros(outputRows, outputCols, type);
+    out.im = Mat::zeros(outputRows, outputCols, type);
+
+#pragma omp parallel for schedule(guided)
+    for (int i = 0; i < outputRows; i++)
+    {
+        if (worker && worker->isStopRequested()) {
+            continue;
+        }
+
+        double x, y, sampleRow, sampleCol;
+        Mat tmp(1, 3, CV_64F);
+        Mat result;
+        int row0, col0, row1, col1;
+        double offsetRows, offsetCols, upper, lower;
+        for (int j = 0; j < outputCols; j++)
+        {
+            sampleCol = static_cast<double>(j);
+            sampleRow = static_cast<double>(i);
+            x = (sampleCol - offsetX) / scaleX;
+            y = (sampleRow - offsetY) / scaleY;
+            tmp.at<double>(0, 0) = 1.0;
+            tmp.at<double>(0, 1) = x;
+            tmp.at<double>(0, 2) = y;
+            result = tmp * coefRows;
+            offsetRows = result.at<double>(0, 0);
+            result = tmp * coefCols;
+            offsetCols = result.at<double>(0, 0);
+
+            sampleRow += offsetRows;
+            sampleCol += offsetCols;
+
+            row0 = static_cast<int>(floor(sampleRow));
+            col0 = static_cast<int>(floor(sampleCol));
+            if (row0 < 0 || col0 < 0 || row0 > rowsSlave - 1 || col0 > colsSlave - 1)
+            {
+                continue;
+            }
+
+            row1 = row0 + 1;
+            col1 = col0 + 1;
+            row1 = row1 >= rowsSlave - 1 ? rowsSlave - 1 : row1;
+            col1 = col1 >= colsSlave - 1 ? colsSlave - 1 : col1;
+            if (type == CV_16S)
+            {
+                upper = static_cast<double>(slave.re.at<short>(row0, col0)) + static_cast<double>(slave.re.at<short>(row0, col1) - slave.re.at<short>(row0, col0)) * (sampleCol - static_cast<double>(col0));
+                lower = static_cast<double>(slave.re.at<short>(row1, col0)) + static_cast<double>(slave.re.at<short>(row1, col1) - slave.re.at<short>(row1, col0)) * (sampleCol - static_cast<double>(col0));
+                out.re.at<short>(i, j) = upper + static_cast<double>(lower - upper) * (sampleRow - static_cast<double>(row0));
+                upper = static_cast<double>(slave.im.at<short>(row0, col0)) + static_cast<double>(slave.im.at<short>(row0, col1) - slave.im.at<short>(row0, col0)) * (sampleCol - static_cast<double>(col0));
+                lower = static_cast<double>(slave.im.at<short>(row1, col0)) + static_cast<double>(slave.im.at<short>(row1, col1) - slave.im.at<short>(row1, col0)) * (sampleCol - static_cast<double>(col0));
+                out.im.at<short>(i, j) = upper + static_cast<double>(lower - upper) * (sampleRow - static_cast<double>(row0));
+            }
+            else if (type == CV_32F)
+            {
+                upper = slave.re.at<float>(row0, col0) + (slave.re.at<float>(row0, col1) - slave.re.at<float>(row0, col0)) * (sampleCol - static_cast<double>(col0));
+                lower = slave.re.at<float>(row1, col0) + (slave.re.at<float>(row1, col1) - slave.re.at<float>(row1, col0)) * (sampleCol - static_cast<double>(col0));
+                out.re.at<float>(i, j) = upper + (lower - upper) * (sampleRow - static_cast<double>(row0));
+                upper = slave.im.at<float>(row0, col0) + (slave.im.at<float>(row0, col1) - slave.im.at<float>(row0, col0)) * (sampleCol - static_cast<double>(col0));
+                lower = slave.im.at<float>(row1, col0) + (slave.im.at<float>(row1, col1) - slave.im.at<float>(row1, col0)) * (sampleCol - static_cast<double>(col0));
+                out.im.at<float>(i, j) = upper + (lower - upper) * (sampleRow - static_cast<double>(row0));
+            }
+            else
+            {
+                upper = slave.re.at<double>(row0, col0) + (slave.re.at<double>(row0, col1) - slave.re.at<double>(row0, col0)) * (sampleCol - static_cast<double>(col0));
+                lower = slave.re.at<double>(row1, col0) + (slave.re.at<double>(row1, col1) - slave.re.at<double>(row1, col0)) * (sampleCol - static_cast<double>(col0));
+                out.re.at<double>(i, j) = upper + (lower - upper) * (sampleRow - static_cast<double>(row0));
+                upper = slave.im.at<double>(row0, col0) + (slave.im.at<double>(row0, col1) - slave.im.at<double>(row0, col0)) * (sampleCol - static_cast<double>(col0));
+                lower = slave.im.at<double>(row1, col0) + (slave.im.at<double>(row1, col1) - slave.im.at<double>(row1, col0)) * (sampleCol - static_cast<double>(col0));
+                out.im.at<double>(i, j) = upper + (lower - upper) * (sampleRow - static_cast<double>(row0));
+            }
+        }
+    }
+}
+
 QString CoregistrationWorker::resolveOutputFileName(const QString& originalName) const
 {
     QString pattern = m_filePattern.trimmed();
@@ -188,7 +270,7 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
     Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
     Mat tmp_double = Mat::zeros(1, 1, CV_64FC1);
     double interp_interval;
-    int offset_row, offset_col;
+    double offset_row = 0.0, offset_col = 0.0;
     int Rows, Cols;
     double time_Master = 0;
     string time_master_str;
@@ -214,8 +296,8 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
     }
     QString temporal_baseline, B_parallel, B_effect;
     /*添加图像到model中并复制h5参数*/
-    vector<int> Row_offset;
-    vector<int> Col_offset;
+    vector<double> Row_offset;
+    vector<double> Col_offset;
 	emit updateProcess(90, QStringLiteral("写入辅助参数……"));
     for (int i = 0; i < image_number; i++)
     {
@@ -225,7 +307,7 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 			return;
 		}
         /*写入辅助参数到h5*/
-		offset_row = offset_col = 0;
+		offset_row = offset_col = 0.0;
         {
             NodeUtils::Hdf5Locker locker;
             FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
@@ -234,12 +316,12 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
             
             QString slaveImgPath = QString::fromStdString(SAR_images.at(i));
             NodeUtils::readScalarFromH5(slaveImgPath, "offset_row", offset_row);
-		    offset_row += offset_row_out.at<int>(i, 0);
-            FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", offset_row);
+		    offset_row += offset_row_out.at<double>(i, 0);
+            FC.write_double_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", offset_row);
             Row_offset.push_back(offset_row);
             NodeUtils::readScalarFromH5(slaveImgPath, "offset_col", offset_col);
-		    offset_col += offset_col_out.at<int>(i, 0);
-            FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", offset_col);
+		    offset_col += offset_col_out.at<double>(i, 0);
+            FC.write_double_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", offset_col);
             Col_offset.push_back(offset_col);
             FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", Rows);
             FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", Cols);
@@ -527,8 +609,8 @@ int CoregistrationWorker::Registration_copy(
 	int n_images = SAR_images.size();
 	int num_slaves = n_images - 1;
 	int slave_idx = 0;
-	offset_col_out.create(n_images, 1, CV_32S);
-	offset_row_out.create(n_images, 1, CV_32S);
+	offset_col_out.create(n_images, 1, CV_64F);
+	offset_row_out.create(n_images, 1, CV_64F);
 	Mat images_rows, images_cols, tmp;
 	images_rows = Mat::zeros(n_images, 1, CV_32S); images_cols = Mat::zeros(n_images, 1, CV_32S);
 	for (int i = 0; i < n_images; i++)
@@ -565,7 +647,8 @@ int CoregistrationWorker::Registration_copy(
 		fprintf(stderr, "stack_coregistration(): try smaller blocksize!\n");
 		return -1;
 	}
-	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F);
+	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F); Mat eligibleMask = Mat::zeros(m, n, CV_8U);
+	Mat snr_values = Mat::zeros(m, n, CV_64F);
 	Mat offset_coord_row = Mat::zeros(m, n, CV_64F);
 	Mat offset_coord_col = Mat::zeros(m, n, CV_64F);
 	//子块中心坐标
@@ -586,8 +669,8 @@ int CoregistrationWorker::Registration_copy(
 		if (cancellationRequested()) return -2;
 		if (ii == Master_index - 1)
 		{
-			offset_row_out.at<int>(ii, 0) = 0;
-			offset_col_out.at<int>(ii, 0) = 0;
+			offset_row_out.at<double>(ii, 0) = 0.0;
+			offset_col_out.at<double>(ii, 0) = 0.0;
 			continue;
 		}
 		if (!b_block)//不分块读取
@@ -635,10 +718,23 @@ int CoregistrationWorker::Registration_copy(
 		std::atomic<int> completed_blocks(0);
 		int init_pct = static_cast<int>(start_p);
 		std::atomic<int> max_reported_pct(init_pct);
+		m = images_rows.at<int>(ii, 0) / blocksize;
+		n = images_cols.at<int>(ii, 0) / blocksize;
 		int total_blocks = m * n;
-		int mm, nn;
-		mm = images_rows.at<int>(ii, 0) / blocksize;
-		nn = images_cols.at<int>(ii, 0) / blocksize;
+		offset_r = Mat::zeros(m, n, CV_64F);
+		offset_c = Mat::zeros(m, n, CV_64F);
+		eligibleMask = Mat::zeros(m, n, CV_8U);
+		offset_coord_row = Mat::zeros(m, n, CV_64F);
+		snr_values = Mat::zeros(m, n, CV_64F);
+		offset_coord_col = Mat::zeros(m, n, CV_64F);
+		for (int i = 0; i < m; i++)
+		{
+			for (int j = 0; j < n; j++)
+			{
+				offset_coord_row.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * i + 1);
+				offset_coord_col.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * j + 1);
+			}
+		}
 		if (!b_block)
 		{
 # pragma omp parallel for schedule(guided)
@@ -648,12 +744,13 @@ int CoregistrationWorker::Registration_copy(
 				if (isStopRequested()) {
 					continue;
 				}
-				int offset_row, offset_col, move_r, move_c;
-				ComplexMat master, slave, master_interp, slave_interp;
+				int offset_row, offset_col;
+				double move_r, move_c, snr_val;
+				ComplexMat master, slave;
 				for (int k = 0; k < n; k++)
 				{
 					offset_row = j * blocksize; offset_col = k * blocksize;
-					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
+					if ((j + 1) * blocksize <= images_rows.at<int>(ii, 0) && (k + 1) * blocksize <= images_cols.at<int>(ii, 0))
 					{
 						master = master_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
 						slave = slave_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
@@ -661,12 +758,16 @@ int CoregistrationWorker::Registration_copy(
 						//计算偏移量
 						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
 						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
-						move_r = 0; move_c = 0;
-						ret = regis.interp_paddingzero(master, master_interp, interp_times);
-						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
-						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
-						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
-						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
+						move_r = 0.0; move_c = 0.0; snr_val = 0.0;
+						int matchRet = regis.real_coherent(master, slave, &move_r, &move_c, &snr_val);
+						if (matchRet >= 0 && snr_val >= 3.0) {
+							offset_r.at<double>(j, k) = move_r;
+							offset_c.at<double>(j, k) = move_c;
+							eligibleMask.at<uchar>(j, k) = 1;
+							snr_values.at<double>(j, k) = snr_val;
+						} else {
+							eligibleMask.at<uchar>(j, k) = 0;
+						}
 					}
 					int current_done = ++completed_blocks;
 					int step = std::max(1, total_blocks / 50);
@@ -695,8 +796,9 @@ int CoregistrationWorker::Registration_copy(
 		}
 		else
 		{
-			int offset_row, offset_col, move_r, move_c;
-			ComplexMat master, slave, master_interp, slave_interp;
+			int offset_row, offset_col;
+			double move_r, move_c, snr_val;
+			ComplexMat master, slave;
 			for (int j = 0; j < m; j++)
 			{
 				if (isStopRequested()) {
@@ -705,7 +807,7 @@ int CoregistrationWorker::Registration_copy(
 				for (int k = 0; k < n; k++)
 				{
 					offset_row = j * blocksize; offset_col = k * blocksize;
-					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
+					if ((j + 1) * blocksize <= images_rows.at<int>(ii, 0) && (k + 1) * blocksize <= images_cols.at<int>(ii, 0))
 					{
 						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, master.im);
 						if (cancellationRequested()) return -2;
@@ -724,17 +826,17 @@ int CoregistrationWorker::Registration_copy(
 						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
 						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
 
-						ret = regis.interp_paddingzero(master, master_interp, interp_times);
+						move_r = 0.0; move_c = 0.0; snr_val = 0.0;
+						int matchRet = regis.real_coherent(master, slave, &move_r, &move_c, &snr_val);
 						if (cancellationRequested()) return -2;
-						if (ret < 0) return -1;
-						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
-						if (cancellationRequested()) return -2;
-						if (ret < 0) return -1;
-						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
-						if (cancellationRequested()) return -2;
-						if (ret < 0) return -1;
-						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
-						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
+						if (matchRet >= 0 && snr_val >= 3.0) {
+							offset_r.at<double>(j, k) = move_r;
+							offset_c.at<double>(j, k) = move_c;
+							snr_values.at<double>(j, k) = snr_val;
+							eligibleMask.at<uchar>(j, k) = 1;
+						} else {
+							eligibleMask.at<uchar>(j, k) = 0;
+						}
 					}
 					int current_done = ++completed_blocks;
 					int step = std::max(1, total_blocks / 50);
@@ -763,40 +865,96 @@ int CoregistrationWorker::Registration_copy(
 
 
 		//剔除outliers
-		m = mm; n = nn;//更新实际子块行列数
 		Mat sentinel = Mat::zeros(m, n, CV_64F);
-		int ix, iy, count = 0, c = 0; double delta, thresh = 2.0;
+		std::vector<double> rawRows;
+		std::vector<double> rawCols;
+		std::vector<double> rawSnr;
+		rawRows.reserve(total_blocks);
+		rawCols.reserve(total_blocks);
+		rawSnr.reserve(total_blocks);
+		for (int blockRow = 0; blockRow < m; ++blockRow)
+		{
+			for (int blockCol = 0; blockCol < n; ++blockCol)
+			{
+				if (eligibleMask.at<uchar>(blockRow, blockCol) == 1) {
+					rawRows.push_back(offset_r.at<double>(blockRow, blockCol));
+					rawCols.push_back(offset_c.at<double>(blockRow, blockCol));
+					rawSnr.push_back(snr_values.at<double>(blockRow, blockCol));
+				}
+			}
+		}
+		const int rawEligibleCount = static_cast<int>(rawRows.size());
+		if (rawEligibleCount > 0)
+		{
+			auto medianOf = [](std::vector<double> values) {
+				std::sort(values.begin(), values.end());
+				const size_t middle = values.size() / 2;
+				return values.size() % 2 == 0 ? (values[middle - 1] + values[middle]) * 0.5 : values[middle];
+			};
+			double minRow, maxRow, minCol, maxCol, minSnr, maxSnr;
+			cv::minMaxLoc(offset_r, &minRow, &maxRow, nullptr, nullptr, eligibleMask);
+			cv::minMaxLoc(offset_c, &minCol, &maxCol, nullptr, nullptr, eligibleMask);
+			cv::minMaxLoc(snr_values, &minSnr, &maxSnr, nullptr, nullptr, eligibleMask);
+			const QString slaveName = QFileInfo(QString::fromStdString(SAR_images[ii])).fileName();
+			InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1]: grid=%2x%3, accepted=%4/%5; dy(mean=%6, median=%7, min=%8, max=%9); dx(mean=%10, median=%11, min=%12, max=%13); snr(mean=%14, median=%15, min=%16, max=%17)")
+				.arg(slaveName).arg(m).arg(n).arg(rawEligibleCount).arg(total_blocks)
+				.arg(cv::mean(offset_r, eligibleMask)[0], 0, 'f', 4).arg(medianOf(rawRows), 0, 'f', 4).arg(minRow, 0, 'f', 4).arg(maxRow, 0, 'f', 4)
+				.arg(cv::mean(offset_c, eligibleMask)[0], 0, 'f', 4).arg(medianOf(rawCols), 0, 'f', 4).arg(minCol, 0, 'f', 4).arg(maxCol, 0, 'f', 4)
+				.arg(cv::mean(snr_values, eligibleMask)[0], 0, 'f', 4).arg(medianOf(rawSnr), 0, 'f', 4).arg(minSnr, 0, 'f', 4).arg(maxSnr, 0, 'f', 4));
+		}
+		else
+		{
+			InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration diagnostics [%1]: no blocks passed real_coherent/SNR filtering.").arg(QFileInfo(QString::fromStdString(SAR_images[ii])).fileName()));
+		}
+
+		int count = 0, c = 0; double delta, thresh = 2.0;
 		for (int i = 0; i < m; i++)
 		{
 			for (int j = 0; j < n; j++)
 			{
-				count = 0;
-				//上
-				ix = j;
-				iy = i - 1; iy = iy < 0 ? 0 : iy;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
-				//下
-				ix = j;
-				iy = i + 1; iy = iy > m - 1 ? m - 1 : iy;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
-				//左
-				ix = j - 1; ix = ix < 0 ? 0 : ix;
-				iy = i;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
-				//右
-				ix = j + 1; ix = ix > n - 1 ? n - 1 : ix;
-				iy = i;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
+				if (eligibleMask.at<uchar>(i, j) == 0) {
+					sentinel.at<double>(i, j) = 1.0;
+					c++;
+					continue;
+				}
 
-				if (count > 2) { sentinel.at<double>(i, j) = 1.0; c++; }
+				int valid_neighbors = 0;
+				int anomaly_count = 0;
+				int ix, iy;
+
+				// 上
+				ix = j; iy = i - 1;
+				if (iy >= 0 && eligibleMask.at<uchar>(iy, ix) == 1) {
+					valid_neighbors++;
+					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+					if (delta >= thresh) anomaly_count++;
+				}
+				// 下
+				ix = j; iy = i + 1;
+				if (iy < m && eligibleMask.at<uchar>(iy, ix) == 1) {
+					valid_neighbors++;
+					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+					if (delta >= thresh) anomaly_count++;
+				}
+				// 左
+				ix = j - 1; iy = i;
+				if (ix >= 0 && eligibleMask.at<uchar>(iy, ix) == 1) {
+					valid_neighbors++;
+					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+					if (delta >= thresh) anomaly_count++;
+				}
+				// 右
+				ix = j + 1; iy = i;
+				if (ix < n && eligibleMask.at<uchar>(iy, ix) == 1) {
+					valid_neighbors++;
+					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+					if (delta >= thresh) anomaly_count++;
+				}
+
+				if (valid_neighbors >= 2 && anomaly_count >= 2) {
+					sentinel.at<double>(i, j) = 1.0;
+					c++;
+				}
 			}
 		}
 		Mat offset_c_0, offset_r_0, offset_coord_row_0, offset_coord_col_0;
@@ -819,6 +977,14 @@ int CoregistrationWorker::Registration_copy(
 				}
 			}
 		}
+
+		InSARLogManager::LogInfo("CoregistrationWorker",
+			QString("Registration diagnostics [%1]: filtering retained=%2/%3 blocks; qualityRejected=%4, outlierRejected=%5.")
+				.arg(QFileInfo(QString::fromStdString(SAR_images[ii])).fileName())
+				.arg(count)
+				.arg(total_blocks)
+				.arg(total_blocks - rawEligibleCount)
+				.arg(rawEligibleCount - count));
 
 
 		m = 1; n = count;
@@ -879,6 +1045,7 @@ int CoregistrationWorker::Registration_copy(
 		if (!cv::solve(A, b_r, coef_r, cv::DECOMP_NORMAL))
 		{
 			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
+
 			return -1;
 		}
 		if (!cv::solve(A, b_c, coef_c, cv::DECOMP_NORMAL))
@@ -886,6 +1053,20 @@ int CoregistrationWorker::Registration_copy(
 			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
 			return -1;
 		}
+
+		const double centerRow = static_cast<double>(rows / 2);
+		const double centerCol = static_cast<double>(cols / 2);
+		const double centerX = (centerCol - offset_x) / scale_x;
+		const double centerY = (centerRow - offset_y) / scale_y;
+		const double centerDy = coef_r.at<double>(0, 0) + coef_r.at<double>(1, 0) * centerX + coef_r.at<double>(2, 0) * centerY;
+		const double centerDx = coef_c.at<double>(0, 0) + coef_c.at<double>(1, 0) * centerX + coef_c.at<double>(2, 0) * centerY;
+		const QString diagnosticSlaveName = QFileInfo(QString::fromStdString(SAR_images[ii])).fileName();
+		InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1]: fit row=[%2, %3, %4], col=[%5, %6, %7], rms(row=%8, col=%9), center=(r=%10, c=%11) predicts dy=%12, dx=%13.")
+			.arg(diagnosticSlaveName)
+			.arg(coef_r.at<double>(0, 0), 0, 'f', 8).arg(coef_r.at<double>(1, 0), 0, 'f', 8).arg(coef_r.at<double>(2, 0), 0, 'f', 8)
+			.arg(coef_c.at<double>(0, 0), 0, 'f', 8).arg(coef_c.at<double>(1, 0), 0, 'f', 8).arg(coef_c.at<double>(2, 0), 0, 'f', 8)
+			.arg(rms1, 0, 'f', 6).arg(rms2, 0, 'f', 6)
+			.arg(centerRow, 0, 'f', 1).arg(centerCol, 0, 'f', 1).arg(centerDy, 0, 'f', 6).arg(centerDx, 0, 'f', 6));
 
 		/*---------------------------------------*/
 		/*    双线性插值获取重采样后的辅图像     */
@@ -896,8 +1077,23 @@ int CoregistrationWorker::Registration_copy(
 		tt.at<double>(0, 0) = 1.0;
 		tt.at<double>(0, 1) = (0.0 - offset_x) / scale_x;
 		tt.at<double>(0, 2) = (0.0 - offset_y) / scale_y;
-		offset_row_out.at<int>(ii, 0) = sum(tt * coef_r)[0];
-		offset_col_out.at<int>(ii, 0) = sum(tt * coef_c)[0];
+		offset_row_out.at<double>(ii, 0) = sum(tt * coef_r)[0];
+		offset_col_out.at<double>(ii, 0) = sum(tt * coef_c)[0];
+
+		ComplexMat slave1;
+		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
+		if (cancellationRequested()) return -2;
+		if (ret < 0) return -1;
+		type = slave1.type();
+		ComplexMat slave_tmp;
+		InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1]: manual-bilinear resample input=%2x%3 type=%4, output=%5x%6, center source=(r=%7, c=%8), topLeft dy=%9, dx=%10.")
+			.arg(diagnosticSlaveName).arg(slave1.GetCols()).arg(slave1.GetRows()).arg(type).arg(cols).arg(rows)
+			.arg(centerRow + centerDy, 0, 'f', 6).arg(centerCol + centerDx, 0, 'f', 6)
+			.arg(offset_row_out.at<double>(ii, 0), 0, 'f', 6).arg(offset_col_out.at<double>(ii, 0), 0, 'f', 6));
+		ResampleSlaveInverseWithAffineOffset(slave1, slave_tmp, rows, cols,
+			coef_r, coef_c, offset_x, offset_y, scale_x, scale_y, this);
+#if 0
+		offset_col_out.at<double>(ii, 0) = sum(tt * coef_c)[0];
 
 		ComplexMat slave1;
 		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
@@ -994,6 +1190,7 @@ int CoregistrationWorker::Registration_copy(
 
 			}
 		}
+#endif
 		if (cancellationRequested()) return -2;
 
 		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);

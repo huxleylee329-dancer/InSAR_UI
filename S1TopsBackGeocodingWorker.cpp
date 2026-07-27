@@ -925,8 +925,9 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				double offset_r = 0.0;
 				if (detectRet >= 0)
 				{
-					AlignmentResult res[5];
+					AlignmentResult res[5]{};
 					for (int k = 0; k < 5; ++k) {
+						res[k].structSize = sizeof(AlignmentResult);
 						res[k].heatmap_rgb = nullptr;
 						res[k].overlay_rgb = nullptr;
 					}

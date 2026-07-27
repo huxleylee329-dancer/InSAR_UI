@@ -2474,9 +2474,10 @@ private:
                 inputLocker = std::make_unique<NodeUtils::Hdf5Locker>(inputMasterPath);
             }
 
-            EvalThreadResult threadRes;
+            EvalThreadResult threadRes{};
             threadRes.retCode = -1;
             for (int i = 0; i < 5; ++i) {
+                threadRes.results[i].structSize = sizeof(AlignmentResult);
                 threadRes.results[i].heatmap_rgb = nullptr;
                 threadRes.results[i].overlay_rgb = nullptr;
                 threadRes.results[i].imageWidth = 0;
@@ -2514,8 +2515,9 @@ private:
             // 计算配准前的 0 位移相干性
             if (threadRes.retCode == 0 && !inputMasterPath.isEmpty() && !inputSlavePath.isEmpty() &&
                 QFile::exists(inputMasterPath) && QFile::exists(inputSlavePath)) {
-                AlignmentResult inputRes[5];
+                AlignmentResult inputRes[5]{};
                 for (int i = 0; i < 5; ++i) {
+                    inputRes[i].structSize = sizeof(AlignmentResult);
                     inputRes[i].heatmap_rgb = nullptr;
                     inputRes[i].overlay_rgb = nullptr;
                     inputRes[i].imageWidth = 0;
@@ -2705,17 +2707,15 @@ private:
                 preCohValidCount++;
             }
             
-            int dy = std::abs(m_results[i].offsetY);
-            int dx = std::abs(m_results[i].offsetX);
+            double dy = std::abs(m_results[i].offsetY);
+            double dx = std::abs(m_results[i].offsetX);
             
             if (maxCorr < 0.15 || postCoh < 0.20) {
-                // 如果相关系数过低（低于 0.15）或相干性过低（低于 0.20），说明当前区域是噪声区，偏移量不具有置信度
-                // 此时忽略其对 FAILED 的统计贡献，防止噪声误导，默认认为物理对齐良好（由相干性判定主导）
                 perfectCount++;
             } else {
-                if (dy == 0 && dx == 0) {
+                if (dy < 0.01 && dx < 0.01) {
                     perfectCount++;
-                } else if (dy <= 2 && dx <= 2) {
+                } else if (dy <= 2.0 && dx <= 2.0) {
                     warningCount++;
                 } else {
                     failedCount++;
@@ -2745,7 +2745,7 @@ private:
                 QString("Assessment sample=%1, point=(%2,%3), coherence={pre=%4, post=%5, optimal=%6}, residualOffset=(%7,%8), correlation=%9, lowConfidence=%10")
                     .arg(i + 1).arg(m_points[i].x).arg(m_points[i].y)
                     .arg(m_inputCoherence[i], 0, 'f', 4).arg(m_results[i].coherenceZeroShift, 0, 'f', 4)
-                    .arg(m_results[i].coherenceOptimal, 0, 'f', 4).arg(m_results[i].offsetX).arg(m_results[i].offsetY)
+                    .arg(m_results[i].coherenceOptimal, 0, 'f', 4).arg(m_results[i].offsetX, 0, 'f', 2).arg(m_results[i].offsetY, 0, 'f', 2)
                     .arg(m_results[i].maxCorrelation, 0, 'f', 4)
                     .arg((m_results[i].maxCorrelation < 0.15 || m_results[i].coherenceZeroShift < 0.20) ? "true" : "false"),
                 "registration.assessment.sample");

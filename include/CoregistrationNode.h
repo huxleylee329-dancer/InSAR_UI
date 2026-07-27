@@ -44,6 +44,12 @@ public:
     void createWidget();
     QStringList previewImagePaths() const override;
 
+    bool supportsInterferometry() const override { return true; }
+    ::QWidget* createInterferometryWidget(::QWidget* parent) override;
+    QStringList getOutputPaths() const { return m_outputImagePaths; }
+    int masterIndex() const { return m_masterIndex; }
+    bool defaultFirstMaster() const { return m_defaultFirstMaster; }
+
     // Execution
     void execute() override;
     void stopExecution() override;

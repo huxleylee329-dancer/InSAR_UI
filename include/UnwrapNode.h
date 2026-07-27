@@ -48,6 +48,8 @@ public:
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
+    bool supportsValidation() const override { return true; }
+    ::QWidget* createValidationWidget(::QWidget* parent) override;
 
 protected:
     bool validateAndRestoreOutput() override;

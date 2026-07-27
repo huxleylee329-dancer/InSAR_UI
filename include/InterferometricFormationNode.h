@@ -32,6 +32,7 @@ class InterferometricFormationNode : public ExecutableNodeDelegateModel
     Q_OBJECT
 
 public:
+    friend class InterferometricFormationEvalWidget;
     InterferometricFormationNode();
     ~InterferometricFormationNode();
 
@@ -59,6 +60,8 @@ protected:
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
     bool prepareToStart() override;
+    bool supportsInterferometry() const override { return true; }
+    ::QWidget* createInterferometryWidget(::QWidget* parent) override;
 
 private:
     ::QWidget* _widget;

@@ -6,6 +6,7 @@
 #include "icon_source.h"
 #include "InSARLogManager.h"
 #include <QDir>
+#include <QFile>
 #include <QThread>
 #include <QElapsedTimer>
 #include <QCoreApplication>
@@ -220,6 +221,20 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         return true;
     };
 
+    auto writeOutputPhase = [&](int idx, Mat& phase_unwrap) -> bool {
+        if (phase_unwrap.type() != CV_32F) {
+            phase_unwrap.convertTo(phase_unwrap, CV_32F);
+        }
+
+        const QString& outputPath = absolute_unwrap_path.at(idx);
+        if (!NodeUtils::writeMatToH5(outputPath, "phase", phase_unwrap)) {
+            return false;
+        }
+
+        return NodeUtils::writeScalarToH5(outputPath, "unwrap_method", method)
+            && NodeUtils::writeScalarToH5(outputPath, "unwrap_coherence_threshold", coherence_threshold);
+    };
+
     if (method == 1)
     {
         for (int i = 0; i < image_number; i++)
@@ -250,11 +265,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 }
                 return;
             }
-            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
-            if (phase_unwrap.type() != CV_32F) {
-                phase_unwrap.convertTo(phase_unwrap, CV_32F);
+            if (!writeOutputPhase(i, phase_unwrap)) {
+                QFile::remove(absolute_unwrap_path.at(i));
+                continue;
             }
-            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }
@@ -292,11 +306,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 }
                 return;
             }
-            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
-            if (phase_unwrap.type() != CV_32F) {
-                phase_unwrap.convertTo(phase_unwrap, CV_32F);
+            if (!writeOutputPhase(i, phase_unwrap)) {
+                QFile::remove(absolute_unwrap_path.at(i));
+                continue;
             }
-            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }
@@ -331,11 +344,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 }
                 return;
             }
-            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
-            if (phase_unwrap.type() != CV_32F) {
-                phase_unwrap.convertTo(phase_unwrap, CV_32F);
+            if (!writeOutputPhase(i, phase_unwrap)) {
+                QFile::remove(absolute_unwrap_path.at(i));
+                continue;
             }
-            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }
@@ -371,11 +383,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 }
                 return;
             }
-            // 存入磁盘前重新转换回单精度 float，以保持标准存储能效并防止文件臃肿
-            if (phase_unwrap.type() != CV_32F) {
-                phase_unwrap.convertTo(phase_unwrap, CV_32F);
+            if (!writeOutputPhase(i, phase_unwrap)) {
+                QFile::remove(absolute_unwrap_path.at(i));
+                continue;
             }
-            ret = NodeUtils::writeMatToH5(absolute_unwrap_path.at(i), "phase", phase_unwrap) ? 0 : -1;
             process_success[i] = true;
         }
     }

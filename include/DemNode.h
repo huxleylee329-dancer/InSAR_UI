@@ -46,6 +46,10 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+    bool supportsValidation() const override { return true; }
+    ::QWidget* createValidationWidget(::QWidget* parent) override;
+    std::shared_ptr<ImportedFileData> inputDataForValidation() const { return m_inputData; }
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
@@ -103,6 +107,7 @@ private:
     void updateWidgetSize();
     void onMethodChanged(int index);
     QString generateDefaultOutputName() const;
+    bool commitWidgetParametersForExecution();
     void executeProcessing();
 
     // Context helpers

@@ -77,6 +77,9 @@ bool writeDenoisedPhase(FormatConversion& conversion,
                         const QString& outputPath,
                         const QString& projectPath,
                         const Mat& filteredPhase,
+                        int method,
+                        int slopePrefilterWindow,
+                        int slopeWindow,
                         int& offsetRow,
                         int& offsetCol,
                         QString& error)
@@ -89,6 +92,12 @@ bool writeDenoisedPhase(FormatConversion& conversion,
 
     if (!NodeUtils::writeMatToH5(outputPath, "phase", filteredPhase)) {
         error = QStringLiteral("Failed to write denoised phase data.");
+        return false;
+    }
+    if (!NodeUtils::writeScalarToH5(outputPath, "denoise_method", method) ||
+        (method == 1 && (!NodeUtils::writeScalarToH5(outputPath, "denoise_slope_pre_win", slopePrefilterWindow) ||
+                         !NodeUtils::writeScalarToH5(outputPath, "denoise_slope_win", slopeWindow)))) {
+        error = QStringLiteral("Failed to write denoise processing metadata.");
         return false;
     }
 
@@ -228,7 +237,7 @@ void DenoiseWorker::Denoise(QList<int> para,
         int offsetCol = 0;
         QString writeError;
         if (!writeDenoisedPhase(conversion, inputPath, outputPath, savePath, filteredPhase,
-                                offsetRow, offsetCol, writeError)) {
+                                method, para.at(0), para.at(1), offsetRow, offsetCol, writeError)) {
             QFile::remove(outputPath);
             emit errorProcess(writeError);
             return;

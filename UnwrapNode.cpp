@@ -11,17 +11,25 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QDir>
 #include <QApplication>
 #include <QDateTime>
+#include <QHash>
+#include <QRect>
 #include <QStandardItemModel>
 #include <QDebug>
 #include <QMessageBox>
 #include <QTimer>
 #include <QtConcurrent/QtConcurrent>
+#include <opencv2/imgproc.hpp>
+#include <algorithm>
+#include <cmath>
+#include <vector>
+#include "QtNodes/internal/NodeDetailWindow.hpp"
 
 namespace QtNodes {
 
@@ -785,6 +793,495 @@ void UnwrapNode::processAutomatically()
     {
         setState(ExecutionState::Idle);
     }
+}
+
+namespace {
+
+QString unwrapMethodName(int method)
+{
+    switch (method) {
+    case 1: return QStringLiteral("SPD Guided");
+    case 2: return QStringLiteral("MCF");
+    case 3: return QStringLiteral("SNAPHU");
+    case 4: return QStringLiteral("Quality Guided MCF");
+    default: return QObject::tr("未知");
+    }
+}
+
+struct UnwrapImageDiagnostics
+{
+    QString name;
+    bool outputFound = false;
+    bool dimensionsMatch = false;
+    int inputRows = 0;
+    int inputCols = 0;
+    int outputRows = 0;
+    int outputCols = 0;
+    qint64 inputFinite = 0;
+    qint64 pairedFinite = 0;
+    qint64 outputFinite = 0;
+    double rewrapRmse = 0.0;
+    double rewrapP95 = 0.0;
+    bool hasRewrapMetrics = false;
+    int validComponentCount = 0;
+    qint64 largestValidComponentPixels = 0;
+    double largestValidComponentRatio = 0.0;
+    qint64 gradientComparedEdges = 0;
+    qint64 gradientRiskEdges = 0;
+    int gradientRiskComponentCount = 0;
+    qint64 largestGradientRiskPixels = 0;
+    QRect largestGradientRiskBounds;
+    bool hasSpatialMetrics = false;
+};
+
+struct UnwrapValidationResults
+{
+    bool success = false;
+    QString errorMessage;
+    int expectedMethod = 1;
+    double expectedThreshold = 0.2;
+    bool hasRecordedMethod = false;
+    int recordedMethod = 0;
+    bool hasRecordedThreshold = false;
+    double recordedThreshold = 0.0;
+    bool outputMetadataConsistent = true;
+    QList<UnwrapImageDiagnostics> images;
+};
+
+class UnwrapValidationWidget : public BaseValidationWidget
+{
+public:
+    UnwrapValidationWidget(UnwrapNode* node, QWidget* parent)
+        : BaseValidationWidget(node, parent)
+        , m_node(node)
+    {
+        setupUI();
+        startAsyncValidation();
+    }
+
+private:
+    void setupUI()
+    {
+        setupBaseUI(QObject::tr("正在诊断解缠结果..."),
+                    QObject::tr("正在读取全部输入与输出 H5 数据，检查完整性、重新缠绕一致性和空间风险线索。"),
+                    QObject::tr("解缠诊断汇总"),
+                    QObject::tr("解缠参数与结果诊断"), true, true);
+
+        m_coverageLabel = createFeatureLabel();
+        m_rewrapRmseLabel = createFeatureLabel();
+        m_rewrapP95Label = createFeatureLabel();
+        m_componentLabel = createFeatureLabel();
+        m_largestComponentLabel = createFeatureLabel();
+        m_gradientRiskLabel = createFeatureLabel();
+        m_riskRegionLabel = createFeatureLabel();
+        m_missingLabel = createFeatureLabel();
+        QGridLayout* featureGrid = replaceFeatureFormWithGrid();
+        const auto addMetric = [this, featureGrid](int row, int column, int columnSpan,
+            const QString& title, QLabel* value) {
+            QWidget* metric = new QWidget(m_featureCard);
+            QHBoxLayout* metricLayout = new QHBoxLayout(metric);
+            metricLayout->setContentsMargins(0, 0, 0, 0);
+            metricLayout->setSpacing(8);
+            QLabel* titleLabel = createHeaderLabel(title);
+            titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+            value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            metricLayout->addWidget(titleLabel, 2);
+            metricLayout->addWidget(value, 1);
+            featureGrid->addWidget(metric, row, column, 1, columnSpan);
+        };
+
+        addMetric(0, 0, 1, QObject::tr("配对有效像元覆盖率:"), m_coverageLabel);
+        addMetric(0, 1, 1, QObject::tr("重新缠绕圆差 RMSE (rad):"), m_rewrapRmseLabel);
+        addMetric(1, 0, 1, QObject::tr("重新缠绕圆差 P95 估计 (rad):"), m_rewrapP95Label);
+        addMetric(1, 1, 1, QObject::tr("有效输出连通域:"), m_componentLabel);
+        addMetric(2, 0, 1, QObject::tr("最大连通域占比:"), m_largestComponentLabel);
+        addMetric(2, 1, 1, QObject::tr("高梯度风险边比例 (|delta| > pi):"), m_gradientRiskLabel);
+        addMetric(3, 0, 2, QObject::tr("最大风险区域:"), m_riskRegionLabel);
+        addMetric(4, 0, 2, QObject::tr("缺失或尺寸异常结果:"), m_missingLabel);
+    }
+
+    void setNotExecutedState()
+    {
+        m_statusTitle->setText(QObject::tr("诊断不可用"));
+        m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+        m_statusDesc->setText(QObject::tr("请先成功执行解缠节点，再查看诊断结果。"));
+        m_compTable->clearComparison();
+        m_compTable->setEnabled(false);
+        m_coverageLabel->setText(QObject::tr("未执行"));
+        m_rewrapRmseLabel->setText(QObject::tr("未执行"));
+        m_rewrapP95Label->setText(QObject::tr("未执行"));
+        m_componentLabel->setText(QObject::tr("未执行"));
+        m_largestComponentLabel->setText(QObject::tr("未执行"));
+        m_gradientRiskLabel->setText(QObject::tr("未执行"));
+        m_riskRegionLabel->setText(QObject::tr("未执行"));
+        m_missingLabel->setText(QObject::tr("未执行"));
+    }
+
+    void startAsyncValidation() override
+    {
+        m_isTimedOut = false;
+        if (m_node->executionState() != ExecutionState::Completed) {
+            setNotExecutedState();
+            return;
+        }
+
+        const auto inputData = std::dynamic_pointer_cast<ImportedFileData>(m_node->getInputData(0));
+        const auto outputData = std::dynamic_pointer_cast<ImportedFileData>(m_node->outData(0));
+        if (!inputData || inputData->filePaths().isEmpty() || !outputData || outputData->filePaths().isEmpty()) {
+            m_statusTitle->setText(QObject::tr("诊断失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(QObject::tr("未找到完整的输入或输出 H5 文件列表。"));
+            return;
+        }
+
+        const QStringList inputPaths = inputData->filePaths();
+        const QStringList outputPaths = outputData->filePaths();
+        const QJsonObject settings = m_node->save();
+        const int expectedMethod = settings.value("method").toInt(1);
+        const double expectedThreshold = settings.value("coherenceThreshold").toDouble(0.2);
+        m_loadingOverlay->startLoading(QObject::tr("正在计算全部影像的解缠诊断..."));
+
+        QFuture<UnwrapValidationResults> future = QtConcurrent::run([inputPaths, outputPaths, expectedMethod, expectedThreshold]() {
+            NodeUtils::Hdf5Locker locker;
+            UnwrapValidationResults result;
+            result.expectedMethod = expectedMethod;
+            result.expectedThreshold = expectedThreshold;
+
+            QHash<QString, QString> outputsByBaseName;
+            for (const QString& outputPath : outputPaths) {
+                outputsByBaseName.insert(QFileInfo(outputPath).baseName(), outputPath);
+            }
+
+            bool firstMetadata = true;
+
+            for (const QString& inputPath : inputPaths) {
+                UnwrapImageDiagnostics image;
+                image.name = QFileInfo(inputPath).baseName();
+                const QString outputPath = outputsByBaseName.value(image.name + QStringLiteral("_unwrapped"));
+                image.outputFound = !outputPath.isEmpty();
+
+                if (!image.outputFound) {
+                    result.images.append(image);
+                    continue;
+                }
+
+                int method = 0;
+                double threshold = 0.0;
+                const bool hasMethod = NodeUtils::readScalarFromH5(outputPath, "unwrap_method", method);
+                const bool hasThreshold = NodeUtils::readScalarFromH5(outputPath, "unwrap_coherence_threshold", threshold);
+                if (firstMetadata) {
+                    result.hasRecordedMethod = hasMethod;
+                    result.recordedMethod = method;
+                    result.hasRecordedThreshold = hasThreshold;
+                    result.recordedThreshold = threshold;
+                    firstMetadata = false;
+                } else if ((!hasMethod || !result.hasRecordedMethod || method != result.recordedMethod)
+                           || (!hasThreshold || !result.hasRecordedThreshold || std::abs(threshold - result.recordedThreshold) > 1e-9)) {
+                    result.outputMetadataConsistent = false;
+                }
+
+                cv::Mat inputPhase;
+                cv::Mat outputPhase;
+                if (!NodeUtils::readMatFromH5(inputPath, "phase", inputPhase, CV_32F)
+                    || !NodeUtils::readMatFromH5(outputPath, "phase", outputPhase, CV_32F)
+                    || inputPhase.empty() || outputPhase.empty()) {
+                    result.images.append(image);
+                    continue;
+                }
+
+                image.inputRows = inputPhase.rows;
+                image.inputCols = inputPhase.cols;
+                image.outputRows = outputPhase.rows;
+                image.outputCols = outputPhase.cols;
+                image.dimensionsMatch = inputPhase.size() == outputPhase.size();
+
+                double squaredResidualSum = 0.0;
+                const qint64 pixelCount = static_cast<qint64>(inputPhase.total());
+                constexpr qint64 maxResidualSamples = 200000;
+                const qint64 sampleStride = std::max<qint64>(1, (pixelCount + maxResidualSamples - 1) / maxResidualSamples);
+                std::vector<double> residualSamples;
+                residualSamples.reserve(static_cast<size_t>(std::min<qint64>((pixelCount + sampleStride - 1) / sampleStride, maxResidualSamples)));
+                for (int row = 0; row < inputPhase.rows; ++row) {
+                    const float* inputValues = inputPhase.ptr<float>(row);
+                    const float* outputValues = image.dimensionsMatch ? outputPhase.ptr<float>(row) : nullptr;
+                    for (int col = 0; col < inputPhase.cols; ++col) {
+                        const double inputValue = inputValues[col];
+                        if (!std::isfinite(inputValue)) {
+                            continue;
+                        }
+                        ++image.inputFinite;
+                        if (!outputValues || !std::isfinite(outputValues[col])) {
+                            continue;
+                        }
+
+                        const double residual = std::abs(std::atan2(std::sin(outputValues[col] - inputValue),
+                                                                    std::cos(outputValues[col] - inputValue)));
+                        squaredResidualSum += residual * residual;
+                        if (image.pairedFinite % sampleStride == 0) {
+                            residualSamples.push_back(residual);
+                        }
+                        ++image.pairedFinite;
+                    }
+                }
+
+                if (image.pairedFinite > 0) {
+                    image.hasRewrapMetrics = true;
+                    image.rewrapRmse = std::sqrt(squaredResidualSum / image.pairedFinite);
+                    if (!residualSamples.empty()) {
+                        const size_t p95Index = static_cast<size_t>(std::ceil(residualSamples.size() * 0.95)) - 1;
+                        std::nth_element(residualSamples.begin(), residualSamples.begin() + p95Index, residualSamples.end());
+                        image.rewrapP95 = residualSamples[p95Index];
+                    }
+                }
+
+                constexpr double highGradientThreshold = 3.14159265358979323846;
+                cv::Mat validOutputMask = cv::Mat::zeros(outputPhase.size(), CV_8U);
+                cv::Mat gradientRiskMask = cv::Mat::zeros(outputPhase.size(), CV_8U);
+                for (int row = 0; row < outputPhase.rows; ++row) {
+                    const float* outputValues = outputPhase.ptr<float>(row);
+                    uchar* validMaskValues = validOutputMask.ptr<uchar>(row);
+                    for (int col = 0; col < outputPhase.cols; ++col) {
+                        if (std::isfinite(outputValues[col])) {
+                            validMaskValues[col] = 255;
+                            ++image.outputFinite;
+                        }
+                    }
+                }
+
+                if (image.outputFinite > 0) {
+                    cv::Mat labels;
+                    cv::Mat stats;
+                    cv::Mat centroids;
+                    const int labelCount = cv::connectedComponentsWithStats(
+                        validOutputMask, labels, stats, centroids, 8, CV_32S);
+                    image.validComponentCount = std::max(0, labelCount - 1);
+                    for (int label = 1; label < labelCount; ++label) {
+                        const qint64 area = stats.at<int>(label, cv::CC_STAT_AREA);
+                        image.largestValidComponentPixels = std::max(image.largestValidComponentPixels, area);
+                    }
+                    image.largestValidComponentRatio = 100.0 * image.largestValidComponentPixels / image.outputFinite;
+                }
+
+                for (int row = 0; row < outputPhase.rows; ++row) {
+                    const float* currentValues = outputPhase.ptr<float>(row);
+                    const float* nextRowValues = row + 1 < outputPhase.rows ? outputPhase.ptr<float>(row + 1) : nullptr;
+                    uchar* riskValues = gradientRiskMask.ptr<uchar>(row);
+                    uchar* nextRiskValues = row + 1 < outputPhase.rows ? gradientRiskMask.ptr<uchar>(row + 1) : nullptr;
+                    for (int col = 0; col < outputPhase.cols; ++col) {
+                        if (!std::isfinite(currentValues[col])) {
+                            continue;
+                        }
+
+                        if (col + 1 < outputPhase.cols && std::isfinite(currentValues[col + 1])) {
+                            ++image.gradientComparedEdges;
+                            if (std::abs(static_cast<double>(currentValues[col + 1]) - currentValues[col]) > highGradientThreshold) {
+                                ++image.gradientRiskEdges;
+                                riskValues[col] = 255;
+                                riskValues[col + 1] = 255;
+                            }
+                        }
+
+                        if (nextRowValues && std::isfinite(nextRowValues[col])) {
+                            ++image.gradientComparedEdges;
+                            if (std::abs(static_cast<double>(nextRowValues[col]) - currentValues[col]) > highGradientThreshold) {
+                                ++image.gradientRiskEdges;
+                                riskValues[col] = 255;
+                                nextRiskValues[col] = 255;
+                            }
+                        }
+                    }
+                }
+
+                if (image.gradientRiskEdges > 0) {
+                    cv::Mat labels;
+                    cv::Mat stats;
+                    cv::Mat centroids;
+                    const int labelCount = cv::connectedComponentsWithStats(
+                        gradientRiskMask, labels, stats, centroids, 8, CV_32S);
+                    image.gradientRiskComponentCount = std::max(0, labelCount - 1);
+                    for (int label = 1; label < labelCount; ++label) {
+                        const qint64 area = stats.at<int>(label, cv::CC_STAT_AREA);
+                        if (area > image.largestGradientRiskPixels) {
+                            image.largestGradientRiskPixels = area;
+                            image.largestGradientRiskBounds = QRect(
+                                stats.at<int>(label, cv::CC_STAT_LEFT),
+                                stats.at<int>(label, cv::CC_STAT_TOP),
+                                stats.at<int>(label, cv::CC_STAT_WIDTH),
+                                stats.at<int>(label, cv::CC_STAT_HEIGHT));
+                        }
+                    }
+                }
+                image.hasSpatialMetrics = image.outputFinite > 0;
+                result.images.append(image);
+            }
+
+            result.success = !result.images.isEmpty();
+            if (!result.success) {
+                result.errorMessage = QObject::tr("没有可用于诊断的解缠影像。");
+            }
+            return result;
+        });
+
+        auto* watcher = new QFutureWatcher<UnwrapValidationResults>(this);
+        connect(watcher, &QFutureWatcher<UnwrapValidationResults>::finished, this, [this, watcher]() {
+            if (m_isTimedOut) {
+                watcher->deleteLater();
+                return;
+            }
+
+            const UnwrapValidationResults result = watcher->result();
+            m_loadingOverlay->stopLoading();
+            if (!result.success) {
+                m_statusTitle->setText(QObject::tr("诊断失败"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+                m_statusDesc->setText(result.errorMessage);
+                watcher->deleteLater();
+                return;
+            }
+
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(true);
+            const QString actualMethod = result.hasRecordedMethod ? unwrapMethodName(result.recordedMethod) : QObject::tr("未记录（旧结果）");
+            m_compTable->addComparison(QObject::tr("解缠算法"), unwrapMethodName(result.expectedMethod), actualMethod);
+            int outputCount = 0;
+            for (const UnwrapImageDiagnostics& image : result.images) {
+                outputCount += image.outputFound ? 1 : 0;
+            }
+            m_compTable->addComparison(QObject::tr("输入/输出影像数"), QString::number(result.images.size()), QString::number(outputCount));
+            if (result.expectedMethod == 4) {
+                const QString actualThreshold = result.hasRecordedThreshold
+                    ? QString::number(result.recordedThreshold, 'f', 3)
+                    : QObject::tr("未记录（旧结果）");
+                m_compTable->addComparison(QObject::tr("相干系数阈值"), QString::number(result.expectedThreshold, 'f', 3), actualThreshold);
+            }
+
+            qint64 inputFinite = 0;
+            qint64 pairedFinite = 0;
+            double sumSquaredResidual = 0.0;
+            qint64 gradientComparedEdges = 0;
+            qint64 gradientRiskEdges = 0;
+            int totalValidComponents = 0;
+            int maxValidComponents = 0;
+            double smallestLargestComponentRatio = 100.0;
+            const UnwrapImageDiagnostics* largestRiskImage = nullptr;
+            int missingOrInvalid = 0;
+            for (const UnwrapImageDiagnostics& image : result.images) {
+                const QString expected = QStringLiteral("%1 x %2").arg(image.inputCols).arg(image.inputRows);
+                QString actual;
+                if (!image.outputFound) {
+                    actual = QObject::tr("缺失输出");
+                    ++missingOrInvalid;
+                } else if (!image.dimensionsMatch) {
+                    actual = QObject::tr("尺寸不匹配: %1 x %2").arg(image.outputCols).arg(image.outputRows);
+                    ++missingOrInvalid;
+                } else if (!image.hasRewrapMetrics) {
+                    actual = QObject::tr("无有效配对像元");
+                    ++missingOrInvalid;
+                } else {
+                    actual = QStringLiteral("%1 x %2").arg(image.outputCols).arg(image.outputRows);
+                }
+                m_compTable->addComparison(image.name, expected, actual);
+
+                if (image.hasRewrapMetrics) {
+                    const double imageCoverage = image.inputFinite > 0 ? 100.0 * image.pairedFinite / image.inputFinite : 0.0;
+                    const double riskRatio = image.gradientComparedEdges > 0
+                        ? 100.0 * image.gradientRiskEdges / image.gradientComparedEdges : 0.0;
+                    m_compTable->addDiagnostic(image.name + QObject::tr(" 诊断"),
+                        QObject::tr("覆盖 %1%, RMSE %2 rad, P95 %3 rad, 连通域 %4, 最大占比 %5%, 高梯度风险 %6%")
+                            .arg(QString::number(imageCoverage, 'f', 2),
+                                 QString::number(image.rewrapRmse, 'g', 4),
+                                 QString::number(image.rewrapP95, 'g', 4),
+                                 QString::number(image.validComponentCount),
+                                 QString::number(image.largestValidComponentRatio, 'f', 2),
+                                 QString::number(riskRatio, 'f', 4)));
+                }
+
+                inputFinite += image.inputFinite;
+                pairedFinite += image.pairedFinite;
+                if (image.hasRewrapMetrics) {
+                    sumSquaredResidual += image.rewrapRmse * image.rewrapRmse * image.pairedFinite;
+                }
+                if (image.hasSpatialMetrics) {
+                    totalValidComponents += image.validComponentCount;
+                    maxValidComponents = std::max(maxValidComponents, image.validComponentCount);
+                    smallestLargestComponentRatio = std::min(smallestLargestComponentRatio, image.largestValidComponentRatio);
+                    gradientComparedEdges += image.gradientComparedEdges;
+                    gradientRiskEdges += image.gradientRiskEdges;
+                    if (image.largestGradientRiskPixels > 0
+                        && (!largestRiskImage || image.largestGradientRiskPixels > largestRiskImage->largestGradientRiskPixels)) {
+                        largestRiskImage = &image;
+                    }
+                }
+            }
+
+            const double coverage = inputFinite > 0 ? 100.0 * pairedFinite / inputFinite : 0.0;
+            m_coverageLabel->setText(inputFinite > 0 ? QString::number(coverage, 'f', 2) + QStringLiteral("%") : QObject::tr("无有效输入像元"));
+            m_rewrapRmseLabel->setText(pairedFinite > 0 ? QString::number(std::sqrt(sumSquaredResidual / pairedFinite), 'g', 5) : QObject::tr("无有效配对像元"));
+
+            double worstP95 = 0.0;
+            for (const UnwrapImageDiagnostics& image : result.images) {
+                if (image.hasRewrapMetrics) {
+                    worstP95 = std::max(worstP95, image.rewrapP95);
+                }
+            }
+            m_rewrapP95Label->setText(pairedFinite > 0 ? QString::number(worstP95, 'g', 5) + QObject::tr("（逐幅最大估计值）") : QObject::tr("无有效配对像元"));
+            m_componentLabel->setText(totalValidComponents > 0
+                ? QObject::tr("%1（逐幅最大 %2）").arg(totalValidComponents).arg(maxValidComponents)
+                : QObject::tr("无有效输出"));
+            m_largestComponentLabel->setText(totalValidComponents > 0
+                ? QString::number(smallestLargestComponentRatio, 'f', 2) + QObject::tr("%（逐幅最小值）")
+                : QObject::tr("无有效输出"));
+            m_gradientRiskLabel->setText(gradientComparedEdges > 0
+                ? QString::number(100.0 * gradientRiskEdges / gradientComparedEdges, 'f', 4) + QObject::tr("%（候选风险）")
+                : QObject::tr("无可比较边"));
+            if (largestRiskImage) {
+                const QRect& bounds = largestRiskImage->largestGradientRiskBounds;
+                QString imageName = largestRiskImage->name;
+                if (imageName.size() > 40) {
+                    imageName = imageName.left(18) + QStringLiteral("...") + imageName.right(18);
+                }
+                m_riskRegionLabel->setText(QObject::tr("%1\nx=%2, y=%3, %4 x %5 (%6 像元)")
+                    .arg(imageName)
+                    .arg(bounds.x()).arg(bounds.y()).arg(bounds.width()).arg(bounds.height())
+                    .arg(largestRiskImage->largestGradientRiskPixels));
+            } else {
+                m_riskRegionLabel->setText(QObject::tr("未发现高梯度候选区域"));
+            }
+            m_missingLabel->setText(QString::number(missingOrInvalid) + QStringLiteral(" / ") + QString::number(result.images.size()));
+
+            const bool metadataMatch = result.outputMetadataConsistent
+                && (!result.hasRecordedMethod || result.recordedMethod == result.expectedMethod)
+                && (result.expectedMethod != 4 || !result.hasRecordedThreshold || std::abs(result.recordedThreshold - result.expectedThreshold) <= 1e-9);
+            if (missingOrInvalid == 0 && metadataMatch) {
+                m_statusTitle->setText(QObject::tr("诊断完成"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+                m_statusDesc->setText(QObject::tr("全部结果已配对。重新缠绕一致性、连通域和高梯度仅用于诊断数值完整性与候选风险，不能单独证明不存在整数周模糊。"));
+            } else {
+                m_statusTitle->setText(QObject::tr("需要复查"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                m_statusDesc->setText(QObject::tr("发现缺失、尺寸异常或记录参数不一致的结果。请先检查对应影像和处理日志。"));
+            }
+            watcher->deleteLater();
+        });
+        watcher->setFuture(future);
+    }
+
+    UnwrapNode* m_node = nullptr;
+    QLabel* m_coverageLabel = nullptr;
+    QLabel* m_rewrapRmseLabel = nullptr;
+    QLabel* m_rewrapP95Label = nullptr;
+    QLabel* m_componentLabel = nullptr;
+    QLabel* m_largestComponentLabel = nullptr;
+    QLabel* m_gradientRiskLabel = nullptr;
+    QLabel* m_riskRegionLabel = nullptr;
+    QLabel* m_missingLabel = nullptr;
+};
+
+} // namespace
+
+::QWidget* UnwrapNode::createValidationWidget(::QWidget* parent)
+{
+    return new UnwrapValidationWidget(this, parent);
 }
 
 } // namespace QtNodes

@@ -190,6 +190,8 @@ void DemWorker::Dem(int method,
             const QString masterPath = QDir::toNativeSeparators(savePath) + QString::fromStdString(sourcePath);
             NodeUtils::readStringFromH5(inputH5, "source_2", sourcePath);
             conversion.write_str_to_h5(outputH5.toStdString().c_str(), "source_2", sourcePath.c_str());
+            NodeUtils::writeScalarToH5(outputH5, "dem_generation_method", method);
+            NodeUtils::writeScalarToH5(outputH5, "dem_generation_iterations", times);
 
             if (NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficient", value) ||
                 NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficientficient", value)) {
