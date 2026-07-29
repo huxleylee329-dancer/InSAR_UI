@@ -87,10 +87,13 @@ private:
     double m_preparedCoherenceThresh = 0.3;
     QStringList m_preparedPhaseNames;
     QStringList m_preparedPhasePaths;
+    QStringList m_preparedOutputPaths;
     QStringList m_generatedOutputNames;
     QStringList m_generatedOutputPaths;
     QList<int> m_generatedOffsetRows;
     QList<int> m_generatedOffsetCols;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    bool m_xmlDirty = false;
 
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
@@ -101,11 +104,13 @@ private:
     void updateWidgetSize();
     QString generateDefaultOutputName() const;
     void executeProcessing();
-    void persistOutputToProject(const QString& outputNodeName, const QStringList& h5Paths,
-                                const QStringList& outputNames, const QList<int>& offsetRows,
-                                const QList<int>& offsetCols);
+    bool commitResultsToProjectXml(const QString& outputNodeName, const QStringList& h5Paths,
+                                   const QStringList& outputNames, const QList<int>& offsetRows,
+                                   const QList<int>& offsetCols);
+    void publishResultsToProjectTree(const QString& outputNodeName, const QStringList& h5Paths,
+                                     const QStringList& outputNames);
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& types, const QStringList& resultJpgPaths,
+                                const QStringList& types, const QStringList& resultH5Paths, const QStringList& resultJpgPaths,
                                 bool completeExecution);
     void cleanUpThreadAndWorker();
     void releaseFinishedThreadAndWorker();
@@ -122,9 +127,7 @@ private:
 
 signals:
     void startRegression(int polyOrder, int windowSize, double coherenceThresh,
-                         QString save_path, QString project_name,
-                         QString node_name, QString file_name,
-                         QStringList phaseNames, QStringList phasePaths);
+                         QString outputDirectory, QStringList phaseNames, QStringList phasePaths);
 };
 
 } // namespace QtNodes

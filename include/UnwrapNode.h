@@ -16,6 +16,7 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QList>
 #include <memory>
 
 class IApplicationInterface;
@@ -88,8 +89,11 @@ private:
     QString m_preparedProjectName;
     QString m_preparedSrcNode;
     QStringList m_preparedPhasePaths;
+    QStringList m_preparedOutputPaths;
     int m_preparedMethod = 1;
     double m_preparedThreshold = 0.3;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QList<UnwrapFileResult> m_pendingUnwrapResults;
     bool m_xmlDirty = false;
 
     // Helper methods
@@ -106,8 +110,10 @@ private:
     QString generateDefaultOutputName() const;
     void executeProcessing();
     void cleanUpThreadAndWorker();
+    void commitUnwrapResult(const UnwrapFileResult& result);
+    void publishUnwrapResultToProjectTree(const UnwrapFileResult& result);
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& types, const QStringList& resultJpgPaths,
+                                const QStringList& types, const QStringList& resultH5Paths, const QStringList& resultJpgPaths,
                                 bool completeExecution);
 
     // Context helpers

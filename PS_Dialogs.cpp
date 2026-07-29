@@ -2,6 +2,8 @@
 #include "NodeUtils.h"
 #include "IApplicationInterface.h"
 #include "InSARLogManager.h"
+#include "FormatConversion.h"
+#include "tinyxml.h"
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QDialogButtonBox>
@@ -29,6 +31,7 @@ PS_Candidate_Dialog::PS_Candidate_Dialog(QWidget* parent)
 PS_Candidate_Dialog::~PS_Candidate_Dialog()
 {
     stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS candidate dialog destroyed"));
 }
 
 void PS_Candidate_Dialog::createUI()
@@ -149,23 +152,44 @@ void PS_Candidate_Dialog::onAccept()
         return;
     }
 
+    const QString root = projectRoot();
+    if (root.isEmpty() || !QFileInfo(projectXmlPath()).isFile()) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("工程 XML 文件不可用！"));
+        return;
+    }
+    m_preparedOutputNode = outName;
+    m_preparedOutputPaths = QStringList() <<
+        QDir(root).absoluteFilePath(outName + "/PS_candidates.h5");
+    m_preparedInputPaths = slcList;
+    m_generatedOutputPaths.clear();
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(root, m_preparedOutputNode, m_preparedOutputPaths,
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+        QMessageBox::warning(this, "Warning", transactionError);
+        return;
+    }
+
     m_statusLabel->setText(QStringLiteral("正在初始化后台线程..."));
     m_progressBar->setValue(0);
-
-    // 清除冲突的旧节点
-    NodeUtils::removeDataNodeFromProject(nullptr, outName);
 
     m_thread = new QThread(this);
     m_worker = new PSCandidateWorker();
     m_worker->moveToThread(m_thread);
+    const QString stagingNode = m_outputTransaction.stagingName;
 
-    connect(m_thread, &QThread::started, m_worker, [this, daThresh, minPs, rg, az, outName, slcList]() {
-        m_worker->select_candidates(daThresh, minPs, rg, az, m_projectPath, m_projectName, outName, slcList);
+    connect(m_thread, &QThread::started, m_worker, [this, daThresh, minPs, rg, az, root, stagingNode]() {
+        m_worker->select_candidates(daThresh, minPs, rg, az, root, m_projectName, stagingNode,
+                                    m_preparedInputPaths, true);
     });
 
     connect(m_worker, &PSCandidateWorker::updateProcess, this, &PS_Candidate_Dialog::onProgressUpdate);
+    connect(m_worker, &PSCandidateWorker::outputsGenerated, this, &PS_Candidate_Dialog::onOutputsGenerated);
     connect(m_worker, &PSCandidateWorker::endProcess, this, &PS_Candidate_Dialog::onProcessingFinished);
     connect(m_worker, &PSCandidateWorker::errorProcess, this, &PS_Candidate_Dialog::onError);
+    connect(m_worker, &PSCandidateWorker::cancelled, this, &PS_Candidate_Dialog::onCancelled);
+    connect(m_worker, &PSCandidateWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSCandidateWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSCandidateWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -175,19 +199,41 @@ void PS_Candidate_Dialog::onAccept()
 
 void PS_Candidate_Dialog::onReject()
 {
-    stopThread();
     reject();
 }
 
 void PS_Candidate_Dialog::stopThread()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
         m_thread->quit();
         m_thread->wait();
     }
     m_thread = nullptr;
     m_worker = nullptr;
+}
+
+QString PS_Candidate_Dialog::projectRoot() const
+{
+    return m_projectPath.endsWith(".insar", Qt::CaseInsensitive)
+        ? QFileInfo(m_projectPath).absolutePath() : m_projectPath;
+}
+
+QString PS_Candidate_Dialog::projectXmlPath() const
+{
+    if (m_projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
+        return m_projectPath;
+    }
+    return QDir(projectRoot()).absoluteFilePath(m_projectName);
+}
+
+void PS_Candidate_Dialog::reject()
+{
+    stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS candidate dialog cancelled"));
+    QDialog::reject();
 }
 
 void PS_Candidate_Dialog::onProgressUpdate(int progress, const QString& message)
@@ -196,34 +242,95 @@ void PS_Candidate_Dialog::onProgressUpdate(int progress, const QString& message)
     m_statusLabel->setText(QStringLiteral("进度 (%1%): %2").arg(progress).arg(message));
 }
 
+void PS_Candidate_Dialog::onOutputsGenerated(const QStringList& outputPaths)
+{
+    m_generatedOutputPaths = outputPaths;
+}
+
 void PS_Candidate_Dialog::onError(const QString& error)
 {
-    QMessageBox::critical(this, "Error", QStringLiteral("计算出错: ") + error);
-    m_statusLabel->setText(QStringLiteral("状态：出错中断"));
     stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error);
+    m_statusLabel->setText(QStringLiteral("状态：出错中断"));
+    QMessageBox::critical(this, "Error", QStringLiteral("计算出错: ") + error);
+}
+
+void PS_Candidate_Dialog::onCancelled()
+{
+    stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS candidate calculation cancelled"));
+    m_statusLabel->setText(QStringLiteral("状态：已取消"));
 }
 
 void PS_Candidate_Dialog::onProcessingFinished()
 {
-    QString outName = m_outputNodeNameEdit->text();
-    QString rawPath = m_projectPath;
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString h5Path = dir + "/" + outName + "/PS_candidates.h5";
-
-    // 注册到项目树
-    QList<QStandardItem*> found = m_projectModel->findItems(m_projectName);
-    if (!found.isEmpty()) {
-        QStandardItem* projectItem = found.first();
-        QStandardItem* parentNode = NodeUtils::findOrCreateProjectNode(projectItem, outName, "mask-1.0");
-        NodeUtils::findOrCreateChildItem(parentNode, "PS_candidates.h5", "mask-1.0", h5Path);
-        
-        // 刷新 UI 树
-        emit sendCopy(m_projectModel);
+    const QList<QStandardItem*> projects = m_projectModel
+        ? m_projectModel->findItems(m_projectName) : QList<QStandardItem*>();
+    QString transactionError;
+    QStringList finalPaths;
+    XMLFile xml;
+    const QString xmlPath = projectXmlPath();
+    if (projects.isEmpty() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+            QStringList() << QStringLiteral("amplitude_dispersion") << QStringLiteral("ps_mask"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0 ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, &xml, xmlPath, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("PS 候选点输出事务校验失败。") : transactionError;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        m_statusLabel->setText(QStringLiteral("状态：出错中断"));
+        QMessageBox::critical(this, "Error", reason);
+        return;
     }
 
-    m_statusLabel->setText(QStringLiteral("计算成功完成！已注册节点 %1").arg(outName));
+    TiXmlElement* root = nullptr;
+    if (xml.get_root(root) < 0 || !root) {
+        const QString reason = QStringLiteral("无法读取工程 XML 根节点。");
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        QMessageBox::critical(this, "Error", reason);
+        return;
+    }
+    for (TiXmlElement* element = root->FirstChildElement(); element != nullptr; ) {
+        const char* name = element->Attribute("name");
+        if (name && m_preparedOutputNode == QString::fromLocal8Bit(name)) {
+            TiXmlElement* toRemove = element;
+            element = element->NextSiblingElement();
+            root->RemoveChild(toRemove);
+        } else {
+            element = element->NextSiblingElement();
+        }
+    }
+    const QString h5Path = finalPaths.value(0);
+    const QString relativePath = QString("/%1/%2").arg(m_preparedOutputNode, QFileInfo(h5Path).fileName());
+    xml.XMLFile_add_unwrap(m_preparedOutputNode.toStdString().c_str(), "PS_candidates",
+                            relativePath.toStdString().c_str(), 0, 0, "PS_Candidates", 0);
+    if (!NodeUtils::saveProjectXmlAtomically(&xml, xmlPath, &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("PS 候选点元数据提交失败。") : transactionError;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        QMessageBox::critical(this, "Error", reason);
+        return;
+    }
+
+    QStandardItem* projectItem = projects.first();
+    for (int row = projectItem->rowCount() - 1; row >= 0; --row) {
+        QStandardItem* nodeItem = projectItem->child(row, 0);
+        if (nodeItem && nodeItem->text() == m_preparedOutputNode) {
+            projectItem->removeRow(row);
+        }
+    }
+    QStandardItem* parentNode = NodeUtils::findOrCreateProjectNode(projectItem, m_preparedOutputNode, "mask-1.0");
+    NodeUtils::findOrCreateChildItem(parentNode, "PS_candidates.h5", "mask-1.0", h5Path);
+    emit sendCopy(m_projectModel);
+
+    m_statusLabel->setText(QStringLiteral("计算成功完成！已注册节点 %1").arg(m_preparedOutputNode));
     m_progressBar->setValue(100);
     QMessageBox::information(this, "Success", QStringLiteral("PS 候选点提取完成！"));
     stopThread();
@@ -249,6 +356,7 @@ PS_Network_Dialog::PS_Network_Dialog(QWidget* parent)
 PS_Network_Dialog::~PS_Network_Dialog()
 {
     stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS network dialog destroyed"));
 }
 
 void PS_Network_Dialog::createUI()
@@ -373,6 +481,10 @@ void PS_Network_Dialog::onAccept()
     for (int i = 0; i < slcNodeItem->rowCount(); ++i) {
         slcList.append(slcNodeItem->child(i, 1)->text());
     }
+    if (slcList.size() < 2) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("PS 网络至少需要两景配准影像！"));
+        return;
+    }
 
     double maxEdge = m_maxEdgeLengthEdit->text().toDouble();
     int refRow = m_refRowEdit->text().toInt();
@@ -384,23 +496,50 @@ void PS_Network_Dialog::onAccept()
         return;
     }
 
+    const QString root = projectRoot();
+    if (root.isEmpty() || !QFileInfo(projectXmlPath()).isFile()) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("工程 XML 文件不可用！"));
+        return;
+    }
+    m_preparedOutputNode = outName;
+    m_preparedOutputPaths = QStringList() <<
+        QDir(root).absoluteFilePath(outName + "/PS_network.h5");
+    m_preparedInputPaths = QStringList() << candH5Path;
+    m_preparedInputPaths.append(slcList);
+    m_generatedOutputPaths.clear();
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(root, m_preparedOutputNode, m_preparedOutputPaths,
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+        QMessageBox::warning(this, "Warning", transactionError);
+        return;
+    }
+
     m_statusLabel->setText(QStringLiteral("正在初始化网络构建线程..."));
     m_progressBar->setValue(0);
-
-    // 清除冲突的旧节点
-    NodeUtils::removeDataNodeFromProject(nullptr, outName);
 
     m_thread = new QThread(this);
     m_worker = new PSNetworkWorker();
     m_worker->moveToThread(m_thread);
+    const QString stagingNode = m_outputTransaction.stagingName;
 
-    connect(m_thread, &QThread::started, m_worker, [this, maxEdge, refRow, refCol, outName, candH5Path, slcList]() {
-        m_worker->build_network(maxEdge, refRow, refCol, m_projectPath, m_projectName, outName, candH5Path, slcList);
+    connect(m_thread, &QThread::started, m_worker, [this, maxEdge, refRow, refCol, root, stagingNode]() {
+        const QString candidatesH5 = m_preparedInputPaths.value(0);
+        QStringList slcPaths = m_preparedInputPaths;
+        if (!slcPaths.isEmpty()) {
+            slcPaths.removeFirst();
+        }
+        m_worker->build_network(maxEdge, refRow, refCol, root, m_projectName, stagingNode,
+                                candidatesH5, slcPaths, true);
     });
 
     connect(m_worker, &PSNetworkWorker::updateProcess, this, &PS_Network_Dialog::onProgressUpdate);
+    connect(m_worker, &PSNetworkWorker::outputsGenerated, this, &PS_Network_Dialog::onOutputsGenerated);
     connect(m_worker, &PSNetworkWorker::endProcess, this, &PS_Network_Dialog::onProcessingFinished);
     connect(m_worker, &PSNetworkWorker::errorProcess, this, &PS_Network_Dialog::onError);
+    connect(m_worker, &PSNetworkWorker::cancelled, this, &PS_Network_Dialog::onCancelled);
+    connect(m_worker, &PSNetworkWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSNetworkWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSNetworkWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -410,19 +549,41 @@ void PS_Network_Dialog::onAccept()
 
 void PS_Network_Dialog::onReject()
 {
-    stopThread();
     reject();
 }
 
 void PS_Network_Dialog::stopThread()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
         m_thread->quit();
         m_thread->wait();
     }
     m_thread = nullptr;
     m_worker = nullptr;
+}
+
+QString PS_Network_Dialog::projectRoot() const
+{
+    return m_projectPath.endsWith(".insar", Qt::CaseInsensitive)
+        ? QFileInfo(m_projectPath).absolutePath() : m_projectPath;
+}
+
+QString PS_Network_Dialog::projectXmlPath() const
+{
+    if (m_projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
+        return m_projectPath;
+    }
+    return QDir(projectRoot()).absoluteFilePath(m_projectName);
+}
+
+void PS_Network_Dialog::reject()
+{
+    stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS network dialog cancelled"));
+    QDialog::reject();
 }
 
 void PS_Network_Dialog::onProgressUpdate(int progress, const QString& message)
@@ -431,34 +592,97 @@ void PS_Network_Dialog::onProgressUpdate(int progress, const QString& message)
     m_statusLabel->setText(QStringLiteral("进度 (%1%): %2").arg(progress).arg(message));
 }
 
+void PS_Network_Dialog::onOutputsGenerated(const QStringList& outputPaths)
+{
+    m_generatedOutputPaths = outputPaths;
+}
+
 void PS_Network_Dialog::onError(const QString& error)
 {
-    QMessageBox::critical(this, "Error", QStringLiteral("计算出错: ") + error);
-    m_statusLabel->setText(QStringLiteral("状态：出错中断"));
     stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error);
+    m_statusLabel->setText(QStringLiteral("状态：出错中断"));
+    QMessageBox::critical(this, "Error", QStringLiteral("计算出错: ") + error);
+}
+
+void PS_Network_Dialog::onCancelled()
+{
+    stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS network calculation cancelled"));
+    m_statusLabel->setText(QStringLiteral("状态：已取消"));
 }
 
 void PS_Network_Dialog::onProcessingFinished()
 {
-    QString outName = m_outputNodeNameEdit->text();
-    QString rawPath = m_projectPath;
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString h5Path = dir + "/" + outName + "/PS_network.h5";
-
-    // 注册到项目树
-    QList<QStandardItem*> found = m_projectModel->findItems(m_projectName);
-    if (!found.isEmpty()) {
-        QStandardItem* projectItem = found.first();
-        QStandardItem* parentNode = NodeUtils::findOrCreateProjectNode(projectItem, outName, "mask-1.0");
-        NodeUtils::findOrCreateChildItem(parentNode, "PS_network.h5", "mask-1.0", h5Path);
-        
-        // 刷新 UI 树
-        emit sendCopy(m_projectModel);
+    const QList<QStandardItem*> projects = m_projectModel
+        ? m_projectModel->findItems(m_projectName) : QList<QStandardItem*>();
+    QString transactionError;
+    QStringList finalPaths;
+    XMLFile xml;
+    const QString xmlPath = projectXmlPath();
+    if (projects.isEmpty() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+            QStringList() << QStringLiteral("ps_coordinates") << QStringLiteral("edges") <<
+                QStringLiteral("edge_phase_diff") << QStringLiteral("temporal_baseline") <<
+                QStringLiteral("spatial_baseline") << QStringLiteral("formation_matrix"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0 ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, &xml, xmlPath, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("PS 网络输出事务校验失败。") : transactionError;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        m_statusLabel->setText(QStringLiteral("状态：出错中断"));
+        QMessageBox::critical(this, "Error", reason);
+        return;
     }
 
-    m_statusLabel->setText(QStringLiteral("计算成功完成！已注册网络节点 %1").arg(outName));
+    TiXmlElement* root = nullptr;
+    if (xml.get_root(root) < 0 || !root) {
+        const QString reason = QStringLiteral("无法读取工程 XML 根节点。");
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        QMessageBox::critical(this, "Error", reason);
+        return;
+    }
+    for (TiXmlElement* element = root->FirstChildElement(); element != nullptr; ) {
+        const char* name = element->Attribute("name");
+        if (name && m_preparedOutputNode == QString::fromLocal8Bit(name)) {
+            TiXmlElement* toRemove = element;
+            element = element->NextSiblingElement();
+            root->RemoveChild(toRemove);
+        } else {
+            element = element->NextSiblingElement();
+        }
+    }
+    const QString h5Path = finalPaths.value(0);
+    const QString relativePath = QString("/%1/%2").arg(m_preparedOutputNode, QFileInfo(h5Path).fileName());
+    xml.XMLFile_add_unwrap(m_preparedOutputNode.toStdString().c_str(), "PS_network",
+                            relativePath.toStdString().c_str(), 0, 0, "PS_Network", 0);
+    if (!NodeUtils::saveProjectXmlAtomically(&xml, xmlPath, &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("PS 网络元数据提交失败。") : transactionError;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        QMessageBox::critical(this, "Error", reason);
+        return;
+    }
+
+    QStandardItem* projectItem = projects.first();
+    for (int row = projectItem->rowCount() - 1; row >= 0; --row) {
+        QStandardItem* nodeItem = projectItem->child(row, 0);
+        if (nodeItem && nodeItem->text() == m_preparedOutputNode) {
+            projectItem->removeRow(row);
+        }
+    }
+    QStandardItem* parentNode = NodeUtils::findOrCreateProjectNode(projectItem, m_preparedOutputNode, "mask-1.0");
+    NodeUtils::findOrCreateChildItem(parentNode, "PS_network.h5", "mask-1.0", h5Path);
+    emit sendCopy(m_projectModel);
+
+    m_statusLabel->setText(QStringLiteral("计算成功完成！已注册网络节点 %1").arg(m_preparedOutputNode));
     m_progressBar->setValue(100);
     QMessageBox::information(this, "Success", QStringLiteral("PS Delaunay 网络构建完成！"));
     stopThread();
@@ -484,6 +708,7 @@ PS_TimeSeries_Dialog::PS_TimeSeries_Dialog(QWidget* parent)
 PS_TimeSeries_Dialog::~PS_TimeSeries_Dialog()
 {
     stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS time-series dialog destroyed"));
 }
 
 void PS_TimeSeries_Dialog::createUI()
@@ -596,25 +821,44 @@ void PS_TimeSeries_Dialog::onAccept()
         return;
     }
 
+    const QString root = projectRoot();
+    if (root.isEmpty() || !QFileInfo(projectXmlPath()).isFile()) {
+        QMessageBox::warning(this, "Warning", QStringLiteral("工程 XML 文件不可用！"));
+        return;
+    }
+    m_preparedOutputNode = outName;
+    m_preparedOutputPaths = QStringList() <<
+        QDir(root).absoluteFilePath(outName + "/PS_time_series.h5");
+    m_preparedInputPaths = QStringList() << netH5Path;
+    m_generatedOutputPaths.clear();
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(root, m_preparedOutputNode, m_preparedOutputPaths,
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+        QMessageBox::warning(this, "Warning", transactionError);
+        return;
+    }
+
     m_statusLabel->setText(QStringLiteral("正在初始化时序反演分析线程..."));
     m_progressBar->setValue(0);
-
-    // 清除冲突的旧节点
-    NodeUtils::removeDataNodeFromProject(nullptr, outName);
 
     m_thread = new QThread(this);
     m_worker = new PSTimeSeriesWorker();
     m_worker->moveToThread(m_thread);
+    const QString stagingNode = m_outputTransaction.stagingName;
 
-    QStringList fileList = QStringList() << netH5Path;
-
-    connect(m_thread, &QThread::started, m_worker, [this, cohThresh, maxDef, atmosWin, outName, fileList]() {
-        m_worker->ps_time_series(cohThresh, maxDef, atmosWin, m_projectPath, m_projectName, outName, fileList);
+    connect(m_thread, &QThread::started, m_worker, [this, cohThresh, maxDef, atmosWin, root, stagingNode]() {
+        m_worker->ps_time_series(cohThresh, maxDef, atmosWin, root, m_projectName, stagingNode,
+                                 m_preparedInputPaths, true);
     });
 
     connect(m_worker, &PSTimeSeriesWorker::updateProcess, this, &PS_TimeSeries_Dialog::onProgressUpdate);
+    connect(m_worker, &PSTimeSeriesWorker::outputsGenerated, this, &PS_TimeSeries_Dialog::onOutputsGenerated);
     connect(m_worker, &PSTimeSeriesWorker::endProcess, this, &PS_TimeSeries_Dialog::onProcessingFinished);
     connect(m_worker, &PSTimeSeriesWorker::errorProcess, this, &PS_TimeSeries_Dialog::onError);
+    connect(m_worker, &PSTimeSeriesWorker::cancelled, this, &PS_TimeSeries_Dialog::onCancelled);
+    connect(m_worker, &PSTimeSeriesWorker::endProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSTimeSeriesWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &PSTimeSeriesWorker::cancelled, m_thread, &QThread::quit);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
@@ -624,19 +868,41 @@ void PS_TimeSeries_Dialog::onAccept()
 
 void PS_TimeSeries_Dialog::onReject()
 {
-    stopThread();
     reject();
 }
 
 void PS_TimeSeries_Dialog::stopThread()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
         m_thread->quit();
         m_thread->wait();
     }
     m_thread = nullptr;
     m_worker = nullptr;
+}
+
+QString PS_TimeSeries_Dialog::projectRoot() const
+{
+    return m_projectPath.endsWith(".insar", Qt::CaseInsensitive)
+        ? QFileInfo(m_projectPath).absolutePath() : m_projectPath;
+}
+
+QString PS_TimeSeries_Dialog::projectXmlPath() const
+{
+    if (m_projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
+        return m_projectPath;
+    }
+    return QDir(projectRoot()).absoluteFilePath(m_projectName);
+}
+
+void PS_TimeSeries_Dialog::reject()
+{
+    stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS time-series dialog cancelled"));
+    QDialog::reject();
 }
 
 void PS_TimeSeries_Dialog::onProgressUpdate(int progress, const QString& message)
@@ -645,34 +911,98 @@ void PS_TimeSeries_Dialog::onProgressUpdate(int progress, const QString& message
     m_statusLabel->setText(QStringLiteral("进度 (%1%): %2").arg(progress).arg(message));
 }
 
+void PS_TimeSeries_Dialog::onOutputsGenerated(const QStringList& outputPaths)
+{
+    m_generatedOutputPaths = outputPaths;
+}
+
 void PS_TimeSeries_Dialog::onError(const QString& error)
 {
-    QMessageBox::critical(this, "Error", QStringLiteral("计算出错: ") + error);
-    m_statusLabel->setText(QStringLiteral("状态：出错中断"));
     stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error);
+    m_statusLabel->setText(QStringLiteral("状态：出错中断"));
+    QMessageBox::critical(this, "Error", QStringLiteral("计算出错: ") + error);
+}
+
+void PS_TimeSeries_Dialog::onCancelled()
+{
+    stopThread();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("PS time-series calculation cancelled"));
+    m_statusLabel->setText(QStringLiteral("状态：已取消"));
 }
 
 void PS_TimeSeries_Dialog::onProcessingFinished()
 {
-    QString outName = m_outputNodeNameEdit->text();
-    QString rawPath = m_projectPath;
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString h5Path = dir + "/" + outName + "/PS_time_series.h5";
-
-    // 注册到项目树
-    QList<QStandardItem*> found = m_projectModel->findItems(m_projectName);
-    if (!found.isEmpty()) {
-        QStandardItem* projectItem = found.first();
-        QStandardItem* parentNode = NodeUtils::findOrCreateProjectNode(projectItem, outName, "double-1.0");
-        NodeUtils::findOrCreateChildItem(parentNode, "PS_time_series.h5", "double-1.0", h5Path);
-        
-        // 刷新 UI 树
-        emit sendCopy(m_projectModel);
+    const QList<QStandardItem*> projects = m_projectModel
+        ? m_projectModel->findItems(m_projectName) : QList<QStandardItem*>();
+    QString transactionError;
+    QStringList finalPaths;
+    XMLFile xml;
+    const QString xmlPath = projectXmlPath();
+    if (projects.isEmpty() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+            QStringList() << QStringLiteral("ps_coordinates") << QStringLiteral("deformation_velocity") <<
+                QStringLiteral("temporal_coherence") << QStringLiteral("topographic_residual") <<
+                QStringLiteral("deformation_time_series") << QStringLiteral("mask") <<
+                QStringLiteral("mask_count_map") << QStringLiteral("temporal_baseline"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0 ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, &xml, xmlPath, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("PS 时序输出事务校验失败。") : transactionError;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        m_statusLabel->setText(QStringLiteral("状态：出错中断"));
+        QMessageBox::critical(this, "Error", reason);
+        return;
     }
 
-    m_statusLabel->setText(QStringLiteral("计算成功完成！已注册时序成果节点 %1").arg(outName));
+    TiXmlElement* root = nullptr;
+    if (xml.get_root(root) < 0 || !root) {
+        const QString reason = QStringLiteral("无法读取工程 XML 根节点。");
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        QMessageBox::critical(this, "Error", reason);
+        return;
+    }
+    for (TiXmlElement* element = root->FirstChildElement(); element != nullptr; ) {
+        const char* name = element->Attribute("name");
+        if (name && m_preparedOutputNode == QString::fromLocal8Bit(name)) {
+            TiXmlElement* toRemove = element;
+            element = element->NextSiblingElement();
+            root->RemoveChild(toRemove);
+        } else {
+            element = element->NextSiblingElement();
+        }
+    }
+    const QString h5Path = finalPaths.value(0);
+    const QString relativePath = QString("/%1/%2").arg(m_preparedOutputNode, QFileInfo(h5Path).fileName());
+    xml.XMLFile_add_unwrap(m_preparedOutputNode.toStdString().c_str(), "PS_time_series",
+                            relativePath.toStdString().c_str(), 0, 0, "PS_TimeSeries", 0);
+    if (!NodeUtils::saveProjectXmlAtomically(&xml, xmlPath, &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("PS 时序元数据提交失败。") : transactionError;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        stopThread();
+        QMessageBox::critical(this, "Error", reason);
+        return;
+    }
+
+    QStandardItem* projectItem = projects.first();
+    for (int row = projectItem->rowCount() - 1; row >= 0; --row) {
+        QStandardItem* nodeItem = projectItem->child(row, 0);
+        if (nodeItem && nodeItem->text() == m_preparedOutputNode) {
+            projectItem->removeRow(row);
+        }
+    }
+    QStandardItem* parentNode = NodeUtils::findOrCreateProjectNode(projectItem, m_preparedOutputNode, "double-1.0");
+    NodeUtils::findOrCreateChildItem(parentNode, "PS_time_series.h5", "double-1.0", h5Path);
+    emit sendCopy(m_projectModel);
+
+    m_statusLabel->setText(QStringLiteral("计算成功完成！已注册时序成果节点 %1").arg(m_preparedOutputNode));
     m_progressBar->setValue(100);
     QMessageBox::information(this, "Success", QStringLiteral("PS 时序反演完成！"));
     stopThread();

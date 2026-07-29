@@ -98,6 +98,8 @@ private:
     void onCancelled();
     void onError(const QString& error);
     void onGeocodingGenerated(const GeocodingFileResult& result);
+    void commitGeocodingResult(const GeocodingFileResult& result);
+    void publishGeocodingResultToProjectTree(const GeocodingFileResult& result);
     bool validateInputs() const;
     void updateWidgetSize();
     void updateParameterWidgetsEnableState();
@@ -106,7 +108,7 @@ private:
     void executeProcessing();
     void cleanUpThreadAndWorker();
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& types, const QStringList& resultJpgPaths,
+                                const QStringList& types, const QStringList& resultH5Paths, const QStringList& resultJpgPaths,
                                 bool completeExecution);
 
     // Context helpers
@@ -134,6 +136,8 @@ private:
     int m_preparedMultiAz = 1;
     QString m_preparedDemPath;
     bool m_xmlDirty = false;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QList<GeocodingFileResult> m_pendingGeocodingResults;
 
 signals:
     void startGeocoding(int type, int multi_rg, int multi_az, QString savePath, QStringList inputPaths,

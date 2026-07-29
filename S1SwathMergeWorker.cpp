@@ -67,10 +67,8 @@ void S1SwathMergeWorker::S1_swath_merge(
 
     const QString filename = QStringLiteral("merged_phase");
     const QString mergedH5Path = savePath + "/" + dstNode + "/" + filename + ".h5";
-    const QString previewPath = savePath + "/" + dstNode + "/" + filename + ".jpg";
-    const auto finishCancelled = [this, &mergedH5Path, &previewPath]() {
+    const auto finishCancelled = [this, &mergedH5Path]() {
         QFile::remove(mergedH5Path);
-        QFile::remove(previewPath);
         emit cancelled();
     };
 
@@ -98,11 +96,6 @@ void S1SwathMergeWorker::S1_swath_merge(
         return;
     }
 
-    InSARLogManager::LogInfo("S1SwathMergeWorker", "Swaths merged successfully. Generating preview image...");
-    {
-        NodeUtils::Hdf5Locker locker;
-        NodeUtils::generateJpgPreviewFromH5(mergedH5Path, previewPath, "phase");
-    }
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         finishCancelled();
         return;

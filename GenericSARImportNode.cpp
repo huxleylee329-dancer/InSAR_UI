@@ -91,7 +91,7 @@ QWidget* GenericSARImportNode::createWidget()
     fileNameRow->addWidget(new QLabel("目标文件名："), 3);
     m_outputFileNameEdit = new QLineEdit();
     m_outputFileNameEdit->setText(m_outputFileName);
-    m_outputFileNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
+    m_outputFileNameEdit->setPlaceholderText("自动生成或手动输入");
     connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputFileNameEdit->text();
         if (m_outputFileName != text) {
@@ -159,7 +159,7 @@ bool GenericSARImportNode::prepareToStart()
 
     if (!model || path.isEmpty() || name.isEmpty())
     {
-        onError("鏈娴嬪埌鎵撳紑鐨勯」鐩紝璇峰厛鎵撳紑鎴栨柊寤轰竴涓」鐩€?");
+        onError("未检测到打开的项目，请先打开或新建一个项目。");
         return false;
     }
 
@@ -178,7 +178,7 @@ bool GenericSARImportNode::prepareToStart()
     m_imagePath = m_imageEdit->text().trimmed();
     if (m_imagePath.isEmpty())
     {
-        onError("璇烽€夋嫨涓€涓?閫氱敤 SAR 鍥惧儚鏂囦欢銆?");
+        onError("请选择一个 通用 SAR 图像文件。");
         return false;
     }
 

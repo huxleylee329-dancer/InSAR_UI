@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QThread>
 #include <QElapsedTimer>
+#include <QTemporaryDir>
 #include <vector>
 #include <string>
 #include <opencv2/opencv.hpp>
@@ -147,8 +148,13 @@ void SLCDerampWorker::SLC_deramp_with_dem(
         originNames.append(originName);
     }
 
+    QTemporaryDir temporaryDemDirectory;
     if (demPath.isEmpty()) {
-        demPath = QDir::toNativeSeparators(savePath + "/.dem_cache");
+        if (!temporaryDemDirectory.isValid()) {
+            emit errorProcess(QStringLiteral("Unable to create temporary DEM cache directory."));
+            return;
+        }
+        demPath = QDir::toNativeSeparators(temporaryDemDirectory.path());
     }
 
     Utils util;
@@ -256,7 +262,10 @@ void SLCDerampWorker::SLC_deramp_with_dem(
                 emit errorProcess(QStringLiteral("SLC deramp failed."));
                 return;
             }
-            conversion.write_slc_to_h5(derampImages.at(i).c_str(), slc);
+            if (conversion.write_slc_to_h5(derampImages.at(i).c_str(), slc) < 0) {
+                emit errorProcess(QStringLiteral("Failed to write deramped SLC output."));
+                return;
+            }
             conversion.Copy_para_from_h5_2_h5(sourceImages.at(i).c_str(), derampImages.at(i).c_str());
 
             const QString sourcePath = inputPaths.at(i);
@@ -269,14 +278,7 @@ void SLCDerampWorker::SLC_deramp_with_dem(
             NodeUtils::writeScalarToH5(outputPath, "azimuth_len", sceneHeight);
         }
 
-        const QFileInfo outputInfo(QString::fromStdString(derampImages.at(i)));
-        const QString outputPath = outputInfo.absoluteFilePath();
-        const QString previewPath = outputInfo.absolutePath() + "/" + outputInfo.baseName() + ".jpg";
-        {
-            NodeUtils::Hdf5Locker locker;
-            NodeUtils::generateJpgPreviewFromH5(outputPath, previewPath, "complex");
-        }
-        resultH5Paths.append(outputPath);
+        resultH5Paths.append(QString::fromStdString(derampImages.at(i)));
         emit updateProcess(50 + 40 * (i + 1) / inputPaths.size(), QStringLiteral("Processing SLC images..."));
     }
 

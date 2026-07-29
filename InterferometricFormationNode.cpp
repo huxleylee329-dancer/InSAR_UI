@@ -184,6 +184,12 @@ QJsonObject InterferometricFormationNode::save() const
     modelJson["multilookRg"] = m_multilookRgEdit ? m_multilookRgEdit->text().toInt() : m_multilookRg;
     modelJson["multilookAz"] = m_multilookAzEdit ? m_multilookAzEdit->text().toInt() : m_multilookAz;
     modelJson[QStringLiteral("demPath")] = m_demPath;
+    modelJson[QStringLiteral("hasOutputExecutionSettings")] = m_hasOutputExecutionSettings;
+    modelJson[QStringLiteral("outputIsDeflat")] = m_outputIsDeflat;
+    modelJson[QStringLiteral("outputIsTopoRemoval")] = m_outputIsTopoRemoval;
+    modelJson[QStringLiteral("outputIsCoherence")] = m_outputIsCoherence;
+    modelJson[QStringLiteral("outputWinW")] = m_outputWinW;
+    modelJson[QStringLiteral("outputWinH")] = m_outputWinH;
 
     return modelJson;
 }
@@ -222,6 +228,19 @@ void InterferometricFormationNode::load(QJsonObject const &json)
 
     QJsonValue vDemPath = json[QStringLiteral("demPath")];
     if (!vDemPath.isUndefined()) m_demPath = vDemPath.toString();
+
+    QJsonValue vHasOutputSettings = json[QStringLiteral("hasOutputExecutionSettings")];
+    if (!vHasOutputSettings.isUndefined()) m_hasOutputExecutionSettings = vHasOutputSettings.toBool();
+    QJsonValue vOutputDeflat = json[QStringLiteral("outputIsDeflat")];
+    if (!vOutputDeflat.isUndefined()) m_outputIsDeflat = vOutputDeflat.toBool();
+    QJsonValue vOutputTopo = json[QStringLiteral("outputIsTopoRemoval")];
+    if (!vOutputTopo.isUndefined()) m_outputIsTopoRemoval = vOutputTopo.toBool();
+    QJsonValue vOutputCoherence = json[QStringLiteral("outputIsCoherence")];
+    if (!vOutputCoherence.isUndefined()) m_outputIsCoherence = vOutputCoherence.toBool();
+    QJsonValue vOutputWinW = json[QStringLiteral("outputWinW")];
+    if (!vOutputWinW.isUndefined()) m_outputWinW = vOutputWinW.toInt();
+    QJsonValue vOutputWinH = json[QStringLiteral("outputWinH")];
+    if (!vOutputWinH.isUndefined()) m_outputWinH = vOutputWinH.toInt();
 
     ExecutableNodeDelegateModel::load(json);
 
@@ -477,7 +496,7 @@ void InterferometricFormationNode::createWidget()
     nodeNameLabel->setFixedWidth(100);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -662,7 +681,7 @@ QString InterferometricFormationNode::generateDefaultOutputName() const
     {
         return m_inputData->nodeName() + "_interf";
     }
-    return "骞叉秹鍖栫粨鏋?";
+    return "干涉化结果";
 }
 
 bool InterferometricFormationNode::validateInputs() const
@@ -718,166 +737,108 @@ void InterferometricFormationNode::onProgressUpdate(int progress, const QString&
 
 void InterferometricFormationNode::onProcessingFinished()
 {
+    const QString dstNode = m_preparedFileName;
+    QStringList h5Paths;
+    QStringList previewSourcePaths;
+    QStringList jpgPaths;
+    QStringList types;
+    QList<InterferogramFileResult> committedResults;
+
+    m_workerThread = nullptr;
+    m_thread = nullptr;
+
     if (isAutomaticExecutionObsolete()) {
-        m_workerThread = nullptr;
-        m_thread = nullptr;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
+        m_outputData.reset();
+        m_imageInfoData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         discardObsoleteAutomaticExecution();
         return;
     }
 
-    if (m_xmlDirty) {
-        XMLFile* xml = projectXml();
-        const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
-        if (!xml || xmlPath.isEmpty() || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
-            onError(QStringLiteral("Failed to save project XML after interferometric formation."));
-            return;
-        }
-        m_xmlDirty = false;
+    QString transactionError;
+    if (!projectXml()) {
+        onError(QStringLiteral("Project XML context is unavailable for interferometric output commit."));
+        return;
     }
 
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
+    QStringList requiredDatasets;
+    requiredDatasets.append(QStringLiteral("phase"));
+    if (m_preparedIsCoherence) {
+        requiredDatasets.append(QStringLiteral("coherence"));
+    }
+    if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, requiredDatasets, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
 
-    // Scan output directory for H5 results and generate JPG previews
-    QStringList h5Paths;
-    QStringList jpgPaths;
-    QStringList types;
+    QStringList workerOutputPaths;
+    for (const InterferogramFileResult& result : m_pendingInterferogramResults) {
+        workerOutputPaths.append(result.h5Path);
+    }
+    if (!NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, workerOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    if (!NodeUtils::prepareOutputTransactionMetadataCommit(
+            m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
 
-    if (m_preparedMasterIndex >= 0 && m_preparedMasterIndex < m_preparedInputPaths.size())
-    {
-        const QString masterName = QFileInfo(m_preparedInputPaths.at(m_preparedMasterIndex)).baseName();
-        for (int i = 0; i < m_preparedInputPaths.size(); ++i)
-        {
-            if (i == m_preparedMasterIndex)
-                continue;
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode, false, false);
+    m_xmlDirty = false;
+    for (InterferogramFileResult result : m_pendingInterferogramResults) {
+        const QString h5FileName = QFileInfo(result.h5Path).fileName();
+        result.h5Path = QDir(projectPath() + "/" + dstNode).absoluteFilePath(h5FileName);
+        result.relativePath = QStringLiteral("/%1/%2").arg(dstNode, h5FileName);
+        commitInterferogramResult(result);
+        committedResults.append(result);
+    }
+    if (!m_xmlDirty) {
+        onError(QStringLiteral("Interferometric output metadata was not produced."));
+        return;
+    }
+    if (!NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    if (!NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
 
-            const QString slaveName = QFileInfo(m_preparedInputPaths.at(i)).baseName();
-            const QString h5Name = masterName + "_" + slaveName;
-            const QString h5Path = outputPath + h5Name + ".h5";
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
+    for (const InterferogramFileResult& result : committedResults) {
+        publishInterferogramResultToProjectTree(result);
+    }
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
+    }
+    captureOutputExecutionSettings();
 
-            h5Paths.append(h5Path);
-            jpgPaths.append(outputPath + h5Name + "_phase.jpg");
-            types.append("phase");
-
-            if (m_preparedIsCoherence)
-            {
-                h5Paths.append(h5Path);
-                jpgPaths.append(outputPath + h5Name + "_coh.jpg");
-                types.append("coherence");
-            }
+    for (const QString& h5Path : h5Paths) {
+        const QString baseName = QFileInfo(h5Path).baseName();
+        previewSourcePaths.append(h5Path);
+        jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + baseName + "_phase.jpg");
+        types.append(QStringLiteral("phase"));
+        if (m_preparedIsCoherence) {
+            previewSourcePaths.append(h5Path);
+            jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + baseName + "_coh.jpg");
+            types.append(QStringLiteral("coherence"));
         }
     }
 
-    QStringList uniqueH5Paths = h5Paths;
-    uniqueH5Paths.removeDuplicates();
-    uniqueH5Paths.sort();
-
-    if (uniqueH5Paths.isEmpty())
-    {
-        QDir dir(outputPath);
-        if (dir.exists()) {
-            QStringList filters;
-            filters << "*.h5";
-            QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
-            h5Files.sort();
-            for (const QString& h5File : h5Files) {
-                uniqueH5Paths.append(dir.absoluteFilePath(h5File));
-            }
-        }
-    }
-
-    m_outputData = std::make_shared<ImportedFileData>(uniqueH5Paths, dstNode);
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
-    // Clean up thread
-    if (m_thread)
+    if (!previewSourcePaths.isEmpty())
     {
-        m_thread = nullptr;
-    }
-
-    if (m_workerThread)
-    {
-        m_workerThread = nullptr;
-    }
-
-    if (!h5Paths.isEmpty())
-    {
-        m_remedyWatcher.disconnect(this);
-        if (m_remedyWatcher.isRunning()) {
-            m_remedyWatcher.cancel();
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
-                m_remedyWatcher.disconnect(this);
-                QTimer::singleShot(0, this, [this]() { onProcessingFinished(); });
-            });
-            return;
-        }
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, uniqueH5Paths, h5Paths, jpgPaths]() {
-            if (discardObsoleteAutomaticExecution()) {
-                return;
-            }
-
-            QStringList validJpgPaths;
-            bool anyFailed = false;
-            for (const QString& path : jpgPaths) {
-                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
-                    validJpgPaths.append(path);
-                } else {
-                    anyFailed = true;
-                }
-            }
-
-            if (!validJpgPaths.isEmpty()) {
-                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
-                setOutputData(1, m_imageInfoData);
-            } else {
-                m_imageInfoData.reset();
-                setOutputData(1, nullptr);
-            }
-
-            // Update UI state
-            updateParameterWidgetsEnableState();
-
-            if (anyFailed) {
-                setLastWarningMessage(QStringLiteral("Interferometric products were generated, but some preview images could not be generated."));
-                TaskLogContext logContext;
-                logContext.displayName = caption();
-                InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelWarning,
-                                              "InterferometricFormationNode",
-                                              QStringLiteral("干涉形成完成，但部分预览图生成失败。"),
-                                              LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
-                                              QStringLiteral("completed"), QStringLiteral("completed_with_warnings"),
-                                              m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-                finishExecutionWithWarning();
-            } else {
-                setProgress(100);
-                TaskLogContext logContext;
-                logContext.displayName = caption();
-                InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
-                                              "InterferometricFormationNode",
-                                              QStringLiteral("干涉形成完成。输出：%1")
-                                                  .arg(uniqueH5Paths.join(QStringLiteral(", "))),
-                                              LogTargets(LogTarget::UserProjectLog),
-                                              QStringLiteral("completed"), QStringLiteral("completed"),
-                                              m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-                finishExecution();
-            }
-        });
-
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
-            for (int i = 0; i < h5Paths.size(); ++i) {
-                // 如果 JPG 存在、有效，且修改时间不早于 H5 文件，则跳过重生成
-                QFileInfo jpgInfo(jpgPaths[i]);
-                QFileInfo h5Info(h5Paths[i]);
-                if (jpgInfo.exists() && jpgInfo.size() > 0 && jpgInfo.lastModified() >= h5Info.lastModified()) {
-                    continue;
-                }
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+        startPreviewGeneration(previewSourcePaths, jpgPaths, types, h5Paths);
     }
     else
     {
@@ -896,67 +857,16 @@ void InterferometricFormationNode::onProcessingFinished()
 
 void InterferometricFormationNode::onInterferogramGenerated(const InterferogramFileResult& result)
 {
-    QStandardItemModel* model = projectModel();
-    if (!model) return;
+    m_pendingInterferogramResults.append(result);
+}
 
-    QList<QStandardItem*> foundProjects = model->findItems(m_preparedProjectName);
-    if (foundProjects.isEmpty()) return;
-
-    QStandardItem* project = foundProjects.first();
-    QStandardItem* interfNode = NodeUtils::findOrCreateProjectNode(project, m_preparedFileName, "phase-1.0");
-    if (interfNode) {
-        interfNode->setToolTip(m_preparedProjectName);
-    } else {
-        return;
-    }
-
-    if (result.isDeflat) {
-        QStandardItem* itemImg = nullptr;
-        for (int j = 0; j < interfNode->rowCount(); j++) {
-            if (interfNode->child(j, 0)->text() == result.phaseName) {
-                itemImg = interfNode->child(j, 0);
-                break;
-            }
-        }
-        if (!itemImg) {
-            QStandardItem* phaseItemName = new QStandardItem(result.phaseName);
-            phaseItemName->setToolTip("phase");
-            QStandardItem* phaseItemPath = new QStandardItem(result.h5Path);
-            phaseItemPath->setToolTip(QFileInfo(result.h5Path).fileName());
-            phaseItemName->setIcon(QIcon(IMAGEDATA_ICON));
-            interfNode->appendRow(phaseItemName);
-            interfNode->setChild(interfNode->rowCount() - 1, 1, phaseItemPath);
-        } else {
-            interfNode->setChild(itemImg->row(), 1, new QStandardItem(result.h5Path));
-        }
-    }
-
-    if (result.isCoherence) {
-        QStandardItem* itemCoh = nullptr;
-        for (int j = 0; j < interfNode->rowCount(); j++) {
-            if (interfNode->child(j, 0)->text() == result.cohName) {
-                itemCoh = interfNode->child(j, 0);
-                break;
-            }
-        }
-        if (!itemCoh) {
-            QStandardItem* cohItemName = new QStandardItem(result.cohName);
-            cohItemName->setToolTip("coherence");
-            QStandardItem* cohItemPath = new QStandardItem(result.h5Path);
-            cohItemPath->setToolTip(QFileInfo(result.h5Path).fileName());
-            cohItemName->setIcon(QIcon(IMAGEDATA_ICON));
-            interfNode->appendRow(cohItemName);
-            interfNode->setChild(interfNode->rowCount() - 1, 1, cohItemPath);
-        } else {
-            interfNode->setChild(itemCoh->row(), 1, new QStandardItem(result.h5Path));
-        }
-    }
-
+void InterferometricFormationNode::commitInterferogramResult(const InterferogramFileResult& result)
+{
     XMLFile* xml = projectXml();
     if (!xml) {
-        onError(QStringLiteral("Project XML is unavailable while publishing interferometric output."));
         return;
     }
+
     xml->XMLFile_add_interferometric_phase(
         m_preparedFileName.toStdString().c_str(),
         result.phaseName.toStdString().c_str(),
@@ -972,6 +882,7 @@ void InterferometricFormationNode::onInterferogramGenerated(const InterferogramF
         result.winHeight,
         result.multilookRg,
         result.multilookAz);
+
     if (result.isCoherence) {
         xml->XMLFile_add_interferometric_phase(
             m_preparedFileName.toStdString().c_str(),
@@ -992,6 +903,53 @@ void InterferometricFormationNode::onInterferogramGenerated(const InterferogramF
     m_xmlDirty = true;
 }
 
+void InterferometricFormationNode::publishInterferogramResultToProjectTree(
+    const InterferogramFileResult& result)
+{
+    QStandardItemModel* model = projectModel();
+    if (!model) {
+        return;
+    }
+
+    QList<QStandardItem*> foundProjects = model->findItems(m_preparedProjectName);
+    if (foundProjects.isEmpty()) {
+        return;
+    }
+
+    QStandardItem* project = foundProjects.first();
+    QStandardItem* interfNode = NodeUtils::findOrCreateProjectNode(
+        project, m_preparedFileName, "phase-1.0");
+    if (!interfNode) {
+        return;
+    }
+    interfNode->setToolTip(m_preparedProjectName);
+
+    const auto publishItem = [interfNode, &result](const QString& name, const QString& type) {
+        QStandardItem* item = nullptr;
+        for (int row = 0; row < interfNode->rowCount(); ++row) {
+            QStandardItem* existing = interfNode->child(row, 0);
+            if (existing && existing->text() == name) {
+                item = existing;
+                break;
+            }
+        }
+        if (!item) {
+            item = new QStandardItem(name);
+            item->setToolTip(type);
+            item->setIcon(QIcon(IMAGEDATA_ICON));
+            interfNode->appendRow(item);
+        }
+        QStandardItem* pathItem = new QStandardItem(result.h5Path);
+        pathItem->setToolTip(QFileInfo(result.h5Path).fileName());
+        interfNode->setChild(item->row(), 1, pathItem);
+    };
+
+    publishItem(result.phaseName, QStringLiteral("phase"));
+    if (result.isCoherence) {
+        publishItem(result.cohName, QStringLiteral("coherence"));
+    }
+}
+
 void InterferometricFormationNode::onError(const QString& error)
 {
     if (m_thread && m_thread->isRunning()) {
@@ -999,6 +957,12 @@ void InterferometricFormationNode::onError(const QString& error)
     }
     m_workerThread = nullptr;
     m_thread = nullptr;
+
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -1018,29 +982,22 @@ void InterferometricFormationNode::onError(const QString& error)
 
 void InterferometricFormationNode::onCancelled()
 {
-    const QString outputName = m_preparedFileName;
-    auto* iface = NodeUtils::getProjectContext(_widget);
-    if (iface && !outputName.isEmpty()) {
-        NodeUtils::removeDataNodeFromProject(iface, outputName);
-    }
-    if (!outputName.isEmpty()) {
-        QDir(projectPath() + "/" + outputName).removeRecursively();
-    }
     m_workerThread = nullptr;
     m_thread = nullptr;
-    if (discardObsoleteAutomaticExecution()) {
-        return;
-    }
-
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
     m_outputData.reset();
     m_imageInfoData.reset();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
     updateParameterWidgetsEnableState();
     TaskLogContext logContext;
     logContext.displayName = caption();
     InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
-                                  "InterferometricFormationNode", QStringLiteral("骞叉秹褰㈡垚浠诲姟宸插彇娑堛€?"),
+                                  "InterferometricFormationNode", QStringLiteral("干涉形成任务已取消。"),
                                   LogTargets(LogTarget::UserProjectLog),
                                   QStringLiteral("completed"), QStringLiteral("cancelled"),
                                   m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
@@ -1144,7 +1101,7 @@ bool InterferometricFormationNode::prepareToStart()
 
     // Snapshot input H5 paths in the GUI thread. The worker only receives these
     // immutable values and never touches the project model or XML document.
-    QStringList pathsToCheck;
+    m_preparedOutputPaths.clear();
     QStandardItemModel* model = projectModel();
     if (model)
     {
@@ -1177,7 +1134,9 @@ bool InterferometricFormationNode::prepareToStart()
                             if (j == m_preparedMasterIndex)
                                 continue;
                             const QString slaveName = QFileInfo(m_preparedInputPaths.at(j)).baseName();
-                            pathsToCheck.append(m_preparedSavePath + "/" + m_preparedFileName + "/" + masterName + "_" + slaveName + ".h5");
+                            m_preparedOutputPaths.append(
+                                m_preparedSavePath + "/" + m_preparedFileName + "/" +
+                                masterName + "_" + slaveName + ".h5");
                         }
                     }
                     break;
@@ -1191,11 +1150,15 @@ bool InterferometricFormationNode::prepareToStart()
         m_preparedMasterIndex >= m_preparedInputPaths.size()) {
         return false;
     }
+    if (m_preparedOutputPaths.isEmpty()) {
+        return false;
+    }
 
     if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedFileName, pathsToCheck, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+            NodeUtils::getProjectContext(_widget), m_preparedFileName, m_preparedOutputPaths, nullptr);
     }
 
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
@@ -1229,14 +1192,22 @@ void InterferometricFormationNode::executeProcessing()
         return;
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        // Clean up old data nodes to prevent tree duplicates
-        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedFileName);
-    }
-
     setProgress(0);
     setState(ExecutionState::Running);
+
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedFileName,
+                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_pendingInterferogramResults.clear();
     m_xmlDirty = false;
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 
     m_thread = new QThread();
     m_workerThread = new InterferometricFormationWorker();
@@ -1244,11 +1215,12 @@ void InterferometricFormationNode::executeProcessing()
 
     connect(this, &InterferometricFormationNode::startInterferometric, m_workerThread, &InterferometricFormationWorker::InterferometricWithDem);
     connect(m_workerThread, &InterferometricFormationWorker::interferogramGenerated, this, &InterferometricFormationNode::onInterferogramGenerated);
-    connect(m_thread, &QThread::started, [this]() {
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, [this, stagingNode]() {
         Q_EMIT startInterferometric(m_preparedIsDeflat, m_preparedIsTopoRemoval, m_preparedIsCoherence, 
                                     m_preparedMasterIndex, m_preparedWinW, m_preparedWinH,
                                     m_preparedMultilookRg, m_preparedMultilookAz, 
-                                    m_preparedSavePath, m_preparedFileName,
+                                    m_preparedSavePath, stagingNode,
                                     m_preparedInputPaths,
                                     m_preparedDemPath);
     });
@@ -1293,48 +1265,34 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
     if (dstNode.isEmpty())
         return false;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (!dir.exists())
-        return false;
-
-    // Check if H5 outputs exist in the folder directly
-    QStringList filters;
-    filters << "*.h5";
-    QStringList h5Files = dir.entryList(filters, QDir::Files);
-    if (h5Files.isEmpty()) {
+    QStringList uniqueH5Paths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, uniqueH5Paths)) {
         return false;
     }
 
     QStringList h5Paths;
     QStringList expectedJpgPaths;
     QStringList types;
+    const bool outputHasCoherence = m_hasOutputExecutionSettings
+        ? m_outputIsCoherence : m_isCoherence;
 
-    for (const QString& h5File : h5Files) {
-        QString h5Path = dir.absoluteFilePath(h5File);
+    for (const QString& h5Path : uniqueH5Paths) {
         QFileInfo fi(h5Path);
         QString baseName = fi.baseName();
 
         // Phase output
         h5Paths.append(h5Path);
-        expectedJpgPaths.append(outputPath + baseName + "_phase.jpg");
+        expectedJpgPaths.append(fi.absolutePath() + "/" + baseName + "_phase.jpg");
         types.append("phase");
 
         // Coherence output (if enabled)
-        if (m_isCoherence)
+        if (outputHasCoherence)
         {
             h5Paths.append(h5Path);
-            expectedJpgPaths.append(outputPath + baseName + "_coh.jpg");
+            expectedJpgPaths.append(fi.absolutePath() + "/" + baseName + "_coh.jpg");
             types.append("coherence");
         }
     }
-
-    QStringList uniqueH5Paths;
-    for (const QString& h5File : h5Files) {
-        uniqueH5Paths.append(dir.absoluteFilePath(h5File));
-    }
-    uniqueH5Paths.sort();
-    uniqueH5Paths.removeDuplicates();
 
     m_outputData = std::make_shared<ImportedFileData>(uniqueH5Paths, dstNode);
     setOutputData(0, m_outputData);
@@ -1349,9 +1307,7 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
     int totalExpected = expectedJpgPaths.size();
     for (int i = 0; i < totalExpected; ++i) {
         QString jpgPath = expectedJpgPaths[i];
-        QFileInfo jpgInfo(jpgPath);
-        QFileInfo h5Info(h5Paths[i]);
-        if (jpgInfo.exists() && jpgInfo.size() > 0 && jpgInfo.lastModified() >= h5Info.lastModified()) {
+        if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], jpgPath)) {
             existingJpgPaths.append(jpgPath);
         } else {
             // Find corresponding h5 path
@@ -1381,18 +1337,18 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
             return true;
         }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths, missingJpgs]() {
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Paths, expectedJpgPaths, missingH5s, missingJpgs]() {
             QStringList validJpgPaths;
             bool anyFailed = false;
-            for (const QString& path : missingJpgs) {
-                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
+            for (int i = 0; i < missingJpgs.size(); ++i) {
+                if (!NodeUtils::isJpgPreviewCurrent(missingH5s[i], missingJpgs[i])) {
                     anyFailed = true;
                 }
             }
 
-            for (const QString& path : expectedJpgPaths) {
-                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
-                    validJpgPaths.append(path);
+            for (int i = 0; i < expectedJpgPaths.size(); ++i) {
+                if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
+                    validJpgPaths.append(expectedJpgPaths[i]);
                 }
             }
 
@@ -1417,10 +1373,7 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
 
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
-                // 如果 JPG 存在、有效，且修改时间不早于 H5 文件，则跳过重生成
-                QFileInfo jpgInfo(missingJpgs[i]);
-                QFileInfo h5Info(missingH5s[i]);
-                if (jpgInfo.exists() && jpgInfo.size() > 0 && jpgInfo.lastModified() >= h5Info.lastModified()) {
+                if (NodeUtils::isJpgPreviewCurrent(missingH5s[i], missingJpgs[i])) {
                     continue;
                 }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
@@ -1439,24 +1392,18 @@ QStringList InterferometricFormationNode::previewImagePaths() const
     if (dstNode.isEmpty())
         return list;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString baseName = QFileInfo(h5File).baseName();
-            
-            // Phase output preview
-            QString phaseJpg = outputPath + baseName + "_phase.jpg";
+    QStringList h5Paths;
+    const bool outputHasCoherence = m_hasOutputExecutionSettings
+        ? m_outputIsCoherence : m_isCoherence;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
+        for (const QString& h5Path : h5Paths) {
+            const QFileInfo info(h5Path);
+            const QString phaseJpg = info.absolutePath() + "/" + info.baseName() + "_phase.jpg";
             if (QFile::exists(phaseJpg)) {
                 list.append(phaseJpg);
             }
-            
-            // Coherence output preview (if enabled)
-            if (m_isCoherence) {
-                QString cohJpg = outputPath + baseName + "_coh.jpg";
+            if (outputHasCoherence) {
+                const QString cohJpg = info.absolutePath() + "/" + info.baseName() + "_coh.jpg";
                 if (QFile::exists(cohJpg)) {
                     list.append(cohJpg);
                 }
@@ -1494,6 +1441,93 @@ void InterferometricFormationNode::updateParameterWidgetsEnableState()
     if (m_demPathLabel) m_demPathLabel->setEnabled(demEnabled);
     if (m_demPathEdit) m_demPathEdit->setEnabled(demEnabled);
     if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(demEnabled);
+}
+
+void InterferometricFormationNode::captureOutputExecutionSettings()
+{
+    m_hasOutputExecutionSettings = true;
+    m_outputIsDeflat = m_preparedIsDeflat;
+    m_outputIsTopoRemoval = m_preparedIsTopoRemoval;
+    m_outputIsCoherence = m_preparedIsCoherence;
+    m_outputWinW = m_preparedWinW;
+    m_outputWinH = m_preparedWinH;
+}
+
+void InterferometricFormationNode::startPreviewGeneration(const QStringList& previewSourcePaths,
+                                                          const QStringList& jpgPaths,
+                                                          const QStringList& types,
+                                                          const QStringList& outputPaths)
+{
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, previewSourcePaths, jpgPaths, types, outputPaths]() {
+            m_remedyWatcher.disconnect(this);
+            startPreviewGeneration(previewSourcePaths, jpgPaths, types, outputPaths);
+        });
+        return;
+    }
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, previewSourcePaths, jpgPaths, outputPaths]() {
+        if (discardObsoleteAutomaticExecution()) {
+            return;
+        }
+
+        QStringList validJpgPaths;
+        bool anyFailed = false;
+        for (int i = 0; i < jpgPaths.size(); ++i) {
+            if (NodeUtils::isJpgPreviewCurrent(previewSourcePaths[i], jpgPaths[i])) {
+                validJpgPaths.append(jpgPaths[i]);
+            } else {
+                anyFailed = true;
+            }
+        }
+
+        if (!validJpgPaths.isEmpty()) {
+            m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+            setOutputData(1, m_imageInfoData);
+        } else {
+            m_imageInfoData.reset();
+            setOutputData(1, nullptr);
+        }
+
+        updateParameterWidgetsEnableState();
+        if (anyFailed) {
+            setLastWarningMessage(QStringLiteral("Interferometric products were generated, but some preview images could not be generated."));
+            TaskLogContext logContext;
+            logContext.displayName = caption();
+            InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelWarning,
+                                          "InterferometricFormationNode",
+                                          QStringLiteral("干涉形成完成，但部分预览图生成失败。"),
+                                          LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
+                                          QStringLiteral("completed"), QStringLiteral("completed_with_warnings"),
+                                          m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
+            finishExecutionWithWarning();
+        } else {
+            setProgress(100);
+            TaskLogContext logContext;
+            logContext.displayName = caption();
+            InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
+                                          "InterferometricFormationNode",
+                                          QStringLiteral("干涉形成完成。输出：%1")
+                                              .arg(outputPaths.join(QStringLiteral(", "))),
+                                          LogTargets(LogTarget::UserProjectLog),
+                                          QStringLiteral("completed"), QStringLiteral("completed"),
+                                          m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
+            finishExecution();
+        }
+    });
+    m_remedyWatcher.setFuture(QtConcurrent::run([previewSourcePaths, jpgPaths, types]() {
+        for (int i = 0; i < previewSourcePaths.size(); ++i) {
+            if (NodeUtils::isJpgPreviewCurrent(previewSourcePaths[i], jpgPaths[i])) {
+                continue;
+            }
+            NodeUtils::generateJpgPreviewFromH5(previewSourcePaths[i], jpgPaths[i], types[i]);
+        }
+    }));
 }
 
 // --------------------------------------------------------------------------------
@@ -1664,9 +1698,7 @@ public:
 
     ~InterferometricFormationEvalWidget() override
     {
-        if (m_watcher.isRunning()) {
-            m_watcher.waitForFinished();
-        }
+        m_watcher.cancel();
     }
 
 private:
@@ -1895,11 +1927,27 @@ private:
         
         m_phaseNoiseLabel->setText(QString(tr("约 %1°")).arg(phaseNoise, 0, 'f', 1));
         
-        m_enlLabel->setText("5 x 5 (25 Looks)");
-        m_flatEarthLabel->setText(tr("[√] 已移除 (轨道辅助)"));
-        m_flatEarthLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #10B981;");
-        m_topoLabel->setText(tr("[√] 已移除 (DEM辅助)"));
-        m_topoLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #10B981;");
+        if (!m_node->m_hasOutputExecutionSettings) {
+            m_enlLabel->setText(tr("未记录"));
+            m_flatEarthLabel->setText(tr("未记录"));
+            m_topoLabel->setText(tr("未记录"));
+            m_flatEarthLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #6B7280;");
+            m_topoLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #6B7280;");
+        } else {
+            const int looks = m_node->m_outputWinW * m_node->m_outputWinH;
+            m_enlLabel->setText(QString("%1 x %2 (%3 Looks)")
+                .arg(m_node->m_outputWinW)
+                .arg(m_node->m_outputWinH)
+                .arg(looks));
+            m_flatEarthLabel->setText(m_node->m_outputIsDeflat
+                ? tr("[√] 已移除 (轨道辅助)") : tr("未移除"));
+            m_flatEarthLabel->setStyleSheet(QString("font-size: 11px; font-weight: bold; color: %1;")
+                .arg(m_node->m_outputIsDeflat ? "#10B981" : "#6B7280"));
+            m_topoLabel->setText(m_node->m_outputIsTopoRemoval
+                ? tr("[√] 已移除 (DEM辅助)") : tr("未移除"));
+            m_topoLabel->setStyleSheet(QString("font-size: 11px; font-weight: bold; color: %1;")
+                .arg(m_node->m_outputIsTopoRemoval ? "#10B981" : "#6B7280"));
+        }
 
         // 根据经验阈值更新诊断卡片
         if (res.meanCoh > 0.4f && res.highCohPct > 30.0f) {

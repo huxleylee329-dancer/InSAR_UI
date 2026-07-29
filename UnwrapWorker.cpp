@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QFile>
 #include <QThread>
+#include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QCoreApplication>
 
@@ -109,11 +110,11 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
     QString absolute_path = save_path + "/" + file_name;
     QDir target_dir(absolute_path);
-    if (target_dir.exists())
+    if (!target_dir.exists() && !QDir(save_path).mkdir(file_name))
     {
-        target_dir.removeRecursively();
+        emit errorProcess(QStringLiteral("无法创建解缠输出目录: %1").arg(absolute_path));
+        return;
     }
-    QDir(save_path).mkdir(file_name);
 
     QList<QString> phase_name;
     QList<QString> phase_path;
@@ -235,6 +236,14 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             && NodeUtils::writeScalarToH5(outputPath, "unwrap_coherence_threshold", coherence_threshold);
     };
 
+    const auto finishMetadataFailure = [&]() {
+        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+            finishCancelled();
+        } else {
+            emit errorProcess(QStringLiteral("创建或复制解缠输出元数据失败"));
+        }
+    };
+
     if (method == 1)
     {
         for (int i = 0; i < image_number; i++)
@@ -260,9 +269,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
-                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-                    finishCancelled();
-                }
+                finishMetadataFailure();
                 return;
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
@@ -294,6 +301,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             ret = util.residue(phase, residue);
             QString app_path = QCoreApplication::applicationDirPath();
             ret = unwrap.MCF(phase, phase_unwrap, coherence, residue, (absolute_path + "/MCF.net").toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            QFile::remove(absolute_path + "/MCF.net");
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
@@ -301,9 +309,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
-                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-                    finishCancelled();
-                }
+                finishMetadataFailure();
                 return;
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
@@ -331,7 +337,12 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
-            ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), absolute_path.toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            QTemporaryDir snaphuWorkDir;
+            if (!snaphuWorkDir.isValid()) {
+                emit errorProcess(QStringLiteral("无法创建 SNAPHU 临时工作目录"));
+                return;
+            }
+            ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
@@ -339,9 +350,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
-                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-                    finishCancelled();
-                }
+                finishMetadataFailure();
                 return;
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
@@ -370,7 +379,14 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
-            ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold, absolute_path.toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            QTemporaryDir qualityGuidedWorkDir;
+            if (!qualityGuidedWorkDir.isValid()) {
+                emit errorProcess(QStringLiteral("无法创建质量引导 MCF 临时工作目录"));
+                return;
+            }
+            ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold,
+                                           qualityGuidedWorkDir.path().toStdString().c_str(),
+                                           app_path.toStdString().c_str(), unwrapProgressCallback);
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
@@ -378,9 +394,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
-                if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-                    finishCancelled();
-                }
+                finishMetadataFailure();
                 return;
             }
             if (!writeOutputPhase(i, phase_unwrap)) {

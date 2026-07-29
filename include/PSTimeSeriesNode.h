@@ -16,6 +16,8 @@
 #include <memory>
 #include "NodeUtils.h"
 
+class XMLFile;
+
 namespace QtNodes {
 
 class PSTimeSeriesNode : public ExecutableNodeDelegateModel
@@ -85,10 +87,16 @@ private:
     // Worker thread
     PSTimeSeriesWorker* m_worker;
     QThread* m_thread;
+    QString m_preparedDstNode;
+    QStringList m_preparedOutputPaths;
+    QStringList m_preparedInputPaths;
+    QStringList m_generatedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 
     // Helper methods
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
+    void onOutputsGenerated(const QStringList& outputPaths);
     void onProcessingFinished();
     void onError(const QString& error);
     void onCancelled();
@@ -97,6 +105,7 @@ private:
     void updateWidgetSize();
     void executeProcessing();
     void generateStaticPreviewJpg();
+    XMLFile* projectXml() const;
 };
 
 } // namespace QtNodes

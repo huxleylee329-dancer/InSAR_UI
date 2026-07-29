@@ -100,7 +100,7 @@ private:
     void executeProcessing();
     void releaseFinishedThreadResources();
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& types, const QStringList& resultJpgPaths,
+                                const QStringList& types, const QStringList& resultH5Paths, const QStringList& resultJpgPaths,
                                 bool completeExecution);
 
     QStandardItemModel* projectModel() const;

@@ -296,7 +296,7 @@ void TargetDetectionNode::createWidget()
                 m_expandLabel->hide();
             } else {
                 if (singleResultView) singleResultView->hide();
-                m_summaryLabel->setText(QStringLiteral("妫€娴嬪畬鎴愶細鍏卞鐞?%1 寮犲浘鍍?").arg(totalCount));
+                m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
                 m_summaryLabel->show();
                 m_expandLabel->show();
             }
@@ -482,7 +482,7 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
         } else {
             if (singleView) singleView->hide();
             if (m_summaryLabel) {
-                m_summaryLabel->setText(QStringLiteral("妫€娴嬪畬鎴愶細鍏卞鐞?%1 寮犲浘鍍?").arg(totalCount));
+                m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
                 m_summaryLabel->show();
             }
             if (m_expandLabel) {
@@ -627,7 +627,7 @@ void TargetDetectionNode::load(QJsonObject const &json)
             } else {
                 if (singleView) singleView->hide();
                 if (m_summaryLabel) {
-                    m_summaryLabel->setText(QStringLiteral("妫€娴嬪畬鎴愶細鍏卞鐞?%1 寮犲浘鍍?").arg(totalCount));
+                    m_summaryLabel->setText(QStringLiteral("检测完成：共处理 %1 张图像").arg(totalCount));
                     m_summaryLabel->show();
                 }
                 if (m_expandLabel) m_expandLabel->show();

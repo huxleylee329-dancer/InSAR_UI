@@ -808,7 +808,7 @@ void DEMSourceNode::onProcessingFinished(
     }
 
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
-        bool jpgExists = QFile::exists(jpgPath) && QFileInfo(jpgPath).size() > 0;
+        bool jpgExists = NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath);
         if (jpgExists) {
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
             setOutputData(1, m_imageInfoData);
@@ -837,7 +837,7 @@ void DEMSourceNode::onProcessingFinished(
 
     // 异步生成预览图，已存在则跳过重生成
     m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
-        if (QFileInfo::exists(jpgPath) && QFileInfo(jpgPath).size() > 0) {
+        if (NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath)) {
             return;
         }
         NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
@@ -848,7 +848,7 @@ void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString&
 {
     m_remedyWatcher.disconnect(this);
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
-        bool jpgExists = QFile::exists(jpgPath) && QFileInfo(jpgPath).size() > 0;
+        bool jpgExists = NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath);
         if (jpgExists) {
             m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
             setOutputData(1, m_imageInfoData);
@@ -873,7 +873,7 @@ void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString&
         }
     });
     m_remedyWatcher.setFuture(QtConcurrent::run([h5Path, jpgPath]() {
-        if (QFileInfo::exists(jpgPath) && QFileInfo(jpgPath).size() > 0) {
+        if (NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath)) {
             return;
         }
         NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
@@ -911,7 +911,7 @@ bool DEMSourceNode::validateAndRestoreOutput()
 
     if (QFile::exists(targetH5)) {
         bool needsTif = !QFile::exists(targetTif);
-        bool needsJpg = !QFile::exists(targetJpg);
+        bool needsJpg = !NodeUtils::isJpgPreviewCurrent(targetH5, targetJpg);
 
         if (needsTif || needsJpg) {
             m_remedyWatcher.disconnect(this);
@@ -925,9 +925,9 @@ bool DEMSourceNode::validateAndRestoreOutput()
             }
 
             auto writeTifSuccess = std::make_shared<bool>(true);
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, targetTif, targetJpg, name, writeTifSuccess]() {
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, targetH5, targetTif, targetJpg, name, writeTifSuccess]() {
                 bool tifExists = QFile::exists(targetTif) && *writeTifSuccess;
-                bool jpgExists = QFile::exists(targetJpg) && QFileInfo(targetJpg).size() > 0;
+                bool jpgExists = NodeUtils::isJpgPreviewCurrent(targetH5, targetJpg);
 
                 if (tifExists) {
                     m_outputData = std::make_shared<DEMFileData>(targetTif, name);
@@ -993,8 +993,7 @@ bool DEMSourceNode::validateAndRestoreOutput()
                     }
                 }
                 if (needsJpg) {
-                    // 已存在有效 JPG 则跳过重生成
-                    if (QFileInfo::exists(targetJpg) && QFileInfo(targetJpg).size() > 0) {
+                    if (NodeUtils::isJpgPreviewCurrent(targetH5, targetJpg)) {
                         return;
                     }
                     NodeUtils::generateJpgPreviewFromH5(targetH5, targetJpg, "dem");

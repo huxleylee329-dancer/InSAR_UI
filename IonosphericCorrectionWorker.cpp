@@ -71,19 +71,17 @@ void IonosphericCorrectionWorker::doCorrection(
     if (save_path.isEmpty() || project_name.isEmpty() ||
         node_name.isEmpty() || file_name.isEmpty())
     {
+        currentWorker = nullptr;
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
     }
 
-    // 创建输出目录
+    // 输出目录由节点事务预先创建；worker 只允许写入 staging 目录。
     const QString outputDirectoryPath = save_path + "/" + file_name;
     QDir outputDirectory(outputDirectoryPath);
-    if (outputDirectory.exists() && !outputDirectory.removeRecursively()) {
-        emit errorProcess(QStringLiteral("无法清理已有输出目录: ") + outputDirectoryPath);
-        return;
-    }
-    if (!QDir().mkpath(outputDirectoryPath)) {
-        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDirectoryPath);
+    if (!outputDirectory.exists()) {
+        currentWorker = nullptr;
+        emit errorProcess(QStringLiteral("staging输出目录不存在: ") + outputDirectoryPath);
         return;
     }
 
@@ -92,7 +90,11 @@ void IonosphericCorrectionWorker::doCorrection(
 
     emit updateProcess(5, QStringLiteral("准备数据……"));
 
-    if (slc_names.size() != slc_paths.size()) { emit errorProcess(QStringLiteral("输入影像快照无效")); return; }
+    if (slc_names.size() != slc_paths.size()) {
+        currentWorker = nullptr;
+        emit errorProcess(QStringLiteral("输入影像快照无效"));
+        return;
+    }
     for (int i = 0; i < slc_paths.size(); ++i) {
         const QString outName = slc_names[i] + "_iono";
         output_names.append(outName);
@@ -100,10 +102,25 @@ void IonosphericCorrectionWorker::doCorrection(
     }
 
     int image_count = slc_paths.size();
-    if (image_count == 0) { emit errorProcess(QStringLiteral("没有可处理的SLC影像")); return; }
+    if (image_count == 0) {
+        currentWorker = nullptr;
+        emit errorProcess(QStringLiteral("没有可处理的SLC影像"));
+        return;
+    }
 
     FormatConversion FC;
     int ret = 0;
+    const auto fail = [this](const QString& message) {
+        currentWorker = nullptr;
+        emit errorProcess(message);
+    };
+    const auto writeMat = [&fail](const QString& filePath, const QString& dataset, const cv::Mat& value) {
+        if (NodeUtils::writeMatToH5(filePath, dataset, value)) {
+            return true;
+        }
+        fail(QStringLiteral("无法写入H5数据集: %1").arg(dataset));
+        return false;
+    };
 
     std::vector<bool> process_ok(image_count, false);
 
@@ -111,6 +128,7 @@ void IonosphericCorrectionWorker::doCorrection(
     for (int idx = 0; idx < image_count; idx++)
     {
         if (QThread::currentThread()->isInterruptionRequested()) {
+            currentWorker = nullptr;
             emit cancelled();
             return;
         }
@@ -124,7 +142,10 @@ void IonosphericCorrectionWorker::doCorrection(
                 NodeUtils::Hdf5Locker locker;
                 ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
             }
-            if (ret < 0) continue;
+            if (ret < 0) {
+                fail(QStringLiteral("无法创建主影像电离层输出文件"));
+                return;
+            }
 
             QString srcH5 = slc_paths[idx];
             QString dstH5 = abs_paths[idx];
@@ -132,8 +153,18 @@ void IonosphericCorrectionWorker::doCorrection(
             Mat slc_complex;
             {
                 NodeUtils::Hdf5Locker locker;
-                if (NodeUtils::readMatFromH5(srcH5, "complex", slc_complex)) {
-                    NodeUtils::writeMatToH5(dstH5, "complex", slc_complex);
+                if (!NodeUtils::readMatFromH5(srcH5, "complex", slc_complex)) {
+                    fail(QStringLiteral("无法读取主影像复数数据"));
+                    return;
+                }
+                if (!writeMat(dstH5, QStringLiteral("complex"), slc_complex)) {
+                    return;
+                }
+                if (outputTEC) {
+                    const cv::Mat tecPlaceholder = cv::Mat::zeros(slc_complex.rows, slc_complex.cols, CV_32FC1);
+                    if (!writeMat(dstH5, QStringLiteral("tec_estimate"), tecPlaceholder)) {
+                        return;
+                    }
                 }
 
                 // 复制元数据
@@ -145,13 +176,13 @@ void IonosphericCorrectionWorker::doCorrection(
                 if (NodeUtils::readStringFromH5(srcH5, "source_2", tmp_str))
                     FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_2", tmp_str.c_str());
                 if (NodeUtils::readMatFromH5(srcH5, "range_len", tmp))
-                    NodeUtils::writeMatToH5(dstH5, "range_len", tmp);
+                    if (!writeMat(dstH5, QStringLiteral("range_len"), tmp)) return;
                 if (NodeUtils::readMatFromH5(srcH5, "azimuth_len", tmp))
-                    NodeUtils::writeMatToH5(dstH5, "azimuth_len", tmp);
+                    if (!writeMat(dstH5, QStringLiteral("azimuth_len"), tmp)) return;
                 if (NodeUtils::readMatFromH5(srcH5, "mapped_lat", tmp))
-                    NodeUtils::writeMatToH5(dstH5, "mapped_lat", tmp);
+                    if (!writeMat(dstH5, QStringLiteral("mapped_lat"), tmp)) return;
                 if (NodeUtils::readMatFromH5(srcH5, "mapped_lon", tmp))
-                    NodeUtils::writeMatToH5(dstH5, "mapped_lon", tmp);
+                    if (!writeMat(dstH5, QStringLiteral("mapped_lon"), tmp)) return;
             }
 
             process_ok[idx] = true;
@@ -161,18 +192,25 @@ void IonosphericCorrectionWorker::doCorrection(
         // 读取 Master 复数 SLC 数据
         Mat master_complex;
         ret = NodeUtils::readMatFromH5(slc_paths[0], "complex", master_complex) ? 0 : -1;
-        if (ret < 0) continue;
+        if (ret < 0) {
+            fail(QStringLiteral("无法读取主影像复数数据"));
+            return;
+        }
 
         // 读取 Slave 复数 SLC 数据
         Mat slave_complex;
         ret = NodeUtils::readMatFromH5(slc_paths[idx], "complex", slave_complex) ? 0 : -1;
-        if (ret < 0) continue;
+        if (ret < 0) {
+            fail(QStringLiteral("无法读取第%1幅从影像复数数据").arg(idx + 1));
+            return;
+        }
 
         int rows = slave_complex.rows;
         int cols = slave_complex.cols;
         if (master_complex.rows != rows || master_complex.cols != cols) {
             InSARLogManager::LogError("IonosphericCorrectionWorker", "主从图像尺寸不匹配");
-            continue;
+            fail(QStringLiteral("第%1幅主从影像尺寸不匹配").arg(idx + 1));
+            return;
         }
 
         // 转换为双通道复数格式 (CV_32FC2)
@@ -189,8 +227,11 @@ void IonosphericCorrectionWorker::doCorrection(
         };
 
         Mat master_2ch, slave_2ch;
-        if (!toComplex2Ch(master_complex, master_2ch, rows, cols)) continue;
-        if (!toComplex2Ch(slave_complex, slave_2ch, rows, cols)) continue;
+        if (!toComplex2Ch(master_complex, master_2ch, rows, cols) ||
+            !toComplex2Ch(slave_complex, slave_2ch, rows, cols)) {
+            fail(QStringLiteral("第%1幅影像复数数据格式无效").arg(idx + 1));
+            return;
+        }
 
         // 预分配输出矩阵 (双重保险)
         Mat corrected(rows, cols, CV_32FC2);
@@ -210,9 +251,15 @@ void IonosphericCorrectionWorker::doCorrection(
         );
 
         if (!ok) {
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                currentWorker = nullptr;
+                emit cancelled();
+                return;
+            }
             InSARLogManager::LogError("IonosphericCorrectionWorker", 
                 QString("电离层算法计算失败 (图%1): %2").arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
-            continue;
+            fail(QStringLiteral("电离层算法计算失败 (图%1): %2").arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
+            return;
         }
 
         // 写入输出 H5
@@ -220,7 +267,10 @@ void IonosphericCorrectionWorker::doCorrection(
             NodeUtils::Hdf5Locker locker;
             ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
         }
-        if (ret < 0) continue;
+        if (ret < 0) {
+            fail(QStringLiteral("无法创建第%1幅电离层输出文件").arg(idx + 1));
+            return;
+        }
 
         // 复制元数据
         {
@@ -235,25 +285,31 @@ void IonosphericCorrectionWorker::doCorrection(
             NodeUtils::readStringFromH5(srcH5, "source_2", tmp_str);
             FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_2", tmp_str.c_str());
 
-            NodeUtils::readMatFromH5(srcH5, "range_len", tmp);
-            NodeUtils::writeMatToH5(dstH5, "range_len", tmp);
-            NodeUtils::readMatFromH5(srcH5, "azimuth_len", tmp);
-            NodeUtils::writeMatToH5(dstH5, "azimuth_len", tmp);
+            if (!NodeUtils::readMatFromH5(srcH5, "range_len", tmp)) {
+                fail(QStringLiteral("无法读取第%1幅影像距离尺寸").arg(idx + 1));
+                return;
+            }
+            if (!writeMat(dstH5, QStringLiteral("range_len"), tmp)) return;
+            if (!NodeUtils::readMatFromH5(srcH5, "azimuth_len", tmp)) {
+                fail(QStringLiteral("无法读取第%1幅影像方位尺寸").arg(idx + 1));
+                return;
+            }
+            if (!writeMat(dstH5, QStringLiteral("azimuth_len"), tmp)) return;
 
             // 写入校正后的复数 SLC
-            NodeUtils::writeMatToH5(dstH5, "complex", corrected);
+            if (!writeMat(dstH5, QStringLiteral("complex"), corrected)) return;
 
             // 可选输出 TEC 估计图
             if (outputTEC) {
                 // 由于算法封装至 DLL 内部，此处输出空的 TEC 占位矩阵
                 cv::Mat tec_placeholder = cv::Mat::zeros(corrected.rows, corrected.cols, CV_32FC1);
-                NodeUtils::writeMatToH5(dstH5, "tec_estimate", tec_placeholder);
+                if (!writeMat(dstH5, QStringLiteral("tec_estimate"), tec_placeholder)) return;
             }
 
             if (NodeUtils::readMatFromH5(srcH5, "mapped_lat", tmp))
-                NodeUtils::writeMatToH5(dstH5, "mapped_lat", tmp);
+                if (!writeMat(dstH5, QStringLiteral("mapped_lat"), tmp)) return;
             if (NodeUtils::readMatFromH5(srcH5, "mapped_lon", tmp))
-                NodeUtils::writeMatToH5(dstH5, "mapped_lon", tmp);
+                if (!writeMat(dstH5, QStringLiteral("mapped_lon"), tmp)) return;
         }
 
         process_ok[idx] = true;
@@ -267,9 +323,9 @@ void IonosphericCorrectionWorker::doCorrection(
             generatedPaths.append(abs_paths[i]);
         }
     }
-    if (generatedPaths.isEmpty()) {
+    if (generatedPaths.size() != image_count) {
         currentWorker = nullptr;
-        emit errorProcess(QStringLiteral("电离层校正未生成任何输出文件"));
+        emit errorProcess(QStringLiteral("电离层校正未完成全部输出文件"));
         return;
     }
 

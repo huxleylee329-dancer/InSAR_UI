@@ -71,7 +71,7 @@ void EvaluationENLNode::createWidget()
     m_epiLabel = new QLabel("--");
 
     singleLayout->addRow(QStringLiteral("原图ENL："), m_originalEnlLabel);
-    singleLayout->addRow(QStringLiteral("婊ゆ尝鍚嶦NL锛?"), m_filteredEnlLabel);
+    singleLayout->addRow(QStringLiteral("滤波后ENL："), m_filteredEnlLabel);
     singleLayout->addRow(QStringLiteral("EPI："), m_epiLabel);
 
     simpleLayout->addWidget(singleResultView);
@@ -368,11 +368,11 @@ void EvaluationENLNode::calculateAndDisplayENL()
         } else {
             QString errorMsg = QStringLiteral("错误：无法读取全部 %1 对图像。\n");
             if (data.totalCount > 0) {
-                QString origPath = origPaths.isEmpty() ? "绌鸿矾寰?" : origPaths[0];
-                QString filtPath = filtPaths.isEmpty() ? "绌鸿矾寰?" : filtPaths[0];
-                if (origPath == "绌鸿矾寰?" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                QString origPath = origPaths.isEmpty() ? "空路径" : origPaths[0];
+                QString filtPath = filtPaths.isEmpty() ? "空路径" : filtPaths[0];
+                if (origPath == "空路径" || cv::imread(origPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty())
                     errorMsg += QString("原图失败: %1\n").arg(origPath);
-                if (filtPath == "绌鸿矾寰?" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty()) 
+                if (filtPath == "空路径" || cv::imread(filtPath.toLocal8Bit().constData(), cv::IMREAD_GRAYSCALE).empty())
                     errorMsg += QString("滤波图失败: %1").arg(filtPath);
             }
             data.errorMsg = errorMsg.arg(data.totalCount);
@@ -434,7 +434,7 @@ void EvaluationENLNode::onEvaluationFinished()
         int row = m_resultsTable->rowCount();
         m_resultsTable->insertRow(row);
         
-        auto* avgItem = new QTableWidgetItem(QStringLiteral("骞冲潎鍊?"));
+        auto* avgItem = new QTableWidgetItem(QStringLiteral("平均值"));
         avgItem->setFont(QFont("", -1, QFont::Bold));
         m_resultsTable->setItem(row, 0, avgItem);
         m_resultsTable->setItem(row, 1, new QTableWidgetItem(QString::number(data.avgOrigEnl, 'f', 4)));
@@ -566,7 +566,7 @@ void EvaluationENLNode::load(QJsonObject const &json)
             m_resultsTable->insertRow(row);
             
             QString col0Text = rowObj["col0"].toString();
-            if (col0Text == QStringLiteral("骞冲潎鍊?")) {
+            if (col0Text == QStringLiteral("平均值")) {
                 auto* avgItem = new QTableWidgetItem(col0Text);
                 avgItem->setFont(QFont("", -1, QFont::Bold));
                 m_resultsTable->setItem(row, 0, avgItem);
@@ -592,7 +592,7 @@ void EvaluationENLNode::load(QJsonObject const &json)
     if (json.contains("results")) {
         QJsonArray resultsArray = json["results"].toArray();
         int totalCount = resultsArray.size();
-        if (totalCount > 0 && resultsArray.last().toObject()["col0"].toString() == QStringLiteral("骞冲潎鍊?")) {
+        if (totalCount > 0 && resultsArray.last().toObject()["col0"].toString() == QStringLiteral("平均值")) {
             totalCount--;
         }
         

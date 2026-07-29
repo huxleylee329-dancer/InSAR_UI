@@ -57,32 +57,22 @@ PhaseElevationRegressionWorker::~PhaseElevationRegressionWorker()
 
 void PhaseElevationRegressionWorker::doRegression(
     int polyOrder, int windowSize, double coherenceThresh,
-    QString save_path, QString project_name,
-    QString node_name, QString file_name,
+    QString outputDirectoryPath,
     QStringList phase_names, QStringList phase_paths)
 {
-    Q_UNUSED(project_name);
-    Q_UNUSED(node_name);
     InSARLogManager::LogInfo("PhaseElevationRegressionWorker",
-        QString("回归校正开始. 输出: %1, 阶数: %2, 窗口: %3, 相干阈值: %4")
-        .arg(file_name).arg(polyOrder).arg(windowSize).arg(coherenceThresh));
+        QString("回归校正开始. Staging输出: %1, 阶数: %2, 窗口: %3, 相干阈值: %4")
+        .arg(outputDirectoryPath).arg(polyOrder).arg(windowSize).arg(coherenceThresh));
 
-    if (save_path.isEmpty() || project_name.isEmpty() ||
-        node_name.isEmpty() || file_name.isEmpty())
+    if (outputDirectoryPath.isEmpty() || phase_names.isEmpty() || phase_paths.isEmpty())
     {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
     }
 
-    // 创建输出目录
-    const QString outputDirectoryPath = save_path + "/" + file_name;
     QDir outputDirectory(outputDirectoryPath);
-    if (outputDirectory.exists() && !outputDirectory.removeRecursively()) {
-        emit errorProcess(QStringLiteral("无法清理已有输出目录: ") + outputDirectoryPath);
-        return;
-    }
-    if (!QDir().mkpath(outputDirectoryPath)) {
-        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDirectoryPath);
+    if (!outputDirectory.exists()) {
+        emit errorProcess(QStringLiteral("staging输出目录不存在: ") + outputDirectoryPath);
         return;
     }
 
@@ -122,6 +112,7 @@ void PhaseElevationRegressionWorker::doRegression(
     for (int idx = 0; idx < image_count; idx++)
     {
         if (QThread::currentThread()->isInterruptionRequested()) {
+            currentWorker = nullptr;
             emit cancelled();
             return;
         }
@@ -142,7 +133,11 @@ void PhaseElevationRegressionWorker::doRegression(
             QString phaseH5 = phase_paths[idx];
             
             ret = NodeUtils::readMatFromH5(phaseH5, "phase", phase, CV_32F) ? 0 : -1;
-            if (ret < 0) { continue; }
+            if (ret < 0) {
+                currentWorker = nullptr;
+                emit errorProcess(QStringLiteral("无法读取输入干涉图相位: %1").arg(phaseH5));
+                return;
+            }
 
             int rows = phase.rows;
             int cols = phase.cols;
@@ -191,9 +186,16 @@ void PhaseElevationRegressionWorker::doRegression(
         );
 
         if (!ok) {
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                currentWorker = nullptr;
+                emit cancelled();
+                return;
+            }
             InSARLogManager::LogError("PhaseElevationRegressionWorker", 
                 QString("回归算法计算失败 (图%1): %2").arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
-            continue;
+            currentWorker = nullptr;
+            emit errorProcess(QStringLiteral("回归算法计算失败: %1").arg(QString::fromLocal8Bit(errBuf)));
+            return;
         }
 
         // 写入校正后的 H5 文件
@@ -201,49 +203,68 @@ void PhaseElevationRegressionWorker::doRegression(
             NodeUtils::Hdf5Locker locker;
             ret = FC.creat_new_h5(absolute_output_paths[idx].toStdString().c_str());
         }
-        if (ret < 0) continue;
+        if (ret < 0) {
+            currentWorker = nullptr;
+            emit errorProcess(QStringLiteral("无法创建回归校正输出: %1").arg(absolute_output_paths[idx]));
+            return;
+        }
 
+        QString h5WriteError;
         // 复制元数据
         {
             NodeUtils::Hdf5Locker locker;
             QString phaseH5 = phase_paths[idx];
             QString outH5 = absolute_output_paths[idx];
             string tmp_str;
-            Mat tmp;
             
             NodeUtils::readStringFromH5(phaseH5, "source_1", tmp_str);
             FC.write_str_to_h5(outH5.toStdString().c_str(), "source_1", tmp_str.c_str());
             NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str);
             FC.write_str_to_h5(outH5.toStdString().c_str(), "source_2", tmp_str.c_str());
 
-            NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp);
-            NodeUtils::writeMatToH5(outH5, "flat_phase_coefficient", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "range_len", tmp);
-            NodeUtils::writeMatToH5(outH5, "range_len", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "azimuth_len", tmp);
-            NodeUtils::writeMatToH5(outH5, "azimuth_len", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "multilook_rg", tmp);
-            NodeUtils::writeMatToH5(outH5, "multilook_rg", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "multilook_az", tmp);
-            NodeUtils::writeMatToH5(outH5, "multilook_az", tmp);
-
-            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lon", tmp))
-                NodeUtils::writeMatToH5(outH5, "mapped_lon", tmp);
-            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lat", tmp))
-                NodeUtils::writeMatToH5(outH5, "mapped_lat", tmp);
-            if (has_coherence) {
-                NodeUtils::writeMatToH5(outH5, "coherence", coherence);
+            auto copyMatIfPresent = [&](const char* dataset) {
+                Mat value;
+                if (!NodeUtils::readMatFromH5(phaseH5, dataset, value)) return true;
+                if (NodeUtils::writeMatToH5(outH5, dataset, value)) return true;
+                h5WriteError = QStringLiteral("无法写入 %1").arg(QString::fromLatin1(dataset));
+                return false;
+            };
+            if (!copyMatIfPresent("flat_phase_coefficient") ||
+                !copyMatIfPresent("range_len") ||
+                !copyMatIfPresent("azimuth_len") ||
+                !copyMatIfPresent("multilook_rg") ||
+                !copyMatIfPresent("multilook_az") ||
+                !copyMatIfPresent("mapped_lon") ||
+                !copyMatIfPresent("mapped_lat")) {
+                // h5WriteError is set by the helper.
+            }
+            if (h5WriteError.isEmpty() && has_coherence &&
+                !NodeUtils::writeMatToH5(outH5, "coherence", coherence)) {
+                h5WriteError = QStringLiteral("无法写入 coherence");
+            }
+            if (h5WriteError.isEmpty() && !NodeUtils::writeMatToH5(outH5, "phase", corrected_phase)) {
+                h5WriteError = QStringLiteral("无法写入校正后的 phase");
             }
 
-            // 写入校正后的相位
-            NodeUtils::writeMatToH5(outH5, "phase", corrected_phase);
-
-            // 读取偏移量
             Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
-            NodeUtils::readMatFromH5(phaseH5, "offset_row", tmp_int);
-            offset_rows[idx] = tmp_int.at<int>(0, 0);
-            NodeUtils::readMatFromH5(phaseH5, "offset_col", tmp_int);
-            offset_cols[idx] = tmp_int.at<int>(0, 0);
+            if (h5WriteError.isEmpty() &&
+                (!NodeUtils::readMatFromH5(phaseH5, "offset_row", tmp_int) || tmp_int.empty())) {
+                h5WriteError = QStringLiteral("无法读取 offset_row");
+            } else if (h5WriteError.isEmpty()) {
+                offset_rows[idx] = tmp_int.at<int>(0, 0);
+            }
+            if (h5WriteError.isEmpty() &&
+                (!NodeUtils::readMatFromH5(phaseH5, "offset_col", tmp_int) || tmp_int.empty())) {
+                h5WriteError = QStringLiteral("无法读取 offset_col");
+            } else if (h5WriteError.isEmpty()) {
+                offset_cols[idx] = tmp_int.at<int>(0, 0);
+            }
+        }
+
+        if (!h5WriteError.isEmpty()) {
+            currentWorker = nullptr;
+            emit errorProcess(QStringLiteral("回归校正输出写入失败: %1").arg(h5WriteError));
+            return;
         }
 
         process_ok[idx] = true;

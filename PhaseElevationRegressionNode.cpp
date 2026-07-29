@@ -75,7 +75,7 @@ bool PhaseElevationRegressionNode::portCaptionVisible(PortType portType, PortInd
 QString PhaseElevationRegressionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QStringLiteral("骞叉秹鍥?");
+        if (portIndex == 0) return QStringLiteral("干涉图");
         else return QStringLiteral("DEM ?");
     } else {
         if (portIndex == 0) return QStringLiteral("成果 *");
@@ -234,7 +234,7 @@ void PhaseElevationRegressionNode::createWidget()
     // 目标节点名称
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -295,19 +295,21 @@ bool PhaseElevationRegressionNode::prepareToStart()
     m_preparedPolyOrder = m_polyOrder;
     m_preparedWindowSize = m_windowSizeEdit ? m_windowSizeEdit->text().toInt() : m_windowSize;
     m_preparedCoherenceThresh = m_coherenceThreshSpin ? m_coherenceThreshSpin->value() : m_coherenceThresh;
-
-    QStringList pathsToCheck;
-    QStringList srcPaths = m_inputData->filePaths();
-    for (const QString& srcPath : srcPaths) {
-        QFileInfo fi(srcPath);
-        pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + fi.baseName() + "_atmos.h5");
+    m_preparedPhasePaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    m_preparedPhaseNames.clear();
+    m_preparedOutputPaths.clear();
+    for (const QString& phasePath : m_preparedPhasePaths) {
+        const QString outputName = QFileInfo(phasePath).baseName() + QStringLiteral("_atmos");
+        m_preparedPhaseNames.append(QFileInfo(phasePath).baseName());
+        m_preparedOutputPaths.append(QDir(m_preparedSavePath).absoluteFilePath(
+            m_preparedDstNode + "/" + outputName + ".h5"));
     }
 
     if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
         m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
-            NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
+            NodeUtils::getProjectContext(_widget), m_preparedDstNode, m_preparedOutputPaths, nullptr);
     }
 
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
@@ -329,33 +331,37 @@ void PhaseElevationRegressionNode::executeProcessing()
         if (validateAndRestoreOutput()) {
             finishExecution();
         } else {
-            setState(ExecutionState::Error);
+            onError(QStringLiteral("加载已提交的回归校正输出失败"));
         }
         return;
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
-    }
-
     setProgress(0);
     setState(ExecutionState::Running);
-    m_preparedPhasePaths = m_inputData ? m_inputData->filePaths() : QStringList();
-    m_preparedPhaseNames.clear();
-    for (const QString& path : m_preparedPhasePaths)
-        m_preparedPhaseNames.append(QFileInfo(path).baseName());
     if (m_preparedPhasePaths.isEmpty()) { onError(QStringLiteral("没有可校正的干涉图")); return; }
     m_generatedOutputNames.clear(); m_generatedOutputPaths.clear();
     m_generatedOffsetRows.clear(); m_generatedOffsetCols.clear();
+    m_xmlDirty = false;
+
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
+                                           m_preparedOutputPaths, m_preparedPhasePaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
 
     m_thread = new QThread();
     m_workerThread = new PhaseElevationRegressionWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &PhaseElevationRegressionNode::startRegression, m_workerThread, &PhaseElevationRegressionWorker::doRegression);
+    connect(this, &PhaseElevationRegressionNode::startRegression, m_workerThread,
+            static_cast<void (PhaseElevationRegressionWorker::*)(int, int, double, QString, QStringList, QStringList)>(
+                &PhaseElevationRegressionWorker::doRegression));
     connect(m_thread, &QThread::started, this, [this]() {
+        if (!m_thread || !m_workerThread || !m_thread->isRunning()) return;
         Q_EMIT startRegression(m_preparedPolyOrder, m_preparedWindowSize, m_preparedCoherenceThresh,
-            m_preparedSavePath, m_preparedProjectName, m_preparedSrcNode, m_preparedDstNode,
+            QDir(m_preparedSavePath).absoluteFilePath(m_outputTransaction.stagingName),
             m_preparedPhaseNames, m_preparedPhasePaths);
     });
     connect(m_workerThread, &PhaseElevationRegressionWorker::updateProcess, this, &PhaseElevationRegressionNode::onProgressUpdate);
@@ -399,45 +405,85 @@ void PhaseElevationRegressionNode::onProgressUpdate(int progress, const QString&
 void PhaseElevationRegressionNode::onProcessingFinished()
 {
     const QString dstNode = m_preparedDstNode;
-    const QStringList h5Paths = m_generatedOutputPaths;
+    QStringList h5Paths;
     QStringList jpgPaths;
     QStringList types;
+
+    releaseFinishedThreadAndWorker();
+
+    if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
+        m_outputData.reset();
+        m_imageInfoData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
+        return;
+    }
+
+    if (m_generatedOutputPaths.isEmpty() ||
+        m_generatedOutputPaths.size() != m_preparedOutputPaths.size() ||
+        m_generatedOutputNames.size() != m_preparedOutputPaths.size() ||
+        m_generatedOffsetRows.size() != m_preparedOutputPaths.size() ||
+        m_generatedOffsetCols.size() != m_preparedOutputPaths.size()) {
+        onError(QStringLiteral("回归校正未生成完整输出结果"));
+        return;
+    }
+
+    for (int i = 0; i < m_preparedOutputPaths.size(); ++i) {
+        if (QFileInfo(m_generatedOutputPaths[i]).fileName() != QFileInfo(m_preparedOutputPaths[i]).fileName() ||
+            m_generatedOutputNames[i] != QFileInfo(m_preparedOutputPaths[i]).completeBaseName()) {
+            onError(QStringLiteral("回归校正输出名称与事务清单不一致"));
+            return;
+        }
+    }
+
+    QString transactionError;
+    if (!projectXml() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("phase"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(
+            m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError.isEmpty()
+                    ? QStringLiteral("回归校正输出事务校验失败")
+                    : transactionError);
+        return;
+    }
+
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode, false, false);
+    if (!commitResultsToProjectXml(dstNode, h5Paths, m_generatedOutputNames,
+                                  m_generatedOffsetRows, m_generatedOffsetCols) ||
+        !NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError.isEmpty()
+                    ? QStringLiteral("回归校正输出元数据提交失败")
+                    : transactionError);
+        return;
+    }
+
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
+    publishResultsToProjectTree(dstNode, h5Paths, m_generatedOutputNames);
+    m_outputNodeName = dstNode;
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    setOutputData(0, m_outputData);
+
     for (const QString& h5Path : h5Paths) {
         jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
         types.append("phase");
     }
-
-    releaseFinishedThreadAndWorker();
-
-    if (discardObsoleteAutomaticExecution()) return;
-
-    if (h5Paths.isEmpty()) { onError(QStringLiteral("回归校正未生成有效输出")); return; }
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
-    setOutputData(0, m_outputData);
-    persistOutputToProject(dstNode, h5Paths, m_generatedOutputNames,
-        m_generatedOffsetRows, m_generatedOffsetCols);
-
-    if (!h5Paths.isEmpty()) {
-        startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
-    } else {
-        m_imageInfoData.reset();
-        setOutputData(1, nullptr);
-
-        m_outputNodeNameEdit->setEnabled(true);
-        m_polyOrderCombo->setEnabled(true);
-        m_windowSizeEdit->setEnabled(true);
-        m_coherenceThreshSpin->setEnabled(true);
-
-        setState(ExecutionState::Running);
-        setProgress(100);
-        finishExecution();
-    }
+    startPreviewGeneration(h5Paths, jpgPaths, types, h5Paths, jpgPaths, true);
 }
 
 void PhaseElevationRegressionNode::onError(const QString& error)
 {
-    Q_UNUSED(error);
     releaseFinishedThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 
     if (discardObsoleteAutomaticExecution()) return;
 
@@ -447,11 +493,17 @@ void PhaseElevationRegressionNode::onError(const QString& error)
     m_coherenceThreshSpin->setEnabled(true);
 
     setState(ExecutionState::Error);
+    Q_EMIT executionError(error);
 }
 
 void PhaseElevationRegressionNode::onCancelled()
 {
     releaseFinishedThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) return;
 
     setState(ExecutionState::Stopped);
@@ -468,24 +520,14 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
     QString dstNode = m_outputNodeName.trimmed();
     if (dstNode.isEmpty()) return false;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (!dir.exists()) return false;
-
-    QStringList filters;
-    filters << "*.h5";
-    QStringList h5Files = dir.entryList(filters, QDir::Files);
-    if (h5Files.isEmpty()) return false;
-
     QStringList h5Paths;
     QStringList expectedJpgPaths;
     QStringList types;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
 
-    for (const QString& h5File : h5Files) {
-        QString h5Path = dir.absoluteFilePath(h5File);
-        QString baseName = QFileInfo(h5File).baseName();
-        h5Paths.append(h5Path);
-        expectedJpgPaths.append(outputPath + baseName + ".jpg");
+    for (const QString& h5Path : h5Paths) {
+        const QString baseName = QFileInfo(h5Path).baseName();
+        expectedJpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + baseName + ".jpg");
         types.append("phase");
     }
 
@@ -498,7 +540,7 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
     QStringList missingTypes;
 
     for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-        if (QFile::exists(expectedJpgPaths[i])) {
+        if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
             existingJpgPaths.append(expectedJpgPaths[i]);
         } else {
             missingH5s.append(h5Paths[i]);
@@ -512,69 +554,87 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, h5Paths, expectedJpgPaths, false);
     }
 
     return true;
 }
 
-void PhaseElevationRegressionNode::persistOutputToProject(const QString& outputNodeName,
-                                                          const QStringList& h5Paths,
-                                                          const QStringList& outputNames,
-                                                          const QList<int>& offsetRows,
-                                                          const QList<int>& offsetCols)
+bool PhaseElevationRegressionNode::commitResultsToProjectXml(const QString& outputNodeName,
+                                                              const QStringList& h5Paths,
+                                                              const QStringList& outputNames,
+                                                              const QList<int>& offsetRows,
+                                                              const QList<int>& offsetCols)
+{
+    XMLFile* xml = projectXml();
+    if (!xml || h5Paths.size() != outputNames.size() ||
+        h5Paths.size() != offsetRows.size() || h5Paths.size() != offsetCols.size())
+        return false;
+
+    for (int i = 0; i < h5Paths.size(); ++i) {
+        const QString relativePath = QString("/%1/%2").arg(outputNodeName, QFileInfo(h5Paths[i]).fileName());
+        xml->XMLFile_add_unwrap(outputNodeName.toStdString().c_str(), outputNames[i].toStdString().c_str(),
+            relativePath.toStdString().c_str(), offsetRows[i], offsetCols[i],
+            "PhaseElevationRegression", 0);
+    }
+    m_xmlDirty = true;
+    return true;
+}
+
+void PhaseElevationRegressionNode::publishResultsToProjectTree(const QString& outputNodeName,
+                                                                const QStringList& h5Paths,
+                                                                const QStringList& outputNames)
 {
     QStandardItemModel* model = projectModel();
-    if (!model || h5Paths.size() != outputNames.size() ||
-        h5Paths.size() != offsetRows.size() || h5Paths.size() != offsetCols.size())
-        return;
+    if (!model || h5Paths.size() != outputNames.size()) return;
 
     const QList<QStandardItem*> projects = model->findItems(projectName());
-    if (projects.isEmpty())
-        return;
+    if (projects.isEmpty()) return;
 
     QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
         projects.first(), outputNodeName, "phase-2.5", FOLDER_ICON);
-    XMLFile* xml = projectXml();
+    if (!outputNode) return;
     for (int i = 0; i < h5Paths.size(); ++i) {
-        const QString relativePath = QString("/%1/%2.h5").arg(outputNodeName, outputNames[i]);
         NodeUtils::findOrCreateChildItem(outputNode, outputNames[i], "phase", h5Paths[i], IMAGEDATA_ICON);
-        if (xml) {
-            xml->XMLFile_add_unwrap(outputNodeName.toStdString().c_str(), outputNames[i].toStdString().c_str(),
-                relativePath.toStdString().c_str(), offsetRows[i], offsetCols[i],
-                "PhaseElevationRegression", 0);
-        }
     }
-    if (xml) {
-        const QString xmlPath = projectPath() + "/" + projectName() + ".Insar";
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
-    }
-    if (auto* iface = NodeUtils::getProjectContext(_widget))
-        iface->refreshProjectTree();
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) iface->refreshProjectTree();
 }
 
 void PhaseElevationRegressionNode::startPreviewGeneration(const QStringList& h5Paths,
-                                                           const QStringList& generatedJpgPaths,
-                                                           const QStringList& types,
-                                                           const QStringList& resultJpgPaths,
+                                                          const QStringList& generatedJpgPaths,
+                                                          const QStringList& types,
+                                                          const QStringList& resultH5Paths,
+                                                          const QStringList& resultJpgPaths,
                                                            bool completeExecution)
 {
     if (m_remedyWatcher.isRunning()) {
         m_remedyWatcher.cancel();
         m_remedyWatcher.disconnect(this);
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+                [this, h5Paths, generatedJpgPaths, types, resultH5Paths, resultJpgPaths, completeExecution]() {
             m_remedyWatcher.disconnect(this);
-            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultH5Paths, resultJpgPaths, completeExecution);
         });
         return;
     }
 
     m_remedyWatcher.disconnect(this);
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-            [this, resultJpgPaths, completeExecution]() {
-        if (completeExecution && discardObsoleteAutomaticExecution()) return;
-        m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            [this, resultH5Paths, resultJpgPaths, completeExecution]() {
+        QStringList currentJpgPaths;
+        for (int i = 0; i < resultH5Paths.size() && i < resultJpgPaths.size(); ++i) {
+            if (NodeUtils::isJpgPreviewCurrent(resultH5Paths[i], resultJpgPaths[i])) currentJpgPaths.append(resultJpgPaths[i]);
+        }
+        if (completeExecution && discardObsoleteAutomaticExecution()) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                                QStringLiteral("obsolete automatic execution"), projectXml());
+            m_outputData.reset();
+            m_imageInfoData.reset();
+            setOutputData(0, nullptr);
+            setOutputData(1, nullptr);
+            return;
+        }
+        m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
         setOutputData(1, m_imageInfoData);
         if (completeExecution) {
             m_outputNodeNameEdit->setEnabled(true);
@@ -599,23 +659,7 @@ void PhaseElevationRegressionNode::startPreviewGeneration(const QStringList& h5P
 
 QStringList PhaseElevationRegressionNode::previewImagePaths() const
 {
-    QStringList list;
-    QString dstNode = m_outputNodeName.trimmed();
-    if (dstNode.isEmpty()) return list;
-
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString baseName = QFileInfo(h5File).baseName();
-            QString jpgPath = outputPath + baseName + ".jpg";
-            if (QFile::exists(jpgPath)) list.append(jpgPath);
-        }
-    }
-    return list;
+    return m_imageInfoData ? m_imageInfoData->filePaths() : QStringList();
 }
 
 QStandardItemModel* PhaseElevationRegressionNode::projectModel() const
@@ -665,8 +709,8 @@ void PhaseElevationRegressionNode::cleanUpThreadAndWorker()
     m_workerThread = nullptr;
     if (!thread)
         return;
+    thread->quit();
     if (thread->isRunning()) {
-        thread->quit();
         thread->wait();
     }
 }
@@ -688,9 +732,37 @@ void PhaseElevationRegressionNode::execute()
 
 void PhaseElevationRegressionNode::stopExecution()
 {
-    if (m_thread && m_thread->isRunning())
-        m_thread->requestInterruption();
-    cleanUpThreadAndWorker();
+    if (m_workerThread || m_thread) {
+        if (m_workerThread) {
+            m_workerThread->disconnect(this);
+        }
+        if (m_thread) {
+            m_thread->requestInterruption();
+        }
+        cleanUpThreadAndWorker();
+        onCancelled();
+        return;
+    }
+
+    if (!m_remedyWatcher.isRunning()) return;
+
+    m_remedyWatcher.disconnect(this);
+    m_remedyWatcher.cancel();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                        QStringLiteral("preview generation cancelled"), projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    if (discardObsoleteAutomaticExecution()) return;
+
+    m_outputNodeNameEdit->setEnabled(true);
+    m_polyOrderCombo->setEnabled(true);
+    m_windowSizeEdit->setEnabled(true);
+    m_coherenceThreshSpin->setEnabled(true);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void PhaseElevationRegressionNode::processAutomatically()

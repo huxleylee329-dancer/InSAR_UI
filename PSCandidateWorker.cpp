@@ -55,7 +55,8 @@ void PSCandidateWorker::select_candidates(
     QString projectPath,
     QString projectName,
     QString dstNode,
-    QStringList filePaths
+    QStringList filePaths,
+    bool outputDirectoryIsStaging
 )
 {
     NodeUtils::Hdf5Locker locker;
@@ -70,13 +71,18 @@ void PSCandidateWorker::select_candidates(
         ? QFileInfo(projectPath).absolutePath() : projectPath) + "/" + dstNode;
     const QString outputH5 = outputDir + "/PS_candidates.h5";
     const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
-    const auto finishCancelled = [this, &outputDir]() {
-        QDir dir(outputDir);
-        if (dir.exists() && !dir.removeRecursively()) {
-            InSARLogManager::LogWarning("PSCandidateWorker", "Cancellation cleanup left output directory: " + outputDir);
-        }
+    const auto finishCancelled = [this]() {
         emit cancelled();
     };
+
+    if (outputDirectoryIsStaging && !QDir(outputDir).exists()) {
+        emit errorProcess(QStringLiteral("staging输出目录不存在: ") + outputDir);
+        return;
+    }
+    if (!outputDirectoryIsStaging && !QDir().mkpath(outputDir)) {
+        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDir);
+        return;
+    }
 
     if (cancellationRequested()) {
         finishCancelled();
@@ -151,28 +157,25 @@ void PSCandidateWorker::select_candidates(
     }
 
     // 保存输出到 H5 文件
-    QDir().mkpath(outputDir);
-
     if (cancellationRequested()) {
         finishCancelled();
         return;
     }
-    ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "amplitude_dispersion", amplitude_dispersion);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_mask", ps_mask);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", ps_count);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "multilook_rg", multilook_rg);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "multilook_az", multilook_az);
-
-    if (cancellationRequested()) {
-        finishCancelled();
-        return;
-    }
-
-    if (ret != 0) {
+    if (FC.write_array_to_h5(outputH5.toStdString().c_str(), "amplitude_dispersion", amplitude_dispersion) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_mask", ps_mask) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", ps_count) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "multilook_rg", multilook_rg) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "multilook_az", multilook_az) != 0) {
         emit errorProcess(QStringLiteral("写入 PS_candidates.h5 失败"));
         return;
     }
 
+    if (cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+
     emit updateProcess(100, QStringLiteral("计算完成"));
+    emit outputsGenerated(QStringList() << outputH5);
     emit endProcess();
 }

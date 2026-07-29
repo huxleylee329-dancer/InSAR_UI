@@ -74,10 +74,8 @@ void S1FrameMergeWorker::S1_frame_merge(
 
     Utils util;
     const QString mergedH5Path = savePath + "/" + dstNode + "/" + filename + ".h5";
-    const QString previewPath = savePath + "/" + dstNode + "/" + filename + ".jpg";
-    const auto finishCancelled = [this, &mergedH5Path, &previewPath]() {
+    const auto finishCancelled = [this, &mergedH5Path]() {
         QFile::remove(mergedH5Path);
-        QFile::remove(previewPath);
         emit cancelled();
     };
 
@@ -99,11 +97,6 @@ void S1FrameMergeWorker::S1_frame_merge(
         return;
     }
 
-    InSARLogManager::LogInfo("S1FrameMergeWorker", "Frames merged successfully. Generating preview image...");
-    {
-        NodeUtils::Hdf5Locker locker;
-        NodeUtils::generateJpgPreviewFromH5(mergedH5Path, previewPath, "complex");
-    }
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         finishCancelled();
         return;

@@ -18,6 +18,7 @@
 #include <QStandardItemModel>
 #include <QMessageBox>
 #include <QFileDialog>
+#include <QSettings>
 #include <QtConcurrent/QtConcurrent>
 
 
@@ -25,6 +26,9 @@
 #include "ImageView.h"
 #include "QtNodes/internal/NodeDetailWindow.hpp"
 #include <QTimer>
+#include <QUuid>
+#include <memory>
+#include <cmath>
 
 namespace QtNodes {
 
@@ -49,6 +53,12 @@ CoregistrationNode::CoregistrationNode()
 CoregistrationNode::~CoregistrationNode()
 {
     stopExecution();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.waitForFinished();
+    }
+    for (const QString& temporaryJpgPath : m_previewTemporaryJpgPaths) {
+        QFile::remove(temporaryJpgPath);
+    }
 }
 
 unsigned int CoregistrationNode::nPorts(PortType portType) const
@@ -433,7 +443,7 @@ void CoregistrationNode::updateMasterImageCombo()
                 m_masterIndex = 1;
             }
         } else {
-            m_masterImageCombo->addItem(QStringLiteral("鏃犳暟鎹緭鍏?"));
+            m_masterImageCombo->addItem(QStringLiteral("无数据输入"));
         }
     }
     updateParameterWidgetsEnableState();
@@ -552,23 +562,29 @@ bool CoregistrationNode::prepareToStart()
         return false;
     }
 
-    QStringList inputPaths = m_inputData->filePaths();
-    QString projDir = getRealSavePath();
-    QString nodeName = m_outputNodeName.trimmed();
+    m_preparedInputPaths = m_inputData->filePaths();
+    m_preparedSavePath = getRealSavePath();
+    m_preparedDstNode = m_outputNodeName.trimmed();
+    m_preparedProjectName = projectName();
+    if (m_preparedInputPaths.isEmpty() || m_preparedSavePath.isEmpty() ||
+        m_preparedDstNode.isEmpty() || m_preparedProjectName.isEmpty()) {
+        return false;
+    }
 
     m_preparedOutputNames.clear();
     m_preparedH5Paths.clear();
     m_preparedJpgPaths.clear();
 
-    for (const QString& path : inputPaths) {
+    for (const QString& path : m_preparedInputPaths) {
         QString origName = QFileInfo(path).completeBaseName();
         QString outName = resolveOutputFileName(origName);
         if (!outName.endsWith(".h5", Qt::CaseInsensitive)) {
             outName += ".h5";
         }
         m_preparedOutputNames.append(QFileInfo(outName).completeBaseName());
-        m_preparedH5Paths.append(projDir + "/" + nodeName + "/" + outName);
-        m_preparedJpgPaths.append(projDir + "/" + nodeName + "/" + QFileInfo(outName).completeBaseName() + ".jpg");
+        m_preparedH5Paths.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + outName);
+        m_preparedJpgPaths.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" +
+                                  QFileInfo(outName).completeBaseName() + ".jpg");
     }
 
     auto* iface = NodeUtils::getProjectContext(_widget);
@@ -576,7 +592,8 @@ bool CoregistrationNode::prepareToStart()
     if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(iface, nodeName, m_preparedH5Paths, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+            iface, m_preparedDstNode, m_preparedH5Paths, nullptr);
     }
 
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
@@ -590,11 +607,15 @@ void CoregistrationNode::executeProcessing()
         stopExecution();
     }
 
-    setProgress(0);
+    const QString dstNode = m_preparedDstNode;
+    const QString savePath = m_preparedSavePath;
+    const QString project = m_preparedProjectName;
+    if (dstNode.isEmpty() || savePath.isEmpty() || project.isEmpty() ||
+        m_preparedInputPaths.isEmpty() || m_preparedH5Paths.isEmpty()) {
+        onError(QStringLiteral("Coregistration output was not prepared before execution."));
+        return;
+    }
 
-    m_savedOutputFiles = m_preparedOutputNames;
-    m_outputImagePaths = m_preparedH5Paths;
-    m_outputJpgPaths = m_preparedJpgPaths;
     m_generatedOutputNames.clear();
     m_generatedOutputPaths.clear();
     m_generatedOffsetRows.clear();
@@ -603,24 +624,34 @@ void CoregistrationNode::executeProcessing()
     m_generatedEffectiveBaseline.clear();
     m_generatedParallelBaseline.clear();
 
-    auto* iface = NodeUtils::getProjectContext(_widget);
-    QString nodeName = m_outputNodeName.trimmed();
-    QStringList inputPaths = m_inputData->filePaths();
-    QString projDir = getRealSavePath();
-    QString projName = projectName();
-
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         if (validateAndRestoreOutput()) {
-            setState(ExecutionState::Completed);
-            finishExecution();
+            setState(ExecutionState::Running);
+            setProgress(100);
+            if (m_previewGenerationPending) {
+                m_isExecuting = true;
+                updateParameterWidgetsEnableState();
+                deferAutomaticCompletion();
+            } else {
+                finishExecution();
+            }
             return;
         } else {
             QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("加载已有文件失败，将开始重新计算！"));
         }
     }
 
-    // Clean up old project tree items
-    NodeUtils::removeDataNodeFromProject(iface, nodeName);
+    setProgress(0);
+    setState(ExecutionState::Running);
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(savePath, dstNode, m_preparedH5Paths,
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_xmlDirty = false;
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
 
     m_worker = new CoregistrationWorker();
     m_thread = new QThread(this);
@@ -663,23 +694,23 @@ void CoregistrationNode::executeProcessing()
         para.push_back(masterIdx);
         para.push_back(m_interpTimes);
         para.push_back(m_blockSize);
-        para.push_back(inputPaths.size());
+        para.push_back(m_preparedInputPaths.size());
 
         // Invoke Regis slot inside worker thread
         QMetaObject::invokeMethod(m_worker, "Regis", Qt::QueuedConnection,
             Q_ARG(QList<int>, para),
-            Q_ARG(QString, projDir),
-            Q_ARG(QString, projName),
-            Q_ARG(QString, nodeName),
-            Q_ARG(QStringList, inputPaths));
+            Q_ARG(QString, savePath),
+            Q_ARG(QString, project),
+            Q_ARG(QString, m_outputTransaction.stagingName),
+            Q_ARG(QStringList, m_preparedInputPaths));
     } else {
         // Invoke DEMAssistCoregistration slot inside worker thread
         QMetaObject::invokeMethod(m_worker, "DEMAssistCoregistration", Qt::QueuedConnection,
             Q_ARG(int, masterIdx),
-            Q_ARG(QString, projDir),
-            Q_ARG(QString, projName),
-            Q_ARG(QString, nodeName),
-            Q_ARG(QStringList, inputPaths));
+            Q_ARG(QString, savePath),
+            Q_ARG(QString, project),
+            Q_ARG(QString, m_outputTransaction.stagingName),
+            Q_ARG(QStringList, m_preparedInputPaths));
     }
 
     updateParameterWidgetsEnableState();
@@ -694,6 +725,49 @@ void CoregistrationNode::stopExecution()
 {
     if (m_worker) {
         m_worker->StopProcess();
+        if (m_thread && m_thread->isRunning()) {
+            m_thread->requestInterruption();
+        }
+        return;
+    }
+
+    if (m_previewGenerationPending || m_remedyWatcher.isRunning()) {
+        m_previewGenerationPending = false;
+        ++m_previewGenerationId;
+        const quint64 cleanupGenerationId = m_previewGenerationId;
+        const QStringList temporaryJpgPaths = m_previewTemporaryJpgPaths;
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.disconnect(this);
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                    [this, temporaryJpgPaths, cleanupGenerationId]() {
+                for (const QString& temporaryJpgPath : temporaryJpgPaths) {
+                    QFile::remove(temporaryJpgPath);
+                }
+                if (m_previewGenerationId == cleanupGenerationId) {
+                    m_previewTemporaryJpgPaths.clear();
+                }
+            });
+            m_remedyWatcher.cancel();
+        } else {
+            for (const QString& temporaryJpgPath : temporaryJpgPaths) {
+                QFile::remove(temporaryJpgPath);
+            }
+            m_previewTemporaryJpgPaths.clear();
+        }
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("preview generation cancelled"), projectXml());
+        m_isExecuting = false;
+        m_outputData.reset();
+        m_previewData.reset();
+        m_outputImagePaths.clear();
+        m_outputJpgPaths.clear();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
+        if (discardObsoleteAutomaticExecution()) {
+            return;
+        }
+        setState(ExecutionState::Stopped);
+        Q_EMIT executionStopped();
+        Q_EMIT computingFinished();
     }
     updateParameterWidgetsEnableState();
 }
@@ -711,34 +785,89 @@ void CoregistrationNode::onProcessingFinished()
 {
     m_worker = nullptr;
     m_thread = nullptr;
-    if (discardObsoleteAutomaticExecution()) {
+    if (isAutomaticExecutionObsolete()) {
+        m_previewGenerationPending = false;
+        ++m_previewGenerationId;
+        if (m_remedyWatcher.isRunning()) {
+            m_remedyWatcher.cancel();
+        }
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
+        m_isExecuting = false;
+        m_outputData.reset();
+        m_previewData.reset();
+        m_outputImagePaths.clear();
+        m_outputJpgPaths.clear();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
+        discardObsoleteAutomaticExecution();
         return;
     }
 
     if (m_generatedOutputPaths.isEmpty() ||
         m_generatedOutputNames.size() != m_generatedOutputPaths.size() ||
+        m_preparedH5Paths.size() != m_generatedOutputPaths.size() ||
         m_generatedOffsetRows.size() != m_generatedOutputPaths.size() ||
         m_generatedOffsetCols.size() != m_generatedOutputPaths.size()) {
         onError(QStringLiteral("Coregistration did not return a complete output result."));
         return;
     }
 
+    for (int i = 0; i < m_generatedOutputPaths.size(); ++i) {
+        const QString expectedName = QFileInfo(m_preparedH5Paths[i]).completeBaseName();
+        if (QFileInfo(m_generatedOutputPaths[i]).fileName() != QFileInfo(m_preparedH5Paths[i]).fileName() ||
+            m_generatedOutputNames[i] != expectedName) {
+            onError(QStringLiteral("Coregistration worker output names do not match the prepared manifest."));
+            return;
+        }
+    }
+
+    QString transactionError;
+    QStringList h5Paths;
+    if (!projectXml() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+                                             QStringList() << QStringLiteral("s_re") << QStringLiteral("s_im"),
+                                             &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedH5Paths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(
+            m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError.isEmpty()
+                    ? QStringLiteral("Coregistration output transaction validation failed.")
+                    : transactionError);
+        return;
+    }
+
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode, false, false);
+    m_xmlDirty = commitResultsToProjectXml(m_generatedOutputNames, h5Paths,
+                                           m_generatedOffsetRows, m_generatedOffsetCols,
+                                           m_generatedTemporalBaseline, m_generatedEffectiveBaseline,
+                                           m_generatedParallelBaseline);
+    if (!m_xmlDirty ||
+        !NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError.isEmpty()
+                    ? QStringLiteral("Coregistration output metadata was not produced.")
+                    : transactionError);
+        return;
+    }
+
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
+    publishResultsToProjectTree(m_generatedOutputNames, h5Paths);
+
     m_savedOutputFiles = m_generatedOutputNames;
-    m_outputImagePaths = m_generatedOutputPaths;
+    m_outputImagePaths = h5Paths;
     m_outputJpgPaths.clear();
     for (const QString& h5Path : m_outputImagePaths) {
         m_outputJpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
     }
-    persistOutputToProject(m_generatedOutputNames, m_generatedOutputPaths,
-        m_generatedOffsetRows, m_generatedOffsetCols, m_generatedTemporalBaseline,
-        m_generatedEffectiveBaseline, m_generatedParallelBaseline);
+
+    m_outputData = std::make_shared<ImportedFileData>(m_outputImagePaths, m_preparedDstNode);
+    setOutputData(0, m_outputData);
 
     InSARLogManager::LogInfo("CoregistrationNode", "Coregistration process finished. Generating previews...");
-
-    // Generate preview JPGs asynchronously
-    QStringList h5Paths = m_outputImagePaths;
-    QStringList jpgPaths = m_outputJpgPaths;
-    startPreviewGeneration(h5Paths, jpgPaths, jpgPaths, true);
+    startPreviewGeneration(m_outputImagePaths, m_outputJpgPaths, true);
 }
 
 void CoregistrationNode::onError(const QString& error)
@@ -746,15 +875,12 @@ void CoregistrationNode::onError(const QString& error)
     m_worker = nullptr;
     m_thread = nullptr;
     m_isExecuting = false;
-    if (discardObsoleteAutomaticExecution()) {
-        return;
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
     }
-
-    InSARLogManager::LogError("CoregistrationNode", error);
-    Q_EMIT executionError(error);
-    setState(ExecutionState::Error);
-
-    updateParameterWidgetsEnableState();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
 
     m_outputData.reset();
     m_previewData.reset();
@@ -762,6 +888,15 @@ void CoregistrationNode::onError(const QString& error)
     m_outputJpgPaths.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    setLastErrorMessage(error);
+    InSARLogManager::LogError("CoregistrationNode", error);
+    Q_EMIT executionError(error);
+    setState(ExecutionState::Error);
+    updateParameterWidgetsEnableState();
 }
 
 void CoregistrationNode::onCancelled()
@@ -770,9 +905,12 @@ void CoregistrationNode::onCancelled()
     m_worker = nullptr;
     m_thread = nullptr;
     m_isExecuting = false;
-    if (discardObsoleteAutomaticExecution()) {
-        return;
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
     }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
 
     m_outputData.reset();
     m_previewData.reset();
@@ -780,66 +918,76 @@ void CoregistrationNode::onCancelled()
     m_outputJpgPaths.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
     updateParameterWidgetsEnableState();
 }
 
-void CoregistrationNode::persistOutputToProject(const QStringList& outputNames,
-                                                const QStringList& outputPaths,
-                                                const QList<int>& offsetRows,
-                                                const QList<int>& offsetCols,
-                                                const QString& temporalBaseline,
-                                                const QString& effectiveBaseline,
-                                                const QString& parallelBaseline)
+bool CoregistrationNode::commitResultsToProjectXml(const QStringList& outputNames,
+                                                    const QStringList& outputPaths,
+                                                    const QList<int>& offsetRows,
+                                                    const QList<int>& offsetCols,
+                                                    const QString& temporalBaseline,
+                                                    const QString& effectiveBaseline,
+                                                    const QString& parallelBaseline)
 {
     if (outputNames.size() != outputPaths.size() ||
         outputPaths.size() != offsetRows.size() ||
         outputPaths.size() != offsetCols.size()) {
         InSARLogManager::LogError("CoregistrationNode", "Generated output metadata is inconsistent.");
+        return false;
+    }
+
+    XMLFile* xml = projectXml();
+    if (!xml || m_preparedDstNode.isEmpty()) {
+        return false;
+    }
+    const int masterIndex = m_defaultFirstMaster ? 1 : m_masterIndex;
+    const int interpTimes = m_method == "Coarse" ? m_interpTimes : -1;
+    const int blockSize = m_method == "Coarse" ? m_blockSize : -1;
+    for (int i = 0; i < outputPaths.size(); ++i) {
+        const QString relativePath = QString("/%1/%2").arg(m_preparedDstNode, QFileInfo(outputPaths[i]).fileName());
+        if (xml->XMLFile_add_regis(m_preparedDstNode.toStdString().c_str(), outputNames[i].toStdString().c_str(),
+                                   relativePath.toStdString().c_str(), offsetRows[i], offsetCols[i], masterIndex,
+                                   interpTimes, blockSize, temporalBaseline.toStdString().c_str(),
+                                   effectiveBaseline.toStdString().c_str(), parallelBaseline.toStdString().c_str()) < 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void CoregistrationNode::publishResultsToProjectTree(const QStringList& outputNames,
+                                                      const QStringList& outputPaths)
+{
+    if (outputNames.size() != outputPaths.size()) {
         return;
     }
 
     QStandardItemModel* model = projectModel();
-    const QList<QStandardItem*> projects = model ? model->findItems(projectName()) : QList<QStandardItem*>();
+    const QList<QStandardItem*> projects = model ? model->findItems(m_preparedProjectName) : QList<QStandardItem*>();
     if (projects.isEmpty()) {
         InSARLogManager::LogError("CoregistrationNode", "Project tree root was not found.");
         return;
     }
 
-    const QString outputNodeName = m_outputNodeName.trimmed();
     QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-        projects.first(), outputNodeName, "complex-2.0", FOLDER_ICON);
+        projects.first(), m_preparedDstNode, "complex-2.0", FOLDER_ICON);
     if (!outputNode) {
         InSARLogManager::LogError("CoregistrationNode", "Unable to create coregistration output node.");
         return;
     }
-    outputNode->setToolTip(projectName());
-
-    XMLFile* xml = projectXml();
-    const int masterIndex = m_defaultFirstMaster ? 1 : m_masterIndex;
-    const int interpTimes = m_method == "Coarse" ? m_interpTimes : -1;
-    const int blockSize = m_method == "Coarse" ? m_blockSize : -1;
+    outputNode->setToolTip(m_preparedProjectName);
     for (int i = 0; i < outputPaths.size(); ++i) {
         QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
             outputNode, outputNames[i], "complex", outputPaths[i], IMAGEDATA_ICON);
         if (imageItem) {
             outputNode->setChild(imageItem->row(), 1, new QStandardItem(outputPaths[i]));
         }
-
-        if (xml) {
-            const QString relativePath = QString("/%1/%2").arg(outputNodeName, QFileInfo(outputPaths[i]).fileName());
-            xml->XMLFile_add_regis(outputNodeName.toStdString().c_str(), outputNames[i].toStdString().c_str(),
-                relativePath.toStdString().c_str(), offsetRows[i], offsetCols[i], masterIndex,
-                interpTimes, blockSize, temporalBaseline.toStdString().c_str(),
-                effectiveBaseline.toStdString().c_str(), parallelBaseline.toStdString().c_str());
-        }
-    }
-
-    if (xml) {
-        const QString xmlPath = projectPath() + "/" + projectName();
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
     }
     if (auto* iface = NodeUtils::getProjectContext(_widget)) {
         iface->refreshProjectTree();
@@ -917,6 +1065,7 @@ void CoregistrationNode::load(QJsonObject const &json)
 
 bool CoregistrationNode::validateAndRestoreOutput()
 {
+#if 0
     QString nodeName = m_outputNodeName.trimmed();
     if (nodeName.isEmpty()) return false;
 
@@ -960,14 +1109,14 @@ bool CoregistrationNode::validateAndRestoreOutput()
     QStringList missingH5s;
     QStringList missingJpgs;
     for (int i = 0; i < expectedH5Paths.size(); ++i) {
-        if (!QFile::exists(expectedJpgPaths[i])) {
+        if (!NodeUtils::isJpgPreviewCurrent(expectedH5Paths[i], expectedJpgPaths[i])) {
             missingH5s.append(expectedH5Paths[i]);
             missingJpgs.append(expectedJpgPaths[i]);
         }
     }
 
     if (!missingH5s.isEmpty()) {
-        startPreviewGeneration(missingH5s, missingJpgs, expectedJpgPaths, false);
+        startPreviewGeneration(missingH5s, missingJpgs, expectedH5Paths, expectedJpgPaths, false);
     } else {
         m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
         setOutputData(1, m_previewData);
@@ -1269,50 +1418,153 @@ bool CoregistrationNode::validateAndRestoreOutput()
     }
 
     return true;
+#endif
+
+    const QString dstNode = m_preparedDstNode.isEmpty()
+        ? m_outputNodeName.trimmed()
+        : m_preparedDstNode;
+    QStringList h5Paths;
+    if (dstNode.isEmpty() ||
+        !NodeUtils::loadCommittedOutputManifest(getRealSavePath(), dstNode, h5Paths) ||
+        h5Paths.isEmpty()) {
+        return false;
+    }
+
+    m_preparedDstNode = dstNode;
+    m_preparedProjectName = projectName();
+    m_preparedH5Paths = h5Paths;
+    m_preparedOutputNames.clear();
+    m_outputJpgPaths.clear();
+    for (const QString& h5Path : h5Paths) {
+        const QFileInfo info(h5Path);
+        m_preparedOutputNames.append(info.completeBaseName());
+        m_outputJpgPaths.append(info.absolutePath() + "/" + info.baseName() + ".jpg");
+    }
+    m_preparedJpgPaths = m_outputJpgPaths;
+    m_savedOutputFiles = m_preparedOutputNames;
+    m_outputImagePaths = h5Paths;
+
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    setOutputData(0, m_outputData);
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
+    publishResultsToProjectTree(m_preparedOutputNames, h5Paths);
+
+    bool previewsCurrent = true;
+    for (int i = 0; i < h5Paths.size() && i < m_outputJpgPaths.size(); ++i) {
+        if (!NodeUtils::isJpgPreviewCurrent(h5Paths[i], m_outputJpgPaths[i])) {
+            previewsCurrent = false;
+            break;
+        }
+    }
+    if (previewsCurrent) {
+        m_previewData = std::make_shared<ImageInfoData>(m_outputJpgPaths);
+        setOutputData(1, m_previewData);
+        Q_EMIT dataUpdated(1);
+    } else {
+        m_previewData.reset();
+        setOutputData(1, nullptr);
+        startPreviewGeneration(h5Paths, m_outputJpgPaths, false);
+    }
+    return true;
 }
 
 void CoregistrationNode::startPreviewGeneration(const QStringList& h5Paths,
-                                                const QStringList& generatedJpgPaths,
-                                                const QStringList& resultJpgPaths,
+                                                const QStringList& finalJpgPaths,
                                                 bool completeExecution)
 {
+    if (h5Paths.isEmpty() || h5Paths.size() != finalJpgPaths.size()) {
+        if (completeExecution) {
+            onError(QStringLiteral("Coregistration preview paths are incomplete."));
+        }
+        return;
+    }
+
     if (m_remedyWatcher.isRunning()) {
+        m_previewGenerationPending = false;
+        ++m_previewGenerationId;
+        const quint64 restartGenerationId = m_previewGenerationId;
+        const QStringList previousTemporaryJpgPaths = m_previewTemporaryJpgPaths;
         m_remedyWatcher.cancel();
         m_remedyWatcher.disconnect(this);
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                [this, h5Paths, generatedJpgPaths, resultJpgPaths, completeExecution]() {
-            m_remedyWatcher.disconnect(this);
-            startPreviewGeneration(h5Paths, generatedJpgPaths, resultJpgPaths, completeExecution);
+                [this, h5Paths, finalJpgPaths, completeExecution,
+                 previousTemporaryJpgPaths, restartGenerationId]() {
+            for (const QString& temporaryJpgPath : previousTemporaryJpgPaths) {
+                QFile::remove(temporaryJpgPath);
+            }
+            if (m_previewGenerationId == restartGenerationId) {
+                m_previewTemporaryJpgPaths.clear();
+            }
+            startPreviewGeneration(h5Paths, finalJpgPaths, completeExecution);
         });
         return;
     }
 
     m_remedyWatcher.disconnect(this);
-    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-            [this, h5Paths, resultJpgPaths, completeExecution]() {
-        if (completeExecution) {
-            InSARLogManager::LogInfo("CoregistrationNode", "Coregistration JPG preview generation finished.");
-            m_isExecuting = false;
-            if (discardObsoleteAutomaticExecution()) {
-                return;
-            }
+    m_previewGenerationPending = true;
+    const quint64 previewGenerationId = ++m_previewGenerationId;
+    QStringList temporaryJpgPaths;
+    for (const QString& finalJpgPath : finalJpgPaths) {
+        const QFileInfo info(finalJpgPath);
+        temporaryJpgPaths.append(info.absolutePath() + "/." + info.baseName() +
+                                 QStringLiteral(".preview-%1.jpg").arg(previewGenerationId));
+        QFile::remove(finalJpgPath);
+    }
+    m_previewTemporaryJpgPaths = temporaryJpgPaths;
 
-            m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_outputNodeName.trimmed());
-            m_previewData = std::make_shared<ImageInfoData>(resultJpgPaths);
-            setOutputData(0, m_outputData);
-            setOutputData(1, m_previewData);
-            updateParameterWidgetsEnableState();
-            finishExecution();
-        } else {
-            InSARLogManager::LogInfo("CoregistrationNode", "Remedy preview generation finished.");
-            m_previewData = std::make_shared<ImageInfoData>(resultJpgPaths);
-            setOutputData(1, m_previewData);
-            Q_EMIT dataUpdated(1);
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, h5Paths, finalJpgPaths, temporaryJpgPaths, completeExecution, previewGenerationId]() {
+        if (!m_previewGenerationPending || previewGenerationId != m_previewGenerationId) {
+            for (const QString& temporaryJpgPath : temporaryJpgPaths) {
+                QFile::remove(temporaryJpgPath);
+            }
+            return;
         }
+
+        m_previewGenerationPending = false;
+        if (discardObsoleteAutomaticExecution()) {
+            ++m_previewGenerationId;
+            for (const QString& temporaryJpgPath : temporaryJpgPaths) {
+                QFile::remove(temporaryJpgPath);
+            }
+            m_previewTemporaryJpgPaths.clear();
+            NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                                QStringLiteral("obsolete preview generation"), projectXml());
+            m_isExecuting = false;
+            m_outputData.reset();
+            m_previewData.reset();
+            setOutputData(0, nullptr);
+            setOutputData(1, nullptr);
+            return;
+        }
+
+        QStringList currentJpgPaths;
+        for (int i = 0; i < temporaryJpgPaths.size() && i < finalJpgPaths.size(); ++i) {
+            if (QFile::exists(temporaryJpgPaths[i]) &&
+                QFile::rename(temporaryJpgPaths[i], finalJpgPaths[i])) {
+                currentJpgPaths.append(finalJpgPaths[i]);
+            }
+        }
+        m_previewTemporaryJpgPaths.clear();
+        m_previewData = currentJpgPaths.isEmpty()
+            ? nullptr : std::make_shared<ImageInfoData>(currentJpgPaths);
+        setOutputData(1, m_previewData);
+
+        if (!completeExecution && executionState() != ExecutionState::Running) {
+            Q_EMIT dataUpdated(1);
+            return;
+        }
+
+        InSARLogManager::LogInfo("CoregistrationNode", "Coregistration JPG preview generation finished.");
+        m_isExecuting = false;
+        updateParameterWidgetsEnableState();
+        setState(ExecutionState::Running);
+        setProgress(100);
+        finishExecution();
     });
-    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, generatedJpgPaths]() {
-        for (int i = 0; i < h5Paths.size(); ++i) {
-            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], generatedJpgPaths[i], "complex");
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, temporaryJpgPaths]() {
+        for (int i = 0; i < h5Paths.size() && i < temporaryJpgPaths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], temporaryJpgPaths[i], "complex");
         }
     }));
 }
@@ -1347,6 +1599,41 @@ struct CoregisEvalThreadResult {
     CropEvalResult evalResult;
 };
 
+struct CropEvaluationThresholds {
+    double warningOffsetPixels;
+    double severeOffsetPixels;
+    double minimumSnr;
+};
+
+static CropEvaluationThresholds loadCropEvaluationThresholds()
+{
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+    auto readPositive = [&settings](const char* key, double fallback) {
+        bool ok = false;
+        const double value = settings.value(key, fallback).toDouble(&ok);
+        return ok && value > 0.0 ? value : fallback;
+    };
+
+    CropEvaluationThresholds thresholds;
+    thresholds.warningOffsetPixels = readPositive("RegistrationEvaluation/ResidualOffsetWarningPixels", 0.5);
+    thresholds.severeOffsetPixels = std::max(
+        thresholds.warningOffsetPixels,
+        readPositive("RegistrationEvaluation/ResidualOffsetSeverePixels", 1.0));
+    thresholds.minimumSnr = readPositive("RegistrationEvaluation/MinimumResidualOffsetSnr", 3.0);
+    return thresholds;
+}
+
+struct CoregisEvalTempFiles {
+    QString coherenceJpg;
+    QString phaseJpg;
+
+    ~CoregisEvalTempFiles()
+    {
+        QFile::remove(coherenceJpg);
+        QFile::remove(phaseJpg);
+    }
+};
+
 class CoregistrationEvalWidget : public QWidget
 {
 public:
@@ -1356,11 +1643,6 @@ public:
         , m_hasResults(false)
     {
         m_outputPaths = m_node->getOutputPaths();
-
-        // 绑定唯一的临时路径以防多节点运行冲突
-        QString tempDir = QDir::tempPath();
-        m_tempCoherenceJpg = tempDir + QString("/crop_coherence_%1.jpg").arg(reinterpret_cast<quintptr>(m_node));
-        m_tempPhaseJpg = tempDir + QString("/crop_phase_%1.jpg").arg(reinterpret_cast<quintptr>(m_node));
 
         // 界面布局
         auto* mainLayout = new QHBoxLayout(this);
@@ -1438,6 +1720,7 @@ public:
         m_medianCohLabel = createValueLabel();
         m_maxCohLabel = createValueLabel();
         m_highCohPctLabel = createValueLabel();
+        m_snrLabel = createValueLabel();
         m_offsetYLabel = createValueLabel();
         m_offsetXLabel = createValueLabel();
 
@@ -1451,6 +1734,7 @@ public:
         addFormRow(tr("相干系数中位数:"), m_medianCohLabel);
         addFormRow(tr("相干系数最大值:"), m_maxCohLabel);
         addFormRow(tr("高相干像素比例 (>0.5):"), m_highCohPctLabel);
+        addFormRow(tr("残余偏移估计 SNR:"), m_snrLabel);
         addFormRow(tr("垂直残余偏移 (Y):"), m_offsetYLabel);
         addFormRow(tr("水平残余偏移 (X):"), m_offsetXLabel);
 
@@ -1505,11 +1789,6 @@ public:
     ~CoregistrationEvalWidget() override
     {
         m_watcher.cancel();
-        m_watcher.waitForFinished();
-
-        // 销毁时清理生成的临时图像文件，遵守“垃圾代码与临时文件清理”规则
-        if (QFile::exists(m_tempCoherenceJpg)) QFile::remove(m_tempCoherenceJpg);
-        if (QFile::exists(m_tempPhaseJpg)) QFile::remove(m_tempPhaseJpg);
     }
 
 private:
@@ -1543,14 +1822,21 @@ private:
 
         m_statusLabel->setText(tr("正在计算裁剪区全图相干性与干涉相位，请稍候..."));
         m_imageView->setImage(QImage());
+        m_hasResults = false;
 
         // 重置指标标签
         m_meanCohLabel->setText("-");
         m_medianCohLabel->setText("-");
         m_maxCohLabel->setText("-");
         m_highCohPctLabel->setText("-");
+        m_snrLabel->setText("-");
         m_offsetYLabel->setText("-");
         m_offsetXLabel->setText("-");
+        const bool isDark = NodeDetailWindow::isDarkTheme(this);
+        const QString defaultValueStyle = QString("font-size: 12px; font-weight: bold; color: %1;")
+            .arg(isDark ? "#F3F4F6" : "#1F2937");
+        m_offsetYLabel->setStyleSheet(defaultValueStyle);
+        m_offsetXLabel->setStyleSheet(defaultValueStyle);
         m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
         m_statusCardTitle->setText(tr("未评估"));
         m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
@@ -1561,23 +1847,32 @@ private:
 
         if (!QFile::exists(masterPath) || !QFile::exists(slavePath)) {
             m_statusLabel->setText(tr("错误：主图像或副图像裁剪文件不存在，请确保节点已成功运行！"));
+            m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusCardDesc->setText(tr("主图像或副图像裁剪文件不存在，无法启动评估。"));
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
+                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
             return;
         }
 
         m_slaveCombo->setEnabled(false);
 
-        QString cohJpg = m_tempCoherenceJpg;
-        QString phaseJpg = m_tempPhaseJpg;
+        const QString tempDir = QDir::tempPath();
+        const QString runId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        auto tempFiles = std::make_shared<CoregisEvalTempFiles>();
+        tempFiles->coherenceJpg = tempDir + QString("/crop_coherence_%1.jpg").arg(runId);
+        tempFiles->phaseJpg = tempDir + QString("/crop_phase_%1.jpg").arg(runId);
+        m_activeTempFiles = tempFiles;
 
-        QFuture<CoregisEvalThreadResult> future = QtConcurrent::run([masterPath, slavePath, cohJpg, phaseJpg]() {
+        QFuture<CoregisEvalThreadResult> future = QtConcurrent::run([masterPath, slavePath, tempFiles]() {
             NodeUtils::Hdf5Locker locker(masterPath);
             CoregisEvalThreadResult res{};
             res.evalResult.structSize = sizeof(CropEvalResult);
             res.retCode = AnalyzeCropRegistration(
                 masterPath.toLocal8Bit().constData(),
                 slavePath.toLocal8Bit().constData(),
-                cohJpg.toLocal8Bit().constData(),
-                phaseJpg.toLocal8Bit().constData(),
+                tempFiles->coherenceJpg.toLocal8Bit().constData(),
+                tempFiles->phaseJpg.toLocal8Bit().constData(),
                 -1.0, -1.0, -1.0, -1.0,
                 &res.evalResult
             );
@@ -1593,7 +1888,16 @@ private:
 
         CoregisEvalThreadResult threadRes = m_watcher.result();
         if (threadRes.retCode != 0) {
+            m_hasResults = false;
+            m_imageView->setImage(QImage());
+            const bool isDark = NodeDetailWindow::isDarkTheme(this);
             m_statusLabel->setText(tr("裁剪配准评估失败，错误码：%1").arg(threadRes.retCode));
+            m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusCardDesc->setText(tr("底层评估调用失败，错误码：%1。请检查输入数据和处理日志。")
+                .arg(threadRes.retCode));
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
+                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
             return;
         }
 
@@ -1601,19 +1905,39 @@ private:
         m_hasResults = true;
         m_statusLabel->setText(tr("配准评估完成。"));
 
-        // 填充指标数据
-        m_meanCohLabel->setText(QString::number(m_evalResult.meanCoherence, 'f', 4));
-        m_medianCohLabel->setText(QString::number(m_evalResult.medianCoherence, 'f', 4));
-        m_maxCohLabel->setText(QString::number(m_evalResult.maxCoherence, 'f', 4));
-        m_highCohPctLabel->setText(QString("%1%").arg(QString::number(m_evalResult.highCoherencePct * 100.0, 'f', 2)));
-
-        m_offsetYLabel->setText(QString::number(m_evalResult.offsetY, 'f', 2));
-        m_offsetXLabel->setText(QString::number(m_evalResult.offsetX, 'f', 2));
-
-        // 动态样式刷新
         bool isDark = NodeDetailWindow::isDarkTheme(this);
+        const CropEvaluationThresholds thresholds = loadCropEvaluationThresholds();
+        const bool validMeanCoherence = std::isfinite(m_evalResult.meanCoherence) &&
+            m_evalResult.meanCoherence >= 0.0 && m_evalResult.meanCoherence <= 1.0;
+        const bool validMedianCoherence = std::isfinite(m_evalResult.medianCoherence) &&
+            m_evalResult.medianCoherence >= 0.0 && m_evalResult.medianCoherence <= 1.0;
+        const bool validMaxCoherence = std::isfinite(m_evalResult.maxCoherence) &&
+            m_evalResult.maxCoherence >= 0.0 && m_evalResult.maxCoherence <= 1.0;
+        const bool validHighCoherencePct = std::isfinite(m_evalResult.highCoherencePct) &&
+            m_evalResult.highCoherencePct >= 0.0 && m_evalResult.highCoherencePct <= 1.0;
+        const bool validCoherenceMetrics = validMeanCoherence && validMedianCoherence &&
+            validMaxCoherence && validHighCoherencePct;
+        const bool validAssessmentStatus = m_evalResult.assessmentStatus >= 0 && m_evalResult.assessmentStatus <= 2;
+        const bool validMetrics = validCoherenceMetrics && validAssessmentStatus;
+        const bool validOffsets = std::isfinite(m_evalResult.offsetY) && std::isfinite(m_evalResult.offsetX) &&
+            std::abs(m_evalResult.offsetY) < 1000.0 && std::abs(m_evalResult.offsetX) < 1000.0;
+        const bool validSnr = std::isfinite(m_evalResult.snr) && m_evalResult.snr >= 0.0;
+        const bool offsetWarning = validOffsets && (std::abs(m_evalResult.offsetY) > thresholds.warningOffsetPixels ||
+            std::abs(m_evalResult.offsetX) > thresholds.warningOffsetPixels);
+        const bool offsetSevere = validOffsets && (std::abs(m_evalResult.offsetY) > thresholds.severeOffsetPixels ||
+            std::abs(m_evalResult.offsetX) > thresholds.severeOffsetPixels);
+        const bool lowSnr = validSnr && m_evalResult.snr < thresholds.minimumSnr;
 
-        if (std::abs(m_evalResult.offsetY) > 0.5 || std::abs(m_evalResult.offsetX) > 0.5) {
+        m_meanCohLabel->setText(validMeanCoherence ? QString::number(m_evalResult.meanCoherence, 'f', 4) : "-");
+        m_medianCohLabel->setText(validMedianCoherence ? QString::number(m_evalResult.medianCoherence, 'f', 4) : "-");
+        m_maxCohLabel->setText(validMaxCoherence ? QString::number(m_evalResult.maxCoherence, 'f', 4) : "-");
+        m_highCohPctLabel->setText(validHighCoherencePct
+            ? QString("%1%").arg(QString::number(m_evalResult.highCoherencePct * 100.0, 'f', 2)) : "-");
+        m_snrLabel->setText(validSnr ? QString::number(m_evalResult.snr, 'f', 2) : "-");
+        m_offsetYLabel->setText(validOffsets ? QString::number(m_evalResult.offsetY, 'f', 2) : "-");
+        m_offsetXLabel->setText(validOffsets ? QString::number(m_evalResult.offsetX, 'f', 2) : "-");
+
+        if (offsetWarning) {
             m_offsetYLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
             m_offsetXLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
         } else {
@@ -1622,24 +1946,63 @@ private:
             m_offsetXLabel->setStyleSheet(defaultColor);
         }
 
-        if (m_evalResult.assessmentStatus == 0) {
+        QStringList reasons;
+        if (!validCoherenceMetrics) {
+            reasons << tr("相干性统计指标无效");
+        }
+        if (!validAssessmentStatus) {
+            reasons << tr("相干性评估状态无效");
+        } else if (m_evalResult.assessmentStatus == 1) {
+            reasons << tr("相干性一般");
+        } else if (m_evalResult.assessmentStatus == 2) {
+            reasons << tr("相干性不足");
+        }
+        if (!validOffsets) {
+            reasons << tr("残余偏移估计不可用");
+        } else if (std::abs(m_evalResult.offsetY) > thresholds.warningOffsetPixels) {
+            reasons << tr("方位残余偏移 %1 px").arg(m_evalResult.offsetY, 0, 'f', 2);
+        }
+        if (validOffsets && std::abs(m_evalResult.offsetX) > thresholds.warningOffsetPixels) {
+            reasons << tr("距离残余偏移 %1 px").arg(m_evalResult.offsetX, 0, 'f', 2);
+        }
+        if (!validSnr) {
+            reasons << tr("残余偏移估计 SNR 无效");
+        } else if (lowSnr) {
+            reasons << tr("残余偏移估计 SNR=%1，低于 %2").arg(m_evalResult.snr, 0, 'f', 2).arg(thresholds.minimumSnr, 0, 'f', 2);
+        }
+
+        auto setStatusCard = [this, isDark](const QString& title, const QString& titleColor,
+            const QString& borderColor, const QString& darkBackground, const QString& lightBackground,
+            const QString& description) {
+            m_statusCardTitle->setText(title);
+            m_statusCardTitle->setStyleSheet(QString("font-size: 14px; font-weight: bold; color: %1;").arg(titleColor));
+            m_statusCardDesc->setText(description);
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 4px;")
+                .arg(isDark ? darkBackground : lightBackground).arg(borderColor));
+        };
+
+        const QString reasonText = reasons.isEmpty() ? tr("相干性、几何残余和估计置信度均满足当前阈值。") : reasons.join(tr("；"));
+        if (!validMetrics || !validOffsets || !validSnr) {
+            setStatusCard(tr("无法评估 (FAILED)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
+                reasonText + tr("。无法给出可靠的配准结论。"));
+        } else if (lowSnr) {
+            setStatusCard(tr("结果不确定 (INCONCLUSIVE)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
+                reasonText + tr("。请复核影像纹理或扩大有效评估区域。"));
+        } else if (offsetSevere) {
+            setStatusCard(tr("几何配准异常 (FAILED)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
+                reasonText + tr("。残余偏移超过严重阈值。"));
+        } else if (m_evalResult.assessmentStatus == 2) {
+            setStatusCard(tr("低相干 (LOW COHERENCE)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
+                reasonText + tr("。请注意后续干涉和解缠质量。"));
+        } else if (m_evalResult.assessmentStatus == 1 || offsetWarning) {
+            setStatusCard(tr("提醒 (WARNING)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
+                reasonText + tr("。建议复核质量。"));
+        } else {
             m_statusCardTitle->setText(tr("通过 (PASS)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
-            m_statusCardDesc->setText(tr("全图相干性优秀，主副影像配准成功，完全满足干涉处理要求。"));
+            m_statusCardDesc->setText(reasonText);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #10B981; border-radius: 4px;")
                 .arg(isDark ? "#064E3B" : "#D1FAE5"));
-        } else if (m_evalResult.assessmentStatus == 1) {
-            m_statusCardTitle->setText(tr("提醒 (WARNING)"));
-            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-            m_statusCardDesc->setText(tr("全图相干性一般。局部可能存在轻微失相干，或包含水体、森林。建议核对质量。"));
-            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #F59E0B; border-radius: 4px;")
-                .arg(isDark ? "#78350F" : "#FEF3C7"));
-        } else {
-            m_statusCardTitle->setText(tr("低相干 (LOW COHERENCE)"));
-            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusCardDesc->setText(tr("地表相干性较低，请注意解缠质量。"));
-            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
-                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
         }
 
         updateImageView();
@@ -1653,7 +2016,11 @@ private:
         }
 
         int mode = m_visualModeCombo->currentData().toInt();
-        QString imgPath = (mode == 0) ? m_tempPhaseJpg : m_tempCoherenceJpg;
+        if (!m_activeTempFiles) {
+            m_imageView->setImage(QImage());
+            return;
+        }
+        QString imgPath = (mode == 0) ? m_activeTempFiles->phaseJpg : m_activeTempFiles->coherenceJpg;
 
         if (QFile::exists(imgPath)) {
             m_imageView->loadImage(imgPath);
@@ -1676,12 +2043,14 @@ private:
     QLabel* m_medianCohLabel;
     QLabel* m_maxCohLabel;
     QLabel* m_highCohPctLabel;
+    QLabel* m_snrLabel;
     QLabel* m_offsetYLabel;
     QLabel* m_offsetXLabel;
     QLabel* m_statusLabel;
 
-    QString m_tempCoherenceJpg;
-    QString m_tempPhaseJpg;
+    // The worker owns a copy while it writes, so closing Detail View cannot
+    // race temporary-file cleanup with AnalyzeCropRegistration.
+    std::shared_ptr<CoregisEvalTempFiles> m_activeTempFiles;
 
     CropEvalResult m_evalResult;
     bool m_hasResults;

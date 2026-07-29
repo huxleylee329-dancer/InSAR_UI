@@ -83,12 +83,13 @@ private:
     void onError(const QString& error);
     void onCancelled();
     // 接收 Worker 的 sendResults 信号，用原生 TinyXML 完成 XML 落盘（SOP 避坑经验 #9）
-    void onResultsReceived(const QString& dstNode, const QStringList& deburstH5Paths, const QStringList& originNames);
+    bool onResultsReceived(const QString& dstNode, const QStringList& deburstH5Paths, const QStringList& originNames);
+    void publishResultsToProjectTree(const QString& dstNode, const QStringList& deburstH5Paths);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& resultJpgPaths);
+                                const QStringList& resultH5Paths, const QStringList& resultJpgPaths);
 
     // Get project context interface
     QStandardItemModel* projectModel() const;
@@ -104,6 +105,9 @@ private:
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QStringList m_pendingOutputPaths;
+    QStringList m_pendingOriginNames;
 
 signals:
     void startDeburst(QString savePath, QString dstProject,

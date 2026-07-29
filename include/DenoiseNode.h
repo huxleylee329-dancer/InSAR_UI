@@ -103,6 +103,8 @@ private:
     void onCancelled();
     void onError(const QString& error);
     void onDenoiseGenerated(const DenoiseFileResult& result);
+    void commitDenoiseResult(const DenoiseFileResult& result);
+    void publishDenoiseResultToProjectTree(const DenoiseFileResult& result);
     bool validateInputs() const;
     void updateWidgetSize();
     void onMethodChanged(int index);
@@ -110,7 +112,7 @@ private:
     void executeProcessing();
     void cleanUpThreadAndWorker();
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& types, const QStringList& resultJpgPaths,
+                                const QStringList& types, const QStringList& resultH5Paths, const QStringList& resultJpgPaths,
                                 bool completeExecution);
 
     // Context helpers
@@ -132,6 +134,9 @@ private:
     QStringList m_preparedOutputPaths;
     QList<int> m_preparedPara;
     double m_preparedAlpha = 0.0;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QList<DenoiseFileResult> m_pendingDenoiseResults;
+    bool m_xmlDirty = false;
 
 signals:
     void startDenoise(QList<int> para, double alpha, QString savePath, QString outputNode,

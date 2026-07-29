@@ -1,4 +1,4 @@
-﻿#include "GacosOnlineServiceNode.h"
+#include "GacosOnlineServiceNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 #include "InterfaceManager.h"
@@ -65,11 +65,11 @@ bool GacosOnlineServiceNode::portCaptionVisible(PortType, PortIndex) const { ret
 QString GacosOnlineServiceNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QStringLiteral("骞叉秹鍥?");
+        if (portIndex == 0) return QStringLiteral("干涉图");
         else return QStringLiteral("DEM ?");
     } else {
-        if (portIndex == 0) return QStringLiteral("鎴愭灉 *");
-        else return QStringLiteral("棰勮 ?");
+        if (portIndex == 0) return QStringLiteral("成果 *");
+        else return QStringLiteral("预览 ?");
     }
     return QString();
 }
@@ -176,7 +176,7 @@ void GacosOnlineServiceNode::createWidget()
 
     m_emailEdit = new QLineEdit();
     m_emailEdit->setText(m_email);
-    m_emailEdit->setPlaceholderText("娉ㄥ唽閭");
+    m_emailEdit->setPlaceholderText("注册邮箱");
     connect(m_emailEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_emailEdit->text().trimmed();
         if (m_email != text) {
@@ -207,7 +207,7 @@ void GacosOnlineServiceNode::createWidget()
 
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -219,9 +219,9 @@ void GacosOnlineServiceNode::createWidget()
     });
 
     formLayout->addRow("API Key", m_apiKeyEdit);
-    formLayout->addRow("閭", m_emailEdit);
-    formLayout->addRow("鏁版嵁鏍煎紡", m_dataFormatCombo);
-    formLayout->addRow("鐩爣鑺傜偣", m_outputNodeNameEdit);
+    formLayout->addRow("邮箱", m_emailEdit);
+    formLayout->addRow("数据格式", m_dataFormatCombo);
+    formLayout->addRow("目标节点", m_outputNodeNameEdit);
 }
 
 void GacosOnlineServiceNode::updateWidgetSize()
@@ -379,7 +379,7 @@ void GacosOnlineServiceNode::onProcessingFinished()
     setOutputData(0, m_outputData);
 
     if (!h5Paths.isEmpty()) {
-        startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
+        startPreviewGeneration(h5Paths, jpgPaths, types, h5Paths, jpgPaths, true);
     } else {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
@@ -497,7 +497,7 @@ bool GacosOnlineServiceNode::validateAndRestoreOutput()
 
     QStringList missingH5s, missingJpgs, missingTypes, existingJpgs;
     for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-        if (QFile::exists(expectedJpgPaths[i])) existingJpgs.append(expectedJpgPaths[i]);
+        if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) existingJpgs.append(expectedJpgPaths[i]);
         else { missingH5s.append(h5Paths[i]); missingJpgs.append(expectedJpgPaths[i]); missingTypes.append(types[i]); }
     }
 
@@ -506,7 +506,7 @@ bool GacosOnlineServiceNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, h5Paths, expectedJpgPaths, false);
     }
     return true;
 }
@@ -514,6 +514,7 @@ bool GacosOnlineServiceNode::validateAndRestoreOutput()
 void GacosOnlineServiceNode::startPreviewGeneration(const QStringList& h5Paths,
                                                     const QStringList& generatedJpgPaths,
                                                     const QStringList& types,
+                                                    const QStringList& resultH5Paths,
                                                     const QStringList& resultJpgPaths,
                                                     bool completeExecution)
 {
@@ -521,19 +522,23 @@ void GacosOnlineServiceNode::startPreviewGeneration(const QStringList& h5Paths,
         m_remedyWatcher.cancel();
         m_remedyWatcher.disconnect(this);
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+                [this, h5Paths, generatedJpgPaths, types, resultH5Paths, resultJpgPaths, completeExecution]() {
             m_remedyWatcher.disconnect(this);
-            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultH5Paths, resultJpgPaths, completeExecution);
         });
         return;
     }
 
     m_remedyWatcher.disconnect(this);
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-            [this, resultJpgPaths, completeExecution]() {
+            [this, resultH5Paths, resultJpgPaths, completeExecution]() {
+        QStringList currentJpgPaths;
+        for (int i = 0; i < resultH5Paths.size() && i < resultJpgPaths.size(); ++i) {
+            if (NodeUtils::isJpgPreviewCurrent(resultH5Paths[i], resultJpgPaths[i])) currentJpgPaths.append(resultJpgPaths[i]);
+        }
         if (completeExecution) {
             if (discardObsoleteAutomaticExecution()) return;
-            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
             setOutputData(1, m_imageInfoData);
             m_outputNodeNameEdit->setEnabled(true);
             m_apiKeyEdit->setEnabled(true);
@@ -543,7 +548,7 @@ void GacosOnlineServiceNode::startPreviewGeneration(const QStringList& h5Paths,
             setProgress(100);
             finishExecution();
         } else {
-            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
         }

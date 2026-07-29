@@ -166,7 +166,7 @@ void PSTimeSeriesNode::createWidget()
     addParamRow(QStringLiteral("大气滤波窗口:"), m_atmosphericWindowEdit);
 
     m_outputNodeNameEdit = new QLineEdit(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")); // SOP: standard placeholder
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入")); // SOP: standard placeholder
     addParamRow(QStringLiteral("目标节点名:"), m_outputNodeNameEdit);
 
     // Row: Result Display
@@ -235,6 +235,11 @@ bool PSTimeSeriesNode::prepareToStart()
         return false;
     }
 
+    m_preparedDstNode = m_outputNodeName;
+    m_preparedOutputPaths = QStringList() <<
+        QDir(projectPath()).absoluteFilePath(m_preparedDstNode + "/PS_time_series.h5");
+    m_preparedInputPaths = m_inputData ? m_inputData->filePaths() : QStringList();
+
     if (isAutoTriggered()) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
         return true;
@@ -242,17 +247,8 @@ bool PSTimeSeriesNode::prepareToStart()
 
     // 检查并提示覆盖
     if (executionMode() == ExecutionMode::Manual) {
-        QString rawPath = projectPath();
-        QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                      ? QFileInfo(rawPath).absolutePath()
-                      : rawPath;
-        QString outDir = dir + "/" + m_outputNodeName;
-        QString h5Path = outDir + "/PS_time_series.h5";
-
-        QStringList pathsToCheck;
-        pathsToCheck << h5Path;
         m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
-            NodeUtils::getProjectContext(_widget), m_outputNodeName, pathsToCheck
+            NodeUtils::getProjectContext(_widget), m_preparedDstNode, m_preparedOutputPaths
         );
         if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
             m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
@@ -272,9 +268,6 @@ void PSTimeSeriesNode::execute()
         return;
     }
 
-    // 清除项目子节点及 XML 条目，防止 UI 树和项目 XML 的多重重影 bug
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
-
     executeProcessing();
 }
 
@@ -283,27 +276,40 @@ void PSTimeSeriesNode::executeProcessing()
     InSARLogManager::LogInfo("PSTimeSeriesNode", "executeProcessing started.");
     stopExecution();
 
+    QString projPath = projectPath();
+    QString projName = projectName();
+    const QStringList networkFileList = m_preparedInputPaths;
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(projPath, m_preparedDstNode, m_preparedOutputPaths,
+                                           networkFileList, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputData.reset();
+    m_previewData.reset();
+    m_generatedOutputPaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+
     m_thread = new QThread(this);
     m_worker = new PSTimeSeriesWorker();
     m_worker->moveToThread(m_thread);
-
-    QString projPath = projectPath();
-    QString projName = projectName();
-    QStringList networkFileList = m_inputData ? m_inputData->filePaths() : QStringList();
-
-    connect(m_thread, &QThread::started, m_worker, [this, projPath, projName, networkFileList]() {
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, m_worker, [this, projPath, projName, stagingNode, networkFileList]() {
         m_worker->ps_time_series(
             m_coherenceThresh,
             m_maxDeformationRate,
             m_atmosphericWindow,
             projPath,
             projName,
-            m_outputNodeName,
-            networkFileList
+            stagingNode,
+            networkFileList,
+            true
         );
     });
 
     connect(m_worker, &PSTimeSeriesWorker::updateProcess, this, &PSTimeSeriesNode::onProgressUpdate);
+    connect(m_worker, &PSTimeSeriesWorker::outputsGenerated, this, &PSTimeSeriesNode::onOutputsGenerated);
     connect(m_worker, &PSTimeSeriesWorker::endProcess, this, &PSTimeSeriesNode::onProcessingFinished);
     connect(m_worker, &PSTimeSeriesWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &PSTimeSeriesWorker::errorProcess, this, &PSTimeSeriesNode::onError);
@@ -346,8 +352,14 @@ void PSTimeSeriesNode::onProgressUpdate(int progress, const QString& message)
     }
 }
 
+void PSTimeSeriesNode::onOutputsGenerated(const QStringList& outputPaths)
+{
+    m_generatedOutputPaths = outputPaths;
+}
+
 void PSTimeSeriesNode::onError(const QString& error)
 {
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
     m_worker = nullptr;
     m_thread = nullptr;
     if (discardObsoleteAutomaticExecution()) {
@@ -358,6 +370,11 @@ void PSTimeSeriesNode::onError(const QString& error)
     if (m_resultLabel) {
         m_resultLabel->setText(QStringLiteral("计算出错: ") + error);
     }
+    m_outputData.reset();
+    m_previewData.reset();
+    m_generatedOutputPaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     setState(ExecutionState::Error);
     finishExecution();
 }
@@ -367,15 +384,17 @@ void PSTimeSeriesNode::onCancelled()
     InSARLogManager::LogInfo("PSTimeSeriesNode", "PS time-series cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
 
     m_outputData.reset();
     m_previewData.reset();
+    m_generatedOutputPaths.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
-    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("宸插彇娑?"));
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -386,17 +405,41 @@ void PSTimeSeriesNode::onProcessingFinished()
     m_worker = nullptr;
     m_thread = nullptr;
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic execution"), projectXml());
         return;
     }
 
     InSARLogManager::LogInfo("PSTimeSeriesNode", "executeProcessing completed successfully.");
     
-    QString rawPath = projectPath();
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString outDir = dir + "/" + m_outputNodeName;
-    QString h5Path = outDir + "/PS_time_series.h5";
+    const QString dstNode = m_preparedDstNode;
+    QStringList h5Paths;
+    QString transactionError;
+    if (!projectXml() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+            QStringList() << QStringLiteral("ps_coordinates") << QStringLiteral("deformation_velocity") <<
+                QStringLiteral("temporal_coherence") << QStringLiteral("topographic_residual") <<
+                QStringLiteral("deformation_time_series") << QStringLiteral("mask") <<
+                QStringLiteral("mask_count_map") << QStringLiteral("temporal_baseline"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(
+            m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("PS时序输出验收失败") : transactionError);
+        return;
+    }
+
+    const QString h5Path = h5Paths.value(0);
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode, false, false);
+    projectXml()->XMLFile_add_unwrap(dstNode.toStdString().c_str(), "PS_time_series",
+        QString("/%1/PS_time_series.h5").arg(dstNode).toStdString().c_str(), 0, 0, "PS_TimeSeries", 0);
+    if (!NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputNodeName = dstNode;
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
 
     // 注册生成的数据节点到项目树中
     IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
@@ -406,17 +449,17 @@ void PSTimeSeriesNode::onProcessingFinished()
             QList<QStandardItem*> found = model->findItems(projectName());
             if (!found.isEmpty()) {
                 QStandardItem* projectItem = found.first();
-                NodeUtils::findOrCreateProjectNode(projectItem, m_outputNodeName, "double-1.0");
+                NodeUtils::findOrCreateProjectNode(projectItem, dstNode, "double-1.0");
                 iface->refreshProjectTree();
             }
         }
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+    m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, dstNode);
     setOutputData(0, m_outputData);
     
     if (m_resultLabel) {
-        m_resultLabel->setText(QStringLiteral("时序反演计算成功！结果保存在: ") + m_outputNodeName);
+        m_resultLabel->setText(QStringLiteral("时序反演计算成功！结果保存在: ") + dstNode);
     }
 
     generateStaticPreviewJpg();
@@ -428,13 +471,10 @@ void PSTimeSeriesNode::onProcessingFinished()
 
 bool PSTimeSeriesNode::validateAndRestoreOutput()
 {
-    QString rawPath = projectPath();
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString h5Path = dir + "/" + m_outputNodeName + "/PS_time_series.h5";
-
-    if (QFileInfo::exists(h5Path)) {
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) &&
+        h5Paths.size() == 1) {
+        const QString h5Path = h5Paths.first();
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
         setOutputData(0, m_outputData);
         generateStaticPreviewJpg();
@@ -502,12 +542,10 @@ void PSTimeSeriesNode::generateStaticPreviewJpg()
 
 QStringList PSTimeSeriesNode::previewImagePaths() const
 {
-    QString rawPath = projectPath();
-    QString dir = rawPath.endsWith(".insar", Qt::CaseInsensitive)
-                  ? QFileInfo(rawPath).absolutePath()
-                  : rawPath;
-    QString jpgPath = dir + "/" + m_outputNodeName + "/deformation_velocity.jpg";
     QStringList paths;
+    QStringList h5Paths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) || h5Paths.size() != 1) return paths;
+    const QString jpgPath = QFileInfo(h5Paths.first()).absolutePath() + "/deformation_velocity.jpg";
     if (QFileInfo::exists(jpgPath)) {
         paths << jpgPath;
     }
@@ -591,6 +629,12 @@ QString PSTimeSeriesNode::projectName() const
         return QFileInfo(iface->projectPath()).fileName();
     }
     return QString();
+}
+
+XMLFile* PSTimeSeriesNode::projectXml() const
+{
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    return iface ? iface->projectXml() : nullptr;
 }
 
 void PSTimeSeriesNode::processAutomatically()

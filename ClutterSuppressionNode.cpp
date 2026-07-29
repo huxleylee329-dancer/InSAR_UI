@@ -300,8 +300,6 @@ void ClutterSuppressionNode::executeProcessing()
     QString baseFileName = m_outputFileName.trimmed();
     bool saveToProject = m_saveToProject;
     QString projPath = projectPath();
-    QString projName = projectName();
-    
     QStringList outputPaths;
     QStringList fileNames;
     for (int i = 0; i < inputPaths.size(); ++i) {
@@ -329,13 +327,35 @@ void ClutterSuppressionNode::executeProcessing()
     }
     
     m_savedOutputFiles = fileNames;
+    m_preparedOutputPaths.clear();
+    m_generatedOutputPaths.clear();
+    if (saveToProject) {
+        QString outputRoot = projPath;
+        if (outputRoot.endsWith(".insar", Qt::CaseInsensitive)) {
+            outputRoot = QFileInfo(outputRoot).absolutePath();
+        }
+        for (const QString& fileName : fileNames) {
+            m_preparedOutputPaths.append(QDir(outputRoot).absoluteFilePath(
+                outputNodeName + "/" + QFileInfo(fileName).completeBaseName() + ".png"));
+        }
+
+        QString transactionError;
+        if (!NodeUtils::beginOutputTransaction(outputRoot, outputNodeName, m_preparedOutputPaths,
+                                               inputPaths, m_outputTransaction, &transactionError)) {
+            onError(transactionError);
+            return;
+        }
+        outputPaths.clear();
+        for (const QString& finalPath : m_preparedOutputPaths) {
+            outputPaths.append(QDir(outputRoot).absoluteFilePath(
+                m_outputTransaction.stagingName + "/" + QFileInfo(finalPath).fileName()));
+        }
+    }
     m_outputImagePaths = outputPaths;
 
-    // 清理旧数据，防止反复执行导致数据累加
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), outputNodeName);
-
     m_isExecuting = true;
-    m_task = new BM3DEnhancementTask(EnhancementType::ClutterSuppression, inputPaths, outputPaths, outputNodeName, fileNames, projPath, projName, saveToProject);
+    m_task = new BM3DEnhancementTask(EnhancementType::ClutterSuppression, inputPaths, outputPaths,
+                                     !saveToProject);
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
@@ -345,7 +365,8 @@ void ClutterSuppressionNode::executeProcessing()
     connect(m_task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::cancelled, this, &ClutterSuppressionNode::onCancelled, Qt::QueuedConnection);
     connect(m_task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::saveImageToProjectRequested, this, &ClutterSuppressionNode::onSaveImageToProjectRequested, Qt::QueuedConnection);
+    connect(m_task, &BM3DEnhancementTask::outputsGenerated, this,
+        [this](const QStringList& outputPaths) { m_generatedOutputPaths = outputPaths; }, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
     updateParameterWidgetsEnableState();
@@ -365,26 +386,59 @@ void ClutterSuppressionNode::onProcessingFinished()
     m_task = nullptr;
     m_isExecuting = false;
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
+        m_outputData.reset();
+        m_outputImagePaths.clear();
+        m_generatedOutputPaths.clear();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         return;
     }
 
     if (m_saveToProject) {
-        m_outputImagePaths.clear();
-        
-        QString nodeName = m_outputNodeName.trimmed();
-        if (nodeName.isEmpty()) nodeName = "ClutterSuppression";
-        
-        QString projDirStr = projectPath();
-        if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
-            projDirStr = QFileInfo(projDirStr).absolutePath();
+        QString transactionError;
+        QStringList finalPaths;
+        if (!projectXml() ||
+            !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+            !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+            !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+            !NodeUtils::prepareOutputTransactionMetadataCommit(
+                m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+            onError(transactionError.isEmpty()
+                        ? QStringLiteral("Clutter suppression output transaction validation failed.")
+                        : transactionError);
+            return;
         }
-        
-        for (int i = 0; i < m_savedOutputFiles.size(); ++i) {
-            QString finalFileName = m_savedOutputFiles[i];
-            if (!finalFileName.endsWith(".png", Qt::CaseInsensitive)) {
-                finalFileName += ".png";
+
+        auto* iface = NodeUtils::getProjectContext(_widget);
+        const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("ClutterSuppression") : m_outputNodeName.trimmed();
+        NodeUtils::removeDataNodeFromProject(iface, nodeName, false, false);
+        for (int i = 0; i < finalPaths.size(); ++i) {
+            const QString relativePath = QString("/%1/%2").arg(nodeName, QFileInfo(finalPaths[i]).fileName());
+            if (projectXml()->XMLFile_add_origin(nodeName.toStdString().c_str(),
+                                                 m_savedOutputFiles[i].toStdString().c_str(),
+                                                 relativePath.toStdString().c_str(),
+                                                 "ClutterSuppression") < 0) {
+                onError(QStringLiteral("Unable to update clutter suppression project metadata."));
+                return;
             }
-            m_outputImagePaths.append(projDirStr + "/" + nodeName + "/" + finalFileName);
+        }
+        if (!NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+            !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+            onError(transactionError.isEmpty()
+                        ? QStringLiteral("Clutter suppression output metadata was not produced.")
+                        : transactionError);
+            return;
+        }
+        NodeUtils::removeDataNodeFromProjectTree(iface, nodeName);
+        publishResultsToProjectTree(m_savedOutputFiles, finalPaths);
+        m_outputImagePaths = finalPaths;
+    } else {
+        m_outputImagePaths = m_generatedOutputPaths;
+        if (m_outputImagePaths.isEmpty()) {
+            onError(QStringLiteral("BM3D处理未生成可发布的输出。"));
+            return;
         }
     }
 
@@ -403,6 +457,12 @@ void ClutterSuppressionNode::onError(const QString& error)
 {
     m_task = nullptr;
     m_isExecuting = false;
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_generatedOutputPaths.clear();
+    m_outputData.reset();
+    m_outputImagePaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -413,94 +473,49 @@ void ClutterSuppressionNode::onError(const QString& error)
     m_isExecuting = false;
     updateParameterWidgetsEnableState();
 
-    m_outputData.reset();
-    m_outputImagePaths.clear();
-    setOutputData(0, nullptr);
-    setOutputData(1, nullptr);
 }
 
 void ClutterSuppressionNode::onCancelled()
 {
     m_task = nullptr;
     m_isExecuting = false;
-    if (discardObsoleteAutomaticExecution()) {
-        return;
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+    if (!m_saveToProject) {
+        for (const QString& outputPath : m_outputImagePaths) QFile::remove(outputPath);
     }
-
-    for (const QString& outputPath : m_outputImagePaths) QFile::remove(outputPath);
-    if (m_saveToProject) {
-        const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("ClutterSuppression") : m_outputNodeName.trimmed();
-        QString outputRoot = projectPath();
-        if (outputRoot.endsWith(".insar", Qt::CaseInsensitive)) {
-            outputRoot = QFileInfo(outputRoot).absolutePath();
-        }
-        QDir(outputRoot + "/" + nodeName).removeRecursively();
-    }
-    NodeUtils::removeDataNodeFromProject(
-        NodeUtils::getProjectContext(_widget),
-        m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("ClutterSuppression") : m_outputNodeName.trimmed());
     m_outputImagePaths.clear();
     m_outputData.reset();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
     updateParameterWidgetsEnableState();
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
 }
 
-void ClutterSuppressionNode::onSaveImageToProjectRequested(
-    const QString& projectName,
-    const QString& nodeName,
-    const QString& displayName,
-    const QString& finalPath,
-    const QString& tag,
-    const QString& finalFileName
-)
+void ClutterSuppressionNode::publishResultsToProjectTree(const QStringList& outputNames,
+                                                         const QStringList& outputPaths)
 {
-    if (isAutomaticExecutionObsolete()) return;
-
     QStandardItemModel* model = projectModel();
     if (!model) return;
 
-    QStandardItem* projectItem = model->findItems(projectName).isEmpty() ? nullptr : model->findItems(projectName).first();
+    QStandardItem* projectItem = model->findItems(projectName()).isEmpty() ? nullptr : model->findItems(projectName()).first();
     if (!projectItem) return;
 
-    QStandardItem* dataNode = nullptr;
-    for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 0)->text() == nodeName) {
-            dataNode = projectItem->child(i, 0);
-            break;
-        }
-    }
-    if (!dataNode) {
-        dataNode = new QStandardItem(nodeName);
-        dataNode->setIcon(QIcon(FOLDER_ICON));
-        projectItem->appendRow(dataNode);
-    }
+    const QString nodeName = m_outputNodeName.trimmed().isEmpty() ? QStringLiteral("ClutterSuppression") : m_outputNodeName.trimmed();
 
-    QStandardItem* item_img = nullptr;
-    for (int j = 0; j < dataNode->rowCount(); j++) {
-        if (dataNode->child(j, 0)->text() == displayName) {
-            item_img = dataNode->child(j, 0);
-            break;
-        }
-    }
-
-    if (!item_img) {
-        QStandardItem* nameItem = new QStandardItem(displayName);
+    QStandardItem* dataNode = new QStandardItem(nodeName);
+    dataNode->setIcon(QIcon(FOLDER_ICON));
+    projectItem->appendRow(dataNode);
+    for (int i = 0; i < outputPaths.size(); ++i) {
+        QStandardItem* nameItem = new QStandardItem(outputNames[i]);
         nameItem->setIcon(QIcon(IMAGEDATA_ICON));
         nameItem->setToolTip(QStringLiteral("image"));
-        QStandardItem* pathItem = new QStandardItem(finalPath);
+        QStandardItem* pathItem = new QStandardItem(outputPaths[i]);
         dataNode->appendRow({ nameItem, pathItem });
-
-        // Update XML for persistence
-        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-            QString relativePath = "/" + nodeName + "/" + finalFileName;
-            NodeUtils::addOriginNodeToProjectXml(iface, nodeName, displayName, relativePath, tag);
-        }
-    } else {
-        dataNode->setChild(item_img->row(), 1, new QStandardItem(finalPath));
     }
 
     // Refresh tree
@@ -525,6 +540,12 @@ QString ClutterSuppressionNode::projectName() const
 {
     auto* iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectName() : QString();
+}
+
+XMLFile* ClutterSuppressionNode::projectXml() const
+{
+    auto* iface = NodeUtils::getProjectContext(_widget);
+    return iface ? iface->projectXml() : nullptr;
 }
 
 QJsonObject ClutterSuppressionNode::save() const
@@ -615,66 +636,26 @@ bool ClutterSuppressionNode::validateAndRestoreOutput()
     if (nodeName.isEmpty())
         return false;
 
-    QString projDirStr = projectPath();
-    if (projDirStr.endsWith(".insar", Qt::CaseInsensitive)) {
-        projDirStr = QFileInfo(projDirStr).absolutePath();
+    QString outputRoot = projectPath();
+    if (outputRoot.endsWith(".insar", Qt::CaseInsensitive)) {
+        outputRoot = QFileInfo(outputRoot).absolutePath();
     }
-
-    if (!m_savedOutputFiles.isEmpty()) {
-        QStringList validPaths;
-        for (const QString& fileName : m_savedOutputFiles) {
-            QString finalFileName = fileName;
-            if (!finalFileName.endsWith(".png", Qt::CaseInsensitive)) {
-                finalFileName += ".png";
-            }
-            QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
-            if (QFile::exists(outputPath)) {
-                validPaths.append(outputPath);
-            }
-        }
-
-        if (!validPaths.isEmpty() && validPaths.size() == m_savedOutputFiles.size()) {
-            m_outputImagePaths = validPaths;
-            m_outputData = std::make_shared<ImageInfoData>(validPaths);
-            setOutputData(0, m_outputData);
-            setOutputData(1, m_outputData);
-            Q_EMIT dataUpdated(0);
-            Q_EMIT dataUpdated(1);
-            return true;
-        }
-    }
-
-    QString finalFileName;
-    if (m_outputFileName.isEmpty()) {
+    QStringList outputPaths;
+    if (!NodeUtils::loadCommittedOutputManifest(outputRoot, nodeName, outputPaths)) {
         return false;
-    } else {
-        QString resolvedFileName = m_outputFileName;
-        if (m_inputData && !m_inputData->filePaths().isEmpty()) {
-            QString originalName = QFileInfo(m_inputData->filePaths().first()).baseName();
-            QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
-            resolvedFileName.replace(re, originalName);
-        }
-        if (QFileInfo(resolvedFileName).suffix().isEmpty()) {
-            finalFileName = resolvedFileName + ".png";
-        } else {
-            finalFileName = resolvedFileName;
-        }
     }
 
-    QString outputPath = projDirStr + "/" + nodeName + "/" + finalFileName;
-
-    if (QFile::exists(outputPath)) {
-        m_outputImagePaths.clear();
-        m_outputImagePaths.append(outputPath);
-        m_outputData = std::make_shared<ImageInfoData>(QStringList() << outputPath);
-        setOutputData(0, m_outputData);
-        setOutputData(1, m_outputData);
-        Q_EMIT dataUpdated(0);
-        Q_EMIT dataUpdated(1);
-        return true;
+    m_outputImagePaths = outputPaths;
+    m_savedOutputFiles.clear();
+    for (const QString& outputPath : outputPaths) {
+        m_savedOutputFiles.append(QFileInfo(outputPath).completeBaseName());
     }
-
-    return false;
+    m_outputData = std::make_shared<ImageInfoData>(outputPaths);
+    setOutputData(0, m_outputData);
+    setOutputData(1, m_outputData);
+    Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
+    return true;
 }
 
 void ClutterSuppressionNode::updateParameterWidgetsEnableState()

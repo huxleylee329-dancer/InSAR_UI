@@ -20,20 +20,12 @@ BM3DEnhancementTask::BM3DEnhancementTask(
     EnhancementType type,
     QStringList inputPaths,
     QStringList outputPaths,
-    QString nodeName,
-    QStringList fileNames,
-    QString projectPath,
-    QString projectName,
-    bool saveToProject
+    bool allowSkipOnError
 )
     : m_type(type)
     , m_inputPaths(inputPaths)
     , m_outputPaths(outputPaths)
-    , m_nodeName(nodeName)
-    , m_fileNames(fileNames)
-    , m_projectPath(projectPath)
-    , m_projectName(projectName)
-    , m_saveToProject(saveToProject)
+    , m_allowSkipOnError(allowSkipOnError)
     , m_stopFlag(false)
 {
 }
@@ -87,6 +79,12 @@ bool BM3DEnhancementTask::waitForErrorDecision(const QString& errorMessage, bool
 
 void BM3DEnhancementTask::run()
 {
+    if (m_inputPaths.isEmpty() || m_inputPaths.size() != m_outputPaths.size()) {
+        emit errorProcess(QStringLiteral("BM3D input and output paths are inconsistent."));
+        return;
+    }
+
+    QStringList generatedOutputPaths;
     for (int i = 0; i < m_inputPaths.size(); ++i) {
         if (isStopped()) {
             emit cancelled();
@@ -97,9 +95,7 @@ void BM3DEnhancementTask::run()
         int progressStep = 100 / m_inputPaths.size();
         QString outError;
         bool ok = processBM3DEnhancement(
-            m_inputPaths[i], m_outputPaths[i], m_nodeName,
-            m_fileNames.isEmpty() ? QString() : m_fileNames[i],
-            m_projectPath, m_projectName, m_saveToProject, outError, baseProgress, progressStep
+            m_inputPaths[i], m_outputPaths[i], outError, baseProgress, progressStep
         );
 
         if (isStopped()) {
@@ -108,17 +104,27 @@ void BM3DEnhancementTask::run()
         }
 
         if (!ok) {
-            QString msg = QStringLiteral("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(QFileInfo(m_inputPaths[i]).fileName(), outError);
+            const QString failedFile = QFileInfo(m_inputPaths[i]).fileName();
+            if (!m_allowSkipOnError) {
+                const QString error = QStringLiteral("批处理在 %1 处停止: %2").arg(failedFile, outError);
+                InSARLogManager::LogError("BM3DEnhancementTask", error);
+                emit errorProcess(error);
+                return;
+            }
+
+            QString msg = QStringLiteral("处理 %1 时发生错误: %2\n是否跳过并继续处理其余文件？").arg(failedFile, outError);
             bool skip = false;
             if (!waitForErrorDecision(msg, skip)) {
                 emit cancelled();
                 return;
             }
             if (!skip) {
-                InSARLogManager::LogError("BM3DEnhancementTask", QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
-                emit errorProcess(QStringLiteral("批处理在 %1 处停止").arg(QFileInfo(m_inputPaths[i]).fileName()));
+                InSARLogManager::LogError("BM3DEnhancementTask", QStringLiteral("批处理在 %1 处停止").arg(failedFile));
+                emit errorProcess(QStringLiteral("批处理在 %1 处停止").arg(failedFile));
                 return;
             }
+        } else {
+            generatedOutputPaths.append(m_outputPaths[i]);
         }
 
         int overallProgress = (i + 1) * 100 / m_inputPaths.size();
@@ -130,38 +136,25 @@ void BM3DEnhancementTask::run()
         return;
     }
 
+    emit outputsGenerated(generatedOutputPaths);
     emit endProcess();
 }
 
 bool BM3DEnhancementTask::processBM3DEnhancement(
     QString inputPath,
     QString outputPath,
-    QString nodeName,
-    QString fileName,
-    QString projectPath,
-    QString projectName,
-    bool saveToProject,
     QString& outError,
     int baseProgress,
     int progressStep
 )
 {
     // 根据增强类型动态配置
-    QString tag;
     QString processMsg;
-    QString suffix;
-    QString defaultDisplay;
 
     if (m_type == EnhancementType::SpeckleDenoise) {
-        tag = "SpeckleDenoise";
         processMsg = QStringLiteral("执行BM3D去噪 (可能耗时较长)...");
-        suffix = "_denoised.png";
-        defaultDisplay = QStringLiteral("denoised");
     } else { // ClutterSuppression
-        tag = "ClutterSuppression";
         processMsg = QStringLiteral("执行BM3D去杂波 (可能耗时较长)...");
-        suffix = "_clutter.png";
-        defaultDisplay = QStringLiteral("clutter_suppressed");
     }
 
     emit updateProcess(baseProgress + progressStep * 0.0, QStringLiteral("加载图像..."));
@@ -195,43 +188,13 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
         return false;
     }
 
-    if (saveToProject) {
-        QString projDirStr = projectPath;
-        if (projectPath.endsWith(".insar", Qt::CaseInsensitive)) {
-            projDirStr = QFileInfo(projectPath).absolutePath();
-        }
-
-        QDir dir(projDirStr);
-        if (!dir.exists(nodeName)) {
-            dir.mkdir(nodeName);
-        }
-
-        QString finalFileName;
-        if (fileName.isEmpty()) {
-            finalFileName = QFileInfo(inputPath).baseName() + suffix;
-        } else {
-            if (QFileInfo(fileName).suffix().isEmpty()) {
-                finalFileName = fileName + ".png";
-            } else {
-                finalFileName = fileName;
-            }
-        }
-        QString finalPath = projDirStr + "/" + nodeName + "/" + finalFileName;
-        cv::imwrite(finalPath.toStdString(), output8U);
-        if (isStopped()) {
-            QFile::remove(finalPath);
-            return false;
-        }
-
-        QString displayName = fileName.isEmpty() ? defaultDisplay : fileName;
-
-        emit saveImageToProjectRequested(projectName, nodeName, displayName, finalPath, tag, finalFileName);
-    } else {
-        cv::imwrite(outputPath.toStdString(), output8U);
-        if (isStopped()) {
-            QFile::remove(outputPath);
-            return false;
-        }
+    if (!cv::imwrite(outputPath.toStdString(), output8U)) {
+        outError = QStringLiteral("无法保存处理结果");
+        return false;
+    }
+    if (isStopped()) {
+        QFile::remove(outputPath);
+        return false;
     }
 
     emit updateProcess(100, QStringLiteral("处理完成"));

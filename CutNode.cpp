@@ -19,7 +19,9 @@
 #include <QJsonArray>
 #include <QImage>
 #include <QSet>
+#include <QSettings>
 #include <QtGlobal>
+#include <cmath>
 #include "InSARLogManager.h"
 #include <Utils.h>
 #include <FormatConversion.h>
@@ -46,11 +48,24 @@ CutNode::CutNode()
 
 CutNode::~CutNode()
 {
+    NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                        QStringLiteral("CutNode destroyed"), projectXml());
+    if (m_thread && m_thread->parent() == this) {
+        // A timed-out worker must not remain a child deleted by this destructor.
+        m_thread->setParent(nullptr);
+    }
+    if (m_worker) {
+        m_worker->disconnect(this);
+        m_worker->StopProcess();
+    }
     if (m_thread) {
         if (m_thread->isRunning()) {
             m_thread->requestInterruption();
             m_thread->quit();
-            m_thread->wait(5000);
+            if (!m_thread->wait(5000)) {
+                InSARLogManager::LogWarning("CutNode",
+                    "Worker thread did not stop within destructor timeout; deferred deletion remains connected.");
+            }
         }
         m_thread = nullptr;
     }
@@ -620,32 +635,34 @@ void CutNode::executeProcessing()
         }
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        if (!NodeUtils::removeOutputFiles(m_preparedOutputPaths)) {
-            InSARLogManager::LogError("CutNode", "Failed to clean up old output files. Execution aborted.");
-            Q_EMIT executionError(QStringLiteral("无法清理旧输出文件，文件可能已被其他程序占用。"));
-            setState(ExecutionState::Error);
-            return;
-        }
+    setProgress(0);
+    m_generatedOutputPaths.clear();
+    m_generatedOutputNames.clear();
+    m_generatedOffsetRows.clear();
+    m_generatedOffsetCols.clear();
+    m_generatedMasterIndexes.clear();
+    m_generatedRanks.clear();
+    m_generatedCropParameters.clear();
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedProjDir, m_preparedDstNodeName,
+                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
     }
 
-    setProgress(0);
-    m_outputPaths = m_preparedOutputPaths;
-
     m_executionTimer.start();
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNodeName);
-
     // Instantiate thread and worker
     m_worker = new CutWorker();
     m_thread = new QThread; // 不设parent，由析构函数显式管理
     m_worker->moveToThread(m_thread);
 
     QString srcNodeName = m_inputData->nodeName();
-    QString dstNodeName = m_preparedDstNodeName;
+    QString dstNodeName = m_outputTransaction.stagingName;
     QString projDir = m_preparedProjDir;
     QString projName = m_preparedProjName;
     QStandardItemModel* model = m_preparedModel;
-    QStringList inputPaths = resolvedInputH5Paths();
+    QStringList inputPaths = m_preparedInputPaths;
 
     // Resolve the project tree node and source data rank on the GUI thread.
     QStandardItem* project = nullptr;
@@ -669,14 +686,6 @@ void CutNode::executeProcessing()
         }
         if (src_node_index >= 0) {
             src_data_rank = project->child(src_node_index, 1)->text();
-        }
-    }
-
-    QStandardItem* Images_Cut = nullptr;
-    if (project) {
-        Images_Cut = NodeUtils::findOrCreateProjectNode(project, dstNodeName, m_mode == 1 ? "complex-1.0" : src_data_rank);
-        if (Images_Cut) {
-            Images_Cut->setToolTip(projName);
         }
     }
 
@@ -707,56 +716,23 @@ void CutNode::executeProcessing()
     connect(m_worker, &CutWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &CutWorker::cancelled, m_thread, &QThread::quit);
 
-    // Update the project tree and XML only from the GUI thread.
+    // Cache worker metadata; XML and tree publication occur only after commit.
     connect(m_worker, &CutWorker::fileCropped, this, [=](QString cutName, QString fullPath, int offsetRow, int offsetCol, int masterIdx, QString rank, QList<double> cPara) {
-        if (!Images_Cut) return;
-        QStandardItem* item_img = nullptr;
-        for (int j = 0; j < Images_Cut->rowCount(); j++)
-        {
-            if (Images_Cut->child(j, 0)->text() == cutName)
-            {
-                item_img = Images_Cut->child(j, 0);
-                break;
-            }
-        }
-
-        if (!item_img)
-        {
-            QStandardItem* Image_Cut_Name = new QStandardItem(cutName);
-            QStandardItem* Image_Cut_Path = new QStandardItem(fullPath);
-            Image_Cut_Name->setIcon(QIcon(IMAGEDATA_ICON));
-            Images_Cut->appendRow(Image_Cut_Name);
-            Image_Cut_Name->setToolTip("complex");
-            Images_Cut->setChild(Images_Cut->rowCount() - 1, 1, Image_Cut_Path);
-
-            QByteArray dir_name = dstNodeName.toLocal8Bit();
-            QByteArray filename = cutName.toLocal8Bit();
-            QByteArray file_relative_path = QString("/%1/%2.h5").arg(dstNodeName).arg(cutName).toLocal8Bit();
-
-            if (cPara.size() == 4) {
-                doc->XMLFile_add_cut(dir_name.data(), -1, filename.data(),
-                    file_relative_path.data(),
-                    offsetRow, offsetCol, cPara.at(0), cPara.at(1),
-                    cPara.at(2), cPara.at(3), "complex-1.0");
-            } else {
-                doc->XMLFile_add_cut(dir_name.data(), masterIdx, filename.data(),
-                    file_relative_path.data(),
-                    offsetRow, offsetCol, 0, 0, 0, 0, rank.toStdString().c_str());
-            }
-        }
-        else
-        {
-            Images_Cut->setChild(item_img->row(), 1, new QStandardItem(fullPath));
-        }
+        m_generatedOutputNames.append(cutName);
+        m_generatedOutputPaths.append(fullPath);
+        m_generatedOffsetRows.append(offsetRow);
+        m_generatedOffsetCols.append(offsetCol);
+        m_generatedMasterIndexes.append(masterIdx);
+        m_generatedRanks.append(rank);
+        m_generatedCropParameters.append(cPara);
     }, Qt::QueuedConnection);
 
     // Persist XML and refresh the project tree before publishing node outputs.
     connect(m_worker, &CutWorker::endProcess, this, [=]() {
-        doc->XMLFile_save(file_abs_path.data());
-        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-            iface->refreshProjectTree();
-        }
         onProcessingFinished();
+    }, Qt::QueuedConnection);
+    connect(m_worker, &CutWorker::outputsGenerated, this, [this](const QStringList& paths) {
+        m_generatedOutputPaths = paths;
     }, Qt::QueuedConnection);
 
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
@@ -781,14 +757,14 @@ void CutNode::executeProcessing()
         QMetaObject::invokeMethod(m_worker, [=]() {
             m_worker->Cut(para, projDir,
                           projName.endsWith(".insar", Qt::CaseInsensitive) ? projName : projName + ".insar",
-                          srcNodeName, dstNodeName, inputPaths, QString("complex-1.0"));
+                          srcNodeName, dstNodeName, inputPaths, QString("complex-1.0"), true);
         }, Qt::QueuedConnection);
     } else { // Auto center (0) and Box selection (2) crop via Cut2
         QMetaObject::invokeMethod(m_worker, [=]() {
             m_worker->Cut2(m_left, m_right, m_top, m_bottom,
                            projDir,
                            projName.endsWith(".insar", Qt::CaseInsensitive) ? projName : projName + ".insar",
-                           srcNodeName, dstNodeName, inputPaths, src_data_rank, master_index);
+                           srcNodeName, dstNodeName, inputPaths, src_data_rank, master_index, true);
         }, Qt::QueuedConnection);
     }
 
@@ -814,13 +790,31 @@ void CutNode::stopExecution()
         }
     }
 
-    if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
+    if (m_worker || m_thread) {
+        if (m_worker) {
+            m_worker->disconnect(this);
+            m_worker->StopProcess();
+        }
+        if (m_thread && m_thread->isRunning()) {
+            m_thread->requestInterruption();
+        }
+        cleanUpThreadAndWorker();
     }
-    cleanUpThreadAndWorker();
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
     m_isExecuting = false;
-    setState(ExecutionState::Idle);
+    m_outputData.reset();
+    m_previewData.reset();
+    m_outputPaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
+    updateParameterWidgetsEnableState();
 }
 
 void CutNode::onProgressUpdate(int progress, const QString& message)
@@ -836,7 +830,15 @@ void CutNode::onProcessingFinished()
 {
     m_isExecuting = false;
     releaseFinishedThreadAndWorker();
-    if (discardObsoleteAutomaticExecution()) {
+    if (isAutomaticExecutionObsolete()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
+        m_outputData.reset();
+        m_previewData.reset();
+        m_outputPaths.clear();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
+        discardObsoleteAutomaticExecution();
         return;
     }
 
@@ -848,30 +850,82 @@ void CutNode::onProcessingFinished()
                                   QStringLiteral("worker_finished"), QStringLiteral("running"),
                                   m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
 
-    QString dstNodeName = m_outputNodeName.trimmed();
-    QStringList invalidH5Paths;
-    for (const QString& path : m_outputPaths) {
-        const QFileInfo fileInfo(path);
-        if (!fileInfo.exists() || fileInfo.size() <= 0) {
-            invalidH5Paths.append(path);
-        }
-    }
-    if (!invalidH5Paths.isEmpty()) {
-        const QString error = QStringLiteral("裁剪输出产物校验失败：%1")
-                                  .arg(invalidH5Paths.join(QStringLiteral(", ")));
-        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelError, "CutNode", error,
-                                      LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
-                                      QStringLiteral("artifact_validated"), QStringLiteral("failed"),
-                                      m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-        m_outputData.reset();
-        m_previewData.reset();
-        setOutputData(0, nullptr);
-        setOutputData(1, nullptr);
-        setState(ExecutionState::Error);
-        Q_EMIT executionError(error);
-        updateParameterWidgetsEnableState();
+    QString dstNodeName = m_preparedDstNodeName;
+    QStringList finalPaths;
+    QString transactionError;
+    if (m_generatedOutputPaths.isEmpty() ||
+        m_generatedOutputPaths.size() != m_preparedOutputPaths.size() ||
+        m_generatedOutputNames.size() != m_generatedOutputPaths.size() ||
+        m_generatedOutputPaths.size() != m_generatedOffsetRows.size() ||
+        m_generatedOutputPaths.size() != m_generatedOffsetCols.size() ||
+        m_generatedOutputPaths.size() != m_generatedMasterIndexes.size() ||
+        m_generatedOutputPaths.size() != m_generatedRanks.size() ||
+        m_generatedOutputPaths.size() != m_generatedCropParameters.size()) {
+        onError(QStringLiteral("裁剪 Worker 未返回完整输出结果。"));
         return;
     }
+    for (int i = 0; i < m_generatedOutputPaths.size(); ++i) {
+        if (QFileInfo(m_generatedOutputPaths[i]).fileName() != QFileInfo(m_preparedOutputPaths[i]).fileName() ||
+            m_generatedOutputNames[i] != QFileInfo(m_preparedOutputPaths[i]).completeBaseName()) {
+            onError(QStringLiteral("裁剪 Worker 输出名称与事务清单不一致。"));
+            return;
+        }
+    }
+    if (!projectXml() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+            QStringList() << QStringLiteral("s_re") << QStringLiteral("s_im"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, projectXml(),
+            NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        const QString error = transactionError.isEmpty()
+            ? QStringLiteral("裁剪输出事务校验失败。") : transactionError;
+        onError(error);
+        return;
+    }
+
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNodeName, false, false);
+    for (int i = 0; i < finalPaths.size(); ++i) {
+        const QString relativePath = QString("/%1/%2").arg(dstNodeName, QFileInfo(finalPaths[i]).fileName());
+        const QList<double>& cropParameters = m_generatedCropParameters[i];
+        if (cropParameters.size() == 4) {
+            projectXml()->XMLFile_add_cut(dstNodeName.toStdString().c_str(), -1,
+                m_generatedOutputNames[i].toStdString().c_str(), relativePath.toStdString().c_str(),
+                m_generatedOffsetRows[i], m_generatedOffsetCols[i], cropParameters[0], cropParameters[1],
+                cropParameters[2], cropParameters[3], "complex-1.0");
+        } else {
+            projectXml()->XMLFile_add_cut(dstNodeName.toStdString().c_str(), m_generatedMasterIndexes[i],
+                m_generatedOutputNames[i].toStdString().c_str(), relativePath.toStdString().c_str(),
+                m_generatedOffsetRows[i], m_generatedOffsetCols[i], 0, 0, 0, 0,
+                m_generatedRanks[i].toStdString().c_str());
+        }
+    }
+    if (!NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        const QString error = transactionError.isEmpty()
+            ? QStringLiteral("裁剪输出元数据提交失败。") : transactionError;
+        onError(error);
+        return;
+    }
+
+    if (QStandardItemModel* model = m_preparedModel) {
+        const QList<QStandardItem*> projects = model->findItems(m_preparedProjName);
+        if (!projects.isEmpty()) {
+            QStandardItem* projectItem = projects.first();
+            for (int row = projectItem->rowCount() - 1; row >= 0; --row) {
+                QStandardItem* nodeItem = projectItem->child(row, 0);
+                if (nodeItem && nodeItem->text() == dstNodeName) projectItem->removeRow(row);
+            }
+            const QString rank = m_mode == 1 ? QStringLiteral("complex-1.0") : m_generatedRanks.value(0);
+            QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(projectItem, dstNodeName, rank);
+            for (int i = 0; outputNode && i < finalPaths.size(); ++i) {
+                NodeUtils::findOrCreateChildItem(outputNode, m_generatedOutputNames[i], "complex", finalPaths[i], IMAGEDATA_ICON);
+            }
+            if (auto* iface = NodeUtils::getProjectContext(_widget)) iface->refreshProjectTree();
+        }
+    }
+    m_outputPaths = finalPaths;
 
     InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug, "CutNode",
                                    QStringLiteral("裁剪输出产物校验通过。"),
@@ -1028,6 +1082,13 @@ void CutNode::onError(const QString& error)
 {
     m_isExecuting = false;
     releaseFinishedThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+
+    m_outputData.reset();
+    m_previewData.reset();
+    m_outputPaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -1044,14 +1105,19 @@ void CutNode::onError(const QString& error)
 
     updateParameterWidgetsEnableState();
 
-    m_outputData.reset();
-    m_previewData.reset();
 }
 
 void CutNode::onCancelled()
 {
     m_isExecuting = false;
     releaseFinishedThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+
+    m_outputData.reset();
+    m_previewData.reset();
+    m_outputPaths.clear();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -1084,48 +1150,24 @@ void CutNode::onModelUpdated(QStandardItemModel* model)
 
 bool CutNode::validateAndRestoreOutput()
 {
-        QString nodeName = m_outputNodeName.trimmed();
+    const QString nodeName = m_outputNodeName.trimmed();
     if (nodeName.isEmpty()) return false;
 
     QString projDir = projectPath();
     if (projDir.endsWith(".insar", Qt::CaseInsensitive)) {
         projDir = QFileInfo(projDir).absolutePath();
     }
+    if (projDir.isEmpty()) return false;
 
     QStringList expectedH5Paths;
     QStringList expectedJpgPaths;
-
-    if (!m_outputPaths.isEmpty()) {
-        // m_outputPaths已有完整路径（执行后保存的），直接使用
-                for (const QString& path : m_outputPaths) {
-            QString outPath = path;
-            if (!outPath.endsWith(".h5", Qt::CaseInsensitive)) outPath += ".h5";
-            expectedH5Paths.append(outPath);
-            expectedJpgPaths.append(QFileInfo(outPath).absolutePath() + "/" + QFileInfo(outPath).baseName() + ".jpg");
-        }
-    } else if (!m_savedOutputFileNames.isEmpty() && !projDir.isEmpty()) {
-        // load时projDir不可用，现在可用，从保存的文件名重建路径
-        for (const auto& fn : m_savedOutputFileNames) {
-            expectedH5Paths.append(projDir + "/" + nodeName + "/" + fn);
-            expectedJpgPaths.append(projDir + "/" + nodeName + "/" + QFileInfo(fn).baseName() + ".jpg");
-        }
-    } else if (m_inputData && !projDir.isEmpty()) {
-        for (const QString& path : resolvedInputH5Paths()) {
-            QString origName = QFileInfo(path).baseName();
-            QString outBase = origName + (m_mode == 1 ? "_cut" : "_cut2");
-            expectedH5Paths.append(projDir + "/" + nodeName + "/" + outBase + ".h5");
-            expectedJpgPaths.append(projDir + "/" + nodeName + "/" + outBase + ".jpg");
-        }
-    } else {
+    if (!NodeUtils::loadCommittedOutputManifest(projDir, nodeName, expectedH5Paths)) {
         return false;
     }
-
-    // Verify files exist
-    for (const QString& path : expectedH5Paths) {
-        if (!QFile::exists(path)) return false;
-    }
-
     m_outputPaths = expectedH5Paths;
+    for (const QString& path : expectedH5Paths) {
+        expectedJpgPaths.append(QFileInfo(path).absolutePath() + "/" + QFileInfo(path).baseName() + ".jpg");
+    }
 
     // Remedy JPG previews if missing
     QStringList missingH5s;
@@ -1217,187 +1259,6 @@ bool CutNode::validateAndRestoreOutput()
         m_outputData = std::make_shared<ImportedFileData>(expectedH5Paths, nodeName);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
-
-    
-    // Rebuild project tree node
-    QStandardItemModel* projModelPtr = projectModel();
-    if (projModelPtr) {
-        QList<QStandardItem*> foundProjects = projModelPtr->findItems(projectName());
-        if (!foundProjects.isEmpty()) {
-            QStandardItem* projectItem = foundProjects.first();
-
-            QStandardItem* cutNodeItem = nullptr;
-            for (int i = 0; i < projectItem->rowCount(); i++) {
-                if (projectItem->child(i, 0)->text() == nodeName) {
-                    cutNodeItem = projectItem->child(i, 0);
-                    break;
-                }
-            }
-
-            if (!cutNodeItem) {
-                cutNodeItem = new QStandardItem(nodeName);
-                cutNodeItem->setToolTip(projectName());
-                int insert = 0;
-                for (; insert < projectItem->rowCount(); insert++) {
-                    if (projectItem->child(insert, 1)->text().compare("complex-0.0") == 0 ||
-                        projectItem->child(insert, 1)->text().compare("complex-1.0") == 0)
-                        continue;
-                    else
-                        break;
-                }
-                cutNodeItem->setIcon(QIcon(FOLDER_ICON));
-                projectItem->insertRow(insert, cutNodeItem);
-
-                QString rank = "complex-1.0";
-                if (m_inputData && m_inputData->filePaths().size() > 0) {
-                    for (int i = 0; i < projectItem->rowCount(); i++) {
-                        if (projectItem->child(i, 0)->text() == m_inputData->nodeName()) {
-                            rank = projectItem->child(i, 1)->text();
-                            break;
-                        }
-                    }
-                }
-                QStandardItem* cutRank = new QStandardItem(rank);
-                projectItem->setChild(insert, 1, cutRank);
-            }
-
-            for (const QString& h5Path : expectedH5Paths) {
-                QFileInfo fileinfo(h5Path);
-                QString cut_img_name = fileinfo.baseName();
-
-                QStandardItem* item_img = nullptr;
-                for (int j = 0; j < cutNodeItem->rowCount(); j++) {
-                    if (cutNodeItem->child(j, 0)->text() == cut_img_name) {
-                        item_img = cutNodeItem->child(j, 0);
-                        break;
-                    }
-                }
-
-                if (!item_img) {
-                    QStandardItem* cut_images_name = new QStandardItem(cut_img_name);
-                    cut_images_name->setToolTip("complex");
-                    QStandardItem* cut_images_path = new QStandardItem(fileinfo.absoluteFilePath());
-                    cut_images_name->setIcon(QIcon(IMAGEDATA_ICON));
-                    cutNodeItem->appendRow(cut_images_name);
-                    cutNodeItem->setChild(cutNodeItem->rowCount() - 1, 1, cut_images_path);
-                } else {
-                    cutNodeItem->setChild(item_img->row(), 1, new QStandardItem(fileinfo.absoluteFilePath()));
-                }
-            }
-        }
-    }
-
-    // Native XML self-healing
-    XMLFile* xml = projectXml();
-    if (xml) {
-        TiXmlElement* root = nullptr;
-        xml->get_root(root);
-        if (root) {
-            bool dataNodeExists = false;
-            for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement()) {
-                const char* nameAttr = p->Attribute("name");
-                if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == nodeName) {
-                    dataNodeExists = true;
-                    break;
-                }
-            }
-
-            if (!dataNodeExists && m_inputData) {
-                QStringList inputPaths = resolvedInputH5Paths();
-                TiXmlElement* dataNodeElem = new TiXmlElement("DataNode");
-                dataNodeElem->SetAttribute("name", nodeName.toStdString().c_str());
-                dataNodeElem->SetAttribute("data_count", QString::number(inputPaths.size()).toStdString().c_str());
-                dataNodeElem->SetAttribute("data_processing", "cut");
-
-                QString rank = "complex-1.0";
-                TiXmlElement* srcNodeElem = nullptr;
-                if (xml->find_node_with_attribute("DataNode", "name", m_inputData->nodeName().toStdString().c_str(), srcNodeElem) == 0 && srcNodeElem) {
-                    const char* srcRank = srcNodeElem->Attribute("rank");
-                    if (srcRank) rank = srcRank;
-                }
-                dataNodeElem->SetAttribute("rank", rank.toStdString().c_str());
-
-                int index = 1;
-                TiXmlElement* root_child = root->FirstChildElement();
-                if (root_child) {
-                    root_child = root_child->NextSiblingElement(); // skip project_info
-                }
-
-                TiXmlElement* insertBeforeNode = nullptr;
-                for (TiXmlElement* p = root_child; p != nullptr; p = p->NextSiblingElement(), index++) {
-                    const char* rankAttr = p->Attribute("rank");
-                    if (rankAttr && (strcmp(rankAttr, "complex-0.0") == 0 ||
-                                     strcmp(rankAttr, "complex-1.0") == 0)) {
-                        continue;
-                    } else {
-                        insertBeforeNode = p;
-                        break;
-                    }
-                }
-                dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
-
-                int master_index = -1;
-                if (srcNodeElem) {
-                    TiXmlElement* pnode = nullptr;
-                    if (xml->_find_node(srcNodeElem, "master_image", pnode) == 0 && pnode) {
-                        sscanf(pnode->GetText(), "%d", &master_index);
-                    }
-                }
-
-                for (int i = 0; i < expectedH5Paths.size(); ++i) {
-                    QFileInfo fi(expectedH5Paths[i]);
-                    QString outBase = fi.baseName();
-                    QString relativePath = "/" + nodeName + "/" + outBase + ".h5";
-
-                    TiXmlElement* imageElem = new TiXmlElement("image");
-                    imageElem->SetAttribute("name", outBase.toStdString().c_str());
-                    imageElem->SetAttribute("path", relativePath.toStdString().c_str());
-                    imageElem->SetAttribute("index", QString::number(i + 1).toStdString().c_str());
-
-                    TiXmlElement* offsetRowElem = new TiXmlElement("offset_row");
-                    offsetRowElem->LinkEndChild(new TiXmlText("0"));
-                    imageElem->LinkEndChild(offsetRowElem);
-
-                    TiXmlElement* offsetColElem = new TiXmlElement("offset_col");
-                    offsetColElem->LinkEndChild(new TiXmlText("0"));
-                    imageElem->LinkEndChild(offsetColElem);
-
-                    if (m_mode == 1) { // Coordinates
-                        TiXmlElement* lonElem = new TiXmlElement("lon");
-                        lonElem->LinkEndChild(new TiXmlText(QString::number(m_lon, 'f', 6).toStdString().c_str()));
-                        imageElem->LinkEndChild(lonElem);
-
-                        TiXmlElement* latElem = new TiXmlElement("lat");
-                        latElem->LinkEndChild(new TiXmlText(QString::number(m_lat, 'f', 6).toStdString().c_str()));
-                        imageElem->LinkEndChild(latElem);
-
-                        TiXmlElement* widthElem = new TiXmlElement("width");
-                        widthElem->LinkEndChild(new TiXmlText(QString::number(m_width, 'f', 1).toStdString().c_str()));
-                        imageElem->LinkEndChild(widthElem);
-
-                        TiXmlElement* heightElem = new TiXmlElement("height");
-                        heightElem->LinkEndChild(new TiXmlText(QString::number(m_height, 'f', 1).toStdString().c_str()));
-                        imageElem->LinkEndChild(heightElem);
-                    }
-
-                    dataNodeElem->LinkEndChild(imageElem);
-                }
-
-                if (master_index != -1) {
-                    TiXmlElement* masterElem = new TiXmlElement("master_image");
-                    masterElem->LinkEndChild(new TiXmlText(QString::number(master_index).toStdString().c_str()));
-                    dataNodeElem->LinkEndChild(masterElem);
-                }
-
-                if (insertBeforeNode) {
-                    root->InsertBeforeChild(insertBeforeNode, *dataNodeElem);
-                    delete dataNodeElem;
-                } else {
-                    root->LinkEndChild(dataNodeElem);
-                }
-            }
-        }
-    }
 
     // 阻塞信号，避免修改 widget 参数时触发 invalidateNodeData
     QSignalBlocker b1(m_modeCombo);
@@ -1806,6 +1667,30 @@ struct CropEvalThreadResult {
     CropEvalResult evalResult;
 };
 
+struct CropEvaluationThresholds {
+    double warningOffsetPixels;
+    double severeOffsetPixels;
+    double minimumSnr;
+};
+
+static CropEvaluationThresholds loadCropEvaluationThresholds()
+{
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+    auto readPositive = [&settings](const char* key, double fallback) {
+        bool ok = false;
+        const double value = settings.value(key, fallback).toDouble(&ok);
+        return ok && value > 0.0 ? value : fallback;
+    };
+
+    CropEvaluationThresholds thresholds;
+    thresholds.warningOffsetPixels = readPositive("RegistrationEvaluation/ResidualOffsetWarningPixels", 0.5);
+    thresholds.severeOffsetPixels = std::max(
+        thresholds.warningOffsetPixels,
+        readPositive("RegistrationEvaluation/ResidualOffsetSeverePixels", 1.0));
+    thresholds.minimumSnr = readPositive("RegistrationEvaluation/MinimumResidualOffsetSnr", 3.0);
+    return thresholds;
+}
+
 class CutRegistrationEvalWidget : public QWidget
 {
 public:
@@ -1894,6 +1779,7 @@ public:
         m_medianCohLabel = createValueLabel();
         m_maxCohLabel = createValueLabel();
         m_highCohPctLabel = createValueLabel();
+        m_snrLabel = createValueLabel();
         m_offsetYLabel = createValueLabel();
         m_offsetXLabel = createValueLabel();
 
@@ -1907,6 +1793,7 @@ public:
         addFormRow(tr("相干系数中位数:"), m_medianCohLabel);
         addFormRow(tr("相干系数最大值:"), m_maxCohLabel);
         addFormRow(tr("高相干像素比例 (>0.5):"), m_highCohPctLabel);
+        addFormRow(tr("残余偏移估计 SNR:"), m_snrLabel);
         addFormRow(tr("垂直残余偏移 (Y):"), m_offsetYLabel);
         addFormRow(tr("水平残余偏移 (X):"), m_offsetXLabel);
 
@@ -1994,14 +1881,21 @@ private:
 
         m_statusLabel->setText(tr("正在计算裁剪区全图相干性与干涉相位，请稍候..."));
         m_imageView->setImage(QImage());
+        m_hasResults = false;
         
         // 重置指标标签
         m_meanCohLabel->setText("-");
         m_medianCohLabel->setText("-");
         m_maxCohLabel->setText("-");
         m_highCohPctLabel->setText("-");
+        m_snrLabel->setText("-");
         m_offsetYLabel->setText("-");
         m_offsetXLabel->setText("-");
+        const bool isDark = NodeDetailWindow::isDarkTheme(this);
+        const QString defaultValueStyle = QString("font-size: 12px; font-weight: bold; color: %1;")
+            .arg(isDark ? "#F3F4F6" : "#1F2937");
+        m_offsetYLabel->setStyleSheet(defaultValueStyle);
+        m_offsetXLabel->setStyleSheet(defaultValueStyle);
         m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
         m_statusCardTitle->setText(tr("未评估"));
         m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
@@ -2012,6 +1906,11 @@ private:
 
         if (!QFile::exists(masterPath) || !QFile::exists(slavePath)) {
             m_statusLabel->setText(tr("错误：主图像或副图像裁剪文件不存在，请确保节点已成功运行！"));
+            m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusCardDesc->setText(tr("主图像或副图像裁剪文件不存在，无法启动评估。"));
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
+                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
             return;
         }
 
@@ -2044,7 +1943,16 @@ private:
 
         CropEvalThreadResult threadRes = m_watcher.result();
         if (threadRes.retCode != 0) {
+            m_hasResults = false;
+            m_imageView->setImage(QImage());
+            const bool isDark = NodeDetailWindow::isDarkTheme(this);
             m_statusLabel->setText(tr("裁剪配准评估失败，错误码：%1").arg(threadRes.retCode));
+            m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusCardDesc->setText(tr("底层评估调用失败，错误码：%1。请检查输入数据和处理日志。")
+                .arg(threadRes.retCode));
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
+                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
             return;
         }
 
@@ -2052,19 +1960,39 @@ private:
         m_hasResults = true;
         m_statusLabel->setText(tr("配准评估完成。"));
 
-        // 填充指标数据
-        m_meanCohLabel->setText(QString::number(m_evalResult.meanCoherence, 'f', 4));
-        m_medianCohLabel->setText(QString::number(m_evalResult.medianCoherence, 'f', 4));
-        m_maxCohLabel->setText(QString::number(m_evalResult.maxCoherence, 'f', 4));
-        m_highCohPctLabel->setText(QString("%1%").arg(QString::number(m_evalResult.highCoherencePct * 100.0, 'f', 2)));
-        
-        m_offsetYLabel->setText(QString::number(m_evalResult.offsetY, 'f', 2));
-        m_offsetXLabel->setText(QString::number(m_evalResult.offsetX, 'f', 2));
-
-        // 动态样式刷新
         bool isDark = NodeDetailWindow::isDarkTheme(this);
-        
-        if (std::abs(m_evalResult.offsetY) > 0.5 || std::abs(m_evalResult.offsetX) > 0.5) {
+        const CropEvaluationThresholds thresholds = loadCropEvaluationThresholds();
+        const bool validMeanCoherence = std::isfinite(m_evalResult.meanCoherence) &&
+            m_evalResult.meanCoherence >= 0.0 && m_evalResult.meanCoherence <= 1.0;
+        const bool validMedianCoherence = std::isfinite(m_evalResult.medianCoherence) &&
+            m_evalResult.medianCoherence >= 0.0 && m_evalResult.medianCoherence <= 1.0;
+        const bool validMaxCoherence = std::isfinite(m_evalResult.maxCoherence) &&
+            m_evalResult.maxCoherence >= 0.0 && m_evalResult.maxCoherence <= 1.0;
+        const bool validHighCoherencePct = std::isfinite(m_evalResult.highCoherencePct) &&
+            m_evalResult.highCoherencePct >= 0.0 && m_evalResult.highCoherencePct <= 1.0;
+        const bool validCoherenceMetrics = validMeanCoherence && validMedianCoherence &&
+            validMaxCoherence && validHighCoherencePct;
+        const bool validAssessmentStatus = m_evalResult.assessmentStatus >= 0 && m_evalResult.assessmentStatus <= 2;
+        const bool validMetrics = validCoherenceMetrics && validAssessmentStatus;
+        const bool validOffsets = std::isfinite(m_evalResult.offsetY) && std::isfinite(m_evalResult.offsetX) &&
+            std::abs(m_evalResult.offsetY) < 1000.0 && std::abs(m_evalResult.offsetX) < 1000.0;
+        const bool validSnr = std::isfinite(m_evalResult.snr) && m_evalResult.snr >= 0.0;
+        const bool offsetWarning = validOffsets && (std::abs(m_evalResult.offsetY) > thresholds.warningOffsetPixels ||
+            std::abs(m_evalResult.offsetX) > thresholds.warningOffsetPixels);
+        const bool offsetSevere = validOffsets && (std::abs(m_evalResult.offsetY) > thresholds.severeOffsetPixels ||
+            std::abs(m_evalResult.offsetX) > thresholds.severeOffsetPixels);
+        const bool lowSnr = validSnr && m_evalResult.snr < thresholds.minimumSnr;
+
+        m_meanCohLabel->setText(validMeanCoherence ? QString::number(m_evalResult.meanCoherence, 'f', 4) : "-");
+        m_medianCohLabel->setText(validMedianCoherence ? QString::number(m_evalResult.medianCoherence, 'f', 4) : "-");
+        m_maxCohLabel->setText(validMaxCoherence ? QString::number(m_evalResult.maxCoherence, 'f', 4) : "-");
+        m_highCohPctLabel->setText(validHighCoherencePct
+            ? QString("%1%").arg(QString::number(m_evalResult.highCoherencePct * 100.0, 'f', 2)) : "-");
+        m_snrLabel->setText(validSnr ? QString::number(m_evalResult.snr, 'f', 2) : "-");
+        m_offsetYLabel->setText(validOffsets ? QString::number(m_evalResult.offsetY, 'f', 2) : "-");
+        m_offsetXLabel->setText(validOffsets ? QString::number(m_evalResult.offsetX, 'f', 2) : "-");
+
+        if (offsetWarning) {
             m_offsetYLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
             m_offsetXLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
         } else {
@@ -2073,24 +2001,63 @@ private:
             m_offsetXLabel->setStyleSheet(defaultColor);
         }
 
-        if (m_evalResult.assessmentStatus == 0) {
+        QStringList reasons;
+        if (!validCoherenceMetrics) {
+            reasons << tr("相干性统计指标无效");
+        }
+        if (!validAssessmentStatus) {
+            reasons << tr("相干性评估状态无效");
+        } else if (m_evalResult.assessmentStatus == 1) {
+            reasons << tr("相干性一般");
+        } else if (m_evalResult.assessmentStatus == 2) {
+            reasons << tr("相干性不足");
+        }
+        if (!validOffsets) {
+            reasons << tr("残余偏移估计不可用");
+        } else if (std::abs(m_evalResult.offsetY) > thresholds.warningOffsetPixels) {
+            reasons << tr("方位残余偏移 %1 px").arg(m_evalResult.offsetY, 0, 'f', 2);
+        }
+        if (validOffsets && std::abs(m_evalResult.offsetX) > thresholds.warningOffsetPixels) {
+            reasons << tr("距离残余偏移 %1 px").arg(m_evalResult.offsetX, 0, 'f', 2);
+        }
+        if (!validSnr) {
+            reasons << tr("残余偏移估计 SNR 无效");
+        } else if (lowSnr) {
+            reasons << tr("残余偏移估计 SNR=%1，低于 %2").arg(m_evalResult.snr, 0, 'f', 2).arg(thresholds.minimumSnr, 0, 'f', 2);
+        }
+
+        auto setStatusCard = [this, isDark](const QString& title, const QString& titleColor,
+            const QString& borderColor, const QString& darkBackground, const QString& lightBackground,
+            const QString& description) {
+            m_statusCardTitle->setText(title);
+            m_statusCardTitle->setStyleSheet(QString("font-size: 14px; font-weight: bold; color: %1;").arg(titleColor));
+            m_statusCardDesc->setText(description);
+            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid %2; border-radius: 4px;")
+                .arg(isDark ? darkBackground : lightBackground).arg(borderColor));
+        };
+
+        const QString reasonText = reasons.isEmpty() ? tr("相干性、几何残余和估计置信度均满足当前阈值。") : reasons.join(tr("；"));
+        if (!validMetrics || !validOffsets || !validSnr) {
+            setStatusCard(tr("无法评估 (FAILED)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
+                reasonText + tr("。无法给出可靠的配准结论。"));
+        } else if (lowSnr) {
+            setStatusCard(tr("结果不确定 (INCONCLUSIVE)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
+                reasonText + tr("。请复核影像纹理或扩大有效评估区域。"));
+        } else if (offsetSevere) {
+            setStatusCard(tr("几何配准异常 (FAILED)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
+                reasonText + tr("。残余偏移超过严重阈值。"));
+        } else if (m_evalResult.assessmentStatus == 2) {
+            setStatusCard(tr("低相干 (LOW COHERENCE)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
+                reasonText + tr("。请注意后续干涉和解缠质量。"));
+        } else if (m_evalResult.assessmentStatus == 1 || offsetWarning) {
+            setStatusCard(tr("提醒 (WARNING)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
+                reasonText + tr("。建议复核质量。"));
+        } else {
             m_statusCardTitle->setText(tr("通过 (PASS)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
-            m_statusCardDesc->setText(tr("全图相干性优秀，主副影像配准成功，完全满足干涉处理要求。"));
+            m_statusCardDesc->setText(reasonText);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #10B981; border-radius: 4px;")
                 .arg(isDark ? "#064E3B" : "#D1FAE5"));
-        } else if (m_evalResult.assessmentStatus == 1) {
-            m_statusCardTitle->setText(tr("提醒 (WARNING)"));
-            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-            m_statusCardDesc->setText(tr("全图相干性一般。局部可能存在轻微失相干，或包含水体、森林。建议核对质量。"));
-            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #F59E0B; border-radius: 4px;")
-                .arg(isDark ? "#78350F" : "#FEF3C7"));
-        } else {
-            m_statusCardTitle->setText(tr("低相干 (LOW COHERENCE)"));
-            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusCardDesc->setText(tr("地表相干性较低，请注意解缠质量。"));
-            m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
-                .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
         }
 
         updateImageView();
@@ -2127,6 +2094,7 @@ private:
     QLabel* m_medianCohLabel;
     QLabel* m_maxCohLabel;
     QLabel* m_highCohPctLabel;
+    QLabel* m_snrLabel;
     QLabel* m_offsetYLabel;
     QLabel* m_offsetXLabel;
     QLabel* m_statusLabel;

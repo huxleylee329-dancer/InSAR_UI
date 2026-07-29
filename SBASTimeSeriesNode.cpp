@@ -220,7 +220,7 @@ void SBASTimeSeriesNode::createWidget()
     addParamRow(QStringLiteral("精炼形变阈值:"), m_refinementDefThreshEdit);
 
     m_outputNodeNameEdit = new QLineEdit(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")); // SOP: standard placeholder
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入")); // SOP: standard placeholder
     addParamRow(QStringLiteral("目标节点名:"), m_outputNodeNameEdit);
 
     // Row: Result Display
@@ -460,7 +460,7 @@ void SBASTimeSeriesNode::onCancelled()
     m_previewData.reset();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
-    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("宸插彇娑?"));
+    if (m_resultLabel) m_resultLabel->setText(QStringLiteral("已取消"));
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();

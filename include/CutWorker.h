@@ -19,7 +19,8 @@ public slots:
              QString src_node,
              QString dst_node,
              QStringList inputPaths,
-             QString src_data_rank);
+             QString src_data_rank,
+             bool outputDirectoryIsStaging = false);
 
     /**
      * @brief Normalized ratio-based AOI crop (used by box-selection and auto-center)
@@ -34,9 +35,11 @@ public slots:
               QString dst_node,
               QStringList inputPaths,
               QString src_data_rank,
-              int master_index);
+              int master_index,
+              bool outputDirectoryIsStaging = false);
 
 signals:
     void cancelled();
     void fileCropped(QString cutName, QString fullPath, int offsetRow, int offsetCol, int masterIndex, QString srcDataRank, QList<double> para);
+    void outputsGenerated(const QStringList& outputPaths);
 };

@@ -82,8 +82,10 @@ private:
     bool m_preparedOutputTEC = false;
     QStringList m_preparedSlcNames;
     QStringList m_preparedSlcPaths;
+    QStringList m_preparedOutputPaths;
     QStringList m_generatedOutputNames;
     QStringList m_generatedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
@@ -97,7 +99,7 @@ private:
     void persistOutputToProject(const QString& outputNodeName,
                                 const QStringList& h5Paths);
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& types, const QStringList& resultJpgPaths,
+                                const QStringList& types, const QStringList& resultH5Paths, const QStringList& resultJpgPaths,
                                 bool completeExecution);
     void cleanUpThreadAndWorker();
     void releaseFinishedThreadAndWorker();

@@ -79,12 +79,13 @@ private:
     void executeProcessing();
     QString getRealSavePath() const;
     QString resolveOutputFileName(const QString& originalName) const;
-    void persistOutputToProject(const QStringList& outputNames, const QStringList& outputPaths,
-                                const QList<int>& offsetRows, const QList<int>& offsetCols,
-                                const QString& temporalBaseline, const QString& effectiveBaseline,
-                                const QString& parallelBaseline);
-    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
-                                const QStringList& resultJpgPaths, bool completeExecution);
+    bool commitResultsToProjectXml(const QStringList& outputNames, const QStringList& outputPaths,
+                                   const QList<int>& offsetRows, const QList<int>& offsetCols,
+                                   const QString& temporalBaseline, const QString& effectiveBaseline,
+                                   const QString& parallelBaseline);
+    void publishResultsToProjectTree(const QStringList& outputNames, const QStringList& outputPaths);
+    void startPreviewGeneration(const QStringList& h5Paths, const QStringList& finalJpgPaths,
+                                bool completeExecution);
 
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
@@ -139,12 +140,21 @@ private:
     QThread* m_thread = nullptr;
     QFutureWatcher<void> m_remedyWatcher;
     bool m_isExecuting = false;
+    bool m_previewGenerationPending = false;
+    quint64 m_previewGenerationId = 0;
+    QStringList m_previewTemporaryJpgPaths;
 
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedSavePath;
+    QString m_preparedDstNode;
+    QString m_preparedProjectName;
+    QStringList m_preparedInputPaths;
     QStringList m_preparedH5Paths;
     QStringList m_preparedJpgPaths;
     QStringList m_preparedOutputNames;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    bool m_xmlDirty = false;
     QStringList m_generatedOutputNames;
     QStringList m_generatedOutputPaths;
     QList<int> m_generatedOffsetRows;

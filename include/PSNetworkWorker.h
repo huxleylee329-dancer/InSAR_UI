@@ -21,11 +21,13 @@ public slots:
         QString projectName,
         QString dstNode,
         QString candidatesH5,
-        QStringList slcFilePaths
+        QStringList slcFilePaths,
+        bool outputDirectoryIsStaging = false
     );
 
 signals:
     void cancelled();
+    void outputsGenerated(const QStringList& outputPaths);
 
 private:
     std::atomic_bool m_cancelRequested{false};

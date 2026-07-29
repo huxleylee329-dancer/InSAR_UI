@@ -19,6 +19,7 @@
 #include <QStandardItemModel>
 #include <QFutureWatcher>
 #include <QElapsedTimer>
+#include <QList>
 #include <QPointer>
 #include <memory>
 
@@ -116,6 +117,7 @@ private:
     QString m_preparedProjectName;
     QString m_preparedFileName;
     QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
     QString m_preparedDemPath;
     bool m_preparedIsDeflat = true;
     bool m_preparedIsTopoRemoval = false;
@@ -125,6 +127,14 @@ private:
     int m_preparedWinH = 5;
     int m_preparedMultilookRg = 1;
     int m_preparedMultilookAz = 1;
+    bool m_hasOutputExecutionSettings = false;
+    bool m_outputIsDeflat = true;
+    bool m_outputIsTopoRemoval = true;
+    bool m_outputIsCoherence = false;
+    int m_outputWinW = 5;
+    int m_outputWinH = 5;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QList<InterferogramFileResult> m_pendingInterferogramResults;
     bool m_xmlDirty = false;
 
     // Helper methods
@@ -141,6 +151,13 @@ private:
     void onCoherenceStateChanged(int state);
     QString generateDefaultOutputName() const;
     void executeProcessing();
+    void captureOutputExecutionSettings();
+    void startPreviewGeneration(const QStringList& previewSourcePaths,
+                                const QStringList& jpgPaths,
+                                const QStringList& types,
+                                const QStringList& outputPaths);
+    void commitInterferogramResult(const InterferogramFileResult& result);
+    void publishInterferogramResultToProjectTree(const InterferogramFileResult& result);
 
     // Context helpers
     QStandardItemModel* projectModel() const;

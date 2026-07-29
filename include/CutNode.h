@@ -161,12 +161,20 @@ private:
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QStringList m_preparedInputPaths;
     QStringList m_preparedOutputPaths;
+    QStringList m_generatedOutputPaths;
+    QStringList m_generatedOutputNames;
+    QList<int> m_generatedOffsetRows;
+    QList<int> m_generatedOffsetCols;
+    QList<int> m_generatedMasterIndexes;
+    QStringList m_generatedRanks;
+    QList<QList<double>> m_generatedCropParameters;
     QString m_preparedDstNodeName;
     QString m_preparedProjDir;
     QString m_preparedProjName;
     QStandardItemModel* m_preparedModel = nullptr;
     bool m_preparedSaveToProject = true;
     XMLFile* m_preparedProjectXmlPtr = nullptr;
+    NodeUtils::OutputTransaction m_outputTransaction;
 };
 
 } // namespace QtNodes

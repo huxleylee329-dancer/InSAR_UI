@@ -85,15 +85,11 @@ void TroposphericCorrectionWorker::doCorrection(
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
     }
-    // 创建输出目录
+    // 输出目录由节点事务预先创建；worker 只允许写入 staging 目录。
     const QString outputDirectoryPath = save_path + "/" + file_name;
     QDir outputDirectory(outputDirectoryPath);
-    if (outputDirectory.exists() && !outputDirectory.removeRecursively()) {
-        emit errorProcess(QStringLiteral("无法清理已有输出目录: ") + outputDirectoryPath);
-        return;
-    }
-    if (!QDir().mkpath(outputDirectoryPath)) {
-        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDirectoryPath);
+    if (!outputDirectory.exists()) {
+        emit errorProcess(QStringLiteral("staging输出目录不存在: ") + outputDirectoryPath);
         return;
     }
 
@@ -144,6 +140,17 @@ void TroposphericCorrectionWorker::doCorrection(
     };
 
     currentWorker = this;
+    const auto fail = [this](const QString& message) {
+        currentWorker = nullptr;
+        emit errorProcess(message);
+    };
+    const auto writeMat = [&fail](const QString& filePath, const QString& dataset, const cv::Mat& value) {
+        if (NodeUtils::writeMatToH5(filePath, dataset, value)) {
+            return true;
+        }
+        fail(QStringLiteral("无法写入H5数据集: %1").arg(dataset));
+        return false;
+    };
 
     std::vector<bool> process_ok(image_count, false);
 
@@ -151,6 +158,7 @@ void TroposphericCorrectionWorker::doCorrection(
     for (int idx = 0; idx < image_count; idx++)
     {
         if (QThread::currentThread()->isInterruptionRequested()) {
+            currentWorker = nullptr;
             emit cancelled();
             return;
         }
@@ -168,7 +176,10 @@ void TroposphericCorrectionWorker::doCorrection(
             QString phaseH5 = phase_paths[idx];
             
             ret = NodeUtils::readMatFromH5(phaseH5, "phase", phase, CV_32F) ? 0 : -1;
-            if (ret < 0) continue;
+            if (ret < 0) {
+                fail(QStringLiteral("无法读取第%1幅干涉图相位数据").arg(idx + 1));
+                return;
+            }
 
             if (NodeUtils::readMatFromH5(phaseH5, "mapped_lat", lat_mat, CV_32F) &&
                 NodeUtils::readMatFromH5(phaseH5, "mapped_lon", lon_mat, CV_32F)) {
@@ -184,8 +195,8 @@ void TroposphericCorrectionWorker::doCorrection(
         int rows = phase.rows, cols = phase.cols;
 
         if (!has_latlon) {
-            emit updateProcess(progress, QStringLiteral("第%1幅缺少坐标数据，跳过").arg(idx + 1));
-            continue;
+            fail(QStringLiteral("第%1幅干涉图缺少坐标数据").arg(idx + 1));
+            return;
         }
 
         // 提取日期字符串
@@ -231,9 +242,15 @@ void TroposphericCorrectionWorker::doCorrection(
         );
 
         if (!ok) {
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                currentWorker = nullptr;
+                emit cancelled();
+                return;
+            }
             InSARLogManager::LogError("TroposphericCorrectionWorker", 
                 QString("对流层算法计算失败 (图%1): %2").arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
-            continue;
+            fail(QStringLiteral("对流层算法计算失败 (图%1): %2").arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
+            return;
         }
 
         // 写入输出 H5
@@ -241,7 +258,10 @@ void TroposphericCorrectionWorker::doCorrection(
             NodeUtils::Hdf5Locker locker;
             ret = FC.creat_new_h5(abs_paths[idx].toStdString().c_str());
         }
-        if (ret < 0) continue;
+        if (ret < 0) {
+            fail(QStringLiteral("无法创建第%1幅对流层输出文件").arg(idx + 1));
+            return;
+        }
 
         {
             NodeUtils::Hdf5Locker locker;
@@ -255,22 +275,37 @@ void TroposphericCorrectionWorker::doCorrection(
             NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str);
             FC.write_str_to_h5(absH5.toStdString().c_str(), "source_2", tmp_str.c_str());
 
-            NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp);
-            NodeUtils::writeMatToH5(absH5, "flat_phase_coefficient", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "range_len", tmp);
-            NodeUtils::writeMatToH5(absH5, "range_len", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "azimuth_len", tmp);
-            NodeUtils::writeMatToH5(absH5, "azimuth_len", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "multilook_rg", tmp);
-            NodeUtils::writeMatToH5(absH5, "multilook_rg", tmp);
-            NodeUtils::readMatFromH5(phaseH5, "multilook_az", tmp);
-            NodeUtils::writeMatToH5(absH5, "multilook_az", tmp);
+            if (!NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp)) {
+                fail(QStringLiteral("无法读取第%1幅干涉图平坦相位系数").arg(idx + 1));
+                return;
+            }
+            if (!writeMat(absH5, QStringLiteral("flat_phase_coefficient"), tmp)) return;
+            if (!NodeUtils::readMatFromH5(phaseH5, "range_len", tmp)) {
+                fail(QStringLiteral("无法读取第%1幅干涉图距离尺寸").arg(idx + 1));
+                return;
+            }
+            if (!writeMat(absH5, QStringLiteral("range_len"), tmp)) return;
+            if (!NodeUtils::readMatFromH5(phaseH5, "azimuth_len", tmp)) {
+                fail(QStringLiteral("无法读取第%1幅干涉图方位尺寸").arg(idx + 1));
+                return;
+            }
+            if (!writeMat(absH5, QStringLiteral("azimuth_len"), tmp)) return;
+            if (!NodeUtils::readMatFromH5(phaseH5, "multilook_rg", tmp)) {
+                fail(QStringLiteral("无法读取第%1幅干涉图距离多视参数").arg(idx + 1));
+                return;
+            }
+            if (!writeMat(absH5, QStringLiteral("multilook_rg"), tmp)) return;
+            if (!NodeUtils::readMatFromH5(phaseH5, "multilook_az", tmp)) {
+                fail(QStringLiteral("无法读取第%1幅干涉图方位多视参数").arg(idx + 1));
+                return;
+            }
+            if (!writeMat(absH5, QStringLiteral("multilook_az"), tmp)) return;
             if (has_latlon) {
-                NodeUtils::writeMatToH5(absH5, "mapped_lat", lat_mat);
-                NodeUtils::writeMatToH5(absH5, "mapped_lon", lon_mat);
+                if (!writeMat(absH5, QStringLiteral("mapped_lat"), lat_mat)) return;
+                if (!writeMat(absH5, QStringLiteral("mapped_lon"), lon_mat)) return;
             }
 
-            NodeUtils::writeMatToH5(absH5, "phase", corrected_phase);
+            if (!writeMat(absH5, QStringLiteral("phase"), corrected_phase)) return;
         }
 
         process_ok[idx] = true;
@@ -284,9 +319,9 @@ void TroposphericCorrectionWorker::doCorrection(
             generatedPaths.append(abs_paths[i]);
         }
     }
-    if (generatedPaths.isEmpty()) {
+    if (generatedPaths.size() != image_count) {
         currentWorker = nullptr;
-        emit errorProcess(QStringLiteral("对流层校正未生成任何输出文件"));
+        emit errorProcess(QStringLiteral("对流层校正未完成全部输出文件"));
         return;
     }
 

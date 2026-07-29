@@ -23,15 +23,10 @@ public slots:
      * @param polyOrder        多项式阶数（1=线性, 2=二次）
      * @param windowSize       滑动窗口大小（0=全局回归）
      * @param coherenceThresh  相干性阈值，仅高于此值的像素参与回归
-     * @param save_path        工程根目录
-     * @param project_name     工程名称
-     * @param node_name        输入数据节点名
-     * @param file_name        输出数据节点名
-     * @param model            项目树模型
+     * @param outputDirectory  节点准备的 staging 输出目录
      */
     void doRegression(int polyOrder, int windowSize, double coherenceThresh,
-                      QString save_path, QString project_name,
-                      QString node_name, QString file_name,
+                      QString outputDirectory,
                       QStringList phaseNames, QStringList phasePaths);
 
 signals:

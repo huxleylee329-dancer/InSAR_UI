@@ -546,7 +546,7 @@ void GCPManagerNode::setParameter(const QString& paramName, const QString& value
             modified = true;
         }
     } 
-    else if (paramName == QStringLiteral("鏈€灏忚川閲忕瓑绾?")) {
+    else if (paramName == QStringLiteral("最小质量等级")) {
         int val = value.toInt(&ok);
         if (ok && (val >= 0 && val <= 2) && val != m_minQuality) {
             m_minQuality = val;
@@ -557,7 +557,7 @@ void GCPManagerNode::setParameter(const QString& paramName, const QString& value
             modified = true;
         }
     } 
-    else if (paramName == QStringLiteral("杈撳嚭鐩綍鍚?")) {
+    else if (paramName == QStringLiteral("输出目录名")) {
         QString trimmed = value.trimmed();
         if (trimmed != m_outputNodeName) {
             m_outputNodeName = trimmed;

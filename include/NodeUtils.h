@@ -1,7 +1,10 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 #include <QMutex>
+#include <QJsonObject>
+#include <QJsonArray>
 
 #include <functional>
 
@@ -9,6 +12,7 @@
 
 class QWidget;
 class IApplicationInterface;
+class XMLFile;
 
 class QStandardItem;
 class QThread;
@@ -49,7 +53,10 @@ IApplicationInterface* getProjectContext(QWidget* widget);
  * @param iface  Project context (IApplicationInterface*)
  * @param oldNodeName  The old DataNode name to remove
  */
-void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldNodeName);
+void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldNodeName,
+                               bool saveXmlImmediately = true,
+                               bool updateTreeImmediately = true);
+void removeDataNodeFromProjectTree(IApplicationInterface* iface, const QString& nodeName);
 
 /**
  * @brief 向工程 XML 中安全添加数据节点 (Origin 类型)，自适应内存同步与磁盘保存
@@ -74,6 +81,89 @@ enum class OverwriteResult {
     LoadExisting,
     Cancel
 };
+
+// A node-owned, same-volume output transaction. The final directory is never
+// modified until every staged artifact has been verified.
+struct OutputTransaction {
+    enum class Stage {
+        Inactive,
+        StagingCreatePrepared,
+        StagingPrepared,
+        StagingValidated,
+        BackupMovePrepared,
+        BackupMoved,
+        PromotionPrepared,
+        FinalPromoted,
+        MetadataCommitPrepared,
+        MetadataCommitted,
+        Completed,
+        Failed
+    };
+
+    QString projectRoot;
+    QString nodeName;
+    QString runId;
+    QString stagingName;
+    QString backupName;
+    QString journalPath;
+    QString metadataXmlName;
+    QString metadataBackupName;
+    QStringList expectedFileNames;
+    QStringList inputPaths;
+    QJsonArray inputFingerprints;
+    QJsonObject previousFinalManifest;
+    QJsonObject previousCommittedJournal;
+    bool hasPreviousFinal = false;
+    bool backupCleanupDeferred = false;
+    bool metadataBackupReady = false;
+    Stage stage = Stage::Inactive;
+};
+
+bool beginOutputTransaction(const QString& projectRoot,
+                            const QString& nodeName,
+                            const QStringList& expectedFinalPaths,
+                            const QStringList& inputPaths,
+                            OutputTransaction& transaction,
+                            QString* errorMessage = nullptr);
+// Performs only provably safe rollback/cleanup for an interrupted transaction.
+// Ambiguous states remain isolated and return false.
+bool recoverOutputTransaction(const QString& projectRoot,
+                              const QString& nodeName,
+                              QString* errorMessage = nullptr);
+bool validateStagedOutputTransaction(OutputTransaction& transaction,
+                                     QString* errorMessage = nullptr);
+// Verifies that every staged H5 output contains each required non-empty
+// dataset. This is intentionally separate from the generic transaction
+// validation because dataset contracts are node-specific.
+bool validateStagedH5Datasets(const OutputTransaction& transaction,
+                              const QStringList& requiredDatasets,
+                              QString* errorMessage = nullptr);
+bool promoteOutputTransaction(OutputTransaction& transaction,
+                              QStringList& finalPaths,
+                              QString* errorMessage = nullptr);
+// Must be called before mutating the in-memory project XML. It persists a
+// transaction-owned XML backup so metadata and promoted files can roll back together.
+bool prepareOutputTransactionMetadataCommit(OutputTransaction& transaction,
+                                            XMLFile* xml,
+                                            const QString& xmlPath,
+                                            QString* errorMessage = nullptr);
+bool markOutputTransactionMetadataCommitted(OutputTransaction& transaction,
+                                            QString* errorMessage = nullptr);
+void abandonOutputTransaction(OutputTransaction& transaction,
+                              const QString& reason = QString(),
+                              XMLFile* xml = nullptr);
+bool loadCommittedOutputManifest(const QString& projectRoot,
+                                 const QString& nodeName,
+                                 QStringList& outputPaths,
+                                 QString* errorMessage = nullptr);
+// Verifies that worker-reported files form a one-to-one filename mapping to a
+// transaction-validated manifest. Worker paths may point at staging while the
+// manifest paths point at final, so directory components are intentionally ignored.
+bool workerOutputsMatchManifest(const QStringList& manifestPaths,
+                                const QStringList& workerPaths,
+                                QString* errorMessage = nullptr);
+bool saveProjectXmlAtomically(XMLFile* xml, const QString& xmlPath,
+                              QString* errorMessage = nullptr);
 
 /**
  * @brief Checks if a node with the given name exists in the project tree,
@@ -102,7 +192,13 @@ bool removeOutputFiles(const QStringList& filePaths);
  */
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type = "complex");
 
-// A valid preview must represent the current version of its H5 source.
+// Validates and publishes a completed temporary JPG without exposing a partial target file.
+bool replaceJpgPreviewAtomically(const QString& temporaryJpgPath, const QString& jpgPath);
+
+// A valid preview must represent every required input used to render it.
+bool isJpgPreviewCurrent(const QStringList& inputPaths, const QString& jpgPath);
+
+// Convenience overload for previews rendered from a single H5 source.
 bool isJpgPreviewCurrent(const QString& h5Path, const QString& jpgPath);
 
 /**

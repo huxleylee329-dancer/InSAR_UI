@@ -241,7 +241,7 @@ void UnwrapNode::createWidget()
     // 5. 目标节点
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -339,18 +339,18 @@ bool UnwrapNode::prepareToStart()
     m_preparedThreshold = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
 
     // Precalculate output file paths for overwrite check
-    QStringList pathsToCheck;
+    m_preparedOutputPaths.clear();
     for (const QString& srcPath : m_preparedPhasePaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_unwrapped";
-        pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + changeName + ".h5");
+        m_preparedOutputPaths.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + changeName + ".h5");
     }
 
     // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
     if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, m_preparedOutputPaths, nullptr);
     }
 
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
@@ -377,22 +377,30 @@ void UnwrapNode::executeProcessing()
         return;
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
-        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
-    }
-
     setProgress(0);
     setState(ExecutionState::Running);
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
+                                           m_preparedOutputPaths, m_preparedPhasePaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_pendingUnwrapResults.clear();
     m_xmlDirty = false;
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 
     m_thread = new QThread();
     m_workerThread = new UnwrapWorker();
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &UnwrapNode::startUnwrap, m_workerThread, &UnwrapWorker::Unwrap);
-    connect(m_thread, &QThread::started, [this]() {
-        Q_EMIT startUnwrap(m_preparedMethod, m_preparedThreshold, m_preparedSavePath, m_preparedDstNode, m_preparedPhasePaths);
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, [this, stagingNode]() {
+        Q_EMIT startUnwrap(m_preparedMethod, m_preparedThreshold, m_preparedSavePath, stagingNode, m_preparedPhasePaths);
     });
     connect(m_workerThread, &UnwrapWorker::unwrapFileGenerated, this, &UnwrapNode::onUnwrapFileGenerated);
     connect(m_workerThread, &UnwrapWorker::updateProcess, this, &UnwrapNode::onProgressUpdate);
@@ -432,44 +440,58 @@ void UnwrapNode::onProgressUpdate(int progress, const QString& message)
 
 void UnwrapNode::onProcessingFinished()
 {
-    QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text().trimmed();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
     QStringList h5Paths;
     QStringList jpgPaths;
     QStringList types;
+    QList<UnwrapFileResult> committedResults;
+    const QString dstNode = m_preparedDstNode;
 
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString h5Path = dir.absoluteFilePath(h5File);
-            h5Paths.append(h5Path);
-            QString baseName = QFileInfo(h5File).baseName();
-            jpgPaths.append(outputPath + baseName + ".jpg");
-            types.append("phase");
-        }
-    }
-
-    // Clean up worker thread
     cleanUpThreadAndWorker();
-
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic execution"), projectXml());
+        m_outputData.reset();
+        m_imageInfoData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         return;
     }
 
-    if (m_xmlDirty) {
-        XMLFile* xml = projectXml();
-        const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
-        if (!xml || xmlPath.isEmpty() || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
-            onError(QStringLiteral("Failed to save project XML after phase unwrapping."));
-            return;
-        }
-        m_xmlDirty = false;
+    QString transactionError;
+    if (!projectXml() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("phase"), &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("Project XML context is unavailable for unwrap output commit.") : transactionError);
+        return;
+    }
+    QStringList workerPaths;
+    for (const UnwrapFileResult& result : m_pendingUnwrapResults) workerPaths.append(result.absolutePath);
+    if (!NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, workerPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode, false, false);
+    m_xmlDirty = false;
+    for (UnwrapFileResult result : m_pendingUnwrapResults) {
+        const QString fileName = QFileInfo(result.absolutePath).fileName();
+        result.absolutePath = QDir(projectPath() + "/" + dstNode).absoluteFilePath(fileName);
+        result.relativePath = QStringLiteral("/%1/%2").arg(dstNode, fileName);
+        commitUnwrapResult(result);
+        committedResults.append(result);
+    }
+    if (!m_xmlDirty || !NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("Unwrap output metadata was not produced.") : transactionError);
+        return;
+    }
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
+    for (const UnwrapFileResult& result : committedResults) publishUnwrapResultToProjectTree(result);
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) iface->refreshProjectTree();
+
+    for (const QString& h5Path : h5Paths) {
+        jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
+        types.append(QStringLiteral("phase"));
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
@@ -477,7 +499,7 @@ void UnwrapNode::onProcessingFinished()
 
     if (!h5Paths.isEmpty())
     {
-        startPreviewGeneration(h5Paths, jpgPaths, types, jpgPaths, true);
+        startPreviewGeneration(h5Paths, jpgPaths, types, h5Paths, jpgPaths, true);
     }
     else
     {
@@ -500,6 +522,11 @@ void UnwrapNode::onCancelled()
 {
     InSARLogManager::LogInfo("UnwrapNode", "Unwrap cancellation cleanup completed.");
     cleanUpThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -514,8 +541,12 @@ void UnwrapNode::onCancelled()
 
 void UnwrapNode::onError(const QString& error)
 {
-    Q_UNUSED(error);
     cleanUpThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -543,47 +574,31 @@ void UnwrapNode::onModelUpdated(QStandardItemModel* model)
 
 void UnwrapNode::onUnwrapFileGenerated(const UnwrapFileResult& result)
 {
-    if (isAutomaticExecutionObsolete()) {
-        return;
-    }
+    m_pendingUnwrapResults.append(result);
+}
 
+void UnwrapNode::commitUnwrapResult(const UnwrapFileResult& result)
+{
+    if (XMLFile* xml = projectXml()) {
+        xml->XMLFile_add_unwrap(m_preparedDstNode.toStdString().c_str(), result.unwrapName.toStdString().c_str(),
+                                result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol,
+                                result.method.toStdString().c_str(), 0);
+        m_xmlDirty = true;
+    }
+}
+
+void UnwrapNode::publishUnwrapResultToProjectTree(const UnwrapFileResult& result)
+{
     QStandardItemModel* model = projectModel();
-    if (!model) {
-        onError(QStringLiteral("Project model is unavailable while publishing unwrapped output."));
-        return;
-    }
-
+    if (!model) return;
     const QList<QStandardItem*> projects = model->findItems(m_preparedProjectName);
-    if (projects.isEmpty()) {
-        onError(QStringLiteral("Project node is unavailable while publishing unwrapped output."));
-        return;
-    }
-
+    if (projects.isEmpty()) return;
     QStandardItem* unwrapNode = NodeUtils::findOrCreateProjectNode(
         projects.first(), m_preparedDstNode, "phase-3.0", FOLDER_ICON);
-    if (!unwrapNode) {
-        onError(QStringLiteral("Unable to create the unwrapped output node."));
-        return;
+    if (unwrapNode) {
+        unwrapNode->setToolTip(m_preparedProjectName);
+        NodeUtils::findOrCreateChildItem(unwrapNode, result.unwrapName, "phase", result.absolutePath, IMAGEDATA_ICON);
     }
-
-    unwrapNode->setToolTip(m_preparedProjectName);
-    NodeUtils::findOrCreateChildItem(
-        unwrapNode, result.unwrapName, "phase", result.absolutePath, IMAGEDATA_ICON);
-
-    XMLFile* xml = projectXml();
-    if (!xml) {
-        onError(QStringLiteral("Project XML is unavailable while publishing unwrapped output."));
-        return;
-    }
-    xml->XMLFile_add_unwrap(
-        m_preparedDstNode.toStdString().c_str(),
-        result.unwrapName.toStdString().c_str(),
-        result.relativePath.toStdString().c_str(),
-        result.offsetRow,
-        result.offsetCol,
-        result.method.toStdString().c_str(),
-        0);
-    m_xmlDirty = true;
 }
 
 bool UnwrapNode::validateAndRestoreOutput()
@@ -592,27 +607,14 @@ bool UnwrapNode::validateAndRestoreOutput()
     if (dstNode.isEmpty())
         return false;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (!dir.exists())
-        return false;
-
-    QStringList filters;
-    filters << "*.h5";
-    QStringList h5Files = dir.entryList(filters, QDir::Files);
-    if (h5Files.isEmpty()) {
-        return false;
-    }
-
     QStringList h5Paths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
     QStringList expectedJpgPaths;
     QStringList types;
 
-    for (const QString& h5File : h5Files) {
-        QString h5Path = dir.absoluteFilePath(h5File);
-        QString baseName = QFileInfo(h5File).baseName();
-        h5Paths.append(h5Path);
-        expectedJpgPaths.append(outputPath + baseName + ".jpg");
+    for (const QString& h5Path : h5Paths) {
+        QFileInfo info(h5Path);
+        expectedJpgPaths.append(info.absolutePath() + "/" + info.baseName() + ".jpg");
         types.append("phase");
     }
 
@@ -627,7 +629,7 @@ bool UnwrapNode::validateAndRestoreOutput()
     QStringList missingTypes;
 
     for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-        if (QFile::exists(expectedJpgPaths[i])) {
+        if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
             existingJpgPaths.append(expectedJpgPaths[i]);
         } else {
             missingH5s.append(h5Paths[i]);
@@ -641,7 +643,7 @@ bool UnwrapNode::validateAndRestoreOutput()
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
-        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, expectedJpgPaths, false);
+        startPreviewGeneration(missingH5s, missingJpgs, missingTypes, h5Paths, expectedJpgPaths, false);
     }
 
     return true;
@@ -650,6 +652,7 @@ bool UnwrapNode::validateAndRestoreOutput()
 void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
                                         const QStringList& generatedJpgPaths,
                                         const QStringList& types,
+                                        const QStringList& resultH5Paths,
                                         const QStringList& resultJpgPaths,
                                         bool completeExecution)
 {
@@ -657,22 +660,26 @@ void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
         m_remedyWatcher.cancel();
         m_remedyWatcher.disconnect(this);
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                [this, h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution]() {
+                [this, h5Paths, generatedJpgPaths, types, resultH5Paths, resultJpgPaths, completeExecution]() {
             m_remedyWatcher.disconnect(this);
-            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultJpgPaths, completeExecution);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, types, resultH5Paths, resultJpgPaths, completeExecution);
         });
         return;
     }
 
     m_remedyWatcher.disconnect(this);
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-            [this, resultJpgPaths, completeExecution]() {
+            [this, resultH5Paths, resultJpgPaths, completeExecution]() {
+        QStringList currentJpgPaths;
+        for (int i = 0; i < resultH5Paths.size() && i < resultJpgPaths.size(); ++i) {
+            if (NodeUtils::isJpgPreviewCurrent(resultH5Paths[i], resultJpgPaths[i])) currentJpgPaths.append(resultJpgPaths[i]);
+        }
         if (completeExecution) {
             if (discardObsoleteAutomaticExecution()) {
                 return;
             }
 
-            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
             setOutputData(1, m_imageInfoData);
             m_outputNodeNameEdit->setEnabled(true);
             m_methodCombo->setEnabled(true);
@@ -683,7 +690,7 @@ void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
             InSARLogManager::LogInfo("UnwrapNode", "executeProcessing completed.");
             finishExecution();
         } else {
-            m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+            m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
             InSARLogManager::LogInfo("UnwrapNode", "validateAndRestoreOutput background rendering completed.");
@@ -703,15 +710,11 @@ QStringList UnwrapNode::previewImagePaths() const
     if (dstNode.isEmpty())
         return list;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString baseName = QFileInfo(h5File).baseName();
-            QString jpgPath = outputPath + baseName + ".jpg";
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
+        for (const QString& h5Path : h5Paths) {
+            QFileInfo info(h5Path);
+            QString jpgPath = info.absolutePath() + "/" + info.baseName() + ".jpg";
             if (QFile::exists(jpgPath)) {
                 list.append(jpgPath);
             }

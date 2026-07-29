@@ -186,7 +186,7 @@ void S1DeburstNode::createWidget()
     nodeNameLabel->setFixedWidth(80);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
+    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -255,27 +255,59 @@ void S1DeburstNode::onProcessingFinished()
     m_worker = nullptr;
     m_thread = nullptr;
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic execution"), projectXml());
         return;
     }
 
-    QString dstNode = m_outputNodeNameEdit->text().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
     QStringList h5Paths;
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*_deburst.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files | QDir::NoSymLinks);
-        h5Files.sort();
-        for (const QString& h5File : h5Files) {
-            h5Paths.append(dir.absoluteFilePath(h5File));
-        }
+    QString transactionError;
+    if (!projectXml()) {
+        onError(QStringLiteral("Project XML context is unavailable for deburst output commit."));
+        return;
+    }
+    if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+                                              QStringList() << QStringLiteral("s_re")
+                                                            << QStringLiteral("s_im"),
+                                              &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    QStringList manifestPaths;
+    const QDir finalDirectory(QDir(m_outputTransaction.projectRoot).absoluteFilePath(m_outputTransaction.nodeName));
+    for (const QString& fileName : m_outputTransaction.expectedFileNames) {
+        manifestPaths.append(finalDirectory.absoluteFilePath(fileName));
+    }
+    if (!NodeUtils::workerOutputsMatchManifest(manifestPaths, m_pendingOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    if (!NodeUtils::prepareOutputTransactionMetadataCommit(
+            m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode, false, false);
+    if (!onResultsReceived(m_preparedDstNode, h5Paths, m_pendingOriginNames)) {
+        onError(QStringLiteral("Failed to commit deburst project metadata."));
+        return;
+    }
+    if (!NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    if (!NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
+    publishResultsToProjectTree(m_preparedDstNode, h5Paths);
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_preparedDstNode);
     setOutputData(0, m_outputData);
 
     // 收集生成的预览图
@@ -317,9 +349,15 @@ void S1DeburstNode::onError(const QString& error)
     m_thread = nullptr;
 
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic error"), projectXml());
         return;
     }
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     m_outputNodeNameEdit->setEnabled(true);
     setState(ExecutionState::Error);
 }
@@ -330,9 +368,11 @@ void S1DeburstNode::onCancelled()
     m_worker = nullptr;
     m_thread = nullptr;
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic cancellation"), projectXml());
         return;
     }
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
     m_outputData.reset();
     m_imageInfoData.reset();
     setOutputData(0, nullptr);
@@ -343,34 +383,13 @@ void S1DeburstNode::onCancelled()
     Q_EMIT computingFinished();
 }
 
-void S1DeburstNode::onResultsReceived(
+bool S1DeburstNode::onResultsReceived(
     const QString& dstNode,
     const QStringList& deburstH5Paths,
     const QStringList& originNames)
 {
     if (isAutomaticExecutionObsolete()) {
-        return;
-    }
-
-    QStandardItemModel* model = projectModel();
-    const QList<QStandardItem*> projects = model ? model->findItems(projectName()) : QList<QStandardItem*>();
-    if (projects.isEmpty()) {
-        InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: project tree root is unavailable.");
-        return;
-    }
-    QStandardItem* deburstNode = NodeUtils::findOrCreateProjectNode(
-        projects.first(), dstNode, "complex-1.0", FOLDER_ICON);
-    if (!deburstNode) {
-        InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: failed to create output tree node.");
-        return;
-    }
-    deburstNode->setToolTip(projectName());
-    for (const QString& h5Path : deburstH5Paths) {
-        QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
-            deburstNode, QFileInfo(h5Path).baseName(), "complex", h5Path, IMAGEDATA_ICON);
-        if (imageItem) {
-            deburstNode->setChild(imageItem->row(), 1, new QStandardItem(h5Path));
-        }
+        return false;
     }
 
     // 用全局 XML 句柄 + 原生 TinyXML 写入，绕过外部 DLL 接口（SOP 避坑经验 #9）
@@ -379,7 +398,7 @@ void S1DeburstNode::onResultsReceived(
     if (!xml)
     {
         InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: projectXml() is null, skipping XML write.");
-        return;
+        return false;
     }
 
     TiXmlElement* root = nullptr;
@@ -387,7 +406,7 @@ void S1DeburstNode::onResultsReceived(
     if (!root)
     {
         InSARLogManager::LogError("S1DeburstNode", "onResultsReceived: XML root is null, skipping XML write.");
-        return;
+        return false;
     }
 
     bool xmlModified = false;
@@ -505,15 +524,27 @@ void S1DeburstNode::onResultsReceived(
         }
     }
 
-    if (xmlModified)
-    {
-        // 通过全局句柄落盘，与主工程统一的内存镜像一致，不会被主工程覆盖（SOP 避坑经验 #9 §1）
-        QString xmlPath = projectPath() + "/" + projectName();
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
-        InSARLogManager::LogInfo("S1DeburstNode", "onResultsReceived: XML saved via native TinyXML.");
+    return xmlModified;
+}
+
+void S1DeburstNode::publishResultsToProjectTree(const QString& dstNode, const QStringList& deburstH5Paths)
+{
+    QStandardItemModel* model = projectModel();
+    const QList<QStandardItem*> projects = model ? model->findItems(projectName()) : QList<QStandardItem*>();
+    if (projects.isEmpty()) {
+        InSARLogManager::LogError("S1DeburstNode", "Output metadata committed but project tree root is unavailable.");
+        return;
     }
-    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-        iface->refreshProjectTree();
+    QStandardItem* deburstNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), dstNode, "complex-1.0", FOLDER_ICON);
+    if (!deburstNode) return;
+    deburstNode->setToolTip(projectName());
+    for (const QString& h5Path : deburstH5Paths) {
+        QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
+            deburstNode, QFileInfo(h5Path).baseName(), "complex", h5Path, IMAGEDATA_ICON);
+        if (imageItem) {
+            deburstNode->setChild(imageItem->row(), 1, new QStandardItem(h5Path));
+        }
     }
 }
 
@@ -635,6 +666,23 @@ void S1DeburstNode::executeProcessing()
 
     setProgress(0);
 
+    QStringList expectedOutputPaths;
+    for (const QString& inputPath : inputPaths) {
+        expectedOutputPaths.append(savePath + "/" + dstNode + "/" + QFileInfo(inputPath).baseName() + "_deburst.h5");
+    }
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(savePath, dstNode, expectedOutputPaths,
+                                           inputPaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_pendingOutputPaths.clear();
+    m_pendingOriginNames.clear();
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+
     // Create thread and worker
     m_thread = new QThread();
     m_worker = new S1DeburstWorker();
@@ -642,8 +690,9 @@ void S1DeburstNode::executeProcessing()
 
     // Connect signals
     connect(this, &S1DeburstNode::startDeburst, m_worker, &S1DeburstWorker::S1_Deburst);
-    connect(m_thread, &QThread::started, [this, savePath, dstProject, dstNode, inputPaths]() {
-        Q_EMIT startDeburst(savePath, dstProject, dstNode, inputPaths);
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, [this, savePath, dstProject, stagingNode, inputPaths]() {
+        Q_EMIT startDeburst(savePath, dstProject, stagingNode, inputPaths);
     });
     connect(m_worker, &S1DeburstWorker::updateProcess, this, &S1DeburstNode::onProgressUpdate);
     connect(m_worker, &S1DeburstWorker::endProcess, this, &S1DeburstNode::onProcessingFinished);
@@ -652,8 +701,11 @@ void S1DeburstNode::executeProcessing()
     connect(m_worker, &S1DeburstWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_worker, &S1DeburstWorker::cancelled, this, &S1DeburstNode::onCancelled);
     connect(m_worker, &S1DeburstWorker::cancelled, m_thread, &QThread::quit);
-    // sendResults: Worker 完成后回传路径列表，由 Node 端用原生 TinyXML 写 XML（SOP 避坑经验 #9）
-    connect(m_worker, &S1DeburstWorker::sendResults, this, &S1DeburstNode::onResultsReceived);
+    connect(m_worker, &S1DeburstWorker::sendResults, this,
+            [this](const QString&, const QStringList& paths, const QStringList& names) {
+                m_pendingOutputPaths = paths;
+                m_pendingOriginNames = names;
+            });
     connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
 
@@ -678,20 +730,9 @@ bool S1DeburstNode::validateAndRestoreOutput()
         return false;
 
     QString outputPath = projectPath() + "/" + dstNode + "/";
-
-    // 检查目录是否存在且不为空
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*_deburst.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-
-        if (!h5Files.isEmpty()) {
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
             // 恢复 Port 0 数据
-            QStringList h5Paths;
-            for (const QString& h5File : h5Files) {
-                h5Paths.append(dir.absoluteFilePath(h5File));
-            }
             h5Paths.sort();
             m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
@@ -703,13 +744,12 @@ bool S1DeburstNode::validateAndRestoreOutput()
             QStringList missingJpgs;
             QStringList allJpgPaths;
 
-            for (const QString& h5File : h5Files) {
-                QString h5Path = dir.absoluteFilePath(h5File);
+            for (const QString& h5Path : h5Paths) {
                 QFileInfo fi(h5Path);
                 QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
                 allJpgPaths.append(jpgPath);
 
-                if (QFile::exists(jpgPath)) {
+                if (NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath)) {
                     existingJpgPaths.append(jpgPath);
                 } else {
                     missingH5s.append(h5Path);
@@ -729,7 +769,7 @@ bool S1DeburstNode::validateAndRestoreOutput()
 
             // 异步补录 JPG 预览
             if (!missingH5s.isEmpty()) {
-                startPreviewGeneration(missingH5s, missingJpgs, allJpgPaths);
+                startPreviewGeneration(missingH5s, missingJpgs, h5Paths, allJpgPaths);
             }
 
             // 恢复左侧树标准项目模型 (Standard Item Model Tree View)
@@ -766,8 +806,7 @@ bool S1DeburstNode::validateAndRestoreOutput()
                     }
 
                     // 2. 补全下属图像节点
-                    for (const QString& h5File : h5Files) {
-                        QString h5Path = dir.absoluteFilePath(h5File);
+                    for (const QString& h5Path : h5Paths) {
                         QFileInfo fileinfo(h5Path);
                         QString deburst_name = fileinfo.baseName();
 
@@ -810,8 +849,7 @@ bool S1DeburstNode::validateAndRestoreOutput()
                     }
 
                     if (!dataNodeExists) {
-                        for (const QString& h5File : h5Files) {
-                            QString h5Path = dir.absoluteFilePath(h5File);
+                        for (const QString& h5Path : h5Paths) {
                             QFileInfo fileinfo(h5Path);
                             QString relativePath = QString("/%1/%2").arg(dstNode).arg(fileinfo.fileName());
 
@@ -938,30 +976,34 @@ bool S1DeburstNode::validateAndRestoreOutput()
 
             return true;
         }
-    }
 
     return false;
 }
 
 void S1DeburstNode::startPreviewGeneration(const QStringList& h5Paths,
                                            const QStringList& generatedJpgPaths,
+                                           const QStringList& resultH5Paths,
                                            const QStringList& resultJpgPaths)
 {
     if (m_remedyWatcher.isRunning()) {
         m_remedyWatcher.cancel();
         m_remedyWatcher.disconnect(this);
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                [this, h5Paths, generatedJpgPaths, resultJpgPaths]() {
+                [this, h5Paths, generatedJpgPaths, resultH5Paths, resultJpgPaths]() {
             m_remedyWatcher.disconnect(this);
-            startPreviewGeneration(h5Paths, generatedJpgPaths, resultJpgPaths);
+            startPreviewGeneration(h5Paths, generatedJpgPaths, resultH5Paths, resultJpgPaths);
         });
         return;
     }
 
     m_remedyWatcher.disconnect(this);
-    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, resultJpgPaths]() {
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, resultH5Paths, resultJpgPaths]() {
         InSARLogManager::LogInfo("S1DeburstNode", "Remedy preview generation finished. Updating Port 1.");
-        m_imageInfoData = std::make_shared<ImageInfoData>(resultJpgPaths);
+        QStringList currentJpgPaths;
+        for (int i = 0; i < resultH5Paths.size() && i < resultJpgPaths.size(); ++i) {
+            if (NodeUtils::isJpgPreviewCurrent(resultH5Paths[i], resultJpgPaths[i])) currentJpgPaths.append(resultJpgPaths[i]);
+        }
+        m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     });
@@ -979,14 +1021,9 @@ QStringList S1DeburstNode::previewImagePaths() const
     if (dstNode.isEmpty())
         return existingPaths;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*_deburst.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString h5Path = dir.absoluteFilePath(h5File);
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
+        for (const QString& h5Path : h5Paths) {
             QFileInfo fi(h5Path);
             QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
             if (QFile::exists(jpgPath)) {

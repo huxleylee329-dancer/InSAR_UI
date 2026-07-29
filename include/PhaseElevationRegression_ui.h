@@ -3,6 +3,7 @@
 #include <QStandardItemModel>
 #include "ui_PhaseElevationRegression.h"
 #include "PhaseElevationRegressionWorker.h"
+#include "NodeUtils.h"
 
 class PhaseElevationRegression_ui : public QWidget
 {
@@ -20,9 +21,7 @@ public slots:
 
 signals:
     void operate(int polyOrder, int windowSize, double coherenceThresh,
-                 QString save_path, QString project_name,
-                 QString node_name, QString file_name,
-                 QStringList phaseNames, QStringList phasePaths);
+                 QString outputDirectory, QStringList phaseNames, QStringList phasePaths);
     void sendCopy(QStandardItemModel* model);
 
 private slots:
@@ -39,7 +38,10 @@ private:
     QStringList m_generatedOutputPaths;
     QList<int> m_generatedOffsetRows;
     QList<int> m_generatedOffsetCols;
+    QStringList m_preparedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 
     void ChangeVision(bool Editable);
-    void persistGeneratedOutputs();
+    bool persistGeneratedOutputs(QString* errorMessage = nullptr);
+    void onWorkerError(const QString& error);
 };

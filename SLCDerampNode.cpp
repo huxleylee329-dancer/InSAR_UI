@@ -208,16 +208,11 @@ QStringList SLCDerampNode::previewImagePaths() const
     if (dstNode.isEmpty())
         return existingPaths;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*_deramp.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString h5Path = dir.absoluteFilePath(h5File);
-            QFileInfo fi(h5Path);
-            QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
+        for (const QString& h5Path : h5Paths) {
+            const QFileInfo fi(h5Path);
+            const QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
             if (QFile::exists(jpgPath)) {
                 existingPaths.append(jpgPath);
             }
@@ -232,21 +227,10 @@ bool SLCDerampNode::validateAndRestoreOutput()
     if (dstNode.isEmpty())
         return false;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*_deramp.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-
-        if (!h5Files.isEmpty()) {
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
+        if (!h5Paths.isEmpty()) {
             // 恢复 Port 0 数据
-            QStringList h5Paths;
-            for (const QString& h5File : h5Files) {
-                h5Paths.append(dir.absoluteFilePath(h5File));
-            }
-            h5Paths.sort();
             m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
             setOutputData(0, m_outputData);
 
@@ -256,13 +240,12 @@ bool SLCDerampNode::validateAndRestoreOutput()
             QStringList missingJpgs;
             QStringList allJpgPaths;
 
-            for (const QString& h5File : h5Files) {
-                QString h5Path = dir.absoluteFilePath(h5File);
+            for (const QString& h5Path : h5Paths) {
                 QFileInfo fi(h5Path);
                 QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
                 allJpgPaths.append(jpgPath);
 
-                if (QFile::exists(jpgPath)) {
+                if (NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath)) {
                     existingJpgPaths.append(jpgPath);
                 } else {
                     missingH5s.append(h5Path);
@@ -280,27 +263,52 @@ bool SLCDerampNode::validateAndRestoreOutput()
 
             // 异步补录 JPG 预览
             if (!missingH5s.isEmpty()) {
-                m_remedyWatcher.cancel();
+                m_remedyWatcher.disconnect();
                 if (m_remedyWatcher.isRunning()) {
-                    m_remedyWatcher.disconnect(this);
-                    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
-                        m_remedyWatcher.disconnect(this);
-                        QTimer::singleShot(0, this, [this]() { validateAndRestoreOutput(); });
-                    });
-                    return true;
+                    m_remedyWatcher.cancel();
                 }
-                m_remedyWatcher.disconnect(this);
+                m_previewGenerationPending = true;
+                const quint64 previewGenerationId = ++m_previewGenerationId;
+                QStringList previewJpgPaths;
+                for (const QString& missingJpg : missingJpgs) {
+                    const QFileInfo info(missingJpg);
+                    previewJpgPaths.append(info.absolutePath() + "/." + info.baseName() +
+                        QStringLiteral(".preview-%1.jpg").arg(previewGenerationId));
+                    QFile::remove(missingJpg);
+                }
 
-                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths]() {
+                connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                        [this, h5Paths, allJpgPaths, missingJpgs, previewJpgPaths, previewGenerationId]() {
+                    if (!m_previewGenerationPending || previewGenerationId != m_previewGenerationId) {
+                        for (const QString& previewJpgPath : previewJpgPaths) {
+                            QFile::remove(previewJpgPath);
+                        }
+                        return;
+                    }
+                    m_previewGenerationPending = false;
+                    for (int i = 0; i < previewJpgPaths.size() && i < missingJpgs.size(); ++i) {
+                        if (QFile::exists(previewJpgPaths[i])) {
+                            QFile::rename(previewJpgPaths[i], missingJpgs[i]);
+                        }
+                    }
                     InSARLogManager::LogInfo("SLCDerampNode", "Remedy preview generation finished. Updating Port 1.");
-                    m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
+                    QStringList currentJpgPaths;
+                    for (int i = 0; i < h5Paths.size() && i < allJpgPaths.size(); ++i) {
+                        if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], allJpgPaths[i])) currentJpgPaths.append(allJpgPaths[i]);
+                    }
+                    m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
                     setOutputData(1, m_imageInfoData);
-                    Q_EMIT dataUpdated(1);
+                    if (executionState() == ExecutionState::Running) {
+                        setProgress(100);
+                        finishExecution();
+                    } else {
+                        Q_EMIT dataUpdated(1);
+                    }
                 });
 
-                QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs]() {
+                QFuture<void> future = QtConcurrent::run([missingH5s, previewJpgPaths]() {
                     for (int i = 0; i < missingH5s.size(); ++i) {
-                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
+                        NodeUtils::generateJpgPreviewFromH5(missingH5s[i], previewJpgPaths[i], "complex");
                     }
                 });
                 m_remedyWatcher.setFuture(future);
@@ -342,8 +350,7 @@ bool SLCDerampNode::validateAndRestoreOutput()
                     }
 
                     // 2. 补全下属图像节点
-                    for (const QString& h5File : h5Files) {
-                        QString h5Path = dir.absoluteFilePath(h5File);
+                    for (const QString& h5Path : h5Paths) {
                         QFileInfo fileinfo(h5Path);
                         QString deramp_name = fileinfo.baseName();
 
@@ -401,7 +408,7 @@ void SLCDerampNode::createWidget()
     nodeNameLabel->setFixedWidth(80);
     nodeNameLayout->addWidget(nodeNameLabel);
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
+    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -550,70 +557,163 @@ void SLCDerampNode::onProgressUpdate(int progress, const QString& message)
 
 void SLCDerampNode::onProcessingFinished()
 {
+    QStringList h5Paths;
+    const QString dstNode = m_preparedDstNode;
+    releaseFinishedThreadAndWorker();
+
     if (isAutomaticExecutionObsolete()) {
-        releaseFinishedThreadAndWorker();
+        m_previewGenerationPending = false;
+        ++m_previewGenerationId;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
+        m_outputData.reset();
+        m_imageInfoData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         discardObsoleteAutomaticExecution();
         return;
     }
 
-    if (m_generatedOutputPaths.isEmpty()) {
-        onError(QStringLiteral("SLC deramp did not return output files."));
+    QString transactionError;
+    if (!projectXml() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+                                             QStringList() << QStringLiteral("s_re") << QStringLiteral("s_im"),
+                                             &transactionError)) {
+        onError(transactionError.isEmpty()
+                    ? QStringLiteral("Project XML context is unavailable for SLC deramp output commit.")
+                    : transactionError);
         return;
     }
-    for (const QString& h5Path : m_generatedOutputPaths) {
-        if (!QFileInfo::exists(h5Path)) {
-            onError(QStringLiteral("SLC deramp returned a missing output file."));
-            return;
-        }
+
+    if (!NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(
+            m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(m_generatedOutputPaths, m_outputNodeName);
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode, false, false);
+    m_xmlDirty = false;
+    if (!commitResultsToProjectXml(h5Paths, m_pendingOriginNames) || !m_xmlDirty ||
+        !NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError.isEmpty()
+                    ? QStringLiteral("SLC deramp output metadata was not produced.")
+                    : transactionError);
+        return;
+    }
+
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
+    publishResultsToProjectTree(h5Paths, m_pendingOriginNames);
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
+    }
+
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
-    // 收集生成的预览图
     QStringList jpgPaths;
-    for (const QString& h5Path : m_generatedOutputPaths) {
-        QFileInfo fi(h5Path);
-        QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-        if (QFile::exists(jpgPath)) {
-            jpgPaths.append(jpgPath);
-        }
+    for (const QString& h5Path : h5Paths) {
+        const QFileInfo fi(h5Path);
+        jpgPaths.append(fi.absolutePath() + "/" + fi.baseName() + ".jpg");
     }
 
-    if (!jpgPaths.isEmpty()) {
-        m_imageInfoData = std::make_shared<ImageInfoData>(jpgPaths);
-        setOutputData(1, m_imageInfoData);
-    } else {
+    if (jpgPaths.isEmpty()) {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
-    }
-
-    releaseFinishedThreadAndWorker();
-
-    if (discardObsoleteAutomaticExecution()) {
+        updateParameterWidgetsEnableState();
+        setState(ExecutionState::Running);
+        setProgress(100);
+        InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing completed (empty output list).");
+        finishExecution();
         return;
     }
 
-    // Update UI
-    updateParameterWidgetsEnableState();
+    m_remedyWatcher.disconnect();
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+    m_previewGenerationPending = true;
+    const quint64 previewGenerationId = ++m_previewGenerationId;
+    QStringList previewJpgPaths;
+    for (const QString& jpgPath : jpgPaths) {
+        const QFileInfo info(jpgPath);
+        previewJpgPaths.append(info.absolutePath() + "/." + info.baseName() +
+            QStringLiteral(".preview-%1.jpg").arg(previewGenerationId));
+        QFile::remove(jpgPath);
+    }
+    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+            [this, jpgPaths, previewJpgPaths, previewGenerationId]() {
+        if (!m_previewGenerationPending || previewGenerationId != m_previewGenerationId) {
+            for (const QString& previewJpgPath : previewJpgPaths) {
+                QFile::remove(previewJpgPath);
+            }
+            return;
+        }
+        m_previewGenerationPending = false;
+        if (discardObsoleteAutomaticExecution()) {
+            ++m_previewGenerationId;
+            m_outputData.reset();
+            m_imageInfoData.reset();
+            setOutputData(0, nullptr);
+            setOutputData(1, nullptr);
+            return;
+        }
 
-    setState(ExecutionState::Running);
-    setProgress(100);
-    InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing completed.");
-    finishExecution();
+        QStringList validJpgPaths;
+        for (int i = 0; i < jpgPaths.size() && i < previewJpgPaths.size(); ++i) {
+            if (QFile::exists(previewJpgPaths[i]) &&
+                QFile::rename(previewJpgPaths[i], jpgPaths[i])) {
+                validJpgPaths.append(jpgPaths[i]);
+            }
+        }
+        if (!validJpgPaths.isEmpty()) {
+            m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+            setOutputData(1, m_imageInfoData);
+        } else {
+            m_imageInfoData.reset();
+            setOutputData(1, nullptr);
+        }
+
+        updateParameterWidgetsEnableState();
+        setState(ExecutionState::Running);
+        setProgress(100);
+        InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing completed.");
+        finishExecution();
+    });
+    QFuture<void> future = QtConcurrent::run([h5Paths, previewJpgPaths]() {
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], previewJpgPaths[i], "complex");
+        }
+    });
+    m_remedyWatcher.setFuture(future);
 }
 
 void SLCDerampNode::onError(const QString& error)
 {
     InSARLogManager::LogError("SLCDerampNode", "Execution error: " + error);
     releaseFinishedThreadAndWorker();
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
 
     updateParameterWidgetsEnableState();
+    setLastErrorMessage(error);
     setState(ExecutionState::Error);
+    Q_EMIT executionError(error);
 }
 
 void SLCDerampNode::onResultsReceived(
@@ -623,67 +723,51 @@ void SLCDerampNode::onResultsReceived(
     const QString& savePath,
     const QString& projectName)
 {
+    Q_UNUSED(dstNode);
+    Q_UNUSED(savePath);
+    Q_UNUSED(projectName);
     if (isAutomaticExecutionObsolete()) {
         return;
     }
 
     if (h5Paths.isEmpty() || h5Paths.size() != originNames.size()) {
-        InSARLogManager::LogError("SLCDerampNode", "Worker returned inconsistent deramp output metadata.");
         return;
     }
     m_generatedOutputPaths = h5Paths;
+    m_pendingOriginNames = originNames;
+}
 
-    QStandardItemModel* model = projectModel();
-    const QList<QStandardItem*> projects = model ? model->findItems(projectName) : QList<QStandardItem*>();
-    if (projects.isEmpty()) {
-        InSARLogManager::LogError("SLCDerampNode", "Project tree root was not found.");
-        return;
+bool SLCDerampNode::commitResultsToProjectXml(const QStringList& h5Paths, const QStringList& originNames)
+{
+    if (h5Paths.isEmpty() || h5Paths.size() != originNames.size()) {
+        return false;
     }
 
-    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-        projects.first(), dstNode, "complex-3.0", FOLDER_ICON);
-    if (!outputNode) {
-        InSARLogManager::LogError("SLCDerampNode", "Unable to create deramp output node.");
-        return;
-    }
-    outputNode->setToolTip(projectName);
-    for (const QString& h5Path : h5Paths) {
-        const QString outputName = QFileInfo(h5Path).baseName();
-        QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
-            outputNode, outputName, "complex", h5Path, IMAGEDATA_ICON);
-        if (imageItem) {
-            outputNode->setChild(imageItem->row(), 1, new QStandardItem(h5Path));
-        }
-    }
-
-    // 用全局 XML 句柄 + 原生 TinyXML 写入，绕过外部 DLL 接口以避崩溃 (SOP 9)
     XMLFile* xml = projectXml();
     if (!xml)
     {
-        InSARLogManager::LogError("SLCDerampNode", "onResultsReceived: projectXml() is null, skipping XML write.");
-        return;
+        return false;
     }
 
     TiXmlElement* root = nullptr;
     xml->get_root(root);
     if (!root)
     {
-        InSARLogManager::LogError("SLCDerampNode", "onResultsReceived: XML root is null, skipping XML write.");
-        return;
+        return false;
     }
 
     bool xmlModified = false;
     for (int i = 0; i < h5Paths.size(); i++)
     {
         QFileInfo fileinfo(h5Paths.at(i));
-        QString relativePath = QString("/%1/%2").arg(dstNode).arg(fileinfo.fileName());
+        QString relativePath = QString("/%1/%2").arg(m_preparedDstNode).arg(fileinfo.fileName());
 
         // 查找或新建 DataNode
         TiXmlElement* dataNodeElem = nullptr;
         for (TiXmlElement* p = root->FirstChildElement(); p != nullptr; p = p->NextSiblingElement())
         {
             const char* nameAttr = p->Attribute("name");
-            if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == dstNode)
+            if (nameAttr && strcmp(p->Value(), "DataNode") == 0 && QString(nameAttr) == m_preparedDstNode)
             {
                 dataNodeElem = p;
                 break;
@@ -694,7 +778,7 @@ void SLCDerampNode::onResultsReceived(
         {
             // 新建 DataNode
             dataNodeElem = new TiXmlElement("DataNode");
-            dataNodeElem->SetAttribute("name", dstNode.toStdString().c_str());
+            dataNodeElem->SetAttribute("name", m_preparedDstNode.toStdString().c_str());
             dataNodeElem->SetAttribute("data_count", "1");
             dataNodeElem->SetAttribute("data_processing", "SLC_deramp");
             dataNodeElem->SetAttribute("rank", "complex-3.0");
@@ -733,7 +817,7 @@ void SLCDerampNode::onResultsReceived(
 
             TiXmlElement* paramsElem = new TiXmlElement("Data_Processing_Parameters");
             TiXmlElement* masterImageElem = new TiXmlElement("master_image");
-            masterImageElem->LinkEndChild(new TiXmlText(QString::number(m_masterIndex).toStdString().c_str()));
+            masterImageElem->LinkEndChild(new TiXmlText(QString::number(m_preparedMasterIndex).toStdString().c_str()));
             paramsElem->LinkEndChild(masterImageElem);
             dataNodeElem->LinkEndChild(paramsElem);
 
@@ -790,21 +874,35 @@ void SLCDerampNode::onResultsReceived(
         }
     }
 
-    if (xmlModified)
-    {
-        QString xmlPath = savePath + "/" + projectName;
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
-        InSARLogManager::LogInfo("SLCDerampNode", "onResultsReceived: XML saved via native TinyXML.");
+    m_xmlDirty = xmlModified;
+    return xmlModified;
+}
+
+void SLCDerampNode::publishResultsToProjectTree(const QStringList& h5Paths, const QStringList& originNames)
+{
+    Q_UNUSED(originNames);
+    QStandardItemModel* model = projectModel();
+    const QList<QStandardItem*> projects = model ? model->findItems(m_preparedProjectName)
+                                                  : QList<QStandardItem*>();
+    if (projects.isEmpty()) {
+        return;
     }
 
-    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-        iface->refreshProjectTree();
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projects.first(), m_preparedDstNode, "complex-3.0", FOLDER_ICON);
+    if (!outputNode) {
+        return;
+    }
+    outputNode->setToolTip(m_preparedProjectName);
+    for (const QString& h5Path : h5Paths) {
+        const QString outputName = QFileInfo(h5Path).baseName();
+        NodeUtils::findOrCreateChildItem(outputNode, outputName, "complex", h5Path, IMAGEDATA_ICON);
     }
 }
 
 bool SLCDerampNode::validateInputs() const
 {
-    if (!m_inputData)
+    if (!m_inputData || m_inputData->filePaths().isEmpty())
     {
         return false;
     }
@@ -836,34 +934,46 @@ QString SLCDerampNode::generateDefaultOutputName() const
 
 bool SLCDerampNode::prepareToStart()
 {
+    const QString configuredOutputName = m_outputNodeNameEdit
+        ? m_outputNodeNameEdit->text().trimmed()
+        : m_outputNodeName.trimmed();
+    if (configuredOutputName.isEmpty()) {
+        m_outputNodeName = generateDefaultOutputName();
+        if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
+    } else {
+        m_outputNodeName = configuredOutputName;
+    }
+
     if (!validateInputs())
     {
         return false;
     }
 
-    QString dstNode = m_outputNodeNameEdit->text().trimmed();
-    if (dstNode.isEmpty()) dstNode = generateDefaultOutputName();
+    QString dstNode = m_outputNodeName.trimmed();
     m_preparedDstNode = dstNode;
+    m_outputNodeName = m_preparedDstNode;
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
+    m_preparedSavePath = projectPath();
+    m_preparedProjectName = projectName();
+    m_preparedInputPaths = m_inputData->filePaths();
+    for (QString& inputPath : m_preparedInputPaths) {
+        if (QDir::isRelativePath(inputPath)) {
+            inputPath = QDir(m_preparedSavePath).absoluteFilePath(inputPath);
+        }
+    }
+    m_preparedMasterIndex = m_masterIndex;
+    m_preparedOutputPaths.clear();
+    for (const QString& inputPath : m_preparedInputPaths) {
+        m_preparedOutputPaths.append(QDir(m_preparedSavePath).absoluteFilePath(
+            m_preparedDstNode + "/" + QFileInfo(inputPath).baseName() + "_deramp.h5"));
+    }
 
     m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir outputDir(outputPath);
-    if (outputDir.exists()) {
-        QStringList filters;
-        filters << "*_deramp.h5";
-        QStringList existingH5 = outputDir.entryList(filters, QDir::Files);
-        if (!existingH5.isEmpty()) {
-            if (_isAutoTriggered) {
-                m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
-            } else {
-                m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
-                    NodeUtils::getProjectContext(_widget),
-                    caption(),
-                    existingH5,
-                    nullptr
-                );
-            }
-        }
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+            NodeUtils::getProjectContext(_widget), m_preparedDstNode, m_preparedOutputPaths, nullptr);
     }
 
     m_preparedDemPath = m_demPath;
@@ -877,11 +987,11 @@ void SLCDerampNode::executeProcessing()
 
     // Retrieve input and output settings
     QString dstNode = m_preparedDstNode;
-    QString dstProject = projectName();
-    QString savePath = projectPath();
+    QString dstProject = m_preparedProjectName;
+    QString savePath = m_preparedSavePath;
     QString preparedDemPath = m_preparedDemPath;
-    const QStringList inputPaths = m_inputData->filePaths();
-    const int masterIndex = m_masterIndex;
+    const QStringList inputPaths = m_preparedInputPaths;
+    const int masterIndex = m_preparedMasterIndex;
 
     m_outputNodeName = dstNode;
 
@@ -890,7 +1000,9 @@ void SLCDerampNode::executeProcessing()
         if (validateAndRestoreOutput()) {
             setState(ExecutionState::Running);
             setProgress(100);
-            finishExecution();
+            if (!m_remedyWatcher.isRunning()) {
+                finishExecution();
+            }
             return;
         }
         else
@@ -901,10 +1013,19 @@ void SLCDerampNode::executeProcessing()
     }
 
     setProgress(0);
-
-    // 2. 覆盖运行前，清理工程 XML 的旧记录 and 左侧树视图以避影分身 (SOP 14)
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
+    setState(ExecutionState::Running);
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
+                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
     m_generatedOutputPaths.clear();
+    m_pendingOriginNames.clear();
+    m_xmlDirty = false;
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
 
     // Create thread and worker
     m_thread = new QThread();
@@ -913,8 +1034,9 @@ void SLCDerampNode::executeProcessing()
 
     // Connect signals
     connect(this, &SLCDerampNode::startDeramp, m_worker, &SLCDerampWorker::SLC_deramp_with_dem);
-    connect(m_thread, &QThread::started, [this, masterIndex, dstProject, savePath, dstNode, inputPaths, preparedDemPath]() {
-        Q_EMIT startDeramp(masterIndex, dstProject, savePath, dstNode, inputPaths, preparedDemPath);
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, [this, masterIndex, dstProject, savePath, stagingNode, inputPaths, preparedDemPath]() {
+        Q_EMIT startDeramp(masterIndex, dstProject, savePath, stagingNode, inputPaths, preparedDemPath);
     });
     connect(m_worker, &SLCDerampWorker::updateProcess, this, &SLCDerampNode::onProgressUpdate);
     connect(m_worker, &SLCDerampWorker::endProcess, this, &SLCDerampNode::onProcessingFinished);
@@ -983,12 +1105,46 @@ void SLCDerampNode::stopExecution()
     if (m_worker)
     {
         m_worker->StopProcess();
+        return;
     }
+
+    if (!m_previewGenerationPending) {
+        return;
+    }
+
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    updateParameterWidgetsEnableState();
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void SLCDerampNode::onCancelled()
 {
     releaseFinishedThreadAndWorker();
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }

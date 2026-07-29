@@ -10,11 +10,13 @@
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QFileInfo>
+#include <QFile>
 #include <QDebug>
 #include <QDir>
 #include <QApplication>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QFutureWatcher>
+#include <QUuid>
 #include <opencv2/opencv.hpp>
 #include "FormatConversion.h"
 
@@ -179,7 +181,7 @@ void DeformationRateFieldNode::createWidget()
 
     m_modelTypeCombo = new QComboBox();
     m_modelTypeCombo->addItem(QStringLiteral("线性拟合"), 1);
-    m_modelTypeCombo->addItem(QStringLiteral("浜屾澶氶」寮?"), 2);
+    m_modelTypeCombo->addItem(QStringLiteral("二次多项式"), 2);
     m_modelTypeCombo->setCurrentIndex(m_modelType - 1);
     addParamRow(QStringLiteral("速率模型:"), m_modelTypeCombo);
 
@@ -205,9 +207,9 @@ void DeformationRateFieldNode::createWidget()
     addParamRow(QStringLiteral("中质不确阈值:"), m_uncertaintyThreshMidEdit);
 
     m_colorMapCombo = new QComboBox();
-    m_colorMapCombo->addItem(QStringLiteral("钃?鐧?绾?"), 0);
-    m_colorMapCombo->addItem(QStringLiteral("鐑姏鍥?"), 1);
-    m_colorMapCombo->addItem(QStringLiteral("褰╄櫣鑹?"), 2);
+    m_colorMapCombo->addItem(QStringLiteral("蓝-白-红"), 0);
+    m_colorMapCombo->addItem(QStringLiteral("热力图"), 1);
+    m_colorMapCombo->addItem(QStringLiteral("彩虹色"), 2);
     m_colorMapCombo->setCurrentIndex(m_colorMap);
     addParamRow(QStringLiteral("可视化色带:"), m_colorMapCombo);
 
@@ -230,7 +232,7 @@ void DeformationRateFieldNode::createWidget()
     mainLayout->addLayout(arrowLayout);
 
     m_outputNodeNameEdit = new QLineEdit(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     addParamRow(QStringLiteral("目标节点名:"), m_outputNodeNameEdit);
 
     m_resultLabel = new QLabel(QStringLiteral("状态：等待分析"));
@@ -588,14 +590,16 @@ void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
 
     if (!QFileInfo::exists(h5Path)) return;
 
+    // Resolved in the background task to keep HDF5 probing off the UI thread.
+    const auto renderedInputs = std::make_shared<QStringList>();
     QFutureWatcher<void>* watcher = new QFutureWatcher<void>(this);
-    connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, h5Path, jpgPath, completeExecution]() {
+    connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, h5Path, jpgPath, completeExecution, renderedInputs]() {
         if (discardObsoleteAutomaticExecution()) {
             watcher->deleteLater();
             return;
         }
 
-        if (QFileInfo::exists(jpgPath)) {
+        if (NodeUtils::isJpgPreviewCurrent(*renderedInputs, jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
             setOutputData(1, m_previewData);
             if (!completeExecution) {
@@ -622,20 +626,33 @@ void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
         watcher->deleteLater();
     });
 
-    watcher->setFuture(QtConcurrent::run([h5Path, jpgPath, outDir]() {
+    watcher->setFuture(QtConcurrent::run([h5Path, jpgPath, renderedInputs]() {
         NodeUtils::Hdf5Locker locker;
-        
-        if (QFileInfo::exists(jpgPath)) return;
 
         FormatConversion FC;
         cv::Mat velocity, mask;
-        
-        std::string sbas_h5_std;
-        FC.read_str_from_h5(h5Path.toStdString().c_str(), "sbas_h5_path", sbas_h5_std);
-        
+
+        std::string sbasPath;
+        FC.read_str_from_h5(h5Path.toStdString().c_str(), "sbas_h5_path", sbasPath);
         int ret = FC.read_array_from_h5(h5Path.toStdString().c_str(), "velocity_nonlinear", velocity);
-        if (ret != 0 && !sbas_h5_std.empty()) {
-            FC.read_array_from_h5(sbas_h5_std.c_str(), "defomation_velocity", velocity);
+        if (ret != 0 || velocity.empty()) {
+            if (sbasPath.empty()) {
+                renderedInputs->clear();
+                return;
+            }
+            *renderedInputs = QStringList() << h5Path << QString::fromStdString(sbasPath);
+            if (FC.read_array_from_h5(sbasPath.c_str(), "defomation_velocity", velocity) != 0 ||
+                velocity.empty()) {
+                renderedInputs->clear();
+                return;
+            }
+        } else {
+            *renderedInputs = QStringList() << h5Path;
+        }
+
+        // The cache can only be accepted after the input actually used to render is known.
+        if (NodeUtils::isJpgPreviewCurrent(*renderedInputs, jpgPath)) {
+            return;
         }
         FC.read_array_from_h5(h5Path.toStdString().c_str(), "mask", mask);
 
@@ -708,7 +725,15 @@ void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
                     }
                 }
             }
-            cv::imwrite(jpgPath.toStdString(), color_img);
+            const QFileInfo jpgInfo(jpgPath);
+            const QString temporaryJpgPath = jpgInfo.absolutePath() + "/." + jpgInfo.completeBaseName() +
+                "." + QUuid::createUuid().toString(QUuid::WithoutBraces) + ".jpg";
+            QFile::remove(temporaryJpgPath);
+            if (cv::imwrite(temporaryJpgPath.toStdString(), color_img)) {
+                if (!NodeUtils::replaceJpgPreviewAtomically(temporaryJpgPath, jpgPath)) {
+                    QFile::remove(temporaryJpgPath);
+                }
+            }
         }
     }));
 }

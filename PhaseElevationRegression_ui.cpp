@@ -3,9 +3,12 @@
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QAbstractButton>
+#include <QDir>
+#include <QFileInfo>
 #include <FormatConversion.h>
 #include "NodeUtils.h"
 #include "icon_source.h"
+#include "tinyxml.h"
 
 PhaseElevationRegression_ui::PhaseElevationRegression_ui(QWidget* parent) :
     QWidget(parent),
@@ -21,8 +24,8 @@ PhaseElevationRegression_ui::PhaseElevationRegression_ui(QWidget* parent) :
 
 PhaseElevationRegression_ui::~PhaseElevationRegression_ui()
 {
+    StopThread();
     emit sendCopy(copy);
-    m_worker = nullptr;
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
@@ -42,7 +45,8 @@ void PhaseElevationRegression_ui::updateProcess(int value, QString information)
 
 void PhaseElevationRegression_ui::endProcess()
 {
-    persistGeneratedOutputs();
+    QString error;
+    const bool committed = persistGeneratedOutputs(&error);
     if (m_worker != nullptr && m_worker->thread()->isRunning())
     {
         m_worker->thread()->quit();
@@ -50,6 +54,12 @@ void PhaseElevationRegression_ui::endProcess()
     }
     m_worker = nullptr;
     ui->progressBar->hide();
+    if (!committed) {
+        QMessageBox::warning(this, "Warning!", error.isEmpty()
+            ? QStringLiteral("回归校正输出事务提交失败。") : error);
+        ChangeVision(true);
+        return;
+    }
     this->close();
 }
 
@@ -65,6 +75,9 @@ void PhaseElevationRegression_ui::StopThread()
         }
         m_worker = nullptr;
     }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"));
+    ui->progressBar->hide();
+    ChangeVision(true);
 }
 
 void PhaseElevationRegression_ui::TransitModel(QStandardItemModel* model)
@@ -217,6 +230,23 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
     m_generatedOutputPaths.clear();
     m_generatedOffsetRows.clear();
     m_generatedOffsetCols.clear();
+    m_preparedOutputPaths.clear();
+
+    QString projectRoot = save_path;
+    if (projectRoot.endsWith(".insar", Qt::CaseInsensitive)) {
+        projectRoot = QFileInfo(projectRoot).absolutePath();
+    }
+    const QString outputNodeName = ui->file_name->text();
+    for (const QString& phaseName : phaseNames) {
+        m_preparedOutputPaths.append(QDir(projectRoot).absoluteFilePath(
+            outputNodeName + "/" + phaseName + "_atmos.h5"));
+    }
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(projectRoot, outputNodeName, m_preparedOutputPaths,
+                                           phasePaths, m_outputTransaction, &transactionError)) {
+        QMessageBox::warning(this, "Warning!", transactionError);
+        return;
+    }
 
     m_worker = new PhaseElevationRegressionWorker;
     m_worker->moveToThread(new QThread(this));
@@ -224,7 +254,8 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
     ui->progressBar->setValue(0);
     ui->progressBar->show();
 
-    connect(this, &PhaseElevationRegression_ui::operate, m_worker, &PhaseElevationRegressionWorker::doRegression, Qt::QueuedConnection);
+    connect(this, &PhaseElevationRegression_ui::operate, m_worker,
+            &PhaseElevationRegressionWorker::doRegression, Qt::QueuedConnection);
     connect(m_worker, &PhaseElevationRegressionWorker::updateProcess, this, &PhaseElevationRegression_ui::updateProcess);
     connect(m_worker, &PhaseElevationRegressionWorker::outputsGenerated, this,
         [this](const QStringList& names, const QStringList& paths,
@@ -235,8 +266,9 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
             m_generatedOffsetCols = cols;
         });
     connect(m_worker, &PhaseElevationRegressionWorker::endProcess, this, &PhaseElevationRegression_ui::endProcess);
+    connect(m_worker, &PhaseElevationRegressionWorker::errorProcess, this, &PhaseElevationRegression_ui::onWorkerError);
+    connect(m_worker, &PhaseElevationRegressionWorker::cancelled, this, &PhaseElevationRegression_ui::StopThread);
     connect(m_worker->thread(), &QThread::finished, m_worker, &PhaseElevationRegressionWorker::deleteLater);
-    connect(this, &QWidget::destroyed, this, &PhaseElevationRegression_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &PhaseElevationRegression_ui::StopThread);
 
     m_worker->thread()->start();
@@ -246,47 +278,126 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
     double coherenceThresh = ui->doubleSpinBox_coherence->value();
 
     emit operate(polyOrder, windowSize, coherenceThresh,
-                 this->save_path, ui->comboBox->currentText(),
-                 ui->comboBox_2->currentText(), ui->file_name->text(),
+                 QDir(projectRoot).absoluteFilePath(m_outputTransaction.stagingName),
                  phaseNames, phasePaths);
 }
 
-void PhaseElevationRegression_ui::persistGeneratedOutputs()
+bool PhaseElevationRegression_ui::persistGeneratedOutputs(QString* errorMessage)
 {
     if (!copy || m_generatedOutputNames.size() != m_generatedOutputPaths.size() ||
         m_generatedOutputPaths.size() != m_generatedOffsetRows.size() ||
         m_generatedOutputPaths.size() != m_generatedOffsetCols.size() ||
+        m_generatedOutputPaths.size() != m_preparedOutputPaths.size() ||
         m_generatedOutputPaths.isEmpty()) {
-        return;
+        const QString reason = QStringLiteral("回归校正未生成完整输出结果。");
+        if (errorMessage) *errorMessage = reason;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason);
+        return false;
+    }
+
+    for (int i = 0; i < m_preparedOutputPaths.size(); ++i) {
+        if (QFileInfo(m_generatedOutputPaths[i]).fileName() != QFileInfo(m_preparedOutputPaths[i]).fileName() ||
+            m_generatedOutputNames[i] != QFileInfo(m_preparedOutputPaths[i]).completeBaseName()) {
+            const QString reason = QStringLiteral("回归校正输出名称与事务清单不一致。");
+            if (errorMessage) *errorMessage = reason;
+            NodeUtils::abandonOutputTransaction(m_outputTransaction, reason);
+            return false;
+        }
     }
 
     const QList<QStandardItem*> projects = copy->findItems(ui->comboBox->currentText());
-    if (projects.isEmpty())
-        return;
-
-    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-        projects.first(), ui->file_name->text(), "phase-2.5", FOLDER_ICON);
-    if (!outputNode)
-        return;
-
-    XMLFile xml;
-    const QString xmlPath = save_path + "/" + ui->comboBox->currentText() + ".Insar";
-    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
-        QMessageBox::warning(this, "Warning!", QStringLiteral("输出已生成，但项目 XML 保存失败。"));
-        return;
+    if (projects.isEmpty()) {
+        const QString reason = QStringLiteral("未找到当前工程项目树。");
+        if (errorMessage) *errorMessage = reason;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason);
+        return false;
     }
 
-    for (int i = 0; i < m_generatedOutputPaths.size(); ++i) {
-        const QString relativePath = QString("/%1/%2.h5")
-            .arg(ui->file_name->text(), m_generatedOutputNames[i]);
-        NodeUtils::findOrCreateChildItem(outputNode, m_generatedOutputNames[i], "phase",
-            m_generatedOutputPaths[i], IMAGEDATA_ICON);
+    QString projectRoot = save_path;
+    if (projectRoot.endsWith(".insar", Qt::CaseInsensitive)) {
+        projectRoot = QFileInfo(projectRoot).absolutePath();
+    }
+    QString projectFileName = ui->comboBox->currentText();
+    if (!projectFileName.endsWith(".insar", Qt::CaseInsensitive)) {
+        projectFileName += QStringLiteral(".Insar");
+    }
+    const QString xmlPath = QDir(projectRoot).absoluteFilePath(projectFileName);
+    QString transactionError;
+    QStringList finalPaths;
+    XMLFile xml;
+    if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("phase"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0 ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, &xml, xmlPath, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("回归校正输出事务校验失败。") : transactionError;
+        if (errorMessage) *errorMessage = reason;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        return false;
+    }
+
+    const QString outputNodeName = ui->file_name->text();
+    TiXmlElement* root = nullptr;
+    if (xml.get_root(root) < 0 || !root) {
+        const QString reason = QStringLiteral("无法读取项目 XML 根节点。");
+        if (errorMessage) *errorMessage = reason;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        return false;
+    }
+    for (TiXmlElement* element = root->FirstChildElement(); element != nullptr; ) {
+        const char* name = element->Attribute("name");
+        if (name && outputNodeName == QString::fromLocal8Bit(name)) {
+            TiXmlElement* toRemove = element;
+            element = element->NextSiblingElement();
+            root->RemoveChild(toRemove);
+        } else {
+            element = element->NextSiblingElement();
+        }
+    }
+    for (int i = 0; i < finalPaths.size(); ++i) {
+        const QString relativePath = QString("/%1/%2")
+            .arg(outputNodeName, QFileInfo(finalPaths[i]).fileName());
         xml.XMLFile_add_unwrap(ui->file_name->text().toStdString().c_str(),
             m_generatedOutputNames[i].toStdString().c_str(), relativePath.toStdString().c_str(),
             m_generatedOffsetRows[i], m_generatedOffsetCols[i], "PhaseElevationRegression", 0);
     }
-    xml.XMLFile_save(xmlPath.toStdString().c_str());
+    if (!NodeUtils::saveProjectXmlAtomically(&xml, xmlPath, &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        const QString reason = transactionError.isEmpty()
+            ? QStringLiteral("回归校正输出元数据提交失败。") : transactionError;
+        if (errorMessage) *errorMessage = reason;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, &xml);
+        return false;
+    }
+
+    QStandardItem* projectItem = projects.first();
+    for (int row = projectItem->rowCount() - 1; row >= 0; --row) {
+        QStandardItem* nodeItem = projectItem->child(row, 0);
+        if (nodeItem && nodeItem->text() == outputNodeName) projectItem->removeRow(row);
+    }
+    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+        projectItem, outputNodeName, "phase-2.5", FOLDER_ICON);
+    for (int i = 0; i < finalPaths.size(); ++i) {
+        NodeUtils::findOrCreateChildItem(outputNode, m_generatedOutputNames[i], "phase",
+            finalPaths[i], IMAGEDATA_ICON);
+    }
     emit sendCopy(copy);
+    return true;
+}
+
+void PhaseElevationRegression_ui::onWorkerError(const QString& error)
+{
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error);
+    if (m_worker && m_worker->thread()->isRunning()) {
+        m_worker->thread()->quit();
+        m_worker->thread()->wait();
+    }
+    m_worker = nullptr;
+    ui->progressBar->hide();
+    ChangeVision(true);
+    QMessageBox::warning(this, "Warning!", error);
 }
 
 void PhaseElevationRegression_ui::on_buttonBox_rejected()

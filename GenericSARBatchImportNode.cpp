@@ -165,7 +165,7 @@ bool GenericSARBatchImportNode::prepareToStart()
 
     if (m_imagePaths.isEmpty())
     {
-        onError("璇疯嚦灏戞坊鍔犱竴涓?閫氱敤 SAR 鍥惧儚鏂囦欢銆?");
+        onError("请至少添加一个 通用 SAR 图像文件。");
         return false;
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NodeDataTypes.h"
+#include "NodeUtils.h"
 #include "QtNodes/internal/ExecutableNodeDelegateModel.hpp"
 #include "BM3DEnhancementTask.h"
 #include <QLineEdit>
@@ -66,21 +67,15 @@ private Q_SLOTS:
     void onError(const QString& error);
     void onCancelled();
     void onAskUserError(quint64 requestId, const QString& message);
-    void onSaveImageToProjectRequested(
-        const QString& projectName,
-        const QString& nodeName,
-        const QString& displayName,
-        const QString& finalPath,
-        const QString& tag,
-        const QString& finalFileName
-    );
 
 private:
     QStandardItemModel* projectModel() const;
     QString projectPath() const;
     QString projectName() const;
+    XMLFile* projectXml() const;
 
     void executeProcessing();
+    void publishResultsToProjectTree(const QStringList& outputNames, const QStringList& outputPaths);
     QString generateOutputFileName() const;
     void updateParameterWidgetsEnableState();
 
@@ -95,10 +90,13 @@ private:
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;
     std::shared_ptr<ImageInfoData> m_outputData = nullptr;
     QStringList m_outputImagePaths;
+    QStringList m_preparedOutputPaths;
+    QStringList m_generatedOutputPaths;
     QString m_outputNodeName;
     QString m_outputFileName;
     QStringList m_savedOutputFiles;
     bool m_saveToProject = true;
+    NodeUtils::OutputTransaction m_outputTransaction;
 
     // Threading
     BM3DEnhancementTask* m_task = nullptr;

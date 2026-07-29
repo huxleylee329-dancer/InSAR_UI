@@ -154,7 +154,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     nameRow->setStretch(1, 7);
     nameRow->addWidget(new QLabel("目标节点："));
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?");
+    m_outputNodeNameEdit->setPlaceholderText("自动生成或手动输入");
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text();
@@ -189,7 +189,7 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     m_endBurstSpin->setValue(m_endBurst);
     
     burstRow->addWidget(m_startBurstSpin);
-    burstRow->addWidget(new QLabel("鑷?"));
+    burstRow->addWidget(new QLabel("至"));
     burstRow->addWidget(m_endBurstSpin);
     configLayout->addLayout(burstRow);
 
@@ -255,13 +255,13 @@ bool Sentinel1BatchImportNode::prepareToStart()
 
     if (!model || path.isEmpty() || name.isEmpty())
     {
-        onError("鏈娴嬪埌鎵撳紑鐨勯」鐩紝璇峰厛鎵撳紑鎴栨柊寤轰竴涓」鐩€?");
+        onError("未检测到打开的项目，请先打开或新建一个项目。");
         return false;
     }
 
     if (m_manifestPaths.isEmpty())
     {
-        onError("璇疯嚦灏戞坊鍔犱竴涓竻鍗曟枃浠躲€?");
+        onError("请至少添加一个清单文件。");
         return false;
     }
 
@@ -317,7 +317,7 @@ bool Sentinel1BatchImportNode::prepareToStart()
             QStringList entries = annDir.entryList(xmlFilters, QDir::Files);
             if (entries.isEmpty())
             {
-                onError(QStringLiteral("鍦?%1 涓湭鎵惧埌瀛愬甫 %2 鏋佸寲 %3 鐨勫厓鏁版嵁XML鏂囦欢锛佽妫€鏌ュ瓙甯?鏋佸寲閫夋嫨鏄惁姝ｇ‘銆?")
+                onError(QStringLiteral("在 %1 中未找到子带 %2 极化 %3 的元数据XML文件！请检查子带/极化选择是否正确。")
                     .arg(manifestInfo.fileName()).arg(subswath).arg(pol));
                 return false;
             }
@@ -342,7 +342,7 @@ bool Sentinel1BatchImportNode::prepareToStart()
 
                     if (m_endBurst >= burstCount)
                     {
-                        onError(QStringLiteral("杈撳叆鐨勭粨鏉熺垎鍧楃紪鍙?%1)瓒呭嚭浜嗘枃浠?%2 鐨勬渶澶х垎鍧楁暟(%3)锛佹湁鏁堢紪鍙疯寖鍥村簲涓?0-%4銆?")
+                        onError(QStringLiteral("输入的结束爆块编号(%1)超出了文件 %2 的最大爆块数(%3)！有效编号范围应为 0-%4。")
                             .arg(m_endBurst)
                             .arg(manifestInfo.fileName())
                             .arg(burstCount)
@@ -804,7 +804,7 @@ static bool extractExpectedAcquisitionStartTime(
 {
     expectedTime.clear();
     if (!xmlRoot) {
-        sourceDescription = QStringLiteral("鍘熷 XML 鏈姞杞?");
+        sourceDescription = QStringLiteral("原始 XML 未加载");
         return false;
     }
 
@@ -819,7 +819,7 @@ static bool extractExpectedAcquisitionStartTime(
             return true;
         }
 
-        sourceDescription = QStringLiteral("鍘熷 XML 缂哄皯鏁存櫙寮€濮嬫椂闂?");
+        sourceDescription = QStringLiteral("原始 XML 缺少整景开始时间");
         return false;
     }
 
@@ -1057,7 +1057,7 @@ static std::vector<CompareItem> performComparison(
         }
     }
     results.push_back({gPlatform, QStringLiteral("入射角中心值 (inc_center)"),
-                       xmlLoaded ? QString::number(xmlIncCenter, 'f', 6) + "掳" : QStringLiteral("鏈鍙?"),
+                       xmlLoaded ? QString::number(xmlIncCenter, 'f', 6) + "掳" : QStringLiteral("未读取"),
                        QString::number(h5IncCenter, 'f', 6) + "°",
                        (xmlLoaded && floatCompare(xmlIncCenter, h5IncCenter, 1e-4)) ? "PASS" : "FAILED"});
 
@@ -1107,22 +1107,22 @@ static std::vector<CompareItem> performComparison(
     }
 
     results.push_back({gGeom, QStringLiteral("载波频率 (Frequency)"), 
-                       xmlLoaded ? QString::number(xmlFreq, 'f', 1) + " Hz" : QStringLiteral("鏈鍙?"), 
+                       xmlLoaded ? QString::number(xmlFreq, 'f', 1) + " Hz" : QStringLiteral("未读取"),
                        QString::number(h5Freq, 'f', 1) + " Hz", 
                        (xmlLoaded && floatCompare(xmlFreq, h5Freq)) ? "PASS" : "FAILED"});
 
     results.push_back({gGeom, QStringLiteral("距离采样物理间隔 (Spacing)"), 
-                       xmlLoaded ? QString::number(xmlSpacing, 'f', 6) + " m" : QStringLiteral("鏈鍙?"), 
+                       xmlLoaded ? QString::number(xmlSpacing, 'f', 6) + " m" : QStringLiteral("未读取"),
                        QString::number(h5Spacing, 'f', 6) + " m", 
                        (xmlLoaded && floatCompare(xmlSpacing, h5Spacing)) ? "PASS" : "FAILED"});
 
     results.push_back({gGeom, QStringLiteral("首像素斜距 (near_range)"), 
-                       xmlLoaded ? QString::number(xmlFirstPixel, 'f', 4) + " m" : QStringLiteral("鏈鍙?"), 
+                       xmlLoaded ? QString::number(xmlFirstPixel, 'f', 4) + " m" : QStringLiteral("未读取"),
                        QString::number(h5FirstPixel, 'f', 4) + " m", 
                        (xmlLoaded && floatCompare(xmlFirstPixel, h5FirstPixel, 1.0)) ? "PASS" : "FAILED"});
 
     results.push_back({gGeom, QStringLiteral("等效方位向采样率 (Azimuth PRF)"), 
-                       xmlLoaded ? QString::number(xmlPrf, 'f', 3) + " Hz" : QStringLiteral("鏈鍙?"), 
+                       xmlLoaded ? QString::number(xmlPrf, 'f', 3) + " Hz" : QStringLiteral("未读取"),
                        QString::number(h5Prf, 'f', 3) + " Hz", 
                        (xmlLoaded && floatCompare(xmlPrf, h5Prf)) ? "PASS" : "FAILED"});
 
@@ -1182,9 +1182,9 @@ static std::vector<CompareItem> performComparison(
     // 检测输入端精轨可用性
     bool hasEof = orbitCacheHasEof(manifestPath, "");
 
-    QString rawOrbitStr = xmlLoaded ? QStringLiteral("%1 鐐?(棣栫偣X: %2 m)").arg(xmlOrbits.size()).arg(xmlX, 0, 'f', 1) : QStringLiteral("鏈鍙?");
+    QString rawOrbitStr = xmlLoaded ? QStringLiteral("%1 点 (首点X: %2 m)").arg(xmlOrbits.size()).arg(xmlX, 0, 'f', 1) : QStringLiteral("未读取");
     rawOrbitStr += hasEof ? QStringLiteral("\n（精轨库：有可用 EOF）") : QStringLiteral("\n（精轨库：无可用 EOF）");
-    QString h5OrbitStr = h5Orbit.empty() ? QStringLiteral("鏃犺建閬?") : QStringLiteral("%1 鐐?").arg(h5Orbit.rows);
+    QString h5OrbitStr = h5Orbit.empty() ? QStringLiteral("无轨道") : QStringLiteral("%1 点").arg(h5Orbit.rows);
 
     if (!h5Orbit.empty() && h5Orbit.rows > 0) {
         // 场景 1/3: 精轨 EOF 可用（本地目录或全局缓存中存在匹配的 POEORB/RESORB）
@@ -1237,7 +1237,7 @@ static std::vector<CompareItem> performComparison(
         xmlOrbitAltitude = sumAlt / xmlOrbits.size();
     }
     results.push_back({gOrbit, QStringLiteral("轨道物理平均高度 (orbit_altitude)"),
-                       xmlLoaded ? QString::number(xmlOrbitAltitude, 'f', 3) + " m" : QStringLiteral("鏈鍙?"),
+                       xmlLoaded ? QString::number(xmlOrbitAltitude, 'f', 3) + " m" : QStringLiteral("未读取"),
                        QString::number(h5OrbitAltitude, 'f', 3) + " m",
                        (xmlLoaded && floatCompare(xmlOrbitAltitude, h5OrbitAltitude, 5.0)) ? "PASS" : "FAILED"});
 
@@ -1258,7 +1258,7 @@ static std::vector<CompareItem> performComparison(
     // ---------------------------------------------------------
     // 4. 测量图像与切片
     // ---------------------------------------------------------
-    QString gImage = QStringLiteral("娴嬮噺鍥惧儚涓庡垏鐗?");
+    QString gImage = QStringLiteral("测量图像与切片");
 
     int h5Rows = 0, h5Cols = 0;
     {
@@ -1298,7 +1298,7 @@ static std::vector<CompareItem> performComparison(
     bool sizeMatch = (h5Rows == expectedRows && (xmlSamplesPerBurst == 0 || h5Cols == xmlSamplesPerBurst));
 
     results.push_back({gImage, QStringLiteral("图像行列大小 & 存储格式"), 
-                       xmlLoaded ? QString("%1 x %2").arg(expectedRows).arg(xmlSamplesPerBurst) : QStringLiteral("鏈鍙?"), 
+                       xmlLoaded ? QString("%1 x %2").arg(expectedRows).arg(xmlSamplesPerBurst) : QStringLiteral("未读取"),
                        QString("%1 x %2 (CV_32FC2 复浮点)").arg(h5Rows).arg(h5Cols), 
                        sizeMatch ? "PASS" : "FAILED"});
 
@@ -1392,10 +1392,10 @@ static std::vector<CompareItem> performComparison(
                                                 .arg(h5ReVal, 0, 'f', 1).arg(h5ImVal, 0, 'f', 1));
                             }
                         } else {
-                            diagMsgs.append(QString("pt%1(%2,%3):璇籋5绌?").arg(idx).arg(pt.x).arg(pt.y));
+                            diagMsgs.append(QString("pt%1(%2,%3):读H5空").arg(idx).arg(pt.x).arg(pt.y));
                         }
                     } else {
-                        diagMsgs.append(QString("pt%1(%2,%3):璇籘IF閿?").arg(idx).arg(pt.x).arg(pt.y));
+                        diagMsgs.append(QString("pt%1(%2,%3):读TIF错").arg(idx).arg(pt.x).arg(pt.y));
                     }
                     idx++;
                 }
@@ -1466,15 +1466,15 @@ static std::vector<CompareItem> performComparison(
     // ---------------------------------------------------------
     // 6. 元数据忽略报告
     // ---------------------------------------------------------
-    QString gOmit = QStringLiteral("鍏冩暟鎹拷鐣ユ姤鍛?");
+    QString gOmit = QStringLiteral("元数据忽略报告");
 
     results.push_back({gOmit, QStringLiteral("绝对定标查找表 (calibration LUTs)"), 
-                       QStringLiteral("鍘熷 XML 鍚湁瀹氭爣琛?"), 
+                       QStringLiteral("原始 XML 含有定标表"),
                        QStringLiteral("已忽略 (InSAR干涉跳过)"), 
                        "IGNORED"});
 
     results.push_back({gOmit, QStringLiteral("传感器热噪声表 (noise LUTs)"), 
-                       QStringLiteral("鍘熷 XML 鍚湁鍣０鏌ユ壘琛?"), 
+                       QStringLiteral("原始 XML 含有噪声查找表"),
                        QStringLiteral("已忽略 (InSAR干涉跳过)"), 
                        "IGNORED"});
 
@@ -1531,7 +1531,7 @@ private:
 
         m_compareTable = new QTableWidget(splitter);
         m_compareTable->setColumnCount(4);
-        m_compareTable->setHorizontalHeaderLabels({tr("瀵规瘮鍐呭"), tr("鍘熷杈撳叆绔?(.SAFE)"), tr("H5 杈撳嚭绔?"), tr("鐘舵€?")});
+        m_compareTable->setHorizontalHeaderLabels({tr("对比内容"), tr("原始输入端 (.SAFE)"), tr("H5 输出端"), tr("状态")});
         m_compareTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         m_compareTable->verticalHeader()->setVisible(false);
         m_compareTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -1557,7 +1557,7 @@ private:
         if (expected.isEmpty()) {
             m_statusTitle->setText(tr("验证失败"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusDesc->setText(tr("鏈敓鎴愪换浣曡緭鍑烘枃浠躲€?"));
+            m_statusDesc->setText(tr("未生成任何输出文件。"));
             m_compareTable->setEnabled(false);
             return;
         }
@@ -1705,7 +1705,7 @@ private:
             } else if (anyWarning) {
                 m_statusTitle->setText(tr("校验存在提醒"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-                m_statusDesc->setText(tr("閮ㄥ垎妫€鏌ョ粨鏋滃瓨鍦ㄤ笉纭畾鎬э紝璇风‘璁ゆ暟鎹潵婧愩€?"));
+                m_statusDesc->setText(tr("部分检查结果存在不确定性，请确认数据来源。"));
             } else {
                 m_statusDesc->setText(tr("当前选中文件的元数据和抽样像素点一致性校验通过。"));
             }
@@ -1842,7 +1842,7 @@ private:
         m_statusTitle = new QLabel(tr("干涉测量分析"), m_statusCard);
         m_statusTitle->setStyleSheet(QString("font-size: 14px; font-weight: bold; color: %1;")
             .arg(isDark ? "#60A5FA" : "#2563EB"));
-        m_statusDesc = new QLabel(tr("閫夋嫨涓诲奖鍍忎笌杈呭奖鍍忥紝璇勪及骞叉秹娴嬮噺閫傜敤鎬с€?"), m_statusCard);
+        m_statusDesc = new QLabel(tr("选择主影像与辅影像，评估干涉测量适用性。"), m_statusCard);
         m_statusDesc->setStyleSheet(QString("font-size: 11px; color: %1;")
             .arg(isDark ? "#9CA3AF" : "#6B7280"));
         cardLayout->addWidget(m_statusTitle);
@@ -1887,7 +1887,7 @@ private:
         selectorRow->addLayout(slaveGroup);
 
         // 分析按钮
-        m_analyzeBtn = new QPushButton(tr("鍒嗘瀽骞叉秹閫傜敤鎬?"), this);
+        m_analyzeBtn = new QPushButton(tr("分析干涉适用性"), this);
         m_analyzeBtn->setFixedHeight(32);
         m_analyzeBtn->setStyleSheet(isDark ?
             "QPushButton { background-color: #2563EB; color: white; border-radius: 4px; padding: 4px 16px; font-weight: bold; }"
@@ -1960,9 +1960,9 @@ private:
         m_slaveCombo->clear();
 
         if (m_node->executionState() != ExecutionState::Completed) {
-            m_statusTitle->setText(tr("鏈畬鎴愬鍏?"));
+            m_statusTitle->setText(tr("未完成导入"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-            m_statusDesc->setText(tr("璇峰厛鎵ц鎵归噺瀵煎叆锛岀敓鎴?H5 鏂囦欢鍚庡啀杩涜骞叉秹娴嬮噺鍒嗘瀽銆?"));
+            m_statusDesc->setText(tr("请先执行批量导入，生成 H5 文件后再进行干涉测量分析。"));
             m_analyzeBtn->setEnabled(false);
             return;
         }
@@ -1978,7 +1978,7 @@ private:
         if (existing.size() < 2) {
             m_statusTitle->setText(tr("影像数量不足"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-            m_statusDesc->setText(tr("鑷冲皯闇€瑕?2 涓?H5 鏂囦欢鎵嶈兘杩涜骞叉秹娴嬮噺鍒嗘瀽銆傚綋鍓嶅彲鐢? %1 涓€?")
+            m_statusDesc->setText(tr("至少需要 2 个 H5 文件才能进行干涉测量分析。当前可用: %1 个。")
                 .arg(existing.size()));
             m_analyzeBtn->setEnabled(false);
             return;
@@ -1998,7 +1998,7 @@ private:
         m_statusTitle->setText(tr("就绪"));
         m_statusTitle->setStyleSheet(QString("font-size: 14px; font-weight: bold; color: %1;")
             .arg(NodeDetailWindow::isDarkTheme(this) ? "#10B981" : "#10B981"));
-        m_statusDesc->setText(tr("宸插彂鐜?%1 涓?H5 鏂囦欢锛岃閫夋嫨涓?杈呭奖鍍忓杩涜鍒嗘瀽銆?").arg(existing.size()));
+        m_statusDesc->setText(tr("已发现 %1 个 H5 文件，请选择主/辅影像对进行分析。").arg(existing.size()));
         m_analyzeBtn->setEnabled(existing.size() >= 2);
     }
 
@@ -2120,7 +2120,7 @@ private:
             btStatus = QStringLiteral("WARNING");
             btColor = "#F59E0B";
         } else {
-            btText = QStringLiteral("Bt = %1 澶?").arg(result.temporalBaseline, 0, 'f', 1);
+            btText = QStringLiteral("Bt = %1 天").arg(result.temporalBaseline, 0, 'f', 1);
             if (result.temporalBaseline >= 6.0 && result.temporalBaseline <= 36.0) {
                 btStatus = QStringLiteral("PASS");
                 btColor = "#10B981";
@@ -2135,7 +2135,7 @@ private:
         addRow(grpBaseline, btText, btStatus, btColor);
 
         // ---- 2. 轨道与覆盖 ----
-        QString grpOrbit = QStringLiteral("  杞ㄩ亾涓庤鐩?");
+        QString grpOrbit = QStringLiteral("  轨道与覆盖");
 
         // 相对轨道号
         QString relOrbitText, relOrbitStatus, relOrbitColor;
@@ -2166,7 +2166,7 @@ private:
         // 爆块数
         addRow(grpOrbit,
             QStringLiteral("主: %1 / 辅: %2").arg(result.burstCountMaster).arg(result.burstCountSlave),
-            result.burstCompatible ? QStringLiteral("鍏煎") : QStringLiteral("涓嶅吋瀹?"),
+            result.burstCompatible ? QStringLiteral("兼容") : QStringLiteral("不兼容"),
             result.burstCompatible ? "#10B981" : "#EF4444");
 
         // ---- 3. 极化与传感器 ----
@@ -2215,7 +2215,7 @@ private:
         if (result.perpendicularBaseline > -998.0) {
             summaryLine += QStringLiteral("B⊥ = %1 m  |  ").arg(result.perpendicularBaseline, 0, 'f', 1);
         }
-        summaryLine += QStringLiteral("Bt = %1 澶?").arg(result.temporalBaseline, 0, 'f', 1);
+        summaryLine += QStringLiteral("Bt = %1 天").arg(result.temporalBaseline, 0, 'f', 1);
         m_statusDesc->setText(summaryLine);
 
         // 详细建议放入状态卡片的第三行
@@ -2347,7 +2347,7 @@ private:
             issues.append(QStringLiteral("爆块数量不兼容（%1 vs %2）")
                 .arg(result.burstCountMaster).arg(result.burstCountSlave));
         if (result.perpendicularBaseline > -998.0 && !result.baselinePass)
-            issues.append(QStringLiteral("鍨傜洿鍩虹嚎杩囧ぇ锛?1m > 100m锛?")
+            issues.append(QStringLiteral("垂直基线过大（%1m > 100m）")
                 .arg(result.perpendicularBaseline, 0, 'f', 1));
         if (result.temporalBaseline > -998.0 && result.temporalBaseline > 36.0)
             issues.append(QStringLiteral("时间基线较长（%1天 > 36天）")
@@ -2392,7 +2392,7 @@ private:
 
         if (!result.isPreciseOrbit && result.perpendicularBaseline > -998.0) {
             result.recommendations.append(
-                QStringLiteral("杞ㄩ亾绮惧害鎻愮ず: 褰撳墠浣跨敤鐨勮建閬撴暟鎹偣鏁颁笉瓒?0涓紝寤鸿浼樺厛鍖归厤绮惧瘑杞ㄩ亾鏂囦欢锛圥OEORB锛?"
+                QStringLiteral("轨道精度提示: 当前使用的轨道数据点数不足50个，建议优先匹配精密轨道文件（POEORB）"
                    "以获得更准确的基线估计。"));
         }
 

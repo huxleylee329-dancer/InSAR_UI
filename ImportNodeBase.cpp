@@ -288,7 +288,7 @@ bool ImportNodeBase::validateAndRestoreOutput()
         QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
         expectedJpgPaths.append(jpgPath);
 
-        if (!QFile::exists(jpgPath)) {
+        if (!NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath)) {
             missingH5s.append(h5Path);
             missingJpgs.append(jpgPath);
         }
@@ -302,21 +302,21 @@ bool ImportNodeBase::validateAndRestoreOutput()
             m_remedyWatcher.waitForFinished();
         }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths, missingJpgs]() {
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedPaths, expectedJpgPaths, missingH5s, missingJpgs]() {
             QStringList validJpgPaths;
             bool anyFailed = false;
 
             // 检查本次新生成的 JPG
-            for (const QString& path : missingJpgs) {
-                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
+            for (int i = 0; i < missingJpgs.size(); ++i) {
+                if (!NodeUtils::isJpgPreviewCurrent(missingH5s[i], missingJpgs[i])) {
                     anyFailed = true;
                 }
             }
 
             // 收集所有最终有效的 JPG
-            for (const QString& path : expectedJpgPaths) {
-                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
-                    validJpgPaths.append(path);
+            for (int i = 0; i < expectedJpgPaths.size(); ++i) {
+                if (NodeUtils::isJpgPreviewCurrent(expectedPaths[i], expectedJpgPaths[i])) {
+                    validJpgPaths.append(expectedJpgPaths[i]);
                 }
             }
 
@@ -343,8 +343,7 @@ bool ImportNodeBase::validateAndRestoreOutput()
         QString type = previewDataType();
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, type]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
-                // 已存在且有效的 JPG 跳过重生成
-                if (QFileInfo::exists(missingJpgs[i]) && QFileInfo(missingJpgs[i]).size() > 0) {
+                if (NodeUtils::isJpgPreviewCurrent(missingH5s[i], missingJpgs[i])) {
                     continue;
                 }
                 NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], type);
@@ -352,7 +351,13 @@ bool ImportNodeBase::validateAndRestoreOutput()
         });
         m_remedyWatcher.setFuture(future);
     } else {
-        m_imageInfo = std::make_shared<ImageInfoData>(expectedJpgPaths);
+        QStringList validJpgPaths;
+        for (int i = 0; i < expectedJpgPaths.size(); ++i) {
+            if (NodeUtils::isJpgPreviewCurrent(expectedPaths[i], expectedJpgPaths[i])) {
+                validJpgPaths.append(expectedJpgPaths[i]);
+            }
+        }
+        m_imageInfo = std::make_shared<ImageInfoData>(validJpgPaths);
         setOutputData(1, m_imageInfo);
     }
 
@@ -412,7 +417,7 @@ void ImportNodeBase::onImportFinished()
         for (const QString& h5Path : m_importedFilePaths) {
             QFileInfo fi(h5Path);
             QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
-            if (QFile::exists(jpgPath) && QFileInfo(jpgPath).size() > 0) {
+            if (NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath)) {
                 validJpgPaths.append(jpgPath);
             } else {
                 anyFailed = true;

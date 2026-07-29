@@ -90,7 +90,7 @@ private:
     void onCancelled();
     void onError(const QString& error);
     void onModelUpdated(QStandardItemModel* model);
-    void onResultsReceived(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames);
+    bool onResultsReceived(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
@@ -111,6 +111,9 @@ private:
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QStringList m_pendingOutputPaths;
+    QStringList m_pendingOriginNames;
 };
 
 } // namespace QtNodes

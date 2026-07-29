@@ -57,14 +57,15 @@ void PSNetworkWorker::build_network(
     QString projectName,
     QString dstNode,
     QString candidatesH5,
-    QStringList slcFilePaths
+    QStringList slcFilePaths,
+    bool outputDirectoryIsStaging
 )
 {
     NodeUtils::Hdf5Locker locker;
     InSARLogManager::LogInfo("PSNetworkWorker", QString("build_network started. Output Node: %1").arg(dstNode));
 
-    if (slcFilePaths.isEmpty() || candidatesH5.isEmpty()) {
-        emit errorProcess(QStringLiteral("输入文件路径为空"));
+    if (slcFilePaths.size() < 2 || candidatesH5.isEmpty()) {
+        emit errorProcess(QStringLiteral("PS 网络至少需要两景 SLC 影像和候选点文件"));
         return;
     }
 
@@ -72,13 +73,18 @@ void PSNetworkWorker::build_network(
         ? QFileInfo(projectPath).absolutePath() : projectPath) + "/" + dstNode;
     const QString outputH5 = outputDir + "/PS_network.h5";
     const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
-    const auto finishCancelled = [this, &outputDir]() {
-        QDir dir(outputDir);
-        if (dir.exists() && !dir.removeRecursively()) {
-            InSARLogManager::LogWarning("PSNetworkWorker", "Cancellation cleanup left output directory: " + outputDir);
-        }
+    const auto finishCancelled = [this]() {
         emit cancelled();
     };
+
+    if (outputDirectoryIsStaging && !QDir(outputDir).exists()) {
+        emit errorProcess(QStringLiteral("staging输出目录不存在: ") + outputDir);
+        return;
+    }
+    if (!outputDirectoryIsStaging && !QDir().mkpath(outputDir)) {
+        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDir);
+        return;
+    }
 
     if (cancellationRequested()) {
         finishCancelled();
@@ -207,32 +213,41 @@ void PSNetworkWorker::build_network(
     int offset_col = 0;
 
     QString masterPath = slcFilePaths.at(0); // 第一景作为 Master
-    ret = (NodeUtils::readMatFromH5(masterPath, "state_vec", State_Vec_Master) &&
-           NodeUtils::readMatFromH5(masterPath, "lon_coefficient", Lon_Coeff_Master) &&
-           NodeUtils::readMatFromH5(masterPath, "lat_coefficient", Lat_Coeff_Master) &&
-           NodeUtils::readMatFromH5(masterPath, "prf", tmp_double)) ? 0 : -1;
+    Mat offset_row_data = Mat::zeros(1, 1, CV_32SC1);
+    Mat offset_col_data = Mat::zeros(1, 1, CV_32SC1);
+    if (!NodeUtils::readMatFromH5(masterPath, "state_vec", State_Vec_Master) ||
+        !NodeUtils::readMatFromH5(masterPath, "lon_coefficient", Lon_Coeff_Master) ||
+        !NodeUtils::readMatFromH5(masterPath, "lat_coefficient", Lat_Coeff_Master) ||
+        !NodeUtils::readMatFromH5(masterPath, "prf", tmp_double) ||
+        tmp_double.empty() ||
+        !NodeUtils::readMatFromH5(masterPath, "offset_row", offset_row_data) || offset_row_data.empty() ||
+        !NodeUtils::readMatFromH5(masterPath, "offset_col", offset_col_data) || offset_col_data.empty() ||
+        !NodeUtils::readStringFromH5(masterPath, "acquisition_start_time", time_master_str) ||
+        FC.utc2gps(time_master_str.c_str(), &time_Master) != 0 ||
+        !NodeUtils::readScalarFromH5(masterPath, "carrier_frequency", carrier_frequency) ||
+        !NodeUtils::readScalarFromH5(masterPath, "slant_range_first_pixel", slant_range_first_pixel) ||
+        !NodeUtils::readScalarFromH5(masterPath, "range_spacing", range_spacing)) {
+        emit errorProcess(QStringLiteral("读取主影像轨道或雷达元数据失败: ") + masterPath);
+        return;
+    }
+    if (tmp_double.type() != CV_64F) {
+        tmp_double.convertTo(tmp_double, CV_64F);
+    }
     interp_interval_master = 1.0 / tmp_double.at<double>(0, 0);
 
-    Mat tmp = Mat::zeros(1, 1, CV_32SC1);
-    NodeUtils::readMatFromH5(masterPath, "offset_row", tmp);
-    offset_row_master = tmp.at<int>(0, 0);
-    NodeUtils::readMatFromH5(masterPath, "offset_col", tmp);
-    offset_col_master = tmp.at<int>(0, 0);
+    offset_row_master = offset_row_data.at<int>(0, 0);
+    offset_col_master = offset_col_data.at<int>(0, 0);
     offset_col = offset_col_master;
 
-    NodeUtils::readStringFromH5(masterPath, "acquisition_start_time", time_master_str);
-    FC.utc2gps(time_master_str.c_str(), &time_Master);
-
-    // 获取核心雷达几何参数
-    NodeUtils::readScalarFromH5(masterPath, "carrier_frequency", carrier_frequency);
-    NodeUtils::readScalarFromH5(masterPath, "slant_range_first_pixel", slant_range_first_pixel);
-    NodeUtils::readScalarFromH5(masterPath, "range_spacing", range_spacing);
-    
     Mat tmp_inc;
     if (NodeUtils::readMatFromH5(masterPath, "inc_coefficient", tmp_inc) && !tmp_inc.empty()) {
+        if (tmp_inc.type() != CV_64F) {
+            tmp_inc.convertTo(tmp_inc, CV_64F);
+        }
         inc_center = tmp_inc.at<double>(0, 0);
-    } else {
-        NodeUtils::readScalarFromH5(masterPath, "inc_center", inc_center);
+    } else if (!NodeUtils::readScalarFromH5(masterPath, "inc_center", inc_center)) {
+        emit errorProcess(QStringLiteral("读取主影像入射角元数据失败: ") + masterPath);
+        return;
     }
     if (cancellationRequested()) {
         finishCancelled();
@@ -256,14 +271,23 @@ void PSNetworkWorker::build_network(
             string time_slave_str;
 
             QString slavePath = slcFilePaths.at(i);
-            NodeUtils::readMatFromH5(slavePath, "state_vec", State_Vec_Slave);
-            NodeUtils::readMatFromH5(slavePath, "lon_coefficient", Lon_Coeff_Slave);
-            NodeUtils::readMatFromH5(slavePath, "lat_coefficient", Lat_Coeff_Slave);
-            NodeUtils::readMatFromH5(slavePath, "prf", tmp_double);
+            if (!NodeUtils::readMatFromH5(slavePath, "state_vec", State_Vec_Slave) ||
+                !NodeUtils::readMatFromH5(slavePath, "lon_coefficient", Lon_Coeff_Slave) ||
+                !NodeUtils::readMatFromH5(slavePath, "lat_coefficient", Lat_Coeff_Slave) ||
+                !NodeUtils::readMatFromH5(slavePath, "prf", tmp_double) || tmp_double.empty()) {
+                emit errorProcess(QStringLiteral("读取从影像轨道或 PRF 元数据失败: ") + slavePath);
+                return;
+            }
+            if (tmp_double.type() != CV_64F) {
+                tmp_double.convertTo(tmp_double, CV_64F);
+            }
             interp_interval_slave = 1.0 / tmp_double.at<double>(0, 0);
 
-            NodeUtils::readStringFromH5(slavePath, "acquisition_start_time", time_slave_str);
-            FC.utc2gps(time_slave_str.c_str(), &time_Slave);
+            if (!NodeUtils::readStringFromH5(slavePath, "acquisition_start_time", time_slave_str) ||
+                FC.utc2gps(time_slave_str.c_str(), &time_Slave) != 0) {
+                emit errorProcess(QStringLiteral("读取从影像采集时间失败: ") + slavePath);
+                return;
+            }
 
             double delta_t = (time_Slave - time_Master) / 60.0 / 60.0 / 24.0;
             temporal_baseline.at<float>(i) = static_cast<float>(delta_t);
@@ -300,8 +324,6 @@ void PSNetworkWorker::build_network(
     emit updateProcess(90, QStringLiteral("正在写入 PS_network.h5 成果..."));
 
     // 7. 保存网络成果
-    QDir().mkpath(outputDir);
-    
     // 准备点集坐标矩阵
     cv::Mat ps_coords(ps_count, 2, CV_32SC1);
     for (int i = 0; i < ps_count; ++i) {
@@ -320,36 +342,32 @@ void PSNetworkWorker::build_network(
         finishCancelled();
         return;
     }
-    ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_coordinates", ps_coords);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "edges", edge_nodes);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "edge_phase_diff", edge_phase_diff);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_baseline", temporal_baseline);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "spatial_baseline", spatial_baseline);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "formation_matrix", formation_matrix);
-    
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", ps_count);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "edge_count", edge_count);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_index", ref_index);
-
-    // 写入雷达元数据
-    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "carrier_frequency", carrier_frequency);
-    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "inc_center", inc_center);
-    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "slant_range_first_pixel", slant_range_first_pixel);
-    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "range_spacing", range_spacing);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "offset_col", offset_col);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "rows", rows);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "cols", cols);
+    if (FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_coordinates", ps_coords) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "edges", edge_nodes) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "edge_phase_diff", edge_phase_diff) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_baseline", temporal_baseline) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "spatial_baseline", spatial_baseline) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "formation_matrix", formation_matrix) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", ps_count) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "edge_count", edge_count) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_index", ref_index) != 0 ||
+        FC.write_double_to_h5(outputH5.toStdString().c_str(), "carrier_frequency", carrier_frequency) != 0 ||
+        FC.write_double_to_h5(outputH5.toStdString().c_str(), "inc_center", inc_center) != 0 ||
+        FC.write_double_to_h5(outputH5.toStdString().c_str(), "slant_range_first_pixel", slant_range_first_pixel) != 0 ||
+        FC.write_double_to_h5(outputH5.toStdString().c_str(), "range_spacing", range_spacing) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "offset_col", offset_col) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "rows", rows) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "cols", cols) != 0) {
+        emit errorProcess(QStringLiteral("写入 PS_network.h5 失败"));
+        return;
+    }
 
     if (cancellationRequested()) {
         finishCancelled();
         return;
     }
 
-    if (ret != 0) {
-        emit errorProcess(QStringLiteral("写入 PS_network.h5 失败"));
-        return;
-    }
-
     emit updateProcess(100, QStringLiteral("三角网构建完成"));
+    emit outputsGenerated(QStringList() << outputH5);
     emit endProcess();
 }

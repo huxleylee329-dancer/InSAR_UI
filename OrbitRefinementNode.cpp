@@ -247,20 +247,9 @@ bool OrbitRefinementNode::validateAndRestoreOutput()
     QString dstNode = m_outputNodeName.trimmed();
     if (dstNode.isEmpty()) return false;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (!dir.exists()) return false;
-
-    QStringList filters;
-    filters << "*.h5";
-    QStringList h5Files = dir.entryList(filters, QDir::Files);
-    if (h5Files.isEmpty()) return false;
-
-    // 1. 恢复 Port 0 轨道精炼后的影像绝对文件列表
     QStringList h5Paths;
-    for (const QString& file : h5Files) {
-        h5Paths.append(dir.absoluteFilePath(file));
-    }
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
+    const QString outputPath = projectPath() + "/" + dstNode + "/";
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
@@ -309,8 +298,8 @@ bool OrbitRefinementNode::validateAndRestoreOutput()
                 projectItem->setChild(projectItem->rowCount() - 1, 1, new QStandardItem(sensorTag));
             }
 
-            for (const QString& file : h5Files) {
-                QFileInfo fileinfo(dir.absoluteFilePath(file));
+            for (const QString& h5Path : h5Paths) {
+                QFileInfo fileinfo(h5Path);
                 QString imgName = fileinfo.baseName();
                 QStandardItem* imgItem = nullptr;
                 for (int j = 0; j < refNodeItem->rowCount(); j++) {
@@ -397,7 +386,7 @@ void OrbitRefinementNode::createWidget()
 
     // 4. 目标节点名
     m_outputNodeNameEdit = new QLineEdit();
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?")); // 鍗犱綅绗﹀榻愯鑼?"(SOP 11)
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入")); // 占位符对齐规范 (SOP 11)
     m_outputNodeNameEdit->setText(m_outputNodeName);
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
@@ -479,32 +468,83 @@ void OrbitRefinementNode::onProcessingFinished()
 {
     releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic execution"), projectXml());
         return;
     }
 
-    QString dstNode = m_outputNodeName;
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
-    // 1. 扫描输出目录，构建输出影像数据对象 (Port 0)
     QStringList h5Paths;
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        h5Files.sort();
-        for (const QString& file : h5Files) {
-            h5Paths.append(dir.absoluteFilePath(file));
+    QString transactionError;
+    if (!projectXml()) {
+        onError(QStringLiteral("Project XML context is unavailable for orbit refinement output commit."));
+        return;
+    }
+    if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+                                              QStringList() << QStringLiteral("state_vec")
+                                                            << QStringLiteral("lon_coefficient")
+                                                            << QStringLiteral("lat_coefficient"),
+                                              &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    const int masterOutputIndex = m_masterIndex - 1;
+    if (masterOutputIndex < 0 || masterOutputIndex >= m_outputTransaction.expectedFileNames.size()) {
+        onError(QStringLiteral("Orbit refinement master index is outside the staged output manifest."));
+        return;
+    }
+    const QDir stagingDirectory(QDir(m_outputTransaction.projectRoot).absoluteFilePath(m_outputTransaction.stagingName));
+    const QString masterStagedPath = stagingDirectory.absoluteFilePath(
+        m_outputTransaction.expectedFileNames.at(masterOutputIndex));
+    int orbitRefined = 0;
+    double rmsRange = 0.0;
+    double rmsAzimuth = 0.0;
+    transactionError.clear();
+    if (!NodeUtils::readScalarFromH5(masterStagedPath, QStringLiteral("orbit_refined"), orbitRefined, &transactionError) ||
+        orbitRefined != 1 ||
+        !NodeUtils::readScalarFromH5(masterStagedPath, QStringLiteral("orbit_refinement_rms_range"), rmsRange, &transactionError) ||
+        !NodeUtils::readScalarFromH5(masterStagedPath, QStringLiteral("orbit_refinement_rms_azimuth"), rmsAzimuth, &transactionError)) {
+        if (transactionError.isEmpty()) {
+            transactionError = QStringLiteral("Staged orbit refinement output is missing committed refinement metadata: %1")
+                .arg(masterStagedPath);
         }
+        onError(transactionError);
+        return;
+    }
+    QStringList manifestPaths;
+    const QDir finalDirectory(QDir(m_outputTransaction.projectRoot).absoluteFilePath(m_outputTransaction.nodeName));
+    for (const QString& fileName : m_outputTransaction.expectedFileNames) {
+        manifestPaths.append(finalDirectory.absoluteFilePath(fileName));
+    }
+    if (!NodeUtils::workerOutputsMatchManifest(manifestPaths, m_pendingOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    if (!NodeUtils::prepareOutputTransactionMetadataCommit(
+            m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    const QString outputPath = projectPath() + "/" + m_preparedDstNode + "/";
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode, false, false);
+    if (!onResultsReceived(m_preparedDstNode, h5Paths, m_pendingOriginNames)) {
+        onError(QStringLiteral("Failed to commit orbit refinement project metadata."));
+        return;
+    }
+    if (!NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    if (!NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
     }
 
-    QStringList originNames;
-    for (const QString& h5Path : h5Paths) {
-        originNames.append(QFileInfo(h5Path).baseName());
-    }
-    onResultsReceived(dstNode, h5Paths, originNames);
-
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_preparedDstNode);
     setOutputData(0, m_outputData);
 
     // 2. 从数据库读取点信息并离线绘制残差图 (Port 1)
@@ -549,9 +589,15 @@ void OrbitRefinementNode::onError(const QString& error)
 {
     releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic error"), projectXml());
         return;
     }
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     InSARLogManager::LogError("OrbitRefinementNode", "Worker 执行出错：" + error);
     m_statusLabel->setText(QStringLiteral("计算出错：%1").arg(error));
 
@@ -566,9 +612,15 @@ void OrbitRefinementNode::onCancelled()
 {
     releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic cancellation"), projectXml());
         return;
     }
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     m_outputNodeNameEdit->setEnabled(true);
     m_masterIndexSpin->setEnabled(true);
     m_polyDegreeCombo->setEnabled(true);
@@ -637,7 +689,6 @@ void OrbitRefinementNode::executeProcessing()
 {
     InSARLogManager::LogInfo("OrbitRefinementNode", "executeProcessing 开始。");
 
-    QString srcNode = m_inputData->nodeName();
     QString dstNode = m_preparedDstNode;
     m_outputNodeName = dstNode;
 
@@ -658,11 +709,24 @@ void OrbitRefinementNode::executeProcessing()
 
     setProgress(0);
 
-    // 2. 覆盖运行前，清理工程 XML 的旧记录和左侧树视图以避影分身 (SOP 14)
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode);
-
     initDatabase();
     QStringList inputFilePaths = m_inputData->filePaths();
+    QStringList expectedOutputPaths;
+    for (const QString& inputPath : inputFilePaths) {
+        expectedOutputPaths.append(projectPath() + "/" + dstNode + "/" + QFileInfo(inputPath).baseName() + ".h5");
+    }
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(savePath, dstNode, expectedOutputPaths,
+                                           inputFilePaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_pendingOutputPaths.clear();
+    m_pendingOriginNames.clear();
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     QString dbPath = m_db->databasePath();
     int masterIndex = m_masterIndex;
     int polyDegree = m_polyDegree;
@@ -674,17 +738,24 @@ void OrbitRefinementNode::executeProcessing()
     OrbitRefinementWorker* worker = m_worker;
 
     // 4. 连接信号槽
-    connect(m_thread, &QThread::started, [worker, savePath, projName, dstNode, inputFilePaths, dbPath, masterIndex, polyDegree]() {
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, [worker, savePath, projName, stagingNode, inputFilePaths, dbPath, masterIndex, polyDegree]() {
         worker->refine_orbit(
             savePath + "/" + projName,
             projName,
-            dstNode,
+            stagingNode,
             inputFilePaths,
             dbPath,
             masterIndex,
             polyDegree
         );
     });
+
+    connect(m_worker, &OrbitRefinementWorker::sendResults, this,
+            [this](const QString&, const QStringList& paths, const QStringList& names) {
+                m_pendingOutputPaths = paths;
+                m_pendingOriginNames = names;
+            });
 
     connect(m_worker, &OrbitRefinementWorker::updateProcess, this, &OrbitRefinementNode::onProgressUpdate);
     connect(m_worker, &OrbitRefinementWorker::endProcess, this, &OrbitRefinementNode::onProcessingFinished);
@@ -717,27 +788,27 @@ void OrbitRefinementNode::executeProcessing()
     });
 }
 
-void OrbitRefinementNode::onResultsReceived(
+bool OrbitRefinementNode::onResultsReceived(
     const QString& dstNode,
     const QStringList& h5Paths,
     const QStringList& originNames
 )
 {
     if (isAutomaticExecutionObsolete()) {
-        return;
+        return false;
     }
 
     XMLFile* xml = projectXml();
     if (!xml) {
-        InSARLogManager::LogError("OrbitRefinementNode", "onResultsReceived: projectXml() 涓虹┖锛岃烦杩?XML 鍐欏叆銆?");
-        return;
+        InSARLogManager::LogError("OrbitRefinementNode", "onResultsReceived: projectXml() 为空，跳过 XML 写入。");
+        return false;
     }
 
     TiXmlElement* root = nullptr;
     xml->get_root(root);
     if (!root) {
         InSARLogManager::LogError("OrbitRefinementNode", "onResultsReceived: XML 根节点为空，跳过 XML 写入。");
-        return;
+        return false;
     }
 
     // 从上游 DataNode 查询传感器类型和级别
@@ -871,17 +942,7 @@ void OrbitRefinementNode::onResultsReceived(
         }
     }
 
-    if (xmlModified) {
-        QString xmlPath = projectPath() + "/" + projectName();
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
-        InSARLogManager::LogInfo("OrbitRefinementNode", "onResultsReceived: XML 成功通过全局句柄保存。");
-    }
-
-    // 触发项目树刷新
-    auto iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        iface->refreshProjectTree();
-    }
+    return xmlModified;
 }
 
 void OrbitRefinementNode::onModelUpdated(QStandardItemModel* model)

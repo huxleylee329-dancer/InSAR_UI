@@ -207,7 +207,7 @@ void DemNode::createWidget()
     methodLayout->addWidget(methodLabel);
     m_methodCombo = new QComboBox();
     m_methodCombo->setEditable(false);
-    m_methodCombo->addItem("鐗涢】娉?");
+    m_methodCombo->addItem("牛顿法");
     m_methodCombo->setCurrentIndex(m_method - 1);
     connect(m_methodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
         int val = index + 1;
@@ -258,7 +258,7 @@ void DemNode::createWidget()
     outputLayout->addWidget(outputLabel);
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
-    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("鑷姩鐢熸垚鎴栨墜鍔ㄨ緭鍏?"));
+    m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
@@ -362,14 +362,23 @@ bool DemNode::prepareToStart()
         return false;
     }
 
+    if (m_outputNodeName.trimmed().isEmpty()) {
+        m_outputNodeName = generateDefaultOutputName();
+        if (m_outputNodeNameEdit) {
+            m_outputNodeNameEdit->setText(m_outputNodeName);
+        }
+    }
+
     if (!validateInputs()) {
         setStartFailureMessage(QStringLiteral("请检查输入数据和输出配置是否完整。"));
         return false;
     }
 
-    m_preparedDstNode = m_outputNodeName.trimmed().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeName.trimmed();
+    m_preparedDstNode = m_outputNodeName.trimmed();
+    m_outputNodeName = m_preparedDstNode;
+    if (m_outputNodeNameEdit) {
+        m_outputNodeNameEdit->setText(m_outputNodeName);
+    }
 
     m_preparedSavePath = projectPath();
     m_preparedProjectName = projectName();
@@ -379,6 +388,7 @@ bool DemNode::prepareToStart()
     m_preparedTimes = m_times;
 
     QStringList srcPaths = m_inputData->filePaths();
+    m_preparedPhasePaths = srcPaths;
 
     // 方案 1: 预检输入文件是否包含平地消除系数
     FormatConversion FC_check;
@@ -407,18 +417,18 @@ bool DemNode::prepareToStart()
     }
 
     // Precalculate output file paths for overwrite check
-    QStringList pathsToCheck;
+    m_preparedOutputPaths.clear();
     for (const QString& srcPath : srcPaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_dem";
-        pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + changeName + ".h5");
+        m_preparedOutputPaths.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + changeName + ".h5");
     }
 
     // 自动触发时（上游数据更新），强制覆盖，保证数据链路一致性
     if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
-        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, m_preparedOutputPaths, nullptr);
     }
 
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
@@ -447,20 +457,25 @@ void DemNode::executeProcessing()
         return;
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        // Clean up old data nodes to prevent tree duplicates (SOP Rule 14)
-        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
-    }
-
     setProgress(0);
     setState(ExecutionState::Running);
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
+                                           m_preparedOutputPaths, m_preparedPhasePaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_pendingDemResults.clear();
     m_xmlDirty = false;
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
 
     m_thread = new QThread();
     m_workerThread = new DemWorker();
     m_workerThread->moveToThread(m_thread);
 
-    const QStringList phasePaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    const QStringList phasePaths = m_preparedPhasePaths;
     QStringList phaseNames;
     for (const QString& phasePath : phasePaths) {
         phaseNames.append(QFileInfo(phasePath).baseName());
@@ -468,8 +483,9 @@ void DemNode::executeProcessing()
 
     connect(this, &DemNode::startDem, m_workerThread, &DemWorker::Dem);
     connect(m_workerThread, &DemWorker::demFileGenerated, this, &DemNode::handleDemFileGenerated);
-    connect(m_thread, &QThread::started, [this, phaseNames, phasePaths]() {
-        Q_EMIT startDem(m_preparedMethod, m_preparedTimes, m_preparedSavePath, m_preparedDstNode,
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, [this, phaseNames, phasePaths, stagingNode]() {
+        Q_EMIT startDem(m_preparedMethod, m_preparedTimes, m_preparedSavePath, stagingNode,
                         phaseNames, phasePaths);
     });
     connect(m_workerThread, &DemWorker::updateProcess, this, &DemNode::onProgressUpdate);
@@ -509,45 +525,54 @@ void DemNode::onProgressUpdate(int progress, const QString& message)
 
 void DemNode::onProcessingFinished()
 {
-    QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text().trimmed();
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-
     QStringList h5Paths;
     QStringList jpgPaths;
     QStringList types;
-
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString h5Path = dir.absoluteFilePath(h5File);
-            h5Paths.append(h5Path);
-            QString baseName = QFileInfo(h5File).baseName();
-            jpgPaths.append(outputPath + baseName + ".jpg");
-            types.append("dem");
-        }
-    }
+    QList<DemFileResult> committedResults;
+    const QString dstNode = m_preparedDstNode;
 
     // Clean up worker thread
     releaseFinishedThreadResources();
 
     if (discardObsoleteAutomaticExecution()) {
+        m_previewGenerationPending = false;
+        ++m_previewGenerationId;
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic execution"), projectXml());
+        m_outputData.reset(); m_imageInfoData.reset(); setOutputData(0, nullptr); setOutputData(1, nullptr);
         return;
     }
 
-    if (m_xmlDirty) {
-        XMLFile* xml = projectXml();
-        const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
-        if (!xml || xmlPath.isEmpty() || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
-            onError(QStringLiteral("Failed to save project XML after DEM generation."));
-            return;
-        }
-        m_xmlDirty = false;
+    QString transactionError;
+    if (!projectXml() || !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("dem"), &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("Project XML context is unavailable for DEM output commit.") : transactionError);
+        return;
     }
+    QStringList workerPaths;
+    for (const DemFileResult& result : m_pendingDemResults) workerPaths.append(result.absoluteDemPath);
+    if (!NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, workerPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), dstNode, false, false);
+    m_xmlDirty = false;
+    for (DemFileResult result : m_pendingDemResults) {
+        const QString fileName = QFileInfo(result.absoluteDemPath).fileName();
+        result.absoluteDemPath = QDir(projectPath() + "/" + dstNode).absoluteFilePath(fileName);
+        result.relativeDemPath = QStringLiteral("/%1/%2").arg(dstNode, fileName);
+        commitDemResult(result); committedResults.append(result);
+    }
+    if (!m_xmlDirty || !NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("DEM output metadata was not produced.") : transactionError);
+        return;
+    }
+    NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
+    for (const DemFileResult& result : committedResults) publishDemResultToProjectTree(result);
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) iface->refreshProjectTree();
+    for (const QString& h5Path : h5Paths) { jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg"); types.append(QStringLiteral("dem")); }
 
     m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
@@ -558,16 +583,39 @@ void DemNode::onProcessingFinished()
         if (m_remedyWatcher.isRunning()) {
             m_remedyWatcher.cancel();
         }
+        m_previewGenerationPending = true;
+        const quint64 previewGenerationId = ++m_previewGenerationId;
+        QStringList previewJpgPaths;
+        for (const QString& jpgPath : jpgPaths) {
+            const QFileInfo info(jpgPath);
+            previewJpgPaths.append(info.absolutePath() + "/." + info.baseName() +
+                QStringLiteral(".preview-%1.jpg").arg(previewGenerationId));
+            QFile::remove(jpgPath);
+        }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, jpgPaths]() {
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, jpgPaths, previewJpgPaths, previewGenerationId]() {
+            if (!m_previewGenerationPending || previewGenerationId != m_previewGenerationId) {
+                for (const QString& previewJpgPath : previewJpgPaths) {
+                    QFile::remove(previewJpgPath);
+                }
+                return;
+            }
+            m_previewGenerationPending = false;
             if (discardObsoleteAutomaticExecution()) {
+                ++m_previewGenerationId;
+                m_outputData.reset();
+                m_imageInfoData.reset();
+                setOutputData(0, nullptr);
+                setOutputData(1, nullptr);
                 return;
             }
 
             QStringList validJpgPaths;
-            for (const QString& path : jpgPaths) {
-                if (QFile::exists(path)) {
-                    validJpgPaths.append(path);
+            for (int i = 0; i < jpgPaths.size() && i < previewJpgPaths.size(); ++i) {
+                if (QFile::exists(previewJpgPaths[i]) &&
+                    QFile::rename(previewJpgPaths[i], jpgPaths[i])) {
+                    validJpgPaths.append(jpgPaths[i]);
                 }
             }
             if (!validJpgPaths.isEmpty()) {
@@ -588,9 +636,9 @@ void DemNode::onProcessingFinished()
             finishExecution();
         });
 
-        QFuture<void> future = QtConcurrent::run([h5Paths, jpgPaths, types]() {
+        QFuture<void> future = QtConcurrent::run([h5Paths, previewJpgPaths, types]() {
             for (int i = 0; i < h5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], jpgPaths[i], types[i]);
+                NodeUtils::generateJpgPreviewFromH5(h5Paths[i], previewJpgPaths[i], types[i]);
             }
         });
         m_remedyWatcher.setFuture(future);
@@ -614,76 +662,29 @@ void DemNode::onProcessingFinished()
 
 void DemNode::handleDemFileGenerated(const DemFileResult& result)
 {
+    m_pendingDemResults.append(result);
+}
+
+void DemNode::commitDemResult(const DemFileResult& result)
+{
+    XMLFile* xml = projectXml();
+    if (xml) {
+        xml->XMLFile_add_dem(m_preparedDstNode.toStdString().c_str(), result.demName.toStdString().c_str(),
+            result.relativeDemPath.toStdString().c_str(), result.offsetRow, result.offsetCol, "Iteration", m_preparedTimes);
+        m_xmlDirty = true;
+    }
+}
+
+void DemNode::publishDemResultToProjectTree(const DemFileResult& result)
+{
     QStandardItemModel* model = projectModel();
     if (!model) return;
-
-    QList<QStandardItem*> foundProjects = model->findItems(m_preparedProjectName);
-    if (foundProjects.isEmpty()) return;
-
-    QStandardItem* project = foundProjects.first();
-    QStandardItem* demNode = nullptr;
-
-    for (int i = 0; i < project->rowCount(); i++) {
-        if (project->child(i, 0)->text() == m_preparedDstNode) {
-            demNode = project->child(i, 0);
-            break;
-        }
-    }
-
-    if (!demNode) {
-        demNode = new QStandardItem(m_preparedDstNode);
-        demNode->setToolTip(m_preparedProjectName);
-        int insert = 0;
-        for (; insert < project->rowCount(); insert++) {
-            if (project->child(insert, 1) &&
-                (project->child(insert, 1)->text().startsWith("complex") ||
-                 project->child(insert, 1)->text().startsWith("phase") ||
-                 project->child(insert, 1)->text().startsWith("dem"))) {
-                continue;
-            } else {
-                break;
-            }
-        }
-        demNode->setIcon(QIcon(FOLDER_ICON));
-        project->insertRow(insert, demNode);
-        QStandardItem* demNodeRank = new QStandardItem("dem-1.0");
-        project->setChild(insert, 1, demNodeRank);
-    }
-
-    QStandardItem* itemImg = nullptr;
-    for (int j = 0; j < demNode->rowCount(); j++) {
-        if (demNode->child(j, 0)->text() == result.demName) {
-            itemImg = demNode->child(j, 0);
-            break;
-        }
-    }
-
-    if (!itemImg) {
-        QStandardItem* image = new QStandardItem(result.demName);
-        image->setToolTip("dem");
-        image->setIcon(QIcon(IMAGEDATA_ICON));
-        demNode->appendRow(image);
-        QStandardItem* imagePath = new QStandardItem(result.absoluteDemPath);
-        demNode->setChild(demNode->rowCount() - 1, 1, imagePath);
-    } else {
-        demNode->setChild(itemImg->row(), 1, new QStandardItem(result.absoluteDemPath));
-    }
-
-    XMLFile* xml = projectXml();
-    if (!xml) {
-        onError(QStringLiteral("Project XML is unavailable while publishing DEM output."));
-        return;
-    }
-    xml->XMLFile_add_dem(
-        m_preparedDstNode.toStdString().c_str(),
-        result.demName.toStdString().c_str(),
-        result.relativeDemPath.toStdString().c_str(),
-        result.offsetRow,
-        result.offsetCol,
-        "Iteration",
-        m_preparedTimes);
-    m_xmlDirty = true;
+    const QList<QStandardItem*> projects = model->findItems(m_preparedProjectName);
+    if (projects.isEmpty()) return;
+    QStandardItem* demNode = NodeUtils::findOrCreateProjectNode(projects.first(), m_preparedDstNode, "dem-1.0", FOLDER_ICON);
+    if (demNode) NodeUtils::findOrCreateChildItem(demNode, result.demName, "dem", result.absoluteDemPath, IMAGEDATA_ICON);
 }
+
 
 void DemNode::cleanupThreadResources()
 {
@@ -708,6 +709,13 @@ void DemNode::releaseFinishedThreadResources()
 void DemNode::onError(const QString& error)
 {
     releaseFinishedThreadResources();
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+    m_outputData.reset(); m_imageInfoData.reset(); setOutputData(0, nullptr); setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -725,6 +733,13 @@ void DemNode::onError(const QString& error)
 void DemNode::onCancelled()
 {
     releaseFinishedThreadResources();
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+    m_outputData.reset(); m_imageInfoData.reset(); setOutputData(0, nullptr); setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -756,27 +771,16 @@ bool DemNode::validateAndRestoreOutput()
     if (dstNode.isEmpty())
         return false;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (!dir.exists())
-        return false;
-
-    QStringList filters;
-    filters << "*.h5";
-    QStringList h5Files = dir.entryList(filters, QDir::Files);
-    if (h5Files.isEmpty()) {
+    QStringList h5Paths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
         return false;
     }
-
-    QStringList h5Paths;
     QStringList expectedJpgPaths;
     QStringList types;
 
-    for (const QString& h5File : h5Files) {
-        QString h5Path = dir.absoluteFilePath(h5File);
-        QString baseName = QFileInfo(h5File).baseName();
-        h5Paths.append(h5Path);
-        expectedJpgPaths.append(outputPath + baseName + ".jpg");
+    for (const QString& h5Path : h5Paths) {
+        const QFileInfo info(h5Path);
+        expectedJpgPaths.append(info.absolutePath() + "/" + info.baseName() + ".jpg");
         types.append("dem");
     }
 
@@ -793,7 +797,7 @@ bool DemNode::validateAndRestoreOutput()
     QStringList missingTypes;
 
     for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-        if (QFile::exists(expectedJpgPaths[i])) {
+        if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
             existingJpgPaths.append(expectedJpgPaths[i]);
         } else {
             missingH5s.append(h5Paths[i]);
@@ -813,12 +817,34 @@ bool DemNode::validateAndRestoreOutput()
         if (m_remedyWatcher.isRunning()) {
             m_remedyWatcher.cancel();
         }
+        m_previewGenerationPending = true;
+        const quint64 previewGenerationId = ++m_previewGenerationId;
+        QStringList previewJpgPaths;
+        for (const QString& missingJpg : missingJpgs) {
+            const QFileInfo info(missingJpg);
+            previewJpgPaths.append(info.absolutePath() + "/." + info.baseName() +
+                QStringLiteral(".preview-%1.jpg").arg(previewGenerationId));
+            QFile::remove(missingJpg);
+        }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, expectedJpgPaths]() {
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
+                [this, h5Paths, expectedJpgPaths, missingJpgs, previewJpgPaths, previewGenerationId]() {
+            if (!m_previewGenerationPending || previewGenerationId != m_previewGenerationId) {
+                for (const QString& previewJpgPath : previewJpgPaths) {
+                    QFile::remove(previewJpgPath);
+                }
+                return;
+            }
+            m_previewGenerationPending = false;
+            for (int i = 0; i < previewJpgPaths.size() && i < missingJpgs.size(); ++i) {
+                if (QFile::exists(previewJpgPaths[i])) {
+                    QFile::rename(previewJpgPaths[i], missingJpgs[i]);
+                }
+            }
             QStringList validJpgPaths;
-            for (const QString& path : expectedJpgPaths) {
-                if (QFile::exists(path)) {
-                    validJpgPaths.append(path);
+            for (int i = 0; i < h5Paths.size() && i < expectedJpgPaths.size(); ++i) {
+                if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
+                    validJpgPaths.append(expectedJpgPaths[i]);
                 }
             }
             if (!validJpgPaths.isEmpty()) {
@@ -838,9 +864,9 @@ bool DemNode::validateAndRestoreOutput()
             }
         });
 
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
+        QFuture<void> future = QtConcurrent::run([missingH5s, previewJpgPaths, missingTypes]() {
             for (int i = 0; i < missingH5s.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], missingTypes[i]);
+                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], previewJpgPaths[i], missingTypes[i]);
             }
         });
         m_remedyWatcher.setFuture(future);
@@ -856,15 +882,11 @@ QStringList DemNode::previewImagePaths() const
     if (dstNode.isEmpty())
         return list;
 
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        QStringList h5Files = dir.entryList(filters, QDir::Files);
-        for (const QString& h5File : h5Files) {
-            QString baseName = QFileInfo(h5File).baseName();
-            QString jpgPath = outputPath + baseName + ".jpg";
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
+        for (const QString& h5Path : h5Paths) {
+            const QFileInfo info(h5Path);
+            QString jpgPath = info.absolutePath() + "/" + info.baseName() + ".jpg";
             if (QFile::exists(jpgPath)) {
                 list.append(jpgPath);
             }
@@ -923,7 +945,34 @@ void DemNode::stopExecution()
     if (m_workerThread)
     {
         m_workerThread->StopProcess();
+        return;
     }
+
+    if (!m_previewGenerationPending) {
+        return;
+    }
+
+    m_previewGenerationPending = false;
+    ++m_previewGenerationId;
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
+    m_outputData.reset();
+    m_imageInfoData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
+
+    if (discardObsoleteAutomaticExecution()) {
+        return;
+    }
+
+    m_outputNodeNameEdit->setEnabled(true);
+    m_methodCombo->setEnabled(true);
+    if (m_timesEdit) m_timesEdit->setEnabled(true);
+    onMethodChanged(m_method - 1);
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 void DemNode::processAutomatically()

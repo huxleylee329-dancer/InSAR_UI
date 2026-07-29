@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QStandardItemModel>
 #include <QThread>
+#include "NodeUtils.h"
 #include "PSCandidateWorker.h"
 #include "PSNetworkWorker.h"
 #include "PSTimeSeriesWorker.h"
@@ -31,12 +32,17 @@ private slots:
     void onAccept();
     void onReject();
     void onProgressUpdate(int progress, const QString& message);
+    void onOutputsGenerated(const QStringList& outputPaths);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
 
 private:
     void createUI();
     void stopThread();
+    QString projectRoot() const;
+    QString projectXmlPath() const;
+    void reject() override;
 
     QComboBox* m_projectCombo;
     QComboBox* m_srcNodeCombo;
@@ -53,6 +59,11 @@ private:
     QThread* m_thread;
     QString m_projectPath;
     QString m_projectName;
+    QString m_preparedOutputNode;
+    QStringList m_preparedOutputPaths;
+    QStringList m_preparedInputPaths;
+    QStringList m_generatedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 };
 
 // ==================== 2. PS 网络构建对话框 ====================
@@ -73,12 +84,17 @@ private slots:
     void onAccept();
     void onReject();
     void onProgressUpdate(int progress, const QString& message);
+    void onOutputsGenerated(const QStringList& outputPaths);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
 
 private:
     void createUI();
     void stopThread();
+    QString projectRoot() const;
+    QString projectXmlPath() const;
+    void reject() override;
 
     QComboBox* m_projectCombo;
     QComboBox* m_candidatesCombo;
@@ -95,6 +111,11 @@ private:
     QThread* m_thread;
     QString m_projectPath;
     QString m_projectName;
+    QString m_preparedOutputNode;
+    QStringList m_preparedOutputPaths;
+    QStringList m_preparedInputPaths;
+    QStringList m_generatedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 };
 
 // ==================== 3. PS 时序分析对话框 ====================
@@ -115,12 +136,17 @@ private slots:
     void onAccept();
     void onReject();
     void onProgressUpdate(int progress, const QString& message);
+    void onOutputsGenerated(const QStringList& outputPaths);
     void onProcessingFinished();
     void onError(const QString& error);
+    void onCancelled();
 
 private:
     void createUI();
     void stopThread();
+    QString projectRoot() const;
+    QString projectXmlPath() const;
+    void reject() override;
 
     QComboBox* m_projectCombo;
     QComboBox* m_networkCombo;
@@ -136,6 +162,11 @@ private:
     QThread* m_thread;
     QString m_projectPath;
     QString m_projectName;
+    QString m_preparedOutputNode;
+    QStringList m_preparedOutputPaths;
+    QStringList m_preparedInputPaths;
+    QStringList m_generatedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 };
 
 } // namespace QtNodes

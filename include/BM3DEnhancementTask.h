@@ -22,11 +22,7 @@ public:
         EnhancementType type,
         QStringList inputPaths,
         QStringList outputPaths,
-        QString nodeName,
-        QStringList fileNames,
-        QString projectPath,
-        QString projectName,
-        bool saveToProject
+        bool allowSkipOnError
     );
 
     void stop();
@@ -40,14 +36,7 @@ signals:
     void endProcess();
     void errorProcess(QString error_msg);
     void askUserError(quint64 requestId, QString error_msg);
-    void saveImageToProjectRequested(
-        QString projectName,
-        QString nodeName,
-        QString displayName,
-        QString finalPath,
-        QString tag,
-        QString finalFileName
-    );
+    void outputsGenerated(QStringList outputPaths);
 
 private:
     bool waitForErrorDecision(const QString& errorMessage, bool& skip);
@@ -55,11 +44,6 @@ private:
     bool processBM3DEnhancement(
         QString inputPath,
         QString outputPath,
-        QString nodeName,
-        QString fileName,
-        QString projectPath,
-        QString projectName,
-        bool saveToProject,
         QString& outError,
         int baseProgress,
         int progressStep
@@ -68,11 +52,7 @@ private:
     EnhancementType m_type;
     QStringList m_inputPaths;
     QStringList m_outputPaths;
-    QString m_nodeName;
-    QStringList m_fileNames;
-    QString m_projectPath;
-    QString m_projectName;
-    bool m_saveToProject;
+    bool m_allowSkipOnError = false;
 
     std::atomic_bool m_stopFlag{false};
     QMutex m_decisionMutex;

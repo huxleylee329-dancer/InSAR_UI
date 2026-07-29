@@ -16,6 +16,7 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QList>
 #include <memory>
 
 class IApplicationInterface;
@@ -89,9 +90,15 @@ private:
     QString m_preparedSavePath;
     QString m_preparedProjectName;
     QString m_preparedSrcNode;
+    QStringList m_preparedPhasePaths;
+    QStringList m_preparedOutputPaths;
     int m_preparedMethod = 1;
     int m_preparedTimes = 20;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QList<DemFileResult> m_pendingDemResults;
     bool m_xmlDirty = false;
+    bool m_previewGenerationPending = false;
+    quint64 m_previewGenerationId = 0;
 
     // Helper methods
     void cleanupThreadResources();
@@ -109,6 +116,8 @@ private:
     QString generateDefaultOutputName() const;
     bool commitWidgetParametersForExecution();
     void executeProcessing();
+    void commitDemResult(const DemFileResult& result);
+    void publishDemResultToProjectTree(const DemFileResult& result);
 
     // Context helpers
     QStandardItemModel* projectModel() const;

@@ -88,6 +88,7 @@ private:
     void onResultReceived(const QString& dstNode, const QString& filename,
                           const QString& mergedH5Path, const QString& savePath,
                           const QString& projectName);
+    void publishResultToProjectTree(const QString& h5Path, const QString& filename);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
@@ -106,7 +107,16 @@ private:
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
+    QString m_preparedSavePath;
+    QString m_preparedProjectName;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
     QString m_generatedOutputPath;
+    QString m_pendingOutputName;
+    bool m_xmlDirty = false;
+    bool m_previewGenerationPending = false;
+    quint64 m_previewGenerationId = 0;
 
 signals:
     void startFrameMerge(QString projectName, QString savePath, QString dstNode,

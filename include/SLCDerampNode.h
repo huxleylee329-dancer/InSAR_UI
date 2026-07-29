@@ -90,6 +90,8 @@ private:
     void onError(const QString& error);
     void onResultsReceived(const QString& dstNode, const QStringList& h5Paths, const QStringList& originNames,
                            const QString& savePath, const QString& projectName);
+    bool commitResultsToProjectXml(const QStringList& h5Paths, const QStringList& originNames);
+    void publishResultsToProjectTree(const QStringList& h5Paths, const QStringList& originNames);
     bool validateInputs() const;
     QString generateDefaultOutputName() const;
     void executeProcessing();
@@ -111,8 +113,18 @@ private:
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
+    QString m_preparedSavePath;
+    QString m_preparedProjectName;
     QString m_preparedDemPath;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    int m_preparedMasterIndex = 1;
+    NodeUtils::OutputTransaction m_outputTransaction;
     QStringList m_generatedOutputPaths;
+    QStringList m_pendingOriginNames;
+    bool m_xmlDirty = false;
+    bool m_previewGenerationPending = false;
+    quint64 m_previewGenerationId = 0;
 
 signals:
     void startDeramp(int masterIndex, QString projectName, QString savePath,

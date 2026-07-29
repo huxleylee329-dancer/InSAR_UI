@@ -56,7 +56,8 @@ void PSTimeSeriesWorker::ps_time_series(
     QString projectPath,
     QString projectName,
     QString dstNode,
-    QStringList filePaths
+    QStringList filePaths,
+    bool outputDirectoryIsStaging
 )
 {
     NodeUtils::Hdf5Locker locker;
@@ -71,13 +72,18 @@ void PSTimeSeriesWorker::ps_time_series(
         ? QFileInfo(projectPath).absolutePath() : projectPath) + "/" + dstNode;
     const QString outputH5 = outputDir + "/PS_time_series.h5";
     const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
-    const auto finishCancelled = [this, &outputDir]() {
-        QDir dir(outputDir);
-        if (dir.exists() && !dir.removeRecursively()) {
-            InSARLogManager::LogWarning("PSTimeSeriesWorker", "Cancellation cleanup left output directory: " + outputDir);
-        }
+    const auto finishCancelled = [this]() {
         emit cancelled();
     };
+
+    if (outputDirectoryIsStaging && !QDir(outputDir).exists()) {
+        emit errorProcess(QStringLiteral("staging输出目录不存在: ") + outputDir);
+        return;
+    }
+    if (!outputDirectoryIsStaging && !QDir().mkpath(outputDir)) {
+        emit errorProcess(QStringLiteral("无法创建输出目录: ") + outputDir);
+        return;
+    }
 
     if (cancellationRequested()) {
         finishCancelled();
@@ -237,8 +243,6 @@ void PSTimeSeriesWorker::ps_time_series(
     emit updateProcess(90, QStringLiteral("正在写入 PS_time_series.h5 成果..."));
 
     // 6. 保存过滤后时序结果到 H5
-    QDir().mkpath(outputDir);
-
     if (!temporal_coherence.empty() && temporal_coherence.type() != CV_64F) {
         temporal_coherence.convertTo(temporal_coherence, CV_64F);
     }
@@ -258,35 +262,32 @@ void PSTimeSeriesWorker::ps_time_series(
         finishCancelled();
         return;
     }
-    ret = FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_coordinates", filtered_coords);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "deformation_velocity", filtered_velocity);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_coherence", filtered_coherence);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "topographic_residual", filtered_topographic_residual);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "deformation_time_series", filtered_time_series);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "mask", final_ps_mask);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "mask_count_map", mask_count_map);
-    ret += FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_baseline", temporal_baseline);
-
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", filtered_ps_count);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "num_images", num_images);
-    int ref_row_val = ps_points[ref_index].row;
-    int ref_col_val = ps_points[ref_index].col;
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_row", ref_row_val);
-    ret += FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_col", ref_col_val);
-
-    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "max_deformation", max_def);
-    ret += FC.write_double_to_h5(outputH5.toStdString().c_str(), "min_deformation", min_def);
+    const int ref_row_val = ps_points[ref_index].row;
+    const int ref_col_val = ps_points[ref_index].col;
+    if (FC.write_array_to_h5(outputH5.toStdString().c_str(), "ps_coordinates", filtered_coords) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "deformation_velocity", filtered_velocity) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_coherence", filtered_coherence) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "topographic_residual", filtered_topographic_residual) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "deformation_time_series", filtered_time_series) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "mask", final_ps_mask) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "mask_count_map", mask_count_map) != 0 ||
+        FC.write_array_to_h5(outputH5.toStdString().c_str(), "temporal_baseline", temporal_baseline) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "ps_count", filtered_ps_count) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "num_images", num_images) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_row", ref_row_val) != 0 ||
+        FC.write_int_to_h5(outputH5.toStdString().c_str(), "ref_col", ref_col_val) != 0 ||
+        FC.write_double_to_h5(outputH5.toStdString().c_str(), "max_deformation", max_def) != 0 ||
+        FC.write_double_to_h5(outputH5.toStdString().c_str(), "min_deformation", min_def) != 0) {
+        emit errorProcess(QStringLiteral("写入 PS_time_series.h5 失败"));
+        return;
+    }
 
     if (cancellationRequested()) {
         finishCancelled();
         return;
     }
 
-    if (ret != 0) {
-        emit errorProcess(QStringLiteral("写入 PS_time_series.h5 失败"));
-        return;
-    }
-
     emit updateProcess(100, QStringLiteral("时序反演完成"));
+    emit outputsGenerated(QStringList() << outputH5);
     emit endProcess();
 }
