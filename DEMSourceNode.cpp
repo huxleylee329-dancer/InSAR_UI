@@ -43,7 +43,7 @@ DEMSourceNode::DEMSourceNode()
     , m_clearCacheBtn(nullptr)
     , m_cacheSizeLabel(nullptr)
     , m_outputNodeNameEdit(nullptr)
-    , m_demSource(0)
+    , m_demSource(2)
     , m_resMode(0)
     , m_customResolution(30.0)
     , m_cacheDir("")
@@ -198,7 +198,7 @@ void DEMSourceNode::load(QJsonObject const &json)
     ExecutableNodeDelegateModel::load(json);
 
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
-    if (m_demSourceCombo) m_demSourceCombo->setCurrentIndex(m_demSource);
+    if (m_demSourceCombo) m_demSourceCombo->setCurrentIndex(m_demSourceCombo->findData(m_demSource));
     if (m_resolutionCombo) m_resolutionCombo->setCurrentIndex(m_resMode);
     if (m_customResEdit) m_customResEdit->setText(QString::number(m_customResolution));
     if (m_cacheDirEdit) m_cacheDirEdit->setText(m_cacheDir);
@@ -250,20 +250,21 @@ void DEMSourceNode::createWidget()
     sourceLabel->setFixedWidth(labelWidth);
     sourceLayout->addWidget(sourceLabel);
     m_demSourceCombo = new QComboBox();
-    m_demSourceCombo->addItem("SRTM 1\" (~30m)");
-    m_demSourceCombo->addItem("SRTM 3\" (~90m)");
-    m_demSourceCombo->addItem("Copernicus DEM (30m)");
-    m_demSourceCombo->addItem("ASTER GDEM v3 (30m)");
-    m_demSourceCombo->setCurrentIndex(m_demSource);
+    m_demSourceCombo->addItem("Copernicus DEM (30m)", 2);
+    m_demSourceCombo->addItem("SRTM 1\" (~30m)", 0);
+    m_demSourceCombo->addItem("SRTM 3\" (~90m)", 1);
+    m_demSourceCombo->addItem("ASTER GDEM v3 (30m)", 3);
+    m_demSourceCombo->setCurrentIndex(m_demSourceCombo->findData(m_demSource));
     connect(m_demSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
-        if (m_demSource != index) {
+        const int demSource = m_demSourceCombo->itemData(index).toInt();
+        if (m_demSource != demSource) {
             if (!confirmParameterChange()) {
                 m_demSourceCombo->blockSignals(true);
-                m_demSourceCombo->setCurrentIndex(m_demSource);
+                m_demSourceCombo->setCurrentIndex(m_demSourceCombo->findData(m_demSource));
                 m_demSourceCombo->blockSignals(false);
                 return;
             }
-            m_demSource = index;
+            m_demSource = demSource;
             invalidateNodeData();
         }
     });
@@ -497,7 +498,7 @@ bool DEMSourceNode::prepareToStart()
     m_preparedProjectName = projectName();
     
     m_preparedDstNode = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName.trimmed();
-    m_preparedSource = m_demSourceCombo ? m_demSourceCombo->currentIndex() : m_demSource;
+    m_preparedSource = m_demSourceCombo ? m_demSourceCombo->currentData().toInt() : m_demSource;
     m_preparedCacheDir = m_cacheDirEdit ? m_cacheDirEdit->text().trimmed() : m_cacheDir;
 
     // 检查 NASA Earthdata 登录状态（如果选择的源非 Copernicus 且未登录）
@@ -667,7 +668,7 @@ void DEMSourceNode::onProcessingFinished(
     int demSource,
     double targetResolution,
     const QStringList& availableTiles,
-    const QStringList& missingTiles,
+    const QStringList& serverNotFoundTiles,
     int requestedTileCount,
     bool outputValidated
 )
@@ -683,9 +684,9 @@ void DEMSourceNode::onProcessingFinished(
     logContext.displayName = caption();
     const double tileAvailability = requestedTileCount > 0
         ? 100.0 * availableTiles.size() / requestedTileCount : 0.0;
-    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，请求瓦片可用率 %3%，缺失：%4，输出：%5，输出数据集校验：%6。")
+    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，请求瓦片可用率 %3%，服务器 404 瓦片：%4，输出：%5，输出数据集校验：%6。")
         .arg(availableTiles.size()).arg(requestedTileCount).arg(tileAvailability, 0, 'f', 1)
-        .arg(missingTiles.isEmpty() ? QStringLiteral("无") : missingTiles.join(QStringLiteral(", ")))
+        .arg(serverNotFoundTiles.isEmpty() ? QStringLiteral("无") : serverNotFoundTiles.join(QStringLiteral(", ")))
         .arg(outputH5Path).arg(outputValidated ? QStringLiteral("通过") : QStringLiteral("失败"));
     InSARLogManager::LogTaskEvent(logContext,
                                   outputValidated ? InSARLogManager::LevelInfo : InSARLogManager::LevelError,
@@ -1066,7 +1067,7 @@ void DEMSourceNode::updateLoginStatus()
     if (!m_demSourceCombo || !m_loginStatusLabel || !m_loginBtn || !m_logoutBtn)
         return;
 
-    int demSource = m_demSourceCombo->currentIndex();
+    int demSource = m_demSourceCombo->currentData().toInt();
     if (demSource == 2) // Copernicus DEM 不需要登录
     {
         m_loginStatusLabel->setText(QStringLiteral("无需登录"));

@@ -1013,6 +1013,12 @@ struct OrbitValidationItem
     int broadcastRows = 0;   // state_vec 行数（广播轨道）
     int preciseRows = 0;     // fine_state_vec 行数（精密轨道）
     QString orbitType;       // 轨道类型属性（如 Precise (POE) / Reconstructed (RES)）
+    QString inputSwath;
+    QString inputPolarization;
+    QString outputSwath;
+    QString outputPolarization;
+    QString identityConsistency;
+    QString identityStatus;
     bool passed = false;
     QString errorMsg;
 };
@@ -1204,6 +1210,29 @@ private:
             m_compareTable->setItem(r, 3, statusItem);
         };
 
+        const QString identityColor = item.identityStatus == QStringLiteral("PASS") ? "#10B981"
+            : item.identityStatus == QStringLiteral("WARNING") ? "#F59E0B" : "#EF4444";
+        const QString identityInput = item.inputSwath.isEmpty()
+            ? tr("未记录（旧产物）") : item.inputSwath;
+        const QString identityOutput = item.outputSwath.isEmpty()
+            ? tr("未读取") : item.outputSwath;
+        const QString polarizationInput = item.inputPolarization.isEmpty()
+            ? tr("未记录（旧产物）") : item.inputPolarization;
+        const QString polarizationOutput = item.outputPolarization.isEmpty()
+            ? tr("未读取") : item.outputPolarization;
+
+        const QString grpIdentity = QStringLiteral("  产品身份");
+        addRow(grpIdentity + tr(" / Swath"), identityInput, identityOutput,
+            item.identityStatus, identityColor);
+        addRow(grpIdentity + tr(" / Polarization"), polarizationInput, polarizationOutput,
+            item.identityStatus, identityColor);
+        addRow(grpIdentity + tr(" / Identity consistency"),
+            item.inputSwath.isEmpty() || item.inputPolarization.isEmpty()
+                ? tr("旧产物未记录输入身份快照")
+                : tr("输入身份快照已记录"),
+            item.identityConsistency.isEmpty() ? tr("未记录") : item.identityConsistency,
+            item.identityStatus, identityColor);
+
         // 1. fine_state_vec 存在性
         QString grpOrbit = QStringLiteral("  精密轨道");
         if (item.hasFineStateVec) {
@@ -1283,10 +1312,40 @@ private:
                     item.orbitType = tr("Unknown");
                 }
             }
+
+            auto readString = [&FC, &h5Path](const char* dataset, QString& value) {
+                std::string text;
+                if (FC.read_str_from_h5(h5Path.toLocal8Bit().constData(), dataset, text) == 0) {
+                    value = QString::fromStdString(text).trimmed().toUpper();
+                    return true;
+                }
+                return false;
+            };
+            const bool hasInputSwath = readString("orbit_input_swath", item.inputSwath);
+            const bool hasInputPolarization = readString("orbit_input_polarization", item.inputPolarization);
+            const bool hasOutputSwath = readString("swath", item.outputSwath);
+            const bool hasOutputPolarization = readString("polarization", item.outputPolarization);
+            readString("orbit_identity_consistency", item.identityConsistency);
+
+            if (!hasOutputSwath || !hasOutputPolarization || item.outputSwath.isEmpty() || item.outputPolarization.isEmpty()) {
+                item.identityStatus = QStringLiteral("FAILED");
+                item.errorMsg = QStringLiteral("输出 H5 缺少 Sentinel-1 swath/polarization 元数据。");
+            } else if (!hasInputSwath || !hasInputPolarization || item.inputSwath.isEmpty() || item.inputPolarization.isEmpty()) {
+                item.identityStatus = QStringLiteral("WARNING");
+                item.errorMsg = QStringLiteral("旧产物未记录轨道应用前的 Sentinel-1 身份快照。");
+            } else if (item.inputSwath != item.outputSwath ||
+                       item.inputPolarization != item.outputPolarization ||
+                       item.identityConsistency != QStringLiteral("VERIFIED")) {
+                item.identityStatus = QStringLiteral("FAILED");
+                item.errorMsg = QStringLiteral("轨道应用前后的 Sentinel-1 swath/polarization 身份不一致。");
+            } else {
+                item.identityStatus = QStringLiteral("PASS");
+            }
         }
 
         // 判定：fine_state_vec 存在且 ≥5 点 → 精密轨道已应用
-        item.passed = item.hasFineStateVec && item.preciseRows >= 5;
+        item.passed = item.hasFineStateVec && item.preciseRows >= 5 &&
+            item.identityStatus != QStringLiteral("FAILED");
 
         if (!item.hasFineStateVec) {
             item.errorMsg = QStringLiteral("精密轨道未能写入 H5 文件。请检查 EOF 文件是否成功下载。");

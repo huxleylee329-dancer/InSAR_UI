@@ -33,10 +33,10 @@ DEMSourceDialog::DEMSourceDialog(QWidget* parent)
     formLayout->addRow(QStringLiteral("参考 SLC 影像:"), m_slcCombo);
 
     m_demSourceCombo = new QComboBox(this);
-    m_demSourceCombo->addItem("SRTM 1\" (~30m)");
-    m_demSourceCombo->addItem("SRTM 3\" (~90m)");
-    m_demSourceCombo->addItem("Copernicus DEM (30m)");
-    m_demSourceCombo->addItem("ASTER GDEM v3 (30m)");
+    m_demSourceCombo->addItem("Copernicus DEM (30m)", 2);
+    m_demSourceCombo->addItem("SRTM 1\" (~30m)", 0);
+    m_demSourceCombo->addItem("SRTM 3\" (~90m)", 1);
+    m_demSourceCombo->addItem("ASTER GDEM v3 (30m)", 3);
     formLayout->addRow(QStringLiteral("DEM 数据源:"), m_demSourceCombo);
 
     // 账户状态与登录注销按钮
@@ -255,7 +255,7 @@ void DEMSourceDialog::onStartPressed()
         }
     }
 
-    int demSource = m_demSourceCombo->currentIndex();
+    int demSource = m_demSourceCombo->currentData().toInt();
     if (demSource != 2) // Copernicus DEM 不需要登录
     {
         QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
@@ -601,7 +601,7 @@ void DEMSourceDialog::updateCacheSizeLabel()
 
 void DEMSourceDialog::updateLoginStatus()
 {
-    int demSource = m_demSourceCombo->currentIndex();
+    int demSource = m_demSourceCombo->currentData().toInt();
     if (demSource == 2) // Copernicus DEM
     {
         m_loginStatusLabel->setText(QStringLiteral("无需登录"));

@@ -6,6 +6,7 @@
 #include "WorkspaceUI.h"
 #include "InSARLogManager.h"
 #include "icon_source.h"
+#include "tinyxml.h"
 #include "Utils.h"
 #include <QTimer>
 #include <QJsonDocument>
@@ -14,6 +15,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QApplication>
+#include <QPointer>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QFutureWatcher>
 
@@ -57,12 +59,9 @@ SBASTimeSeriesNode::SBASTimeSeriesNode()
 
 SBASTimeSeriesNode::~SBASTimeSeriesNode()
 {
-    if (m_worker) m_worker->StopProcess();
-    if (m_thread && m_thread->isRunning()) {
-        m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
-    }
+    ++m_executionGeneration;
+    stopAndWaitForTrackedExecutions();
+    rollbackOutputTransaction(QStringLiteral("node destroyed"));
 }
 
 unsigned int SBASTimeSeriesNode::nPorts(PortType portType) const
@@ -284,9 +283,11 @@ void SBASTimeSeriesNode::updateLabels()
     }
 
     if (m_resultLabel) {
-        QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
-        if (QFileInfo::exists(h5Path)) {
-            m_resultLabel->setText(QStringLiteral("状态：时序分析计算完成\n输出：%1").arg(QFileInfo(h5Path).fileName()));
+        QStringList h5Paths;
+        if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) &&
+            h5Paths.size() == 1) {
+            m_resultLabel->setText(QStringLiteral("状态：时序分析计算完成\n输出：%1")
+                .arg(QFileInfo(h5Paths.first()).fileName()));
         } else {
             m_resultLabel->setText(QStringLiteral("状态：等待计算"));
         }
@@ -317,8 +318,12 @@ bool SBASTimeSeriesNode::prepareToStart()
         return false;
     }
 
-    QString outDir = projectPath() + "/" + m_outputNodeName;
-    QString h5Path = outDir + "/SBAS_time_series.h5";
+    m_preparedProjectRoot = projectPath();
+    m_preparedProjectName = projectName();
+    m_preparedInputPaths = m_inputData->filePaths();
+    QString h5Path = QDir(m_preparedProjectRoot).absoluteFilePath(
+        m_outputNodeName + "/SBAS_time_series.h5");
+    m_preparedOutputPaths = QStringList() << h5Path;
     QStringList pathsToCheck = QStringList() << h5Path;
 
     if (_isAutoTriggered) {
@@ -342,65 +347,107 @@ void SBASTimeSeriesNode::execute()
         return;
     }
 
-    // If Overwrite: clean project tree first to avoid tree duplicates (SOP rule 14)
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
-
     executeProcessing();
 }
 
 void SBASTimeSeriesNode::executeProcessing()
 {
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing started.");
+    const quint64 executionGeneration = ++m_executionGeneration;
     stopExecution();
     m_xmlDirty = false;
+    m_pendingResult = SBASTimeSeriesResult();
+
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_outputNodeName,
+                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
 
     m_thread = new QThread(this);
     m_worker = new SBASTimeSeriesWorker();
     m_worker->moveToThread(m_thread);
+    SBASTimeSeriesWorker* const worker = m_worker;
+    QThread* const workerThread = m_thread;
+    const QPointer<QThread> workerThreadGuard(workerThread);
+    trackExecution(worker, workerThread);
 
-    QString projPath = projectPath();
-    QString projName = projectName();
-    QString csvPath = projPath + "/" + m_outputNodeName + "/sbas_time_series.csv";
-    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    const QString projPath = m_preparedProjectRoot;
+    const QString projName = m_preparedProjectName;
+    const QString stagingNode = m_outputTransaction.stagingName;
+    const QStringList filePaths = m_preparedInputPaths;
+    const double temporalThreshLow = m_temporalThreshLow;
+    const double temporalThresh = m_temporalThresh;
+    const double spatialThresh = m_spatialThresh;
+    const int multilookRg = m_multilookRg;
+    const int multilookAz = m_multilookAz;
+    const int unwrapMethod = m_unwrapMethod;
+    const double alpha = m_alpha;
+    const double coherenceThresh = m_coherenceThresh;
+    const double temporalCoherenceThresh = m_temporalCoherenceThresh;
+    const double refinementCohThresh = m_refinementCohThresh;
+    const double refinementDefThresh = m_refinementDefThresh;
 
-    connect(m_thread, &QThread::started, m_worker, [this, projPath, projName, csvPath, filePaths]() {
-        m_worker->SBAS_time_series(
-            m_temporalThreshLow,
-            m_temporalThresh,
-            m_spatialThresh,
-            m_multilookRg,
-            m_multilookAz,
-            m_unwrapMethod,
-            m_alpha,
-            m_coherenceThresh,
-            m_temporalCoherenceThresh,
-            m_refinementCohThresh,
-            m_refinementDefThresh,
+    connect(workerThread, &QThread::started, worker,
+            [worker, temporalThreshLow, temporalThresh, spatialThresh, multilookRg, multilookAz,
+             unwrapMethod, alpha, coherenceThresh, temporalCoherenceThresh, refinementCohThresh,
+             refinementDefThresh, projPath, projName, stagingNode, filePaths]() {
+        worker->SBAS_time_series(
+            temporalThreshLow,
+            temporalThresh,
+            spatialThresh,
+            multilookRg,
+            multilookAz,
+            unwrapMethod,
+            alpha,
+            coherenceThresh,
+            temporalCoherenceThresh,
+            refinementCohThresh,
+            refinementDefThresh,
             projPath,
             projName,
-            m_outputNodeName,
-            csvPath,
-            filePaths
+            stagingNode,
+            QString(),
+            filePaths,
+            true
         );
     });
 
-    connect(m_worker, &SBASTimeSeriesWorker::sbasGenerated, this, &SBASTimeSeriesNode::onSbasGenerated);
-    connect(m_worker, &SBASTimeSeriesWorker::updateProcess, this, &SBASTimeSeriesNode::onProgressUpdate);
-    connect(m_worker, &SBASTimeSeriesWorker::endProcess, this, &SBASTimeSeriesNode::onProcessingFinished);
-    connect(m_worker, &SBASTimeSeriesWorker::endProcess, m_thread, &QThread::quit);
-    connect(m_worker, &SBASTimeSeriesWorker::errorProcess, this, &SBASTimeSeriesNode::onError);
-    connect(m_worker, &SBASTimeSeriesWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_worker, &SBASTimeSeriesWorker::cancelled, this, &SBASTimeSeriesNode::onCancelled);
-    connect(m_worker, &SBASTimeSeriesWorker::cancelled, m_thread, &QThread::quit);
+    connect(worker, &SBASTimeSeriesWorker::sbasGenerated, this,
+            [this, executionGeneration](const SBASTimeSeriesResult& result) {
+        if (executionGeneration == m_executionGeneration) onSbasGenerated(result);
+    });
+    connect(worker, &SBASTimeSeriesWorker::updateProcess, this,
+            [this, executionGeneration](int progress, const QString& message) {
+        if (executionGeneration == m_executionGeneration) onProgressUpdate(progress, message);
+    });
+    connect(worker, &SBASTimeSeriesWorker::endProcess, this,
+            [this, executionGeneration]() {
+        if (executionGeneration == m_executionGeneration) onProcessingFinished();
+    });
+    connect(worker, &SBASTimeSeriesWorker::endProcess, workerThread, &QThread::quit);
+    connect(worker, &SBASTimeSeriesWorker::errorProcess, this,
+            [this, executionGeneration](const QString& error) {
+        if (executionGeneration == m_executionGeneration) onError(error);
+    });
+    connect(worker, &SBASTimeSeriesWorker::errorProcess, workerThread, &QThread::quit);
+    connect(worker, &SBASTimeSeriesWorker::cancelled, this,
+            [this, executionGeneration]() {
+        if (executionGeneration == m_executionGeneration) onCancelled();
+    });
+    connect(worker, &SBASTimeSeriesWorker::cancelled, workerThread, &QThread::quit);
 
-    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
-    connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
+    connect(workerThread, &QThread::finished, worker, &QObject::deleteLater);
+    connect(workerThread, &QThread::finished, workerThread, &QObject::deleteLater);
 
     setState(ExecutionState::Running);
     setProgress(0);
 
-    QTimer::singleShot(0, this, [this]() {
-        if (m_thread && m_thread->isRunning()) {
+    QTimer::singleShot(0, this, [this, executionGeneration, workerThreadGuard]() {
+        if (executionGeneration == m_executionGeneration && workerThreadGuard &&
+            workerThreadGuard->isRunning()) {
             setState(ExecutionState::Running);
         }
     });
@@ -413,6 +460,9 @@ void SBASTimeSeriesNode::stopExecution()
 {
     if (m_worker) {
         m_worker->StopProcess();
+    }
+    if (m_thread) {
+        m_thread->requestInterruption();
     }
 }
 
@@ -438,6 +488,11 @@ void SBASTimeSeriesNode::onError(const QString& error)
 {
     m_worker = nullptr;
     m_thread = nullptr;
+    rollbackOutputTransaction(error);
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -452,6 +507,7 @@ void SBASTimeSeriesNode::onCancelled()
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "SBAS time-series cancellation cleanup completed.");
     m_worker = nullptr;
     m_thread = nullptr;
+    rollbackOutputTransaction(QStringLiteral("cancelled"));
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -471,22 +527,23 @@ void SBASTimeSeriesNode::onProcessingFinished()
     m_worker = nullptr;
     m_thread = nullptr;
     if (discardObsoleteAutomaticExecution()) {
+        rollbackOutputTransaction(QStringLiteral("obsolete automatic execution"));
+        m_outputData.reset();
+        m_previewData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         return;
     }
 
-    if (m_xmlDirty) {
-        IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
-        const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
-        XMLFile* xml = iface ? iface->projectXml() : nullptr;
-        if (!xml || xmlPath.isEmpty() || xml->XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
-            onError(QStringLiteral("Failed to save project XML after SBAS analysis."));
-            return;
-        }
-        m_xmlDirty = false;
+    QString transactionError;
+    if (!commitOutputTransaction(&transactionError)) {
+        onError(transactionError);
+        return;
     }
 
     InSARLogManager::LogInfo("SBASTimeSeriesNode", "executeProcessing completed.");
-    QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
+    const QString h5Path = QDir(m_preparedProjectRoot).absoluteFilePath(
+        m_outputNodeName + "/SBAS_time_series.h5");
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
     setOutputData(0, m_outputData);
 
@@ -509,55 +566,127 @@ void SBASTimeSeriesNode::onProcessingFinished()
 
 void SBASTimeSeriesNode::onSbasGenerated(const SBASTimeSeriesResult& result)
 {
-    QStandardItemModel* model = nullptr;
-    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
-    if (iface) {
-        model = iface->projectModel();
+    if (!isAutomaticExecutionObsolete()) {
+        m_pendingResult = result;
     }
-    if (!model) return;
+}
 
-    QList<QStandardItem*> foundProjects = model->findItems(projectName());
-    if (foundProjects.isEmpty()) return;
-    QStandardItem* project = foundProjects[0];
+bool SBASTimeSeriesNode::commitOutputTransaction(QString* errorMessage)
+{
+    if (m_pendingResult.dstNode != m_outputTransaction.stagingName ||
+        m_pendingResult.timesSeriesH5Path.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("SBAS worker did not return the expected staging output.");
+        return false;
+    }
 
-    QStandardItem* sbasNode = NodeUtils::findOrCreateProjectNode(project, result.dstNode, "SBAS-1.0");
-    if (sbasNode) {
-        sbasNode->setToolTip(projectName());
-        QStandardItem* itemImg = nullptr;
-        for (int j = 0; j < sbasNode->rowCount(); j++) {
-            if (sbasNode->child(j, 0)->text() == "SBAS_time_series") {
-                itemImg = sbasNode->child(j, 0);
-                break;
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    XMLFile* xml = iface ? iface->projectXml() : nullptr;
+    const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
+    if (!xml || xmlPath.isEmpty() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, errorMessage) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+            QStringList() << QStringLiteral("mask") << QStringLiteral("defomation_velocity")
+                          << QStringLiteral("deformation_time_series"), errorMessage) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths,
+            QStringList() << m_pendingResult.timesSeriesH5Path, errorMessage)) {
+        return false;
+    }
+
+    QStringList finalPaths;
+    if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, errorMessage) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, xml, xmlPath, errorMessage)) {
+        return false;
+    }
+
+    TiXmlElement* root = nullptr;
+    if (xml->get_root(root) < 0 || !root) {
+        if (errorMessage) *errorMessage = QStringLiteral("Unable to read project XML root for SBAS output.");
+        return false;
+    }
+    for (TiXmlElement* element = root->FirstChildElement(); element != nullptr; ) {
+        const char* name = element->Attribute("name");
+        if (name && m_outputNodeName == QString::fromUtf8(name)) {
+            TiXmlElement* toRemove = element;
+            element = element->NextSiblingElement();
+            root->RemoveChild(toRemove);
+        } else {
+            element = element->NextSiblingElement();
+        }
+    }
+    const QString relativePath = QStringLiteral("/%1/SBAS_time_series.h5").arg(m_outputNodeName);
+    if (xml->XMLFile_add_SBAS(m_outputNodeName.toStdString().c_str(), "SBAS_time_series",
+                              relativePath.toStdString().c_str()) < 0 ||
+        !NodeUtils::saveProjectXmlAtomically(xml, xmlPath, errorMessage) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, errorMessage)) {
+        if (errorMessage && errorMessage->isEmpty()) {
+            *errorMessage = QStringLiteral("Unable to commit SBAS output metadata.");
+        }
+        return false;
+    }
+
+    if (iface && iface->projectModel() && !finalPaths.isEmpty()) {
+        NodeUtils::removeDataNodeFromProjectTree(iface, m_outputNodeName);
+        const QList<QStandardItem*> projects = iface->projectModel()->findItems(m_preparedProjectName);
+        if (!projects.isEmpty()) {
+            QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+                projects.first(), m_outputNodeName, "SBAS-1.0", FOLDER_ICON);
+            if (outputNode) {
+                outputNode->setToolTip(m_preparedProjectName);
+                NodeUtils::findOrCreateChildItem(outputNode, "SBAS_time_series", "SBAS",
+                                                  finalPaths.first(), IMAGEDATA_ICON);
             }
         }
-        if (!itemImg) {
-            QStandardItem* sbasNameItem = new QStandardItem("SBAS_time_series");
-            sbasNameItem->setToolTip("SBAS");
-            QStandardItem* sbasPathItem = new QStandardItem(result.timesSeriesH5Path);
-            sbasNameItem->setIcon(QIcon(IMAGEDATA_ICON));
-            sbasNode->appendRow(sbasNameItem);
-            sbasNode->setChild(sbasNode->rowCount() - 1, 1, sbasPathItem);
-        } else {
-            sbasNode->setChild(itemImg->row(), 1, new QStandardItem(result.timesSeriesH5Path));
+        iface->refreshProjectTree();
+    }
+    return true;
+}
+
+void SBASTimeSeriesNode::rollbackOutputTransaction(const QString& reason)
+{
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, iface ? iface->projectXml() : nullptr);
+}
+
+void SBASTimeSeriesNode::trackExecution(SBASTimeSeriesWorker* worker, QThread* thread)
+{
+    if (!worker || !thread) return;
+
+    m_trackedExecutions.append({worker, thread});
+    connect(thread, &QThread::finished, this, [this, thread]() {
+        for (int i = m_trackedExecutions.size() - 1; i >= 0; --i) {
+            const QPointer<QThread>& trackedThread = m_trackedExecutions.at(i).thread;
+            if (!trackedThread || trackedThread.data() == thread) {
+                m_trackedExecutions.removeAt(i);
+            }
+        }
+    });
+}
+
+void SBASTimeSeriesNode::stopAndWaitForTrackedExecutions()
+{
+    for (const TrackedExecution& execution : m_trackedExecutions) {
+        if (execution.worker) execution.worker->StopProcess();
+        if (execution.thread) {
+            execution.thread->requestInterruption();
+            execution.thread->quit();
         }
     }
-
-    XMLFile* xml = iface ? iface->projectXml() : nullptr;
-    if (!xml) {
-        onError(QStringLiteral("Project XML is unavailable while publishing SBAS output."));
-        return;
+    for (const TrackedExecution& execution : m_trackedExecutions) {
+        if (execution.thread && execution.thread->isRunning()) {
+            execution.thread->wait();
+        }
     }
-    xml->XMLFile_add_SBAS(
-        result.dstNode.toStdString().c_str(),
-        "SBAS_time_series",
-        result.relativePath.toStdString().c_str());
-    m_xmlDirty = true;
+    m_trackedExecutions.clear();
+    m_worker = nullptr;
+    m_thread = nullptr;
 }
 
 bool SBASTimeSeriesNode::validateAndRestoreOutput()
 {
-    QString h5Path = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.h5";
-    if (QFileInfo::exists(h5Path)) {
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) &&
+        h5Paths.size() == 1) {
+        const QString h5Path = h5Paths.first();
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
         setOutputData(0, m_outputData);
         
@@ -660,9 +789,15 @@ void SBASTimeSeriesNode::load(QJsonObject const& json)
 
 QStringList SBASTimeSeriesNode::previewImagePaths() const
 {
-    QString jpgPath = projectPath() + "/" + m_outputNodeName + "/SBAS_time_series.jpg";
-    if (QFileInfo::exists(jpgPath)) {
-        return QStringList() << jpgPath;
+    QStringList h5Paths;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths)) {
+        QStringList jpgPaths;
+        for (const QString& h5Path : h5Paths) {
+            const QString jpgPath = QFileInfo(h5Path).absolutePath() + "/" +
+                QFileInfo(h5Path).baseName() + ".jpg";
+            if (QFileInfo::exists(jpgPath)) jpgPaths.append(jpgPath);
+        }
+        return jpgPaths;
     }
     return QStringList();
 }

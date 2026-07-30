@@ -6,6 +6,7 @@
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QThread>
 #include <QElapsedTimer>
@@ -99,7 +100,7 @@ void SLCDerampWorker::SLC_deramp(
     QString dstNode,
     QStringList inputPaths)
 {
-    SLC_deramp_with_dem(masterIndex, projectName, savePath, dstNode, inputPaths, QString());
+    SLC_deramp_with_dem(masterIndex, projectName, savePath, dstNode, inputPaths, QString(), true, true);
 }
 
 void SLCDerampWorker::SLC_deramp_with_dem(
@@ -108,7 +109,9 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     QString savePath,
     QString dstNode,
     QStringList inputPaths,
-    QString demPath)
+    QString demPath,
+    bool isDeflat,
+    bool isTopoRemoval)
 {
     DerampThreadLocalGuard guard(this);
     InSARLogManager::LogInfo("SLCDerampWorker",
@@ -148,6 +151,36 @@ void SLCDerampWorker::SLC_deramp_with_dem(
         originNames.append(originName);
     }
 
+    if (!isDeflat) {
+        QStringList resultH5Paths;
+        for (int i = 0; i < inputPaths.size(); ++i) {
+            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                emit cancelled();
+                return;
+            }
+
+            const QString outputPath = QString::fromStdString(derampImages.at(i));
+            if (QFile::exists(outputPath) && !QFile::remove(outputPath)) {
+                emit errorProcess(QStringLiteral("Unable to replace SLC output."));
+                return;
+            }
+            if (!QFile::copy(inputPaths.at(i), outputPath)) {
+                emit errorProcess(QStringLiteral("Failed to copy input SLC."));
+                return;
+            }
+
+            resultH5Paths.append(outputPath);
+            emit updateProcess(10 + 80 * (i + 1) / inputPaths.size(),
+                               QStringLiteral("Copying SLC images..."));
+        }
+
+        emit sendResults(dstNode, resultH5Paths, originNames, savePath, projectName);
+        InSARLogManager::LogInfo("SLCDerampWorker",
+            QString("SLC_deramp completed without phase removal. Total images: %1").arg(inputPaths.size()));
+        emit endProcess();
+        return;
+    }
+
     QTemporaryDir temporaryDemDirectory;
     if (demPath.isEmpty()) {
         if (!temporaryDemDirectory.isValid()) {
@@ -167,7 +200,7 @@ void SLCDerampWorker::SLC_deramp_with_dem(
         }
     }
 
-    emit updateProcess(10, QStringLiteral("Preparing DEM mapping..."));
+    emit updateProcess(10, QStringLiteral("Preparing phase correction..."));
     double lonMax = 0.0;
     double lonMin = 0.0;
     double latMax = 0.0;
@@ -229,6 +262,9 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     util.computeImageGeoBoundry(latCoef, lonCoef, sceneHeight, sceneWidth, offsetRow, offsetCol,
         &lonMax, &latMax, &lonMin, &latMin);
     util.getSRTMDEM(demPath.toStdString().c_str(), dem, &lonUpperLeft, &latUpperLeft, lonMin, lonMax, latMin, latMax);
+    if (!isTopoRemoval) {
+        dem = Mat::zeros(dem.size(), dem.type());
+    }
     ret = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lonUpperLeft, latUpperLeft, offsetRow, offsetCol,
         sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec,
         20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, derampProgressCallback);

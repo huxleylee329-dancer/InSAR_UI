@@ -92,6 +92,65 @@ void logAcquisitionTimeRange(const QString& stage, const QString& h5Path,
             .arg(stopText)
             .arg(stopGps, 0, 'f', 3));
 }
+
+struct Sentinel1ProductIdentity
+{
+    QString swath;
+    QString polarization;
+};
+
+bool readSentinel1ProductIdentity(const QString& h5Path, Sentinel1ProductIdentity& identity,
+                                  QString& errorMessage)
+{
+    std::string swath;
+    std::string polarization;
+    QString readError;
+    if (!NodeUtils::readStringFromH5(h5Path, "swath", swath, &readError) ||
+        !NodeUtils::readStringFromH5(h5Path, "polarization", polarization, &readError)) {
+        errorMessage = QStringLiteral("Missing Sentinel-1 swath/polarization metadata in %1: %2")
+            .arg(h5Path, readError);
+        return false;
+    }
+
+    identity.swath = QString::fromStdString(swath).trimmed().toUpper();
+    identity.polarization = QString::fromStdString(polarization).trimmed().toUpper();
+    if (identity.swath.isEmpty() || identity.polarization.isEmpty()) {
+        errorMessage = QStringLiteral("Empty Sentinel-1 swath/polarization metadata in %1").arg(h5Path);
+        return false;
+    }
+    return true;
+}
+
+void logSentinel1ProductIdentity(const QString& stage, const QString& h5Path,
+                                 const Sentinel1ProductIdentity& identity)
+{
+    InSARLogManager::LogInfo("OrbitSourceWorker",
+        QStringLiteral("Sentinel-1 product identity %1: file=%2, swath=%3, polarization=%4")
+            .arg(stage, h5Path, identity.swath, identity.polarization));
+}
+
+bool writeOrbitProductIdentityAudit(const QString& h5Path,
+                                    const Sentinel1ProductIdentity& inputIdentity,
+                                    QString& errorMessage)
+{
+    NodeUtils::Hdf5Locker locker(h5Path);
+    if (!locker.isLocked()) {
+        errorMessage = QStringLiteral("Unable to lock POD output for Sentinel-1 identity audit: %1").arg(h5Path);
+        return false;
+    }
+
+    FormatConversion conversion;
+    if (conversion.write_str_to_h5(h5Path.toStdString().c_str(), "orbit_input_swath",
+                                   inputIdentity.swath.toStdString().c_str()) != 0 ||
+        conversion.write_str_to_h5(h5Path.toStdString().c_str(), "orbit_input_polarization",
+                                   inputIdentity.polarization.toStdString().c_str()) != 0 ||
+        conversion.write_str_to_h5(h5Path.toStdString().c_str(), "orbit_identity_consistency",
+                                   "verified") != 0) {
+        errorMessage = QStringLiteral("Unable to write Sentinel-1 identity audit metadata to POD output: %1").arg(h5Path);
+        return false;
+    }
+    return true;
+}
 }
 
 OrbitSourceWorker::OrbitSourceWorker(QObject* parent)
@@ -970,6 +1029,7 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath,
     emit updateProcess(0, QStringLiteral("开始从 %1 检索并匹配轨道数据……").arg(sourceName(static_cast<int>(source))));
     QHash<QString, QString> matchedOrbits;
     QHash<QString, bool> preciseFlags;
+    QHash<QString, Sentinel1ProductIdentity> inputIdentities;
     for (int i = 0; i < filePaths.size(); ++i) {
         if (isStopRequested()) {
             emit cancelled();
@@ -977,6 +1037,15 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath,
         }
         emit updateProcess(5 + i * 50 / filePaths.size(),
             QStringLiteral("正在匹配影像 %1 的轨道文件……").arg(QFileInfo(filePaths.at(i)).fileName()));
+        Sentinel1ProductIdentity identity;
+        QString identityError;
+        if (!readSentinel1ProductIdentity(filePaths.at(i), identity, identityError)) {
+            InSARLogManager::LogError("OrbitSourceWorker", identityError);
+            emit errorProcess(identityError);
+            return;
+        }
+        logSentinel1ProductIdentity(QStringLiteral("before POD application"), filePaths.at(i), identity);
+        inputIdentities.insert(filePaths.at(i), identity);
         QString eofPath;
         bool precise = false;
         QString itemError;
@@ -1056,6 +1125,29 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath,
             QFile::remove(targetJpg);
             QFile::copy(sourceJpg, targetJpg);
         }
+        Sentinel1ProductIdentity copiedIdentity;
+        QString copiedIdentityError;
+        if (!readSentinel1ProductIdentity(newH5Path, copiedIdentity, copiedIdentityError) ||
+            copiedIdentity.swath != inputIdentities.value(h5Path).swath ||
+            copiedIdentity.polarization != inputIdentities.value(h5Path).polarization) {
+            const QString error = copiedIdentityError.isEmpty()
+                ? QStringLiteral("Sentinel-1 swath/polarization metadata changed while copying POD output: %1").arg(newH5Path)
+                : copiedIdentityError;
+            InSARLogManager::LogError("OrbitSourceWorker", error);
+            QFile::remove(newH5Path);
+            QFile::remove(targetJpg);
+            emit errorProcess(error);
+            return;
+        }
+        logSentinel1ProductIdentity(QStringLiteral("after POD output copy"), newH5Path, copiedIdentity);
+        QString auditError;
+        if (!writeOrbitProductIdentityAudit(newH5Path, inputIdentities.value(h5Path), auditError)) {
+            InSARLogManager::LogError("OrbitSourceWorker", auditError);
+            QFile::remove(newH5Path);
+            QFile::remove(targetJpg);
+            emit errorProcess(auditError);
+            return;
+        }
         newH5Paths.append(newH5Path);
 
         const QString eofPath = matchedOrbits.value(h5Path);
@@ -1079,6 +1171,29 @@ void OrbitSourceWorker::fetch_and_apply_orbits(QString projectPath,
             }
         }
         if (result >= 0) {
+            Sentinel1ProductIdentity outputIdentity;
+            QString identityError;
+            if (!readSentinel1ProductIdentity(newH5Path, outputIdentity, identityError) ||
+                outputIdentity.swath != inputIdentities.value(h5Path).swath ||
+                outputIdentity.polarization != inputIdentities.value(h5Path).polarization) {
+                const QString error = identityError.isEmpty()
+                    ? QStringLiteral("Sentinel-1 swath/polarization metadata changed after POD application: %1").arg(newH5Path)
+                    : identityError;
+                InSARLogManager::LogError("OrbitSourceWorker", error);
+                QFile::remove(newH5Path);
+                QFile::remove(targetJpg);
+                emit errorProcess(error);
+                return;
+            }
+            QString auditError;
+            if (!writeOrbitProductIdentityAudit(newH5Path, inputIdentities.value(h5Path), auditError)) {
+                InSARLogManager::LogError("OrbitSourceWorker", auditError);
+                QFile::remove(newH5Path);
+                QFile::remove(targetJpg);
+                emit errorProcess(auditError);
+                return;
+            }
+            logSentinel1ProductIdentity(QStringLiteral("after POD application"), newH5Path, outputIdentity);
             QString outputStartText;
             QString outputStopText;
             double outputStartGps = 0.0;

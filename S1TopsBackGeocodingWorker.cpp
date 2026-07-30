@@ -35,6 +35,93 @@ QString nativeText(const char* value)
     return value ? QString::fromUtf8(value) : QString();
 }
 
+struct Sentinel1ProductIdentity
+{
+    QString swath;
+    QString polarization;
+};
+
+struct ComplexOutputCoverage
+{
+    bool available = false;
+    int rows = 0;
+    int columns = 0;
+    qint64 nonZeroSamples = 0;
+    qint64 totalSamples = 0;
+    QString errorMessage;
+};
+
+ComplexOutputCoverage measureComplexOutputCoverage(const QString& h5Path)
+{
+    ComplexOutputCoverage coverage;
+    FormatConversion conversion;
+    const std::string nativePath = h5Path.toStdString();
+    NodeUtils::Hdf5Locker locker(nativePath);
+    if (!locker.isLocked()) {
+        coverage.errorMessage = QStringLiteral("Unable to lock output H5.");
+        return coverage;
+    }
+
+    int realRows = 0;
+    int realColumns = 0;
+    int imaginaryRows = 0;
+    int imaginaryColumns = 0;
+    if (conversion.get_dataset_dims(nativePath.c_str(), "s_re", &realRows, &realColumns) != 0 ||
+        conversion.get_dataset_dims(nativePath.c_str(), "s_im", &imaginaryRows, &imaginaryColumns) != 0 ||
+        realRows <= 0 || realColumns <= 0 || realRows != imaginaryRows || realColumns != imaginaryColumns) {
+        coverage.errorMessage = QStringLiteral("Unable to read matching s_re/s_im dimensions.");
+        return coverage;
+    }
+
+    coverage.rows = realRows;
+    coverage.columns = realColumns;
+    coverage.totalSamples = static_cast<qint64>(realRows) * realColumns;
+    constexpr int kRowsPerBlock = 64;
+    for (int row = 0; row < realRows; row += kRowsPerBlock) {
+        const int rowsToRead = qMin(kRowsPerBlock, realRows - row);
+        cv::Mat realBlock;
+        cv::Mat imaginaryBlock;
+        if (conversion.read_subarray_from_h5(nativePath.c_str(), "s_re", row, 0, rowsToRead, realColumns, realBlock) != 0 ||
+            conversion.read_subarray_from_h5(nativePath.c_str(), "s_im", row, 0, rowsToRead, realColumns, imaginaryBlock) != 0 ||
+            realBlock.empty() || imaginaryBlock.empty()) {
+            coverage.errorMessage = QStringLiteral("Unable to read complex output samples.");
+            return coverage;
+        }
+
+        cv::Mat realNonZero;
+        cv::Mat imaginaryNonZero;
+        cv::Mat complexNonZero;
+        cv::compare(realBlock, cv::Scalar(0), realNonZero, cv::CMP_NE);
+        cv::compare(imaginaryBlock, cv::Scalar(0), imaginaryNonZero, cv::CMP_NE);
+        cv::bitwise_or(realNonZero, imaginaryNonZero, complexNonZero);
+        coverage.nonZeroSamples += cv::countNonZero(complexNonZero);
+    }
+
+    coverage.available = true;
+    return coverage;
+}
+bool readSentinel1ProductIdentity(const QString& h5Path, Sentinel1ProductIdentity& identity,
+                                  QString& errorMessage)
+{
+    std::string swath;
+    std::string polarization;
+    QString readError;
+    if (!NodeUtils::readStringFromH5(h5Path, "swath", swath, &readError) ||
+        !NodeUtils::readStringFromH5(h5Path, "polarization", polarization, &readError)) {
+        errorMessage = QStringLiteral("Missing Sentinel-1 swath/polarization metadata in %1: %2")
+            .arg(h5Path, readError);
+        return false;
+    }
+
+    identity.swath = QString::fromStdString(swath).trimmed().toUpper();
+    identity.polarization = QString::fromStdString(polarization).trimmed().toUpper();
+    if (identity.swath.isEmpty() || identity.polarization.isEmpty()) {
+        errorMessage = QStringLiteral("Empty Sentinel-1 swath/polarization metadata in %1").arg(h5Path);
+        return false;
+    }
+    return true;
+}
+
 QString zeroDopplerReasonText(int reason)
 {
     switch (reason) {
@@ -167,6 +254,11 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
     if (!h5File.isEmpty()) message += QStringLiteral(" [h5=%1]").arg(h5File);
     if (!dataset.isEmpty()) message += QStringLiteral(" [dataset=%1]").arg(dataset);
 
+    if (phase == QStringLiteral("projection.summary")) {
+        message += QStringLiteral("; Projection valid ratios use the full DEM raster as their denominator, not the expected SAR footprint. "
+                                  "rangeOrBurstFailures therefore primarily describe DEM cells outside the active burst coverage.");
+    }
+
     LogTargets targets = LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile;
     if (level == InSARLogManager::LevelError ||
         phase == QStringLiteral("refinement.cleanup_verified") ||
@@ -237,6 +329,29 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		SAR_images.push_back(fileInfo.absoluteFilePath().toStdString());
 		SAR_images_regis.push_back(QDir(savePath).filePath(dstNode + "/" + originName + "_regis.h5").toStdString());
 	}
+
+    Sentinel1ProductIdentity referenceIdentity;
+    for (int index = 0; index < inputPaths.size(); ++index) {
+        Sentinel1ProductIdentity identity;
+        QString identityError;
+        if (!readSentinel1ProductIdentity(inputPaths.at(index), identity, identityError)) {
+            emit errorProcess(identityError);
+            return;
+        }
+        if (index == 0) {
+            referenceIdentity = identity;
+        } else if (identity.swath != referenceIdentity.swath ||
+                   identity.polarization != referenceIdentity.polarization) {
+            emit errorProcess(QStringLiteral("Sentinel-1 inputs must use the same swath and polarization: %1 is %2/%3, expected %4/%5.")
+                .arg(inputPaths.at(index), identity.swath, identity.polarization,
+                     referenceIdentity.swath, referenceIdentity.polarization));
+            return;
+        }
+        InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+            QStringLiteral("Validated Sentinel-1 input identity: image=%1, swath=%2, polarization=%3")
+                .arg(index + 1).arg(identity.swath, identity.polarization),
+            "coregistration.input_identity");
+    }
 
 		// 如果外部未传入DEM路径，在 GUI 线程安全地查询项目全局默认高程数据路径
 	QStringList outputPaths;
@@ -1234,6 +1349,42 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	}
 	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", "Copied registration metadata and completion parameters to output H5 files.", "output.metadata");
 
+    for (int imageIndex = 0; imageIndex < images_number; ++imageIndex) {
+        const QString outputPath = QString::fromStdString(SAR_images_regis.at(imageIndex));
+        const ComplexOutputCoverage coverage = measureComplexOutputCoverage(outputPath);
+        if (cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
+        if (!coverage.available) {
+            InSARLogManager::LogWarning("S1TopsBackGeocodingWorker",
+                QStringLiteral("Output complex-sample coverage is unavailable for image %1: %2")
+                    .arg(imageIndex + 1).arg(coverage.errorMessage));
+            continue;
+        }
+
+        const double nonZeroCoveragePercent = coverage.totalSamples > 0
+            ? 100.0 * static_cast<double>(coverage.nonZeroSamples) / coverage.totalSamples : 0.0;
+        InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+            QStringLiteral("Output complex-sample coverage: image=%1, dimensions=%2x%3, nonZero=%4/%5 (%6%). "
+                           "This is an exact diagnostic of non-zero complex samples, not a geometric validity mask.")
+                .arg(imageIndex + 1).arg(coverage.rows).arg(coverage.columns)
+                .arg(coverage.nonZeroSamples).arg(coverage.totalSamples)
+                .arg(nonZeroCoveragePercent, 0, 'f', 3),
+            "quality.output_coverage");
+
+        NodeUtils::Hdf5Locker locker(SAR_images_regis.at(imageIndex));
+        const int writeResult = FC.write_double_to_h5(SAR_images_regis.at(imageIndex).c_str(),
+            "s1_tops_complex_nonzero_samples", static_cast<double>(coverage.nonZeroSamples)) |
+            FC.write_double_to_h5(SAR_images_regis.at(imageIndex).c_str(),
+                "s1_tops_complex_total_samples", static_cast<double>(coverage.totalSamples)) |
+            FC.write_double_to_h5(SAR_images_regis.at(imageIndex).c_str(),
+                "s1_tops_complex_nonzero_coverage_percent", nonZeroCoveragePercent);
+        if (writeResult != 0) {
+            InSARLogManager::LogWarning("S1TopsBackGeocodingWorker",
+                QStringLiteral("Unable to persist output complex-sample coverage metrics for image %1.").arg(imageIndex + 1));
+        }
+    }
 	std::vector<SentinelBurstQualityStatus> burstQualityStatus;
 	ret = backgeocoding.getBurstQualityStatus(burstQualityStatus);
 	if (ret < 0) {
@@ -1246,6 +1397,19 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 
 	for (const SentinelBurstQualityStatus& status : burstQualityStatus)
 	{
+        const double demGridProjectionCoverage = status.attemptedPoints > 0
+            ? 100.0 * static_cast<double>(status.validPoints) / status.attemptedPoints : 0.0;
+        const double rangeOrBurstRejectionRatio = status.attemptedPoints > 0
+            ? 100.0 * static_cast<double>(status.rangeOrBurstFailures) / status.attemptedPoints : 0.0;
+        InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+            QString("Burst projection context: image=%1, burst=%2, demGridValid=%3/%4 (%5%), "
+                    "rangeOrBurstRejections=%6 (%7%), zeroDopplerFailures=%8. "
+                    "These ratios use the full DEM grid as their denominator and are not SAR footprint coverage.")
+                .arg(status.imageIndex).arg(status.burstIndex)
+                .arg(status.validPoints).arg(status.attemptedPoints)
+                .arg(demGridProjectionCoverage, 0, 'f', 1)
+                .arg(status.rangeOrBurstFailures).arg(rangeOrBurstRejectionRatio, 0, 'f', 1)
+                .arg(status.zeroDopplerFailures), "quality.projection_context");
 		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
 			QString("Burst quality: image=%1, burst=%2, code=%3, valid=%4/%5, zeroDopplerFailures=%6, rangeOrBurstFailures=%7, fitPoints=%8, fitRms=%9.")
 				.arg(status.imageIndex).arg(status.burstIndex).arg(status.qualityCode)

@@ -9,6 +9,7 @@
 #include <QtNodes/NodeData>
 #include <QWidget>
 #include <QLabel>
+#include <QCheckBox>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
@@ -60,6 +61,8 @@ private:
     ::QWidget* _widget;
     QLineEdit* m_outputNodeNameEdit;
     QLabel* m_masterIndexLabel;
+    QCheckBox* m_deflatCheckBox = nullptr;
+    QCheckBox* m_topoRemovalCheckBox = nullptr;
 
     QLabel* m_demPathLabel = nullptr;
     QLineEdit* m_demPathEdit = nullptr;
@@ -73,6 +76,8 @@ private:
     QString m_outputNodeName;
     QString m_demPath;
     int m_masterIndex;
+    bool m_isDeflat = true;
+    bool m_isTopoRemoval = true;
 
     // Worker thread
     QPointer<SLCDerampWorker> m_worker;
@@ -119,6 +124,8 @@ private:
     QStringList m_preparedInputPaths;
     QStringList m_preparedOutputPaths;
     int m_preparedMasterIndex = 1;
+    bool m_preparedIsDeflat = true;
+    bool m_preparedIsTopoRemoval = true;
     NodeUtils::OutputTransaction m_outputTransaction;
     QStringList m_generatedOutputPaths;
     QStringList m_pendingOriginNames;
@@ -128,7 +135,8 @@ private:
 
 signals:
     void startDeramp(int masterIndex, QString projectName, QString savePath,
-                     QString dstNode, QStringList inputPaths, QString demPath);
+                     QString dstNode, QStringList inputPaths, QString demPath,
+                     bool isDeflat, bool isTopoRemoval);
 };
 
 } // namespace QtNodes

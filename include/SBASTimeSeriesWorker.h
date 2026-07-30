@@ -27,7 +27,7 @@ public slots:
                           double coherence_thresh, double temporal_coherence_thresh,
                           double refinement_coh_thresh, double refinemen_def_thresh,
                           QString projectPath, QString projectName, QString dstNode, QString csvPath,
-                          QStringList filePaths);
+                          QStringList filePaths, bool outputDirectoryIsStaging);
 
 signals:
     void cancelled();

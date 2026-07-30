@@ -123,7 +123,7 @@ private:
         int demSource,
         double targetResolution,
         const QStringList& availableTiles,
-        const QStringList& missingTiles,
+        const QStringList& serverNotFoundTiles,
         int requestedTileCount,
         bool outputValidated
     );

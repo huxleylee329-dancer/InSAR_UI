@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BaseWorker.h"
+#include "InSARLogManager.h"
 #include <QMetaType>
 #include <QStringList>
 
@@ -30,19 +31,26 @@ public:
     explicit InterferometricFormationWorker(QObject* parent = nullptr);
     ~InterferometricFormationWorker();
 
+    void setTaskLogContext(const TaskLogContext& context) { m_taskLogContext = context; }
+
 public slots:
     void Interferometric(bool isdeflat, bool istopo_removal, bool iscoherence,
                          int master_index, int win_width, int win_height,
                          int multilook_rg, int multilook_az, QString save_path,
-                         QString file_name, QStringList input_paths);
+                         QString file_name, QStringList input_paths,
+                         bool outputDirectoryIsStaging = false);
 
     void InterferometricWithDem(bool isdeflat, bool istopo_removal, bool iscoherence,
                                 int master_index, int win_width, int win_height,
                                 int multilook_rg, int multilook_az, QString save_path,
                                 QString file_name, QStringList input_paths,
-                                QString dem_path);
+                                QString dem_path,
+                                bool outputDirectoryIsStaging = false);
 
 signals:
     void interferogramGenerated(const InterferogramFileResult& result);
     void cancelled();
+
+private:
+    TaskLogContext m_taskLogContext;
 };

@@ -948,18 +948,16 @@ static std::vector<CompareItem> performComparison(
     QDir measDir(safeDir.filePath("measurement"));
     QDir annDir(safeDir.filePath("annotation"));
 
-    // 1. 从 H5 文件名中提取实际的子带与极化 (因为 H5 属性中未包含这两个字符串属性)
-    QFileInfo h5Info(h5Path);
-    QString baseName = h5Info.baseName().toLower();
-    QRegularExpression re("_(iw[1-3])(vv|vh|hh|hv)");
-    QRegularExpressionMatch match = re.match(baseName);
-    
-    QString actSub = "";
-    QString actPol = "";
-    if (match.hasMatch()) {
-        actSub = match.captured(1); // "iw1"
-        actPol = match.captured(2); // "vv"
-    }
+    // 1. Read the identity written by Sentinel1ImportWorker. Do not infer it
+    // from the output file name because renamed H5 files must remain auditable.
+    std::string h5Swath;
+    std::string h5Polarization;
+    QString h5IdentityError;
+    const bool h5IdentityRead =
+        NodeUtils::readStringFromH5(h5Path, "swath", h5Swath, &h5IdentityError) &&
+        NodeUtils::readStringFromH5(h5Path, "polarization", h5Polarization, &h5IdentityError);
+    const QString actSub = h5IdentityRead ? QString::fromStdString(h5Swath).trimmed().toLower() : QString();
+    const QString actPol = h5IdentityRead ? QString::fromStdString(h5Polarization).trimmed().toLower() : QString();
 
     // 2. 定位 XML 与 TIFF 文件
     QStringList xmlFilters, tiffFilters;
@@ -1013,11 +1011,21 @@ static std::vector<CompareItem> performComparison(
     else if (manifestInfo.absoluteFilePath().toLower().contains("s1c")) rawPlatform = "S1C";
     results.push_back({gPlatform, QStringLiteral("卫星平台 (Platform)"), rawPlatform, rawPlatform, "PASS"});
 
-    // 极化与子带
+    // 极化与子带：H5 输出值直接来自导入后写入并回读校验的身份元数据。
     results.push_back({gPlatform, QStringLiteral("极化方式 (Polarization)"), rawPol.toUpper(), actPol.toUpper(), 
                        (!rawPol.isEmpty() && rawPol == actPol) ? "PASS" : "FAILED"});
     results.push_back({gPlatform, QStringLiteral("子条带 (Subswath)"), rawSub.toUpper(), actSub.toUpper(), 
                        (!rawSub.isEmpty() && rawSub == actSub) ? "PASS" : "FAILED"});
+    const bool identityVerified = h5IdentityRead && !actSub.isEmpty() && !actPol.isEmpty() &&
+        rawSub == actSub && rawPol == actPol;
+    results.push_back({gPlatform, QStringLiteral("产品身份元数据 (H5 swath / polarization)"),
+                       rawSub.isEmpty() || rawPol.isEmpty()
+                           ? QStringLiteral("原始 XML/TIFF 未识别")
+                           : QStringLiteral("%1 / %2").arg(rawSub.toUpper(), rawPol.toUpper()),
+                       h5IdentityRead
+                           ? QStringLiteral("%1 / %2").arg(actSub.toUpper(), actPol.toUpper())
+                           : QStringLiteral("未读取：%1").arg(h5IdentityError),
+                       identityVerified ? "PASS" : "FAILED"});
 
     // 成像时间
     std::string h5Start = "", h5Stop = "";
@@ -1057,7 +1065,7 @@ static std::vector<CompareItem> performComparison(
         }
     }
     results.push_back({gPlatform, QStringLiteral("入射角中心值 (inc_center)"),
-                       xmlLoaded ? QString::number(xmlIncCenter, 'f', 6) + "掳" : QStringLiteral("未读取"),
+                       xmlLoaded ? QString::number(xmlIncCenter, 'f', 6) + "°" : QStringLiteral("未读取"),
                        QString::number(h5IncCenter, 'f', 6) + "°",
                        (xmlLoaded && floatCompare(xmlIncCenter, h5IncCenter, 1e-4)) ? "PASS" : "FAILED"});
 

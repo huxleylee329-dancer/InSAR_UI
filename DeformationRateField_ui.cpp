@@ -9,6 +9,8 @@
 #include <QCoreApplication>
 #include <QApplication>
 #include <QFileInfo>
+#include <QDir>
+#include "tinyxml.h"
 
 DeformationRateField_ui::DeformationRateField_ui(QWidget* parent)
     : QWidget(parent)
@@ -135,21 +137,37 @@ void DeformationRateField_ui::updateProcess(int progress, QString message)
 
 void DeformationRateField_ui::endProcess()
 {
+    QString error;
+    if (!commitOutputTransaction(&error)) {
+        QMessageBox::warning(this, "Error", error);
+        StopThread();
+        ui->progressBar->hide();
+        setControlsEnabled(true);
+        return;
+    }
     if (m_thread) {
         m_thread->quit();
         m_thread->wait();
     }
+    m_thread = nullptr;
+    m_worker = nullptr;
     ui->progressBar->hide();
     this->close();
 }
 
 void DeformationRateField_ui::StopThread()
 {
-    if (m_worker && m_thread && m_thread->isRunning()) {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
+    if (m_thread && m_thread->isRunning()) {
         m_thread->requestInterruption();
         m_thread->quit();
         m_thread->wait();
     }
+    m_thread = nullptr;
+    m_worker = nullptr;
+    rollbackOutputTransaction(QStringLiteral("cancelled"));
 }
 
 void DeformationRateField_ui::TransitModel(QStandardItemModel* model)
@@ -160,48 +178,100 @@ void DeformationRateField_ui::TransitModel(QStandardItemModel* model)
 
 void DeformationRateField_ui::handleResults(const QString& dstNode, const QString& outputH5Path)
 {
-    if (!copy || m_activeProjectName.isEmpty() || outputH5Path.isEmpty()) {
+    if (dstNode != m_activeDstNode || outputH5Path.isEmpty()) {
         return;
     }
+    m_workerOutputPaths.append(outputH5Path);
+}
 
-    const QList<QStandardItem*> projects = copy->findItems(m_activeProjectName);
-    if (projects.isEmpty()) {
-        return;
+bool DeformationRateField_ui::commitOutputTransaction(QString* errorMessage)
+{
+    if (m_workerOutputPaths.size() != 1 ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, errorMessage)) {
+        if (errorMessage && errorMessage->isEmpty()) {
+            *errorMessage = QStringLiteral("Rate field worker did not return the expected staging output.");
+        }
+        return false;
     }
 
-    QString xmlPath = m_activeProjectPath;
-    if (!xmlPath.endsWith(m_activeProjectName)) {
-        xmlPath += "/" + m_activeProjectName;
+    QStringList requiredDatasets = QStringList()
+        << QStringLiteral("velocity_std") << QStringLiteral("velocity_lower")
+        << QStringLiteral("velocity_upper") << QStringLiteral("quality_mask") << QStringLiteral("mask");
+    if (m_activeModelType == 2) {
+        requiredDatasets << QStringLiteral("velocity_nonlinear") << QStringLiteral("acceleration")
+                         << QStringLiteral("acceleration_std");
     }
+    if (!NodeUtils::validateStagedH5Datasets(m_outputTransaction, requiredDatasets, errorMessage) ||
+        !NodeUtils::workerOutputsMatchManifest(m_activeOutputPaths, m_workerOutputPaths, errorMessage)) {
+        return false;
+    }
+
+    const QString xmlPath = QDir(m_activeProjectRoot).absoluteFilePath(m_activeProjectName);
     XMLFile xml;
     if (xml.XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
-        QMessageBox::warning(this, "Error", QStringLiteral("Unable to load project XML for rate field output."));
-        return;
+        if (errorMessage) *errorMessage = QStringLiteral("Unable to load project XML for rate field output.");
+        return false;
     }
 
-    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-        projects.first(), dstNode, "SBAS-1.0", FOLDER_ICON);
-    if (!outputNode) {
-        return;
-    }
-    outputNode->setToolTip(m_activeProjectName);
-
-    bool created = false;
-    QStandardItem* outputItem = NodeUtils::findOrCreateChildItem(
-        outputNode, "DeformationRateField", "SBAS", outputH5Path, IMAGEDATA_ICON, &created);
-    if (!outputItem) {
-        return;
-    }
-    if (!created) {
-        outputNode->setChild(outputItem->row(), 1, new QStandardItem(outputH5Path));
-    } else {
-        const QString relativePath = QString("/%1/DeformationRateField.h5").arg(dstNode);
-        xml.XMLFile_add_SBAS(dstNode.toStdString().c_str(), "DeformationRateField",
-            relativePath.toStdString().c_str());
-        xml.XMLFile_save(xmlPath.toStdString().c_str());
+    QStringList finalPaths;
+    if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, errorMessage) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, &xml, xmlPath, errorMessage)) {
+        return false;
     }
 
-    emit sendCopy(copy);
+    TiXmlElement* root = nullptr;
+    if (xml.get_root(root) < 0 || !root) {
+        if (errorMessage) *errorMessage = QStringLiteral("Unable to read project XML root for rate field output.");
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            errorMessage ? *errorMessage : QStringLiteral("missing XML root"),
+                                            &xml);
+        return false;
+    }
+    for (TiXmlElement* element = root->FirstChildElement(); element != nullptr; ) {
+        const char* name = element->Attribute("name");
+        if (name && m_activeDstNode == QString::fromUtf8(name)) {
+            TiXmlElement* toRemove = element;
+            element = element->NextSiblingElement();
+            root->RemoveChild(toRemove);
+        } else {
+            element = element->NextSiblingElement();
+        }
+    }
+
+    const QString relativePath = QStringLiteral("/%1/DeformationRateField.h5").arg(m_activeDstNode);
+    if (xml.XMLFile_add_SBAS(m_activeDstNode.toStdString().c_str(), "DeformationRateField",
+                             relativePath.toStdString().c_str()) < 0 ||
+        !NodeUtils::saveProjectXmlAtomically(&xml, xmlPath, errorMessage) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, errorMessage)) {
+        if (errorMessage && errorMessage->isEmpty()) {
+            *errorMessage = QStringLiteral("Unable to commit rate field output metadata.");
+        }
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            errorMessage ? *errorMessage : QStringLiteral("metadata commit failed"),
+                                            &xml);
+        return false;
+    }
+
+    if (copy) {
+        const QList<QStandardItem*> projects = copy->findItems(m_activeProjectName);
+        if (!projects.isEmpty()) {
+            QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+                projects.first(), m_activeDstNode, "SBAS-1.0", FOLDER_ICON);
+            if (outputNode) {
+                outputNode->setToolTip(m_activeProjectName);
+                NodeUtils::findOrCreateChildItem(outputNode, "DeformationRateField", "SBAS",
+                                                  finalPaths.first(), IMAGEDATA_ICON);
+            }
+        }
+        emit sendCopy(copy);
+    }
+    return true;
+}
+
+void DeformationRateField_ui::rollbackOutputTransaction(const QString& reason)
+{
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, reason);
+    m_workerOutputPaths.clear();
 }
 
 void DeformationRateField_ui::setControlsEnabled(bool enabled)
@@ -254,11 +324,29 @@ void DeformationRateField_ui::on_buttonBox_accepted()
         return;
     }
 
+    m_activeProjectName = ui->comboBox_project->currentText();
+    m_activeProjectPath = copy->item(project_item->row(), 1)->text();
+    m_activeProjectRoot = m_activeProjectPath;
+    if (m_activeProjectRoot.endsWith(".insar", Qt::CaseInsensitive)) {
+        m_activeProjectRoot = QFileInfo(m_activeProjectRoot).absolutePath();
+    }
+    m_activeDstNode = ui->lineEdit_dstNode->text().trimmed();
+    m_activeModelType = ui->comboBox_modelType->currentData().toInt();
+    m_activeInputPaths = filePaths;
+    m_activeOutputPaths = QStringList() << QDir(m_activeProjectRoot).absoluteFilePath(
+        m_activeDstNode + "/DeformationRateField.h5");
+    m_workerOutputPaths.clear();
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_activeProjectRoot, m_activeDstNode,
+                                            m_activeOutputPaths, m_activeInputPaths,
+                                            m_outputTransaction, &transactionError)) {
+        QMessageBox::warning(this, "Error", transactionError);
+        return;
+    }
+
     m_worker = new DeformationRateFieldWorker();
     m_thread = new QThread(this);
     m_worker->moveToThread(m_thread);
-    m_activeProjectName = ui->comboBox_project->currentText();
-    m_activeProjectPath = copy->item(project_item->row(), 1)->text();
 
     ui->progressBar->setValue(0);
     ui->progressBar->show();
@@ -271,6 +359,7 @@ void DeformationRateField_ui::on_buttonBox_accepted()
     connect(m_worker, &DeformationRateFieldWorker::outputsGenerated,
             this, &DeformationRateField_ui::handleResults);
     connect(m_worker, &DeformationRateFieldWorker::errorProcess, this, [this](QString err) {
+        rollbackOutputTransaction(err);
         QMessageBox::warning(this, "Error", err);
         StopThread();
     });
@@ -280,14 +369,15 @@ void DeformationRateField_ui::on_buttonBox_accepted()
     m_thread->start();
     setControlsEnabled(false);
 
-    QString projPath = m_activeProjectPath;
+    const QString stagingOutputDir = QDir(m_activeProjectRoot)
+        .absoluteFilePath(m_outputTransaction.stagingName);
 
     emit operate(
-        projPath,
+        stagingOutputDir,
         m_activeProjectName,
-        ui->lineEdit_dstNode->text(),
-        filePaths,
-        ui->comboBox_modelType->currentData().toInt(),
+        m_activeDstNode,
+        m_activeInputPaths,
+        m_activeModelType,
         ui->comboBox_confidenceLevel->currentData().toDouble(),
         ui->lineEdit_cohThreshHigh->text().toDouble(),
         ui->lineEdit_cohThreshMid->text().toDouble(),
@@ -297,7 +387,8 @@ void DeformationRateField_ui::on_buttonBox_accepted()
         ui->checkBox_showContour->isChecked(),
         ui->lineEdit_contourInterval->text().toInt(),
         ui->checkBox_showArrow->isChecked(),
-        ui->lineEdit_arrowSpacing->text().toInt()
+        ui->lineEdit_arrowSpacing->text().toInt(),
+        true
     );
 }
 

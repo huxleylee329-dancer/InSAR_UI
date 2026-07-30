@@ -15,6 +15,8 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QThread>
+#include <QPointer>
+#include <QList>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <memory>
@@ -90,10 +92,22 @@ private:
     double m_refinementCohThresh;
     double m_refinementDefThresh;
     QString m_outputNodeName;
+    QString m_preparedProjectRoot;
+    QString m_preparedProjectName;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    SBASTimeSeriesResult m_pendingResult;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    quint64 m_executionGeneration = 0;
 
     // Worker thread
     SBASTimeSeriesWorker* m_worker;
     QThread* m_thread;
+    struct TrackedExecution {
+        QPointer<SBASTimeSeriesWorker> worker;
+        QPointer<QThread> thread;
+    };
+    QList<TrackedExecution> m_trackedExecutions;
 
     // Helper methods
     void createWidget();
@@ -107,6 +121,10 @@ private:
     void updateWidgetSize();
     void executeProcessing();
     bool generateStaticPreviewJpg(bool completeExecution = false);
+    bool commitOutputTransaction(QString* errorMessage);
+    void rollbackOutputTransaction(const QString& reason);
+    void trackExecution(SBASTimeSeriesWorker* worker, QThread* thread);
+    void stopAndWaitForTrackedExecutions();
     QString projectPath() const;
     QString projectName() const;
 

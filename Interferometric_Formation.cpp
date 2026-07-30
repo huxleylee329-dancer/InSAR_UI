@@ -577,7 +577,7 @@ void Interferometric_Formation::on_buttonBox_accepted()
     emit operate(ui->Isdeflat->isChecked(), ui->Istopo_removal->isChecked(), ui->iscoherence->isChecked(),
         ui->comboBox_3->currentIndex(), win_width, win_height, ui->multilook_rg->text().toInt(),
         ui->multilook_az->text().toInt(), this->save_path, ui->file_name->text(), inputPaths,
-        m_demPathEdit->text().trimmed());
+        m_demPathEdit->text().trimmed(), false);
 }
 
 void Interferometric_Formation::on_buttonBox_rejected()

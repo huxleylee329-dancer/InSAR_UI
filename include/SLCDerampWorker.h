@@ -26,7 +26,9 @@ public slots:
         QString savePath,
         QString dstNode,
         QStringList inputPaths,
-        QString demPath
+        QString demPath,
+        bool isDeflat,
+        bool isTopoRemoval
     );
 
 signals:

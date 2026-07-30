@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QStandardItemModel>
 #include "DeformationRateFieldWorker.h"
+#include "NodeUtils.h"
 
 namespace Ui {
 class DeformationRateField;
@@ -39,7 +40,8 @@ signals:
         bool     showContour,
         int      contourInterval,
         bool     showArrow,
-        int      arrowSpacing
+        int      arrowSpacing,
+        bool     outputDirectoryIsStaging
     );
     void sendCopy(QStandardItemModel* model);
 
@@ -57,8 +59,17 @@ private:
     QString save_path;
     QString m_activeProjectName;
     QString m_activeProjectPath;
+    QString m_activeProjectRoot;
+    QString m_activeDstNode;
+    int m_activeModelType = 1;
+    QStringList m_activeInputPaths;
+    QStringList m_activeOutputPaths;
+    QStringList m_workerOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 
     void updateSrcNodeCombo();
     void setControlsEnabled(bool enabled);
     QStringList getSelectedFilePaths();
+    bool commitOutputTransaction(QString* errorMessage);
+    void rollbackOutputTransaction(const QString& reason);
 };

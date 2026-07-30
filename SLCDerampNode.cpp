@@ -76,7 +76,7 @@ QString SLCDerampNode::portCaption(PortType portType, PortIndex portIndex) const
         if (portIndex == 0)
             return QStringLiteral("输入图像");
         else
-            return QStringLiteral("DEM ?");
+            return QStringLiteral("DEM *");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -88,8 +88,6 @@ QString SLCDerampNode::portCaption(PortType portType, PortIndex portIndex) const
 
 bool SLCDerampNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::In && portIndex == 1)
-        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -164,6 +162,8 @@ QJsonObject SLCDerampNode::save() const
     modelJson["outputNodeName"] = nodeName;
     modelJson["masterIndex"] = m_masterIndex;
     modelJson[QStringLiteral("demPath")] = m_demPath;
+    modelJson["isDeflat"] = m_deflatCheckBox ? m_deflatCheckBox->isChecked() : m_isDeflat;
+    modelJson["isTopoRemoval"] = m_topoRemovalCheckBox ? m_topoRemovalCheckBox->isChecked() : m_isTopoRemoval;
 
     return modelJson;
 }
@@ -188,10 +188,26 @@ void SLCDerampNode::load(QJsonObject const &json)
         m_demPath = vDemPath.toString();
     }
 
+    QJsonValue vDeflat = json["isDeflat"];
+    if (!vDeflat.isUndefined())
+    {
+        m_isDeflat = vDeflat.toBool();
+    }
+
+    QJsonValue vTopo = json["isTopoRemoval"];
+    if (!vTopo.isUndefined())
+    {
+        m_isTopoRemoval = vTopo.toBool();
+    }
+
     ExecutableNodeDelegateModel::load(json);
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
+    if (m_deflatCheckBox)
+        m_deflatCheckBox->setChecked(m_isDeflat);
+    if (m_topoRemovalCheckBox)
+        m_topoRemovalCheckBox->setChecked(m_isTopoRemoval);
         
     updateLabels();
 }
@@ -428,6 +444,48 @@ void SLCDerampNode::createWidget()
     // 主图像序号展示 QLabel
     m_masterIndexLabel = new QLabel("主图像序号: [未连接]");
     layout->addWidget(m_masterIndexLabel);
+
+    auto* deflatLayout = new QHBoxLayout();
+    deflatLayout->addWidget(new QLabel("平地相位消除"));
+    m_deflatCheckBox = new QCheckBox();
+    m_deflatCheckBox->setChecked(m_isDeflat);
+    connect(m_deflatCheckBox, &QCheckBox::stateChanged, this, [this, invalidateNodeData](int state) {
+        const bool value = (state == Qt::Checked);
+        if (m_isDeflat == value) {
+            return;
+        }
+        if (!confirmParameterChange()) {
+            m_deflatCheckBox->blockSignals(true);
+            m_deflatCheckBox->setChecked(m_isDeflat);
+            m_deflatCheckBox->blockSignals(false);
+            return;
+        }
+        m_isDeflat = value;
+        invalidateNodeData();
+    });
+    deflatLayout->addWidget(m_deflatCheckBox);
+    layout->addLayout(deflatLayout);
+
+    auto* topoRemovalLayout = new QHBoxLayout();
+    topoRemovalLayout->addWidget(new QLabel("地形相位消除"));
+    m_topoRemovalCheckBox = new QCheckBox();
+    m_topoRemovalCheckBox->setChecked(m_isTopoRemoval);
+    connect(m_topoRemovalCheckBox, &QCheckBox::stateChanged, this, [this, invalidateNodeData](int state) {
+        const bool value = (state == Qt::Checked);
+        if (m_isTopoRemoval == value) {
+            return;
+        }
+        if (!confirmParameterChange()) {
+            m_topoRemovalCheckBox->blockSignals(true);
+            m_topoRemovalCheckBox->setChecked(m_isTopoRemoval);
+            m_topoRemovalCheckBox->blockSignals(false);
+            return;
+        }
+        m_isTopoRemoval = value;
+        invalidateNodeData();
+    });
+    topoRemovalLayout->addWidget(m_topoRemovalCheckBox);
+    layout->addLayout(topoRemovalLayout);
 
     // DEM Path Row
     auto* demLayout = new QHBoxLayout();
@@ -907,6 +965,12 @@ bool SLCDerampNode::validateInputs() const
         return false;
     }
 
+    const QFileInfo demInfo(m_demPath);
+    if (!m_demInputData || m_demPath.isEmpty() || !demInfo.isFile() || !demInfo.isReadable())
+    {
+        return false;
+    }
+
     QString nodeName = m_inputData->nodeName();
     if (nodeName.isEmpty())
     {
@@ -946,6 +1010,22 @@ bool SLCDerampNode::prepareToStart()
 
     if (!validateInputs())
     {
+        if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+            setStartFailureMessage(QStringLiteral("请连接输入图像端口。"));
+        } else if (!m_demInputData) {
+            setStartFailureMessage(QStringLiteral("请连接 DEM 输入端口。"));
+        } else if (m_demPath.isEmpty()) {
+            setStartFailureMessage(QStringLiteral("DEM 输入路径为空。"));
+        } else {
+            const QFileInfo demInfo(m_demPath);
+            if (!demInfo.isFile()) {
+                setStartFailureMessage(QStringLiteral("DEM 输入文件不存在或不是常规文件：%1").arg(m_demPath));
+            } else if (!demInfo.isReadable()) {
+                setStartFailureMessage(QStringLiteral("DEM 输入文件不可读：%1").arg(m_demPath));
+            } else {
+                setStartFailureMessage(QStringLiteral("SLC Deramp 输入参数无效。"));
+            }
+        }
         return false;
     }
 
@@ -962,6 +1042,8 @@ bool SLCDerampNode::prepareToStart()
         }
     }
     m_preparedMasterIndex = m_masterIndex;
+    m_preparedIsDeflat = m_isDeflat;
+    m_preparedIsTopoRemoval = m_isTopoRemoval;
     m_preparedOutputPaths.clear();
     for (const QString& inputPath : m_preparedInputPaths) {
         m_preparedOutputPaths.append(QDir(m_preparedSavePath).absoluteFilePath(
@@ -992,6 +1074,8 @@ void SLCDerampNode::executeProcessing()
     QString preparedDemPath = m_preparedDemPath;
     const QStringList inputPaths = m_preparedInputPaths;
     const int masterIndex = m_preparedMasterIndex;
+    const bool isDeflat = m_preparedIsDeflat;
+    const bool isTopoRemoval = m_preparedIsTopoRemoval;
 
     m_outputNodeName = dstNode;
 
@@ -1035,8 +1119,9 @@ void SLCDerampNode::executeProcessing()
     // Connect signals
     connect(this, &SLCDerampNode::startDeramp, m_worker, &SLCDerampWorker::SLC_deramp_with_dem);
     const QString stagingNode = m_outputTransaction.stagingName;
-    connect(m_thread, &QThread::started, [this, masterIndex, dstProject, savePath, stagingNode, inputPaths, preparedDemPath]() {
-        Q_EMIT startDeramp(masterIndex, dstProject, savePath, stagingNode, inputPaths, preparedDemPath);
+    connect(m_thread, &QThread::started, [this, masterIndex, dstProject, savePath, stagingNode, inputPaths, preparedDemPath, isDeflat, isTopoRemoval]() {
+        Q_EMIT startDeramp(masterIndex, dstProject, savePath, stagingNode, inputPaths, preparedDemPath,
+                           isDeflat, isTopoRemoval);
     });
     connect(m_worker, &SLCDerampWorker::updateProcess, this, &SLCDerampNode::onProgressUpdate);
     connect(m_worker, &SLCDerampWorker::endProcess, this, &SLCDerampNode::onProcessingFinished);
@@ -1183,6 +1268,8 @@ void SLCDerampNode::updateParameterWidgetsEnableState()
     bool enableWidgets = !isExec;
 
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
+    if (m_deflatCheckBox) m_deflatCheckBox->setEnabled(enableWidgets);
+    if (m_topoRemovalCheckBox) m_topoRemovalCheckBox->setEnabled(enableWidgets);
 
     bool hasDemConn = (m_demInputData != nullptr);
     if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);

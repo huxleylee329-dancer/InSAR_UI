@@ -32,13 +32,14 @@ signals:
         int demSource,
         double targetResolution,
         const QStringList& availableTiles,
-        const QStringList& missingTiles,
+        const QStringList& serverNotFoundTiles,
         int requestedTileCount,
         bool outputValidated
     );
 
 private:
-    int downloadTile(const QString& url, const QString& savePath, bool allowRetry = true);
+    int downloadTile(const QString& url, const QString& savePath, bool requiresEarthdataAuth,
+                     QString* failureDetail = nullptr, bool allowRetry = true);
 };
 
 #endif // DEM_SOURCE_WORKER_H

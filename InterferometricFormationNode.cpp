@@ -24,6 +24,8 @@
 #include <QTimer>
 #include <QFileDialog>
 #include <QtConcurrent/QtConcurrent>
+#include <atomic>
+#include <memory>
 
 namespace QtNodes {
 
@@ -60,7 +62,42 @@ InterferometricFormationNode::InterferometricFormationNode()
 
 InterferometricFormationNode::~InterferometricFormationNode()
 {
-    stopExecution();
+    if (m_thread && m_thread->parent() == this) {
+        m_thread->setParent(nullptr);
+    }
+    if (m_workerThread) {
+        m_workerThread->disconnect(this);
+        m_workerThread->StopProcess();
+    }
+    bool workerStopped = true;
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        workerStopped = m_thread->wait(5000);
+    }
+
+    if (workerStopped) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("InterferometricFormationNode destroyed"), projectXml());
+    } else if (m_thread) {
+        const auto rollbackScheduled = std::make_shared<std::atomic_bool>(false);
+        auto rollbackAfterWorkerStops = [transaction = m_outputTransaction, rollbackScheduled]() mutable {
+            bool expected = false;
+            if (!rollbackScheduled->compare_exchange_strong(expected, true)) {
+                return;
+            }
+            NodeUtils::abandonOutputTransaction(transaction,
+                                                QStringLiteral("InterferometricFormationNode destroyed after worker stopped"));
+        };
+        connect(m_thread, &QThread::finished, rollbackAfterWorkerStops);
+        if (!m_thread->isRunning()) {
+            rollbackAfterWorkerStops();
+        }
+        InSARLogManager::LogWarning("InterferometricFormationNode",
+            "Worker thread did not stop within destructor timeout; rollback is deferred until the worker exits.");
+    }
+    m_workerThread = nullptr;
+    m_thread = nullptr;
 }
 
 unsigned int InterferometricFormationNode::nPorts(PortType portType) const
@@ -1057,6 +1094,9 @@ void InterferometricFormationNode::execute()
 
 void InterferometricFormationNode::stopExecution()
 {
+    if (m_workerThread) {
+        m_workerThread->StopProcess();
+    }
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
@@ -1211,6 +1251,11 @@ void InterferometricFormationNode::executeProcessing()
 
     m_thread = new QThread();
     m_workerThread = new InterferometricFormationWorker();
+    TaskLogContext workerLogContext = InSARLogManager::currentTaskContext();
+    workerLogContext.nodeId = name();
+    workerLogContext.displayName = caption();
+    workerLogContext.scope = QStringLiteral("task");
+    m_workerThread->setTaskLogContext(workerLogContext);
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &InterferometricFormationNode::startInterferometric, m_workerThread, &InterferometricFormationWorker::InterferometricWithDem);
@@ -1222,14 +1267,8 @@ void InterferometricFormationNode::executeProcessing()
                                     m_preparedMultilookRg, m_preparedMultilookAz, 
                                     m_preparedSavePath, stagingNode,
                                     m_preparedInputPaths,
-                                    m_preparedDemPath);
+                                    m_preparedDemPath, true);
     });
-    connect(m_thread, &QThread::started, this, [logContext]() {
-        InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelDebug,
-                                      "InterferometricFormationWorker", QStringLiteral("干涉形成 Worker 已启动。"),
-                                      LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
-                                      QStringLiteral("worker_started"), QStringLiteral("running"));
-    }, Qt::QueuedConnection);
     connect(m_workerThread, &InterferometricFormationWorker::updateProcess, this, &InterferometricFormationNode::onProgressUpdate);
     connect(m_workerThread, &InterferometricFormationWorker::endProcess, this, &InterferometricFormationNode::onProcessingFinished);
     connect(m_workerThread, &InterferometricFormationWorker::endProcess, m_thread, &QThread::quit);

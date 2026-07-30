@@ -21,7 +21,8 @@ public slots:
     void StopThread();
 signals:
     void operate(int masterIndex, QString projectName, QString savePath,
-                 QString dstNode, QStringList inputPaths, QString demPath);
+                 QString dstNode, QStringList inputPaths, QString demPath,
+                 bool isDeflat, bool isTopoRemoval);
     void sendCopy(QStandardItemModel*);
 
 private:

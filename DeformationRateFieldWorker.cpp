@@ -113,7 +113,8 @@ void DeformationRateFieldWorker::analyze_rate_field(
     bool     showContour,
     int      contourInterval,
     bool     showArrow,
-    int      arrowSpacing
+    int      arrowSpacing,
+    bool     outputDirectoryIsStaging
 ) {
     Q_UNUSED(projectName);
     if (filePaths.isEmpty()) {
@@ -132,10 +133,17 @@ void DeformationRateFieldWorker::analyze_rate_field(
     if (projDir.endsWith(".insar", Qt::CaseInsensitive)) {
         projDir = QFileInfo(projDir).absolutePath();
     }
-    QString outDir = projDir + "/" + dstNode;
-    QDir dir(projDir);
-    if (!dir.exists(dstNode)) {
-        if (!dir.mkdir(dstNode)) {
+    QString outDir;
+    if (outputDirectoryIsStaging) {
+        outDir = projDir;
+        if (!QDir(outDir).exists()) {
+            emit errorProcess(QStringLiteral("Staging output directory does not exist: %1").arg(outDir));
+            return;
+        }
+    } else {
+        outDir = projDir + "/" + dstNode;
+        QDir dir(projDir);
+        if (!dir.exists(dstNode) && !dir.mkdir(dstNode)) {
             emit errorProcess(QStringLiteral("创建输出目录失败：%1").arg(outDir));
             return;
         }
@@ -277,32 +285,54 @@ void DeformationRateFieldWorker::analyze_rate_field(
     {
         NodeUtils::Hdf5Locker locker;
 
-        if (modelType == 2) {
-            FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_nonlinear", result.velocity_nonlinear);
-            FC.write_array_to_h5(outH5.toStdString().c_str(), "acceleration", result.acceleration);
-            FC.write_array_to_h5(outH5.toStdString().c_str(), "acceleration_std", result.acceleration_std);
+        if (FC.creat_new_h5(outH5.toStdString().c_str()) < 0) {
+            emit errorProcess(QStringLiteral("创建速率场输出文件失败：%1").arg(outH5));
+            return;
         }
-        FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_std", result.velocity_std);
-        FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_lower", result.velocity_lower);
-        FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_upper", result.velocity_upper);
-        FC.write_array_to_h5(outH5.toStdString().c_str(), "quality_mask", result.quality_mask);
-        FC.write_array_to_h5(outH5.toStdString().c_str(), "mask", mask);
+        const auto writeFailed = [this, &outH5](int result, const QString& dataset) {
+            if (result >= 0) {
+                return false;
+            }
+            emit errorProcess(QStringLiteral("写入速率场数据集失败：%1 (%2)").arg(dataset, outH5));
+            return true;
+        };
 
-        FC.write_str_to_h5(outH5.toStdString().c_str(), "rate_model_type", (modelType == 2) ? "quadratic" : "linear");
-        FC.write_double_to_h5(outH5.toStdString().c_str(), "confidence_level", confidenceLevel);
-        FC.write_double_to_h5(outH5.toStdString().c_str(), "coherence_threshold_high", coherenceThresholdHigh);
-        FC.write_double_to_h5(outH5.toStdString().c_str(), "coherence_threshold_mid", coherenceThresholdMid);
-        FC.write_double_to_h5(outH5.toStdString().c_str(), "uncertainty_threshold_high", uncertaintyThresholdHigh);
-        FC.write_double_to_h5(outH5.toStdString().c_str(), "uncertainty_threshold_mid", uncertaintyThresholdMid);
-        FC.write_double_to_h5(outH5.toStdString().c_str(), "mean_velocity", result.mean_velocity);
-        FC.write_double_to_h5(outH5.toStdString().c_str(), "std_velocity_global", result.std_velocity);
-        FC.write_int_to_h5(outH5.toStdString().c_str(), "num_valid_pixels", result.num_valid_pixels);
-        FC.write_str_to_h5(outH5.toStdString().c_str(), "analysis_date", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString().c_str());
-        FC.write_str_to_h5(outH5.toStdString().c_str(), "sbas_h5_path", sbasH5.toStdString().c_str());
+        if (modelType == 2) {
+            if (writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_nonlinear", result.velocity_nonlinear), QStringLiteral("velocity_nonlinear")) ||
+                writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "acceleration", result.acceleration), QStringLiteral("acceleration")) ||
+                writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "acceleration_std", result.acceleration_std), QStringLiteral("acceleration_std"))) {
+                return;
+            }
+        }
+        if (writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_std", result.velocity_std), QStringLiteral("velocity_std")) ||
+            writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_lower", result.velocity_lower), QStringLiteral("velocity_lower")) ||
+            writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "velocity_upper", result.velocity_upper), QStringLiteral("velocity_upper")) ||
+            writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "quality_mask", result.quality_mask), QStringLiteral("quality_mask")) ||
+            writeFailed(FC.write_array_to_h5(outH5.toStdString().c_str(), "mask", mask), QStringLiteral("mask")) ||
+            writeFailed(FC.write_str_to_h5(outH5.toStdString().c_str(), "rate_model_type", (modelType == 2) ? "quadratic" : "linear"), QStringLiteral("rate_model_type")) ||
+            writeFailed(FC.write_double_to_h5(outH5.toStdString().c_str(), "confidence_level", confidenceLevel), QStringLiteral("confidence_level")) ||
+            writeFailed(FC.write_double_to_h5(outH5.toStdString().c_str(), "coherence_threshold_high", coherenceThresholdHigh), QStringLiteral("coherence_threshold_high")) ||
+            writeFailed(FC.write_double_to_h5(outH5.toStdString().c_str(), "coherence_threshold_mid", coherenceThresholdMid), QStringLiteral("coherence_threshold_mid")) ||
+            writeFailed(FC.write_double_to_h5(outH5.toStdString().c_str(), "uncertainty_threshold_high", uncertaintyThresholdHigh), QStringLiteral("uncertainty_threshold_high")) ||
+            writeFailed(FC.write_double_to_h5(outH5.toStdString().c_str(), "uncertainty_threshold_mid", uncertaintyThresholdMid), QStringLiteral("uncertainty_threshold_mid")) ||
+            writeFailed(FC.write_double_to_h5(outH5.toStdString().c_str(), "mean_velocity", result.mean_velocity), QStringLiteral("mean_velocity")) ||
+            writeFailed(FC.write_double_to_h5(outH5.toStdString().c_str(), "std_velocity_global", result.std_velocity), QStringLiteral("std_velocity_global")) ||
+            writeFailed(FC.write_int_to_h5(outH5.toStdString().c_str(), "num_valid_pixels", result.num_valid_pixels), QStringLiteral("num_valid_pixels")) ||
+            writeFailed(FC.write_str_to_h5(outH5.toStdString().c_str(), "analysis_date", QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString().c_str()), QStringLiteral("analysis_date")) ||
+            writeFailed(FC.write_str_to_h5(outH5.toStdString().c_str(), "sbas_h5_path", sbasH5.toStdString().c_str()), QStringLiteral("sbas_h5_path"))) {
+            return;
+        }
     }
 
     if (QThread::currentThread()->isInterruptionRequested()) {
         emit cancelled();
+        return;
+    }
+
+    if (outputDirectoryIsStaging) {
+        emit updateProcess(100, QStringLiteral("速率场分析完成"));
+        emit outputsGenerated(dstNode, outH5);
+        emit endProcess();
         return;
     }
 

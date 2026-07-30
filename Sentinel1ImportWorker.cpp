@@ -6,6 +6,59 @@
 
 namespace {
 
+QString normalizeSentinel1MetadataValue(const QString& value)
+{
+    return value.trimmed().toUpper();
+}
+
+bool persistSentinel1ProductIdentity(const QString& h5Path, const QString& subswath,
+                                     const QString& polarization, QString& errorMessage)
+{
+    const QString normalizedSwath = normalizeSentinel1MetadataValue(subswath);
+    const QString normalizedPolarization = normalizeSentinel1MetadataValue(polarization);
+    if (normalizedSwath.isEmpty() || normalizedPolarization.isEmpty()) {
+        errorMessage = QStringLiteral("Sentinel-1 import did not provide a valid swath and polarization.");
+        return false;
+    }
+
+    {
+        NodeUtils::Hdf5Locker locker(h5Path);
+        if (!locker.isLocked()) {
+            errorMessage = QStringLiteral("Unable to lock imported Sentinel-1 H5 for metadata write: %1").arg(h5Path);
+            return false;
+        }
+
+        FormatConversion conversion;
+        if (conversion.write_str_to_h5(h5Path.toStdString().c_str(), "swath",
+                                       normalizedSwath.toStdString().c_str()) != 0 ||
+            conversion.write_str_to_h5(h5Path.toStdString().c_str(), "polarization",
+                                       normalizedPolarization.toStdString().c_str()) != 0) {
+            errorMessage = QStringLiteral("Unable to write Sentinel-1 swath/polarization metadata to %1").arg(h5Path);
+            return false;
+        }
+    }
+
+    std::string storedSwath;
+    std::string storedPolarization;
+    QString readError;
+    if (!NodeUtils::readStringFromH5(h5Path, "swath", storedSwath, &readError) ||
+        !NodeUtils::readStringFromH5(h5Path, "polarization", storedPolarization, &readError)) {
+        errorMessage = QStringLiteral("Unable to verify Sentinel-1 swath/polarization metadata in %1: %2")
+            .arg(h5Path, readError);
+        return false;
+    }
+    if (normalizeSentinel1MetadataValue(QString::fromStdString(storedSwath)) != normalizedSwath ||
+        normalizeSentinel1MetadataValue(QString::fromStdString(storedPolarization)) != normalizedPolarization) {
+        errorMessage = QStringLiteral("Sentinel-1 swath/polarization metadata verification mismatch in %1").arg(h5Path);
+        return false;
+    }
+
+    InSARLogManager::LogInfo("Sentinel1ImportWorker",
+        QStringLiteral("Persisted Sentinel-1 product identity: file=%1, swath=%2, polarization=%3")
+            .arg(h5Path, normalizedSwath, normalizedPolarization));
+    return true;
+}
+
 bool validateAcquisitionTimeRange(const QString& h5Path, QString& errorMessage)
 {
     std::string startText;
@@ -129,5 +182,6 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         return false;
     }
 
-    return validateAcquisitionTimeRange(outputPath, outErrorMsg);
+    return persistSentinel1ProductIdentity(outputPath, subswath, polarization, outErrorMsg) &&
+        validateAcquisitionTimeRange(outputPath, outErrorMsg);
 }

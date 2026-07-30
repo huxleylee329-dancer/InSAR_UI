@@ -93,6 +93,14 @@ private:
     QPointer<DeformationRateFieldWorker> m_worker;
     QPointer<QThread> m_thread;
     QString m_generatedOutputPath;
+    QString m_preparedProjectRoot;
+    QString m_preparedProjectName;
+    QString m_preparedDstNode;
+    int m_preparedModelType = 1;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    QStringList m_workerOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
     bool m_resultPublishingFailed = false;
 
     // Helper methods

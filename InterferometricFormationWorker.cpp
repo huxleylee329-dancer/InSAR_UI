@@ -80,37 +80,70 @@ InterferometricFormationWorker::~InterferometricFormationWorker()
 void InterferometricFormationWorker::Interferometric(bool isdeflat, bool istopo_removal, bool iscoherence,
                                                      int master_index, int win_width, int win_height,
                                                      int multilook_rg, int multilook_az, QString save_path,
-                                                     QString file_name, QStringList input_paths)
+                                                     QString file_name, QStringList input_paths,
+                                                     bool outputDirectoryIsStaging)
 {
     InterferometricWithDem(isdeflat, istopo_removal, iscoherence, master_index, win_width, win_height,
                            multilook_rg, multilook_az, save_path, file_name, input_paths,
-                           QString());
+                           QString(), outputDirectoryIsStaging);
 }
 
 void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool istopo_removal, bool iscoherence,
                                                             int master_index, int win_width, int win_height,
                                                             int multilook_rg, int multilook_az, QString save_path,
                                                             QString file_name, QStringList input_paths,
-                                                            QString dem_path)
+                                                            QString dem_path,
+                                                            bool outputDirectoryIsStaging)
 {
+    ScopedTaskLogContext taskLogContextGuard(m_taskLogContext);
     current_worker = this;
     WorkerResetGuard reset_guard;
 
+    InSARLogManager::LogTaskEvent(m_taskLogContext, InSARLogManager::LevelDebug,
+                                  "InterferometricFormationWorker", QStringLiteral("干涉形成 Worker 已启动。"),
+                                  LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+                                  QStringLiteral("worker_started"), QStringLiteral("running"));
     InSARLogManager::LogInfo("InterferometricFormationWorker", QString("Interferometric task started. Output folder: %1").arg(file_name));
 
     FormatConversion FC;
     Deflat flat; 
     Utils util;
+    const auto writeArray = [this, &FC](const QString& h5Path, const char* dataset, const Mat& value) {
+        if (FC.write_array_to_h5(h5Path.toStdString().c_str(), dataset, value) >= 0) {
+            return true;
+        }
+        emit errorProcess(QStringLiteral("写入干涉H5数据集失败: %1 (%2)")
+                          .arg(QString::fromLatin1(dataset), h5Path));
+        return false;
+    };
+    const auto writeString = [this, &FC](const QString& h5Path, const char* dataset, const QString& value) {
+        if (FC.write_str_to_h5(h5Path.toStdString().c_str(), dataset,
+                               value.toStdString().c_str()) >= 0) {
+            return true;
+        }
+        emit errorProcess(QStringLiteral("写入干涉H5字符串数据集失败: %1 (%2)")
+                          .arg(QString::fromLatin1(dataset), h5Path));
+        return false;
+    };
     
     if (save_path.isEmpty() || file_name.isEmpty() || input_paths.isEmpty()) {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
     }
+    if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+        emit cancelled();
+        return;
+    }
 
     QDir dir(save_path);
-    if (!dir.exists(file_name))
-    {
-        dir.mkdir(file_name);
+    if (outputDirectoryIsStaging) {
+        if (!dir.exists(file_name)) {
+            emit errorProcess(QStringLiteral("staging输出目录不存在: %1").arg(dir.absoluteFilePath(file_name)));
+            return;
+        }
+    } else if (!dir.exists(file_name) && !dir.mkpath(file_name)) {
+        emit errorProcess(QStringLiteral("无法创建输出目录: %1").arg(dir.absoluteFilePath(file_name)));
+        return;
     }
     QString absolute_path = save_path + "/" + file_name;
 
@@ -232,14 +265,22 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 ret = FC.read_slc_from_h5(slave_path.toStdString().c_str(), Slave);
             }
             if (ret < 0) {
-                InSARLogManager::LogError("InterferometricFormationWorker", "Failed to read slave image: " + slave_path);
-                continue;
+                const QString error = QStringLiteral("读取辅影像数据失败: %1").arg(slave_path);
+                InSARLogManager::LogError("InterferometricFormationWorker", error);
+                emit errorProcess(error);
+                return;
             }
             
             emit updateProcess(pair_prog_start + pair_span * 0.1, QStringLiteral("生成第%1/%2幅干涉图：正在计算多视相干乘积……").arg(pair).arg(total_pairs));
             if (Master.type() != CV_32F) Master.convertTo(Master, CV_32F);
             if (Slave.type() != CV_32F) Slave.convertTo(Slave, CV_32F);
             ret = util.Multilook(Master, Slave, 1, 1, phase);
+            if (ret < 0 || phase.empty()) {
+                const QString error = QStringLiteral("干涉相位计算失败: %1").arg(slave_path);
+                InSARLogManager::LogError("InterferometricFormationWorker", error);
+                emit errorProcess(error);
+                return;
+            }
             
             {
                 NodeUtils::Hdf5Locker locker;
@@ -300,17 +341,26 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     return;
                 }
                 else if (ret_topo < 0) {
-                    InSARLogManager::LogWarning("InterferometricFormationWorker", "Topography simulation failed.");
+                    InSARLogManager::LogError("InterferometricFormationWorker", "Topography simulation failed.");
+                    emit errorProcess(QStringLiteral("地形相位模拟失败"));
+                    return;
                 }
                 else {
                     phase_deflatted = phase - phase_deflatted;
-                    util.wrap(phase_deflatted, phase);
+                    if (util.wrap(phase_deflatted, phase) < 0) {
+                        emit errorProcess(QStringLiteral("地形相位包裹失败"));
+                        return;
+                    }
                 }
             }
 
             if (multilook_rg > 1 || multilook_az > 1)
             {
-                util.multilook(phase, phase_deflatted, multilook_rg, multilook_az);
+                if (util.multilook(phase, phase_deflatted, multilook_rg, multilook_az) < 0 ||
+                    phase_deflatted.empty()) {
+                    emit errorProcess(QStringLiteral("干涉相位多视处理失败"));
+                    return;
+                }
                 phase_deflatted.copyTo(phase);
             }
 
@@ -318,16 +368,17 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 NodeUtils::Hdf5Locker locker;
                 ret = FC.creat_new_h5(h5_path.toStdString().c_str());
                 if (ret >= 0) {
-                    if (!flat_phase_coefficient.empty()) {
-                        FC.write_array_to_h5(h5_path.toStdString().c_str(), "flat_phase_coefficient", flat_phase_coefficient);
+                    if ((!flat_phase_coefficient.empty() &&
+                         !writeArray(h5_path, "flat_phase_coefficient", flat_phase_coefficient)) ||
+                        !writeString(h5_path, "source_1", master_path) ||
+                        !writeString(h5_path, "source_2", slave_path) ||
+                        !writeArray(h5_path, "range_len", Mat(1, 1, CV_32S, &sceneWidth)) ||
+                        !writeArray(h5_path, "azimuth_len", Mat(1, 1, CV_32S, &sceneHeight)) ||
+                        !writeArray(h5_path, "multilook_rg", Mat(1, 1, CV_32S, &multilook_rg)) ||
+                        !writeArray(h5_path, "multilook_az", Mat(1, 1, CV_32S, &multilook_az)) ||
+                        !writeArray(h5_path, "phase", phase)) {
+                        return;
                     }
-                    FC.write_str_to_h5(h5_path.toStdString().c_str(), "source_1", master_path.toStdString().c_str());
-                    FC.write_str_to_h5(h5_path.toStdString().c_str(), "source_2", slave_path.toStdString().c_str());
-                    FC.write_array_to_h5(h5_path.toStdString().c_str(), "range_len", Mat(1, 1, CV_32S, &sceneWidth));
-                    FC.write_array_to_h5(h5_path.toStdString().c_str(), "azimuth_len", Mat(1, 1, CV_32S, &sceneHeight));
-                    FC.write_array_to_h5(h5_path.toStdString().c_str(), "multilook_rg", Mat(1, 1, CV_32S, &multilook_rg));
-                    FC.write_array_to_h5(h5_path.toStdString().c_str(), "multilook_az", Mat(1, 1, CV_32S, &multilook_az));
-                    FC.write_array_to_h5(h5_path.toStdString().c_str(), "phase", phase);
                 }
             }
             if (ret < 0) {
@@ -362,7 +413,9 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
 
                 {
                     NodeUtils::Hdf5Locker locker;
-                    FC.write_array_to_h5(h5_path.toStdString().c_str(), "coherence", coherence);
+                    if (!writeArray(h5_path, "coherence", coherence)) {
+                        return;
+                    }
                 }
             }
 

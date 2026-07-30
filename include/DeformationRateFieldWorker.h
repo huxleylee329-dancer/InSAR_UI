@@ -27,7 +27,8 @@ public slots:
         bool     showContour,
         int      contourInterval,
         bool     showArrow,
-        int      arrowSpacing
+        int      arrowSpacing,
+        bool     outputDirectoryIsStaging = false
     );
 
 signals:

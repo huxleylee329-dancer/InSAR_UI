@@ -51,34 +51,41 @@ DEMSourceWorker::~DEMSourceWorker()
 {
 }
 
-int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, bool allowRetry)
+int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, bool requiresEarthdataAuth,
+                                  QString* failureDetail, bool allowRetry)
 {
     QNetworkAccessManager manager;
     QNetworkRequest request((QUrl(url)));
     request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
 
-    // 从全局 Config.ini 读取 Earthdata 账号密码并直接设置 Authorization 头部以防重定向鉴权丢失
-    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-    QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
-    QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
+    if (requiresEarthdataAuth)
+    {
+        // Earthdata-protected sources need Basic authentication. Public Copernicus S3
+        // rejects this header with HTTP 400, so it must never be sent there.
+        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
+        QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
+        QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
+        QString password = QString::fromUtf8(QByteArray::fromBase64(encryptedPass.toUtf8()));
 
-    QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
-    QString password = QString::fromUtf8(QByteArray::fromBase64(encryptedPass.toUtf8()));
+        QByteArray authHeader = "Basic " + QByteArray(QString("%1:%2").arg(username).arg(password).toUtf8()).toBase64();
+        request.setRawHeader("Authorization", authHeader);
 
-    QByteArray authHeader = "Basic " + QByteArray(QString("%1:%2").arg(username).arg(password).toUtf8()).toBase64();
-    request.setRawHeader("Authorization", authHeader);
-
-    connect(&manager, &QNetworkAccessManager::authenticationRequired,
-            this, [username, password](QNetworkReply*, QAuthenticator* authenticator) {
-                authenticator->setUser(username);
-                authenticator->setPassword(password);
-            });
+        connect(&manager, &QNetworkAccessManager::authenticationRequired,
+                this, [username, password](QNetworkReply*, QAuthenticator* authenticator) {
+                    authenticator->setUser(username);
+                    authenticator->setPassword(password);
+                });
+    }
 
     QString tempPath = savePath + ".part";
     QFile tempFile(tempPath);
     if (!tempFile.open(QIODevice::WriteOnly))
     {
         InSARLogManager::LogError("DEMSourceWorker", QString("Failed to open temp file for write: ") + tempPath);
+        if (failureDetail) {
+            *failureDetail = QStringLiteral("无法写入临时文件：%1").arg(tempPath);
+        }
         return -1;
     }
 
@@ -135,6 +142,9 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
         else
         {
             InSARLogManager::LogError("DEMSourceWorker", QString("Download timeout. URL: %1").arg(url));
+            if (failureDetail) {
+                *failureDetail = QStringLiteral("下载超时");
+            }
         }
         return -1;
     }
@@ -148,6 +158,9 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
         if (expectedSize > 0 && actualSize != expectedSize)
         {
             InSARLogManager::LogError("DEMSourceWorker", QString("Downloaded file size mismatch. Expected: %1, Actual: %2").arg(expectedSize).arg(actualSize));
+            if (failureDetail) {
+                *failureDetail = QStringLiteral("下载文件大小不完整，期望 %1 字节，实际 %2 字节").arg(expectedSize).arg(actualSize);
+            }
             tempFile.remove();
             reply->deleteLater();
             return -1;
@@ -172,14 +185,16 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
         }
         else if (err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
         {
-            if (allowRetry)
+            if (requiresEarthdataAuth && allowRetry)
             {
                 InSARLogManager::LogInfo("DEMSourceWorker", QString("Retrying DEM tile download after authentication response: %1").arg(url));
-                return downloadTile(url, savePath, false);
+                return downloadTile(url, savePath, requiresEarthdataAuth, failureDetail, false);
             }
 
-            InSARLogManager::LogError("DEMSourceWorker",
-                QString("Earthdata authentication failed. URL: %1, Status Code: %2, Error: %3")
+            if (failureDetail) {
+                *failureDetail = QStringLiteral("HTTP %1：%2").arg(statusCode).arg(errorString);
+            }
+            InSARLogManager::LogError("DEMSourceWorker", QString("DEM authentication failed. URL: %1, Status Code: %2, Error: %3")
                 .arg(url).arg(statusCode).arg(errorString));
             return -1;
         }
@@ -196,9 +211,12 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
             if (retryable)
             {
                 InSARLogManager::LogInfo("DEMSourceWorker", QString("Retrying DEM tile download once: %1").arg(url));
-                return downloadTile(url, savePath, false);
+                return downloadTile(url, savePath, requiresEarthdataAuth, failureDetail, false);
             }
 
+            if (failureDetail) {
+                *failureDetail = QStringLiteral("HTTP %1：%2").arg(statusCode).arg(errorString);
+            }
             return -1;
         }
     }
@@ -532,7 +550,8 @@ void DEMSourceWorker::fetch_dem(
     int endLat = qFloor(max_lat);
 
     QStringList cachedFiles;
-    QStringList missingTiles;
+    QStringList serverNotFoundTiles;
+    QStringList serverNotFoundTilesIntersectingOutput;
     const int requestedTileCount = (endLat - startLat + 1) * (endLon - startLon + 1);
     emit updateProcess(10, QStringLiteral("检索本地缓存及下载瓦片中……"));
 
@@ -652,7 +671,9 @@ void DEMSourceWorker::fetch_dem(
 
                 emit updateProcess(10 + (lat - startLat) * 30 / (endLat - startLat + 1), QStringLiteral("正在下载 DEM 瓦片 %1……").arg(tileName));
                 
-                int dlResult = downloadTile(downloadUrl, targetZipOrTif);
+                QString downloadFailure;
+                const bool requiresEarthdataAuth = demSource != 2;
+                int dlResult = downloadTile(downloadUrl, targetZipOrTif, requiresEarthdataAuth, &downloadFailure);
                 if (dlResult == 1)
                 {
                     // 如果是 zip，解压它
@@ -698,14 +719,24 @@ void DEMSourceWorker::fetch_dem(
                 }
                 else if (dlResult == 0)
                 {
-                    // 404 未找到（例如海洋瓦片），直接跳过此瓦片且不终止程序
-                    missingTiles.append(tileName);
-                    InSARLogManager::LogDebug("DEMSourceWorker", QString("Tile %1 not found on server (likely ocean), skipping.").arg(tileName), "dem.tile");
+                    // HTTP 404 is frequently an ocean tile for SRTM, but it is not proof that
+                    // the requested area is safe to treat as zero elevation.
+                    serverNotFoundTiles.append(tileName);
+                    const double intersectionMinLon = qMax(min_lon, static_cast<double>(lon));
+                    const double intersectionMaxLon = qMin(max_lon, static_cast<double>(lon + 1));
+                    const double intersectionMinLat = qMax(min_lat, static_cast<double>(lat));
+                    const double intersectionMaxLat = qMin(max_lat, static_cast<double>(lat + 1));
+                    if (intersectionMinLon < intersectionMaxLon && intersectionMinLat < intersectionMaxLat) {
+                        serverNotFoundTilesIntersectingOutput.append(tileName);
+                    }
+                    InSARLogManager::LogDebug("DEMSourceWorker",
+                        QString("DEM server returned HTTP 404 for tile %1; recording it as server-not-found, not as confirmed ocean.").arg(tileName),
+                        "dem.tile");
                     continue;
                 }
                 else
                 {
-                    emit errorProcess(QStringLiteral("获取 DEM 瓦片 %1 时发生网络或身份验证错误。").arg(tileName));
+                    emit errorProcess(QStringLiteral("获取 DEM 瓦片 %1 失败：%2").arg(tileName, downloadFailure));
                     return;
                 }
             }
@@ -950,13 +981,29 @@ void DEMSourceWorker::fetch_dem(
             FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lat", min_lat);
             FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lat", max_lat);
             FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_cache_path", QDir::toNativeSeparators(cacheDir).toStdString().c_str());
+            const QString serverNotFoundTileText = serverNotFoundTiles.isEmpty()
+                ? QStringLiteral("none") : serverNotFoundTiles.join(",");
+            const QString intersectingServerNotFoundTileText = serverNotFoundTilesIntersectingOutput.isEmpty()
+                ? QStringLiteral("none") : serverNotFoundTilesIntersectingOutput.join(",");
+            const bool serverNotFoundMetadataWritten =
+                FC.write_int_to_h5(outputH5Path.toStdString().c_str(), "dem_server_404_tile_count", serverNotFoundTiles.size()) == 0 &&
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_server_404_tiles",
+                    serverNotFoundTileText.toStdString().c_str()) == 0 &&
+                FC.write_int_to_h5(outputH5Path.toStdString().c_str(), "dem_server_404_intersecting_output_tile_count", serverNotFoundTilesIntersectingOutput.size()) == 0 &&
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_server_404_intersecting_output_tiles",
+                    intersectingServerNotFoundTileText.toStdString().c_str()) == 0 &&
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_server_404_policy",
+                    "HTTP 404 is recorded as server-not-found; it is not treated as confirmed ocean.") == 0;
+            if (!serverNotFoundMetadataWritten) {
+                InSARLogManager::LogError("DEMSourceWorker", "Failed to write DEM server-404 audit metadata.");
+            }
 
             // 写入行列偏移量以向下兼容
             Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
             tmp_int.at<int>(0, 0) = 0;
             FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_row", tmp_int);
             FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_col", tmp_int);
-            write_success = true;
+            write_success = serverNotFoundMetadataWritten;
         }
     }
 
@@ -981,10 +1028,18 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
+    if (!serverNotFoundTilesIntersectingOutput.isEmpty()) {
+        InSARLogManager::LogWarning("DEMSourceWorker",
+            QString("DEM server returned HTTP 404 for %1 tile(s) intersecting the final DEM crop: %2. "
+                    "They were not assumed to be ocean; review DEM NoData coverage before terrain-sensitive processing.")
+                .arg(serverNotFoundTilesIntersectingOutput.size())
+                .arg(serverNotFoundTilesIntersectingOutput.join(", ")));
+    }
+
     emit updateProcess(100, QStringLiteral("外部 DEM 获取完成。"));
     // 清理完成后再通知主线程挂载输出，取消时不会提前暴露部分结果。
     const bool outputValidated = QFileInfo(outputH5Path).exists() && QFileInfo(outputH5Path).size() > 0;
     emit demFetchFinished(outputH5Path, dstNode, projectName, demSource, targetResolution,
-                          cachedFiles, missingTiles, requestedTileCount, outputValidated);
+                          cachedFiles, serverNotFoundTiles, requestedTileCount, outputValidated);
     emit endProcess();
 }

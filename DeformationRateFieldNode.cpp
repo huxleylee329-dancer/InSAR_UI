@@ -332,19 +332,30 @@ bool DeformationRateFieldNode::prepareToStart()
         return false;
     }
 
+    m_preparedProjectRoot = projectPath();
+    m_preparedProjectName = projectName();
+    m_preparedDstNode = m_outputNodeName.trimmed();
+    m_preparedModelType = m_modelType;
+    m_preparedInputPaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    m_preparedOutputPaths = QStringList()
+        << QDir(m_preparedProjectRoot).absoluteFilePath(
+            m_preparedDstNode + "/DeformationRateField.h5");
+    if (m_preparedProjectRoot.isEmpty() || m_preparedProjectName.isEmpty() ||
+        m_preparedDstNode.isEmpty() || m_preparedInputPaths.isEmpty()) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     if (isAutoTriggered()) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
         return true;
     }
 
-    QString outDir = projectPath() + "/" + m_outputNodeName;
-    QString h5Path = outDir + "/DeformationRateField.h5";
-    QStringList pathsToCheck = QStringList() << h5Path;
-
     m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
         NodeUtils::getProjectContext(_widget),
-        m_outputNodeName,
-        pathsToCheck,
+        m_preparedDstNode,
+        m_preparedOutputPaths,
         _widget
     );
 
@@ -363,7 +374,6 @@ void DeformationRateFieldNode::execute()
         return;
     }
 
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
     executeProcessing();
 }
 
@@ -372,34 +382,62 @@ void DeformationRateFieldNode::executeProcessing()
     InSARLogManager::LogInfo("DeformationRateFieldNode", "executeProcessing started.");
     stopExecution();
     m_generatedOutputPath.clear();
+    m_workerOutputPaths.clear();
     m_resultPublishingFailed = false;
+
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_preparedDstNode,
+                                            m_preparedOutputPaths, m_preparedInputPaths,
+                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
 
     m_thread = new QThread(this);
     m_worker = new DeformationRateFieldWorker();
     m_worker->moveToThread(m_thread);
 
-    QString projPath = projectPath();
-    QString projName = projectName();
-    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    const QString stagingOutputDir = QDir(m_preparedProjectRoot)
+        .absoluteFilePath(m_outputTransaction.stagingName);
+    const QString projName = m_preparedProjectName;
+    const QString dstNode = m_preparedDstNode;
+    const QStringList filePaths = m_preparedInputPaths;
+    const int modelType = m_preparedModelType;
+    const double confidenceLevel = m_confidenceLevel;
+    const double coherenceThreshHigh = m_coherenceThreshHigh;
+    const double coherenceThreshMid = m_coherenceThreshMid;
+    const double uncertaintyThreshHigh = m_uncertaintyThreshHigh;
+    const double uncertaintyThreshMid = m_uncertaintyThreshMid;
+    const int colorMap = m_colorMap;
+    const bool showContour = m_showContour;
+    const int contourInterval = m_contourInterval;
+    const bool showArrow = m_showArrow;
+    const int arrowSpacing = m_arrowSpacing;
 
     DeformationRateFieldWorker* worker = m_worker;
-    connect(m_thread, &QThread::started, m_worker, [worker, this, projPath, projName, filePaths]() {
+    connect(m_thread, &QThread::started, m_worker, [worker, stagingOutputDir, projName, dstNode,
+                                                      filePaths, modelType, confidenceLevel,
+                                                      coherenceThreshHigh, coherenceThreshMid,
+                                                      uncertaintyThreshHigh, uncertaintyThreshMid,
+                                                      colorMap, showContour, contourInterval,
+                                                      showArrow, arrowSpacing]() {
         worker->analyze_rate_field(
-            projPath,
+            stagingOutputDir,
             projName,
-            m_outputNodeName,
+            dstNode,
             filePaths,
-            m_modelType,
-            m_confidenceLevel,
-            m_coherenceThreshHigh,
-            m_coherenceThreshMid,
-            m_uncertaintyThreshHigh,
-            m_uncertaintyThreshMid,
-            m_colorMap,
-            m_showContour,
-            m_contourInterval,
-            m_showArrow,
-            m_arrowSpacing
+            modelType,
+            confidenceLevel,
+            coherenceThreshHigh,
+            coherenceThreshMid,
+            uncertaintyThreshHigh,
+            uncertaintyThreshMid,
+            colorMap,
+            showContour,
+            contourInterval,
+            showArrow,
+            arrowSpacing,
+            true
         );
     });
 
@@ -431,6 +469,9 @@ void DeformationRateFieldNode::executeProcessing()
 
 void DeformationRateFieldNode::stopExecution()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread && m_thread->isRunning()) {
         m_thread->requestInterruption();
         m_thread->quit();
@@ -438,6 +479,15 @@ void DeformationRateFieldNode::stopExecution()
     }
     m_thread = nullptr;
     m_worker = nullptr;
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("stopped"),
+                                        iface ? iface->projectXml() : nullptr);
+    m_generatedOutputPath.clear();
+    m_workerOutputPaths.clear();
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
 }
 
 void DeformationRateFieldNode::cleanUpThreadAndWorker()
@@ -472,6 +522,15 @@ void DeformationRateFieldNode::onProgressUpdate(int progress, const QString& mes
 void DeformationRateFieldNode::onError(const QString& error)
 {
     cleanUpThreadAndWorker();
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error,
+                                        iface ? iface->projectXml() : nullptr);
+    m_generatedOutputPath.clear();
+    m_workerOutputPaths.clear();
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -484,21 +543,81 @@ void DeformationRateFieldNode::onError(const QString& error)
 void DeformationRateFieldNode::onProcessingFinished()
 {
     cleanUpThreadAndWorker();
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
     if (discardObsoleteAutomaticExecution()) {
-        return;
-    }
-
-    if (m_resultPublishingFailed) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"),
+                                            iface ? iface->projectXml() : nullptr);
+        m_outputData.reset();
+        m_previewData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         return;
     }
 
     InSARLogManager::LogInfo("DeformationRateFieldNode", "executeProcessing completed.");
-    QString h5Path = m_generatedOutputPath;
-    if (!QFileInfo::exists(h5Path)) {
-        onError(QStringLiteral("未生成形变速率场输出文件"));
+    QString transactionError;
+    const QString dstNode = m_preparedDstNode;
+    if (!iface || !iface->projectXml()) {
+        onError(QStringLiteral("Project XML context is unavailable for rate field output commit."));
         return;
     }
 
+    QStringList requiredDatasets = QStringList()
+        << QStringLiteral("velocity_std")
+        << QStringLiteral("velocity_lower")
+        << QStringLiteral("velocity_upper")
+        << QStringLiteral("quality_mask")
+        << QStringLiteral("mask");
+    if (m_preparedModelType == 2) {
+        requiredDatasets << QStringLiteral("velocity_nonlinear")
+                         << QStringLiteral("acceleration")
+                         << QStringLiteral("acceleration_std");
+    }
+
+    QStringList finalPaths;
+    if (m_resultPublishingFailed || m_workerOutputPaths.size() != 1 ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, requiredDatasets, &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_workerOutputPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, iface->projectXml(),
+                                                            NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        if (transactionError.isEmpty()) {
+            transactionError = QStringLiteral("Rate field worker did not return the expected staging output.");
+        }
+        onError(transactionError);
+        return;
+    }
+
+    NodeUtils::removeDataNodeFromProject(iface, dstNode, false, false);
+    const QString relativePath = QStringLiteral("/%1/DeformationRateField.h5").arg(dstNode);
+    if (iface->projectXml()->XMLFile_add_SBAS(dstNode.toStdString().c_str(), "DeformationRateField",
+                                              relativePath.toStdString().c_str()) < 0 ||
+        !NodeUtils::saveProjectXmlAtomically(iface->projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        if (transactionError.isEmpty()) {
+            transactionError = QStringLiteral("Unable to commit rate field output metadata.");
+        }
+        onError(transactionError);
+        return;
+    }
+
+    if (QStandardItemModel* model = iface->projectModel()) {
+        const QList<QStandardItem*> projects = model->findItems(m_preparedProjectName);
+        if (!projects.isEmpty()) {
+            QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+                projects.first(), dstNode, "SBAS-1.0", FOLDER_ICON);
+            if (outputNode) {
+                NodeUtils::findOrCreateChildItem(outputNode, "DeformationRateField", "SBAS",
+                                                  finalPaths.first(), IMAGEDATA_ICON);
+            }
+        }
+    }
+    iface->refreshProjectTree();
+
+    m_outputNodeName = dstNode;
+    m_generatedOutputPath = finalPaths.first();
     generateStaticPreviewJpg(true);
 }
 
@@ -507,55 +626,24 @@ void DeformationRateFieldNode::onResultsGenerated(const QString& dstNode, const 
     if (isAutomaticExecutionObsolete()) {
         return;
     }
-    if (dstNode != m_outputNodeName || outputH5Path.isEmpty() || !QFileInfo::exists(outputH5Path)) {
+    if (dstNode != m_preparedDstNode || outputH5Path.isEmpty()) {
         m_resultPublishingFailed = true;
-        onError(QStringLiteral("Rate field worker returned an invalid output path."));
-        return;
     }
-
-    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
-    QStandardItemModel* model = iface ? iface->projectModel() : nullptr;
-    const QList<QStandardItem*> projects = model ? model->findItems(projectName()) : QList<QStandardItem*>();
-    if (!iface || projects.isEmpty()) {
-        m_resultPublishingFailed = true;
-        onError(QStringLiteral("Project context is unavailable while publishing the rate field output."));
-        return;
-    }
-
-    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-        projects.first(), dstNode, "SBAS-1.0", FOLDER_ICON);
-    if (!outputNode) {
-        m_resultPublishingFailed = true;
-        onError(QStringLiteral("Unable to create the rate field output node."));
-        return;
-    }
-
-    bool created = false;
-    QStandardItem* outputItem = NodeUtils::findOrCreateChildItem(
-        outputNode, "DeformationRateField", "SBAS", outputH5Path, IMAGEDATA_ICON, &created);
-    if (!outputItem) {
-        m_resultPublishingFailed = true;
-        onError(QStringLiteral("Unable to create the rate field output item."));
-        return;
-    }
-    if (!created) {
-        outputNode->setChild(outputItem->row(), 1, new QStandardItem(outputH5Path));
-    } else {
-        const QString relativePath = QString("/%1/DeformationRateField.h5").arg(dstNode);
-        if (!NodeUtils::addSBASNodeToProjectXml(iface, dstNode, "DeformationRateField", relativePath)) {
-            m_resultPublishingFailed = true;
-            onError(QStringLiteral("Unable to save the rate field output to project XML."));
-            return;
-        }
-    }
-
-    m_generatedOutputPath = outputH5Path;
-    iface->refreshProjectTree();
+    m_workerOutputPaths.append(outputH5Path);
 }
 
 void DeformationRateFieldNode::onCancelled()
 {
     cleanUpThreadAndWorker();
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"),
+                                        iface ? iface->projectXml() : nullptr);
+    m_generatedOutputPath.clear();
+    m_workerOutputPaths.clear();
+    m_outputData.reset();
+    m_previewData.reset();
+    setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -567,19 +655,24 @@ void DeformationRateFieldNode::onCancelled()
 
 bool DeformationRateFieldNode::validateAndRestoreOutput()
 {
-    QString h5Path = projectPath() + "/" + m_outputNodeName + "/DeformationRateField.h5";
-    if (QFileInfo::exists(h5Path)) {
-        m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
-        setOutputData(0, m_outputData);
-        generateStaticPreviewJpg();
-
-        setState(ExecutionState::Completed);
-        setProgress(100);
-        updateLabels();
-        Q_EMIT dataUpdated(0);
-        return true;
+    QStringList outputPaths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, outputPaths) ||
+        outputPaths.size() != 1 ||
+        QFileInfo(outputPaths.first()).fileName() != QStringLiteral("DeformationRateField.h5")) {
+        return false;
     }
-    return false;
+
+    const QString h5Path = outputPaths.first();
+    m_generatedOutputPath = h5Path;
+    m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+    setOutputData(0, m_outputData);
+    generateStaticPreviewJpg();
+
+    setState(ExecutionState::Completed);
+    setProgress(100);
+    updateLabels();
+    Q_EMIT dataUpdated(0);
+    return true;
 }
 
 void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
@@ -779,7 +872,13 @@ void DeformationRateFieldNode::load(QJsonObject const& json)
 
 QStringList DeformationRateFieldNode::previewImagePaths() const
 {
-    QString jpgPath = projectPath() + "/" + m_outputNodeName + "/velocity_overlay.jpg";
+    QStringList outputPaths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, outputPaths) ||
+        outputPaths.size() != 1 ||
+        QFileInfo(outputPaths.first()).fileName() != QStringLiteral("DeformationRateField.h5")) {
+        return QStringList();
+    }
+    const QString jpgPath = QFileInfo(outputPaths.first()).absolutePath() + "/velocity_overlay.jpg";
     if (QFileInfo::exists(jpgPath)) {
         return QStringList() << jpgPath;
     }

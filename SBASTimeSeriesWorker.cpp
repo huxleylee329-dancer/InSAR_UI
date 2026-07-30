@@ -10,6 +10,8 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QTemporaryDir>
+#include <QTemporaryFile>
 #include <QTextStream>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -55,35 +57,51 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                                             double coherence_thresh, double temporal_coherence_thresh,
                                             double refinement_coh_thresh, double refinemen_def_thresh,
                                             QString projectPath, QString projectName, QString dstNode, QString csvPath,
-                                            QStringList filePaths)
+                                            QStringList filePaths, bool outputDirectoryIsStaging)
 {
-    /*创建csv文件*/
-    QDir csv(csvPath);
-    if (!csv.exists())
-    {
-        if (!csv.mkpath(csv.absolutePath()))
-        {
-            InSARLogManager::LogWarning("UI", QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
-            emit errorProcess(QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
-            return;
-        }
-    }
-    QFile csv_file(csvPath);
-    QTextStream in(&csv_file);
-    if (!csv_file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
-    {    
-        InSARLogManager::LogWarning("UI", QStringLiteral("打开csv文件失败，请检查路径是否正确!"));
-        emit errorProcess(QStringLiteral("打开csv文件失败，请检查路径是否正确!"));
+    const QString outputDir = QDir(projectPath).absoluteFilePath(dstNode);
+    if (!QDir().mkpath(outputDir)) {
+        emit errorProcess(QStringLiteral("Unable to create SBAS output directory."));
         return;
     }
 
-    const QString outputDir = projectPath + "/" + dstNode;
+    QTemporaryDir workingDirectory;
+    if (!workingDirectory.isValid()) {
+        emit errorProcess(QStringLiteral("Unable to create temporary SBAS working directory."));
+        return;
+    }
+
+    QFile csvFile;
+    QTemporaryFile stagingCsvFile;
+    QIODevice* csvDevice = nullptr;
+    if (outputDirectoryIsStaging) {
+        if (!stagingCsvFile.open()) {
+            emit errorProcess(QStringLiteral("Unable to create temporary SBAS CSV output."));
+            return;
+        }
+        csvDevice = &stagingCsvFile;
+    } else {
+        const QFileInfo csvInfo(csvPath);
+        if (csvPath.isEmpty() || !QDir().mkpath(csvInfo.absolutePath())) {
+            emit errorProcess(QStringLiteral("创建csv文件失败，请检查路径是否正确!"));
+            return;
+        }
+        csvFile.setFileName(csvPath);
+        if (!csvFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
+            emit errorProcess(QStringLiteral("打开csv文件失败，请检查路径是否正确!"));
+            return;
+        }
+        csvDevice = &csvFile;
+    }
+    QTextStream in(csvDevice);
     const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
-    const auto finishCancelled = [this, &csv_file, &outputDir]() {
-        csv_file.close();
-        QDir dir(outputDir);
-        if (dir.exists() && !dir.removeRecursively()) {
-            InSARLogManager::LogWarning("SBASTimeSeriesWorker", "Cancellation cleanup left output directory: " + outputDir);
+    const auto finishCancelled = [this, csvDevice, outputDirectoryIsStaging, &outputDir]() {
+        if (csvDevice) csvDevice->close();
+        if (outputDirectoryIsStaging) {
+            QDir dir(outputDir);
+            if (dir.exists() && !dir.removeRecursively()) {
+                InSARLogManager::LogWarning("SBASTimeSeriesWorker", "Cancellation cleanup left staging directory: " + outputDir);
+            }
         }
         emit cancelled();
     };
@@ -106,10 +124,6 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         return;
     }
 
-    QString save_path = projectPath;
-    string save_path_std_string = save_path.toStdString();
-    std::replace(save_path_std_string.begin(), save_path_std_string.end(), '/', '\\');
-
     //确定应用程序路径
     string appPath = QCoreApplication::applicationDirPath().toStdString();
     std::replace(appPath.begin(), appPath.end(), '/', '\\');
@@ -124,11 +138,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         finishCancelled();
         return;
     }
-    QString ifgSavePath = save_path + "/" + dstNode;
+    QString ifgSavePath = workingDirectory.path();
     string path1 = ifgSavePath.toStdString();
     std::replace(path1.begin(), path1.end(), '/', '\\');
-    QDir dir(save_path);
-    if (!dir.exists(dstNode)) dir.mkdir(dstNode);
     ret = sbas.generate_interferograms(
         SAR_images, formation_matrix, spatial_baseline, temporal_baseline, multilook_az, multilook_rg,
         path1.c_str(), true, alpha, &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
@@ -236,7 +248,11 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 finishCancelled();
                 return;
             }
-            conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase);
+            NodeUtils::Hdf5Locker h5Lock;
+            if (conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase) < 0) {
+                emit errorProcess(QStringLiteral("Failed to write first-stage unwrapped phase."));
+                return;
+            }
             for (int j = 0; j < nodes.size(); j++)
             {
                 nodes[j].b_unwrapped = false;
@@ -278,7 +294,11 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 return;
             }
             if (phase2.type() != CV_32F) phase2.convertTo(phase2, CV_32F);
-            conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase2);
+            NodeUtils::Hdf5Locker h5Lock;
+            if (conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_1", phase2) < 0) {
+                emit errorProcess(QStringLiteral("Failed to write first-stage unwrapped phase."));
+                return;
+            }
             int process = double(i + 1) / phaseFiles.size() * 100.0 * 0.5;
             emit updateProcess(10 + process, QStringLiteral("相位解缠中……"));
         }
@@ -328,7 +348,11 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             finishCancelled();
             return;
         }
-        conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase);
+        NodeUtils::Hdf5Locker h5Lock;
+        if (conversion.write_array_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase) < 0) {
+            emit errorProcess(QStringLiteral("Failed to write refined unwrapped phase."));
+            return;
+        }
     }
 
     if (cancellationRequested()) {
@@ -517,7 +541,12 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                 finishCancelled();
                 return;
             }
-            conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0, phase.rows, phase.cols);
+            NodeUtils::Hdf5Locker h5Lock;
+            if (conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0,
+                                                phase.rows, phase.cols) < 0) {
+                emit errorProcess(QStringLiteral("Failed to write second-stage refined phase."));
+                return;
+            }
         }
     }
 
@@ -619,10 +648,14 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     mask.copyTo(out_mask);
     mask.copyTo(mask_count_map);
     out_mask = 0; mask_count_map = 0;
-    string times_series_h5 = path1 + "\\SBAS_time_series.h5";
+    string times_series_h5 = QDir::toNativeSeparators(
+        QDir(outputDir).absoluteFilePath(QStringLiteral("SBAS_time_series.h5"))).toStdString();
     {
         NodeUtils::Hdf5Locker h5Lock;
-        conversion.creat_new_h5(times_series_h5.c_str());
+        if (conversion.creat_new_h5(times_series_h5.c_str()) < 0) {
+            emit errorProcess(QStringLiteral("Failed to create SBAS time-series H5 output."));
+            return;
+        }
     }
     if (cancellationRequested()) {
         finishCancelled();
@@ -700,7 +733,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             }
         }
     }
-    csv_file.close();
+    csvDevice->close();
     
     if (cancellationRequested()) {
         finishCancelled();
@@ -711,38 +744,45 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     Mat mapped_lat, mapped_lon;
     double max_def, min_def;
     
-    conversion.write_int_to_h5(times_series_h5.c_str(), "ref_row", ref_i);
+    const auto writeOrFail = [this](int status, const QString& dataset) {
+        if (status >= 0) return true;
+        emit errorProcess(QStringLiteral("Failed to write SBAS output dataset: %1").arg(dataset));
+        return false;
+    };
+
+    NodeUtils::Hdf5Locker h5Lock;
+    if (!writeOrFail(conversion.write_int_to_h5(times_series_h5.c_str(), "ref_row", ref_i), QStringLiteral("ref_row"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_int_to_h5(times_series_h5.c_str(), "ref_col", ref_j);
+    if (!writeOrFail(conversion.write_int_to_h5(times_series_h5.c_str(), "ref_col", ref_j), QStringLiteral("ref_col"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_int_to_h5(times_series_h5.c_str(), "multilook_rg", multilook_rg);
+    if (!writeOrFail(conversion.write_int_to_h5(times_series_h5.c_str(), "multilook_rg", multilook_rg), QStringLiteral("multilook_rg"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_int_to_h5(times_series_h5.c_str(), "multilook_az", multilook_az);
+    if (!writeOrFail(conversion.write_int_to_h5(times_series_h5.c_str(), "multilook_az", multilook_az), QStringLiteral("multilook_az"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "temporal_baseline", temporal);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "temporal_baseline", temporal), QStringLiteral("temporal_baseline"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "spatial_baseline", spatial);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "spatial_baseline", spatial), QStringLiteral("spatial_baseline"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "formation_matrix", formation_matrix);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "formation_matrix", formation_matrix), QStringLiteral("formation_matrix"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "mask", out_mask);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "mask", out_mask), QStringLiteral("mask"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "mask_count_map", mask_count_map);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "mask_count_map", mask_count_map), QStringLiteral("mask_count_map"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
     time_series = time_series / 4 / PI * wavelength;
     cv::minMaxLoc(time_series, &min_def, &max_def);
-    conversion.write_double_to_h5(times_series_h5.c_str(), "max_deformation", max_def);
+    if (!writeOrFail(conversion.write_double_to_h5(times_series_h5.c_str(), "max_deformation", max_def), QStringLiteral("max_deformation"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_double_to_h5(times_series_h5.c_str(), "min_deformation", min_def);
+    if (!writeOrFail(conversion.write_double_to_h5(times_series_h5.c_str(), "min_deformation", min_def), QStringLiteral("min_deformation"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "deformation_time_series", time_series);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "deformation_time_series", time_series), QStringLiteral("deformation_time_series"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "temporal_coherence", temporal_coh);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "temporal_coherence", temporal_coh), QStringLiteral("temporal_coherence"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
     v = v / 4 / PI * wavelength;
-    conversion.write_array_to_h5(times_series_h5.c_str(), "defomation_velocity", v);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "defomation_velocity", v), QStringLiteral("defomation_velocity"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_array_to_h5(times_series_h5.c_str(), "residue_topography", z);
+    if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "residue_topography", z), QStringLiteral("residue_topography"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
     for (int ii = 0; ii < phaseFiles.size(); ii++)
     {
@@ -761,9 +801,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                         cv::Range(c_idx * multilook_rg, c_idx * multilook_rg + multilook_rg)))[0];
                 }
             }
-            conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lat", lat_new);
+            if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lat", lat_new), QStringLiteral("mapped_lat"))) return;
             if (cancellationRequested()) { finishCancelled(); return; }
-            conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lon", lon_new);
+            if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lon", lon_new), QStringLiteral("mapped_lon"))) return;
             if (cancellationRequested()) { finishCancelled(); return; }
             break;
         }

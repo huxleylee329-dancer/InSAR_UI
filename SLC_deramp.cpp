@@ -388,7 +388,7 @@ void SLC_deramp::on_buttonBox_accepted()
     m_thread->start();
     ChangeVision(false);
     emit operate(index, ui->comboBox->currentText(), save_path, ui->lineEdit->text(),
-                 inputPaths, m_demPathEdit->text().trimmed());
+                 inputPaths, m_demPathEdit->text().trimmed(), true, true);
 
 
 }
