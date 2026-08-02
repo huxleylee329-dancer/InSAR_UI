@@ -175,6 +175,11 @@ void IonosphericCorrectionWorker::doCorrection(
                     FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_1", tmp_str.c_str());
                 if (NodeUtils::readStringFromH5(srcH5, "source_2", tmp_str))
                     FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_2", tmp_str.c_str());
+                QString sourcePathMetadataError;
+                if (!NodeUtils::copySourcePathMetadata(srcH5, dstH5, &sourcePathMetadataError)) {
+                    fail(QStringLiteral("无法保留源路径元数据: %1").arg(sourcePathMetadataError));
+                    return;
+                }
                 if (NodeUtils::readMatFromH5(srcH5, "range_len", tmp))
                     if (!writeMat(dstH5, QStringLiteral("range_len"), tmp)) return;
                 if (NodeUtils::readMatFromH5(srcH5, "azimuth_len", tmp))
@@ -284,6 +289,11 @@ void IonosphericCorrectionWorker::doCorrection(
             FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_1", tmp_str.c_str());
             NodeUtils::readStringFromH5(srcH5, "source_2", tmp_str);
             FC.write_str_to_h5(dstH5.toStdString().c_str(), "source_2", tmp_str.c_str());
+            QString sourcePathMetadataError;
+            if (!NodeUtils::copySourcePathMetadata(srcH5, dstH5, &sourcePathMetadataError)) {
+                fail(QStringLiteral("无法保留源路径元数据: %1").arg(sourcePathMetadataError));
+                return;
+            }
 
             if (!NodeUtils::readMatFromH5(srcH5, "range_len", tmp)) {
                 fail(QStringLiteral("无法读取第%1幅影像距离尺寸").arg(idx + 1));

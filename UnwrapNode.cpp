@@ -831,6 +831,7 @@ struct UnwrapImageDiagnostics
     double largestValidComponentRatio = 0.0;
     qint64 gradientComparedEdges = 0;
     qint64 gradientRiskEdges = 0;
+    qint64 candidateJumpPoints = 0;
     int gradientRiskComponentCount = 0;
     qint64 largestGradientRiskPixels = 0;
     QRect largestGradientRiskBounds;
@@ -875,7 +876,8 @@ private:
         m_rewrapP95Label = createFeatureLabel();
         m_componentLabel = createFeatureLabel();
         m_largestComponentLabel = createFeatureLabel();
-        m_gradientRiskLabel = createFeatureLabel();
+        m_candidateJumpEdgeLabel = createFeatureLabel();
+        m_candidateJumpPointLabel = createFeatureLabel();
         m_riskRegionLabel = createFeatureLabel();
         m_missingLabel = createFeatureLabel();
         QGridLayout* featureGrid = replaceFeatureFormWithGrid();
@@ -898,8 +900,9 @@ private:
         addMetric(1, 0, 1, QObject::tr("重新缠绕圆差 P95 估计 (rad):"), m_rewrapP95Label);
         addMetric(1, 1, 1, QObject::tr("有效输出连通域:"), m_componentLabel);
         addMetric(2, 0, 1, QObject::tr("最大连通域占比:"), m_largestComponentLabel);
-        addMetric(2, 1, 1, QObject::tr("高梯度风险边比例 (|delta| > pi):"), m_gradientRiskLabel);
-        addMetric(3, 0, 2, QObject::tr("最大风险区域:"), m_riskRegionLabel);
+        addMetric(2, 1, 1, QObject::tr("候选跳变边密度 (|delta| > pi，候选边/有效相邻边):"), m_candidateJumpEdgeLabel);
+        addMetric(3, 0, 1, QObject::tr("候选跳变点密度 (候选点/有效输出像元):"), m_candidateJumpPointLabel);
+        addMetric(3, 1, 1, QObject::tr("最大候选跳变区域:"), m_riskRegionLabel);
         addMetric(4, 0, 2, QObject::tr("缺失或尺寸异常结果:"), m_missingLabel);
     }
 
@@ -915,7 +918,8 @@ private:
         m_rewrapP95Label->setText(QObject::tr("未执行"));
         m_componentLabel->setText(QObject::tr("未执行"));
         m_largestComponentLabel->setText(QObject::tr("未执行"));
-        m_gradientRiskLabel->setText(QObject::tr("未执行"));
+        m_candidateJumpEdgeLabel->setText(QObject::tr("未执行"));
+        m_candidateJumpPointLabel->setText(QObject::tr("未执行"));
         m_riskRegionLabel->setText(QObject::tr("未执行"));
         m_missingLabel->setText(QObject::tr("未执行"));
     }
@@ -1094,6 +1098,7 @@ private:
                         }
                     }
                 }
+                image.candidateJumpPoints = static_cast<qint64>(cv::countNonZero(gradientRiskMask));
 
                 if (image.gradientRiskEdges > 0) {
                     cv::Mat labels;
@@ -1163,6 +1168,8 @@ private:
             double sumSquaredResidual = 0.0;
             qint64 gradientComparedEdges = 0;
             qint64 gradientRiskEdges = 0;
+            qint64 outputFinite = 0;
+            qint64 candidateJumpPoints = 0;
             int totalValidComponents = 0;
             int maxValidComponents = 0;
             double smallestLargestComponentRatio = 100.0;
@@ -1189,14 +1196,17 @@ private:
                     const double imageCoverage = image.inputFinite > 0 ? 100.0 * image.pairedFinite / image.inputFinite : 0.0;
                     const double riskRatio = image.gradientComparedEdges > 0
                         ? 100.0 * image.gradientRiskEdges / image.gradientComparedEdges : 0.0;
+                    const double pointRatio = image.outputFinite > 0
+                        ? 100.0 * image.candidateJumpPoints / image.outputFinite : 0.0;
                     m_compTable->addDiagnostic(image.name + QObject::tr(" 诊断"),
-                        QObject::tr("覆盖 %1%, RMSE %2 rad, P95 %3 rad, 连通域 %4, 最大占比 %5%, 高梯度风险 %6%")
+                        QObject::tr("覆盖 %1%, RMSE %2 rad, P95 %3 rad, 连通域 %4, 最大占比 %5%, 候选跳变边 %6%, 候选跳变点 %7%")
                             .arg(QString::number(imageCoverage, 'f', 2),
                                  QString::number(image.rewrapRmse, 'g', 4),
                                  QString::number(image.rewrapP95, 'g', 4),
                                  QString::number(image.validComponentCount),
                                  QString::number(image.largestValidComponentRatio, 'f', 2),
-                                 QString::number(riskRatio, 'f', 4)));
+                                 QString::number(riskRatio, 'f', 4),
+                                 QString::number(pointRatio, 'f', 4)));
                 }
 
                 inputFinite += image.inputFinite;
@@ -1210,6 +1220,8 @@ private:
                     smallestLargestComponentRatio = std::min(smallestLargestComponentRatio, image.largestValidComponentRatio);
                     gradientComparedEdges += image.gradientComparedEdges;
                     gradientRiskEdges += image.gradientRiskEdges;
+                    outputFinite += image.outputFinite;
+                    candidateJumpPoints += image.candidateJumpPoints;
                     if (image.largestGradientRiskPixels > 0
                         && (!largestRiskImage || image.largestGradientRiskPixels > largestRiskImage->largestGradientRiskPixels)) {
                         largestRiskImage = &image;
@@ -1234,9 +1246,18 @@ private:
             m_largestComponentLabel->setText(totalValidComponents > 0
                 ? QString::number(smallestLargestComponentRatio, 'f', 2) + QObject::tr("%（逐幅最小值）")
                 : QObject::tr("无有效输出"));
-            m_gradientRiskLabel->setText(gradientComparedEdges > 0
-                ? QString::number(100.0 * gradientRiskEdges / gradientComparedEdges, 'f', 4) + QObject::tr("%（候选风险）")
+            m_candidateJumpEdgeLabel->setText(gradientComparedEdges > 0
+                ? QObject::tr("%1 / %2（%3%）")
+                    .arg(gradientRiskEdges)
+                    .arg(gradientComparedEdges)
+                    .arg(QString::number(100.0 * gradientRiskEdges / gradientComparedEdges, 'f', 4))
                 : QObject::tr("无可比较边"));
+            m_candidateJumpPointLabel->setText(outputFinite > 0
+                ? QObject::tr("%1 / %2（%3%）")
+                    .arg(candidateJumpPoints)
+                    .arg(outputFinite)
+                    .arg(QString::number(100.0 * candidateJumpPoints / outputFinite, 'f', 4))
+                : QObject::tr("无有效输出像元"));
             if (largestRiskImage) {
                 const QRect& bounds = largestRiskImage->largestGradientRiskBounds;
                 QString imageName = largestRiskImage->name;
@@ -1248,7 +1269,7 @@ private:
                     .arg(bounds.x()).arg(bounds.y()).arg(bounds.width()).arg(bounds.height())
                     .arg(largestRiskImage->largestGradientRiskPixels));
             } else {
-                m_riskRegionLabel->setText(QObject::tr("未发现高梯度候选区域"));
+                m_riskRegionLabel->setText(QObject::tr("未发现候选跳变区域"));
             }
             m_missingLabel->setText(QString::number(missingOrInvalid) + QStringLiteral(" / ") + QString::number(result.images.size()));
 
@@ -1258,7 +1279,7 @@ private:
             if (missingOrInvalid == 0 && metadataMatch) {
                 m_statusTitle->setText(QObject::tr("诊断完成"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
-                m_statusDesc->setText(QObject::tr("全部结果已配对。重新缠绕一致性、连通域和高梯度仅用于诊断数值完整性与候选风险，不能单独证明不存在整数周模糊。"));
+                m_statusDesc->setText(QObject::tr("全部结果已配对。重新缠绕一致性、连通域和候选跳变仅用于诊断数值完整性与候选风险，不能单独证明不存在整数周模糊。"));
             } else {
                 m_statusTitle->setText(QObject::tr("需要复查"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
@@ -1275,7 +1296,8 @@ private:
     QLabel* m_rewrapP95Label = nullptr;
     QLabel* m_componentLabel = nullptr;
     QLabel* m_largestComponentLabel = nullptr;
-    QLabel* m_gradientRiskLabel = nullptr;
+    QLabel* m_candidateJumpEdgeLabel = nullptr;
+    QLabel* m_candidateJumpPointLabel = nullptr;
     QLabel* m_riskRegionLabel = nullptr;
     QLabel* m_missingLabel = nullptr;
 };

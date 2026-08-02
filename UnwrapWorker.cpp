@@ -11,6 +11,7 @@
 #include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QCoreApplication>
+#include <QByteArray>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
@@ -28,6 +29,59 @@ thread_local UnwrapWorker* t_currentUnwrapWorker = nullptr;
 thread_local int t_unwrapCurrentImageIndex = 0;
 thread_local int t_unwrapTotalImagesCount = 1;
 thread_local int t_unwrapLastLoggedProgress = -10;
+
+namespace {
+
+QString diagnosticString(const char* bytes, int capacity)
+{
+    const QByteArray value(bytes, capacity);
+    const int terminator = value.indexOf('\0');
+    return QString::fromUtf8(value.constData(), terminator >= 0 ? terminator : value.size()).trimmed();
+}
+
+QString diagnosticStageName(uint32_t stage)
+{
+    switch (stage) {
+    case UNWRAP_DIAGNOSTIC_STAGE_INPUT: return QStringLiteral("input");
+    case UNWRAP_DIAGNOSTIC_STAGE_PATH: return QStringLiteral("path");
+    case UNWRAP_DIAGNOSTIC_STAGE_PREPARE: return QStringLiteral("prepare");
+    case UNWRAP_DIAGNOSTIC_STAGE_LAUNCH: return QStringLiteral("launch");
+    case UNWRAP_DIAGNOSTIC_STAGE_JOB: return QStringLiteral("job");
+    case UNWRAP_DIAGNOSTIC_STAGE_PROCESS_EXIT: return QStringLiteral("process exit");
+    case UNWRAP_DIAGNOSTIC_STAGE_OUTPUT: return QStringLiteral("output validation");
+    case UNWRAP_DIAGNOSTIC_STAGE_INTERNAL: return QStringLiteral("internal");
+    default: return QStringLiteral("unknown");
+    }
+}
+
+QString diagnosticFailureMessage(const QString& operation, const UnwrapDiagnostic& diagnostic, int result)
+{
+    const QString tool = diagnosticString(diagnostic.tool, sizeof(diagnostic.tool));
+    const QString summary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
+    return QStringLiteral("%1 failed (%2, stage=%3, status=%4, win32Error=%5, exitCode=%6): %7")
+        .arg(operation,
+             tool.isEmpty() ? QStringLiteral("unwrap") : tool,
+             diagnosticStageName(diagnostic.stage))
+        .arg(result)
+        .arg(diagnostic.win32Error)
+        .arg(diagnostic.exitCode)
+        .arg(summary.isEmpty() ? QStringLiteral("No diagnostic summary.") : summary);
+}
+
+bool readOffset(const QString& h5Path, const char* dataset, int& offset, QString& error)
+{
+    cv::Mat value;
+    if (!NodeUtils::readMatFromH5(h5Path, QString::fromLatin1(dataset), value) ||
+        value.empty() || value.type() != CV_32SC1 || value.total() != 1) {
+        error = QStringLiteral("Unable to read scalar %1 from %2.")
+                    .arg(QString::fromLatin1(dataset), h5Path);
+        return false;
+    }
+    offset = value.at<int>(0, 0);
+    return true;
+}
+
+} // namespace
 
 static bool __stdcall unwrapProgressCallback(int progress, const char* message)
 {
@@ -154,54 +208,126 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
     std::vector<int> offset_cols(image_number, 0);
     std::vector<bool> process_success(image_number, false);
 
+    const auto failImage = [this, image_number, method](int index, const QString& stage, int code) {
+        QString methodName;
+        switch (method) {
+        case 1: methodName = QStringLiteral("SPD Guided"); break;
+        case 2: methodName = QStringLiteral("MCF"); break;
+        case 3: methodName = QStringLiteral("SNAPHU"); break;
+        case 4: methodName = QStringLiteral("Quality Guided MCF"); break;
+        default: methodName = QStringLiteral("Unknown"); break;
+        }
+        emit errorProcess(QStringLiteral("%1 failed for image %2/%3 (%4, code=%5).")
+                              .arg(methodName)
+                              .arg(index + 1)
+                              .arg(image_number)
+                              .arg(stage)
+                              .arg(code));
+    };
+
+    const auto failDiagnostic = [this, &finishCancelled](const QString& operation,
+                                                         const UnwrapDiagnostic& diagnostic,
+                                                         int result) {
+        if (diagnostic.cancelled != 0 ||
+            QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+            finishCancelled();
+            return;
+        }
+        const QString stderrTail = diagnosticString(diagnostic.stderrTail, sizeof(diagnostic.stderrTail));
+        if (!stderrTail.isEmpty()) {
+            InSARLogManager::LogWarning("UnwrapWorker", QStringLiteral("%1 stderr: %2").arg(operation, stderrTail));
+        }
+        emit errorProcess(diagnosticFailureMessage(operation, diagnostic, result));
+    };
+
+    QString metadataError;
     auto copyH5Metadata = [&](int idx) -> bool {
         NodeUtils::Hdf5Locker locker;
         /*写入h5*/
         ret = FC.creat_new_h5(absolute_unwrap_path.at(idx).toStdString().c_str());
-        if (ret < 0) return false;
+        if (ret < 0) {
+            metadataError = QStringLiteral("无法创建解缠输出 H5");
+            return false;
+        }
 
         string tmp_str;
         Mat tmp;
         QString phaseH5 = phase_path.at(idx);
         QString unwrapH5 = absolute_unwrap_path.at(idx);
         
+        PathResolver::Resolution masterResolution;
         {
             NodeUtils::Hdf5Locker locker;
             FormatConversion FC;
-            NodeUtils::readStringFromH5(phaseH5, "source_1", tmp_str);
-            FC.write_str_to_h5(unwrapH5.toStdString().c_str(), "source_1", tmp_str.c_str());
+            if (!NodeUtils::readStringFromH5(phaseH5, "source_1", tmp_str)) {
+                metadataError = QStringLiteral("无法读取 source_1");
+                return false;
+            }
+            PathResolver::Error pathError = PathResolver::Error::None;
+            const QByteArray projectRootUtf8 = save_path.toUtf8();
+            if (!PathResolver::resolve(tmp_str, projectRootUtf8.toStdString(), masterResolution, &pathError)) {
+                metadataError = QStringLiteral("无法解析 source_1: %1")
+                                    .arg(QString::fromLatin1(PathResolver::errorMessage(pathError)));
+                return false;
+            }
+            if (FC.write_str_to_h5(unwrapH5.toStdString().c_str(), "source_1", tmp_str.c_str()) != 0) {
+                metadataError = QStringLiteral("无法写入 source_1");
+                return false;
+            }
         }
-        QString master_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
+        const QString masterPath = QString::fromUtf8(masterResolution.utf8.data(),
+                                                     static_cast<int>(masterResolution.utf8.size()));
 
         {
             NodeUtils::Hdf5Locker locker;
             FormatConversion FC;
-            NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str);
-            FC.write_str_to_h5(unwrapH5.toStdString().c_str(), "source_2", tmp_str.c_str());
+            if (!NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str) ||
+                FC.write_str_to_h5(unwrapH5.toStdString().c_str(), "source_2", tmp_str.c_str()) != 0) {
+                metadataError = QStringLiteral("无法复制 source_2");
+                return false;
+            }
         }
-        QString slave_path = QDir::toNativeSeparators(save_path) + QString(tmp_str.c_str());
-
+        QString sourcePathMetadataError;
+        if (!NodeUtils::copySourcePathMetadata(phaseH5, unwrapH5, &sourcePathMetadataError)) {
+            metadataError = sourcePathMetadataError;
+            return false;
+        }
         {
             NodeUtils::Hdf5Locker locker;
-            NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp);
-            NodeUtils::writeMatToH5(unwrapH5, "flat_phase_coefficient", tmp);
+            const auto copyRequiredMatrix = [&](const QString& dataset) {
+                QString matrixError;
+                if (!NodeUtils::readMatFromH5(phaseH5, dataset, tmp, -1, &matrixError) || tmp.empty()) {
+                    metadataError = QStringLiteral("无法读取必需元数据 %1: %2")
+                                        .arg(dataset, matrixError.isEmpty() ? QStringLiteral("empty dataset") : matrixError);
+                    return false;
+                }
+                if (!NodeUtils::writeMatToH5(unwrapH5, dataset, tmp)) {
+                    metadataError = QStringLiteral("无法写入必需元数据 %1").arg(dataset);
+                    return false;
+                }
+                return true;
+            };
+            const auto copyOptionalMatrix = [&](const QString& dataset) {
+                QString matrixError;
+                if (!NodeUtils::readMatFromH5(phaseH5, dataset, tmp, -1, &matrixError)) {
+                    return true;
+                }
+                if (tmp.empty() || !NodeUtils::writeMatToH5(unwrapH5, dataset, tmp)) {
+                    metadataError = QStringLiteral("无法写入可选元数据 %1").arg(dataset);
+                    return false;
+                }
+                return true;
+            };
 
-            NodeUtils::readMatFromH5(phaseH5, "range_len", tmp);
-            NodeUtils::writeMatToH5(unwrapH5, "range_len", tmp);
-
-            NodeUtils::readMatFromH5(phaseH5, "azimuth_len", tmp);
-            NodeUtils::writeMatToH5(unwrapH5, "azimuth_len", tmp);
-
-            NodeUtils::readMatFromH5(phaseH5, "multilook_rg", tmp);
-            NodeUtils::writeMatToH5(unwrapH5, "multilook_rg", tmp);
-
-            NodeUtils::readMatFromH5(phaseH5, "multilook_az", tmp);
-            NodeUtils::writeMatToH5(unwrapH5, "multilook_az", tmp);
-
-            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lon", tmp))
-                NodeUtils::writeMatToH5(unwrapH5, "mapped_lon", tmp);
-            if (NodeUtils::readMatFromH5(phaseH5, "mapped_lat", tmp))
-                NodeUtils::writeMatToH5(unwrapH5, "mapped_lat", tmp);
+            if (!copyOptionalMatrix(QStringLiteral("flat_phase_coefficient")) ||
+                !copyRequiredMatrix(QStringLiteral("range_len")) ||
+                !copyRequiredMatrix(QStringLiteral("azimuth_len")) ||
+                !copyRequiredMatrix(QStringLiteral("multilook_rg")) ||
+                !copyRequiredMatrix(QStringLiteral("multilook_az")) ||
+                !copyOptionalMatrix(QStringLiteral("mapped_lon")) ||
+                !copyOptionalMatrix(QStringLiteral("mapped_lat"))) {
+                return false;
+            }
         }
 
         if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
@@ -210,13 +336,12 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         }
 
         /*行列偏移量*/
-        Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
         {
             NodeUtils::Hdf5Locker locker;
-            NodeUtils::readMatFromH5(master_path, "offset_row", tmp_int);
-            offset_rows[idx] = tmp_int.at<int>(0, 0);
-            NodeUtils::readMatFromH5(master_path, "offset_col", tmp_int);
-            offset_cols[idx] = tmp_int.at<int>(0, 0);
+            if (!readOffset(masterPath, "offset_row", offset_rows[idx], metadataError) ||
+                !readOffset(masterPath, "offset_col", offset_cols[idx], metadataError)) {
+                return false;
+            }
         }
 
         return true;
@@ -240,7 +365,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
             finishCancelled();
         } else {
-            emit errorProcess(QStringLiteral("创建或复制解缠输出元数据失败"));
+            emit errorProcess(QStringLiteral("创建或复制解缠输出元数据失败: %1")
+                                  .arg(metadataError.isEmpty() ? QStringLiteral("unknown error") : metadataError));
         }
     };
 
@@ -258,7 +384,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
-            if (ret < 0) continue;
+            if (ret < 0) {
+                failImage(i, QStringLiteral("reading phase"), ret);
+                return;
+            }
 
             Mat phase_unwrap;
             ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap, unwrapProgressCallback);
@@ -266,7 +395,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 finishCancelled();
                 return;
             }
-            if (ret < 0) continue;
+            if (ret < 0) {
+                failImage(i, QStringLiteral("unwrapping"), ret);
+                return;
+            }
 
             if (!copyH5Metadata(i)) {
                 finishMetadataFailure();
@@ -274,7 +406,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
                 QFile::remove(absolute_unwrap_path.at(i));
-                continue;
+                failImage(i, QStringLiteral("writing output"), -1);
+                return;
             }
             process_success[i] = true;
         }
@@ -293,20 +426,30 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
-            if (ret < 0) continue;
+            if (ret < 0) {
+                failImage(i, QStringLiteral("reading phase"), ret);
+                return;
+            }
 
             Mat phase_unwrap;
             Mat coherence, residue;
             ret = util.phase_coherence(phase, coherence);
             ret = util.residue(phase, residue);
             QString app_path = QCoreApplication::applicationDirPath();
-            ret = unwrap.MCF(phase, phase_unwrap, coherence, residue, (absolute_path + "/MCF.net").toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            UnwrapDiagnostic diagnostic = {};
+            diagnostic.structSize = sizeof(diagnostic);
+            ret = unwrap.MCFEx(phase, phase_unwrap, coherence, residue,
+                               (absolute_path + "/MCF.net").toStdString().c_str(),
+                               app_path.toStdString().c_str(), unwrapProgressCallback, &diagnostic);
             QFile::remove(absolute_path + "/MCF.net");
+            if (ret != 0) {
+                failDiagnostic(QStringLiteral("MCF"), diagnostic, ret);
+                return;
+            }
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
             }
-            if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
                 finishMetadataFailure();
@@ -314,7 +457,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
                 QFile::remove(absolute_unwrap_path.at(i));
-                continue;
+                failImage(i, QStringLiteral("writing output"), -1);
+                return;
             }
             process_success[i] = true;
         }
@@ -333,7 +477,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase) ? 0 : -1;
-            if (ret < 0) continue;
+            if (ret < 0) {
+                failImage(i, QStringLiteral("reading phase"), ret);
+                return;
+            }
 
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
@@ -342,12 +489,19 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 emit errorProcess(QStringLiteral("无法创建 SNAPHU 临时工作目录"));
                 return;
             }
-            ret = unwrap.snaphu(phase_path.at(i).toStdString().c_str(), phase_unwrap, save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(), app_path.toStdString().c_str(), unwrapProgressCallback);
+            UnwrapDiagnostic diagnostic = {};
+            diagnostic.structSize = sizeof(diagnostic);
+            ret = unwrap.SnaphuFileEx(phase_path.at(i).toStdString().c_str(), phase_unwrap,
+                                      save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
+                                      app_path.toStdString().c_str(), unwrapProgressCallback, &diagnostic);
+            if (ret != 0) {
+                failDiagnostic(QStringLiteral("SNAPHU"), diagnostic, ret);
+                return;
+            }
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
             }
-            if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
                 finishMetadataFailure();
@@ -355,7 +509,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
                 QFile::remove(absolute_unwrap_path.at(i));
-                continue;
+                failImage(i, QStringLiteral("writing output"), -1);
+                return;
             }
             process_success[i] = true;
         }
@@ -375,7 +530,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             emit updateProcess(10 + i * 80 / image_number, QStringLiteral("第%1幅图像解缠中……").arg(i + 1));
             Mat phase;
             ret = NodeUtils::readMatFromH5(phase_path.at(i), "phase", phase, CV_64F) ? 0 : -1;
-            if (ret < 0) continue;
+            if (ret < 0) {
+                failImage(i, QStringLiteral("reading phase"), ret);
+                return;
+            }
 
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
@@ -384,14 +542,19 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 emit errorProcess(QStringLiteral("无法创建质量引导 MCF 临时工作目录"));
                 return;
             }
-            ret = unwrap.QualityGuided_MCF(phase, phase_unwrap, coherence_threshold, distance_threshold,
-                                           qualityGuidedWorkDir.path().toStdString().c_str(),
-                                           app_path.toStdString().c_str(), unwrapProgressCallback);
+            UnwrapDiagnostic diagnostic = {};
+            diagnostic.structSize = sizeof(diagnostic);
+            ret = unwrap.QualityGuidedMCFEx(phase, phase_unwrap, coherence_threshold, distance_threshold,
+                                             qualityGuidedWorkDir.path().toStdString().c_str(),
+                                             app_path.toStdString().c_str(), unwrapProgressCallback, &diagnostic);
+            if (ret != 0) {
+                failDiagnostic(QStringLiteral("Quality Guided MCF"), diagnostic, ret);
+                return;
+            }
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
             }
-            if (ret < 0) continue;
 
             if (!copyH5Metadata(i)) {
                 finishMetadataFailure();
@@ -399,7 +562,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
                 QFile::remove(absolute_unwrap_path.at(i));
-                continue;
+                failImage(i, QStringLiteral("writing output"), -1);
+                return;
             }
             process_success[i] = true;
         }

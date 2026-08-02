@@ -2,10 +2,12 @@
 #include <QtWidgets/QMainWindow>
 #include <qstandarditemmodel.h>
 #include "ui_Unwrap.h"
+#include "NodeUtils.h"
 #include <QThread>
 #include <QStringList>
+#include <QList>
 
-class UnwrapWorker;
+#include "UnwrapWorker.h"
 
 class Unwrap_ui : public QWidget
 {
@@ -20,6 +22,9 @@ public slots:
     void endThread();
     void StopThread();
     void TransitModel(QStandardItemModel*);
+    void onWorkerError(const QString& error);
+    void onWorkerCancelled();
+    void onUnwrapFileGenerated(const UnwrapFileResult& result);
 private:
     Ui::Unwrap* ui;
     QStandardItemModel* copy;
@@ -28,7 +33,12 @@ private:
     QString save_path;
     int method;
     int image_number;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    QStringList m_preparedOutputPaths;
+    QList<UnwrapFileResult> m_pendingUnwrapResults;
     void ChangeVision(bool Editable);
+    void abandonOutputTransaction(const QString& reason);
+    void releaseStoppedThread();
 signals:
     void operate(int, double, QString, QString, QStringList);
     void sendCopy(QStandardItemModel*);

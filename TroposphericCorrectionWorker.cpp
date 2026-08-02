@@ -274,6 +274,11 @@ void TroposphericCorrectionWorker::doCorrection(
             FC.write_str_to_h5(absH5.toStdString().c_str(), "source_1", tmp_str.c_str());
             NodeUtils::readStringFromH5(phaseH5, "source_2", tmp_str);
             FC.write_str_to_h5(absH5.toStdString().c_str(), "source_2", tmp_str.c_str());
+            QString sourcePathMetadataError;
+            if (!NodeUtils::copySourcePathMetadata(phaseH5, absH5, &sourcePathMetadataError)) {
+                fail(QStringLiteral("无法保留源路径元数据: %1").arg(sourcePathMetadataError));
+                return;
+            }
 
             if (!NodeUtils::readMatFromH5(phaseH5, "flat_phase_coefficient", tmp)) {
                 fail(QStringLiteral("无法读取第%1幅干涉图平坦相位系数").arg(idx + 1));

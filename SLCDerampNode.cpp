@@ -17,6 +17,7 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QFileDialog>
+#include <atomic>
 
 namespace QtNodes {
 
@@ -235,6 +236,13 @@ QStringList SLCDerampNode::previewImagePaths() const
         }
     }
     return existingPaths;
+}
+
+std::vector<QString> SLCDerampNode::processingInfo() const
+{
+    return m_processingStatus.isEmpty()
+        ? std::vector<QString>()
+        : std::vector<QString>{m_processingStatus};
 }
 
 bool SLCDerampNode::validateAndRestoreOutput()
@@ -606,11 +614,12 @@ void SLCDerampNode::updateWidgetSize()
 
 void SLCDerampNode::onProgressUpdate(int progress, const QString& message)
 {
-    Q_UNUSED(message);
     if (isAutomaticExecutionObsolete()) {
         return;
     }
+    m_processingStatus = message;
     setProgress(progress);
+    triggerVisualUpdate();
 }
 
 void SLCDerampNode::onProcessingFinished()
@@ -695,6 +704,7 @@ void SLCDerampNode::onProcessingFinished()
     }
     m_previewGenerationPending = true;
     const quint64 previewGenerationId = ++m_previewGenerationId;
+    onProgressUpdate(90, QStringLiteral("正在生成预览图..."));
     QStringList previewJpgPaths;
     for (const QString& jpgPath : jpgPaths) {
         const QFileInfo info(jpgPath);
@@ -737,13 +747,48 @@ void SLCDerampNode::onProcessingFinished()
 
         updateParameterWidgetsEnableState();
         setState(ExecutionState::Running);
+        m_processingStatus = QStringLiteral("SLC Deramp 已完成。");
         setProgress(100);
+        triggerVisualUpdate();
         InSARLogManager::LogInfo("SLCDerampNode", "executeProcessing completed.");
         finishExecution();
     });
-    QFuture<void> future = QtConcurrent::run([h5Paths, previewJpgPaths]() {
+    const auto previewProgress = std::make_shared<std::atomic<int>>(90);
+    const QPointer<SLCDerampNode> nodeGuard(this);
+    QFuture<void> future = QtConcurrent::run([h5Paths, previewJpgPaths, previewGenerationId, previewProgress, nodeGuard]() {
         for (int i = 0; i < h5Paths.size(); ++i) {
-            NodeUtils::generateJpgPreviewFromH5(h5Paths[i], previewJpgPaths[i], "complex");
+            NodeUtils::generateJpgPreviewFromH5WithProgress(
+                h5Paths[i], previewJpgPaths[i], "complex",
+                [nodeGuard, previewGenerationId, previewProgress, i, total = h5Paths.size()](int completedRows, int totalRows) {
+                    if (!nodeGuard || total <= 0 || totalRows <= 0) {
+                        return;
+                    }
+
+                    const int localProgress = qBound(0, completedRows * 100 / totalRows, 100);
+                    // Reserve 100% for the future completion handler, including its atomic rename.
+                    const int candidate = 90 + (9 * (i * 100 + localProgress)) / (total * 100);
+                    int previous = previewProgress->load(std::memory_order_relaxed);
+                    while (candidate > previous &&
+                           !previewProgress->compare_exchange_weak(previous, candidate,
+                                                                   std::memory_order_relaxed,
+                                                                   std::memory_order_relaxed)) {
+                    }
+                    if (candidate <= previous) {
+                        return;
+                    }
+
+                    QMetaObject::invokeMethod(nodeGuard.data(),
+                        [nodeGuard, previewGenerationId, candidate, i, total]() {
+                            if (!nodeGuard || !nodeGuard->m_previewGenerationPending ||
+                                nodeGuard->m_previewGenerationId != previewGenerationId) {
+                                return;
+                            }
+                            nodeGuard->onProgressUpdate(
+                                candidate,
+                                QStringLiteral("正在生成预览图：%1/%2").arg(i + 1).arg(total));
+                        },
+                        Qt::QueuedConnection);
+                });
         }
     });
     m_remedyWatcher.setFuture(future);
@@ -1096,7 +1141,9 @@ void SLCDerampNode::executeProcessing()
         }
     }
 
+    m_processingStatus = QStringLiteral("正在准备 SLC Deramp 任务...");
     setProgress(0);
+    triggerVisualUpdate();
     setState(ExecutionState::Running);
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,

@@ -453,16 +453,25 @@ void ExecutableNodeDelegateModel::completeAutomaticExecution()
 
 void ExecutableNodeDelegateModel::invalidateExecution()
 {
-    // Reset to idle state when data changes in Manual mode
-    // This indicates the previous result is outdated and needs re-execution
-    if (_state == ExecutionState::Idle && _progress == 0) {
-        // Already invalid, no change needed
+    // Connected automatic nodes wait for re-execution; all other invalid nodes are idle.
+    const bool shouldBePending = _mode == ExecutionMode::Automatic
+        && nPorts(PortType::In) > 0
+        && allRequiredPortsConnected();
+    const ExecutionState targetState = shouldBePending
+        ? ExecutionState::Pending
+        : ExecutionState::Idle;
+    const bool progressIsReset = _progress == 0
+        && _targetProgress == 0.0
+        && _currentShownProgress == 0.0
+        && (!_progressTimer || !_progressTimer->isActive());
+
+    if (_state == targetState && progressIsReset) {
+        // Already invalid with no stale progress state.
         return;
     }
 
-    _progress = 0;
-    Q_EMIT progressUpdated(_progress);
-    setState(ExecutionState::Idle);
+    setProgress(0);
+    setState(targetState);
 
     if (_scene) {
         Q_EMIT _scene->modified(_scene);

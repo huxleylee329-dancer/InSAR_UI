@@ -19,6 +19,7 @@
 #include <QFutureWatcher>
 #include <QPointer>
 #include <memory>
+#include <vector>
 
 class IApplicationInterface;
 class XMLFile;
@@ -51,6 +52,7 @@ public:
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
     QStringList previewImagePaths() const override;
+    std::vector<QString> processingInfo() const override;
 
 protected:
     bool prepareToStart() override;
@@ -132,6 +134,7 @@ private:
     bool m_xmlDirty = false;
     bool m_previewGenerationPending = false;
     quint64 m_previewGenerationId = 0;
+    QString m_processingStatus;
 
 signals:
     void startDeramp(int masterIndex, QString projectName, QString savePath,

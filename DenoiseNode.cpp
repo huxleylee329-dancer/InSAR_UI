@@ -1048,6 +1048,7 @@ private:
         m_lblDiffStd = createFeatureLabel();
         m_lblDiffResultant = createFeatureLabel();
         m_lblGradientSummary = createFeatureLabel();
+        m_lblResidueCountSummary = createFeatureLabel();
         m_lblResidueSummary = createFeatureLabel();
         m_lblInWidth = m_lblDiffMean;
         m_lblOutWidth = m_lblDiffStd;
@@ -1058,12 +1059,17 @@ private:
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差圆标准差 (rad):")), m_lblDiffStd);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差集中度 R (0-1):")), m_lblDiffResultant);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位梯度 RMS (输入 -> 输出):")), m_lblGradientSummary);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("相位残差点密度 (输入 -> 输出):")), m_lblResidueSummary);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("正/负/总残差单元数 (plaquette，输入 -> 输出):")), m_lblResidueCountSummary);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("残差单元密度 (总数/有效 2 x 2 单元，输入 -> 输出):")), m_lblResidueSummary);
     }
 
     struct PhaseQualityMetrics {
         double gradientRms = 0.0;
         double residueDensity = 0.0;
+        qint64 positiveResidueCount = 0;
+        qint64 negativeResidueCount = 0;
+        qint64 totalResidueCount = 0;
+        qint64 validPlaquetteCount = 0;
         bool hasGradient = false;
         bool hasResidueDensity = false;
     };
@@ -1114,6 +1120,7 @@ private:
             m_lblDiffStd->setText(QObject::tr("未执行"));
             m_lblDiffResultant->setText(QObject::tr("未执行"));
             m_lblGradientSummary->setText(QObject::tr("未执行"));
+            m_lblResidueCountSummary->setText(QObject::tr("未执行"));
             m_lblResidueSummary->setText(QObject::tr("未执行"));
 
             return;
@@ -1205,7 +1212,8 @@ private:
                         metrics.hasGradient = true;
                     }
 
-                    qint64 residueCount = 0;
+                    qint64 positiveResidueCount = 0;
+                    qint64 negativeResidueCount = 0;
                     qint64 plaquetteCount = 0;
                     for (int row = 0; row + 1 < phase.rows; ++row) {
                         const float* top = phase.ptr<float>(row);
@@ -1223,14 +1231,20 @@ private:
                                 + wrapDifference(p11 - p01)
                                 + wrapDifference(p10 - p11)
                                 + wrapDifference(p00 - p10);
-                            if (std::abs(closure) > pi) {
-                                ++residueCount;
+                            if (closure > pi) {
+                                ++positiveResidueCount;
+                            } else if (closure < -pi) {
+                                ++negativeResidueCount;
                             }
                             ++plaquetteCount;
                         }
                     }
                     if (plaquetteCount > 0) {
-                        metrics.residueDensity = 100.0 * residueCount / plaquetteCount;
+                        metrics.positiveResidueCount = positiveResidueCount;
+                        metrics.negativeResidueCount = negativeResidueCount;
+                        metrics.totalResidueCount = positiveResidueCount + negativeResidueCount;
+                        metrics.validPlaquetteCount = plaquetteCount;
+                        metrics.residueDensity = 100.0 * metrics.totalResidueCount / plaquetteCount;
                         metrics.hasResidueDensity = true;
                     }
                     return metrics;
@@ -1327,10 +1341,35 @@ private:
                     const double reduction = 100.0 * (input - output) / input;
                     return QString("%1 -> %2 (%3%)").arg(inputText).arg(outputText).arg(QString::number(reduction, 'f', 2));
                 };
+                const auto residueCountText = [](const PhaseQualityMetrics& metrics) {
+                    if (!metrics.hasResidueDensity) {
+                        return QObject::tr("无有效单元");
+                    }
+                    return QObject::tr("+%1 / -%2 / %3（有效 %4）")
+                        .arg(metrics.positiveResidueCount)
+                        .arg(metrics.negativeResidueCount)
+                        .arg(metrics.totalResidueCount)
+                        .arg(metrics.validPlaquetteCount);
+                };
+                const auto residueDensityText = [](const PhaseQualityMetrics& input,
+                                                   const PhaseQualityMetrics& output) {
+                    if (!input.hasResidueDensity || !output.hasResidueDensity) {
+                        return QObject::tr("无有效单元");
+                    }
+                    const QString inputText = QString::number(input.residueDensity, 'f', 3) + QStringLiteral("%");
+                    const QString outputText = QString::number(output.residueDensity, 'f', 3) + QStringLiteral("%");
+                    if (input.totalResidueCount == 0) {
+                        return QStringLiteral("%1 -> %2").arg(inputText, outputText);
+                    }
+                    const double reduction = 100.0 * (input.residueDensity - output.residueDensity) / input.residueDensity;
+                    return QStringLiteral("%1 -> %2 (%3%)")
+                        .arg(inputText, outputText, QString::number(reduction, 'f', 2));
+                };
                 m_lblGradientSummary->setText(transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
                     res.outputQuality.gradientRms, res.outputQuality.hasGradient, 4, QString()));
-                m_lblResidueSummary->setText(transitionText(res.inputQuality.residueDensity, res.inputQuality.hasResidueDensity,
-                    res.outputQuality.residueDensity, res.outputQuality.hasResidueDensity, 3, QStringLiteral("%")));
+                m_lblResidueCountSummary->setText(residueCountText(res.inputQuality)
+                    + QStringLiteral(" -> ") + residueCountText(res.outputQuality));
+                m_lblResidueSummary->setText(residueDensityText(res.inputQuality, res.outputQuality));
 
                 // Final status card
                 m_statusTitle->setText(QObject::tr("验证通过"));
@@ -1355,6 +1394,7 @@ private:
     QLabel* m_lblDiffStd = nullptr;
     QLabel* m_lblDiffResultant = nullptr;
     QLabel* m_lblGradientSummary = nullptr;
+    QLabel* m_lblResidueCountSummary = nullptr;
     QLabel* m_lblResidueSummary = nullptr;
     QLabel* m_lblInWidth = nullptr;
     QLabel* m_lblOutWidth = nullptr;

@@ -50,11 +50,36 @@ void Unwrap_ui::updateProcess(int value, QString information)
 }
 void Unwrap_ui::endProcess()
 {
+    QString transactionError;
+    QStringList workerPaths;
+    QStringList finalPaths;
+    for (const UnwrapFileResult& result : m_pendingUnwrapResults) {
+        workerPaths.append(result.absolutePath);
+    }
+    if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("phase"), &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, workerPaths, &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        !NodeUtils::completeOutputTransactionWithoutMetadata(m_outputTransaction, &transactionError)) {
+        if (m_thread && m_thread->isRunning()) {
+            m_thread->quit();
+            m_thread->wait();
+        }
+        releaseStoppedThread();
+        abandonOutputTransaction(transactionError.isEmpty()
+            ? QStringLiteral("解缠输出事务提交失败") : transactionError);
+        ChangeVision(true);
+        ui->progressBar->hide();
+        QMessageBox::critical(this, QStringLiteral("Error"), transactionError.isEmpty()
+            ? QStringLiteral("解缠输出事务提交失败") : transactionError);
+        return;
+    }
     if (m_thread)
     {
         m_thread->quit();
         m_thread->wait();
     }
+    releaseStoppedThread();
     ui->progressBar->hide();
     this->close();
 }
@@ -65,6 +90,7 @@ void Unwrap_ui::endThread()
         m_thread->quit();
         m_thread->wait();
     }
+    releaseStoppedThread();
 }
 void Unwrap_ui::StopThread()
 {
@@ -78,6 +104,48 @@ void Unwrap_ui::StopThread()
         m_thread->quit();
         m_thread->wait();
     }
+    releaseStoppedThread();
+    abandonOutputTransaction(QStringLiteral("cancelled"));
+}
+void Unwrap_ui::onWorkerError(const QString& error)
+{
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->quit();
+        m_thread->wait();
+    }
+    releaseStoppedThread();
+    abandonOutputTransaction(error);
+    ui->progressBar->hide();
+    ChangeVision(true);
+    QMessageBox::critical(this, QStringLiteral("Error"), error);
+}
+void Unwrap_ui::onWorkerCancelled()
+{
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->quit();
+        m_thread->wait();
+    }
+    releaseStoppedThread();
+    abandonOutputTransaction(QStringLiteral("cancelled"));
+    ui->progressBar->hide();
+    ChangeVision(true);
+}
+void Unwrap_ui::onUnwrapFileGenerated(const UnwrapFileResult& result)
+{
+    m_pendingUnwrapResults.append(result);
+}
+void Unwrap_ui::abandonOutputTransaction(const QString& reason)
+{
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, reason);
+}
+void Unwrap_ui::releaseStoppedThread()
+{
+    if (!m_thread || m_thread->isRunning()) {
+        return;
+    }
+    m_thread->deleteLater();
+    m_thread = nullptr;
+    Unwrap_worker = nullptr;
 }
 void Unwrap_ui::TransitModel(QStandardItemModel* model)
 {
@@ -283,6 +351,19 @@ void Unwrap_ui::on_buttonBox_accepted()
         return;
     }
 
+    m_preparedOutputPaths.clear();
+    for (const QString& phasePath : phasePaths) {
+        const QString outputName = QFileInfo(phasePath).baseName() + QStringLiteral("_unwrapped.h5");
+        m_preparedOutputPaths.append(QDir(save_path).filePath(ui->file_name->text() + "/" + outputName));
+    }
+    m_pendingUnwrapResults.clear();
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(save_path, ui->file_name->text(), m_preparedOutputPaths,
+                                           phasePaths, m_outputTransaction, &transactionError)) {
+        QMessageBox::critical(this, QStringLiteral("Error"), transactionError);
+        return;
+    }
+
     m_thread = new QThread(this);
     Unwrap_worker = new UnwrapWorker();
     Unwrap_worker->moveToThread(m_thread);
@@ -294,12 +375,18 @@ void Unwrap_ui::on_buttonBox_accepted()
     connect(Unwrap_worker, &UnwrapWorker::updateProcess, this, &Unwrap_ui::updateProcess);
     connect(m_thread, &QThread::finished, Unwrap_worker, &QObject::deleteLater);
     connect(Unwrap_worker, &UnwrapWorker::endProcess, this, &Unwrap_ui::endProcess);
+    connect(Unwrap_worker, &UnwrapWorker::unwrapFileGenerated, this, &Unwrap_ui::onUnwrapFileGenerated);
+    connect(Unwrap_worker, &UnwrapWorker::errorProcess, this, &Unwrap_ui::onWorkerError);
+    connect(Unwrap_worker, &UnwrapWorker::errorProcess, m_thread, &QThread::quit);
+    connect(Unwrap_worker, &UnwrapWorker::cancelled, this, &Unwrap_ui::onWorkerCancelled);
+    connect(Unwrap_worker, &UnwrapWorker::cancelled, m_thread, &QThread::quit);
     connect(this, &QWidget::destroyed, this, &Unwrap_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Unwrap_ui::StopThread);
     
     m_thread->start();
     ChangeVision(false);
-    emit operate(this->method, ui->coherence_threshold->text().toDouble(), this->save_path, ui->file_name->text(), phasePaths);
+    emit operate(this->method, ui->coherence_threshold->text().toDouble(), this->save_path,
+                 m_outputTransaction.stagingName, phasePaths);
 }
 
 void Unwrap_ui::on_buttonBox_rejected()

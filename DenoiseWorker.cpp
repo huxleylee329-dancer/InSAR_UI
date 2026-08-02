@@ -109,6 +109,9 @@ bool writeDenoisedPhase(FormatConversion& conversion,
 
     NodeUtils::readStringFromH5(inputPath, "source_2", sourcePath);
     conversion.write_str_to_h5(outputPath.toStdString().c_str(), "source_2", sourcePath.c_str());
+    if (!NodeUtils::copySourcePathMetadata(inputPath, outputPath, &error)) {
+        return false;
+    }
 
     const char* const copiedDatasets[] = {
         "flat_phase_coefficient", "range_len", "azimuth_len", "multilook_rg", "multilook_az"

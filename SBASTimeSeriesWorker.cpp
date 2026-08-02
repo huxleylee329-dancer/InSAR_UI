@@ -15,6 +15,7 @@
 #include <QTextStream>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QByteArray>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -28,6 +29,42 @@ namespace {
 bool __stdcall isCancellationRequested(void* context)
 {
     return static_cast<std::atomic_bool*>(context)->load(std::memory_order_relaxed);
+}
+
+QString diagnosticString(const char* bytes, int capacity)
+{
+    const QByteArray value(bytes, capacity);
+    const int terminator = value.indexOf('\0');
+    return QString::fromUtf8(value.constData(), terminator >= 0 ? terminator : value.size()).trimmed();
+}
+
+QString diagnosticStageName(uint32_t stage)
+{
+    switch (stage) {
+    case UNWRAP_DIAGNOSTIC_STAGE_INPUT: return QStringLiteral("input");
+    case UNWRAP_DIAGNOSTIC_STAGE_PATH: return QStringLiteral("path");
+    case UNWRAP_DIAGNOSTIC_STAGE_PREPARE: return QStringLiteral("prepare");
+    case UNWRAP_DIAGNOSTIC_STAGE_LAUNCH: return QStringLiteral("launch");
+    case UNWRAP_DIAGNOSTIC_STAGE_JOB: return QStringLiteral("job");
+    case UNWRAP_DIAGNOSTIC_STAGE_PROCESS_EXIT: return QStringLiteral("process exit");
+    case UNWRAP_DIAGNOSTIC_STAGE_OUTPUT: return QStringLiteral("output validation");
+    case UNWRAP_DIAGNOSTIC_STAGE_INTERNAL: return QStringLiteral("internal");
+    default: return QStringLiteral("unknown");
+    }
+}
+
+QString diagnosticFailureMessage(const QString& operation, const UnwrapDiagnostic& diagnostic, int result)
+{
+    const QString tool = diagnosticString(diagnostic.tool, sizeof(diagnostic.tool));
+    const QString summary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
+    return QStringLiteral("%1 failed (%2, stage=%3, status=%4, win32Error=%5, exitCode=%6): %7")
+        .arg(operation,
+             tool.isEmpty() ? QStringLiteral("unwrap") : tool,
+             diagnosticStageName(diagnostic.stage))
+        .arg(result)
+        .arg(diagnostic.win32Error)
+        .arg(diagnostic.exitCode)
+        .arg(summary.isEmpty() ? QStringLiteral("No diagnostic summary.") : summary);
 }
 }
 
@@ -104,6 +141,19 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             }
         }
         emit cancelled();
+    };
+    const auto failDiagnostic = [this, &finishCancelled, &cancellationRequested](const QString& operation,
+                                                                                  const UnwrapDiagnostic& diagnostic,
+                                                                                  int result) {
+        if (diagnostic.cancelled != 0 || cancellationRequested()) {
+            finishCancelled();
+            return;
+        }
+        const QString stderrTail = diagnosticString(diagnostic.stderrTail, sizeof(diagnostic.stderrTail));
+        if (!stderrTail.isEmpty()) {
+            InSARLogManager::LogWarning("SBASTimeSeriesWorker", QStringLiteral("%1 stderr: %2").arg(operation, stderrTail));
+        }
+        emit errorProcess(diagnosticFailureMessage(operation, diagnostic, result));
     };
 
     if (cancellationRequested()) {
@@ -228,7 +278,13 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             if (num_residues > 0)
             {
                 sbas.writeDIMACS_spatial(mcf_problem.c_str(), nodes, edges, triangles);
-                unwrap.mcf_delaunay(mcf_problem.c_str(), appPath.c_str());
+                UnwrapDiagnostic diagnostic = {};
+                diagnostic.structSize = sizeof(diagnostic);
+                ret = unwrap.McfDelaunayEx(mcf_problem.c_str(), appPath.c_str(), nullptr, &diagnostic);
+                if (ret != 0) {
+                    failDiagnostic(QStringLiteral("SBAS Delaunay MCF"), diagnostic, ret);
+                    return;
+                }
                 sbas.readDIMACS(mcf_solution.c_str(), nodes, edges, triangles, obj);
             }
             ret = sbas.floodFillUnwrap(
@@ -281,13 +337,21 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             }
             Mat residue, phase2;
             util.residue(phase, residue);
+            UnwrapDiagnostic diagnostic = {};
+            diagnostic.structSize = sizeof(diagnostic);
             if (unwrap_method == 2)//SNAPHU方法
             {
-                unwrap.snaphu(phase, phase2, path1.c_str());
+                ret = unwrap.SnaphuMatrixEx(phase, phase2, path1.c_str(), nullptr, &diagnostic);
             }
             else//MCF方法
             {
-                unwrap.MCF(phase, phase2, coherence, residue, mcf_problem.c_str(), appPath.c_str());
+                ret = unwrap.MCFEx(phase, phase2, coherence, residue, mcf_problem.c_str(), appPath.c_str(),
+                                   nullptr, &diagnostic);
+            }
+            if (ret != 0) {
+                failDiagnostic(unwrap_method == 2 ? QStringLiteral("SBAS SNAPHU") : QStringLiteral("SBAS MCF"),
+                               diagnostic, ret);
+                return;
             }
             if (cancellationRequested()) {
                 finishCancelled();

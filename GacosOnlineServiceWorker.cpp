@@ -326,6 +326,12 @@ void GacosOnlineServiceWorker::doGacosRequest(
             FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
             FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", tmp_str);
             FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
+            QString sourcePathMetadataError;
+            if (!NodeUtils::copySourcePathMetadata(phase_paths[idx], absolute_output_paths[idx], &sourcePathMetadataError)) {
+                emit errorProcess(QStringLiteral("Failed to preserve source-path metadata: %1").arg(sourcePathMetadataError));
+                currentWorker = nullptr;
+                return;
+            }
             FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "phase", aps_phase);
 
             if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", tmp))

@@ -141,6 +141,10 @@ bool validateStagedH5Datasets(const OutputTransaction& transaction,
 bool promoteOutputTransaction(OutputTransaction& transaction,
                               QStringList& finalPaths,
                               QString* errorMessage = nullptr);
+// Completes a transaction whose caller has no project XML metadata to commit.
+// The staged files must already have been validated and promoted successfully.
+bool completeOutputTransactionWithoutMetadata(OutputTransaction& transaction,
+                                              QString* errorMessage = nullptr);
 // Must be called before mutating the in-memory project XML. It persists a
 // transaction-owned XML backup so metadata and promoted files can roll back together.
 bool prepareOutputTransactionMetadataCommit(OutputTransaction& transaction,
@@ -276,6 +280,19 @@ bool readStringFromH5(const QString& filePath,
                       const QString& dataset,
                       std::string& out,
                       QString* errMsg = nullptr);
+
+// Validates the source-path contract on an input H5 and verifies that the
+// derived H5 already contains the same source paths. Legacy inputs are
+// accepted only when both source paths are valid UTF-8.
+bool copySourcePathMetadata(const QString& inputPath,
+                            const QString& outputPath,
+                            QString* errMsg = nullptr);
+// Creates source_1/source_2 on a fresh derived H5. FormatConversion owns the
+// corresponding UTF-8/v2 metadata write.
+bool writeSourcePathMetadata(const QString& outputPath,
+                             const std::string& source1,
+                             const std::string& source2,
+                             QString* errMsg = nullptr);
 
 /**
  * @brief 向 H5 文件中写入 cv::Mat 矩阵数据（带自动线程锁）

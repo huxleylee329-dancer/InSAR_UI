@@ -50,6 +50,38 @@ bool isDirectProjectChild(const QString& projectRoot, const QString& name,
 bool writeJsonAtomically(const QString& path, const QJsonObject& object, QString* errorMessage);
 QString transactionDirectoryPath(const QString& root);
 
+bool isValidUtf8PathBytes(const std::string& value)
+{
+    const auto* bytes = reinterpret_cast<const unsigned char*>(value.data());
+    const size_t size = value.size();
+    for (size_t i = 0; i < size;) {
+        const unsigned char first = bytes[i];
+        if (first == 0) return false;
+        if (first <= 0x7f) {
+            ++i;
+            continue;
+        }
+
+        size_t length = 0;
+        if (first >= 0xc2 && first <= 0xdf) length = 2;
+        else if (first >= 0xe0 && first <= 0xef) length = 3;
+        else if (first >= 0xf0 && first <= 0xf4) length = 4;
+        else return false;
+        if (i + length > size) return false;
+        for (size_t offset = 1; offset < length; ++offset) {
+            if ((bytes[i + offset] & 0xc0) != 0x80) return false;
+        }
+        if ((first == 0xe0 && bytes[i + 1] < 0xa0) ||
+            (first == 0xed && bytes[i + 1] > 0x9f) ||
+            (first == 0xf0 && bytes[i + 1] < 0x90) ||
+            (first == 0xf4 && bytes[i + 1] > 0x8f)) {
+            return false;
+        }
+        i += length;
+    }
+    return true;
+}
+
 bool isCompleteJpegFile(const QString& path)
 {
     const QFileInfo info(path);
@@ -1124,6 +1156,32 @@ bool promoteOutputTransaction(OutputTransaction& transaction, QStringList& final
         const QFileInfo info(finalDirectory.absoluteFilePath(name));
         if (!validateOutputFile(info, errorMessage)) return false;
         finalPaths.append(info.absoluteFilePath());
+    }
+    return true;
+}
+
+bool completeOutputTransactionWithoutMetadata(OutputTransaction& transaction, QString* errorMessage)
+{
+    if (transaction.stage != OutputTransaction::Stage::FinalPromoted) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot complete output transaction before output promotion.");
+        return false;
+    }
+
+    const OutputTransaction::Stage previousStage = transaction.stage;
+    const QJsonObject previousCommittedJournal = transaction.previousCommittedJournal;
+    transaction.previousCommittedJournal = QJsonObject();
+    if (!setTransactionStage(transaction, OutputTransaction::Stage::Completed, errorMessage)) {
+        transaction.stage = previousStage;
+        transaction.previousCommittedJournal = previousCommittedJournal;
+        return false;
+    }
+
+    QDir root(transaction.projectRoot);
+    if (transaction.hasPreviousFinal && QDir(root.absoluteFilePath(transaction.backupName)).exists() &&
+        !QDir(root.absoluteFilePath(transaction.backupName)).removeRecursively()) {
+        transaction.backupCleanupDeferred = true;
+        InSARLogManager::LogWarning("NodeUtils", QString("Deferred cleanup for output transaction backup: %1")
+            .arg(transaction.backupName));
     }
     return true;
 }
@@ -2253,6 +2311,72 @@ bool readStringFromH5(const QString& filePath,
     if (rc != 0) {
         if (errMsg) *errMsg = QStringLiteral("读取 H5 字符串 %1 失败 (rc=%2)")
                                    .arg(dataset).arg(rc);
+        return false;
+    }
+    return true;
+}
+
+bool copySourcePathMetadata(const QString& inputPath,
+                            const QString& outputPath,
+                            QString* errMsg)
+{
+    std::string source1;
+    std::string source2;
+    if (!readStringFromH5(inputPath, QStringLiteral("source_1"), source1, errMsg) ||
+        !readStringFromH5(inputPath, QStringLiteral("source_2"), source2, errMsg)) {
+        return false;
+    }
+
+    if (!isValidUtf8PathBytes(source1) || !isValidUtf8PathBytes(source2)) {
+        if (errMsg) *errMsg = QStringLiteral("Source paths are not valid UTF-8 in %1.").arg(inputPath);
+        return false;
+    }
+
+    std::string encoding;
+    std::string formatVersion;
+    const bool hasEncoding = readStringFromH5(inputPath, QStringLiteral("source_path_encoding"), encoding);
+    const bool hasFormatVersion = readStringFromH5(inputPath, QStringLiteral("source_path_format_version"), formatVersion);
+    if (hasEncoding != hasFormatVersion) {
+        if (errMsg) *errMsg = QStringLiteral("Source-path metadata is incomplete in %1.").arg(inputPath);
+        return false;
+    }
+    if (hasEncoding && (encoding != "UTF-8" || formatVersion != "2")) {
+        if (errMsg) *errMsg = QStringLiteral("Unsupported source-path metadata in %1.").arg(inputPath);
+        return false;
+    }
+
+    std::string outputSource1;
+    std::string outputSource2;
+    if (!readStringFromH5(outputPath, QStringLiteral("source_1"), outputSource1, errMsg) ||
+        !readStringFromH5(outputPath, QStringLiteral("source_2"), outputSource2, errMsg)) {
+        return false;
+    }
+    if (outputSource1 != source1 || outputSource2 != source2) {
+        if (errMsg) *errMsg = QStringLiteral("Derived H5 source paths differ from %1.").arg(inputPath);
+        return false;
+    }
+    return true;
+}
+
+bool writeSourcePathMetadata(const QString& outputPath,
+                             const std::string& source1,
+                             const std::string& source2,
+                             QString* errMsg)
+{
+    if (!isValidUtf8PathBytes(source1) || !isValidUtf8PathBytes(source2)) {
+        if (errMsg) *errMsg = QStringLiteral("Source paths are not valid UTF-8 for %1.").arg(outputPath);
+        return false;
+    }
+    Hdf5Locker locker(outputPath);
+    if (!locker.isLocked()) {
+        if (errMsg) *errMsg = QStringLiteral("Failed to lock output H5 for source-path metadata: %1").arg(outputPath);
+        return false;
+    }
+    FormatConversion conversion;
+    const std::string outputUtf8 = outputPath.toStdString();
+    if (conversion.write_str_to_h5(outputUtf8.c_str(), "source_1", source1.c_str()) != 0 ||
+        conversion.write_str_to_h5(outputUtf8.c_str(), "source_2", source2.c_str()) != 0) {
+        if (errMsg) *errMsg = QStringLiteral("Failed to write source paths and metadata: %1").arg(outputPath);
         return false;
     }
     return true;

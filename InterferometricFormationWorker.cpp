@@ -379,6 +379,12 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                         !writeArray(h5_path, "phase", phase)) {
                         return;
                     }
+                    QString sourcePathMetadataError;
+                    if (!NodeUtils::writeSourcePathMetadata(h5_path, master_path.toStdString(),
+                                                            slave_path.toStdString(), &sourcePathMetadataError)) {
+                        emit errorProcess(QStringLiteral("写入源路径元数据失败: %1").arg(sourcePathMetadataError));
+                        return;
+                    }
                 }
             }
             if (ret < 0) {

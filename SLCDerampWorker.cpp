@@ -9,8 +9,12 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QThread>
-#include <QElapsedTimer>
 #include <QTemporaryDir>
+#include <array>
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <vector>
 #include <string>
 #include <opencv2/opencv.hpp>
@@ -32,57 +36,166 @@
 using namespace cv;
 using namespace std;
 
-thread_local SLCDerampWorker* t_currentDerampWorker = nullptr;
-thread_local int t_derampLastLoggedProgress = -10;
+namespace {
 
-static bool __stdcall derampProgressCallback(int progress, const char* message)
+constexpr int kDerampProgressSlotCount = 8;
+
+struct DerampProgressContext
 {
-    thread_local QElapsedTimer callbackTimer;
-    thread_local bool timerStarted = false;
-    if (!timerStarted) {
-        callbackTimer.start();
-        timerStarted = true;
+    explicit DerampProgressContext(SLCDerampWorker* sourceWorker)
+        : worker(sourceWorker)
+    {
     }
-    if (progress != 0 && progress != 100 && callbackTimer.elapsed() < 100) {
+
+    bool isCancellationRequested() const
+    {
+        return !worker || worker->thread()->isInterruptionRequested() || worker->isStopRequested();
+    }
+
+    void setStage(int start, int end, const QString& name)
+    {
+        std::lock_guard<std::mutex> guard(progressMutex);
+        stageStart = qBound(0, start, 100);
+        stageEnd = qBound(stageStart, end, 100);
+        stageName = name;
+    }
+
+    bool report(int localProgress, const char* message, bool force = false)
+    {
+        // Cancellation must never be delayed by UI progress throttling.
+        if (isCancellationRequested()) {
+            return false;
+        }
+
+        const qint64 now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        QString status;
+        int mappedProgress = 0;
+        {
+            std::lock_guard<std::mutex> guard(progressMutex);
+            const int clamped = qBound(0, localProgress, 100);
+            mappedProgress = stageStart + (stageEnd - stageStart) * clamped / 100;
+            if (mappedProgress <= lastObservedProgress) {
+                return true;
+            }
+            lastObservedProgress = mappedProgress;
+            if (!force && mappedProgress < stageEnd && now - lastUiUpdateMs < 100) {
+                return true;
+            }
+            lastUiUpdateMs = now;
+            const QString detail = message ? QString::fromLocal8Bit(message) : QString();
+            status = detail.isEmpty() ? stageName : QStringLiteral("%1：%2").arg(stageName, detail);
+        }
+
+        emit worker->updateProcess(mappedProgress, status);
         return true;
     }
-    callbackTimer.restart();
 
-    if (!t_currentDerampWorker) {
-        return true;
-    }
-    if (t_currentDerampWorker->thread()->isInterruptionRequested() ||
-        t_currentDerampWorker->isStopRequested()) {
-        return false;
+    bool completeStage(const QString& completionMessage)
+    {
+        return report(100, completionMessage.toLocal8Bit().constData(), true);
     }
 
-    const int mappedProgress = 10 + progress * 40 / 100;
-    const QString messageText = message ? QString::fromLocal8Bit(message) : QString();
-    emit t_currentDerampWorker->updateProcess(mappedProgress,
-        QStringLiteral("DEM mapping: %1% (%2)").arg(progress).arg(messageText));
+    SLCDerampWorker* worker = nullptr;
+    std::mutex progressMutex;
+    int stageStart = 0;
+    int stageEnd = 0;
+    int lastObservedProgress = 0;
+    qint64 lastUiUpdateMs = 0;
+    QString stageName;
+};
 
-    if (progress == 0 || progress == 100 || progress - t_derampLastLoggedProgress >= 10) {
-        InSARLogManager::LogInfo("SLCDerampWorker",
-            QString("demMapping progress: %1% (total: %2%) - %3")
-                .arg(progress).arg(mappedProgress).arg(messageText));
-        t_derampLastLoggedProgress = progress;
+std::array<std::shared_ptr<DerampProgressContext>, kDerampProgressSlotCount> g_derampProgressSlots;
+std::mutex g_derampProgressSlotsMutex;
+std::condition_variable g_derampProgressSlotAvailable;
+
+static bool dispatchDerampProgress(int slotIndex, int progress, const char* message)
+{
+    std::shared_ptr<DerampProgressContext> context;
+    {
+        std::lock_guard<std::mutex> guard(g_derampProgressSlotsMutex);
+        context = g_derampProgressSlots[slotIndex];
     }
-    return true;
+    return !context || context->report(progress, message);
 }
 
-struct DerampThreadLocalGuard {
-    explicit DerampThreadLocalGuard(SLCDerampWorker* worker)
+template <int SlotIndex>
+static bool __stdcall derampProgressCallbackSlot(int progress, const char* message)
+{
+    return dispatchDerampProgress(SlotIndex, progress, message);
+}
+
+const std::array<DeflatProgressCallback, kDerampProgressSlotCount> g_derampProgressCallbacks = {
+    &derampProgressCallbackSlot<0>, &derampProgressCallbackSlot<1>,
+    &derampProgressCallbackSlot<2>, &derampProgressCallbackSlot<3>,
+    &derampProgressCallbackSlot<4>, &derampProgressCallbackSlot<5>,
+    &derampProgressCallbackSlot<6>, &derampProgressCallbackSlot<7>
+};
+
+class ScopedDerampProgressCallback
+{
+public:
+    explicit ScopedDerampProgressCallback(SLCDerampWorker* worker)
+        : m_context(std::make_shared<DerampProgressContext>(worker))
     {
-        t_currentDerampWorker = worker;
-        t_derampLastLoggedProgress = -10;
     }
 
-    ~DerampThreadLocalGuard()
+    ~ScopedDerampProgressCallback()
     {
-        t_currentDerampWorker = nullptr;
-        t_derampLastLoggedProgress = -10;
+        release();
     }
+
+    bool acquire()
+    {
+        std::unique_lock<std::mutex> lock(g_derampProgressSlotsMutex);
+        while (m_slotIndex < 0) {
+            if (m_context->isCancellationRequested()) {
+                return false;
+            }
+            for (int i = 0; i < kDerampProgressSlotCount; ++i) {
+                if (!g_derampProgressSlots[i]) {
+                    g_derampProgressSlots[i] = m_context;
+                    m_slotIndex = i;
+                    return true;
+                }
+            }
+            g_derampProgressSlotAvailable.wait_for(lock, std::chrono::milliseconds(100));
+        }
+        return true;
+    }
+
+    DeflatProgressCallback callback() const
+    {
+        return m_slotIndex >= 0 ? g_derampProgressCallbacks[m_slotIndex] : nullptr;
+    }
+
+    void setStage(int start, int end, const QString& name)
+    {
+        m_context->setStage(start, end, name);
+    }
+
+    bool completeStage(const QString& completionMessage)
+    {
+        return m_context->completeStage(completionMessage);
+    }
+
+private:
+    void release()
+    {
+        if (m_slotIndex < 0) {
+            return;
+        }
+        std::lock_guard<std::mutex> guard(g_derampProgressSlotsMutex);
+        g_derampProgressSlots[m_slotIndex].reset();
+        m_slotIndex = -1;
+        g_derampProgressSlotAvailable.notify_one();
+    }
+
+    std::shared_ptr<DerampProgressContext> m_context;
+    int m_slotIndex = -1;
 };
+
+} // namespace
 
 SLCDerampWorker::SLCDerampWorker(QObject* parent)
     : BaseWorker(parent)
@@ -113,7 +226,6 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     bool isDeflat,
     bool isTopoRemoval)
 {
-    DerampThreadLocalGuard guard(this);
     InSARLogManager::LogInfo("SLCDerampWorker",
         QString("SLC_deramp task started. Project: %1, destination: %2").arg(projectName).arg(dstNode));
 
@@ -131,6 +243,14 @@ void SLCDerampWorker::SLC_deramp_with_dem(
         emit errorProcess(QStringLiteral("Master image index is out of range."));
         return;
     }
+
+    const auto cancelIfRequested = [this]() {
+        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+            emit cancelled();
+            return true;
+        }
+        return false;
+    };
 
     QDir projectDir(savePath);
     if (!projectDir.exists(dstNode) && !projectDir.mkdir(dstNode)) {
@@ -154,24 +274,34 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     if (!isDeflat) {
         QStringList resultH5Paths;
         for (int i = 0; i < inputPaths.size(); ++i) {
-            if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-                emit cancelled();
+            if (cancelIfRequested()) {
                 return;
             }
+
+            const int copyStart = 10 + 80 * i / inputPaths.size();
+            const int copyEnd = 10 + 80 * (i + 1) / inputPaths.size();
+            emit updateProcess(copyStart,
+                               QStringLiteral("正在复制 SLC：%1/%2").arg(i + 1).arg(inputPaths.size()));
 
             const QString outputPath = QString::fromStdString(derampImages.at(i));
             if (QFile::exists(outputPath) && !QFile::remove(outputPath)) {
                 emit errorProcess(QStringLiteral("Unable to replace SLC output."));
                 return;
             }
+            if (cancelIfRequested()) {
+                return;
+            }
             if (!QFile::copy(inputPaths.at(i), outputPath)) {
                 emit errorProcess(QStringLiteral("Failed to copy input SLC."));
                 return;
             }
+            if (cancelIfRequested()) {
+                return;
+            }
 
             resultH5Paths.append(outputPath);
-            emit updateProcess(10 + 80 * (i + 1) / inputPaths.size(),
-                               QStringLiteral("Copying SLC images..."));
+            emit updateProcess(copyEnd,
+                               QStringLiteral("已复制 SLC：%1/%2").arg(i + 1).arg(inputPaths.size()));
         }
 
         emit sendResults(dstNode, resultH5Paths, originNames, savePath, projectName);
@@ -193,14 +323,21 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     Utils util;
     FormatConversion conversion;
     Deflat flat;
-    {
-        NodeUtils::Hdf5Locker locker;
-        for (const string& outputPath : derampImages) {
+    emit updateProcess(5, QStringLiteral("正在创建 SLC 输出文件..."));
+    for (const string& outputPath : derampImages) {
+        if (cancelIfRequested()) {
+            return;
+        }
+        {
+            NodeUtils::Hdf5Locker locker;
             conversion.creat_new_h5(outputPath.c_str());
+        }
+        if (cancelIfRequested()) {
+            return;
         }
     }
 
-    emit updateProcess(10, QStringLiteral("Preparing phase correction..."));
+    emit updateProcess(10, QStringLiteral("正在读取主影像元数据..."));
     double lonMax = 0.0;
     double lonMin = 0.0;
     double latMax = 0.0;
@@ -230,6 +367,9 @@ void SLCDerampWorker::SLC_deramp_with_dem(
     int ret = 0;
 
     const QString masterH5Path = inputPaths.at(masterIndex - 1);
+    if (cancelIfRequested()) {
+        return;
+    }
     {
         NodeUtils::Hdf5Locker locker;
         if (!NodeUtils::readScalarFromH5(masterH5Path, "range_len", sceneWidth) ||
@@ -249,25 +389,40 @@ void SLCDerampWorker::SLC_deramp_with_dem(
             return;
         }
     }
+    if (cancelIfRequested()) {
+        return;
+    }
 
     wavelength = VEL_C / wavelength;
     nearRangeTime = 2.0 * nearRangeTime / VEL_C;
     conversion.utc2gps(startTime.c_str(), &start);
     conversion.utc2gps(endTime.c_str(), &end);
-    if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-        emit cancelled();
+    if (cancelIfRequested()) {
         return;
     }
 
+    emit updateProcess(10, QStringLiteral("正在加载 DEM..."));
     util.computeImageGeoBoundry(latCoef, lonCoef, sceneHeight, sceneWidth, offsetRow, offsetCol,
         &lonMax, &latMax, &lonMin, &latMin);
     util.getSRTMDEM(demPath.toStdString().c_str(), dem, &lonUpperLeft, &latUpperLeft, lonMin, lonMax, latMin, latMax);
     if (!isTopoRemoval) {
         dem = Mat::zeros(dem.size(), dem.type());
     }
+
+    if (cancelIfRequested()) {
+        return;
+    }
+
+    emit updateProcess(10, QStringLiteral("正在等待 DEM 映射进度槽位..."));
+    ScopedDerampProgressCallback progressCallback(this);
+    if (!progressCallback.acquire()) {
+        emit cancelled();
+        return;
+    }
+    progressCallback.setStage(10, 46, QStringLiteral("正在映射 DEM"));
     ret = flat.demMapping(dem, mappedDem, mappedLat, mappedLon, lonUpperLeft, latUpperLeft, offsetRow, offsetCol,
         sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec,
-        20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, derampProgressCallback);
+        20, 5.0 / 6000.0, 5.0 / 6000.0, 0, 0, progressCallback.callback());
     if (ret < 0 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
         if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
             emit cancelled();
@@ -276,46 +431,132 @@ void SLCDerampWorker::SLC_deramp_with_dem(
         }
         return;
     }
+    if (!progressCallback.completeStage(QStringLiteral("DEM 映射完成"))) {
+        emit cancelled();
+        return;
+    }
 
+    progressCallback.setStage(46, 48, QStringLiteral("正在写入主景纬度坐标"));
+    emit updateProcess(46, QStringLiteral("正在写入主景纬度坐标..."));
+    if (cancelIfRequested()) {
+        return;
+    }
     {
         NodeUtils::Hdf5Locker locker;
         const QString masterOutputPath = QString::fromStdString(derampImages.at(masterIndex - 1));
         NodeUtils::writeMatToH5(masterOutputPath, "mapped_lat", mappedLat);
+    }
+    if (cancelIfRequested()) {
+        return;
+    }
+    if (!progressCallback.completeStage(QStringLiteral("主景纬度坐标已写入"))) {
+        emit cancelled();
+        return;
+    }
+
+    progressCallback.setStage(48, 50, QStringLiteral("正在写入主景经度坐标"));
+    emit updateProcess(48, QStringLiteral("正在写入主景经度坐标..."));
+    if (cancelIfRequested()) {
+        return;
+    }
+    {
+        NodeUtils::Hdf5Locker locker;
+        const QString masterOutputPath = QString::fromStdString(derampImages.at(masterIndex - 1));
         NodeUtils::writeMatToH5(masterOutputPath, "mapped_lon", mappedLon);
+    }
+    if (cancelIfRequested()) {
+        return;
+    }
+    if (!progressCallback.completeStage(QStringLiteral("主景经度坐标已写入"))) {
+        emit cancelled();
+        return;
     }
 
     QStringList resultH5Paths;
     for (int i = 0; i < inputPaths.size(); ++i) {
-        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
-            emit cancelled();
+        if (cancelIfRequested()) {
             return;
         }
 
+        const int imageStart = 50 + 40 * i / inputPaths.size();
+        const int imageEnd = 50 + 40 * (i + 1) / inputPaths.size();
+        const int derampEnd = imageStart + 3 * (imageEnd - imageStart) / 4;
+        progressCallback.setStage(imageStart, derampEnd,
+                                  QStringLiteral("正在去除第 %1/%2 景 SLC 相位")
+                                      .arg(i + 1).arg(inputPaths.size()));
+        emit updateProcess(imageStart,
+                           QStringLiteral("正在读取并去除第 %1/%2 景 SLC 相位...")
+                               .arg(i + 1).arg(inputPaths.size()));
+
         {
             NodeUtils::Hdf5Locker locker;
-            ret = flat.SLC_deramp(slc, mappedDem, mappedLat, mappedLon, sourceImages.at(i).c_str());
+            ret = flat.SLC_deramp(slc, mappedDem, mappedLat, mappedLon, sourceImages.at(i).c_str(),
+                                  TR_MODE_SINGLE_TX_SINGLE_RX, progressCallback.callback());
+            if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                emit cancelled();
+                return;
+            }
             if (ret < 0) {
                 emit errorProcess(QStringLiteral("SLC deramp failed."));
+                return;
+            }
+            if (!progressCallback.completeStage(QStringLiteral("正在写入第 %1/%2 景 SLC...")
+                                                .arg(i + 1).arg(inputPaths.size()))) {
+                emit cancelled();
+                return;
+            }
+            progressCallback.setStage(derampEnd, imageEnd,
+                                      QStringLiteral("正在写入第 %1/%2 景 SLC")
+                                          .arg(i + 1).arg(inputPaths.size()));
+            if (cancelIfRequested()) {
                 return;
             }
             if (conversion.write_slc_to_h5(derampImages.at(i).c_str(), slc) < 0) {
                 emit errorProcess(QStringLiteral("Failed to write deramped SLC output."));
                 return;
             }
+            if (cancelIfRequested()) {
+                return;
+            }
             conversion.Copy_para_from_h5_2_h5(sourceImages.at(i).c_str(), derampImages.at(i).c_str());
+            if (cancelIfRequested()) {
+                return;
+            }
 
             const QString sourcePath = inputPaths.at(i);
             const QString outputPath = QString::fromStdString(derampImages.at(i));
             NodeUtils::readScalarFromH5(sourcePath, "offset_row", offsetRow);
+            if (cancelIfRequested()) {
+                return;
+            }
             NodeUtils::writeScalarToH5(outputPath, "offset_row", offsetRow);
+            if (cancelIfRequested()) {
+                return;
+            }
             NodeUtils::readScalarFromH5(sourcePath, "offset_col", offsetCol);
+            if (cancelIfRequested()) {
+                return;
+            }
             NodeUtils::writeScalarToH5(outputPath, "offset_col", offsetCol);
+            if (cancelIfRequested()) {
+                return;
+            }
             NodeUtils::writeScalarToH5(outputPath, "range_len", sceneWidth);
+            if (cancelIfRequested()) {
+                return;
+            }
             NodeUtils::writeScalarToH5(outputPath, "azimuth_len", sceneHeight);
+        }
+        if (cancelIfRequested()) {
+            return;
         }
 
         resultH5Paths.append(QString::fromStdString(derampImages.at(i)));
-        emit updateProcess(50 + 40 * (i + 1) / inputPaths.size(), QStringLiteral("Processing SLC images..."));
+        if (!progressCallback.completeStage(QStringLiteral("第 %1/%2 景 SLC 已完成")
+                                            .arg(i + 1).arg(inputPaths.size()))) {
+            emit cancelled();
+            return;
+        }
     }
 
     emit sendResults(dstNode, resultH5Paths, originNames, savePath, projectName);

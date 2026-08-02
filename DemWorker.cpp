@@ -305,6 +305,11 @@ void DemWorker::Dem(int method,
             const QString masterPath = QDir::toNativeSeparators(savePath) + QString::fromStdString(sourcePath);
             NodeUtils::readStringFromH5(inputH5, "source_2", sourcePath);
             conversion.write_str_to_h5(outputH5.toStdString().c_str(), "source_2", sourcePath.c_str());
+            QString sourcePathMetadataError;
+            if (!NodeUtils::copySourcePathMetadata(inputH5, outputH5, &sourcePathMetadataError)) {
+                emit errorProcess(QStringLiteral("Failed to preserve source-path metadata: %1").arg(sourcePathMetadataError));
+                return;
+            }
             NodeUtils::writeScalarToH5(outputH5, "dem_generation_method", method);
             NodeUtils::writeScalarToH5(outputH5, "dem_generation_iterations", times);
 
