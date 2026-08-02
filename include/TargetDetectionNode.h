@@ -97,6 +97,7 @@ private:
 
     // Threading
     TargetDetectionTask* m_task = nullptr;
+    quint64 m_executionGeneration = 0;
 };
 
 } // namespace QtNodes

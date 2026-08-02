@@ -365,7 +365,21 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     ui->progressBar->setValue(0);
     ui->progressBar->show();
     
-    connect(this, &SBAS_time_series_analysis::operate, SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::SBAS_time_series, Qt::QueuedConnection);
+    SBASTimeSeriesWorker* const worker = SBAS_time_series_analysis_thread.data();
+    connect(this, &SBAS_time_series_analysis::operate, worker,
+            [worker](double temporalThreshLow, double temporalThresh, double spatialThresh,
+                     int multilookRg, int multilookAz, int unwrapMethod, double alpha,
+                     double coherenceThresh, double temporalCoherenceThresh,
+                     double refinementCohThresh, double refinementDefThresh,
+                     QString projectPath, QString projectName, QString dstNode, QString csvPath,
+                     QStringList filePaths, bool outputDirectoryIsStaging) {
+        worker->SBAS_time_series(temporalThreshLow, temporalThresh, spatialThresh,
+                                 multilookRg, multilookAz, unwrapMethod, alpha,
+                                 coherenceThresh, temporalCoherenceThresh,
+                                 refinementCohThresh, refinementDefThresh,
+                                 projectPath, projectName, dstNode, csvPath, filePaths,
+                                 outputDirectoryIsStaging, QString(), nullptr);
+    }, Qt::QueuedConnection);
     connect(SBAS_time_series_analysis_thread, &SBASTimeSeriesWorker::sbasGenerated, this, [this](const SBASTimeSeriesResult& res) {
         m_pendingResult = res;
     });

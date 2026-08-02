@@ -18,6 +18,7 @@
 #include <QJsonArray>
 #include <QPoint>
 #include <QList>
+#include <QStringList>
 #include <memory>
 
 namespace QtNodes {
@@ -79,6 +80,7 @@ private:
     // Worker thread
     SBASReferenceReselectionWorker* m_worker;
     QThread* m_thread;
+    quint64 m_executionGeneration = 0;
 
     // Helper methods
     void createWidget();
@@ -101,6 +103,18 @@ private:
 
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    QString m_preparedProjectRoot;
+    QString m_preparedProjectName;
+    QString m_preparedInputH5;
+    QStringList m_preparedOutputPaths;
+    QStringList m_preparedSourceInputs;
+    SBASRebuildParameters m_preparedParameters;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    SBASReferenceReselectionResult m_pendingResult;
+    bool m_hasPreparedProvenance = false;
+
+    bool commitOutputTransaction(QString* errorMessage);
+    void rollbackOutputTransaction(const QString& reason);
 
 private slots:
     void onSelectClicked();

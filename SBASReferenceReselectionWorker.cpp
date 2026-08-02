@@ -1,4 +1,5 @@
 #include "SBASReferenceReselectionWorker.h"
+#include "SBASTimeSeriesWorker.h"
 #include "NodeUtils.h"
 #include <Unwrap.h>
 #include "SBAS.h"
@@ -10,6 +11,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QTemporaryDir>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -28,6 +30,7 @@ bool __stdcall isCancellationRequested(void* context)
 SBASReferenceReselectionWorker::SBASReferenceReselectionWorker(QObject* parent)
     : BaseWorker(parent)
 {
+    qRegisterMetaType<SBASReferenceReselectionResult>("SBASReferenceReselectionResult");
 }
 
 SBASReferenceReselectionWorker::~SBASReferenceReselectionWorker()
@@ -45,13 +48,12 @@ bool SBASReferenceReselectionWorker::cancellationRequested() const noexcept
     return m_cancelRequested.load(std::memory_order_relaxed);
 }
 
-void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_path, QString srcNode, QString times_series_h5,
+void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString projectRoot, QString stagingNode,
+                                                                QStringList sourceInputs, SBASRebuildParameters parameters,
                                                                 int ref_row, int ref_col, QList<QPoint> GCPs)
 {
-    NodeUtils::Hdf5Locker locker;
     Utils util; SBAS sbas; FormatConversion conversion;
     int ret;
-    string times_series_h5_std = times_series_h5.toStdString();
     const auto finishCancelled = [this]() { emit cancelled(); };
 
     if (cancellationRequested()) {
@@ -59,6 +61,40 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
         return;
     }
     
+    QTemporaryDir reconstructedInterferograms;
+    if (!reconstructedInterferograms.isValid()) {
+        emit errorProcess(QStringLiteral("Unable to create temporary SBAS reconstruction directory."));
+        return;
+    }
+
+    bool reconstructionCancelled = false;
+    QString reconstructionError;
+    SBASTimeSeriesWorker reconstructor;
+    QObject::connect(&reconstructor, &SBASTimeSeriesWorker::cancelled, [&reconstructionCancelled]() {
+        reconstructionCancelled = true;
+    });
+    QObject::connect(&reconstructor, &SBASTimeSeriesWorker::errorProcess, [&reconstructionError](const QString& error) {
+        reconstructionError = error;
+    });
+    emit updateProcess(2, QStringLiteral("正在根据 SBAS provenance 重建干涉图..."));
+    reconstructor.SBAS_time_series(parameters.temporalThreshLow, parameters.temporalThresh,
+                                   parameters.spatialThresh, parameters.multilookRg, parameters.multilookAz,
+                                   parameters.unwrapMethod, parameters.alpha, parameters.coherenceThresh,
+                                   parameters.temporalCoherenceThresh, parameters.refinementCohThresh,
+                                   parameters.refinementDefThresh, projectRoot, QString(), stagingNode, QString(),
+                                   sourceInputs, true, reconstructedInterferograms.path(), &m_cancelRequested);
+    if (reconstructionCancelled || cancellationRequested()) {
+        finishCancelled();
+        return;
+    }
+    if (!reconstructionError.isEmpty()) {
+        emit errorProcess(QStringLiteral("Unable to rebuild SBAS interferograms: %1").arg(reconstructionError));
+        return;
+    }
+
+    const QString times_series_h5 = QDir(projectRoot).absoluteFilePath(
+        stagingNode + QStringLiteral("/SBAS_time_series.h5"));
+    const string times_series_h5_std = QDir::toNativeSeparators(times_series_h5).toStdString();
     Mat formation_matrix, mask, temporal_baseline, reflattening_mask;
     ret = NodeUtils::readMatFromH5(times_series_h5, "formation_matrix", formation_matrix) ? 0 : -1;
     if (ret == 0) {
@@ -76,12 +112,7 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
         return;
     }
     
-    //确定应用程序路径
-    string appPath = QCoreApplication::applicationDirPath().toStdString();
-    std::replace(appPath.begin(), appPath.end(), '/', '\\');
-    QString ifgSavePath = save_path + "/" + srcNode;
-    string path1 = ifgSavePath.toStdString();
-    std::replace(path1.begin(), path1.end(), '/', '\\');
+    const QString ifgSavePath = reconstructedInterferograms.path();
 
     int num_GCPs = GCPs.size();
     mask.copyTo(reflattening_mask); reflattening_mask = 0;
@@ -92,17 +123,14 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
 
     vector<string> phaseFiles;
     int n_images = formation_matrix.rows;
-    char str[256];
     for (int i = 0; i < n_images; i++)
     {
         for (int j = 0; j < i; j++)
         {
             if (formation_matrix.at<int>(i, j) == 1)
             {
-                memset(str, 0, 256);
-                sprintf(str, "\\%d_%d.h5", i + 1, j + 1);
-                string str2 = path1 + str;
-                phaseFiles.push_back(str2);
+                phaseFiles.push_back(QDir::toNativeSeparators(
+                    QDir(ifgSavePath).absoluteFilePath(QStringLiteral("%1_%2.h5").arg(i + 1).arg(j + 1))).toStdString());
             }
         }
     }
@@ -137,7 +165,13 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
             finishCancelled();
             return;
         }
-        conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0, phase.rows, phase.cols);
+        NodeUtils::Hdf5Locker writeLock(pFile);
+        if (!writeLock.isLocked() ||
+            conversion.write_subarray_to_h5(phaseFiles[i].c_str(), "unwrapped_phase_2", phase, 0, 0,
+                                             phase.rows, phase.cols) != 0) {
+            emit errorProcess(QStringLiteral("Failed to write reflattened interferogram phase."));
+            return;
+        }
         if (cancellationRequested()) {
             finishCancelled();
             return;
@@ -327,26 +361,42 @@ void SBASReferenceReselectionWorker::SBAS_reference_reselection(QString save_pat
         finishCancelled();
         return;
     }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "max_deformation", Max, 0, 0, 1, 1);
+    NodeUtils::Hdf5Locker outputWriteLock(times_series_h5);
+    if (!outputWriteLock.isLocked()) {
+        emit errorProcess(QStringLiteral("Failed to lock staged SBAS output for reference reselection."));
+        return;
+    }
+    const auto writeOrFail = [this, &conversion, &times_series_h5_std](const char* dataset, Mat& value,
+                                                                         int rows, int cols) {
+        if (conversion.write_subarray_to_h5(times_series_h5_std.c_str(), dataset, value, 0, 0, rows, cols) == 0) {
+            return true;
+        }
+        emit errorProcess(QStringLiteral("Failed to write SBAS reselection output dataset: %1").arg(QString::fromLatin1(dataset)));
+        return false;
+    };
+    if (!writeOrFail("max_deformation", Max, 1, 1)) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "min_deformation", Min, 0, 0, 1, 1);
+    if (!writeOrFail("min_deformation", Min, 1, 1)) return;
     Mat ref_i(1, 1, CV_32S), ref_j(1, 1, CV_32S);
     ref_i.at<int>(0, 0) = ref_row;
     ref_j.at<int>(0, 0) = ref_col;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "ref_row", ref_i, 0, 0, 1, 1);
+    if (!writeOrFail("ref_row", ref_i, 1, 1)) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "ref_col", ref_j, 0, 0, 1, 1);
+    if (!writeOrFail("ref_col", ref_j, 1, 1)) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "deformation_time_series", time_series, 0, 0, time_series.rows, time_series.cols);
+    if (!writeOrFail("deformation_time_series", time_series, time_series.rows, time_series.cols)) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "temporal_coherence", temporal_coh, 0, 0, temporal_coh.rows, temporal_coh.cols);
+    if (!writeOrFail("temporal_coherence", temporal_coh, temporal_coh.rows, temporal_coh.cols)) return;
     v = v / 4 / PI * wavelength;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "defomation_velocity", v, 0, 0, v.rows, v.cols);
+    if (!writeOrFail("defomation_velocity", v, v.rows, v.cols)) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    conversion.write_subarray_to_h5(times_series_h5_std.c_str(), "residue_topography", z, 0, 0, v.rows, v.cols);
+    if (!writeOrFail("residue_topography", z, v.rows, v.cols)) return;
 
+    SBASReferenceReselectionResult result;
+    result.outputH5Path = times_series_h5;
+    emit reselectionGenerated(result);
     InSARLogManager::LogInfo("SBASReferenceReselectionWorker", "SBAS Reference Reselection completed successfully.");
     emit endProcess();
 }

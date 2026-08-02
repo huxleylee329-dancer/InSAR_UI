@@ -397,23 +397,41 @@ void TargetDetectionNode::executeProcessing()
     QStringList inputPaths = m_inputData->filePaths();
     QString modelPath = m_selectedModelPath;
     float thresholdValue = m_thresholdValue;
+    const quint64 executionGeneration = ++m_executionGeneration;
 
     m_task = new TargetDetectionTask(inputPaths, modelPath, thresholdValue);
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
 
-    connect(m_task, &TargetDetectionTask::updateProcess, this, &TargetDetectionNode::onProgressUpdate, Qt::QueuedConnection);
-    connect(m_task, &TargetDetectionTask::sendTargetDetectionResult, this, &TargetDetectionNode::onDetectionFinished, Qt::QueuedConnection);
-    connect(m_task, &TargetDetectionTask::endProcess, this, [this]() {
-        if (isAutomaticExecutionObsolete()) {
+    connect(m_task, &TargetDetectionTask::updateProcess, this,
+            [this, executionGeneration](int progress, const QString& message) {
+        if (executionGeneration == m_executionGeneration) onProgressUpdate(progress, message);
+    }, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::sendTargetDetectionResult, this,
+            [this, executionGeneration](int imageIndex, bool success, float shipProb,
+                                        const QString& resultText, const QString& errorMsg) {
+        if (executionGeneration == m_executionGeneration) {
+            onDetectionFinished(imageIndex, success, shipProb, resultText, errorMsg);
+        }
+    }, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::endProcess, this, [this, executionGeneration]() {
+        if (executionGeneration == m_executionGeneration && isAutomaticExecutionObsolete()) {
             m_task = nullptr;
             discardObsoleteAutomaticExecution();
         }
     }, Qt::QueuedConnection);
-    connect(m_task, &TargetDetectionTask::errorProcess, this, &TargetDetectionNode::onError, Qt::QueuedConnection);
-    connect(m_task, &TargetDetectionTask::cancelled, this, &TargetDetectionNode::onCancelled, Qt::QueuedConnection);
-    connect(m_task, &TargetDetectionTask::askUserError, this, &TargetDetectionNode::onAskUserError, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::errorProcess, this,
+            [this, executionGeneration](const QString& error) {
+        if (executionGeneration == m_executionGeneration) onError(error);
+    }, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::cancelled, this, [this, executionGeneration]() {
+        if (executionGeneration == m_executionGeneration) onCancelled();
+    }, Qt::QueuedConnection);
+    connect(m_task, &TargetDetectionTask::askUserError, this,
+            [this, executionGeneration](quint64 requestId, const QString& message) {
+        if (executionGeneration == m_executionGeneration) onAskUserError(requestId, message);
+    }, Qt::QueuedConnection);
 
     QThreadPool::globalInstance()->start(m_task);
     
@@ -512,6 +530,7 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
 
 void TargetDetectionNode::onError(const QString& error)
 {
+    ++m_executionGeneration;
     m_task = nullptr;
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -528,6 +547,7 @@ void TargetDetectionNode::onError(const QString& error)
 
 void TargetDetectionNode::onCancelled()
 {
+    ++m_executionGeneration;
     m_task = nullptr;
     if (discardObsoleteAutomaticExecution()) {
         return;

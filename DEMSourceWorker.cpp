@@ -225,16 +225,18 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
 void DEMSourceWorker::fetch_dem(
     QString projectPath,
     QString projectName,
-    QString dstNode,
+    QString stagingNode,
+    QString outputNodeName,
     QStringList filePaths,
     int demSource,
     double targetResolution,
     QString cacheDir
 )
 {
-    InSARLogManager::LogInfo("DEMSourceWorker", QString("External DEM fetch started. Target node: %1, Source Type: %2").arg(dstNode).arg(demSource));
+    InSARLogManager::LogInfo("DEMSourceWorker", QString("External DEM fetch started. Target node: %1, Source Type: %2").arg(outputNodeName).arg(demSource));
 
-    if (projectPath.isEmpty() || projectName.isEmpty() || dstNode.isEmpty() || filePaths.isEmpty())
+    if (projectPath.isEmpty() || projectName.isEmpty() || stagingNode.isEmpty() ||
+        outputNodeName.isEmpty() || filePaths.isEmpty())
     {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
@@ -763,8 +765,8 @@ void DEMSourceWorker::fetch_dem(
 
     // 5. 多瓦片拼接机制 (VRT)
     QString finalInputFile;
-    QString vrtPath = save_path + "/" + dstNode + "/mosaic.vrt";
-    QDir().mkpath(save_path + "/" + dstNode);
+    QString vrtPath = save_path + "/" + stagingNode + "/mosaic.vrt";
+    QDir().mkpath(save_path + "/" + stagingNode);
 
     if (cachedFiles.size() == 1)
     {
@@ -914,12 +916,12 @@ void DEMSourceWorker::fetch_dem(
     emit updateProcess(90, QStringLiteral("写入 H5 数据文件……"));
 
     // 7. 写入 H5 文件
-    QString outputH5Name = dstNode + "_dem.h5";
-    QString outputH5Path = save_path + "/" + dstNode + "/" + outputH5Name;
+    QString outputH5Name = outputNodeName + "_dem.h5";
+    QString outputH5Path = save_path + "/" + stagingNode + "/" + outputH5Name;
 
     // 7.5 写入 TIF 成果文件（供下游工作流节点使用）
-    QString outputTifName = dstNode + "_dem.tif";
-    QString outputTifPath = save_path + "/" + dstNode + "/" + outputTifName;
+    QString outputTifName = outputNodeName + "_dem.tif";
+    QString outputTifPath = save_path + "/" + stagingNode + "/" + outputTifName;
     if (!NodeUtils::writeDemToTif(outputTifPath, cropped_dem, new_gt, wkt_projection))
     {
         if (!vrtPath.isEmpty() && QFile::exists(vrtPath))
@@ -957,7 +959,7 @@ void DEMSourceWorker::fetch_dem(
 
     {
         NodeUtils::Hdf5Locker locker;
-        if (FC.creat_new_h5(outputH5Path.toStdString().c_str()) == 0)
+        if (locker.isLocked() && FC.creat_new_h5(outputH5Path.toStdString().c_str()) == 0)
         {
             // 确保高程和三维坐标使用双精度(CV_64F)写入，防止 precompiled DLL 读取时发生类型 Mismatch
             if (cropped_dem.type() != CV_64F) cropped_dem.convertTo(cropped_dem, CV_64F);
@@ -965,22 +967,22 @@ void DEMSourceWorker::fetch_dem(
             if (dem_y.type() != CV_64F) dem_y.convertTo(dem_y, CV_64F);
             if (dem_z.type() != CV_64F) dem_z.convertTo(dem_z, CV_64F);
 
-            // 写入数据集
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem", cropped_dem);
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_x", dem_x);
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_y", dem_y);
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_z", dem_z);
+            const bool datasetsWritten =
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem", cropped_dem) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_x", dem_x) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_y", dem_y) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_z", dem_z) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lon", out_lon) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lat", out_lat) == 0;
 
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lon", out_lon);
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "lat", out_lat);
-
-            // 写入元数据属性
-            FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_source", srcName.c_str());
-            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lon", min_lon);
-            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lon", max_lon);
-            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lat", min_lat);
-            FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lat", max_lat);
-            FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_cache_path", QDir::toNativeSeparators(cacheDir).toStdString().c_str());
+            const bool metadataWritten =
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_source", srcName.c_str()) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lon", min_lon) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lon", max_lon) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lat", min_lat) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lat", max_lat) == 0 &&
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_cache_path",
+                                   QDir::toNativeSeparators(cacheDir).toStdString().c_str()) == 0;
             const QString serverNotFoundTileText = serverNotFoundTiles.isEmpty()
                 ? QStringLiteral("none") : serverNotFoundTiles.join(",");
             const QString intersectingServerNotFoundTileText = serverNotFoundTilesIntersectingOutput.isEmpty()
@@ -1001,9 +1003,10 @@ void DEMSourceWorker::fetch_dem(
             // 写入行列偏移量以向下兼容
             Mat tmp_int = Mat::zeros(1, 1, CV_32SC1);
             tmp_int.at<int>(0, 0) = 0;
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_row", tmp_int);
-            FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_col", tmp_int);
-            write_success = serverNotFoundMetadataWritten;
+            const bool offsetsWritten =
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_row", tmp_int) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "offset_col", tmp_int) == 0;
+            write_success = datasetsWritten && metadataWritten && serverNotFoundMetadataWritten && offsetsWritten;
         }
     }
 
@@ -1038,8 +1041,9 @@ void DEMSourceWorker::fetch_dem(
 
     emit updateProcess(100, QStringLiteral("外部 DEM 获取完成。"));
     // 清理完成后再通知主线程挂载输出，取消时不会提前暴露部分结果。
-    const bool outputValidated = QFileInfo(outputH5Path).exists() && QFileInfo(outputH5Path).size() > 0;
-    emit demFetchFinished(outputH5Path, dstNode, projectName, demSource, targetResolution,
+    const bool outputValidated = QFileInfo(outputH5Path).isFile() && QFileInfo(outputH5Path).size() > 0 &&
+        QFileInfo(outputTifPath).isFile() && QFileInfo(outputTifPath).size() > 0;
+    emit demFetchFinished(outputH5Path, stagingNode, projectName, demSource, targetResolution,
                           cachedFiles, serverNotFoundTiles, requestedTileCount, outputValidated);
     emit endProcess();
 }

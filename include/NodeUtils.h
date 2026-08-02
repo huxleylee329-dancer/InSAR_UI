@@ -7,6 +7,7 @@
 #include <QJsonArray>
 
 #include <functional>
+#include <string>
 
 #include <opencv2/core.hpp>
 
@@ -119,6 +120,10 @@ struct OutputTransaction {
     Stage stage = Stage::Inactive;
 };
 
+// Captures ordered, content-addressed input snapshots. Each entry contains the
+// normalized path, size, modification time, and SHA-256 digest.
+QJsonArray fingerprintInputPaths(const QStringList& paths);
+
 bool beginOutputTransaction(const QString& projectRoot,
                             const QString& nodeName,
                             const QStringList& expectedFinalPaths,
@@ -132,9 +137,9 @@ bool recoverOutputTransaction(const QString& projectRoot,
                               QString* errorMessage = nullptr);
 bool validateStagedOutputTransaction(OutputTransaction& transaction,
                                      QString* errorMessage = nullptr);
-// Verifies that every staged H5 output contains each required non-empty
-// dataset. This is intentionally separate from the generic transaction
-// validation because dataset contracts are node-specific.
+// Verifies that every staged .h5 output contains each required non-empty
+// dataset. Non-H5 artifacts in a transaction are validated by the generic
+// transaction contract but are not opened as H5 files here.
 bool validateStagedH5Datasets(const OutputTransaction& transaction,
                               const QStringList& requiredDatasets,
                               QString* errorMessage = nullptr);
@@ -160,6 +165,12 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
                                  const QString& nodeName,
                                  QStringList& outputPaths,
                                  QString* errorMessage = nullptr);
+// Returns the run identifier bound to a committed output manifest. Callers
+// should still use loadCommittedOutputManifest to obtain validated paths.
+bool loadCommittedOutputManifestRunId(const QString& projectRoot,
+                                      const QString& nodeName,
+                                      QString& runId,
+                                      QString* errorMessage = nullptr);
 // Verifies that worker-reported files form a one-to-one filename mapping to a
 // transaction-validated manifest. Worker paths may point at staging while the
 // manifest paths point at final, so directory components are intentionally ignored.
@@ -281,14 +292,18 @@ bool readStringFromH5(const QString& filePath,
                       std::string& out,
                       QString* errMsg = nullptr);
 
+bool writeStringToH5(const QString& filePath,
+                     const QString& dataset,
+                     const std::string& value,
+                     QString* errMsg = nullptr);
+
 // Validates the source-path contract on an input H5 and verifies that the
 // derived H5 already contains the same source paths. Legacy inputs are
 // accepted only when both source paths are valid UTF-8.
 bool copySourcePathMetadata(const QString& inputPath,
                             const QString& outputPath,
                             QString* errMsg = nullptr);
-// Creates source_1/source_2 on a fresh derived H5. FormatConversion owns the
-// corresponding UTF-8/v2 metadata write.
+// Creates UTF-8/v2 source-path metadata on a fresh derived H5.
 bool writeSourcePathMetadata(const QString& outputPath,
                              const std::string& source1,
                              const std::string& source2,

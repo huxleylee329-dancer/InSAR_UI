@@ -279,22 +279,9 @@ void SBAS_reference_reselection::on_buttonBox_accepted()
         }
     }
     if (!image) return;
-    QString times_series_h5 = image->child(0, 1)->text();
-
-    SBAS_reference_reselection_thread = new SBASReferenceReselectionWorker;
-    SBAS_reference_reselection_thread->moveToThread(new QThread(this));
-    ui->progressBar->setValue(0);
-    ui->progressBar->show();
-
-    connect(this, &SBAS_reference_reselection::operate, SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::SBAS_reference_reselection, Qt::QueuedConnection);
-    connect(SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::updateProcess, this, &SBAS_reference_reselection::updateProcess);
-    connect(SBAS_reference_reselection_thread->thread(), &QThread::finished, SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::deleteLater);
-    connect(SBAS_reference_reselection_thread, &SBASReferenceReselectionWorker::endProcess, this, &SBAS_reference_reselection::endProcess);
-    connect(this, &QWidget::destroyed, this, &SBAS_reference_reselection::StopThread);
-    connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &SBAS_reference_reselection::StopThread);
-    SBAS_reference_reselection_thread->thread()->start();
-    ChangeVision(false);
-    emit operate(this->save_path, ui->comboBox_srcNode->currentText(), times_series_h5, ref_row, ref_col, plist);
+    Q_UNUSED(image);
+    QMessageBox::warning(this, QStringLiteral("不兼容的旧入口"),
+                         QStringLiteral("旧版 SBAS 参考点重选不具备 provenance 重建契约。请使用 SBAS Reference Reselection 节点，并先重新运行 SBAS Time Series。"));
 }
 
 void SBAS_reference_reselection::on_buttonBox_rejected()

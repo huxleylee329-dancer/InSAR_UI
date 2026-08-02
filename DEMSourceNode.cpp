@@ -62,6 +62,7 @@ DEMSourceNode::DEMSourceNode()
 
 DEMSourceNode::~DEMSourceNode()
 {
+    ++m_executionGeneration;
     if (m_workerThread) {
         m_workerThread->StopProcess();
     }
@@ -70,6 +71,7 @@ DEMSourceNode::~DEMSourceNode()
         m_thread->quit();
         m_thread->wait();
     }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("node destroyed"), projectXml());
 }
 
 unsigned int DEMSourceNode::nPorts(PortType portType) const
@@ -500,6 +502,7 @@ bool DEMSourceNode::prepareToStart()
     m_preparedDstNode = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName.trimmed();
     m_preparedSource = m_demSourceCombo ? m_demSourceCombo->currentData().toInt() : m_demSource;
     m_preparedCacheDir = m_cacheDirEdit ? m_cacheDirEdit->text().trimmed() : m_cacheDir;
+    m_preparedInputPaths = m_inputData->filePaths();
 
     // 检查 NASA Earthdata 登录状态（如果选择的源非 Copernicus 且未登录）
     if (m_preparedSource != 2)
@@ -533,29 +536,17 @@ bool DEMSourceNode::prepareToStart()
     else if (resIdx == 2) m_preparedResolution = 90.0;
     else m_preparedResolution = m_customResEdit ? m_customResEdit->text().toDouble() : m_customResolution;
 
-    // Overwrite check
-    QString targetH5Dir = m_preparedSavePath + "/" + m_preparedDstNode;
-    QString targetH5 = targetH5Dir + "/" + m_preparedDstNode + "_dem.h5";
-    
-    m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
-    if (QFile::exists(targetH5))
-    {
-        if (_isAutoTriggered)
-        {
-            m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
-        }
-        else
-        {
-            auto iface = NodeUtils::getProjectContext(_widget);
-            m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(iface, m_preparedDstNode, QStringList() << targetH5, nullptr);
-            if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel)
-            {
-                return false;
-            }
-        }
+    const QDir outputDirectory(m_preparedSavePath + "/" + m_preparedDstNode);
+    m_preparedOutputPaths = QStringList()
+        << outputDirectory.absoluteFilePath(m_preparedDstNode + "_dem.h5")
+        << outputDirectory.absoluteFilePath(m_preparedDstNode + "_dem.tif");
+    if (_isAutoTriggered) {
+        m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
+    } else {
+        m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
+            NodeUtils::getProjectContext(_widget), m_preparedDstNode, m_preparedOutputPaths, nullptr);
     }
-    
-    return true;
+    return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
 }
 
 void DEMSourceNode::execute()
@@ -596,17 +587,13 @@ void DEMSourceNode::executeProcessing()
         return;
     }
 
-    QString savePath = m_preparedSavePath;
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        QDir oldDir(savePath + "/" + m_preparedDstNode);
-        if (oldDir.exists()) {
-            oldDir.removeRecursively();
-        }
-        QDir().mkpath(savePath + "/" + m_preparedDstNode);
-        auto iface = NodeUtils::getProjectContext(_widget);
-        if (iface) {
-            NodeUtils::removeDataNodeFromProject(iface, m_preparedDstNode);
-        }
+    const quint64 executionGeneration = ++m_executionGeneration;
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
+                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
     }
 
     m_workerThread = new DEMSourceWorker();
@@ -616,33 +603,56 @@ void DEMSourceNode::executeProcessing()
     connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QObject::deleteLater);
 
-    connect(m_workerThread, &DEMSourceWorker::updateProcess, this, &DEMSourceNode::onProgressUpdate);
-    connect(m_workerThread, &DEMSourceWorker::errorProcess, this, &DEMSourceNode::onError);
+    connect(m_workerThread, &DEMSourceWorker::updateProcess, this,
+            [this, executionGeneration](int progress, const QString& message) {
+        if (executionGeneration == m_executionGeneration) onProgressUpdate(progress, message);
+    });
+    connect(m_workerThread, &DEMSourceWorker::errorProcess, this,
+            [this, executionGeneration](const QString& error) {
+        if (executionGeneration == m_executionGeneration) onError(error);
+    });
     connect(m_workerThread, &DEMSourceWorker::errorProcess, m_thread, &QThread::quit);
-    connect(m_workerThread, &DEMSourceWorker::cancelled, this, &DEMSourceNode::onCancelled);
+    connect(m_workerThread, &DEMSourceWorker::cancelled, this,
+            [this, executionGeneration]() {
+        if (executionGeneration == m_executionGeneration) onCancelled();
+    });
     connect(m_workerThread, &DEMSourceWorker::cancelled, m_thread, &QThread::quit);
-    connect(m_workerThread, &DEMSourceWorker::demFetchFinished, this, &DEMSourceNode::onProcessingFinished);
+    connect(m_workerThread, &DEMSourceWorker::demFetchFinished, this,
+            [this, executionGeneration](const QString& outputH5Path, const QString& stagingNode,
+                                        const QString& projectName, int demSource, double targetResolution,
+                                        const QStringList& availableTiles, const QStringList& serverNotFoundTiles,
+                                        int requestedTileCount, bool outputValidated) {
+        if (executionGeneration == m_executionGeneration) {
+            onProcessingFinished(outputH5Path, stagingNode, projectName, demSource, targetResolution,
+                                 availableTiles, serverNotFoundTiles, requestedTileCount, outputValidated);
+        }
+    });
     connect(m_workerThread, &DEMSourceWorker::demFetchFinished, m_thread, &QThread::quit);
-    connect(this, &DEMSourceNode::startDemFetch, m_workerThread, &DEMSourceWorker::fetch_dem);
 
+    DEMSourceWorker* const worker = m_workerThread;
+    const QString projectRoot = m_preparedSavePath;
+    const QString projectName = m_preparedProjectName;
+    const QString stagingNode = m_outputTransaction.stagingName;
+    const QString outputNodeName = m_preparedDstNode;
+    const QStringList inputPaths = m_preparedInputPaths;
+    const int source = m_preparedSource;
+    const double resolution = m_preparedResolution;
+    const QString cacheDirectory = m_preparedCacheDir;
+    connect(m_thread, &QThread::started, m_workerThread,
+            [worker, projectRoot, projectName, stagingNode, outputNodeName, inputPaths,
+             source, resolution, cacheDirectory]() {
+        worker->fetch_dem(projectRoot, projectName, stagingNode, outputNodeName, inputPaths,
+                          source, resolution, cacheDirectory);
+    });
     m_thread->start();
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
-
-    emit startDemFetch(
-        m_preparedSavePath,
-        m_preparedProjectName,
-        m_preparedDstNode,
-        m_inputData->filePaths(),
-        m_preparedSource,
-        m_preparedResolution,
-        m_preparedCacheDir
-    );
 }
 
 void DEMSourceNode::onProgressUpdate(int progress, const QString& message)
 {
     Q_UNUSED(message);
+    if (isAutomaticExecutionObsolete()) return;
     setProgress(progress);
 }
 
@@ -650,6 +660,8 @@ void DEMSourceNode::onError(const QString& error)
 {
     m_workerThread = nullptr;
     m_thread = nullptr;
+
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
 
     if (discardObsoleteAutomaticExecution()) {
         return;
@@ -663,7 +675,7 @@ void DEMSourceNode::onError(const QString& error)
 
 void DEMSourceNode::onProcessingFinished(
     const QString& outputH5Path,
-    const QString& dstNode,
+    const QString& stagingNode,
     const QString& projectName,
     int demSource,
     double targetResolution,
@@ -677,6 +689,8 @@ void DEMSourceNode::onProcessingFinished(
     m_thread = nullptr;
 
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
         return;
     }
 
@@ -684,55 +698,85 @@ void DEMSourceNode::onProcessingFinished(
     logContext.displayName = caption();
     const double tileAvailability = requestedTileCount > 0
         ? 100.0 * availableTiles.size() / requestedTileCount : 0.0;
-    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，请求瓦片可用率 %3%，服务器 404 瓦片：%4，输出：%5，输出数据集校验：%6。")
-        .arg(availableTiles.size()).arg(requestedTileCount).arg(tileAvailability, 0, 'f', 1)
-        .arg(serverNotFoundTiles.isEmpty() ? QStringLiteral("无") : serverNotFoundTiles.join(QStringLiteral(", ")))
-        .arg(outputH5Path).arg(outputValidated ? QStringLiteral("通过") : QStringLiteral("失败"));
-    InSARLogManager::LogTaskEvent(logContext,
-                                  outputValidated ? InSARLogManager::LevelInfo : InSARLogManager::LevelError,
-                                  "DEMSourceNode", summary,
-                                  outputValidated ? LogTargets(LogTarget::UserProjectLog)
-                                                  : (LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole),
-                                  QStringLiteral("artifact_validated"),
-                                  outputValidated ? QStringLiteral("completed") : QStringLiteral("failed"));
-    if (!outputValidated) {
-        onError(QStringLiteral("DEM 输出 H5 校验失败：%1").arg(outputH5Path));
+    if (stagingNode != m_outputTransaction.stagingName || !outputValidated) {
+        onError(QStringLiteral("DEM worker returned an incomplete or inconsistent staging output."));
         return;
     }
 
-    QString h5Path = outputH5Path;
-    QString tifPath = h5Path.left(h5Path.lastIndexOf('.')) + ".tif";
-    QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
+    QString transactionError;
+    XMLFile* xml = projectXml();
+    const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
+    if (!xml || xmlPath.isEmpty() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+                                              QStringList() << QStringLiteral("dem")
+                                                            << QStringLiteral("dem_x")
+                                                            << QStringLiteral("dem_y")
+                                                            << QStringLiteral("dem_z")
+                                                            << QStringLiteral("lon")
+                                                            << QStringLiteral("lat"),
+                                              &transactionError) ||
+        !NodeUtils::workerOutputsMatchManifest(QStringList() << m_preparedOutputPaths.first(),
+                                               QStringList() << outputH5Path, &transactionError)) {
+        onError(transactionError.isEmpty()
+            ? QStringLiteral("DEM staging output did not pass transaction validation.") : transactionError);
+        return;
+    }
 
+    QStringList finalPaths;
+    if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, xml, xmlPath, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+
+    QString h5Path;
+    QString tifPath;
+    for (const QString& finalPath : finalPaths) {
+        if (finalPath.endsWith(QStringLiteral(".h5"), Qt::CaseInsensitive)) h5Path = finalPath;
+        if (finalPath.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive)) tifPath = finalPath;
+    }
+    if (h5Path.isEmpty() || tifPath.isEmpty()) {
+        onError(QStringLiteral("Promoted DEM transaction is missing its H5 or TIFF output."));
+        return;
+    }
+
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    NodeUtils::removeDataNodeFromProject(iface, m_preparedDstNode, false, false);
+    std::string srcName = "SRTM1";
+    if (demSource == 1) srcName = "SRTM3";
+    else if (demSource == 2) srcName = "Copernicus";
+    else if (demSource == 3) srcName = "ASTER";
+    xml->XMLFile_add_dem(m_preparedDstNode.toStdString().c_str(),
+                          (m_preparedDstNode + "_dem").toStdString().c_str(),
+                          ("/" + m_preparedDstNode + "/" + QFileInfo(h5Path).fileName()).toStdString().c_str(),
+                          0, 0, srcName.c_str(), targetResolution);
+    if (!NodeUtils::saveProjectXmlAtomically(xml, xmlPath, &transactionError) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("Unable to commit DEM project metadata.") : transactionError);
+        return;
+    }
+
+    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，请求瓦片可用率 %3%，服务器 404 瓦片：%4，输出：%5，输出数据集校验：通过。")
+        .arg(availableTiles.size()).arg(requestedTileCount).arg(tileAvailability, 0, 'f', 1)
+        .arg(serverNotFoundTiles.isEmpty() ? QStringLiteral("无") : serverNotFoundTiles.join(QStringLiteral(", ")))
+        .arg(h5Path);
+    InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo, "DEMSourceNode", summary,
+                                  LogTargets(LogTarget::UserProjectLog),
+                                  QStringLiteral("artifact_validated"), QStringLiteral("completed"));
+
+    const QString dstNode = m_preparedDstNode;
+    const QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
     m_outputData = std::make_shared<DEMFileData>(tifPath, dstNode);
-    // 先将预览重置，待 finished 回调确认生成成功后再加载，杜绝不存在的 JPG 路径发布给下游
     m_imageInfoData.reset();
     setOutputData(0, m_outputData);
     setOutputData(1, nullptr);
-
-    // 主线程更新全局 XML 并保存
-    XMLFile* xml = projectXml();
-    if (xml)
-    {
-        std::string srcName = "SRTM1";
-        if (demSource == 1) srcName = "SRTM3";
-        else if (demSource == 2) srcName = "Copernicus";
-        else if (demSource == 3) srcName = "ASTER";
-
-        QString outputH5Name = QFileInfo(h5Path).fileName();
-        xml->XMLFile_add_dem(
-            dstNode.toStdString().c_str(), 
-            (dstNode + "_dem").toStdString().c_str(),
-            ("/" + dstNode + "/" + outputH5Name).toStdString().c_str(),
-            0, 0, srcName.c_str(), targetResolution
-        );
-        xml->XMLFile_save(NodeUtils::getProjectFilePath(_widget).toStdString().c_str());
-    }
 
     // 主线程挂载项目树 UI
     QStandardItemModel* model = projectModel();
     if (model)
     {
+        if (iface) NodeUtils::removeDataNodeFromProjectTree(iface, dstNode);
         QStandardItem* project = nullptr;
         QList<QStandardItem*> foundProjects = model->findItems(projectName);
         if (!foundProjects.isEmpty())
@@ -789,64 +833,28 @@ void DEMSourceNode::onProcessingFinished(
                 image->setToolTip("dem");
                 image->setIcon(QIcon(IMAGEDATA_ICON));
                 demNode->appendRow(image);
-                demNode->setChild(demNode->rowCount() - 1, 1, new QStandardItem(outputH5Path));
+                demNode->setChild(demNode->rowCount() - 1, 1, new QStandardItem(h5Path));
             }
             else
             {
-                demNode->setChild(itemImg->row(), 1, new QStandardItem(outputH5Path));
+                demNode->setChild(itemImg->row(), 1, new QStandardItem(h5Path));
             }
         }
     }
+    startPreviewGeneration(h5Path, jpgPath);
+}
 
-    m_remedyWatcher.disconnect(this);
+void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString& jpgPath)
+{
     if (m_remedyWatcher.isRunning()) {
         m_remedyWatcher.cancel();
+        m_remedyWatcher.disconnect(this);
         connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
             m_remedyWatcher.disconnect(this);
             startPreviewGeneration(h5Path, jpgPath);
         });
         return;
     }
-
-    connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
-        bool jpgExists = NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath);
-        if (jpgExists) {
-            m_imageInfoData = std::make_shared<ImageInfoData>(jpgPath);
-            setOutputData(1, m_imageInfoData);
-        } else {
-            m_imageInfoData.reset();
-            setOutputData(1, nullptr);
-            InSARLogManager::LogWarning("DEMSourceNode", "DEM preview JPG failed to generate: " + jpgPath);
-        }
-
-        // TIF 成功但 JPG 失败时以 Warning 完成，两个输出端口仍由完成辅助函数统一发布。
-        if (!jpgExists) {
-            setLastWarningMessage(QStringLiteral("DEM data was generated, but its preview image could not be generated."));
-            setState(ExecutionState::Running);
-            finishExecutionWithWarning();
-        } else {
-            setState(ExecutionState::Running);
-            finishExecution();
-        }
-        updateCacheSizeLabel();
-        
-        auto iface = NodeUtils::getProjectContext(_widget);
-        if (iface) {
-            iface->refreshProjectTree();
-        }
-    });
-
-    // 异步生成预览图，已存在则跳过重生成
-    m_remedyWatcher.setFuture(QtConcurrent::run([=]() {
-        if (NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath)) {
-            return;
-        }
-        NodeUtils::generateJpgPreviewFromH5(h5Path, jpgPath, "dem");
-    }));
-}
-
-void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString& jpgPath)
-{
     m_remedyWatcher.disconnect(this);
     connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Path, jpgPath]() {
         bool jpgExists = NodeUtils::isJpgPreviewCurrent(h5Path, jpgPath);
@@ -887,14 +895,12 @@ void DEMSourceNode::onCancelled()
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
 
-    m_outputData.reset();
-    m_imageInfoData.reset();
-    setOutputData(0, nullptr);
-    setOutputData(1, nullptr);
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
@@ -904,8 +910,21 @@ bool DEMSourceNode::validateAndRestoreOutput()
 {
     QString savePath = projectPath();
     QString name = m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName;
-    QString targetH5 = savePath + "/" + name + "/" + name + "_dem.h5";
-    QString targetTif = savePath + "/" + name + "/" + name + "_dem.tif";
+    QStringList committedPaths;
+    if (!NodeUtils::loadCommittedOutputManifest(savePath, name, committedPaths)) {
+        setState(ExecutionState::Idle);
+        return false;
+    }
+    QString targetH5;
+    QString targetTif;
+    for (const QString& path : committedPaths) {
+        if (path.endsWith(QStringLiteral(".h5"), Qt::CaseInsensitive)) targetH5 = path;
+        if (path.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive)) targetTif = path;
+    }
+    if (targetH5.isEmpty() || targetTif.isEmpty()) {
+        setState(ExecutionState::Idle);
+        return false;
+    }
     QString targetJpg = savePath + "/" + name + "/" + name + "_dem.jpg";
 
 
@@ -1026,8 +1045,18 @@ bool DEMSourceNode::validateAndRestoreOutput()
 QStringList DEMSourceNode::previewImagePaths() const
 {
     QStringList list;
-    if (m_imageInfoData && !m_imageInfoData->filePath().isEmpty()) {
-        list.append(m_imageInfoData->filePath());
+    const QString name = m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName;
+    QStringList committedPaths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), name, committedPaths)) {
+        return list;
+    }
+    for (const QString& outputPath : committedPaths) {
+        if (!outputPath.endsWith(QStringLiteral(".h5"), Qt::CaseInsensitive)) continue;
+        const QFileInfo h5Info(outputPath);
+        const QString jpgPath = h5Info.absolutePath() + "/" + h5Info.baseName() + ".jpg";
+        if (NodeUtils::isJpgPreviewCurrent(outputPath, jpgPath)) {
+            list.append(jpgPath);
+        }
     }
     return list;
 }

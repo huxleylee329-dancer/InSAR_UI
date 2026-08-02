@@ -110,6 +110,10 @@ private:
     int m_preparedSource = 0;
     double m_preparedResolution = 0.0;
     QString m_preparedCacheDir;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    quint64 m_executionGeneration = 0;
 
     // Helper methods
     void createWidget();
@@ -118,7 +122,7 @@ private:
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished(
         const QString& outputH5Path,
-        const QString& dstNode,
+        const QString& stagingNode,
         const QString& projectName,
         int demSource,
         double targetResolution,
@@ -147,16 +151,6 @@ private:
     void stopExecution() override;
     void processAutomatically() override;
 
-signals:
-    void startDemFetch(
-        QString projectPath,
-        QString projectName,
-        QString dstNode,
-        QStringList filePaths,
-        int demSource,
-        double targetResolution,
-        QString cacheDir
-    );
 };
 
 } // namespace QtNodes

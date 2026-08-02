@@ -13,6 +13,20 @@
 #include <QFileDialog>
 #include <QSettings>
 
+namespace
+{
+QString normalizedFilePath(const QString& path)
+{
+    QFileInfo fileInfo(path);
+    QString normalizedPath = fileInfo.canonicalFilePath();
+    if (normalizedPath.isEmpty())
+    {
+        normalizedPath = fileInfo.absoluteFilePath();
+    }
+    return QDir::cleanPath(QDir::fromNativeSeparators(normalizedPath));
+}
+}
+
 DEMSourceDialog::DEMSourceDialog(QWidget* parent)
     : QDialog(parent)
     , m_model(nullptr)
@@ -116,7 +130,16 @@ DEMSourceDialog::DEMSourceDialog(QWidget* parent)
 
     connect(m_projectCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &DEMSourceDialog::onProjectChanged);
     connect(m_startBtn, &QPushButton::clicked, this, &DEMSourceDialog::onStartPressed);
-    connect(m_cancelBtn, &QPushButton::clicked, this, &QWidget::close);
+    connect(m_cancelBtn, &QPushButton::clicked, this, [this]() {
+        if (m_worker) {
+            m_cancelRequested = true;
+            m_worker->StopProcess();
+            m_cancelBtn->setEnabled(false);
+            m_statusLabel->setText(QStringLiteral("正在取消 DEM 任务..."));
+        } else {
+            reject();
+        }
+    });
     connect(m_resolutionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &DEMSourceDialog::onResolutionModeChanged);
     connect(m_browseCacheBtn, &QPushButton::clicked, this, &DEMSourceDialog::onBrowseCachePressed);
     connect(m_clearCacheBtn, &QPushButton::clicked, this, &DEMSourceDialog::onClearCachePressed);
@@ -141,10 +164,17 @@ DEMSourceDialog::DEMSourceDialog(QWidget* parent)
 
 DEMSourceDialog::~DEMSourceDialog()
 {
+    if (m_worker) {
+        m_worker->StopProcess();
+    }
     if (m_thread) {
+        m_thread->requestInterruption();
         m_thread->quit();
         m_thread->wait();
     }
+    IApplicationInterface* iface = NodeUtils::getProjectContext(this);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("dialog destroyed"),
+                                        iface ? iface->projectXml() : nullptr);
 }
 
 void DEMSourceDialog::ShowProjectList(QStandardItemModel* model)
@@ -296,18 +326,62 @@ void DEMSourceDialog::onStartPressed()
     }
     QDir().mkpath(cacheDir);
 
-    // 检查重名和冲突
-    bool same_name = false;
-    for (int i = 0; i < projectItem->rowCount(); ++i) {
-        if (projectItem->child(i, 0)->text() == dstNode && projectItem->child(i, 1)->text() != "complex-0.0") {
-            same_name = true;
-            break;
-        }
+    IApplicationInterface* iface = NodeUtils::getProjectContext(this);
+    const QString xmlPath = NodeUtils::getProjectFilePath(this);
+    const QString projectRoot = projectPath.endsWith(QStringLiteral(".insar"), Qt::CaseInsensitive)
+        ? QFileInfo(projectPath).absolutePath() : QDir(projectPath).absolutePath();
+    const QString projectFileName = projectName.endsWith(QStringLiteral(".insar"), Qt::CaseInsensitive)
+        ? projectName : projectName + QStringLiteral(".insar");
+    const QString selectedXmlPath = projectPath.endsWith(QStringLiteral(".insar"), Qt::CaseInsensitive)
+        ? projectPath : QDir(projectRoot).absoluteFilePath(projectFileName);
+    const QString normalizedActiveXmlPath = normalizedFilePath(xmlPath);
+    const QString normalizedSelectedXmlPath = normalizedFilePath(selectedXmlPath);
+    if (!iface || !iface->projectXml() || normalizedActiveXmlPath.isEmpty() ||
+        normalizedSelectedXmlPath.isEmpty() ||
+        normalizedActiveXmlPath.compare(normalizedSelectedXmlPath, Qt::CaseInsensitive) != 0) {
+        QMessageBox::warning(this, QStringLiteral("无法启动"),
+                             QStringLiteral("所选工程不是当前可提交的工程 XML 上下文，无法安全写入 DEM 成果。"));
+        return;
     }
-    if (same_name) {
-        if (QMessageBox::question(this, QStringLiteral("覆盖确认"), QStringLiteral("目标节点 %1 已存在，是否覆盖？").arg(dstNode)) == QMessageBox::No) {
+
+    m_cancelRequested = false;
+    m_preparedProjectRoot = projectRoot;
+    m_preparedProjectName = projectName;
+    m_preparedDstNode = dstNode;
+    m_preparedInputPaths = filePaths;
+    m_preparedDemSource = demSource;
+    m_preparedResolution = targetResolution;
+    m_preparedXmlPath = normalizedActiveXmlPath;
+    const QDir outputDirectory(projectRoot + "/" + dstNode);
+    m_preparedOutputPaths = QStringList()
+        << outputDirectory.absoluteFilePath(dstNode + "_dem.h5")
+        << outputDirectory.absoluteFilePath(dstNode + "_dem.tif");
+    const NodeUtils::OverwriteResult overwriteResult = NodeUtils::checkAndPromptOverwrite(
+        iface, m_preparedDstNode, m_preparedOutputPaths, this);
+    if (overwriteResult == NodeUtils::OverwriteResult::Cancel) {
+        return;
+    }
+    if (overwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        QStringList committedPaths;
+        if (!NodeUtils::loadCommittedOutputManifest(m_preparedProjectRoot, m_preparedDstNode,
+                                                    committedPaths)) {
+            QMessageBox::warning(this, QStringLiteral("无法加载现有成果"),
+                                 QStringLiteral("现有 DEM 目录不是已提交的事务成果，请重新运行以生成可验证输出。"));
             return;
         }
+        QMessageBox::information(this, QStringLiteral("已保留现有成果"),
+                                 QStringLiteral("已保留现有已提交的 DEM 成果，未执行下载。"));
+        Q_EMIT sendCopy(m_model);
+        accept();
+        return;
+    }
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_preparedDstNode,
+                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_outputTransaction, &transactionError)) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, transactionError, iface->projectXml());
+        QMessageBox::critical(this, QStringLiteral("无法启动"), transactionError);
+        return;
     }
 
     // 锁定 UI 开始下载
@@ -321,7 +395,7 @@ void DEMSourceDialog::onStartPressed()
     m_browseCacheBtn->setEnabled(false);
     m_clearCacheBtn->setEnabled(false);
     m_startBtn->setEnabled(false);
-    m_cancelBtn->setEnabled(false);
+    m_cancelBtn->setEnabled(true);
 
     m_progressBar->show();
     m_progressBar->setValue(0);
@@ -337,22 +411,22 @@ void DEMSourceDialog::onStartPressed()
 
     connect(m_worker, &DEMSourceWorker::updateProcess, this, &DEMSourceDialog::onProgressUpdate);
     connect(m_worker, &DEMSourceWorker::errorProcess, this, &DEMSourceDialog::onError);
-    connect(m_worker, &DEMSourceWorker::endProcess, this, &DEMSourceDialog::onFinished);
+    connect(m_worker, &DEMSourceWorker::cancelled, this, &DEMSourceDialog::onCancelled);
+    connect(m_worker, &DEMSourceWorker::cancelled, m_thread, &QThread::quit);
+    connect(m_worker, &DEMSourceWorker::errorProcess, m_thread, &QThread::quit);
+    connect(m_worker, &DEMSourceWorker::endProcess, m_thread, &QThread::quit);
     connect(m_worker, &DEMSourceWorker::demFetchFinished, this, &DEMSourceDialog::onDemFetchFinished);
 
-    connect(this, &DEMSourceDialog::startDemFetch, m_worker, &DEMSourceWorker::fetch_dem);
+    DEMSourceWorker* const worker = m_worker;
+    const QString stagingNode = m_outputTransaction.stagingName;
+    connect(m_thread, &QThread::started, m_worker,
+            [worker, projectRoot, projectName, stagingNode, dstNode, filePaths, demSource,
+             targetResolution, cacheDir]() {
+        worker->fetch_dem(projectRoot, projectName, stagingNode, dstNode, filePaths,
+                          demSource, targetResolution, cacheDir);
+    });
 
     m_thread->start();
-
-    emit startDemFetch(
-        projectPath,
-        projectName,
-        dstNode,
-        filePaths,
-        demSource,
-        targetResolution,
-        cacheDir
-    );
 }
 
 void DEMSourceDialog::onProgressUpdate(int progress, const QString& message)
@@ -370,10 +444,31 @@ void DEMSourceDialog::onError(const QString& error)
         m_thread = nullptr;
         m_worker = nullptr;
     }
+    IApplicationInterface* iface = NodeUtils::getProjectContext(this);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, iface ? iface->projectXml() : nullptr);
 
     QMessageBox::critical(this, "Error", error);
 
-    // 恢复 UI
+    restoreUiAfterFailure();
+}
+
+void DEMSourceDialog::onCancelled()
+{
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+        m_thread = nullptr;
+        m_worker = nullptr;
+    }
+    IApplicationInterface* iface = NodeUtils::getProjectContext(this);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"),
+                                        iface ? iface->projectXml() : nullptr);
+    restoreUiAfterFailure();
+    reject();
+}
+
+void DEMSourceDialog::restoreUiAfterFailure()
+{
     m_projectCombo->setEnabled(true);
     m_slcCombo->setEnabled(true);
     m_demSourceCombo->setEnabled(true);
@@ -405,64 +500,106 @@ void DEMSourceDialog::onFinished()
 
 void DEMSourceDialog::onDemFetchFinished(
     const QString& outputH5Path,
-    const QString& dstNode,
+    const QString& stagingNode,
     const QString& projectName,
     int demSource,
     double targetResolution
 )
 {
-    // 1. 主线程更新全局 XML 并保存
+    if (m_cancelRequested) {
+        onCancelled();
+        return;
+    }
+
+    QString transactionError;
+    if (!commitOutputTransaction(outputH5Path, stagingNode, projectName, demSource,
+                                 targetResolution, &transactionError)) {
+        if (m_cancelRequested) {
+            onCancelled();
+            return;
+        }
+        onError(transactionError);
+        return;
+    }
+    onFinished();
+}
+
+bool DEMSourceDialog::commitOutputTransaction(const QString& stagedH5Path,
+                                              const QString& stagingNode,
+                                              const QString& projectName,
+                                              int demSource,
+                                              double targetResolution,
+                                              QString* errorMessage)
+{
     auto* iface = NodeUtils::getProjectContext(this);
+    XMLFile* xml = iface ? iface->projectXml() : nullptr;
+    const QString xmlPath = NodeUtils::getProjectFilePath(this);
+    if (m_cancelRequested || !xml || xmlPath.isEmpty() ||
+        normalizedFilePath(xmlPath).compare(m_preparedXmlPath, Qt::CaseInsensitive) != 0 ||
+        stagingNode != m_outputTransaction.stagingName ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, errorMessage) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+                                              QStringList() << QStringLiteral("dem")
+                                                            << QStringLiteral("dem_x")
+                                                            << QStringLiteral("dem_y")
+                                                            << QStringLiteral("dem_z")
+                                                            << QStringLiteral("lon")
+                                                            << QStringLiteral("lat"),
+                                              errorMessage) ||
+        !NodeUtils::workerOutputsMatchManifest(QStringList() << m_preparedOutputPaths.first(),
+                                               QStringList() << stagedH5Path, errorMessage)) {
+        if (errorMessage && errorMessage->isEmpty()) {
+            *errorMessage = QStringLiteral("DEM staging output did not pass transaction validation.");
+        }
+        return false;
+    }
+
+    QStringList finalPaths;
+    if (m_cancelRequested) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("DEM task was cancelled before transaction commit.");
+        }
+        return false;
+    }
+    if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, errorMessage) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, xml, xmlPath, errorMessage)) {
+        return false;
+    }
+
+    QString h5Path;
+    for (const QString& finalPath : finalPaths) {
+        if (finalPath.endsWith(QStringLiteral(".h5"), Qt::CaseInsensitive)) {
+            h5Path = finalPath;
+            break;
+        }
+    }
+    if (h5Path.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Promoted DEM transaction has no H5 output.");
+        return false;
+    }
+
+    NodeUtils::removeDataNodeFromProject(iface, m_preparedDstNode, false, false);
     std::string srcName = "SRTM1";
     if (demSource == 1) srcName = "SRTM3";
     else if (demSource == 2) srcName = "Copernicus";
     else if (demSource == 3) srcName = "ASTER";
-    QString outputH5Name = QFileInfo(outputH5Path).fileName();
-
-    if (iface && iface->projectXml())
-    {
-        XMLFile* xml = iface->projectXml();
-        xml->XMLFile_add_dem(
-            dstNode.toStdString().c_str(),
-            (dstNode + "_dem").toStdString().c_str(),
-            ("/" + dstNode + "/" + outputH5Name).toStdString().c_str(),
-            0, 0, srcName.c_str(), targetResolution
-        );
-        xml->XMLFile_save(iface->projectPath().toStdString().c_str());
-    }
-    else if (m_model)
-    {
-        // 兜底处理
-        QString projectPath;
-        for (int i = 0; i < m_model->rowCount(); ++i) {
-            if (m_model->item(i, 0)->text() == projectName) {
-                projectPath = m_model->item(i, 1)->text();
-                break;
-            }
-        }
-        if (!projectPath.isEmpty()) {
-            XMLFile xml;
-            QString xml_path = projectPath;
-            if (!xml_path.endsWith(".Insar", Qt::CaseInsensitive)) {
-                xml_path += ".Insar";
-            }
-            if (xml.XMLFile_load(xml_path.toStdString().c_str()) == 0) {
-                xml.XMLFile_add_dem(
-                    dstNode.toStdString().c_str(),
-                    (dstNode + "_dem").toStdString().c_str(),
-                    ("/" + dstNode + "/" + outputH5Name).toStdString().c_str(),
-                    0, 0, srcName.c_str(), targetResolution
-                );
-                xml.XMLFile_save(xml_path.toStdString().c_str());
-            }
-        }
+    xml->XMLFile_add_dem(
+        m_preparedDstNode.toStdString().c_str(),
+        (m_preparedDstNode + "_dem").toStdString().c_str(),
+        ("/" + m_preparedDstNode + "/" + QFileInfo(h5Path).fileName()).toStdString().c_str(),
+        0, 0, srcName.c_str(), targetResolution
+    );
+    if (!NodeUtils::saveProjectXmlAtomically(xml, xmlPath, errorMessage) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, errorMessage)) {
+        return false;
     }
 
-    // 2. 主线程挂载项目树 UI
-    if (m_model)
+    QStandardItemModel* model = iface->projectModel() ? iface->projectModel() : m_model;
+    if (model)
     {
+        NodeUtils::removeDataNodeFromProjectTree(iface, m_preparedDstNode);
         QStandardItem* project = nullptr;
-        QList<QStandardItem*> foundProjects = m_model->findItems(projectName);
+        QList<QStandardItem*> foundProjects = model->findItems(projectName);
         if (!foundProjects.isEmpty())
         {
             project = foundProjects.first();
@@ -473,7 +610,7 @@ void DEMSourceDialog::onDemFetchFinished(
             QStandardItem* demNode = nullptr;
             for (int i = 0; i < project->rowCount(); ++i)
             {
-                if (project->child(i, 0)->text() == dstNode)
+                if (project->child(i, 0)->text() == m_preparedDstNode)
                 {
                     demNode = project->child(i, 0);
                     break;
@@ -482,7 +619,7 @@ void DEMSourceDialog::onDemFetchFinished(
 
             if (!demNode)
             {
-                demNode = new QStandardItem(dstNode);
+                demNode = new QStandardItem(m_preparedDstNode);
                 demNode->setToolTip(projectName);
                 demNode->setIcon(QIcon(FOLDER_ICON));
                 int insertIndex = 0;
@@ -501,7 +638,7 @@ void DEMSourceDialog::onDemFetchFinished(
             }
 
             QStandardItem* itemImg = nullptr;
-            QString imgName = dstNode + "_dem";
+            QString imgName = m_preparedDstNode + "_dem";
             for (int j = 0; j < demNode->rowCount(); ++j)
             {
                 if (demNode->child(j, 0)->text() == imgName)
@@ -517,14 +654,16 @@ void DEMSourceDialog::onDemFetchFinished(
                 image->setToolTip("dem");
                 image->setIcon(QIcon(IMAGEDATA_ICON));
                 demNode->appendRow(image);
-                demNode->setChild(demNode->rowCount() - 1, 1, new QStandardItem(outputH5Path));
+                demNode->setChild(demNode->rowCount() - 1, 1, new QStandardItem(h5Path));
             }
             else
             {
-                demNode->setChild(itemImg->row(), 1, new QStandardItem(outputH5Path));
+                demNode->setChild(itemImg->row(), 1, new QStandardItem(h5Path));
             }
         }
     }
+    iface->refreshProjectTree();
+    return true;
 }
 
 void DEMSourceDialog::onResolutionModeChanged(int index)

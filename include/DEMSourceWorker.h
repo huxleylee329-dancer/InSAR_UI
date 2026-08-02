@@ -16,7 +16,8 @@ public slots:
     void fetch_dem(
         QString projectPath,
         QString projectName,
-        QString dstNode,
+        QString stagingNode,
+        QString outputNodeName,
         QStringList filePaths,
         int demSource,
         double targetResolution,

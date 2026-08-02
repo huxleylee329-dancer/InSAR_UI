@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QDateTime>
+#include <QCryptographicHash>
 #include <QLineEdit>
 #include <QSaveFile>
 #include <QSet>
@@ -102,6 +103,39 @@ bool isCompleteJpegFile(const QString& path)
     return start.size() == 2 && end.size() == 2 &&
         start[0] == static_cast<char>(0xff) && start[1] == static_cast<char>(0xd8) &&
         end[0] == static_cast<char>(0xff) && end[1] == static_cast<char>(0xd9);
+}
+
+bool validateGeoTiffOutput(const QFileInfo& info, QString* errorMessage)
+{
+    GDALAllRegister();
+    const QByteArray nativePath = QDir::toNativeSeparators(info.absoluteFilePath()).toLocal8Bit();
+    GDALDataset* dataset = static_cast<GDALDataset*>(GDALOpen(nativePath.constData(), GA_ReadOnly));
+    if (!dataset) {
+        if (errorMessage) *errorMessage = QStringLiteral("Staged GeoTIFF cannot be opened by GDAL: %1")
+                                      .arg(info.absoluteFilePath());
+        return false;
+    }
+
+    double geoTransform[6] = {};
+    const char* projection = dataset->GetProjectionRef();
+    const bool isGeoTiff = dataset->GetDriver() &&
+        QString::fromLatin1(dataset->GetDriver()->GetDescription()) == QStringLiteral("GTiff");
+    const bool hasValidGeoTransform = dataset->GetGeoTransform(geoTransform) == CE_None &&
+        std::isfinite(geoTransform[0]) && std::isfinite(geoTransform[1]) &&
+        std::isfinite(geoTransform[2]) && std::isfinite(geoTransform[3]) &&
+        std::isfinite(geoTransform[4]) && std::isfinite(geoTransform[5]) &&
+        (geoTransform[1] != 0.0 || geoTransform[2] != 0.0) &&
+        (geoTransform[4] != 0.0 || geoTransform[5] != 0.0);
+    const bool valid = isGeoTiff && dataset->GetRasterCount() > 0 &&
+        dataset->GetRasterXSize() > 0 && dataset->GetRasterYSize() > 0 &&
+        hasValidGeoTransform && projection && *projection;
+    GDALClose(dataset);
+
+    if (!valid && errorMessage) {
+        *errorMessage = QStringLiteral("Staged GeoTIFF lacks a raster band, dimensions, or georeference: %1")
+            .arg(info.absoluteFilePath());
+    }
+    return valid;
 }
 
 QString stageName(OutputTransaction::Stage stage)
@@ -217,11 +251,33 @@ QJsonArray fingerprintInputs(const QStringList& paths)
 {
     QJsonArray fingerprints;
     for (const QString& path : paths) {
-        const QFileInfo info(path);
+        const QFileInfo requestedInfo(path);
+        const QString absolutePath = requestedInfo.absoluteFilePath();
         QJsonObject item;
-        item.insert(QStringLiteral("path"), QDir::cleanPath(info.absoluteFilePath()));
-        item.insert(QStringLiteral("size"), static_cast<double>(info.exists() ? info.size() : -1));
-        item.insert(QStringLiteral("modifiedMs"), static_cast<double>(info.exists() ? info.lastModified().toMSecsSinceEpoch() : -1));
+        QString digest;
+        if (requestedInfo.isFile()) {
+            QFile file(absolutePath);
+            if (file.open(QIODevice::ReadOnly)) {
+                QCryptographicHash hash(QCryptographicHash::Sha256);
+                while (!file.atEnd()) {
+                    const QByteArray block = file.read(1024 * 1024);
+                    if (block.isEmpty() && file.error() != QFile::NoError) {
+                        digest.clear();
+                        break;
+                    }
+                    hash.addData(block);
+                }
+                if (file.error() == QFile::NoError) {
+                    digest = QString::fromLatin1(hash.result().toHex());
+                }
+            }
+        }
+        const QFileInfo snapshot(absolutePath);
+        item.insert(QStringLiteral("path"), QDir::cleanPath(snapshot.absoluteFilePath()));
+        item.insert(QStringLiteral("size"), static_cast<double>(snapshot.isFile() ? snapshot.size() : -1));
+        item.insert(QStringLiteral("modifiedMs"), static_cast<double>(
+            snapshot.isFile() ? snapshot.lastModified().toMSecsSinceEpoch() : -1));
+        item.insert(QStringLiteral("sha256"), digest);
         fingerprints.append(item);
     }
     return fingerprints;
@@ -233,11 +289,32 @@ bool fingerprintsMatch(const QJsonArray& expected, const QStringList& paths)
            QJsonDocument(fingerprintInputs(paths)).toJson(QJsonDocument::Compact);
 }
 
+bool fingerprintsAreReadable(const QJsonArray& fingerprints, QString* errorMessage)
+{
+    for (const QJsonValue& value : fingerprints) {
+        const QJsonObject fingerprint = value.toObject();
+        if (fingerprint.value(QStringLiteral("size")).toDouble(-1.0) < 0.0 ||
+            fingerprint.value(QStringLiteral("sha256")).toString().isEmpty()) {
+            if (errorMessage) {
+                *errorMessage = QStringLiteral("Cannot capture a content fingerprint for input: %1")
+                    .arg(fingerprint.value(QStringLiteral("path")).toString());
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 bool validateOutputFile(const QFileInfo& info, QString* errorMessage)
 {
     if (!info.isFile() || info.size() <= 0) {
         if (errorMessage) *errorMessage = QStringLiteral("Missing or empty staged output: %1").arg(info.absoluteFilePath());
         return false;
+    }
+    const QString suffix = info.suffix();
+    if (suffix.compare(QStringLiteral("tif"), Qt::CaseInsensitive) == 0 ||
+        suffix.compare(QStringLiteral("tiff"), Qt::CaseInsensitive) == 0) {
+        return validateGeoTiffOutput(info, errorMessage);
     }
     // Dataset-level validation remains node-specific because these nodes emit
     // different H5 products. The transaction layer verifies the complete,
@@ -338,8 +415,11 @@ bool persistTransaction(OutputTransaction& transaction, QString* errorMessage)
 
 bool setTransactionStage(OutputTransaction& transaction, OutputTransaction::Stage stage, QString* errorMessage)
 {
+    const OutputTransaction::Stage previousStage = transaction.stage;
     transaction.stage = stage;
-    return persistTransaction(transaction, errorMessage);
+    if (persistTransaction(transaction, errorMessage)) return true;
+    transaction.stage = previousStage;
+    return false;
 }
 
 QString transactionDirectoryPath(const QString& root)
@@ -348,6 +428,11 @@ QString transactionDirectoryPath(const QString& root)
 }
 
 } // namespace
+
+QJsonArray fingerprintInputPaths(const QStringList& paths)
+{
+    return fingerprintInputs(paths);
+}
 
 QMutex* getHdf5Mutex()
 {
@@ -842,7 +927,7 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         return markFailed(QStringLiteral("restored or retained previous final before promotion"));
     }
 
-    if (stage == QStringLiteral("PromotionPrepared")) {
+    if (stage == QStringLiteral("PromotionPrepared") || stage == QStringLiteral("FinalPromoted")) {
         const bool finalExists = QDir(finalPath).exists();
         const bool stagingExists = QDir(stagingPath).exists();
         if (hasPreviousFinal) {
@@ -870,7 +955,7 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         }
         if (!journal.value(QStringLiteral("previousCommittedJournal")).toObject().isEmpty())
             return restorePreviousCommittedJournal();
-        return markFailed(QStringLiteral("rolled back interrupted promotion before final commit"));
+        return markFailed(QStringLiteral("rolled back promoted output before metadata commit"));
     }
 
     if (stage == QStringLiteral("MetadataCommitPrepared")) {
@@ -927,9 +1012,6 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         return markFailed(QStringLiteral("restored XML backup and rolled back uncommitted metadata"));
     }
 
-    // FinalPromoted is deliberately not rolled back automatically: the XML
-    // replacement may have happened immediately before the process stopped.
-    // Without a durable XML backup this state is not provably consistent.
     if (errorMessage) *errorMessage = QStringLiteral("Interrupted output transaction is ambiguous at stage %1; output remains isolated until controlled recovery.")
         .arg(stage.isEmpty() ? QStringLiteral("unknown") : stage);
     return false;
@@ -1015,6 +1097,9 @@ bool beginOutputTransaction(const QString& projectRoot,
 
     transaction.inputPaths = inputPaths;
     transaction.inputFingerprints = fingerprintInputs(inputPaths);
+    if (!fingerprintsAreReadable(transaction.inputFingerprints, errorMessage)) {
+        return false;
+    }
     transaction.runId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     transaction.stagingName = QStringLiteral(".%1.staging-%2").arg(nodeName, transaction.runId);
     transaction.backupName = QStringLiteral(".%1.backup-%2").arg(nodeName, transaction.runId);
@@ -1105,7 +1190,12 @@ bool validateStagedH5Datasets(const OutputTransaction& transaction,
     }
 
     const QDir staging(QDir(transaction.projectRoot).absoluteFilePath(transaction.stagingName));
+    bool hasH5Output = false;
     for (const QString& name : transaction.expectedFileNames) {
+        if (QFileInfo(name).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+        hasH5Output = true;
         const QString h5Path = staging.absoluteFilePath(name);
         for (const QString& dataset : requiredDatasets) {
             if (dataset.isEmpty()) {
@@ -1122,6 +1212,10 @@ bool validateStagedH5Datasets(const OutputTransaction& transaction,
                 return false;
             }
         }
+    }
+    if (!hasH5Output) {
+        if (errorMessage) *errorMessage = QStringLiteral("Staged output transaction does not contain an H5 artifact.");
+        return false;
     }
     return true;
 }
@@ -1241,10 +1335,20 @@ bool markOutputTransactionMetadataCommitted(OutputTransaction& transaction, QStr
         transaction.backupCleanupDeferred = true;
         InSARLogManager::LogWarning("NodeUtils", QString("Deferred cleanup for output transaction backup: %1").arg(transaction.backupName));
         transaction.previousCommittedJournal = QJsonObject();
-        return setTransactionStage(transaction, OutputTransaction::Stage::Completed, errorMessage);
+        QString completionError;
+        if (!setTransactionStage(transaction, OutputTransaction::Stage::Completed, &completionError)) {
+            InSARLogManager::LogWarning("NodeUtils", QString("Metadata committed but completion journal update was deferred: %1")
+                .arg(completionError));
+        }
+        return true;
     }
     transaction.previousCommittedJournal = QJsonObject();
-    return setTransactionStage(transaction, OutputTransaction::Stage::Completed, errorMessage);
+    QString completionError;
+    if (!setTransactionStage(transaction, OutputTransaction::Stage::Completed, &completionError)) {
+        InSARLogManager::LogWarning("NodeUtils", QString("Metadata committed but completion journal update was deferred: %1")
+            .arg(completionError));
+    }
+    return true;
 }
 
 void abandonOutputTransaction(OutputTransaction& transaction, const QString& reason, XMLFile* xml)
@@ -1419,6 +1523,34 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
         outputPaths.append(info.absoluteFilePath());
     }
     return !outputPaths.isEmpty();
+}
+
+bool loadCommittedOutputManifestRunId(const QString& projectRoot,
+                                      const QString& nodeName,
+                                      QString& runId,
+                                      QString* errorMessage)
+{
+    runId.clear();
+    QStringList outputPaths;
+    if (!loadCommittedOutputManifest(projectRoot, nodeName, outputPaths, errorMessage)) {
+        return false;
+    }
+
+    const QDir root(projectRoot);
+    const QString journalPath = QDir(transactionDirectoryPath(root.absolutePath())).absoluteFilePath(
+        nodeName + QStringLiteral(".json"));
+    QFile journal(journalPath);
+    if (!journal.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output transaction record is unavailable.");
+        return false;
+    }
+    const QJsonObject journalObject = QJsonDocument::fromJson(journal.readAll()).object();
+    runId = journalObject.value(QStringLiteral("runId")).toString();
+    if (runId.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output transaction record has no run identifier.");
+        return false;
+    }
+    return true;
 }
 
 bool workerOutputsMatchManifest(const QStringList& manifestPaths,
@@ -2316,6 +2448,37 @@ bool readStringFromH5(const QString& filePath,
     return true;
 }
 
+bool writeStringToH5(const QString& filePath,
+                     const QString& dataset,
+                     const std::string& value,
+                     QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 file does not exist: %1").arg(filePath);
+        return false;
+    }
+    if (dataset.isEmpty()) {
+        if (errMsg) *errMsg = QStringLiteral("H5 string dataset name is empty.");
+        return false;
+    }
+
+    NodeUtils::Hdf5Locker locker(filePath);
+    if (!locker.isLocked()) {
+        if (errMsg) *errMsg = QStringLiteral("Failed to lock H5 for string write: %1").arg(filePath);
+        return false;
+    }
+    FormatConversion conversion;
+    const int rc = conversion.write_str_to_h5(filePath.toStdString().c_str(),
+                                               dataset.toStdString().c_str(),
+                                               value.c_str());
+    if (rc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("Failed to write H5 string dataset %1 (rc=%2)")
+                                   .arg(dataset).arg(rc);
+        return false;
+    }
+    return true;
+}
+
 bool copySourcePathMetadata(const QString& inputPath,
                             const QString& outputPath,
                             QString* errMsg)
@@ -2347,12 +2510,20 @@ bool copySourcePathMetadata(const QString& inputPath,
 
     std::string outputSource1;
     std::string outputSource2;
+    std::string outputEncoding;
+    std::string outputFormatVersion;
     if (!readStringFromH5(outputPath, QStringLiteral("source_1"), outputSource1, errMsg) ||
-        !readStringFromH5(outputPath, QStringLiteral("source_2"), outputSource2, errMsg)) {
+        !readStringFromH5(outputPath, QStringLiteral("source_2"), outputSource2, errMsg) ||
+        !readStringFromH5(outputPath, QStringLiteral("source_path_encoding"), outputEncoding, errMsg) ||
+        !readStringFromH5(outputPath, QStringLiteral("source_path_format_version"), outputFormatVersion, errMsg)) {
         return false;
     }
     if (outputSource1 != source1 || outputSource2 != source2) {
         if (errMsg) *errMsg = QStringLiteral("Derived H5 source paths differ from %1.").arg(inputPath);
+        return false;
+    }
+    if (outputEncoding != "UTF-8" || outputFormatVersion != "2") {
+        if (errMsg) *errMsg = QStringLiteral("Derived H5 has invalid UTF-8/v2 source-path metadata: %1.").arg(outputPath);
         return false;
     }
     return true;
@@ -2375,7 +2546,9 @@ bool writeSourcePathMetadata(const QString& outputPath,
     FormatConversion conversion;
     const std::string outputUtf8 = outputPath.toStdString();
     if (conversion.write_str_to_h5(outputUtf8.c_str(), "source_1", source1.c_str()) != 0 ||
-        conversion.write_str_to_h5(outputUtf8.c_str(), "source_2", source2.c_str()) != 0) {
+        conversion.write_str_to_h5(outputUtf8.c_str(), "source_2", source2.c_str()) != 0 ||
+        conversion.write_str_to_h5(outputUtf8.c_str(), "source_path_encoding", "UTF-8") != 0 ||
+        conversion.write_str_to_h5(outputUtf8.c_str(), "source_path_format_version", "2") != 0) {
         if (errMsg) *errMsg = QStringLiteral("Failed to write source paths and metadata: %1").arg(outputPath);
         return false;
     }

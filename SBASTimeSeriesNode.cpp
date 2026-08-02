@@ -21,6 +21,16 @@
 
 namespace QtNodes {
 
+namespace {
+const char* const kSbasProvenanceDataset = "sbas_rebuild_provenance";
+
+QJsonObject fingerprintFile(const QString& path)
+{
+    const QJsonArray fingerprints = NodeUtils::fingerprintInputPaths(QStringList() << path);
+    return fingerprints.isEmpty() ? QJsonObject() : fingerprints.first().toObject();
+}
+}
+
 SBASTimeSeriesNode::SBASTimeSeriesNode()
     : ExecutableNodeDelegateModel()
     , _widget(nullptr)
@@ -357,6 +367,7 @@ void SBASTimeSeriesNode::executeProcessing()
     stopExecution();
     m_xmlDirty = false;
     m_pendingResult = SBASTimeSeriesResult();
+    m_provenanceWritten = false;
 
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_outputNodeName,
@@ -566,16 +577,59 @@ void SBASTimeSeriesNode::onProcessingFinished()
 
 void SBASTimeSeriesNode::onSbasGenerated(const SBASTimeSeriesResult& result)
 {
-    if (!isAutomaticExecutionObsolete()) {
-        m_pendingResult = result;
+    if (isAutomaticExecutionObsolete()) {
+        return;
     }
+
+    const QDir projectRoot(m_preparedProjectRoot);
+    QJsonArray inputs;
+    for (const QString& inputPath : m_preparedInputPaths) {
+        const QString relativePath = projectRoot.relativeFilePath(QFileInfo(inputPath).absoluteFilePath());
+        if (relativePath.isEmpty() || relativePath == QStringLiteral("..") || relativePath.startsWith(QStringLiteral("../"))) {
+            onError(QStringLiteral("SBAS provenance requires project-relative input paths: %1").arg(inputPath));
+            return;
+        }
+        QJsonObject input = fingerprintFile(QFileInfo(inputPath).absoluteFilePath());
+        input.insert(QStringLiteral("path"), QDir::cleanPath(relativePath));
+        inputs.append(input);
+    }
+
+    QJsonObject parameters;
+    parameters.insert(QStringLiteral("temporalThreshLow"), m_temporalThreshLow);
+    parameters.insert(QStringLiteral("temporalThresh"), m_temporalThresh);
+    parameters.insert(QStringLiteral("spatialThresh"), m_spatialThresh);
+    parameters.insert(QStringLiteral("multilookRg"), m_multilookRg);
+    parameters.insert(QStringLiteral("multilookAz"), m_multilookAz);
+    parameters.insert(QStringLiteral("unwrapMethod"), m_unwrapMethod);
+    parameters.insert(QStringLiteral("alpha"), m_alpha);
+    parameters.insert(QStringLiteral("coherenceThresh"), m_coherenceThresh);
+    parameters.insert(QStringLiteral("temporalCoherenceThresh"), m_temporalCoherenceThresh);
+    parameters.insert(QStringLiteral("refinementCohThresh"), m_refinementCohThresh);
+    parameters.insert(QStringLiteral("refinementDefThresh"), m_refinementDefThresh);
+
+    QJsonObject provenance;
+    provenance.insert(QStringLiteral("version"), 2);
+    provenance.insert(QStringLiteral("transactionRunId"), m_outputTransaction.runId);
+    provenance.insert(QStringLiteral("inputs"), inputs);
+    provenance.insert(QStringLiteral("parameters"), parameters);
+
+    QString provenanceError;
+    if (!NodeUtils::writeStringToH5(result.timesSeriesH5Path,
+                                    QString::fromLatin1(kSbasProvenanceDataset),
+                                    QJsonDocument(provenance).toJson(QJsonDocument::Compact).toStdString(),
+                                    &provenanceError)) {
+        onError(QStringLiteral("Failed to persist SBAS rebuild provenance: %1").arg(provenanceError));
+        return;
+    }
+    m_pendingResult = result;
+    m_provenanceWritten = true;
 }
 
 bool SBASTimeSeriesNode::commitOutputTransaction(QString* errorMessage)
 {
-    if (m_pendingResult.dstNode != m_outputTransaction.stagingName ||
+    if (!m_provenanceWritten || m_pendingResult.dstNode != m_outputTransaction.stagingName ||
         m_pendingResult.timesSeriesH5Path.isEmpty()) {
-        if (errorMessage) *errorMessage = QStringLiteral("SBAS worker did not return the expected staging output.");
+        if (errorMessage) *errorMessage = QStringLiteral("SBAS worker did not return a provenance-complete staging output.");
         return false;
     }
 
@@ -586,7 +640,8 @@ bool SBASTimeSeriesNode::commitOutputTransaction(QString* errorMessage)
         !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, errorMessage) ||
         !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
             QStringList() << QStringLiteral("mask") << QStringLiteral("defomation_velocity")
-                          << QStringLiteral("deformation_time_series"), errorMessage) ||
+                          << QStringLiteral("deformation_time_series")
+                          << QString::fromLatin1(kSbasProvenanceDataset), errorMessage) ||
         !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths,
             QStringList() << m_pendingResult.timesSeriesH5Path, errorMessage)) {
         return false;

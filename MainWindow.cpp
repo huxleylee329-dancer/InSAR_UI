@@ -706,7 +706,7 @@ void MainWindow::open_from_project_file(QString str)
             m_workspaceUI->updateProjectModel(currentModel);
 
             // 加载工作流状态
-            loadWorkflowFromProject(str);
+            loadWorkflowFromProject(str, false);
         }
         this->project->XMLFile_save(str.toStdString().c_str());
         statusBar()->showMessage(QStringLiteral("已成功加载工程: %1").arg(fileinfo.fileName()), 3000);
@@ -887,7 +887,9 @@ void MainWindow::on_actionOpen_triggered()
     
     connect(&open_Window, &OpenProject::aboutToLoadProject, this, &MainWindow::closeCurrentProject);
     connect(&open_Window, &OpenProject::sendModel, m_workspaceUI, &WorkspaceUI::updateProjectModel);
-    connect(&open_Window, &OpenProject::projectOpened, this, &MainWindow::loadWorkflowFromProject);
+    connect(&open_Window, &OpenProject::projectOpened, this, [this](const QString& projectFilePath) {
+        loadWorkflowFromProject(projectFilePath, true);
+    });
     
     open_Window.exec();
 }
@@ -1324,7 +1326,7 @@ void MainWindow::saveWorkflowToProject(const QString& projectFilePath)
     textNode->SetCDATA(true);
     pnode->LinkEndChild(textNode);
 }
-void MainWindow::loadWorkflowFromProject(const QString& projectFilePath)
+void MainWindow::loadWorkflowFromProject(const QString& projectFilePath, bool reloadProjectXml)
 {
     if (!m_workflowUI || projectFilePath.isEmpty())
         return;
@@ -1333,8 +1335,8 @@ void MainWindow::loadWorkflowFromProject(const QString& projectFilePath)
         // 记录当前工程路径
         updateProjectContext(projectFilePath);
 
-        // 加载项目 XML 到 this->project，确保后续保存不会写空文件
-        if (this->project)
+        // 直接打开路径已加载并修正 project_info，不能在此重载，否则会丢失内存中的修正。
+        if (reloadProjectXml && this->project)
         {
             int ret = this->project->XMLFile_load(projectFilePath.toStdString().c_str());
             if (ret < 0)

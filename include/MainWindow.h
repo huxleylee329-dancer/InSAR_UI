@@ -190,7 +190,7 @@ private:
 
     // 工作流状态保存/加载
     void saveWorkflowToProject(const QString& projectFilePath);
-    void loadWorkflowFromProject(const QString& projectFilePath);
+    void loadWorkflowFromProject(const QString& projectFilePath, bool reloadProjectXml = true);
 
     // 最近打开项目管理
     void addToRecentProjects(const QString& path);

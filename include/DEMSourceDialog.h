@@ -11,6 +11,7 @@
 #include <QStandardItemModel>
 #include <QThread>
 #include "DEMSourceWorker.h"
+#include "NodeUtils.h"
 
 class DEMSourceDialog : public QDialog
 {
@@ -24,25 +25,17 @@ public slots:
 
 signals:
     void sendCopy(QStandardItemModel* model);
-    void startDemFetch(
-        QString projectPath,
-        QString projectName,
-        QString dstNode,
-        QStringList filePaths,
-        int demSource,
-        double targetResolution,
-        QString cacheDir
-    );
 
 private slots:
     void onProjectChanged(int index);
     void onStartPressed();
     void onProgressUpdate(int progress, const QString& message);
     void onError(const QString& error);
+    void onCancelled();
     void onFinished();
     void onDemFetchFinished(
         const QString& outputH5Path,
-        const QString& dstNode,
+        const QString& stagingNode,
         const QString& projectName,
         int demSource,
         double targetResolution
@@ -78,8 +71,22 @@ private:
     QStandardItemModel* m_model;
     DEMSourceWorker* m_worker;
     QThread* m_thread;
+    QString m_preparedProjectRoot;
+    QString m_preparedProjectName;
+    QString m_preparedDstNode;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    QString m_preparedXmlPath;
+    int m_preparedDemSource = 0;
+    double m_preparedResolution = 0.0;
+    bool m_cancelRequested = false;
+    NodeUtils::OutputTransaction m_outputTransaction;
 
     void updateSlcCombo();
+    bool commitOutputTransaction(const QString& stagedH5Path, const QString& stagingNode,
+                                 const QString& projectName, int demSource,
+                                 double targetResolution, QString* errorMessage);
+    void restoreUiAfterFailure();
 };
 
 #endif // DEM_SOURCE_DIALOG_H

@@ -94,7 +94,9 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
                                             double coherence_thresh, double temporal_coherence_thresh,
                                             double refinement_coh_thresh, double refinemen_def_thresh,
                                             QString projectPath, QString projectName, QString dstNode, QString csvPath,
-                                            QStringList filePaths, bool outputDirectoryIsStaging)
+                                            QStringList filePaths, bool outputDirectoryIsStaging,
+                                            QString interferogramDirectory,
+                                            std::atomic_bool* externalCancellationFlag)
 {
     const QString outputDir = QDir(projectPath).absoluteFilePath(dstNode);
     if (!QDir().mkpath(outputDir)) {
@@ -102,9 +104,16 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         return;
     }
 
-    QTemporaryDir workingDirectory;
-    if (!workingDirectory.isValid()) {
-        emit errorProcess(QStringLiteral("Unable to create temporary SBAS working directory."));
+    QTemporaryDir ownedWorkingDirectory;
+    QString workingDirectoryPath = interferogramDirectory;
+    if (workingDirectoryPath.isEmpty()) {
+        if (!ownedWorkingDirectory.isValid()) {
+            emit errorProcess(QStringLiteral("Unable to create temporary SBAS working directory."));
+            return;
+        }
+        workingDirectoryPath = ownedWorkingDirectory.path();
+    } else if (!QDir().mkpath(workingDirectoryPath)) {
+        emit errorProcess(QStringLiteral("Unable to create requested SBAS working directory."));
         return;
     }
 
@@ -131,7 +140,11 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         csvDevice = &csvFile;
     }
     QTextStream in(csvDevice);
-    const auto cancellationRequested = [this]() { return this->cancellationRequested(); };
+    std::atomic_bool* const activeCancellationFlag = externalCancellationFlag
+        ? externalCancellationFlag : &m_cancelRequested;
+    const auto cancellationRequested = [this, activeCancellationFlag]() {
+        return this->cancellationRequested() || activeCancellationFlag->load(std::memory_order_relaxed);
+    };
     const auto finishCancelled = [this, csvDevice, outputDirectoryIsStaging, &outputDir]() {
         if (csvDevice) csvDevice->close();
         if (outputDirectoryIsStaging) {
@@ -188,12 +201,12 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         finishCancelled();
         return;
     }
-    QString ifgSavePath = workingDirectory.path();
+    QString ifgSavePath = workingDirectoryPath;
     string path1 = ifgSavePath.toStdString();
     std::replace(path1.begin(), path1.end(), '/', '\\');
     ret = sbas.generate_interferograms(
         SAR_images, formation_matrix, spatial_baseline, temporal_baseline, multilook_az, multilook_rg,
-        path1.c_str(), true, alpha, &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+        path1.c_str(), true, alpha, &isCancellationRequested, activeCancellationFlag, nullptr, nullptr);
     if (ret == -2 || cancellationRequested()) {
         finishCancelled();
         return;
@@ -233,7 +246,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         /*生成高相干三角网络*/
         ret = sbas.generate_high_coherence_mask(
             phaseFiles, 3, 3, coherence_thresh, 0.5, mask,
-            &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+            &isCancellationRequested, activeCancellationFlag, nullptr, nullptr);
         if (ret == -2 || cancellationRequested()) {
             finishCancelled();
             return;
@@ -289,7 +302,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             }
             ret = sbas.floodFillUnwrap(
                 nodes, edges, 1, false,
-                &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+                &isCancellationRequested, activeCancellationFlag, nullptr, nullptr);
             if (ret == -2 || cancellationRequested()) {
                 finishCancelled();
                 return;
@@ -397,7 +410,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
         NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
         ret = sbas.refinement_and_reflattening(
             phase, mask, coherence, refinement_coh_thresh,
-            &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+            &isCancellationRequested, activeCancellationFlag, nullptr, nullptr);
         if (ret == -2 || cancellationRequested()) {
             finishCancelled();
             return;
@@ -589,7 +602,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F);
             ret = sbas.refinement_and_reflattening(
                 phase, refinement_mask, coherence, refinement_coh_thresh,
-                &isCancellationRequested, &m_cancelRequested, nullptr, nullptr);
+                &isCancellationRequested, activeCancellationFlag, nullptr, nullptr);
             if (ret == -2 || cancellationRequested()) {
                 finishCancelled();
                 return;

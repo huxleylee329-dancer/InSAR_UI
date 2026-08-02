@@ -27,7 +27,9 @@ public slots:
                           double coherence_thresh, double temporal_coherence_thresh,
                           double refinement_coh_thresh, double refinemen_def_thresh,
                           QString projectPath, QString projectName, QString dstNode, QString csvPath,
-                          QStringList filePaths, bool outputDirectoryIsStaging);
+                          QStringList filePaths, bool outputDirectoryIsStaging,
+                          QString interferogramDirectory = QString(),
+                          std::atomic_bool* externalCancellationFlag = nullptr);
 
 signals:
     void cancelled();

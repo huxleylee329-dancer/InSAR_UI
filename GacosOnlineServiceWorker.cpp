@@ -87,14 +87,18 @@ void GacosOnlineServiceWorker::doGacosRequest(
         file_name.isEmpty() || apiKey.isEmpty() || inputPaths.isEmpty())
     {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
+        currentWorker = nullptr;
         return;
     }
 
     // 创建输出目录
     QDir dir(save_path);
     QString absolute_path = save_path + "/" + file_name;
-    if (dir.exists(file_name)) dir.remove(file_name);
-    dir.mkdir(file_name);
+    if (!dir.mkpath(file_name)) {
+        emit errorProcess(QStringLiteral("Unable to create GACOS staging output directory."));
+        currentWorker = nullptr;
+        return;
+    }
 
     // 获取输入干涉图信息
     QStringList phase_names;
@@ -107,6 +111,7 @@ void GacosOnlineServiceWorker::doGacosRequest(
     for (const QString& inputPath : inputPaths) {
         if (inputPath.isEmpty() || !QFileInfo::exists(inputPath)) {
             emit errorProcess(QStringLiteral("Input phase file does not exist."));
+            currentWorker = nullptr;
             return;
         }
         const QString phaseName = QFileInfo(inputPath).baseName();
@@ -120,22 +125,43 @@ void GacosOnlineServiceWorker::doGacosRequest(
     int image_count = phase_paths.size();
     if (image_count == 0) {
         emit errorProcess(QStringLiteral("没有可处理的干涉图"));
+        currentWorker = nullptr;
         return;
     }
 
     FormatConversion FC;
     int ret = 0;
 
-    std::vector<bool> process_ok(image_count, false);
-
     // 创建网络管理器
     QNetworkAccessManager nam;
+    const auto waitForReply = [this](QNetworkReply* reply, int timeoutMs) {
+        QEventLoop replyLoop;
+        QTimer timeoutTimer;
+        QTimer interruptionTimer;
+        timeoutTimer.setSingleShot(true);
+        interruptionTimer.setInterval(100);
+        QObject::connect(reply, &QNetworkReply::finished, &replyLoop, &QEventLoop::quit);
+        QObject::connect(&timeoutTimer, &QTimer::timeout, &replyLoop, &QEventLoop::quit);
+        QObject::connect(&interruptionTimer, &QTimer::timeout, &replyLoop, [&replyLoop, reply]() {
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                reply->abort();
+                replyLoop.quit();
+            }
+        });
+        timeoutTimer.start(timeoutMs);
+        interruptionTimer.start();
+        replyLoop.exec();
+        interruptionTimer.stop();
+        timeoutTimer.stop();
+        return reply->isFinished();
+    };
 
     // 处理每幅干涉图
     for (int idx = 0; idx < image_count; idx++)
     {
         if (QThread::currentThread()->isInterruptionRequested()) {
             emit cancelled();
+            currentWorker = nullptr;
             return;
         }
 
@@ -151,11 +177,15 @@ void GacosOnlineServiceWorker::doGacosRequest(
         {
             NodeUtils::Hdf5Locker locker;
             ret = FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "phase", phase);
-            if (ret < 0) continue;
-            FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat);
-            FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat);
-            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", source_1_str);
-            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", source_2_str);
+            if (!locker.isLocked() || ret != 0 || phase.empty() ||
+                FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat) != 0 ||
+                FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat) != 0 ||
+                FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", source_1_str) != 0 ||
+                FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", source_2_str) != 0) {
+                emit errorProcess(QStringLiteral("Failed to read required GACOS input metadata: %1").arg(phase_paths[idx]));
+                currentWorker = nullptr;
+                return;
+            }
             FC.read_double_from_h5(phase_paths[idx].toStdString().c_str(), "carrier_frequency", &carrier_frequency);
         }
         if (!lat_mat.empty()) {
@@ -190,25 +220,36 @@ void GacosOnlineServiceWorker::doGacosRequest(
         submitReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         QNetworkReply* submitReply = nam.post(submitReq, QJsonDocument(submitBody).toJson());
 
-        // 同步等待提交响应
-        QEventLoop submitLoop;
-        connect(submitReply, &QNetworkReply::finished, &submitLoop, &QEventLoop::quit);
-        QTimer::singleShot(30000, &submitLoop, &QEventLoop::quit); // 30秒超时
-        submitLoop.exec();
+        const bool submitFinished = waitForReply(submitReply, 30000);
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            submitReply->deleteLater();
+            emit cancelled();
+            currentWorker = nullptr;
+            return;
+        }
+        if (!submitFinished) {
+            submitReply->abort();
+            submitReply->deleteLater();
+            emit errorProcess(QStringLiteral("GACOS提交请求超时。"));
+            currentWorker = nullptr;
+            return;
+        }
 
         if (submitReply->error() != QNetworkReply::NoError) {
-            InSARLogManager::LogError("GacosOnlineServiceWorker",
-                QString("GACOS提交失败: %1").arg(submitReply->errorString()));
+            const QString error = QString("GACOS提交失败: %1").arg(submitReply->errorString());
             submitReply->deleteLater();
-            continue;
+            emit errorProcess(error);
+            currentWorker = nullptr;
+            return;
         }
 
         QJsonDocument submitDoc = QJsonDocument::fromJson(submitReply->readAll());
         submitReply->deleteLater();
         QString jobId = submitDoc.object()["job_id"].toString();
         if (jobId.isEmpty()) {
-            InSARLogManager::LogError("GacosOnlineServiceWorker", "GACOS返回空 job_id");
-            continue;
+            emit errorProcess(QStringLiteral("GACOS返回空 job_id"));
+            currentWorker = nullptr;
+            return;
         }
 
         // === 阶段2: 轮询状态 ===
@@ -219,19 +260,35 @@ void GacosOnlineServiceWorker::doGacosRequest(
         for (int poll = 0; poll < 60; poll++) { // 最多轮询60次，每次30秒
             if (QThread::currentThread()->isInterruptionRequested()) {
                 emit cancelled();
+                currentWorker = nullptr;
                 return;
             }
 
-            QThread::sleep(30);
+            for (int waitMs = 0; waitMs < 30000; waitMs += 100) {
+                if (QThread::currentThread()->isInterruptionRequested()) {
+                    emit cancelled();
+                    currentWorker = nullptr;
+                    return;
+                }
+                QThread::msleep(100);
+            }
 
             QNetworkRequest statusReq;
             statusReq.setUrl(QUrl(GACOS_API_BASE + "/status/" + jobId));
             QNetworkReply* statusReply = nam.get(statusReq);
 
-            QEventLoop statusLoop;
-            connect(statusReply, &QNetworkReply::finished, &statusLoop, &QEventLoop::quit);
-            QTimer::singleShot(15000, &statusLoop, &QEventLoop::quit);
-            statusLoop.exec();
+            const bool statusFinished = waitForReply(statusReply, 15000);
+            if (QThread::currentThread()->isInterruptionRequested()) {
+                statusReply->deleteLater();
+                emit cancelled();
+                currentWorker = nullptr;
+                return;
+            }
+            if (!statusFinished) {
+                statusReply->abort();
+                statusReply->deleteLater();
+                continue;
+            }
 
             if (statusReply->error() == QNetworkReply::NoError) {
                 QJsonDocument statusDoc = QJsonDocument::fromJson(statusReply->readAll());
@@ -247,9 +304,9 @@ void GacosOnlineServiceWorker::doGacosRequest(
         }
 
         if (!completed) {
-            InSARLogManager::LogError("GacosOnlineServiceWorker",
-                QString("GACOS作业超时: %1").arg(jobId));
-            continue;
+            emit errorProcess(QString("GACOS作业超时: %1").arg(jobId));
+            currentWorker = nullptr;
+            return;
         }
 
         // === 阶段3: 下载并解析 ===
@@ -263,23 +320,39 @@ void GacosOnlineServiceWorker::doGacosRequest(
         downloadReq.setUrl(QUrl(downloadUrl));
         QNetworkReply* downloadReply = nam.get(downloadReq);
 
-        QEventLoop downloadLoop;
-        connect(downloadReply, &QNetworkReply::finished, &downloadLoop, &QEventLoop::quit);
-        QTimer::singleShot(120000, &downloadLoop, &QEventLoop::quit); // 2分钟下载超时
-        downloadLoop.exec();
+        const bool downloadFinished = waitForReply(downloadReply, 120000);
+        if (QThread::currentThread()->isInterruptionRequested()) {
+            downloadReply->deleteLater();
+            emit cancelled();
+            currentWorker = nullptr;
+            return;
+        }
+        if (!downloadFinished) {
+            downloadReply->abort();
+            downloadReply->deleteLater();
+            emit errorProcess(QStringLiteral("GACOS下载请求超时。"));
+            currentWorker = nullptr;
+            return;
+        }
 
         if (downloadReply->error() != QNetworkReply::NoError) {
-            InSARLogManager::LogError("GacosOnlineServiceWorker",
-                QString("GACOS下载失败: %1").arg(downloadReply->errorString()));
+            const QString error = QString("GACOS下载失败: %1").arg(downloadReply->errorString());
             downloadReply->deleteLater();
-            continue;
+            emit errorProcess(error);
+            currentWorker = nullptr;
+            return;
         }
 
         QFile dlFile(localDownloadPath);
-        if (dlFile.open(QIODevice::WriteOnly)) {
-            dlFile.write(downloadReply->readAll());
-            dlFile.close();
+        const QByteArray downloadData = downloadReply->readAll();
+        if (!dlFile.open(QIODevice::WriteOnly) || dlFile.write(downloadData) != downloadData.size()) {
+            if (dlFile.isOpen()) dlFile.close();
+            downloadReply->deleteLater();
+            emit errorProcess(QStringLiteral("Unable to save downloaded GACOS response."));
+            currentWorker = nullptr;
+            return;
         }
+        dlFile.close();
         downloadReply->deleteLater();
 
         // 调用独立算法 DLL 解析下载文件并计算 GACOS 改正相位
@@ -305,62 +378,44 @@ void GacosOnlineServiceWorker::doGacosRequest(
         );
 
         if (!ok) {
-            InSARLogManager::LogError("GacosOnlineServiceWorker", 
-                QString("GACOS算法处理失败 (图%1): %2").arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
             QFile::remove(localDownloadPath);
-            continue;
+            emit errorProcess(QString("GACOS算法处理失败 (图%1): %2")
+                .arg(idx + 1).arg(QString::fromLocal8Bit(errBuf)));
+            currentWorker = nullptr;
+            return;
         }
 
-        // Write the output and its metadata while holding the HDF5 lock.
+        // Write the staged output under one HDF5 lock; metadata copying takes
+        // its own lock after this scope to avoid recursive locking.
         {
             NodeUtils::Hdf5Locker locker;
             ret = FC.creat_new_h5(absolute_output_paths[idx].toStdString().c_str());
-            if (ret < 0) {
+            if (!locker.isLocked() || ret != 0 ||
+                FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "phase", aps_phase) != 0 ||
+                FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lat", lat_mat) != 0 ||
+                FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lon", lon_mat) != 0) {
                 QFile::remove(localDownloadPath);
-                continue;
-            }
-
-            string tmp_str;
-            Mat tmp;
-            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_1", tmp_str);
-            FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_1", tmp_str.c_str());
-            FC.read_str_from_h5(phase_paths[idx].toStdString().c_str(), "source_2", tmp_str);
-            FC.write_str_to_h5(absolute_output_paths[idx].toStdString().c_str(), "source_2", tmp_str.c_str());
-            QString sourcePathMetadataError;
-            if (!NodeUtils::copySourcePathMetadata(phase_paths[idx], absolute_output_paths[idx], &sourcePathMetadataError)) {
-                emit errorProcess(QStringLiteral("Failed to preserve source-path metadata: %1").arg(sourcePathMetadataError));
+                emit errorProcess(QStringLiteral("Failed to write staged GACOS H5 output: %1").arg(absolute_output_paths[idx]));
                 currentWorker = nullptr;
                 return;
             }
-            FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "phase", aps_phase);
-
-            if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lat", tmp))
-                FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lat", tmp);
-            if (0 == FC.read_array_from_h5(phase_paths[idx].toStdString().c_str(), "mapped_lon", tmp))
-                FC.write_array_to_h5(absolute_output_paths[idx].toStdString().c_str(), "mapped_lon", tmp);
         }
-
-        process_ok[idx] = true;
+        QString sourcePathMetadataError;
+        if (!NodeUtils::writeSourcePathMetadata(absolute_output_paths[idx], source_1_str, source_2_str,
+                                                &sourcePathMetadataError) ||
+            !NodeUtils::copySourcePathMetadata(phase_paths[idx], absolute_output_paths[idx],
+                                               &sourcePathMetadataError)) {
+            QFile::remove(localDownloadPath);
+            emit errorProcess(QStringLiteral("Failed to preserve source-path metadata: %1").arg(sourcePathMetadataError));
+            currentWorker = nullptr;
+            return;
+        }
 
         // 清理下载文件
         QFile::remove(localDownloadPath);
     }
 
-    QStringList generatedNames;
-    QStringList generatedPaths;
-    for (int i = 0; i < image_count; ++i) {
-        if (process_ok[i]) {
-            generatedNames.append(output_names[i]);
-            generatedPaths.append(absolute_output_paths[i]);
-        }
-    }
-    if (generatedPaths.isEmpty()) {
-        emit errorProcess(QStringLiteral("GACOS did not generate any output files."));
-        currentWorker = nullptr;
-        return;
-    }
-
-    emit outputsGenerated(file_name, generatedNames, generatedPaths, save_path, project_name);
+    emit outputsGenerated(file_name, output_names, absolute_output_paths, save_path, project_name);
     currentWorker = nullptr;
     InSARLogManager::LogInfo("GacosOnlineServiceWorker", "GACOS处理完成");
     emit endProcess();

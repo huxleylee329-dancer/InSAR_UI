@@ -135,6 +135,7 @@ private:
 
     // Prepared data for pre-execution lifecycle
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    bool m_provenanceWritten = false;
     bool m_xmlDirty = false;
 
 signals:

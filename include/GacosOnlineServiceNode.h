@@ -85,6 +85,10 @@ private:
     int m_preparedDataFormat = 0;
     QStringList m_generatedOutputNames;
     QStringList m_generatedOutputPaths;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    quint64 m_executionGeneration = 0;
 
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
@@ -99,6 +103,9 @@ private:
     QString generateDefaultOutputName() const;
     void executeProcessing();
     void releaseFinishedThreadResources();
+    bool commitOutputTransaction(QString* errorMessage);
+    void rollbackOutputTransaction(const QString& reason);
+    void setControlsEnabled(bool enabled);
     void startPreviewGeneration(const QStringList& h5Paths, const QStringList& generatedJpgPaths,
                                 const QStringList& types, const QStringList& resultH5Paths, const QStringList& resultJpgPaths,
                                 bool completeExecution);

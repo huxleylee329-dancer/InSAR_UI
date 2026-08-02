@@ -6,6 +6,7 @@
 #include "NodeUtils.h"
 #include "icon_source.h"
 #include "InSARLogManager.h"
+#include "tinyxml.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -40,7 +41,9 @@ GacosOnlineServiceNode::GacosOnlineServiceNode()
 
 GacosOnlineServiceNode::~GacosOnlineServiceNode()
 {
+    ++m_executionGeneration;
     stopExecution();
+    rollbackOutputTransaction(QStringLiteral("node destroyed"));
 }
 
 unsigned int GacosOnlineServiceNode::nPorts(PortType portType) const
@@ -212,7 +215,6 @@ void GacosOnlineServiceNode::createWidget()
         QString text = m_outputNodeNameEdit->text().trimmed();
         if (m_outputNodeName != text) {
             if (!confirmParameterChange()) { m_outputNodeNameEdit->setText(m_outputNodeName); return; }
-            NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_outputNodeName);
             m_outputNodeName = text;
             invalidateNodeData();
         }
@@ -254,27 +256,31 @@ bool GacosOnlineServiceNode::prepareToStart()
 {
     if (!validateInputs()) return false;
 
-    m_preparedDstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
-        ? generateDefaultOutputName() : m_outputNodeNameEdit->text().trimmed();
+    const QString configuredDstNode = m_outputNodeNameEdit
+        ? m_outputNodeNameEdit->text().trimmed()
+        : m_outputNodeName.trimmed();
+    m_preparedDstNode = configuredDstNode.isEmpty()
+        ? generateDefaultOutputName() : configuredDstNode;
     m_preparedSavePath = projectPath();
     m_preparedProjectName = projectName();
     m_preparedSrcNode = m_inputData->nodeName();
     m_preparedApiKey = m_apiKeyEdit ? m_apiKeyEdit->text().trimmed() : m_apiKey;
     m_preparedEmail = m_emailEdit ? m_emailEdit->text().trimmed() : m_email;
     m_preparedDataFormat = m_dataFormat;
+    m_preparedInputPaths = m_inputData->filePaths();
 
-    QStringList pathsToCheck;
-    QStringList srcPaths = m_inputData->filePaths();
-    for (const QString& srcPath : srcPaths) {
+    m_preparedOutputPaths.clear();
+    for (const QString& srcPath : m_preparedInputPaths) {
         QFileInfo fi(srcPath);
-        pathsToCheck.append(m_preparedSavePath + "/" + m_preparedDstNode + "/" + fi.baseName() + "_gacos_aps.h5");
+        m_preparedOutputPaths.append(QDir(m_preparedSavePath).absoluteFilePath(
+            m_preparedDstNode + "/" + fi.baseName() + "_gacos_aps.h5"));
     }
 
     if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
         m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(
-            NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
+            NodeUtils::getProjectContext(_widget), m_preparedDstNode, m_preparedOutputPaths, nullptr);
     }
 
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
@@ -286,10 +292,7 @@ void GacosOnlineServiceNode::executeProcessing()
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = m_preparedDstNode;
-        m_outputNodeNameEdit->setEnabled(true);
-        m_apiKeyEdit->setEnabled(true);
-        m_emailEdit->setEnabled(true);
-        m_dataFormatCombo->setEnabled(true);
+        setControlsEnabled(true);
         setState(ExecutionState::Running);
         setProgress(100);
         if (validateAndRestoreOutput()) finishExecution();
@@ -297,13 +300,17 @@ void GacosOnlineServiceNode::executeProcessing()
         return;
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
+    const quint64 executionGeneration = ++m_executionGeneration;
+    stopExecution();
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
+                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
     }
-
     setProgress(0);
     setState(ExecutionState::Running);
-    const QStringList inputPaths = m_inputData->filePaths();
     m_generatedOutputNames.clear();
     m_generatedOutputPaths.clear();
 
@@ -311,20 +318,33 @@ void GacosOnlineServiceNode::executeProcessing()
     m_workerThread = new GacosOnlineServiceWorker();
     m_workerThread->moveToThread(m_thread);
 
-    connect(this, &GacosOnlineServiceNode::startGacos, m_workerThread, &GacosOnlineServiceWorker::doGacosRequest);
-    connect(m_thread, &QThread::started, this, [this, inputPaths]() {
-        Q_EMIT startGacos(m_preparedApiKey, m_preparedEmail, m_preparedDataFormat,
-            m_preparedSavePath, m_preparedProjectName, m_preparedDstNode, inputPaths);
+    GacosOnlineServiceWorker* const worker = m_workerThread;
+    const QString projectRoot = m_preparedSavePath;
+    const QString stagingNode = m_outputTransaction.stagingName;
+    const QStringList inputPaths = m_preparedInputPaths;
+    connect(m_thread, &QThread::started, m_workerThread, [worker, projectRoot, stagingNode, inputPaths,
+            apiKey = m_preparedApiKey, email = m_preparedEmail, dataFormat = m_preparedDataFormat,
+            projectName = m_preparedProjectName]() {
+        worker->doGacosRequest(apiKey, email, dataFormat, projectRoot, projectName, stagingNode, inputPaths);
     });
-    connect(m_workerThread, &GacosOnlineServiceWorker::updateProcess, this, &GacosOnlineServiceNode::onProgressUpdate);
-    connect(m_workerThread, &GacosOnlineServiceWorker::endProcess, this, &GacosOnlineServiceNode::onProcessingFinished);
-    connect(m_workerThread, &GacosOnlineServiceWorker::errorProcess, this, &GacosOnlineServiceNode::onError);
-    connect(m_workerThread, &GacosOnlineServiceWorker::cancelled, this, &GacosOnlineServiceNode::onCancelled);
+    connect(m_workerThread, &GacosOnlineServiceWorker::updateProcess, this,
+            [this, executionGeneration](int progress, const QString& message) {
+        if (executionGeneration == m_executionGeneration) onProgressUpdate(progress, message);
+    });
+    connect(m_workerThread, &GacosOnlineServiceWorker::endProcess, this,
+            [this, executionGeneration]() { if (executionGeneration == m_executionGeneration) onProcessingFinished(); });
+    connect(m_workerThread, &GacosOnlineServiceWorker::errorProcess, this,
+            [this, executionGeneration](const QString& error) { if (executionGeneration == m_executionGeneration) onError(error); });
+    connect(m_workerThread, &GacosOnlineServiceWorker::cancelled, this,
+            [this, executionGeneration]() { if (executionGeneration == m_executionGeneration) onCancelled(); });
     connect(m_workerThread, &GacosOnlineServiceWorker::endProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &GacosOnlineServiceWorker::errorProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &GacosOnlineServiceWorker::cancelled, m_thread, &QThread::quit);
-    connect(m_workerThread, &GacosOnlineServiceWorker::outputsGenerated,
-            this, &GacosOnlineServiceNode::onResultsReceived);
+    connect(m_workerThread, &GacosOnlineServiceWorker::outputsGenerated, this,
+            [this, executionGeneration](const QString& dstNode, const QStringList& names,
+                                        const QStringList& paths, const QString& savePath, const QString& projectName) {
+        if (executionGeneration == m_executionGeneration) onResultsReceived(dstNode, names, paths, savePath, projectName);
+    });
     connect(m_workerThread, &GacosOnlineServiceWorker::destroyed, m_thread, &QThread::quit);
     connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
@@ -333,10 +353,7 @@ void GacosOnlineServiceNode::executeProcessing()
         if (m_thread && m_thread->isRunning()) setState(ExecutionState::Running);
     });
 
-    m_outputNodeNameEdit->setEnabled(false);
-    m_apiKeyEdit->setEnabled(false);
-    m_emailEdit->setEnabled(false);
-    m_dataFormatCombo->setEnabled(false);
+    setControlsEnabled(false);
 
     deferAutomaticCompletion();
     m_thread->start();
@@ -351,18 +368,13 @@ void GacosOnlineServiceNode::onProgressUpdate(int progress, const QString& messa
 
 void GacosOnlineServiceNode::onProcessingFinished()
 {
-    if (m_generatedOutputPaths.isEmpty()) {
-        onError(QStringLiteral("GACOS did not return output files."));
+    QString transactionError;
+    if (!commitOutputTransaction(&transactionError)) {
+        onError(transactionError);
         return;
     }
-    for (const QString& h5Path : m_generatedOutputPaths) {
-        if (!QFileInfo::exists(h5Path)) {
-            onError(QStringLiteral("GACOS returned a missing output file."));
-            return;
-        }
-    }
-    const QString dstNode = m_outputNodeName;
-    const QStringList h5Paths = m_generatedOutputPaths;
+    releaseFinishedThreadResources();
+    const QStringList h5Paths = m_outputData ? m_outputData->filePaths() : QStringList();
     QStringList jpgPaths;
     QStringList types;
     for (const QString& h5Path : h5Paths) {
@@ -371,22 +383,14 @@ void GacosOnlineServiceNode::onProcessingFinished()
         types.append("phase");
     }
 
-    releaseFinishedThreadResources();
-
     if (discardObsoleteAutomaticExecution()) return;
-
-    m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
-    setOutputData(0, m_outputData);
 
     if (!h5Paths.isEmpty()) {
         startPreviewGeneration(h5Paths, jpgPaths, types, h5Paths, jpgPaths, true);
     } else {
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
-        m_outputNodeNameEdit->setEnabled(true);
-        m_apiKeyEdit->setEnabled(true);
-        m_emailEdit->setEnabled(true);
-        m_dataFormatCombo->setEnabled(true);
+        setControlsEnabled(true);
         setState(ExecutionState::Running);
         setProgress(100);
         finishExecution();
@@ -395,28 +399,24 @@ void GacosOnlineServiceNode::onProcessingFinished()
 
 void GacosOnlineServiceNode::onError(const QString& error)
 {
-    Q_UNUSED(error);
+    rollbackOutputTransaction(error);
     releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) return;
-    m_outputNodeNameEdit->setEnabled(true);
-    m_apiKeyEdit->setEnabled(true);
-    m_emailEdit->setEnabled(true);
-    m_dataFormatCombo->setEnabled(true);
+    InSARLogManager::LogError("GacosOnlineServiceNode", error);
+    setControlsEnabled(true);
     setState(ExecutionState::Error);
 }
 
 void GacosOnlineServiceNode::onCancelled()
 {
+    rollbackOutputTransaction(QStringLiteral("cancelled"));
     releaseFinishedThreadResources();
     if (discardObsoleteAutomaticExecution()) return;
 
     setState(ExecutionState::Stopped);
     Q_EMIT executionStopped();
     Q_EMIT computingFinished();
-    m_outputNodeNameEdit->setEnabled(true);
-    m_apiKeyEdit->setEnabled(true);
-    m_emailEdit->setEnabled(true);
-    m_dataFormatCombo->setEnabled(true);
+    setControlsEnabled(true);
 }
 
 void GacosOnlineServiceNode::onResultsReceived(
@@ -427,67 +427,35 @@ void GacosOnlineServiceNode::onResultsReceived(
     const QString& projectName)
 {
     if (isAutomaticExecutionObsolete()) return;
-    if (outputNames.isEmpty() || outputNames.size() != outputPaths.size()) {
-        InSARLogManager::LogError("GacosOnlineServiceNode", "Worker returned inconsistent GACOS output metadata.");
+    if (dstNode != m_outputTransaction.stagingName || outputNames.isEmpty() ||
+        outputNames.size() != outputPaths.size()) {
+        ++m_executionGeneration;
+        onError(QStringLiteral("Worker returned inconsistent GACOS output metadata."));
         return;
+    }
+    for (int i = 0; i < outputPaths.size(); ++i) {
+        if (QFileInfo(outputPaths[i]).baseName() != outputNames[i]) {
+            ++m_executionGeneration;
+            onError(QStringLiteral("Worker returned a GACOS output with an inconsistent file name."));
+            return;
+        }
     }
 
     m_generatedOutputNames = outputNames;
     m_generatedOutputPaths = outputPaths;
-    QStandardItemModel* model = projectModel();
-    const QList<QStandardItem*> projects = model ? model->findItems(projectName) : QList<QStandardItem*>();
-    if (projects.isEmpty()) {
-        InSARLogManager::LogError("GacosOnlineServiceNode", "Project tree root was not found.");
-        return;
-    }
-
-    QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
-        projects.first(), dstNode, "phase-2.5", FOLDER_ICON);
-    if (!outputNode) {
-        InSARLogManager::LogError("GacosOnlineServiceNode", "Unable to create GACOS output node.");
-        return;
-    }
-    outputNode->setToolTip(projectName);
-
-    XMLFile* xml = projectXml();
-    for (int i = 0; i < outputPaths.size(); ++i) {
-        QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
-            outputNode, outputNames[i], "phase", outputPaths[i], IMAGEDATA_ICON);
-        if (imageItem) {
-            outputNode->setChild(imageItem->row(), 1, new QStandardItem(outputPaths[i]));
-        }
-        if (xml) {
-            const QString relativePath = QString("/%1/%2").arg(dstNode, QFileInfo(outputPaths[i]).fileName());
-            xml->XMLFile_add_unwrap(dstNode.toStdString().c_str(), outputNames[i].toStdString().c_str(),
-                relativePath.toStdString().c_str(), 0, 0, "GACOS", 0);
-        }
-    }
-    if (xml) {
-        const QString xmlPath = savePath + "/" + projectName;
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
-    }
-    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-        iface->refreshProjectTree();
-    }
+    Q_UNUSED(savePath);
+    Q_UNUSED(projectName);
 }
 
 bool GacosOnlineServiceNode::validateAndRestoreOutput()
 {
-    QString dstNode = m_outputNodeName.trimmed();
-    if (dstNode.isEmpty()) return false;
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (!dir.exists()) return false;
-
-    QStringList filters;
-    filters << "*.h5";
-    QStringList h5Files = dir.entryList(filters, QDir::Files);
-    if (h5Files.isEmpty()) return false;
-
-    QStringList h5Paths, expectedJpgPaths, types;
-    for (const QString& h5File : h5Files) {
-        h5Paths.append(dir.absoluteFilePath(h5File));
-        expectedJpgPaths.append(outputPath + QFileInfo(h5File).baseName() + ".jpg");
+    QStringList h5Paths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths)) return false;
+    const QString dstNode = m_outputNodeName.trimmed();
+    QStringList expectedJpgPaths, types;
+    for (const QString& h5Path : h5Paths) {
+        expectedJpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" +
+                                QFileInfo(h5Path).baseName() + ".jpg");
         types.append("phase");
     }
 
@@ -540,10 +508,7 @@ void GacosOnlineServiceNode::startPreviewGeneration(const QStringList& h5Paths,
             if (discardObsoleteAutomaticExecution()) return;
             m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
             setOutputData(1, m_imageInfoData);
-            m_outputNodeNameEdit->setEnabled(true);
-            m_apiKeyEdit->setEnabled(true);
-            m_emailEdit->setEnabled(true);
-            m_dataFormatCombo->setEnabled(true);
+            setControlsEnabled(true);
             setState(ExecutionState::Running);
             setProgress(100);
             finishExecution();
@@ -562,18 +527,15 @@ void GacosOnlineServiceNode::startPreviewGeneration(const QStringList& h5Paths,
 
 QStringList GacosOnlineServiceNode::previewImagePaths() const
 {
+    QStringList h5Paths;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths)) {
+        return QStringList();
+    }
     QStringList list;
-    QString dstNode = m_outputNodeName.trimmed();
-    if (dstNode.isEmpty()) return list;
-    QString outputPath = projectPath() + "/" + dstNode + "/";
-    QDir dir(outputPath);
-    if (dir.exists()) {
-        QStringList filters;
-        filters << "*.h5";
-        for (const QString& h5File : dir.entryList(filters, QDir::Files)) {
-            QString jpgPath = outputPath + QFileInfo(h5File).baseName() + ".jpg";
-            if (QFile::exists(jpgPath)) list.append(jpgPath);
-        }
+    for (const QString& h5Path : h5Paths) {
+        const QString jpgPath = QFileInfo(h5Path).absolutePath() + "/" +
+            QFileInfo(h5Path).baseName() + ".jpg";
+        if (QFile::exists(jpgPath)) list.append(jpgPath);
     }
     return list;
 }
@@ -625,6 +587,7 @@ void GacosOnlineServiceNode::stopExecution()
         m_thread->quit();
         m_thread->wait();
     }
+    rollbackOutputTransaction(QStringLiteral("stopped"));
     m_thread = nullptr;
     m_workerThread = nullptr;
 }
@@ -637,6 +600,90 @@ void GacosOnlineServiceNode::releaseFinishedThreadResources()
     if (thread && thread->isRunning()) {
         thread->quit();
     }
+}
+
+bool GacosOnlineServiceNode::commitOutputTransaction(QString* errorMessage)
+{
+    if (m_generatedOutputNames.size() != m_generatedOutputPaths.size() || m_generatedOutputPaths.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("GACOS worker did not return a complete staging output map.");
+        return false;
+    }
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    XMLFile* xml = iface ? iface->projectXml() : nullptr;
+    const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
+    if (!xml || xmlPath.isEmpty() ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, errorMessage) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("phase"), errorMessage) ||
+        !NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, m_generatedOutputPaths, errorMessage)) {
+        return false;
+    }
+    QStringList finalPaths;
+    if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, errorMessage) ||
+        !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, xml, xmlPath, errorMessage)) {
+        return false;
+    }
+    TiXmlElement* root = nullptr;
+    if (xml->get_root(root) < 0 || !root) {
+        if (errorMessage) *errorMessage = QStringLiteral("Unable to read project XML root for GACOS output.");
+        return false;
+    }
+    for (TiXmlElement* element = root->FirstChildElement(); element != nullptr; ) {
+        const char* name = element->Attribute("name");
+        if (name && m_preparedDstNode == QString::fromUtf8(name)) {
+            TiXmlElement* toRemove = element;
+            element = element->NextSiblingElement();
+            root->RemoveChild(toRemove);
+        } else {
+            element = element->NextSiblingElement();
+        }
+    }
+    for (int i = 0; i < finalPaths.size(); ++i) {
+        const QString outputName = QFileInfo(finalPaths[i]).baseName();
+        const QString relativePath = QStringLiteral("/%1/%2").arg(m_preparedDstNode, QFileInfo(finalPaths[i]).fileName());
+        if (xml->XMLFile_add_unwrap(m_preparedDstNode.toStdString().c_str(), outputName.toStdString().c_str(),
+                                    relativePath.toStdString().c_str(), 0, 0, "GACOS", 0) < 0) {
+            if (errorMessage) *errorMessage = QStringLiteral("Unable to add GACOS output to project XML.");
+            return false;
+        }
+    }
+    if (!NodeUtils::saveProjectXmlAtomically(xml, xmlPath, errorMessage) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, errorMessage)) {
+        return false;
+    }
+    if (iface && iface->projectModel()) {
+        NodeUtils::removeDataNodeFromProjectTree(iface, m_preparedDstNode);
+        const QList<QStandardItem*> projects = iface->projectModel()->findItems(m_preparedProjectName);
+        if (!projects.isEmpty()) {
+            QStandardItem* outputNode = NodeUtils::findOrCreateProjectNode(
+                projects.first(), m_preparedDstNode, "phase-2.5", FOLDER_ICON);
+            if (outputNode) {
+                outputNode->setToolTip(m_preparedProjectName);
+                for (int i = 0; i < finalPaths.size(); ++i) {
+                    NodeUtils::findOrCreateChildItem(outputNode, QFileInfo(finalPaths[i]).baseName(),
+                                                      "phase", finalPaths[i], IMAGEDATA_ICON);
+                }
+            }
+        }
+        iface->refreshProjectTree();
+    }
+    m_outputNodeName = m_preparedDstNode;
+    m_outputData = std::make_shared<ImportedFileData>(finalPaths, m_preparedDstNode);
+    setOutputData(0, m_outputData);
+    return true;
+}
+
+void GacosOnlineServiceNode::rollbackOutputTransaction(const QString& reason)
+{
+    IApplicationInterface* iface = NodeUtils::getProjectContext(_widget);
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, reason, iface ? iface->projectXml() : nullptr);
+}
+
+void GacosOnlineServiceNode::setControlsEnabled(bool enabled)
+{
+    if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enabled);
+    if (m_apiKeyEdit) m_apiKeyEdit->setEnabled(enabled);
+    if (m_emailEdit) m_emailEdit->setEnabled(enabled);
+    if (m_dataFormatCombo) m_dataFormatCombo->setEnabled(enabled);
 }
 
 void GacosOnlineServiceNode::processAutomatically()
