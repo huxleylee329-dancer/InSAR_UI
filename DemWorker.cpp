@@ -235,6 +235,11 @@ void DemWorker::Dem(int method,
         int offsetCol = 0;
         {
             NodeUtils::Hdf5Locker locker;
+            QString phaseContractError;
+            if (!NodeUtils::validateDemPhaseInput(inputH5, &phaseContractError)) {
+                emit errorProcess(phaseContractError);
+                return;
+            }
             Mat phase;
             if (!NodeUtils::readMatFromH5(inputH5, "phase", phase)) {
                 emit errorProcess(QStringLiteral("Failed to read input phase data: ") + inputH5);
@@ -242,8 +247,9 @@ void DemWorker::Dem(int method,
             }
 
             Mat flatPhaseCoefficient;
-            if (!NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficient", flatPhaseCoefficient)) {
-                emit errorProcess(QStringLiteral("Input phase file has no flat_phase_coefficient: ") + inputH5);
+            if (!NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficient", flatPhaseCoefficient) ||
+                flatPhaseCoefficient.empty()) {
+                emit errorProcess(QStringLiteral("Input phase file has no valid flat_phase_coefficient: ") + inputH5);
                 return;
             }
 

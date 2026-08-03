@@ -117,18 +117,15 @@ bool loadSbasRebuildProvenance(const QString& h5Path, const QString& projectRoot
         }
         const QJsonObject actual = actualFingerprints.first().toObject();
         if (actual.value(QStringLiteral("size")).toDouble(-1.0) < 0.0 ||
-            actual.value(QStringLiteral("sha256")).toString().isEmpty()) {
+            actual.value(QStringLiteral("modifiedMs")).toDouble(-1.0) < 0.0) {
             if (errorMessage) *errorMessage = QStringLiteral("SBAS provenance input is missing: %1. Please rerun SBAS Time Series.").arg(relativePath);
             return false;
         }
         const QJsonValue expectedSize = input.value(QStringLiteral("size"));
         const QJsonValue expectedModified = input.value(QStringLiteral("modifiedMs"));
-        const QJsonValue expectedHash = input.value(QStringLiteral("sha256"));
-        if (!expectedSize.isDouble() || !expectedModified.isDouble() || !expectedHash.isString() ||
-            expectedHash.toString().isEmpty() ||
+        if (!expectedSize.isDouble() || !expectedModified.isDouble() ||
             actual.value(QStringLiteral("size")).toDouble() != expectedSize.toDouble() ||
-            actual.value(QStringLiteral("modifiedMs")).toDouble() != expectedModified.toDouble() ||
-            actual.value(QStringLiteral("sha256")).toString() != expectedHash.toString()) {
+            actual.value(QStringLiteral("modifiedMs")).toDouble() != expectedModified.toDouble()) {
             if (errorMessage) *errorMessage = QStringLiteral("SBAS provenance input fingerprint changed: %1. Please rerun SBAS Time Series.").arg(relativePath);
             return false;
         }

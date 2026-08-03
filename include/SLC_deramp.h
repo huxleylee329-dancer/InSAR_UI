@@ -21,8 +21,7 @@ public slots:
     void StopThread();
 signals:
     void operate(int masterIndex, QString projectName, QString savePath,
-                 QString dstNode, QStringList inputPaths, QString demPath,
-                 bool isDeflat, bool isTopoRemoval);
+                 QString dstNode, QStringList inputPaths, QString demPath);
     void sendCopy(QStandardItemModel*);
 
 private:
@@ -36,7 +35,7 @@ private:
     int method;
     int image_number;
     void ChangeVision(bool Editable);
-    
+
     QLabel* m_demPathLabel = nullptr;
     QLineEdit* m_demPathEdit = nullptr;
     QPushButton* m_demBrowseBtn = nullptr;

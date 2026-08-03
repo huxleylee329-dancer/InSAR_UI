@@ -390,30 +390,19 @@ bool DemNode::prepareToStart()
     QStringList srcPaths = m_inputData->filePaths();
     m_preparedPhasePaths = srcPaths;
 
-    // 方案 1: 预检输入文件是否包含平地消除系数
-    FormatConversion FC_check;
-    cv::Mat tmp_check;
-    bool hasFlatPhase = true;
+    // DEM inversion requires a complete, compatible interferometric phase contract.
     for (const QString& srcPath : srcPaths) {
         QString inputH5 = srcPath;
         if (QDir::isRelativePath(inputH5)) {
             inputH5 = m_preparedSavePath + "/" + inputH5;
         }
-        if (FC_check.read_array_from_h5(inputH5.toStdString().c_str(), "flat_phase_coefficient", tmp_check) != 0) {
-            hasFlatPhase = false;
-            break;
+        QString phaseContractError;
+        if (!NodeUtils::validateDemPhaseInput(inputH5, &phaseContractError)) {
+            setLastErrorMessage(phaseContractError);
+            setState(ExecutionState::Error);
+            Q_EMIT executionError(phaseContractError);
+            return false;
         }
-    }
-
-    if (!hasFlatPhase) {
-        QString errorMsg = QStringLiteral(
-            "输入的解缠相位文件中未包含平地相位消除系数 flat_phase_coefficient。"
-            "请确保上游\"干涉形成 (Interferometric Formation)\"节点在运行时已勾选"
-            "\"平地消除 (IsDeflat)\"选项，并重新运行后续节点。");
-        setLastErrorMessage(errorMsg);
-        setState(ExecutionState::Error);
-        Q_EMIT executionError(errorMsg);
-        return false;
     }
 
     // Precalculate output file paths for overwrite check

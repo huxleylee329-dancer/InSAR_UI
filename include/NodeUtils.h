@@ -120,8 +120,13 @@ struct OutputTransaction {
     Stage stage = Stage::Inactive;
 };
 
-// Captures ordered, content-addressed input snapshots. Each entry contains the
-// normalized path, size, modification time, and SHA-256 digest.
+struct OutputTransactionRecoveryInfo {
+    bool transactionRecovered = false;
+    bool projectXmlRestored = false;
+};
+
+// Captures ordered input metadata snapshots. Each entry contains the
+// normalized path, size, and modification time.
 QJsonArray fingerprintInputPaths(const QStringList& paths);
 
 bool beginOutputTransaction(const QString& projectRoot,
@@ -129,7 +134,8 @@ bool beginOutputTransaction(const QString& projectRoot,
                             const QStringList& expectedFinalPaths,
                             const QStringList& inputPaths,
                             OutputTransaction& transaction,
-                            QString* errorMessage = nullptr);
+                            QString* errorMessage = nullptr,
+                            OutputTransactionRecoveryInfo* recoveryInfo = nullptr);
 // Performs only provably safe rollback/cleanup for an interrupted transaction.
 // Ambiguous states remain isolated and return false.
 bool recoverOutputTransaction(const QString& projectRoot,
@@ -308,6 +314,15 @@ bool writeSourcePathMetadata(const QString& outputPath,
                              const std::string& source1,
                              const std::string& source2,
                              QString* errMsg = nullptr);
+
+// Copies the phase-processing contract when the input provides one. Legacy
+// products without a contract remain readable, but are not upgraded implicitly.
+bool copyPhaseProcessingMetadata(const QString& inputPath,
+                                 const QString& outputPath,
+                                 QString* errMsg = nullptr);
+
+// Validates the phase-processing contract required by DEM inversion.
+bool validateDemPhaseInput(const QString& inputPath, QString* errMsg = nullptr);
 
 /**
  * @brief 向 H5 文件中写入 cv::Mat 矩阵数据（带自动线程锁）

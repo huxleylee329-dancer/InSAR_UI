@@ -3,6 +3,7 @@
 #include "InSARLogManager.h"
 #include "tinyxml.h"
 #include "FormatConversion.h"
+#include "Hdf5IO.h"
 #include "CDSELoginDialog.h"
 #include <QAuthenticator>
 #include <QNetworkAccessManager>
@@ -99,6 +100,52 @@ struct Sentinel1ProductIdentity
     QString polarization;
 };
 
+class Hdf5BatchLocker
+{
+public:
+    Hdf5BatchLocker()
+        : m_lock(Hdf5IO::acquireBatchLock())
+        , m_status(m_lock ? Hdf5IO::getBatchLockStatus(m_lock) : -1)
+    {
+    }
+
+    ~Hdf5BatchLocker()
+    {
+        if (m_lock) {
+            Hdf5IO::releaseBatchLock(m_lock);
+        }
+    }
+
+    bool isLocked() const { return m_status == 0; }
+
+private:
+    Hdf5IO::BatchLock* m_lock;
+    int m_status;
+};
+
+bool readOptionalOrbitAuditField(const QString& h5Path, const char* name, bool& exists,
+                                 std::string& value, QString& errorMessage)
+{
+    Hdf5IO::Hdf5ReadDiagnostic diagnostic = {};
+    const int status = Hdf5IO::readStringDiagnosed(h5Path.toStdString().c_str(), name, value, &diagnostic);
+    if (status == 0) {
+        exists = true;
+        return true;
+    }
+    if (diagnostic.stage == Hdf5IO::HDF5_READ_STAGE_OPEN_DATASET && diagnostic.hdf5Status == 0) {
+        exists = false;
+        value.clear();
+        return true;
+    }
+
+    errorMessage = QStringLiteral("Unable to read Sentinel-1 identity audit field %1 in %2: stage=%3, status=%4, detail=%5")
+        .arg(QString::fromLatin1(name), h5Path)
+        .arg(diagnostic.stage)
+        .arg(diagnostic.hdf5Status)
+        .arg(QString::fromLocal8Bit(diagnostic.errorStack));
+    return false;
+}
+
 bool readSentinel1ProductIdentity(const QString& h5Path, Sentinel1ProductIdentity& identity,
                                   QString& errorMessage)
 {
@@ -139,15 +186,77 @@ bool writeOrbitProductIdentityAudit(const QString& h5Path,
         return false;
     }
 
-    FormatConversion conversion;
-    if (conversion.write_str_to_h5(h5Path.toStdString().c_str(), "orbit_input_swath",
-                                   inputIdentity.swath.toStdString().c_str()) != 0 ||
-        conversion.write_str_to_h5(h5Path.toStdString().c_str(), "orbit_input_polarization",
-                                   inputIdentity.polarization.toStdString().c_str()) != 0 ||
-        conversion.write_str_to_h5(h5Path.toStdString().c_str(), "orbit_identity_consistency",
-                                   "verified") != 0) {
-        errorMessage = QStringLiteral("Unable to write Sentinel-1 identity audit metadata to POD output: %1").arg(h5Path);
+    Hdf5BatchLocker hdf5BatchLocker;
+    if (!hdf5BatchLocker.isLocked()) {
+        errorMessage = QStringLiteral("Unable to acquire HDF5 batch lock for Sentinel-1 identity audit: %1").arg(h5Path);
         return false;
+    }
+
+    struct AuditField
+    {
+        AuditField(const char* fieldName, const QString& expectedValue)
+            : name(fieldName)
+            , expected(expectedValue)
+            , exists(false)
+        {
+        }
+
+        const char* name;
+        QString expected;
+        bool exists;
+        std::string stored;
+    };
+    AuditField fields[] = {
+        { "orbit_input_swath", inputIdentity.swath },
+        { "orbit_input_polarization", inputIdentity.polarization },
+        { "orbit_identity_consistency", QStringLiteral("verified") }
+    };
+
+    for (AuditField& field : fields) {
+        if (!readOptionalOrbitAuditField(h5Path, field.name, field.exists, field.stored, errorMessage)) {
+            return false;
+        }
+        if (field.exists && QString::fromStdString(field.stored).trimmed().compare(field.expected, Qt::CaseInsensitive) != 0) {
+            errorMessage = QStringLiteral("Sentinel-1 identity audit field %1 mismatch in %2: expected %3, found %4")
+                .arg(QString::fromLatin1(field.name), h5Path, field.expected,
+                     QString::fromStdString(field.stored).trimmed());
+            return false;
+        }
+    }
+
+    const std::string nativePath = h5Path.toStdString();
+    QStringList failedFields;
+    for (const AuditField& field : fields) {
+        if (!field.exists && Hdf5IO::createString(nativePath.c_str(), field.name,
+                                                   field.expected.toStdString().c_str()) != 0) {
+            failedFields.append(QString::fromLatin1(field.name));
+        }
+    }
+    if (!failedFields.isEmpty()) {
+        QStringList rollbackFailures;
+        for (const AuditField& field : fields) {
+            if (!field.exists && Hdf5IO::removeDatasetIfPresent(nativePath.c_str(), field.name) < 0) {
+                rollbackFailures.append(QString::fromLatin1(field.name));
+            }
+        }
+        errorMessage = QStringLiteral("Unable to write Sentinel-1 identity audit field(s) %1 to POD output: %2")
+            .arg(failedFields.join(QStringLiteral(", ")), h5Path);
+        if (!rollbackFailures.isEmpty()) {
+            errorMessage += QStringLiteral("; audit metadata rollback failed for field(s): %1")
+                .arg(rollbackFailures.join(QStringLiteral(", ")));
+        }
+        return false;
+    }
+
+    for (AuditField& field : fields) {
+        if (!field.exists && !readOptionalOrbitAuditField(h5Path, field.name, field.exists, field.stored, errorMessage)) {
+            return false;
+        }
+        if (!field.exists || QString::fromStdString(field.stored).trimmed().compare(field.expected, Qt::CaseInsensitive) != 0) {
+            errorMessage = QStringLiteral("Unable to verify Sentinel-1 identity audit field %1 in POD output: %2")
+                .arg(QString::fromLatin1(field.name), h5Path);
+            return false;
+        }
     }
     return true;
 }

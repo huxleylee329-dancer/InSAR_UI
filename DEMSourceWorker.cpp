@@ -52,7 +52,7 @@ DEMSourceWorker::~DEMSourceWorker()
 }
 
 int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, bool requiresEarthdataAuth,
-                                  QString* failureDetail, bool allowRetry)
+                                  QString* failureDetail)
 {
     QNetworkAccessManager manager;
     QNetworkRequest request((QUrl(url)));
@@ -91,19 +91,37 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
 
     QNetworkReply* reply = manager.get(request);
 
+    constexpr int kDownloadInactivityTimeoutMs = 30000;
+    bool downloadTimedOut = false;
+    qint64 downloadedBytes = 0;
+
+    QTimer inactivityTimer;
+    inactivityTimer.setSingleShot(true);
+    connect(&inactivityTimer, &QTimer::timeout, reply, [&]() {
+        downloadTimedOut = true;
+        InSARLogManager::LogWarning("DEMSourceWorker", QString("Download tile stalled for %1 ms: %2")
+            .arg(kDownloadInactivityTimeoutMs).arg(url));
+        reply->abort();
+    });
+
     // 绑定读取信号
     connect(reply, &QNetworkReply::readyRead, this, [&]() {
-        tempFile.write(reply->readAll());
+        const QByteArray data = reply->readAll();
+        if (!data.isEmpty()) {
+            tempFile.write(data);
+            inactivityTimer.start(kDownloadInactivityTimeoutMs);
+        }
     });
 
     QEventLoop loop;
     connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
 
-    QTimer timeoutTimer;
-    timeoutTimer.setSingleShot(true);
-    connect(&timeoutTimer, &QTimer::timeout, reply, [&]() {
-        InSARLogManager::LogWarning("DEMSourceWorker", QString("Download tile timeout: %1").arg(url));
-        reply->abort();
+    connect(reply, &QNetworkReply::downloadProgress, &inactivityTimer,
+            [&](qint64 bytesReceived, qint64) {
+        if (bytesReceived > downloadedBytes) {
+            downloadedBytes = bytesReceived;
+            inactivityTimer.start(kDownloadInactivityTimeoutMs);
+        }
     });
 
     QTimer cancelCheckTimer;
@@ -115,12 +133,12 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
         }
     });
 
-    timeoutTimer.start(60000); // 60s
+    inactivityTimer.start(kDownloadInactivityTimeoutMs);
     cancelCheckTimer.start(200); // 200ms
 
     loop.exec(); // 阻塞当前线程直到下载完毕、超时或被取消
 
-    timeoutTimer.stop();
+    inactivityTimer.stop();
     cancelCheckTimer.stop();
 
     tempFile.close();
@@ -139,11 +157,18 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
         {
             InSARLogManager::LogInfo("DEMSourceWorker", "Download canceled by user.");
         }
-        else
+        else if (downloadTimedOut)
         {
             InSARLogManager::LogError("DEMSourceWorker", QString("Download timeout. URL: %1").arg(url));
             if (failureDetail) {
-                *failureDetail = QStringLiteral("下载超时");
+                *failureDetail = QStringLiteral("下载 %1 秒内无数据进度").arg(kDownloadInactivityTimeoutMs / 1000);
+            }
+        }
+        else
+        {
+            InSARLogManager::LogError("DEMSourceWorker", QString("Download aborted. URL: %1").arg(url));
+            if (failureDetail) {
+                *failureDetail = QStringLiteral("下载被中止");
             }
         }
         return -1;
@@ -185,12 +210,6 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
         }
         else if (err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
         {
-            if (requiresEarthdataAuth && allowRetry)
-            {
-                InSARLogManager::LogInfo("DEMSourceWorker", QString("Retrying DEM tile download after authentication response: %1").arg(url));
-                return downloadTile(url, savePath, requiresEarthdataAuth, failureDetail, false);
-            }
-
             if (failureDetail) {
                 *failureDetail = QStringLiteral("HTTP %1：%2").arg(statusCode).arg(errorString);
             }
@@ -203,16 +222,6 @@ int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, b
             QString errorMessage = QString("Download failed: URL: %1, Final URL: %2, Status Code: %3, Content-Type: %4, Error: %5")
                 .arg(url).arg(finalUrl).arg(statusCode).arg(contentType).arg(errorString);
             InSARLogManager::LogWarning("DEMSourceWorker", errorMessage);
-
-            const bool retryable = allowRetry &&
-                (statusCode == 0 || statusCode == 302 || statusCode == 303 || statusCode == 307 || statusCode == 308 ||
-                 err == QNetworkReply::TemporaryNetworkFailureError || err == QNetworkReply::ConnectionRefusedError ||
-                 err == QNetworkReply::RemoteHostClosedError || err == QNetworkReply::UnknownNetworkError);
-            if (retryable)
-            {
-                InSARLogManager::LogInfo("DEMSourceWorker", QString("Retrying DEM tile download once: %1").arg(url));
-                return downloadTile(url, savePath, requiresEarthdataAuth, failureDetail, false);
-            }
 
             if (failureDetail) {
                 *failureDetail = QStringLiteral("HTTP %1：%2").arg(statusCode).arg(errorString);

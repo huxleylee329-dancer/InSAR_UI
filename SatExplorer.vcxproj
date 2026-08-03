@@ -99,7 +99,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;DeformationRateField_d.lib;Qt5Sqld.lib;gdal_i.lib;GCPManager_d.lib;AtmosphericCorrection_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SARProcessing_d.lib;qtmain.lib;Qt5Cored.lib;Qt5Guid.lib;Qt5Widgetsd.lib;Qt5Chartsd.lib;Qt5Svgd.lib;Qt5Concurrentd.lib;Utils_d.lib;Deflat_d.lib;FormatConversion_d.lib;Hdf5IO_d.lib;ComplexMat_d.lib;Registration_d.lib;Filter_d.lib;Unwrap_d.lib;Dem_d.lib;SBAS_d.lib;PSI_d.lib;DeformationRateField_d.lib;Qt5Sqld.lib;gdal_i.lib;GCPManager_d.lib;AtmosphericCorrection_d.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="Configuration">
@@ -117,7 +117,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
       <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;Qt5Sql.lib;gdal_i.lib;GCPManager.lib;AtmosphericCorrection.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;Hdf5IO.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;Qt5Sql.lib;gdal_i.lib;GCPManager.lib;AtmosphericCorrection.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

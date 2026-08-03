@@ -471,45 +471,11 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		if (backgeocoding.getPostRegistrationRefinementTransactionStatus(transactionStatus) == 0 &&
 			(transactionStatus.state == SENTINEL_REFINEMENT_TRANSACTION_IN_PROGRESS ||
 				transactionStatus.state == SENTINEL_REFINEMENT_TRANSACTION_FAILED)) {
-			if (m_recoverRefinementTransaction) {
-				InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
-					"User-confirmed refinement recovery started.");
-				const int recoveryResult = backgeocoding.recoverPostRegistrationRefinementTransaction();
-				SentinelRefinementTransactionStatus recoveredStatus = {};
-				recoveredStatus.version = SENTINEL_REFINEMENT_TRANSACTION_STATUS_VERSION;
-				recoveredStatus.structSize = sizeof(recoveredStatus);
-				if (recoveryResult != 0 ||
-					backgeocoding.getPostRegistrationRefinementTransactionStatus(recoveredStatus) != 0 ||
-					recoveredStatus.state != SENTINEL_REFINEMENT_TRANSACTION_NONE) {
-					emit errorProcess(QStringLiteral("Failed to recover the previous Sentinel-1 refinement transaction: %1").arg(recoveryResult));
-					return;
-				}
-				InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
-                    "Refinement recovery completed. Clearing the previous node output before rerun.");
-                QDir recoveredOutputDirectory(QDir(savePath).filePath(dstNode));
-                if (recoveredOutputDirectory.exists() && !recoveredOutputDirectory.removeRecursively()) {
-                    emit errorProcess(QStringLiteral("Failed to clear the recovered Sentinel-1 output directory: %1")
-                        .arg(recoveredOutputDirectory.absolutePath()));
-                    return;
-                }
-                if (!QDir(savePath).mkdir(dstNode)) {
-                    emit errorProcess(QStringLiteral("Failed to recreate the Sentinel-1 output directory: %1")
-                        .arg(QDir(savePath).filePath(dstNode)));
-                    return;
-                }
-                cleanupGuard.resetForFreshOutput();
-                InSARLogManager::LogInfo("S1TopsBackGeocodingWorker",
-                    "Previous output cleared. Retrying Sentinel-1 initialization.");
-				ret = backgeocoding.init(SAR_images, SAR_images_regis, tmpDem.c_str(), masterIndex,
-					&S1TopsBackGeocodingWorker::onNativeDiagnostic, this);
-			}
-			if (ret != 0) {
-				InSARLogManager::LogWarning("S1TopsBackGeocodingWorker",
-					QString("Refinement transaction requires explicit recovery: state=%1, outputs=%2, verified=%3.")
-						.arg(transactionStatus.state).arg(transactionStatus.outputCount).arg(transactionStatus.verifiedOutputCount));
-				emit errorProcess(QStringLiteral("Sentinel-1 refinement transaction is incomplete or failed. Recover or clean it explicitly before retrying."));
-				return;
-			}
+			InSARLogManager::LogWarning("S1TopsBackGeocodingWorker",
+				QString("Refinement transaction remains isolated in staging: state=%1, outputs=%2, verified=%3.")
+					.arg(transactionStatus.state).arg(transactionStatus.outputCount).arg(transactionStatus.verifiedOutputCount));
+			emit errorProcess(QStringLiteral("Sentinel-1 refinement transaction did not terminate in staging."));
+			return;
 		}
 	}
 	if (ret != 0) { emit errorProcess(QStringLiteral("Failed to initialize Sentinel-1 registration: %1").arg(ret)); return; }
@@ -1518,6 +1484,34 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			emit errorProcess(QStringLiteral("Failed to finalize registration output: %1.").arg(QString::fromStdString(SAR_images_regis.at(i))));
 			return;
 		}
+	}
+
+	SentinelRefinementTransactionStatus finalTransactionStatus = {};
+	finalTransactionStatus.version = SENTINEL_REFINEMENT_TRANSACTION_STATUS_VERSION;
+	finalTransactionStatus.structSize = sizeof(finalTransactionStatus);
+	const int transactionStatusRet = backgeocoding.getPostRegistrationRefinementTransactionStatus(finalTransactionStatus);
+	const bool refinementTransactionTerminated =
+		finalTransactionStatus.state == SENTINEL_REFINEMENT_TRANSACTION_NONE ||
+		finalTransactionStatus.state == SENTINEL_REFINEMENT_TRANSACTION_COMPLETE;
+	if (transactionStatusRet != 0 || !refinementTransactionTerminated) {
+		emit errorProcess(QStringLiteral("Sentinel-1 refinement transaction is not in a committable terminal state before staging validation: "
+			"query=%1, state=%2, outputs=%3, verified=%4.")
+			.arg(transactionStatusRet)
+			.arg(finalTransactionStatus.state)
+			.arg(finalTransactionStatus.outputCount)
+			.arg(finalTransactionStatus.verifiedOutputCount));
+		return;
+	}
+	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+		QString("DLL refinement transaction is in a committable terminal state: state=%1, outputs=%2, verified=%3; staging cleanup may proceed.")
+			.arg(finalTransactionStatus.state)
+			.arg(finalTransactionStatus.outputCount)
+			.arg(finalTransactionStatus.verifiedOutputCount), "refinement.isolation_verified");
+	const QString refinementManifestPath = QDir(savePath).filePath(
+		dstNode + QStringLiteral("/refinement_transaction.json"));
+	if (QFileInfo::exists(refinementManifestPath) && !QFile::remove(refinementManifestPath)) {
+		emit errorProcess(QStringLiteral("Cannot remove staging refinement transaction manifest: %1").arg(refinementManifestPath));
+		return;
 	}
 
 	cleanupGuard.dismiss();

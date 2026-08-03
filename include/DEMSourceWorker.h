@@ -40,7 +40,7 @@ signals:
 
 private:
     int downloadTile(const QString& url, const QString& savePath, bool requiresEarthdataAuth,
-                     QString* failureDetail = nullptr, bool allowRetry = true);
+                     QString* failureDetail = nullptr);
 };
 
 #endif // DEM_SOURCE_WORKER_H

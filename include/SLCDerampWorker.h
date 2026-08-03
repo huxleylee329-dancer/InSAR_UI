@@ -17,18 +17,8 @@ public slots:
         QString projectName,
         QString savePath,
         QString dstNode,
-        QStringList inputPaths
-    );
-
-    void SLC_deramp_with_dem(
-        int masterIndex,
-        QString projectName,
-        QString savePath,
-        QString dstNode,
         QStringList inputPaths,
-        QString demPath,
-        bool isDeflat,
-        bool isTopoRemoval
+        QString demPath
     );
 
 signals:

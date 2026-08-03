@@ -504,15 +504,6 @@ bool CutNode::isReady() const
         }
     }
 
-    if (isAutoTriggered()) {
-        if (m_mode == 1 && !m_coordsSet) {
-            return false;
-        }
-        if (m_mode == 0 && !m_coordsSet) {
-            return false;
-        }
-    }
-
     if (m_mode == 1) { // Coordinate mode: block execution until coordinates are validly set
         if (m_lon == 0.0 && m_lat == 0.0) {
             return false;

@@ -29,6 +29,7 @@ thread_local UnwrapWorker* t_currentUnwrapWorker = nullptr;
 thread_local int t_unwrapCurrentImageIndex = 0;
 thread_local int t_unwrapTotalImagesCount = 1;
 thread_local int t_unwrapLastLoggedProgress = -10;
+thread_local int t_unwrapLastReportedProgress = -1;
 
 namespace {
 
@@ -49,6 +50,7 @@ QString diagnosticStageName(uint32_t stage)
     case UNWRAP_DIAGNOSTIC_STAGE_JOB: return QStringLiteral("job");
     case UNWRAP_DIAGNOSTIC_STAGE_PROCESS_EXIT: return QStringLiteral("process exit");
     case UNWRAP_DIAGNOSTIC_STAGE_OUTPUT: return QStringLiteral("output validation");
+    case UNWRAP_DIAGNOSTIC_STAGE_COMPLETED: return QStringLiteral("completed");
     case UNWRAP_DIAGNOSTIC_STAGE_INTERNAL: return QStringLiteral("internal");
     default: return QStringLiteral("unknown");
     }
@@ -103,20 +105,27 @@ static bool __stdcall unwrapProgressCallback(int progress, const char* message)
             return false;
         }
 
-        int start_prog = 10 + t_unwrapCurrentImageIndex * 80 / t_unwrapTotalImagesCount;
-        int end_prog = 10 + (t_unwrapCurrentImageIndex + 1) * 80 / t_unwrapTotalImagesCount;
-        int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
+        const int boundedProgress = qBound(0, progress, 100);
+        if (boundedProgress <= t_unwrapLastReportedProgress) {
+            return true;
+        }
+
+        const int start_prog = 10 + t_unwrapCurrentImageIndex * 80 / t_unwrapTotalImagesCount;
+        const int end_prog = 10 + (t_unwrapCurrentImageIndex + 1) * 80 / t_unwrapTotalImagesCount;
+        const int mapped_prog = start_prog + boundedProgress * (end_prog - start_prog) / 100;
 
         QString msgStr = QString::fromLocal8Bit(message);
         emit t_currentUnwrapWorker->updateProcess(mapped_prog, QStringLiteral("第%1幅图像解缠中：%2% (%3)")
-            .arg(t_unwrapCurrentImageIndex + 1).arg(progress).arg(msgStr));
+            .arg(t_unwrapCurrentImageIndex + 1).arg(boundedProgress).arg(msgStr));
 
-        if (progress == 0 || progress == 100 || (progress - t_unwrapLastLoggedProgress) >= 10)
+        if (boundedProgress == 0 || boundedProgress == 100 ||
+            (boundedProgress - t_unwrapLastLoggedProgress) >= 10)
         {
             InSARLogManager::LogInfo("UnwrapWorker", QString("Unwrap progress: %1% (Total: %2%) - %3")
-                .arg(progress).arg(mapped_prog).arg(msgStr));
-            t_unwrapLastLoggedProgress = progress;
+                .arg(boundedProgress).arg(mapped_prog).arg(msgStr));
+            t_unwrapLastLoggedProgress = boundedProgress;
         }
+        t_unwrapLastReportedProgress = boundedProgress;
     }
     return true;
 }
@@ -127,12 +136,14 @@ struct UnwrapThreadLocalGuard {
         t_unwrapCurrentImageIndex = 0;
         t_unwrapTotalImagesCount = total;
         t_unwrapLastLoggedProgress = -10;
+        t_unwrapLastReportedProgress = -1;
     }
     ~UnwrapThreadLocalGuard() {
         t_currentUnwrapWorker = nullptr;
         t_unwrapCurrentImageIndex = 0;
         t_unwrapTotalImagesCount = 1;
         t_unwrapLastLoggedProgress = -10;
+        t_unwrapLastReportedProgress = -1;
     }
 };
 
@@ -319,8 +330,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return true;
             };
 
-            if (!copyOptionalMatrix(QStringLiteral("flat_phase_coefficient")) ||
-                !copyRequiredMatrix(QStringLiteral("range_len")) ||
+            if (!copyRequiredMatrix(QStringLiteral("range_len")) ||
                 !copyRequiredMatrix(QStringLiteral("azimuth_len")) ||
                 !copyRequiredMatrix(QStringLiteral("multilook_rg")) ||
                 !copyRequiredMatrix(QStringLiteral("multilook_az")) ||
@@ -328,6 +338,9 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 !copyOptionalMatrix(QStringLiteral("mapped_lat"))) {
                 return false;
             }
+        }
+        if (!NodeUtils::copyPhaseProcessingMetadata(phaseH5, unwrapH5, &metadataError)) {
+            return false;
         }
 
         if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
@@ -376,6 +389,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             t_unwrapCurrentImageIndex = i;
             t_unwrapLastLoggedProgress = -10;
+            t_unwrapLastReportedProgress = -1;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 finishCancelled();
@@ -418,6 +432,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             t_unwrapCurrentImageIndex = i;
             t_unwrapLastLoggedProgress = -10;
+            t_unwrapLastReportedProgress = -1;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 finishCancelled();
@@ -469,6 +484,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             t_unwrapCurrentImageIndex = i;
             t_unwrapLastLoggedProgress = -10;
+            t_unwrapLastReportedProgress = -1;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 finishCancelled();
@@ -498,6 +514,22 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 failDiagnostic(QStringLiteral("SNAPHU"), diagnostic, ret);
                 return;
             }
+            const QString diagnosticSummary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
+            if (!diagnosticSummary.isEmpty()) {
+                const QString diagnosticMessage = QStringLiteral("SNAPHU completed (stage=%1): %2")
+                    .arg(diagnosticStageName(diagnostic.stage), diagnosticSummary);
+                if (diagnosticSummary.contains(QStringLiteral("corr=disabled")) ||
+                    diagnosticSummary.contains(QStringLiteral("phase_derived")) ||
+                    diagnosticSummary.contains(QStringLiteral("amp=omitted"))) {
+                    InSARLogManager::LogWarning("UnwrapWorker", diagnosticMessage);
+                } else {
+                    InSARLogManager::LogInfo("UnwrapWorker", diagnosticMessage);
+                }
+            }
+            const int solverCompleteProgress = 10 + (i + 1) * 80 / image_number;
+            emit updateProcess(solverCompleteProgress,
+                               QStringLiteral("第%1幅图像的外部 SNAPHU 求解完成，正在验证并写入输出……")
+                                   .arg(i + 1));
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
@@ -522,6 +554,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         {
             t_unwrapCurrentImageIndex = i;
             t_unwrapLastLoggedProgress = -10;
+            t_unwrapLastReportedProgress = -1;
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
             {
                 finishCancelled();
@@ -588,6 +621,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         Q_EMIT unwrapFileGenerated(result);
     }
 
+    emit updateProcess(100, QStringLiteral("解缠输出已验证并写入。"));
     InSARLogManager::LogInfo("UnwrapWorker", QString("Task completed: ") + QString(__FUNCTION__));
     emit endProcess();
 }

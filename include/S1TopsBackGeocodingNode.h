@@ -76,6 +76,11 @@ private:
         bool hasRangeOffset = false;
     };
 
+    struct PreviewGenerationResult
+    {
+        QStringList generationFailures;
+    };
+
     QComboBox* m_masterImageCombo;
     QCheckBox* m_defaultMasterCheckBox;
     QCheckBox* m_esdCheckBox;
@@ -109,8 +114,6 @@ private:
     int m_preparedMasterIndex;
     bool m_preparedBESD;
     bool m_preparedBRangeRefine;
-    bool m_preparedRecoverRefinementTransaction = false;
-    bool m_preparedCleanOutputDirectory = false;
     int m_preparedImagesNumber;
     QStringList m_preparedInputPaths;
     bool m_processingWarning = false;
@@ -118,13 +121,26 @@ private:
     QVector<RegistrationOffsetSummary> m_registrationOffsets;
     QStringList m_registrationOverviewPaths;
     QElapsedTimer m_executionTimer;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    quint64 m_executionGeneration = 0;
+    quint64 m_activeGeneration = 0;
+    QStringList m_pendingWorkerH5Paths;
+    QStringList m_pendingPreviewH5Paths;
+    QStringList m_pendingPreviewJpgPaths;
+    QStringList m_pendingPreviewOverviewPaths;
+    QString m_pendingWorkerError;
+    bool m_pendingWorkerCancelled = false;
+    bool m_workerFinishedSuccessfully = false;
+    bool m_userCancellationRequested = false;
+    bool m_executionSuperseded = false;
+    bool m_destroying = false;
 
     // Worker thread
     QPointer<S1TopsBackGeocodingWorker> m_workerThread;
     QPointer<QThread> m_thread;
 
     // Remedy watcher for missing JPG regeneration
-    QFutureWatcher<void> m_remedyWatcher;
+    QFutureWatcher<PreviewGenerationResult> m_remedyWatcher;
 
     // Helper methods
     void createWidget();
@@ -153,9 +169,16 @@ private:
     QString resolveSavedOutputPath(const QString& path, const QString& dstNode) const;
     QStringList restoreOrderedH5Paths(const QString& dstNode) const;
     bool isCompleteBackGeocodingOutput(const QString& path) const;
-    void syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode);
-    void syncProjectXmlOrder(const QStringList& h5Paths, const QString& dstNode);
-    bool clearPreparedOutputDirectory();
+    bool syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode);
+    bool syncProjectXmlOrder(const QStringList& h5Paths, const QString& dstNode);
+    bool isCurrentGeneration(quint64 generation) const;
+    void invalidateExecutionGeneration();
+    void beginStagedPreview(quint64 generation);
+    void finalizeStagedTransaction(quint64 generation);
+    void failStagedTransaction(const QString& error, bool cancelled = false);
+    bool reloadProjectXmlAfterRecovery(QString* errorMessage);
+    QStringList expectedH5PathsForTransaction() const;
+    QStringList expectedPreviewPathsForH5Paths(const QStringList& h5Paths) const;
     void executeProcessing();
 
     // Context helpers

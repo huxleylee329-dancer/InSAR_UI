@@ -12,6 +12,8 @@
 #include <QFileInfo>
 #include <QThread>
 
+#include <cmath>
+
 #ifdef _DEBUG
 #pragma comment(lib, "Filter_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
@@ -72,6 +74,44 @@ public:
     }
 };
 
+bool copyCompatibleCoherence(const QString& inputPath, const QString& outputPath,
+                             const Mat& filteredPhase, QString& error)
+{
+    Mat coherence;
+    if (!NodeUtils::readMatFromH5(inputPath, "coherence", coherence)) {
+        return true;
+    }
+
+    if (coherence.empty() || coherence.rows != filteredPhase.rows ||
+        coherence.cols != filteredPhase.cols || coherence.channels() != 1 ||
+        (coherence.type() != CV_32FC1 && coherence.type() != CV_64FC1)) {
+        InSARLogManager::LogWarning("DenoiseWorker",
+                                    QStringLiteral("Skipping incompatible coherence metadata: %1")
+                                        .arg(inputPath));
+        return true;
+    }
+
+    for (int row = 0; row < coherence.rows; ++row) {
+        for (int column = 0; column < coherence.cols; ++column) {
+            const double value = coherence.type() == CV_32FC1
+                ? static_cast<double>(coherence.ptr<float>(row)[column])
+                : coherence.ptr<double>(row)[column];
+            if (!std::isfinite(value) || value < 0.0 || value > 1.0) {
+                InSARLogManager::LogWarning("DenoiseWorker",
+                                            QStringLiteral("Skipping invalid coherence metadata: %1")
+                                                .arg(inputPath));
+                return true;
+            }
+        }
+    }
+
+    if (!NodeUtils::writeMatToH5(outputPath, "coherence", coherence)) {
+        error = QStringLiteral("Failed to preserve coherence metadata.");
+        return false;
+    }
+    return true;
+}
+
 bool writeDenoisedPhase(FormatConversion& conversion,
                         const QString& inputPath,
                         const QString& outputPath,
@@ -114,11 +154,17 @@ bool writeDenoisedPhase(FormatConversion& conversion,
     }
 
     const char* const copiedDatasets[] = {
-        "flat_phase_coefficient", "range_len", "azimuth_len", "multilook_rg", "multilook_az"
+        "range_len", "azimuth_len", "multilook_rg", "multilook_az"
     };
     for (const char* dataset : copiedDatasets) {
         NodeUtils::readMatFromH5(inputPath, dataset, value);
         NodeUtils::writeMatToH5(outputPath, dataset, value);
+    }
+    if (!NodeUtils::copyPhaseProcessingMetadata(inputPath, outputPath, &error)) {
+        return false;
+    }
+    if (!copyCompatibleCoherence(inputPath, outputPath, filteredPhase, error)) {
+        return false;
     }
     if (NodeUtils::readMatFromH5(inputPath, "mapped_lon", value)) {
         NodeUtils::writeMatToH5(outputPath, "mapped_lon", value);

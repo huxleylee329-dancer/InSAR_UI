@@ -1,5 +1,6 @@
 #include "Sentinel1ImportWorker.h"
 #include <FormatConversion.h>
+#include <Hdf5IO.h>
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 #include <string>
@@ -9,6 +10,53 @@ namespace {
 QString normalizeSentinel1MetadataValue(const QString& value)
 {
     return value.trimmed().toUpper();
+}
+
+class Hdf5BatchLocker
+{
+public:
+    Hdf5BatchLocker()
+        : m_lock(Hdf5IO::acquireBatchLock())
+        , m_status(m_lock ? Hdf5IO::getBatchLockStatus(m_lock) : -1)
+    {
+    }
+
+    ~Hdf5BatchLocker()
+    {
+        if (m_lock) {
+            Hdf5IO::releaseBatchLock(m_lock);
+        }
+    }
+
+    bool isLocked() const { return m_status == 0; }
+
+private:
+    Hdf5IO::BatchLock* m_lock;
+    int m_status;
+};
+
+bool readOptionalSentinel1Metadata(const QString& h5Path, const char* name, bool& exists,
+                                   std::string& value, QString& errorMessage)
+{
+    Hdf5IO::Hdf5ReadDiagnostic diagnostic = {};
+    const int status = Hdf5IO::readStringDiagnosed(h5Path.toStdString().c_str(), name, value, &diagnostic);
+    if (status == 0) {
+        exists = true;
+        return true;
+    }
+
+    if (diagnostic.stage == Hdf5IO::HDF5_READ_STAGE_OPEN_DATASET && diagnostic.hdf5Status == 0) {
+        exists = false;
+        value.clear();
+        return true;
+    }
+
+    errorMessage = QStringLiteral("Unable to read Sentinel-1 metadata field %1 in %2: stage=%3, status=%4, detail=%5")
+        .arg(QString::fromLatin1(name), h5Path)
+        .arg(diagnostic.stage)
+        .arg(diagnostic.hdf5Status)
+        .arg(QString::fromLocal8Bit(diagnostic.errorStack));
+    return false;
 }
 
 bool persistSentinel1ProductIdentity(const QString& h5Path, const QString& subswath,
@@ -21,32 +69,85 @@ bool persistSentinel1ProductIdentity(const QString& h5Path, const QString& subsw
         return false;
     }
 
-    {
-        NodeUtils::Hdf5Locker locker(h5Path);
-        if (!locker.isLocked()) {
-            errorMessage = QStringLiteral("Unable to lock imported Sentinel-1 H5 for metadata write: %1").arg(h5Path);
-            return false;
-        }
-
-        FormatConversion conversion;
-        if (conversion.write_str_to_h5(h5Path.toStdString().c_str(), "swath",
-                                       normalizedSwath.toStdString().c_str()) != 0 ||
-            conversion.write_str_to_h5(h5Path.toStdString().c_str(), "polarization",
-                                       normalizedPolarization.toStdString().c_str()) != 0) {
-            errorMessage = QStringLiteral("Unable to write Sentinel-1 swath/polarization metadata to %1").arg(h5Path);
-            return false;
-        }
-    }
-
-    std::string storedSwath;
-    std::string storedPolarization;
-    QString readError;
-    if (!NodeUtils::readStringFromH5(h5Path, "swath", storedSwath, &readError) ||
-        !NodeUtils::readStringFromH5(h5Path, "polarization", storedPolarization, &readError)) {
-        errorMessage = QStringLiteral("Unable to verify Sentinel-1 swath/polarization metadata in %1: %2")
-            .arg(h5Path, readError);
+    NodeUtils::Hdf5Locker locker(h5Path);
+    if (!locker.isLocked()) {
+        errorMessage = QStringLiteral("Unable to lock imported Sentinel-1 H5 for metadata write: %1").arg(h5Path);
         return false;
     }
+
+    Hdf5BatchLocker hdf5BatchLocker;
+    if (!hdf5BatchLocker.isLocked()) {
+        errorMessage = QStringLiteral("Unable to acquire HDF5 batch lock for Sentinel-1 metadata write: %1").arg(h5Path);
+        return false;
+    }
+
+    bool hasStoredSwath = false;
+    bool hasStoredPolarization = false;
+    std::string storedSwath;
+    std::string storedPolarization;
+    if (!readOptionalSentinel1Metadata(h5Path, "swath", hasStoredSwath, storedSwath, errorMessage) ||
+        !readOptionalSentinel1Metadata(h5Path, "polarization", hasStoredPolarization, storedPolarization, errorMessage)) {
+        return false;
+    }
+
+    if (hasStoredSwath &&
+        normalizeSentinel1MetadataValue(QString::fromStdString(storedSwath)) != normalizedSwath) {
+        errorMessage = QStringLiteral("Sentinel-1 swath metadata mismatch in %1: expected %2, found %3")
+            .arg(h5Path, normalizedSwath,
+                 normalizeSentinel1MetadataValue(QString::fromStdString(storedSwath)));
+        return false;
+    }
+    if (hasStoredPolarization &&
+        normalizeSentinel1MetadataValue(QString::fromStdString(storedPolarization)) != normalizedPolarization) {
+        errorMessage = QStringLiteral("Sentinel-1 polarization metadata mismatch in %1: expected %2, found %3")
+            .arg(h5Path, normalizedPolarization,
+                 normalizeSentinel1MetadataValue(QString::fromStdString(storedPolarization)));
+        return false;
+    }
+
+    const std::string nativePath = h5Path.toStdString();
+    bool writeFailed = false;
+    QStringList failedFields;
+    if (!hasStoredSwath && Hdf5IO::createString(nativePath.c_str(), "swath",
+                                                 normalizedSwath.toStdString().c_str()) != 0) {
+        writeFailed = true;
+        failedFields.append(QStringLiteral("swath"));
+    }
+    if (!hasStoredPolarization && Hdf5IO::createString(nativePath.c_str(), "polarization",
+                                                        normalizedPolarization.toStdString().c_str()) != 0) {
+        writeFailed = true;
+        failedFields.append(QStringLiteral("polarization"));
+    }
+    if (writeFailed) {
+        QStringList rollbackFailures;
+        if (!hasStoredSwath && Hdf5IO::removeDatasetIfPresent(nativePath.c_str(), "swath") < 0) {
+            rollbackFailures.append(QStringLiteral("swath"));
+        }
+        if (!hasStoredPolarization && Hdf5IO::removeDatasetIfPresent(nativePath.c_str(), "polarization") < 0) {
+            rollbackFailures.append(QStringLiteral("polarization"));
+        }
+
+        errorMessage = QStringLiteral("Unable to write missing Sentinel-1 metadata field(s) %1 to %2")
+            .arg(failedFields.join(QStringLiteral(", ")), h5Path);
+        if (!rollbackFailures.isEmpty()) {
+            errorMessage += QStringLiteral("; metadata rollback failed for field(s): %1")
+                .arg(rollbackFailures.join(QStringLiteral("; ")));
+        }
+        return false;
+    }
+
+    if (!hasStoredSwath && !readOptionalSentinel1Metadata(h5Path, "swath", hasStoredSwath, storedSwath, errorMessage)) {
+        return false;
+    }
+    if (!hasStoredPolarization && !readOptionalSentinel1Metadata(h5Path, "polarization", hasStoredPolarization, storedPolarization, errorMessage)) {
+        return false;
+    }
+
+    if (!hasStoredSwath || !hasStoredPolarization) {
+        errorMessage = QStringLiteral("Sentinel-1 swath/polarization metadata was not created in %1").arg(h5Path);
+        return false;
+    }
+
     if (normalizeSentinel1MetadataValue(QString::fromStdString(storedSwath)) != normalizedSwath ||
         normalizeSentinel1MetadataValue(QString::fromStdString(storedPolarization)) != normalizedPolarization) {
         errorMessage = QStringLiteral("Sentinel-1 swath/polarization metadata verification mismatch in %1").arg(h5Path);

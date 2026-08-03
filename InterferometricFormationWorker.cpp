@@ -116,16 +116,6 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                           .arg(QString::fromLatin1(dataset), h5Path));
         return false;
     };
-    const auto writeString = [this, &FC](const QString& h5Path, const char* dataset, const QString& value) {
-        if (FC.write_str_to_h5(h5Path.toStdString().c_str(), dataset,
-                               value.toStdString().c_str()) >= 0) {
-            return true;
-        }
-        emit errorProcess(QStringLiteral("写入干涉H5字符串数据集失败: %1 (%2)")
-                          .arg(QString::fromLatin1(dataset), h5Path));
-        return false;
-    };
-    
     if (save_path.isEmpty() || file_name.isEmpty() || input_paths.isEmpty()) {
         emit errorProcess(QStringLiteral("无效的参数或输入路径为空"));
         return;
@@ -364,14 +354,21 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 phase_deflatted.copyTo(phase);
             }
 
+            if (isdeflat && flat_phase_coefficient.empty())
+            {
+                emit errorProcess(QStringLiteral("平地相位消除未生成有效系数"));
+                return;
+            }
+
             {
                 NodeUtils::Hdf5Locker locker;
                 ret = FC.creat_new_h5(h5_path.toStdString().c_str());
                 if (ret >= 0) {
                     if ((!flat_phase_coefficient.empty() &&
                          !writeArray(h5_path, "flat_phase_coefficient", flat_phase_coefficient)) ||
-                        !writeString(h5_path, "source_1", master_path) ||
-                        !writeString(h5_path, "source_2", slave_path) ||
+                        !NodeUtils::writeScalarToH5(h5_path, "phase_processing_schema_version", 1) ||
+                        !NodeUtils::writeScalarToH5(h5_path, "phase_flat_earth_removed", isdeflat ? 1 : 0) ||
+                        !NodeUtils::writeScalarToH5(h5_path, "phase_topography_removed", istopo_removal ? 1 : 0) ||
                         !writeArray(h5_path, "range_len", Mat(1, 1, CV_32S, &sceneWidth)) ||
                         !writeArray(h5_path, "azimuth_len", Mat(1, 1, CV_32S, &sceneHeight)) ||
                         !writeArray(h5_path, "multilook_rg", Mat(1, 1, CV_32S, &multilook_rg)) ||

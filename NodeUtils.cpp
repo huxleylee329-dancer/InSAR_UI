@@ -15,7 +15,6 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QDateTime>
-#include <QCryptographicHash>
 #include <QLineEdit>
 #include <QSaveFile>
 #include <QSet>
@@ -29,6 +28,7 @@
 #include "include/InterfaceManager.h"
 #include "tinyxml.h"
 #include <FormatConversion.h>
+#include <Hdf5IO.h>
 #include <Utils.h>
 #include <cmath>
 
@@ -81,6 +81,45 @@ bool isValidUtf8PathBytes(const std::string& value)
         i += length;
     }
     return true;
+}
+
+enum class H5DatasetProbeResult
+{
+    Exists,
+    Missing,
+    Error
+};
+
+H5DatasetProbeResult probeH5Dataset(const QString& filePath,
+                                    const QString& dataset,
+                                    QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 文件不存在：%1").arg(filePath);
+        return H5DatasetProbeResult::Error;
+    }
+
+    cv::Mat value;
+    Hdf5IO::Hdf5ReadDiagnostic diagnostic = {};
+    const QByteArray utf8Path = filePath.toUtf8();
+    const QByteArray utf8Dataset = dataset.toUtf8();
+    const int result = Hdf5IO::readArrayDiagnosed(utf8Path.constData(), utf8Dataset.constData(),
+                                                   value, &diagnostic);
+    if (result == 0) {
+        return H5DatasetProbeResult::Exists;
+    }
+    if (diagnostic.stage == Hdf5IO::HDF5_READ_STAGE_OPEN_DATASET && diagnostic.hdf5Status == 0) {
+        return H5DatasetProbeResult::Missing;
+    }
+
+    if (errMsg) {
+        const QString detail = QString::fromUtf8(diagnostic.errorStack).trimmed();
+        *errMsg = detail.isEmpty()
+            ? QStringLiteral("无法读取 H5 数据集 %1：%2 (stage=%3, status=%4)")
+                  .arg(dataset, filePath).arg(diagnostic.stage).arg(diagnostic.hdf5Status)
+            : QStringLiteral("无法读取 H5 数据集 %1：%2").arg(dataset, detail);
+    }
+    return H5DatasetProbeResult::Error;
 }
 
 bool isCompleteJpegFile(const QString& path)
@@ -254,30 +293,11 @@ QJsonArray fingerprintInputs(const QStringList& paths)
         const QFileInfo requestedInfo(path);
         const QString absolutePath = requestedInfo.absoluteFilePath();
         QJsonObject item;
-        QString digest;
-        if (requestedInfo.isFile()) {
-            QFile file(absolutePath);
-            if (file.open(QIODevice::ReadOnly)) {
-                QCryptographicHash hash(QCryptographicHash::Sha256);
-                while (!file.atEnd()) {
-                    const QByteArray block = file.read(1024 * 1024);
-                    if (block.isEmpty() && file.error() != QFile::NoError) {
-                        digest.clear();
-                        break;
-                    }
-                    hash.addData(block);
-                }
-                if (file.error() == QFile::NoError) {
-                    digest = QString::fromLatin1(hash.result().toHex());
-                }
-            }
-        }
         const QFileInfo snapshot(absolutePath);
         item.insert(QStringLiteral("path"), QDir::cleanPath(snapshot.absoluteFilePath()));
         item.insert(QStringLiteral("size"), static_cast<double>(snapshot.isFile() ? snapshot.size() : -1));
         item.insert(QStringLiteral("modifiedMs"), static_cast<double>(
             snapshot.isFile() ? snapshot.lastModified().toMSecsSinceEpoch() : -1));
-        item.insert(QStringLiteral("sha256"), digest);
         fingerprints.append(item);
     }
     return fingerprints;
@@ -293,10 +313,11 @@ bool fingerprintsAreReadable(const QJsonArray& fingerprints, QString* errorMessa
 {
     for (const QJsonValue& value : fingerprints) {
         const QJsonObject fingerprint = value.toObject();
-        if (fingerprint.value(QStringLiteral("size")).toDouble(-1.0) < 0.0 ||
-            fingerprint.value(QStringLiteral("sha256")).toString().isEmpty()) {
+        if (fingerprint.value(QStringLiteral("path")).toString().isEmpty() ||
+            fingerprint.value(QStringLiteral("size")).toDouble(-1.0) < 0.0 ||
+            fingerprint.value(QStringLiteral("modifiedMs")).toDouble(-1.0) < 0.0) {
             if (errorMessage) {
-                *errorMessage = QStringLiteral("Cannot capture a content fingerprint for input: %1")
+                *errorMessage = QStringLiteral("Cannot capture input file metadata for: %1")
                     .arg(fingerprint.value(QStringLiteral("path")).toString());
             }
             return false;
@@ -1022,9 +1043,11 @@ bool beginOutputTransaction(const QString& projectRoot,
                             const QStringList& expectedFinalPaths,
                             const QStringList& inputPaths,
                             OutputTransaction& transaction,
-                            QString* errorMessage)
+                            QString* errorMessage,
+                            OutputTransactionRecoveryInfo* recoveryInfo)
 {
     transaction = OutputTransaction();
+    if (recoveryInfo) *recoveryInfo = OutputTransactionRecoveryInfo();
     const QDir root(projectRoot);
     if (!root.exists()) {
         if (errorMessage) *errorMessage = QStringLiteral("Project output root does not exist: %1").arg(projectRoot);
@@ -1055,10 +1078,23 @@ bool beginOutputTransaction(const QString& projectRoot,
     transaction.nodeName = nodeName;
     transaction.journalPath = QDir(transactionDirectory).absoluteFilePath(nodeName + QStringLiteral(".json"));
     if (QFileInfo::exists(transaction.journalPath)) {
+        QFile recoveryJournal(transaction.journalPath);
+        if (!recoveryJournal.open(QIODevice::ReadOnly)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot inspect interrupted output transaction: %1").arg(transaction.journalPath);
+            return false;
+        }
+        const QJsonObject recoveryRecord = QJsonDocument::fromJson(recoveryJournal.readAll()).object();
+        const QString recoveryStage = recoveryRecord.value(QStringLiteral("stage")).toString();
+        recoveryJournal.close();
         QString recoveryError;
         if (!recoverOutputTransaction(root.absolutePath(), nodeName, &recoveryError)) {
             if (errorMessage) *errorMessage = recoveryError;
             return false;
+        }
+        if (recoveryInfo && recoveryStage != QStringLiteral("Completed") && recoveryStage != QStringLiteral("Failed")) {
+            recoveryInfo->transactionRecovered = true;
+            recoveryInfo->projectXmlRestored = recoveryStage == QStringLiteral("MetadataCommitPrepared") &&
+                recoveryRecord.value(QStringLiteral("metadataBackupReady")).toBool(false);
         }
         QFile journal(transaction.journalPath);
         if (!journal.open(QIODevice::ReadOnly)) {
@@ -1820,10 +1856,11 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
             return true;
         }
 
-        // 分块读取并下采样拼装
+        // For previews, average intensity rather than complex samples.  TOPS
+        // azimuth phase changes can otherwise cancel during complex averaging.
         int dst_rows = rows / down_sample_times;
         int dst_cols = cols / down_sample_times;
-        ComplexMat downsampled_SLC(dst_rows, dst_cols);
+        cv::Mat downsampled_power(dst_rows, dst_cols, CV_64F);
 
         int block_height_read = (1024 / down_sample_times) * down_sample_times;
         if (block_height_read == 0) block_height_read = down_sample_times;
@@ -1844,15 +1881,17 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
 
             if (block_dst_rows > 0 && block_dst_cols > 0)
             {
-                cv::Mat down_re, down_im;
-                cv::resize(block_re, down_re, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
-                cv::resize(block_im, down_im, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
+                cv::multiply(block_re, block_re, block_re);
+                cv::multiply(block_im, block_im, block_im);
+                block_re += block_im;
+
+                cv::Mat down_power;
+                cv::resize(block_re, down_power, cv::Size(block_dst_cols, block_dst_rows), 0, 0, cv::INTER_AREA);
 
                 int r_dst = r / down_sample_times;
                 if (r_dst + block_dst_rows <= dst_rows)
                 {
-                    down_re.copyTo(downsampled_SLC.re(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
-                    down_im.copyTo(downsampled_SLC.im(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
+                    down_power.copyTo(downsampled_power(cv::Rect(0, r_dst, block_dst_cols, block_dst_rows)));
                 }
             }
 
@@ -1862,7 +1901,15 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
             }
         }
 
-        util.saveSLC(jpgPath.toLocal8Bit().constData(), 65, downsampled_SLC);
+        cv::Mat downsampled_amplitude;
+        cv::sqrt(downsampled_power, downsampled_amplitude);
+
+        // saveSLC owns the existing display normalization.  Put the amplitude
+        // in the real component so its magnitude is preserved.
+        ComplexMat preview_SLC(dst_rows, dst_cols);
+        downsampled_amplitude.copyTo(preview_SLC.re);
+        preview_SLC.im.setTo(0.0);
+        util.saveSLC(jpgPath.toLocal8Bit().constData(), 65, preview_SLC);
         return true;
     }
     else if (type == "phase" || type == "coherence" || type == "dem")
@@ -2545,11 +2592,146 @@ bool writeSourcePathMetadata(const QString& outputPath,
     }
     FormatConversion conversion;
     const std::string outputUtf8 = outputPath.toStdString();
-    if (conversion.write_str_to_h5(outputUtf8.c_str(), "source_1", source1.c_str()) != 0 ||
-        conversion.write_str_to_h5(outputUtf8.c_str(), "source_2", source2.c_str()) != 0 ||
-        conversion.write_str_to_h5(outputUtf8.c_str(), "source_path_encoding", "UTF-8") != 0 ||
-        conversion.write_str_to_h5(outputUtf8.c_str(), "source_path_format_version", "2") != 0) {
-        if (errMsg) *errMsg = QStringLiteral("Failed to write source paths and metadata: %1").arg(outputPath);
+    const int source1Result = conversion.write_str_to_h5(outputUtf8.c_str(), "source_1", source1.c_str());
+    if (source1Result != 0) {
+        if (errMsg) *errMsg = QStringLiteral("Failed to write source_1 metadata (rc=%1): %2")
+                               .arg(source1Result).arg(outputPath);
+        return false;
+    }
+
+    // FormatConversion creates the UTF-8 encoding and format-version datasets
+    // whenever either source path is written.
+    const int source2Result = conversion.write_str_to_h5(outputUtf8.c_str(), "source_2", source2.c_str());
+    if (source2Result != 0) {
+        if (errMsg) *errMsg = QStringLiteral("Failed to write source_2 metadata (rc=%1): %2")
+                               .arg(source2Result).arg(outputPath);
+        return false;
+    }
+    return true;
+}
+
+bool copyPhaseProcessingMetadata(const QString& inputPath,
+                                 const QString& outputPath,
+                                 QString* errMsg)
+{
+    constexpr int kPhaseProcessingSchemaVersion = 1;
+    constexpr const char* kSchemaDataset = "phase_processing_schema_version";
+    constexpr const char* kFlatDataset = "phase_flat_earth_removed";
+    constexpr const char* kTopoDataset = "phase_topography_removed";
+    constexpr const char* kCoefficientDataset = "flat_phase_coefficient";
+
+    cv::Mat flatPhaseCoefficient;
+    QString coefficientError;
+    const bool hasCoefficient = readMatFromH5(inputPath, QString::fromLatin1(kCoefficientDataset),
+                                              flatPhaseCoefficient, -1, &coefficientError);
+    if (!hasCoefficient) {
+        const H5DatasetProbeResult coefficientProbe = probeH5Dataset(
+            inputPath, QString::fromLatin1(kCoefficientDataset), &coefficientError);
+        if (coefficientProbe == H5DatasetProbeResult::Error) {
+            if (errMsg) *errMsg = coefficientError;
+            return false;
+        }
+        if (coefficientProbe == H5DatasetProbeResult::Exists) {
+            if (errMsg) *errMsg = coefficientError;
+            return false;
+        }
+    }
+    if (hasCoefficient && flatPhaseCoefficient.empty()) {
+        if (errMsg) *errMsg = QStringLiteral("平地相位系数为空：%1").arg(inputPath);
+        return false;
+    }
+
+    QString schemaError;
+    const H5DatasetProbeResult schemaProbe = probeH5Dataset(
+        inputPath, QString::fromLatin1(kSchemaDataset), &schemaError);
+    if (schemaProbe == H5DatasetProbeResult::Error) {
+        if (errMsg) *errMsg = schemaError;
+        return false;
+    }
+    if (schemaProbe == H5DatasetProbeResult::Missing) {
+        // Legacy products can continue through generic phase-processing nodes.
+        if (hasCoefficient && !writeMatToH5(outputPath, QString::fromLatin1(kCoefficientDataset),
+                                             flatPhaseCoefficient, errMsg)) {
+            return false;
+        }
+        return true;
+    }
+
+    int schemaVersion = 0;
+    if (!readScalarFromH5(inputPath, QString::fromLatin1(kSchemaDataset),
+                          schemaVersion, &schemaError)) {
+        if (errMsg) *errMsg = schemaError;
+        return false;
+    }
+    if (schemaVersion != kPhaseProcessingSchemaVersion) {
+        if (errMsg) *errMsg = QStringLiteral("不支持的相位处理契约版本：%1").arg(schemaVersion);
+        return false;
+    }
+
+    int flatRemoved = 0;
+    int topoRemoved = 0;
+    if (!readScalarFromH5(inputPath, QString::fromLatin1(kFlatDataset), flatRemoved, errMsg) ||
+        !readScalarFromH5(inputPath, QString::fromLatin1(kTopoDataset), topoRemoved, errMsg)) {
+        return false;
+    }
+    if ((flatRemoved != 0 && flatRemoved != 1) || (topoRemoved != 0 && topoRemoved != 1)) {
+        if (errMsg) *errMsg = QStringLiteral("相位处理状态无效：%1").arg(inputPath);
+        return false;
+    }
+    if (flatRemoved == 1 && !hasCoefficient) {
+        if (errMsg) *errMsg = QStringLiteral("已去平地的相位缺少平地相位系数：%1").arg(inputPath);
+        return false;
+    }
+    if (flatRemoved == 0 && hasCoefficient) {
+        if (errMsg) *errMsg = QStringLiteral("未去平地的相位不应包含平地相位系数：%1").arg(inputPath);
+        return false;
+    }
+
+    if ((hasCoefficient && !writeMatToH5(outputPath, QString::fromLatin1(kCoefficientDataset),
+                                          flatPhaseCoefficient, errMsg)) ||
+        !writeScalarToH5(outputPath, QString::fromLatin1(kSchemaDataset), schemaVersion, errMsg) ||
+        !writeScalarToH5(outputPath, QString::fromLatin1(kFlatDataset), flatRemoved, errMsg) ||
+        !writeScalarToH5(outputPath, QString::fromLatin1(kTopoDataset), topoRemoved, errMsg)) {
+        return false;
+    }
+    return true;
+}
+
+bool validateDemPhaseInput(const QString& inputPath, QString* errMsg)
+{
+    constexpr int kPhaseProcessingSchemaVersion = 1;
+    int schemaVersion = 0;
+    int flatRemoved = 0;
+    int topoRemoved = 0;
+    cv::Mat flatPhaseCoefficient;
+
+    if (!readScalarFromH5(inputPath, QStringLiteral("phase_processing_schema_version"), schemaVersion, errMsg)) {
+        if (errMsg) *errMsg = QStringLiteral("输入相位缺少处理状态契约，请从干涉形成节点重新运行：%1").arg(inputPath);
+        return false;
+    }
+    if (schemaVersion != kPhaseProcessingSchemaVersion) {
+        if (errMsg) *errMsg = QStringLiteral("不支持的相位处理契约版本：%1").arg(schemaVersion);
+        return false;
+    }
+    if (!readScalarFromH5(inputPath, QStringLiteral("phase_flat_earth_removed"), flatRemoved, errMsg) ||
+        !readScalarFromH5(inputPath, QStringLiteral("phase_topography_removed"), topoRemoved, errMsg)) {
+        return false;
+    }
+    if ((flatRemoved != 0 && flatRemoved != 1) || (topoRemoved != 0 && topoRemoved != 1)) {
+        if (errMsg) *errMsg = QStringLiteral("输入相位的处理状态无效：%1").arg(inputPath);
+        return false;
+    }
+    if (flatRemoved != 1) {
+        if (errMsg) *errMsg = QStringLiteral("DEM 反演要求输入相位已消除平地相位：%1").arg(inputPath);
+        return false;
+    }
+    if (topoRemoved != 0) {
+        if (errMsg) *errMsg = QStringLiteral("DEM 反演要求保留地形相位，当前输入已去地形：%1").arg(inputPath);
+        return false;
+    }
+    if (!readMatFromH5(inputPath, QStringLiteral("flat_phase_coefficient"), flatPhaseCoefficient, -1, errMsg) ||
+        flatPhaseCoefficient.empty()) {
+        if (errMsg) *errMsg = QStringLiteral("输入相位缺少有效的平地相位系数：%1").arg(inputPath);
         return false;
     }
     return true;

@@ -1889,8 +1889,6 @@ void MainWindow::ShowColorBar(int index)
     {
         if (index >= 0 && index < mExist_Color.size() && index < mColors.size())
         {
-            cout << activeTabWidget->count();
-            cout << "\n" << "new";
             if (mExist_Color.at(index))
             {
                 if (activeTabWidget->currentWidget())
@@ -1905,20 +1903,14 @@ void MainWindow::ShowColorBar(int index)
 
         if (ColorBar_Before >= 0 && ColorBar_Before < mColors.size())
         {
-            cout << activeTabWidget->count();
-            cout << "\n" << "hide";
             mColors.at(ColorBar_Before)->hide();
         }
-        cout << activeTabWidget->count();
-        cout << "\n" << "change";
 
     }
     if (TabCount_Before >= 0 && TabCount_Before< activeTabWidget->count())
     {
         if (ColorBar_Before >= 0 && ColorBar_Before < mColors.size())
         {
-            cout << activeTabWidget->count();
-            cout << "\n" << "hide";
             mColors.at(ColorBar_Before)->hide();
         }
     }

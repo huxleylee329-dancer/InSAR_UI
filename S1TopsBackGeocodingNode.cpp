@@ -36,6 +36,9 @@
 #include <QColor>
 #include <QFont>
 #include <QImage>
+#include <QImageReader>
+#include <QHash>
+#include <QSet>
 #include <algorithm>
 #include <vector>
 #include <cmath>
@@ -81,6 +84,107 @@ bool generateRegistrationOverviewPreview(const QString& masterJpgPath,
     return overview.save(overviewJpgPath, "JPG", 92);
 }
 
+QString normalizedAbsolutePath(const QString& path)
+{
+    return QDir::cleanPath(QFileInfo(path).absoluteFilePath()).toLower();
+}
+
+bool removeCompletedLegacyRefinementManifest(const QString& manifestPath,
+                                             const QStringList& expectedOutputPaths,
+                                             QString& errorMessage)
+{
+    QFile manifestFile(manifestPath);
+    if (!manifestFile.open(QIODevice::ReadOnly)) {
+        errorMessage = QStringLiteral("Cannot read legacy refinement transaction manifest: %1")
+            .arg(manifestPath);
+        return false;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(manifestFile.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        errorMessage = QStringLiteral("Legacy refinement transaction manifest is invalid: %1")
+            .arg(manifestPath);
+        return false;
+    }
+
+    const QJsonObject manifest = document.object();
+    if (manifest.value(QStringLiteral("state")).toString() != QStringLiteral("complete")) {
+        errorMessage = QStringLiteral("Refusing to rerun while an unfinished refinement transaction remains: %1")
+            .arg(manifestPath);
+        return false;
+    }
+
+    const QJsonArray outputs = manifest.value(QStringLiteral("outputs")).toArray();
+    if (outputs.isEmpty() || outputs.size() != expectedOutputPaths.size()) {
+        errorMessage = QStringLiteral("Completed refinement transaction has an unexpected output list: %1")
+            .arg(manifestPath);
+        return false;
+    }
+
+    const QDir outputDir = QFileInfo(manifestPath).dir();
+    const QString normalizedOutputDir = normalizedAbsolutePath(outputDir.absolutePath());
+    QSet<QString> expectedOutputs;
+    for (const QString& outputPath : expectedOutputPaths) {
+        expectedOutputs.insert(normalizedAbsolutePath(outputPath));
+    }
+
+    QSet<QString> manifestOutputs;
+    const QStringList temporaryKeys = {
+        QStringLiteral("temporary"),
+        QStringLiteral("fullBurst"),
+        QStringLiteral("fullBurstTemporary"),
+        QStringLiteral("backup")
+    };
+    for (const QJsonValue& value : outputs) {
+        if (!value.isObject()) {
+            errorMessage = QStringLiteral("Completed refinement transaction contains an invalid output entry: %1")
+                .arg(manifestPath);
+            return false;
+        }
+
+        const QJsonObject output = value.toObject();
+        const QString finalPath = output.value(QStringLiteral("output")).toString();
+        const QFileInfo finalInfo(finalPath);
+        if (finalPath.isEmpty() || normalizedAbsolutePath(finalInfo.absolutePath()) != normalizedOutputDir ||
+            !finalInfo.isFile()) {
+            errorMessage = QStringLiteral("Completed refinement transaction has a missing or unsafe final output: %1")
+                .arg(manifestPath);
+            return false;
+        }
+        manifestOutputs.insert(normalizedAbsolutePath(finalPath));
+
+        for (const QString& key : temporaryKeys) {
+            const QString temporaryPath = output.value(key).toString();
+            const QFileInfo temporaryInfo(temporaryPath);
+            if (temporaryPath.isEmpty() ||
+                normalizedAbsolutePath(temporaryInfo.absolutePath()) != normalizedOutputDir ||
+                temporaryInfo.exists()) {
+                errorMessage = QStringLiteral("Completed refinement transaction still has unsafe or residual %1 data: %2")
+                    .arg(key, manifestPath);
+                return false;
+            }
+        }
+    }
+
+    if (manifestOutputs != expectedOutputs) {
+        errorMessage = QStringLiteral("Completed refinement transaction does not match this run's outputs: %1")
+            .arg(manifestPath);
+        return false;
+    }
+
+    manifestFile.close();
+    if (!QFile::remove(manifestPath)) {
+        errorMessage = QStringLiteral("Cannot remove completed legacy refinement transaction manifest: %1")
+            .arg(manifestPath);
+        return false;
+    }
+
+    InSARLogManager::LogInfo("S1TopsBackGeocodingNode",
+        QStringLiteral("Removed completed legacy refinement transaction manifest: %1").arg(manifestPath));
+    return true;
+}
+
 } // namespace
 
 S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
@@ -104,6 +208,7 @@ S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
 
 S1TopsBackGeocodingNode::~S1TopsBackGeocodingNode()
 {
+    m_destroying = true;
     // 安全断开并等待 remedyWatcher，防止析构时的悬空指针回调崩溃
     m_remedyWatcher.disconnect();
     if (m_remedyWatcher.isRunning()) {
@@ -131,6 +236,7 @@ S1TopsBackGeocodingNode::~S1TopsBackGeocodingNode()
         m_thread->deleteLater();
         m_thread = nullptr;
     }
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("node destroyed"), projectXml());
 }
 
 unsigned int S1TopsBackGeocodingNode::nPorts(PortType portType) const
@@ -982,21 +1088,21 @@ QStringList S1TopsBackGeocodingNode::restoreOrderedH5Paths(const QString& dstNod
     return orderedPaths;
 }
 
-void S1TopsBackGeocodingNode::syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode)
+bool S1TopsBackGeocodingNode::syncProjectTreeOrder(const QStringList& h5Paths, const QString& dstNode)
 {
     QStandardItemModel* model = projectModel();
     if (!model)
-        return;
+        return false;
 
     QList<QStandardItem*> projects = model->findItems(projectName());
     if (projects.isEmpty())
-        return;
+        return false;
 
     QStandardItem* project = projects.first();
     QStandardItem* resultNode = NodeUtils::findOrCreateProjectNode(
         project, dstNode, "complex-2.0", FOLDER_ICON);
     if (!resultNode)
-        return;
+        return false;
 
     resultNode->setToolTip(projectName());
     resultNode->removeRows(0, resultNode->rowCount());
@@ -1005,15 +1111,16 @@ void S1TopsBackGeocodingNode::syncProjectTreeOrder(const QStringList& h5Paths, c
         NodeUtils::findOrCreateChildItem(
             resultNode, fi.baseName(), "complex", fi.absoluteFilePath(), IMAGEDATA_ICON);
     }
+    return true;
 }
 
-void S1TopsBackGeocodingNode::syncProjectXmlOrder(
+bool S1TopsBackGeocodingNode::syncProjectXmlOrder(
     const QStringList& h5Paths, const QString& dstNode)
 {
     XMLFile* xml = projectXml();
     TiXmlElement* root = nullptr;
     if (!xml || xml->get_root(root) < 0 || !root)
-        return;
+        return false;
 
     TiXmlElement* dataNode = nullptr;
     for (TiXmlElement* node = root->FirstChildElement("DataNode"); node;
@@ -1088,8 +1195,7 @@ void S1TopsBackGeocodingNode::syncProjectXmlOrder(
         dataNode->InsertBeforeChild(params, dataElem);
     }
 
-    QString xmlPath = NodeUtils::getProjectFilePath(_widget);
-    xml->XMLFile_save(xmlPath.toStdString().c_str());
+    return true;
 }
 
 void S1TopsBackGeocodingNode::onProcessingFinished(
@@ -1102,216 +1208,28 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
     const QStringList& qualityWarnings
 )
 {
-    if (isAutomaticExecutionObsolete()) {
-        return;
-    }
-
     Q_UNUSED(dstProject);
     Q_UNUSED(savePath);
-
+    Q_UNUSED(dstNode);
+    Q_UNUSED(masterIndex);
+    if (!isCurrentGeneration(m_activeGeneration)) return;
+    m_pendingWorkerH5Paths = regisH5Paths;
     m_processingWarning = hasQualityWarning;
     m_processingQualityWarnings = qualityWarnings;
-    if (m_processingWarning) {
-        InSARLogManager::LogDebug("S1TopsBackGeocodingNode",
-            QStringLiteral("Worker quality warnings: %1").arg(m_processingQualityWarnings.join(" | ")),
-            "quality.summary");
-    }
-
-    // Worker 保持原输入顺序计算，Node 仅在输出阶段把主影像稳定移到首位
-    QStringList orderedH5Paths = moveMasterToFront(regisH5Paths, masterIndex);
-    for (const QString& path : orderedH5Paths) {
-        if (!isCompleteBackGeocodingOutput(path)) {
-            onError(QStringLiteral("配准输出未完成或无效：%1").arg(path));
-            return;
-        }
-    }
-    m_savedOutputPaths = orderedH5Paths;
-    m_savedMasterOutputPath = orderedH5Paths.isEmpty() ? QString() : orderedH5Paths.first();
-    m_registrationOverviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
-    updateRegistrationOffsets(orderedH5Paths);
-
-    syncProjectXmlOrder(orderedH5Paths, dstNode);
-    syncProjectTreeOrder(orderedH5Paths, dstNode);
-
-    QStringList jpgPaths = jpgPathsFromH5Paths(orderedH5Paths);
-    m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, dstNode);
-    setOutputData(0, m_outputData);
-
-    if (!orderedH5Paths.isEmpty())
-    {
-        m_remedyWatcher.disconnect(this);
-        if (m_remedyWatcher.isRunning()) {
-            m_remedyWatcher.cancel();
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this,
-                    [this, regisH5Paths, dstNode, dstProject, savePath, masterIndex,
-                     hasQualityWarning, qualityWarnings]() {
-                m_remedyWatcher.disconnect(this);
-                QTimer::singleShot(0, this, [this, regisH5Paths, dstNode, dstProject, savePath,
-                                              masterIndex, hasQualityWarning, qualityWarnings]() {
-                    onProcessingFinished(regisH5Paths, dstNode, dstProject, savePath, masterIndex,
-                                         hasQualityWarning, qualityWarnings);
-                });
-            });
-            return;
-        }
-
-        const QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
-        const std::shared_ptr<QElapsedTimer> previewTimer = std::make_shared<QElapsedTimer>();
-        previewTimer->start();
-        setProgress(99);
-        InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
-            QStringLiteral("最终配准 H5 已发布，正在生成预览：%1 个 H5 预览，%2 张配准概览图。")
-                .arg(orderedH5Paths.size()).arg(overviewPaths.size()),
-            LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
-            QStringLiteral("preview"), QStringLiteral("running"), QStringLiteral("running"));
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, orderedH5Paths, jpgPaths, overviewPaths, previewTimer]() {
-            if (discardObsoleteAutomaticExecution()) {
-                return;
-            }
-
-            QStringList validJpgPaths;
-            bool anyFailed = false;
-            for (const QString& path : jpgPaths) {
-                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
-                    validJpgPaths.append(path);
-                } else {
-                    anyFailed = true;
-                }
-            }
-
-            m_registrationOverviewPaths.clear();
-            bool overviewFailed = false;
-            for (const QString& path : overviewPaths) {
-                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
-                    m_registrationOverviewPaths.append(path);
-                } else {
-                    overviewFailed = true;
-                }
-            }
-            if (overviewFailed) {
-                const QString overviewWarning = QStringLiteral("Some registration overview images could not be generated.");
-                if (!m_processingQualityWarnings.contains(overviewWarning)) {
-                    m_processingQualityWarnings.append(overviewWarning);
-                }
-                m_processingWarning = true;
-            }
-
-            // 只有确实存在且生成成功的 JPG 路径才能加入 ImageInfoData
-            if (!validJpgPaths.isEmpty()) {
-                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
-                setOutputData(1, m_imageInfoData);
-            } else {
-                m_imageInfoData.reset();
-                setOutputData(1, nullptr);
-            }
-            const qint64 previewElapsedMs = previewTimer->isValid() ? previewTimer->elapsed() : -1;
-            InSARLogManager::LogDiagnostic(
-                anyFailed || overviewFailed ? InSARLogManager::LevelWarning : InSARLogManager::LevelInfo,
-                "S1 TOPS Back-Geocoding",
-                QStringLiteral("预览生成完成：H5 预览 %1/%2，配准概览图 %3/%4。")
-                    .arg(validJpgPaths.size()).arg(jpgPaths.size())
-                    .arg(m_registrationOverviewPaths.size()).arg(overviewPaths.size()),
-                LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
-                QStringLiteral("preview"), QStringLiteral("completed"),
-                anyFailed || overviewFailed ? QStringLiteral("completed_with_warnings") : QStringLiteral("completed"),
-                previewElapsedMs);
-
-            updateParameterWidgetsEnableState();
-
-            const bool hasWarning = m_processingWarning || anyFailed || overviewFailed;
-            if (hasWarning) {
-                QString warningMessage = m_processingQualityWarnings.join('\n');
-                if (anyFailed) {
-                    if (!warningMessage.isEmpty()) {
-                        warningMessage.append('\n');
-                    }
-                    warningMessage.append(QStringLiteral("Some preview images could not be generated."));
-                }
-                setLastWarningMessage(warningMessage);
-                InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "S1 TOPS Back-Geocoding",
-                    QStringLiteral("后向地理编码完成，但包含告警：%1 输出：%2")
-                        .arg(warningMessage.simplified(), orderedH5Paths.join("; ")),
-                    LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"),
-                    QStringLiteral("completed_with_warnings"),
-                    m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-
-                finishExecutionWithWarning();
-            } else {
-                setProgress(100);
-                InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
-                    QStringLiteral("后向地理编码完成。输出：%1").arg(orderedH5Paths.join("; ")),
-                    LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("completed"),
-                    m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-                finishExecution();
-            }
-        });
-
-        QFuture<void> future = QtConcurrent::run([orderedH5Paths, jpgPaths, overviewPaths]() {
-            for (int i = 0; i < orderedH5Paths.size(); ++i) {
-                NodeUtils::generateJpgPreviewFromH5(orderedH5Paths[i], jpgPaths[i], "complex");
-            }
-            for (int i = 1; i < jpgPaths.size() && i - 1 < overviewPaths.size(); ++i) {
-                generateRegistrationOverviewPreview(jpgPaths.first(), jpgPaths[i], overviewPaths[i - 1]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
-    }
-    else
-    {
-        m_imageInfoData.reset();
-        setOutputData(1, nullptr);
-
-        updateParameterWidgetsEnableState();
-        setProgress(100);
-        InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
-            QStringLiteral("后向地理编码完成。输出：%1").arg(orderedH5Paths.join("; ")),
-            LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("completed"),
-            m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-        finishExecution();
-    }
+    m_workerFinishedSuccessfully = true;
 }
 
 void S1TopsBackGeocodingNode::onError(const QString& error)
 {
-    if (isAutomaticExecutionObsolete()) {
-        return;
-    }
-
-    InSARLogManager::LogDiagnostic(InSARLogManager::LevelError, "S1 TOPS Back-Geocoding",
-        QStringLiteral("后向地理编码失败：%1").arg(error),
-        LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole,
-        QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("failed"),
-        m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-
-    setLastErrorMessage(error);
-    setState(ExecutionState::Error);
-    Q_EMIT executionError(error);
-    updateParameterWidgetsEnableState();
+    m_pendingWorkerError = error;
+    if (!m_thread || !m_thread->isRunning()) failStagedTransaction(error);
 }
 
 void S1TopsBackGeocodingNode::onCancelled(const QStringList& cleanupFailures)
 {
-    if (isAutomaticExecutionObsolete()) {
-        return;
-    }
-
-    if (!cleanupFailures.isEmpty()) {
-        InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "S1 TOPS Back-Geocoding",
-            QStringLiteral("后向地理编码已取消，但部分临时输出未能清理：%1").arg(cleanupFailures.join(", ")),
-            LogTargets(LogTarget::UserProjectLog), QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("cancelled"),
-            m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-    } else {
-        InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
-            QStringLiteral("后向地理编码已取消。"), LogTargets(LogTarget::UserProjectLog),
-            QStringLiteral("lifecycle"), QStringLiteral("completed"), QStringLiteral("cancelled"),
-            m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
-    }
-
-    setState(ExecutionState::Stopped);
-    Q_EMIT executionStopped();
-    Q_EMIT computingFinished();
-    updateParameterWidgetsEnableState();
+    m_pendingWorkerCancelled = true;
+    if (!cleanupFailures.isEmpty()) m_pendingWorkerError = cleanupFailures.join(QStringLiteral(", "));
+    if (!m_thread || !m_thread->isRunning()) failStagedTransaction(m_pendingWorkerError, true);
 }
 
 void S1TopsBackGeocodingNode::onModelUpdated(QStandardItemModel* model)
@@ -1357,10 +1275,12 @@ void S1TopsBackGeocodingNode::execute()
 
 void S1TopsBackGeocodingNode::stopExecution()
 {
-    // 安全断开并取消 remedyWatcher，防止重新执行时的竞态与崩溃
-    if (!isAutomaticExecutionObsolete()) {
-        m_remedyWatcher.disconnect();
+    if (!m_executionSuperseded && !m_destroying && !isAutomaticExecutionObsolete()) {
+        m_userCancellationRequested = true;
     }
+    invalidateExecutionGeneration();
+    // Keep the completion callback connected so it can abandon staging only
+    // after the preview task has reached its finished boundary.
     if (m_remedyWatcher.isRunning()) {
         m_remedyWatcher.cancel();
     }
@@ -1390,6 +1310,7 @@ void S1TopsBackGeocodingNode::setExecutionMode(ExecutionMode mode)
 
 bool S1TopsBackGeocodingNode::prepareToStart()
 {
+    setStartFailureMessage(QString());
     if (!validateInputs())
         return false;
 
@@ -1403,57 +1324,10 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     m_preparedBESD = m_esdCheckBox ? m_esdCheckBox->isChecked() : true;
     m_preparedBRangeRefine = m_rangeRefineCheckBox ? m_rangeRefineCheckBox->isChecked() : false;
     m_preparedDemPath = m_demPath;
-    m_preparedRecoverRefinementTransaction = false;
-    m_preparedCleanOutputDirectory = false;
     m_preparedInputPaths = m_inputData->filePaths();
     if (m_preparedInputPaths.size() < 2) {
         InSARLogManager::LogError("S1TopsBackGeocodingNode", "At least two input files are required for Back-Geocoding.");
         return false;
-    }
-
-    const QString refinementManifestPath = QDir(m_preparedSavePath).filePath(
-        m_preparedDstNode + QStringLiteral("/refinement_transaction.json"));
-    QFile refinementManifest(refinementManifestPath);
-    if (refinementManifest.exists()) {
-        if (!refinementManifest.open(QIODevice::ReadOnly)) {
-            InSARLogManager::LogError("S1TopsBackGeocodingNode",
-                QString("Unable to read refinement transaction manifest: %1").arg(refinementManifestPath));
-            return false;
-        }
-        QJsonParseError parseError = {};
-        const QJsonDocument document = QJsonDocument::fromJson(refinementManifest.readAll(), &parseError);
-        if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-            InSARLogManager::LogError("S1TopsBackGeocodingNode",
-                QString("Refinement transaction manifest is invalid: %1").arg(refinementManifestPath));
-            return false;
-        }
-        const QString state = document.object().value(QStringLiteral("state")).toString();
-        if (state == QStringLiteral("in_progress") || state == QStringLiteral("failed")) {
-            if (_isAutoTriggered) {
-                // Automatic execution follows an explicit upstream rerun. Recover this
-                // node's interrupted transaction before its output is replaced.
-                m_preparedRecoverRefinementTransaction = true;
-                InSARLogManager::LogInfo("S1TopsBackGeocodingNode",
-                    QString("Automatic rerun will recover and replace the previous refinement transaction: %1")
-                        .arg(refinementManifestPath));
-            }
-            else {
-            QMessageBox confirmation(QMessageBox::Warning, QStringLiteral("检测到未完成的精化事务"),
-                QStringLiteral("输出目录中存在未完成或失败的精化事务。\n\n"
-                    "“清理并重新运行”会调用 DLL 回滚/清理该事务及临时文件，然后重新执行配准。\n"
-                    "不会发布当前遗留输出。"), QMessageBox::Cancel, _widget);
-            QPushButton* recoverAndRun = confirmation.addButton(QStringLiteral("清理并重新运行"), QMessageBox::AcceptRole);
-            confirmation.setDefaultButton(recoverAndRun);
-            confirmation.exec();
-            if (confirmation.clickedButton() != recoverAndRun) return false;
-            m_preparedRecoverRefinementTransaction = true;
-            }
-        }
-        else if (state != QStringLiteral("complete")) {
-            InSARLogManager::LogError("S1TopsBackGeocodingNode",
-                QString("Refinement transaction manifest has an unsupported state '%1': %2").arg(state, refinementManifestPath));
-            return false;
-        }
     }
 
     // 覆盖提示判断
@@ -1467,7 +1341,18 @@ bool S1TopsBackGeocodingNode::prepareToStart()
         pathsToCheck.append(QDir(m_preparedSavePath).filePath(m_preparedDstNode + "/" + originName + "_regis.h5"));
     }
 
-    if (m_preparedRecoverRefinementTransaction || _isAutoTriggered) {
+    const QString refinementManifestPath = QDir(m_preparedSavePath).filePath(
+        m_preparedDstNode + QStringLiteral("/refinement_transaction.json"));
+    if (QFileInfo::exists(refinementManifestPath)) {
+        QString manifestError;
+        if (!removeCompletedLegacyRefinementManifest(refinementManifestPath, pathsToCheck, manifestError)) {
+            setStartFailureMessage(manifestError);
+            InSARLogManager::LogError("S1TopsBackGeocodingNode", manifestError);
+            return false;
+        }
+    }
+
+    if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
         m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(NodeUtils::getProjectContext(_widget), m_preparedDstNode, pathsToCheck, nullptr);
@@ -1476,9 +1361,6 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Cancel) {
         return false;
     }
-    m_preparedCleanOutputDirectory =
-        m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite;
-
     m_preparedImagesNumber = m_preparedInputPaths.size();
 
     if (m_preparedImagesNumber < 2)
@@ -1492,15 +1374,37 @@ bool S1TopsBackGeocodingNode::prepareToStart()
 
 void S1TopsBackGeocodingNode::executeProcessing()
 {
+    if (m_remedyWatcher.isRunning()) {
+        m_executionSuperseded = true;
+        stopExecution();
+        connect(&m_remedyWatcher, &QFutureWatcher<PreviewGenerationResult>::finished, this, [this]() {
+            QTimer::singleShot(0, this, [this]() { executeProcessing(); });
+        });
+        return;
+    }
+    if (m_workerThread || m_thread) {
+        QPointer<QThread> stoppingThread = m_thread;
+        m_executionSuperseded = true;
+        stopExecution();
+        if (stoppingThread) {
+            if (stoppingThread->isRunning()) {
+                connect(stoppingThread, &QThread::finished, this, [this]() {
+                    QTimer::singleShot(0, this, [this]() { executeProcessing(); });
+                });
+            } else {
+                QTimer::singleShot(0, this, [this]() { executeProcessing(); });
+            }
+            return;
+        }
+    }
+    m_executionSuperseded = false;
+    m_userCancellationRequested = false;
+    invalidateExecutionGeneration();
+    const quint64 generation = m_activeGeneration;
     m_executionTimer.start();
     InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
         QStringLiteral("后向地理编码任务已提交。"), LogTargets(LogTarget::UserProjectLog),
         QStringLiteral("lifecycle"), QStringLiteral("queued"), QStringLiteral("queued"));
-
-    // 检测是否有运行中的线程，有的话先安全终止，消灭重入隐患
-    if (m_workerThread || m_thread) {
-        stopExecution();
-    }
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         // 直接复用磁盘上的现有数据，不重新计算
@@ -1518,20 +1422,42 @@ void S1TopsBackGeocodingNode::executeProcessing()
         return;
     }
 
-    // A complete result can be discarded at once. An interrupted transaction
-    // remains until the worker has recovered it with the DLL.
-    if (m_preparedCleanOutputDirectory && !m_preparedRecoverRefinementTransaction &&
-        !clearPreparedOutputDirectory()) {
-        onError(QStringLiteral("Failed to clean the previous back-geocoding output directory."));
-        return;
-    }
-
-    // 清理旧数据，防止反复执行导致UI Tree数据累加
-    NodeUtils::removeDataNodeFromProject(NodeUtils::getProjectContext(_widget), m_preparedDstNode);
-
     setProgress(0);
     m_processingWarning = false;
     m_processingQualityWarnings.clear();
+    m_pendingWorkerH5Paths.clear();
+    m_pendingWorkerError.clear();
+    m_pendingWorkerCancelled = false;
+    m_workerFinishedSuccessfully = false;
+
+    QString transactionError;
+    const QStringList expectedH5Paths = expectedH5PathsForTransaction();
+    const QStringList expectedJpgPaths = expectedPreviewPathsForH5Paths(expectedH5Paths);
+    const QStringList orderedExpectedH5Paths = moveMasterToFront(expectedH5Paths, m_preparedMasterIndex);
+    const QStringList expectedOverviewPaths = registrationOverviewPathsFromH5Paths(orderedExpectedH5Paths);
+    QStringList expectedFinalPaths = expectedH5Paths;
+    expectedFinalPaths.append(expectedJpgPaths);
+    expectedFinalPaths.append(expectedOverviewPaths);
+    QSet<QString> expectedNames;
+    for (const QString& expectedPath : expectedFinalPaths) {
+        expectedNames.insert(QFileInfo(expectedPath).fileName().toCaseFolded());
+    }
+    if (expectedNames.size() != expectedFinalPaths.size()) {
+        failStagedTransaction(QStringLiteral("Back-geocoding output manifest contains duplicate file names."));
+        return;
+    }
+    NodeUtils::OutputTransactionRecoveryInfo recoveryInfo;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode, expectedFinalPaths,
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError,
+                                           &recoveryInfo)) {
+        failStagedTransaction(transactionError);
+        return;
+    }
+    if (recoveryInfo.projectXmlRestored && !reloadProjectXmlAfterRecovery(&transactionError)) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, transactionError, projectXml());
+        failStagedTransaction(transactionError);
+        return;
+    }
 
     // Create thread
     m_thread = new QThread();
@@ -1543,17 +1469,27 @@ void S1TopsBackGeocodingNode::executeProcessing()
     m_workerThread->setTaskLogContext(logContext);
     m_workerThread->setDemPath(m_preparedDemPath);
     m_workerThread->setRangeRefine(m_preparedBRangeRefine);
-    m_workerThread->setRecoverRefinementTransaction(m_preparedRecoverRefinementTransaction);
     m_workerThread->prepareForStart();
     m_workerThread->moveToThread(m_thread);
 
     connect(m_thread, &QThread::finished, m_workerThread, &QObject::deleteLater);
     connect(m_thread, &QThread::finished, m_thread, &QThread::deleteLater);
-    connect(m_thread, &QThread::finished, this, [this]() {
+    connect(m_thread, &QThread::finished, this, [this, generation]() {
         m_workerThread = nullptr;
         m_thread = nullptr;
-        if (isAutomaticExecutionObsolete()) {
-            discardObsoleteAutomaticExecution();
+        const bool automaticObsolete = discardObsoleteAutomaticExecution();
+        if (!isCurrentGeneration(generation) || automaticObsolete) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete execution"), projectXml());
+            if (m_userCancellationRequested && !m_executionSuperseded && !m_destroying) {
+                failStagedTransaction(QStringLiteral("cancelled"), true);
+            }
+        } else if (m_pendingWorkerCancelled) {
+            failStagedTransaction(m_pendingWorkerError, true);
+        } else if (!m_pendingWorkerError.isEmpty() || !m_workerFinishedSuccessfully) {
+            failStagedTransaction(m_pendingWorkerError.isEmpty()
+                ? QStringLiteral("Back-geocoding worker ended without a successful result.") : m_pendingWorkerError);
+        } else {
+            beginStagedPreview(generation);
         }
     });
 
@@ -1563,22 +1499,34 @@ void S1TopsBackGeocodingNode::executeProcessing()
     int masterIndex = m_preparedMasterIndex;
     QString savePath = m_preparedSavePath;
     QString dstProject = m_preparedDstProject;
-    QString dstNode = m_preparedDstNode;
+    QString dstNode = m_outputTransaction.stagingName;
     QStringList inputPaths = m_preparedInputPaths;
     bool b_ESD = m_preparedBESD;
     
-    connect(m_thread, &QThread::started, [this, masterIndex, savePath, dstProject, dstNode, inputPaths, b_ESD]() {
+    connect(m_thread, &QThread::started, [this, generation, masterIndex, savePath, dstProject, dstNode, inputPaths, b_ESD]() {
+        if (!isCurrentGeneration(generation)) return;
         InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
             QStringLiteral("后向地理编码 Worker 已启动。"), LogTargets(LogTarget::UserProjectLog),
             QStringLiteral("lifecycle"), QStringLiteral("worker_started"), QStringLiteral("running"));
         Q_EMIT startBackGeocoding(masterIndex, savePath, dstProject, dstNode, inputPaths, b_ESD);
     });
-    connect(m_workerThread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1TopsBackGeocodingNode::onProgressUpdate);
-    connect(m_workerThread, &S1TopsBackGeocodingWorker::registrationFinished, this, &S1TopsBackGeocodingNode::onProcessingFinished);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::updateProcess, this,
+            [this, generation](int progress, const QString& message) {
+        if (isCurrentGeneration(generation)) onProgressUpdate(progress, message);
+    });
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::registrationFinished, this,
+            [this, generation](const QStringList& paths, const QString& node, const QString& project,
+                               const QString& root, int master, bool warning, const QStringList& warnings) {
+        if (isCurrentGeneration(generation)) onProcessingFinished(paths, node, project, root, master, warning, warnings);
+    });
     connect(m_workerThread, &S1TopsBackGeocodingWorker::endProcess, m_thread, &QThread::quit);
-    connect(m_workerThread, &S1TopsBackGeocodingWorker::cancelled, this, &S1TopsBackGeocodingNode::onCancelled);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::cancelled, this, [this, generation](const QStringList& failures) {
+        if (isCurrentGeneration(generation)) onCancelled(failures);
+    });
     connect(m_workerThread, &S1TopsBackGeocodingWorker::cancelled, m_thread, &QThread::quit);
-    connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, this, &S1TopsBackGeocodingNode::onError);
+    connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, this, [this, generation](const QString& error) {
+        if (isCurrentGeneration(generation)) onError(error);
+    });
     connect(m_workerThread, &S1TopsBackGeocodingWorker::errorProcess, m_thread, &QThread::quit);
 
     // Start thread
@@ -1587,42 +1535,234 @@ void S1TopsBackGeocodingNode::executeProcessing()
     updateParameterWidgetsEnableState();
 
     // 在下一个事件循环中强行将状态重置为 Running，防止基类 setInData 在 Automatic 模式下将其强行设为 Idle
-    QTimer::singleShot(0, this, [this]() {
-        if (m_thread && m_thread->isRunning())
+    QTimer::singleShot(0, this, [this, generation]() {
+        if (isCurrentGeneration(generation) && m_thread && m_thread->isRunning())
         {
             setState(ExecutionState::Running);
         }
     });
 }
 
-bool S1TopsBackGeocodingNode::clearPreparedOutputDirectory()
+bool S1TopsBackGeocodingNode::isCurrentGeneration(quint64 generation) const
 {
-    const QString relativeOutputDirectory = QDir::cleanPath(
-        QDir::fromNativeSeparators(m_preparedDstNode));
-    if (relativeOutputDirectory.isEmpty() || relativeOutputDirectory == QStringLiteral(".") ||
-        relativeOutputDirectory == QStringLiteral("..") || relativeOutputDirectory.startsWith(QStringLiteral("../")) ||
-        relativeOutputDirectory.contains('/') || QDir::isAbsolutePath(relativeOutputDirectory)) {
-        InSARLogManager::LogError("S1TopsBackGeocodingNode",
-            QString("Refusing to clear an unsafe back-geocoding output directory name: %1")
-                .arg(m_preparedDstNode));
+    return generation != 0 && generation == m_activeGeneration;
+}
+
+void S1TopsBackGeocodingNode::invalidateExecutionGeneration()
+{
+    m_activeGeneration = ++m_executionGeneration;
+}
+
+QStringList S1TopsBackGeocodingNode::expectedH5PathsForTransaction() const
+{
+    QStringList paths;
+    const QDir outputDir(QDir(m_preparedSavePath).filePath(m_preparedDstNode));
+    for (const QString& inputPath : m_preparedInputPaths) {
+        const QString baseName = QFileInfo(inputPath).baseName();
+        if (!baseName.isEmpty()) paths.append(outputDir.absoluteFilePath(baseName + QStringLiteral("_regis.h5")));
+    }
+    return paths;
+}
+
+QStringList S1TopsBackGeocodingNode::expectedPreviewPathsForH5Paths(const QStringList& h5Paths) const
+{
+    return jpgPathsFromH5Paths(h5Paths);
+}
+
+bool S1TopsBackGeocodingNode::reloadProjectXmlAfterRecovery(QString* errorMessage)
+{
+    XMLFile* xml = projectXml();
+    const QString xmlPath = NodeUtils::getProjectFilePath(_widget);
+    const QByteArray nativePath = QDir::toNativeSeparators(xmlPath).toLocal8Bit();
+    if (!xml || xmlPath.isEmpty() || xml->XMLFile_load(nativePath.constData()) < 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot reload project XML restored by output transaction recovery.");
         return false;
     }
-
-    QDir outputDirectory(QDir(m_preparedSavePath).filePath(relativeOutputDirectory));
-    if (!outputDirectory.exists()) {
-        return true;
-    }
-    if (!outputDirectory.removeRecursively()) {
-        InSARLogManager::LogError("S1TopsBackGeocodingNode",
-            QString("Failed to clear previous back-geocoding output directory: %1")
-                .arg(outputDirectory.absolutePath()));
-        return false;
-    }
-
-    InSARLogManager::LogInfo("S1TopsBackGeocodingNode",
-        QString("Cleared previous back-geocoding output before rerun: %1")
-            .arg(outputDirectory.absolutePath()));
     return true;
+}
+
+void S1TopsBackGeocodingNode::failStagedTransaction(const QString& error, bool cancelled)
+{
+    if (m_outputTransaction.stage != NodeUtils::OutputTransaction::Stage::Inactive &&
+        m_outputTransaction.stage != NodeUtils::OutputTransaction::Stage::Failed &&
+        m_outputTransaction.stage != NodeUtils::OutputTransaction::Stage::MetadataCommitted &&
+        m_outputTransaction.stage != NodeUtils::OutputTransaction::Stage::Completed) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            cancelled ? QStringLiteral("cancelled") : error,
+                                            projectXml());
+    }
+    m_pendingWorkerH5Paths.clear();
+    m_workerFinishedSuccessfully = false;
+    if (cancelled) {
+        setState(ExecutionState::Stopped);
+        Q_EMIT executionStopped();
+        Q_EMIT computingFinished();
+    } else {
+        const QString message = error.isEmpty() ? QStringLiteral("Back-geocoding staging transaction failed.") : error;
+        setLastErrorMessage(message);
+        setState(ExecutionState::Error);
+        Q_EMIT executionError(message);
+    }
+    updateParameterWidgetsEnableState();
+}
+
+void S1TopsBackGeocodingNode::beginStagedPreview(quint64 generation)
+{
+    if (!isCurrentGeneration(generation) || m_outputTransaction.stage != NodeUtils::OutputTransaction::Stage::StagingPrepared) {
+        return;
+    }
+    const QStringList expectedH5Paths = expectedH5PathsForTransaction();
+    const QStringList stagingH5Paths = [&]() {
+        QStringList paths;
+        const QDir staging(QDir(m_outputTransaction.projectRoot).absoluteFilePath(m_outputTransaction.stagingName));
+        for (const QString& expected : expectedH5Paths) paths.append(staging.absoluteFilePath(QFileInfo(expected).fileName()));
+        return paths;
+    }();
+    m_pendingPreviewH5Paths = moveMasterToFront(stagingH5Paths, m_preparedMasterIndex);
+    m_pendingPreviewJpgPaths = jpgPathsFromH5Paths(m_pendingPreviewH5Paths);
+    m_pendingPreviewOverviewPaths = registrationOverviewPathsFromH5Paths(m_pendingPreviewH5Paths);
+    setProgress(99);
+
+    m_remedyWatcher.disconnect(this);
+    connect(&m_remedyWatcher, &QFutureWatcher<PreviewGenerationResult>::finished, this, [this, generation]() {
+        const bool automaticObsolete = discardObsoleteAutomaticExecution();
+        if (!isCurrentGeneration(generation) || automaticObsolete) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete preview execution"), projectXml());
+            if (m_userCancellationRequested && !m_executionSuperseded && !m_destroying) {
+                failStagedTransaction(QStringLiteral("cancelled"), true);
+            }
+            return;
+        }
+        const PreviewGenerationResult previewResult = m_remedyWatcher.result();
+        if (!previewResult.generationFailures.isEmpty()) {
+            failStagedTransaction(QStringLiteral("Staged preview generation failed: %1")
+                                      .arg(previewResult.generationFailures.join(QStringLiteral("; "))));
+            return;
+        }
+        for (const QString& path : m_pendingPreviewJpgPaths + m_pendingPreviewOverviewPaths) {
+            QImageReader reader(path);
+            const QImage image = reader.read();
+            if (image.isNull()) {
+                failStagedTransaction(QStringLiteral("Staged preview is missing or cannot be decoded: %1").arg(path));
+                return;
+            }
+        }
+        finalizeStagedTransaction(generation);
+    });
+    const QStringList h5Paths = m_pendingPreviewH5Paths;
+    const QStringList jpgPaths = m_pendingPreviewJpgPaths;
+    const QStringList overviewPaths = m_pendingPreviewOverviewPaths;
+    m_remedyWatcher.setFuture(QtConcurrent::run([h5Paths, jpgPaths, overviewPaths]() {
+        PreviewGenerationResult result;
+        for (int i = 0; i < h5Paths.size(); ++i) {
+            if (!NodeUtils::generateJpgPreviewFromH5(h5Paths.at(i), jpgPaths.at(i), "complex")) {
+                result.generationFailures.append(jpgPaths.at(i));
+            }
+        }
+        for (int i = 1; i < jpgPaths.size() && i - 1 < overviewPaths.size(); ++i) {
+            if (!generateRegistrationOverviewPreview(jpgPaths.first(), jpgPaths.at(i), overviewPaths.at(i - 1))) {
+                result.generationFailures.append(overviewPaths.at(i - 1));
+            }
+        }
+        return result;
+    }));
+}
+
+void S1TopsBackGeocodingNode::finalizeStagedTransaction(quint64 generation)
+{
+    if (!isCurrentGeneration(generation)) return;
+    if (!projectXml()) {
+        failStagedTransaction(QStringLiteral("Project XML context is unavailable for output commit."));
+        return;
+    }
+    QString error;
+    const QStringList expectedH5Paths = expectedH5PathsForTransaction();
+    const QDir staging(QDir(m_outputTransaction.projectRoot).absoluteFilePath(m_outputTransaction.stagingName));
+    QStringList stagedManifestH5Paths;
+    for (const QString& expected : expectedH5Paths) stagedManifestH5Paths.append(staging.absoluteFilePath(QFileInfo(expected).fileName()));
+    for (const QString& workerPath : m_pendingWorkerH5Paths) {
+        if (QDir::cleanPath(QFileInfo(workerPath).absolutePath()).compare(
+                QDir::cleanPath(staging.absolutePath()), Qt::CaseInsensitive) != 0) {
+            failStagedTransaction(QStringLiteral("Worker reported an output outside the staging directory: %1").arg(workerPath));
+            return;
+        }
+    }
+    if (m_pendingWorkerH5Paths.size() != stagedManifestH5Paths.size()) {
+        failStagedTransaction(QStringLiteral("Worker H5 output count does not match the input-order manifest."));
+        return;
+    }
+    for (int i = 0; i < stagedManifestH5Paths.size(); ++i) {
+        if (QFileInfo(m_pendingWorkerH5Paths.at(i)).fileName() != QFileInfo(stagedManifestH5Paths.at(i)).fileName()) {
+            failStagedTransaction(QStringLiteral("Worker H5 output order does not match the input-order manifest."));
+            return;
+        }
+    }
+    if (!NodeUtils::workerOutputsMatchManifest(stagedManifestH5Paths, m_pendingWorkerH5Paths, &error) ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &error) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+                                              QStringList() << QStringLiteral("s_re") << QStringLiteral("s_im"), &error)) {
+        failStagedTransaction(error);
+        return;
+    }
+    for (const QString& path : stagedManifestH5Paths) {
+        if (!isCompleteBackGeocodingOutput(path)) {
+            failStagedTransaction(QStringLiteral("Staged back-geocoding output is incomplete: %1").arg(path));
+            return;
+        }
+    }
+
+    QStringList finalPaths;
+    if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &error)) {
+        failStagedTransaction(error);
+        return;
+    }
+    QHash<QString, QString> finalByName;
+    for (const QString& path : finalPaths) finalByName.insert(QFileInfo(path).fileName(), path);
+    QStringList finalH5Paths;
+    for (const QString& expected : expectedH5Paths) {
+        const QString finalPath = finalByName.value(QFileInfo(expected).fileName());
+        if (finalPath.isEmpty()) {
+            failStagedTransaction(QStringLiteral("Promoted H5 is missing from the transaction manifest."));
+            return;
+        }
+        finalH5Paths.append(finalPath);
+    }
+    const QStringList orderedH5Paths = moveMasterToFront(finalH5Paths, m_preparedMasterIndex);
+    if (!NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, projectXml(),
+                                                           NodeUtils::getProjectFilePath(_widget), &error) ||
+        !syncProjectXmlOrder(orderedH5Paths, m_preparedDstNode) ||
+        !NodeUtils::saveProjectXmlAtomically(projectXml(), NodeUtils::getProjectFilePath(_widget), &error) ||
+        !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction, &error)) {
+        if (error.isEmpty()) error = QStringLiteral("Unable to commit back-geocoding project metadata.");
+        failStagedTransaction(error);
+        return;
+    }
+
+    m_savedOutputPaths = orderedH5Paths;
+    m_savedMasterOutputPath = orderedH5Paths.isEmpty() ? QString() : orderedH5Paths.first();
+    m_outputNodeName = m_preparedDstNode;
+    m_registrationOverviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
+    updateRegistrationOffsets(orderedH5Paths);
+    const bool treePublished = syncProjectTreeOrder(orderedH5Paths, m_preparedDstNode);
+    m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, m_preparedDstNode);
+    m_imageInfoData = std::make_shared<ImageInfoData>(jpgPathsFromH5Paths(orderedH5Paths));
+    setOutputData(0, m_outputData);
+    setOutputData(1, m_imageInfoData);
+    if (auto* iface = NodeUtils::getProjectContext(_widget)) {
+        iface->refreshProjectTree();
+    }
+    if (!treePublished) {
+        InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
+            "Back-geocoding output committed, but the project tree could not be published; requested a tree refresh.");
+    }
+    setProgress(100);
+    if (m_processingWarning) {
+        setLastWarningMessage(m_processingQualityWarnings.join('\n'));
+        finishExecutionWithWarning();
+    } else {
+        finishExecution();
+    }
+    updateParameterWidgetsEnableState();
 }
 bool S1TopsBackGeocodingNode::isCompleteBackGeocodingOutput(const QString& path) const
 {
@@ -1660,7 +1800,22 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     if (dstNode.isEmpty())
         return false;
 
-    QStringList orderedH5Paths = restoreOrderedH5Paths(dstNode);
+    QStringList manifestPaths;
+    QString manifestError;
+    const bool hasCommittedManifest = NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode,
+                                                                              manifestPaths, &manifestError);
+    QStringList orderedH5Paths;
+    if (hasCommittedManifest) {
+        for (const QString& path : manifestPaths) {
+            if (QFileInfo(path).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+                orderedH5Paths.append(path);
+            }
+        }
+        orderedH5Paths = moveMasterToFront(orderedH5Paths, m_masterIndex);
+    } else {
+        // Legacy projects without a journal remain readable, but are not migrated implicitly.
+        orderedH5Paths = restoreOrderedH5Paths(dstNode);
+    }
     if (orderedH5Paths.isEmpty())
         return false;
 
@@ -1674,108 +1829,43 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
 
     m_savedOutputPaths = orderedH5Paths;
     m_savedMasterOutputPath = orderedH5Paths.first();
-    m_registrationOverviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
+    m_registrationOverviewPaths.clear();
     updateRegistrationOffsets(orderedH5Paths);
     m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, dstNode);
     setOutputData(0, m_outputData);
 
-    QStringList allJpgPaths = jpgPathsFromH5Paths(orderedH5Paths);
-    QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
-    QStringList missingH5s;
-    QStringList missingJpgs;
-    for (int i = 0; i < orderedH5Paths.size(); ++i) {
-        if (!NodeUtils::isJpgPreviewCurrent(orderedH5Paths[i], allJpgPaths[i])) {
-            missingH5s.append(orderedH5Paths[i]);
-            missingJpgs.append(allJpgPaths[i]);
-        }
-    }
-    bool needsOverview = false;
-    for (const QString& overviewPath : overviewPaths) {
-        if (!QFileInfo::exists(overviewPath) || QFileInfo(overviewPath).size() == 0) {
-            needsOverview = true;
+    const QStringList allJpgPaths = jpgPathsFromH5Paths(orderedH5Paths);
+    bool previewsValid = true;
+    for (const QString& path : allJpgPaths) {
+        QImageReader reader(path);
+        if (reader.read().isNull()) {
+            previewsValid = false;
             break;
         }
     }
-
-    if (missingH5s.isEmpty()) {
+    if (previewsValid) {
+        const QStringList overviewPaths = registrationOverviewPathsFromH5Paths(orderedH5Paths);
+        for (const QString& path : overviewPaths) {
+            QImageReader reader(path);
+            if (reader.read().isNull()) {
+                previewsValid = false;
+                break;
+            }
+            m_registrationOverviewPaths.append(path);
+        }
+    }
+    if (previewsValid) {
         m_imageInfoData = std::make_shared<ImageInfoData>(allJpgPaths);
         setOutputData(1, m_imageInfoData);
     } else {
-        // 缺失预览补齐前不输出子集，避免 H5 与 JPG 按索引错位
         m_imageInfoData.reset();
         setOutputData(1, nullptr);
+        setLastWarningMessage(QStringLiteral("Committed back-geocoding previews are unavailable or invalid."));
     }
-    Q_EMIT dataUpdated(1);
-
-    if (!missingH5s.isEmpty() || needsOverview) {
-        m_remedyWatcher.disconnect(this);
-        if (m_remedyWatcher.isRunning()) {
-            m_remedyWatcher.cancel();
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
-                m_remedyWatcher.disconnect(this);
-                QTimer::singleShot(0, this, [this]() { validateAndRestoreOutput(); });
-            });
-            return true;
-        }
-
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, allJpgPaths, missingJpgs, overviewPaths]() {
-            QStringList validJpgPaths;
-            bool anyFailed = false;
-            for (const QString& path : missingJpgs) {
-                if (!QFile::exists(path) || QFileInfo(path).size() == 0) {
-                    anyFailed = true;
-                }
-            }
-
-            for (const QString& path : allJpgPaths) {
-                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
-                    validJpgPaths.append(path);
-                }
-            }
-
-            m_registrationOverviewPaths.clear();
-            bool overviewFailed = false;
-            for (const QString& path : overviewPaths) {
-                if (QFile::exists(path) && QFileInfo(path).size() > 0) {
-                    m_registrationOverviewPaths.append(path);
-                } else {
-                    overviewFailed = true;
-                }
-            }
-
-            // 仅输出生成成功的 JPG，防止不存在的路径传入下游
-            if (!validJpgPaths.isEmpty()) {
-                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
-                setOutputData(1, m_imageInfoData);
-            } else {
-                m_imageInfoData.reset();
-                setOutputData(1, nullptr);
-            }
-            Q_EMIT dataUpdated(1);
-
-            if (anyFailed || overviewFailed) {
-                setLastWarningMessage(QStringLiteral("Back-geocoding products were restored, but some preview images could not be generated."));
-                setState(ExecutionState::Warning);
-                InSARLogManager::LogWarning("S1TopsBackGeocodingNode", "Output recovery finished with warnings. Some preview images failed to generate.");
-            } else {
-                setState(ExecutionState::Completed);
-            }
-        });
-
-        QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, allJpgPaths, overviewPaths]() {
-            for (int i = 0; i < missingH5s.size(); ++i) {
-                // 已存在有效 JPG 则跳过重生成
-                NodeUtils::generateJpgPreviewFromH5(missingH5s[i], missingJpgs[i], "complex");
-            }
-            for (int i = 1; i < allJpgPaths.size() && i - 1 < overviewPaths.size(); ++i) {
-                generateRegistrationOverviewPreview(allJpgPaths.first(), allJpgPaths[i], overviewPaths[i - 1]);
-            }
-        });
-        m_remedyWatcher.setFuture(future);
+    if (!syncProjectTreeOrder(orderedH5Paths, dstNode)) {
+        InSARLogManager::LogWarning("S1TopsBackGeocodingNode",
+            "Restored back-geocoding output could not be published to the project tree; requested a tree refresh.");
     }
-
-    syncProjectTreeOrder(orderedH5Paths, dstNode);
-    syncProjectXmlOrder(orderedH5Paths, dstNode);
 
     auto iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
