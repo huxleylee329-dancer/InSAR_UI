@@ -238,6 +238,13 @@ QWidget* Sentinel1BatchImportNode::createWidget()
 
 bool Sentinel1BatchImportNode::prepareToStart()
 {
+    QString subswath = m_subswathCombo ? m_subswathCombo->currentText() : QString();
+    QString pol = m_polarizationCombo ? m_polarizationCombo->currentText() : QString();
+    InSARLogManager::LogDebug("Sentinel1BatchImportNode",
+        QStringLiteral("prepareToStart: inputFiles=%1, subswath=%2, polarization=%3, importAllBursts=%4")
+            .arg(m_manifestPaths.size()).arg(subswath).arg(pol).arg(m_importAllBursts),
+        "lifecycle.prepare_to_start");
+
     // 强制把 SpinBox 的最新输入解析并同步到变量中，防止用户直接点击画布上的虚拟 Play 按钮而未触发 focusOut 失去焦点导致值滞留
     if (m_startBurstSpin) {
         m_startBurstSpin->interpretText();

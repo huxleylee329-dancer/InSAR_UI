@@ -141,6 +141,18 @@ void BaselineWorker::Baseline_Estimate(int index, const QStringList& filePaths)
                 spatial_baseline.push_back(V_baseline);
                 cc.at<double>(0, i) = V_baseline;
                 cc.at<double>(1, i) = delta;
+
+                InSARLogManager::LogDebug("BaselineWorker",
+                    QStringLiteral("Calculated baseline pair: slave=%1, V_baseline=%2m, temporal_baseline=%3days")
+                        .arg(filePaths.at(i)).arg(V_baseline, 0, 'f', 2).arg(delta, 0, 'f', 1),
+                    "baseline.pair_calculated");
+
+                InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "BaselineWorker",
+                    QStringLiteral("基线估算：主图与从图[%1] 垂直基线 %2 m，时间基线 %3 天。")
+                        .arg(QFileInfo(filePaths.at(i)).completeBaseName())
+                        .arg(V_baseline, 0, 'f', 2)
+                        .arg(delta, 0, 'f', 1),
+                    LogTargets(LogTarget::UserProjectLog));
             }
             catch (const std::exception& e) {
                 emit errorProcess(QStringLiteral("处理从图像 %1 失败: ").arg(filePaths.at(i)) + QString::fromStdString(e.what()));

@@ -37,7 +37,10 @@ void CutWorker::Cut(QList<double> para,
         return;
     }
 
-    InSARLogManager::LogInfo("CutWorker", QString("Starting Coordinate Cut on node '%1' -> '%2'").arg(src_node).arg(dst_node));
+    InSARLogManager::LogDebug("CutWorker",
+        QString("Coordinate cut: src=%1, dst=%2, range=[%3, %4], azimuth=[%5, %6]")
+            .arg(src_node).arg(dst_node).arg(para.value(0)).arg(para.value(1)).arg(para.value(2)).arg(para.value(3)),
+        "cut.coordinate_start");
 
     Utils util;
     FormatConversion FC;

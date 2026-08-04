@@ -3,6 +3,7 @@
 #include "icon_source.h"
 #include <Utils.h>
 #include <Registration.h>
+#include <RobustCoregistration.h>
 #include <QDir>
 #include <QThread>
 #include <QMessageBox>
@@ -12,7 +13,6 @@
 #include <atomic>
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <QFileInfo>
 #include <QRegularExpression>
 #include "InSARLogManager.h"
@@ -88,47 +88,12 @@ RobustFitSettings loadRobustFitSettings()
     return values;
 }
 
-double medianOfValues(std::vector<double> values)
-{
-    if (values.empty()) {
-        return 0.0;
-    }
-    std::sort(values.begin(), values.end());
-    const size_t middle = values.size() / 2;
-    return values.size() % 2 == 0 ? (values[middle - 1] + values[middle]) * 0.5 : values[middle];
 }
 
-double percentileOfValues(std::vector<double> values, double percentile)
+static int __stdcall robustCoregistrationCancelCallback(void* userData)
 {
-    if (values.empty()) {
-        return 0.0;
-    }
-    std::sort(values.begin(), values.end());
-    const double boundedPercentile = std::max(0.0, std::min(1.0, percentile));
-    const size_t roundedIndex = static_cast<size_t>(std::ceil(boundedPercentile * values.size()));
-    const size_t index = roundedIndex == 0 ? 0 : roundedIndex - 1;
-    return values[std::min(index, values.size() - 1)];
-}
-
-bool solveWeightedAffine(const cv::Mat& design, const cv::Mat& values, const std::vector<double>& weights, cv::Mat& coefficients)
-{
-    if (design.rows != values.rows || design.rows != static_cast<int>(weights.size())) {
-        return false;
-    }
-
-    cv::Mat weightedDesign(design.rows, design.cols, CV_64F);
-    cv::Mat weightedValues(values.rows, 1, CV_64F);
-    for (int row = 0; row < design.rows; ++row)
-    {
-        const double rootWeight = std::sqrt(std::max(0.0, weights[row]));
-        for (int column = 0; column < design.cols; ++column)
-        {
-            weightedDesign.at<double>(row, column) = rootWeight * design.at<double>(row, column);
-        }
-        weightedValues.at<double>(row, 0) = rootWeight * values.at<double>(row, 0);
-    }
-    return cv::solve(weightedDesign, weightedValues, coefficients, cv::DECOMP_SVD);
-}
+	CoregistrationWorker* worker = static_cast<CoregistrationWorker*>(userData);
+	return worker && (worker->isStopRequested() || worker->thread()->isInterruptionRequested()) ? 1 : 0;
 }
 
 static bool __stdcall coregisProgressCallback(int progress, const char* message, void* userData)
@@ -209,13 +174,16 @@ CoregistrationWorker::~CoregistrationWorker()
 
 void CoregistrationWorker::ResampleSlaveInverseWithAffineOffset(const ComplexMat& slave, ComplexMat& out,
     int outputRows, int outputCols, const Mat& coefRows, const Mat& coefCols,
-    double offsetX, double offsetY, double scaleX, double scaleY, CoregistrationWorker* worker)
+    double offsetX, double offsetY, double scaleX, double scaleY, CoregistrationWorker* worker,
+    int progressStart, int progressEnd, int imageIndex, int imageCount)
 {
     const int rowsSlave = slave.GetRows();
     const int colsSlave = slave.GetCols();
     const int type = slave.type();
     out.re = Mat::zeros(outputRows, outputCols, type);
     out.im = Mat::zeros(outputRows, outputCols, type);
+    std::atomic<int> completedRows(0);
+    int lastReportedProgress = progressStart;
 
 #pragma omp parallel for schedule(guided)
     for (int i = 0; i < outputRows; i++)
@@ -283,6 +251,19 @@ void CoregistrationWorker::ResampleSlaveInverseWithAffineOffset(const ComplexMat
                 upper = slave.im.at<double>(row0, col0) + (slave.im.at<double>(row0, col1) - slave.im.at<double>(row0, col0)) * (sampleCol - static_cast<double>(col0));
                 lower = slave.im.at<double>(row1, col0) + (slave.im.at<double>(row1, col1) - slave.im.at<double>(row1, col0)) * (sampleCol - static_cast<double>(col0));
                 out.im.at<double>(i, j) = upper + (lower - upper) * (sampleRow - static_cast<double>(row0));
+            }
+        }
+
+        const int completed = ++completedRows;
+        const int progress = progressStart + static_cast<int>(
+            std::floor(static_cast<double>(completed) * (progressEnd - progressStart) / outputRows));
+#pragma omp critical(coreg_resample_progress)
+        {
+            if (worker && progress > lastReportedProgress)
+            {
+                lastReportedProgress = progress;
+                emit worker->updateProcess(progress, QStringLiteral("第%1/%2对图像重采样中：%3%")
+                    .arg(imageIndex).arg(imageCount).arg(progress));
             }
         }
     }
@@ -706,6 +687,9 @@ int CoregistrationWorker::Registration_copy(
 	int n_images = SAR_images.size();
 	int num_slaves = n_images - 1;
 	int slave_idx = 0;
+	const double pairProgressWidth = 75.0;
+	const double matchingProgressWidth = 45.0;
+	const double resamplingProgressWidth = 24.0;
 	offset_col_out.create(n_images, 1, CV_64F);
 	offset_row_out.create(n_images, 1, CV_64F);
 	Mat images_rows, images_cols, tmp;
@@ -810,10 +794,13 @@ int CoregistrationWorker::Registration_copy(
 		}
 		
 		//分块读取并计算偏移量
-		double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
-		emit updateProcess(int(start_p), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
+		double pairStart = 10.0 + (pairProgressWidth / num_slaves) * slave_idx;
+		double matchingEnd = pairStart + matchingProgressWidth / num_slaves;
+		double resamplingEnd = matchingEnd + resamplingProgressWidth / num_slaves;
+		double pairEnd = pairStart + pairProgressWidth / num_slaves;
+		emit updateProcess(qRound(pairStart), QStringLiteral("第%1对图像匹配中……").arg(slave_idx + 1));
 		std::atomic<int> completed_blocks(0);
-		int init_pct = static_cast<int>(start_p);
+		int init_pct = qRound(pairStart);
 		std::atomic<int> max_reported_pct(init_pct);
 		m = images_rows.at<int>(ii, 0) / blocksize;
 		n = images_cols.at<int>(ii, 0) / blocksize;
@@ -870,9 +857,7 @@ int CoregistrationWorker::Registration_copy(
 					int step = std::max(1, total_blocks / 50);
 					if (current_done % step == 0 || current_done == total_blocks) {
 						double block_ratio = double(current_done) / double(total_blocks);
-						double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
-						double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
-						double current_prog = start_p + block_ratio * (end_p - start_p);
+						double current_prog = pairStart + block_ratio * (matchingEnd - pairStart);
 						int progress_pct = int(current_prog);
 						int prev = max_reported_pct.load();
 						while (progress_pct > prev && !max_reported_pct.compare_exchange_weak(prev, progress_pct)) {
@@ -939,9 +924,7 @@ int CoregistrationWorker::Registration_copy(
 					int step = std::max(1, total_blocks / 50);
 					if (current_done % step == 0 || current_done == total_blocks) {
 						double block_ratio = double(current_done) / double(total_blocks);
-						double start_p = 10.0 + (70.0 / num_slaves) * slave_idx;
-						double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
-						double current_prog = start_p + block_ratio * (end_p - start_p);
+						double current_prog = pairStart + block_ratio * (matchingEnd - pairStart);
 						int progress_pct = int(current_prog);
 						int prev = max_reported_pct.load();
 						while (progress_pct > prev && !max_reported_pct.compare_exchange_weak(prev, progress_pct)) {
@@ -1005,326 +988,165 @@ int CoregistrationWorker::Registration_copy(
 			InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration diagnostics [%1]: no blocks passed real_coherent/SNR filtering (minimumSNR=%2).").arg(QFileInfo(QString::fromStdString(SAR_images[ii])).fileName()).arg(robustFitSettings.minimumBlockMatchSnr, 0, 'f', 3));
 		}
 
-		int count = 0, c = 0; double delta, thresh = 2.0;
-		for (int i = 0; i < m; i++)
-		{
-			for (int j = 0; j < n; j++)
-			{
-				if (eligibleMask.at<uchar>(i, j) == 0) {
-					sentinel.at<double>(i, j) = 1.0;
-					c++;
-					continue;
-				}
-
-				int valid_neighbors = 0;
-				int anomaly_count = 0;
-				int ix, iy;
-
-				// 上
-				ix = j; iy = i - 1;
-				if (iy >= 0 && eligibleMask.at<uchar>(iy, ix) == 1) {
-					valid_neighbors++;
-					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-					if (delta >= thresh) anomaly_count++;
-				}
-				// 下
-				ix = j; iy = i + 1;
-				if (iy < m && eligibleMask.at<uchar>(iy, ix) == 1) {
-					valid_neighbors++;
-					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-					if (delta >= thresh) anomaly_count++;
-				}
-				// 左
-				ix = j - 1; iy = i;
-				if (ix >= 0 && eligibleMask.at<uchar>(iy, ix) == 1) {
-					valid_neighbors++;
-					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-					if (delta >= thresh) anomaly_count++;
-				}
-				// 右
-				ix = j + 1; iy = i;
-				if (ix < n && eligibleMask.at<uchar>(iy, ix) == 1) {
-					valid_neighbors++;
-					delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix)) + fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-					if (delta >= thresh) anomaly_count++;
-				}
-
-				if (valid_neighbors >= 2 && anomaly_count >= 2) {
-					sentinel.at<double>(i, j) = 1.0;
-					c++;
-				}
-			}
-		}
-		Mat offset_c_0, offset_r_0, offset_coord_row_0, offset_coord_col_0;
-		offset_c_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		offset_r_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		offset_coord_row_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		offset_coord_col_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		count = 0;
-		for (int i = 0; i < m; i++)
-		{
-			for (int j = 0; j < n; j++)
-			{
-				if (sentinel.at<double>(i, j) < 0.5)
-				{
-					offset_r_0.at<double>(count, 0) = offset_r.at<double>(i, j);
-					offset_c_0.at<double>(count, 0) = offset_c.at<double>(i, j);
-					offset_coord_row_0.at<double>(count, 0) = offset_coord_row.at<double>(i, j);
-					offset_coord_col_0.at<double>(count, 0) = offset_coord_col.at<double>(i, j);
-					count++;
-				}
-			}
-		}
-
-		InSARLogManager::LogInfo("CoregistrationWorker",
-			QString("Registration diagnostics [%1]: filtering retained=%2/%3 blocks; qualityRejected=%4, outlierRejected=%5.")
-				.arg(QFileInfo(QString::fromStdString(SAR_images[ii])).fileName())
-				.arg(count)
-				.arg(total_blocks)
-				.arg(total_blocks - rawEligibleCount)
-				.arg(rawEligibleCount - count));
-
-
 		const QString diagnosticSlaveName = QFileInfo(QString::fromStdString(SAR_images[ii])).fileName();
-		if (count < robustFitSettings.minimumInlierCount)
+		std::vector<RobustCoregistrationBlockMatch> blockMatches(static_cast<size_t>(total_blocks));
+		for (int blockRow = 0; blockRow < m; ++blockRow)
 		{
-			InSARLogManager::LogWarning("CoregistrationWorker",
-				QString("Registration diagnostics [%1]: only %2 points remain after prefiltering; minimum is %3.")
-					.arg(diagnosticSlaveName).arg(count).arg(robustFitSettings.minimumInlierCount));
-			fprintf(stderr, "stack_coregistration(): insufficient valid sub blocks!\n");
+			for (int blockCol = 0; blockCol < n; ++blockCol)
+			{
+				RobustCoregistrationBlockMatch& match = blockMatches[static_cast<size_t>(blockRow * n + blockCol)];
+				match.structSize = sizeof(RobustCoregistrationBlockMatch);
+				match.version = 1;
+				match.blockRow = blockRow;
+				match.blockColumn = blockCol;
+				match.centerRow = offset_coord_row.at<double>(blockRow, blockCol);
+				match.centerColumn = offset_coord_col.at<double>(blockRow, blockCol);
+				match.dy = offset_r.at<double>(blockRow, blockCol);
+				match.dx = offset_c.at<double>(blockRow, blockCol);
+				match.snr = snr_values.at<double>(blockRow, blockCol);
+				match.valid = eligibleMask.at<uchar>(blockRow, blockCol) == 1 ? 1 : 0;
+			}
+		}
+
+		RobustCoregistrationConfig baseConfig = {};
+		baseConfig.structSize = sizeof(RobustCoregistrationConfig);
+		int configStatus = GetDefaultRobustCoregistrationConfig(&baseConfig);
+		if (configStatus != ROBUST_COREGISTRATION_SUCCESS)
+		{
+			InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration diagnostics [%1]: unable to initialize robust coregistration configuration (status=%2).").arg(diagnosticSlaveName).arg(configStatus));
+			return -1;
+		}
+		baseConfig.minimumBlockMatchSnr = robustFitSettings.minimumBlockMatchSnr;
+		baseConfig.minimumInlierCount = robustFitSettings.minimumInlierCount;
+		baseConfig.minimumInlierRatio = robustFitSettings.minimumInlierRatio;
+		baseConfig.maximumDesignConditionNumber = robustFitSettings.maximumDesignConditionNumber;
+		baseConfig.minimumOccupiedGridCells = robustFitSettings.minimumOccupiedGridCells;
+		baseConfig.residualFloorPixels = robustFitSettings.residualFloorPixels;
+		baseConfig.huberCutoffSigma = robustFitSettings.huberCutoffSigma;
+		baseConfig.inlierSigma = robustFitSettings.inlierSigma;
+
+		RobustCoregistrationImageSize imageSize = {};
+		imageSize.structSize = sizeof(RobustCoregistrationImageSize);
+		imageSize.version = 1;
+		imageSize.rows = rows;
+		imageSize.columns = cols;
+		const auto runRobustFit = [&](const RobustCoregistrationConfig& config,
+			RobustCoregistrationResult& result, std::vector<unsigned char>& inlierFlags,
+			std::vector<char>& diagnosticBuffer) {
+			result = {};
+			result.structSize = sizeof(RobustCoregistrationResult);
+			result.version = 1;
+			inlierFlags.assign(static_cast<size_t>(total_blocks), 0);
+			diagnosticBuffer.assign(1024, '\0');
+			const int callStatus = FitAffineRobustCoregistration(
+				blockMatches.data(), total_blocks, &imageSize, &config,
+				robustCoregistrationCancelCallback, this,
+				inlierFlags.data(), static_cast<int>(inlierFlags.size()),
+				&result, diagnosticBuffer.data(), static_cast<int>(diagnosticBuffer.size()));
+			return callStatus != ROBUST_COREGISTRATION_SUCCESS ? callStatus : result.statusCode;
+		};
+
+		// Shadow comparison uses the same block matches. The 1B RANSAC result is
+		// the production fit; 1A remains a diagnostics-only reference.
+		RobustCoregistrationConfig baselineConfig = baseConfig;
+		baselineConfig.enableRansac = 0;
+		RobustCoregistrationResult robustResult = {};
+		std::vector<unsigned char> inlierFlags;
+		std::vector<char> diagnosticBuffer;
+		const int baselineStatus = runRobustFit(baselineConfig, robustResult, inlierFlags, diagnosticBuffer);
+		if (baselineStatus == ROBUST_COREGISTRATION_CANCELLED) {
+			return -2;
+		}
+
+		RobustCoregistrationConfig ransacConfig = baseConfig;
+		ransacConfig.enableRansac = 1;
+		RobustCoregistrationResult ransacResult = {};
+		std::vector<unsigned char> ransacInlierFlags;
+		std::vector<char> ransacDiagnosticBuffer;
+		const int ransacStatus = runRobustFit(ransacConfig, ransacResult, ransacInlierFlags, ransacDiagnosticBuffer);
+		if (ransacStatus == ROBUST_COREGISTRATION_CANCELLED) {
+			return -2;
+		}
+
+		const bool baselineSucceeded = baselineStatus == ROBUST_COREGISTRATION_SUCCESS;
+		const bool ransacSucceeded = ransacStatus == ROBUST_COREGISTRATION_SUCCESS;
+		if (baselineSucceeded && ransacSucceeded)
+		{
+			int sharedInliers = 0;
+			int unionInliers = 0;
+			for (int matchIndex = 0; matchIndex < total_blocks; ++matchIndex)
+			{
+				const bool baselineInlier = inlierFlags[static_cast<size_t>(matchIndex)] != 0;
+				const bool ransacInlier = ransacInlierFlags[static_cast<size_t>(matchIndex)] != 0;
+				sharedInliers += baselineInlier && ransacInlier ? 1 : 0;
+				unionInliers += baselineInlier || ransacInlier ? 1 : 0;
+			}
+			double maximumCoefficientDelta = 0.0;
+			for (int coefficient = 0; coefficient < 3; ++coefficient)
+			{
+				maximumCoefficientDelta = std::max(maximumCoefficientDelta,
+					std::abs(ransacResult.rowCoefficients[coefficient] - robustResult.rowCoefficients[coefficient]));
+				maximumCoefficientDelta = std::max(maximumCoefficientDelta,
+					std::abs(ransacResult.columnCoefficients[coefficient] - robustResult.columnCoefficients[coefficient]));
+			}
+			InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration shadow comparison [%1]: active=1B RANSAC, reference=1A; baselineInliers=%2, ransacInliers=%3, shared/union=%4/%5, maxCoefficientDelta=%6, topLeftDelta=(dy=%7, dx=%8), residualDelta=%9; RANSAC candidates=%10, validHypotheses=%11, degenerateHypotheses=%12, iterations=%13, bestConsensus=%14/%15. %16")
+				.arg(diagnosticSlaveName).arg(robustResult.finalInlierCount).arg(ransacResult.finalInlierCount)
+				.arg(sharedInliers).arg(unionInliers).arg(maximumCoefficientDelta, 0, 'g', 8)
+				.arg(ransacResult.topLeftDy - robustResult.topLeftDy, 0, 'g', 8)
+				.arg(ransacResult.topLeftDx - robustResult.topLeftDx, 0, 'g', 8)
+				.arg(ransacResult.residualRms - robustResult.residualRms, 0, 'g', 8)
+				.arg(ransacResult.ransacCandidateCount).arg(ransacResult.ransacValidHypothesisCount)
+				.arg(ransacResult.ransacDegenerateHypothesisCount).arg(ransacResult.ransacIterations)
+				.arg(ransacResult.ransacBestConsensusCount).arg(ransacResult.ransacBestConsensusRatio, 0, 'f', 3)
+				.arg(QString::fromLocal8Bit(ransacDiagnosticBuffer.data())));
+			InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1] 1B RANSAC: prefiltered=%2, inliers=%3/%4 (%5), irlsIterations=%6, finalRefits=%7, sigma=%8, coverage=%9/9, bands=%10x%11, rank=%12, condition=%13, residual(rms=%14, p95=%15, rowRms=%16, colRms=%17), row=[%18, %19, %20], col=[%21, %22, %23], center dy=%24, dx=%25, topLeft dy=%26, dx=%27.")
+				.arg(diagnosticSlaveName).arg(ransacResult.prefilteredCount).arg(ransacResult.finalInlierCount).arg(ransacResult.prefilteredCount).arg(ransacResult.finalInlierRatio, 0, 'f', 3).arg(ransacResult.irlsIterations).arg(ransacResult.finalRefitPasses)
+				.arg(ransacResult.robustSigma, 0, 'f', 6).arg(ransacResult.occupiedGridCellCount).arg(ransacResult.occupiedRowBandCount).arg(ransacResult.occupiedColumnBandCount)
+				.arg(ransacResult.designRank).arg(ransacResult.conditionNumber, 0, 'g', 6)
+				.arg(ransacResult.residualRms, 0, 'f', 6).arg(ransacResult.residualP95, 0, 'f', 6).arg(ransacResult.rowResidualRms, 0, 'f', 6).arg(ransacResult.columnResidualRms, 0, 'f', 6)
+				.arg(ransacResult.rowCoefficients[0], 0, 'f', 8).arg(ransacResult.rowCoefficients[1], 0, 'f', 8).arg(ransacResult.rowCoefficients[2], 0, 'f', 8)
+				.arg(ransacResult.columnCoefficients[0], 0, 'f', 8).arg(ransacResult.columnCoefficients[1], 0, 'f', 8).arg(ransacResult.columnCoefficients[2], 0, 'f', 8)
+				.arg(ransacResult.centerDy, 0, 'f', 6).arg(ransacResult.centerDx, 0, 'f', 6)
+				.arg(ransacResult.topLeftDy, 0, 'f', 6).arg(ransacResult.topLeftDx, 0, 'f', 6));
+		}
+		else
+		{
+			InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration shadow comparison [%1]: reference 1A status=%2 (%3); active 1B RANSAC status=%4 (%5).")
+				.arg(diagnosticSlaveName).arg(baselineStatus).arg(QString::fromLocal8Bit(diagnosticBuffer.data()))
+				.arg(ransacStatus).arg(QString::fromLocal8Bit(ransacDiagnosticBuffer.data())));
+		}
+		if (!ransacSucceeded)
+		{
 			return -1;
 		}
 
-		// 二维一阶偏移平面：dy/dx = a0 + a1 * x + a2 * y，坐标归一化后直接求解原始超定系统。
+		Mat coef_r(3, 1, CV_64F);
+		Mat coef_c(3, 1, CV_64F);
+		for (int coefficient = 0; coefficient < 3; ++coefficient)
+		{
+			coef_r.at<double>(coefficient, 0) = ransacResult.rowCoefficients[coefficient];
+			coef_c.at<double>(coefficient, 0) = ransacResult.columnCoefficients[coefficient];
+		}
 		const double offset_x = static_cast<double>(cols) / 2.0;
 		const double offset_y = static_cast<double>(rows) / 2.0;
 		const double scale_x = static_cast<double>(cols);
 		const double scale_y = static_cast<double>(rows);
-		offset_coord_row_0 = (offset_coord_row_0 - offset_y) / scale_y;
-		offset_coord_col_0 = (offset_coord_col_0 - offset_x) / scale_x;
-		Mat design = Mat::ones(count, 3, CV_64F);
-		offset_coord_col_0.copyTo(design(Range::all(), Range(1, 2)));
-		offset_coord_row_0.copyTo(design(Range::all(), Range(2, 3)));
-
-		Mat coef_r, coef_c;
-		std::vector<double> weights(count, 1.0);
-		if (!solveWeightedAffine(design, offset_r_0, weights, coef_r) ||
-			!solveWeightedAffine(design, offset_c_0, weights, coef_c))
-		{
-			InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration diagnostics [%1]: initial affine displacement fit failed.").arg(diagnosticSlaveName));
-			return -1;
-		}
-
-		auto calculateResiduals = [&design, &offset_r_0, &offset_c_0](const Mat& rowCoefficients, const Mat& colCoefficients) {
-			std::vector<double> residuals(design.rows);
-			for (int row = 0; row < design.rows; ++row)
-			{
-				const double x = design.at<double>(row, 1);
-				const double y = design.at<double>(row, 2);
-				const double predictedRow = rowCoefficients.at<double>(0, 0) + rowCoefficients.at<double>(1, 0) * x + rowCoefficients.at<double>(2, 0) * y;
-				const double predictedCol = colCoefficients.at<double>(0, 0) + colCoefficients.at<double>(1, 0) * x + colCoefficients.at<double>(2, 0) * y;
-				residuals[row] = std::hypot(offset_r_0.at<double>(row, 0) - predictedRow, offset_c_0.at<double>(row, 0) - predictedCol);
-			}
-			return residuals;
-		};
-
-		int irlsIterations = 0;
-		for (int iteration = 0; iteration < 10; ++iteration)
-		{
-			if (cancellationRequested()) return -2;
-			const std::vector<double> residuals = calculateResiduals(coef_r, coef_c);
-			const double sigma = std::max(robustFitSettings.residualFloorPixels,
-				medianOfValues(residuals) / std::sqrt(2.0 * std::log(2.0)));
-			std::vector<double> nextWeights(count, 1.0);
-			double maxWeightChange = 0.0;
-			for (int row = 0; row < count; ++row)
-			{
-				const double normalizedResidual = residuals[row] / sigma;
-				nextWeights[row] = normalizedResidual > robustFitSettings.huberCutoffSigma ? robustFitSettings.huberCutoffSigma / normalizedResidual : 1.0;
-				maxWeightChange = std::max(maxWeightChange, std::abs(nextWeights[row] - weights[row]));
-			}
-
-			Mat nextCoefR, nextCoefC;
-			if (!solveWeightedAffine(design, offset_r_0, nextWeights, nextCoefR) ||
-				!solveWeightedAffine(design, offset_c_0, nextWeights, nextCoefC))
-			{
-				InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration diagnostics [%1]: robust affine displacement fit failed.").arg(diagnosticSlaveName));
-				return -1;
-			}
-
-			const double coefficientChange = std::max(cv::norm(nextCoefR - coef_r), cv::norm(nextCoefC - coef_c));
-			const double coefficientScale = std::max(1.0, std::max(cv::norm(coef_r), cv::norm(coef_c)));
-			coef_r = nextCoefR;
-			coef_c = nextCoefC;
-			weights.swap(nextWeights);
-			irlsIterations = iteration + 1;
-			if (coefficientChange <= coefficientScale * 1e-6 || maxWeightChange <= 1e-3) {
-				break;
-			}
-		}
-
-		auto selectInlierRows = [&calculateResiduals, &robustFitSettings, count](const Mat& rowCoefficients, const Mat& colCoefficients, std::vector<double>& residuals, double& sigma) {
-			residuals = calculateResiduals(rowCoefficients, colCoefficients);
-			sigma = std::max(robustFitSettings.residualFloorPixels,
-				medianOfValues(residuals) / std::sqrt(2.0 * std::log(2.0)));
-			const double threshold = robustFitSettings.inlierSigma * sigma;
-			std::vector<int> rows;
-			rows.reserve(count);
-			for (int row = 0; row < count; ++row)
-			{
-				if (residuals[row] <= threshold) {
-					rows.push_back(row);
-				}
-			}
-			return rows;
-		};
-		auto solveInlierFit = [&design, &offset_r_0, &offset_c_0](const std::vector<int>& rows, Mat& rowCoefficients, Mat& colCoefficients) {
-			if (rows.size() < 3) {
-				return false;
-			}
-			Mat inlierDesign(static_cast<int>(rows.size()), 3, CV_64F);
-			Mat inlierRowsOffset(static_cast<int>(rows.size()), 1, CV_64F);
-			Mat inlierColsOffset(static_cast<int>(rows.size()), 1, CV_64F);
-			for (size_t index = 0; index < rows.size(); ++index)
-			{
-				const int sourceRow = rows[index];
-				design.row(sourceRow).copyTo(inlierDesign.row(static_cast<int>(index)));
-				inlierRowsOffset.at<double>(static_cast<int>(index), 0) = offset_r_0.at<double>(sourceRow, 0);
-				inlierColsOffset.at<double>(static_cast<int>(index), 0) = offset_c_0.at<double>(sourceRow, 0);
-			}
-			return cv::solve(inlierDesign, inlierRowsOffset, rowCoefficients, cv::DECOMP_SVD) &&
-				cv::solve(inlierDesign, inlierColsOffset, colCoefficients, cv::DECOMP_SVD);
-		};
-
-		std::vector<double> finalResiduals;
-		double robustSigma = 0.0;
-		std::vector<int> inlierRows = selectInlierRows(coef_r, coef_c, finalResiduals, robustSigma);
-		bool inlierSetSettled = false;
-		int finalRefitPasses = 0;
-		for (int pass = 0; pass < 3; ++pass)
-		{
-			if (cancellationRequested()) return -2;
-			Mat refitCoefR, refitCoefC;
-			if (!solveInlierFit(inlierRows, refitCoefR, refitCoefC))
-			{
-				InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration diagnostics [%1]: final inlier displacement fit has fewer than three usable points or cannot be solved.").arg(diagnosticSlaveName));
-				return -1;
-			}
-			finalRefitPasses = pass + 1;
-			std::vector<double> refitResiduals;
-			double refitSigma = 0.0;
-			const std::vector<int> refitInlierRows = selectInlierRows(refitCoefR, refitCoefC, refitResiduals, refitSigma);
-			if (refitInlierRows == inlierRows)
-			{
-				coef_r = refitCoefR;
-				coef_c = refitCoefC;
-				finalResiduals.swap(refitResiduals);
-				robustSigma = refitSigma;
-				inlierSetSettled = true;
-				break;
-			}
-			inlierRows = refitInlierRows;
-		}
-		if (!inlierSetSettled)
-		{
-			InSARLogManager::LogWarning("CoregistrationWorker", QString("Registration diagnostics [%1]: final inlier set did not settle after two updates.").arg(diagnosticSlaveName));
-			return -1;
-		}
-
-		const int inlierCount = static_cast<int>(inlierRows.size());
-		const double inlierRatio = static_cast<double>(inlierCount) / static_cast<double>(count);
-		if (inlierCount < robustFitSettings.minimumInlierCount || inlierRatio < robustFitSettings.minimumInlierRatio)
-		{
-			InSARLogManager::LogWarning("CoregistrationWorker",
-				QString("Registration diagnostics [%1]: robust fit retained %2/%3 final inliers (%4); required count=%5, ratio=%6.")
-					.arg(diagnosticSlaveName).arg(inlierCount).arg(count).arg(inlierRatio, 0, 'f', 3)
-					.arg(robustFitSettings.minimumInlierCount).arg(robustFitSettings.minimumInlierRatio, 0, 'f', 3));
-			return -1;
-		}
-
-		Mat inlierDesign(inlierCount, 3, CV_64F);
-		bool occupiedCells[3][3] = {};
-		bool occupiedRowBands[3] = {};
-		bool occupiedColBands[3] = {};
-		for (int index = 0; index < inlierCount; ++index)
-		{
-			const int sourceRow = inlierRows[index];
-			design.row(sourceRow).copyTo(inlierDesign.row(index));
-			const int gridCol = std::max(0, std::min(2, static_cast<int>((design.at<double>(sourceRow, 1) + 0.5) * 3.0)));
-			const int gridRow = std::max(0, std::min(2, static_cast<int>((design.at<double>(sourceRow, 2) + 0.5) * 3.0)));
-			occupiedCells[gridRow][gridCol] = true;
-			occupiedRowBands[gridRow] = true;
-			occupiedColBands[gridCol] = true;
-		}
-
-		cv::SVD svd(inlierDesign, cv::SVD::NO_UV);
-		const double maxSingularValue = svd.w.at<double>(0, 0);
-		const double minSingularValue = svd.w.at<double>(svd.w.rows - 1, 0);
-		const double rankTolerance = std::numeric_limits<double>::epsilon() * std::max(inlierDesign.rows, inlierDesign.cols) * maxSingularValue;
-		int designRank = 0;
-		for (int singularIndex = 0; singularIndex < svd.w.rows; ++singularIndex)
-		{
-			if (svd.w.at<double>(singularIndex, 0) > rankTolerance) {
-				designRank++;
-			}
-		}
-		const double conditionNumber = minSingularValue > rankTolerance ? maxSingularValue / minSingularValue : std::numeric_limits<double>::infinity();
-		int occupiedCellCount = 0;
-		int occupiedRowBandCount = 0;
-		int occupiedColBandCount = 0;
-		for (int gridRow = 0; gridRow < 3; ++gridRow)
-		{
-			occupiedRowBandCount += occupiedRowBands[gridRow] ? 1 : 0;
-			occupiedColBandCount += occupiedColBands[gridRow] ? 1 : 0;
-			for (int gridCol = 0; gridCol < 3; ++gridCol)
-			{
-				occupiedCellCount += occupiedCells[gridRow][gridCol] ? 1 : 0;
-			}
-		}
-		if (designRank != 3 || !std::isfinite(conditionNumber) || conditionNumber > robustFitSettings.maximumDesignConditionNumber ||
-			occupiedCellCount < robustFitSettings.minimumOccupiedGridCells || occupiedRowBandCount < 2 || occupiedColBandCount < 2)
-		{
-			InSARLogManager::LogWarning("CoregistrationWorker",
-				QString("Registration diagnostics [%1]: unstable fit geometry: rank=%2, condition=%3, singular=[%4, %5], coverage=%6/9, bands=%7x%8.")
-					.arg(diagnosticSlaveName).arg(designRank).arg(conditionNumber, 0, 'g', 6)
-					.arg(maxSingularValue, 0, 'g', 6).arg(minSingularValue, 0, 'g', 6)
-					.arg(occupiedCellCount).arg(occupiedRowBandCount).arg(occupiedColBandCount));
-			return -1;
-		}
-
-		std::vector<double> finalInlierResiduals;
-		finalInlierResiduals.reserve(inlierCount);
-		double squaredRowResiduals = 0.0;
-		double squaredColResiduals = 0.0;
-		for (int sourceRow : inlierRows)
-		{
-			finalInlierResiduals.push_back(finalResiduals[sourceRow]);
-			const double x = design.at<double>(sourceRow, 1);
-			const double y = design.at<double>(sourceRow, 2);
-			const double rowResidual = offset_r_0.at<double>(sourceRow, 0) - (coef_r.at<double>(0, 0) + coef_r.at<double>(1, 0) * x + coef_r.at<double>(2, 0) * y);
-			const double colResidual = offset_c_0.at<double>(sourceRow, 0) - (coef_c.at<double>(0, 0) + coef_c.at<double>(1, 0) * x + coef_c.at<double>(2, 0) * y);
-			squaredRowResiduals += rowResidual * rowResidual;
-			squaredColResiduals += colResidual * colResidual;
-		}
-		const double rowRms = std::sqrt(squaredRowResiduals / static_cast<double>(inlierCount));
-		const double colRms = std::sqrt(squaredColResiduals / static_cast<double>(inlierCount));
-		const double combinedRms = std::sqrt((squaredRowResiduals + squaredColResiduals) / static_cast<double>(inlierCount));
-		const double p95Residual = percentileOfValues(finalInlierResiduals, 0.95);
-
 		const double centerRow = static_cast<double>(rows) / 2.0;
 		const double centerCol = static_cast<double>(cols) / 2.0;
-		const double centerX = (centerCol - offset_x) / scale_x;
-		const double centerY = (centerRow - offset_y) / scale_y;
-		const double centerDy = coef_r.at<double>(0, 0) + coef_r.at<double>(1, 0) * centerX + coef_r.at<double>(2, 0) * centerY;
-		const double centerDx = coef_c.at<double>(0, 0) + coef_c.at<double>(1, 0) * centerX + coef_c.at<double>(2, 0) * centerY;
-		InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1]: robust displacement fit prefiltered=%2, inliers=%3/%4 (%5), irlsIterations=%6, finalRefits=%7, sigma=%8, coverage=%9/9, bands=%10x%11, rank=%12, condition=%13, singular=[%14, %15], residual(rms=%16, p95=%17, rowRms=%18, colRms=%19), row=[%20, %21, %22], col=[%23, %24, %25], center dy=%26, dx=%27.")
-			.arg(diagnosticSlaveName).arg(count).arg(inlierCount).arg(count).arg(inlierRatio, 0, 'f', 3).arg(irlsIterations).arg(finalRefitPasses)
-			.arg(robustSigma, 0, 'f', 6).arg(occupiedCellCount).arg(occupiedRowBandCount).arg(occupiedColBandCount)
-			.arg(designRank).arg(conditionNumber, 0, 'g', 6).arg(maxSingularValue, 0, 'g', 6).arg(minSingularValue, 0, 'g', 6)
-			.arg(combinedRms, 0, 'f', 6).arg(p95Residual, 0, 'f', 6).arg(rowRms, 0, 'f', 6).arg(colRms, 0, 'f', 6)
-			.arg(coef_r.at<double>(0, 0), 0, 'f', 8).arg(coef_r.at<double>(1, 0), 0, 'f', 8).arg(coef_r.at<double>(2, 0), 0, 'f', 8)
-			.arg(coef_c.at<double>(0, 0), 0, 'f', 8).arg(coef_c.at<double>(1, 0), 0, 'f', 8).arg(coef_c.at<double>(2, 0), 0, 'f', 8)
-			.arg(centerDy, 0, 'f', 6).arg(centerDx, 0, 'f', 6));
+		offset_row_out.at<double>(ii, 0) = ransacResult.topLeftDy;
+		offset_col_out.at<double>(ii, 0) = ransacResult.topLeftDx;
+
+		if (baselineSucceeded)
+		{
+			InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1] 1A baseline: prefiltered=%2, inliers=%3/%4 (%5), irlsIterations=%6, finalRefits=%7, sigma=%8, coverage=%9/9, bands=%10x%11, rank=%12, condition=%13, residual(rms=%14, p95=%15, rowRms=%16, colRms=%17), row=[%18, %19, %20], col=[%21, %22, %23], center dy=%24, dx=%25. %26")
+				.arg(diagnosticSlaveName).arg(robustResult.prefilteredCount).arg(robustResult.finalInlierCount).arg(robustResult.prefilteredCount).arg(robustResult.finalInlierRatio, 0, 'f', 3).arg(robustResult.irlsIterations).arg(robustResult.finalRefitPasses)
+				.arg(robustResult.robustSigma, 0, 'f', 6).arg(robustResult.occupiedGridCellCount).arg(robustResult.occupiedRowBandCount).arg(robustResult.occupiedColumnBandCount)
+				.arg(robustResult.designRank).arg(robustResult.conditionNumber, 0, 'g', 6)
+				.arg(robustResult.residualRms, 0, 'f', 6).arg(robustResult.residualP95, 0, 'f', 6).arg(robustResult.rowResidualRms, 0, 'f', 6).arg(robustResult.columnResidualRms, 0, 'f', 6)
+				.arg(robustResult.rowCoefficients[0], 0, 'f', 8).arg(robustResult.rowCoefficients[1], 0, 'f', 8).arg(robustResult.rowCoefficients[2], 0, 'f', 8)
+				.arg(robustResult.columnCoefficients[0], 0, 'f', 8).arg(robustResult.columnCoefficients[1], 0, 'f', 8).arg(robustResult.columnCoefficients[2], 0, 'f', 8)
+				.arg(robustResult.centerDy, 0, 'f', 6).arg(robustResult.centerDx, 0, 'f', 6).arg(QString::fromLocal8Bit(diagnosticBuffer.data())));
+		}
 
 		/*---------------------------------------*/
 		/*    双线性插值获取重采样后的辅图像     */
@@ -1338,124 +1160,30 @@ int CoregistrationWorker::Registration_copy(
 		offset_row_out.at<double>(ii, 0) = sum(tt * coef_r)[0];
 		offset_col_out.at<double>(ii, 0) = sum(tt * coef_c)[0];
 
+		emit updateProcess(qRound(matchingEnd), QStringLiteral("正在读取第%1/%2对辅图像……")
+			.arg(slave_idx + 1).arg(num_slaves));
 		ComplexMat slave1;
 		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
 		if (cancellationRequested()) return -2;
 		if (ret < 0) return -1;
 		type = slave1.type();
 		ComplexMat slave_tmp;
-		InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1]: manual-bilinear resample input=%2x%3 type=%4, output=%5x%6, center source=(r=%7, c=%8), topLeft dy=%9, dx=%10.")
+		InSARLogManager::LogInfo("CoregistrationWorker", QString("Registration diagnostics [%1] 1B RANSAC: manual-bilinear resample input=%2x%3 type=%4, output=%5x%6, center source=(r=%7, c=%8), topLeft dy=%9, dx=%10.")
 			.arg(diagnosticSlaveName).arg(slave1.GetCols()).arg(slave1.GetRows()).arg(type).arg(cols).arg(rows)
-			.arg(centerRow + centerDy, 0, 'f', 6).arg(centerCol + centerDx, 0, 'f', 6)
+			.arg(centerRow + ransacResult.centerDy, 0, 'f', 6).arg(centerCol + ransacResult.centerDx, 0, 'f', 6)
 			.arg(offset_row_out.at<double>(ii, 0), 0, 'f', 6).arg(offset_col_out.at<double>(ii, 0), 0, 'f', 6));
 		ResampleSlaveInverseWithAffineOffset(slave1, slave_tmp, rows, cols,
-			coef_r, coef_c, offset_x, offset_y, scale_x, scale_y, this);
-#if 0
-		offset_col_out.at<double>(ii, 0) = sum(tt * coef_c)[0];
-
-		ComplexMat slave1;
-		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
-		if (cancellationRequested()) return -2;
-		if (ret < 0) return -1;
-		int rows_slave = slave1.GetRows(); int cols_slave = slave1.GetCols();
-		type = slave1.type();
-		ComplexMat slave_tmp; slave_tmp.re = Mat::zeros(rows, cols, type); slave_tmp.im = Mat::zeros(rows, cols, type);
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < rows; i++)
-		{
-			if (isStopRequested()) {
-				continue;
-			}
-			double x, y, iiii, jjjj; Mat tmp(1, 3, CV_64F); Mat result;
-			int mm0, nn0, mm1, nn1;
-			double offset_rows, offset_cols, upper, lower;
-			for (int j = 0; j < cols; j++)
-			{
-				jjjj = (double)j;
-				iiii = (double)i;
-				x = (jjjj - offset_x) / scale_x;
-				y = (iiii - offset_y) / scale_y;
-				tmp.at<double>(0, 0) = 1.0;
-				tmp.at<double>(0, 1) = x;
-				tmp.at<double>(0, 2) = y;
-				result = tmp * coef_r;
-				offset_rows = result.at<double>(0, 0);
-				result = tmp * coef_c;
-				offset_cols = result.at<double>(0, 0);
-
-				iiii += offset_rows;
-				jjjj += offset_cols;
-
-				mm0 = (int)floor(iiii); nn0 = (int)floor(jjjj);
-				if (mm0 < 0 || nn0 < 0 || mm0 > rows_slave - 1 || nn0 > cols_slave - 1)
-				{
-					if (type == CV_64F)
-					{
-						slave_tmp.re.at<double>(i, j) = 0;
-						slave_tmp.im.at<double>(i, j) = 0;
-					}
-					else if (type == CV_32F)
-					{
-						slave_tmp.re.at<float>(i, j) = 0;
-						slave_tmp.im.at<float>(i, j) = 0;
-					}
-					else
-					{
-						slave_tmp.re.at<short>(i, j) = 0;
-						slave_tmp.im.at<short>(i, j) = 0;
-					}
-				}
-				else
-				{
-					mm1 = mm0 + 1; nn1 = nn0 + 1;
-					mm1 = mm1 >= rows_slave - 1 ? rows_slave - 1 : mm1;
-					nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
-					if (type == CV_16S)
-					{
-						//实部插值
-						upper = (double)slave1.re.at<short>(mm0, nn0) + double(slave1.re.at<short>(mm0, nn1) - slave1.re.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = (double)slave1.re.at<short>(mm1, nn0) + double(slave1.re.at<short>(mm1, nn1) - slave1.re.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.re.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
-						//虚部插值
-						upper = (double)slave1.im.at<short>(mm0, nn0) + double(slave1.im.at<short>(mm0, nn1) - slave1.im.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = (double)slave1.im.at<short>(mm1, nn0) + double(slave1.im.at<short>(mm1, nn1) - slave1.im.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.im.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
-					}
-					else if (type == CV_32F)
-					{
-						//实部插值
-						upper = slave1.re.at<float>(mm0, nn0) + (slave1.re.at<float>(mm0, nn1) - slave1.re.at<float>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = slave1.re.at<float>(mm1, nn0) + (slave1.re.at<float>(mm1, nn1) - slave1.re.at<float>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.re.at<float>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-						//虚部插值
-						upper = slave1.im.at<float>(mm0, nn0) + (slave1.im.at<float>(mm0, nn1) - slave1.im.at<float>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = slave1.im.at<float>(mm1, nn0) + (slave1.im.at<float>(mm1, nn1) - slave1.im.at<float>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.im.at<float>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-					}
-					else
-					{
-						//实部插值
-						upper = slave1.re.at<double>(mm0, nn0) + (slave1.re.at<double>(mm0, nn1) - slave1.re.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = slave1.re.at<double>(mm1, nn0) + (slave1.re.at<double>(mm1, nn1) - slave1.re.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.re.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-						//虚部插值
-						upper = slave1.im.at<double>(mm0, nn0) + (slave1.im.at<double>(mm0, nn1) - slave1.im.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = slave1.im.at<double>(mm1, nn0) + (slave1.im.at<double>(mm1, nn1) - slave1.im.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-					}
-
-				}
-
-			}
-		}
-#endif
+			coef_r, coef_c, offset_x, offset_y, scale_x, scale_y, this,
+			qRound(matchingEnd), qRound(resamplingEnd), slave_idx + 1, num_slaves);
 		if (cancellationRequested()) return -2;
 
+		emit updateProcess(qRound(resamplingEnd), QStringLiteral("正在写入第%1/%2对配准结果……")
+			.arg(slave_idx + 1).arg(num_slaves));
 		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
 		if (cancellationRequested()) return -2;
 		if (ret < 0) return -1;
-		double end_p = 10.0 + (70.0 / num_slaves) * (slave_idx + 1);
-		emit updateProcess(int(end_p), QStringLiteral("第%1对图像处理中……").arg(ii + 1));
+		emit updateProcess(qRound(pairEnd), QStringLiteral("第%1/%2对图像配准完成……")
+			.arg(slave_idx + 1).arg(num_slaves));
 		slave_idx++;
 	}
 	return 0;

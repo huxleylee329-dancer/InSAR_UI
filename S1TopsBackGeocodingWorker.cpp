@@ -254,15 +254,8 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
     if (!h5File.isEmpty()) message += QStringLiteral(" [h5=%1]").arg(h5File);
     if (!dataset.isEmpty()) message += QStringLiteral(" [dataset=%1]").arg(dataset);
 
-    if (phase == QStringLiteral("projection.summary")) {
-        message += QStringLiteral("; Projection valid ratios use the full DEM raster as their denominator, not the expected SAR footprint. "
-                                  "rangeOrBurstFailures therefore primarily describe DEM cells outside the active burst coverage.");
-    }
-
     LogTargets targets = LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile;
-    if (level == InSARLogManager::LevelError ||
-        phase == QStringLiteral("refinement.cleanup_verified") ||
-        phase == QStringLiteral("refinement.cleanup_residual")) {
+    if (level == InSARLogManager::LevelError || level == InSARLogManager::LevelWarning) {
         targets |= LogTarget::UserProjectLog;
     }
     InSARLogManager::LogTaskEvent(m_taskLogContext, level, "Sentinel1BackGeocoding", message,

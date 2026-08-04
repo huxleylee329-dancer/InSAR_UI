@@ -729,6 +729,10 @@ void Sentinel1OrbitNode::onProcessingFinished(
     }
 
     qDebug() << "[OrbitNode] POD apply results: ok=" << podApplyOk << "fail=" << podApplyFail << "skipped=" << podSkipped;
+    InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "Sentinel1OrbitNode",
+        QStringLiteral("Sentinel-1 精轨匹配完成：成功 %1 幅，失败 %2 幅，跳过 %3 幅。").arg(podApplyOk).arg(podApplyFail).arg(podSkipped),
+        LogTargets(LogTarget::UserProjectLog),
+        QStringLiteral("completed"), QStringLiteral("completed"), QStringLiteral("completed"));
 
     // 传播输出数据
     if (!newH5Paths.isEmpty()) {

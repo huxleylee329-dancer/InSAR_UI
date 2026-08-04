@@ -1399,6 +1399,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
     }
     m_executionSuperseded = false;
     m_userCancellationRequested = false;
+    m_lastLoggedProgress = -1;
     invalidateExecutionGeneration();
     const quint64 generation = m_activeGeneration;
     m_executionTimer.start();
@@ -1756,6 +1757,10 @@ void S1TopsBackGeocodingNode::finalizeStagedTransaction(quint64 generation)
             "Back-geocoding output committed, but the project tree could not be published; requested a tree refresh.");
     }
     setProgress(100);
+    InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "S1 TOPS Back-Geocoding",
+        QStringLiteral("后向地理编码配准处理完成。输出节点名称：%1，总耗时 %2 ms。").arg(m_outputNodeName).arg(m_executionTimer.elapsed()),
+        LogTargets(LogTarget::UserProjectLog),
+        QStringLiteral("completed"), QStringLiteral("completed"), QStringLiteral("completed"), m_executionTimer.elapsed());
     if (m_processingWarning) {
         setLastWarningMessage(m_processingQualityWarnings.join('\n'));
         finishExecutionWithWarning();

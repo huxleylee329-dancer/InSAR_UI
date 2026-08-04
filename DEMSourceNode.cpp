@@ -1374,6 +1374,11 @@ private:
 
             if (read_h5_ok) {
                 res.actSource = QString::fromStdString(dem_source_str);
+                // H5 metadata may contain the protocol token "COPERNICUS" while
+                // the node stores the same source as the display name "Copernicus".
+                if (res.actSource.compare(QStringLiteral("COPERNICUS"), Qt::CaseInsensitive) == 0) {
+                    res.actSource = QStringLiteral("Copernicus");
+                }
                 res.actMinLon = demMinLon;
                 res.actMaxLon = demMaxLon;
                 res.actMinLat = demMinLat;
@@ -1496,7 +1501,7 @@ private:
                 m_compTable->setEnabled(true);
 
                 // 1. 数据源比对
-                m_compTable->addComparison(QObject::tr("DEM 数据源"), res.expSource, res.actSource.toUpper());
+                m_compTable->addComparison(QObject::tr("DEM 数据源"), res.expSource, res.actSource);
 
                 // 2. 几何范围比对
                 QString expLonStr, actLonStr;

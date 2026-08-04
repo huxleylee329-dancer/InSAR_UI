@@ -389,15 +389,18 @@ void BaselineFormationNode::execute()
 
 void BaselineFormationNode::executeProcessing()
 {
-    InSARLogManager::LogInfo("BaselineFormationNode", "executeProcessing started.");
     stopExecution();
+
+    int finalMasterIndex = m_useDefaultMaster ? 1 : m_masterIndex;
+    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
+    InSARLogManager::LogDebug("BaselineFormationNode",
+        QStringLiteral("executeProcessing started: masterIndex=%1, inputFiles=%2")
+            .arg(finalMasterIndex).arg(filePaths.size()),
+        "lifecycle.execute_processing");
 
     m_thread = new QThread(this);
     m_worker = new BaselineWorker();
     m_worker->moveToThread(m_thread);
-
-    int finalMasterIndex = m_useDefaultMaster ? 1 : m_masterIndex;
-    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
 
     connect(m_thread, &QThread::started, m_worker, [this, finalMasterIndex, filePaths]() {
         m_worker->Baseline_Estimate(finalMasterIndex, filePaths);

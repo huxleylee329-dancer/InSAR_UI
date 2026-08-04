@@ -36,7 +36,8 @@ private:
     int Registration_copy(std::vector<std::string>& SAR_images, std::vector<std::string>& SAR_images_out, cv::Mat& offset_row_out, cv::Mat& offset_col_out, int Master_index, int interp_times, int blocksize);
     static void ResampleSlaveInverseWithAffineOffset(const ComplexMat& slave, ComplexMat& out,
         int outputRows, int outputCols, const cv::Mat& coefRows, const cv::Mat& coefCols,
-        double offsetX, double offsetY, double scaleX, double scaleY, CoregistrationWorker* worker);
+        double offsetX, double offsetY, double scaleX, double scaleY, CoregistrationWorker* worker,
+        int progressStart, int progressEnd, int imageIndex, int imageCount);
     QString resolveOutputFileName(const QString& originalName) const;
 
     QString m_demPath;

@@ -134,6 +134,7 @@ private:
     bool m_userCancellationRequested = false;
     bool m_executionSuperseded = false;
     bool m_destroying = false;
+    int m_lastLoggedProgress = -1;
 
     // Worker thread
     QPointer<S1TopsBackGeocodingWorker> m_workerThread;

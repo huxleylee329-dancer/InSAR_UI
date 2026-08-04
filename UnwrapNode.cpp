@@ -358,7 +358,10 @@ bool UnwrapNode::prepareToStart()
 
 void UnwrapNode::executeProcessing()
 {
-    InSARLogManager::LogInfo("UnwrapNode", "executeProcessing started.");
+    InSARLogManager::LogDebug("UnwrapNode",
+        QStringLiteral("executeProcessing started: method=%1, threshold=%2, inputs=%3")
+            .arg(m_method).arg(m_preparedThreshold, 0, 'f', 2).arg(m_preparedPhasePaths.size()),
+        "lifecycle.execute_processing");
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
         m_outputNodeName = m_preparedDstNode;

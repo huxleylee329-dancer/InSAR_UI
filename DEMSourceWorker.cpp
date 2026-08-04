@@ -741,7 +741,7 @@ void DEMSourceWorker::fetch_dem(
                         serverNotFoundTilesIntersectingOutput.append(tileName);
                     }
                     InSARLogManager::LogDebug("DEMSourceWorker",
-                        QString("DEM server returned HTTP 404 for tile %1; recording it as server-not-found, not as confirmed ocean.").arg(tileName),
+                        QString("Tile server-not-found 404: tile=%1, action=recorded_as_server_not_found").arg(tileName),
                         "dem.tile");
                     continue;
                 }

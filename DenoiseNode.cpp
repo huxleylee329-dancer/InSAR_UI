@@ -509,10 +509,6 @@ bool DenoiseNode::prepareToStart()
 
 void DenoiseNode::executeProcessing()
 {
-    InSARLogManager::LogInfo("DenoiseNode", "executeProcessing started.");
-
-    setProgress(0);
-
     QString dstNode = m_preparedDstNode;
     QString savePath = projectPath();
     QStringList phasePaths = m_inputData->filePaths();
@@ -520,6 +516,13 @@ void DenoiseNode::executeProcessing()
     for (const QString& phasePath : phasePaths) {
         phaseNames.append(QFileInfo(phasePath).baseName());
     }
+
+    InSARLogManager::LogDebug("DenoiseNode",
+        QStringLiteral("executeProcessing started: method=%1, alpha=%2, inputCount=%3")
+            .arg(m_method).arg(m_preparedAlpha, 0, 'f', 2).arg(phasePaths.size()),
+        "lifecycle.execute_processing");
+
+    setProgress(0);
 
     QList<int> para = m_preparedPara;
     double alpha = m_preparedAlpha;
@@ -1042,7 +1045,7 @@ private:
     {
         setupBaseUI(QObject::tr("正在验证数据中..."),
                     QObject::tr("正在读取输入与输出 H5 数据以进行参数及特征值校验。"),
-                    QObject::tr("特征值分析"));
+                    QObject::tr("特征值分析"), QString(), false, true);
 
         m_lblDiffMean = createFeatureLabel();
         m_lblDiffStd = createFeatureLabel();
@@ -1322,15 +1325,6 @@ private:
                 m_compTable->addComparison(QObject::tr("图像高度 (行数)"), QString::number(res.inRows), QString::number(res.outRows));
 
                 // Update feature analysis labels
-                m_lblDiffMean->setText(res.hasWrappedDifference
-                    ? QString::number(res.wrappedDiffMean, 'f', 4)
-                    : QObject::tr("图像尺寸不一致"));
-                m_lblDiffStd->setText(res.hasWrappedDifference
-                    ? QString::number(res.wrappedDiffStd, 'f', 4)
-                    : QObject::tr("图像尺寸不一致"));
-                m_lblDiffResultant->setText(res.hasWrappedDifference
-                    ? QString::number(res.wrappedDiffResultant, 'f', 4)
-                    : QObject::tr("图像尺寸不一致"));
                 const auto transitionText = [](double input, bool hasInput, double output, bool hasOutput,
                     int precision, const QString& unitSuffix) {
                     if (!hasInput || !hasOutput || input <= 0.0) {
@@ -1365,11 +1359,24 @@ private:
                     return QStringLiteral("%1 -> %2 (%3%)")
                         .arg(inputText, outputText, QString::number(reduction, 'f', 2));
                 };
-                m_lblGradientSummary->setText(transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
+                const auto setFeatureValue = [](QLabel* label, const QString& value) {
+                    label->setText(value);
+                    label->setToolTip(value);
+                };
+                setFeatureValue(m_lblDiffMean, res.hasWrappedDifference
+                    ? QString::number(res.wrappedDiffMean, 'f', 4)
+                    : QObject::tr("图像尺寸不一致"));
+                setFeatureValue(m_lblDiffStd, res.hasWrappedDifference
+                    ? QString::number(res.wrappedDiffStd, 'f', 4)
+                    : QObject::tr("图像尺寸不一致"));
+                setFeatureValue(m_lblDiffResultant, res.hasWrappedDifference
+                    ? QString::number(res.wrappedDiffResultant, 'f', 4)
+                    : QObject::tr("图像尺寸不一致"));
+                setFeatureValue(m_lblGradientSummary, transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
                     res.outputQuality.gradientRms, res.outputQuality.hasGradient, 4, QString()));
-                m_lblResidueCountSummary->setText(residueCountText(res.inputQuality)
+                setFeatureValue(m_lblResidueCountSummary, residueCountText(res.inputQuality)
                     + QStringLiteral(" -> ") + residueCountText(res.outputQuality));
-                m_lblResidueSummary->setText(residueDensityText(res.inputQuality, res.outputQuality));
+                setFeatureValue(m_lblResidueSummary, residueDensityText(res.inputQuality, res.outputQuality));
 
                 // Final status card
                 m_statusTitle->setText(QObject::tr("验证通过"));

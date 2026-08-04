@@ -1640,6 +1640,7 @@ public:
     explicit CoregistrationEvalWidget(CoregistrationNode* node, QWidget* parent = nullptr)
         : QWidget(parent)
         , m_node(node)
+        , m_evalBtn(nullptr)
         , m_hasResults(false)
     {
         m_outputPaths = m_node->getOutputPaths();
@@ -1755,6 +1756,18 @@ public:
         rightLayout->setSpacing(8);
 
         auto* modeLayout = new QHBoxLayout();
+
+        m_evalBtn = new QPushButton(tr(" 执行质量评估 "));
+        m_evalBtn->setStyleSheet(
+            "QPushButton { background-color: #3B82F6; color: white; border-radius: 4px; padding: 4px 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #2563EB; }"
+            "QPushButton:pressed { background-color: #1D4ED8; }"
+            "QPushButton:disabled { background-color: #9CA3AF; }"
+        );
+        modeLayout->addWidget(m_evalBtn);
+
+        modeLayout->addStretch(1);
+
         auto* modeLabel = new QLabel(tr("显示模式:"));
         modeLabel->setStyleSheet("font-weight: bold;");
         modeLayout->addWidget(modeLabel);
@@ -1762,7 +1775,7 @@ public:
         m_visualModeCombo = new QComboBox();
         m_visualModeCombo->addItem(tr("全图干涉相位图"), 0);
         m_visualModeCombo->addItem(tr("全图相干性系数图"), 1);
-        modeLayout->addWidget(m_visualModeCombo, 1);
+        modeLayout->addWidget(m_visualModeCombo);
         rightLayout->addLayout(modeLayout);
 
         m_imageView = new ImageView();
@@ -1776,13 +1789,13 @@ public:
         // 绑定信号槽
         connect(m_slaveCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CoregistrationEvalWidget::onSlaveChanged);
         connect(m_visualModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CoregistrationEvalWidget::onVisualModeChanged);
+        connect(m_evalBtn, &QPushButton::clicked, this, &CoregistrationEvalWidget::startEvaluation);
         connect(&m_watcher, &QFutureWatcher<CoregisEvalThreadResult>::finished, this, &CoregistrationEvalWidget::onEvaluationFinished);
 
-        // 自动计算初始评估
-        if (m_outputPaths.size() > 1) {
-            QTimer::singleShot(200, this, [this]() {
-                startEvaluation();
-            });
+        if (m_slaveCombo->count() > 0 && m_outputPaths.size() > 1) {
+            onSlaveChanged(m_slaveCombo->currentIndex());
+        } else {
+            m_evalBtn->setEnabled(false);
         }
     }
 
@@ -1795,7 +1808,36 @@ private:
     void onSlaveChanged(int index)
     {
         Q_UNUSED(index);
-        startEvaluation();
+        m_hasResults = false;
+        m_evalResult = CropEvalResult{};
+        m_imageView->setImage(QImage());
+
+        // 重置指标标签
+        m_meanCohLabel->setText("-");
+        m_medianCohLabel->setText("-");
+        m_maxCohLabel->setText("-");
+        m_highCohPctLabel->setText("-");
+        m_snrLabel->setText("-");
+        m_offsetYLabel->setText("-");
+        m_offsetXLabel->setText("-");
+
+        const bool isDark = NodeDetailWindow::isDarkTheme(this);
+        const QString defaultValueStyle = QString("font-size: 12px; font-weight: bold; color: %1;")
+            .arg(isDark ? "#F3F4F6" : "#1F2937");
+        m_offsetYLabel->setStyleSheet(defaultValueStyle);
+        m_offsetXLabel->setStyleSheet(defaultValueStyle);
+
+        m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
+        m_statusCardTitle->setText(tr("未评估"));
+        m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
+        m_statusCardDesc->setText(tr("请点击评估获取相干性及对齐精度诊断结果。"));
+        m_statusLabel->setText(tr("准备就绪。点击“执行质量评估”开始分析。"));
+
+        if (m_slaveCombo->count() > 0 && m_outputPaths.size() > 1) {
+            m_evalBtn->setEnabled(true);
+        } else {
+            m_evalBtn->setEnabled(false);
+        }
     }
 
     void onVisualModeChanged(int index)
@@ -1820,7 +1862,7 @@ private:
             return;
         }
 
-        m_statusLabel->setText(tr("正在计算裁剪区全图相干性与干涉相位，请稍候..."));
+        m_statusLabel->setText(tr("正在计算配准影像相干性与干涉相位，请稍候..."));
         m_imageView->setImage(QImage());
         m_hasResults = false;
 
@@ -1846,16 +1888,17 @@ private:
         QString slavePath = m_outputPaths[slaveIdx0];
 
         if (!QFile::exists(masterPath) || !QFile::exists(slavePath)) {
-            m_statusLabel->setText(tr("错误：主图像或副图像裁剪文件不存在，请确保节点已成功运行！"));
+            m_statusLabel->setText(tr("错误：主图像或副图像配准文件不存在，请确保节点已成功运行！"));
             m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusCardDesc->setText(tr("主图像或副图像裁剪文件不存在，无法启动评估。"));
+            m_statusCardDesc->setText(tr("主图像或副图像配准文件不存在，无法启动评估。"));
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
                 .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
             return;
         }
 
         m_slaveCombo->setEnabled(false);
+        m_evalBtn->setEnabled(false);
 
         const QString tempDir = QDir::tempPath();
         const QString runId = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -1885,13 +1928,14 @@ private:
     void onEvaluationFinished()
     {
         m_slaveCombo->setEnabled(true);
+        m_evalBtn->setEnabled(true);
 
         CoregisEvalThreadResult threadRes = m_watcher.result();
         if (threadRes.retCode != 0) {
             m_hasResults = false;
             m_imageView->setImage(QImage());
             const bool isDark = NodeDetailWindow::isDarkTheme(this);
-            m_statusLabel->setText(tr("裁剪配准评估失败，错误码：%1").arg(threadRes.retCode));
+            m_statusLabel->setText(tr("配准质量评估失败，错误码：%1").arg(threadRes.retCode));
             m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             m_statusCardDesc->setText(tr("底层评估调用失败，错误码：%1。请检查输入数据和处理日志。")
@@ -2033,6 +2077,7 @@ private:
     QStringList m_outputPaths;
     QComboBox* m_slaveCombo;
     QComboBox* m_visualModeCombo;
+    QPushButton* m_evalBtn;
     ImageView* m_imageView;
 
     QFrame* m_statusCard;
