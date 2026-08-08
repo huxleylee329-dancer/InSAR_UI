@@ -27,6 +27,18 @@ LUTANImportNode::LUTANImportNode()
     m_outputNodeName = "LUTAN_Import";
 }
 
+ProductOutputContract LUTANImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("lutan_import.output.complex_sar")
+        : QStringLiteral("lutan_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 QWidget* LUTANImportNode::createWidget()
 {
     auto* widget = new QWidget();

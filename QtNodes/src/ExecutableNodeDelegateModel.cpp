@@ -20,6 +20,69 @@ ExecutableNodeDelegateModel::ExecutableNodeDelegateModel()
 {
 }
 
+ExecutableNodeDelegateModel::OutputCommitLease::OutputCommitLease(
+    ExecutableNodeDelegateModel* owner, std::unique_lock<std::mutex>&& lock)
+    : _owner(owner)
+    , _lock(std::move(lock))
+{
+}
+
+ExecutableNodeDelegateModel::OutputCommitLease::OutputCommitLease(OutputCommitLease&& other) noexcept
+    : _owner(other._owner)
+    , _lock(std::move(other._lock))
+{
+    other._owner = nullptr;
+}
+
+ExecutableNodeDelegateModel::OutputCommitLease&
+ExecutableNodeDelegateModel::OutputCommitLease::operator=(OutputCommitLease&& other) noexcept
+{
+    if (this != &other) {
+        release();
+        _owner = other._owner;
+        _lock = std::move(other._lock);
+        other._owner = nullptr;
+    }
+    return *this;
+}
+
+ExecutableNodeDelegateModel::OutputCommitLease::~OutputCommitLease()
+{
+    release();
+}
+
+void ExecutableNodeDelegateModel::OutputCommitLease::release()
+{
+    if (_owner) {
+        _owner->releaseOutputCommitLease(_lock);
+        _owner = nullptr;
+    }
+}
+
+ExecutableNodeDelegateModel::OutputCommitLease
+ExecutableNodeDelegateModel::acquireOutputCommitLease(std::uint64_t revision)
+{
+    std::unique_lock<std::mutex> lock(_commitLeaseMutex);
+    if (revision == 0 || revision != _executionRevision.load() ||
+        _commitInvalidationRequested.load()) {
+        return OutputCommitLease();
+    }
+    _commitLeaseActive.store(true);
+    return OutputCommitLease(this, std::move(lock));
+}
+
+void ExecutableNodeDelegateModel::releaseOutputCommitLease(std::unique_lock<std::mutex>& lock)
+{
+    _commitLeaseActive.store(false);
+    const bool invalidateAfterCommit = _commitInvalidationRequested.exchange(false);
+    if (lock.owns_lock()) {
+        lock.unlock();
+    }
+    if (invalidateAfterCommit) {
+        QTimer::singleShot(0, this, [this]() { invalidateExecution(); });
+    }
+}
+
 void ExecutableNodeDelegateModel::setNodeContext(NodeId nodeId, BasicGraphicsScene *scene)
 {
     _nodeId = nodeId;
@@ -73,6 +136,7 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
             const bool inputChangedWhileRunning = supportsAutomaticRestartAfterInputChange()
                 && (_state == ExecutionState::Running);
             if (inputChangedWhileRunning) {
+                ++_executionRevision;
                 _restartAfterInputChange = true;
                 stopExecution();
             }
@@ -101,7 +165,7 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
                 }
 
                 auto inputIt = _inputData.find(index);
-                if (inputIt == _inputData.end() || inputIt->second == nullptr)
+                if (!isInputBindingValid(index) || inputIt == _inputData.end() || inputIt->second == nullptr)
                 {
                     allRequiredInputsReady = false;
                     break;
@@ -127,6 +191,7 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
                 return;
             }
 
+            ++_executionRevision;
             // For automatic mode: set running state and zero progress before execution
             setState(ExecutionState::Running);
             _progress = 0;
@@ -216,6 +281,7 @@ void ExecutableNodeDelegateModel::start()
         return;
     }
 
+    ++_executionRevision;
     // Use setState() to trigger downstream invalidation (clear stale outputs & propagate nullptr)
     setState(ExecutionState::Running);
     _progress = 0;
@@ -232,6 +298,7 @@ void ExecutableNodeDelegateModel::stop()
         return;
     }
 
+    ++_executionRevision;
     stopExecution();
     if (stopExecutionIsAsynchronous()) {
         return;
@@ -396,12 +463,13 @@ void ExecutableNodeDelegateModel::restartAutomaticExecutionAfterInputChange()
             continue;
         }
         auto inputIt = _inputData.find(index);
-        if (inputIt == _inputData.end() || inputIt->second == nullptr) {
+        if (!isInputBindingValid(index) || inputIt == _inputData.end() || inputIt->second == nullptr) {
             setState(ExecutionState::Pending);
             return;
         }
     }
 
+    ++_executionRevision;
     setState(ExecutionState::Running);
     _progress = 0;
     Q_EMIT executionStarted();
@@ -453,6 +521,14 @@ void ExecutableNodeDelegateModel::completeAutomaticExecution()
 
 void ExecutableNodeDelegateModel::invalidateExecution()
 {
+    // Do not block cancellation or invalidation behind output finalization.
+    std::unique_lock<std::mutex> leaseLock(_commitLeaseMutex, std::try_to_lock);
+    if (!leaseLock.owns_lock()) {
+        _commitInvalidationRequested.store(true);
+        return;
+    }
+    ++_executionRevision;
+
     // Connected automatic nodes wait for re-execution; all other invalid nodes are idle.
     const bool shouldBePending = _mode == ExecutionMode::Automatic
         && nPorts(PortType::In) > 0
@@ -515,12 +591,52 @@ std::shared_ptr<NodeData> ExecutableNodeDelegateModel::getInputData(PortIndex po
 
 void ExecutableNodeDelegateModel::setOutputData(PortIndex portIndex, std::shared_ptr<NodeData> data)
 {
+    if (data) {
+        const ProductOutputContract contract = productOutputContract(portIndex);
+        if (contract.semanticId.isEmpty() || contract.publishedProductTypes.size() != 1) {
+            // A node without an explicit, unique output contract cannot publish.
+            data.reset();
+        } else if (!data->productDescriptor()) {
+            QMap<QString, QString> provenance;
+            provenance.insert(QStringLiteral("producer"), name());
+            provenance.insert(QStringLiteral("output_port"), contract.semanticId);
+            data->setProductDescriptor(ProductDescriptor::create(
+                contract.publishedProductTypes.first(), contract.schemaId,
+                contract.schemaVersion, contract.publishedState, name(), provenance));
+        }
+        if (data && !validatePublishedDescriptor(contract, data->productDescriptor()).accepted) {
+            data.reset();
+        }
+    }
     _outputData[portIndex] = data;
     auto it = _lastRevisionedOutputData.find(portIndex);
     if (it == _lastRevisionedOutputData.end() || it->second != data) {
         _lastRevisionedOutputData[portIndex] = data;
         ++_outputRevisions[portIndex];
     }
+}
+
+void ExecutableNodeDelegateModel::setInputBindingValid(PortIndex portIndex,
+                                                        bool valid,
+                                                        const QString& reason)
+{
+    const auto it = _inputBindingValidity.find(portIndex);
+    if (it != _inputBindingValidity.end() && it->second == valid) {
+        return;
+    }
+    _inputBindingValidity[portIndex] = valid;
+    if (valid || _isRestoring) {
+        return;
+    }
+
+    _lastErrorMessage = reason;
+    setState(allRequiredPortsConnected() ? ExecutionState::Pending : ExecutionState::Idle);
+}
+
+bool ExecutableNodeDelegateModel::isInputBindingValid(PortIndex portIndex) const
+{
+    const auto it = _inputBindingValidity.find(portIndex);
+    return it == _inputBindingValidity.end() || it->second;
 }
 
 std::uint64_t ExecutableNodeDelegateModel::outputRevision(PortIndex portIndex) const
@@ -617,9 +733,26 @@ void ExecutableNodeDelegateModel::refreshStateAfterRestoration()
         return;
     }
 
-    if (allRequiredPortsConnected()) {
-        setState(ExecutionState::Pending);
+    if (!allRequiredPortsConnected()) {
+        return;
     }
+
+    for (PortIndex index = 0; index < nPorts(PortType::In); ++index) {
+        if (portIsOptional(PortType::In, index)) {
+            continue;
+        }
+        if (!isInputBindingValid(index)) {
+            _lastErrorMessage = QStringLiteral("Required input descriptor was rejected during restoration.");
+            setState(ExecutionState::Error);
+            return;
+        }
+        const auto input = _inputData.find(index);
+        if (input == _inputData.end() || input->second == nullptr) {
+            setState(ExecutionState::Pending);
+            return;
+        }
+    }
+    setState(ExecutionState::Pending);
 }
 
 void ExecutableNodeDelegateModel::setState(ExecutionState state)
@@ -815,33 +948,10 @@ void ExecutableNodeDelegateModel::inputConnectionDeleted(ConnectionId const &con
     // 当输入连接断开时，我们需要清除缓存的数据
     PortIndex portIndex = connectionId.inPortIndex;
     _inputData[portIndex] = nullptr;
-
-    if (_mode == ExecutionMode::Automatic) {
-        // 如果断开连接后，必需端口不再全部接齐，则退回到 Idle 状态
-        if (!allRequiredPortsConnected()) {
-            setState(ExecutionState::Idle);
-        } else {
-            // 如果可选端口断开或者依然连齐，则评估数据是否就绪
-            bool allRequiredInputsReady = true;
-            unsigned int inPortCount = nPorts(PortType::In);
-            for (PortIndex index = 0; index < inPortCount; ++index) {
-                if (portIsOptional(PortType::In, index)) {
-                    continue;
-                }
-                auto inputIt = _inputData.find(index);
-                if (inputIt == _inputData.end() || inputIt->second == nullptr) {
-                    allRequiredInputsReady = false;
-                    break;
-                }
-            }
-
-            if (!allRequiredInputsReady) {
-                setState(ExecutionState::Pending);
-            }
-        }
-    } else if (_mode == ExecutionMode::Manual) {
-        invalidateExecution();
-    }
+    _inputBindingValidity[portIndex] = false;
+    // Optional inputs may affect the produced artifact. A topology change is
+    // therefore always an invalidation, never merely a readiness recalculation.
+    invalidateExecution();
 }
 
 } // namespace QtNodes

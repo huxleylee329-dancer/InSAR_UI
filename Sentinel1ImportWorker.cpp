@@ -3,13 +3,65 @@
 #include <Hdf5IO.h>
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
+#include <QDir>
+#include <QFileInfo>
 #include <string>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace {
 
 QString normalizeSentinel1MetadataValue(const QString& value)
 {
     return value.trimmed().toUpper();
+}
+
+bool resolveCoreCompatibleOrbitPath(const QString& orbitPath, QString& corePath, QString& errorMessage)
+{
+    constexpr int kCoreLegacyMaxPath = 260;
+    corePath.clear();
+    const QString nativePath = QDir::toNativeSeparators(orbitPath);
+    if (!QFileInfo(nativePath).isFile()) {
+        errorMessage = QStringLiteral("EOF 文件不存在：%1").arg(orbitPath);
+        return false;
+    }
+
+    const auto isAsciiPath = [](const QString& path) {
+        for (const QChar character : path) {
+            if (character.unicode() > 0x7f) {
+                return false;
+            }
+        }
+        return true;
+    };
+    if (isAsciiPath(nativePath) && nativePath.size() < kCoreLegacyMaxPath) {
+        corePath = nativePath;
+        return true;
+    }
+
+#ifdef _WIN32
+    const std::wstring widePath = nativePath.toStdWString();
+    std::vector<wchar_t> shortPathBuffer(32768, L'\0');
+    const DWORD shortPathLength = GetShortPathNameW(
+        widePath.c_str(), shortPathBuffer.data(), static_cast<DWORD>(shortPathBuffer.size()));
+    if (shortPathLength == 0 || shortPathLength >= shortPathBuffer.size()) {
+        errorMessage = QStringLiteral("无法为 EOF 路径取得 Windows ASCII 短路径：%1").arg(orbitPath);
+        return false;
+    }
+    const QString shortPath = QString::fromWCharArray(shortPathBuffer.data(), static_cast<int>(shortPathLength));
+    if (!isAsciiPath(shortPath) || shortPath.size() >= kCoreLegacyMaxPath) {
+        errorMessage = QStringLiteral("Windows 未提供可供 Core 使用的短 ASCII EOF 路径：%1").arg(orbitPath);
+        return false;
+    }
+    corePath = QDir::toNativeSeparators(shortPath);
+    return true;
+#else
+    errorMessage = QStringLiteral("当前平台的 Core EOF 接口不支持 Unicode 路径：%1").arg(orbitPath);
+    return false;
+#endif
 }
 
 class Hdf5BatchLocker
@@ -160,6 +212,81 @@ bool persistSentinel1ProductIdentity(const QString& h5Path, const QString& subsw
     return true;
 }
 
+bool persistSentinel1OrbitIdentityAudit(const QString& h5Path, const QString& subswath,
+                                        const QString& polarization, QString& errorMessage)
+{
+    const QString normalizedSwath = normalizeSentinel1MetadataValue(subswath);
+    const QString normalizedPolarization = normalizeSentinel1MetadataValue(polarization);
+    NodeUtils::Hdf5Locker locker(h5Path);
+    if (!locker.isLocked()) {
+        errorMessage = QStringLiteral("Unable to lock Sentinel-1 H5 for orbit identity audit: %1").arg(h5Path);
+        return false;
+    }
+    Hdf5BatchLocker hdf5BatchLocker;
+    if (!hdf5BatchLocker.isLocked()) {
+        errorMessage = QStringLiteral("Unable to acquire HDF5 batch lock for orbit identity audit: %1").arg(h5Path);
+        return false;
+    }
+
+    struct AuditField {
+        const char* name;
+        QString expected;
+        bool exists = false;
+        std::string value;
+    } fields[] = {
+        {"orbit_input_swath", normalizedSwath},
+        {"orbit_input_polarization", normalizedPolarization},
+        {"orbit_identity_consistency", QStringLiteral("verified")}
+    };
+
+    for (AuditField& field : fields) {
+        if (!readOptionalSentinel1Metadata(h5Path, field.name, field.exists, field.value, errorMessage)) {
+            return false;
+        }
+        if (field.exists && normalizeSentinel1MetadataValue(QString::fromStdString(field.value)) !=
+                normalizeSentinel1MetadataValue(field.expected)) {
+            errorMessage = QStringLiteral("Sentinel-1 orbit identity audit field mismatch in %1: %2")
+                .arg(h5Path, QString::fromLatin1(field.name));
+            return false;
+        }
+    }
+
+    const std::string nativePath = h5Path.toStdString();
+    QStringList createdFields;
+    for (const AuditField& field : fields) {
+        if (!field.exists && Hdf5IO::createString(nativePath.c_str(), field.name,
+                                                   field.expected.toStdString().c_str()) != 0) {
+            createdFields.append(QString::fromLatin1(field.name));
+        }
+    }
+    if (!createdFields.isEmpty()) {
+        for (const AuditField& field : fields) {
+            if (!field.exists) {
+                Hdf5IO::removeDatasetIfPresent(nativePath.c_str(), field.name);
+            }
+        }
+        errorMessage = QStringLiteral("Unable to write Sentinel-1 orbit identity audit field(s) %1 to %2")
+            .arg(createdFields.join(QStringLiteral(", ")), h5Path);
+        return false;
+    }
+
+    for (AuditField& field : fields) {
+        bool exists = false;
+        std::string value;
+        if (!readOptionalSentinel1Metadata(h5Path, field.name, exists, value, errorMessage) ||
+            !exists || normalizeSentinel1MetadataValue(QString::fromStdString(value)) !=
+                normalizeSentinel1MetadataValue(field.expected)) {
+            errorMessage = QStringLiteral("Unable to verify Sentinel-1 orbit identity audit field %1 in %2")
+                .arg(QString::fromLatin1(field.name), h5Path);
+            return false;
+        }
+    }
+    InSARLogManager::LogInfo("Sentinel1ImportWorker",
+        QStringLiteral("Persisted Sentinel-1 orbit identity audit: file=%1, swath=%2, polarization=%3")
+            .arg(h5Path, normalizedSwath, normalizedPolarization));
+    return true;
+}
+
 bool validateAcquisitionTimeRange(const QString& h5Path, QString& errorMessage)
 {
     std::string startText;
@@ -257,6 +384,21 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         end_burst = arguments[burstArgStart + 1].toInt();
     }
 
+    QString corePodFile;
+    std::string corePodFileUtf8;
+    if (!pod_file.isEmpty()) {
+        if (!resolveCoreCompatibleOrbitPath(pod_file, corePodFile, outErrorMsg)) {
+            InSARLogManager::LogError("Sentinel1ImportWorker", outErrorMsg);
+            return false;
+        }
+        corePodFileUtf8 = corePodFile.toStdString();
+    }
+
+    InSARLogManager::LogInfo("Sentinel1ImportWorker",
+        pod_file.isEmpty()
+            ? QStringLiteral("未提供 EOF，导入将使用 SAFE 中的轨道：%1").arg(manifest_file)
+            : QStringLiteral("导入将应用 EOF 轨道：%1").arg(pod_file));
+
     FormatConversion conversion;
     S1ProgressContext context;
     context.worker = this;
@@ -268,7 +410,7 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         subswath.toStdString().c_str(),
         polarization.toStdString().c_str(),
         outputPath.toStdString().c_str(),
-        pod_file.isEmpty() ? nullptr : pod_file.toStdString().c_str(),
+        pod_file.isEmpty() ? nullptr : corePodFileUtf8.c_str(),
         onS1DllProgress,
         &context,
         start_burst,
@@ -283,6 +425,51 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         return false;
     }
 
-    return persistSentinel1ProductIdentity(outputPath, subswath, polarization, outErrorMsg) &&
-        validateAcquisitionTimeRange(outputPath, outErrorMsg);
+    if (!persistSentinel1ProductIdentity(outputPath, subswath, polarization, outErrorMsg) ||
+        !validateAcquisitionTimeRange(outputPath, outErrorMsg)) {
+        return false;
+    }
+
+    if (!pod_file.isEmpty()) {
+        if (!persistSentinel1OrbitIdentityAudit(outputPath, subswath, polarization, outErrorMsg)) {
+            return false;
+        }
+        int fineRows = 0;
+        int fineColumns = 0;
+        const bool isPreciseOrbit = pod_file.contains(QStringLiteral("POEORB"), Qt::CaseInsensitive);
+        const QString orbitType = isPreciseOrbit
+            ? QStringLiteral("Precise (POE)")
+            : QStringLiteral("Reconstructed (RES)");
+        {
+            NodeUtils::Hdf5Locker locker(outputPath);
+            conversion.get_dataset_dims(outputPath.toLocal8Bit().constData(),
+                                        "fine_state_vec", &fineRows, &fineColumns);
+            if (fineRows >= 5) {
+                const std::string orbitTypeUtf8 = orbitType.toStdString();
+                if (conversion.write_str_to_h5(outputPath.toLocal8Bit().constData(),
+                                               "orbit_type", orbitTypeUtf8.c_str()) != 0) {
+                    outErrorMsg = QStringLiteral("精密轨道已生成但无法写入 orbit_type：file=%1，type=%2")
+                        .arg(outputPath, orbitType);
+                    InSARLogManager::LogError("Sentinel1ImportWorker", outErrorMsg);
+                    return false;
+                }
+            }
+        }
+        Q_UNUSED(fineColumns);
+        if (fineRows >= 5) {
+            InSARLogManager::LogInfo("Sentinel1ImportWorker",
+                QStringLiteral("%1已应用并写入 H5：file=%2，fine_state_vec=%3 行，EOF=%4")
+                    .arg(isPreciseOrbit ? QStringLiteral("精密轨道") : QStringLiteral("重建轨道"))
+                    .arg(outputPath).arg(fineRows).arg(pod_file));
+        } else {
+            outErrorMsg = QStringLiteral("外部 EOF 已传入但未生成有效 fine_state_vec：file=%1，EOF=%2")
+                .arg(outputPath, pod_file);
+            InSARLogManager::LogError("Sentinel1ImportWorker", outErrorMsg);
+            return false;
+        }
+    } else {
+        InSARLogManager::LogInfo("Sentinel1ImportWorker",
+            QStringLiteral("本次导入未应用外部精密轨道：file=%1").arg(outputPath));
+    }
+    return true;
 }

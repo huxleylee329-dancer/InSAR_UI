@@ -37,6 +37,9 @@ public:
 
     QString caption() const override { return QStringLiteral("General SAR Loading"); }
     QString name() const override { return QStringLiteral("GeneralSARLoading"); }
+    unsigned int nPorts(PortType portType) const override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
@@ -49,6 +52,7 @@ protected:
     void executeImport() override;
     QStringList getExpectedOutputFilePaths() const override;
     QString getOutputNodeName() const override;
+    bool prepareToStart() override;
 
 public slots:
     void onProjectModelChanged(QStandardItemModel* model);

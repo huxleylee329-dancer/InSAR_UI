@@ -1293,13 +1293,54 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		{
 			NodeUtils::Hdf5Locker locker_src(SAR_images.at(i));
 			NodeUtils::Hdf5Locker locker_dst(SAR_images_regis.at(i));
-			FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
-			FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
-			FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
-			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_row", 0);
-			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "offset_col", 0);
-			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "azimuth_len", rows);
-			FC.write_int_to_h5(SAR_images_regis.at(i).c_str(), "range_len", cols);
+			const std::string& sourcePath = SAR_images.at(i);
+			const std::string& outputPath = SAR_images_regis.at(i);
+			const int copyResult = FC.Copy_para_from_h5_2_h5(sourcePath.c_str(), outputPath.c_str());
+			if (copyResult != 0) {
+				emit errorProcess(QStringLiteral("Failed to copy registration metadata to %1 (rc=%2).")
+					.arg(QString::fromStdString(outputPath)).arg(copyResult));
+				return;
+			}
+			const auto writeString = [&](const char* dataset, const char* value) {
+				return FC.write_str_to_h5(outputPath.c_str(), dataset, value);
+			};
+			const auto writeInt = [&](const char* dataset, int value) {
+				return FC.write_int_to_h5(outputPath.c_str(), dataset, value);
+			};
+			struct StringWrite {
+				const char* dataset;
+				const char* value;
+			};
+			const StringWrite stringWrites[] = {
+				{"process_state", "coregistration"},
+				{"comment", "complex-2.0"}
+			};
+			for (const StringWrite& write : stringWrites) {
+				const int writeResult = writeString(write.dataset, write.value);
+				if (writeResult != 0) {
+					emit errorProcess(QStringLiteral("Failed to write registration metadata '%1' to %2 (rc=%3).")
+						.arg(QString::fromLatin1(write.dataset), QString::fromStdString(outputPath)).arg(writeResult));
+					return;
+				}
+			}
+			struct IntWrite {
+				const char* dataset;
+				int value;
+			};
+			const IntWrite intWrites[] = {
+				{"offset_row", 0},
+				{"offset_col", 0},
+				{"azimuth_len", rows},
+				{"range_len", cols}
+			};
+			for (const IntWrite& write : intWrites) {
+				const int writeResult = writeInt(write.dataset, write.value);
+				if (writeResult != 0) {
+					emit errorProcess(QStringLiteral("Failed to write registration metadata '%1' to %2 (rc=%3).")
+						.arg(QString::fromLatin1(write.dataset), QString::fromStdString(outputPath)).arg(writeResult));
+					return;
+				}
+			}
 		}
 		if (cancellationRequested()) {
 			finishCancelled();

@@ -9,17 +9,14 @@
 
 namespace ImportOutputPersistence {
 
-inline bool persist(QStandardItemModel* model,
-                    const QString& projectName,
-                    const QString& savePath,
-                    const QString& dstNode,
-                    const QStringList& outputNames,
-                    const QStringList& outputPaths,
-                    const QString& dataType,
-                    const QString& satelliteFormat,
-                    XMLFile* projectXml = nullptr)
+inline bool publishToModel(QStandardItemModel* model,
+                           const QString& projectName,
+                           const QString& dstNode,
+                           const QStringList& outputNames,
+                           const QStringList& outputPaths,
+                           const QString& dataType)
 {
-    if (!model || projectName.isEmpty() || savePath.isEmpty() || dstNode.isEmpty() ||
+    if (!model || projectName.isEmpty() || dstNode.isEmpty() ||
         outputNames.isEmpty() || outputNames.size() != outputPaths.size()) {
         return false;
     }
@@ -35,13 +32,6 @@ inline bool persist(QStandardItemModel* model,
         return false;
     }
 
-    XMLFile localXml;
-    XMLFile* xml = projectXml ? projectXml : &localXml;
-    const QString xmlPath = savePath + "/" + projectName;
-    if (!projectXml && xml->XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
-        return false;
-    }
-
     for (int i = 0; i < outputPaths.size(); ++i) {
         bool created = false;
         QStandardItem* imageItem = NodeUtils::findOrCreateChildItem(
@@ -51,8 +41,34 @@ inline bool persist(QStandardItemModel* model,
         }
         if (!created) {
             outputNode->setChild(imageItem->row(), 1, new QStandardItem(outputPaths[i]));
-            continue;
         }
+    }
+    return true;
+}
+
+inline bool persist(QStandardItemModel* model,
+                    const QString& projectName,
+                    const QString& savePath,
+                    const QString& dstNode,
+                    const QStringList& outputNames,
+                    const QStringList& outputPaths,
+                    const QString& dataType,
+                    const QString& satelliteFormat,
+                    XMLFile* projectXml = nullptr)
+{
+    if (!publishToModel(model, projectName, dstNode, outputNames, outputPaths, dataType) ||
+        savePath.isEmpty()) {
+        return false;
+    }
+
+    XMLFile localXml;
+    XMLFile* xml = projectXml ? projectXml : &localXml;
+    const QString xmlPath = savePath + "/" + projectName;
+    if (!projectXml && xml->XMLFile_load(xmlPath.toStdString().c_str()) < 0) {
+        return false;
+    }
+
+    for (int i = 0; i < outputPaths.size(); ++i) {
 
         const QString relativePath = QString("/%1/%2").arg(dstNode, QFileInfo(outputPaths[i]).fileName());
         xml->XMLFile_add_origin(dstNode.toStdString().c_str(), outputNames[i].toStdString().c_str(),

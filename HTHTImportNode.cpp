@@ -24,6 +24,18 @@ HTHTImportNode::HTHTImportNode()
     m_outputNodeName = "HTHT_Import";
 }
 
+ProductOutputContract HTHTImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("htht_import.output.complex_sar")
+        : QStringLiteral("htht_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 QWidget* HTHTImportNode::createWidget()
 {
     auto* widget = new QWidget();

@@ -37,6 +37,8 @@ public:
     QString name() const override { return QStringLiteral("Phase Unwrapping"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
@@ -94,6 +96,7 @@ private:
     double m_preparedThreshold = 0.3;
     NodeUtils::OutputTransaction m_outputTransaction;
     QList<UnwrapFileResult> m_pendingUnwrapResults;
+    QString m_pendingWarningMessage;
     bool m_xmlDirty = false;
 
     // Helper methods
@@ -121,6 +124,7 @@ private:
     QString projectPath() const;
     QString projectName() const;
     XMLFile* projectXml() const;
+    QString committedAmplitudeWarningMessage(const QStringList& h5Paths) const;
 
     // Executable interface implementation
     void execute() override;

@@ -28,6 +28,7 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Fucheng-1 Import"); }
     QString name() const override { return QStringLiteral("SpacetyImport"); }
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;

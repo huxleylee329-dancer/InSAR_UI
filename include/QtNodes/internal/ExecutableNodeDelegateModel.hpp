@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <memory>
 #include <cstdint>
+#include <atomic>
+#include <mutex>
 
 namespace QtNodes {
 
@@ -59,12 +61,35 @@ public:
     ~ExecutableNodeDelegateModel() override = default;
 
 public:
+    class OutputCommitLease
+    {
+    public:
+        OutputCommitLease() = default;
+        OutputCommitLease(OutputCommitLease const&) = delete;
+        OutputCommitLease& operator=(OutputCommitLease const&) = delete;
+        OutputCommitLease(OutputCommitLease&& other) noexcept;
+        OutputCommitLease& operator=(OutputCommitLease&& other) noexcept;
+        ~OutputCommitLease();
+
+        explicit operator bool() const { return _owner != nullptr; }
+
+    private:
+        friend class ExecutableNodeDelegateModel;
+        OutputCommitLease(ExecutableNodeDelegateModel* owner, std::unique_lock<std::mutex>&& lock);
+        void release();
+
+        ExecutableNodeDelegateModel* _owner = nullptr;
+        std::unique_lock<std::mutex> _lock;
+    };
+
     ExecutionMode executionMode() const { return _mode; }
     virtual void setExecutionMode(ExecutionMode mode);
 
     ExecutionState executionState() const { return _state; }
 
     int progress() const { return _progress; }
+
+    std::uint64_t executionRevision() const { return _executionRevision.load(); }
 
     /// Mark whether this node uses external layout (ears + progress bar painted outside)
     virtual bool useExternalLayout() const { return true; }
@@ -122,6 +147,8 @@ public:
     std::shared_ptr<NodeData> getInputData(PortIndex portIndex);
     void setOutputData(PortIndex portIndex, std::shared_ptr<NodeData> data);
     std::shared_ptr<NodeData> getOutputData(PortIndex portIndex);
+    void setInputBindingValid(PortIndex portIndex, bool valid, const QString& reason) override;
+    bool isInputBindingValid(PortIndex portIndex) const override;
 
     /// Runtime-only artifact generation for a given output port.
     std::uint64_t outputRevision(PortIndex portIndex) const;
@@ -243,6 +270,8 @@ protected:
 
     bool isAutomaticExecutionObsolete() const { return _restartAfterInputChange; }
 
+    OutputCommitLease acquireOutputCommitLease(std::uint64_t revision);
+
     /// Call this when input or source data changes in Manual mode
     void invalidateExecution();
 
@@ -270,8 +299,13 @@ protected:
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _inputData;
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _outputData;
     std::unordered_map<PortIndex, std::uint64_t> _inputRevisions;
+    std::unordered_map<PortIndex, bool> _inputBindingValidity;
     std::unordered_map<PortIndex, std::uint64_t> _outputRevisions;
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _lastRevisionedOutputData;
+    std::atomic<std::uint64_t> _executionRevision{1};
+    std::mutex _commitLeaseMutex;
+    std::atomic<bool> _commitLeaseActive{false};
+    std::atomic<bool> _commitInvalidationRequested{false};
 
     // Widget managed by NodeDelegateModel base class (ownership handled by base)
     ::QWidget *_widget;
@@ -301,6 +335,7 @@ private:
     std::uint64_t inputRevisionFromGraph(PortIndex portIndex) const;
     void invalidateOutputArtifact(PortIndex portIndex);
     void restartAutomaticExecutionAfterInputChange();
+    void releaseOutputCommitLease(std::unique_lock<std::mutex>& lock);
 };
 
 } // namespace QtNodes

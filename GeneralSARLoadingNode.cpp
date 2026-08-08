@@ -32,6 +32,24 @@ GeneralSARLoadingNode::GeneralSARLoadingNode()
 {
 }
 
+unsigned int GeneralSARLoadingNode::nPorts(PortType portType) const
+{
+    Q_UNUSED(portType);
+    return 0;
+}
+
+ProductInputContract GeneralSARLoadingNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    return ProductInputContract();
+}
+
+ProductOutputContract GeneralSARLoadingNode::productOutputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    return ProductOutputContract();
+}
+
 QWidget* GeneralSARLoadingNode::createWidget()
 {
     auto* widget = new LoadingNodeWidget(this);
@@ -244,11 +262,24 @@ void GeneralSARLoadingNode::executeImport()
         return;
     }
 
-    m_imageInfo = std::make_shared<ImageInfoData>(validPaths);
-    setOutputData(0, m_imageInfo);
-    setOutputData(1, m_imageInfo);
-
     finishExecution();
+}
+
+bool GeneralSARLoadingNode::prepareToStart()
+{
+    QStringList validPaths;
+    for (const QString& path : m_checkedFilePaths) {
+        if (QFileInfo::exists(path)) {
+            validPaths.append(path);
+        }
+    }
+    if (validPaths.isEmpty()) {
+        onError(QStringLiteral("未选择任何有效文件。"));
+        return false;
+    }
+    m_checkedFilePaths = validPaths;
+    m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    return true;
 }
 
 QStringList GeneralSARLoadingNode::getExpectedOutputFilePaths() const
@@ -298,10 +329,8 @@ void GeneralSARLoadingNode::load(QJsonObject const &json)
 
 NodeDataType GeneralSARLoadingNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"image_info", "Image Info"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
-    }
+    Q_UNUSED(portType);
+    Q_UNUSED(portIndex);
     return NodeDataType();
 }
 
@@ -319,11 +348,6 @@ bool GeneralSARLoadingNode::validateAndRestoreOutput()
     }
 
     m_checkedFilePaths = expectedPaths;
-    m_imageInfo = std::make_shared<ImageInfoData>(expectedPaths);
-    setOutputData(0, m_imageInfo);
-    setOutputData(1, m_imageInfo);
-    Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
     return true;
 }
 

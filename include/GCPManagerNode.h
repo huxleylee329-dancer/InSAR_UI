@@ -7,6 +7,7 @@
 #include "GCPPoint.h"
 #include "GCPDatabase.h"
 #include "GCPManagerWorker.h"
+#include "NodeUtils.h"
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>
@@ -40,6 +41,8 @@ public:
     // 序列化
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
     // 属性面板接口
     QVector<ParameterInfo> getParameters() const override;
@@ -106,6 +109,9 @@ private:
     int m_pendingNumGcpUsed = 0;
     int m_pendingNumGcpRejected = 0;
     bool m_hasPendingEvaluation = false;
+    QStringList m_preparedInputPaths;
+    QStringList m_preparedOutputPaths;
+    NodeUtils::OutputTransaction m_outputTransaction;
 
     bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 

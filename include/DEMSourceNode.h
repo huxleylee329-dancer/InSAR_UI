@@ -39,6 +39,8 @@ public:
     QString name() const override { return QStringLiteral("DEMSource"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;

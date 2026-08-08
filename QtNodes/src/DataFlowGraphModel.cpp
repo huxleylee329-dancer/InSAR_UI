@@ -112,14 +112,6 @@ NodeId DataFlowGraphModel::addNode(QString const nodeType)
 
 bool DataFlowGraphModel::connectionPossible(ConnectionId const connectionId) const
 {
-    auto getDataType = [&](PortType const portType) {
-        return portData(getNodeId(portType, connectionId),
-                        portType,
-                        getPortIndex(portType, connectionId),
-                        PortRole::DataType)
-            .value<NodeDataType>();
-    };
-
     auto portVacant = [&](PortType const portType) {
         NodeId const nodeId = getNodeId(portType, connectionId);
         PortIndex const portIndex = getPortIndex(portType, connectionId);
@@ -131,12 +123,33 @@ bool DataFlowGraphModel::connectionPossible(ConnectionId const connectionId) con
         return connected.empty() || (policy == ConnectionPolicy::Many);
     };
 
-    return getDataType(PortType::Out).id == getDataType(PortType::In).id
-           && portVacant(PortType::Out) && portVacant(PortType::In);
+    return validateConnection(connectionId).accepted && portVacant(PortType::Out) &&
+           portVacant(PortType::In);
+}
+
+ProductValidationResult DataFlowGraphModel::validateConnection(ConnectionId const connectionId) const
+{
+    auto source = _models.find(connectionId.outNodeId);
+    auto destination = _models.find(connectionId.inNodeId);
+    if (source == _models.end() || destination == _models.end()) {
+        return {false, QStringLiteral("Connection references a missing node.")};
+    }
+    if (connectionId.outPortIndex >= source->second->nPorts(PortType::Out) ||
+        connectionId.inPortIndex >= destination->second->nPorts(PortType::In)) {
+        return {false, QStringLiteral("Connection references a missing port.")};
+    }
+    return QtNodes::validateConnection(source->second->productOutputContract(connectionId.outPortIndex),
+                                       destination->second->productInputContract(connectionId.inPortIndex));
 }
 
 void DataFlowGraphModel::addConnection(ConnectionId const connectionId)
 {
+    if (!connectionPossible(connectionId)) {
+        const ProductValidationResult validation = validateConnection(connectionId);
+        Q_EMIT connectionRejected(connectionId, validation.accepted
+            ? QStringLiteral("A connection policy rejects this port.") : validation.reason);
+        return;
+    }
     _connectivity.insert(connectionId);
 
     sendConnectionCreation(connectionId);
@@ -324,8 +337,9 @@ QVariant DataFlowGraphModel::portData(NodeId nodeId,
 
     switch (role) {
     case PortRole::Data:
-        if (portType == PortType::Out)
+        if (portType == PortType::Out) {
             result = QVariant::fromValue(model->outData(portIndex));
+        }
         break;
 
     case PortRole::DataType:
@@ -368,7 +382,18 @@ bool DataFlowGraphModel::setPortData(
     switch (role) {
     case PortRole::Data:
         if (portType == PortType::In) {
-            model->setInData(value.value<std::shared_ptr<NodeData>>(), portIndex);
+            const auto data = value.value<std::shared_ptr<NodeData>>();
+            if (data) {
+                const ProductValidationResult validation = validateBoundDescriptor(
+                    model->productInputContract(portIndex), data->productDescriptor());
+                if (!validation.accepted) {
+                    model->setInputBindingValid(portIndex, false, validation.reason);
+                    Q_EMIT inputBindingRejected(nodeId, portIndex, validation.reason);
+                    return false;
+                }
+            }
+            model->setInputBindingValid(portIndex, true, QString());
+            model->setInData(data, portIndex);
 
             // Triggers repainting on the scene.
             Q_EMIT inPortDataWasSet(nodeId, portType, portIndex);
@@ -379,7 +404,7 @@ bool DataFlowGraphModel::setPortData(
         break;
     }
 
-    return false;
+    return true;
 }
 
 bool DataFlowGraphModel::deleteConnection(ConnectionId const connectionId)
@@ -443,6 +468,7 @@ QJsonObject DataFlowGraphModel::saveNode(NodeId const nodeId) const
 QJsonObject DataFlowGraphModel::save() const
 {
     QJsonObject sceneJson;
+    sceneJson[QStringLiteral("semantic_contract_version")] = 1;
 
     QJsonArray nodesJsonArray;
     for (auto const nodeId : allNodeIds()) {
@@ -509,20 +535,45 @@ void DataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
 
 void DataFlowGraphModel::load(QJsonObject const &jsonDocument)
 {
-    QJsonArray nodesJsonArray = jsonDocument["nodes"].toArray();
+    constexpr int kCurrentSemanticContractVersion = 1;
+    QJsonObject migratedDocument = jsonDocument;
+    const QJsonValue versionValue = jsonDocument.value(QStringLiteral("semantic_contract_version"));
+    const int version = versionValue.isUndefined() ? 0 : versionValue.toInt(-1);
+    if (version == 0) {
+        // Version 0 is the only supported migration. Its ports are re-audited
+        // against the current explicit contracts while connections are restored.
+        Q_EMIT semanticContractAudit(
+            QStringLiteral("Legacy workflow has no semantic_contract_version; applying v0-to-v1 contract audit."),
+            false);
+        migratedDocument[QStringLiteral("semantic_contract_version")] = kCurrentSemanticContractVersion;
+    } else if (version < 0 || version > kCurrentSemanticContractVersion) {
+        Q_EMIT semanticContractAudit(
+            QStringLiteral("Workflow semantic contract version %1 is unsupported; recovery was rejected.")
+                .arg(versionValue.toVariant().toString()),
+            true);
+        return;
+    } else if (version != kCurrentSemanticContractVersion) {
+        Q_EMIT semanticContractAudit(
+            QStringLiteral("Workflow semantic contract version %1 has no migration path; recovery was rejected.")
+                .arg(version),
+            true);
+        return;
+    }
+
+    QJsonArray nodesJsonArray = migratedDocument["nodes"].toArray();
 
     for (QJsonValueRef nodeJson : nodesJsonArray) {
         loadNode(nodeJson.toObject());
     }
 
-    QJsonArray connectionJsonArray = jsonDocument["connections"].toArray();
+    QJsonArray connectionJsonArray = migratedDocument["connections"].toArray();
 
     for (QJsonValueRef connection : connectionJsonArray) {
         QJsonObject connJson = connection.toObject();
 
         ConnectionId connId = fromJson(connJson);
 
-        // Restore the connection
+        // Restore via the same semantic validation path as interactive edges.
         addConnection(connId);
     }
 }

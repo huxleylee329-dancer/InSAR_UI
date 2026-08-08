@@ -17,6 +17,7 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QPointer>
+#include <QJsonObject>
 #include <memory>
 
 class IApplicationInterface;
@@ -37,6 +38,8 @@ public:
     QString name() const override { return QStringLiteral("Sentinel1Orbit"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
@@ -95,6 +98,9 @@ private:
     int m_preparedSource = 0;
     QString m_preparedCacheDir;
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
+    NodeUtils::OutputTransaction m_outputTransaction;
+    bool m_preparedReferenceMode = false;
+    QJsonObject m_preparedReferenceManifest;
 
     // 工程恢复用：保存输出文件路径，使 validateAndRestoreOutput() 不依赖 m_inputData
     QStringList m_savedOutputPaths;
@@ -116,6 +122,7 @@ private:
     bool validateInputs() const;
     void updateWidgetSize();
     void executeProcessing();
+    bool preparePreciseReferenceManifest(QJsonObject& manifest) const;
 
     // Context helpers
     QStandardItemModel* projectModel() const;

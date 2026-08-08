@@ -7,6 +7,7 @@
 #include <QtCore/QVector>
 
 #include "Export.hpp"
+#include "ProductContracts.hpp"
 
 namespace QtNodes {
 
@@ -64,6 +65,22 @@ public:
     /// Type for inner use
     virtual NodeDataType type() const = 0;
 
+    /// Semantic identity attached by the producing port. The descriptor is
+    /// intentionally runtime-only; persisted artifacts keep their own copy.
+    ProductDescriptor::Ptr productDescriptor() const { return _productDescriptor; }
+    void setProductDescriptor(ProductDescriptor::Ptr descriptor) { _productDescriptor = descriptor; }
+
+    /// Physical identity of the referenced H5 artifact. This differs from the
+    /// logical descriptor when a node publishes a zero-copy reference output.
+    ProductDescriptor::Ptr physicalProductDescriptor() const
+    {
+        return _physicalProductDescriptor ? _physicalProductDescriptor : _productDescriptor;
+    }
+    void setPhysicalProductDescriptor(ProductDescriptor::Ptr descriptor)
+    {
+        _physicalProductDescriptor = descriptor;
+    }
+
     /**
      * @brief getSummary - 获取数据摘要（单行简短描述）
      */
@@ -89,6 +106,10 @@ public:
         Q_UNUSED(value);
         return false;
     }
+
+private:
+    ProductDescriptor::Ptr _productDescriptor;
+    ProductDescriptor::Ptr _physicalProductDescriptor;
 };
 
 } // namespace QtNodes

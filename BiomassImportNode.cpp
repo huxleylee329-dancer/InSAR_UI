@@ -28,6 +28,18 @@ BiomassImportNode::BiomassImportNode()
 {
 }
 
+ProductOutputContract BiomassImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("biomass_import.output.complex_sar")
+        : QStringLiteral("biomass_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 QWidget* BiomassImportNode::createWidget()
 {
     m_widget = new QWidget();

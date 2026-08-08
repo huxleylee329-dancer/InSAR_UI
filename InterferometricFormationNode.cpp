@@ -174,7 +174,7 @@ void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, Por
             m_imageInfoData.reset();
         }
     } else if (port == 1) {
-        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        m_demInputData = std::dynamic_pointer_cast<DEMFileData>(data);
         if (m_demInputData) {
             m_demPath = m_demInputData->filePath();
             if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
@@ -795,6 +795,13 @@ void InterferometricFormationNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QString transactionError;
     if (!projectXml()) {
         onError(QStringLiteral("Project XML context is unavailable for interferometric output commit."));
@@ -871,6 +878,8 @@ void InterferometricFormationNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     if (!previewSourcePaths.isEmpty())
@@ -895,6 +904,33 @@ void InterferometricFormationNode::onProcessingFinished()
 void InterferometricFormationNode::onInterferogramGenerated(const InterferogramFileResult& result)
 {
     m_pendingInterferogramResults.append(result);
+}
+
+ProductInputContract InterferometricFormationNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    contract.semanticId = portIndex == 0 ? QStringLiteral("interferometric.input.coregistered_complex_sar")
+                                         : QStringLiteral("interferometric.input.auxiliary_terrain_dem");
+    contract.optional = portIndex == 1;
+    contract.allowedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("coregistered_complex_sar")
+                      << QStringLiteral("ionosphere_corrected_complex_sar")
+                      << QStringLiteral("slc_stack")
+                      << QStringLiteral("cropped_complex_sar")
+        : QStringList() << QStringLiteral("auxiliary_terrain_dem");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract InterferometricFormationNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0 ? QStringLiteral("interferometric.output.interferogram")
+                                         : QStringLiteral("interferometric.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList{QStringLiteral("interferogram")} : QStringList{QStringLiteral("preview")};
+    return contract;
 }
 
 void InterferometricFormationNode::commitInterferogramResult(const InterferogramFileResult& result)
@@ -1134,6 +1170,62 @@ bool InterferometricFormationNode::prepareToStart()
     m_preparedIsCoherence = m_isCoherence;
     m_preparedDemPath = m_demPath;
 
+    if (!m_preparedDemPath.isEmpty()) {
+        if (!m_demInputData) {
+            setStartFailureMessage(QStringLiteral("辅助 DEM 必须通过带已识别 descriptor 的输入端口提供。"));
+            return false;
+        }
+        const ProductValidationResult demBinding = validateBoundDescriptor(
+            productInputContract(1), m_demInputData->productDescriptor());
+        if (!demBinding.accepted) {
+            setStartFailureMessage(demBinding.reason);
+            setLastErrorMessage(demBinding.reason);
+            return false;
+        }
+        const QString demRasterPath = QDir::cleanPath(m_demInputData->filePath());
+        const QString demIdentityH5Path = QDir::cleanPath(m_demInputData->identityH5Path());
+        const QFileInfo demRasterInfo(demRasterPath);
+        if (demRasterPath.isEmpty() ||
+            !demRasterInfo.isFile() ||
+            !demRasterInfo.isReadable() ||
+            (demRasterInfo.suffix().compare(QStringLiteral("tif"), Qt::CaseInsensitive) != 0 &&
+             demRasterInfo.suffix().compare(QStringLiteral("tiff"), Qt::CaseInsensitive) != 0)) {
+            const QString reason = QStringLiteral("辅助 DEM 栅格文件不可读：%1").arg(demRasterPath);
+            setStartFailureMessage(reason);
+            setLastErrorMessage(reason);
+            return false;
+        }
+        if (demIdentityH5Path.isEmpty()) {
+            const QString reason = QStringLiteral("辅助 DEM 缺少配套 H5 身份文件。");
+            setStartFailureMessage(reason);
+            setLastErrorMessage(reason);
+            return false;
+        }
+
+        QStringList demCommittedOutputs;
+        QString demManifestError;
+        if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_demInputData->nodeName(),
+                                                     demCommittedOutputs, &demManifestError) ||
+            !demCommittedOutputs.contains(QFileInfo(demIdentityH5Path).absoluteFilePath(), Qt::CaseInsensitive) ||
+            !demCommittedOutputs.contains(QFileInfo(demRasterPath).absoluteFilePath(), Qt::CaseInsensitive)) {
+            const QString reason = demManifestError.isEmpty()
+                ? QStringLiteral("辅助 DEM 的 TIFF 与 H5 不属于同一次已提交输出。")
+                : demManifestError;
+            setStartFailureMessage(reason);
+            setLastErrorMessage(reason);
+            return false;
+        }
+
+        QString demIdentityError;
+        if (!NodeUtils::validateH5Identities(QStringList() << demIdentityH5Path,
+                                             m_demInputData->physicalProductDescriptor(), &demIdentityError)) {
+            setStartFailureMessage(demIdentityError);
+            setLastErrorMessage(demIdentityError);
+            return false;
+        }
+        m_preparedDemPath = demRasterPath;
+    }
+
     m_preparedWinW = m_winWEdit ? m_winWEdit->text().toInt() : m_winW;
     m_preparedWinH = m_winHEdit ? m_winHEdit->text().toInt() : m_winH;
     m_preparedMultilookRg = m_multilookRgEdit ? m_multilookRgEdit->text().toInt() : m_multilookRg;
@@ -1190,6 +1282,13 @@ bool InterferometricFormationNode::prepareToStart()
         m_preparedMasterIndex >= m_preparedInputPaths.size()) {
         return false;
     }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedInputPaths, m_inputData->physicalProductDescriptor(),
+                                         &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
     if (m_preparedOutputPaths.isEmpty()) {
         return false;
     }
@@ -1239,6 +1338,20 @@ void InterferometricFormationNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedFileName,
                                            m_preparedOutputPaths, m_preparedInputPaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("interferometric.output.interferogram"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("interferogram"),
+                                      QStringLiteral("sat-explorer-product"), 1,
+                                      ProductState::Committed, name(), descriptorProvenance),
+            &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -1308,6 +1421,10 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
     if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, uniqueH5Paths)) {
         return false;
     }
+    ProductDescriptor::Ptr descriptor;
+    if (!NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor)) {
+        return false;
+    }
 
     QStringList h5Paths;
     QStringList expectedJpgPaths;
@@ -1334,6 +1451,7 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(uniqueH5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 

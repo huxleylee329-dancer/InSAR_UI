@@ -76,6 +76,29 @@ NodeDataType S1DeburstNode::dataType(PortType portType, PortIndex portIndex) con
         return NodeDataType{"image_info", "Image Info"};
 }
 
+ProductInputContract S1DeburstNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("s1_deburst.input.burst_sar");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("sentinel1_burst_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract S1DeburstNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("s1_deburst.output.debursted_complex_sar")
+        : QStringLiteral("s1_deburst.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("debursted_complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 std::shared_ptr<NodeData> S1DeburstNode::outData(PortIndex port)
 {
     if (executionState() != ExecutionState::Completed)
@@ -259,6 +282,13 @@ void S1DeburstNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QStringList h5Paths;
     QString transactionError;
     if (!projectXml()) {
@@ -308,6 +338,7 @@ void S1DeburstNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_preparedDstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     // 收集生成的预览图
@@ -614,6 +645,14 @@ bool S1DeburstNode::prepareToStart()
     if (!validateInputs())
         return false;
 
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
+
     QString dstNode = m_outputNodeNameEdit->text().isEmpty()
         ? generateDefaultOutputName()
         : m_outputNodeNameEdit->text();
@@ -676,6 +715,18 @@ void S1DeburstNode::executeProcessing()
         onError(transactionError);
         return;
     }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("s1_deburst.output.debursted_complex_sar"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("debursted_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
     m_pendingOutputPaths.clear();
     m_pendingOriginNames.clear();
     m_outputData.reset();
@@ -732,9 +783,17 @@ bool S1DeburstNode::validateAndRestoreOutput()
     QString outputPath = projectPath() + "/" + dstNode + "/";
     QStringList h5Paths;
     if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
+            ProductDescriptor::Ptr descriptor;
+            QString identityError;
+            if (!NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
+                !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+                !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
+                return false;
+            }
             // 恢复 Port 0 数据
             h5Paths.sort();
             m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+            m_outputData->setProductDescriptor(descriptor);
             setOutputData(0, m_outputData);
             Q_EMIT dataUpdated(0);
 

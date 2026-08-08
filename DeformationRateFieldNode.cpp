@@ -16,6 +16,7 @@
 #include <QApplication>
 #include <QtConcurrent/QtConcurrentRun>
 #include <QFutureWatcher>
+#include <QMap>
 #include <QUuid>
 #include <opencv2/opencv.hpp>
 #include "FormatConversion.h"
@@ -60,6 +61,31 @@ DeformationRateFieldNode::DeformationRateFieldNode()
 DeformationRateFieldNode::~DeformationRateFieldNode()
 {
     stopExecution();
+}
+
+ProductInputContract DeformationRateFieldNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("deformation_rate_field.input.sbas_time_series");
+    contract.allowedProductTypes = QStringList()
+        << QStringLiteral("sbas_time_series")
+        << QStringLiteral("referenced_sbas_time_series");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract DeformationRateFieldNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("deformation_rate_field.output.deformation_rate_field")
+        : QStringLiteral("deformation_rate_field.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("deformation_rate_field")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
 }
 
 unsigned int DeformationRateFieldNode::nPorts(PortType portType) const
@@ -332,6 +358,21 @@ bool DeformationRateFieldNode::prepareToStart()
         return false;
     }
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     m_preparedProjectRoot = projectPath();
     m_preparedProjectName = projectName();
     m_preparedDstNode = m_outputNodeName.trimmed();
@@ -370,7 +411,9 @@ bool DeformationRateFieldNode::prepareToStart()
 void DeformationRateFieldNode::execute()
 {
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
-        validateAndRestoreOutput();
+        if (!validateAndRestoreOutput()) {
+            onError(QStringLiteral("Existing deformation rate-field output does not satisfy its semantic identity contract."));
+        }
         return;
     }
 
@@ -389,6 +432,17 @@ void DeformationRateFieldNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_preparedDstNode,
                                             m_preparedOutputPaths, m_preparedInputPaths,
                                             m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("deformation_rate_field"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -576,6 +630,12 @@ void DeformationRateFieldNode::onProcessingFinished()
     }
 
     QStringList finalPaths;
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+            QStringLiteral("obsolete execution revision"), iface->projectXml());
+        return;
+    }
     if (m_resultPublishingFailed || m_workerOutputPaths.size() != 1 ||
         !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
         !NodeUtils::validateStagedH5Datasets(m_outputTransaction, requiredDatasets, &transactionError) ||
@@ -618,6 +678,8 @@ void DeformationRateFieldNode::onProcessingFinished()
 
     m_outputNodeName = dstNode;
     m_generatedOutputPath = finalPaths.first();
+    m_outputData = std::make_shared<ImportedFileData>(QStringList() << m_generatedOutputPath, m_outputNodeName);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     generateStaticPreviewJpg(true);
 }
 
@@ -656,15 +718,21 @@ void DeformationRateFieldNode::onCancelled()
 bool DeformationRateFieldNode::validateAndRestoreOutput()
 {
     QStringList outputPaths;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
     if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, outputPaths) ||
         outputPaths.size() != 1 ||
-        QFileInfo(outputPaths.first()).fileName() != QStringLiteral("DeformationRateField.h5")) {
+        QFileInfo(outputPaths.first()).fileName() != QStringLiteral("DeformationRateField.h5") ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), m_outputNodeName, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(outputPaths, descriptor, &identityError)) {
         return false;
     }
 
     const QString h5Path = outputPaths.first();
     m_generatedOutputPath = h5Path;
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     generateStaticPreviewJpg();
 
@@ -694,6 +762,12 @@ void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
 
         if (NodeUtils::isJpgPreviewCurrent(*renderedInputs, jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_previewData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(1, m_previewData);
             if (!completeExecution) {
                 Q_EMIT dataUpdated(1);
@@ -707,7 +781,11 @@ void DeformationRateFieldNode::generateStaticPreviewJpg(bool completeExecution)
         }
 
         if (completeExecution) {
-            m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+            if (!m_outputData || !m_outputData->productDescriptor()) {
+                onError(QStringLiteral("Committed deformation rate-field output has no semantic descriptor for publication."));
+                watcher->deleteLater();
+                return;
+            }
 
             setProgress(100);
             setState(ExecutionState::Running);

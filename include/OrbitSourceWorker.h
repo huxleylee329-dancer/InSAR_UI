@@ -18,6 +18,15 @@ public:
     explicit OrbitSourceWorker(QObject* parent = nullptr);
     ~OrbitSourceWorker();
 
+    // Resolves an already cached EOF for a Sentinel-1 SAFE manifest. Matching
+    // prefers POEORB and falls back to RESORB, using the same coverage and XML
+    // validation rules as the Apply Orbit File node.
+    static bool findCachedOrbitForManifest(const QString& manifestPath,
+                                           const QString& cacheDir,
+                                           QString& orbitPath,
+                                           bool& isPrecise,
+                                           QString* errorMessage = nullptr);
+
 public slots:
     void fetch_orbits(
         QString projectPath,

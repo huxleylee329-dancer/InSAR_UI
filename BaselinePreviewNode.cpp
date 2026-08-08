@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QDir>
 #include <QApplication>
+#include <QMap>
 
 namespace QtNodes {
 
@@ -33,6 +34,29 @@ BaselinePreviewNode::BaselinePreviewNode()
 BaselinePreviewNode::~BaselinePreviewNode()
 {
     stopExecution();
+}
+
+ProductInputContract BaselinePreviewNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("baseline_preview.input.complex_sar_stack");
+    contract.allowedProductTypes = QStringList()
+        << QStringLiteral("complex_sar")
+        << QStringLiteral("cropped_complex_sar")
+        << QStringLiteral("coregistered_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract BaselinePreviewNode::productOutputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductOutputContract contract;
+    contract.semanticId = QStringLiteral("baseline_preview.output.baseline_estimate");
+    contract.publishedProductTypes = QStringList() << QStringLiteral("baseline_estimate");
+    return contract;
 }
 
 unsigned int BaselinePreviewNode::nPorts(PortType portType) const
@@ -329,10 +353,34 @@ bool BaselinePreviewNode::validateInputs() const
     return true;
 }
 
-void BaselinePreviewNode::execute()
+bool BaselinePreviewNode::prepareToStart()
 {
     if (!validateInputs()) {
-        onError(QStringLiteral("参数校验未通过，请连接输入并正确选择主图像！"));
+        setLastErrorMessage(QStringLiteral("Baseline estimation requires a complex SAR stack and a valid master image."));
+        setState(ExecutionState::Error);
+        return false;
+    }
+
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    return true;
+}
+
+void BaselinePreviewNode::execute()
+{
+    if (!prepareToStart()) {
         return;
     }
     executeProcessing();
@@ -401,7 +449,7 @@ void BaselinePreviewNode::cleanUpThreadAndWorker()
 
 void BaselinePreviewNode::processAutomatically()
 {
-    if (validateInputs()) {
+    if (prepareToStart()) {
         executeProcessing();
     }
 }
@@ -454,6 +502,12 @@ void BaselinePreviewNode::onProcessingFinished(QList<double> temporal_baseline, 
 
     QJsonDocument doc(blObj);
     m_outputData = std::make_shared<BaselineData>(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    m_outputData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("baseline_estimate"),
+        productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+        productOutputContract(0).publishedState, name(), provenance));
     setOutputData(0, m_outputData);
 
     setProgress(100);
@@ -517,6 +571,12 @@ bool BaselinePreviewNode::validateAndRestoreOutput()
 
         QJsonDocument doc(blObj);
         m_outputData = std::make_shared<BaselineData>(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)));
+        QMap<QString, QString> provenance;
+        provenance.insert(QStringLiteral("producer"), name());
+        provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+        m_outputData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("baseline_estimate"),
+            productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+            productOutputContract(0).publishedState, name(), provenance));
         setOutputData(0, m_outputData);
 
         if (m_showChartBtn) m_showChartBtn->setEnabled(true);

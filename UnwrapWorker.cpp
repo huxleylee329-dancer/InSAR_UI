@@ -12,6 +12,8 @@
 #include <QElapsedTimer>
 #include <QCoreApplication>
 #include <QByteArray>
+#include <QRegularExpression>
+#include <vector>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
@@ -68,6 +70,65 @@ QString diagnosticFailureMessage(const QString& operation, const UnwrapDiagnosti
         .arg(diagnostic.win32Error)
         .arg(diagnostic.exitCode)
         .arg(summary.isEmpty() ? QStringLiteral("No diagnostic summary.") : summary);
+}
+
+struct UnwrapAmplitudeStatus
+{
+    QString status = QStringLiteral("not_applicable");
+    QString reason = QStringLiteral("method_not_snaphu");
+    int masterRows = 0;
+    int masterCols = 0;
+    int slaveRows = 0;
+    int slaveCols = 0;
+    int expectedRows = 0;
+    int expectedCols = 0;
+    bool degraded = false;
+};
+
+UnwrapAmplitudeStatus parseSnaphuAmplitudeStatus(const QString& summary)
+{
+    UnwrapAmplitudeStatus result;
+    result.status = QStringLiteral("unknown");
+    result.reason = QStringLiteral("missing_amplitude_diagnostic");
+    result.degraded = true;
+
+    static const QRegularExpression usedExpression(
+        QStringLiteral("amp=used\\((\\d+)x(\\d+)\\)"));
+    static const QRegularExpression mismatchExpression(
+        QStringLiteral("amp=omitted_dimension_mismatch\\((\\d+)x(\\d+),(\\d+)x(\\d+); expected=(\\d+)x(\\d+)\\)"));
+
+    const QRegularExpressionMatch mismatchMatch = mismatchExpression.match(summary);
+    if (mismatchMatch.hasMatch()) {
+        result.status = QStringLiteral("omitted_dimension_mismatch");
+        result.reason = QStringLiteral("source_amplitude_dimensions_do_not_match_phase");
+        result.masterRows = mismatchMatch.captured(1).toInt();
+        result.masterCols = mismatchMatch.captured(2).toInt();
+        result.slaveRows = mismatchMatch.captured(3).toInt();
+        result.slaveCols = mismatchMatch.captured(4).toInt();
+        result.expectedRows = mismatchMatch.captured(5).toInt();
+        result.expectedCols = mismatchMatch.captured(6).toInt();
+        return result;
+    }
+
+    const QRegularExpressionMatch usedMatch = usedExpression.match(summary);
+    if (usedMatch.hasMatch()) {
+        result.status = QStringLiteral("used");
+        result.reason = QStringLiteral("none");
+        result.masterRows = usedMatch.captured(1).toInt();
+        result.masterCols = usedMatch.captured(2).toInt();
+        result.slaveRows = result.masterRows;
+        result.slaveCols = result.masterCols;
+        result.expectedRows = result.masterRows;
+        result.expectedCols = result.masterCols;
+        result.degraded = false;
+        return result;
+    }
+
+    if (summary.contains(QStringLiteral("amp=unavailable"))) {
+        result.status = QStringLiteral("unavailable");
+        result.reason = QStringLiteral("source_amplitude_unavailable");
+    }
+    return result;
 }
 
 bool readOffset(const QString& h5Path, const char* dataset, int& offset, QString& error)
@@ -208,6 +269,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         return;
     }
     t_unwrapTotalImagesCount = image_number;
+    std::vector<UnwrapAmplitudeStatus> amplitudeStatuses(static_cast<size_t>(image_number));
 
     ::Unwrap unwrap;
     FormatConversion FC;
@@ -370,8 +432,41 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             return false;
         }
 
-        return NodeUtils::writeScalarToH5(outputPath, "unwrap_method", method)
-            && NodeUtils::writeScalarToH5(outputPath, "unwrap_coherence_threshold", coherence_threshold);
+        if (!NodeUtils::writeScalarToH5(outputPath, "unwrap_method", method) ||
+            !NodeUtils::writeScalarToH5(outputPath, "unwrap_coherence_threshold", coherence_threshold)) {
+            metadataError = QStringLiteral("无法写入解缠参数元数据");
+            return false;
+        }
+
+        const UnwrapAmplitudeStatus& amplitude = amplitudeStatuses.at(static_cast<size_t>(idx));
+        const auto writeString = [&](const QString& dataset, const QString& value) {
+            QString writeError;
+            if (!NodeUtils::writeStringToH5(outputPath, dataset, value.toStdString(), &writeError)) {
+                metadataError = QStringLiteral("无法写入 %1: %2").arg(dataset, writeError);
+                return false;
+            }
+            return true;
+        };
+        const auto writeInt = [&](const QString& dataset, int value) {
+            QString writeError;
+            if (!NodeUtils::writeScalarToH5(outputPath, dataset, value, &writeError)) {
+                metadataError = QStringLiteral("无法写入 %1: %2").arg(dataset, writeError);
+                return false;
+            }
+            return true;
+        };
+        if (!writeString(QStringLiteral("unwrap_amplitude_status"), amplitude.status) ||
+            !writeString(QStringLiteral("unwrap_amplitude_reason"), amplitude.reason) ||
+            !writeInt(QStringLiteral("unwrap_amplitude_degraded"), amplitude.degraded ? 1 : 0) ||
+            !writeInt(QStringLiteral("unwrap_amplitude_master_rows"), amplitude.masterRows) ||
+            !writeInt(QStringLiteral("unwrap_amplitude_master_cols"), amplitude.masterCols) ||
+            !writeInt(QStringLiteral("unwrap_amplitude_slave_rows"), amplitude.slaveRows) ||
+            !writeInt(QStringLiteral("unwrap_amplitude_slave_cols"), amplitude.slaveCols) ||
+            !writeInt(QStringLiteral("unwrap_amplitude_expected_rows"), amplitude.expectedRows) ||
+            !writeInt(QStringLiteral("unwrap_amplitude_expected_cols"), amplitude.expectedCols)) {
+            return false;
+        }
+        return true;
     };
 
     const auto finishMetadataFailure = [&]() {
@@ -516,6 +611,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             const QString diagnosticSummary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
             if (!diagnosticSummary.isEmpty()) {
+                amplitudeStatuses.at(static_cast<size_t>(i)) = parseSnaphuAmplitudeStatus(diagnosticSummary);
                 const QString diagnosticMessage = QStringLiteral("SNAPHU completed (stage=%1): %2")
                     .arg(diagnosticStageName(diagnostic.stage), diagnosticSummary);
                 if (diagnosticSummary.contains(QStringLiteral("corr=disabled")) ||
@@ -525,6 +621,10 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 } else {
                     InSARLogManager::LogInfo("UnwrapWorker", diagnosticMessage);
                 }
+            } else {
+                amplitudeStatuses.at(static_cast<size_t>(i)).status = QStringLiteral("unknown");
+                amplitudeStatuses.at(static_cast<size_t>(i)).reason = QStringLiteral("missing_amplitude_diagnostic");
+                amplitudeStatuses.at(static_cast<size_t>(i)).degraded = true;
             }
             const int solverCompleteProgress = 10 + (i + 1) * 80 / image_number;
             emit updateProcess(solverCompleteProgress,
@@ -618,6 +718,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         result.offsetRow = offset_rows[i];
         result.offsetCol = offset_cols[i];
         result.method = methodName;
+        const UnwrapAmplitudeStatus& amplitude = amplitudeStatuses.at(static_cast<size_t>(i));
+        result.amplitudeStatus = amplitude.status;
+        result.amplitudeReason = amplitude.reason;
+        result.amplitudeMasterRows = amplitude.masterRows;
+        result.amplitudeMasterCols = amplitude.masterCols;
+        result.amplitudeSlaveRows = amplitude.slaveRows;
+        result.amplitudeSlaveCols = amplitude.slaveCols;
+        result.amplitudeExpectedRows = amplitude.expectedRows;
+        result.amplitudeExpectedCols = amplitude.expectedCols;
+        result.amplitudeDegraded = amplitude.degraded;
         Q_EMIT unwrapFileGenerated(result);
     }
 

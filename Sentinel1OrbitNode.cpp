@@ -17,6 +17,7 @@
 #include <QFormLayout>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QDir>
 #include <QApplication>
 #include <QCoreApplication>
@@ -33,9 +34,105 @@
 #include <QHeaderView>
 #include <QFutureWatcher>
 #include <QPointer>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace QtNodes {
+
+namespace {
+
+const QString kOrbitReferenceFile = QStringLiteral(".orbit-reference.json");
+
+bool isSafeProjectRelativePath(const QString& relativePath)
+{
+    if (relativePath.isEmpty() || QDir::isAbsolutePath(relativePath)) {
+        return false;
+    }
+    const QString clean = QDir::cleanPath(relativePath);
+    return clean != QStringLiteral("..") && !clean.startsWith(QStringLiteral("../")) &&
+        !clean.startsWith(QStringLiteral("..\\"));
+}
+
+bool resolveReferencePath(const QDir& projectRoot, const QString& relativePath, QString& absolutePath)
+{
+    if (!isSafeProjectRelativePath(relativePath)) {
+        return false;
+    }
+    absolutePath = projectRoot.absoluteFilePath(QDir::cleanPath(relativePath));
+    return QFileInfo(absolutePath).isFile();
+}
+
+bool readOrbitReferenceManifest(const QString& markerPath,
+                                const QString& projectRootPath,
+                                QStringList& h5Paths,
+                                QStringList& jpgPaths,
+                                ProductDescriptor::Ptr& sourceDescriptor,
+                                QString* errorMessage)
+{
+    h5Paths.clear();
+    jpgPaths.clear();
+    sourceDescriptor.reset();
+    QFile marker(markerPath);
+    if (!marker.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot open orbit reference manifest: %1").arg(markerPath);
+        return false;
+    }
+    const QJsonObject object = QJsonDocument::fromJson(marker.readAll()).object();
+    if (object.value(QStringLiteral("version")).toInt() != 2 ||
+        object.value(QStringLiteral("mode")).toString() != QStringLiteral("precise-orbit-reference")) {
+        if (errorMessage) *errorMessage = QStringLiteral("Unsupported or invalid orbit reference manifest version: %1").arg(markerPath);
+        return false;
+    }
+    QString descriptorError;
+    sourceDescriptor = ProductDescriptor::fromJson(
+        object.value(QStringLiteral("sourceProductDescriptor")).toObject(), &descriptorError);
+    if (!sourceDescriptor || sourceDescriptor->state() != ProductState::Committed) {
+        if (errorMessage) *errorMessage = descriptorError.isEmpty()
+            ? QStringLiteral("Orbit reference manifest has no committed source product descriptor.")
+            : descriptorError;
+        return false;
+    }
+    const QDir projectRoot(projectRootPath);
+    const QJsonArray files = object.value(QStringLiteral("files")).toArray();
+    if (files.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Orbit reference manifest contains no files.");
+        return false;
+    }
+    for (const QJsonValue& value : files) {
+        const QJsonObject file = value.toObject();
+        QString h5Path;
+        QString jpgPath;
+        if (!resolveReferencePath(projectRoot, file.value(QStringLiteral("h5")).toString(), h5Path) ||
+            !resolveReferencePath(projectRoot, file.value(QStringLiteral("jpg")).toString(), jpgPath) ||
+            QFileInfo(h5Path).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0) {
+            if (errorMessage) *errorMessage = QStringLiteral("Orbit reference source is missing or unsafe.");
+            h5Paths.clear();
+            jpgPaths.clear();
+            return false;
+        }
+        const QFileInfo h5Info(h5Path);
+        const QFileInfo jpgInfo(jpgPath);
+        if (static_cast<qint64>(file.value(QStringLiteral("h5Size")).toDouble(-1)) != h5Info.size() ||
+            static_cast<qint64>(file.value(QStringLiteral("h5ModifiedMs")).toDouble(-1)) !=
+                h5Info.lastModified().toMSecsSinceEpoch() ||
+            static_cast<qint64>(file.value(QStringLiteral("jpgSize")).toDouble(-1)) != jpgInfo.size() ||
+            static_cast<qint64>(file.value(QStringLiteral("jpgModifiedMs")).toDouble(-1)) !=
+                jpgInfo.lastModified().toMSecsSinceEpoch()) {
+            if (errorMessage) *errorMessage = QStringLiteral(
+                "Orbit reference source size/timestamp snapshot changed after publication.");
+            h5Paths.clear();
+            jpgPaths.clear();
+            return false;
+        }
+        h5Paths.append(h5Path);
+        jpgPaths.append(jpgPath);
+    }
+    return true;
+}
+
+}
 
 Sentinel1OrbitNode::Sentinel1OrbitNode()
     : ExecutableNodeDelegateModel()
@@ -86,6 +183,29 @@ NodeDataType Sentinel1OrbitNode::dataType(PortType portType, PortIndex portIndex
     if (portIndex == 0)
         return NodeDataType{"imported_file", "Imported File"};
     return NodeDataType{"image_info", "Image Info"};
+}
+
+ProductInputContract Sentinel1OrbitNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("sentinel1_orbit.input.burst_sar");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("sentinel1_burst_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract Sentinel1OrbitNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("sentinel1_orbit.output.orbit_corrected_burst_sar")
+        : QStringLiteral("sentinel1_orbit.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("sentinel1_burst_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
 }
 
 bool Sentinel1OrbitNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
@@ -240,30 +360,66 @@ void Sentinel1OrbitNode::setExecutionMode(ExecutionMode mode)
 
 bool Sentinel1OrbitNode::validateAndRestoreOutput()
 {
-    QString targetDirName = m_outputNodeName.isEmpty() ? "S1_Orbit" : m_outputNodeName;
-
-    // 重建待校验路径：优先使用保存的输出路径（工程恢复时 m_inputData 尚未设置）
-    QStringList expectedPaths;
-    if (!m_savedOutputPaths.isEmpty()) {
-        expectedPaths = m_savedOutputPaths;
-    } else if (m_inputData && !m_inputData->filePaths().isEmpty()) {
-        // 向后兼容：旧工程无 outputPaths，从 m_inputData 推导
-        QString projectDir = NodeUtils::projectDirectory(projectPath());
-        QString targetDirPath = projectDir + "/" + targetDirName;
-        for (const QString& h5Path : m_inputData->filePaths())
-        {
-            expectedPaths.append(targetDirPath + "/" + QFileInfo(h5Path).fileName());
-        }
-    } else {
+    const auto failRestore = [this](const QString& stage, const QString& reason) {
+        const QString detail = QStringLiteral("轨道输出恢复失败[%1]：%2")
+            .arg(stage, reason.isEmpty() ? QStringLiteral("未提供原因") : reason);
+        setLastErrorMessage(detail);
+        InSARLogManager::LogWarning("Sentinel1OrbitNode", detail);
         setState(ExecutionState::Idle);
         return false;
+    };
+
+    const QString targetDirName = m_outputNodeName.trimmed();
+    if (targetDirName.isEmpty()) {
+        return failRestore(QStringLiteral("当前输出目录"), QStringLiteral("输出节点名为空。"));
+    }
+
+    QStringList expectedPaths;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), targetDirName, expectedPaths, &identityError)) {
+        return failRestore(QStringLiteral("当前 transaction/manifest"), identityError);
+    }
+    identityError.clear();
+    if (!NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), targetDirName, descriptor, &identityError)) {
+        return failRestore(QStringLiteral("当前输出 descriptor"), identityError);
+    }
+    const ProductValidationResult outputValidation = validatePublishedDescriptor(productOutputContract(0), descriptor);
+    if (!outputValidation.accepted) {
+        return failRestore(QStringLiteral("当前输出 descriptor"), outputValidation.reason);
+    }
+
+    QStringList h5Paths;
+    for (const QString& path : expectedPaths) {
+        if (QFileInfo(path).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+            h5Paths.append(path);
+        }
+    }
+    QStringList referenceJpgPaths;
+    ProductDescriptor::Ptr sourceDescriptor;
+    const bool isReferenceOutput = h5Paths.isEmpty();
+    if (h5Paths.isEmpty()) {
+        const QString projectRoot = NodeUtils::projectDirectory(projectPath());
+        const QString markerPath = QDir(projectRoot).absoluteFilePath(
+            targetDirName + QStringLiteral("/") + kOrbitReferenceFile);
+        if (!readOrbitReferenceManifest(markerPath, projectRoot, h5Paths, referenceJpgPaths,
+                                        sourceDescriptor, &identityError)) {
+            return failRestore(QStringLiteral("引用清单"), identityError);
+        }
+    }
+    const ProductDescriptor::Ptr& identityDescriptor = isReferenceOutput ? sourceDescriptor : descriptor;
+    if (!NodeUtils::validateH5Identities(h5Paths, identityDescriptor, &identityError)) {
+        return failRestore(isReferenceOutput ? QStringLiteral("源 H5 身份") : QStringLiteral("输出 H5 身份"),
+                           identityError);
     }
 
     FormatConversion FC;
     bool allHaveOrbit = true;
-    for (const QString& h5Path : expectedPaths)
+    QString orbitFailurePath;
+    for (const QString& h5Path : h5Paths)
     {
         if (!QFile::exists(h5Path)) {
+            orbitFailurePath = h5Path;
             allHaveOrbit = false;
             break;
         }
@@ -272,6 +428,7 @@ bool Sentinel1OrbitNode::validateAndRestoreOutput()
             NodeUtils::Hdf5Locker locker(h5Path);
             if (FC.get_dataset_dims(h5Path.toLocal8Bit().constData(), "fine_state_vec", &r, &c) != 0 || r < 5)
             {
+                orbitFailurePath = h5Path;
                 allHaveOrbit = false;
                 break;
             }
@@ -279,10 +436,16 @@ bool Sentinel1OrbitNode::validateAndRestoreOutput()
     }
     if (allHaveOrbit)
     {
-        m_outputData = std::make_shared<ImportedFileData>(expectedPaths, targetDirName);
-        QStringList expectedJpgPaths;
-        for (const QString& h5 : expectedPaths) {
-            expectedJpgPaths.append(h5.left(h5.lastIndexOf('.')) + ".jpg");
+        m_outputData = std::make_shared<ImportedFileData>(h5Paths, targetDirName);
+        m_outputData->setProductDescriptor(descriptor);
+        if (isReferenceOutput) {
+            m_outputData->setPhysicalProductDescriptor(sourceDescriptor);
+        }
+        QStringList expectedJpgPaths = referenceJpgPaths;
+        if (expectedJpgPaths.isEmpty()) {
+            for (const QString& h5 : h5Paths) {
+                expectedJpgPaths.append(h5.left(h5.lastIndexOf('.')) + ".jpg");
+            }
         }
         m_previewData = std::make_shared<ImageInfoData>(expectedJpgPaths);
         setOutputData(0, m_outputData);
@@ -294,15 +457,31 @@ bool Sentinel1OrbitNode::validateAndRestoreOutput()
         return true;
     }
 
-    setState(ExecutionState::Idle);
-    return false;
+    return failRestore(QStringLiteral("精轨数据"),
+                       QStringLiteral("源 H5 缺少有效 fine_state_vec：%1").arg(orbitFailurePath));
 }
 
 bool Sentinel1OrbitNode::prepareToStart()
 {
     qDebug() << "[OrbitNode] prepareToStart()";
+    m_preparedReferenceMode = false;
+    m_preparedReferenceManifest = QJsonObject();
     if (!validateInputs()) {
         qDebug() << "[OrbitNode] validateInputs() failed";
+        return false;
+    }
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setStartFailureMessage(inputValidation.reason);
+        setLastErrorMessage(inputValidation.reason);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
         return false;
     }
     qDebug() << "[OrbitNode] input valid, filePaths:" << m_inputData->filePaths();
@@ -313,12 +492,22 @@ bool Sentinel1OrbitNode::prepareToStart()
     m_preparedSource = m_orbitSourceCombo ? m_orbitSourceCombo->currentIndex() : m_orbitSource;
     m_preparedCacheDir = m_cacheDirEdit ? m_cacheDirEdit->text().trimmed() : m_cacheDir;
 
+    // A fully verified precise-orbit input can be published as a logical reference.
+    // This is deliberately all-or-nothing for a batch so one output node has one
+    // storage contract; mixed inputs continue through the normal POD path.
+    m_preparedReferenceMode = preparePreciseReferenceManifest(m_preparedReferenceManifest);
+    if (!m_preparedReferenceMode && m_preparedCacheDir.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("未设置轨道缓存目录。"));
+        setLastErrorMessage(QStringLiteral("未设置轨道缓存目录。"));
+        return false;
+    }
+
     qDebug() << "[OrbitNode] projectPath:" << m_preparedSavePath;
     qDebug() << "[OrbitNode] projectName:" << m_preparedProjectName;
     qDebug() << "[OrbitNode] cacheDir:" << m_preparedCacheDir;
     qDebug() << "[OrbitNode] orbitSource:" << m_preparedSource;
 
-    // 根据所选数据源检查对应账户
+    // A reference output does not need network access or orbit-source credentials.
     QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
     const bool useCdse = (m_preparedSource == 1);
     const QString userKey = useCdse ? "Orbit/CDSEUser" : "DEM/EarthdataUser";
@@ -326,7 +515,7 @@ bool Sentinel1OrbitNode::prepareToStart()
     const QString sourceLabel = useCdse ? QStringLiteral("ESA CDSE") : QStringLiteral("NASA Earthdata");
     const bool credentialsMissing = settings.value(userKey, "").toString().isEmpty()
         || settings.value(passKey, "").toString().isEmpty();
-    if (credentialsMissing)
+    if (credentialsMissing && !m_preparedReferenceMode)
     {
         if (_isAutoTriggered)
         {
@@ -358,15 +547,22 @@ bool Sentinel1OrbitNode::prepareToStart()
 
     m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QDir outDir(targetDirPath);
-    if (outDir.exists() && outDir.entryList(QStringList{"*.h5"}, QDir::Files).count() > 0)
+    const QString referenceMarkerPath = outDir.absoluteFilePath(kOrbitReferenceFile);
+    const bool hasCommittedOutput = outDir.exists() &&
+        (outDir.entryList(QStringList{"*.h5"}, QDir::Files).count() > 0 || QFile::exists(referenceMarkerPath));
+    if (hasCommittedOutput)
     {
         auto ctx = NodeUtils::getProjectContext(_widget);
         if (_isAutoTriggered) {
             m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
         } else {
             QStringList expectedH5Paths;
-            for (const QString& h5Path : m_preparedFilePaths) {
-                expectedH5Paths.append(targetDirPath + "/" + QFileInfo(h5Path).fileName());
+            if (m_preparedReferenceMode) {
+                expectedH5Paths.append(referenceMarkerPath);
+            } else {
+                for (const QString& h5Path : m_preparedFilePaths) {
+                    expectedH5Paths.append(targetDirPath + "/" + QFileInfo(h5Path).fileName());
+                }
             }
             m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(ctx, targetDirName, expectedH5Paths, nullptr);
         }
@@ -378,6 +574,72 @@ bool Sentinel1OrbitNode::prepareToStart()
     }
 
     qDebug() << "[OrbitNode] prepareToStart() OK";
+    return true;
+}
+
+bool Sentinel1OrbitNode::preparePreciseReferenceManifest(QJsonObject& manifest) const
+{
+    manifest = QJsonObject();
+    const QString projectRootPath = NodeUtils::projectDirectory(m_preparedSavePath);
+    const QDir projectRoot(projectRootPath);
+    if (!projectRoot.exists() || m_preparedFilePaths.isEmpty()) {
+        return false;
+    }
+
+    FormatConversion conversion;
+    QJsonArray files;
+    for (const QString& h5Path : m_preparedFilePaths) {
+        const QFileInfo h5Info(h5Path);
+        const QFileInfo jpgInfo(h5Info.absolutePath() + "/" + h5Info.completeBaseName() + ".jpg");
+        if (!h5Info.isFile() || !jpgInfo.isFile()) {
+            return false;
+        }
+        const QString relativeH5 = projectRoot.relativeFilePath(h5Info.absoluteFilePath()).replace('\\', '/');
+        const QString relativeJpg = projectRoot.relativeFilePath(jpgInfo.absoluteFilePath()).replace('\\', '/');
+        if (!isSafeProjectRelativePath(relativeH5) || !isSafeProjectRelativePath(relativeJpg)) {
+            return false;
+        }
+
+        int rows = 0;
+        int columns = 0;
+        {
+            NodeUtils::Hdf5Locker locker(h5Info.absoluteFilePath());
+            if (conversion.get_dataset_dims(h5Info.absoluteFilePath().toLocal8Bit().constData(),
+                                            "fine_state_vec", &rows, &columns) != 0 || rows < 5) {
+                return false;
+            }
+            std::string orbitType;
+            const int orbitTypeStatus = conversion.read_str_from_h5(
+                h5Info.absoluteFilePath().toLocal8Bit().constData(), "orbit_type", orbitType);
+            if (orbitTypeStatus == 0 &&
+                QString::fromStdString(orbitType).trimmed().compare(
+                    QStringLiteral("Precise (POE)"), Qt::CaseInsensitive) != 0) {
+                return false;
+            }
+        }
+
+        QJsonObject file;
+        file.insert(QStringLiteral("name"), h5Info.fileName());
+        file.insert(QStringLiteral("h5"), relativeH5);
+        file.insert(QStringLiteral("jpg"), relativeJpg);
+        file.insert(QStringLiteral("fineStateRows"), rows);
+        file.insert(QStringLiteral("h5Size"), static_cast<double>(h5Info.size()));
+        file.insert(QStringLiteral("h5ModifiedMs"), static_cast<double>(h5Info.lastModified().toMSecsSinceEpoch()));
+        file.insert(QStringLiteral("jpgSize"), static_cast<double>(jpgInfo.size()));
+        file.insert(QStringLiteral("jpgModifiedMs"), static_cast<double>(jpgInfo.lastModified().toMSecsSinceEpoch()));
+        files.append(file);
+    }
+
+    const ProductDescriptor::Ptr sourceDescriptor = m_inputData
+        ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr();
+    if (!sourceDescriptor || sourceDescriptor->state() != ProductState::Committed) {
+        return false;
+    }
+    manifest.insert(QStringLiteral("version"), 2);
+    manifest.insert(QStringLiteral("mode"), QStringLiteral("precise-orbit-reference"));
+    manifest.insert(QStringLiteral("sourceProductDescriptor"),
+                    sourceDescriptor->toJson());
+    manifest.insert(QStringLiteral("files"), files);
     return true;
 }
 
@@ -422,6 +684,10 @@ void Sentinel1OrbitNode::executeProcessing()
     if (targetDirName.isEmpty() && m_inputData) {
         targetDirName = m_inputData->nodeName() + "_Orbit";
     }
+    m_outputNodeName = targetDirName;
+    if (m_outputNodeNameEdit) {
+        m_outputNodeNameEdit->setText(m_outputNodeName);
+    }
 
     // 覆盖/复用判断 (SOP 移植规范 #3 & #14)
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting)
@@ -430,17 +696,69 @@ void Sentinel1OrbitNode::executeProcessing()
         if (validateAndRestoreOutput())
         {
             qDebug() << "[OrbitNode] Loaded existing data successfully.";
+            InSARLogManager::LogInfo("Sentinel1OrbitNode",
+                QStringLiteral("已复用已提交的轨道输出，跳过本次精密轨道应用：target=%1").arg(targetDirName));
             return;
         }
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite)
-    {
-        auto* iface = NodeUtils::getProjectContext(_widget);
-        if (iface) {
-            NodeUtils::removeDataNodeFromProject(iface, targetDirName);
+    QStringList expectedOutputPaths;
+    if (m_preparedReferenceMode) {
+        expectedOutputPaths.append(QDir(m_preparedSavePath).absoluteFilePath(
+            targetDirName + QStringLiteral("/") + kOrbitReferenceFile));
+    } else {
+        for (const QString& inputPath : m_preparedFilePaths) {
+            const QFileInfo inputInfo(inputPath);
+            expectedOutputPaths.append(QDir(m_preparedSavePath).absoluteFilePath(
+                targetDirName + QStringLiteral("/") + inputInfo.fileName()));
+            const QString inputJpgPath = inputInfo.absolutePath() + QStringLiteral("/") +
+                inputInfo.completeBaseName() + QStringLiteral(".jpg");
+            if (QFileInfo::exists(inputJpgPath)) {
+                expectedOutputPaths.append(QDir(m_preparedSavePath).absoluteFilePath(
+                    targetDirName + QStringLiteral("/") + inputInfo.completeBaseName() + QStringLiteral(".jpg")));
+            }
         }
     }
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, targetDirName, expectedOutputPaths,
+                                           m_preparedFilePaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("sentinel1_orbit.output.orbit_corrected_burst_sar"));
+    ProductDescriptor::Ptr outputDescriptor = ProductDescriptor::create(
+        QStringLiteral("sentinel1_burst_sar"), QStringLiteral("sat-explorer-product"), 1,
+        ProductState::Committed, name(), descriptorProvenance);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, outputDescriptor, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+
+    if (m_preparedReferenceMode) {
+        InSARLogManager::LogInfo("Sentinel1OrbitNode",
+            QStringLiteral("输入 H5 已验证包含精密轨道，跳过重复应用并建立逻辑引用：target=%1")
+                .arg(targetDirName));
+        const QString markerPath = QDir(m_preparedSavePath).absoluteFilePath(
+            m_outputTransaction.stagingName + QStringLiteral("/") + kOrbitReferenceFile);
+        QSaveFile marker(markerPath);
+        if (!marker.open(QIODevice::WriteOnly) ||
+            marker.write(QJsonDocument(m_preparedReferenceManifest).toJson(QJsonDocument::Compact)) < 0 ||
+            !marker.commit()) {
+            onError(QStringLiteral("无法写入精密轨道引用清单：%1").arg(markerPath));
+            return;
+        }
+        onProcessingFinished(m_preparedFilePaths, m_preparedFilePaths.size(), 0, 0, targetDirName);
+        return;
+    }
+
+    InSARLogManager::LogInfo("Sentinel1OrbitNode",
+        QStringLiteral("输入 H5 未满足精密轨道复用条件，开始执行精密轨道应用：target=%1")
+            .arg(targetDirName));
 
     qDebug() << "[OrbitNode] creating worker thread, cacheDir:" << m_preparedCacheDir
              << "files:" << m_preparedFilePaths.size();
@@ -475,7 +793,7 @@ void Sentinel1OrbitNode::executeProcessing()
         m_preparedFilePaths,
         m_preparedSource,
         m_preparedCacheDir,
-        targetDirName
+        m_outputTransaction.stagingName
     );
 }
 
@@ -714,6 +1032,57 @@ void Sentinel1OrbitNode::onProcessingFinished(
     m_thread = nullptr;
 
     if (discardObsoleteAutomaticExecution()) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete automatic execution"), projectXml());
+        return;
+    }
+
+    const int expectedOutputCount = m_preparedFilePaths.size();
+    if (podApplyOk != expectedOutputCount || newH5Paths.size() != expectedOutputCount) {
+        const QString error = QStringLiteral(
+            "Orbit application did not produce a complete product set (%1 of %2 input files succeeded).")
+            .arg(podApplyOk).arg(expectedOutputCount);
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+        onError(error);
+        return;
+    }
+
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
+    QString transactionError;
+    if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    QStringList committedPaths;
+    if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, committedPaths, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    QStringList committedH5Paths;
+    for (const QString& path : committedPaths) {
+        if (QFileInfo(path).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+            committedH5Paths.append(path);
+        }
+    }
+    const QStringList publishedH5Paths = m_preparedReferenceMode
+        ? m_preparedFilePaths : committedH5Paths;
+    if ((m_preparedReferenceMode &&
+         (committedPaths.size() != 1 || QFileInfo(committedPaths.first()).fileName() != kOrbitReferenceFile)) ||
+        publishedH5Paths.size() != expectedOutputCount) {
+        onError(QStringLiteral("Committed orbit transaction has an incomplete output manifest."));
+        return;
+    }
+
+    XMLFile* xml = projectXml();
+    if (!xml || !NodeUtils::prepareOutputTransactionMetadataCommit(
+                    m_outputTransaction, xml, NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+        onError(xml ? transactionError : QStringLiteral("Project XML context is unavailable for orbit output commit."));
         return;
     }
 
@@ -722,7 +1091,7 @@ void Sentinel1OrbitNode::onProcessingFinished(
     settings.setValue("Orbit/LastMatchDir", m_preparedCacheDir);
     settings.setValue(QString("Orbit/ProjectDir_%1").arg(m_preparedProjectName), m_preparedCacheDir);
 
-    // 如果覆盖，先清理项目中的旧数据
+    // Metadata mutation occurs only after the staged artifacts have been promoted.
     auto* iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
         NodeUtils::removeDataNodeFromProject(iface, targetDirName);
@@ -730,15 +1099,21 @@ void Sentinel1OrbitNode::onProcessingFinished(
 
     qDebug() << "[OrbitNode] POD apply results: ok=" << podApplyOk << "fail=" << podApplyFail << "skipped=" << podSkipped;
     InSARLogManager::LogDiagnostic(InSARLogManager::LevelInfo, "Sentinel1OrbitNode",
-        QStringLiteral("Sentinel-1 精轨匹配完成：成功 %1 幅，失败 %2 幅，跳过 %3 幅。").arg(podApplyOk).arg(podApplyFail).arg(podSkipped),
+        m_preparedReferenceMode
+            ? QStringLiteral("Sentinel-1 输入已验证为精密轨道，已建立零拷贝逻辑引用：%1 幅。").arg(expectedOutputCount)
+            : QStringLiteral("Sentinel-1 精轨匹配完成：成功 %1 幅，失败 %2 幅，跳过 %3 幅。").arg(podApplyOk).arg(podApplyFail).arg(podSkipped),
         LogTargets(LogTarget::UserProjectLog),
         QStringLiteral("completed"), QStringLiteral("completed"), QStringLiteral("completed"));
 
     // 传播输出数据
-    if (!newH5Paths.isEmpty()) {
-        m_outputData = std::make_shared<ImportedFileData>(newH5Paths, targetDirName);
+    if (!publishedH5Paths.isEmpty()) {
+        m_outputData = std::make_shared<ImportedFileData>(publishedH5Paths, targetDirName);
+        m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
+        if (m_preparedReferenceMode) {
+            m_outputData->setPhysicalProductDescriptor(m_inputData->physicalProductDescriptor());
+        }
         QStringList newJpgPaths;
-        for (const QString& h5 : newH5Paths) {
+        for (const QString& h5 : publishedH5Paths) {
             newJpgPaths.append(h5.left(h5.lastIndexOf('.')) + ".jpg");
         }
         m_previewData = std::make_shared<ImageInfoData>(newJpgPaths);
@@ -753,14 +1128,13 @@ void Sentinel1OrbitNode::onProcessingFinished(
 
     // 写入项目 XML 并刷新项目树
     if (podApplyOk > 0) {
-        XMLFile* xml = projectXml();
         if (xml) {
             TiXmlElement* root = nullptr;
             xml->get_root(root);
             if (root) {
                 TiXmlElement* dataNodeElem = new TiXmlElement("DataNode");
                 dataNodeElem->SetAttribute("name", targetDirName.toStdString().c_str());
-                dataNodeElem->SetAttribute("data_count", std::to_string(newH5Paths.size()).c_str());
+                dataNodeElem->SetAttribute("data_count", std::to_string(publishedH5Paths.size()).c_str());
                 dataNodeElem->SetAttribute("data_processing", "orbit");
                 dataNodeElem->SetAttribute("rank", "complex-1.0");
 
@@ -779,9 +1153,19 @@ void Sentinel1OrbitNode::onProcessingFinished(
                 }
                 dataNodeElem->SetAttribute("index", QString::number(index).toStdString().c_str());
 
-                for (int i = 0; i < newH5Paths.size(); i++) {
-                    QFileInfo fileinfo(newH5Paths.at(i));
+                for (int i = 0; i < publishedH5Paths.size(); i++) {
+                    QFileInfo fileinfo(publishedH5Paths.at(i));
                     QString relativePath = QString("/%1/%2").arg(targetDirName).arg(fileinfo.fileName());
+                    if (m_preparedReferenceMode) {
+                        const QString projectRoot = NodeUtils::projectDirectory(m_preparedSavePath);
+                        const QString sourceRelativePath = QDir(projectRoot).relativeFilePath(
+                            fileinfo.absoluteFilePath()).replace('\\', '/');
+                        if (!isSafeProjectRelativePath(sourceRelativePath)) {
+                            onError(QStringLiteral("Orbit reference source is outside the project root."));
+                            return;
+                        }
+                        relativePath = QStringLiteral("/") + sourceRelativePath;
+                    }
 
                     TiXmlElement* dataElem = new TiXmlElement("Data");
                     TiXmlElement* dataNameNode = new TiXmlElement("Data_Name");
@@ -820,8 +1204,22 @@ void Sentinel1OrbitNode::onProcessingFinished(
                     root->LinkEndChild(dataNodeElem);
                 }
 
-                xml->XMLFile_save(projectPath().toStdString().c_str());
+                if (!NodeUtils::saveProjectXmlAtomically(xml, NodeUtils::getProjectFilePath(_widget),
+                                                         &transactionError) ||
+                    !NodeUtils::markOutputTransactionMetadataCommitted(m_outputTransaction,
+                                                                         &transactionError)) {
+                    onError(transactionError);
+                    return;
+                }
             }
+        }
+
+        // markOutputTransactionMetadataCommitted() normally advances the
+        // journal through MetadataCommitted to Completed in one call.
+        if (m_outputTransaction.stage != NodeUtils::OutputTransaction::Stage::MetadataCommitted &&
+            m_outputTransaction.stage != NodeUtils::OutputTransaction::Stage::Completed) {
+            onError(QStringLiteral("Orbit output metadata could not be committed."));
+            return;
         }
 
         // 恢复左侧树标准项目模型 (Standard Item Model Tree View)
@@ -858,7 +1256,7 @@ void Sentinel1OrbitNode::onProcessingFinished(
                 }
 
                 // 2. 补全下属图像节点
-                for (const QString& h5Path : newH5Paths) {
+                for (const QString& h5Path : publishedH5Paths) {
                     QFileInfo fileinfo(h5Path);
                     QString orbit_img_name = fileinfo.baseName();
 
@@ -924,6 +1322,8 @@ void Sentinel1OrbitNode::onError(const QString& error)
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -940,6 +1340,8 @@ void Sentinel1OrbitNode::onCancelled()
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
+
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -953,11 +1355,6 @@ bool Sentinel1OrbitNode::validateInputs() const
 {
     if (!m_inputData || m_inputData->filePaths().isEmpty())
         return false;
-
-    QString cache = m_cacheDirEdit ? m_cacheDirEdit->text().trimmed() : m_cacheDir.trimmed();
-    if (cache.isEmpty())
-        return false;
-
     return true;
 }
 
@@ -991,7 +1388,7 @@ QStandardItemModel* Sentinel1OrbitNode::projectModel() const
 QString Sentinel1OrbitNode::projectPath() const
 {
     auto* iface = NodeUtils::getProjectContext(_widget);
-    return iface ? iface->projectPath() : QString();
+    return iface ? NodeUtils::projectDirectory(iface->projectPath()) : QString();
 }
 
 QString Sentinel1OrbitNode::projectName() const

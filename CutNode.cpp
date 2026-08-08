@@ -97,6 +97,36 @@ NodeDataType CutNode::dataType(PortType portType, PortIndex portIndex) const
     }
 }
 
+ProductInputContract CutNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("aoi_crop.input.complex_sar");
+    contract.allowedProductTypes = QStringList()
+        << QStringLiteral("complex_sar")
+        << QStringLiteral("coregistered_complex_sar")
+        << QStringLiteral("debursted_complex_sar")
+        << QStringLiteral("deramped_complex_sar")
+        << QStringLiteral("merged_complex_sar")
+        << QStringLiteral("orbit_refined_complex_sar")
+        << QStringLiteral("back_geocoded_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract CutNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("aoi_crop.output.cropped_complex_sar")
+        : QStringLiteral("aoi_crop.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("cropped_complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 bool CutNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
 {
     Q_UNUSED(portType);
@@ -573,6 +603,13 @@ bool CutNode::prepareToStart()
     }
 
     m_preparedInputPaths = resolvedInputH5Paths();
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedInputPaths,
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
     m_preparedDstNodeName = m_outputNodeName.trimmed();
     m_preparedProjDir = projectPath();
     if (m_preparedProjDir.endsWith(".insar", Qt::CaseInsensitive)) {
@@ -638,6 +675,18 @@ void CutNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedProjDir, m_preparedDstNodeName,
                                            m_preparedOutputPaths, m_preparedInputPaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("aoi_crop.output.cropped_complex_sar"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("cropped_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -830,6 +879,13 @@ void CutNode::onProcessingFinished()
         setOutputData(0, nullptr);
         setOutputData(1, nullptr);
         discardObsoleteAutomaticExecution();
+        return;
+    }
+
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
         return;
     }
 
@@ -1155,6 +1211,13 @@ bool CutNode::validateAndRestoreOutput()
     if (!NodeUtils::loadCommittedOutputManifest(projDir, nodeName, expectedH5Paths)) {
         return false;
     }
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputProductDescriptor(projDir, nodeName, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(expectedH5Paths, descriptor, &identityError)) {
+        return false;
+    }
     m_outputPaths = expectedH5Paths;
     for (const QString& path : expectedH5Paths) {
         expectedJpgPaths.append(QFileInfo(path).absolutePath() + "/" + QFileInfo(path).baseName() + ".jpg");
@@ -1247,7 +1310,8 @@ bool CutNode::validateAndRestoreOutput()
         Q_EMIT dataUpdated(1);
     }
 
-        m_outputData = std::make_shared<ImportedFileData>(expectedH5Paths, nodeName);
+    m_outputData = std::make_shared<ImportedFileData>(expectedH5Paths, nodeName);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 

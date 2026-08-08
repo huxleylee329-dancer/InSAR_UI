@@ -469,14 +469,13 @@ void MainWindow::closeEvent(QCloseEvent* event)
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
 
         if (reply == QMessageBox::Save) {
-            if (this->project) {
-                this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+            QString saveError;
+            if (!saveCurrentProject(&saveError)) {
+                QMessageBox::critical(this, QStringLiteral("错误"),
+                                      QStringLiteral("工程保存失败：%1").arg(saveError));
+                event->ignore();
+                return;
             }
-            saveWorkflowToProject(m_projectPath);
-            if (m_interfaceManager && this->project) {
-                m_interfaceManager->saveLastInterfaceToProject(this->project);
-            }
-            this->project->XMLFile_save(m_projectPath.toStdString().c_str());
             closeCurrentProject();
             event->accept();
         } else if (reply == QMessageBox::Discard) {
@@ -548,6 +547,122 @@ void MainWindow::Loading(QString Data_path, QString ImageType, QString bmp_path,
     int index = activeTabWidget->addTab(TabChild, bmp_name);
     activeTabWidget->setCurrentWidget(TabChild);
 }
+bool MainWindow::repairProjectInfo(XMLFile* xml, const QString& projectFilePath,
+                                   QString* errorMessage)
+{
+    if (!xml || projectFilePath.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("工程 XML 或路径为空。");
+        return false;
+    }
+
+    const QFileInfo fileInfo(projectFilePath);
+    if (!fileInfo.exists() || !fileInfo.isFile()) {
+        if (errorMessage) *errorMessage = QStringLiteral("工程文件不存在：%1").arg(projectFilePath);
+        return false;
+    }
+
+    TiXmlElement* root = nullptr;
+    if (xml->get_root(root) < 0 || !root) {
+        if (errorMessage) *errorMessage = QStringLiteral("工程 XML 缺少根节点。");
+        return false;
+    }
+
+    TiXmlElement* projectInfo = root->FirstChildElement("project_info");
+    if (!projectInfo) {
+        if (errorMessage) *errorMessage = QStringLiteral("工程 XML 缺少 project_info 节点。");
+        return false;
+    }
+    TiXmlElement* nameElement = projectInfo->FirstChildElement("project_name");
+    TiXmlElement* pathElement = projectInfo->FirstChildElement("project_path");
+    if (!nameElement || !pathElement) {
+        if (errorMessage) *errorMessage = QStringLiteral("工程 XML 缺少 project_name 或 project_path。");
+        return false;
+    }
+
+    const QString actualName = fileInfo.fileName();
+    const QString actualDirectory = QDir::cleanPath(fileInfo.absolutePath());
+    const auto normalizedPath = [](const QString& value) {
+        return QDir::cleanPath(QDir::fromNativeSeparators(value.trimmed()));
+    };
+
+    if (QString::fromUtf8(nameElement->GetText() ? nameElement->GetText() : "") != actualName) {
+        nameElement->Clear();
+        nameElement->LinkEndChild(new TiXmlText(actualName.toUtf8().constData()));
+    }
+    const QString savedDirectory = QString::fromUtf8(pathElement->GetText() ? pathElement->GetText() : "");
+    if (QString::compare(normalizedPath(savedDirectory), normalizedPath(actualDirectory), Qt::CaseInsensitive) != 0) {
+        pathElement->Clear();
+        pathElement->LinkEndChild(new TiXmlText(actualDirectory.toUtf8().constData()));
+    }
+    return true;
+}
+
+bool MainWindow::saveCurrentProject(QString* errorMessage)
+{
+    if (m_projectPath.isEmpty() || !project) {
+        if (errorMessage) *errorMessage = QStringLiteral("没有可保存的工程。");
+        return false;
+    }
+    const QByteArray nativePath = QDir::toNativeSeparators(m_projectPath).toLocal8Bit();
+    if (project->XMLFile_load(nativePath.constData()) < 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("无法重新加载工程 XML：%1").arg(m_projectPath);
+        return false;
+    }
+    if (!repairProjectInfo(project, m_projectPath, errorMessage)) return false;
+    saveWorkflowToProject(m_projectPath);
+    if (m_interfaceManager) m_interfaceManager->saveLastInterfaceToProject(project);
+    return NodeUtils::saveProjectXmlAtomically(project, m_projectPath, errorMessage);
+}
+
+bool MainWindow::recoverProjectOutputTransactions(const QString& projectFilePath,
+                                                  QString* errorMessage)
+{
+    const QDir projectRoot(QDir::cleanPath(QFileInfo(projectFilePath).absolutePath()));
+    const QDir transactionRoot(projectRoot.absoluteFilePath(QStringLiteral(".node_transactions")));
+    if (!transactionRoot.exists()) return true;
+
+    const QFileInfoList journals = transactionRoot.entryInfoList(
+        QStringList() << QStringLiteral("*.json"), QDir::Files, QDir::Name);
+    for (const QFileInfo& journal : journals) {
+        const QString nodeName = journal.completeBaseName();
+        QString recoveryError;
+        if (!NodeUtils::recoverOutputTransaction(projectRoot.absolutePath(), nodeName, &recoveryError)) {
+            if (errorMessage) {
+                *errorMessage = QStringLiteral("无法恢复节点 %1 的中断事务：%2")
+                    .arg(nodeName, recoveryError);
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
+bool MainWindow::migrateGcpDatabaseForRenamedProject(const QString& projectFilePath,
+                                                      const QString& previousProjectName,
+                                                      QString* errorMessage)
+{
+    const QFileInfo fileInfo(projectFilePath);
+    const QString actualProjectName = fileInfo.fileName();
+    if (previousProjectName.isEmpty() ||
+        QString::compare(previousProjectName, actualProjectName, Qt::CaseInsensitive) == 0) {
+        return true;
+    }
+
+    const QDir projectDirectory(QDir::cleanPath(fileInfo.absolutePath()));
+    const QString oldDatabase = projectDirectory.absoluteFilePath(
+        QFileInfo(previousProjectName).baseName() + QStringLiteral("_gcp.db"));
+    const QString newDatabase = projectDirectory.absoluteFilePath(
+        fileInfo.baseName() + QStringLiteral("_gcp.db"));
+    if (!QFileInfo::exists(oldDatabase) || QFileInfo::exists(newDatabase)) return true;
+    if (QFile::rename(oldDatabase, newDatabase)) return true;
+
+    if (errorMessage) {
+        *errorMessage = QStringLiteral("工程元数据已修正，但无法迁移 GCP 数据库：%1 -> %2")
+            .arg(oldDatabase, newDatabase);
+    }
+    return false;
+}
+
 void MainWindow::open_from_project_file(QString str)
 {
     if (str.isEmpty())
@@ -571,73 +686,99 @@ void MainWindow::open_from_project_file(QString str)
         if (!maybeSave())
             return;
     }
-
-    // 关闭当前工程（不保存），避免两个工程状态共存
-    closeCurrentProject();
+    if (m_workflowUI && m_workflowUI->hasActiveExecution()) {
+        QMessageBox::warning(this, QStringLiteral("无法重新加载工程"),
+                             QStringLiteral("当前工程仍有正在执行的节点。请等待任务结束或手动停止并确认其退出后再重新加载。"));
+        return;
+    }
 
     QString filename = str;
     QFileInfo fileinfo = QFileInfo(filename);
-    QString abs_path = fileinfo.absolutePath();
+    QString abs_path = QDir::cleanPath(fileinfo.absolutePath());
     QStandardItemModel* currentModel = m_workspaceUI->treeView()->model;
 
-    int ret = this->project->XMLFile_load(filename.toStdString().c_str());
+    XMLFile candidate;
+    const QByteArray nativeFilename = QDir::toNativeSeparators(filename).toLocal8Bit();
+    int ret = candidate.XMLFile_load(nativeFilename.constData());
     if (ret < 0)
     {
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("无法加载工程文件，请检查文件是否损坏或路径是否正确。"));
         return;
     }
+    QString repairError;
+    if (!recoverProjectOutputTransactions(filename, &repairError)) {
+        QMessageBox::critical(this, QStringLiteral("错误"), repairError);
+        return;
+    }
+    // Transaction recovery may restore an older XML backup. Reload it before
+    // deriving the previous name and atomically persisting repaired metadata.
+    if (candidate.XMLFile_load(nativeFilename.constData()) < 0) {
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("无法重新加载恢复后的工程 XML。"));
+        return;
+    }
+    XMLFile rollbackProject;
+    if (rollbackProject.XMLFile_load(nativeFilename.constData()) < 0) {
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("无法准备工程 XML 回滚副本。"));
+        return;
+    }
+    TiXmlElement* candidateRoot = nullptr;
+    candidate.get_root(candidateRoot);
+    TiXmlElement* candidateInfo = candidateRoot ? candidateRoot->FirstChildElement("project_info") : nullptr;
+    TiXmlElement* candidateName = candidateInfo ? candidateInfo->FirstChildElement("project_name") : nullptr;
+    const QString previousProjectName = candidateName && candidateName->GetText()
+        ? QString::fromUtf8(candidateName->GetText()) : QString();
+    if (!repairProjectInfo(&candidate, filename, &repairError)) {
+        QMessageBox::critical(this, QStringLiteral("错误"), repairError);
+        return;
+    }
+    if (!NodeUtils::saveProjectXmlAtomically(&candidate, filename, &repairError)) {
+        QMessageBox::critical(this, QStringLiteral("错误"),
+                              QStringLiteral("工程元数据修正保存失败：%1").arg(repairError));
+        return;
+    }
+    if (!migrateGcpDatabaseForRenamedProject(filename, previousProjectName, &repairError)) {
+        QString rollbackError;
+        if (!NodeUtils::saveProjectXmlAtomically(&rollbackProject, filename, &rollbackError)) {
+            repairError += QStringLiteral("；同时无法恢复原工程 XML：%1").arg(rollbackError);
+        } else {
+            repairError += QStringLiteral("；已原子恢复原工程 XML，可在下次打开时重试迁移");
+        }
+        QMessageBox::critical(this, QStringLiteral("错误"), repairError);
+        return;
+    }
+
+    std::unique_ptr<XMLFile> nextProject(new XMLFile);
+    if (nextProject->XMLFile_load(nativeFilename.constData()) < 0) {
+        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("无法加载已修正并恢复后的工程 XML。"));
+        return;
+    }
+
+    // 目标 XML 已完成预检后，才关闭旧工程并转移唯一工程实例的所有权。
+    closeCurrentProject();
+    delete project;
+    project = nextProject.release();
     TiXmlElement* root;
     ret = this->project->get_root(root);
-    TiXmlElement* p, * q, * j;
+    TiXmlElement* p, * j;
     QList<QString> origin_name;
     if (!root->NoChildren())
     {
-        p = root->FirstChildElement();
-        if (!strcmp(p->Value(), "project_info"))
+        TiXmlElement* projectInfo = root->FirstChildElement("project_info");
+        if (projectInfo)
         {
-            q = p->FirstChildElement();
-            QString project_name = q->Value();
             QStandardItem* Project = new QStandardItem;
             QStandardItem* Project_Path = new QStandardItem;
             Project->setIcon(QIcon(PROJECT_ICON));
             Project->setData(PROJECT_ICON, Qt::UserRole + 10);
             Project->setStatusTip(NOT_IN_PROCESS);
-            if (!strcmp(q->Value(), "project_name"))
-            {
-                // 如果实际文件名与XML中记录的名称不一致（手动改名或另存为Bug导致），自动修正XML内存结构并更新显示名称
-                QString actualFileName = fileinfo.fileName();
-                QString oldFileName = QString::fromUtf8(q->GetText());
-                if (actualFileName != oldFileName)
-                {
-                    q->Clear();
-                    q->LinkEndChild(new TiXmlText(actualFileName.toStdString().c_str()));
-
-                    // 自动修正并重命名 GCP 数据库文件（自愈机制）
-                    QString projDir = fileinfo.absolutePath();
-                    QString oldBase = QFileInfo(oldFileName).baseName();
-                    QString newBase = fileinfo.baseName();
-                    QString oldDbPath = projDir + "/" + oldBase + "_gcp.db";
-                    QString newDbPath = projDir + "/" + newBase + "_gcp.db";
-                    if (QFile::exists(oldDbPath) && !QFile::exists(newDbPath))
-                    {
-                        QFile::rename(oldDbPath, newDbPath);
-                    }
-                }
-                Project->setText(actualFileName);
-            }
-
-            q = q->NextSiblingElement();
-            if (!strcmp(q->Value(), "project_path"))
-                if (!strcmp(abs_path.toStdString().c_str(), q->GetText()))
-                    Project_Path->setText(q->GetText());
-                else
-                {
-                    Project_Path->setText(abs_path.toStdString().c_str());
-                    q->Clear(); q->LinkEndChild(new TiXmlText(abs_path.toStdString().c_str()));//Update save path
-                }
+            Project->setText(fileinfo.fileName());
+            Project_Path->setText(abs_path);
             currentModel->appendRow(Project);
             currentModel->setItem(currentModel->rowCount() - 1, 1, Project_Path);
-            for (p = p->NextSiblingElement(); p != NULL; p = p->NextSiblingElement())
+            for (p = root->FirstChildElement(); p != NULL; p = p->NextSiblingElement())
             {
+                if (p == projectInfo)
+                    continue;
                 // 跳过非 DataNode 元素（如 lastInterface、workflow）
                 if (!p->Attribute("name"))
                     continue;
@@ -652,12 +793,14 @@ void MainWindow::open_from_project_file(QString str)
                 Project->setChild(Project->rowCount() - 1, 1, Rank);
                 int i = 0;
                 int count = 0;
-                for (q = p->FirstChildElement(); q != NULL && strcmp(q->Value(), "Data") == 0; q = q->NextSiblingElement(), i++)
+                for (TiXmlElement* dataNode = p->FirstChildElement();
+                     dataNode != NULL && strcmp(dataNode->Value(), "Data") == 0;
+                     dataNode = dataNode->NextSiblingElement(), i++)
                 {
                     QStandardItem* Data = new QStandardItem;
                     QStandardItem* Data_Path = new QStandardItem;
 
-                    for (j = q->FirstChildElement(); j != NULL; j = j->NextSiblingElement())
+                    for (j = dataNode->FirstChildElement(); j != NULL; j = j->NextSiblingElement())
                     {
 
                         if (!strcmp(j->Value(), "Data_Name"))
@@ -708,7 +851,6 @@ void MainWindow::open_from_project_file(QString str)
             // 加载工作流状态
             loadWorkflowFromProject(str, false);
         }
-        this->project->XMLFile_save(str.toStdString().c_str());
         statusBar()->showMessage(QStringLiteral("已成功加载工程: %1").arg(fileinfo.fileName()), 3000);
     }
     else
@@ -878,19 +1020,10 @@ void MainWindow::on_actionNew_triggered()
 }
 void MainWindow::on_actionOpen_triggered()
 {
-    if (!maybeSave())
-        return;
-
     OpenProject open_Window(this);
-    connect(this, &MainWindow::sendModel, &open_Window, &OpenProject::LoadModel);
-    emit sendModel(m_interfaceManager->projectModel());
-    
-    connect(&open_Window, &OpenProject::aboutToLoadProject, this, &MainWindow::closeCurrentProject);
-    connect(&open_Window, &OpenProject::sendModel, m_workspaceUI, &WorkspaceUI::updateProjectModel);
-    connect(&open_Window, &OpenProject::projectOpened, this, [this](const QString& projectFilePath) {
-        loadWorkflowFromProject(projectFilePath, true);
+    connect(&open_Window, &OpenProject::projectSelected, this, [this](const QString& projectFilePath) {
+        open_from_project_file(projectFilePath);
     });
-    
     open_Window.exec();
 }
 void MainWindow::updateWindowTitle()
@@ -912,14 +1045,12 @@ void MainWindow::on_actionSave_triggered()
         QMessageBox::warning(this, "提示", "没有打开的工程，无法保存。");
         return;
     }
-    if (this->project) {
-        this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+    QString saveError;
+    if (!saveCurrentProject(&saveError)) {
+        QMessageBox::critical(this, QStringLiteral("错误"),
+                              QStringLiteral("工程保存失败：%1").arg(saveError));
+        return;
     }
-    saveWorkflowToProject(m_projectPath);
-    if (m_interfaceManager && this->project) {
-        m_interfaceManager->saveLastInterfaceToProject(this->project);
-    }
-    this->project->XMLFile_save(m_projectPath.toStdString().c_str());
 
     // 添加或更新到最近打开列表
     addToRecentProjects(m_projectPath);
@@ -963,23 +1094,26 @@ void MainWindow::on_actionSave_as_triggered()
     // 3. 更新 XML 内存结构中的 project_name 和 project_path
     QFileInfo newFileInfo(newFilePath);
     QString newProjectName = newFileInfo.fileName(); // 另存为时使用含后缀的完整文件名，确保与系统全局的工程名形式一致
-    QString newProjectDir = newFileInfo.absolutePath();
+    QString newProjectDir = QDir::cleanPath(newFileInfo.absolutePath());
 
     TiXmlElement* root = nullptr;
     if (this->project->get_root(root) >= 0 && root) {
         TiXmlElement* p = root->FirstChildElement("project_info");
-        if (p) {
-            TiXmlElement* nameElem = p->FirstChildElement("project_name");
-            if (nameElem) {
-                nameElem->Clear();
-                nameElem->LinkEndChild(new TiXmlText(newProjectName.toStdString().c_str()));
-            }
-            TiXmlElement* pathElem = p->FirstChildElement("project_path");
-            if (pathElem) {
-                pathElem->Clear();
-                pathElem->LinkEndChild(new TiXmlText(newProjectDir.toStdString().c_str()));
-            }
+        TiXmlElement* nameElem = p ? p->FirstChildElement("project_name") : nullptr;
+        TiXmlElement* pathElem = p ? p->FirstChildElement("project_path") : nullptr;
+        if (!p || !nameElem || !pathElem) {
+            QMessageBox::critical(this, QStringLiteral("错误"),
+                                  QStringLiteral("另存工程失败：工程 XML 缺少完整的 project_info。"));
+            return;
         }
+        nameElem->Clear();
+        nameElem->LinkEndChild(new TiXmlText(newProjectName.toUtf8().constData()));
+        pathElem->Clear();
+        pathElem->LinkEndChild(new TiXmlText(newProjectDir.toUtf8().constData()));
+    } else {
+        QMessageBox::critical(this, QStringLiteral("错误"),
+                              QStringLiteral("另存工程失败：工程 XML 根节点无效。"));
+        return;
     }
 
     // 4. 保存工作流与界面状态到内存中
@@ -1155,8 +1289,10 @@ void MainWindow::on_actionSave_as_triggered()
     }
 
     // 5. 保存到新路径
-    if (this->project->XMLFile_save(newFilePath.toStdString().c_str()) < 0) {
-        QMessageBox::critical(this, QStringLiteral("错误"), QStringLiteral("另存工程失败！"));
+    QString saveError;
+    if (!NodeUtils::saveProjectXmlAtomically(this->project, newFilePath, &saveError)) {
+        QMessageBox::critical(this, QStringLiteral("错误"),
+                              QStringLiteral("另存工程失败：%1").arg(saveError));
         return;
     }
 
@@ -1178,7 +1314,7 @@ bool MainWindow::maybeSave()
 
     if (reply == QMessageBox::Save) {
         on_actionSave_triggered();
-        return true;
+        return !m_projectModified;
     } else if (reply == QMessageBox::Discard) {
         return true;
     } else {
@@ -1268,14 +1404,12 @@ void MainWindow::on_actionClose_triggered()
             QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
 
         if (reply == QMessageBox::Save) {
-            if (this->project) {
-                this->project->XMLFile_load(m_projectPath.toStdString().c_str());
+            QString saveError;
+            if (!saveCurrentProject(&saveError)) {
+                QMessageBox::critical(this, QStringLiteral("错误"),
+                                      QStringLiteral("工程保存失败：%1").arg(saveError));
+                return;
             }
-            saveWorkflowToProject(m_projectPath);
-            if (m_interfaceManager && this->project) {
-                m_interfaceManager->saveLastInterfaceToProject(this->project);
-            }
-            this->project->XMLFile_save(m_projectPath.toStdString().c_str());
         } else if (reply == QMessageBox::Cancel) {
             return;
         }
@@ -1967,8 +2101,6 @@ void MainWindow::handleTabCloseRequested(int index)
             }
         }
 
-        cout << activeTabWidget->count();
-        cout << "\n" << "close";
        // activeTabWidget->removeTab(index);
         delete(activeTabWidget->widget(index));
         mColors.removeAt(index);

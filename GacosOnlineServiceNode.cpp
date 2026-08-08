@@ -48,16 +48,15 @@ GacosOnlineServiceNode::~GacosOnlineServiceNode()
 
 unsigned int GacosOnlineServiceNode::nPorts(PortType portType) const
 {
-    if (portType == PortType::In) return 2;
+    if (portType == PortType::In) return 1;
     else return 2;
 }
 
 NodeDataType GacosOnlineServiceNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
-    if (portType == PortType::In)
+    if (portType == PortType::In) {
         return NodeDataType{"imported_file", "Imported File"};
-    else {
+    } else {
         if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
         else return NodeDataType{"image_info", "Image Info"};
     }
@@ -68,8 +67,7 @@ bool GacosOnlineServiceNode::portCaptionVisible(PortType, PortIndex) const { ret
 QString GacosOnlineServiceNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QStringLiteral("干涉图");
-        else return QStringLiteral("DEM ?");
+        return QStringLiteral("解缠相位");
     } else {
         if (portIndex == 0) return QStringLiteral("成果 *");
         else return QStringLiteral("预览 ?");
@@ -79,14 +77,13 @@ QString GacosOnlineServiceNode::portCaption(PortType portType, PortIndex portInd
 
 bool GacosOnlineServiceNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::In && portIndex == 1) return true;
     if (portType == PortType::Out && portIndex == 1) return true;
     return false;
 }
 
 void GacosOnlineServiceNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
+    if (port != 0) return;
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
     if (m_inputData && m_outputNodeName.isEmpty()) {
         m_outputNodeName = generateDefaultOutputName();
@@ -97,6 +94,29 @@ void GacosOnlineServiceNode::setInData(std::shared_ptr<NodeData> data, PortIndex
         m_outputData.reset();
         m_imageInfoData.reset();
     }
+}
+
+ProductInputContract GacosOnlineServiceNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("gacos_online_service.input.unwrapped_phase");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("unwrapped_phase");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract GacosOnlineServiceNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("gacos_online_service.output.gacos_corrected_interferogram")
+        : QStringLiteral("gacos_online_service.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("gacos_corrected_interferogram")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
 }
 
 std::shared_ptr<NodeData> GacosOnlineServiceNode::outData(PortIndex port)
@@ -256,6 +276,21 @@ bool GacosOnlineServiceNode::prepareToStart()
 {
     if (!validateInputs()) return false;
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     const QString configuredDstNode = m_outputNodeNameEdit
         ? m_outputNodeNameEdit->text().trimmed()
         : m_outputNodeName.trimmed();
@@ -306,6 +341,17 @@ void GacosOnlineServiceNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedInputPaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("gacos_corrected_interferogram"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -450,7 +496,15 @@ void GacosOnlineServiceNode::onResultsReceived(
 bool GacosOnlineServiceNode::validateAndRestoreOutput()
 {
     QStringList h5Paths;
-    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths)) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), m_outputNodeName,
+                                                          descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
+        return false;
+    }
     const QString dstNode = m_outputNodeName.trimmed();
     QStringList expectedJpgPaths, types;
     for (const QString& h5Path : h5Paths) {
@@ -460,6 +514,7 @@ bool GacosOnlineServiceNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 
@@ -471,6 +526,12 @@ bool GacosOnlineServiceNode::validateAndRestoreOutput()
 
     if (missingH5s.isEmpty()) {
         m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgs);
+        QMap<QString, QString> previewProvenance;
+        previewProvenance.insert(QStringLiteral("producer"), name());
+        previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+        m_imageInfoData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+            productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+            productOutputContract(1).publishedState, name(), previewProvenance));
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
@@ -507,6 +568,12 @@ void GacosOnlineServiceNode::startPreviewGeneration(const QStringList& h5Paths,
         if (completeExecution) {
             if (discardObsoleteAutomaticExecution()) return;
             m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_imageInfoData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(1, m_imageInfoData);
             setControlsEnabled(true);
             setState(ExecutionState::Running);
@@ -514,6 +581,12 @@ void GacosOnlineServiceNode::startPreviewGeneration(const QStringList& h5Paths,
             finishExecution();
         } else {
             m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_imageInfoData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
         }
@@ -604,6 +677,13 @@ void GacosOnlineServiceNode::releaseFinishedThreadResources()
 
 bool GacosOnlineServiceNode::commitOutputTransaction(QString* errorMessage)
 {
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("GACOS output is obsolete because its execution revision changed.");
+        }
+        return false;
+    }
     if (m_generatedOutputNames.size() != m_generatedOutputPaths.size() || m_generatedOutputPaths.isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("GACOS worker did not return a complete staging output map.");
         return false;
@@ -668,6 +748,8 @@ bool GacosOnlineServiceNode::commitOutputTransaction(QString* errorMessage)
     }
     m_outputNodeName = m_preparedDstNode;
     m_outputData = std::make_shared<ImportedFileData>(finalPaths, m_preparedDstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
     return true;
 }

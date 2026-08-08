@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>
+#include <QMap>
 #include <QRegularExpression>
 
 namespace QtNodes {
@@ -33,6 +34,26 @@ ExportKMLNode::~ExportKMLNode()
         m_thread->quit();
         m_thread->wait();
     }
+}
+
+ProductInputContract ExportKMLNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("export_kml.input.geocoded_raster");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("geocoded_raster");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract ExportKMLNode::productOutputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductOutputContract contract;
+    contract.semanticId = QStringLiteral("export_kml.output.kml_export");
+    contract.publishedProductTypes = QStringList() << QStringLiteral("kml_export");
+    return contract;
 }
 
 unsigned int ExportKMLNode::nPorts(PortType portType) const
@@ -243,6 +264,21 @@ bool ExportKMLNode::prepareToStart()
         return false;
     }
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     if (isAutoTriggered()) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
         return true;
@@ -269,7 +305,9 @@ bool ExportKMLNode::prepareToStart()
 void ExportKMLNode::execute()
 {
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
-        validateAndRestoreOutput();
+        if (!validateAndRestoreOutput()) {
+            onError(QStringLiteral("Existing KML export is unavailable for semantic restoration."));
+        }
         return;
     }
 
@@ -345,7 +383,7 @@ void ExportKMLNode::processAutomatically()
 {
     if (prepareToStart()) {
         execute();
-    } else {
+    } else if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         setState(ExecutionState::Idle);
     }
 }
@@ -362,6 +400,8 @@ void ExportKMLNode::onProgressUpdate(int progress, const QString& message)
 void ExportKMLNode::onError(const QString& error)
 {
     cleanUpThreadAndWorker();
+    m_outputData.reset();
+    setOutputData(0, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -383,7 +423,17 @@ void ExportKMLNode::onProcessingFinished()
     m_resultLabel->setText(QStringLiteral("导出完成！"));
 
     QString kmlPath = m_outputPath + "/" + m_fileName + ".kml";
+    if (!QFileInfo(kmlPath).isFile()) {
+        onError(QStringLiteral("KML export worker completed without producing the expected file."));
+        return;
+    }
     m_outputData = std::make_shared<ImportedFileData>(kmlPath, m_fileName);
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    m_outputData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("kml_export"),
+        productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+        productOutputContract(0).publishedState, name(), provenance));
     setOutputData(0, m_outputData);
     setState(ExecutionState::Running);
     finishExecution();
@@ -392,6 +442,8 @@ void ExportKMLNode::onProcessingFinished()
 void ExportKMLNode::onCancelled()
 {
     cleanUpThreadAndWorker();
+    m_outputData.reset();
+    setOutputData(0, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -408,6 +460,12 @@ bool ExportKMLNode::validateAndRestoreOutput()
     if (QFile::exists(kmlPath))
     {
         m_outputData = std::make_shared<ImportedFileData>(kmlPath, m_fileName);
+        QMap<QString, QString> provenance;
+        provenance.insert(QStringLiteral("producer"), name());
+        provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+        m_outputData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("kml_export"),
+            productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+            productOutputContract(0).publishedState, name(), provenance));
         setOutputData(0, m_outputData);
         m_resultLabel->setText(QStringLiteral("检测到已有导出文件，已恢复。"));
         setState(ExecutionState::Completed);

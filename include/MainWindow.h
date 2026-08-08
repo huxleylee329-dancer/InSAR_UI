@@ -187,6 +187,14 @@ private:
     // 关闭当前工程（不含确认对话框），供新建/打开工程前调用
     void closeCurrentProject();
     bool maybeSave();
+    bool repairProjectInfo(XMLFile* xml, const QString& projectFilePath,
+                           QString* errorMessage = nullptr);
+    bool saveCurrentProject(QString* errorMessage = nullptr);
+    bool recoverProjectOutputTransactions(const QString& projectFilePath,
+                                          QString* errorMessage = nullptr);
+    bool migrateGcpDatabaseForRenamedProject(const QString& projectFilePath,
+                                             const QString& previousProjectName,
+                                             QString* errorMessage = nullptr);
 
     // 工作流状态保存/加载
     void saveWorkflowToProject(const QString& projectFilePath);

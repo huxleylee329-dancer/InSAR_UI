@@ -222,6 +222,29 @@ SBASReferenceReselectionNode::~SBASReferenceReselectionNode()
     rollbackOutputTransaction(QStringLiteral("node destroyed"));
 }
 
+ProductInputContract SBASReferenceReselectionNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("sbas_reference_reselection.input.sbas_time_series");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("sbas_time_series");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract SBASReferenceReselectionNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("sbas_reference_reselection.output.referenced_sbas_time_series")
+        : QStringLiteral("sbas_reference_reselection.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("referenced_sbas_time_series")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 unsigned int SBASReferenceReselectionNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
@@ -501,6 +524,21 @@ bool SBASReferenceReselectionNode::prepareToStart()
         return false;
     }
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     m_hasPreparedProvenance = false;
     m_preparedProjectRoot = projectPath();
     m_preparedProjectName = projectName();
@@ -540,7 +578,9 @@ bool SBASReferenceReselectionNode::prepareToStart()
 void SBASReferenceReselectionNode::execute()
 {
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
-        validateAndRestoreOutput();
+        if (!validateAndRestoreOutput()) {
+            onError(QStringLiteral("Existing SBAS reference-reselection output does not satisfy its semantic identity contract."));
+        }
         return;
     }
 
@@ -570,6 +610,17 @@ void SBASReferenceReselectionNode::executeProcessing()
         !NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_outputNodeName,
                                            m_preparedOutputPaths, transactionInputs,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("referenced_sbas_time_series"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -740,8 +791,17 @@ void SBASReferenceReselectionNode::generateStaticPreviewJpg()
 
         if (ok)
         {
-            m_outputData = std::make_shared<ImportedFileData>(h5Path, m_outputNodeName);
+            if (!m_outputData || !m_outputData->productDescriptor()) {
+                onError(QStringLiteral("Committed SBAS reselection output has no semantic descriptor for preview publication."));
+                return;
+            }
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_previewData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(0, m_outputData);
             setOutputData(1, m_previewData);
             if (m_resultLabel) m_resultLabel->setText(QStringLiteral("计算并生成预览完成！"));
@@ -780,6 +840,12 @@ bool SBASReferenceReselectionNode::commitOutputTransaction(QString* errorMessage
 {
     if (m_pendingResult.outputH5Path.isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("SBAS reselection worker did not return a staging output.");
+        return false;
+    }
+
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        if (errorMessage) *errorMessage = QStringLiteral("SBAS reference-reselection execution revision is obsolete.");
         return false;
     }
 
@@ -844,6 +910,7 @@ bool SBASReferenceReselectionNode::commitOutputTransaction(QString* errorMessage
         iface->refreshProjectTree();
     }
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << finalPaths.first(), m_outputNodeName);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
     return true;
 }
@@ -857,11 +924,18 @@ void SBASReferenceReselectionNode::rollbackOutputTransaction(const QString& reas
 bool SBASReferenceReselectionNode::validateAndRestoreOutput()
 {
     QStringList outputPaths;
-    if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, outputPaths) && outputPaths.size() == 1)
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, outputPaths) &&
+        outputPaths.size() == 1 &&
+        NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), m_outputNodeName, descriptor, &identityError) &&
+        validatePublishedDescriptor(productOutputContract(0), descriptor).accepted &&
+        NodeUtils::validateH5Identities(outputPaths, descriptor, &identityError))
     {
         const QString h5Path = outputPaths.first();
         const QString jpgPath = QFileInfo(h5Path).absolutePath() + "/SBAS_time_series.jpg";
         m_outputData = std::make_shared<ImportedFileData>(h5Path, m_outputNodeName);
+        m_outputData->setProductDescriptor(descriptor);
         setOutputData(0, m_outputData);
         m_resultLabel->setText(QStringLiteral("已恢复现有成果。"));
         
@@ -881,6 +955,12 @@ bool SBASReferenceReselectionNode::validateAndRestoreOutput()
         if (QFile::exists(jpgPath))
         {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_previewData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(1, m_previewData);
             setState(ExecutionState::Completed);
             Q_EMIT dataUpdated(0);

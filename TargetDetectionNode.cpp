@@ -93,7 +93,7 @@ QString TargetDetectionNode::portCaption(PortType portType, PortIndex portIndex)
 
 void TargetDetectionNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
+    if (port != 0) return;
     m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
 
     if (m_inputData && !m_inputData->filePath().isEmpty()) {
@@ -123,6 +123,23 @@ void TargetDetectionNode::setInData(std::shared_ptr<NodeData> data, PortIndex po
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+}
+
+ProductInputContract TargetDetectionNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("target_detection.input.preview");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract TargetDetectionNode::productOutputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    return ProductOutputContract();
 }
 
 std::shared_ptr<NodeData> TargetDetectionNode::outData(PortIndex port)
@@ -382,6 +399,14 @@ void TargetDetectionNode::executeProcessing()
         return;
     }
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return;
+    }
+
     setProgress(0);
     
     // Clear previous results
@@ -515,9 +540,6 @@ void TargetDetectionNode::onDetectionFinished(int imageIndex, bool success, floa
             Q_EMIT embeddedWidgetSizeUpdated();
         }
 
-        m_outputData = m_inputData;
-        setOutputData(0, m_outputData);
-        
         InSARLogManager::LogInfo("TargetDetectionNode", "executeProcessing completed.");
         finishExecution();
 

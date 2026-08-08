@@ -23,6 +23,18 @@ AIRSATImportNode::AIRSATImportNode()
 {
 }
 
+ProductOutputContract AIRSATImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("airsat_import.output.complex_sar")
+        : QStringLiteral("airsat_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 QWidget* AIRSATImportNode::createWidget()
 {
     auto* widget = new QWidget();

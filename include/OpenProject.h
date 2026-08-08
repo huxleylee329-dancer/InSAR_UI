@@ -2,8 +2,6 @@
 #include <QtWidgets/QMainWindow>
 #include "ui_OpenProject.h"
 #include <QDialog>
-#include<QStandardItem>
-#include<FormatConversion.h>
 
 class OpenProject : public QDialog
 {
@@ -11,17 +9,11 @@ class OpenProject : public QDialog
 public:
     explicit OpenProject(QWidget* parent = Q_NULLPTR);
     ~OpenProject();
-    QStandardItemModel* model;
-public slots:
-    void LoadModel(QStandardItemModel*);
 private:
     Ui::OpenProject* ui;
-    XMLFile* project;
 
 signals:
-    void sendModel(QStandardItemModel* );
-    void projectOpened(const QString& filePath);
-    void aboutToLoadProject();
+    void projectSelected(const QString& filePath);
 private slots:
     void on_BrowseButton_pressed();
     void on_buttonBox_accepted();

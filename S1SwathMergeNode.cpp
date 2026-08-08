@@ -73,6 +73,28 @@ NodeDataType S1SwathMergeNode::dataType(PortType portType, PortIndex portIndex) 
         return NodeDataType{"image_info", "Image Info"};
 }
 
+ProductInputContract S1SwathMergeNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("s1_swath_merge.input.iw%1_interferogram").arg(portIndex + 1);
+    contract.allowedProductTypes = QStringList() << QStringLiteral("interferogram");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract S1SwathMergeNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("s1_swath_merge.output.merged_interferogram")
+        : QStringLiteral("s1_swath_merge.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("merged_interferogram")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 std::shared_ptr<NodeData> S1SwathMergeNode::outData(PortIndex port)
 {
     if (executionState() != ExecutionState::Completed)
@@ -369,6 +391,13 @@ void S1SwathMergeNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QString transactionError;
     QStringList h5Paths;
     if (!projectXml() ||
@@ -396,6 +425,7 @@ void S1SwathMergeNode::onProcessingFinished()
     publishResultToProjectTree(finalPath, m_pendingOutputName);
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
     QStringList jpgPaths;
     for (const QString& h5Path : h5Paths) {
@@ -641,6 +671,15 @@ bool S1SwathMergeNode::prepareToStart()
     const QString thirdH5Path = inputPaths3[m_index3 - 1];
     if (firstH5Path.isEmpty() || secondH5Path.isEmpty() || thirdH5Path.isEmpty()) return false;
     m_preparedInputPaths = QStringList() << firstH5Path << secondH5Path << thirdH5Path;
+    QString identityError;
+    for (int index = 0; index < m_preparedInputPaths.size(); ++index) {
+        if (!NodeUtils::validateH5Identity(m_preparedInputPaths[index],
+                                            m_inputs[index]->physicalProductDescriptor(), nullptr, &identityError)) {
+            setStartFailureMessage(identityError);
+            setLastErrorMessage(identityError);
+            return false;
+        }
+    }
     m_preparedOutputPaths = QStringList() << QDir(m_preparedSavePath).absoluteFilePath(dstNode + "/merged_phase.h5");
 
     m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
@@ -687,6 +726,18 @@ void S1SwathMergeNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, m_preparedOutputPaths,
                                            m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("s1_swath_merge.output.merged_interferogram"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("merged_interferogram"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -744,9 +795,17 @@ bool S1SwathMergeNode::validateAndRestoreOutput()
 
     QStringList h5Paths;
     if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths) || h5Paths.isEmpty()) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
+        return false;
+    }
     m_preparedDstNode = dstNode;
     m_preparedProjectName = projectName();
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
 
     QStringList existingJpgPaths;

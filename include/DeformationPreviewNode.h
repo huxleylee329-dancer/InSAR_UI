@@ -23,6 +23,7 @@ public:
     QString caption() const override { return QStringLiteral("Deformation Visualization"); }
     QString name() const override { return QStringLiteral("DeformationPreview"); }
 
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
 

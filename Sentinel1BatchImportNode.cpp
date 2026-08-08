@@ -9,6 +9,7 @@
 
 #include "Sentinel1BatchImportNode.h"
 #include "Sentinel1ImportWorker.h"
+#include "OrbitSourceWorker.h"
 #include "ImportTask.h"
 #include "IApplicationInterface.h"
 #include "ImportDataTypes.h"
@@ -32,10 +33,32 @@
 #include <QDate>
 #include <QDateTime>
 #include <QFileDialog>
+#include <QCoreApplication>
 
 namespace QtNodes {
 
 static TiXmlElement* findElementRecursive(TiXmlElement* parent, const std::string& name);
+
+static QString defaultOrbitCacheDir(const QString& projectName)
+{
+    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
+    QStringList candidates;
+    if (!projectName.isEmpty()) {
+        candidates.append(settings.value(
+            QStringLiteral("Orbit/ProjectDir_%1").arg(projectName), QString()).toString());
+    }
+    candidates.append(settings.value(QStringLiteral("Orbit/LastMatchDir"), QString()).toString());
+    const QString applicationOrbitDir = QCoreApplication::applicationDirPath() + QStringLiteral("/orbits");
+    candidates.append(applicationOrbitDir);
+
+    for (const QString& candidate : candidates) {
+        const QString normalized = candidate.trimmed();
+        if (!normalized.isEmpty() && QDir(normalized).exists()) {
+            return QDir::toNativeSeparators(normalized);
+        }
+    }
+    return QDir::toNativeSeparators(applicationOrbitDir);
+}
 
 Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     : ImportNodeBase()
@@ -43,7 +66,8 @@ Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     , m_fileListWidget(nullptr)
     , m_subswathCombo(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_projectLabel(nullptr)
+    , m_orbitCacheDirEdit(nullptr)
+    , m_browseOrbitCacheBtn(nullptr)
     , m_importAllBurstsCheckBox(nullptr)
     , m_startBurstSpin(nullptr)
     , m_endBurstSpin(nullptr)
@@ -53,6 +77,18 @@ Sentinel1BatchImportNode::Sentinel1BatchImportNode()
     , m_startBurst(0)
     , m_endBurst(0)
 {
+}
+
+ProductOutputContract Sentinel1BatchImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("sentinel1_batch_import.output.burst_sar")
+        : QStringLiteral("sentinel1_batch_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("sentinel1_burst_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
 }
 
 QWidget* Sentinel1BatchImportNode::createWidget()
@@ -91,10 +127,6 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     topSection->addLayout(buttonColLayout);
 
     mainLayout->addLayout(topSection, 4);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Bottom section: configuration options
     auto* bottomSection = new QHBoxLayout();
@@ -146,6 +178,39 @@ QWidget* Sentinel1BatchImportNode::createWidget()
     });
     polRow->addWidget(m_polarizationCombo);
     configLayout->addLayout(polRow);
+
+    // Precise orbit cache directory, shared with Apply Orbit File's settings.
+    if (m_orbitCacheDir.isEmpty()) {
+        m_orbitCacheDir = defaultOrbitCacheDir(projectName());
+    }
+    auto* orbitRow = new QHBoxLayout();
+    orbitRow->setStretch(0, 3);
+    orbitRow->setStretch(1, 7);
+    orbitRow->addWidget(new QLabel(QStringLiteral("精密轨道目录：")));
+    m_orbitCacheDirEdit = new QLineEdit();
+    m_orbitCacheDirEdit->setText(m_orbitCacheDir);
+    m_orbitCacheDirEdit->setToolTip(QStringLiteral("优先匹配 POEORB，未找到时回退到 RESORB。"));
+    connect(m_orbitCacheDirEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
+        const QString dir = QDir::toNativeSeparators(m_orbitCacheDirEdit->text().trimmed());
+        if (m_orbitCacheDir != dir) {
+            m_orbitCacheDir = dir;
+            invalidateNodeData();
+        }
+    });
+    orbitRow->addWidget(m_orbitCacheDirEdit);
+    m_browseOrbitCacheBtn = new QPushButton(QStringLiteral("..."));
+    m_browseOrbitCacheBtn->setFixedWidth(30);
+    connect(m_browseOrbitCacheBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
+        const QString selectedDir = QFileDialog::getExistingDirectory(
+            nullptr, QStringLiteral("选择轨道存放目录"), m_orbitCacheDirEdit->text());
+        if (!selectedDir.isEmpty()) {
+            m_orbitCacheDir = QDir::toNativeSeparators(selectedDir);
+            m_orbitCacheDirEdit->setText(m_orbitCacheDir);
+            invalidateNodeData();
+        }
+    });
+    orbitRow->addWidget(m_browseOrbitCacheBtn);
+    configLayout->addLayout(orbitRow);
 
 
     // Output node name row [3:7]
@@ -254,6 +319,9 @@ bool Sentinel1BatchImportNode::prepareToStart()
         m_endBurstSpin->interpretText();
         m_endBurst = m_endBurstSpin->value();
     }
+    if (m_orbitCacheDirEdit) {
+        m_orbitCacheDir = QDir::toNativeSeparators(m_orbitCacheDirEdit->text().trimmed());
+    }
 
     // Safety check: Ensure project is open
     auto* model = projectModel();
@@ -283,6 +351,7 @@ bool Sentinel1BatchImportNode::prepareToStart()
 
     m_preparedOriginalNameList.clear();
     m_preparedImportNameList.clear();
+    m_preparedOrbitPaths.clear();
 
     for (const QString& manifestPath : m_manifestPaths)
     {
@@ -373,6 +442,37 @@ bool Sentinel1BatchImportNode::prepareToStart()
 
     m_preparedOutputNodeName = getOutputNodeName();
 
+    // Reuse the configured orbit cache when it contains an EOF that fully
+    // covers the SAFE acquisition. POEORB is preferred and RESORB is the
+    // explicit fallback, matching Apply Orbit File's resolver.
+    QString orbitCacheDir = m_orbitCacheDir.trimmed();
+    if (orbitCacheDir.isEmpty()) {
+        orbitCacheDir = defaultOrbitCacheDir(name);
+    }
+    orbitCacheDir = QDir::toNativeSeparators(orbitCacheDir);
+    m_orbitCacheDir = orbitCacheDir;
+    if (m_orbitCacheDirEdit) {
+        m_orbitCacheDirEdit->setText(m_orbitCacheDir);
+    }
+    for (const QString& manifestPath : m_preparedOriginalNameList) {
+        QString orbitPath;
+        bool precise = false;
+        QString orbitError;
+        if (!OrbitSourceWorker::findCachedOrbitForManifest(manifestPath, orbitCacheDir,
+                                                           orbitPath, precise, &orbitError)) {
+            m_preparedOrbitPaths.append(QString());
+            InSARLogManager::LogInfo("Sentinel1BatchImportNode",
+                QStringLiteral("No cached orbit applied for %1: %2")
+                    .arg(QFileInfo(manifestPath).fileName(), orbitError));
+        } else {
+            m_preparedOrbitPaths.append(orbitPath);
+            InSARLogManager::LogInfo("Sentinel1BatchImportNode",
+                QStringLiteral("Matched %1 orbit for %2: %3")
+                    .arg(precise ? QStringLiteral("POEORB") : QStringLiteral("RESORB"))
+                    .arg(QFileInfo(manifestPath).fileName(), orbitPath));
+        }
+    }
+
     QStringList pathsToCheck;
     for (const QString& importName : m_preparedImportNameList) {
         pathsToCheck.append(projectPath() + "/" + m_preparedOutputNodeName + "/" + importName + ".h5");
@@ -395,7 +495,7 @@ void Sentinel1BatchImportNode::executeImport()
         return;
     }
 
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+    if (!m_semanticTransactionActive && m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
         // 清理旧数据，防止更换文件重新执行时导致历史记录累积
         NodeUtils::removeDataNodeFromProject(getProjectContext(), m_preparedOutputNodeName);
     }
@@ -409,6 +509,12 @@ void Sentinel1BatchImportNode::executeImport()
         ImportTask task;
         task.filename = m_preparedImportNameList[i];
         QStringList args = QStringList{ m_preparedOriginalNameList[i], subswath, pol };
+
+        if (i < m_preparedOrbitPaths.size() && !m_preparedOrbitPaths.at(static_cast<int>(i)).isEmpty()) {
+            // Sentinel1ImportWorker recognizes an EOF as argument 3 and then
+            // keeps any optional burst range arguments after it.
+            args.append(m_preparedOrbitPaths.at(static_cast<int>(i)));
+        }
 
         // 非全量导入时，传递 burst 范围参数到 DLL
         if (!m_importAllBursts) {
@@ -685,6 +791,7 @@ QJsonObject Sentinel1BatchImportNode::save() const
     json["subswath"] = m_subswathCombo ? m_subswathCombo->currentText() : m_subswath;
     json["polarization"] = m_polarizationCombo ? m_polarizationCombo->currentText() : m_polarization;
     json["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text().trimmed() : m_outputNodeName;
+    json["orbitCacheDir"] = m_orbitCacheDirEdit ? m_orbitCacheDirEdit->text().trimmed() : m_orbitCacheDir;
     json["importAllBursts"] = m_importAllBurstsCheckBox ? m_importAllBurstsCheckBox->isChecked() : m_importAllBursts;
     json["startBurst"] = m_startBurstSpin ? m_startBurstSpin->value() : m_startBurst;
     json["endBurst"] = m_endBurstSpin ? m_endBurstSpin->value() : m_endBurst;
@@ -711,6 +818,10 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
     if (m_polarization.isEmpty()) {
         m_polarization = "vv";
     }
+    m_orbitCacheDir = QDir::toNativeSeparators(json["orbitCacheDir"].toString().trimmed());
+    if (m_orbitCacheDir.isEmpty()) {
+        m_orbitCacheDir = defaultOrbitCacheDir(projectName());
+    }
     m_importAllBursts = json["importAllBursts"].toBool(true);
     m_startBurst = json["startBurst"].toInt(0);
     m_endBurst = json["endBurst"].toInt(0);
@@ -726,6 +837,9 @@ void Sentinel1BatchImportNode::load(QJsonObject const &json)
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
+
+    if (m_orbitCacheDirEdit)
+        m_orbitCacheDirEdit->setText(m_orbitCacheDir);
 
     if (m_subswathCombo) {
         int idx = m_subswathCombo->findText(m_subswath);
@@ -858,90 +972,30 @@ static bool extractExpectedAcquisitionStartTime(
     return false;
 }
 
-// 精轨缓存扫描辅助函数
-// 根据影像的平台与日期，扫描本地目录及 Config.ini 中配置的精轨缓存目录
-// 判断是否存在可用的精轨 EOF 文件（POEORB 或 RESORB）
-// 与 executeImport 中的 findMatchedEofFile() 保持一致的三级查找策略
-static bool orbitCacheHasEof(const QString& manifestPath, const QString& projName)
+// 精轨缓存扫描辅助函数：与批量导入使用同一套 EOF 覆盖范围校验。
+static bool orbitCacheHasEof(const QString& manifestPath,
+                             const QString& projName,
+                             const QString& configuredCacheDir = QString())
 {
-    // === 第 1 级：就近查找 manifest.safe 同级目录 ===
     QFileInfo manifestInfo(manifestPath);
-    QDir safeDir = manifestInfo.dir();
-    QStringList eofFilters;
-    eofFilters << "*.EOF" << "*.eofs";
-    if (!safeDir.entryList(eofFilters, QDir::Files).isEmpty()) {
-        return true;
-    }
-
-    // === 第 2 级：向上查找 .SAFE 上级目录 ===
-    if (manifestInfo.fileName().toLower() == "manifest.safe") {
-        QDir parentDir = safeDir;
-        parentDir.cdUp();
-        if (!parentDir.entryList(eofFilters, QDir::Files).isEmpty()) {
-            return true;
-        }
-    }
-
-    // === 第 3 级：全局精轨缓存目录扫描 ===
-    QString pathLower = manifestPath.toLower();
-    QString platform = "S1A";
-    if (pathLower.contains("s1b")) platform = "S1B";
-
-    QRegularExpression dateRe("(20\\d{6})t(\\d{6})");
-    QRegularExpressionMatch dateMatch = dateRe.match(pathLower);
-    if (!dateMatch.hasMatch()) return false;
-
-    QString dateStr = dateMatch.captured(1);
-    QDate centerDate = QDate::fromString(dateStr, "yyyyMMdd");
-    if (!centerDate.isValid()) return false;
-
-    QDate prevDate = centerDate.addDays(-1);
-    QDate nextDate = centerDate.addDays(1);
-
-    QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-    QString cacheDir;
-    if (!projName.isEmpty()) {
-        cacheDir = settings.value(QString("Orbit/ProjectDir_%1").arg(projName), "").toString();
-    }
+    QString cacheDir = configuredCacheDir.trimmed();
     if (cacheDir.isEmpty()) {
-        cacheDir = settings.value("Orbit/LastMatchDir", "").toString();
+        cacheDir = defaultOrbitCacheDir(projName);
     }
-    if (cacheDir.isEmpty() || !QDir(cacheDir).exists()) return false;
+    if (cacheDir.isEmpty() || !QDir(cacheDir).exists() || !manifestInfo.isFile()) return false;
 
-    QDir globalDir(cacheDir);
-
-    // 检查 POEORB 精轨
-    QString poePattern = QString("*%1*V%2*_%3*.EOF")
-                            .arg(platform)
-                            .arg(prevDate.toString("yyyyMMdd"))
-                            .arg(nextDate.toString("yyyyMMdd"));
-    if (!globalDir.entryList(QStringList{poePattern}, QDir::Files).isEmpty()) {
-        return true;
-    }
-
-    // 检查 RESORB 重构轨道
-    QString resorbPattern = QString("*%1*RESORB*V%2*.EOF").arg(platform).arg(dateStr);
-    QStringList resorbMatches = globalDir.entryList(QStringList{resorbPattern}, QDir::Files);
-    for (const QString& resFile : resorbMatches) {
-        QRegularExpression valRe("V(\\d{8}T\\d{6})_(\\d{8}T\\d{6})");
-        QRegularExpressionMatch valMatch = valRe.match(resFile);
-        if (valMatch.hasMatch()) {
-            QDateTime startVal = QDateTime::fromString(valMatch.captured(1), "yyyyMMddTHHmmss");
-            QDateTime endVal = QDateTime::fromString(valMatch.captured(2), "yyyyMMddTHHmmss");
-            QDateTime imgTime = QDateTime::fromString(dateStr + "T" + dateMatch.captured(2), "yyyyMMddTHHmmss");
-            if (imgTime >= startVal && imgTime <= endVal) {
-                return true;
-            }
-        }
-    }
-
-    return false;
+    QString orbitPath;
+    bool precise = false;
+    return OrbitSourceWorker::findCachedOrbitForManifest(manifestPath, cacheDir,
+                                                         orbitPath, precise, nullptr);
 }
 
 // 执行全量属性比对与数据抽查
 static std::vector<CompareItem> performComparison(
     const QString& h5Path,
     const QString& manifestPath,
+    const QString& projectName,
+    const QString& orbitCacheDir,
     bool importAllBursts,
     int startBurst,
     int endBurst
@@ -1164,9 +1218,16 @@ static std::vector<CompareItem> performComparison(
 
     // 轨道向量
     cv::Mat h5Orbit;
+    cv::Mat h5FineOrbit;
+    QString h5OrbitType;
     {
         NodeUtils::Hdf5Locker locker(h5Path);
         NodeUtils::readMatFromH5(h5Path, "state_vec", h5Orbit, CV_64F);
+        NodeUtils::readMatFromH5(h5Path, "fine_state_vec", h5FineOrbit, CV_64F);
+        std::string orbitType;
+        if (NodeUtils::readStringFromH5(h5Path, "orbit_type", orbitType)) {
+            h5OrbitType = QString::fromStdString(orbitType).trimmed();
+        }
     }
     std::vector<cv::Vec6d> xmlOrbits;
     if (xmlLoaded) {
@@ -1195,43 +1256,32 @@ static std::vector<CompareItem> performComparison(
     double xmlX = !xmlOrbits.empty() ? xmlOrbits[0][0] : 0.0;
 
     // 检测输入端精轨可用性
-    bool hasEof = orbitCacheHasEof(manifestPath, "");
+    bool hasEof = orbitCacheHasEof(manifestPath, projectName, orbitCacheDir);
 
     QString rawOrbitStr = xmlLoaded ? QStringLiteral("%1 点 (首点X: %2 m)").arg(xmlOrbits.size()).arg(xmlX, 0, 'f', 1) : QStringLiteral("未读取");
     rawOrbitStr += hasEof ? QStringLiteral("\n（精轨库：有可用 EOF）") : QStringLiteral("\n（精轨库：无可用 EOF）");
-    QString h5OrbitStr = h5Orbit.empty() ? QStringLiteral("无轨道") : QStringLiteral("%1 点").arg(h5Orbit.rows);
+    const bool hasFineOrbit = !h5FineOrbit.empty() && h5FineOrbit.rows >= 5;
+    QString h5OrbitStr = h5Orbit.empty() ? QStringLiteral("无广播轨道") : QStringLiteral("广播轨道: %1 点").arg(h5Orbit.rows);
 
-    if (!h5Orbit.empty() && h5Orbit.rows > 0) {
-        // 场景 1/3: 精轨 EOF 可用（本地目录或全局缓存中存在匹配的 POEORB/RESORB）
-        if (hasEof) {
-            if (h5Orbit.rows >= 50) {
-                // 场景 1: 精轨可用且 H5 轨道点数充足 → 精密轨道已成功应用
-                orbitStatus = "PASS";
-                h5OrbitStr += QStringLiteral(" [精密轨道覆盖]");
-            } else {
-                // 场景 3: 精轨可用但 H5 轨道点数不足 → DLL 静默降级
-                orbitStatus = "FAILED";
-                h5OrbitStr += QStringLiteral(" [精轨可用但未使用]");
-            }
+    // 精轨应用结果必须以 fine_state_vec 为准；state_vec 仍可能只是广播轨道。
+    if (hasFineOrbit) {
+        orbitStatus = "PASS";
+        h5OrbitStr = QStringLiteral("精密轨道: %1 点").arg(h5FineOrbit.rows);
+        if (!h5OrbitType.isEmpty()) {
+            h5OrbitStr += QStringLiteral(" (%1)").arg(h5OrbitType);
+        }
+        h5OrbitStr += QStringLiteral(" [精密轨道已应用]");
+    } else if (hasEof) {
+        orbitStatus = "FAILED";
+        h5OrbitStr += QStringLiteral(" [缓存中有匹配 EOF，但 H5 缺少 fine_state_vec]");
+    } else if (!h5Orbit.empty() && h5Orbit.rows > 0) {
+        // 无可用 EOF 时，只验证广播轨道与原始 XML 是否一致。
+        if (!xmlOrbits.empty() && floatCompare(h5X, xmlX, 10.0)) {
+            orbitStatus = "PASS";
+            h5OrbitStr += QStringLiteral(" [广播轨道]");
         } else {
-            // 精轨 EOF 不可用，进一步区分场景 2/4/5
-            if (h5Orbit.rows >= 50) {
-                // 场景 4: H5 中有精密轨道数据但本地未找到对应 EOF
-                // 可能是历史导入或精轨文件已被移动
-                orbitStatus = "WARNING";
-                h5OrbitStr += QStringLiteral(" [精轨来源未知]");
-            } else {
-                // 广播轨道场景：H5 点数少，检查是否与 XML 轨道对齐
-                if (!xmlOrbits.empty() && floatCompare(h5X, xmlX, 10.0)) {
-                    // 场景 2: 无精轨，广播轨道与 XML 对齐 → 正常
-                    orbitStatus = "PASS";
-                    h5OrbitStr += QStringLiteral(" [广播轨道]");
-                } else {
-                    // 场景 5: 无精轨且坐标异常
-                    orbitStatus = "FAILED";
-                    h5OrbitStr += QStringLiteral(" [广播轨道异常]");
-                }
-            }
+            orbitStatus = "FAILED";
+            h5OrbitStr += QStringLiteral(" [广播轨道异常]");
         }
     }
     results.push_back({gOrbit, QStringLiteral("轨道向量个数 & 存储精度"), rawOrbitStr, h5OrbitStr, orbitStatus});
@@ -1647,10 +1697,16 @@ private:
         bool importAll = saved["importAllBursts"].toBool(true);
         int startB = saved["startBurst"].toInt(0);
         int endB = saved["endBurst"].toInt(0);
+        const QString comparisonOrbitCacheDir = saved["orbitCacheDir"].toString().trimmed();
 
+        const QString comparisonProjectName = m_node->projectName();
         QFuture<std::vector<CompareItem>> future = QtConcurrent::run(
-            performComparison, h5Path, manifestPath, importAll, startB, endB
-        );
+            [h5Path, manifestPath, comparisonProjectName, comparisonOrbitCacheDir,
+             importAll, startB, endB]() {
+                return performComparison(h5Path, manifestPath, comparisonProjectName,
+                                         comparisonOrbitCacheDir,
+                                         importAll, startB, endB);
+            });
 
         auto* watcher = new QFutureWatcher<std::vector<CompareItem>>(this);
         connect(watcher, &QFutureWatcher<std::vector<CompareItem>>::finished, this, [this, watcher]() {

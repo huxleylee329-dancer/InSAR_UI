@@ -141,6 +141,35 @@ NodeDataType OrbitRefinementNode::dataType(PortType portType, PortIndex portInde
     return NodeDataType();
 }
 
+ProductInputContract OrbitRefinementNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("orbit_refinement.input.complex_sar");
+    contract.allowedProductTypes = QStringList()
+        << QStringLiteral("complex_sar")
+        << QStringLiteral("cropped_complex_sar")
+        << QStringLiteral("debursted_complex_sar")
+        << QStringLiteral("deramped_complex_sar")
+        << QStringLiteral("merged_complex_sar")
+        << QStringLiteral("back_geocoded_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract OrbitRefinementNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("orbit_refinement.output.orbit_refined_complex_sar")
+        : QStringLiteral("orbit_refinement.output.residual_preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("orbit_refined_complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 std::shared_ptr<NodeData> OrbitRefinementNode::outData(PortIndex port)
 {
     if (port == 0) return m_outputData;
@@ -248,9 +277,15 @@ bool OrbitRefinementNode::validateAndRestoreOutput()
     if (dstNode.isEmpty()) return false;
 
     QStringList h5Paths;
-    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) return false;
     const QString outputPath = projectPath() + "/" + dstNode + "/";
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 
@@ -472,6 +507,13 @@ void OrbitRefinementNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QStringList h5Paths;
     QString transactionError;
     if (!projectXml()) {
@@ -545,6 +587,7 @@ void OrbitRefinementNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, m_preparedDstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     // 2. 从数据库读取点信息并离线绘制残差图 (Port 1)
@@ -655,6 +698,21 @@ bool OrbitRefinementNode::prepareToStart()
         return false;
     }
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setStartFailureMessage(inputValidation.reason);
+        setLastErrorMessage(inputValidation.reason);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
+
     QString dstNode = m_outputNodeNameEdit->text().trimmed();
     if (dstNode.isEmpty()) dstNode = generateDefaultOutputName();
     m_preparedDstNode = dstNode;
@@ -718,6 +776,18 @@ void OrbitRefinementNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, expectedOutputPaths,
                                            inputFilePaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("orbit_refinement.output.orbit_refined_complex_sar"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("orbit_refined_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
         onError(transactionError);
         return;
     }

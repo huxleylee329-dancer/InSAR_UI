@@ -9,6 +9,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QPointer>
 #include "NodeUtils.h"
 
 namespace QtNodes {
@@ -18,8 +19,37 @@ GenericSARBatchImportNode::GenericSARBatchImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
     , m_projectLabel(nullptr)
-    , m_task(nullptr)
 {
+}
+
+GenericSARBatchImportNode::~GenericSARBatchImportNode()
+{
+    if (m_cancellationToken) {
+        m_cancellationToken->store(true, std::memory_order_relaxed);
+    }
+}
+
+unsigned int GenericSARBatchImportNode::nPorts(PortType portType) const
+{
+    return portType == PortType::In ? 0 : 1;
+}
+
+ProductOutputContract GenericSARBatchImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    if (portIndex == 0) {
+        contract.semanticId = QStringLiteral("generic_sar_batch_import.output.generic_sar_raster");
+        contract.publishedProductTypes = QStringList() << QStringLiteral("generic_sar_raster");
+    }
+    return contract;
+}
+
+void GenericSARBatchImportNode::stopExecution()
+{
+    if (m_cancellationToken) {
+        m_cancellationToken->store(true, std::memory_order_relaxed);
+    }
+    ImportNodeBase::stopExecution();
 }
 
 QWidget* GenericSARBatchImportNode::createWidget()
@@ -81,7 +111,6 @@ QWidget* GenericSARBatchImportNode::createWidget()
                 m_outputNodeNameEdit->setText(m_outputNodeName);
                 return;
             }
-            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
             m_outputNodeName = text;
             invalidateNodeData();
         }
@@ -106,7 +135,7 @@ QWidget* GenericSARBatchImportNode::createWidget()
 
 void GenericSARBatchImportNode::executeImport()
 {
-    if (m_task)
+    if (m_cancellationToken)
     {
         return;
     }
@@ -121,30 +150,60 @@ void GenericSARBatchImportNode::executeImport()
     }
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+        if (!m_semanticTransactionActive) {
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+        }
     }
 
-    m_task = new GenericSARBatchImportTask(
+    m_cancellationToken = std::make_shared<std::atomic_bool>(false);
+    auto* task = new GenericSARBatchImportTask(
         projectPath(),
         m_preparedOriginalFileList,
         m_preparedImportNameList,
-        getOutputNodeName()
+        m_semanticTransactionActive ? m_outputTransaction.stagingName : getOutputNodeName(),
+        m_cancellationToken
     );
+    // The task owns this copy until its terminal signal is handled after node destruction.
+    const auto terminalTransaction = std::make_shared<NodeUtils::OutputTransaction>(m_outputTransaction);
+    const auto terminalFinalized = std::make_shared<std::atomic_bool>(false);
+    const QPointer<GenericSARBatchImportNode> nodeGuard(this);
+    const auto finalizeAfterNodeDestruction = [nodeGuard, terminalTransaction, terminalFinalized](const QString& reason) {
+        if (nodeGuard || terminalFinalized->exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        NodeUtils::abandonOutputTransaction(*terminalTransaction, reason);
+    };
 
-    connect(m_task, &GenericSARBatchImportTask::updateProcess,
+    connect(task, &GenericSARBatchImportTask::updateProcess,
             this, &GenericSARBatchImportNode::onImportProgress, Qt::QueuedConnection);
-    connect(m_task, &GenericSARBatchImportTask::endProcess, this, [this]() {
-        m_task = nullptr;
-        onImportFinished();
-    }, Qt::QueuedConnection);
-    connect(m_task, &GenericSARBatchImportTask::errorProcess, this, [this](const QString& error) {
-        m_task = nullptr;
-        onThreadError(error);
-    }, Qt::QueuedConnection);
-    connect(m_task, &GenericSARBatchImportTask::outputsGenerated,
+    connect(task, &GenericSARBatchImportTask::endProcess,
+            this, &GenericSARBatchImportNode::onImportFinished, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::errorProcess,
+            this, &GenericSARBatchImportNode::onThreadError, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::cancelled,
+            this, &GenericSARBatchImportNode::onImportCancelled, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::outputsGenerated,
             this, &GenericSARBatchImportNode::onOutputsGenerated, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::endProcess, task,
+            [finalizeAfterNodeDestruction]() {
+                finalizeAfterNodeDestruction(QStringLiteral("generic batch import node was destroyed before completion"));
+            }, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::errorProcess, task,
+            [finalizeAfterNodeDestruction](const QString& error) {
+                finalizeAfterNodeDestruction(error);
+            }, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::cancelled, task,
+            [finalizeAfterNodeDestruction]() {
+                finalizeAfterNodeDestruction(QStringLiteral("generic batch import node was destroyed during cancellation"));
+            }, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::endProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::errorProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &GenericSARBatchImportTask::cancelled,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
 
-    QThreadPool::globalInstance()->start(m_task);
+    QThreadPool::globalInstance()->start(task);
 }
 
 // ============================================================================
@@ -169,7 +228,7 @@ bool GenericSARBatchImportNode::prepareToStart()
         return false;
     }
 
-    if (m_task)
+    if (m_cancellationToken)
     {
         return false;
     }
@@ -184,6 +243,11 @@ bool GenericSARBatchImportNode::prepareToStart()
             onError("通用 SAR 图像文件不存在：" + imagePath);
             return false;
         }
+        if (!isSupportedGenericSarRasterPath(imagePath))
+        {
+            onError("通用 SAR 导入仅支持 JPG、PNG、BMP、TIF 或 TIFF 栅格文件。");
+            return false;
+        }
 
         m_preparedOriginalFileList.push_back(imagePath);
         m_preparedImportNameList.push_back(generateImportName(imagePath));
@@ -191,10 +255,8 @@ bool GenericSARBatchImportNode::prepareToStart()
 
     QStringList pathsToCheck;
     for (size_t i = 0; i < m_preparedImportNameList.size(); ++i) {
-        QString suffix = QFileInfo(m_preparedOriginalFileList[i]).suffix();
-        if (suffix.isEmpty()) suffix = "h5";
+        const QString suffix = QFileInfo(m_preparedOriginalFileList[i]).suffix();
         pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + m_preparedImportNameList[i] + "." + suffix);
-        pathsToCheck.append(projectPath() + "/" + getOutputNodeName() + "/" + m_preparedImportNameList[i] + ".jpg");
     }
     pathsToCheck.removeDuplicates();
 
@@ -210,10 +272,24 @@ QStringList GenericSARBatchImportNode::getExpectedOutputFilePaths() const
 {
     QStringList paths;
     for (const QString& imagePath : m_imagePaths) {
+        if (!isSupportedGenericSarRasterPath(imagePath)) return {};
         QString importName = generateImportName(imagePath);
-        QString suffix = QFileInfo(imagePath).suffix();
-        if (suffix.isEmpty()) suffix = "h5";
+        const QString suffix = QFileInfo(imagePath).suffix();
         paths.append(projectPath() + "/" + getOutputNodeName() + "/" + importName + "." + suffix);
+    }
+    return paths;
+}
+
+QStringList GenericSARBatchImportNode::getExpectedPreviewFilePaths() const
+{
+    return QStringList();
+}
+
+QStringList GenericSARBatchImportNode::transactionInputPaths() const
+{
+    QStringList paths;
+    for (const QString& path : m_preparedOriginalFileList) {
+        paths.append(path);
     }
     return paths;
 }
@@ -261,20 +337,11 @@ void GenericSARBatchImportNode::onAddFilesClicked()
 
     if (changed)
     {
-        if (!m_imagePaths.isEmpty()) {
-            m_imageInfo = std::make_shared<ImageInfoData>(m_imagePaths);
-            setOutputData(1, m_imageInfo);
-        } else {
-            m_imageInfo.reset();
-            setOutputData(1, nullptr);
-        }
-
         m_importedFilePaths.clear();
         setOutputData(0, nullptr);
         setState(ExecutionState::Idle);
 
         Q_EMIT dataUpdated(0);
-        Q_EMIT dataUpdated(1);
     }
 }
 
@@ -286,68 +353,6 @@ void GenericSARBatchImportNode::onRemoveFilesClicked()
     for (QListWidgetItem* item : selectedItems)
     {
         int row = m_fileListWidget->row(item);
-        QString filePath = m_imagePaths.at(row);
-
-        // --- 从工程树和XML中同步移除文件 ---
-        QString importName = generateImportName(filePath);
-        QString suffix = QFileInfo(filePath).suffix();
-        QString importedPath = QString("%1/%2/%3.%4")
-            .arg(projectPath())
-            .arg(getOutputNodeName())
-            .arg(importName)
-            .arg(suffix);
-
-        QStandardItemModel* model = projectModel();
-        if (model && !projectPath().isEmpty() && !projectName().isEmpty()) {
-            QList<QStandardItem*> projItems = model->findItems(projectName());
-            if (!projItems.isEmpty()) {
-                QStandardItem* projItem = projItems.first();
-                for (int i = 0; i < projItem->rowCount(); ++i) {
-                    QStandardItem* nodeItem = projItem->child(i);
-                    if (nodeItem && nodeItem->text() == getOutputNodeName()) {
-                        for (int j = 0; j < nodeItem->rowCount(); ++j) {
-                            QStandardItem* pathItem = nodeItem->child(j, 1);
-                            if (pathItem && pathItem->text() == importedPath) {
-                                QStandardItem* fileItem = nodeItem->child(j, 0);
-                                QString fileName = fileItem ? fileItem->text() : "";
-
-                                auto* iface = getProjectContext();
-                                if (iface && iface->projectXml()) {
-                                    XMLFile* xml = iface->projectXml();
-                                    xml->XMLFile_remove_node(getOutputNodeName().toStdString().c_str(),
-                                                          fileName.toStdString().c_str(),
-                                                          importedPath.toStdString().c_str());
-                                    xml->XMLFile_save(iface->projectPath().toStdString().c_str());
-                                } else {
-                                    XMLFile xml;
-                                    QString xmlPath = projectPath() + "/" + projectName();
-                                    if (xml.XMLFile_load(xmlPath.toStdString().c_str()) >= 0) {
-                                        xml.XMLFile_remove_node(getOutputNodeName().toStdString().c_str(),
-                                                              fileName.toStdString().c_str(),
-                                                              importedPath.toStdString().c_str());
-                                        xml.XMLFile_save(xmlPath.toStdString().c_str());
-                                    }
-                                }
-
-                                if (QFile::exists(importedPath)) {
-                                    QFile::remove(importedPath);
-                                }
-
-                                nodeItem->removeRow(j);
-
-                                if (auto* iface = getProjectContext()) {
-                                    iface->refreshProjectTree();
-                                }
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-        // --- 结束移除 ---
-
         m_imagePaths.removeAt(row);
         delete item;
         changed = true;
@@ -355,20 +360,11 @@ void GenericSARBatchImportNode::onRemoveFilesClicked()
 
     if (changed)
     {
-        if (!m_imagePaths.isEmpty()) {
-            m_imageInfo = std::make_shared<ImageInfoData>(m_imagePaths);
-            setOutputData(1, m_imageInfo);
-        } else {
-            m_imageInfo.reset();
-            setOutputData(1, nullptr);
-        }
-
         m_importedFilePaths.clear();
         setOutputData(0, nullptr);
         setState(ExecutionState::Idle);
 
         Q_EMIT dataUpdated(0);
-        Q_EMIT dataUpdated(1);
     }
 }
 
@@ -396,12 +392,6 @@ void GenericSARBatchImportNode::load(QJsonObject const &json)
 
     m_outputNodeName = json["outputNodeName"].toString("GenericSAR_Batch_Import");
 
-    if (!m_imagePaths.isEmpty()) {
-        m_imageInfo = std::make_shared<ImageInfoData>(m_imagePaths);
-    } else {
-        m_imageInfo.reset();
-    }
-
     ImportNodeBase::load(json);
 
     if (m_fileListWidget) {
@@ -414,7 +404,6 @@ void GenericSARBatchImportNode::load(QJsonObject const &json)
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
 
-    Q_EMIT dataUpdated(1);
 }
 
 // ============================================================================
@@ -428,31 +417,20 @@ void GenericSARBatchImportNode::onImportProgress(int progress, const QString& me
 
 void GenericSARBatchImportNode::onImportFinished()
 {
-    if (m_outputPersistenceFailed) {
-        onThreadError(QStringLiteral("Unable to save imported outputs to the project."));
-        return;
-    }
-
-    m_importedFilePaths = m_generatedOutputPaths.isEmpty()
-        ? getExpectedOutputFilePaths()
-        : m_generatedOutputPaths;
-
-    if (!m_importedFilePaths.isEmpty()) {
-        m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths);
-        setOutputData(0, m_imageInfo);
-        setOutputData(1, m_imageInfo);
-    }
-
-    InSARLogManager::LogInfo(getOutputNodeName() + "Node", "execute completed.");
-
-    finishExecution();
-
-    m_task = nullptr;
+    ImportNodeBase::onImportFinished();
+    m_cancellationToken.reset();
 }
 
 void GenericSARBatchImportNode::onThreadError(const QString& error)
 {
     ImportNodeBase::onThreadError(error);
+    m_cancellationToken.reset();
+}
+
+void GenericSARBatchImportNode::onImportCancelled()
+{
+    ImportNodeBase::onImportCancelled();
+    m_cancellationToken.reset();
 }
 
 void GenericSARBatchImportNode::onOutputsGenerated(const QString& dstNode,
@@ -467,31 +445,17 @@ void GenericSARBatchImportNode::onOutputsGenerated(const QString& dstNode,
 NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"image_info", "Image Info"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+        if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
     }
     return NodeDataType();
 }
 
 bool GenericSARBatchImportNode::validateAndRestoreOutput()
 {
-    QStringList expectedPaths = getExpectedOutputFilePaths();
-    if (expectedPaths.isEmpty())
+    if (!ImportNodeBase::validateAndRestoreOutput()) {
         return false;
-
-    // Check file existence
-    for (const QString& path : expectedPaths) {
-        if (!QFile::exists(path)) {
-            return false;
-        }
     }
-
-    m_importedFilePaths = expectedPaths;
-    m_imageInfo = std::make_shared<ImageInfoData>(expectedPaths);
-    setOutputData(0, m_imageInfo);
-    setOutputData(1, m_imageInfo);
     Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
     return true;
 }
 

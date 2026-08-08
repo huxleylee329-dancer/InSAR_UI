@@ -84,6 +84,12 @@ protected:
 
     // 子类必须实现：返回预期的输出文件路径列表
     virtual QStringList getExpectedOutputFilePaths() const = 0;
+    // Optional preview artifacts committed with the primary outputs. The
+    // default expects a JPG beside each primary output.
+    virtual QStringList getExpectedPreviewFilePaths() const;
+    // Source files are fingerprinted so an import cannot commit data copied
+    // from inputs that changed while its worker was running.
+    virtual QStringList transactionInputPaths() const;
     // 子类必须实现：返回输出的 XML 节点名称
     virtual QString getOutputNodeName() const = 0;
 
@@ -105,6 +111,7 @@ protected:
     // Helper methods
     void onProgressUpdate(int progress, const QString& message);
     void onError(const QString& error);
+    void onImportCancelled();
 
     // Get project context interface
     IApplicationInterface* getProjectContext() const;
@@ -120,6 +127,9 @@ protected:
     std::shared_ptr<ImageInfoData> m_imageInfo;
     QStringList m_importedFilePaths;
     QStringList m_generatedOutputPaths;
+    QStringList m_generatedOutputNames;
+    QString m_generatedDataType;
+    QString m_generatedSatelliteFormat;
     QString m_outputFileName;
 
     // 异步预览生成
@@ -128,6 +138,8 @@ protected:
     // Flag for stop request
     bool m_stopRequested;
     bool m_outputPersistenceFailed = false;
+    bool m_semanticTransactionActive = false;
+    NodeUtils::OutputTransaction m_outputTransaction;
 };
 
 } // namespace QtNodes

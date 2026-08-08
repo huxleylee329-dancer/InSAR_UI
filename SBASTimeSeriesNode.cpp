@@ -74,6 +74,29 @@ SBASTimeSeriesNode::~SBASTimeSeriesNode()
     rollbackOutputTransaction(QStringLiteral("node destroyed"));
 }
 
+ProductInputContract SBASTimeSeriesNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("sbas_time_series.input.coregistered_complex_sar");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("coregistered_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract SBASTimeSeriesNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("sbas_time_series.output.sbas_time_series")
+        : QStringLiteral("sbas_time_series.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("sbas_time_series")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 unsigned int SBASTimeSeriesNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
@@ -328,6 +351,21 @@ bool SBASTimeSeriesNode::prepareToStart()
         return false;
     }
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     m_preparedProjectRoot = projectPath();
     m_preparedProjectName = projectName();
     m_preparedInputPaths = m_inputData->filePaths();
@@ -353,7 +391,9 @@ bool SBASTimeSeriesNode::prepareToStart()
 void SBASTimeSeriesNode::execute()
 {
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
-        validateAndRestoreOutput();
+        if (!validateAndRestoreOutput()) {
+            onError(QStringLiteral("Existing SBAS time-series output does not satisfy its semantic identity contract."));
+        }
         return;
     }
 
@@ -373,6 +413,17 @@ void SBASTimeSeriesNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_outputNodeName,
                                            m_preparedOutputPaths, m_preparedInputPaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("sbas_time_series"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -556,6 +607,7 @@ void SBASTimeSeriesNode::onProcessingFinished()
     const QString h5Path = QDir(m_preparedProjectRoot).absoluteFilePath(
         m_outputNodeName + "/SBAS_time_series.h5");
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     // Refresh project tree (SOP Rule 14 helper)
@@ -630,6 +682,12 @@ bool SBASTimeSeriesNode::commitOutputTransaction(QString* errorMessage)
     if (!m_provenanceWritten || m_pendingResult.dstNode != m_outputTransaction.stagingName ||
         m_pendingResult.timesSeriesH5Path.isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("SBAS worker did not return a provenance-complete staging output.");
+        return false;
+    }
+
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        if (errorMessage) *errorMessage = QStringLiteral("SBAS execution revision is obsolete.");
         return false;
     }
 
@@ -739,10 +797,16 @@ void SBASTimeSeriesNode::stopAndWaitForTrackedExecutions()
 bool SBASTimeSeriesNode::validateAndRestoreOutput()
 {
     QStringList h5Paths;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
     if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) &&
-        h5Paths.size() == 1) {
+        h5Paths.size() == 1 &&
+        NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), m_outputNodeName, descriptor, &identityError) &&
+        validatePublishedDescriptor(productOutputContract(0), descriptor).accepted &&
+        NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
         const QString h5Path = h5Paths.first();
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+        m_outputData->setProductDescriptor(descriptor);
         setOutputData(0, m_outputData);
         
         // Asynchronously restore/generate JPG preview if missing (SOP rule 7)
@@ -775,6 +839,12 @@ bool SBASTimeSeriesNode::generateStaticPreviewJpg(bool completeExecution)
 
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_previewData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(1, m_previewData);
             if (!completeExecution) {
                 Q_EMIT dataUpdated(1);

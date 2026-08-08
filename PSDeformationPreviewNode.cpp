@@ -27,6 +27,17 @@ PSDeformationPreviewNode::~PSDeformationPreviewNode()
 {
 }
 
+ProductInputContract PSDeformationPreviewNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("ps_deformation_preview.input.ps_time_series");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("ps_time_series");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
 unsigned int PSDeformationPreviewNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
@@ -48,6 +59,16 @@ void PSDeformationPreviewNode::setInData(std::shared_ptr<NodeData> data, PortInd
 {
     Q_UNUSED(portIndex);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+    if (m_inputData) {
+        const ProductValidationResult inputValidation = validateBoundDescriptor(
+            productInputContract(0), m_inputData->productDescriptor());
+        QString identityError;
+        if (!inputValidation.accepted ||
+            !NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                m_inputData->physicalProductDescriptor(), &identityError)) {
+            m_inputData.reset();
+        }
+    }
     updateLabels();
 }
 
@@ -119,6 +140,17 @@ void PSDeformationPreviewNode::onPreviewClicked()
 {
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("请先连接输入节点！"));
+        return;
+    }
+
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    QString identityError;
+    if (!inputValidation.accepted ||
+        !NodeUtils::validateH5Identities(m_inputData->filePaths(),
+            m_inputData->physicalProductDescriptor(), &identityError)) {
+        QMessageBox::warning(nullptr, QStringLiteral("错误"), inputValidation.accepted
+            ? identityError : inputValidation.reason);
         return;
     }
 

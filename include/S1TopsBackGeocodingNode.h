@@ -43,6 +43,8 @@ public:
     QString name() const override { return QStringLiteral("S1TopsBackGeocoding"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
@@ -116,6 +118,7 @@ private:
     bool m_preparedBRangeRefine;
     int m_preparedImagesNumber;
     QStringList m_preparedInputPaths;
+    QStringList m_preparedTransactionInputPaths;
     bool m_processingWarning = false;
     QStringList m_processingQualityWarnings;
     QVector<RegistrationOffsetSummary> m_registrationOffsets;

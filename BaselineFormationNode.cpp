@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QDir>
 #include <QApplication>
+#include <QMap>
 #include "Coordinate.h"
 
 namespace QtNodes {
@@ -45,6 +46,29 @@ BaselineFormationNode::~BaselineFormationNode()
     stopExecution();
 }
 
+ProductInputContract BaselineFormationNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("baseline_formation.input.complex_sar_stack");
+    contract.allowedProductTypes = QStringList()
+        << QStringLiteral("complex_sar")
+        << QStringLiteral("cropped_complex_sar")
+        << QStringLiteral("coregistered_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract BaselineFormationNode::productOutputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductOutputContract contract;
+    contract.semanticId = QStringLiteral("baseline_formation.output.baseline_estimate");
+    contract.publishedProductTypes = QStringList() << QStringLiteral("baseline_estimate");
+    return contract;
+}
+
 unsigned int BaselineFormationNode::nPorts(PortType portType) const
 {
     return 1;
@@ -53,7 +77,9 @@ unsigned int BaselineFormationNode::nPorts(PortType portType) const
 NodeDataType BaselineFormationNode::dataType(PortType portType, PortIndex portIndex) const
 {
     Q_UNUSED(portIndex);
-    return NodeDataType{"imported_file", "Imported File"};
+    return portType == PortType::In
+        ? NodeDataType{"imported_file", "Imported File"}
+        : NodeDataType{"baseline", "Baseline Data"};
 }
 
 bool BaselineFormationNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
@@ -68,7 +94,7 @@ QString BaselineFormationNode::portCaption(PortType portType, PortIndex portInde
     if (portType == PortType::In)
         return QStringLiteral("输入图像");
     else
-        return QStringLiteral("输出图像");
+        return QStringLiteral("基线数据");
 }
 
 bool BaselineFormationNode::portIsOptional(PortType portType, PortIndex portIndex) const
@@ -378,10 +404,34 @@ bool BaselineFormationNode::validateInputs() const
     return true;
 }
 
-void BaselineFormationNode::execute()
+bool BaselineFormationNode::prepareToStart()
 {
     if (!validateInputs()) {
-        onError(QStringLiteral("参数校验未通过，请连接输入并正确选择主图像和目标节点名！"));
+        setLastErrorMessage(QStringLiteral("Baseline estimation requires a complex SAR stack and a valid master image."));
+        setState(ExecutionState::Error);
+        return false;
+    }
+
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    return true;
+}
+
+void BaselineFormationNode::execute()
+{
+    if (!prepareToStart()) {
         return;
     }
     executeProcessing();
@@ -456,7 +506,7 @@ void BaselineFormationNode::cleanUpThreadAndWorker()
 
 void BaselineFormationNode::processAutomatically()
 {
-    if (validateInputs()) {
+    if (prepareToStart()) {
         executeProcessing();
     }
 }
@@ -474,6 +524,8 @@ void BaselineFormationNode::onProgressUpdate(int progress, const QString& messag
 void BaselineFormationNode::onError(const QString& error)
 {
     cleanUpThreadAndWorker();
+    m_outputData.reset();
+    setOutputData(0, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -496,8 +548,22 @@ void BaselineFormationNode::onProcessingFinished(QList<double> temporal_baseline
     m_spatialBaselines = spatial_baseline;
     m_masterIndex = index;
 
-    QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
-    m_outputData = std::make_shared<ImportedFileData>(filePaths, m_outputNodeName);
+    QJsonObject baseline;
+    baseline.insert(QStringLiteral("master_index"), m_masterIndex);
+    QJsonArray temporal;
+    for (double value : m_temporalBaselines) temporal.append(value);
+    baseline.insert(QStringLiteral("temporal_baseline"), temporal);
+    QJsonArray spatial;
+    for (double value : m_spatialBaselines) spatial.append(value);
+    baseline.insert(QStringLiteral("spatial_baseline"), spatial);
+    m_outputData = std::make_shared<BaselineData>(
+        QString::fromUtf8(QJsonDocument(baseline).toJson(QJsonDocument::Compact)));
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    m_outputData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("baseline_estimate"),
+        productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+        productOutputContract(0).publishedState, name(), provenance));
     setOutputData(0, m_outputData);
 
     setProgress(100);
@@ -573,6 +639,8 @@ void BaselineFormationNode::onProcessingFinished(QList<double> temporal_baseline
 void BaselineFormationNode::onCancelled()
 {
     cleanUpThreadAndWorker();
+    m_outputData.reset();
+    setOutputData(0, nullptr);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -597,8 +665,22 @@ void BaselineFormationNode::showChart()
 bool BaselineFormationNode::validateAndRestoreOutput()
 {
     if (!m_temporalBaselines.isEmpty() && !m_spatialBaselines.isEmpty() && m_masterIndex >= 1 && !m_outputNodeName.isEmpty()) {
-        QStringList filePaths = m_inputData ? m_inputData->filePaths() : QStringList();
-        m_outputData = std::make_shared<ImportedFileData>(filePaths, m_outputNodeName);
+        QJsonObject baseline;
+        baseline.insert(QStringLiteral("master_index"), m_masterIndex);
+        QJsonArray temporal;
+        for (double value : m_temporalBaselines) temporal.append(value);
+        baseline.insert(QStringLiteral("temporal_baseline"), temporal);
+        QJsonArray spatial;
+        for (double value : m_spatialBaselines) spatial.append(value);
+        baseline.insert(QStringLiteral("spatial_baseline"), spatial);
+        m_outputData = std::make_shared<BaselineData>(
+            QString::fromUtf8(QJsonDocument(baseline).toJson(QJsonDocument::Compact)));
+        QMap<QString, QString> provenance;
+        provenance.insert(QStringLiteral("producer"), name());
+        provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+        m_outputData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("baseline_estimate"),
+            productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+            productOutputContract(0).publishedState, name(), provenance));
         setOutputData(0, m_outputData);
 
         if (m_showChartBtn) m_showChartBtn->setEnabled(true);

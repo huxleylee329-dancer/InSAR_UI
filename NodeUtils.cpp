@@ -43,6 +43,37 @@ static QMap<QString, std::shared_ptr<QMutex>> g_fileLocks;
 
 namespace {
 
+const char kProductDescriptorDataset[] = "semantic_product_descriptor";
+
+bool writeProductDescriptorToH5(const QString& filePath, const QJsonObject& descriptor,
+                                QString* errorMessage)
+{
+    const QByteArray path = filePath.toUtf8();
+    const QByteArray json = QJsonDocument(descriptor).toJson(QJsonDocument::Compact);
+    const int result = Hdf5IO::createString(path.constData(), kProductDescriptorDataset, json.constData());
+    if (result != 0 && errorMessage) {
+        *errorMessage = QStringLiteral("Cannot write staged H5 product descriptor: %1").arg(filePath);
+    }
+    return result == 0;
+}
+
+QtNodes::ProductDescriptor::Ptr readProductDescriptorFromH5(const QString& filePath,
+                                                             QString* errorMessage)
+{
+    const QByteArray path = filePath.toUtf8();
+    std::string storedDescriptor;
+    if (Hdf5IO::readString(path.constData(), kProductDescriptorDataset, storedDescriptor) != 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot read H5 product descriptor: %1").arg(filePath);
+        return QtNodes::ProductDescriptor::Ptr();
+    }
+    const QByteArray json = QByteArray::fromStdString(storedDescriptor);
+    QString descriptorError;
+    const QtNodes::ProductDescriptor::Ptr descriptor = QtNodes::ProductDescriptor::fromJson(
+        QJsonDocument::fromJson(json).object(), &descriptorError);
+    if (!descriptor && errorMessage) *errorMessage = descriptorError;
+    return descriptor;
+}
+
 const char* const kTransactionDirectory = ".node_transactions";
 const char* const kOutputManifestFile = ".node_output_manifest.json";
 
@@ -279,8 +310,12 @@ bool writeJsonAtomically(const QString& path, const QJsonObject& object, QString
         if (errorMessage) *errorMessage = QStringLiteral("Cannot open transaction record: %1").arg(path);
         return false;
     }
-    if (file.write(QJsonDocument(object).toJson(QJsonDocument::Indented)) < 0 || !file.commit()) {
-        if (errorMessage) *errorMessage = QStringLiteral("Cannot commit transaction record: %1").arg(path);
+    const QByteArray serialized = QJsonDocument(object).toJson(QJsonDocument::Indented);
+    if (file.write(serialized) != serialized.size() || !file.commit()) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Cannot commit transaction record: %1 (%2)")
+                .arg(path, file.errorString());
+        }
         return false;
     }
     return true;
@@ -340,6 +375,121 @@ bool validateOutputFile(const QFileInfo& info, QString* errorMessage)
     // Dataset-level validation remains node-specific because these nodes emit
     // different H5 products. The transaction layer verifies the complete,
     // non-empty candidate set without adding another HDF5 ABI dependency.
+    return true;
+}
+
+bool validatePreviousCommittedFinal(const QDir& root, const QString& nodeName,
+                                    const QJsonObject& interruptedJournal,
+                                    QString* errorMessage)
+{
+    const QJsonObject committedJournal = interruptedJournal.value(QStringLiteral("previousCommittedJournal")).toObject();
+    const QString committedRunId = committedJournal.value(QStringLiteral("runId")).toString();
+    if (committedJournal.value(QStringLiteral("stage")).toString() != QStringLiteral("Completed") ||
+        committedRunId.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Interrupted transaction has no previous completed journal.");
+        return false;
+    }
+
+    const QString finalPath = root.absoluteFilePath(nodeName);
+    QFile manifestFile(QDir(finalPath).absoluteFilePath(QString::fromLatin1(kOutputManifestFile)));
+    if (!manifestFile.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Previous committed output manifest is unavailable: %1")
+            .arg(manifestFile.fileName());
+        return false;
+    }
+    const QJsonObject manifest = QJsonDocument::fromJson(manifestFile.readAll()).object();
+    if (manifest.value(QStringLiteral("nodeName")).toString() != nodeName ||
+        manifest.value(QStringLiteral("runId")).toString() != committedRunId) {
+        if (errorMessage) *errorMessage = QStringLiteral("Previous committed output manifest does not match its journal.");
+        return false;
+    }
+    QString descriptorError;
+    const QtNodes::ProductDescriptor::Ptr descriptor = QtNodes::ProductDescriptor::fromJson(
+        manifest.value(QStringLiteral("productDescriptor")).toObject(), &descriptorError);
+    if (!descriptor || descriptor->state() != QtNodes::ProductState::Committed) {
+        if (errorMessage) *errorMessage = descriptorError.isEmpty()
+            ? QStringLiteral("Previous committed output has no committed product descriptor.")
+            : descriptorError;
+        return false;
+    }
+
+    QSet<QString> expectedNames;
+    for (const QJsonValue& value : committedJournal.value(QStringLiteral("expectedFiles")).toArray()) {
+        const QString name = value.toString();
+        if (name.isEmpty() || expectedNames.contains(name)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Previous committed journal has an invalid output list.");
+            return false;
+        }
+        expectedNames.insert(name);
+    }
+    QSet<QString> actualNames;
+    for (const QJsonValue& value : manifest.value(QStringLiteral("outputs")).toArray()) {
+        const QString name = value.toObject().value(QStringLiteral("name")).toString();
+        const QFileInfo outputInfo(QDir(finalPath).absoluteFilePath(name));
+        if (name.isEmpty() || !expectedNames.contains(name) || actualNames.contains(name) ||
+            !validateOutputFile(outputInfo, errorMessage)) {
+            return false;
+        }
+        if (nodeName.compare(QStringLiteral("Coregistration"), Qt::CaseInsensitive) == 0 &&
+            outputInfo.suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+            QString datasetError;
+            if (probeH5Dataset(outputInfo.absoluteFilePath(), QStringLiteral("s_re"), &datasetError) != H5DatasetProbeResult::Exists ||
+                probeH5Dataset(outputInfo.absoluteFilePath(), QStringLiteral("s_im"), &datasetError) != H5DatasetProbeResult::Exists) {
+                if (errorMessage) *errorMessage = datasetError.isEmpty()
+                    ? QStringLiteral("Previous Coregistration H5 output lacks s_re or s_im: %1").arg(outputInfo.fileName())
+                    : datasetError;
+                return false;
+            }
+        }
+        actualNames.insert(name);
+    }
+    if (actualNames != expectedNames) {
+        if (errorMessage) *errorMessage = QStringLiteral("Previous committed output manifest is incomplete.");
+        return false;
+    }
+
+    const QString metadataName = committedJournal.value(QStringLiteral("metadataXmlName")).toString();
+    if (!metadataName.isEmpty()) {
+        TiXmlDocument document(QDir(root.absolutePath()).absoluteFilePath(metadataName).toLocal8Bit().constData());
+        if (!document.LoadFile()) {
+            if (errorMessage) *errorMessage = QStringLiteral("Previous committed project XML is unavailable: %1").arg(metadataName);
+            return false;
+        }
+        TiXmlElement* xmlRoot = document.RootElement();
+        TiXmlElement* dataNode = nullptr;
+        for (TiXmlElement* element = xmlRoot ? xmlRoot->FirstChildElement() : nullptr;
+             element; element = element->NextSiblingElement()) {
+            if (element->Attribute("name") && nodeName == QString::fromUtf8(element->Attribute("name"))) {
+                dataNode = element;
+                break;
+            }
+        }
+        if (!dataNode) {
+            if (errorMessage) *errorMessage = QStringLiteral("Previous committed project XML has no node: %1").arg(nodeName);
+            return false;
+        }
+        const auto normalizedProjectRelativePath = [](const QString& path) {
+            QString normalized = QDir::cleanPath(QDir::fromNativeSeparators(path.trimmed()));
+            if (!normalized.startsWith(QLatin1Char('/'))) normalized.prepend(QLatin1Char('/'));
+            return normalized;
+        };
+        QSet<QString> expectedXmlPaths;
+        for (const QString& name : expectedNames) {
+            expectedXmlPaths.insert(normalizedProjectRelativePath(
+                QStringLiteral("/%1/%2").arg(nodeName, name)));
+        }
+        QSet<QString> xmlPaths;
+        for (TiXmlElement* data = dataNode->FirstChildElement("Data"); data; data = data->NextSiblingElement("Data")) {
+            TiXmlElement* path = data->FirstChildElement("Data_Path");
+            if (path && path->GetText()) {
+                xmlPaths.insert(normalizedProjectRelativePath(QString::fromUtf8(path->GetText())));
+            }
+        }
+        if (xmlPaths != expectedXmlPaths) {
+            if (errorMessage) *errorMessage = QStringLiteral("Previous committed project XML does not match output manifest.");
+            return false;
+        }
+    }
     return true;
 }
 
@@ -407,8 +557,9 @@ bool restoreMetadataBackup(const OutputTransaction& transaction, XMLFile* xml, Q
 bool persistTransaction(OutputTransaction& transaction, QString* errorMessage)
 {
     QJsonObject object;
-    object.insert(QStringLiteral("version"), 1);
+    object.insert(QStringLiteral("version"), 2);
     object.insert(QStringLiteral("runId"), transaction.runId);
+    object.insert(QStringLiteral("executionRevision"), static_cast<double>(transaction.executionRevision));
     object.insert(QStringLiteral("nodeName"), transaction.nodeName);
     object.insert(QStringLiteral("stage"), stageName(transaction.stage));
     object.insert(QStringLiteral("finalDirectory"), transaction.nodeName);
@@ -428,6 +579,9 @@ bool persistTransaction(OutputTransaction& transaction, QString* errorMessage)
         object.insert(QStringLiteral("previousCommittedJournal"), transaction.previousCommittedJournal);
     }
     object.insert(QStringLiteral("inputs"), transaction.inputFingerprints);
+    if (!transaction.productDescriptor.isEmpty()) {
+        object.insert(QStringLiteral("productDescriptor"), transaction.productDescriptor);
+    }
     QJsonArray files;
     for (const QString& name : transaction.expectedFileNames) files.append(name);
     object.insert(QStringLiteral("expectedFiles"), files);
@@ -633,7 +787,10 @@ void removeDataNodeFromProject(IApplicationInterface* iface, const QString& oldN
         }
     }
     if (saveXmlImmediately) {
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
+        QString saveError;
+        if (!saveProjectXmlAtomically(xml, xmlPath, &saveError)) {
+            InSARLogManager::LogError("NodeUtils", QStringLiteral("删除数据节点后保存工程 XML 失败：%1").arg(saveError));
+        }
     }
 }
 
@@ -673,8 +830,8 @@ bool addOriginNodeToProjectXml(IApplicationInterface* iface,
     );
 
     if (ret >= 0) {
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
-        return true;
+        QString saveError;
+        return saveProjectXmlAtomically(xml, xmlPath, &saveError);
     }
     return false;
 }
@@ -713,8 +870,8 @@ bool addSBASNodeToProjectXml(IApplicationInterface* iface,
     );
 
     if (ret >= 0) {
-        xml->XMLFile_save(xmlPath.toStdString().c_str());
-        return true;
+        QString saveError;
+        return saveProjectXmlAtomically(xml, xmlPath, &saveError);
     }
     return false;
 }
@@ -816,6 +973,7 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         return false;
     }
     const QJsonObject journal = QJsonDocument::fromJson(journalFile.readAll()).object();
+    journalFile.close();
     if (!journalNamesAreSafe(root, nodeName, journal)) {
         if (errorMessage) *errorMessage = QStringLiteral("Output transaction journal has unsafe paths and was left untouched: %1").arg(journalPath);
         return false;
@@ -913,6 +1071,9 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         if ((!hasPreviousFinal && QDir(finalPath).exists()) ||
             (hasPreviousFinal && QDir(backupPath).exists())) {
             if (errorMessage) *errorMessage = QStringLiteral("Staging recovery found an unexpected final or backup directory.");
+            return false;
+        }
+        if (hasPreviousFinal && !validatePreviousCommittedFinal(root, nodeName, journal, errorMessage)) {
             return false;
         }
         if (!removeStaging()) {
@@ -1170,6 +1331,17 @@ bool validateStagedOutputTransaction(OutputTransaction& transaction, QString* er
     }
 
     const QDir staging(QDir(transaction.projectRoot).absoluteFilePath(transaction.stagingName));
+    QString descriptorError;
+    const QtNodes::ProductDescriptor::Ptr descriptor = QtNodes::ProductDescriptor::fromJson(
+        transaction.productDescriptor, &descriptorError);
+    if (!descriptor || descriptor->state() != QtNodes::ProductState::Committed) {
+        if (errorMessage) {
+            *errorMessage = descriptorError.isEmpty()
+                ? QStringLiteral("Staged output has no committed product descriptor.")
+                : descriptorError;
+        }
+        return false;
+    }
     if (!fingerprintsMatch(transaction.inputFingerprints, transaction.inputPaths)) {
         if (errorMessage) *errorMessage = QStringLiteral("Input files changed while the output transaction was running.");
         return false;
@@ -1193,6 +1365,10 @@ bool validateStagedOutputTransaction(OutputTransaction& transaction, QString* er
     for (const QString& name : transaction.expectedFileNames) {
         const QFileInfo info(staging.absoluteFilePath(name));
         if (!validateOutputFile(info, errorMessage)) return false;
+        if (info.suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0 &&
+            !writeProductDescriptorToH5(info.absoluteFilePath(), transaction.productDescriptor, errorMessage)) {
+            return false;
+        }
         QJsonObject file;
         file.insert(QStringLiteral("name"), name);
         file.insert(QStringLiteral("size"), static_cast<double>(info.size()));
@@ -1201,15 +1377,32 @@ bool validateStagedOutputTransaction(OutputTransaction& transaction, QString* er
     }
 
     QJsonObject manifest;
-    manifest.insert(QStringLiteral("version"), 1);
+    manifest.insert(QStringLiteral("version"), 2);
     manifest.insert(QStringLiteral("runId"), transaction.runId);
     manifest.insert(QStringLiteral("nodeName"), transaction.nodeName);
     manifest.insert(QStringLiteral("inputs"), fingerprintInputs(transaction.inputPaths));
+    manifest.insert(QStringLiteral("productDescriptor"), transaction.productDescriptor);
     manifest.insert(QStringLiteral("outputs"), files);
     if (!writeJsonAtomically(staging.absoluteFilePath(QString::fromLatin1(kOutputManifestFile)), manifest, errorMessage)) {
         return false;
     }
     return setTransactionStage(transaction, OutputTransaction::Stage::StagingValidated, errorMessage);
+}
+
+bool setOutputTransactionProductDescriptor(OutputTransaction& transaction,
+                                           const QtNodes::ProductDescriptor::Ptr& descriptor,
+                                           QString* errorMessage)
+{
+    if (transaction.stage != OutputTransaction::Stage::StagingPrepared) {
+        if (errorMessage) *errorMessage = QStringLiteral("Product descriptor must be set before staged output validation.");
+        return false;
+    }
+    if (!descriptor || descriptor->state() != QtNodes::ProductState::Committed) {
+        if (errorMessage) *errorMessage = QStringLiteral("Output transaction requires a committed product descriptor.");
+        return false;
+    }
+    transaction.productDescriptor = descriptor->toJson();
+    return persistTransaction(transaction, errorMessage);
 }
 
 bool validateStagedH5Datasets(const OutputTransaction& transaction,
@@ -1495,6 +1688,7 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
     QFile journal(journalPath);
     if (!journal.open(QIODevice::ReadOnly)) return false;
     const QJsonObject journalObject = QJsonDocument::fromJson(journal.readAll()).object();
+    journal.close();
     if (!journalNamesAreSafe(root, nodeName, journalObject)) {
         if (errorMessage) *errorMessage = QStringLiteral("Committed output transaction record has unsafe paths.");
         return false;
@@ -1507,6 +1701,7 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
             QFile recoveredJournal(journalPath);
             if (recoveredJournal.open(QIODevice::ReadOnly)) {
                 const QJsonObject recoveredObject = QJsonDocument::fromJson(recoveredJournal.readAll()).object();
+                recoveredJournal.close();
                 const QString recoveredStage = recoveredObject.value(QStringLiteral("stage")).toString();
                 if (recoveredStage == QStringLiteral("MetadataCommitted") ||
                     recoveredStage == QStringLiteral("Completed")) {
@@ -1535,6 +1730,15 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Output manifest does not match the committed transaction.");
         return false;
     }
+    QString descriptorError;
+    const QtNodes::ProductDescriptor::Ptr descriptor = QtNodes::ProductDescriptor::fromJson(
+        object.value(QStringLiteral("productDescriptor")).toObject(), &descriptorError);
+    if (!descriptor || descriptor->state() != QtNodes::ProductState::Committed) {
+        if (errorMessage) *errorMessage = descriptorError.isEmpty()
+            ? QStringLiteral("Committed output manifest has no committed product descriptor.")
+            : descriptorError;
+        return false;
+    }
     const QJsonArray outputs = object.value(QStringLiteral("outputs")).toArray();
     QSet<QString> expectedNames;
     for (const QJsonValue& value : journalObject.value(QStringLiteral("expectedFiles")).toArray()) {
@@ -1559,6 +1763,138 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
         outputPaths.append(info.absoluteFilePath());
     }
     return !outputPaths.isEmpty();
+}
+
+bool loadCommittedOutputProductDescriptor(const QString& projectRoot,
+                                          const QString& nodeName,
+                                          QtNodes::ProductDescriptor::Ptr& descriptor,
+                                          QString* errorMessage)
+{
+    descriptor.reset();
+    QStringList outputPaths;
+    if (!loadCommittedOutputManifest(projectRoot, nodeName, outputPaths, errorMessage)) {
+        return false;
+    }
+
+    const QDir root(projectRoot);
+    QFile manifest(QDir(root.absoluteFilePath(nodeName)).absoluteFilePath(
+        QString::fromLatin1(kOutputManifestFile)));
+    if (!manifest.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest is unavailable.");
+        return false;
+    }
+    QString descriptorError;
+    descriptor = QtNodes::ProductDescriptor::fromJson(
+        QJsonDocument::fromJson(manifest.readAll()).object()
+            .value(QStringLiteral("productDescriptor")).toObject(),
+        &descriptorError);
+    if (!descriptor || descriptor->state() != QtNodes::ProductState::Committed) {
+        descriptor.reset();
+        if (errorMessage) *errorMessage = descriptorError.isEmpty()
+            ? QStringLiteral("Committed output descriptor is invalid.")
+            : descriptorError;
+        return false;
+    }
+    return true;
+}
+
+bool validateH5Identity(const QString& h5Path,
+                        const QtNodes::ProductDescriptor::Ptr& expectedDescriptor,
+                        QtNodes::ProductDescriptor::Ptr* observedDescriptor,
+                        QString* errorMessage)
+{
+    if (observedDescriptor) observedDescriptor->reset();
+    const QFileInfo h5Info(h5Path);
+    if (!h5Info.isFile() || h5Info.suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Input is not a readable H5 artifact: %1").arg(h5Path);
+        return false;
+    }
+    const QDir outputDirectory(h5Info.absolutePath());
+    const QString nodeName = outputDirectory.dirName();
+    QDir projectRoot = outputDirectory;
+    if (!projectRoot.cdUp() || !isDirectProjectChild(projectRoot.absolutePath(), nodeName)) {
+        if (errorMessage) *errorMessage = QStringLiteral("H5 artifact is not in a direct committed output directory: %1").arg(h5Path);
+        return false;
+    }
+    QFile journal(QDir(transactionDirectoryPath(projectRoot.absolutePath())).absoluteFilePath(
+        nodeName + QStringLiteral(".json")));
+    if (!journal.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("H5 artifact has no output transaction journal: %1").arg(h5Path);
+        return false;
+    }
+    const QJsonObject journalObject = QJsonDocument::fromJson(journal.readAll()).object();
+    const QString journalStage = journalObject.value(QStringLiteral("stage")).toString();
+    if (!journalNamesAreSafe(projectRoot, nodeName, journalObject) ||
+        (journalStage != QStringLiteral("MetadataCommitted") && journalStage != QStringLiteral("Completed")) ||
+        journalObject.value(QStringLiteral("runId")).toString().isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("H5 artifact journal is not a committed transaction: %1").arg(h5Path);
+        return false;
+    }
+    QFile manifest(outputDirectory.absoluteFilePath(QString::fromLatin1(kOutputManifestFile)));
+    if (!manifest.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("H5 artifact has no committed product identity record: %1").arg(h5Path);
+        return false;
+    }
+    const QJsonObject manifestObject = QJsonDocument::fromJson(manifest.readAll()).object();
+    if (manifestObject.value(QStringLiteral("nodeName")).toString() != nodeName ||
+        manifestObject.value(QStringLiteral("runId")).toString() !=
+            journalObject.value(QStringLiteral("runId")).toString()) {
+        if (errorMessage) *errorMessage = QStringLiteral("H5 manifest does not match its committed journal: %1").arg(h5Path);
+        return false;
+    }
+    QString descriptorError;
+    const QtNodes::ProductDescriptor::Ptr descriptor = QtNodes::ProductDescriptor::fromJson(
+        manifestObject.value(QStringLiteral("productDescriptor")).toObject(), &descriptorError);
+    if (!descriptor || descriptor->state() != QtNodes::ProductState::Committed) {
+        if (errorMessage) *errorMessage = descriptorError.isEmpty()
+            ? QStringLiteral("H5 product identity record is not committed.") : descriptorError;
+        return false;
+    }
+    QString h5DescriptorError;
+    const QtNodes::ProductDescriptor::Ptr h5Descriptor = readProductDescriptorFromH5(
+        h5Info.absoluteFilePath(), &h5DescriptorError);
+    if (!h5Descriptor || QJsonDocument(h5Descriptor->toJson()).toJson(QJsonDocument::Compact) !=
+        QJsonDocument(descriptor->toJson()).toJson(QJsonDocument::Compact)) {
+        if (errorMessage) *errorMessage = h5DescriptorError.isEmpty()
+            ? QStringLiteral("H5 product descriptor does not match its committed manifest.")
+            : h5DescriptorError;
+        return false;
+    }
+    bool listed = false;
+    for (const QJsonValue& output : manifestObject.value(QStringLiteral("outputs")).toArray()) {
+        if (output.toObject().value(QStringLiteral("name")).toString() == h5Info.fileName()) {
+            listed = true;
+            break;
+        }
+    }
+    if (!listed) {
+        if (errorMessage) *errorMessage = QStringLiteral("H5 artifact is not claimed by its committed manifest: %1").arg(h5Path);
+        return false;
+    }
+    if (expectedDescriptor &&
+        QJsonDocument(descriptor->toJson()).toJson(QJsonDocument::Compact) !=
+            QJsonDocument(expectedDescriptor->toJson()).toJson(QJsonDocument::Compact)) {
+        if (errorMessage) *errorMessage = QStringLiteral("H5 product identity does not match the bound descriptor.");
+        return false;
+    }
+    if (observedDescriptor) *observedDescriptor = descriptor;
+    return true;
+}
+
+bool validateH5Identities(const QStringList& h5Paths,
+                          const QtNodes::ProductDescriptor::Ptr& expectedDescriptor,
+                          QString* errorMessage)
+{
+    if (!expectedDescriptor) {
+        if (errorMessage) *errorMessage = QStringLiteral("Input has no bound product descriptor.");
+        return false;
+    }
+    for (const QString& h5Path : h5Paths) {
+        if (!validateH5Identity(h5Path, expectedDescriptor, nullptr, errorMessage)) {
+            return false;
+        }
+    }
+    return !h5Paths.isEmpty();
 }
 
 bool loadCommittedOutputManifestRunId(const QString& projectRoot,
@@ -2852,8 +3188,12 @@ bool setGlobalDemPath(IApplicationInterface* iface, const QString& path, bool as
     pnode->Clear();
     pnode->LinkEndChild(new TiXmlText(cleanPath.toUtf8().constData()));
     
-    // 保存项目 XML
-    xml->XMLFile_save(iface->projectPath().toStdString().c_str());
+    // 保存项目 XML，避免直接覆盖已提交文件。
+    QString saveError;
+    if (!saveProjectXmlAtomically(xml, iface->projectPath(), &saveError)) {
+        InSARLogManager::LogError("NodeUtils", QStringLiteral("保存全局 DEM 路径失败：%1").arg(saveError));
+        return false;
+    }
     
     // 联动更新整个应用程序中所有已启用（未连线）的 demPathEdit 控件
     foreach (QWidget* widget, QApplication::allWidgets()) {

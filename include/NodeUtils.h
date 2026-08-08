@@ -5,8 +5,10 @@
 #include <QMutex>
 #include <QJsonObject>
 #include <QJsonArray>
+#include "QtNodes/internal/ProductContracts.hpp"
 
 #include <functional>
+#include <cstdint>
 #include <string>
 
 #include <opencv2/core.hpp>
@@ -112,8 +114,10 @@ struct OutputTransaction {
     QStringList expectedFileNames;
     QStringList inputPaths;
     QJsonArray inputFingerprints;
+    QJsonObject productDescriptor;
     QJsonObject previousFinalManifest;
     QJsonObject previousCommittedJournal;
+    std::uint64_t executionRevision = 0;
     bool hasPreviousFinal = false;
     bool backupCleanupDeferred = false;
     bool metadataBackupReady = false;
@@ -143,6 +147,9 @@ bool recoverOutputTransaction(const QString& projectRoot,
                               QString* errorMessage = nullptr);
 bool validateStagedOutputTransaction(OutputTransaction& transaction,
                                      QString* errorMessage = nullptr);
+bool setOutputTransactionProductDescriptor(OutputTransaction& transaction,
+                                           const QtNodes::ProductDescriptor::Ptr& descriptor,
+                                           QString* errorMessage = nullptr);
 // Verifies that every staged .h5 output contains each required non-empty
 // dataset. Non-H5 artifacts in a transaction are validated by the generic
 // transaction contract but are not opened as H5 files here.
@@ -171,6 +178,19 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
                                  const QString& nodeName,
                                  QStringList& outputPaths,
                                  QString* errorMessage = nullptr);
+bool loadCommittedOutputProductDescriptor(const QString& projectRoot,
+                                          const QString& nodeName,
+                                          QtNodes::ProductDescriptor::Ptr& descriptor,
+                                          QString* errorMessage = nullptr);
+// Validates the persisted identity record for one H5 artifact without scanning
+// directories. External files with no committed identity record are rejected.
+bool validateH5Identity(const QString& h5Path,
+                        const QtNodes::ProductDescriptor::Ptr& expectedDescriptor,
+                        QtNodes::ProductDescriptor::Ptr* observedDescriptor = nullptr,
+                        QString* errorMessage = nullptr);
+bool validateH5Identities(const QStringList& h5Paths,
+                          const QtNodes::ProductDescriptor::Ptr& expectedDescriptor,
+                          QString* errorMessage = nullptr);
 // Returns the run identifier bound to a committed output manifest. Callers
 // should still use loadCommittedOutputManifest to obtain validated paths.
 bool loadCommittedOutputManifestRunId(const QString& projectRoot,

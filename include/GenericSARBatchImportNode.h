@@ -14,6 +14,8 @@
 #include <QLineEdit>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <atomic>
+#include <memory>
 #include <vector>
 
 namespace QtNodes {
@@ -24,10 +26,14 @@ class GenericSARBatchImportNode : public ImportNodeBase
 
 public:
     GenericSARBatchImportNode();
-    ~GenericSARBatchImportNode() = default;
+    ~GenericSARBatchImportNode() override;
 
     QString caption() const override { return QStringLiteral("Generic SAR Batch Import"); }
     QString name() const override { return QStringLiteral("GenericSARBatchImport"); }
+    unsigned int nPorts(PortType portType) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
+    void stopExecution() override;
+    bool stopExecutionIsAsynchronous() const override { return true; }
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
@@ -39,10 +45,10 @@ protected:
     QWidget* createWidget() override;
     void executeImport() override;
     QStringList getExpectedOutputFilePaths() const override;
+    QStringList getExpectedPreviewFilePaths() const override;
+    QStringList transactionInputPaths() const override;
     QString getOutputNodeName() const override;
 
-    // Thread accessors
-    GenericSARBatchImportTask* m_task = nullptr;
     bool prepareToStart() override;
 
 private slots:
@@ -51,6 +57,7 @@ private slots:
     void onImportProgress(int progress, const QString& message);
     void onImportFinished();
     void onThreadError(const QString& error);
+    void onImportCancelled();
     void onOutputsGenerated(const QString& dstNode,
                             const QStringList& outputNames,
                             const QStringList& outputPaths,
@@ -68,6 +75,7 @@ private:
     QString m_outputNodeName;
     std::vector<QString> m_preparedOriginalFileList;
     std::vector<QString> m_preparedImportNameList;
+    std::shared_ptr<std::atomic_bool> m_cancellationToken;
 };
 
 } // namespace QtNodes

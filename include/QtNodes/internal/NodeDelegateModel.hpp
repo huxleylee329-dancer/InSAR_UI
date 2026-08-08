@@ -7,6 +7,7 @@
 #include "Definitions.hpp"
 #include "Export.hpp"
 #include "NodeData.hpp"
+#include "ProductContracts.hpp"
 #include "NodeStyle.hpp"
 #include "Serializable.hpp"
 
@@ -56,6 +57,24 @@ public:
     virtual unsigned int nPorts(PortType portType) const = 0;
 
     virtual NodeDataType dataType(PortType portType, PortIndex portIndex) const = 0;
+
+    // An undeclared contract is deliberately non-connectable. Nodes must
+    // declare their semantic inputs and outputs explicitly; visual NodeDataType
+    // identifiers are not a compatibility fallback.
+    virtual ProductInputContract productInputContract(PortIndex) const
+    {
+        return ProductInputContract();
+    }
+
+    virtual ProductOutputContract productOutputContract(PortIndex) const
+    {
+        return ProductOutputContract();
+    }
+
+    /// A connection may remain structurally valid while its bound descriptor is
+    /// not executable. This hook keeps that state separate from port topology.
+    virtual void setInputBindingValid(PortIndex, bool, const QString&) {}
+    virtual bool isInputBindingValid(PortIndex) const { return true; }
 
 public:
     virtual ConnectionPolicy portConnectionPolicy(PortType, PortIndex) const;

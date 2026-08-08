@@ -26,6 +26,8 @@ public:
     bool captionVisible() const override { return true; }
     unsigned int nPorts(PortType) const override { return 0; }
     NodeDataType dataType(PortType, PortIndex) const override { return NodeDataType(); }
+    ProductInputContract productInputContract(PortIndex) const override { return ProductInputContract(); }
+    ProductOutputContract productOutputContract(PortIndex) const override { return ProductOutputContract(); }
 
     std::shared_ptr<NodeData> outData(PortIndex) override { return nullptr; }
     void setInData(std::shared_ptr<NodeData>, PortIndex) override {}

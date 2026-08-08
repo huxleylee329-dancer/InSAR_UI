@@ -24,6 +24,7 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("LuTan-1 Import"); }
     QString name() const override { return QStringLiteral("LUTANImport"); }
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;

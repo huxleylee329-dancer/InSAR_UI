@@ -12,6 +12,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QApplication>
+#include <QStringList>
 #include <opencv2/opencv.hpp>
 
 using namespace cv;
@@ -28,6 +29,19 @@ DeformationPreviewNode::DeformationPreviewNode()
 
 DeformationPreviewNode::~DeformationPreviewNode()
 {
+}
+
+ProductInputContract DeformationPreviewNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("deformation_preview.input.sbas_time_series");
+    contract.allowedProductTypes = QStringList()
+        << QStringLiteral("sbas_time_series")
+        << QStringLiteral("referenced_sbas_time_series");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
 }
 
 unsigned int DeformationPreviewNode::nPorts(PortType portType) const
@@ -120,6 +134,19 @@ void DeformationPreviewNode::onPreviewClicked()
     if (!m_inputData || m_inputData->filePaths().isEmpty())
     {
         QMessageBox::warning(nullptr, QStringLiteral("警告"), QStringLiteral("请先连接输入节点！"));
+        return;
+    }
+
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        QMessageBox::warning(nullptr, QStringLiteral("错误"), inputValidation.reason);
+        return;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        QMessageBox::warning(nullptr, QStringLiteral("错误"), identityError);
         return;
     }
 

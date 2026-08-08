@@ -45,6 +45,9 @@ public:
 
     bool connectionPossible(ConnectionId const connectionId) const override;
 
+    /// Pure structural validation used by drag, programmatic edges and restore.
+    ProductValidationResult validateConnection(ConnectionId const connectionId) const;
+
     void addConnection(ConnectionId const connectionId) override;
 
     bool nodeExists(NodeId const nodeId) const override;
@@ -96,6 +99,9 @@ public:
 
 Q_SIGNALS:
     void inPortDataWasSet(NodeId const, PortType const, PortIndex const);
+    void connectionRejected(ConnectionId const, QString const& reason);
+    void inputBindingRejected(NodeId const, PortIndex const, QString const& reason);
+    void semanticContractAudit(QString const& message, bool rejected);
 
 protected:
     NodeId newNodeId() override { return _nextNodeId++; }

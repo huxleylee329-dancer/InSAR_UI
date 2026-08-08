@@ -131,6 +131,12 @@ void ExecutableDataFlowGraphModel::addConnection(ConnectionId const connectionId
 {
     // Keep connection creation and its initial propagation on the executable
     // path so a Running source cannot expose a stale artifact to a new child.
+    if (!connectionPossible(connectionId)) {
+        const ProductValidationResult validation = validateConnection(connectionId);
+        Q_EMIT connectionRejected(connectionId, validation.accepted
+            ? QStringLiteral("A connection policy rejects this port.") : validation.reason);
+        return;
+    }
     _connectivity.insert(connectionId);
     sendConnectionCreation(connectionId);
 

@@ -87,9 +87,9 @@ QString GeocodingNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
         if (portIndex == 0)
-            return QStringLiteral("输入图像");
+            return QStringLiteral("待地理编码产品");
         else
-            return QStringLiteral("DEM ?");
+            return QStringLiteral("辅助地形 DEM");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -101,8 +101,6 @@ QString GeocodingNode::portCaption(PortType portType, PortIndex portIndex) const
 
 bool GeocodingNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::In && portIndex == 1)
-        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -214,6 +212,10 @@ void GeocodingNode::load(QJsonObject const &json)
     QJsonValue vDemPath = json[QStringLiteral("demPath")];
     if (!vDemPath.isUndefined()) m_demPath = vDemPath.toString();
 
+    // Restore the saved execution state and validate committed output before
+    // the graph performs its post-restore readiness pass.
+    ExecutableNodeDelegateModel::load(json);
+
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setText(m_outputNodeName);
     if (m_typeCombo) {
         m_typeCombo->setCurrentIndex(m_type - 1);
@@ -221,8 +223,6 @@ void GeocodingNode::load(QJsonObject const &json)
     }
     if (m_multiRgSpin) m_multiRgSpin->setValue(m_multiRg);
     if (m_multiAzSpin) m_multiAzSpin->setValue(m_multiAz);
-
-    validateAndRestoreOutput();
 }
 
 void GeocodingNode::setExecutionMode(ExecutionMode mode)
@@ -348,7 +348,6 @@ void GeocodingNode::createWidget()
     connect(m_typeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &GeocodingNode::onTypeChanged);
     connect(m_outputNodeNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_outputNodeName = text;
-        Q_EMIT m_outputNodeNameEdit->textChanged(text);
     });
 
     onTypeChanged(m_type - 1);
@@ -399,11 +398,36 @@ bool GeocodingNode::prepareToStart()
     m_preparedType = m_typeCombo ? m_typeCombo->currentIndex() + 1 : m_type;
     m_preparedMultiRg = m_multiRgSpin ? m_multiRgSpin->value() : m_multiRg;
     m_preparedMultiAz = m_multiAzSpin ? m_multiAzSpin->value() : m_multiAz;
-    m_preparedDemPath = m_demPath;
+    if (!m_demInputData) {
+        setStartFailureMessage(QStringLiteral("辅助 DEM 是必需输入，必须通过带已识别 descriptor 的输入端口提供。"));
+        return false;
+    }
+    const ProductValidationResult demBinding = validateBoundDescriptor(
+        productInputContract(1), m_demInputData->productDescriptor());
+    if (!demBinding.accepted) {
+        setStartFailureMessage(demBinding.reason);
+        setLastErrorMessage(demBinding.reason);
+        return false;
+    }
+    if (!QFileInfo(m_demInputData->filePath()).isFile()) {
+        const QString demPathError = QStringLiteral("辅助 DEM 栅格文件不存在：%1")
+                                        .arg(m_demInputData->filePath());
+        setStartFailureMessage(demPathError);
+        setLastErrorMessage(demPathError);
+        return false;
+    }
+    m_preparedDemPath = m_demInputData->filePath();
 
     m_preparedDstNode = dstNode;
 
     m_preparedInputPaths = m_inputData->filePaths();
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedInputPaths, m_inputData->physicalProductDescriptor(),
+                                         &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
     m_preparedProductLevel.clear();
     m_preparedMasterIndex = 0;
 
@@ -504,6 +528,18 @@ void GeocodingNode::executeProcessing()
         onError(transactionError);
         return;
     }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("geocoding.output.geocoded_raster"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("geocoded_raster"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
     m_pendingGeocodingResults.clear();
     m_outputData.reset();
     m_imageInfoData.reset();
@@ -577,22 +613,35 @@ void GeocodingNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QString transactionError;
     if (!projectXml()) {
         onError(QStringLiteral("Project XML context is unavailable for geocoding output commit."));
         return;
     }
     QString outputDataset;
+    QString previewType;
     if (m_preparedType == 2) {
         outputDataset = QStringLiteral("amplitude");
+        previewType = QStringLiteral("amplitude");
     } else if (m_preparedProductLevel.startsWith(QStringLiteral("phase-"))) {
         outputDataset = QStringLiteral("phase");
+        previewType = QStringLiteral("phase");
     } else if (m_preparedProductLevel == QStringLiteral("coherence-1.0")) {
         outputDataset = QStringLiteral("coherence");
+        previewType = QStringLiteral("coherence");
     } else if (m_preparedProductLevel == QStringLiteral("dem-1.0")) {
         outputDataset = QStringLiteral("dem");
+        previewType = QStringLiteral("dem");
     } else if (m_preparedProductLevel == QStringLiteral("SBAS-1.0")) {
         outputDataset = QStringLiteral("defomation_velocity");
+        previewType = QStringLiteral("SBAS");
     } else {
         onError(QStringLiteral("Unsupported geocoding product level for staged output validation: %1")
                     .arg(m_preparedProductLevel));
@@ -651,7 +700,7 @@ void GeocodingNode::onProcessingFinished()
     for (const QString& h5Path : h5Paths) {
         const QString baseName = QFileInfo(h5Path).baseName();
         jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + baseName + ".jpg");
-        types.append("amplitude");
+        types.append(previewType);
     }
 
     // Clean up worker thread
@@ -711,6 +760,30 @@ void GeocodingNode::onError(const QString& error)
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
     setState(ExecutionState::Error);
+}
+
+ProductInputContract GeocodingNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    contract.semanticId = portIndex == 0 ? QStringLiteral("geocoding.input.radar_product")
+                                         : QStringLiteral("geocoding.input.auxiliary_terrain_dem");
+    contract.optional = false;
+    contract.allowedProductTypes = portIndex == 0
+        ? QStringList{QStringLiteral("unwrapped_phase"), QStringLiteral("insar_dem")}
+        : QStringList{QStringLiteral("auxiliary_terrain_dem")};
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract GeocodingNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0 ? QStringLiteral("geocoding.output.geocoded_raster")
+                                         : QStringLiteral("geocoding.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList{QStringLiteral("geocoded_raster")} : QStringList{QStringLiteral("preview")};
+    return contract;
 }
 
 void GeocodingNode::onGeocodingGenerated(const GeocodingFileResult& result)
@@ -773,7 +846,12 @@ bool GeocodingNode::validateAndRestoreOutput()
         return false;
 
     QStringList h5Paths;
-    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) return false;
     QStringList expectedJpgPaths;
     QStringList types;
 
@@ -801,6 +879,7 @@ bool GeocodingNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 

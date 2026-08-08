@@ -2,6 +2,7 @@
 #include "NodeUtils.h"
 
 #include "ImageDisplayNode.h"
+#include "ImportDataTypes.h"
 #include "FormatConversion.h"
 #include <QtNodes/internal/StyleCollection.hpp>
 #include <QtNodes/internal/ExecutableNodePainter.hpp>
@@ -60,7 +61,14 @@ NodeDataType ImageDisplayNode::dataType(PortType portType, PortIndex portIndex) 
 
 void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portIndex)
 {
+    if (portIndex != 0) return;
     auto imageInfo = std::dynamic_pointer_cast<ImageInfoData>(data);
+    if (!imageInfo) {
+        const auto importedFiles = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (importedFiles) {
+            imageInfo = std::make_shared<ImageInfoData>(importedFiles->filePaths());
+        }
+    }
     m_inputData = imageInfo;
     m_currentIndex = 0;
 
@@ -85,6 +93,24 @@ void ImageDisplayNode::setInData(std::shared_ptr<NodeData> data, PortIndex portI
         }
         updateNodeStyle();
     }
+}
+
+ProductInputContract ImageDisplayNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("image_display.input.preview");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("preview")
+        << QStringLiteral("generic_sar_raster");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract ImageDisplayNode::productOutputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    return ProductOutputContract();
 }
 
 void ImageDisplayNode::loadImageAtIndex()

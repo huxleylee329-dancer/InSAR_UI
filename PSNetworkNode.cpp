@@ -39,6 +39,33 @@ PSNetworkNode::~PSNetworkNode()
     }
 }
 
+ProductInputContract PSNetworkNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    if (portIndex == 0) {
+        contract.semanticId = QStringLiteral("ps_network.input.ps_candidates");
+        contract.allowedProductTypes = QStringList() << QStringLiteral("ps_candidates");
+    } else {
+        contract.semanticId = QStringLiteral("ps_network.input.coregistered_complex_sar");
+        contract.allowedProductTypes = QStringList() << QStringLiteral("coregistered_complex_sar");
+    }
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract PSNetworkNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("ps_network.output.ps_network")
+        : QStringLiteral("ps_network.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("ps_network")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 unsigned int PSNetworkNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
@@ -261,6 +288,26 @@ bool PSNetworkNode::prepareToStart()
         return false;
     }
 
+    const ProductValidationResult candidatesValidation = validateBoundDescriptor(
+        productInputContract(0), m_candidatesData->productDescriptor());
+    const ProductValidationResult slcValidation = validateBoundDescriptor(
+        productInputContract(1), m_slcData->productDescriptor());
+    if (!candidatesValidation.accepted || !slcValidation.accepted) {
+        setLastErrorMessage(!candidatesValidation.accepted
+            ? candidatesValidation.reason : slcValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_candidatesData->filePaths(),
+            m_candidatesData->physicalProductDescriptor(), &identityError) ||
+        !NodeUtils::validateH5Identities(m_slcData->filePaths(),
+            m_slcData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     m_preparedDstNode = m_outputNodeName;
     m_preparedOutputPaths = QStringList() <<
         QDir(projectPath()).absoluteFilePath(m_preparedDstNode + "/PS_network.h5");
@@ -292,7 +339,9 @@ bool PSNetworkNode::prepareToStart()
 void PSNetworkNode::execute()
 {
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
-        validateAndRestoreOutput();
+        if (!validateAndRestoreOutput()) {
+            onError(QStringLiteral("Existing PS network output does not satisfy its semantic identity contract."));
+        }
         return;
     }
 
@@ -314,6 +363,17 @@ void PSNetworkNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(projPath, m_preparedDstNode, m_preparedOutputPaths,
                                            m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("ps_network"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -442,6 +502,13 @@ void PSNetworkNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     InSARLogManager::LogInfo("PSNetworkNode", "executeProcessing completed successfully.");
     
     const QString dstNode = m_preparedDstNode;
@@ -488,6 +555,7 @@ void PSNetworkNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
     
     if (m_resultLabel) {
@@ -504,10 +572,16 @@ void PSNetworkNode::onProcessingFinished()
 bool PSNetworkNode::validateAndRestoreOutput()
 {
     QStringList h5Paths;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
     if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) &&
-        h5Paths.size() == 1) {
+        h5Paths.size() == 1 &&
+        NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), m_outputNodeName, descriptor, &identityError) &&
+        validatePublishedDescriptor(productOutputContract(0), descriptor).accepted &&
+        NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
         const QString h5Path = h5Paths.first();
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+        m_outputData->setProductDescriptor(descriptor);
         setOutputData(0, m_outputData);
         generateStaticPreviewJpg();
         
@@ -540,6 +614,12 @@ void PSNetworkNode::generateStaticPreviewJpg()
     connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPath]() {
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_previewData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(1, m_previewData);
             Q_EMIT dataUpdated(1);
         }

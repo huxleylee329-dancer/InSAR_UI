@@ -30,6 +30,18 @@ EvaluationENLNode::~EvaluationENLNode()
     }
 }
 
+ProductInputContract EvaluationENLNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("evaluation_enl.input.original_preview")
+        : QStringLiteral("evaluation_enl.input.filtered_preview");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
 void EvaluationENLNode::createWidget()
 {
     m_widget = new QWidget();
@@ -190,6 +202,29 @@ bool EvaluationENLNode::isReady() const
            (m_filteredData != nullptr && !m_filteredData->filePaths().isEmpty());
 }
 
+bool EvaluationENLNode::prepareToStart()
+{
+    if (!isReady()) {
+        return false;
+    }
+
+    const ProductValidationResult originalValidation = validateBoundDescriptor(
+        productInputContract(0), m_originalData->productDescriptor());
+    if (!originalValidation.accepted) {
+        setLastErrorMessage(originalValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    const ProductValidationResult filteredValidation = validateBoundDescriptor(
+        productInputContract(1), m_filteredData->productDescriptor());
+    if (!filteredValidation.accepted) {
+        setLastErrorMessage(filteredValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    return true;
+}
+
 void EvaluationENLNode::collapseDetailedList()
 {
     if (m_isExpanded) {
@@ -206,6 +241,9 @@ void EvaluationENLNode::collapseDetailedList()
 
 void EvaluationENLNode::execute()
 {
+    if (!prepareToStart()) {
+        return;
+    }
     calculateAndDisplayENL();
 }
 
@@ -219,9 +257,9 @@ void EvaluationENLNode::stopExecution()
 
 void EvaluationENLNode::processAutomatically()
 {
-    if (isReady()) {
+    if (prepareToStart()) {
         execute();
-    } else {
+    } else if (!isReady()) {
         setState(ExecutionState::Idle);
     }
 }

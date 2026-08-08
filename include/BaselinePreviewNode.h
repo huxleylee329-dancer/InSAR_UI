@@ -33,6 +33,8 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Baseline Preview"); }
     QString name() const override { return QStringLiteral("BaselinePreview"); }
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
@@ -50,6 +52,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
 

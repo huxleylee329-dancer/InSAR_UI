@@ -26,6 +26,7 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Biomass L1A Import"); }
     QString name() const override { return QStringLiteral("BiomassImport"); }
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;

@@ -159,6 +159,14 @@ class DEMFileData : public ImportedFileData
 public:
     using ImportedFileData::ImportedFileData;
 
+    DEMFileData(const QString& rasterPath, const QString& nodeName, const QString& identityH5Path)
+        : ImportedFileData(rasterPath, nodeName)
+        , _identityH5Path(identityH5Path)
+    {
+    }
+
+    QString identityH5Path() const { return _identityH5Path; }
+
     NodeDataType type() const override
     {
         return NodeDataType{"dem_file", "DEM File"};
@@ -168,6 +176,9 @@ public:
     {
         return dynamic_cast<DEMFileData const *>(&nodeData) != nullptr;
     }
+
+private:
+    QString _identityH5Path;
 };
 
 } // namespace QtNodes

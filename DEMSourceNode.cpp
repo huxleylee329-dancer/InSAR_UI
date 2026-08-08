@@ -96,6 +96,37 @@ NodeDataType DEMSourceNode::dataType(PortType portType, PortIndex portIndex) con
     }
 }
 
+ProductInputContract DEMSourceNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("dem_source.input.complex_sar_coverage");
+    contract.allowedProductTypes = QStringList()
+        << QStringLiteral("complex_sar")
+        << QStringLiteral("cropped_complex_sar")
+        << QStringLiteral("coregistered_complex_sar")
+        << QStringLiteral("debursted_complex_sar")
+        << QStringLiteral("deramped_complex_sar")
+        << QStringLiteral("merged_complex_sar")
+        << QStringLiteral("back_geocoded_complex_sar")
+        << QStringLiteral("sentinel1_burst_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract DEMSourceNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("dem_source.output.auxiliary_terrain_dem")
+        : QStringLiteral("dem_source.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("auxiliary_terrain_dem")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 bool DEMSourceNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
 {
     Q_UNUSED(portType);
@@ -503,6 +534,13 @@ bool DEMSourceNode::prepareToStart()
     m_preparedSource = m_demSourceCombo ? m_demSourceCombo->currentData().toInt() : m_demSource;
     m_preparedCacheDir = m_cacheDirEdit ? m_cacheDirEdit->text().trimmed() : m_cacheDir;
     m_preparedInputPaths = m_inputData->filePaths();
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedInputPaths,
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
 
     // 检查 NASA Earthdata 登录状态（如果选择的源非 Copernicus 且未登录）
     if (m_preparedSource != 2)
@@ -592,6 +630,18 @@ void DEMSourceNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedInputPaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("dem_source.output.auxiliary_terrain_dem"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("auxiliary_terrain_dem"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -694,6 +744,13 @@ void DEMSourceNode::onProcessingFinished(
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     TaskLogContext logContext;
     logContext.displayName = caption();
     const double tileAvailability = requestedTileCount > 0
@@ -767,7 +824,8 @@ void DEMSourceNode::onProcessingFinished(
 
     const QString dstNode = m_preparedDstNode;
     const QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
-    m_outputData = std::make_shared<DEMFileData>(tifPath, dstNode);
+    m_outputData = std::make_shared<DEMFileData>(tifPath, dstNode, h5Path);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     m_imageInfoData.reset();
     setOutputData(0, m_outputData);
     setOutputData(1, nullptr);
@@ -925,6 +983,13 @@ bool DEMSourceNode::validateAndRestoreOutput()
         setState(ExecutionState::Idle);
         return false;
     }
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputProductDescriptor(savePath, name, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identity(targetH5, descriptor, nullptr, &identityError)) {
+        return false;
+    }
     QString targetJpg = savePath + "/" + name + "/" + name + "_dem.jpg";
 
 
@@ -945,12 +1010,13 @@ bool DEMSourceNode::validateAndRestoreOutput()
             }
 
             auto writeTifSuccess = std::make_shared<bool>(true);
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, targetH5, targetTif, targetJpg, name, writeTifSuccess]() {
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, targetH5, targetTif, targetJpg, name, descriptor, writeTifSuccess]() {
                 bool tifExists = QFile::exists(targetTif) && *writeTifSuccess;
                 bool jpgExists = NodeUtils::isJpgPreviewCurrent(targetH5, targetJpg);
 
                 if (tifExists) {
-                    m_outputData = std::make_shared<DEMFileData>(targetTif, name);
+                    m_outputData = std::make_shared<DEMFileData>(targetTif, name, targetH5);
+                    m_outputData->setProductDescriptor(descriptor);
                     setOutputData(0, m_outputData);
                     Q_EMIT dataUpdated(0);
                 } else {
@@ -1025,7 +1091,8 @@ bool DEMSourceNode::validateAndRestoreOutput()
                 setState(ExecutionState::Completed);
             }
         } else {
-            m_outputData = std::make_shared<DEMFileData>(targetTif, name);
+            m_outputData = std::make_shared<DEMFileData>(targetTif, name, targetH5);
+            m_outputData->setProductDescriptor(descriptor);
             m_imageInfoData = std::make_shared<ImageInfoData>(targetJpg);
             setOutputData(0, m_outputData);
             setOutputData(1, m_imageInfoData);

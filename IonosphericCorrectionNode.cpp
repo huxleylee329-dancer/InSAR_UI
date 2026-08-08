@@ -43,13 +43,12 @@ IonosphericCorrectionNode::~IonosphericCorrectionNode() { stopExecution(); }
 
 unsigned int IonosphericCorrectionNode::nPorts(PortType portType) const
 {
-    if (portType == PortType::In) return 2;
+    if (portType == PortType::In) return 1;
     else return 2;
 }
 
 NodeDataType IonosphericCorrectionNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
     if (portType == PortType::In) return NodeDataType{"imported_file", "Imported File"};
     else {
         if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
@@ -62,8 +61,7 @@ bool IonosphericCorrectionNode::portCaptionVisible(PortType, PortIndex) const { 
 QString IonosphericCorrectionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QStringLiteral("配准SLC对");
-        else return QStringLiteral("DEM ?");
+        return QStringLiteral("配准 SLC 对");
     } else {
         if (portIndex == 0) return QStringLiteral("成果 *");
         else return QStringLiteral("预览 ?");
@@ -73,14 +71,13 @@ QString IonosphericCorrectionNode::portCaption(PortType portType, PortIndex port
 
 bool IonosphericCorrectionNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::In && portIndex == 1) return true;
     if (portType == PortType::Out && portIndex == 1) return true;
     return false;
 }
 
 void IonosphericCorrectionNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
+    if (port != 0) return;
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
     if (m_inputData && m_outputNodeName.isEmpty()) {
         m_outputNodeName = generateDefaultOutputName();
@@ -91,6 +88,29 @@ void IonosphericCorrectionNode::setInData(std::shared_ptr<NodeData> data, PortIn
         m_outputData.reset();
         m_imageInfoData.reset();
     }
+}
+
+ProductInputContract IonosphericCorrectionNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("ionospheric_correction.input.coregistered_complex_sar");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("coregistered_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract IonosphericCorrectionNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("ionospheric_correction.output.ionosphere_corrected_complex_sar")
+        : QStringLiteral("ionospheric_correction.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("ionosphere_corrected_complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
 }
 
 std::shared_ptr<NodeData> IonosphericCorrectionNode::outData(PortIndex port)
@@ -245,6 +265,20 @@ bool IonosphericCorrectionNode::validateInputs() const
 bool IonosphericCorrectionNode::prepareToStart()
 {
     if (!validateInputs()) return false;
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
     m_preparedDstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
         ? generateDefaultOutputName() : m_outputNodeNameEdit->text().trimmed();
     m_preparedSavePath = projectPath();
@@ -297,6 +331,17 @@ void IonosphericCorrectionNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode, m_preparedOutputPaths,
                                            m_preparedSlcPaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("ionosphere_corrected_complex_sar"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -366,6 +411,12 @@ void IonosphericCorrectionNode::onProcessingFinished()
     if (m_preparedOutputTEC) {
         requiredDatasets.append(QStringLiteral("tec_estimate"));
     }
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
     if (!projectXml() ||
         !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
         !NodeUtils::validateStagedH5Datasets(m_outputTransaction, requiredDatasets, &transactionError) ||
@@ -393,6 +444,8 @@ void IonosphericCorrectionNode::onProcessingFinished()
     NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
     persistOutputToProject(dstNode, h5Paths);
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
     for (const QString& h5Path : h5Paths) {
         jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
@@ -433,7 +486,15 @@ bool IonosphericCorrectionNode::validateAndRestoreOutput()
     QString dstNode = m_outputNodeName.trimmed();
     if (dstNode.isEmpty()) return false;
     QStringList h5Paths;
-    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode,
+                                                          descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
+        return false;
+    }
     QStringList expectedJpgPaths, types;
     for (const QString& h5Path : h5Paths) {
         expectedJpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
@@ -441,6 +502,7 @@ bool IonosphericCorrectionNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
 
     QStringList missingH5s, missingJpgs, missingTypes, existingJpgs;
@@ -450,6 +512,12 @@ bool IonosphericCorrectionNode::validateAndRestoreOutput()
     }
     if (missingH5s.isEmpty()) {
         m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgs);
+        QMap<QString, QString> previewProvenance;
+        previewProvenance.insert(QStringLiteral("producer"), name());
+        previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+        m_imageInfoData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+            productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+            productOutputContract(1).publishedState, name(), previewProvenance));
         setOutputData(1, m_imageInfoData); Q_EMIT dataUpdated(1);
     } else {
         startPreviewGeneration(missingH5s, missingJpgs, missingTypes, h5Paths, expectedJpgPaths, false);
@@ -503,6 +571,12 @@ void IonosphericCorrectionNode::startPreviewGeneration(const QStringList& h5Path
         }
         if (completeExecution && discardObsoleteAutomaticExecution()) return;
         m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
+        QMap<QString, QString> previewProvenance;
+        previewProvenance.insert(QStringLiteral("producer"), name());
+        previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+        m_imageInfoData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+            productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+            productOutputContract(1).publishedState, name(), previewProvenance));
         setOutputData(1, m_imageInfoData);
         if (completeExecution) {
             m_outputNodeNameEdit->setEnabled(true); m_subbandRatioSpin->setEnabled(true);

@@ -40,6 +40,29 @@ PSCandidateNode::~PSCandidateNode()
     }
 }
 
+ProductInputContract PSCandidateNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("ps_candidate.input.coregistered_complex_sar");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("coregistered_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract PSCandidateNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("ps_candidate.output.ps_candidates")
+        : QStringLiteral("ps_candidate.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("ps_candidates")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 unsigned int PSCandidateNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
@@ -242,6 +265,21 @@ bool PSCandidateNode::prepareToStart()
         return false;
     }
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     m_preparedDstNode = m_outputNodeName;
     m_preparedOutputPaths = QStringList() <<
         QDir(projectPath()).absoluteFilePath(m_preparedDstNode + "/PS_candidates.h5");
@@ -271,7 +309,9 @@ bool PSCandidateNode::prepareToStart()
 void PSCandidateNode::execute()
 {
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
-        validateAndRestoreOutput();
+        if (!validateAndRestoreOutput()) {
+            onError(QStringLiteral("Existing PS candidate output does not satisfy its semantic identity contract."));
+        }
         return;
     }
 
@@ -289,6 +329,17 @@ void PSCandidateNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(projPath, m_preparedDstNode, m_preparedOutputPaths,
                                            slcList, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("ps_candidates"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -417,6 +468,13 @@ void PSCandidateNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     InSARLogManager::LogInfo("PSCandidateNode", "executeProcessing completed successfully.");
     
     const QString dstNode = m_preparedDstNode;
@@ -461,6 +519,7 @@ void PSCandidateNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
     
     if (m_resultLabel) {
@@ -477,10 +536,16 @@ void PSCandidateNode::onProcessingFinished()
 bool PSCandidateNode::validateAndRestoreOutput()
 {
     QStringList h5Paths;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
     if (NodeUtils::loadCommittedOutputManifest(projectPath(), m_outputNodeName, h5Paths) &&
-        h5Paths.size() == 1) {
+        h5Paths.size() == 1 &&
+        NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), m_outputNodeName, descriptor, &identityError) &&
+        validatePublishedDescriptor(productOutputContract(0), descriptor).accepted &&
+        NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
         const QString h5Path = h5Paths.first();
         m_outputData = std::make_shared<ImportedFileData>(QStringList() << h5Path, m_outputNodeName);
+        m_outputData->setProductDescriptor(descriptor);
         setOutputData(0, m_outputData);
         generateStaticPreviewJpg();
         
@@ -512,6 +577,12 @@ void PSCandidateNode::generateStaticPreviewJpg()
     connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher, jpgPath]() {
         if (QFileInfo::exists(jpgPath)) {
             m_previewData = std::make_shared<ImageInfoData>(jpgPath);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_previewData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+                productOutputContract(1).publishedState, name(), previewProvenance));
             setOutputData(1, m_previewData);
             Q_EMIT dataUpdated(1);
         }

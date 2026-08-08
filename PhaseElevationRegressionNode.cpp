@@ -47,14 +47,13 @@ PhaseElevationRegressionNode::~PhaseElevationRegressionNode()
 unsigned int PhaseElevationRegressionNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 2; // Port 0: 干涉图, Port 1: DEM（可选）
+        return 1;
     else
         return 2; // Port 0: 成果, Port 1: 预览（可选）
 }
 
 NodeDataType PhaseElevationRegressionNode::dataType(PortType portType, PortIndex portIndex) const
 {
-    Q_UNUSED(portIndex);
     if (portType == PortType::In) {
         return NodeDataType{"imported_file", "Imported File"};
     } else {
@@ -75,8 +74,7 @@ bool PhaseElevationRegressionNode::portCaptionVisible(PortType portType, PortInd
 QString PhaseElevationRegressionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QStringLiteral("干涉图");
-        else return QStringLiteral("DEM ?");
+        return QStringLiteral("干涉图");
     } else {
         if (portIndex == 0) return QStringLiteral("成果 *");
         else return QStringLiteral("预览 ?");
@@ -86,14 +84,13 @@ QString PhaseElevationRegressionNode::portCaption(PortType portType, PortIndex p
 
 bool PhaseElevationRegressionNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
-    if (portType == PortType::In && portIndex == 1) return true;
     if (portType == PortType::Out && portIndex == 1) return true;
     return false;
 }
 
 void PhaseElevationRegressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    Q_UNUSED(port);
+    if (port != 0) return;
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
     if (m_inputData && m_outputNodeName.isEmpty()) {
@@ -109,6 +106,29 @@ void PhaseElevationRegressionNode::setInData(std::shared_ptr<NodeData> data, Por
         m_outputData.reset();
         m_imageInfoData.reset();
     }
+}
+
+ProductInputContract PhaseElevationRegressionNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("phase_elevation_regression.input.interferogram");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("interferogram");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract PhaseElevationRegressionNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("phase_elevation_regression.output.regressed_interferogram")
+        : QStringLiteral("phase_elevation_regression.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("interferogram")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
 }
 
 std::shared_ptr<NodeData> PhaseElevationRegressionNode::outData(PortIndex port)
@@ -287,6 +307,21 @@ bool PhaseElevationRegressionNode::prepareToStart()
 {
     if (!validateInputs()) return false;
 
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        setState(ExecutionState::Error);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        setState(ExecutionState::Error);
+        return false;
+    }
+
     m_preparedDstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
         ? generateDefaultOutputName() : m_outputNodeNameEdit->text().trimmed();
     m_preparedSavePath = projectPath();
@@ -347,6 +382,17 @@ void PhaseElevationRegressionNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedPhasePaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("interferogram"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -439,6 +485,12 @@ void PhaseElevationRegressionNode::onProcessingFinished()
     }
 
     QString transactionError;
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
     if (!projectXml() ||
         !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
         !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("phase"), &transactionError) ||
@@ -467,6 +519,8 @@ void PhaseElevationRegressionNode::onProcessingFinished()
     publishResultsToProjectTree(dstNode, h5Paths, m_generatedOutputNames);
     m_outputNodeName = dstNode;
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     for (const QString& h5Path : h5Paths) {
@@ -523,7 +577,15 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
     QStringList h5Paths;
     QStringList expectedJpgPaths;
     QStringList types;
-    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode,
+                                                          descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
+        return false;
+    }
 
     for (const QString& h5Path : h5Paths) {
         const QString baseName = QFileInfo(h5Path).baseName();
@@ -532,6 +594,7 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
 
     QStringList existingJpgPaths;
@@ -551,6 +614,12 @@ bool PhaseElevationRegressionNode::validateAndRestoreOutput()
 
     if (missingH5s.isEmpty()) {
         m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgPaths);
+        QMap<QString, QString> previewProvenance;
+        previewProvenance.insert(QStringLiteral("producer"), name());
+        previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+        m_imageInfoData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+            productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+            productOutputContract(1).publishedState, name(), previewProvenance));
         setOutputData(1, m_imageInfoData);
         Q_EMIT dataUpdated(1);
     } else {
@@ -635,6 +704,12 @@ void PhaseElevationRegressionNode::startPreviewGeneration(const QStringList& h5P
             return;
         }
         m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
+        QMap<QString, QString> previewProvenance;
+        previewProvenance.insert(QStringLiteral("producer"), name());
+        previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+        m_imageInfoData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+            productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+            productOutputContract(1).publishedState, name(), previewProvenance));
         setOutputData(1, m_imageInfoData);
         if (completeExecution) {
             m_outputNodeNameEdit->setEnabled(true);

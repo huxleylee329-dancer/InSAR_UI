@@ -389,6 +389,12 @@ bool DemNode::prepareToStart()
 
     QStringList srcPaths = m_inputData->filePaths();
     m_preparedPhasePaths = srcPaths;
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(srcPaths, m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
 
     // DEM inversion requires a complete, compatible interferometric phase contract.
     for (const QString& srcPath : srcPaths) {
@@ -452,6 +458,20 @@ void DemNode::executeProcessing()
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedPhasePaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("dem_generation.output.insar_dem"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("insar_dem"),
+                                      QStringLiteral("sat-explorer-product"), 1,
+                                      ProductState::Committed, name(), descriptorProvenance),
+            &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -531,6 +551,13 @@ void DemNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QString transactionError;
     if (!projectXml() || !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
         !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("dem"), &transactionError)) {
@@ -564,6 +591,8 @@ void DemNode::onProcessingFinished()
     for (const QString& h5Path : h5Paths) { jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg"); types.append(QStringLiteral("dem")); }
 
     m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     if (!h5Paths.isEmpty())
@@ -652,6 +681,27 @@ void DemNode::onProcessingFinished()
 void DemNode::handleDemFileGenerated(const DemFileResult& result)
 {
     m_pendingDemResults.append(result);
+}
+
+ProductInputContract DemNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("dem_generation.input.unwrapped_phase");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("unwrapped_phase");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract DemNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0 ? QStringLiteral("dem_generation.output.insar_dem")
+                                         : QStringLiteral("dem_generation.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList{QStringLiteral("insar_dem")} : QStringList{QStringLiteral("preview")};
+    return contract;
 }
 
 void DemNode::commitDemResult(const DemFileResult& result)
@@ -764,6 +814,10 @@ bool DemNode::validateAndRestoreOutput()
     if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
         return false;
     }
+    ProductDescriptor::Ptr descriptor;
+    if (!NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor)) {
+        return false;
+    }
     QStringList expectedJpgPaths;
     QStringList types;
 
@@ -774,6 +828,7 @@ bool DemNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     if (executionState() != ExecutionState::Running) {
         Q_EMIT dataUpdated(0);

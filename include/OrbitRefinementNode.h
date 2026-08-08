@@ -38,6 +38,8 @@ public:
     QString name() const override { return QStringLiteral("OrbitRefinement"); }
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;

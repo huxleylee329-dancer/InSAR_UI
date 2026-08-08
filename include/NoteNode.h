@@ -43,6 +43,16 @@ public:
         return QtNodes::NodeDataType{"", ""};
     }
 
+    QtNodes::ProductInputContract productInputContract(QtNodes::PortIndex) const override
+    {
+        return QtNodes::ProductInputContract();
+    }
+
+    QtNodes::ProductOutputContract productOutputContract(QtNodes::PortIndex) const override
+    {
+        return QtNodes::ProductOutputContract();
+    }
+
     void setInData(std::shared_ptr<QtNodes::NodeData> nodeData, QtNodes::PortIndex port) override
     {
         Q_UNUSED(nodeData);

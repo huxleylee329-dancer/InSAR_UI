@@ -402,6 +402,27 @@ void WorkflowUI::setupSceneInternal()
     connect(m_graphModel, &QtNodes::AbstractGraphModel::nodeCreated,
             this, &WorkflowUI::onNodeCreated);
 
+    connect(m_graphModel, &QtNodes::DataFlowGraphModel::semanticContractAudit,
+            this, [this](const QString& message, bool rejected) {
+                InSARLogManager::LogWarning("WorkflowUI", message);
+                if (rejected) {
+                    QMessageBox::warning(this, QStringLiteral("Workflow recovery rejected"), message);
+                }
+            });
+    connect(m_graphModel, &QtNodes::DataFlowGraphModel::connectionRejected,
+            this, [](const QtNodes::ConnectionId& connection, const QString& reason) {
+                InSARLogManager::LogWarning("WorkflowUI",
+                    QStringLiteral("Rejected connection %1:%2 -> %3:%4: %5")
+                        .arg(connection.outNodeId).arg(connection.outPortIndex)
+                        .arg(connection.inNodeId).arg(connection.inPortIndex).arg(reason));
+            });
+    connect(m_graphModel, &QtNodes::DataFlowGraphModel::inputBindingRejected,
+            this, [](QtNodes::NodeId nodeId, QtNodes::PortIndex port, const QString& reason) {
+                InSARLogManager::LogWarning("WorkflowUI",
+                    QStringLiteral("Rejected input binding at node %1 port %2: %3")
+                        .arg(nodeId).arg(port).arg(reason));
+            });
+
     // Create scene
     m_scene = new QtNodes::DataFlowGraphicsScene(*m_graphModel, this);
 
@@ -917,6 +938,16 @@ QJsonObject WorkflowUI::saveWorkflowToJson() const
     if (!m_graphModel)
         return QJsonObject();
     return m_graphModel->save();
+}
+
+bool WorkflowUI::hasActiveExecution() const
+{
+    if (!m_graphModel) return false;
+    for (const QtNodes::NodeId nodeId : m_graphModel->allNodeIds()) {
+        const auto* node = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+        if (node && node->executionState() == QtNodes::ExecutionState::Running) return true;
+    }
+    return false;
 }
 
 void WorkflowUI::loadWorkflowFromJson(const QJsonObject& json)

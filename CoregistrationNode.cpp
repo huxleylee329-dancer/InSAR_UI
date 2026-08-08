@@ -563,6 +563,27 @@ bool CoregistrationNode::prepareToStart()
     }
 
     m_preparedInputPaths = m_inputData->filePaths();
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedInputPaths,
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
+    m_preparedTransactionInputPaths = m_preparedInputPaths;
+    if (m_method == "Fine") {
+        if (!m_demInputData || m_demInputData->filePaths().isEmpty()) {
+            setStartFailureMessage(QStringLiteral("DEM-assisted coregistration requires a descriptor-bound DEM input."));
+            return false;
+        }
+        const QStringList demPaths = m_demInputData->filePaths();
+        if (!NodeUtils::validateH5Identities(demPaths, m_demInputData->physicalProductDescriptor(), &identityError)) {
+            setStartFailureMessage(identityError);
+            setLastErrorMessage(identityError);
+            return false;
+        }
+        m_preparedTransactionInputPaths.append(demPaths);
+    }
     m_preparedSavePath = getRealSavePath();
     m_preparedDstNode = m_outputNodeName.trimmed();
     m_preparedProjectName = projectName();
@@ -645,7 +666,19 @@ void CoregistrationNode::executeProcessing()
     setState(ExecutionState::Running);
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, m_preparedH5Paths,
-                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+                                           m_preparedTransactionInputPaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("coregistration.output.coregistered_complex_sar"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("coregistered_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -804,6 +837,13 @@ void CoregistrationNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     if (m_generatedOutputPaths.isEmpty() ||
         m_generatedOutputNames.size() != m_generatedOutputPaths.size() ||
         m_preparedH5Paths.size() != m_generatedOutputPaths.size() ||
@@ -864,6 +904,7 @@ void CoregistrationNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(m_outputImagePaths, m_preparedDstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     InSARLogManager::LogInfo("CoregistrationNode", "Coregistration process finished. Generating previews...");
@@ -992,6 +1033,41 @@ void CoregistrationNode::publishResultsToProjectTree(const QStringList& outputNa
     if (auto* iface = NodeUtils::getProjectContext(_widget)) {
         iface->refreshProjectTree();
     }
+}
+
+ProductInputContract CoregistrationNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    if (portIndex == 0) {
+        contract.semanticId = QStringLiteral("coregistration.input.complex_sar");
+        contract.allowedProductTypes = QStringList()
+            << QStringLiteral("complex_sar")
+            << QStringLiteral("cropped_complex_sar")
+            << QStringLiteral("debursted_complex_sar")
+            << QStringLiteral("deramped_complex_sar")
+            << QStringLiteral("merged_complex_sar")
+            << QStringLiteral("orbit_refined_complex_sar")
+            << QStringLiteral("back_geocoded_complex_sar");
+    } else {
+        contract.semanticId = QStringLiteral("coregistration.input.auxiliary_terrain_dem");
+        contract.optional = true;
+        contract.allowedProductTypes = QStringList() << QStringLiteral("auxiliary_terrain_dem");
+    }
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract CoregistrationNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("coregistration.output.coregistered_complex_sar")
+        : QStringLiteral("coregistration.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("coregistered_complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
 }
 
 QJsonObject CoregistrationNode::save() const
@@ -1429,6 +1505,13 @@ bool CoregistrationNode::validateAndRestoreOutput()
         h5Paths.isEmpty()) {
         return false;
     }
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputProductDescriptor(getRealSavePath(), dstNode, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
+        return false;
+    }
 
     m_preparedDstNode = dstNode;
     m_preparedProjectName = projectName();
@@ -1445,6 +1528,7 @@ bool CoregistrationNode::validateAndRestoreOutput()
     m_outputImagePaths = h5Paths;
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
     publishResultsToProjectTree(m_preparedOutputNames, h5Paths);

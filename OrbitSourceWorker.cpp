@@ -33,9 +33,25 @@ const char* kCdseDownloadHost = "zipper.dataspace.copernicus.eu";
 
 QDateTime parseUtcDateTime(const QString& value)
 {
-    QDateTime result = QDateTime::fromString(value, Qt::ISODateWithMs);
+    QString normalized = value.trimmed();
+    if (normalized.startsWith(QStringLiteral("UTC="), Qt::CaseInsensitive)) {
+        normalized.remove(0, 4);
+    }
+
+    // Sentinel-1 manifests commonly use microseconds while Qt::ISODateWithMs
+    // accepts millisecond precision only. Preserve the timestamp's time zone.
+    static const QRegularExpression timestampRe(
+        QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d+))?(Z|[+-]\\d{2}:?\\d{2})?$"),
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = timestampRe.match(normalized);
+    if (match.hasMatch() && !match.captured(2).isEmpty()) {
+        normalized = match.captured(1) + QStringLiteral(".") +
+            match.captured(2).left(3).leftJustified(3, QLatin1Char('0')) + match.captured(3);
+    }
+
+    QDateTime result = QDateTime::fromString(normalized, Qt::ISODateWithMs);
     if (!result.isValid()) {
-        result = QDateTime::fromString(value, Qt::ISODate);
+        result = QDateTime::fromString(normalized, Qt::ISODate);
     }
     if (result.isValid()) {
         if (result.timeSpec() == Qt::LocalTime) {
@@ -50,6 +66,103 @@ QDateTime parseUtcDateTime(const QString& value)
 QString sourceName(int source)
 {
     return source == 1 ? QStringLiteral("ESA CDSE") : QStringLiteral("NASA ASF");
+}
+
+QString xmlLocalName(const char* value)
+{
+    QString name = QString::fromLatin1(value ? value : "");
+    const int separator = name.lastIndexOf(QLatin1Char(':'));
+    return separator >= 0 ? name.mid(separator + 1) : name;
+}
+
+TiXmlElement* findXmlElementByLocalName(TiXmlNode* parent, const QString& name)
+{
+    if (!parent) {
+        return nullptr;
+    }
+    for (TiXmlNode* node = parent->FirstChild(); node; node = node->NextSibling()) {
+        TiXmlElement* element = node->ToElement();
+        if (!element) {
+            continue;
+        }
+        if (xmlLocalName(element->Value()).compare(name, Qt::CaseInsensitive) == 0) {
+            return element;
+        }
+        if (TiXmlElement* nested = findXmlElementByLocalName(element, name)) {
+            return nested;
+        }
+    }
+    return nullptr;
+}
+
+QString xmlElementText(TiXmlNode* root, const QString& name)
+{
+    TiXmlElement* element = findXmlElementByLocalName(root, name);
+    return element && element->GetText() ? QString::fromUtf8(element->GetText()).trimmed() : QString();
+}
+
+bool readManifestOrbitIdentity(const QString& manifestPath, QString& platform,
+                               QDateTime& acquisitionStart, QDateTime& acquisitionStop,
+                               QString& errorMessage)
+{
+    QFile manifestFile(manifestPath);
+    if (!manifestFile.open(QIODevice::ReadOnly)) {
+        errorMessage = QStringLiteral("无法读取 Sentinel-1 manifest：%1").arg(manifestPath);
+        return false;
+    }
+    const QByteArray manifestData = manifestFile.readAll();
+    manifestFile.close();
+    if (manifestData.isEmpty()) {
+        errorMessage = QStringLiteral("Sentinel-1 manifest 为空：%1").arg(manifestPath);
+        return false;
+    }
+
+    TiXmlDocument document;
+    document.Parse(manifestData.constData(), nullptr, TIXML_ENCODING_UNKNOWN);
+    if (document.Error()) {
+        errorMessage = QStringLiteral("无法解析 Sentinel-1 manifest：%1").arg(manifestPath);
+        return false;
+    }
+
+    TiXmlElement* root = document.RootElement();
+    const QString family = xmlElementText(root, QStringLiteral("familyName"));
+    const QString number = xmlElementText(root, QStringLiteral("number"));
+    QString platformText = (family + QLatin1Char(' ') + number).toUpper();
+    QRegularExpression platformRe(QStringLiteral("S1[AB]"));
+    QRegularExpressionMatch platformMatch = platformRe.match(platformText);
+    if (!platformMatch.hasMatch() &&
+        (family.contains(QStringLiteral("SENTINEL-1"), Qt::CaseInsensitive) ||
+         family.compare(QStringLiteral("S1"), Qt::CaseInsensitive) == 0)) {
+        const QRegularExpressionMatch numberMatch = QRegularExpression(QStringLiteral("([AB])$"))
+            .match(number.toUpper());
+        if (numberMatch.hasMatch()) {
+            platformText = QStringLiteral("S1") + numberMatch.captured(1);
+            platformMatch = platformRe.match(platformText);
+        }
+    }
+    if (!platformMatch.hasMatch()) {
+        errorMessage = QStringLiteral("无法从 manifest 内容确定 Sentinel-1 平台：%1").arg(manifestPath);
+        return false;
+    }
+
+    const QDateTime start = parseUtcDateTime(xmlElementText(root, QStringLiteral("startTime")));
+    const QDateTime stopCandidate = parseUtcDateTime(xmlElementText(root, QStringLiteral("stopTime")));
+    if (!start.isValid()) {
+        errorMessage = QStringLiteral("无法从 manifest 内容确定成像开始时间：%1").arg(manifestPath);
+        return false;
+    }
+    if (!stopCandidate.isValid()) {
+        errorMessage = QStringLiteral("无法从 manifest 内容确定成像结束时间：%1").arg(manifestPath);
+        return false;
+    }
+    platform = platformMatch.captured(0).toUpper();
+    acquisitionStart = start;
+    acquisitionStop = stopCandidate;
+    if (acquisitionStop <= acquisitionStart) {
+        errorMessage = QStringLiteral("manifest 成像时间范围无效：%1").arg(manifestPath);
+        return false;
+    }
+    return true;
 }
 
 bool readAcquisitionTimeRange(const QString& h5Path, QString& startText, QString& stopText,
@@ -271,6 +384,44 @@ OrbitSourceWorker::~OrbitSourceWorker()
 {
 }
 
+bool OrbitSourceWorker::findCachedOrbitForManifest(const QString& manifestPath,
+                                                   const QString& cacheDir,
+                                                   QString& orbitPath,
+                                                   bool& isPrecise,
+                                                   QString* errorMessage)
+{
+    orbitPath.clear();
+    isPrecise = false;
+    if (!QFileInfo(manifestPath).isFile() || !QDir(cacheDir).exists()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Sentinel-1 manifest or orbit cache directory is unavailable.");
+        return false;
+    }
+
+    SlcInfo info;
+    QString manifestError;
+    if (!readManifestOrbitIdentity(manifestPath, info.platform,
+                                   info.acquisitionStart, info.acquisitionStop, manifestError)) {
+        if (errorMessage) *errorMessage = manifestError;
+        return false;
+    }
+
+    OrbitSourceWorker matcher;
+    OrbitProduct product;
+    for (int typeIndex = 0; typeIndex < 2; ++typeIndex) {
+        const bool precise = typeIndex == 0;
+        if (matcher.findCachedOrbit(cacheDir, info, precise, product)) {
+            orbitPath = QDir(cacheDir).absoluteFilePath(product.fileName);
+            isPrecise = precise;
+            return true;
+        }
+    }
+    if (errorMessage) {
+        *errorMessage = QStringLiteral("No cached POEORB or RESORB covers the Sentinel-1 acquisition: %1")
+            .arg(QFileInfo(manifestPath).fileName());
+    }
+    return false;
+}
+
 bool OrbitSourceWorker::convertOrbitSource(int value, OrbitSource& source, QString& errorMessage) const
 {
     if (value == static_cast<int>(OrbitSource::Asf)) {
@@ -397,6 +548,8 @@ bool OrbitSourceWorker::productCovers(const OrbitProduct& product, const SlcInfo
 bool OrbitSourceWorker::findCachedOrbit(const QString& cacheDir, const SlcInfo& info,
     bool precise, OrbitProduct& product) const
 {
+    // Cache resolution is read-only. Invalid cached files are left for the
+    // download/replace path to handle, so preflight cannot delete user data.
     QDir dir(cacheDir);
     if (!dir.exists()) {
         return false;
@@ -428,9 +581,8 @@ bool OrbitSourceWorker::findCachedOrbit(const QString& cacheDir, const SlcInfo& 
         QString xmlError;
         if (!validateOrbitXml(file.absoluteFilePath(), candidate.validStart, candidate.validEnd, xmlError)) {
             InSARLogManager::LogWarning("OrbitSourceWorker",
-                QStringLiteral("缓存轨道文件完整性校验失败，已自动清理并跳过：%1。错误信息：%2")
+                QStringLiteral("缓存轨道文件完整性校验失败，跳过但保留原文件：%1。错误信息：%2")
                 .arg(file.fileName()).arg(xmlError));
-            QFile::remove(file.absoluteFilePath());
             continue;
         }
         matches.append(candidate);
@@ -826,7 +978,19 @@ bool OrbitSourceWorker::validateOrbitXml(const QString& filePath, const QDateTim
     const QDateTime& expectedEnd, QString& errorMessage) const
 {
     TiXmlDocument doc;
-    if (!doc.LoadFile(filePath.toLocal8Bit().constData())) {
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        errorMessage = QStringLiteral("无法读取轨道 XML 文件：%1").arg(filePath);
+        return false;
+    }
+    const QByteArray xmlData = file.readAll();
+    file.close();
+    if (xmlData.isEmpty()) {
+        errorMessage = QStringLiteral("轨道 XML 文件为空：%1").arg(filePath);
+        return false;
+    }
+    doc.Parse(xmlData.constData(), nullptr, TIXML_ENCODING_UNKNOWN);
+    if (doc.Error()) {
         errorMessage = QStringLiteral("无法作为 XML 解析，文件可能已损坏或非 XML 格式。");
         return false;
     }

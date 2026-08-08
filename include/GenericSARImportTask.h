@@ -5,7 +5,11 @@
 #include <QRunnable>
 #include <QString>
 #include <QStringList>
+#include <atomic>
+#include <memory>
 #include <vector>
+
+bool isSupportedGenericSarRasterPath(const QString& path);
 
 // Task for Single Import
 class GenericSARImportTask : public QObject, public QRunnable
@@ -16,7 +20,8 @@ public:
         QString xml_filename,
         QString project_path,
         QString folder,
-        QString filename
+        QString filename,
+        std::shared_ptr<std::atomic_bool> cancellationToken
     );
     ~GenericSARImportTask() override;
 
@@ -27,6 +32,7 @@ signals:
     void updateProcess(int progress, QString message);
     void endProcess();
     void errorProcess(QString error);
+    void cancelled();
     void outputsGenerated(const QString& dstNode,
                           const QStringList& outputNames,
                           const QStringList& outputPaths,
@@ -38,7 +44,7 @@ private:
     QString m_projectPath;
     QString m_folder;
     QString m_filename;
-    bool m_stopFlag = false;
+    std::shared_ptr<std::atomic_bool> m_cancellationToken;
 };
 
 // Task for Batch Import
@@ -50,7 +56,8 @@ public:
         QString savepath,
         std::vector<QString> original_file_list,
         std::vector<QString> import_namelist,
-        QString dst_node
+        QString dst_node,
+        std::shared_ptr<std::atomic_bool> cancellationToken
     );
     ~GenericSARBatchImportTask() override;
 
@@ -61,6 +68,7 @@ signals:
     void updateProcess(int progress, QString message);
     void endProcess();
     void errorProcess(QString error);
+    void cancelled();
     void outputsGenerated(const QString& dstNode,
                           const QStringList& outputNames,
                           const QStringList& outputPaths,
@@ -72,7 +80,7 @@ private:
     std::vector<QString> m_originalFileList;
     std::vector<QString> m_importNamelist;
     QString m_dstNode;
-    bool m_stopFlag = false;
+    std::shared_ptr<std::atomic_bool> m_cancellationToken;
 };
 
 #endif // GENERICSARIMPORTTASK_H

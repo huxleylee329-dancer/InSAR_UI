@@ -51,6 +51,8 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
 protected:
     bool stopExecutionIsAsynchronous() const override { return true; }

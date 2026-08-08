@@ -334,6 +334,13 @@ bool UnwrapNode::prepareToStart()
     m_preparedProjectName = projectName();
     m_preparedSrcNode = m_inputData->nodeName();
     m_preparedPhasePaths = m_inputData->filePaths();
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedPhasePaths, m_inputData->physicalProductDescriptor(),
+                                         &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
 
     m_preparedMethod = m_method;
     m_preparedThreshold = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
@@ -356,6 +363,27 @@ bool UnwrapNode::prepareToStart()
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
 }
 
+ProductInputContract UnwrapNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("unwrap.input.filtered_interferogram");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("filtered_interferogram");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract UnwrapNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0 ? QStringLiteral("unwrap.output.unwrapped_phase")
+                                         : QStringLiteral("unwrap.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList{QStringLiteral("unwrapped_phase")} : QStringList{QStringLiteral("preview")};
+    return contract;
+}
+
 void UnwrapNode::executeProcessing()
 {
     InSARLogManager::LogDebug("UnwrapNode",
@@ -373,7 +401,14 @@ void UnwrapNode::executeProcessing()
         setState(ExecutionState::Running);
         setProgress(100);
         if (validateAndRestoreOutput()) {
-            finishExecution();
+            const QString warningMessage = m_outputData
+                ? committedAmplitudeWarningMessage(m_outputData->filePaths()) : QString();
+            if (!warningMessage.isEmpty()) {
+                setLastWarningMessage(warningMessage);
+                finishExecutionWithWarning();
+            } else {
+                finishExecution();
+            }
         } else {
             setState(ExecutionState::Error);
         }
@@ -389,7 +424,20 @@ void UnwrapNode::executeProcessing()
         onError(transactionError);
         return;
     }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("unwrap.output.unwrapped_phase"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("unwrapped_phase"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
     m_pendingUnwrapResults.clear();
+    m_pendingWarningMessage.clear();
     m_xmlDirty = false;
     m_outputData.reset();
     m_imageInfoData.reset();
@@ -459,6 +507,13 @@ void UnwrapNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QString transactionError;
     if (!projectXml() ||
         !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
@@ -491,6 +546,32 @@ void UnwrapNode::onProcessingFinished()
     NodeUtils::removeDataNodeFromProjectTree(NodeUtils::getProjectContext(_widget), dstNode);
     for (const UnwrapFileResult& result : committedResults) publishUnwrapResultToProjectTree(result);
     if (auto* iface = NodeUtils::getProjectContext(_widget)) iface->refreshProjectTree();
+
+    QStringList amplitudeWarnings;
+    for (const UnwrapFileResult& result : committedResults) {
+        if (!result.amplitudeDegraded) {
+            continue;
+        }
+        QString detail = QStringLiteral("%1: status=%2, reason=%3")
+            .arg(result.unwrapName, result.amplitudeStatus, result.amplitudeReason);
+        if (result.amplitudeExpectedRows > 0 && result.amplitudeExpectedCols > 0) {
+            detail += QStringLiteral(", expected=%1x%2")
+                .arg(result.amplitudeExpectedRows).arg(result.amplitudeExpectedCols);
+        }
+        if (result.amplitudeMasterRows > 0 && result.amplitudeMasterCols > 0) {
+            detail += QStringLiteral(", master=%1x%2")
+                .arg(result.amplitudeMasterRows).arg(result.amplitudeMasterCols);
+        }
+        if (result.amplitudeSlaveRows > 0 && result.amplitudeSlaveCols > 0) {
+            detail += QStringLiteral(", slave=%1x%2")
+                .arg(result.amplitudeSlaveRows).arg(result.amplitudeSlaveCols);
+        }
+        amplitudeWarnings.append(detail);
+    }
+    m_pendingWarningMessage = amplitudeWarnings.isEmpty()
+        ? QString()
+        : QStringLiteral("SNAPHU 解缠完成，但未使用幅度约束：\n%1")
+              .arg(amplitudeWarnings.join('\n'));
 
     for (const QString& h5Path : h5Paths) {
         jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg");
@@ -611,7 +692,12 @@ bool UnwrapNode::validateAndRestoreOutput()
         return false;
 
     QStringList h5Paths;
-    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) return false;
     QStringList expectedJpgPaths;
     QStringList types;
 
@@ -622,6 +708,7 @@ bool UnwrapNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     Q_EMIT dataUpdated(0);
 
@@ -691,7 +778,13 @@ void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
             setState(ExecutionState::Running);
             setProgress(100);
             InSARLogManager::LogInfo("UnwrapNode", "executeProcessing completed.");
-            finishExecution();
+            if (!m_pendingWarningMessage.isEmpty()) {
+                setLastWarningMessage(m_pendingWarningMessage);
+                finishExecutionWithWarning();
+            } else {
+                finishExecution();
+            }
+            m_pendingWarningMessage.clear();
         } else {
             m_imageInfoData = std::make_shared<ImageInfoData>(currentJpgPaths);
             setOutputData(1, m_imageInfoData);
@@ -764,6 +857,36 @@ XMLFile* UnwrapNode::projectXml() const
 {
     auto iface = NodeUtils::getProjectContext(_widget);
     return iface ? iface->projectXml() : nullptr;
+}
+
+QString UnwrapNode::committedAmplitudeWarningMessage(const QStringList& h5Paths) const
+{
+    QStringList warnings;
+    for (const QString& h5Path : h5Paths) {
+        std::string status;
+        int degraded = 0;
+        int method = 0;
+        const bool hasMethod = NodeUtils::readScalarFromH5(h5Path, "unwrap_method", method);
+        const bool hasStatus = NodeUtils::readStringFromH5(h5Path, "unwrap_amplitude_status", status);
+        const bool hasDegraded = NodeUtils::readScalarFromH5(h5Path, "unwrap_amplitude_degraded", degraded);
+        if (!hasStatus || !hasDegraded) {
+            if (hasMethod && method == 3) {
+                warnings.append(QStringLiteral("%1: 幅度约束元数据缺失")
+                    .arg(QFileInfo(h5Path).baseName()));
+            }
+            continue;
+        }
+        if (degraded == 0) {
+            continue;
+        }
+        std::string reason;
+        NodeUtils::readStringFromH5(h5Path, "unwrap_amplitude_reason", reason);
+        warnings.append(QStringLiteral("%1: status=%2, reason=%3")
+            .arg(QFileInfo(h5Path).baseName(), QString::fromStdString(status), QString::fromStdString(reason)));
+    }
+    return warnings.isEmpty()
+        ? QString()
+        : QStringLiteral("SNAPHU 解缠完成，但未使用幅度约束：\n%1").arg(warnings.join('\n'));
 }
 
 void UnwrapNode::execute()
@@ -839,6 +962,16 @@ struct UnwrapImageDiagnostics
     qint64 largestGradientRiskPixels = 0;
     QRect largestGradientRiskBounds;
     bool hasSpatialMetrics = false;
+    bool amplitudeMetadataPresent = false;
+    bool amplitudeDegraded = false;
+    QString amplitudeStatus;
+    QString amplitudeReason;
+    int amplitudeMasterRows = 0;
+    int amplitudeMasterCols = 0;
+    int amplitudeSlaveRows = 0;
+    int amplitudeSlaveCols = 0;
+    int amplitudeExpectedRows = 0;
+    int amplitudeExpectedCols = 0;
 };
 
 struct UnwrapValidationResults
@@ -882,6 +1015,7 @@ private:
         m_candidateJumpEdgeLabel = createFeatureLabel();
         m_candidateJumpPointLabel = createFeatureLabel();
         m_riskRegionLabel = createFeatureLabel();
+        m_amplitudeLabel = createFeatureLabel();
         m_missingLabel = createFeatureLabel();
         QGridLayout* featureGrid = replaceFeatureFormWithGrid();
         const auto addMetric = [this, featureGrid](int row, int column, int columnSpan,
@@ -906,7 +1040,8 @@ private:
         addMetric(2, 1, 1, QObject::tr("候选跳变边密度 (|delta| > pi，候选边/有效相邻边):"), m_candidateJumpEdgeLabel);
         addMetric(3, 0, 1, QObject::tr("候选跳变点密度 (候选点/有效输出像元):"), m_candidateJumpPointLabel);
         addMetric(3, 1, 1, QObject::tr("最大候选跳变区域:"), m_riskRegionLabel);
-        addMetric(4, 0, 2, QObject::tr("缺失或尺寸异常结果:"), m_missingLabel);
+        addMetric(4, 0, 1, QObject::tr("SNAPHU 幅度约束:"), m_amplitudeLabel);
+        addMetric(4, 1, 1, QObject::tr("缺失或尺寸异常结果:"), m_missingLabel);
     }
 
     void setNotExecutedState()
@@ -924,6 +1059,7 @@ private:
         m_candidateJumpEdgeLabel->setText(QObject::tr("未执行"));
         m_candidateJumpPointLabel->setText(QObject::tr("未执行"));
         m_riskRegionLabel->setText(QObject::tr("未执行"));
+        m_amplitudeLabel->setText(QObject::tr("未执行"));
         m_missingLabel->setText(QObject::tr("未执行"));
     }
 
@@ -988,6 +1124,25 @@ private:
                 } else if ((!hasMethod || !result.hasRecordedMethod || method != result.recordedMethod)
                            || (!hasThreshold || !result.hasRecordedThreshold || std::abs(threshold - result.recordedThreshold) > 1e-9)) {
                     result.outputMetadataConsistent = false;
+                }
+
+                std::string amplitudeStatus;
+                std::string amplitudeReason;
+                int amplitudeDegraded = 0;
+                image.amplitudeMetadataPresent =
+                    NodeUtils::readStringFromH5(outputPath, "unwrap_amplitude_status", amplitudeStatus) &&
+                    NodeUtils::readStringFromH5(outputPath, "unwrap_amplitude_reason", amplitudeReason) &&
+                    NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_degraded", amplitudeDegraded);
+                if (image.amplitudeMetadataPresent) {
+                    image.amplitudeStatus = QString::fromStdString(amplitudeStatus);
+                    image.amplitudeReason = QString::fromStdString(amplitudeReason);
+                    image.amplitudeDegraded = amplitudeDegraded != 0;
+                    NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_master_rows", image.amplitudeMasterRows);
+                    NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_master_cols", image.amplitudeMasterCols);
+                    NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_slave_rows", image.amplitudeSlaveRows);
+                    NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_slave_cols", image.amplitudeSlaveCols);
+                    NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_expected_rows", image.amplitudeExpectedRows);
+                    NodeUtils::readScalarFromH5(outputPath, "unwrap_amplitude_expected_cols", image.amplitudeExpectedCols);
                 }
 
                 cv::Mat inputPhase;
@@ -1178,6 +1333,8 @@ private:
             double smallestLargestComponentRatio = 100.0;
             const UnwrapImageDiagnostics* largestRiskImage = nullptr;
             int missingOrInvalid = 0;
+            int amplitudeDegradedCount = 0;
+            int amplitudeMetadataMissingCount = 0;
             for (const UnwrapImageDiagnostics& image : result.images) {
                 const QString expected = QStringLiteral("%1 x %2").arg(image.inputCols).arg(image.inputRows);
                 QString actual;
@@ -1194,6 +1351,32 @@ private:
                     actual = QStringLiteral("%1 x %2").arg(image.outputCols).arg(image.outputRows);
                 }
                 m_compTable->addComparison(image.name, expected, actual);
+
+                if (image.amplitudeMetadataPresent) {
+                    QString amplitudeText = image.amplitudeStatus;
+                    if (image.amplitudeDegraded && image.amplitudeExpectedRows > 0 && image.amplitudeExpectedCols > 0) {
+                        amplitudeText += QObject::tr("（期望 %1x%2")
+                            .arg(image.amplitudeExpectedRows).arg(image.amplitudeExpectedCols);
+                        if (image.amplitudeMasterRows > 0 && image.amplitudeMasterCols > 0) {
+                            amplitudeText += QObject::tr("，主幅度 %1x%2")
+                                .arg(image.amplitudeMasterRows).arg(image.amplitudeMasterCols);
+                        }
+                        if (image.amplitudeSlaveRows > 0 && image.amplitudeSlaveCols > 0) {
+                            amplitudeText += QObject::tr("，辅幅度 %1x%2")
+                                .arg(image.amplitudeSlaveRows).arg(image.amplitudeSlaveCols);
+                        }
+                        amplitudeText += QStringLiteral(")");
+                    }
+                    m_compTable->addDiagnostic(image.name + QObject::tr(" 幅度约束"),
+                        QObject::tr("%1，原因：%2").arg(amplitudeText, image.amplitudeReason));
+                    if (image.amplitudeDegraded) {
+                        ++amplitudeDegradedCount;
+                    }
+                } else if (result.expectedMethod == 3) {
+                    ++amplitudeMetadataMissingCount;
+                    m_compTable->addDiagnostic(image.name + QObject::tr(" 幅度约束"),
+                        QObject::tr("未记录（旧结果或元数据不完整）"));
+                }
 
                 if (image.hasRewrapMetrics) {
                     const double imageCoverage = image.inputFinite > 0 ? 100.0 * image.pairedFinite / image.inputFinite : 0.0;
@@ -1275,18 +1458,31 @@ private:
                 m_riskRegionLabel->setText(QObject::tr("未发现候选跳变区域"));
             }
             m_missingLabel->setText(QString::number(missingOrInvalid) + QStringLiteral(" / ") + QString::number(result.images.size()));
+            if (amplitudeDegradedCount > 0) {
+                m_amplitudeLabel->setText(QObject::tr("%1 / %2 幅降级")
+                    .arg(amplitudeDegradedCount).arg(result.images.size()));
+            } else if (amplitudeMetadataMissingCount > 0) {
+                m_amplitudeLabel->setText(QObject::tr("未记录（%1 幅）").arg(amplitudeMetadataMissingCount));
+            } else if (result.expectedMethod == 3) {
+                m_amplitudeLabel->setText(QObject::tr("全部使用或明确记录"));
+            } else {
+                m_amplitudeLabel->setText(QObject::tr("不适用（非 SNAPHU）"));
+            }
 
             const bool metadataMatch = result.outputMetadataConsistent
                 && (!result.hasRecordedMethod || result.recordedMethod == result.expectedMethod)
                 && (result.expectedMethod != 4 || !result.hasRecordedThreshold || std::abs(result.recordedThreshold - result.expectedThreshold) <= 1e-9);
-            if (missingOrInvalid == 0 && metadataMatch) {
+            const bool amplitudeReview = amplitudeDegradedCount > 0 || amplitudeMetadataMissingCount > 0;
+            if (missingOrInvalid == 0 && metadataMatch && !amplitudeReview) {
                 m_statusTitle->setText(QObject::tr("诊断完成"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
                 m_statusDesc->setText(QObject::tr("全部结果已配对。重新缠绕一致性、连通域和候选跳变仅用于诊断数值完整性与候选风险，不能单独证明不存在整数周模糊。"));
             } else {
                 m_statusTitle->setText(QObject::tr("需要复查"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-                m_statusDesc->setText(QObject::tr("发现缺失、尺寸异常或记录参数不一致的结果。请先检查对应影像和处理日志。"));
+                m_statusDesc->setText(amplitudeReview
+                    ? QObject::tr("发现 SNAPHU 幅度约束降级或元数据缺失；结果仍可用，但质量不等同于使用幅度约束的运行。")
+                    : QObject::tr("发现缺失、尺寸异常或记录参数不一致的结果。请先检查对应影像和处理日志。"));
             }
             watcher->deleteLater();
         });
@@ -1302,6 +1498,7 @@ private:
     QLabel* m_candidateJumpEdgeLabel = nullptr;
     QLabel* m_candidateJumpPointLabel = nullptr;
     QLabel* m_riskRegionLabel = nullptr;
+    QLabel* m_amplitudeLabel = nullptr;
     QLabel* m_missingLabel = nullptr;
 };
 

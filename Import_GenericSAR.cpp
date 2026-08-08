@@ -6,6 +6,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <qmessagebox.h>
+#include <atomic>
+#include <memory>
 
 #include "InSARLogManager.h"
 #include "ImportOutputPersistence.h"
@@ -148,18 +150,25 @@ void Import_GenericSAR::on_buttonBox_accepted()
 
     const QString destinationProject = ui->comboBox_dst_project->currentText();
     const QString destinationPath = this->save_path;
-    import_GenericSAR_thread = new GenericSARImportTask(
+    GenericSARImportTask* singleImportTask = new GenericSARImportTask(
         ui->LineEdit_xml->text(),
         destinationPath,
         ui->lineEdit_dst_node->text(),
-        ui->LineEdit_dst_filename->text()
+        ui->LineEdit_dst_filename->text(),
+        std::make_shared<std::atomic_bool>(false)
     );
-    import_GenericSAR_thread->setAutoDelete(true);
+    import_GenericSAR_thread = singleImportTask;
 
     ui->progressBar->setValue(0);
     ui->progressBar->show();
     connect(import_GenericSAR_thread, &GenericSARImportTask::updateProcess, this, &Import_GenericSAR::updateProcess);
     connect(import_GenericSAR_thread, &GenericSARImportTask::endProcess, this, &Import_GenericSAR::endProcess);
+    connect(singleImportTask, &GenericSARImportTask::endProcess,
+            singleImportTask, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(singleImportTask, &GenericSARImportTask::errorProcess,
+            singleImportTask, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(singleImportTask, &GenericSARImportTask::cancelled,
+            singleImportTask, &QObject::deleteLater, Qt::QueuedConnection);
     connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);
     connect(import_GenericSAR_thread, &GenericSARImportTask::outputsGenerated, this,
@@ -317,19 +326,26 @@ void Import_GenericSAR::on_buttonBox_2_accepted()
 
     const QString destinationProject = ui->comboBox_dst_project_2->currentText();
     const QString destinationPath = this->save_path;
-    import_GenericSAR_thread2 = new GenericSARBatchImportTask(
+    GenericSARBatchImportTask* batchImportTask = new GenericSARBatchImportTask(
         destinationPath,
         original_namelist,
         import_namelist,
-        ui->lineEdit_dst_node_2->text()
+        ui->lineEdit_dst_node_2->text(),
+        std::make_shared<std::atomic_bool>(false)
     );
-    import_GenericSAR_thread2->setAutoDelete(true);
+    import_GenericSAR_thread2 = batchImportTask;
 
     ui->progressBar_2->setValue(0);
     ui->progressBar_2->show();
     
     connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::updateProcess, this, &Import_GenericSAR::updateProcess);
     connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::endProcess, this, &Import_GenericSAR::endProcess);
+    connect(batchImportTask, &GenericSARBatchImportTask::endProcess,
+            batchImportTask, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(batchImportTask, &GenericSARBatchImportTask::errorProcess,
+            batchImportTask, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(batchImportTask, &GenericSARBatchImportTask::cancelled,
+            batchImportTask, &QObject::deleteLater, Qt::QueuedConnection);
     connect(this, &QWidget::destroyed, this, &Import_GenericSAR::StopThread);
     connect(ui->buttonBox_2, &QDialogButtonBox::rejected, this, &Import_GenericSAR::StopThread);
     connect(import_GenericSAR_thread2, &GenericSARBatchImportTask::outputsGenerated, this,

@@ -25,6 +25,18 @@ LidarImportNode::LidarImportNode()
 {
 }
 
+ProductOutputContract LidarImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("lidar_import.output.height_metric")
+        : QStringLiteral("lidar_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("lidar_height_metric")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 QWidget* LidarImportNode::createWidget()
 {
     auto* widget = new QWidget();

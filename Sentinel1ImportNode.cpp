@@ -33,6 +33,18 @@ Sentinel1ImportNode::Sentinel1ImportNode()
 {
 }
 
+ProductOutputContract Sentinel1ImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("sentinel1_import.output.burst_sar")
+        : QStringLiteral("sentinel1_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("sentinel1_burst_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 QWidget* Sentinel1ImportNode::createWidget()
 {
     auto* widget = new QWidget();

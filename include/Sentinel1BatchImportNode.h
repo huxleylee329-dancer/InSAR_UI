@@ -38,6 +38,7 @@ public:
 
     QString caption() const override { return QStringLiteral("Sentinel-1 Batch Import"); }
     QString name() const override { return QStringLiteral("Sentinel1BatchImport"); }
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
@@ -65,7 +66,8 @@ private:
     QListWidget* m_fileListWidget;
     QComboBox* m_subswathCombo;
     QComboBox* m_polarizationCombo;
-    QLabel* m_projectLabel;
+    QLineEdit* m_orbitCacheDirEdit;
+    QPushButton* m_browseOrbitCacheBtn;
     QCheckBox* m_importAllBurstsCheckBox;
     QSpinBox* m_startBurstSpin;
     QSpinBox* m_endBurstSpin;
@@ -75,12 +77,14 @@ private:
     QString m_outputNodeName;
     QString m_subswath = "iw1";
     QString m_polarization = "vv";
+    QString m_orbitCacheDir;
     bool m_importAllBursts = true;
     int m_startBurst = 0;
     int m_endBurst = 0;
 
     std::vector<QString> m_preparedOriginalNameList;
     std::vector<QString> m_preparedImportNameList;
+    QStringList m_preparedOrbitPaths;
     QString m_preparedOutputNodeName;
 };
 

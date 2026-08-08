@@ -87,6 +87,7 @@ std::shared_ptr<NodeData> GCPManagerNode::outData(PortIndex port)
 
 void GCPManagerNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
+    if (port != 0) return;
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
     if (m_inputData) {
@@ -104,6 +105,29 @@ void GCPManagerNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
+}
+
+ProductInputContract GCPManagerNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("gcp_manager.input.coregistered_complex_sar");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("coregistered_complex_sar");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract GCPManagerNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("gcp_manager.output.gcp_evaluation")
+        : QStringLiteral("gcp_manager.output.gcp_report");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("gcp_evaluation")
+        : QStringList() << QStringLiteral("gcp_report");
+    return contract;
 }
 
 ::QWidget* GCPManagerNode::embeddedWidget()
@@ -254,6 +278,24 @@ void GCPManagerNode::execute()
         return;
     }
 
+    QString transactionError;
+    if (!NodeUtils::beginOutputTransaction(projectDir(), m_outputNodeName,
+            m_preparedOutputPaths, m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), name());
+    provenance.insert(QStringLiteral("output_port"), productOutputContract(0).semanticId);
+    if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+            ProductDescriptor::create(QStringLiteral("gcp_evaluation"),
+                productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
+                productOutputContract(0).publishedState, name(), provenance), &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+
     setState(ExecutionState::Running);
     m_statusLabel->setText(QStringLiteral("状态：正在读取数据并执行评估..."));
     m_hasPendingEvaluation = false;
@@ -291,7 +333,7 @@ void GCPManagerNode::execute()
         projectDir(),
         QFileInfo(NodeUtils::getProjectContext(_widget)->projectPath()).baseName(),
         m_inputData->filePath(),
-        getOutputH5Path(),
+        QDir(projectDir()).absoluteFilePath(m_outputTransaction.stagingName + "/GCPResults.h5"),
         gcps,
         m_thresholdSigma,
         m_minQuality
@@ -340,10 +382,23 @@ void GCPManagerNode::processAutomatically()
 
 bool GCPManagerNode::prepareToStart()
 {
-    if (!m_inputData) return false;
-    
-    // 创建输出目录
-    QDir().mkpath(projectDir() + "/" + m_outputNodeName);
+    if (!m_inputData || m_inputData->filePaths().size() != 1 || projectDir().isEmpty()) return false;
+    const ProductValidationResult inputValidation = validateBoundDescriptor(
+        productInputContract(0), m_inputData->productDescriptor());
+    if (!inputValidation.accepted) {
+        setLastErrorMessage(inputValidation.reason);
+        return false;
+    }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_inputData->filePaths(),
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setLastErrorMessage(identityError);
+        return false;
+    }
+    m_preparedInputPaths = m_inputData->filePaths();
+    m_preparedOutputPaths = QStringList()
+        << getOutputH5Path()
+        << getReportTxtPath();
     return true;
 }
 
@@ -370,23 +425,43 @@ void GCPManagerNode::onProcessingFinished()
         return;
     }
 
-    if (m_db && m_db->isOpen()) {
-        m_db->updateGCPs(m_pendingGcps);
-    }
-
-    QString reportPath = getReportTxtPath();
-    QFile file(reportPath);
+    const QString stagedReportPath = QDir(projectDir()).absoluteFilePath(
+        m_outputTransaction.stagingName + "/GCPResults_report.txt");
+    QFile file(stagedReportPath);
     if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         QTextStream out(&file);
         out << m_pendingReportText;
     }
 
-    m_outputData = std::make_shared<ImportedFileData>(getOutputH5Path(), m_outputNodeName);
+    QString transactionError;
+    QStringList finalPaths;
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease ||
+        !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
+        !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
+            QStringList() << QStringLiteral("gcp_lon") << QStringLiteral("gcp_quality"), &transactionError) ||
+        !NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+        !NodeUtils::completeOutputTransactionWithoutMetadata(m_outputTransaction, &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("GCP 输出事务提交失败") : transactionError);
+        return;
+    }
+    if (m_db && m_db->isOpen()) {
+        m_db->updateGCPs(m_pendingGcps);
+    }
+    const QString reportPath = finalPaths.value(1);
+    m_outputData = std::make_shared<ImportedFileData>(finalPaths.value(0), m_outputNodeName);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     QMap<QString, QString> meta;
     meta["RMS_2D"] = QString::number(m_pendingRmsResidual2d, 'f', 3) + " m";
     meta["Total_GCPs"] = QString::number(m_pendingNumGcpUsed + m_pendingNumGcpRejected);
     meta["Rejected_GCPs"] = QString::number(m_pendingNumGcpRejected);
     m_reportData = std::make_shared<ImageInfoData>(reportPath, meta);
+    QMap<QString, QString> reportProvenance;
+    reportProvenance.insert(QStringLiteral("producer"), name());
+    reportProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+    m_reportData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("gcp_report"),
+        productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+        productOutputContract(1).publishedState, name(), reportProvenance));
     m_hasPendingEvaluation = false;
 
     setOutputData(0, m_outputData);
@@ -417,6 +492,7 @@ void GCPManagerNode::onEvaluationFinished(const std::vector<GCPPoint>& updatedGc
 void GCPManagerNode::onError(const QString& error)
 {
     cleanUpThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, error);
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -431,6 +507,7 @@ void GCPManagerNode::onError(const QString& error)
 void GCPManagerNode::onCancelled()
 {
     cleanUpThreadAndWorker();
+    NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"));
     if (discardObsoleteAutomaticExecution()) {
         return;
     }
@@ -445,12 +522,20 @@ void GCPManagerNode::onCancelled()
 
 bool GCPManagerNode::validateAndRestoreOutput()
 {
-    // 自包含恢复规范：无须依赖上游是否连接，只根据磁盘实体恢复
-    QString outH5 = getOutputH5Path();
-    QString reportTxt = getReportTxtPath();
-
-    if (QFile::exists(outH5)) {
+    QStringList outputPaths;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (NodeUtils::loadCommittedOutputManifest(projectDir(), m_outputNodeName, outputPaths) &&
+        outputPaths.size() == 2 && QFileInfo(outputPaths[0]).fileName() == QStringLiteral("GCPResults.h5") &&
+        QFileInfo(outputPaths[1]).fileName() == QStringLiteral("GCPResults_report.txt") &&
+        NodeUtils::loadCommittedOutputProductDescriptor(projectDir(), m_outputNodeName, descriptor, &identityError) &&
+        validatePublishedDescriptor(productOutputContract(0), descriptor).accepted &&
+        NodeUtils::validateH5Identities(QStringList() << outputPaths[0], descriptor, &identityError) &&
+        QFile::exists(outputPaths[1])) {
+        const QString outH5 = outputPaths[0];
+        const QString reportTxt = outputPaths[1];
         m_outputData = std::make_shared<ImportedFileData>(outH5, m_outputNodeName);
+        m_outputData->setProductDescriptor(descriptor);
         
         QMap<QString, QString> meta;
         if (QFile::exists(reportTxt)) {
@@ -468,9 +553,13 @@ bool GCPManagerNode::validateAndRestoreOutput()
                 file.close();
             }
             m_reportData = std::make_shared<ImageInfoData>(reportTxt, meta);
-        } else {
-            m_reportData = std::make_shared<ImageInfoData>(outH5, meta);
         }
+        QMap<QString, QString> reportProvenance;
+        reportProvenance.insert(QStringLiteral("producer"), name());
+        reportProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+        m_reportData->setProductDescriptor(ProductDescriptor::create(QStringLiteral("gcp_report"),
+            productOutputContract(1).schemaId, productOutputContract(1).schemaVersion,
+            productOutputContract(1).publishedState, name(), reportProvenance));
         setOutputData(0, m_outputData);
         setOutputData(1, m_reportData);
         

@@ -13,6 +13,7 @@
 #include <QApplication>
 #include <QThread>
 #include <QFileInfo>
+#include <QSet>
 #include <QtConcurrent/QtConcurrent>
 #include <QDebug>
 
@@ -126,6 +127,23 @@ QStringList ImportNodeBase::previewImagePaths() const
     return jpgPaths;
 }
 
+QStringList ImportNodeBase::getExpectedPreviewFilePaths() const
+{
+    QStringList previewPaths;
+    const QStringList outputPaths = getExpectedOutputFilePaths();
+    for (const QString& outputPath : outputPaths) {
+        const QFileInfo info(outputPath);
+        previewPaths.append(info.absolutePath() + QStringLiteral("/") +
+                            info.baseName() + QStringLiteral(".jpg"));
+    }
+    return previewPaths;
+}
+
+QStringList ImportNodeBase::transactionInputPaths() const
+{
+    return QStringList();
+}
+
 void ImportNodeBase::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     // Call base class implementation
@@ -181,16 +199,53 @@ void ImportNodeBase::execute()
 
     m_stopRequested = false;
     m_generatedOutputPaths.clear();
+    m_generatedOutputNames.clear();
+    const ProductOutputContract outputContract = productOutputContract(0);
+    m_semanticTransactionActive = !outputContract.semanticId.isEmpty() &&
+        !outputContract.publishedProductTypes.isEmpty();
 
     // 如果准备阶段确定加载已存在文件，直接跳转完成，不启动 Worker
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::LoadExisting) {
+        if (m_semanticTransactionActive) {
+            if (!validateAndRestoreOutput()) {
+                onError(QStringLiteral("Existing imported product does not satisfy its semantic identity contract."));
+                return;
+            }
+            setProgress(100);
+            finishExecution();
+            return;
+        }
         setProgress(100);
         onImportFinished();
         return;
     }
 
-    // 如果用户选择覆盖，在正式运行前移除原有项目节点以避免数据累加/UI重影
-    if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
+    if (m_semanticTransactionActive) {
+        const QStringList primaryPaths = getExpectedOutputFilePaths();
+        QStringList expectedPaths = primaryPaths;
+        expectedPaths.append(getExpectedPreviewFilePaths());
+        QString transactionError;
+        if (primaryPaths.isEmpty() || !NodeUtils::beginOutputTransaction(projectPath(), getOutputNodeName(),
+                expectedPaths, transactionInputPaths(), m_outputTransaction, &transactionError)) {
+            onError(transactionError.isEmpty() ? QStringLiteral("Import output transaction could not be prepared.")
+                                                : transactionError);
+            return;
+        }
+        m_outputTransaction.executionRevision = executionRevision();
+        QMap<QString, QString> provenance;
+        provenance.insert(QStringLiteral("producer"), name());
+        provenance.insert(QStringLiteral("output_port"), outputContract.semanticId);
+        if (!NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction,
+                ProductDescriptor::create(outputContract.publishedProductTypes.first(),
+                    outputContract.schemaId, outputContract.schemaVersion,
+                    outputContract.publishedState, name(), provenance), &transactionError)) {
+            onError(transactionError);
+            return;
+        }
+    }
+
+    // Legacy importers retain their direct persistence path until they declare a product contract.
+    if (!m_semanticTransactionActive && m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
         NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
     }
 
@@ -261,6 +316,51 @@ void ImportNodeBase::stopExecution()
 
 bool ImportNodeBase::validateAndRestoreOutput()
 {
+    const ProductOutputContract outputContract = productOutputContract(0);
+    if (!outputContract.semanticId.isEmpty() && !outputContract.publishedProductTypes.isEmpty()) {
+        QStringList manifestPaths;
+        ProductDescriptor::Ptr descriptor;
+        QString identityError;
+        const QString nodeName = getOutputNodeName();
+        if (!NodeUtils::loadCommittedOutputManifest(projectPath(), nodeName, manifestPaths) ||
+            !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), nodeName, descriptor, &identityError) ||
+            !validatePublishedDescriptor(outputContract, descriptor).accepted) {
+            return false;
+        }
+        const QStringList expectedPrimaryPaths = getExpectedOutputFilePaths();
+        QSet<QString> expectedPrimaryNames;
+        for (const QString& path : expectedPrimaryPaths) {
+            expectedPrimaryNames.insert(QFileInfo(path).fileName());
+        }
+        QStringList primaryPaths;
+        QStringList jpgPaths;
+        for (const QString& path : manifestPaths) {
+            if (expectedPrimaryNames.contains(QFileInfo(path).fileName())) primaryPaths.append(path);
+            if (QFileInfo(path).suffix().compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0) jpgPaths.append(path);
+        }
+        if (primaryPaths.isEmpty()) return false;
+        QStringList h5Paths;
+        for (const QString& path : primaryPaths) {
+            if (QFileInfo(path).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+                h5Paths.append(path);
+            }
+        }
+        if (!h5Paths.isEmpty() && !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) return false;
+        m_importedFilePaths = primaryPaths;
+        m_importedFiles = std::make_shared<ImportedFileData>(primaryPaths, nodeName);
+        m_importedFiles->setProductDescriptor(descriptor);
+        setOutputData(0, m_importedFiles);
+        if (nPorts(PortType::Out) > 1) {
+            m_imageInfo = std::make_shared<ImageInfoData>(jpgPaths);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_imageInfo->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                QStringLiteral("sat-explorer-product"), 1, ProductState::Committed, name(), previewProvenance));
+            setOutputData(1, m_imageInfo);
+        }
+        return true;
+    }
     QStringList expectedPaths = getExpectedOutputFilePaths();
     if (expectedPaths.isEmpty())
         return false;
@@ -393,6 +493,103 @@ void ImportNodeBase::onImportProgress(int progress, const QString& message)
 
 void ImportNodeBase::onImportFinished()
 {
+    if (m_semanticTransactionActive) {
+        QString transactionError;
+        IApplicationInterface* iface = getProjectContext();
+        XMLFile* xml = iface ? iface->projectXml() : nullptr;
+        if (m_outputPersistenceFailed || !xml) {
+            onThreadError(m_outputPersistenceFailed
+                ? QStringLiteral("Imported output persistence failed.")
+                : QStringLiteral("Project XML context is unavailable for import output commit."));
+            return;
+        }
+        OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+        if (!commitLease) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                                QStringLiteral("obsolete execution revision"), xml);
+            return;
+        }
+        if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError)) {
+            onThreadError(transactionError);
+            return;
+        }
+        QSet<QString> generatedPrimaryNames;
+        for (const QString& path : m_generatedOutputPaths) {
+            generatedPrimaryNames.insert(QFileInfo(path).fileName());
+        }
+        const QDir stagingDirectory(QDir(m_outputTransaction.projectRoot)
+            .absoluteFilePath(m_outputTransaction.stagingName));
+        QStringList stagedPrimaryPaths;
+        for (const QString& name : m_outputTransaction.expectedFileNames) {
+            if (generatedPrimaryNames.contains(name)) {
+                stagedPrimaryPaths.append(stagingDirectory.absoluteFilePath(name));
+            }
+        }
+        if (stagedPrimaryPaths.isEmpty() || stagedPrimaryPaths.size() != m_generatedOutputNames.size() ||
+            !NodeUtils::workerOutputsMatchManifest(stagedPrimaryPaths, m_generatedOutputPaths, &transactionError)) {
+            onThreadError(transactionError.isEmpty()
+                ? QStringLiteral("Imported output manifest does not match the generated primary products.")
+                : transactionError);
+            return;
+        }
+        QStringList finalPaths;
+        if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &transactionError) ||
+            !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, xml,
+                NodeUtils::getProjectFilePath(_widget), &transactionError)) {
+            onThreadError(transactionError);
+            return;
+        }
+        QStringList primaryPaths;
+        QStringList jpgPaths;
+        for (const QString& path : finalPaths) {
+            const QString suffix = QFileInfo(path).suffix();
+            if (generatedPrimaryNames.contains(QFileInfo(path).fileName())) primaryPaths.append(path);
+            if (suffix.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0) jpgPaths.append(path);
+        }
+        const QString nodeName = getOutputNodeName();
+        NodeUtils::removeDataNodeFromProject(iface, nodeName, false, false);
+        for (int i = 0; i < primaryPaths.size(); ++i) {
+            const QString relativePath = QStringLiteral("/%1/%2").arg(nodeName, QFileInfo(primaryPaths[i]).fileName());
+            if (xml->XMLFile_add_origin(nodeName.toStdString().c_str(),
+                    m_generatedOutputNames[i].toStdString().c_str(),
+                    relativePath.toStdString().c_str(),
+                    m_generatedSatelliteFormat.toStdString().c_str()) < 0) {
+                onThreadError(QStringLiteral("Unable to update imported product metadata."));
+                return;
+            }
+        }
+        if (!NodeUtils::saveProjectXmlAtomically(xml, NodeUtils::getProjectFilePath(_widget),
+                &transactionError) || !NodeUtils::markOutputTransactionMetadataCommitted(
+                    m_outputTransaction, &transactionError)) {
+            onThreadError(transactionError);
+            return;
+        }
+        NodeUtils::removeDataNodeFromProjectTree(iface, nodeName);
+        if (!ImportOutputPersistence::publishToModel(projectModel(), projectName(), nodeName,
+                m_generatedOutputNames, primaryPaths, m_generatedDataType)) {
+            onThreadError(QStringLiteral("Unable to publish imported products to the project tree."));
+            return;
+        }
+        m_importedFilePaths = primaryPaths;
+        m_importedFiles = std::make_shared<ImportedFileData>(primaryPaths, nodeName);
+        m_importedFiles->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
+        setOutputData(0, m_importedFiles);
+        if (nPorts(PortType::Out) > 1) {
+            m_imageInfo = std::make_shared<ImageInfoData>(jpgPaths);
+            QMap<QString, QString> previewProvenance;
+            previewProvenance.insert(QStringLiteral("producer"), name());
+            previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
+            m_imageInfo->setProductDescriptor(ProductDescriptor::create(QStringLiteral("preview"),
+                QStringLiteral("sat-explorer-product"), 1, ProductState::Committed, name(), previewProvenance));
+            setOutputData(1, m_imageInfo);
+        }
+        if (iface) iface->refreshProjectTree();
+        if (m_thread) { m_thread->quit(); m_thread->wait(); m_thread->deleteLater(); m_thread = nullptr; }
+        if (m_worker) { m_worker->deleteLater(); m_worker = nullptr; }
+        finishExecution();
+        return;
+    }
+
     if (m_outputPersistenceFailed) {
         onThreadError(QStringLiteral("Unable to save imported outputs to the project."));
         return;
@@ -492,6 +689,18 @@ void ImportNodeBase::onOutputsGenerated(const QString& dstNode,
                                         const QString& dataType,
                                         const QString& satelliteFormat)
 {
+    if (m_semanticTransactionActive) {
+        if (dstNode != m_outputTransaction.stagingName) {
+            m_outputPersistenceFailed = true;
+            return;
+        }
+        m_generatedOutputNames = outputNames;
+        m_generatedOutputPaths = outputPaths;
+        m_generatedDataType = dataType;
+        m_generatedSatelliteFormat = satelliteFormat;
+        return;
+    }
+
     IApplicationInterface* iface = getProjectContext();
     if (!ImportOutputPersistence::persist(projectModel(), projectName(), projectPath(), dstNode,
             outputNames, outputPaths, dataType, satelliteFormat,
@@ -524,6 +733,7 @@ void ImportNodeBase::startWorker(BaseImportWorker* worker, const std::vector<Imp
     m_worker = worker;
     m_outputPersistenceFailed = false;
     m_generatedOutputPaths.clear();
+    m_generatedOutputNames.clear();
     m_thread = new QThread(this);
     m_worker->moveToThread(m_thread);
 
@@ -539,7 +749,7 @@ void ImportNodeBase::startWorker(BaseImportWorker* worker, const std::vector<Imp
     bool success = QMetaObject::invokeMethod(m_worker, "import_patch",
         Q_ARG(QString, projectPath()),
         Q_ARG(std::vector<ImportTask>, tasks),
-        Q_ARG(QString, getOutputNodeName()));
+        Q_ARG(QString, m_semanticTransactionActive ? m_outputTransaction.stagingName : getOutputNodeName()));
     if (!success) {
         qWarning() << "ImportNodeBase::startWorker - Failed to invoke BaseImportWorker::import_patch asynchronously!";
     }
@@ -559,9 +769,25 @@ void ImportNodeBase::onProgressUpdate(int progress, const QString& message)
 
 void ImportNodeBase::onError(const QString& error)
 {
+    if (m_semanticTransactionActive) {
+        IApplicationInterface* iface = getProjectContext();
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, error, iface ? iface->projectXml() : nullptr);
+    }
     setLastErrorMessage(error);
     setState(ExecutionState::Error);
     Q_EMIT executionError(error);
+}
+
+void ImportNodeBase::onImportCancelled()
+{
+    if (m_semanticTransactionActive) {
+        IApplicationInterface* iface = getProjectContext();
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"),
+                                            iface ? iface->projectXml() : nullptr);
+    }
+    setState(ExecutionState::Stopped);
+    Q_EMIT executionStopped();
+    Q_EMIT computingFinished();
 }
 
 IApplicationInterface* ImportNodeBase::getProjectContext() const

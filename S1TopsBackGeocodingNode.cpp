@@ -266,6 +266,34 @@ NodeDataType S1TopsBackGeocodingNode::dataType(PortType portType, PortIndex port
     return NodeDataType();
 }
 
+ProductInputContract S1TopsBackGeocodingNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    if (portIndex == 0) {
+        contract.semanticId = QStringLiteral("s1_tops_back_geocoding.input.burst_sar");
+        contract.allowedProductTypes = QStringList() << QStringLiteral("sentinel1_burst_sar");
+    } else {
+        contract.semanticId = QStringLiteral("s1_tops_back_geocoding.input.auxiliary_terrain_dem");
+        contract.optional = true;
+        contract.allowedProductTypes = QStringList() << QStringLiteral("auxiliary_terrain_dem");
+    }
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract S1TopsBackGeocodingNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("s1_tops_back_geocoding.output.back_geocoded_complex_sar")
+        : QStringLiteral("s1_tops_back_geocoding.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("back_geocoded_complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 bool S1TopsBackGeocodingNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
 {
     Q_UNUSED(portIndex);
@@ -294,6 +322,8 @@ QString S1TopsBackGeocodingNode::portCaption(PortType portType, PortIndex portIn
 
 bool S1TopsBackGeocodingNode::portIsOptional(PortType portType, PortIndex portIndex) const
 {
+    if (portType == PortType::In && portIndex == 1)
+        return true;
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
@@ -1325,6 +1355,25 @@ bool S1TopsBackGeocodingNode::prepareToStart()
     m_preparedBRangeRefine = m_rangeRefineCheckBox ? m_rangeRefineCheckBox->isChecked() : false;
     m_preparedDemPath = m_demPath;
     m_preparedInputPaths = m_inputData->filePaths();
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedInputPaths,
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
+    m_preparedTransactionInputPaths = m_preparedInputPaths;
+    if (m_demInputData && !m_demInputData->filePath().isEmpty()) {
+        const QString demPath = m_demInputData->filePath();
+        if (QFileInfo(demPath).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+            if (!NodeUtils::validateH5Identity(demPath, m_demInputData->physicalProductDescriptor(), nullptr, &identityError)) {
+                setStartFailureMessage(identityError);
+                setLastErrorMessage(identityError);
+                return false;
+            }
+            m_preparedTransactionInputPaths.append(demPath);
+        }
+    }
     if (m_preparedInputPaths.size() < 2) {
         InSARLogManager::LogError("S1TopsBackGeocodingNode", "At least two input files are required for Back-Geocoding.");
         return false;
@@ -1449,8 +1498,21 @@ void S1TopsBackGeocodingNode::executeProcessing()
     }
     NodeUtils::OutputTransactionRecoveryInfo recoveryInfo;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode, expectedFinalPaths,
-                                           m_preparedInputPaths, m_outputTransaction, &transactionError,
+                                           m_preparedTransactionInputPaths, m_outputTransaction, &transactionError,
                                            &recoveryInfo)) {
+        failStagedTransaction(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("s1_tops_back_geocoding.output.back_geocoded_complex_sar"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("back_geocoded_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, transactionError, projectXml());
         failStagedTransaction(transactionError);
         return;
     }
@@ -1712,6 +1774,13 @@ void S1TopsBackGeocodingNode::finalizeStagedTransaction(quint64 generation)
         }
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QStringList finalPaths;
     if (!NodeUtils::promoteOutputTransaction(m_outputTransaction, finalPaths, &error)) {
         failStagedTransaction(error);
@@ -1746,6 +1815,7 @@ void S1TopsBackGeocodingNode::finalizeStagedTransaction(quint64 generation)
     updateRegistrationOffsets(orderedH5Paths);
     const bool treePublished = syncProjectTreeOrder(orderedH5Paths, m_preparedDstNode);
     m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, m_preparedDstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     m_imageInfoData = std::make_shared<ImageInfoData>(jpgPathsFromH5Paths(orderedH5Paths));
     setOutputData(0, m_outputData);
     setOutputData(1, m_imageInfoData);
@@ -1805,24 +1875,27 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     if (dstNode.isEmpty())
         return false;
 
-    QStringList manifestPaths;
-    QString manifestError;
-    const bool hasCommittedManifest = NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode,
-                                                                              manifestPaths, &manifestError);
     QStringList orderedH5Paths;
-    if (hasCommittedManifest) {
-        for (const QString& path : manifestPaths) {
-            if (QFileInfo(path).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
-                orderedH5Paths.append(path);
-            }
-        }
-        orderedH5Paths = moveMasterToFront(orderedH5Paths, m_masterIndex);
-    } else {
-        // Legacy projects without a journal remain readable, but are not migrated implicitly.
-        orderedH5Paths = restoreOrderedH5Paths(dstNode);
+    QString manifestError;
+    QStringList manifestPaths;
+    ProductDescriptor::Ptr descriptor;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, manifestPaths, &manifestError) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &manifestError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted) {
+        return false;
     }
+    for (const QString& path : manifestPaths) {
+        if (QFileInfo(path).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+            orderedH5Paths.append(path);
+        }
+    }
+    orderedH5Paths = moveMasterToFront(orderedH5Paths, m_masterIndex);
     if (orderedH5Paths.isEmpty())
         return false;
+
+    if (!NodeUtils::validateH5Identities(orderedH5Paths, descriptor, &manifestError)) {
+        return false;
+    }
 
     for (const QString& path : orderedH5Paths) {
         if (!isCompleteBackGeocodingOutput(path)) {
@@ -1837,6 +1910,7 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     m_registrationOverviewPaths.clear();
     updateRegistrationOffsets(orderedH5Paths);
     m_outputData = std::make_shared<ImportedFileData>(orderedH5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
 
     const QStringList allJpgPaths = jpgPathsFromH5Paths(orderedH5Paths);

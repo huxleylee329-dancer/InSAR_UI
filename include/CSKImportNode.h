@@ -24,6 +24,7 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("COSMO-SkyMed Import"); }
     QString name() const override { return QStringLiteral("CSKImport"); }
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;

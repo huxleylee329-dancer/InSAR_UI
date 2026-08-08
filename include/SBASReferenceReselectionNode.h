@@ -34,6 +34,8 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Reference Point Re-selection"); }
     QString name() const override { return QStringLiteral("SBASReferenceReselection"); }
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;

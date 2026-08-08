@@ -49,6 +49,8 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
     void setExecutionMode(ExecutionMode mode) override;
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
 protected:
     bool validateAndRestoreOutput() override;

@@ -32,6 +32,8 @@ public:
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("Baseline Estimation"); }
     QString name() const override { return QStringLiteral("BaselineFormation"); }
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
+    ProductOutputContract productOutputContract(PortIndex portIndex) const override;
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
@@ -48,6 +50,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
 
@@ -66,7 +69,7 @@ private:
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
-    std::shared_ptr<ImportedFileData> m_outputData; // pass-through
+    std::shared_ptr<BaselineData> m_outputData;
 
     // Parameters
     int m_masterIndex;

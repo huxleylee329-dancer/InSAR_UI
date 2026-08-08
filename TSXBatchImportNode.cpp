@@ -24,6 +24,18 @@ TSXBatchImportNode::TSXBatchImportNode()
 {
 }
 
+ProductOutputContract TSXBatchImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("tsx_batch_import.output.complex_sar")
+        : QStringLiteral("tsx_batch_import.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 QWidget* TSXBatchImportNode::createWidget()
 {
     auto* widget = new QWidget();

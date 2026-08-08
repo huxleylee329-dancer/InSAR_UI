@@ -464,6 +464,27 @@ bool DenoiseNode::validateInputs() const
     return true;
 }
 
+ProductInputContract DenoiseNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("denoise.input.interferogram");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("interferogram");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract DenoiseNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0 ? QStringLiteral("denoise.output.filtered_interferogram")
+                                         : QStringLiteral("denoise.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList{QStringLiteral("filtered_interferogram")} : QStringList{QStringLiteral("preview")};
+    return contract;
+}
+
 bool DenoiseNode::prepareToStart()
 {
     if (!validateInputs())
@@ -492,6 +513,12 @@ bool DenoiseNode::prepareToStart()
 
     m_preparedOutputPaths.clear();
     QStringList srcPaths = m_inputData->filePaths();
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(srcPaths, m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
     for (const QString& srcPath : srcPaths) {
         QFileInfo fi(srcPath);
         QString changeName = fi.baseName() + "_denoised";
@@ -547,6 +574,18 @@ void DenoiseNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, m_preparedOutputPaths,
                                            phasePaths, m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("denoise.output.filtered_interferogram"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("filtered_interferogram"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
         onError(transactionError);
         return;
     }
@@ -619,6 +658,13 @@ void DenoiseNode::onProcessingFinished()
 
     if (discardObsoleteAutomaticExecution()) {
         NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete automatic execution"), projectXml());
+        return;
+    }
+
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
         return;
     }
 
@@ -747,7 +793,12 @@ bool DenoiseNode::validateAndRestoreOutput()
         return false;
 
     QStringList h5Paths;
-    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) return false;
+    ProductDescriptor::Ptr descriptor;
+    QString identityError;
+    if (!NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+        !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) return false;
 
     QStringList expectedJpgPaths;
     QStringList types;
@@ -758,6 +809,7 @@ bool DenoiseNode::validateAndRestoreOutput()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
 
     // Remedy missing JPG previews in background

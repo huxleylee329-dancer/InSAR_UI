@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QApplication>
+#include <QPointer>
 
 namespace QtNodes {
 
@@ -18,9 +19,38 @@ GenericSARImportNode::GenericSARImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_outputFileNameEdit(nullptr)
     , m_projectLabel(nullptr)
-    , m_task(nullptr)
 {
     m_outputFileName = "{InputName}";
+}
+
+GenericSARImportNode::~GenericSARImportNode()
+{
+    if (m_cancellationToken) {
+        m_cancellationToken->store(true, std::memory_order_relaxed);
+    }
+}
+
+unsigned int GenericSARImportNode::nPorts(PortType portType) const
+{
+    return portType == PortType::In ? 0 : 1;
+}
+
+ProductOutputContract GenericSARImportNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    if (portIndex == 0) {
+        contract.semanticId = QStringLiteral("generic_sar_import.output.generic_sar_raster");
+        contract.publishedProductTypes = QStringList() << QStringLiteral("generic_sar_raster");
+    }
+    return contract;
+}
+
+void GenericSARImportNode::stopExecution()
+{
+    if (m_cancellationToken) {
+        m_cancellationToken->store(true, std::memory_order_relaxed);
+    }
+    ImportNodeBase::stopExecution();
 }
 
 QWidget* GenericSARImportNode::createWidget()
@@ -55,8 +85,6 @@ QWidget* GenericSARImportNode::createWidget()
             invalidateNodeData();
             if (!m_imagePath.isEmpty() && QFileInfo::exists(m_imagePath))
             {
-                m_imageInfo = std::make_shared<ImageInfoData>(m_imagePath);
-                Q_EMIT dataUpdated(1);
             }
         }
     });
@@ -78,7 +106,6 @@ QWidget* GenericSARImportNode::createWidget()
                 m_outputNodeNameEdit->setText(m_outputNodeName);
                 return;
             }
-            NodeUtils::removeDataNodeFromProject(getProjectContext(), m_outputNodeName);
             m_outputNodeName = text;
             invalidateNodeData();
         }
@@ -114,7 +141,7 @@ QWidget* GenericSARImportNode::createWidget()
 
 void GenericSARImportNode::executeImport()
 {
-    if (m_task)
+    if (m_cancellationToken)
     {
         return;
     }
@@ -129,26 +156,60 @@ void GenericSARImportNode::executeImport()
     }
 
     if (m_preparedOverwriteResult == NodeUtils::OverwriteResult::Overwrite) {
-        NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+        if (!m_semanticTransactionActive) {
+            NodeUtils::removeDataNodeFromProject(getProjectContext(), getOutputNodeName());
+        }
     }
 
-    m_task = new GenericSARImportTask(
+    m_cancellationToken = std::make_shared<std::atomic_bool>(false);
+    auto* task = new GenericSARImportTask(
         m_imagePath,
         projectPath(),
-        getOutputNodeName(),
-        m_preparedOutputFileName
+        m_semanticTransactionActive ? m_outputTransaction.stagingName : getOutputNodeName(),
+        m_preparedOutputFileName,
+        m_cancellationToken
     );
+    // The task owns this copy until its terminal signal is handled after node destruction.
+    const auto terminalTransaction = std::make_shared<NodeUtils::OutputTransaction>(m_outputTransaction);
+    const auto terminalFinalized = std::make_shared<std::atomic_bool>(false);
+    const QPointer<GenericSARImportNode> nodeGuard(this);
+    const auto finalizeAfterNodeDestruction = [nodeGuard, terminalTransaction, terminalFinalized](const QString& reason) {
+        if (nodeGuard || terminalFinalized->exchange(true, std::memory_order_acq_rel)) {
+            return;
+        }
+        NodeUtils::abandonOutputTransaction(*terminalTransaction, reason);
+    };
 
-    connect(m_task, &GenericSARImportTask::updateProcess,
+    connect(task, &GenericSARImportTask::updateProcess,
             this, &GenericSARImportNode::onImportProgress, Qt::QueuedConnection);
-    connect(m_task, &GenericSARImportTask::endProcess,
+    connect(task, &GenericSARImportTask::endProcess,
             this, &GenericSARImportNode::onImportFinished, Qt::QueuedConnection);
-    connect(m_task, &GenericSARImportTask::errorProcess,
+    connect(task, &GenericSARImportTask::errorProcess,
             this, &GenericSARImportNode::onThreadError, Qt::QueuedConnection);
-    connect(m_task, &GenericSARImportTask::outputsGenerated,
+    connect(task, &GenericSARImportTask::cancelled,
+            this, &GenericSARImportNode::onImportCancelled, Qt::QueuedConnection);
+    connect(task, &GenericSARImportTask::outputsGenerated,
             this, &GenericSARImportNode::onOutputsGenerated, Qt::QueuedConnection);
+    connect(task, &GenericSARImportTask::endProcess, task,
+            [finalizeAfterNodeDestruction]() {
+                finalizeAfterNodeDestruction(QStringLiteral("generic import node was destroyed before completion"));
+            }, Qt::QueuedConnection);
+    connect(task, &GenericSARImportTask::errorProcess, task,
+            [finalizeAfterNodeDestruction](const QString& error) {
+                finalizeAfterNodeDestruction(error);
+            }, Qt::QueuedConnection);
+    connect(task, &GenericSARImportTask::cancelled, task,
+            [finalizeAfterNodeDestruction]() {
+                finalizeAfterNodeDestruction(QStringLiteral("generic import node was destroyed during cancellation"));
+            }, Qt::QueuedConnection);
+    connect(task, &GenericSARImportTask::endProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &GenericSARImportTask::errorProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &GenericSARImportTask::cancelled,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
 
-    QThreadPool::globalInstance()->start(m_task);
+    QThreadPool::globalInstance()->start(task);
 }
 
 bool GenericSARImportNode::prepareToStart()
@@ -163,7 +224,7 @@ bool GenericSARImportNode::prepareToStart()
         return false;
     }
 
-    if (m_task)
+    if (m_cancellationToken)
     {
         return false;
     }
@@ -187,6 +248,11 @@ bool GenericSARImportNode::prepareToStart()
         onError("通用 SAR 图像文件不存在：" + m_imagePath);
         return false;
     }
+    if (!isSupportedGenericSarRasterPath(m_imagePath))
+    {
+        onError("通用 SAR 导入仅支持 JPG、PNG、BMP、TIF 或 TIFF 栅格文件。");
+        return false;
+    }
 
     m_outputFileName = m_outputFileNameEdit->text().trimmed();
     if (m_outputFileName.isEmpty())
@@ -199,20 +265,17 @@ bool GenericSARImportNode::prepareToStart()
     QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
     m_preparedOutputFileName.replace(re, QFileInfo(m_imagePath).baseName());
 
-    QString suffix = QFileInfo(m_imagePath).suffix();
-    if (suffix.isEmpty()) suffix = "h5";
+    const QString suffix = QFileInfo(m_imagePath).suffix();
     QString outputPath = QString("%1/%2/%3.%4").arg(projectPath()).arg(outputNodeName).arg(m_preparedOutputFileName).arg(suffix);
-    QString previewPath = QString("%1/%2/%3.jpg").arg(projectPath()).arg(outputNodeName).arg(m_preparedOutputFileName);
-
-    m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath, previewPath}, nullptr);
+    m_preparedOverwriteResult = NodeUtils::checkAndPromptOverwrite(getProjectContext(), outputNodeName, {outputPath}, nullptr);
     return m_preparedOverwriteResult != NodeUtils::OverwriteResult::Cancel;
 }
 
 QStringList GenericSARImportNode::getExpectedOutputFilePaths() const
 {
     if (!m_imagePath.isEmpty() && !m_outputNodeName.isEmpty()) {
-        QString suffix = QFileInfo(m_imagePath).suffix();
-        if (suffix.isEmpty()) suffix = "h5";
+        if (!isSupportedGenericSarRasterPath(m_imagePath)) return {};
+        const QString suffix = QFileInfo(m_imagePath).suffix();
 
         QString resolvedFileName = m_outputFileName;
         QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
@@ -225,6 +288,16 @@ QStringList GenericSARImportNode::getExpectedOutputFilePaths() const
             .arg(suffix) };
     }
     return {};
+}
+
+QStringList GenericSARImportNode::getExpectedPreviewFilePaths() const
+{
+    return QStringList();
+}
+
+QStringList GenericSARImportNode::transactionInputPaths() const
+{
+    return m_imagePath.isEmpty() ? QStringList() : QStringList() << m_imagePath;
 }
 
 QString GenericSARImportNode::getOutputNodeName() const
@@ -250,40 +323,17 @@ void GenericSARImportNode::onImageBrowseClicked()
     if (m_outputFileNameEdit->text().trimmed().isEmpty())
         m_outputFileNameEdit->setText("{InputName}");
 
-    m_imageInfo = std::make_shared<ImageInfoData>(m_imagePath);
-    setOutputData(1, m_imageInfo);
-
     m_importedFilePaths.clear();
     setOutputData(0, nullptr);
     setState(ExecutionState::Idle);
 
     Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
 }
 
 void GenericSARImportNode::onImportFinished()
 {
-    // 更新导入文件路径
-    if (m_outputPersistenceFailed) {
-        onThreadError(QStringLiteral("Unable to save imported outputs to the project."));
-        return;
-    }
-
-    m_importedFilePaths = m_generatedOutputPaths.isEmpty()
-        ? getExpectedOutputFilePaths()
-        : m_generatedOutputPaths;
-
-    // Port 0 & Port 1: 输出 ImageInfoData
-    if (!m_importedFilePaths.isEmpty())
-    {
-        m_imageInfo = std::make_shared<ImageInfoData>(m_importedFilePaths);
-        setOutputData(0, m_imageInfo);
-        setOutputData(1, m_imageInfo);
-    }
-
-    finishExecution();
-
-    m_task = nullptr;
+    ImportNodeBase::onImportFinished();
+    m_cancellationToken.reset();
 }
 
 void GenericSARImportNode::onImportProgress(int progress, const QString& message)
@@ -294,8 +344,14 @@ void GenericSARImportNode::onImportProgress(int progress, const QString& message
 
 void GenericSARImportNode::onThreadError(const QString& error)
 {
-    onError(error);
-    m_task = nullptr;
+    ImportNodeBase::onThreadError(error);
+    m_cancellationToken.reset();
+}
+
+void GenericSARImportNode::onImportCancelled()
+{
+    ImportNodeBase::onImportCancelled();
+    m_cancellationToken.reset();
 }
 
 void GenericSARImportNode::onOutputsGenerated(const QString& dstNode,
@@ -333,31 +389,17 @@ void GenericSARImportNode::load(QJsonObject const &json)
 NodeDataType GenericSARImportNode::dataType(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::Out) {
-        if (portIndex == 0) return NodeDataType{"image_info", "Image Info"};
-        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
+        if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
     }
     return NodeDataType();
 }
 
 bool GenericSARImportNode::validateAndRestoreOutput()
 {
-    QStringList expectedPaths = getExpectedOutputFilePaths();
-    if (expectedPaths.isEmpty())
+    if (!ImportNodeBase::validateAndRestoreOutput()) {
         return false;
-
-    // Check file existence
-    for (const QString& path : expectedPaths) {
-        if (!QFile::exists(path)) {
-            return false;
-        }
     }
-
-    m_importedFilePaths = expectedPaths;
-    m_imageInfo = std::make_shared<ImageInfoData>(expectedPaths);
-    setOutputData(0, m_imageInfo);
-    setOutputData(1, m_imageInfo);
     Q_EMIT dataUpdated(0);
-    Q_EMIT dataUpdated(1);
     return true;
 }
 

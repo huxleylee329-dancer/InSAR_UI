@@ -47,6 +47,7 @@ public:
     QString caption() const override { return "SCR Evaluation"; }
     QString name() const override { return "EvaluationSCR"; }
 
+    ProductInputContract productInputContract(PortIndex portIndex) const override;
     unsigned int nPorts(PortType portType) const override;
     NodeDataType dataType(PortType portType, PortIndex portIndex) const override;
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
@@ -66,6 +67,7 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+    bool prepareToStart() override;
     bool validateAndRestoreOutput() override;
     bool stopExecutionIsAsynchronous() const override { return true; }
     bool supportsAutomaticRestartAfterInputChange() const override { return true; }

@@ -212,6 +212,34 @@ QStringList SLCDerampNode::previewImagePaths() const
     return existingPaths;
 }
 
+ProductInputContract SLCDerampNode::productInputContract(PortIndex portIndex) const
+{
+    ProductInputContract contract;
+    if (portIndex == 0) {
+        contract.semanticId = QStringLiteral("slc_deramp.input.back_geocoded_complex_sar");
+        contract.allowedProductTypes = QStringList() << QStringLiteral("back_geocoded_complex_sar");
+    } else {
+        contract.semanticId = QStringLiteral("slc_deramp.input.auxiliary_terrain_dem");
+        contract.optional = true;
+        contract.allowedProductTypes = QStringList() << QStringLiteral("auxiliary_terrain_dem");
+    }
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract SLCDerampNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("slc_deramp.output.deramped_complex_sar")
+        : QStringLiteral("slc_deramp.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("deramped_complex_sar")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 std::vector<QString> SLCDerampNode::processingInfo() const
 {
     return m_processingStatus.isEmpty()
@@ -228,8 +256,16 @@ bool SLCDerampNode::validateAndRestoreOutput()
     QStringList h5Paths;
     if (NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths)) {
         if (!h5Paths.isEmpty()) {
+            ProductDescriptor::Ptr descriptor;
+            QString identityError;
+            if (!NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
+                !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
+                !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) {
+                return false;
+            }
             // 恢复 Port 0 数据
             m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+            m_outputData->setProductDescriptor(descriptor);
             setOutputData(0, m_outputData);
 
             // 恢复 Port 1 预览数据 & 后台异步补救缺失的 JPG
@@ -549,6 +585,13 @@ void SLCDerampNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     QString transactionError;
     if (!projectXml() ||
         !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
@@ -587,6 +630,7 @@ void SLCDerampNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     QStringList jpgPaths;
@@ -988,10 +1032,28 @@ bool SLCDerampNode::prepareToStart()
             inputPath = QDir(m_preparedSavePath).absoluteFilePath(inputPath);
         }
     }
+    QString identityError;
+    if (!NodeUtils::validateH5Identities(m_preparedInputPaths,
+                                         m_inputData->physicalProductDescriptor(), &identityError)) {
+        setStartFailureMessage(identityError);
+        setLastErrorMessage(identityError);
+        return false;
+    }
+    m_preparedTransactionInputPaths = m_preparedInputPaths;
     m_preparedMasterIndex = m_masterIndex;
     m_preparedDemPath = m_demPath;
     if (QDir::isRelativePath(m_preparedDemPath)) {
         m_preparedDemPath = QDir(m_preparedSavePath).absoluteFilePath(m_preparedDemPath);
+    }
+    if (QFileInfo(m_preparedDemPath).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+        if (!m_demInputData || m_demInputData->filePath() != m_demPath ||
+            !NodeUtils::validateH5Identity(m_preparedDemPath, m_demInputData->physicalProductDescriptor(), nullptr, &identityError)) {
+            setStartFailureMessage(identityError.isEmpty()
+                ? QStringLiteral("H5 DEM must be supplied through a descriptor-bound input port.")
+                : identityError);
+            return false;
+        }
+        m_preparedTransactionInputPaths.append(m_preparedDemPath);
     }
     m_preparedOutputPaths.clear();
     for (const QString& inputPath : m_preparedInputPaths) {
@@ -1047,8 +1109,20 @@ void SLCDerampNode::executeProcessing()
     setState(ExecutionState::Running);
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
-                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_preparedOutputPaths, m_preparedTransactionInputPaths,
                                            m_outputTransaction, &transactionError)) {
+        onError(transactionError);
+        return;
+    }
+    m_outputTransaction.executionRevision = executionRevision();
+    QMap<QString, QString> descriptorProvenance;
+    descriptorProvenance.insert(QStringLiteral("producer"), name());
+    descriptorProvenance.insert(QStringLiteral("output_port"),
+                                QStringLiteral("slc_deramp.output.deramped_complex_sar"));
+    if (!NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, ProductDescriptor::create(
+                QStringLiteral("deramped_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
+                ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
         onError(transactionError);
         return;
     }

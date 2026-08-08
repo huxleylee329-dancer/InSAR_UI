@@ -58,6 +58,29 @@ NodeDataType SpeckleDenoiseNode::dataType(PortType portType, PortIndex portIndex
     return NodeDataType{"image_info", "Image Info"};
 }
 
+ProductInputContract SpeckleDenoiseNode::productInputContract(PortIndex portIndex) const
+{
+    Q_UNUSED(portIndex);
+    ProductInputContract contract;
+    contract.semanticId = QStringLiteral("speckle_denoise.input.preview");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.requiredProvenanceFields = QStringList()
+        << QStringLiteral("producer") << QStringLiteral("output_port");
+    return contract;
+}
+
+ProductOutputContract SpeckleDenoiseNode::productOutputContract(PortIndex portIndex) const
+{
+    ProductOutputContract contract;
+    contract.semanticId = portIndex == 0
+        ? QStringLiteral("speckle_denoise.output.denoised_image")
+        : QStringLiteral("speckle_denoise.output.preview");
+    contract.publishedProductTypes = portIndex == 0
+        ? QStringList() << QStringLiteral("speckle_denoised_image")
+        : QStringList() << QStringLiteral("preview");
+    return contract;
+}
+
 bool SpeckleDenoiseNode::portCaptionVisible(PortType portType, PortIndex portIndex) const
 {
     Q_UNUSED(portType);
@@ -269,10 +292,8 @@ bool SpeckleDenoiseNode::isReady() const
         return false;
     }
 
-    if (m_saveToProject) {
-        if (m_outputNodeName.trimmed().isEmpty()) {
-            return false;
-        }
+    if (!m_saveToProject || m_outputNodeName.trimmed().isEmpty()) {
+        return false;
     }
 
     return true;
@@ -291,6 +312,11 @@ void SpeckleDenoiseNode::executeProcessing()
     {
         m_task->stop();
         deferAutomaticCompletion();
+        return;
+    }
+
+    if (!m_saveToProject) {
+        onError(QStringLiteral("Speckle denoise results must be saved to the project before publication."));
         return;
     }
 
@@ -350,6 +376,18 @@ void SpeckleDenoiseNode::executeProcessing()
             onError(transactionError);
             return;
         }
+        m_outputTransaction.executionRevision = executionRevision();
+        QMap<QString, QString> descriptorProvenance;
+        descriptorProvenance.insert(QStringLiteral("producer"), name());
+        descriptorProvenance.insert(QStringLiteral("output_port"),
+                                    QStringLiteral("speckle_denoise.output.denoised_image"));
+        if (!NodeUtils::setOutputTransactionProductDescriptor(
+                m_outputTransaction, ProductDescriptor::create(
+                    QStringLiteral("speckle_denoised_image"), QStringLiteral("sat-explorer-product"), 1,
+                    ProductState::Committed, name(), descriptorProvenance), &transactionError)) {
+            onError(transactionError);
+            return;
+        }
         outputPaths.clear();
         for (const QString& finalPath : m_preparedOutputPaths) {
             outputPaths.append(QDir(outputRoot).absoluteFilePath(
@@ -401,6 +439,13 @@ void SpeckleDenoiseNode::onProcessingFinished()
         return;
     }
 
+    OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
+    if (!commitLease) {
+        NodeUtils::abandonOutputTransaction(m_outputTransaction,
+                                            QStringLiteral("obsolete execution revision"), projectXml());
+        return;
+    }
+
     if (m_saveToProject) {
         QString transactionError;
         QStringList finalPaths;
@@ -448,8 +493,17 @@ void SpeckleDenoiseNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImageInfoData>(m_outputImagePaths);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
-    setOutputData(1, m_outputData);
+    auto previewData = std::make_shared<ImageInfoData>(m_outputImagePaths);
+    QMap<QString, QString> previewProvenance;
+    previewProvenance.insert(QStringLiteral("producer"), name());
+    previewProvenance.insert(QStringLiteral("output_port"),
+                             QStringLiteral("speckle_denoise.output.preview"));
+    previewData->setProductDescriptor(ProductDescriptor::create(
+        QStringLiteral("preview"), QStringLiteral("sat-explorer-product"), 1,
+        ProductState::Committed, name(), previewProvenance));
+    setOutputData(1, previewData);
 
     m_isExecuting = false;
     updateParameterWidgetsEnableState();
@@ -649,7 +703,11 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
         outputRoot = QFileInfo(outputRoot).absolutePath();
     }
     QStringList outputPaths;
-    if (!NodeUtils::loadCommittedOutputManifest(outputRoot, nodeName, outputPaths)) {
+    ProductDescriptor::Ptr descriptor;
+    QString descriptorError;
+    if (!NodeUtils::loadCommittedOutputManifest(outputRoot, nodeName, outputPaths) ||
+        !NodeUtils::loadCommittedOutputProductDescriptor(outputRoot, nodeName, descriptor, &descriptorError) ||
+        !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted) {
         return false;
     }
 
@@ -659,8 +717,17 @@ bool SpeckleDenoiseNode::validateAndRestoreOutput()
         m_savedOutputFiles.append(QFileInfo(outputPath).completeBaseName());
     }
     m_outputData = std::make_shared<ImageInfoData>(outputPaths);
+    m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
-    setOutputData(1, m_outputData);
+    auto previewData = std::make_shared<ImageInfoData>(outputPaths);
+    QMap<QString, QString> previewProvenance;
+    previewProvenance.insert(QStringLiteral("producer"), name());
+    previewProvenance.insert(QStringLiteral("output_port"),
+                             QStringLiteral("speckle_denoise.output.preview"));
+    previewData->setProductDescriptor(ProductDescriptor::create(
+        QStringLiteral("preview"), QStringLiteral("sat-explorer-product"), 1,
+        ProductState::Committed, name(), previewProvenance));
+    setOutputData(1, previewData);
     Q_EMIT dataUpdated(0);
     Q_EMIT dataUpdated(1);
     return true;
