@@ -41,6 +41,17 @@ public:
 
     bool connectionExists(ConnectionId const connectionId) const override;
 
+    bool isConnectionDormant(ConnectionId const connectionId) const;
+    std::unordered_set<ConnectionId> activeConnections(NodeId nodeId,
+                                                        PortType portType,
+                                                        PortIndex portIndex) const;
+    bool setConnectionDormant(ConnectionId const connectionId, bool dormant,
+                              QString* failureReason = nullptr);
+    // Disables or restores every edge touching nodeId. Re-enable is
+    // fail-closed per edge: unresolved/invalid bindings remain dormant.
+    bool setNodeConnectionsDormant(NodeId nodeId, bool dormant,
+                                   QString* failureReason = nullptr);
+
     NodeId addNode(QString const nodeType) override;
 
     bool connectionPossible(ConnectionId const connectionId) const override;
@@ -49,6 +60,8 @@ public:
     ProductValidationResult validateConnection(ConnectionId const connectionId) const;
 
     void addConnection(ConnectionId const connectionId) override;
+
+    virtual bool addDormantConnection(ConnectionId const connectionId);
 
     bool nodeExists(NodeId const nodeId) const override;
 
@@ -134,6 +147,7 @@ protected:
     std::unordered_map<NodeId, std::unique_ptr<NodeDelegateModel>> _models;
 
     std::unordered_set<ConnectionId> _connectivity;
+    std::unordered_set<ConnectionId> _dormantConnections;
 
     mutable std::unordered_map<NodeId, NodeGeometryData> _nodeGeometryData;
 };

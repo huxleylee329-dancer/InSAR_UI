@@ -189,12 +189,14 @@ private:
                          ExecutableNodeDelegateModel *execModel) const;
     void drawCardHeader(QPainter *painter, NodeGraphicsObject &ngo,
                         QRectF bounds, ExecutionMode mode,
-                        ExecutionState state, ::QWidget* context) const;
+                        ExecutionState state, bool hasExecutionControls,
+                        ::QWidget* context) const;
     void drawCardFooter(QPainter *painter, NodeGraphicsObject &ngo,
                         QRectF bounds, ExecutionState state,
                         int progress, ::QWidget* context) const;
     void drawCardHeaderButtons(QPainter *painter, QRectF bounds,
-                               ExecutionMode mode, ExecutionState state) const;
+                               ExecutionMode mode, ExecutionState state,
+                               bool hasExecutionControls) const;
 
     /// Get gradient start color based on mode and state (theme-aware)
     QColor gradientStartColor(ExecutionMode mode, ExecutionState state, ::QWidget* context) const;

@@ -243,7 +243,8 @@ void PhaseElevationRegression_ui::on_buttonBox_accepted()
     }
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(projectRoot, outputNodeName, m_preparedOutputPaths,
-                                           phasePaths, m_outputTransaction, &transactionError)) {
+                                           phasePaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(this))) {
         QMessageBox::warning(this, "Warning!", transactionError);
         return;
     }

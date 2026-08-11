@@ -12,10 +12,13 @@
 #include <QtConcurrent/QtConcurrentRun>
 #include <QDir>
 #include <QApplication>
+#include <QComboBox>
 #include <QStandardItemModel>
 #include <QTimer>
 #include <QDebug>
 #include <QMessageBox>
+#include <QPointer>
+#include <QSignalBlocker>
 #include <QFileDialog>
 #include <atomic>
 
@@ -31,6 +34,29 @@ SLCDerampNode::SLCDerampNode()
     , m_thread(nullptr)
 {
     setExecutionMode(ExecutionMode::Automatic);
+    QPointer<SLCDerampNode> self(this);
+    NodeUtils::registerResourceChangeCallback([self](const QString& resourceId, const QString& provenanceId, NodeUtils::ResourceChangeKind kind) {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+        if (!self || self->m_preparedAuxiliaryDemBinding.resourceId != resourceId) return;
+        if (kind == NodeUtils::ResourceChangeKind::ProvenanceAdded && provenanceId != self->m_preparedAuxiliaryDemBinding.pinnedProvenanceId) return;
+        QTimer::singleShot(0, self.data(), [self]() {
+            if (!self) return;
+            self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding();
+            self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot();
+            self->m_demPath.clear();
+            self->m_preparedDemPath.clear();
+            self->m_demInputData.reset();
+            self->setProgress(0);
+            self->setLastErrorMessage(QStringLiteral("辅助 DEM 资源已变化，需要重新准备。"));
+            self->setState(ExecutionState::Pending);
+        });
+    });
+    NodeUtils::registerAuxiliaryDemLabelTableChangedCallback([self]() {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+    });
+    NodeUtils::registerAuxiliaryDemLabelReboundCallback([self](const QString& label) {
+        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
+    });
 }
 
 SLCDerampNode::~SLCDerampNode()
@@ -52,7 +78,7 @@ NodeDataType SLCDerampNode::dataType(PortType portType, PortIndex portIndex) con
     {
         if (portIndex == 0)
             return NodeDataType{"imported_file", "Imported File"};
-        return NodeDataType{"dem_file", "DEM File"};
+        return NodeDataType{"auxiliary_dem", "Auxiliary DEM"};
     }
     else
     {
@@ -76,7 +102,7 @@ QString SLCDerampNode::portCaption(PortType portType, PortIndex portIndex) const
         if (portIndex == 0)
             return QStringLiteral("输入图像");
         if (portIndex == 1)
-            return QStringLiteral("DEM ?");
+            return QStringLiteral("辅助地形 DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -93,6 +119,11 @@ bool SLCDerampNode::portIsOptional(PortType portType, PortIndex portIndex) const
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
+}
+
+QList<QList<PortIndex>> SLCDerampNode::alternativeInputGroups() const
+{
+    return {};
 }
 
 std::shared_ptr<NodeData> SLCDerampNode::outData(PortIndex port)
@@ -129,12 +160,15 @@ void SLCDerampNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             }
         }
     } else if (port == 1) {
-        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        const auto auxiliary = std::dynamic_pointer_cast<AuxiliaryDemData>(data);
+        m_auxiliaryDemEntityData = auxiliary;
+        if (auxiliary) { m_auxiliaryDemReferenceData.reset(); m_auxiliaryDemLabel.clear(); if (m_demLabelCombo) m_demLabelCombo->setCurrentIndex(0); }
+        m_demInputData = auxiliary
+            ? std::make_shared<ImportedFileData>(auxiliary->rasterPath(), auxiliary->nodeName())
+            : std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (auxiliary) m_demInputData->setProductDescriptor(auxiliary->productDescriptor());
         if (m_demInputData) {
-            m_demPath = m_demInputData->filePath();
-            if (m_demPathEdit) {
-                m_demPathEdit->setText(m_demPath);
-            }
+            m_demPath = auxiliary ? auxiliary->rasterPath() : m_demInputData->filePath();
         }
     }
 
@@ -158,7 +192,9 @@ QJsonObject SLCDerampNode::save() const
     QString nodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     modelJson["outputNodeName"] = nodeName;
     modelJson["masterIndex"] = m_masterIndex;
-    modelJson[QStringLiteral("demPath")] = m_demPath;
+    modelJson[QStringLiteral("auxiliaryDemLabel")] = m_auxiliaryDemLabel;
+    modelJson[QStringLiteral("auxiliaryDemLegacyResourceId")] = m_legacyDemResourceId;
+    modelJson[QStringLiteral("auxiliaryDemLegacyPinnedProvenanceId")] = m_legacyDemProvenanceId;
     return modelJson;
 }
 
@@ -175,16 +211,16 @@ void SLCDerampNode::load(QJsonObject const &json)
     {
         m_masterIndex = vIndex.toInt();
     }
-    QJsonValue vDemPath = json[QStringLiteral("demPath")];
-    if (!vDemPath.isUndefined()) {
-        m_demPath = vDemPath.toString();
-    }
+    m_auxiliaryDemLabel = json.value(QStringLiteral("auxiliaryDemLabel")).toString().trimmed();
+    m_legacyDemResourceId = json.value(QStringLiteral("auxiliaryDemLegacyResourceId")).toString().trimmed();
+    m_legacyDemProvenanceId = json.value(QStringLiteral("auxiliaryDemLegacyPinnedProvenanceId")).toString().trimmed();
 
     ExecutableNodeDelegateModel::load(json);
 
     if (m_outputNodeNameEdit)
         m_outputNodeNameEdit->setText(m_outputNodeName);
     updateLabels();
+    refreshAuxiliaryDemLabels();
 }
 
 void SLCDerampNode::setExecutionMode(ExecutionMode mode)
@@ -464,40 +500,27 @@ void SLCDerampNode::createWidget()
     layout->addWidget(m_masterIndexLabel);
 
     auto* demLayout = new QHBoxLayout();
-    m_demPathLabel = new QLabel(QStringLiteral("DEM路径"));
+    m_demPathLabel = new QLabel(QStringLiteral("辅助 DEM"));
     m_demPathLabel->setFixedWidth(80);
-    m_demPathEdit = new QLineEdit();
-    if (m_demPath.isEmpty()) {
-        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-            m_demPath = NodeUtils::getGlobalDemPath(iface);
+    m_demLabelCombo = new QComboBox();
+    refreshAuxiliaryDemLabels();
+    connect(m_demLabelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
+        const QString nextLabel = index > 0 ? m_demLabelCombo->itemData(index).toString() : QString();
+        if (!nextLabel.isEmpty() && hasActiveInputConnection(1)) {
+            QMessageBox::warning(nullptr, QStringLiteral("辅助 DEM"),
+                                 QStringLiteral("请先断开辅助 DEM 输入端口的直连，再选择工程标签。"));
+            m_demLabelCombo->blockSignals(true);
+            const int previousIndex = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+            m_demLabelCombo->setCurrentIndex(previousIndex >= 0 ? previousIndex : 0);
+            m_demLabelCombo->blockSignals(false);
+            return;
         }
-    }
-    m_demPathEdit->setText(m_demPath);
-    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
-    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        const QString path = m_demPathEdit->text().trimmed();
-        if (path == m_demPath) return;
-        m_demPath = path;
-        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-            NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-        }
-        invalidateNodeData();
-    });
-    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
-    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
-        const QString path = QFileDialog::getOpenFileName(_widget, QStringLiteral("选择DEM数据"), QString(),
-                                                           QStringLiteral("DEM Files (*.h5 *.tiff *.tif)"));
-        if (path.isEmpty()) return;
-        m_demPath = path;
-        m_demPathEdit->setText(path);
-        if (auto* iface = NodeUtils::getProjectContext(_widget)) {
-            NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-        }
+        m_auxiliaryDemLabel = nextLabel;
+        if (!m_auxiliaryDemLabel.isEmpty()) { m_auxiliaryDemEntityData.reset(); m_auxiliaryDemReferenceData.reset(); }
         invalidateNodeData();
     });
     demLayout->addWidget(m_demPathLabel);
-    demLayout->addWidget(m_demPathEdit);
-    demLayout->addWidget(m_demBrowseBtn);
+    demLayout->addWidget(m_demLabelCombo);
     layout->addLayout(demLayout);
 
     // Bottom spacer
@@ -590,6 +613,20 @@ void SLCDerampNode::onProcessingFinished()
         NodeUtils::abandonOutputTransaction(m_outputTransaction,
                                             QStringLiteral("obsolete execution revision"), projectXml());
         return;
+    }
+    if (m_auxiliaryDemEntityData || m_auxiliaryDemReferenceData) {
+        NodeUtils::AuxiliaryDemBinding currentBinding;
+        QString bindingError;
+        if (!NodeUtils::revalidateDemExecutionSnapshot(projectPath(), m_auxiliaryDemEntityData.get(),
+                                                        m_auxiliaryDemReferenceData.get(), m_preparedDemExecutionSnapshot,
+                                                        NodeUtils::inputGeometryFromProductDescriptor(
+                                                            m_inputData ? m_inputData->physicalProductDescriptor() : nullptr),
+                                                        currentBinding, &bindingError)) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete auxiliary DEM binding"), projectXml());
+            setLastErrorMessage(bindingError);
+            setState(ExecutionState::Error);
+            return;
+        }
     }
 
     QString transactionError;
@@ -995,6 +1032,46 @@ QString SLCDerampNode::generateDefaultOutputName() const
 
 bool SLCDerampNode::prepareToStart()
 {
+    QJsonObject inputGeometry;
+    if (m_inputData) inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor());
+    if (hasActiveInputConnection(1) && !m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("辅助 DEM 不能同时使用直接连线和命名标签。"));
+        return false;
+    }
+    if (!m_auxiliaryDemEntityData && m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("SLCDeramp DEM 必须通过直接连线或工程标签提供。"));
+        return false;
+    }
+    if (m_auxiliaryDemEntityData) {
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemBinding(projectPath(), *m_auxiliaryDemEntityData, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_demInputData = std::make_shared<ImportedFileData>(binding.rasterPath, QStringLiteral("Auxiliary DEM"));
+        m_demInputData->setProductDescriptor(m_auxiliaryDemEntityData->productDescriptor());
+    }
+    if (!m_auxiliaryDemLabel.isEmpty()) {
+        if (!m_legacyDemResourceId.isEmpty() && !m_legacyDemProvenanceId.isEmpty())
+            NodeUtils::registerPendingAuxiliaryDemLabel({m_auxiliaryDemLabel, m_legacyDemResourceId, m_legacyDemProvenanceId});
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemLabel(projectPath(), m_auxiliaryDemLabel, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_auxiliaryDemReferenceData = std::make_shared<AuxiliaryDemReferenceData>(binding.resourceId, binding.pinnedProvenanceId, 1);
+        m_demInputData = std::make_shared<ImportedFileData>(binding.rasterPath, QStringLiteral("DEM Label"));
+    }
     const QString configuredOutputName = m_outputNodeNameEdit
         ? m_outputNodeNameEdit->text().trimmed()
         : m_outputNodeName.trimmed();
@@ -1110,7 +1187,8 @@ void SLCDerampNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedTransactionInputPaths,
-                                           m_outputTransaction, &transactionError)) {
+                                           m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }
@@ -1278,7 +1356,7 @@ void SLCDerampNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Idle);
+        setState(ExecutionState::Pending);
     }
 }
 
@@ -1290,8 +1368,30 @@ void SLCDerampNode::updateParameterWidgetsEnableState()
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
     const bool demConnected = m_demInputData != nullptr;
     if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !demConnected);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !demConnected);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !demConnected);
+    if (m_demLabelCombo) m_demLabelCombo->setEnabled(enableWidgets && !demConnected);
+}
+
+void SLCDerampNode::refreshAuxiliaryDemLabels()
+{
+    if (!m_demLabelCombo) return;
+    QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+    QString error;
+    NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
+    QSignalBlocker blocker(m_demLabelCombo);
+    m_demLabelCombo->clear();
+    m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
+        const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 来源 %3)").arg(it.value().label, status, it.value().producerIdentity.left(8)), it.value().label);
+    }
+    if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::FixedResource) continue;
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (已注册资源)").arg(it.value().label), it.value().label);
+    }
+    const int index = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+    m_demLabelCombo->setCurrentIndex(index < 0 ? 0 : index);
 }
 
 } // namespace QtNodes

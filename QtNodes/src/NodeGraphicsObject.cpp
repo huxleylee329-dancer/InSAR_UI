@@ -169,8 +169,14 @@ QPainterPath NodeGraphicsObject::shape() const
     // 2. 如果是可执行节点，且节点处于选中状态（因为耳朵只有在选中时才会被绘制），则将顶部耳朵加入判定区域
     auto *execGeo = dynamic_cast<ExecutableNodeGeometry*>(&geometry);
     if (execGeo) {
-        if (isSelected()) {
-            path.addRect(execGeo->leftEarRect(_nodeId));
+        auto *dfModel = dynamic_cast<DataFlowGraphModel*>(&_graphModel);
+        auto *execModel = dfModel
+            ? dfModel->delegateModel<ExecutableNodeDelegateModel>(_nodeId)
+            : nullptr;
+        if (isSelected() && execModel && execModel->useExternalLayout()) {
+            if (execModel->hasExecutionControls()) {
+                path.addRect(execGeo->leftEarRect(_nodeId));
+            }
             path.addRect(execGeo->rightEarRect(_nodeId));
         }
         path.addRect(execGeo->progressBarRect(_nodeId));
@@ -409,6 +415,10 @@ void NodeGraphicsObject::hoverLeaveEvent(QGraphicsSceneHoverEvent *event)
 {
     _nodeState.setHovered(false);
 
+    setProperty("executionControlHoverKind", QString());
+    setProperty("executionControlHoverLocalPos", QVariant());
+    setProperty("executionControlHoverExternal", false);
+
     setZValue(0.0);
 
     update();
@@ -441,29 +451,39 @@ void NodeGraphicsObject::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
             execModel = dynamic_cast<ExecutableNodeDelegateModel*>(delegateModel);
         }
 
-        if (execGeo->hitTestStartButton(_nodeId, pos) || execGeo->hitTestCardStartButton(_nodeId, pos)) {
-            if (execModel) {
-                if (execModel->executionState() == ExecutionState::Completed) {
-                    setToolTip("Re-run");
-                } else if (execModel->executionState() == ExecutionState::Running) {
-                    setToolTip("Stop");
-                } else {
-                    setToolTip("Run");
-                }
+        const bool useExternal = execModel && execModel->useExternalLayout();
+        const bool layoutEligible = execModel && (!useExternal || isSelected());
+        const bool startHit = layoutEligible && execModel->hasExecutionControls()
+            && (useExternal ? execGeo->hitTestStartButton(_nodeId, pos)
+                            : execGeo->hitTestCardStartButton(_nodeId, pos));
+        const bool modeHit = layoutEligible && execModel->hasExecutionControls()
+            && (useExternal ? execGeo->hitTestModeButton(_nodeId, pos)
+                            : execGeo->hitTestCardModeButton(_nodeId, pos));
+        const bool detailHit = layoutEligible
+            && (useExternal ? execGeo->hitTestDetailButton(_nodeId, pos)
+                            : execGeo->hitTestCardDetailButton(_nodeId, pos));
+
+        QString hoverKind;
+        if (startHit) {
+            hoverKind = QStringLiteral("start");
+            if (execModel->executionState() == ExecutionState::Completed) {
+                setToolTip("Re-run");
+            } else if (execModel->executionState() == ExecutionState::Running) {
+                setToolTip("Stop");
             } else {
                 setToolTip("Run");
             }
-        } else if (execGeo->hitTestModeButton(_nodeId, pos) || execGeo->hitTestCardModeButton(_nodeId, pos)) {
-            if (execModel) {
-                if (execModel->executionMode() == ExecutionMode::Automatic) {
-                    setToolTip("Auto Mode");
-                } else {
-                    setToolTip("Manual Mode");
-                }
+        } else if (modeHit) {
+            hoverKind = QStringLiteral("mode");
+            if (execModel->executionMode() == ExecutionMode::Automatic) {
+                setToolTip("Auto Mode");
+            } else if (execModel->executionMode() == ExecutionMode::Manual) {
+                setToolTip("Manual Mode");
             } else {
-                setToolTip("Mode");
+                setToolTip("Disabled Mode");
             }
-        } else if (execGeo->hitTestDetailButton(_nodeId, pos) || execGeo->hitTestCardDetailButton(_nodeId, pos)) {
+        } else if (detailHit) {
+            hoverKind = QStringLiteral("detail");
             setToolTip("Detail View");
         } else {
             if (execModel && execModel->executionState() == ExecutionState::Error) {
@@ -478,6 +498,10 @@ void NodeGraphicsObject::hoverMoveEvent(QGraphicsSceneHoverEvent *event)
                 setToolTip("");
             }
         }
+
+        setProperty("executionControlHoverKind", hoverKind);
+        setProperty("executionControlHoverLocalPos", pos);
+        setProperty("executionControlHoverExternal", useExternal);
     }
 
     event->accept();

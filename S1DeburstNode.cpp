@@ -711,7 +711,8 @@ void S1DeburstNode::executeProcessing()
     }
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, expectedOutputPaths,
-                                           inputPaths, m_outputTransaction, &transactionError)) {
+                                           inputPaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

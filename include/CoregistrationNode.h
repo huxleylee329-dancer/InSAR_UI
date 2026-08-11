@@ -36,6 +36,7 @@ public:
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    QList<QList<PortIndex>> alternativeInputGroups() const override;
 
     // Data flow
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
@@ -110,8 +111,7 @@ private:
 
     // Fine inputs
     QLabel* m_demPathLabel = nullptr;
-    QLineEdit* m_demPathEdit = nullptr;
-    QPushButton* m_demBrowseBtn = nullptr;
+    QComboBox* m_demLabelCombo = nullptr;
 
     // Output node & pattern
     QLineEdit* m_outputNodeNameEdit = nullptr;
@@ -120,6 +120,8 @@ private:
     // Data
     std::shared_ptr<ImportedFileData> m_inputData = nullptr;
     std::shared_ptr<ImportedFileData> m_demInputData = nullptr;
+    std::shared_ptr<AuxiliaryDemData> m_auxiliaryDemEntityData;
+    std::shared_ptr<AuxiliaryDemReferenceData> m_auxiliaryDemReferenceData;
     std::shared_ptr<ImportedFileData> m_outputData = nullptr;
     std::shared_ptr<ImageInfoData> m_previewData = nullptr;
 
@@ -136,6 +138,12 @@ private:
     int m_interpTimes = 4;
     int m_blockSize = 64;
     QString m_demPath;
+    QString m_auxiliaryDemLabel;
+    QString m_legacyDemResourceId;
+    QString m_legacyDemProvenanceId;
+    NodeUtils::AuxiliaryDemBinding m_preparedAuxiliaryDemBinding;
+    NodeUtils::DemExecutionSnapshot m_preparedDemExecutionSnapshot;
+    void refreshAuxiliaryDemLabels();
 
     // Threading / Watchers
     CoregistrationWorker* m_worker = nullptr;

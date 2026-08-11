@@ -38,9 +38,7 @@ Geocoding::Geocoding(QWidget* parent) :
     
     m_demPathEdit1 = new QLineEdit(this);
     m_demPathEdit1->setObjectName("demPathEdit");
-    auto* iface = NodeUtils::getProjectContext(this);
-    QString defaultDem = iface ? NodeUtils::getGlobalDemPath(iface) : QString();
-    m_demPathEdit1->setText(defaultDem);
+    m_demPathEdit1->clear();
     m_demPathEdit1->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
 
     m_demBrowseBtn1 = new QPushButton(QStringLiteral("浏览..."), this);
@@ -66,7 +64,7 @@ Geocoding::Geocoding(QWidget* parent) :
     
     m_demPathEdit2 = new QLineEdit(this);
     m_demPathEdit2->setObjectName("demPathEdit");
-    m_demPathEdit2->setText(defaultDem);
+    m_demPathEdit2->clear();
     m_demPathEdit2->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
 
     m_demBrowseBtn2 = new QPushButton(QStringLiteral("浏览..."), this);
@@ -91,10 +89,6 @@ Geocoding::Geocoding(QWidget* parent) :
         if (!file.isEmpty()) {
             m_demPathEdit1->setText(file);
             m_demPathEdit2->setText(file);
-            auto* iface = NodeUtils::getProjectContext(this);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, file, true);
-            }
         }
     };
     connect(m_demBrowseBtn1, &QPushButton::clicked, this, onBrowse1);
@@ -104,10 +98,6 @@ Geocoding::Geocoding(QWidget* parent) :
         if (!file.isEmpty()) {
             m_demPathEdit1->setText(file);
             m_demPathEdit2->setText(file);
-            auto* iface = NodeUtils::getProjectContext(this);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, file, true);
-            }
         }
     };
     connect(m_demBrowseBtn2, &QPushButton::clicked, this, onBrowse2);
@@ -115,19 +105,11 @@ Geocoding::Geocoding(QWidget* parent) :
     connect(m_demPathEdit1, &QLineEdit::editingFinished, this, [this]() {
         QString text = m_demPathEdit1->text().trimmed();
         m_demPathEdit2->setText(text);
-        auto* iface = NodeUtils::getProjectContext(this);
-        if (iface) {
-            NodeUtils::setGlobalDemPath(iface, text, true);
-        }
     });
 
     connect(m_demPathEdit2, &QLineEdit::editingFinished, this, [this]() {
         QString text = m_demPathEdit2->text().trimmed();
         m_demPathEdit1->setText(text);
-        auto* iface = NodeUtils::getProjectContext(this);
-        if (iface) {
-            NodeUtils::setGlobalDemPath(iface, text, true);
-        }
     });
 }
 Geocoding::~Geocoding()

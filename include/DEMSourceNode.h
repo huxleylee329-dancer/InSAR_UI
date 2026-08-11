@@ -25,6 +25,8 @@ class XMLFile;
 
 namespace QtNodes {
 
+struct DemFinalizationPreparation;
+
 class DEMSourceNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
@@ -64,7 +66,7 @@ public:
     void setExecutionMode(ExecutionMode mode) override;
 
 protected:
-    bool stopExecutionIsAsynchronous() const override { return true; }
+    bool stopExecutionIsAsynchronous() const override;
     bool supportsAutomaticRestartAfterInputChange() const override { return true; }
     bool validateAndRestoreOutput() override;
     QStringList previewImagePaths() const override;
@@ -80,6 +82,8 @@ private:
     QPushButton* m_clearCacheBtn;
     QLabel* m_cacheSizeLabel;
     QLineEdit* m_outputNodeNameEdit;
+    QPushButton* m_createLabelBtn;
+    QPushButton* m_importLocalDemBtn;
 
     // 登录相关控件
     QLabel* m_loginStatusLabel;
@@ -88,7 +92,8 @@ private:
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
-    std::shared_ptr<ImportedFileData> m_outputData;
+    std::shared_ptr<AuxiliaryDemData> m_outputData;
+    std::shared_ptr<AuxiliaryDemReferenceData> m_referenceData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
 
     // Parameters
@@ -97,6 +102,13 @@ private:
     double m_customResolution;  // Custom target resolution
     QString m_cacheDir;
     QString m_outputNodeName;
+    bool m_isLocalImport = false;
+    QString m_localImportResourceId;
+    QString m_localImportProvenanceId;
+    QString m_savedResourceId;
+    QString m_savedResourceProvenanceId;
+    QString m_workflowLabel;
+    QString m_workflowProducerIdentity;
 
     // Worker thread
     DEMSourceWorker* m_workerThread;
@@ -104,6 +116,9 @@ private:
 
     // Remedy watcher for missing JPG regeneration
     QFutureWatcher<void> m_remedyWatcher;
+    // Hashing, HDF5 validation, and resource staging for a completed DEM run.
+    QFutureWatcher<void> m_finalizationWatcher;
+    std::shared_ptr<DemFinalizationPreparation> m_finalizationPreparation;
 
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
@@ -116,6 +131,11 @@ private:
     QStringList m_preparedOutputPaths;
     NodeUtils::OutputTransaction m_outputTransaction;
     quint64 m_executionGeneration = 0;
+    // Invalidates preview/recovery futures when a new execution starts,
+    // outputs are cleared, or the node is destroyed.
+    quint64 m_remedyGeneration = 0;
+    QString m_remedyH5Path;
+    QString m_remedyJpgPath;
 
     // Helper methods
     void createWidget();
@@ -141,6 +161,7 @@ private:
     QString generateDefaultOutputName() const;
     void executeProcessing();
     void startPreviewGeneration(const QString& h5Path, const QString& jpgPath);
+    void clearPublishedOutputs();
 
     // Context helpers
     QStandardItemModel* projectModel() const;

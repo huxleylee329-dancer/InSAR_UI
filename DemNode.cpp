@@ -31,6 +31,52 @@
 
 namespace QtNodes {
 
+namespace {
+
+ProductDescriptor::Ptr descriptorWithDemGeometry(const ProductDescriptor::Ptr& descriptor,
+                                                 const QStringList& h5Paths,
+                                                 QString* errorMessage)
+{
+    if (!descriptor || h5Paths.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM product descriptor geometry cannot be built without H5 outputs.");
+        return ProductDescriptor::Ptr();
+    }
+    double minLon = std::numeric_limits<double>::infinity();
+    double maxLon = -std::numeric_limits<double>::infinity();
+    double minLat = std::numeric_limits<double>::infinity();
+    double maxLat = -std::numeric_limits<double>::infinity();
+    for (const QString& h5Path : h5Paths) {
+        double fileMinLon = 0.0, fileMaxLon = 0.0, fileMinLat = 0.0, fileMaxLat = 0.0;
+        QString readError;
+        if (!NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_min_lon"), fileMinLon, &readError) ||
+            !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_max_lon"), fileMaxLon, &readError) ||
+            !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_min_lat"), fileMinLat, &readError) ||
+            !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_max_lat"), fileMaxLat, &readError) ||
+            !std::isfinite(fileMinLon) || !std::isfinite(fileMaxLon) ||
+            !std::isfinite(fileMinLat) || !std::isfinite(fileMaxLat) ||
+            fileMaxLon <= fileMinLon || fileMaxLat <= fileMinLat) {
+            if (errorMessage) *errorMessage = QStringLiteral("DEM output geometry metadata is missing or invalid: %1").arg(h5Path);
+            return ProductDescriptor::Ptr();
+        }
+        minLon = std::min(minLon, fileMinLon);
+        maxLon = std::max(maxLon, fileMaxLon);
+        minLat = std::min(minLat, fileMinLat);
+        maxLat = std::max(maxLat, fileMaxLat);
+    }
+    QMap<QString, QString> provenance = descriptor->provenance();
+    provenance.insert(QStringLiteral("geometrySource"), QStringLiteral("dem_h5_bounds"));
+    provenance.insert(QStringLiteral("crsWkt"), QStringLiteral("EPSG:4326"));
+    provenance.insert(QStringLiteral("minLon"), QString::number(minLon, 'g', 17));
+    provenance.insert(QStringLiteral("maxLon"), QString::number(maxLon, 'g', 17));
+    provenance.insert(QStringLiteral("minLat"), QString::number(minLat, 'g', 17));
+    provenance.insert(QStringLiteral("maxLat"), QString::number(maxLat, 'g', 17));
+    return ProductDescriptor::create(descriptor->productType(), descriptor->schemaId(),
+                                     descriptor->schemaVersion(), descriptor->state(),
+                                     descriptor->source(), provenance);
+}
+
+} // namespace
+
 DemNode::DemNode()
     : ExecutableNodeDelegateModel()
     , _widget(nullptr)
@@ -70,7 +116,7 @@ NodeDataType DemNode::dataType(PortType portType, PortIndex portIndex) const
     else
     {
         if (portIndex == 0)
-            return NodeDataType{"dem_file", "DEM File"};
+            return NodeDataType{"insar_dem", "InSAR DEM"};
         else
             return NodeDataType{"image_info", "Image Info"};
     }
@@ -457,7 +503,8 @@ void DemNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedPhasePaths,
-                                           m_outputTransaction, &transactionError)) {
+                                           m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }
@@ -466,6 +513,7 @@ void DemNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("dem_generation.output.insar_dem"));
+    descriptorProvenance.insert(QStringLiteral("runId"), m_outputTransaction.runId);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction,
             ProductDescriptor::create(QStringLiteral("insar_dem"),
@@ -559,13 +607,28 @@ void DemNode::onProcessingFinished()
     }
 
     QString transactionError;
+    QStringList workerPaths;
+    for (const DemFileResult& result : m_pendingDemResults) workerPaths.append(result.absoluteDemPath);
+    ProductDescriptor::Ptr stagedDescriptor = ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor, &transactionError);
+    stagedDescriptor = descriptorWithDemGeometry(stagedDescriptor, workerPaths, &transactionError);
+    if (!stagedDescriptor || !NodeUtils::setOutputTransactionProductDescriptor(
+            m_outputTransaction, stagedDescriptor, &transactionError)) {
+        onError(transactionError.isEmpty() ? QStringLiteral("DEM output geometry metadata could not be committed.") : transactionError);
+        return;
+    }
     if (!projectXml() || !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
-        !NodeUtils::validateStagedH5Datasets(m_outputTransaction, QStringList() << QStringLiteral("dem"), &transactionError)) {
+        !NodeUtils::validateStagedH5Datasets(
+            m_outputTransaction,
+            QStringList() << QStringLiteral("dem")
+                          << QStringLiteral("dem_min_lon")
+                          << QStringLiteral("dem_max_lon")
+                          << QStringLiteral("dem_min_lat")
+                          << QStringLiteral("dem_max_lat"),
+            &transactionError)) {
         onError(transactionError.isEmpty() ? QStringLiteral("Project XML context is unavailable for DEM output commit.") : transactionError);
         return;
     }
-    QStringList workerPaths;
-    for (const DemFileResult& result : m_pendingDemResults) workerPaths.append(result.absoluteDemPath);
     if (!NodeUtils::workerOutputsMatchManifest(m_preparedOutputPaths, workerPaths, &transactionError) ||
         !NodeUtils::promoteOutputTransaction(m_outputTransaction, h5Paths, &transactionError) ||
         !NodeUtils::prepareOutputTransactionMetadataCommit(m_outputTransaction, projectXml(), NodeUtils::getProjectFilePath(_widget), &transactionError)) {
@@ -590,7 +653,7 @@ void DemNode::onProcessingFinished()
     if (auto* iface = NodeUtils::getProjectContext(_widget)) iface->refreshProjectTree();
     for (const QString& h5Path : h5Paths) { jpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + QFileInfo(h5Path).baseName() + ".jpg"); types.append(QStringLiteral("dem")); }
 
-    m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
+    m_outputData = std::make_shared<InsarDemData>(h5Paths, m_outputTransaction.runId);
     m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
         m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
@@ -818,6 +881,12 @@ bool DemNode::validateAndRestoreOutput()
     if (!NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor)) {
         return false;
     }
+    QString descriptorError;
+    descriptor = descriptorWithDemGeometry(descriptor, h5Paths, &descriptorError);
+    if (!descriptor) {
+        setLastErrorMessage(descriptorError);
+        return false;
+    }
     QStringList expectedJpgPaths;
     QStringList types;
 
@@ -827,7 +896,22 @@ bool DemNode::validateAndRestoreOutput()
         types.append("dem");
     }
 
-    m_outputData = std::make_shared<DEMFileData>(h5Paths, dstNode);
+    QString committedRunId;
+    NodeUtils::loadCommittedOutputManifestRunId(projectPath(), dstNode, committedRunId);
+    bool geometryAvailable = !h5Paths.isEmpty();
+    for (const QString& h5Path : h5Paths) {
+        double minLon = 0.0, maxLon = 0.0, minLat = 0.0, maxLat = 0.0;
+        geometryAvailable = geometryAvailable &&
+            NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_min_lon"), minLon) &&
+            NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_max_lon"), maxLon) &&
+            NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_min_lat"), minLat) &&
+            NodeUtils::readScalarFromH5(h5Path, QStringLiteral("dem_max_lat"), maxLat) &&
+            maxLon > minLon && maxLat > minLat;
+    }
+    m_outputData = std::make_shared<InsarDemData>(
+        h5Paths, committedRunId,
+        geometryAvailable ? InsarDemData::Availability::Executable
+                          : InsarDemData::Availability::HistoricalReadOnly);
     m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
     if (executionState() != ExecutionState::Running) {
@@ -1027,7 +1111,7 @@ void DemNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Idle);
+        setState(ExecutionState::Pending);
     }
 }
 

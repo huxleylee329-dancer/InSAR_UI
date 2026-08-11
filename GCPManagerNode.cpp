@@ -280,7 +280,8 @@ void GCPManagerNode::execute()
 
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(projectDir(), m_outputNodeName,
-            m_preparedOutputPaths, m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+            m_preparedOutputPaths, m_preparedInputPaths, m_outputTransaction, &transactionError, nullptr,
+            NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

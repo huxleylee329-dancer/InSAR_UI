@@ -345,6 +345,16 @@ QJsonObject PasteCommand::makeNewNodeIdsInScene(QJsonObject const &sceneJson)
         // Replace NodeId in json
         nodeJson["id"] = static_cast<qint64>(newNodeId);
 
+        // A pasted DEM source is a distinct workflow producer.  Retaining the
+        // copied label UUID would let it publish into the original producer's
+        // virtual dependency, so require an explicit label declaration.
+        QJsonObject internalData = nodeJson["internal-data"].toObject();
+        if (internalData.value("model-name").toString() == QStringLiteral("DEMSource")) {
+            internalData.remove("workflowDemLabel");
+            internalData.remove("workflowDemProducerIdentity");
+            nodeJson["internal-data"] = internalData;
+        }
+
         newNodesJsonArray.append(nodeJson);
     }
 

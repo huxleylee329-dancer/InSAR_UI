@@ -643,6 +643,18 @@ bool Sentinel1OrbitNode::preparePreciseReferenceManifest(QJsonObject& manifest) 
     return true;
 }
 
+bool Sentinel1OrbitNode::isPreciseOrbitReferenceOutput() const
+{
+    const QString targetDirName = m_outputNodeName.trimmed();
+    if (targetDirName.isEmpty()) {
+        return false;
+    }
+
+    const QDir projectRoot(NodeUtils::projectDirectory(projectPath()));
+    return QFileInfo(projectRoot.absoluteFilePath(
+        targetDirName + QStringLiteral("/") + kOrbitReferenceFile)).isFile();
+}
+
 void Sentinel1OrbitNode::execute()
 {
     executeProcessing();
@@ -721,7 +733,8 @@ void Sentinel1OrbitNode::executeProcessing()
     }
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, targetDirName, expectedOutputPaths,
-                                           m_preparedFilePaths, m_outputTransaction, &transactionError)) {
+                                           m_preparedFilePaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }
@@ -730,6 +743,27 @@ void Sentinel1OrbitNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("sentinel1_orbit.output.orbit_corrected_burst_sar"));
+    // Orbit refinement does not change radar footprint/geometry.  Preserve
+    // only trusted physical-input metadata; Back-Geocoding must never infer
+    // geometry from its auxiliary DEM.
+    const ProductDescriptor::Ptr physicalInputDescriptor = m_inputData
+        ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr();
+    if (physicalInputDescriptor) {
+        const QJsonObject sourceGeometry =
+            NodeUtils::inputGeometryFromProductDescriptor(physicalInputDescriptor);
+        const QStringList geometryFields = {
+            QStringLiteral("minLon"), QStringLiteral("maxLon"), QStringLiteral("minLat"), QStringLiteral("maxLat"),
+            QStringLiteral("crsWkt"), QStringLiteral("verticalDatum"), QStringLiteral("resolutionX"), QStringLiteral("resolutionY"),
+            QStringLiteral("resolutionUnit"), QStringLiteral("resolutionCoordinateSemantic")};
+        for (const QString& field : geometryFields) {
+            const QJsonValue value = sourceGeometry.value(field);
+            if (value.isDouble()) {
+                descriptorProvenance.insert(field, QString::number(value.toDouble(), 'g', 17));
+            } else if (value.isString() && !value.toString().trimmed().isEmpty()) {
+                descriptorProvenance.insert(field, value.toString().trimmed());
+            }
+        }
+    }
     ProductDescriptor::Ptr outputDescriptor = ProductDescriptor::create(
         QStringLiteral("sentinel1_burst_sar"), QStringLiteral("sat-explorer-product"), 1,
         ProductState::Committed, name(), descriptorProvenance);
@@ -1108,9 +1142,13 @@ void Sentinel1OrbitNode::onProcessingFinished(
     // 传播输出数据
     if (!publishedH5Paths.isEmpty()) {
         m_outputData = std::make_shared<ImportedFileData>(publishedH5Paths, targetDirName);
-        m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
+        const ProductDescriptor::Ptr committedDescriptor =
+            ProductDescriptor::fromJson(m_outputTransaction.productDescriptor);
+        m_outputData->setProductDescriptor(committedDescriptor);
         if (m_preparedReferenceMode) {
             m_outputData->setPhysicalProductDescriptor(m_inputData->physicalProductDescriptor());
+        } else {
+            m_outputData->setPhysicalProductDescriptor(committedDescriptor);
         }
         QStringList newJpgPaths;
         for (const QString& h5 : publishedH5Paths) {
@@ -1410,6 +1448,7 @@ XMLFile* Sentinel1OrbitNode::projectXml() const
 struct OrbitValidationItem
 {
     QString filePath;
+    bool isReferenceOutput = false;
     bool hasFineStateVec = false;
     int broadcastRows = 0;   // state_vec 行数（广播轨道）
     int preciseRows = 0;     // fine_state_vec 行数（精密轨道）
@@ -1509,7 +1548,13 @@ private:
             return;
         }
 
-        // 获取输入/输出 H5 文件列表（当前为透传，输入输出路径相同）
+        // 引用模式直接发布已经带精密轨道的源 H5，不生成第二份 H5 文件。
+        m_isReferenceOutput = m_node->isPreciseOrbitReferenceOutput();
+        m_compareTable->setHorizontalHeaderLabels(m_isReferenceOutput
+            ? QStringList{tr("分析项目"), tr("来源 H5"), tr("节点输出"), tr("状态")}
+            : QStringList{tr("分析项目"), tr("输入 H5"), tr("输出 H5"), tr("状态")});
+
+        // 获取输出 H5 文件列表；引用模式下这些路径指向未经改写的源 H5。
         std::shared_ptr<NodeData> outData = m_node->outData(0);
         auto* fileData = dynamic_cast<ImportedFileData*>(outData.get());
         if (!fileData || fileData->filePaths().isEmpty()) {
@@ -1572,7 +1617,7 @@ private:
         m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #3B82F6;");
 
         QFuture<OrbitValidationItem> future = QtConcurrent::run(
-            performOrbitValidation, h5Path);
+            performOrbitValidation, h5Path, m_isReferenceOutput);
 
         auto* watcher = new QFutureWatcher<OrbitValidationItem>(this);
         connect(watcher, &QFutureWatcher<OrbitValidationItem>::finished, this,
@@ -1623,16 +1668,25 @@ private:
             ? tr("未读取") : item.outputPolarization;
 
         const QString grpIdentity = QStringLiteral("  产品身份");
-        addRow(grpIdentity + tr(" / Swath"), identityInput, identityOutput,
-            item.identityStatus, identityColor);
-        addRow(grpIdentity + tr(" / Polarization"), polarizationInput, polarizationOutput,
-            item.identityStatus, identityColor);
-        addRow(grpIdentity + tr(" / Identity consistency"),
-            item.inputSwath.isEmpty() || item.inputPolarization.isEmpty()
-                ? tr("旧产物未记录输入身份快照")
-                : tr("输入身份快照已记录"),
-            item.identityConsistency.isEmpty() ? tr("未记录") : item.identityConsistency,
-            item.identityStatus, identityColor);
+        if (item.isReferenceOutput) {
+            addRow(grpIdentity + tr(" / Swath"), identityOutput,
+                tr("引用来源 H5（未改写）"), item.identityStatus, identityColor);
+            addRow(grpIdentity + tr(" / Polarization"), polarizationOutput,
+                tr("引用来源 H5（未改写）"), item.identityStatus, identityColor);
+            addRow(grpIdentity + tr(" / 引用方式"), tr("已有精密轨道"),
+                tr("零拷贝逻辑引用"), item.identityStatus, identityColor);
+        } else {
+            addRow(grpIdentity + tr(" / Swath"), identityInput, identityOutput,
+                item.identityStatus, identityColor);
+            addRow(grpIdentity + tr(" / Polarization"), polarizationInput, polarizationOutput,
+                item.identityStatus, identityColor);
+            addRow(grpIdentity + tr(" / Identity consistency"),
+                item.inputSwath.isEmpty() || item.inputPolarization.isEmpty()
+                    ? tr("旧产物未记录输入身份快照")
+                    : tr("输入身份快照已记录"),
+                item.identityConsistency.isEmpty() ? tr("未记录") : item.identityConsistency,
+                item.identityStatus, identityColor);
+        }
 
         // 1. fine_state_vec 存在性
         QString grpOrbit = QStringLiteral("  精密轨道");
@@ -1642,10 +1696,9 @@ private:
                 outVal += QString(" (%1)").arg(item.orbitType);
             }
             addRow(grpOrbit,
-                tr("fine_state_vec: 不存在"),
-                outVal,
-                tr("PASS"),
-                "#10B981");
+                item.isReferenceOutput ? outVal : tr("fine_state_vec: 不存在"),
+                item.isReferenceOutput ? tr("引用来源 H5（未改写）") : outVal,
+                tr("PASS"), "#10B981");
         } else {
             addRow(grpOrbit,
                 tr("fine_state_vec: 不存在"),
@@ -1657,17 +1710,24 @@ private:
         // 2. 轨道向量点数
         QString grpPoints = QStringLiteral("  轨道点数");
         addRow(grpPoints,
-            QStringLiteral("广播轨道: %1 点").arg(item.broadcastRows),
-            item.hasFineStateVec
+            item.isReferenceOutput && item.hasFineStateVec
                 ? QStringLiteral("精密轨道: %1 点").arg(item.preciseRows)
-                : tr("精密轨道: 0 点"),
+                : QStringLiteral("广播轨道: %1 点").arg(item.broadcastRows),
+            item.isReferenceOutput
+                ? tr("引用来源 H5（未改写）")
+                : item.hasFineStateVec
+                    ? QStringLiteral("精密轨道: %1 点").arg(item.preciseRows)
+                    : tr("精密轨道: 0 点"),
             item.hasFineStateVec && item.preciseRows >= 5 ? tr("PASS") : tr("WARNING"),
             item.hasFineStateVec && item.preciseRows >= 5 ? "#10B981" : "#F59E0B");
 
         // 3. 判定摘要
         QString grpSummary = QStringLiteral("  综合判定");
         QString detailText;
-        if (item.hasFineStateVec) {
+        if (item.isReferenceOutput && item.hasFineStateVec) {
+            detailText = tr("来源 H5 已包含 %1 个精密轨道点；Apply Orbit File 已建立零拷贝逻辑引用。")
+                .arg(item.preciseRows);
+        } else if (item.hasFineStateVec) {
             int ratio = item.broadcastRows > 0 ? (item.preciseRows * 100 / item.broadcastRows) : 0;
             detailText = tr("精密轨道点数 %1 / 广播轨道点数 %2 ≈ %3%")
                 .arg(item.preciseRows).arg(item.broadcastRows).arg(ratio);
@@ -1682,10 +1742,11 @@ private:
     // ========================================================================
     // 静态分析函数（后台线程运行）
     // ========================================================================
-    static OrbitValidationItem performOrbitValidation(const QString& h5Path)
+    static OrbitValidationItem performOrbitValidation(const QString& h5Path, bool isReferenceOutput)
     {
         OrbitValidationItem item;
         item.filePath = h5Path;
+        item.isReferenceOutput = isReferenceOutput;
 
         FormatConversion FC;
         {
@@ -1730,7 +1791,16 @@ private:
 
             if (!hasOutputSwath || !hasOutputPolarization || item.outputSwath.isEmpty() || item.outputPolarization.isEmpty()) {
                 item.identityStatus = QStringLiteral("FAILED");
-                item.errorMsg = QStringLiteral("输出 H5 缺少 Sentinel-1 swath/polarization 元数据。");
+                item.errorMsg = isReferenceOutput
+                    ? QStringLiteral("引用的来源 H5 缺少 Sentinel-1 swath/polarization 元数据。")
+                    : QStringLiteral("输出 H5 缺少 Sentinel-1 swath/polarization 元数据。");
+            } else if (isReferenceOutput) {
+                // This H5 predates this node.  Audit fields are only written by
+                // the copy-and-apply path, so they are not a reference requirement.
+                item.inputSwath = item.outputSwath;
+                item.inputPolarization = item.outputPolarization;
+                item.identityConsistency = QStringLiteral("SOURCE H5 UNCHANGED");
+                item.identityStatus = QStringLiteral("PASS");
             } else if (!hasInputSwath || !hasInputPolarization || item.inputSwath.isEmpty() || item.inputPolarization.isEmpty()) {
                 item.identityStatus = QStringLiteral("WARNING");
                 item.errorMsg = QStringLiteral("旧产物未记录轨道应用前的 Sentinel-1 身份快照。");
@@ -1764,6 +1834,7 @@ private:
     QListWidget* m_fileList = nullptr;
     QTableWidget* m_compareTable = nullptr;
     QFutureWatcher<void> m_watcher;
+    bool m_isReferenceOutput = false;
 };
 
 // ============================================================================

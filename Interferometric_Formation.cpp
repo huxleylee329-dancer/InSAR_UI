@@ -35,9 +35,7 @@ Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
     
     m_demPathEdit = new QLineEdit(this);
     m_demPathEdit->setObjectName("demPathEdit");
-    auto* iface = NodeUtils::getProjectContext(this);
-    QString defaultDem = iface ? NodeUtils::getGlobalDemPath(iface) : QString();
-    m_demPathEdit->setText(defaultDem);
+    m_demPathEdit->clear();
     m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
 
     m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."), this);
@@ -46,19 +44,11 @@ Interferometric_Formation::Interferometric_Formation(QWidget* parent) :
         QString file = QFileDialog::getOpenFileName(this, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
         if (!file.isEmpty()) {
             m_demPathEdit->setText(file);
-            auto* iface = NodeUtils::getProjectContext(this);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, file, true);
-            }
         }
     });
 
     connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this]() {
         QString text = m_demPathEdit->text().trimmed();
-        auto* iface = NodeUtils::getProjectContext(this);
-        if (iface) {
-            NodeUtils::setGlobalDemPath(iface, text, true);
-        }
     });
 
     demLayout->addWidget(m_demPathEdit);

@@ -359,7 +359,8 @@ void Unwrap_ui::on_buttonBox_accepted()
     m_pendingUnwrapResults.clear();
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(save_path, ui->file_name->text(), m_preparedOutputPaths,
-                                           phasePaths, m_outputTransaction, &transactionError)) {
+                                           phasePaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(this))) {
         QMessageBox::critical(this, QStringLiteral("Error"), transactionError);
         return;
     }

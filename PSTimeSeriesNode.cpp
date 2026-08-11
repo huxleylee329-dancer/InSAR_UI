@@ -321,7 +321,8 @@ void PSTimeSeriesNode::executeProcessing()
     const QStringList networkFileList = m_preparedInputPaths;
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(projPath, m_preparedDstNode, m_preparedOutputPaths,
-                                           networkFileList, m_outputTransaction, &transactionError)) {
+                                           networkFileList, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

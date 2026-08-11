@@ -43,6 +43,7 @@ public:
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    QList<QList<PortIndex>> alternativeInputGroups() const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     ::QWidget* embeddedWidget() override;
@@ -70,18 +71,22 @@ private:
     QLineEdit* m_outputNodeNameEdit;
     
     QLabel* m_demPathLabel = nullptr;
-    QLineEdit* m_demPathEdit = nullptr;
-    QPushButton* m_demBrowseBtn = nullptr;
+    QComboBox* m_demLabelCombo = nullptr;
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
-    std::shared_ptr<DEMFileData> m_demInputData;
+    std::shared_ptr<AuxiliaryDemData> m_auxiliaryDemInputData;
+    std::shared_ptr<AuxiliaryDemReferenceData> m_auxiliaryDemReferenceData;
+    std::shared_ptr<InsarDemData> m_insarDemInputData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     
     // Parameters
     QString m_outputNodeName;
     QString m_demPath;
+    QString m_auxiliaryDemLabel;
+    QString m_legacyDemResourceId;
+    QString m_legacyDemProvenanceId;
     int m_type;       // 1: 干涉产品, 2: SAR图像
     int m_multiRg;    // default 1
     int m_multiAz;    // default 1
@@ -95,6 +100,7 @@ private:
 
     // Helper methods
     void createWidget();
+    void refreshAuxiliaryDemLabels();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
     void onCancelled();
@@ -103,6 +109,8 @@ private:
     void commitGeocodingResult(const GeocodingFileResult& result);
     void publishGeocodingResultToProjectTree(const GeocodingFileResult& result);
     bool validateInputs() const;
+    bool resolveInsarDemProduct(const std::shared_ptr<InsarDemData>& data,
+                                QStringList* resolvedPaths) const;
     void updateWidgetSize();
     void updateParameterWidgetsEnableState();
     void onTypeChanged(int index);
@@ -137,6 +145,8 @@ private:
     int m_preparedMultiRg = 1;
     int m_preparedMultiAz = 1;
     QString m_preparedDemPath;
+    NodeUtils::AuxiliaryDemBinding m_preparedAuxiliaryDemBinding;
+    NodeUtils::DemExecutionSnapshot m_preparedDemExecutionSnapshot;
     bool m_xmlDirty = false;
     NodeUtils::OutputTransaction m_outputTransaction;
     QList<GeocodingFileResult> m_pendingGeocodingResults;

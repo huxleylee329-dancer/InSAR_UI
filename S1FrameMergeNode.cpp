@@ -740,7 +740,8 @@ void S1FrameMergeNode::executeProcessing()
     setState(ExecutionState::Running);
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, m_preparedOutputPaths,
-                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

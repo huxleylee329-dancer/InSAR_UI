@@ -32,6 +32,7 @@ namespace {
 thread_local DenoiseWorker* currentWorker = nullptr;
 thread_local int totalImages = 1;
 thread_local int currentImageIndex = 0;
+thread_local int lastLoggedMappedProgress = -1;
 
 bool __stdcall denoiseProgressCallback(int progress, const char* message)
 {
@@ -60,10 +61,14 @@ bool __stdcall denoiseProgressCallback(int progress, const char* message)
         progressMessage += QString(" (%1)").arg(QString::fromUtf8(message));
     }
     emit currentWorker->updateProcess(mappedProgress, progressMessage);
-    InSARLogManager::LogDebug("DenoiseWorker",
-        QStringLiteral("Filtering progress: image=%1/%2, innerProgress=%3%, mappedProgress=%4%")
-            .arg(currentImageIndex + 1).arg(totalImages).arg(progress).arg(mappedProgress),
-        "denoise.progress");
+    if (progress == 0 || progress == 100 || lastLoggedMappedProgress < 0 ||
+        mappedProgress >= lastLoggedMappedProgress + 5) {
+        InSARLogManager::LogDebug("DenoiseWorker",
+            QStringLiteral("Filtering progress: image=%1/%2, innerProgress=%3%, mappedProgress=%4%")
+                .arg(currentImageIndex + 1).arg(totalImages).arg(progress).arg(mappedProgress),
+            "denoise.progress");
+        lastLoggedMappedProgress = mappedProgress;
+    }
     return true;
 }
 
@@ -75,6 +80,7 @@ public:
         currentWorker = nullptr;
         totalImages = 1;
         currentImageIndex = 0;
+        lastLoggedMappedProgress = -1;
     }
 };
 

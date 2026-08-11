@@ -412,7 +412,8 @@ void SBASTimeSeriesNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_outputNodeName,
                                            m_preparedOutputPaths, m_preparedInputPaths,
-                                           m_outputTransaction, &transactionError)) {
+                                           m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

@@ -328,7 +328,8 @@ void PSCandidateNode::executeProcessing()
     const QStringList slcList = m_preparedInputPaths;
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(projPath, m_preparedDstNode, m_preparedOutputPaths,
-                                           slcList, m_outputTransaction, &transactionError)) {
+                                           slcList, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

@@ -23,6 +23,8 @@
 #include <QDateTime>
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
+#include <QPointer>
+#include <QSignalBlocker>
 #include <Registration.h>
 #include "ImageView.h"
 #include "QtNodes/internal/NodeDetailWindow.hpp"
@@ -204,6 +206,29 @@ S1TopsBackGeocodingNode::S1TopsBackGeocodingNode()
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
+    QPointer<S1TopsBackGeocodingNode> self(this);
+    NodeUtils::registerResourceChangeCallback([self](const QString& resourceId, const QString& provenanceId, NodeUtils::ResourceChangeKind kind) {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+        if (!self || self->m_preparedAuxiliaryDemBinding.resourceId != resourceId) return;
+        if (kind == NodeUtils::ResourceChangeKind::ProvenanceAdded && provenanceId != self->m_preparedAuxiliaryDemBinding.pinnedProvenanceId) return;
+        QTimer::singleShot(0, self.data(), [self]() {
+            if (!self) return;
+            self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding();
+            self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot();
+            self->m_demPath.clear();
+            self->m_preparedDemPath.clear();
+            self->m_demInputData.reset();
+            self->setProgress(0);
+            self->setLastErrorMessage(QStringLiteral("辅助 DEM 资源已变化，需要重新准备。"));
+            self->setState(ExecutionState::Pending);
+        });
+    });
+    NodeUtils::registerAuxiliaryDemLabelTableChangedCallback([self]() {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+    });
+    NodeUtils::registerAuxiliaryDemLabelReboundCallback([self](const QString& label) {
+        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
+    });
 }
 
 S1TopsBackGeocodingNode::~S1TopsBackGeocodingNode()
@@ -242,7 +267,7 @@ S1TopsBackGeocodingNode::~S1TopsBackGeocodingNode()
 unsigned int S1TopsBackGeocodingNode::nPorts(PortType portType) const
 {
     if (portType == PortType::In)
-        return 2;  // 0: S1 SLC Data, 1: Optional DEM File
+        return 2;  // 0: S1 SLC Data, 1: Auxiliary DEM
     else
         return 2;  // Two output ports (0: Results, 1: Preview)
 }
@@ -254,7 +279,7 @@ NodeDataType S1TopsBackGeocodingNode::dataType(PortType portType, PortIndex port
         if (portIndex == 0)
             return NodeDataType{"imported_file", "S1 SLC Data"};
         else
-            return NodeDataType{"dem_file", "DEM File"};
+            return NodeDataType{"auxiliary_dem", "Auxiliary DEM"};
     }
     else
     {
@@ -308,7 +333,7 @@ QString S1TopsBackGeocodingNode::portCaption(PortType portType, PortIndex portIn
         if (portIndex == 0)
             return tr("输入图像");
         else
-            return tr("DEM");
+            return tr("辅助地形 DEM");
     }
     else
     {
@@ -327,6 +352,11 @@ bool S1TopsBackGeocodingNode::portIsOptional(PortType portType, PortIndex portIn
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
+}
+
+QList<QList<PortIndex>> S1TopsBackGeocodingNode::alternativeInputGroups() const
+{
+    return {};
 }
 
 std::shared_ptr<NodeData> S1TopsBackGeocodingNode::outData(PortIndex port)
@@ -352,16 +382,20 @@ void S1TopsBackGeocodingNode::setInData(std::shared_ptr<NodeData> data, PortInde
             m_imageInfoData.reset();
         }
     } else if (port == 1) {
-        m_demInputData = std::dynamic_pointer_cast<DEMFileData>(data);
+        const auto auxiliary = std::dynamic_pointer_cast<AuxiliaryDemData>(data);
+        m_auxiliaryDemEntityData = auxiliary;
+        if (auxiliary) { m_auxiliaryDemReferenceData.reset(); m_auxiliaryDemLabel.clear(); if (m_demLabelCombo) m_demLabelCombo->setCurrentIndex(0); }
+        m_demInputData = auxiliary
+            ? std::make_shared<DEMFileData>(auxiliary->rasterPath(), auxiliary->nodeName(), auxiliary->identityH5Path())
+            : std::dynamic_pointer_cast<DEMFileData>(data);
+        if (auxiliary) {
+            m_demInputData->setProductDescriptor(auxiliary->productDescriptor());
+        }
         if (m_demInputData) {
-            m_demPath = m_demInputData->filePath();
-            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+            m_demPath = auxiliary ? auxiliary->rasterPath() : m_demInputData->filePath();
         } else {
             if (!isRestoring()) {
                 m_demPath.clear();
-                if (m_demPathEdit) {
-                    m_demPathEdit->clear();
-                }
             }
         }
     }
@@ -390,7 +424,9 @@ QJsonObject S1TopsBackGeocodingNode::save() const
     modelJson["useDefaultMaster"] = m_useDefaultMaster;
     modelJson["bESD"] = m_bESD;
     modelJson["bRangeRefine"] = m_bRangeRefine;
-    modelJson["demPath"] = m_demPath;
+    modelJson["auxiliaryDemLabel"] = m_auxiliaryDemLabel;
+    modelJson["auxiliaryDemLegacyResourceId"] = m_legacyDemResourceId;
+    modelJson["auxiliaryDemLegacyPinnedProvenanceId"] = m_legacyDemProvenanceId;
 
     QStringList outputPaths = m_savedOutputPaths;
     if (m_outputData && !m_outputData->filePaths().isEmpty()) {
@@ -464,12 +500,9 @@ void S1TopsBackGeocodingNode::load(QJsonObject const &json)
         m_bRangeRefine = vRangeRefine.toBool();
     }
 
-    QJsonValue vDemPath = json["demPath"];
-    if (!vDemPath.isUndefined())
-    {
-        m_demPath = vDemPath.toString();
-        if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
-    }
+    m_auxiliaryDemLabel = json.value("auxiliaryDemLabel").toString().trimmed();
+    m_legacyDemResourceId = json.value("auxiliaryDemLegacyResourceId").toString().trimmed();
+    m_legacyDemProvenanceId = json.value("auxiliaryDemLegacyPinnedProvenanceId").toString().trimmed();
 
     m_savedOutputPaths.clear();
     QJsonArray outputArray = json["outputPaths"].toArray();
@@ -519,6 +552,7 @@ void S1TopsBackGeocodingNode::load(QJsonObject const &json)
 
     if (m_rangeRefineCheckBox)
         m_rangeRefineCheckBox->setChecked(m_bRangeRefine);
+    refreshAuxiliaryDemLabels();
 }
 
 void S1TopsBackGeocodingNode::createWidget()
@@ -656,64 +690,30 @@ void S1TopsBackGeocodingNode::createWidget()
 
     // DEM 路径选择
     auto* demLayout = new QHBoxLayout();
-    m_demPathLabel = new QLabel("DEM高程数据");
+    m_demPathLabel = new QLabel("辅助 DEM");
     m_demPathLabel->setFixedWidth(80);
     m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
 
-    if (m_demPath.isEmpty()) {
-        auto* iface = NodeUtils::getProjectContext(_widget);
-        if (iface) {
-            m_demPath = NodeUtils::getGlobalDemPath(iface);
+    m_demLabelCombo = new QComboBox();
+    refreshAuxiliaryDemLabels();
+    connect(m_demLabelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
+        const QString nextLabel = index > 0 ? m_demLabelCombo->itemData(index).toString() : QString();
+        if (!nextLabel.isEmpty() && hasActiveInputConnection(1)) {
+            QMessageBox::warning(nullptr, QStringLiteral("辅助 DEM"),
+                                 QStringLiteral("请先断开辅助 DEM 输入端口的直连，再选择工程标签。"));
+            m_demLabelCombo->blockSignals(true);
+            const int previousIndex = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+            m_demLabelCombo->setCurrentIndex(previousIndex >= 0 ? previousIndex : 0);
+            m_demLabelCombo->blockSignals(false);
+            return;
         }
-    }
-
-    m_demPathEdit = new QLineEdit();
-    m_demPathEdit->setObjectName("demPathEdit");
-    m_demPathEdit->setText(m_demPath);
-    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff, *.zip)..."));
-    m_demPathEdit->setStyleSheet(
-        "QLineEdit:disabled {"
-        "  background-color: rgba(120, 120, 120, 0.1);"
-        "  color: #888888;"
-        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
-        "}"
-    );
-    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        QString text = m_demPathEdit->text().trimmed();
-        if (m_demPath != text) {
-            m_demPath = text;
-            invalidateNodeData();
-            auto* iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-            }
-        }
-    });
-
-    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
-    m_demBrowseBtn->setStyleSheet(
-        "QPushButton:disabled {"
-        "  background-color: rgba(120, 120, 120, 0.1);"
-        "  color: #888888;"
-        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
-        "}"
-    );
-    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
-        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif *.zip)");
-        if (!file.isEmpty()) {
-            m_demPath = file;
-            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
-            invalidateNodeData();
-            auto* iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-            }
-        }
+        m_auxiliaryDemLabel = nextLabel;
+        if (!m_auxiliaryDemLabel.isEmpty()) { m_auxiliaryDemEntityData.reset(); m_auxiliaryDemReferenceData.reset(); }
+        invalidateNodeData();
     });
 
     demLayout->addWidget(m_demPathLabel);
-    demLayout->addWidget(m_demPathEdit);
-    demLayout->addWidget(m_demBrowseBtn);
+    demLayout->addWidget(m_demLabelCombo);
     layout->addLayout(demLayout);
 
     // Bottom spacer
@@ -743,8 +743,7 @@ void S1TopsBackGeocodingNode::updateParameterWidgetsEnableState()
     if (m_esdCheckBox) m_esdCheckBox->setEnabled(enableWidgets);
 
     if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !hasDemConn);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !hasDemConn);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !hasDemConn);
+    if (m_demLabelCombo) m_demLabelCombo->setEnabled(enableWidgets && !hasDemConn);
 }
 
 
@@ -1144,6 +1143,29 @@ bool S1TopsBackGeocodingNode::syncProjectTreeOrder(const QStringList& h5Paths, c
     return true;
 }
 
+void S1TopsBackGeocodingNode::refreshAuxiliaryDemLabels()
+{
+    if (!m_demLabelCombo) return;
+    QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+    QString error;
+    NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
+    QSignalBlocker blocker(m_demLabelCombo);
+    m_demLabelCombo->clear();
+    m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
+        const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 来源 %3)").arg(it.value().label, status, it.value().producerIdentity.left(8)), it.value().label);
+    }
+    if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::FixedResource) continue;
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (已注册资源)").arg(it.value().label), it.value().label);
+    }
+    const int index = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+    m_demLabelCombo->setCurrentIndex(index < 0 ? 0 : index);
+}
+
 bool S1TopsBackGeocodingNode::syncProjectXmlOrder(
     const QStringList& h5Paths, const QString& dstNode)
 {
@@ -1329,7 +1351,7 @@ void S1TopsBackGeocodingNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Idle);
+        setState(ExecutionState::Pending);
     }
 }
 
@@ -1340,6 +1362,68 @@ void S1TopsBackGeocodingNode::setExecutionMode(ExecutionMode mode)
 
 bool S1TopsBackGeocodingNode::prepareToStart()
 {
+    QJsonObject inputGeometry;
+    if (m_inputData) inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor());
+    const QStringList geometryKeys = {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                                      QStringLiteral("minLat"), QStringLiteral("maxLat"),
+                                      QStringLiteral("crsWkt")};
+    for (const QString& key : geometryKeys) {
+        const QJsonValue value = inputGeometry.value(key);
+        const bool numeric = key != QStringLiteral("crsWkt");
+        if (!inputGeometry.contains(key) ||
+            (numeric && (!value.isDouble() || !std::isfinite(value.toDouble()))) ||
+            (!numeric && value.toString().trimmed().isEmpty())) {
+            const QString error = QStringLiteral("Trusted input geometry missing/incomplete: %1").arg(key);
+            setStartFailureMessage(error);
+            setLastErrorMessage(error);
+            return false;
+        }
+    }
+    if (inputGeometry.value(QStringLiteral("maxLon")).toDouble() <= inputGeometry.value(QStringLiteral("minLon")).toDouble() ||
+        inputGeometry.value(QStringLiteral("maxLat")).toDouble() <= inputGeometry.value(QStringLiteral("minLat")).toDouble()) {
+        const QString error = QStringLiteral("Trusted input geometry missing/incomplete: invalid bounds");
+        setStartFailureMessage(error);
+        setLastErrorMessage(error);
+        return false;
+    }
+    if (hasActiveInputConnection(1) && !m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("辅助 DEM 不能同时使用直接连线和命名标签。"));
+        return false;
+    }
+    if (!m_auxiliaryDemEntityData && m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("回地理编码 DEM 必须通过直接连线或工程标签提供。"));
+        return false;
+    }
+    if (m_auxiliaryDemEntityData) {
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemBinding(projectPath(), *m_auxiliaryDemEntityData, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_demInputData = std::make_shared<DEMFileData>(binding.rasterPath, QStringLiteral("Auxiliary DEM"), binding.identityH5Path);
+        m_demInputData->setProductDescriptor(m_auxiliaryDemEntityData->productDescriptor());
+    }
+    if (!m_auxiliaryDemLabel.isEmpty()) {
+        if (!m_legacyDemResourceId.isEmpty() && !m_legacyDemProvenanceId.isEmpty())
+            NodeUtils::registerPendingAuxiliaryDemLabel({m_auxiliaryDemLabel, m_legacyDemResourceId, m_legacyDemProvenanceId});
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemLabel(projectPath(), m_auxiliaryDemLabel, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_auxiliaryDemReferenceData = std::make_shared<AuxiliaryDemReferenceData>(binding.resourceId, binding.pinnedProvenanceId, 1);
+        m_demInputData = std::make_shared<DEMFileData>(binding.rasterPath, QStringLiteral("DEM Label"), binding.identityH5Path);
+    }
     setStartFailureMessage(QString());
     if (!validateInputs())
         return false;
@@ -1499,7 +1583,7 @@ void S1TopsBackGeocodingNode::executeProcessing()
     NodeUtils::OutputTransactionRecoveryInfo recoveryInfo;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode, expectedFinalPaths,
                                            m_preparedTransactionInputPaths, m_outputTransaction, &transactionError,
-                                           &recoveryInfo)) {
+                                           &recoveryInfo, NodeUtils::getProjectFilePath(_widget))) {
         failStagedTransaction(transactionError);
         return;
     }
@@ -1779,6 +1863,20 @@ void S1TopsBackGeocodingNode::finalizeStagedTransaction(quint64 generation)
         NodeUtils::abandonOutputTransaction(m_outputTransaction,
                                             QStringLiteral("obsolete execution revision"), projectXml());
         return;
+    }
+    if (m_auxiliaryDemEntityData || m_auxiliaryDemReferenceData) {
+        NodeUtils::AuxiliaryDemBinding currentBinding;
+        QString bindingError;
+        if (!NodeUtils::revalidateDemExecutionSnapshot(projectPath(), m_auxiliaryDemEntityData.get(),
+                                                        m_auxiliaryDemReferenceData.get(), m_preparedDemExecutionSnapshot,
+                                                        NodeUtils::inputGeometryFromProductDescriptor(
+                                                            m_inputData ? m_inputData->physicalProductDescriptor() : nullptr),
+                                                        currentBinding, &bindingError)) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete auxiliary DEM binding"), projectXml());
+            setLastErrorMessage(bindingError);
+            setState(ExecutionState::Error);
+            return;
+        }
     }
 
     QStringList finalPaths;

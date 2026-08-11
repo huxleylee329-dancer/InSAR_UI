@@ -609,7 +609,8 @@ void SBASReferenceReselectionNode::executeProcessing()
     if (!m_hasPreparedProvenance ||
         !NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_outputNodeName,
                                            m_preparedOutputPaths, transactionInputs,
-                                           m_outputTransaction, &transactionError)) {
+                                           m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

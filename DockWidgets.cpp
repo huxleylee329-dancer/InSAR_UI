@@ -705,6 +705,7 @@ PropertyEditor::PropertyEditor(QWidget *parent)
     , m_currentNodeId(QtNodes::InvalidNodeId)
     , m_updatingProperties(false)
     , m_isExecutable(false)
+    , m_hasExecutionControls(false)
     , m_nodeIdLabel(nullptr)
     , m_xSpinBox(nullptr)
     , m_ySpinBox(nullptr)
@@ -898,6 +899,7 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
         return;
 
     m_currentNodeId = nodeId;
+    Q_EMIT selectedNodeChanged(nodeId);
 
     // 清理旧的 m_nodeIdLabel（从固定顶部区域）
     if (m_nodeIdLabel)
@@ -945,7 +947,11 @@ void PropertyEditor::setSelectedNode(QtNodes::NodeId nodeId)
 
 void PropertyEditor::clearSelection()
 {
+    const bool hadSelection = m_currentNodeId != QtNodes::InvalidNodeId;
     m_currentNodeId = QtNodes::InvalidNodeId;
+    if (hadSelection) {
+        Q_EMIT selectedNodeChanged(QtNodes::InvalidNodeId);
+    }
 
     // 先移除旧的 m_nodeIdLabel（如果存在）
     if (m_nodeIdLabel)
@@ -1067,6 +1073,24 @@ void PropertyEditor::generateProperties()
     generateOutputSection();
 }
 
+void PropertyEditor::updateProgress(QtNodes::NodeId nodeId, int percent)
+{
+    if (nodeId != m_currentNodeId) {
+        return;
+    }
+    m_nodeData.progress = percent;
+    if (!m_progressBar) {
+        if (!m_hasExecutionControls) {
+            return;
+        }
+        // Entering Running from a terminal state needs one full rebuild to
+        // create the progress control. Subsequent updates stay lightweight.
+        refreshCurrentNode();
+        return;
+    }
+    m_progressBar->setValue(percent);
+}
+
 void PropertyEditor::generateBasicInfoSection()
 {
     bool darkTheme = isDarkTheme();
@@ -1160,8 +1184,8 @@ void PropertyEditor::generateBasicInfoSection()
 
     basicInfoLayout->addLayout(posLayout);
 
-    // Execution state and progress (only for ExecutableNode)
-    if (m_isExecutable) {
+    // Execution state and progress (only for nodes that expose execution controls)
+    if (m_hasExecutionControls) {
         QHBoxLayout* execLayout = new QHBoxLayout();
         execLayout->setSpacing(12);
 
@@ -1188,7 +1212,9 @@ void PropertyEditor::generateBasicInfoSection()
         QLabel* modeTitle = new QLabel("Mode:");
         modeTitle->setStyleSheet(QString("font-weight: bold; color: %1;").arg(primaryTextColor));
         m_modeLabel = new QLabel(executionModeToString(m_nodeData.executionMode));
-        QString modeColor = (m_nodeData.executionMode == QtNodes::ExecutionMode::Automatic) ? "#3B82F6" : "#F59E0B";
+        QString modeColor = m_nodeData.executionMode == QtNodes::ExecutionMode::Automatic
+            ? "#3B82F6"
+            : (m_nodeData.executionMode == QtNodes::ExecutionMode::Disabled ? "#94A3B8" : "#F59E0B");
         m_modeLabel->setStyleSheet(QString("color: %1; font-weight: bold;").arg(modeColor));
 
         execLayout->addWidget(stateTitle);
@@ -1881,6 +1907,14 @@ void PropertyEditor::clearProperties()
 
 void PropertyEditor::clearBasicInfoFromLayout()
 {
+    // These controls are owned by the basic-info widget. Invalidate the
+    // cached pointers before scheduling that widget for deferred deletion.
+    m_xSpinBox = nullptr;
+    m_ySpinBox = nullptr;
+    m_executionStateLabel = nullptr;
+    m_progressBar = nullptr;
+    m_modeLabel = nullptr;
+
     if (!m_fixedTopLayout)
         return;
 
@@ -1908,6 +1942,7 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
 {
     if (!m_graphModel || nodeId == QtNodes::InvalidNodeId) {
         m_isExecutable = false;
+        m_hasExecutionControls = false;
         return;
     }
 
@@ -1923,6 +1958,7 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
     // Try to get ExecutableNodeDelegateModel
     auto execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
     m_isExecutable = (execModel != nullptr);
+    m_hasExecutionControls = execModel != nullptr && execModel->hasExecutionControls();
 
     if (m_isExecutable && execModel) {
         // Capture execution state and progress
@@ -2079,6 +2115,7 @@ QString PropertyEditor::executionModeToString(QtNodes::ExecutionMode mode) const
     switch (mode) {
         case QtNodes::ExecutionMode::Automatic: return "Automatic";
         case QtNodes::ExecutionMode::Manual: return "Manual";
+        case QtNodes::ExecutionMode::Disabled: return "Disabled";
         default: return "Unknown";
     }
 }

@@ -24,8 +24,11 @@ static QVariant outputDataForPropagation(ExecutableDataFlowGraphModel const *gra
 {
     auto *source = delegateModelConst<ExecutableNodeDelegateModel>(graph, nodeId);
     if (source != nullptr) {
-        // A non-terminal node must never expose its previous artifact downstream.
-        if (source->executionState() != ExecutionState::Completed &&
+        // Configuration/reference nodes have no execution lifecycle; their
+        // current port data remains valid regardless of execution state.
+        // Processing nodes must not expose a stale artifact downstream.
+        if (source->hasExecutionControls() &&
+            source->executionState() != ExecutionState::Completed &&
             source->executionState() != ExecutionState::Warning) {
             return QVariant{};
         }
@@ -137,6 +140,15 @@ void ExecutableDataFlowGraphModel::addConnection(ConnectionId const connectionId
             ? QStringLiteral("A connection policy rejects this port.") : validation.reason);
         return;
     }
+
+    // A disabled endpoint retains the edge structurally, but it must remain
+    // dormant until the endpoint is explicitly re-enabled and revalidated.
+    if (getNodeExecutionMode(connectionId.outNodeId) == ExecutionMode::Disabled ||
+        getNodeExecutionMode(connectionId.inNodeId) == ExecutionMode::Disabled) {
+        addDormantConnection(connectionId);
+        return;
+    }
+
     _connectivity.insert(connectionId);
     sendConnectionCreation(connectionId);
 
@@ -197,9 +209,9 @@ void ExecutableDataFlowGraphModel::propagateFromNode(NodeId nodeId, PortIndex po
 {
     if (_isRestoring) return;
 
-    std::unordered_set<ConnectionId> const &connected = connections(nodeId,
-                                                                    PortType::Out,
-                                                                    portIndex);
+    const std::unordered_set<ConnectionId> connected = activeConnections(nodeId,
+                                                                          PortType::Out,
+                                                                          portIndex);
 
     QVariant const portDataToPropagate = outputDataForPropagation(this, nodeId, portIndex);
 
@@ -214,9 +226,9 @@ void ExecutableDataFlowGraphModel::onOutPortDataUpdated(NodeId const nodeId, Por
 
     // Always propagate when a node emits dataUpdated (either automatic execution or manual start)
     // The Manual mode only prevents automatic propagation on connection creation
-    std::unordered_set<ConnectionId> const &connected = connections(nodeId,
-                                                                    PortType::Out,
-                                                                    portIndex);
+    const std::unordered_set<ConnectionId> connected = activeConnections(nodeId,
+                                                                          PortType::Out,
+                                                                          portIndex);
 
     QVariant const portDataToPropagate = outputDataForPropagation(this, nodeId, portIndex);
 

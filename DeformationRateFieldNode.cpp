@@ -431,7 +431,8 @@ void DeformationRateFieldNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_preparedDstNode,
                                             m_preparedOutputPaths, m_preparedInputPaths,
-                                            m_outputTransaction, &transactionError)) {
+                                            m_outputTransaction, &transactionError, nullptr,
+                                            NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

@@ -6,7 +6,25 @@
 #include <QTimer>
 #include "DataFlowGraphModel.hpp"
 
+#include <memory>
+#include <unordered_map>
+
 namespace QtNodes {
+
+// A graph owns one project workflow.  Keep commit serialization inside that
+// project so independent open projects cannot block one another.
+static std::mutex g_commitLeaseRegistryMutex;
+static std::unordered_map<BasicGraphicsScene const*, std::shared_ptr<std::mutex>> g_projectCommitLeaseMutexes;
+static std::shared_ptr<std::mutex> g_unboundCommitLeaseMutex = std::make_shared<std::mutex>();
+
+static std::shared_ptr<std::mutex> projectCommitLeaseMutex(BasicGraphicsScene const* scene)
+{
+    if (scene == nullptr) return g_unboundCommitLeaseMutex;
+    std::lock_guard<std::mutex> guard(g_commitLeaseRegistryMutex);
+    auto& mutex = g_projectCommitLeaseMutexes[scene];
+    if (!mutex) mutex = std::make_shared<std::mutex>();
+    return mutex;
+}
 
 ExecutableNodeDelegateModel::ExecutableNodeDelegateModel()
     : _mode(ExecutionMode::Automatic)
@@ -62,7 +80,7 @@ void ExecutableNodeDelegateModel::OutputCommitLease::release()
 ExecutableNodeDelegateModel::OutputCommitLease
 ExecutableNodeDelegateModel::acquireOutputCommitLease(std::uint64_t revision)
 {
-    std::unique_lock<std::mutex> lock(_commitLeaseMutex);
+    std::unique_lock<std::mutex> lock(*projectCommitLeaseMutex(_scene));
     if (revision == 0 || revision != _executionRevision.load() ||
         _commitInvalidationRequested.load()) {
         return OutputCommitLease();
@@ -103,11 +121,45 @@ void ExecutableNodeDelegateModel::triggerVisualUpdate()
 
 void ExecutableNodeDelegateModel::setExecutionMode(ExecutionMode mode)
 {
-    if (_mode != mode) {
-        _mode = mode;
-        Q_EMIT modeChanged(mode);
-        triggerVisualUpdate();
+    if (_mode == mode) {
+        return;
     }
+
+    const bool wasDisabled = _mode == ExecutionMode::Disabled;
+    _mode = mode;
+    auto* graph = _scene == nullptr
+        ? nullptr : dynamic_cast<DataFlowGraphModel*>(&_scene->graphModel());
+    if (mode == ExecutionMode::Disabled) {
+        ++_executionRevision;
+        _restartAfterInputChange = false;
+        _restartScheduled = false;
+        if (_state == ExecutionState::Running) {
+            stopExecution();
+        }
+        setState(ExecutionState::Disabled);
+        if (graph != nullptr) {
+            QString ignored;
+            graph->setNodeConnectionsDormant(_nodeId, true, &ignored);
+        }
+    } else if (wasDisabled) {
+        QString restoreFailure;
+        const bool restored = graph == nullptr ||
+            graph->setNodeConnectionsDormant(_nodeId, false, &restoreFailure);
+        if (!restored) {
+            setLastErrorMessage(restoreFailure.isEmpty()
+                ? QStringLiteral("One or more disabled workflow edges could not be restored.")
+                : restoreFailure);
+            setState(ExecutionState::Error);
+        } else if (mode == ExecutionMode::Automatic && nPorts(PortType::In) == 0) {
+            setState(ExecutionState::Idle);
+            triggerAutoExecution();
+        } else {
+            setState(mode == ExecutionMode::Automatic && allRequiredPortsConnected()
+                ? ExecutionState::Pending : ExecutionState::Idle);
+        }
+    }
+    Q_EMIT modeChanged(mode);
+    triggerVisualUpdate();
 }
 
 void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, PortIndex const portIndex)
@@ -269,6 +321,10 @@ std::shared_ptr<NodeData> ExecutableNodeDelegateModel::outData(PortIndex const p
 
 void ExecutableNodeDelegateModel::start()
 {
+    if (_mode == ExecutionMode::Disabled) {
+        Q_EMIT executionStartRejected(QStringLiteral("Node is disabled."));
+        return;
+    }
     if (_state == ExecutionState::Running) {
         return;
     }
@@ -277,6 +333,13 @@ void ExecutableNodeDelegateModel::start()
     if (!prepareToStart()) {
         if (!_startFailureMessage.isEmpty()) {
             Q_EMIT executionStartRejected(_startFailureMessage);
+        }
+        // A manual start with an invalid required binding is a terminal
+        // preparation error; automatic orchestration keeps the node Pending
+        // in its processAutomatically() path.
+        if (_mode == ExecutionMode::Manual) {
+            if (!_startFailureMessage.isEmpty()) setLastErrorMessage(_startFailureMessage);
+            setState(ExecutionState::Error);
         }
         return;
     }
@@ -299,8 +362,16 @@ void ExecutableNodeDelegateModel::stop()
     }
 
     ++_executionRevision;
+    _stopRequested.store(true);
+    _targetProgress = _progress;
+    _currentShownProgress = _progress;
+    if (_progressTimer) {
+        _progressTimer->stop();
+    }
     stopExecution();
     if (stopExecutionIsAsynchronous()) {
+        Q_EMIT progressUpdated(_progress);
+        triggerVisualUpdate();
         return;
     }
 
@@ -313,6 +384,10 @@ void ExecutableNodeDelegateModel::stop()
 
 void ExecutableNodeDelegateModel::setProgress(int percent)
 {
+    if (_stopRequested.load() && percent != 0) {
+        return;
+    }
+
     if (!_progressTimer) {
         _progressTimer = new QTimer(this);
         connect(_progressTimer, &QTimer::timeout, this, &ExecutableNodeDelegateModel::updateSmoothProgress);
@@ -376,7 +451,7 @@ void ExecutableNodeDelegateModel::updateSmoothProgress()
 
 void ExecutableNodeDelegateModel::triggerAutoExecution()
 {
-    if (_mode != ExecutionMode::Automatic) {
+    if (_mode != ExecutionMode::Automatic || _state == ExecutionState::Disabled) {
         return;
     }
 
@@ -385,6 +460,71 @@ void ExecutableNodeDelegateModel::triggerAutoExecution()
     if (inPortCount == 0) {
         processAutomatically();
     }
+}
+
+void ExecutableNodeDelegateModel::retryAutomaticExecution()
+{
+    if (_mode != ExecutionMode::Automatic || _state == ExecutionState::Disabled ||
+        _state == ExecutionState::Running) {
+        return;
+    }
+
+    if (!allRequiredPortsConnected()) {
+        setState(ExecutionState::Idle);
+        return;
+    }
+
+    for (PortIndex index = 0; index < nPorts(PortType::In); ++index) {
+        if (portIsOptional(PortType::In, index)) {
+            continue;
+        }
+        auto inputIt = _inputData.find(index);
+        if (!isInputBindingValid(index) || inputIt == _inputData.end() || inputIt->second == nullptr) {
+            setState(ExecutionState::Pending);
+            return;
+        }
+    }
+
+    ++_executionRevision;
+    setState(ExecutionState::Running);
+    _progress = 0;
+    Q_EMIT executionStarted();
+    _startFailureMessage.clear();
+    _isAutoTriggered = true;
+    _deferAutomaticCompletion = false;
+    processAutomatically();
+    _isAutoTriggered = false;
+
+    if (_deferAutomaticCompletion) {
+        _deferAutomaticCompletion = false;
+        return;
+    }
+    if (_state != ExecutionState::Running) {
+        if (!_startFailureMessage.isEmpty()) {
+            Q_EMIT executionStartRejected(_startFailureMessage);
+        }
+        Q_EMIT executionStateChanged();
+        triggerVisualUpdate();
+        return;
+    }
+
+    const unsigned int outPortCount = nPorts(PortType::Out);
+    bool shouldComplete = outPortCount == 0;
+    if (!shouldComplete) {
+        for (auto const& pair : _outputData) {
+            if (pair.second != nullptr) {
+                shouldComplete = true;
+                break;
+            }
+        }
+    }
+
+    _progress = shouldComplete ? 100 : 0;
+    _state = shouldComplete ? ExecutionState::Completed : ExecutionState::Idle;
+    Q_EMIT progressUpdated(_progress);
+    Q_EMIT executionStateChanged();
+    Q_EMIT computingFinished();
+    triggerVisualUpdate();
 }
 
 void ExecutableNodeDelegateModel::finishExecution()
@@ -401,8 +541,19 @@ void ExecutableNodeDelegateModel::finishExecution()
     Q_EMIT computingFinished();
     triggerVisualUpdate();
 
-    for (auto const &pair : _outputData) {
-        Q_EMIT dataUpdated(pair.first);
+    const auto publishOutputs = [this]() {
+        for (auto const &pair : _outputData) {
+            Q_EMIT dataUpdated(pair.first);
+        }
+    };
+
+    // Output finalization holds a per-project commit lease.  Propagating
+    // synchronously can start an automatic downstream node which attempts to
+    // acquire that same non-recursive lease on this thread.
+    if (_commitLeaseActive.load()) {
+        QTimer::singleShot(0, this, publishOutputs);
+    } else {
+        publishOutputs();
     }
 }
 
@@ -420,8 +571,16 @@ void ExecutableNodeDelegateModel::finishExecutionWithWarning()
     Q_EMIT computingFinished();
     triggerVisualUpdate();
 
-    for (auto const &pair : _outputData) {
-        Q_EMIT dataUpdated(pair.first);
+    const auto publishOutputs = [this]() {
+        for (auto const &pair : _outputData) {
+            Q_EMIT dataUpdated(pair.first);
+        }
+    };
+
+    if (_commitLeaseActive.load()) {
+        QTimer::singleShot(0, this, publishOutputs);
+    } else {
+        publishOutputs();
     }
 }
 
@@ -522,7 +681,7 @@ void ExecutableNodeDelegateModel::completeAutomaticExecution()
 void ExecutableNodeDelegateModel::invalidateExecution()
 {
     // Do not block cancellation or invalidation behind output finalization.
-    std::unique_lock<std::mutex> leaseLock(_commitLeaseMutex, std::try_to_lock);
+    std::unique_lock<std::mutex> leaseLock(*projectCommitLeaseMutex(_scene), std::try_to_lock);
     if (!leaseLock.owns_lock()) {
         _commitInvalidationRequested.store(true);
         return;
@@ -701,7 +860,14 @@ void ExecutableNodeDelegateModel::load(QJsonObject const &json)
     QJsonValue stateValue = json["execution-state"];
     if (!stateValue.isUndefined()) {
         ExecutionState savedState = static_cast<ExecutionState>(stateValue.toInt());
-        if (savedState == ExecutionState::Completed || savedState == ExecutionState::Warning) {
+        if (_mode == ExecutionMode::Disabled || savedState == ExecutionState::Disabled) {
+            _mode = ExecutionMode::Disabled;
+            _state = ExecutionState::Disabled;
+            _progress = 0;
+            Q_EMIT progressUpdated(_progress);
+            Q_EMIT executionStateChanged();
+            triggerVisualUpdate();
+        } else if (savedState == ExecutionState::Completed || savedState == ExecutionState::Warning) {
             // 调用子类验证输出数据
             if (validateAndRestoreOutput()) {
                 _state = savedState;
@@ -757,6 +923,11 @@ void ExecutableNodeDelegateModel::refreshStateAfterRestoration()
 
 void ExecutableNodeDelegateModel::setState(ExecutionState state)
 {
+    // A cancelled worker may report a terminal state after the user disabled
+    // its node. Disabled remains authoritative until the mode is changed.
+    if (_mode == ExecutionMode::Disabled && state != ExecutionState::Disabled) {
+        return;
+    }
     if (_state == state) {
         return;
     }
@@ -768,7 +939,8 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
     if (state != ExecutionState::Warning) {
         _lastWarningMessage = "";
     }
-    if (state == ExecutionState::Idle) {
+    if (state == ExecutionState::Running) {
+        _stopRequested.store(false);
         _progress = 0;
         _targetProgress = 0.0;
         _currentShownProgress = 0.0;
@@ -776,7 +948,16 @@ void ExecutableNodeDelegateModel::setState(ExecutionState state)
             _progressTimer->stop();
         }
         Q_EMIT progressUpdated(0);
-    } else if (state == ExecutionState::Completed || state == ExecutionState::Stopped || state == ExecutionState::Error) {
+    } else if (state == ExecutionState::Idle) {
+        _progress = 0;
+        _targetProgress = 0.0;
+        _currentShownProgress = 0.0;
+        if (_progressTimer) {
+            _progressTimer->stop();
+        }
+        Q_EMIT progressUpdated(0);
+    } else if (state == ExecutionState::Completed || state == ExecutionState::Stopped ||
+               state == ExecutionState::Error || state == ExecutionState::Disabled) {
         if (_progressTimer) {
             _progressTimer->stop();
         }
@@ -817,7 +998,7 @@ std::uint64_t ExecutableNodeDelegateModel::inputRevisionFromGraph(PortIndex port
         return 0;
     }
 
-    auto const &connections = graph->connections(_nodeId, PortType::In, portIndex);
+    const auto connections = graph->activeConnections(_nodeId, PortType::In, portIndex);
     if (connections.size() != 1) {
         return 0;
     }
@@ -851,11 +1032,14 @@ bool ExecutableNodeDelegateModel::isPending() const
         return false;
     }
 
-    auto &graphModel = _scene->graphModel();
+    auto* graphModel = dynamic_cast<DataFlowGraphModel*>(&_scene->graphModel());
+    if (graphModel == nullptr) {
+        return false;
+    }
 
     for (PortIndex index = 0; index < inPortCount; ++index) {
         // Check if this port has any connection
-        auto connections = graphModel.connections(_nodeId, PortType::In, index);
+        auto connections = graphModel->activeConnections(_nodeId, PortType::In, index);
         bool isConnected = !connections.empty();
 
         if (isConnected) {
@@ -904,18 +1088,41 @@ bool ExecutableNodeDelegateModel::allRequiredPortsConnected() const
         return false;
     }
 
-    auto &graphModel = _scene->graphModel();
+    auto* graphModel = dynamic_cast<DataFlowGraphModel*>(&_scene->graphModel());
+    if (graphModel == nullptr) {
+        return false;
+    }
     for (PortIndex index = 0; index < inPortCount; ++index) {
         if (portIsOptional(PortType::In, index)) {
             continue;
         }
 
-        auto connections = graphModel.connections(_nodeId, PortType::In, index);
+        auto connections = graphModel->activeConnections(_nodeId, PortType::In, index);
         if (connections.empty()) {
             return false;
         }
     }
+    for (const QList<PortIndex>& group : alternativeInputGroups()) {
+        bool connected = false;
+        for (const PortIndex index : group) {
+            if (!graphModel->activeConnections(_nodeId, PortType::In, index).empty()) {
+                connected = true;
+                break;
+            }
+        }
+        if (!connected) return false;
+    }
     return true;
+}
+
+bool ExecutableNodeDelegateModel::hasActiveInputConnection(PortIndex portIndex) const
+{
+    if (_scene == nullptr) {
+        return false;
+    }
+    auto* graphModel = dynamic_cast<DataFlowGraphModel*>(&_scene->graphModel());
+    return graphModel != nullptr &&
+        !graphModel->activeConnections(_nodeId, PortType::In, portIndex).empty();
 }
 
 void ExecutableNodeDelegateModel::inputConnectionCreated(ConnectionId const &connectionId)

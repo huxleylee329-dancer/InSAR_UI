@@ -15,6 +15,7 @@
 #include "MainWindow.h"
 #include "WorkspaceUI.h"
 #include "WorkflowUI.h"
+#include "include/DockWidgets.h"
 #include "WelcomeScreenUI.h"
 #include "InterfaceManager.h"
 #include "IApplicationInterface.h"
@@ -623,16 +624,27 @@ bool MainWindow::recoverProjectOutputTransactions(const QString& projectFilePath
 
     const QFileInfoList journals = transactionRoot.entryInfoList(
         QStringList() << QStringLiteral("*.json"), QDir::Files, QDir::Name);
+    QStringList isolatedNodes;
     for (const QFileInfo& journal : journals) {
         const QString nodeName = journal.completeBaseName();
         QString recoveryError;
         if (!NodeUtils::recoverOutputTransaction(projectRoot.absolutePath(), nodeName, &recoveryError)) {
-            if (errorMessage) {
-                *errorMessage = QStringLiteral("无法恢复节点 %1 的中断事务：%2")
-                    .arg(nodeName, recoveryError);
-            }
-            return false;
+            // An ambiguous transaction must remain on disk for explicit
+            // recovery, but it must not prevent unrelated workflow nodes from
+            // opening. loadCommittedOutputManifest() rejects its output until
+            // the node is rerun or the transaction becomes recoverable.
+            isolatedNodes.append(nodeName);
+            InSARLogManager::LogWarning(
+                "NodeUtils",
+                QString("Interrupted output transaction isolated for node %1: %2")
+                    .arg(nodeName, recoveryError));
         }
+    }
+    if (!isolatedNodes.isEmpty() && errorMessage) {
+        *errorMessage = QStringLiteral(
+            "工程已打开，但以下节点的中断事务无法自动恢复，旧输出已隔离且不会提供给下游节点：%1。\n"
+            "请在工作流中重新运行这些节点；事务记录已保留，未覆盖工程 XML 或输出清单。")
+            .arg(isolatedNodes.join(QStringLiteral(", ")));
     }
     return true;
 }
@@ -710,6 +722,8 @@ void MainWindow::open_from_project_file(QString str)
         QMessageBox::critical(this, QStringLiteral("错误"), repairError);
         return;
     }
+    const QString recoveryNotice = repairError;
+    repairError.clear();
     // Transaction recovery may restore an older XML backup. Reload it before
     // deriving the previous name and atomically persisting repaired metadata.
     if (candidate.XMLFile_load(nativeFilename.constData()) < 0) {
@@ -852,6 +866,9 @@ void MainWindow::open_from_project_file(QString str)
             loadWorkflowFromProject(str, false);
         }
         statusBar()->showMessage(QStringLiteral("已成功加载工程: %1").arg(fileinfo.fileName()), 3000);
+        if (!recoveryNotice.isEmpty()) {
+            QMessageBox::warning(this, QStringLiteral("工程已打开（部分输出已隔离）"), recoveryNotice);
+        }
     }
     else
         QMessageBox::warning(NULL, "Warning!", "*.Insar is empty!");
@@ -2414,8 +2431,31 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     // NodeId 是任务身份，caption 只用于展示，避免同名节点或延迟事件改写当前任务状态。
     connect(m_workflowUI, &WorkflowUI::nodeExecutionStarted, this, [this](QtNodes::NodeId nodeId, const QString& caption) {
         m_runningStatusTasks.insert(nodeId, {caption, 0});
+        const QtNodes::NodeId selectedNodeId = m_workflowUI && m_workflowUI->propertyEditor()
+            ? m_workflowUI->propertyEditor()->currentNodeId() : QtNodes::InvalidNodeId;
+        if (selectedNodeId == QtNodes::InvalidNodeId || selectedNodeId == nodeId) {
+            showStatusBarTask(nodeId);
+            statusBar()->showMessage(QStringLiteral("正在运行节点: %1...").arg(caption));
+        }
+    });
+
+    connect(m_workflowUI->propertyEditor(), &PropertyEditor::selectedNodeChanged, this,
+            [this](QtNodes::NodeId nodeId) {
+        const auto task = m_runningStatusTasks.constFind(nodeId);
+        if (task == m_runningStatusTasks.constEnd()) {
+            if (nodeId == QtNodes::InvalidNodeId && !m_runningStatusTasks.isEmpty()) {
+                showStatusBarTask(m_runningStatusTasks.constBegin().key());
+                return;
+            }
+            m_activeStatusTaskId = QtNodes::InvalidNodeId;
+            if (m_statusProgressBar) {
+                m_statusProgressBar->hide();
+            }
+            return;
+        }
         showStatusBarTask(nodeId);
-        statusBar()->showMessage(QStringLiteral("正在运行节点: %1...").arg(caption));
+        statusBar()->showMessage(
+            QStringLiteral("节点 %1 正在处理: %2%").arg(task->caption).arg(task->progress));
     });
 
     connect(m_workflowUI, &WorkflowUI::nodeProgressUpdated, this, [this](QtNodes::NodeId nodeId, const QString& caption, int percent) {
@@ -2425,8 +2465,16 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
         }
         it->caption = caption;
         it->progress = percent;
-        showStatusBarTask(nodeId);
-        statusBar()->showMessage(QStringLiteral("节点 %1 正在处理: %2%").arg(caption).arg(percent));
+        PropertyEditor* propertyEditor = m_workflowUI ? m_workflowUI->propertyEditor() : nullptr;
+        const QtNodes::NodeId selectedNodeId = propertyEditor
+            ? propertyEditor->currentNodeId() : QtNodes::InvalidNodeId;
+        if (propertyEditor) {
+            propertyEditor->updateProgress(nodeId, percent);
+        }
+        if (selectedNodeId == QtNodes::InvalidNodeId || selectedNodeId == nodeId) {
+            showStatusBarTask(nodeId);
+            statusBar()->showMessage(QStringLiteral("节点 %1 正在处理: %2%").arg(caption).arg(percent));
+        }
     });
 
     connect(m_workflowUI, &WorkflowUI::nodeExecutionFinished, this, [this](QtNodes::NodeId nodeId, const QString& caption) {
@@ -2834,7 +2882,18 @@ void MainWindow::removeStatusBarTask(QtNodes::NodeId nodeId)
     }
 
     if (removedActiveTask) {
-        showStatusBarTask(m_runningStatusTasks.constBegin().key());
+        const QtNodes::NodeId selectedNodeId = m_workflowUI && m_workflowUI->propertyEditor()
+            ? m_workflowUI->propertyEditor()->currentNodeId() : QtNodes::InvalidNodeId;
+        if (m_runningStatusTasks.contains(selectedNodeId)) {
+            showStatusBarTask(selectedNodeId);
+        } else if (selectedNodeId == QtNodes::InvalidNodeId) {
+            showStatusBarTask(m_runningStatusTasks.constBegin().key());
+        } else {
+            m_activeStatusTaskId = QtNodes::InvalidNodeId;
+            if (m_statusProgressBar) {
+                m_statusProgressBar->hide();
+            }
+        }
     }
 }
 

@@ -53,6 +53,7 @@ public:
     // 启用验证面板（检查精密轨道是否成功写入 H5）
     bool supportsValidation() const override { return true; }
     ::QWidget* createValidationWidget(::QWidget* parent) override;
+    bool isPreciseOrbitReferenceOutput() const;
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;

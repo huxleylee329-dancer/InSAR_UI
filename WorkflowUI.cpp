@@ -126,7 +126,7 @@ PaletteOrder WorkflowUI::getPaletteFullOrder()
 
     // Data Import / DEM Data 叶子项
     order.leafItems["Data Import/DEM Data"] = QList<PaletteOrder::LeafItem>{
-        {"External DEM Fetch", "External DEM"}
+        {"External DEM Fetch", "External DEM"},
     };
 
     // Data Import / Generic SAR 叶子项
@@ -557,6 +557,13 @@ void WorkflowUI::setupSceneInternal()
     connect(m_scene, &QtNodes::BasicGraphicsScene::nodePropertyChanged, this, [this](QtNodes::NodeId nodeId) {
         // If the node whose properties changed is currently displayed, refresh it
         if (m_propertyEditor->currentNodeId() == nodeId) {
+            auto* execModel = m_graphModel
+                ? m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId)
+                : nullptr;
+            if (execModel && execModel->executionState() == QtNodes::ExecutionState::Running) {
+                m_propertyEditor->updateProgress(nodeId, execModel->progress());
+                return;
+            }
             m_propertyEditor->refreshCurrentNode();
         }
     });
@@ -1682,54 +1689,243 @@ bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)
 
     if (event->type() == QEvent::MouseButtonPress && obj == m_view->viewport()) {
         QMouseEvent *mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() != Qt::LeftButton || !m_scene || !m_graphModel) {
+            return QWidget::eventFilter(obj, event);
+        }
+
         QPointF scenePos = m_view->mapToScene(mouseEvent->pos());
-        QGraphicsItem *item = m_view->itemAt(mouseEvent->pos());
+        auto *geo = dynamic_cast<QtNodes::ExecutableNodeGeometry*>(&m_scene->nodeGeometry());
+        if (!geo) {
+            return QWidget::eventFilter(obj, event);
+        }
 
-        if (auto *ngo = dynamic_cast<QtNodes::NodeGraphicsObject*>(item)) {
-            QtNodes::NodeId nodeId = ngo->nodeId();
-            auto *delegateModel = m_graphModel->delegateModel<QtNodes::NodeDelegateModel>(nodeId);
-            auto *execModel = dynamic_cast<QtNodes::ExecutableNodeDelegateModel*>(delegateModel);
+        QtNodes::NodeGraphicsObject *controlNode = nullptr;
+        QtNodes::ExecutableNodeDelegateModel *controlModel = nullptr;
+        QPointF controlPos;
+        bool modeHit = false;
+        bool startHit = false;
+        bool detailHit = false;
 
-            if (execModel) {
-                // Convert to node local coordinates
-                QPointF nodePos = ngo->sceneTransform().inverted().map(scenePos);
+        QtNodes::NodeGraphicsObject *diagnosticNode = nullptr;
+        QtNodes::ExecutableNodeDelegateModel *diagnosticModel = nullptr;
+        QPointF diagnosticPos;
+        bool diagnosticModeHit = false;
+        bool diagnosticStartHit = false;
+        bool diagnosticDetailHit = false;
+        QGraphicsItem *topOwnedItem = nullptr;
 
-                auto &geo = dynamic_cast<QtNodes::ExecutableNodeGeometry&>(m_scene->nodeGeometry());
-
-                bool useExternal = execModel->useExternalLayout();
-                
-                // Check for mode button (either external layout or card layout)
-                if ((useExternal && geo.hitTestModeButton(nodeId, nodePos)) || 
-                    (!useExternal && geo.hitTestCardModeButton(nodeId, nodePos))) {
-                    // Toggle mode
-                    QtNodes::ExecutionMode currentMode = execModel->executionMode();
-                    execModel->setExecutionMode(
-                        currentMode == QtNodes::ExecutionMode::Automatic
-                            ? QtNodes::ExecutionMode::Manual
-                            : QtNodes::ExecutionMode::Automatic);
-                    ngo->update();
-                    return true;
+        auto nodeOwner = [](QGraphicsItem *item) -> QtNodes::NodeGraphicsObject * {
+            while (item) {
+                if (auto *node = dynamic_cast<QtNodes::NodeGraphicsObject *>(item)) {
+                    return node;
                 }
-                // Check for start button (either external layout or card layout)
-                else if ((useExternal && geo.hitTestStartButton(nodeId, nodePos)) || 
-                         (!useExternal && geo.hitTestCardStartButton(nodeId, nodePos))) {
-                    // Toggle start/stop
-                    if (execModel->executionState() == QtNodes::ExecutionState::Running) {
-                        execModel->stop();
-                    } else {
-                        execModel->start();
-                    }
-                    ngo->update();
-                    return true;
+                item = item->parentItem();
+            }
+            return nullptr;
+        };
+
+        auto testNodeControls = [&](QtNodes::NodeGraphicsObject *node,
+                                    QtNodes::ExecutableNodeDelegateModel *execModel,
+                                    bool requireSelectedExternal) {
+            if (!node || !node->isVisible() || !execModel) {
+                return false;
+            }
+
+            const bool useExternal = execModel->useExternalLayout();
+            if ((useExternal && !node->isSelected())
+                || (requireSelectedExternal && !useExternal)) {
+                return false;
+            }
+
+            const QtNodes::NodeId nodeId = node->nodeId();
+            const QPointF nodePos = node->mapFromScene(scenePos);
+            const bool rawModeHit = useExternal
+                ? geo->hitTestModeButton(nodeId, nodePos)
+                : geo->hitTestCardModeButton(nodeId, nodePos);
+            const bool rawStartHit = useExternal
+                ? geo->hitTestStartButton(nodeId, nodePos)
+                : geo->hitTestCardStartButton(nodeId, nodePos);
+            const bool rawDetailHit = useExternal
+                ? geo->hitTestDetailButton(nodeId, nodePos)
+                : geo->hitTestCardDetailButton(nodeId, nodePos);
+
+            const bool hasExecutionControls = execModel->hasExecutionControls();
+            const bool candidateModeHit = hasExecutionControls && rawModeHit;
+            const bool candidateStartHit = hasExecutionControls && rawStartHit;
+            const bool candidateDetailHit = rawDetailHit;
+
+            QRectF controlNeighborhood;
+            if (useExternal) {
+                controlNeighborhood = geo->leftEarRect(nodeId)
+                    .united(geo->rightEarRect(nodeId)).adjusted(-8.0, -8.0, 8.0, 8.0);
+            } else {
+                const QSize nodeSize = geo->size(nodeId);
+                controlNeighborhood = QRectF(0.0, 0.0, nodeSize.width(),
+                                             QtNodes::CARD_HEADER_HEIGHT)
+                    .adjusted(-8.0, -8.0, 8.0, 8.0);
+            }
+            const bool hasHoverDiagnostic =
+                !node->property("executionControlHoverKind").toString().isEmpty();
+            if (!diagnosticNode
+                && (controlNeighborhood.contains(nodePos) || hasHoverDiagnostic)) {
+                diagnosticNode = node;
+                diagnosticModel = execModel;
+                diagnosticPos = nodePos;
+                diagnosticModeHit = rawModeHit;
+                diagnosticStartHit = rawStartHit;
+                diagnosticDetailHit = rawDetailHit;
+            }
+
+            if (!candidateModeHit && !candidateStartHit && !candidateDetailHit) {
+                return false;
+            }
+
+            controlNode = node;
+            controlModel = execModel;
+            controlPos = nodePos;
+            modeHit = candidateModeHit;
+            startHit = candidateStartHit;
+            detailHit = candidateDetailHit;
+            return true;
+        };
+
+        // A child widget or other child item belongs to its ancestor node. Once
+        // the topmost node owner is known, never let the click reach a node below it.
+        const QList<QGraphicsItem *> hitItems = m_scene->items(
+            scenePos, Qt::IntersectsItemShape, Qt::DescendingOrder,
+            m_view->viewportTransform());
+        QtNodes::NodeGraphicsObject *topOwnedNode = nullptr;
+        for (QGraphicsItem *item : hitItems) {
+            if (auto *owner = nodeOwner(item)) {
+                topOwnedNode = owner;
+                topOwnedItem = item;
+                break;
+            }
+        }
+
+        if (topOwnedNode) {
+            auto *execModel = m_graphModel
+                ->delegateModel<QtNodes::ExecutableNodeDelegateModel>(topOwnedNode->nodeId());
+            testNodeControls(topOwnedNode, execModel, false);
+        } else {
+            // External ears can extend beyond an item's cached shape. With no
+            // node shape at the point, test selected external nodes in paint order.
+            const QList<QGraphicsItem *> stackingItems = m_scene->items(Qt::DescendingOrder);
+            for (QGraphicsItem *item : stackingItems) {
+                auto *node = dynamic_cast<QtNodes::NodeGraphicsObject *>(item);
+                if (!node) {
+                    continue;
                 }
-                // Check for detail button (either external layout or card layout)
-                else if ((useExternal && geo.hitTestDetailButton(nodeId, nodePos)) || 
-                         (!useExternal && geo.hitTestCardDetailButton(nodeId, nodePos))) {
-                    // Open detail view
-                    openDetailView(ngo, execModel);
-                    return true;
+                auto *execModel = m_graphModel
+                    ->delegateModel<QtNodes::ExecutableNodeDelegateModel>(node->nodeId());
+                if (testNodeControls(node, execModel, true)) {
+                    break;
                 }
             }
+        }
+
+        // If ownership and hover ever disagree, retain the hovered control as
+        // the diagnostic subject without allowing it to receive the click.
+        if (!controlNode && !diagnosticNode) {
+            const QList<QGraphicsItem *> stackingItems = m_scene->items(Qt::DescendingOrder);
+            for (QGraphicsItem *item : stackingItems) {
+                auto *node = dynamic_cast<QtNodes::NodeGraphicsObject *>(item);
+                if (!node
+                    || node->property("executionControlHoverKind").toString().isEmpty()) {
+                    continue;
+                }
+                auto *execModel = m_graphModel
+                    ->delegateModel<QtNodes::ExecutableNodeDelegateModel>(node->nodeId());
+                if (!execModel) {
+                    continue;
+                }
+                const QtNodes::NodeId nodeId = node->nodeId();
+                diagnosticNode = node;
+                diagnosticModel = execModel;
+                diagnosticPos = node->mapFromScene(scenePos);
+                const bool useExternal = execModel->useExternalLayout();
+                diagnosticModeHit = useExternal
+                    ? geo->hitTestModeButton(nodeId, diagnosticPos)
+                    : geo->hitTestCardModeButton(nodeId, diagnosticPos);
+                diagnosticStartHit = useExternal
+                    ? geo->hitTestStartButton(nodeId, diagnosticPos)
+                    : geo->hitTestCardStartButton(nodeId, diagnosticPos);
+                diagnosticDetailHit = useExternal
+                    ? geo->hitTestDetailButton(nodeId, diagnosticPos)
+                    : geo->hitTestCardDetailButton(nodeId, diagnosticPos);
+                break;
+            }
+        }
+
+        if (controlNode && controlModel) {
+            const QtNodes::NodeId nodeId = controlNode->nodeId();
+            const bool useExternal = controlModel->useExternalLayout();
+            InSARLogManager::LogDebug("WorkflowUI",
+                QString("Execution control click: node=%1, state=%2, local=(%3,%4), external=%5, modeHit=%6, startHit=%7, detailHit=%8, hoverKind=%9, hoverLocal=%10, hoverExternal=%11")
+                    .arg(static_cast<qulonglong>(nodeId))
+                    .arg(static_cast<int>(controlModel->executionState()))
+                    .arg(controlPos.x(), 0, 'f', 1).arg(controlPos.y(), 0, 'f', 1)
+                    .arg(useExternal ? 1 : 0).arg(modeHit ? 1 : 0)
+                    .arg(startHit ? 1 : 0).arg(detailHit ? 1 : 0)
+                    .arg(controlNode->property("executionControlHoverKind").toString())
+                    .arg(controlNode->property("executionControlHoverLocalPos").toPointF().isNull()
+                        ? QStringLiteral("none")
+                        : QString("(%1,%2)")
+                            .arg(controlNode->property("executionControlHoverLocalPos").toPointF().x(), 0, 'f', 1)
+                            .arg(controlNode->property("executionControlHoverLocalPos").toPointF().y(), 0, 'f', 1))
+                    .arg(controlNode->property("executionControlHoverExternal").toBool() ? 1 : 0));
+
+            if (controlModel->hasExecutionControls() && modeHit) {
+                const QtNodes::ExecutionMode currentMode = controlModel->executionMode();
+                const QtNodes::ExecutionMode nextMode =
+                    currentMode == QtNodes::ExecutionMode::Automatic
+                        ? QtNodes::ExecutionMode::Manual
+                        : (currentMode == QtNodes::ExecutionMode::Manual
+                            ? QtNodes::ExecutionMode::Disabled
+                            : QtNodes::ExecutionMode::Automatic);
+                controlModel->setExecutionMode(nextMode);
+                controlNode->update();
+                return true;
+            }
+            if (controlModel->hasExecutionControls() && startHit) {
+                if (controlModel->executionState() == QtNodes::ExecutionState::Running) {
+                    InSARLogManager::LogInfo("WorkflowUI",
+                        QString("Stop control accepted for node %1.").arg(static_cast<qulonglong>(nodeId)));
+                    controlModel->stop();
+                } else {
+                    controlModel->start();
+                }
+                controlNode->update();
+                return true;
+            }
+            if (detailHit) {
+                openDetailView(controlNode, controlModel);
+                return true;
+            }
+        } else if (diagnosticNode && diagnosticModel) {
+            const QPointF hoverPos = diagnosticNode
+                ->property("executionControlHoverLocalPos").toPointF();
+            InSARLogManager::LogDebug("WorkflowUI",
+                QString("Execution control miss: node=%1, state=%2, clickLocal=(%3,%4), external=%5, selected=%6, controls=%7, rawModeHit=%8, rawStartHit=%9, rawDetailHit=%10, hoverKind=%11, hoverLocal=%12, hoverExternal=%13, topOwner=%14, topItemType=%15, topItemZ=%16")
+                    .arg(static_cast<qulonglong>(diagnosticNode->nodeId()))
+                    .arg(static_cast<int>(diagnosticModel->executionState()))
+                    .arg(diagnosticPos.x(), 0, 'f', 1).arg(diagnosticPos.y(), 0, 'f', 1)
+                    .arg(diagnosticModel->useExternalLayout() ? 1 : 0)
+                    .arg(diagnosticNode->isSelected() ? 1 : 0)
+                    .arg(diagnosticModel->hasExecutionControls() ? 1 : 0)
+                    .arg(diagnosticModeHit ? 1 : 0).arg(diagnosticStartHit ? 1 : 0)
+                    .arg(diagnosticDetailHit ? 1 : 0)
+                    .arg(diagnosticNode->property("executionControlHoverKind").toString())
+                    .arg(hoverPos.isNull()
+                        ? QStringLiteral("none")
+                        : QString("(%1,%2)").arg(hoverPos.x(), 0, 'f', 1)
+                                                .arg(hoverPos.y(), 0, 'f', 1))
+                    .arg(diagnosticNode->property("executionControlHoverExternal").toBool() ? 1 : 0)
+                    .arg(topOwnedNode
+                        ? QString::number(static_cast<qulonglong>(topOwnedNode->nodeId()))
+                        : QStringLiteral("none"))
+                    .arg(topOwnedItem ? topOwnedItem->type() : -1)
+                    .arg(topOwnedItem ? topOwnedItem->zValue() : 0.0, 0, 'f', 1));
         }
     }
     return QWidget::eventFilter(obj, event);
@@ -1861,6 +2057,9 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
 
     // 连接节点的进度和执行信号
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStarted, this, [this, nodeId, caption]() {
+        if (m_propertyEditor && m_propertyEditor->currentNodeId() == nodeId) {
+            m_propertyEditor->refreshCurrentNode();
+        }
         if (m_activeWorkflowRunId.isEmpty()) {
             m_activeWorkflowRunId = QUuid::createUuid().toString(QUuid::WithoutBraces);
             m_activeWorkflowNodes.clear();
@@ -1880,7 +2079,7 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
 
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::progressUpdated, this, [this, nodeId, caption](int percent) {
         Q_EMIT nodeProgressUpdated(nodeId, caption, percent);
-    }, Qt::QueuedConnection);
+    });
 
     connect(execModel, &QtNodes::ExecutableNodeDelegateModel::executionStateChanged, this,
             [this, nodeId, caption, weakModel]() {

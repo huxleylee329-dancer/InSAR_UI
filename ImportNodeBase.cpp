@@ -16,9 +16,102 @@
 #include <QSet>
 #include <QtConcurrent/QtConcurrent>
 #include <QDebug>
+#include <cmath>
 
 
 namespace QtNodes {
+
+namespace {
+
+bool enrichSentinel1GeometryDescriptor(NodeUtils::OutputTransaction& transaction,
+                                      const QStringList& outputPaths,
+                                      const QString& producer,
+                                      QString* errorMessage)
+{
+    bool hasLatitude = false;
+    bool hasLongitude = false;
+    double minLon = 0.0;
+    double maxLon = 0.0;
+    double minLat = 0.0;
+    double maxLat = 0.0;
+
+    const QStringList latitudeFields = {
+        QStringLiteral("topLeftLat"), QStringLiteral("topRightLat"),
+        QStringLiteral("bottomLeftLat"), QStringLiteral("bottomRightLat")};
+    const QStringList longitudeFields = {
+        QStringLiteral("topLeftLon"), QStringLiteral("topRightLon"),
+        QStringLiteral("bottomLeftLon"), QStringLiteral("bottomRightLon")};
+
+    for (const QString& outputPath : outputPaths) {
+        if (QFileInfo(outputPath).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+
+        for (const QString& field : latitudeFields) {
+            double value = 0.0;
+            QString readError;
+            if (!NodeUtils::readScalarFromH5(outputPath, field, value, &readError) ||
+                !std::isfinite(value) || value < -90.0 || value > 90.0) {
+                if (errorMessage) {
+                    *errorMessage = QStringLiteral("Trusted input geometry missing/incomplete: Sentinel-1 H5 field %1 in %2 (%3)")
+                        .arg(field, outputPath, readError);
+                }
+                return false;
+            }
+            if (!hasLatitude) {
+                minLat = maxLat = value;
+                hasLatitude = true;
+            } else {
+                minLat = qMin(minLat, value);
+                maxLat = qMax(maxLat, value);
+            }
+        }
+        for (const QString& field : longitudeFields) {
+            double value = 0.0;
+            QString readError;
+            if (!NodeUtils::readScalarFromH5(outputPath, field, value, &readError) ||
+                !std::isfinite(value) || value < -180.0 || value > 180.0) {
+                if (errorMessage) {
+                    *errorMessage = QStringLiteral("Trusted input geometry missing/incomplete: Sentinel-1 H5 field %1 in %2 (%3)")
+                        .arg(field, outputPath, readError);
+                }
+                return false;
+            }
+            if (!hasLongitude) {
+                minLon = maxLon = value;
+                hasLongitude = true;
+            } else {
+                minLon = qMin(minLon, value);
+                maxLon = qMax(maxLon, value);
+            }
+        }
+    }
+
+    if (!hasLatitude || !hasLongitude || maxLon <= minLon || maxLat <= minLat) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Trusted input geometry missing/incomplete: Sentinel-1 H5 corner coordinates.");
+        }
+        return false;
+    }
+
+    const ProductDescriptor::Ptr previous = ProductDescriptor::fromJson(transaction.productDescriptor);
+    QMap<QString, QString> provenance = previous ? previous->provenance() : QMap<QString, QString>();
+    provenance.insert(QStringLiteral("minLon"), QString::number(minLon, 'g', 17));
+    provenance.insert(QStringLiteral("maxLon"), QString::number(maxLon, 'g', 17));
+    provenance.insert(QStringLiteral("minLat"), QString::number(minLat, 'g', 17));
+    provenance.insert(QStringLiteral("maxLat"), QString::number(maxLat, 'g', 17));
+    provenance.insert(QStringLiteral("crsWkt"), QStringLiteral("EPSG:4326"));
+    provenance.insert(QStringLiteral("geometrySource"), QStringLiteral("sentinel1_h5_corner_coordinates"));
+
+    const ProductDescriptor::Ptr descriptor = ProductDescriptor::create(
+        QStringLiteral("sentinel1_burst_sar"),
+        previous ? previous->schemaId() : QStringLiteral("sat-explorer-product"),
+        previous ? previous->schemaVersion() : 1,
+        ProductState::Committed, producer, provenance);
+    return NodeUtils::setOutputTransactionProductDescriptor(transaction, descriptor, errorMessage);
+}
+
+}
 
 ImportNodeBase::ImportNodeBase()
     : ExecutableNodeDelegateModel()
@@ -226,7 +319,8 @@ void ImportNodeBase::execute()
         expectedPaths.append(getExpectedPreviewFilePaths());
         QString transactionError;
         if (primaryPaths.isEmpty() || !NodeUtils::beginOutputTransaction(projectPath(), getOutputNodeName(),
-                expectedPaths, transactionInputPaths(), m_outputTransaction, &transactionError)) {
+                expectedPaths, transactionInputPaths(), m_outputTransaction, &transactionError, nullptr,
+                NodeUtils::getProjectFilePath(_widget))) {
             onError(transactionError.isEmpty() ? QStringLiteral("Import output transaction could not be prepared.")
                                                 : transactionError);
             return;
@@ -507,6 +601,12 @@ void ImportNodeBase::onImportFinished()
         if (!commitLease) {
             NodeUtils::abandonOutputTransaction(m_outputTransaction,
                                                 QStringLiteral("obsolete execution revision"), xml);
+            return;
+        }
+        if (productOutputContract(0).publishedProductTypes.contains(QStringLiteral("sentinel1_burst_sar")) &&
+            !enrichSentinel1GeometryDescriptor(m_outputTransaction, m_generatedOutputPaths,
+                                                name(), &transactionError)) {
+            onThreadError(transactionError);
             return;
         }
         if (!NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError)) {

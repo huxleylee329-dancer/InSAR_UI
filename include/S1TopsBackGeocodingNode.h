@@ -48,6 +48,7 @@ public:
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    QList<QList<PortIndex>> alternativeInputGroups() const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     ::QWidget* embeddedWidget() override;
@@ -90,22 +91,27 @@ private:
     QLineEdit* m_outputNodeNameEdit;
 
     QLabel* m_demPathLabel = nullptr;
-    QLineEdit* m_demPathEdit = nullptr;
-    QPushButton* m_demBrowseBtn = nullptr;
+    QComboBox* m_demLabelCombo = nullptr;
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
     std::shared_ptr<DEMFileData> m_demInputData;
+    std::shared_ptr<AuxiliaryDemData> m_auxiliaryDemEntityData;
+    std::shared_ptr<AuxiliaryDemReferenceData> m_auxiliaryDemReferenceData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     QStringList m_savedOutputPaths;
     QString m_savedMasterOutputPath;
     QString m_outputNodeName;
     QString m_demPath;
+    QString m_auxiliaryDemLabel;
+    QString m_legacyDemResourceId;
+    QString m_legacyDemProvenanceId;
     int m_masterIndex;
     bool m_useDefaultMaster;
     bool m_bESD;
     bool m_bRangeRefine;
+    void refreshAuxiliaryDemLabels();
 
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
@@ -113,6 +119,8 @@ private:
     QString m_preparedDstProject;
     QString m_preparedSrcNode;
     QString m_preparedDemPath;
+    NodeUtils::AuxiliaryDemBinding m_preparedAuxiliaryDemBinding;
+    NodeUtils::DemExecutionSnapshot m_preparedDemExecutionSnapshot;
     int m_preparedMasterIndex;
     bool m_preparedBESD;
     bool m_preparedBRangeRefine;

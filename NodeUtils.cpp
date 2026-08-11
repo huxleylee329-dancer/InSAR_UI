@@ -19,6 +19,7 @@
 #include <QSaveFile>
 #include <QSet>
 #include <QUuid>
+#include <QCryptographicHash>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
@@ -26,6 +27,7 @@
 #include "include/MainWindow.h"
 #include "include/WorkspaceUI.h"
 #include "include/InterfaceManager.h"
+#include "include/ImportDataTypes.h"
 #include "tinyxml.h"
 #include <FormatConversion.h>
 #include <Hdf5IO.h>
@@ -33,9 +35,1341 @@
 #include <cmath>
 
 #include <QMap>
+#include <QList>
 #include <memory>
 
 namespace NodeUtils {
+
+namespace {
+QMutex g_resourceRegistryMutex(QMutex::Recursive);
+QMutex g_projectXmlMutex(QMutex::Recursive);
+struct ProjectXmlRevision
+{
+    QString hash;
+    QString generation;
+};
+QMap<QString, ProjectXmlRevision> g_projectXmlRevisions;
+QList<ResourceChangeCallback> g_resourceChangeCallbacks;
+QList<AuxiliaryDemLabelTableChangedCallback> g_labelTableChangedCallbacks;
+QList<AuxiliaryDemLabelReboundCallback> g_labelReboundCallbacks;
+QMap<QString, AuxiliaryDemLabelBinding> g_pendingAuxiliaryDemLabels;
+QString resourceRegistryPath(const QString& projectRoot)
+{
+    return QDir(projectRoot).absoluteFilePath(QStringLiteral(".dem_resource_registry.json"));
+}
+
+QString resourceLabelPath(const QString& projectRoot)
+{
+    return QDir(projectRoot).absoluteFilePath(QStringLiteral(".dem_resource_labels.json"));
+}
+
+QString normalizedDemLabel(const QString& label)
+{
+    return label.trimmed().toCaseFolded();
+}
+
+QByteArray sha256File(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return QByteArray();
+
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    while (!file.atEnd()) {
+        const QByteArray block = file.read(4 * 1024 * 1024);
+        if (block.isEmpty() && file.error() != QFile::NoError) return QByteArray();
+        hash.addData(block);
+    }
+    return hash.result().toHex();
+}
+
+QString fileGeneration(const QString& path)
+{
+    const QFileInfo info(path);
+    if (!info.isFile()) return QString();
+    return QStringLiteral("%1:%2:%3")
+        .arg(info.size())
+        .arg(info.lastModified().toMSecsSinceEpoch())
+        .arg(QString::fromLatin1(sha256File(path)));
+}
+
+ProjectXmlRevision projectXmlRevision(const QString& path)
+{
+    ProjectXmlRevision revision;
+    revision.hash = QString::fromLatin1(sha256File(path));
+    revision.generation = fileGeneration(path);
+    return revision;
+}
+
+bool sameProjectXmlRevision(const ProjectXmlRevision& left, const ProjectXmlRevision& right)
+{
+    return !left.hash.isEmpty() && !left.generation.isEmpty() &&
+           left.hash == right.hash && left.generation == right.generation;
+}
+
+void rememberProjectXmlRevision(const QString& canonicalPath, const ProjectXmlRevision& revision)
+{
+    if (!canonicalPath.isEmpty() && !revision.hash.isEmpty() && !revision.generation.isEmpty()) {
+        g_projectXmlRevisions.insert(QDir::cleanPath(canonicalPath), revision);
+    }
+}
+
+void releaseMetadataCommitLock(OutputTransaction& transaction)
+{
+    if (!transaction.metadataCommitLockHeld) {
+        return;
+    }
+    transaction.metadataCommitLockHeld = false;
+    g_projectXmlMutex.unlock();
+}
+
+class MetadataCommitLockReleaseGuard
+{
+public:
+    explicit MetadataCommitLockReleaseGuard(OutputTransaction& transaction)
+        : m_transaction(transaction)
+    {
+    }
+
+    ~MetadataCommitLockReleaseGuard()
+    {
+        if (m_active) {
+            releaseMetadataCommitLock(m_transaction);
+        }
+    }
+
+    void dismiss()
+    {
+        m_active = false;
+    }
+
+private:
+    OutputTransaction& m_transaction;
+    bool m_active = true;
+};
+
+void notifyResourceChange(const QString& resourceId, const QString& provenanceId, ResourceChangeKind kind)
+{
+    QList<ResourceChangeCallback> callbacks;
+    {
+        QMutexLocker locker(&g_resourceRegistryMutex);
+        callbacks = g_resourceChangeCallbacks;
+    }
+    for (const ResourceChangeCallback& callback : callbacks) {
+        if (callback) callback(resourceId, provenanceId, kind);
+    }
+}
+
+void notifyLabelTableChanged()
+{
+    QList<AuxiliaryDemLabelTableChangedCallback> callbacks;
+    {
+        QMutexLocker locker(&g_resourceRegistryMutex);
+        callbacks = g_labelTableChangedCallbacks;
+    }
+    for (const AuxiliaryDemLabelTableChangedCallback& callback : callbacks) if (callback) callback();
+}
+
+void notifyLabelRebound(const QString& label)
+{
+    QList<AuxiliaryDemLabelReboundCallback> callbacks;
+    { QMutexLocker locker(&g_resourceRegistryMutex); callbacks = g_labelReboundCallbacks; }
+    for (const AuxiliaryDemLabelReboundCallback& callback : callbacks) if (callback) callback(label);
+}
+
+bool auxiliaryDemCoversInput(const QJsonObject& metadata,
+                             const QJsonObject& inputGeometry)
+{
+    // Geometry is required to authorize a DEM binding. An absent descriptor
+    // must fail closed instead of bypassing coverage/CRS checks.
+    if (inputGeometry.isEmpty()) return false;
+    const QStringList required = {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                                  QStringLiteral("minLat"), QStringLiteral("maxLat")};
+    for (const QString& key : required) {
+        if (!inputGeometry.contains(key) || !inputGeometry.value(key).isDouble() ||
+            !std::isfinite(inputGeometry.value(key).toDouble())) return false;
+    }
+    const QString inputCrs = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (inputGeometry.value(QStringLiteral("maxLon")).toDouble() <= inputGeometry.value(QStringLiteral("minLon")).toDouble() ||
+        inputGeometry.value(QStringLiteral("maxLat")).toDouble() <= inputGeometry.value(QStringLiteral("minLat")).toDouble() ||
+        inputCrs.isEmpty()) {
+        return false;
+    }
+    const QString demCrs = metadata.value(QStringLiteral("crsWkt")).toString().trimmed();
+    const QString demVerticalDatum = metadata.value(QStringLiteral("verticalDatum")).toString().trimmed();
+    const QString demResolutionUnit = metadata.value(QStringLiteral("resolutionUnit")).toString().trimmed();
+    const QString demResolutionSemantic = metadata.value(QStringLiteral("resolutionCoordinateSemantic")).toString().trimmed();
+    const double demResolutionX = metadata.value(QStringLiteral("resolutionX")).toDouble();
+    const double demResolutionY = metadata.value(QStringLiteral("resolutionY")).toDouble();
+    for (const QString& key : required) {
+        if (!metadata.value(key).isDouble() || !std::isfinite(metadata.value(key).toDouble())) return false;
+    }
+    if (metadata.value(QStringLiteral("maxLon")).toDouble() <= metadata.value(QStringLiteral("minLon")).toDouble() ||
+        metadata.value(QStringLiteral("maxLat")).toDouble() <= metadata.value(QStringLiteral("minLat")).toDouble() ||
+        demCrs.isEmpty() || demVerticalDatum.isEmpty() ||
+        !std::isfinite(demResolutionX) || !std::isfinite(demResolutionY) ||
+        demResolutionX <= 0.0 || demResolutionY <= 0.0) {
+        return false;
+    }
+    if (metadata.value(QStringLiteral("minLon")).toDouble() > inputGeometry.value(QStringLiteral("minLon")).toDouble() ||
+        metadata.value(QStringLiteral("maxLon")).toDouble() < inputGeometry.value(QStringLiteral("maxLon")).toDouble() ||
+        metadata.value(QStringLiteral("minLat")).toDouble() > inputGeometry.value(QStringLiteral("minLat")).toDouble() ||
+        metadata.value(QStringLiteral("maxLat")).toDouble() < inputGeometry.value(QStringLiteral("maxLat")).toDouble()) {
+        return false;
+    }
+    const auto isWgs84Geographic = [](const QString& crs) {
+        const QString normalized = crs.toUpper();
+        return normalized.contains(QStringLiteral("EPSG:4326")) ||
+               (normalized.contains(QStringLiteral("WGS 84")) &&
+                (normalized.contains(QStringLiteral("GEOGCS")) || normalized.contains(QStringLiteral("GEOGCRS"))));
+    };
+    if (demCrs != inputCrs && !(isWgs84Geographic(demCrs) && isWgs84Geographic(inputCrs))) {
+        return false;
+    }
+
+    // Range/azimuth pixel spacing in Sentinel-1 H5 is in metres and is not
+    // comparable with a geographic DEM's degree spacing. Enforce vertical or
+    // resolution constraints only when the input explicitly declares one.
+    if (inputGeometry.contains(QStringLiteral("verticalDatum")) &&
+        demVerticalDatum != inputGeometry.value(QStringLiteral("verticalDatum")).toString().trimmed()) {
+        return false;
+    }
+    const bool declaresResolutionX = inputGeometry.contains(QStringLiteral("resolutionX"));
+    const bool declaresResolutionY = inputGeometry.contains(QStringLiteral("resolutionY"));
+    const QString inputResolutionUnit = inputGeometry.value(QStringLiteral("resolutionUnit")).toString().trimmed();
+    const QString inputResolutionSemantic = inputGeometry.value(QStringLiteral("resolutionCoordinateSemantic")).toString().trimmed();
+    if (declaresResolutionX && declaresResolutionY &&
+        !inputResolutionUnit.isEmpty() && !inputResolutionSemantic.isEmpty() &&
+        !demResolutionUnit.isEmpty() && !demResolutionSemantic.isEmpty() &&
+        inputResolutionUnit == demResolutionUnit &&
+        inputResolutionSemantic == demResolutionSemantic) {
+        const double inputResolutionX = inputGeometry.value(QStringLiteral("resolutionX")).toDouble();
+        const double inputResolutionY = inputGeometry.value(QStringLiteral("resolutionY")).toDouble();
+        if (!inputGeometry.value(QStringLiteral("resolutionX")).isDouble() ||
+            !inputGeometry.value(QStringLiteral("resolutionY")).isDouble() ||
+            !std::isfinite(inputResolutionX) || !std::isfinite(inputResolutionY) ||
+            inputResolutionX <= 0.0 || inputResolutionY <= 0.0) {
+            return false;
+        }
+        return demResolutionX <= inputResolutionX && demResolutionY <= inputResolutionY;
+    }
+    return true;
+}
+}
+
+bool loadAuxiliaryDemRegistry(const QString& projectRoot,
+                              QMap<QString, AuxiliaryDemRegistryEntry>& entries,
+                              QString* errorMessage)
+{
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    entries.clear();
+    const QString registryFilePath = resourceRegistryPath(projectRoot);
+    QFile file(registryFilePath);
+    if (!file.exists()) return true;
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot read DEM resource registry: %1").arg(registryFilePath);
+        return false;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry JSON is invalid: %1 (offset %2)")
+            .arg(registryFilePath).arg(parseError.offset);
+        return false;
+    }
+    const QJsonObject root = document.object();
+    const QJsonValue version = root.value(QStringLiteral("version"));
+    if (!version.isDouble() || version.toDouble() != 1.0 ||
+        !root.contains(QStringLiteral("resources")) ||
+        !root.value(QStringLiteral("resources")).isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry schema is invalid: %1")
+            .arg(registryFilePath);
+        return false;
+    }
+    const QJsonObject resources = root.value(QStringLiteral("resources")).toObject();
+    for (auto it = resources.constBegin(); it != resources.constEnd(); ++it) {
+        if (it.key().isEmpty() || !it.value().isObject()) {
+            if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry contains an invalid entry: resourceId=%1, path=%2")
+                .arg(it.key(), registryFilePath);
+            return false;
+        }
+        const QJsonObject object = it.value().toObject();
+        const QString expectedRoot = QStringLiteral(".dem_resources/%1").arg(it.key());
+        QString canonicalMetadataHash = object.value(QStringLiteral("canonicalMetadataHash")).toString();
+        const QByteArray expectedMetadataHash = QCryptographicHash::hash(
+            QJsonDocument(object.value(QStringLiteral("metadata")).toObject()).toJson(QJsonDocument::Compact),
+            QCryptographicHash::Sha256);
+        bool legacyCanonicalHash = false;
+        if (canonicalMetadataHash.size() != 64 && canonicalMetadataHash.toLatin1().size() == 32 &&
+            canonicalMetadataHash.toLatin1() == expectedMetadataHash) {
+            canonicalMetadataHash = QString::fromLatin1(expectedMetadataHash.toHex());
+            legacyCanonicalHash = true;
+        }
+        if (object.value(QStringLiteral("role")).toString() != QStringLiteral("auxiliary_terrain_dem") ||
+            object.value(QStringLiteral("rasterHash")).toString().isEmpty() ||
+            object.value(QStringLiteral("identityH5Hash")).toString().isEmpty() ||
+            canonicalMetadataHash.isEmpty() ||
+            object.value(QStringLiteral("managedRasterPath")).toString() != expectedRoot + QStringLiteral("/dem.tif") ||
+            object.value(QStringLiteral("managedIdentityH5Path")).toString() != expectedRoot + QStringLiteral("/identity.h5") ||
+            !object.value(QStringLiteral("metadata")).isObject() ||
+            !object.value(QStringLiteral("provenanceHistory")).isArray() ||
+            (object.contains(QStringLiteral("tombstone")) && !object.value(QStringLiteral("tombstone")).isBool())) {
+            if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry entry is incomplete or invalid: resourceId=%1, path=%2")
+                .arg(it.key(), registryFilePath);
+            return false;
+        }
+        const QJsonArray provenanceHistory = object.value(QStringLiteral("provenanceHistory")).toArray();
+        QJsonArray normalizedProvenanceHistory;
+        QSet<QString> provenanceIds;
+        int historyIndex = 0;
+        for (const QJsonValue& provenance : provenanceHistory) {
+            QJsonObject provenanceObject = provenance.toObject();
+            const QString pinnedId = provenanceObject.value(QStringLiteral("pinnedProvenanceId")).toString();
+            const QString runId = provenanceObject.value(QStringLiteral("runId")).toString();
+            const QString historyCanonicalHash = provenanceObject.value(QStringLiteral("canonicalMetadataHash")).toString();
+            const bool invalid = !provenance.isObject() ||
+                provenanceObject.value(QStringLiteral("role")).toString() != QStringLiteral("auxiliary_terrain_dem") ||
+                provenanceObject.value(QStringLiteral("resourceId")).toString() != it.key() ||
+                pinnedId.isEmpty() || runId != pinnedId || provenanceIds.contains(pinnedId) ||
+                (!historyCanonicalHash.isEmpty() && historyCanonicalHash != canonicalMetadataHash) ||
+                (historyCanonicalHash.isEmpty() && !legacyCanonicalHash);
+            if (invalid) {
+                if (errorMessage) *errorMessage = QStringLiteral(
+                    "DEM resource registry provenance history is invalid: resourceId=%1, historyIndex=%2, pin=%3, runId=%4, path=%5")
+                    .arg(it.key()).arg(historyIndex).arg(pinnedId, runId, registryFilePath);
+                return false;
+            }
+            if (historyCanonicalHash.isEmpty()) {
+                provenanceObject.insert(QStringLiteral("canonicalMetadataHash"), canonicalMetadataHash);
+            }
+            normalizedProvenanceHistory.append(provenanceObject);
+            provenanceIds.insert(pinnedId);
+            ++historyIndex;
+        }
+        AuxiliaryDemRegistryEntry entry;
+        entry.resourceId = it.key();
+        entry.role = object.value(QStringLiteral("role")).toString();
+        entry.rasterHash = object.value(QStringLiteral("rasterHash")).toString();
+        entry.identityH5Hash = object.value(QStringLiteral("identityH5Hash")).toString();
+        entry.canonicalMetadataHash = canonicalMetadataHash;
+        entry.managedRasterPath = object.value(QStringLiteral("managedRasterPath")).toString();
+        entry.managedIdentityH5Path = object.value(QStringLiteral("managedIdentityH5Path")).toString();
+        entry.metadata = object.value(QStringLiteral("metadata")).toObject();
+        entry.provenanceHistory = normalizedProvenanceHistory;
+        entry.tombstone = object.value(QStringLiteral("tombstone")).toBool(false);
+        entries.insert(entry.resourceId, entry);
+    }
+    return true;
+}
+
+bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
+                                    const AuxiliaryDemRegistryEntry& entry,
+                                    QString* errorMessage)
+{
+    if (entry.resourceId.isEmpty() || entry.role != QStringLiteral("auxiliary_terrain_dem") ||
+        entry.rasterHash.isEmpty() || entry.identityH5Hash.isEmpty() ||
+        entry.canonicalMetadataHash.isEmpty() || entry.provenanceHistory.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM registry entry is incomplete.");
+        return false;
+    }
+    QSet<QString> incomingProvenanceIds;
+    for (const QJsonValue& value : entry.provenanceHistory) {
+        const QJsonObject provenance = value.toObject();
+        const QString pin = provenance.value(QStringLiteral("pinnedProvenanceId")).toString();
+        if (!value.isObject() || provenance.value(QStringLiteral("role")).toString() != entry.role ||
+            provenance.value(QStringLiteral("resourceId")).toString() != entry.resourceId ||
+            pin.isEmpty() || incomingProvenanceIds.contains(pin) ||
+            provenance.value(QStringLiteral("runId")).toString() != pin ||
+            provenance.value(QStringLiteral("canonicalMetadataHash")).toString() != entry.canonicalMetadataHash ||
+            provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem.tif") ||
+            provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.rasterHash ||
+            provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("identity.h5") ||
+            provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != entry.identityH5Hash) {
+            if (errorMessage) *errorMessage = QStringLiteral("DEM registry provenance entry is incomplete or invalid.");
+            return false;
+        }
+        incomingProvenanceIds.insert(pin);
+    }
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemRegistryEntry> entries;
+    if (!loadAuxiliaryDemRegistry(projectRoot, entries, errorMessage)) {
+        return false;
+    }
+    AuxiliaryDemRegistryEntry merged = entries.value(entry.resourceId);
+    if (!merged.resourceId.isEmpty() && merged.tombstone) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot append provenance to a tombstoned DEM resource.");
+        return false;
+    }
+    if (!merged.resourceId.isEmpty() &&
+        (merged.rasterHash != entry.rasterHash || merged.identityH5Hash != entry.identityH5Hash ||
+         merged.canonicalMetadataHash != entry.canonicalMetadataHash)) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM registry identity conflict for resourceId.");
+        return false;
+    }
+    merged.resourceId = entry.resourceId;
+    merged.role = entry.role;
+    merged.rasterHash = entry.rasterHash;
+    merged.identityH5Hash = entry.identityH5Hash;
+    merged.canonicalMetadataHash = entry.canonicalMetadataHash;
+    merged.managedRasterPath = entry.managedRasterPath;
+    merged.managedIdentityH5Path = entry.managedIdentityH5Path;
+    merged.metadata = entry.metadata;
+    merged.tombstone = false;
+    for (const QJsonValue& provenance : entry.provenanceHistory) {
+        bool duplicate = false;
+        for (const QJsonValue& old : merged.provenanceHistory) {
+            if (old.toObject().value(QStringLiteral("pinnedProvenanceId")) ==
+                provenance.toObject().value(QStringLiteral("pinnedProvenanceId"))) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) merged.provenanceHistory.append(provenance);
+    }
+    entries.insert(merged.resourceId, merged);
+    QJsonObject resources;
+    for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        QJsonObject object;
+        object.insert(QStringLiteral("role"), it.value().role);
+        object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
+        object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
+        object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
+        object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
+        object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
+        object.insert(QStringLiteral("metadata"), it.value().metadata);
+        object.insert(QStringLiteral("provenanceHistory"), it.value().provenanceHistory);
+        object.insert(QStringLiteral("tombstone"), it.value().tombstone);
+        resources.insert(it.key(), object);
+    }
+    QSaveFile output(resourceRegistryPath(projectRoot));
+    QJsonObject registryRoot;
+    registryRoot.insert(QStringLiteral("version"), 1);
+    registryRoot.insert(QStringLiteral("resources"), resources);
+    if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(registryRoot).toJson(QJsonDocument::Compact)) < 0 || !output.commit()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot commit DEM resource registry.");
+        return false;
+    }
+    notifyResourceChange(entry.resourceId,
+                         entry.provenanceHistory.isEmpty() ? QString() : entry.provenanceHistory.last().toObject().value(QStringLiteral("pinnedProvenanceId")).toString(),
+                         ResourceChangeKind::ProvenanceAdded);
+    return true;
+}
+
+bool loadAuxiliaryDemLabels(const QString& projectRoot,
+                            QMap<QString, AuxiliaryDemLabelBinding>& labels,
+                            QString* errorMessage)
+{
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    labels.clear();
+    QFile file(resourceLabelPath(projectRoot));
+    if (!file.exists()) return true;
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot read DEM label registry.");
+        return false;
+    }
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    const QJsonObject root = document.object();
+    const int version = root.value(QStringLiteral("version")).toInt();
+    if (parseError.error != QJsonParseError::NoError || (version != 1 && version != 2) ||
+        !root.value(QStringLiteral("labels")).isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM label registry schema is invalid.");
+        return false;
+    }
+    const QJsonObject stored = root.value(QStringLiteral("labels")).toObject();
+    for (auto it = stored.constBegin(); it != stored.constEnd(); ++it) {
+        const QJsonObject value = it.value().toObject();
+        const QString key = normalizedDemLabel(it.key());
+        const QString resourceId = value.value(QStringLiteral("resourceId")).toString().trimmed();
+        const QString provenanceId = value.value(QStringLiteral("pinnedProvenanceId")).toString().trimmed();
+        AuxiliaryDemLabelBinding binding;
+        binding.label = key;
+        binding.resourceId = resourceId;
+        binding.pinnedProvenanceId = provenanceId;
+        if (version == 2 && value.value(QStringLiteral("mode")).toString() == QStringLiteral("workflow_output")) {
+            binding.mode = AuxiliaryDemLabelMode::WorkflowOutput;
+            binding.producerIdentity = value.value(QStringLiteral("producerIdentity")).toString().trimmed();
+            binding.expectedProductType = value.value(QStringLiteral("expectedProductType")).toString().trimmed();
+        }
+        const bool fixedValid = binding.mode == AuxiliaryDemLabelMode::FixedResource &&
+                                !resourceId.isEmpty() && !provenanceId.isEmpty();
+        const bool workflowValid = binding.mode == AuxiliaryDemLabelMode::WorkflowOutput &&
+                                   !binding.producerIdentity.isEmpty() &&
+                                   binding.expectedProductType == QStringLiteral("auxiliary_terrain_dem") &&
+                                   ((resourceId.isEmpty() && provenanceId.isEmpty()) ||
+                                    (!resourceId.isEmpty() && !provenanceId.isEmpty()));
+        if (key.isEmpty() || key != it.key() || !it.value().isObject() || (!fixedValid && !workflowValid)) {
+            if (errorMessage) *errorMessage = QStringLiteral("DEM label registry contains an invalid binding.");
+            return false;
+        }
+        labels.insert(key, binding);
+    }
+    return true;
+}
+
+namespace {
+bool saveAuxiliaryDemLabels(const QString& projectRoot,
+                            const QMap<QString, AuxiliaryDemLabelBinding>& labels,
+                            QString* errorMessage)
+{
+    QJsonObject values;
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        const AuxiliaryDemLabelBinding& binding = it.value();
+        QJsonObject value{{QStringLiteral("resourceId"), binding.resourceId},
+                          {QStringLiteral("pinnedProvenanceId"), binding.pinnedProvenanceId}};
+        if (binding.mode == AuxiliaryDemLabelMode::WorkflowOutput) {
+            value.insert(QStringLiteral("mode"), QStringLiteral("workflow_output"));
+            value.insert(QStringLiteral("producerIdentity"), binding.producerIdentity);
+            value.insert(QStringLiteral("expectedProductType"), binding.expectedProductType);
+        } else {
+            value.insert(QStringLiteral("mode"), QStringLiteral("fixed_resource"));
+        }
+        values.insert(it.key(), value);
+    }
+    QSaveFile output(resourceLabelPath(projectRoot));
+    const QJsonObject root{{QStringLiteral("version"), 2}, {QStringLiteral("labels"), values}};
+    if (!output.open(QIODevice::WriteOnly) ||
+        output.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) < 0 || !output.commit()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot commit DEM label registry.");
+        return false;
+    }
+    return true;
+}
+}
+
+bool bindAuxiliaryDemLabel(const QString& projectRoot,
+                           const AuxiliaryDemLabelBinding& requested,
+                           bool explicitRebind,
+                           QString* errorMessage)
+{
+    AuxiliaryDemLabelBinding binding = requested;
+    binding.label = normalizedDemLabel(binding.label);
+    binding.mode = AuxiliaryDemLabelMode::FixedResource;
+    if (binding.label.isEmpty() || binding.resourceId.trimmed().isEmpty() || binding.pinnedProvenanceId.trimmed().isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM label, resource ID and pinned provenance are required.");
+        return false;
+    }
+    QMap<QString, AuxiliaryDemRegistryEntry> resources;
+    if (!loadAuxiliaryDemRegistry(projectRoot, resources, errorMessage) || !resources.contains(binding.resourceId) ||
+        resources.value(binding.resourceId).tombstone) {
+        if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("DEM label target is not a live managed resource.");
+        return false;
+    }
+    bool provenanceFound = false;
+    for (const QJsonValue& value : resources.value(binding.resourceId).provenanceHistory) {
+        if (value.toObject().value(QStringLiteral("pinnedProvenanceId")).toString() == binding.pinnedProvenanceId) {
+            provenanceFound = true;
+            break;
+        }
+    }
+    if (!provenanceFound) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM label target provenance is not registered.");
+        return false;
+    }
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    const auto existing = labels.constFind(binding.label);
+    if (existing != labels.constEnd() &&
+        (existing->mode != AuxiliaryDemLabelMode::FixedResource ||
+         existing->resourceId != binding.resourceId || existing->pinnedProvenanceId != binding.pinnedProvenanceId) &&
+        !explicitRebind) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM label already exists; explicit rebind is required.");
+        return false;
+    }
+    labels.insert(binding.label, binding);
+    if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    notifyLabelTableChanged();
+    if (existing != labels.constEnd() && explicitRebind) {
+        notifyLabelRebound(binding.label);
+    }
+    return true;
+}
+
+bool declareWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                      const QString& requestedLabel,
+                                      const QString& producerIdentity,
+                                      bool explicitConvert,
+                                      QString* errorMessage)
+{
+    const QString label = normalizedDemLabel(requestedLabel);
+    if (label.isEmpty() || producerIdentity.trimmed().isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label and producer identity are required.");
+        return false;
+    }
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    const auto existing = labels.constFind(label);
+    if (existing != labels.constEnd() &&
+        existing->mode == AuxiliaryDemLabelMode::WorkflowOutput &&
+        existing->producerIdentity == producerIdentity.trimmed()) {
+        return true;
+    }
+    if (existing != labels.constEnd() &&
+        (existing->mode != AuxiliaryDemLabelMode::WorkflowOutput ||
+         existing->producerIdentity != producerIdentity) && !explicitConvert) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM label already exists; explicit conversion/rebind is required.");
+        return false;
+    }
+    AuxiliaryDemLabelBinding binding;
+    binding.label = label;
+    binding.mode = AuxiliaryDemLabelMode::WorkflowOutput;
+    binding.producerIdentity = producerIdentity.trimmed();
+    binding.expectedProductType = QStringLiteral("auxiliary_terrain_dem");
+    labels.insert(label, binding);
+    if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    notifyLabelTableChanged();
+    if (existing != labels.constEnd()) notifyLabelRebound(label);
+    return true;
+}
+
+bool activateWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                       const QString& currentRequestedLabel,
+                                       const QString& nextRequestedLabel,
+                                       const QString& producerIdentity,
+                                       bool explicitConvert,
+                                       QString* errorMessage)
+{
+    const QString currentLabel = normalizedDemLabel(currentRequestedLabel);
+    const QString nextLabel = normalizedDemLabel(nextRequestedLabel);
+    const QString producer = producerIdentity.trimmed();
+    if (nextLabel.isEmpty() || producer.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label and producer identity are required.");
+        return false;
+    }
+
+    {
+        QMutexLocker locker(&g_resourceRegistryMutex);
+        QMap<QString, AuxiliaryDemLabelBinding> labels;
+        if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+
+        if (!currentLabel.isEmpty()) {
+            if (!labels.contains(currentLabel) ||
+                labels.value(currentLabel).mode != AuxiliaryDemLabelMode::WorkflowOutput ||
+                labels.value(currentLabel).producerIdentity != producer) {
+                if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label producer does not match.");
+                return false;
+            }
+        }
+
+        const auto existing = labels.constFind(nextLabel);
+        if (existing != labels.constEnd() &&
+            (existing->mode != AuxiliaryDemLabelMode::WorkflowOutput ||
+             existing->producerIdentity != producer) && !explicitConvert) {
+            if (errorMessage) *errorMessage = QStringLiteral("DEM label already exists; explicit conversion/rebind is required.");
+            return false;
+        }
+        if (!currentLabel.isEmpty() && currentLabel == nextLabel &&
+            existing != labels.constEnd() &&
+            existing->mode == AuxiliaryDemLabelMode::WorkflowOutput &&
+            existing->producerIdentity == producer) {
+            return true;
+        }
+
+        if (!currentLabel.isEmpty() && currentLabel != nextLabel) {
+            labels.remove(currentLabel);
+        }
+
+        AuxiliaryDemLabelBinding next;
+        next.label = nextLabel;
+        next.mode = AuxiliaryDemLabelMode::WorkflowOutput;
+        next.producerIdentity = producer;
+        next.expectedProductType = QStringLiteral("auxiliary_terrain_dem");
+        labels.insert(nextLabel, next);
+        if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    }
+
+    if (!currentLabel.isEmpty() && currentLabel != nextLabel) {
+        notifyLabelRebound(currentLabel);
+    }
+    notifyLabelRebound(nextLabel);
+    notifyLabelTableChanged();
+    return true;
+}
+
+bool restoreWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                      const QString& requestedLabel,
+                                      const QString& producerIdentity,
+                                      bool claimLegacyProducer,
+                                      QString* errorMessage)
+{
+    const QString label = normalizedDemLabel(requestedLabel);
+    const QString producer = producerIdentity.trimmed();
+    if (label.isEmpty() || producer.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label and producer identity are required.");
+        return false;
+    }
+
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    const auto existing = labels.constFind(label);
+    if (existing == labels.constEnd()) {
+        AuxiliaryDemLabelBinding binding;
+        binding.label = label;
+        binding.mode = AuxiliaryDemLabelMode::WorkflowOutput;
+        binding.producerIdentity = producer;
+        binding.expectedProductType = QStringLiteral("auxiliary_terrain_dem");
+        labels.insert(label, binding);
+        if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+        notifyLabelTableChanged();
+        return true;
+    }
+    if (existing->mode != AuxiliaryDemLabelMode::WorkflowOutput) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM label already belongs to a fixed resource; explicit conversion is required.");
+        return false;
+    }
+    if (existing->producerIdentity == producer) return true;
+    if (!claimLegacyProducer) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label producer does not match this node.");
+        return false;
+    }
+
+    // Older workflow JSON did not persist the producer UUID.  Preserve any
+    // ready resource binding while assigning it to the restored source node.
+    AuxiliaryDemLabelBinding binding = *existing;
+    binding.producerIdentity = producer;
+    labels.insert(label, binding);
+    if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    notifyLabelRebound(label);
+    notifyLabelTableChanged();
+    return true;
+}
+
+bool invalidateWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                         const QString& requestedLabel,
+                                         const QString& producerIdentity,
+                                         QString* errorMessage)
+{
+    const QString label = normalizedDemLabel(requestedLabel);
+    if (label.isEmpty()) return true;
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage) || !labels.contains(label)) return false;
+    AuxiliaryDemLabelBinding binding = labels.value(label);
+    if (binding.mode != AuxiliaryDemLabelMode::WorkflowOutput ||
+        binding.producerIdentity != producerIdentity) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label producer does not match.");
+        return false;
+    }
+    binding.resourceId.clear();
+    binding.pinnedProvenanceId.clear();
+    labels.insert(label, binding);
+    if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    notifyLabelRebound(label);
+    notifyLabelTableChanged();
+    return true;
+}
+
+bool resolveWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                      const QString& requestedLabel,
+                                      const QString& producerIdentity,
+                                      const QString& resourceId,
+                                      const QString& pinnedProvenanceId,
+                                      QString* errorMessage)
+{
+    const QString label = normalizedDemLabel(requestedLabel);
+    if (label.isEmpty()) return true;
+    if (resourceId.isEmpty() || pinnedProvenanceId.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label cannot resolve an empty resource binding.");
+        return false;
+    }
+    QMap<QString, AuxiliaryDemRegistryEntry> resources;
+    if (!loadAuxiliaryDemRegistry(projectRoot, resources, errorMessage) ||
+        !resources.contains(resourceId) || resources.value(resourceId).tombstone) {
+        if (errorMessage && errorMessage->isEmpty()) {
+            *errorMessage = QStringLiteral("Workflow DEM label target is not a live managed resource.");
+        }
+        return false;
+    }
+    bool provenanceFound = false;
+    for (const QJsonValue& provenance : resources.value(resourceId).provenanceHistory) {
+        if (provenance.toObject().value(QStringLiteral("pinnedProvenanceId")).toString() == pinnedProvenanceId) {
+            provenanceFound = true;
+            break;
+        }
+    }
+    if (!provenanceFound) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label target provenance is not registered.");
+        return false;
+    }
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage) || !labels.contains(label)) return false;
+    AuxiliaryDemLabelBinding binding = labels.value(label);
+    if (binding.mode != AuxiliaryDemLabelMode::WorkflowOutput || binding.producerIdentity != producerIdentity) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label producer does not match.");
+        return false;
+    }
+    binding.resourceId = resourceId;
+    binding.pinnedProvenanceId = pinnedProvenanceId;
+    labels.insert(label, binding);
+    if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    notifyLabelRebound(label);
+    notifyLabelTableChanged();
+    return true;
+}
+
+void registerPendingAuxiliaryDemLabel(const AuxiliaryDemLabelBinding& requested)
+{
+    AuxiliaryDemLabelBinding binding = requested;
+    binding.label = normalizedDemLabel(binding.label);
+    if (binding.label.isEmpty() || binding.resourceId.trimmed().isEmpty() || binding.pinnedProvenanceId.trimmed().isEmpty()) return;
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    const auto existing = g_pendingAuxiliaryDemLabels.constFind(binding.label);
+    if (existing == g_pendingAuxiliaryDemLabels.constEnd() ||
+        (existing->resourceId == binding.resourceId && existing->pinnedProvenanceId == binding.pinnedProvenanceId)) {
+        g_pendingAuxiliaryDemLabels.insert(binding.label, binding);
+    }
+}
+
+bool resolveAuxiliaryDemLabel(const QString& projectRoot,
+                              const QString& label,
+                              AuxiliaryDemBinding& binding,
+                              QString* errorMessage,
+                              const QJsonObject& inputGeometry)
+{
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    const QString key = normalizedDemLabel(label);
+    if (key.isEmpty() || !loadAuxiliaryDemLabels(projectRoot, labels, errorMessage)) {
+        if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("DEM label is not defined in this project.");
+        return false;
+    }
+    if (!labels.contains(key)) {
+        AuxiliaryDemLabelBinding pending;
+        {
+            QMutexLocker locker(&g_resourceRegistryMutex);
+            pending = g_pendingAuxiliaryDemLabels.value(key);
+        }
+        if (pending.label.isEmpty() || !bindAuxiliaryDemLabel(projectRoot, pending, false, errorMessage) ||
+            !loadAuxiliaryDemLabels(projectRoot, labels, errorMessage) || !labels.contains(key)) {
+            if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("DEM label is not defined in this project.");
+            return false;
+        }
+        QMutexLocker locker(&g_resourceRegistryMutex);
+        g_pendingAuxiliaryDemLabels.remove(key);
+    }
+    const AuxiliaryDemLabelBinding value = labels.value(key);
+    if (value.isPlanned()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Workflow DEM label @%1 is planned and waiting for its producer.").arg(key);
+        return false;
+    }
+    QtNodes::AuxiliaryDemReferenceData reference(value.resourceId, value.pinnedProvenanceId, 1);
+    return resolveAuxiliaryDemBinding(projectRoot, reference, binding, errorMessage, inputGeometry);
+}
+
+bool tombstoneAuxiliaryDemResource(const QString& projectRoot,
+                                   const QString& resourceId,
+                                   QString* errorMessage)
+{
+    QMap<QString, AuxiliaryDemRegistryEntry> entries;
+    if (!loadAuxiliaryDemRegistry(projectRoot, entries, errorMessage) || !entries.contains(resourceId)) {
+        if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("DEM resource is not registered.");
+        return false;
+    }
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QJsonObject root;
+    QJsonObject resources;
+    for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        QJsonObject object;
+        object.insert(QStringLiteral("role"), it.value().role);
+        object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
+        object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
+        object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
+        object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
+        object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
+        object.insert(QStringLiteral("metadata"), it.value().metadata);
+        object.insert(QStringLiteral("provenanceHistory"), it.value().provenanceHistory);
+        object.insert(QStringLiteral("tombstone"), it.key() == resourceId ? true : it.value().tombstone);
+        resources.insert(it.key(), object);
+    }
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("resources"), resources);
+    QSaveFile output(resourceRegistryPath(projectRoot));
+    if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) < 0 || !output.commit()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot tombstone DEM resource.");
+        return false;
+    }
+    notifyResourceChange(resourceId, QString(), ResourceChangeKind::Tombstoned);
+    return true;
+}
+
+bool removeAuxiliaryDemRegistryEntry(const QString& projectRoot,
+                                     const QString& resourceId,
+                                     QString* errorMessage)
+{
+    QMap<QString, AuxiliaryDemRegistryEntry> entries;
+    if (!loadAuxiliaryDemRegistry(projectRoot, entries, errorMessage)) return false;
+    entries.remove(resourceId);
+    QJsonObject resources;
+    for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        QJsonObject object;
+        object.insert(QStringLiteral("role"), it.value().role);
+        object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
+        object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
+        object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
+        object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
+        object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
+        object.insert(QStringLiteral("metadata"), it.value().metadata);
+        object.insert(QStringLiteral("provenanceHistory"), it.value().provenanceHistory);
+        object.insert(QStringLiteral("tombstone"), it.value().tombstone);
+        resources.insert(it.key(), object);
+    }
+    QJsonObject root;
+    root.insert(QStringLiteral("version"), 1);
+    root.insert(QStringLiteral("resources"), resources);
+    QSaveFile output(resourceRegistryPath(projectRoot));
+    if (!output.open(QIODevice::WriteOnly) ||
+        output.write(QJsonDocument(root).toJson(QJsonDocument::Compact)) < 0 || !output.commit()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot remove DEM resource registry entry.");
+        return false;
+    }
+    notifyResourceChange(resourceId, QString(), ResourceChangeKind::Removed);
+    return true;
+}
+
+void registerResourceChangeCallback(const ResourceChangeCallback& callback)
+{
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    g_resourceChangeCallbacks.append(callback);
+}
+
+void registerAuxiliaryDemLabelTableChangedCallback(const AuxiliaryDemLabelTableChangedCallback& callback)
+{
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    g_labelTableChangedCallbacks.append(callback);
+}
+
+void registerAuxiliaryDemLabelReboundCallback(const AuxiliaryDemLabelReboundCallback& callback)
+{
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    g_labelReboundCallbacks.append(callback);
+}
+
+void publishResourceChange(const QString& resourceId,
+                           const QString& provenanceId,
+                           ResourceChangeKind kind)
+{
+    notifyResourceChange(resourceId, provenanceId, kind);
+}
+
+QJsonObject inputGeometryFromProductDescriptor(const QtNodes::ProductDescriptor::Ptr& descriptor)
+{
+    QJsonObject geometry;
+    if (!descriptor) return geometry;
+    const QMap<QString, QString> provenance = descriptor->provenance();
+    const QMap<QString, QString> aliases = {
+        {QStringLiteral("minLon"), QStringLiteral("min_lon")},
+        {QStringLiteral("maxLon"), QStringLiteral("max_lon")},
+        {QStringLiteral("minLat"), QStringLiteral("min_lat")},
+        {QStringLiteral("maxLat"), QStringLiteral("max_lat")},
+        {QStringLiteral("resolutionX"), QStringLiteral("resolution_x")},
+        {QStringLiteral("resolutionY"), QStringLiteral("resolution_y")}};
+    for (auto it = aliases.constBegin(); it != aliases.constEnd(); ++it) {
+        const QString key = it.key();
+        bool ok = false;
+        const QString raw = provenance.contains(key) ? provenance.value(key) : provenance.value(it.value());
+        const double value = raw.toDouble(&ok);
+        if (ok) geometry.insert(key, value);
+    }
+    const QMap<QString, QString> textAliases = {
+        {QStringLiteral("crsWkt"), QStringLiteral("crs_wkt")},
+        {QStringLiteral("verticalDatum"), QStringLiteral("vertical_datum")},
+        {QStringLiteral("resolutionUnit"), QStringLiteral("resolution_unit")},
+        {QStringLiteral("resolutionCoordinateSemantic"), QStringLiteral("resolution_coordinate_semantic")}};
+    for (auto it = textAliases.constBegin(); it != textAliases.constEnd(); ++it) {
+        const QString key = it.key();
+        const QString raw = provenance.contains(key) ? provenance.value(key) : provenance.value(it.value());
+        if (!raw.isEmpty()) geometry.insert(key, raw);
+    }
+    return geometry;
+}
+
+bool resolveAuxiliaryDemBinding(const QString& projectRoot,
+                                const QtNodes::AuxiliaryDemData& data,
+                                AuxiliaryDemBinding& binding,
+                                QString* errorMessage,
+                                const QJsonObject& inputGeometry)
+{
+    if (!data.isValid()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM entity binding is incomplete.");
+        return false;
+    }
+    if (data.pinnedProvenanceId().contains(QLatin1Char('/')) ||
+        data.pinnedProvenanceId().contains(QLatin1Char('\\')) ||
+        data.pinnedProvenanceId() == QStringLiteral(".") ||
+        data.pinnedProvenanceId() == QStringLiteral("..")) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM pinned provenance identifier is unsafe.");
+        return false;
+    }
+    const QFileInfo raster(data.rasterPath());
+    const QFileInfo identity(data.identityH5Path());
+    if (!raster.isFile() || !raster.isReadable() || !identity.isFile() || !identity.isReadable()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM entity files are missing or unreadable.");
+        return false;
+    }
+    QMap<QString, AuxiliaryDemRegistryEntry> registry;
+    if (!loadAuxiliaryDemRegistry(projectRoot, registry, errorMessage) ||
+        !registry.contains(data.resourceId()) || registry.value(data.resourceId()).tombstone) {
+        if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("Auxiliary DEM resource is not registered or is tombstoned.");
+        return false;
+    }
+    const AuxiliaryDemRegistryEntry entry = registry.value(data.resourceId());
+    const QString expectedRaster = QDir(projectRoot).absoluteFilePath(entry.managedRasterPath);
+    const QString expectedIdentity = QDir(projectRoot).absoluteFilePath(entry.managedIdentityH5Path);
+    if (QDir::cleanPath(expectedRaster).compare(QDir::cleanPath(raster.absoluteFilePath()), Qt::CaseInsensitive) != 0 ||
+        QDir::cleanPath(expectedIdentity).compare(QDir::cleanPath(identity.absoluteFilePath()), Qt::CaseInsensitive) != 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM entity paths are not the registry-managed paths.");
+        return false;
+    }
+    const QByteArray rasterHash = sha256File(raster.absoluteFilePath());
+    const QByteArray identityHash = sha256File(identity.absoluteFilePath());
+    if (QString::fromLatin1(rasterHash) != entry.rasterHash ||
+        QString::fromLatin1(identityHash) != entry.identityH5Hash) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::ContentIntegrityFailed);
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM managed file hash does not match the registry.");
+        return false;
+    }
+    Hdf5Locker identityLock(identity.absoluteFilePath(), 50);
+    if (!identityLock.isLocked()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot lock auxiliary DEM identity H5.");
+        return false;
+    }
+    std::string identityDescriptorJson;
+    if (Hdf5IO::readString(QDir::toNativeSeparators(identity.absoluteFilePath()).toLocal8Bit().constData(),
+                           "semantic_product_descriptor", identityDescriptorJson) != 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM identity H5 lacks semantic_product_descriptor.");
+        return false;
+    }
+    QString identityDescriptorError;
+    const QtNodes::ProductDescriptor::Ptr identityDescriptor = QtNodes::ProductDescriptor::fromJson(
+        QJsonDocument::fromJson(QByteArray::fromStdString(identityDescriptorJson)).object(), &identityDescriptorError);
+    if (!identityDescriptor || identityDescriptor->productType() != QStringLiteral("auxiliary_terrain_dem")) {
+        if (errorMessage) *errorMessage = identityDescriptorError.isEmpty()
+            ? QStringLiteral("Auxiliary DEM identity H5 has an invalid product descriptor.") : identityDescriptorError;
+        return false;
+    }
+    const QJsonObject metadata = entry.metadata;
+    const bool metadataValid = metadata.value(QStringLiteral("schemaVersion")).toInt() >= 1 &&
+        (metadata.value(QStringLiteral("crsWkt")).toString().contains(QStringLiteral("GEOGCS"), Qt::CaseInsensitive) ||
+         metadata.value(QStringLiteral("crsWkt")).toString().contains(QStringLiteral("GEOGCRS"), Qt::CaseInsensitive) ||
+         metadata.value(QStringLiteral("crsWkt")).toString().contains(QStringLiteral("PROJCS"), Qt::CaseInsensitive)) &&
+        metadata.value(QStringLiteral("verticalDatum")).toString().isEmpty() == false &&
+        metadata.value(QStringLiteral("maxLon")).toDouble() > metadata.value(QStringLiteral("minLon")).toDouble() &&
+        metadata.value(QStringLiteral("maxLat")).toDouble() > metadata.value(QStringLiteral("minLat")).toDouble() &&
+        metadata.value(QStringLiteral("resolutionX")).toDouble() > 0.0 &&
+        metadata.value(QStringLiteral("resolutionY")).toDouble() > 0.0 &&
+        QString::fromLatin1(QCryptographicHash::hash(
+            QJsonDocument(metadata).toJson(QJsonDocument::Compact), QCryptographicHash::Sha256).toHex()) == entry.canonicalMetadataHash;
+    if (!metadataValid) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM registry geometry/CRS metadata is invalid.");
+        return false;
+    }
+    if (!auxiliaryDemCoversInput(metadata, inputGeometry)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM does not cover the trusted input geometry or match its CRS/resolution/vertical datum.");
+        return false;
+    }
+    bool pinnedKnown = false;
+    for (const QJsonValue& provenance : entry.provenanceHistory) {
+        if (provenance.toObject().value(QStringLiteral("pinnedProvenanceId")).toString() == data.pinnedProvenanceId()) {
+            pinnedKnown = true;
+            break;
+        }
+    }
+    if (!pinnedKnown) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::PinnedProvenanceMissing);
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM pinned provenance is not registered.");
+        return false;
+    }
+    const QFileInfo entityManifest(QDir(projectRoot).absoluteFilePath(
+        QStringLiteral(".dem_resources/%1/provenance_%2.json").arg(data.resourceId(), data.pinnedProvenanceId())));
+    QFile manifestFile(entityManifest.absoluteFilePath());
+    if (!manifestFile.open(QIODevice::ReadOnly)) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::PinnedProvenanceMissing);
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM provenance manifest is unavailable.");
+        return false;
+    }
+    const QJsonObject manifestObject = QJsonDocument::fromJson(manifestFile.readAll()).object();
+    if (manifestObject.value(QStringLiteral("resourceId")).toString() != data.resourceId() ||
+        manifestObject.value(QStringLiteral("pinnedProvenanceId")).toString() != data.pinnedProvenanceId() ||
+        manifestObject.value(QStringLiteral("runId")).toString().isEmpty() ||
+        manifestObject.value(QStringLiteral("runId")).toString() != data.pinnedProvenanceId() ||
+        entityManifest.fileName() != QStringLiteral("provenance_%1.json").arg(data.pinnedProvenanceId()) ||
+        manifestObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem.tif") ||
+        manifestObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("identity.h5") ||
+        manifestObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.rasterHash ||
+        manifestObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != entry.identityH5Hash ||
+        manifestObject.value(QStringLiteral("canonicalMetadataHash")).toString() != entry.canonicalMetadataHash) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::ContentIntegrityFailed);
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM provenance manifest does not match registry hashes.");
+        return false;
+    }
+    binding.rasterPath = raster.absoluteFilePath();
+    binding.identityH5Path = identity.absoluteFilePath();
+    binding.resourceId = data.resourceId();
+    binding.pinnedProvenanceId = data.pinnedProvenanceId();
+    binding.rasterHash = entry.rasterHash;
+    binding.identityH5Hash = entry.identityH5Hash;
+    binding.canonicalMetadataHash = entry.canonicalMetadataHash;
+    binding.fromReference = false;
+    return true;
+}
+
+bool resolveAuxiliaryDemBinding(const QString& projectRoot,
+                                const QtNodes::AuxiliaryDemReferenceData& data,
+                                AuxiliaryDemBinding& binding,
+                                QString* errorMessage,
+                                const QJsonObject& inputGeometry)
+{
+    if (!data.isValid() || projectRoot.trimmed().isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM reference is incomplete.");
+        return false;
+    }
+    if (data.pinnedProvenanceId().contains(QLatin1Char('/')) ||
+        data.pinnedProvenanceId().contains(QLatin1Char('\\')) ||
+        data.pinnedProvenanceId() == QStringLiteral(".") ||
+        data.pinnedProvenanceId() == QStringLiteral("..")) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM pinned provenance identifier is unsafe.");
+        return false;
+    }
+    QMap<QString, AuxiliaryDemRegistryEntry> registry;
+    if (!loadAuxiliaryDemRegistry(projectRoot, registry, errorMessage) ||
+        !registry.contains(data.resourceId()) || registry.value(data.resourceId()).tombstone) {
+        if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("Referenced DEM resource is missing or tombstoned.");
+        return false;
+    }
+    const AuxiliaryDemRegistryEntry registryEntry = registry.value(data.resourceId());
+    const QJsonObject metadata = registryEntry.metadata;
+    if (metadata.value(QStringLiteral("schemaVersion")).toInt() < 1 ||
+        metadata.value(QStringLiteral("crsWkt")).toString().isEmpty() ||
+        metadata.value(QStringLiteral("verticalDatum")).toString().isEmpty() ||
+        metadata.value(QStringLiteral("maxLon")).toDouble() <= metadata.value(QStringLiteral("minLon")).toDouble() ||
+        metadata.value(QStringLiteral("maxLat")).toDouble() <= metadata.value(QStringLiteral("minLat")).toDouble() ||
+        metadata.value(QStringLiteral("resolutionX")).toDouble() <= 0.0 ||
+        metadata.value(QStringLiteral("resolutionY")).toDouble() <= 0.0 ||
+        QString::fromLatin1(QCryptographicHash::hash(
+            QJsonDocument(metadata).toJson(QJsonDocument::Compact), QCryptographicHash::Sha256).toHex()) != registryEntry.canonicalMetadataHash) {
+        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM registry metadata is incomplete or inconsistent.");
+        return false;
+    }
+    if (!auxiliaryDemCoversInput(metadata, inputGeometry)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM does not cover the trusted input geometry or match its CRS/resolution/vertical datum.");
+        return false;
+    }
+    bool pinnedKnown = false;
+    for (const QJsonValue& provenance : registryEntry.provenanceHistory) {
+        if (provenance.toObject().value(QStringLiteral("pinnedProvenanceId")).toString() == data.pinnedProvenanceId()) {
+            pinnedKnown = true;
+            break;
+        }
+    }
+    if (!pinnedKnown) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::PinnedProvenanceMissing);
+        if (errorMessage) *errorMessage = QStringLiteral("Pinned DEM provenance is not present in the registry history.");
+        return false;
+    }
+    const QDir resourceDir(QDir(projectRoot).absoluteFilePath(
+        QStringLiteral(".dem_resources/%1").arg(data.resourceId())));
+    const QFileInfo raster(resourceDir.absoluteFilePath(QStringLiteral("dem.tif")));
+    const QFileInfo identity(resourceDir.absoluteFilePath(QStringLiteral("identity.h5")));
+    const QFileInfo manifest(resourceDir.absoluteFilePath(
+        QStringLiteral("provenance_%1.json").arg(data.pinnedProvenanceId())));
+    if (!manifest.isFile()) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::PinnedProvenanceMissing);
+        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM pinned provenance manifest is unavailable.");
+        return false;
+    }
+    if (!raster.isFile() || !identity.isFile()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM resource or pinned provenance is unavailable.");
+        return false;
+    }
+    QFile manifestFile(manifest.absoluteFilePath());
+    if (!manifestFile.open(QIODevice::ReadOnly)) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::PinnedProvenanceMissing);
+        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM provenance manifest cannot be read.");
+        return false;
+    }
+    const QJsonObject manifestObject = QJsonDocument::fromJson(manifestFile.readAll()).object();
+    const auto verifyManagedFile = [](const QFileInfo& file, const QJsonValue& value) {
+        const QJsonObject entry = value.toObject();
+        if (entry.value(QStringLiteral("path")).toString() != file.fileName()) return false;
+        return QString::fromLatin1(sha256File(file.absoluteFilePath())) ==
+            entry.value(QStringLiteral("sha256")).toString();
+    };
+    if (manifestObject.value(QStringLiteral("resourceId")).toString() != data.resourceId() ||
+        manifestObject.value(QStringLiteral("pinnedProvenanceId")).toString() != data.pinnedProvenanceId() ||
+        manifestObject.value(QStringLiteral("runId")).toString().isEmpty() ||
+        manifestObject.value(QStringLiteral("runId")).toString() != data.pinnedProvenanceId() ||
+        manifest.fileName() != QStringLiteral("provenance_%1.json").arg(data.pinnedProvenanceId()) ||
+        manifestObject.value(QStringLiteral("canonicalMetadataHash")).toString() != registryEntry.canonicalMetadataHash ||
+        !verifyManagedFile(raster, manifestObject.value(QStringLiteral("dem.tif"))) ||
+        !verifyManagedFile(identity, manifestObject.value(QStringLiteral("identity.h5"))) ||
+        manifestObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("sha256")).toString() != registryEntry.rasterHash ||
+        manifestObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != registryEntry.identityH5Hash) {
+        notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::ContentIntegrityFailed);
+        if (errorMessage) *errorMessage = QStringLiteral("DEM provenance manifest does not match managed files.");
+        return false;
+    }
+    Hdf5Locker identityLock(identity.absoluteFilePath(), 50);
+    if (!identityLock.isLocked()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot lock referenced DEM identity H5.");
+        return false;
+    }
+    std::string identityDescriptorJson;
+    if (Hdf5IO::readString(QDir::toNativeSeparators(identity.absoluteFilePath()).toLocal8Bit().constData(),
+                           "semantic_product_descriptor", identityDescriptorJson) != 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM identity H5 lacks semantic_product_descriptor.");
+        return false;
+    }
+    const QtNodes::ProductDescriptor::Ptr identityDescriptor = QtNodes::ProductDescriptor::fromJson(
+        QJsonDocument::fromJson(QByteArray::fromStdString(identityDescriptorJson)).object());
+    if (!identityDescriptor || identityDescriptor->productType() != QStringLiteral("auxiliary_terrain_dem")) {
+        if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM identity H5 descriptor is invalid.");
+        return false;
+    }
+    binding.rasterPath = raster.absoluteFilePath();
+    binding.identityH5Path = identity.absoluteFilePath();
+    binding.resourceId = data.resourceId();
+    binding.pinnedProvenanceId = data.pinnedProvenanceId();
+    binding.rasterHash = registryEntry.rasterHash;
+    binding.identityH5Hash = registryEntry.identityH5Hash;
+    binding.canonicalMetadataHash = registryEntry.canonicalMetadataHash;
+    binding.fromReference = true;
+    return true;
+}
+
+bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
+                                   const QtNodes::AuxiliaryDemData* entity,
+                                   const QtNodes::AuxiliaryDemReferenceData* reference,
+                                   AuxiliaryDemBinding& binding,
+                                   QString* errorMessage,
+                                   const AuxiliaryDemBinding* expectedBinding,
+                                   const QJsonObject& inputGeometry)
+{
+    if (!entity && !reference) {
+        if (errorMessage) *errorMessage = QStringLiteral("No auxiliary DEM binding is active.");
+        return false;
+    }
+    if (entity && reference &&
+        (entity->resourceId() != reference->resourceId() ||
+         entity->pinnedProvenanceId() != reference->pinnedProvenanceId())) {
+        notifyResourceChange(entity->resourceId(), entity->pinnedProvenanceId(), ResourceChangeKind::ExplicitRebind);
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM entity/reference bindings changed independently.");
+        return false;
+    }
+    const bool resolved = entity ? resolveAuxiliaryDemBinding(projectRoot, *entity, binding, errorMessage, inputGeometry)
+                                 : resolveAuxiliaryDemBinding(projectRoot, *reference, binding, errorMessage, inputGeometry);
+    if (!resolved || !expectedBinding) return resolved;
+    if (binding.resourceId != expectedBinding->resourceId ||
+        binding.pinnedProvenanceId != expectedBinding->pinnedProvenanceId ||
+        binding.rasterHash != expectedBinding->rasterHash ||
+         binding.identityH5Hash != expectedBinding->identityH5Hash ||
+         binding.canonicalMetadataHash != expectedBinding->canonicalMetadataHash) {
+        notifyResourceChange(binding.resourceId, binding.pinnedProvenanceId, ResourceChangeKind::ExplicitRebind);
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM binding changed after preparation.");
+        return false;
+    }
+    return true;
+}
+
+bool revalidateDemExecutionSnapshot(const QString& projectRoot,
+                                    const QtNodes::AuxiliaryDemData* entity,
+                                    const QtNodes::AuxiliaryDemReferenceData* reference,
+                                    const DemExecutionSnapshot& snapshot,
+                                    const QJsonObject& currentInputGeometry,
+                                    AuxiliaryDemBinding& binding,
+                                    QString* errorMessage)
+{
+    if (!snapshot.isValid()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Prepared DEM execution snapshot is incomplete.");
+        return false;
+    }
+    if (currentInputGeometry != snapshot.inputGeometry) {
+        if (errorMessage) *errorMessage = QStringLiteral("Input geometry changed after DEM preparation.");
+        return false;
+    }
+    return revalidateAuxiliaryDemBinding(projectRoot, entity, reference, binding, errorMessage,
+                                         &snapshot.binding, snapshot.inputGeometry);
+}
+
+bool resolveInsarDemProduct(const QtNodes::InsarDemData& data,
+                            QStringList& h5Paths,
+                            QString* errorMessage)
+{
+    if (!data.isExecutable()) {
+        if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM is historical or incomplete and cannot execute.");
+        return false;
+    }
+    const QtNodes::ProductDescriptor::Ptr descriptor = data.productDescriptor();
+    if (!descriptor || descriptor->productType() != QStringLiteral("insar_dem") ||
+        descriptor->state() != QtNodes::ProductState::Committed ||
+        descriptor->provenance().value(QStringLiteral("runId")) != data.runId()) {
+        if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM product descriptor/runId is invalid.");
+        return false;
+    }
+    for (const QString& path : data.h5Paths()) {
+        const QFileInfo info(path);
+        if (!info.isFile() || !info.isReadable()) {
+            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM H5 is missing or unreadable: %1").arg(path);
+            return false;
+        }
+        QFile manifest(QDir(info.absolutePath()).absoluteFilePath(QStringLiteral(".node_output_manifest.json")));
+        if (!manifest.open(QIODevice::ReadOnly)) {
+            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM committed manifest is missing: %1").arg(path);
+            return false;
+        }
+        const QJsonObject manifestObject = QJsonDocument::fromJson(manifest.readAll()).object();
+        if (manifestObject.value(QStringLiteral("runId")).toString() != data.runId()) {
+            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM manifest runId mismatch: %1").arg(path);
+            return false;
+        }
+        bool listed = false;
+        const QByteArray actualHash = sha256File(info.absoluteFilePath());
+        for (const QJsonValue& output : manifestObject.value(QStringLiteral("outputs")).toArray()) {
+            const QJsonObject item = output.toObject();
+            if (item.value(QStringLiteral("name")).toString() == info.fileName() &&
+                item.value(QStringLiteral("sha256")).toString() == QString::fromLatin1(actualHash)) {
+                listed = true;
+                break;
+            }
+        }
+        if (!listed) {
+            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM H5 is not hash-bound by its committed manifest: %1").arg(path);
+            return false;
+        }
+        Hdf5Locker h5Lock(info.absoluteFilePath(), 50);
+        if (!h5Lock.isLocked()) {
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot lock InSAR DEM H5: %1").arg(path);
+            return false;
+        }
+        std::string storedDescriptor;
+        if (Hdf5IO::readString(QDir::toNativeSeparators(info.absoluteFilePath()).toLocal8Bit().constData(),
+                               "semantic_product_descriptor", storedDescriptor) != 0) {
+            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM H5 product descriptor is missing: %1").arg(path);
+            return false;
+        }
+        QString h5DescriptorError;
+        const QtNodes::ProductDescriptor::Ptr h5Descriptor = QtNodes::ProductDescriptor::fromJson(
+            QJsonDocument::fromJson(QByteArray::fromStdString(storedDescriptor)).object(), &h5DescriptorError);
+        if (!h5Descriptor || h5Descriptor->productType() != QStringLiteral("insar_dem") ||
+            h5Descriptor->provenance().value(QStringLiteral("runId")) != data.runId()) {
+            if (errorMessage) *errorMessage = h5DescriptorError.isEmpty()
+                ? QStringLiteral("InSAR DEM H5 descriptor/runId mismatch: %1").arg(path) : h5DescriptorError;
+            return false;
+        }
+        double minLon = 0.0, maxLon = 0.0, minLat = 0.0, maxLat = 0.0;
+        if (!readScalarFromH5(path, QStringLiteral("dem_min_lon"), minLon) ||
+            !readScalarFromH5(path, QStringLiteral("dem_max_lon"), maxLon) ||
+            !readScalarFromH5(path, QStringLiteral("dem_min_lat"), minLat) ||
+            !readScalarFromH5(path, QStringLiteral("dem_max_lat"), maxLat) ||
+            !(maxLon > minLon && maxLat > minLat)) {
+            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM geometry metadata is missing or invalid: %1").arg(path);
+            return false;
+        }
+    }
+    h5Paths = data.h5Paths();
+    return !h5Paths.isEmpty();
+}
 
 static QMutex g_hdf5GlobalMutex(QMutex::Recursive);
 static QMutex g_fileLocksMapMutex(QMutex::Recursive);
@@ -232,17 +1566,31 @@ bool journalNamesAreSafe(const QDir& root, const QString& nodeName, const QJsonO
     const QString backupName = journal.value(QStringLiteral("backupDirectory")).toString();
     const QString metadataXmlName = journal.value(QStringLiteral("metadataXmlName")).toString();
     const QString metadataBackupName = journal.value(QStringLiteral("metadataBackupName")).toString();
-    const bool metadataNamesPresent = !metadataXmlName.isEmpty() || !metadataBackupName.isEmpty();
+    const QString projectXmlPath = journal.value(QStringLiteral("projectXmlPath")).toString();
+    const bool hasMetadataXmlName = !metadataXmlName.isEmpty();
+    const bool hasMetadataBackupName = !metadataBackupName.isEmpty();
+    const QFileInfo projectXmlInfo(projectXmlPath);
+    const QString expectedProjectXmlPath = projectXmlInfo.canonicalFilePath();
+    const bool projectXmlMatches = projectXmlPath.isEmpty()
+        ? journal.value(QStringLiteral("version")).toInt() < 3
+        : projectXmlInfo.isFile() &&
+          QDir::cleanPath(projectXmlInfo.absolutePath()).compare(QDir::cleanPath(root.absolutePath()), Qt::CaseInsensitive) == 0 &&
+          isDirectProjectChild(root.absolutePath(), projectXmlInfo.fileName()) &&
+          !expectedProjectXmlPath.isEmpty() &&
+          QDir::cleanPath(projectXmlPath).compare(QDir::cleanPath(expectedProjectXmlPath), Qt::CaseInsensitive) == 0;
     return journal.value(QStringLiteral("nodeName")).toString() == nodeName &&
            isDirectProjectChild(root.absolutePath(), nodeName) &&
            isDirectProjectChild(root.absolutePath(), stagingName) &&
            isDirectProjectChild(root.absolutePath(), backupName) &&
            stagingName.startsWith(QStringLiteral(".%1.staging-").arg(nodeName), Qt::CaseInsensitive) &&
            backupName.startsWith(QStringLiteral(".%1.backup-").arg(nodeName), Qt::CaseInsensitive) &&
-           (!metadataNamesPresent ||
+           (!hasMetadataXmlName ||
             (isDirectProjectChild(root.absolutePath(), metadataXmlName) &&
-             !metadataBackupName.contains('/') && !metadataBackupName.contains('\\') &&
-             metadataBackupName.startsWith(QStringLiteral(".%1.metadata-backup-").arg(nodeName), Qt::CaseInsensitive)));
+             (projectXmlPath.isEmpty() || metadataXmlName == projectXmlInfo.fileName()))) &&
+           (!hasMetadataBackupName ||
+            (!metadataBackupName.contains('/') && !metadataBackupName.contains('\\') &&
+             metadataBackupName.startsWith(QStringLiteral(".%1.metadata-backup-").arg(nodeName), Qt::CaseInsensitive))) &&
+           projectXmlMatches;
 }
 
 bool updateJournalRecoveryState(const QString& journalPath, QJsonObject journal,
@@ -473,10 +1821,17 @@ bool validatePreviousCommittedFinal(const QDir& root, const QString& nodeName,
             if (!normalized.startsWith(QLatin1Char('/'))) normalized.prepend(QLatin1Char('/'));
             return normalized;
         };
+        // The output manifest includes every transaction artifact (for
+        // example JPG previews and the Apply Orbit reference marker), while
+        // project XML only publishes primary H5 products.  Compare only the
+        // latter here; a reference-only output deliberately points its XML
+        // entries at the source H5 files instead of its marker file.
         QSet<QString> expectedXmlPaths;
         for (const QString& name : expectedNames) {
-            expectedXmlPaths.insert(normalizedProjectRelativePath(
-                QStringLiteral("/%1/%2").arg(nodeName, name)));
+            if (QFileInfo(name).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+                expectedXmlPaths.insert(normalizedProjectRelativePath(
+                    QStringLiteral("/%1/%2").arg(nodeName, name)));
+            }
         }
         QSet<QString> xmlPaths;
         for (TiXmlElement* data = dataNode->FirstChildElement("Data"); data; data = data->NextSiblingElement("Data")) {
@@ -485,7 +1840,7 @@ bool validatePreviousCommittedFinal(const QDir& root, const QString& nodeName,
                 xmlPaths.insert(normalizedProjectRelativePath(QString::fromUtf8(path->GetText())));
             }
         }
-        if (xmlPaths != expectedXmlPaths) {
+        if (!expectedXmlPaths.isEmpty() && xmlPaths != expectedXmlPaths) {
             if (errorMessage) *errorMessage = QStringLiteral("Previous committed project XML does not match output manifest.");
             return false;
         }
@@ -500,6 +1855,7 @@ QString metadataBackupPath(const OutputTransaction& transaction)
 
 QString metadataXmlPath(const OutputTransaction& transaction)
 {
+    if (!transaction.projectXmlPath.isEmpty()) return transaction.projectXmlPath;
     return QDir(transaction.projectRoot).absoluteFilePath(transaction.metadataXmlName);
 }
 
@@ -551,16 +1907,45 @@ bool restoreMetadataBackup(const OutputTransaction& transaction, XMLFile* xml, Q
             return false;
         }
     }
+    {
+        QMutexLocker projectXmlLocker(&g_projectXmlMutex);
+        const QFileInfo restoredInfo(xmlPath);
+        const QString canonicalXmlPath = QDir::cleanPath(restoredInfo.canonicalFilePath());
+        rememberProjectXmlRevision(canonicalXmlPath, projectXmlRevision(canonicalXmlPath));
+    }
     return true;
 }
 
 bool persistTransaction(OutputTransaction& transaction, QString* errorMessage)
 {
     QJsonObject object;
-    object.insert(QStringLiteral("version"), 2);
+    object.insert(QStringLiteral("version"), 3);
     object.insert(QStringLiteral("runId"), transaction.runId);
+    object.insert(QStringLiteral("transactionId"), transaction.transactionId);
+    object.insert(QStringLiteral("resourceAction"), transaction.resourceAction);
+    object.insert(QStringLiteral("installedPath"), transaction.installedPath);
+    object.insert(QStringLiteral("resourceStagingPath"), transaction.resourceStagingPath);
+    object.insert(QStringLiteral("resourceRegistryBackupPath"), transaction.resourceRegistryBackupPath);
+    object.insert(QStringLiteral("resourceRegistryBackupHash"), transaction.resourceRegistryBackupHash);
+    object.insert(QStringLiteral("resourceRegistryCommittedHash"), transaction.resourceRegistryCommittedHash);
+    object.insert(QStringLiteral("baseRegistryHash"), transaction.baseRegistryHash);
+    object.insert(QStringLiteral("baseXmlHash"), transaction.baseXmlHash);
+    object.insert(QStringLiteral("newMetadataHash"), transaction.newMetadataHash);
+    object.insert(QStringLiteral("baseRegistryGeneration"), transaction.baseRegistryGeneration);
+    object.insert(QStringLiteral("baseXmlGeneration"), transaction.baseXmlGeneration);
+    object.insert(QStringLiteral("newRegistryGeneration"), transaction.newRegistryGeneration);
+    object.insert(QStringLiteral("newMetadataGeneration"), transaction.newMetadataGeneration);
+    object.insert(QStringLiteral("provenanceDelta"), transaction.provenanceDelta);
+    object.insert(QStringLiteral("provenanceManifestPath"), transaction.provenanceManifestPath);
+    object.insert(QStringLiteral("provenanceOnlyUpdate"), transaction.provenanceOnlyUpdate);
+    object.insert(QStringLiteral("resourceRegistryMutationPrepared"), transaction.resourceRegistryMutationPrepared);
+    object.insert(QStringLiteral("resourceRegistryCommitted"), transaction.resourceRegistryCommitted);
+    QJsonArray dependencies;
+    for (const QString& dependency : transaction.dependencyTransactions) dependencies.append(dependency);
+    object.insert(QStringLiteral("dependencyTransactions"), dependencies);
     object.insert(QStringLiteral("executionRevision"), static_cast<double>(transaction.executionRevision));
     object.insert(QStringLiteral("nodeName"), transaction.nodeName);
+    object.insert(QStringLiteral("projectXmlPath"), transaction.projectXmlPath);
     object.insert(QStringLiteral("stage"), stageName(transaction.stage));
     object.insert(QStringLiteral("finalDirectory"), transaction.nodeName);
     object.insert(QStringLiteral("stagingDirectory"), transaction.stagingName);
@@ -603,6 +1988,11 @@ QString transactionDirectoryPath(const QString& root)
 }
 
 } // namespace
+
+bool persistOutputTransactionState(OutputTransaction& transaction, QString* errorMessage)
+{
+    return persistTransaction(transaction, errorMessage);
+}
 
 QJsonArray fingerprintInputPaths(const QStringList& paths)
 {
@@ -978,14 +2368,98 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         if (errorMessage) *errorMessage = QStringLiteral("Output transaction journal has unsafe paths and was left untouched: %1").arg(journalPath);
         return false;
     }
-
     const QString stage = journal.value(QStringLiteral("stage")).toString();
+    const auto dependenciesAreRecoverable = [&]() {
+        const QJsonObject previous = journal.value(QStringLiteral("previousCommittedJournal")).toObject();
+        const QString previousId = previous.value(QStringLiteral("transactionId")).toString();
+        const QDir transactionDir(transactionDirectoryPath(root.absolutePath()));
+        for (const QJsonValue& dependencyValue : journal.value(QStringLiteral("dependencyTransactions")).toArray()) {
+            const QString dependencyId = dependencyValue.toString();
+            if (dependencyId.isEmpty()) return false;
+            if (dependencyId == previousId && previous.value(QStringLiteral("stage")).toString() == QStringLiteral("Completed")) {
+                continue;
+            }
+            bool found = false;
+            for (const QFileInfo& info : transactionDir.entryInfoList(QStringList() << QStringLiteral("*.json"), QDir::Files)) {
+                QFile dependencyFile(info.absoluteFilePath());
+                if (!dependencyFile.open(QIODevice::ReadOnly)) continue;
+                const QJsonObject dependency = QJsonDocument::fromJson(dependencyFile.readAll()).object();
+                if (dependency.value(QStringLiteral("transactionId")).toString() == dependencyId &&
+                    dependency.value(QStringLiteral("stage")).toString() == QStringLiteral("Completed")) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
+    };
+    // A terminal journal is self-contained: its manifest and current journal
+    // are the recovery authority. Historical dependencies are only required
+    // while resolving an interrupted promotion/metadata transition.
+    if (stage != QStringLiteral("Completed") && stage != QStringLiteral("Failed") &&
+        !dependenciesAreRecoverable()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Output transaction dependency journal is missing or incomplete; recovery was left isolated.");
+        return false;
+    }
+
     const QString stagingName = journal.value(QStringLiteral("stagingDirectory")).toString();
     const QString backupName = journal.value(QStringLiteral("backupDirectory")).toString();
     const bool hasPreviousFinal = journal.value(QStringLiteral("hasPreviousFinal")).toBool(false);
     const QString finalPath = root.absoluteFilePath(nodeName);
     const QString stagingPath = root.absoluteFilePath(stagingName);
     const QString backupPath = root.absoluteFilePath(backupName);
+    const auto rollbackResourceDelta = [&]() -> bool {
+        const QString action = journal.value(QStringLiteral("resourceAction")).toString();
+        const QString resourcePath = QDir::cleanPath(journal.value(QStringLiteral("installedPath")).toString());
+        const QString resourcesRoot = QDir::cleanPath(root.absoluteFilePath(QStringLiteral(".dem_resources")));
+        bool ok = true;
+        if (action == QStringLiteral("installed") && !resourcePath.isEmpty() &&
+            (resourcePath == resourcesRoot || resourcePath.startsWith(resourcesRoot + QDir::separator())) &&
+            QDir(resourcePath).exists()) {
+            ok = QDir(resourcePath).removeRecursively() && ok;
+        }
+        const QString resourceStagingPath = QDir::cleanPath(journal.value(QStringLiteral("resourceStagingPath")).toString());
+        if (!resourceStagingPath.isEmpty() &&
+            resourceStagingPath.startsWith(resourcesRoot + QDir::separator()) &&
+            QDir(resourceStagingPath).exists()) {
+            ok = QDir(resourceStagingPath).removeRecursively() && ok;
+        }
+        const QString manifestPath = QDir::cleanPath(journal.value(QStringLiteral("provenanceManifestPath")).toString());
+        if (action == QStringLiteral("reused") && !manifestPath.isEmpty() &&
+            manifestPath.startsWith(resourcesRoot + QDir::separator()) && QFileInfo::exists(manifestPath)) {
+            ok = QFile::remove(manifestPath) && ok;
+        }
+        const QString backupRegistry = QDir::cleanPath(journal.value(QStringLiteral("resourceRegistryBackupPath")).toString());
+        const QString registryPath = QDir::cleanPath(root.absoluteFilePath(QStringLiteral(".dem_resource_registry.json")));
+        if (!backupRegistry.isEmpty() && QFileInfo::exists(backupRegistry) &&
+            backupRegistry.startsWith(registryPath + QStringLiteral(".backup-"))) {
+            const QString committedHash = journal.value(QStringLiteral("resourceRegistryCommittedHash")).toString();
+            const QString committedGeneration = journal.value(QStringLiteral("newRegistryGeneration")).toString();
+            if ((!committedHash.isEmpty() && QString::fromLatin1(sha256File(registryPath)) != committedHash) ||
+                (!committedGeneration.isEmpty() && fileGeneration(registryPath) != committedGeneration)) {
+                ok = false;
+            } else {
+                QFile::remove(registryPath);
+                ok = QFile::copy(backupRegistry, registryPath) && ok;
+                if (ok) QFile::remove(backupRegistry);
+            }
+        } else if ((journal.value(QStringLiteral("resourceRegistryCommitted")).toBool(false) ||
+                    journal.value(QStringLiteral("resourceRegistryMutationPrepared")).toBool(false)) &&
+                   (action == QStringLiteral("installed") || action == QStringLiteral("reused"))) {
+            const QString resourceId = journal.value(QStringLiteral("provenanceDelta")).toObject()
+                .value(QStringLiteral("resourceId")).toString();
+            if (!resourceId.isEmpty()) {
+                QString ignored;
+                ok = removeAuxiliaryDemRegistryEntry(root.absolutePath(), resourceId, &ignored) && ok;
+                if (ok && journal.value(QStringLiteral("baseRegistryHash")).toString().isEmpty() &&
+                    QFileInfo::exists(registryPath)) {
+                    ok = QFile::remove(registryPath) && ok;
+                }
+            }
+        }
+        return ok;
+    };
     const auto removeStaging = [&]() {
         return !QDir(stagingPath).exists() || QDir(stagingPath).removeRecursively();
     };
@@ -1003,8 +2477,32 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
     };
 
     if (stage == QStringLiteral("Completed") || stage == QStringLiteral("Failed")) return true;
+    if (stage != QStringLiteral("MetadataCommitted") && !rollbackResourceDelta()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Interrupted DEM resource transaction could not be rolled back safely.");
+        return false;
+    }
 
     if (stage == QStringLiteral("MetadataCommitted")) {
+        const QString metadataXmlName = journal.value(QStringLiteral("metadataXmlName")).toString();
+        const QString newMetadataHash = journal.value(QStringLiteral("newMetadataHash")).toString();
+        const QString newMetadataGeneration = journal.value(QStringLiteral("newMetadataGeneration")).toString();
+        const QString metadataXmlPath = root.absoluteFilePath(metadataXmlName);
+        if (metadataXmlName.isEmpty() || newMetadataHash.isEmpty() ||
+            QString::fromLatin1(sha256File(metadataXmlPath)) != newMetadataHash ||
+            (!newMetadataGeneration.isEmpty() && fileGeneration(metadataXmlPath) != newMetadataGeneration)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Committed project XML no longer matches the output transaction journal.");
+            return false;
+        }
+        const QString committedRegistryHash = journal.value(QStringLiteral("resourceRegistryCommittedHash")).toString();
+        const QString committedRegistryGeneration = journal.value(QStringLiteral("newRegistryGeneration")).toString();
+        const QString registryPath = root.absoluteFilePath(QStringLiteral(".dem_resource_registry.json"));
+        if ((!committedRegistryHash.isEmpty() &&
+             QString::fromLatin1(sha256File(registryPath)) != committedRegistryHash) ||
+            (!committedRegistryGeneration.isEmpty() &&
+             fileGeneration(registryPath) != committedRegistryGeneration)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Committed DEM resource registry no longer matches the output transaction journal.");
+            return false;
+        }
         QFile manifestFile(QDir(finalPath).absoluteFilePath(QString::fromLatin1(kOutputManifestFile)));
         if (!manifestFile.open(QIODevice::ReadOnly)) {
             if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest is unavailable during recovery.");
@@ -1048,6 +2546,11 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         if (QDir(backupPath).exists() && !QDir(backupPath).removeRecursively()) {
             completedJournal.insert(QStringLiteral("backupCleanupDeferred"), true);
             InSARLogManager::LogWarning("NodeUtils", QString("Deferred interrupted-transaction backup cleanup: %1").arg(backupName));
+        }
+        const QString resourceRegistryBackup = journal.value(QStringLiteral("resourceRegistryBackupPath")).toString();
+        if (!resourceRegistryBackup.isEmpty() && QFileInfo::exists(resourceRegistryBackup) &&
+            !QFile::remove(resourceRegistryBackup)) {
+            completedJournal.insert(QStringLiteral("resourceRegistryBackupCleanupDeferred"), true);
         }
         return updateJournalRecoveryState(journalPath, completedJournal, QStringLiteral("Completed"),
                                           QStringLiteral("metadata already committed"), errorMessage);
@@ -1144,11 +2647,32 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
         OutputTransaction transaction;
         transaction.projectRoot = root.absolutePath();
         transaction.nodeName = nodeName;
+        transaction.projectXmlPath = QDir::cleanPath(journal.value(QStringLiteral("projectXmlPath")).toString());
         transaction.metadataXmlName = journal.value(QStringLiteral("metadataXmlName")).toString();
         transaction.metadataBackupName = journal.value(QStringLiteral("metadataBackupName")).toString();
         transaction.metadataBackupReady = journal.value(QStringLiteral("metadataBackupReady")).toBool(false);
-        if (transaction.metadataXmlName.isEmpty() || transaction.metadataBackupName.isEmpty()) {
+        const QString expectedXmlPath = QFileInfo(root.absoluteFilePath(transaction.metadataXmlName)).canonicalFilePath();
+        if (transaction.metadataXmlName.isEmpty() || transaction.metadataBackupName.isEmpty() ||
+            transaction.projectXmlPath.isEmpty() || expectedXmlPath.isEmpty() ||
+            transaction.projectXmlPath.compare(QDir::cleanPath(expectedXmlPath), Qt::CaseInsensitive) != 0) {
             if (errorMessage) *errorMessage = QStringLiteral("Metadata recovery record is incomplete.");
+            return false;
+        }
+        const QString xmlPath = transaction.projectXmlPath;
+        const QString baseXmlHash = journal.value(QStringLiteral("baseXmlHash")).toString();
+        const QString baseXmlGeneration = journal.value(QStringLiteral("baseXmlGeneration")).toString();
+        const QString newMetadataHash = journal.value(QStringLiteral("newMetadataHash")).toString();
+        const QString currentXmlHash = QString::fromLatin1(sha256File(xmlPath));
+        const QString currentXmlGeneration = fileGeneration(xmlPath);
+        const bool matchesBase = !baseXmlHash.isEmpty() && currentXmlHash == baseXmlHash &&
+            (baseXmlGeneration.isEmpty() || currentXmlGeneration == baseXmlGeneration);
+        const bool matchesNew = !newMetadataHash.isEmpty() && currentXmlHash == newMetadataHash;
+        if (!matchesBase) {
+            if (matchesNew) {
+                if (errorMessage) *errorMessage = QStringLiteral("Project XML already contains the pending metadata commit; recovery requires explicit journal reconciliation.");
+            } else if (errorMessage) {
+                *errorMessage = QStringLiteral("Project XML changed after transaction baseline capture; recovery will not overwrite it.");
+            }
             return false;
         }
         if (!restoreMetadataBackup(transaction, nullptr, errorMessage)) {
@@ -1205,7 +2729,8 @@ bool beginOutputTransaction(const QString& projectRoot,
                             const QStringList& inputPaths,
                             OutputTransaction& transaction,
                             QString* errorMessage,
-                            OutputTransactionRecoveryInfo* recoveryInfo)
+                            OutputTransactionRecoveryInfo* recoveryInfo,
+                            const QString& projectXmlPath)
 {
     transaction = OutputTransaction();
     if (recoveryInfo) *recoveryInfo = OutputTransactionRecoveryInfo();
@@ -1237,6 +2762,31 @@ bool beginOutputTransaction(const QString& projectRoot,
 
     transaction.projectRoot = root.absolutePath();
     transaction.nodeName = nodeName;
+    const QFileInfo projectXmlInfo(projectXmlPath);
+    if (!projectXmlInfo.isFile() ||
+        QDir::cleanPath(projectXmlInfo.absolutePath()).compare(QDir::cleanPath(root.absolutePath()), Qt::CaseInsensitive) != 0 ||
+        !isDirectProjectChild(root.absolutePath(), projectXmlInfo.fileName())) {
+        if (errorMessage) *errorMessage = QStringLiteral("Output transaction requires the active project XML path in its project root.");
+        return false;
+    }
+    transaction.projectXmlPath = QDir::cleanPath(projectXmlInfo.canonicalFilePath());
+    if (transaction.projectXmlPath.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot canonicalize active project XML path for output transaction.");
+        return false;
+    }
+    transaction.baseXmlHash = QString::fromLatin1(sha256File(transaction.projectXmlPath));
+    transaction.baseXmlGeneration = fileGeneration(transaction.projectXmlPath);
+    if (transaction.baseXmlHash.isEmpty() || transaction.baseXmlGeneration.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot capture initial project XML baseline for output transaction.");
+        return false;
+    }
+    {
+        QMutexLocker projectXmlLocker(&g_projectXmlMutex);
+        if (!g_projectXmlRevisions.contains(transaction.projectXmlPath)) {
+            rememberProjectXmlRevision(transaction.projectXmlPath,
+                                       {transaction.baseXmlHash, transaction.baseXmlGeneration});
+        }
+    }
     transaction.journalPath = QDir(transactionDirectory).absoluteFilePath(nodeName + QStringLiteral(".json"));
     if (QFileInfo::exists(transaction.journalPath)) {
         QFile recoveryJournal(transaction.journalPath);
@@ -1298,6 +2848,15 @@ bool beginOutputTransaction(const QString& projectRoot,
         return false;
     }
     transaction.runId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    transaction.transactionId = transaction.runId;
+    const QString registryPath = root.absoluteFilePath(QStringLiteral(".dem_resource_registry.json"));
+    transaction.baseRegistryHash = QString::fromLatin1(sha256File(registryPath));
+    transaction.baseRegistryGeneration = fileGeneration(registryPath);
+    const QString previousTransactionId = transaction.previousCommittedJournal
+        .value(QStringLiteral("transactionId")).toString();
+    if (!previousTransactionId.isEmpty()) transaction.dependencyTransactions.append(previousTransactionId);
+    transaction.resourceAction = QStringLiteral("installed");
+    transaction.provenanceOnlyUpdate = false;
     transaction.stagingName = QStringLiteral(".%1.staging-%2").arg(nodeName, transaction.runId);
     transaction.backupName = QStringLiteral(".%1.backup-%2").arg(nodeName, transaction.runId);
     transaction.hasPreviousFinal = QFileInfo(root.absoluteFilePath(nodeName)).exists();
@@ -1373,6 +2932,17 @@ bool validateStagedOutputTransaction(OutputTransaction& transaction, QString* er
         file.insert(QStringLiteral("name"), name);
         file.insert(QStringLiteral("size"), static_cast<double>(info.size()));
         file.insert(QStringLiteral("modifiedMs"), static_cast<double>(info.lastModified().toMSecsSinceEpoch()));
+        QFile artifact(info.absoluteFilePath());
+        if (!artifact.open(QIODevice::ReadOnly)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot hash staged output: %1").arg(info.absoluteFilePath());
+            return false;
+        }
+        const QByteArray artifactHash = sha256File(info.absoluteFilePath());
+        if (artifactHash.isEmpty()) {
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot hash staged output: %1").arg(info.absoluteFilePath());
+            return false;
+        }
+        file.insert(QStringLiteral("sha256"), QString::fromLatin1(artifactHash));
         files.append(file);
     }
 
@@ -1492,10 +3062,13 @@ bool completeOutputTransactionWithoutMetadata(OutputTransaction& transaction, QS
 
     const OutputTransaction::Stage previousStage = transaction.stage;
     const QJsonObject previousCommittedJournal = transaction.previousCommittedJournal;
+    const QStringList dependencyTransactions = transaction.dependencyTransactions;
     transaction.previousCommittedJournal = QJsonObject();
+    transaction.dependencyTransactions.clear();
     if (!setTransactionStage(transaction, OutputTransaction::Stage::Completed, errorMessage)) {
         transaction.stage = previousStage;
         transaction.previousCommittedJournal = previousCommittedJournal;
+        transaction.dependencyTransactions = dependencyTransactions;
         return false;
     }
 
@@ -1509,6 +3082,44 @@ bool completeOutputTransactionWithoutMetadata(OutputTransaction& transaction, QS
     return true;
 }
 
+bool completeAuxiliaryDemResourceTransaction(OutputTransaction& transaction,
+                                             QString* errorMessage)
+{
+    if (transaction.stage != OutputTransaction::Stage::StagingPrepared) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Cannot complete auxiliary DEM resource transaction before resource installation.");
+        }
+        return false;
+    }
+
+    const QDir root(transaction.projectRoot);
+    const QString stagingPath = root.absoluteFilePath(transaction.stagingName);
+    if (QDir(stagingPath).exists() && !QDir(stagingPath).removeRecursively()) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Cannot remove auxiliary DEM resource transaction staging directory.");
+        }
+        return false;
+    }
+
+    const QJsonObject previousCommittedJournal = transaction.previousCommittedJournal;
+    const QStringList dependencyTransactions = transaction.dependencyTransactions;
+    transaction.previousCommittedJournal = QJsonObject();
+    transaction.dependencyTransactions.clear();
+    if (!setTransactionStage(transaction, OutputTransaction::Stage::Completed, errorMessage)) {
+        transaction.previousCommittedJournal = previousCommittedJournal;
+        transaction.dependencyTransactions = dependencyTransactions;
+        return false;
+    }
+
+    if (!transaction.resourceRegistryBackupPath.isEmpty() &&
+        QFileInfo::exists(transaction.resourceRegistryBackupPath) &&
+        !QFile::remove(transaction.resourceRegistryBackupPath)) {
+        InSARLogManager::LogWarning("NodeUtils", QString("Deferred cleanup for auxiliary DEM registry backup: %1")
+            .arg(transaction.resourceRegistryBackupPath));
+    }
+    return true;
+}
+
 bool prepareOutputTransactionMetadataCommit(OutputTransaction& transaction,
                                             XMLFile* xml,
                                             const QString& xmlPath,
@@ -1518,6 +3129,16 @@ bool prepareOutputTransactionMetadataCommit(OutputTransaction& transaction,
         if (errorMessage) *errorMessage = QStringLiteral("Cannot prepare metadata before output promotion.");
         return false;
     }
+    if (transaction.metadataCommitLockHeld) {
+        if (errorMessage) *errorMessage = QStringLiteral("Output transaction already owns the project XML metadata commit lock.");
+        return false;
+    }
+
+    // Hold the lease through prepare -> caller XML mutation -> save -> mark/abandon.
+    // QMutex::Recursive permits saveProjectXmlAtomically() during the lease.
+    g_projectXmlMutex.lock();
+    transaction.metadataCommitLockHeld = true;
+    MetadataCommitLockReleaseGuard releaseOnFailure(transaction);
 
     const QFileInfo xmlInfo(xmlPath);
     const QDir root(transaction.projectRoot);
@@ -1528,6 +3149,69 @@ bool prepareOutputTransactionMetadataCommit(OutputTransaction& transaction,
         return false;
     }
 
+    const QString canonicalXmlPath = QDir::cleanPath(xmlInfo.canonicalFilePath());
+    if (transaction.projectXmlPath.isEmpty() || canonicalXmlPath.isEmpty() ||
+        canonicalXmlPath.compare(QDir::cleanPath(transaction.projectXmlPath), Qt::CaseInsensitive) != 0 ||
+        (!transaction.metadataXmlName.isEmpty() && xmlInfo.fileName() != transaction.metadataXmlName)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Project XML differs from the active XML bound to this output transaction.");
+        return false;
+    }
+
+    const ProjectXmlRevision currentXmlRevision = projectXmlRevision(transaction.projectXmlPath);
+    if (currentXmlRevision.hash.isEmpty() || currentXmlRevision.generation.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot capture the current project XML metadata baseline.");
+        return false;
+    }
+
+    const QString revisionKey = QDir::cleanPath(transaction.projectXmlPath);
+    const auto knownRevision = g_projectXmlRevisions.constFind(revisionKey);
+    if (knownRevision == g_projectXmlRevisions.constEnd() ||
+        !sameProjectXmlRevision(knownRevision.value(), currentXmlRevision)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Project XML changed outside the coordinated XML save path.");
+        return false;
+    }
+
+    // Other nodes may have committed while this worker was processing. Reload
+    // their persisted metadata and make it this transaction's rollback base.
+    const QByteArray nativeXmlPath = QDir::toNativeSeparators(transaction.projectXmlPath).toLocal8Bit();
+    if (xml->XMLFile_load(nativeXmlPath.constData()) < 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Cannot reload project XML before metadata commit: %1")
+            .arg(transaction.projectXmlPath);
+        return false;
+    }
+    const ProjectXmlRevision reloadedXmlRevision = projectXmlRevision(transaction.projectXmlPath);
+    if (!sameProjectXmlRevision(currentXmlRevision, reloadedXmlRevision)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Project XML changed while preparing its metadata commit.");
+        return false;
+    }
+    transaction.baseXmlHash = reloadedXmlRevision.hash;
+    transaction.baseXmlGeneration = reloadedXmlRevision.generation;
+    const QString registryPath = root.absoluteFilePath(QStringLiteral(".dem_resource_registry.json"));
+    if (!transaction.resourceRegistryCommitted) {
+        transaction.baseRegistryHash = QString::fromLatin1(sha256File(registryPath));
+        transaction.baseRegistryGeneration = fileGeneration(registryPath);
+    }
+    const QString expectedRegistryHash = transaction.resourceRegistryCommitted
+        ? transaction.resourceRegistryCommittedHash : transaction.baseRegistryHash;
+    const QString expectedRegistryGeneration = transaction.resourceRegistryCommitted
+        ? transaction.newRegistryGeneration : transaction.baseRegistryGeneration;
+    if (!expectedRegistryHash.isEmpty() &&
+        QString::fromLatin1(sha256File(registryPath)) != expectedRegistryHash) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry changed after output transaction preparation.");
+        return false;
+    }
+    if (!expectedRegistryGeneration.isEmpty() &&
+        fileGeneration(registryPath) != expectedRegistryGeneration) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry generation changed after output transaction preparation.");
+        return false;
+    }
+    if (transaction.resourceRegistryCommitted) {
+        transaction.newRegistryGeneration = fileGeneration(registryPath);
+        if (transaction.newRegistryGeneration.isEmpty()) {
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot capture committed DEM resource registry generation.");
+            return false;
+        }
+    }
     transaction.metadataXmlName = xmlInfo.fileName();
     transaction.metadataBackupName = QStringLiteral(".%1.metadata-backup-%2.xml")
         .arg(transaction.nodeName, transaction.runId);
@@ -1541,53 +3225,152 @@ bool prepareOutputTransactionMetadataCommit(OutputTransaction& transaction,
         return false;
     }
     transaction.metadataBackupReady = true;
-    return persistTransaction(transaction, errorMessage);
+    if (!persistTransaction(transaction, errorMessage)) {
+        return false;
+    }
+
+    // The successful caller owns the lease until mark/abandon releases it.
+    releaseOnFailure.dismiss();
+    return true;
 }
 
 bool markOutputTransactionMetadataCommitted(OutputTransaction& transaction, QString* errorMessage)
 {
+    if (!transaction.metadataCommitLockHeld) {
+        if (errorMessage) *errorMessage = QStringLiteral("Output transaction does not own the project XML metadata commit lock.");
+        return false;
+    }
     if (transaction.stage != OutputTransaction::Stage::MetadataCommitPrepared ||
         !transaction.metadataBackupReady || !QFileInfo(metadataBackupPath(transaction)).isFile()) {
         if (errorMessage) *errorMessage = QStringLiteral("Cannot commit metadata without a prepared XML backup.");
         return false;
     }
-    if (!setTransactionStage(transaction, OutputTransaction::Stage::MetadataCommitted, errorMessage)) return false;
+    const QDir root(transaction.projectRoot);
+    const QString xmlPath = QDir::cleanPath(transaction.projectXmlPath);
+    const QString expectedXmlPath = QFileInfo(root.absoluteFilePath(transaction.metadataXmlName)).canonicalFilePath();
+    if (xmlPath.isEmpty() || expectedXmlPath.isEmpty() ||
+        xmlPath.compare(QDir::cleanPath(expectedXmlPath), Qt::CaseInsensitive) != 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Output transaction lost its bound project XML identity before metadata commit.");
+        return false;
+    }
+    transaction.newMetadataHash = QString::fromLatin1(sha256File(xmlPath));
+    transaction.newMetadataGeneration = fileGeneration(xmlPath);
+    const QString registryPath = root.absoluteFilePath(QStringLiteral(".dem_resource_registry.json"));
+    const QString expectedRegistryGeneration = transaction.resourceRegistryCommitted
+        ? transaction.newRegistryGeneration : transaction.baseRegistryGeneration;
+    if (!expectedRegistryGeneration.isEmpty() &&
+        fileGeneration(registryPath) != expectedRegistryGeneration) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry generation changed before metadata commit.");
+        return false;
+    }
+    transaction.resourceRegistryCommittedHash = QString::fromLatin1(sha256File(registryPath));
+    transaction.newRegistryGeneration = fileGeneration(registryPath);
+    if (transaction.newMetadataHash.isEmpty() ||
+        !persistTransaction(transaction, errorMessage) ||
+        !setTransactionStage(transaction, OutputTransaction::Stage::MetadataCommitted, errorMessage)) return false;
 
     if (!QFile::remove(metadataBackupPath(transaction))) {
         InSARLogManager::LogWarning("NodeUtils", QString("Deferred cleanup for output transaction XML backup: %1")
             .arg(transaction.metadataBackupName));
     }
 
-    QDir root(transaction.projectRoot);
     if (transaction.hasPreviousFinal && QDir(root.absoluteFilePath(transaction.backupName)).exists() &&
         !QDir(root.absoluteFilePath(transaction.backupName)).removeRecursively()) {
         transaction.backupCleanupDeferred = true;
         InSARLogManager::LogWarning("NodeUtils", QString("Deferred cleanup for output transaction backup: %1").arg(transaction.backupName));
         transaction.previousCommittedJournal = QJsonObject();
+        transaction.dependencyTransactions.clear();
         QString completionError;
         if (!setTransactionStage(transaction, OutputTransaction::Stage::Completed, &completionError)) {
             InSARLogManager::LogWarning("NodeUtils", QString("Metadata committed but completion journal update was deferred: %1")
                 .arg(completionError));
         }
+        releaseMetadataCommitLock(transaction);
         return true;
     }
     transaction.previousCommittedJournal = QJsonObject();
+    transaction.dependencyTransactions.clear();
     QString completionError;
     if (!setTransactionStage(transaction, OutputTransaction::Stage::Completed, &completionError)) {
         InSARLogManager::LogWarning("NodeUtils", QString("Metadata committed but completion journal update was deferred: %1")
             .arg(completionError));
     }
+    releaseMetadataCommitLock(transaction);
     return true;
 }
 
 void abandonOutputTransaction(OutputTransaction& transaction, const QString& reason, XMLFile* xml)
 {
+    MetadataCommitLockReleaseGuard releaseOnExit(transaction);
     if (transaction.stage == OutputTransaction::Stage::Inactive || transaction.projectRoot.isEmpty()) return;
     QDir root(transaction.projectRoot);
     const QString finalPath = root.absoluteFilePath(transaction.nodeName);
     const QString stagingPath = root.absoluteFilePath(transaction.stagingName);
     const QString backupPath = root.absoluteFilePath(transaction.backupName);
     bool rollbackOk = true;
+
+    // Resource installation/provenance is part of the same transaction.  An
+    // installed resource is removed on failure; a reused resource keeps its
+    // files and only loses the newly appended provenance manifest/registry
+    // delta.
+    if (transaction.stage != OutputTransaction::Stage::MetadataCommitted &&
+        transaction.stage != OutputTransaction::Stage::Completed) {
+        if (!transaction.provenanceManifestPath.isEmpty() &&
+            transaction.provenanceOnlyUpdate && QFileInfo::exists(transaction.provenanceManifestPath) &&
+            !QFile::remove(transaction.provenanceManifestPath)) {
+            rollbackOk = false;
+        }
+        if (transaction.resourceAction == QStringLiteral("installed") &&
+            !transaction.installedPath.isEmpty() && QDir(transaction.installedPath).exists() &&
+            !QDir(transaction.installedPath).removeRecursively()) {
+            rollbackOk = false;
+        }
+        if (!transaction.resourceStagingPath.isEmpty() &&
+            QDir(transaction.resourceStagingPath).exists() &&
+            !QDir(transaction.resourceStagingPath).removeRecursively()) {
+            rollbackOk = false;
+        }
+        QString registryError;
+        if (!transaction.resourceRegistryBackupPath.isEmpty() &&
+            QFileInfo::exists(transaction.resourceRegistryBackupPath)) {
+            const QString registryPath = QDir(transaction.projectRoot).absoluteFilePath(QStringLiteral(".dem_resource_registry.json"));
+            const QByteArray currentHash = sha256File(registryPath);
+            const QString currentGeneration = fileGeneration(registryPath);
+            if (!transaction.resourceRegistryCommittedHash.isEmpty() &&
+                QString::fromLatin1(currentHash) != transaction.resourceRegistryCommittedHash) {
+                registryError = QStringLiteral("DEM resource registry changed after this transaction; recovery was deferred.");
+            } else if (!transaction.newRegistryGeneration.isEmpty() &&
+                       currentGeneration != transaction.newRegistryGeneration) {
+                registryError = QStringLiteral("DEM resource registry changed after this transaction; recovery was deferred.");
+            } else {
+                QFile::remove(registryPath);
+                if (!QFile::copy(transaction.resourceRegistryBackupPath, registryPath)) {
+                    registryError = QStringLiteral("Cannot restore DEM resource registry backup.");
+                }
+            }
+            if (registryError.isEmpty()) QFile::remove(transaction.resourceRegistryBackupPath);
+        } else if ((transaction.resourceRegistryCommitted || transaction.resourceRegistryMutationPrepared) &&
+                   !transaction.provenanceDelta.isEmpty() &&
+                   (transaction.resourceAction == QStringLiteral("installed") ||
+                    transaction.resourceAction == QStringLiteral("reused"))) {
+            if (!removeAuxiliaryDemRegistryEntry(transaction.projectRoot,
+                                                  transaction.provenanceDelta.value(QStringLiteral("resourceId")).toString(),
+                                                  &registryError)) {
+                rollbackOk = false;
+            } else if (transaction.baseRegistryHash.isEmpty()) {
+                const QString registryPath = QDir(transaction.projectRoot).absoluteFilePath(
+                    QStringLiteral(".dem_resource_registry.json"));
+                if (QFileInfo::exists(registryPath) && !QFile::remove(registryPath)) {
+                    registryError = QStringLiteral("Cannot remove DEM registry created by the abandoned transaction.");
+                    rollbackOk = false;
+                }
+            }
+        }
+        if (!registryError.isEmpty()) {
+            InSARLogManager::LogWarning("NodeUtils", registryError);
+            rollbackOk = false;
+        }
+    }
 
     if (transaction.stage == OutputTransaction::Stage::StagingCreatePrepared) {
         if (QDir(stagingPath).exists() && !QDir(stagingPath).removeRecursively()) {
@@ -1958,6 +3741,7 @@ bool workerOutputsMatchManifest(const QStringList& manifestPaths,
 
 bool saveProjectXmlAtomically(XMLFile* xml, const QString& xmlPath, QString* errorMessage)
 {
+    QMutexLocker projectXmlLocker(&g_projectXmlMutex);
     if (!xml || xmlPath.isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("Project XML context is unavailable.");
         return false;
@@ -2002,6 +3786,9 @@ bool saveProjectXmlAtomically(XMLFile* xml, const QString& xmlPath, QString* err
         return false;
     }
 #endif
+    const QFileInfo savedInfo(xmlPath);
+    const QString canonicalXmlPath = QDir::cleanPath(savedInfo.canonicalFilePath());
+    rememberProjectXmlRevision(canonicalXmlPath, projectXmlRevision(canonicalXmlPath));
     return true;
 }
 

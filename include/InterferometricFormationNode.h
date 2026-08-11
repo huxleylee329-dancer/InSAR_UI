@@ -47,6 +47,7 @@ public:
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    QList<QList<PortIndex>> alternativeInputGroups() const override;
     std::shared_ptr<NodeData> outData(PortIndex port) override;
     void setInData(std::shared_ptr<NodeData> data, PortIndex port) override;
     ::QWidget* embeddedWidget() override;
@@ -82,18 +83,22 @@ private:
     QLineEdit* m_outputNodeNameEdit;
 
     QLabel* m_demPathLabel = nullptr;
-    QLineEdit* m_demPathEdit = nullptr;
-    QPushButton* m_demBrowseBtn = nullptr;
+    QComboBox* m_demLabelCombo = nullptr;
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
     std::shared_ptr<DEMFileData> m_demInputData;
+    std::shared_ptr<AuxiliaryDemData> m_auxiliaryDemEntityData;
+    std::shared_ptr<AuxiliaryDemReferenceData> m_auxiliaryDemReferenceData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     
     // Parameters
     QString m_outputNodeName;
     QString m_demPath;
+    QString m_auxiliaryDemLabel;
+    QString m_legacyDemResourceId;
+    QString m_legacyDemProvenanceId;
     int m_masterIndex;
     bool m_useDefaultMaster;
     bool m_isDeflat;
@@ -103,6 +108,7 @@ private:
     int m_winH;
     int m_multilookRg;
     int m_multilookAz;
+    void refreshAuxiliaryDemLabels();
 
     // Worker thread
     QPointer<InterferometricFormationWorker> m_workerThread;
@@ -121,6 +127,8 @@ private:
     QStringList m_preparedInputPaths;
     QStringList m_preparedOutputPaths;
     QString m_preparedDemPath;
+    NodeUtils::AuxiliaryDemBinding m_preparedAuxiliaryDemBinding;
+    NodeUtils::DemExecutionSnapshot m_preparedDemExecutionSnapshot;
     bool m_preparedIsDeflat = true;
     bool m_preparedIsTopoRemoval = false;
     bool m_preparedIsCoherence = false;

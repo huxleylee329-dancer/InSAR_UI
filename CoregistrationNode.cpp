@@ -20,6 +20,7 @@
 #include <QFileDialog>
 #include <QSettings>
 #include <QtConcurrent/QtConcurrent>
+#include <QPointer>
 
 
 #include "Registration.h"
@@ -48,6 +49,28 @@ CoregistrationNode::CoregistrationNode()
     , m_isExecuting(false)
 {
     setExecutionMode(ExecutionMode::Automatic);
+    QPointer<CoregistrationNode> self(this);
+    NodeUtils::registerResourceChangeCallback([self](const QString& resourceId, const QString& provenanceId, NodeUtils::ResourceChangeKind kind) {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+        if (!self || self->m_preparedAuxiliaryDemBinding.resourceId != resourceId) return;
+        if (kind == NodeUtils::ResourceChangeKind::ProvenanceAdded && provenanceId != self->m_preparedAuxiliaryDemBinding.pinnedProvenanceId) return;
+        QTimer::singleShot(0, self.data(), [self]() {
+            if (!self) return;
+            self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding();
+            self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot();
+            self->m_demPath.clear();
+            self->m_demInputData.reset();
+            self->setProgress(0);
+            self->setLastErrorMessage(QStringLiteral("辅助 DEM 资源已变化，需要重新准备。"));
+            self->setState(ExecutionState::Pending);
+        });
+    });
+    NodeUtils::registerAuxiliaryDemLabelTableChangedCallback([self]() {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+    });
+    NodeUtils::registerAuxiliaryDemLabelReboundCallback([self](const QString& label) {
+        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
+    });
 }
 
 CoregistrationNode::~CoregistrationNode()
@@ -76,7 +99,7 @@ NodeDataType CoregistrationNode::dataType(PortType portType, PortIndex portIndex
         if (portIndex == 0)
             return NodeDataType{"imported_file", "Imported File"};
         else
-            return NodeDataType{"dem_file", "DEM File"};
+            return NodeDataType{"auxiliary_dem", "Auxiliary DEM"};
     }
     else
     {
@@ -100,7 +123,7 @@ QString CoregistrationNode::portCaption(PortType portType, PortIndex portIndex) 
         if (portIndex == 0)
             return QStringLiteral("输入数据");
         else
-            return QStringLiteral("DEM ?");
+            return QStringLiteral("辅助地形 DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -116,6 +139,11 @@ bool CoregistrationNode::portIsOptional(PortType portType, PortIndex portIndex) 
     if (portType == PortType::Out && portIndex == 1)
         return true;
     return false;
+}
+
+QList<QList<PortIndex>> CoregistrationNode::alternativeInputGroups() const
+{
+    return {};
 }
 
 void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
@@ -141,18 +169,23 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
             }
         }
     } else if (port == 1) {
-        m_demInputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        const auto auxiliary = std::dynamic_pointer_cast<AuxiliaryDemData>(data);
+        m_auxiliaryDemEntityData = auxiliary;
+        if (auxiliary) {
+            m_auxiliaryDemReferenceData.reset();
+            m_auxiliaryDemLabel.clear();
+            if (m_demLabelCombo) m_demLabelCombo->setCurrentIndex(0);
+        }
+        m_demInputData = auxiliary
+            ? std::make_shared<ImportedFileData>(auxiliary->rasterPath(), auxiliary->nodeName())
+            : std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (auxiliary) m_demInputData->setProductDescriptor(auxiliary->productDescriptor());
         if (m_demInputData) {
-            m_demPath = m_demInputData->filePath();
-            if (m_demPathEdit) {
-                m_demPathEdit->setText(m_demPath);
-            }
+            m_demPath = auxiliary ? auxiliary->rasterPath() : m_demInputData->filePath();
         } else {
+            m_auxiliaryDemEntityData.reset();
             if (!isRestoring()) {
                 m_demPath.clear();
-                if (m_demPathEdit) {
-                    m_demPathEdit->clear();
-                }
             }
         }
     }
@@ -312,59 +345,25 @@ void CoregistrationNode::createWidget()
 
     layout->addWidget(m_coarseParamsWidget);
 
-    if (m_demPath.isEmpty()) {
-        auto* iface = NodeUtils::getProjectContext(nullptr);
-        if (iface) {
-            m_demPath = NodeUtils::getGlobalDemPath(iface);
+    m_demLabelCombo = new QComboBox();
+    refreshAuxiliaryDemLabels();
+    connect(m_demLabelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
+        const QString nextLabel = index > 0 ? m_demLabelCombo->itemData(index).toString() : QString();
+        if (!nextLabel.isEmpty() && hasActiveInputConnection(1)) {
+            QMessageBox::warning(nullptr, QStringLiteral("辅助 DEM"),
+                                 QStringLiteral("请先断开辅助 DEM 输入端口的直连，再选择工程标签。"));
+            m_demLabelCombo->blockSignals(true);
+            const int previousIndex = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+            m_demLabelCombo->setCurrentIndex(previousIndex >= 0 ? previousIndex : 0);
+            m_demLabelCombo->blockSignals(false);
+            return;
         }
-    }
-
-    m_demPathEdit = new QLineEdit();
-    m_demPathEdit->setObjectName("demPathEdit");
-    m_demPathEdit->setText(m_demPath);
-    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
-    m_demPathEdit->setStyleSheet(
-        "QLineEdit:disabled {"
-        "  background-color: rgba(120, 120, 120, 0.1);"
-        "  color: #888888;"
-        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
-        "}"
-    );
-    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        QString text = m_demPathEdit->text().trimmed();
-        if (m_demPath != text) {
-            m_demPath = text;
-            invalidateNodeData();
-            auto* iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-            }
+        m_auxiliaryDemLabel = nextLabel;
+        if (!m_auxiliaryDemLabel.isEmpty()) {
+            m_auxiliaryDemEntityData.reset();
+            m_auxiliaryDemReferenceData.reset();
         }
-    });
-
-    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
-    m_demBrowseBtn->setStyleSheet(
-        "QPushButton:disabled {"
-        "  background-color: rgba(120, 120, 120, 0.1);"
-        "  color: #888888;"
-        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
-        "}"
-    );
-    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this]() {
-        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
-        if (!file.isEmpty()) {
-            m_demPath = file;
-            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
-            if (m_outputData) m_outputData.reset();
-            if (m_previewData) m_previewData.reset();
-            setOutputData(0, nullptr);
-            setOutputData(1, nullptr);
-            invalidateExecution();
-            auto* iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-            }
-        }
+        invalidateNodeData();
     });
 
     // 3. formLayout2 (Output parameters)
@@ -408,13 +407,12 @@ void CoregistrationNode::createWidget()
     demRow->setContentsMargins(0, 0, 0, 0);
     demRow->setSpacing(6);
 
-    m_demPathLabel = new QLabel(QStringLiteral("DEM路径："));
+    m_demPathLabel = new QLabel(QStringLiteral("辅助 DEM："));
     m_demPathLabel->setFixedWidth(100);
     m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
 
     demRow->addWidget(m_demPathLabel);
-    demRow->addWidget(m_demPathEdit);
-    demRow->addWidget(m_demBrowseBtn);
+    demRow->addWidget(m_demLabelCombo);
 
     layout->addWidget(m_demRowWidget);
 
@@ -472,12 +470,10 @@ void CoregistrationNode::updateParameterWidgetsEnableState()
     if (m_masterImageCombo) m_masterImageCombo->setEnabled(enableWidgets && !m_defaultFirstMaster);
 
     bool isCoarse = (m_method == "Coarse");
-    bool hasDemConn = (m_demInputData != nullptr);
     if (m_interpCombo) { m_interpCombo->setEnabled(false); m_interpCombo->setToolTip(QStringLiteral("底层算法已升级为抛物线拟合，无需网格插值")); }
     if (m_blockSizeCombo) m_blockSizeCombo->setEnabled(enableWidgets && isCoarse);
-    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !isCoarse && !hasDemConn);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(enableWidgets && !isCoarse && !hasDemConn);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(enableWidgets && !isCoarse && !hasDemConn);
+    if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !isCoarse);
+    if (m_demLabelCombo) m_demLabelCombo->setEnabled(enableWidgets && !isCoarse);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
     if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(enableWidgets);
 }
@@ -543,7 +539,7 @@ void CoregistrationNode::processAutomatically()
     if (prepareToStart()) {
         executeProcessing();
     } else {
-        setState(ExecutionState::Idle);
+        setState(ExecutionState::Pending);
     }
 }
 
@@ -554,6 +550,48 @@ void CoregistrationNode::execute()
 
 bool CoregistrationNode::prepareToStart()
 {
+    QJsonObject inputGeometry;
+    if (m_inputData) inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor());
+    if (m_method == "Fine" && hasActiveInputConnection(1) && !m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("辅助 DEM 不能同时使用直接连线和命名标签。"));
+        return false;
+    }
+    if (m_method == "Fine" && !m_auxiliaryDemEntityData && m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("精配准 DEM 必须通过直接连线或工程标签提供。"));
+        return false;
+    }
+    m_demPath.clear();
+    m_demInputData.reset();
+    if (m_method == "Fine" && m_auxiliaryDemEntityData) {
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemBinding(projectPath(), *m_auxiliaryDemEntityData, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_demInputData = std::make_shared<DEMFileData>(binding.rasterPath, QStringLiteral("Auxiliary DEM"), binding.identityH5Path);
+        m_demInputData->setProductDescriptor(m_auxiliaryDemEntityData->productDescriptor());
+    }
+    if (m_method == "Fine" && !m_auxiliaryDemLabel.isEmpty()) {
+        if (!m_legacyDemResourceId.isEmpty() && !m_legacyDemProvenanceId.isEmpty())
+            NodeUtils::registerPendingAuxiliaryDemLabel({m_auxiliaryDemLabel, m_legacyDemResourceId, m_legacyDemProvenanceId});
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemLabel(projectPath(), m_auxiliaryDemLabel, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_auxiliaryDemReferenceData = std::make_shared<AuxiliaryDemReferenceData>(binding.resourceId, binding.pinnedProvenanceId, 1);
+        m_demInputData = std::make_shared<DEMFileData>(binding.rasterPath, QStringLiteral("DEM Label"), binding.identityH5Path);
+    }
     if (m_worker || m_thread) {
         return false;
     }
@@ -576,13 +614,17 @@ bool CoregistrationNode::prepareToStart()
             setStartFailureMessage(QStringLiteral("DEM-assisted coregistration requires a descriptor-bound DEM input."));
             return false;
         }
-        const QStringList demPaths = m_demInputData->filePaths();
-        if (!NodeUtils::validateH5Identities(demPaths, m_demInputData->physicalProductDescriptor(), &identityError)) {
+    }
+    if (m_method == "Fine") {
+        const auto demData = std::dynamic_pointer_cast<DEMFileData>(m_demInputData);
+        if (!demData || demData->identityH5Path().isEmpty() ||
+            !NodeUtils::validateH5Identity(demData->identityH5Path(),
+                                           m_demInputData->physicalProductDescriptor(), nullptr, &identityError)) {
             setStartFailureMessage(identityError);
             setLastErrorMessage(identityError);
             return false;
         }
-        m_preparedTransactionInputPaths.append(demPaths);
+        m_preparedTransactionInputPaths.append(demData->identityH5Path());
     }
     m_preparedSavePath = getRealSavePath();
     m_preparedDstNode = m_outputNodeName.trimmed();
@@ -666,7 +708,8 @@ void CoregistrationNode::executeProcessing()
     setState(ExecutionState::Running);
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, m_preparedH5Paths,
-                                           m_preparedTransactionInputPaths, m_outputTransaction, &transactionError)) {
+                                           m_preparedTransactionInputPaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }
@@ -842,6 +885,20 @@ void CoregistrationNode::onProcessingFinished()
         NodeUtils::abandonOutputTransaction(m_outputTransaction,
                                             QStringLiteral("obsolete execution revision"), projectXml());
         return;
+    }
+    if (m_method == "Fine" && (m_auxiliaryDemEntityData || m_auxiliaryDemReferenceData)) {
+        NodeUtils::AuxiliaryDemBinding currentBinding;
+        QString bindingError;
+        if (!NodeUtils::revalidateDemExecutionSnapshot(projectPath(), m_auxiliaryDemEntityData.get(),
+                                                        m_auxiliaryDemReferenceData.get(), m_preparedDemExecutionSnapshot,
+                                                        NodeUtils::inputGeometryFromProductDescriptor(
+                                                            m_inputData ? m_inputData->physicalProductDescriptor() : nullptr),
+                                                        currentBinding, &bindingError)) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete auxiliary DEM binding"), projectXml());
+            setLastErrorMessage(bindingError);
+            setState(ExecutionState::Error);
+            return;
+        }
     }
 
     if (m_generatedOutputPaths.isEmpty() ||
@@ -1079,7 +1136,9 @@ QJsonObject CoregistrationNode::save() const
     modelJson["masterIndex"] = m_masterIndex;
     modelJson["interpTimes"] = m_interpTimes;
     modelJson["blockSize"] = m_blockSize;
-    modelJson["demPath"] = m_demPath;
+    modelJson["auxiliaryDemLabel"] = m_auxiliaryDemLabel;
+    modelJson["auxiliaryDemLegacyResourceId"] = m_legacyDemResourceId;
+    modelJson["auxiliaryDemLegacyPinnedProvenanceId"] = m_legacyDemProvenanceId;
     modelJson["outputNodeName"] = m_outputNodeName;
     modelJson["outputFileName"] = m_outputFileName;
 
@@ -1099,7 +1158,9 @@ void CoregistrationNode::load(QJsonObject const &json)
     m_masterIndex = json["masterIndex"].toInt(1);
     m_interpTimes = json["interpTimes"].toInt(4);
     m_blockSize = json["blockSize"].toInt(64);
-    m_demPath = json["demPath"].toString("");
+    m_auxiliaryDemLabel = json["auxiliaryDemLabel"].toString().trimmed();
+    m_legacyDemResourceId = json["auxiliaryDemLegacyResourceId"].toString().trimmed();
+    m_legacyDemProvenanceId = json["auxiliaryDemLegacyPinnedProvenanceId"].toString().trimmed();
     m_outputNodeName = json["outputNodeName"].toString("Coregistration");
     m_outputFileName = json["outputFileName"].toString("{InputName}_regis");
 
@@ -1125,9 +1186,7 @@ void CoregistrationNode::load(QJsonObject const &json)
     if (m_blockSizeCombo) {
         m_blockSizeCombo->setCurrentText(QString::number(m_blockSize));
     }
-    if (m_demPathEdit) {
-        m_demPathEdit->setText(m_demPath);
-    }
+    refreshAuxiliaryDemLabels();
     if (m_outputNodeNameEdit) {
         m_outputNodeNameEdit->setText(m_outputNodeName);
     }
@@ -1550,6 +1609,29 @@ bool CoregistrationNode::validateAndRestoreOutput()
         startPreviewGeneration(h5Paths, m_outputJpgPaths, false);
     }
     return true;
+}
+
+void CoregistrationNode::refreshAuxiliaryDemLabels()
+{
+    if (!m_demLabelCombo) return;
+    QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+    QString error;
+    NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
+    QSignalBlocker blocker(m_demLabelCombo);
+    m_demLabelCombo->clear();
+    m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
+        const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 来源 %3)").arg(it.value().label, status, it.value().producerIdentity.left(8)), it.value().label);
+    }
+    if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::FixedResource) continue;
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (已注册资源)").arg(it.value().label), it.value().label);
+    }
+    const int index = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+    m_demLabelCombo->setCurrentIndex(index < 0 ? 0 : index);
 }
 
 void CoregistrationNode::startPreviewGeneration(const QStringList& h5Paths,

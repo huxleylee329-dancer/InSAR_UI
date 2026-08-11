@@ -137,9 +137,10 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
     }
     QString absolute_path = save_path + "/" + file_name;
 
-    QString demPath = dem_path;
-    if (demPath.isEmpty()) {
-        demPath = QDir::toNativeSeparators(save_path + "/.dem_cache");
+    const QString demPath = dem_path;
+    if (istopo_removal && (demPath.isEmpty() || !QFileInfo(demPath).isFile())) {
+        emit errorProcess(QStringLiteral("Interferometric formation requires a resolved Auxiliary DEM file."));
+        return;
     }
 
     if (master_index < 0 || master_index >= input_paths.size()) {

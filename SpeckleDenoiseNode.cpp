@@ -372,7 +372,8 @@ void SpeckleDenoiseNode::executeProcessing()
 
         QString transactionError;
         if (!NodeUtils::beginOutputTransaction(outputRoot, outputNodeName, m_preparedOutputPaths,
-                                               inputPaths, m_outputTransaction, &transactionError)) {
+                                               inputPaths, m_outputTransaction, &transactionError, nullptr,
+                                               NodeUtils::getProjectFilePath(_widget))) {
             onError(transactionError);
             return;
         }

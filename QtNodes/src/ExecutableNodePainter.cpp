@@ -290,7 +290,7 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
     drawMainRect(painter, ngo, geo, mode, state, context);  // Pass view as context for theme detection
 
     // Draw "M" badge for Manual mode in node body (top-left corner)
-    if (mode == ExecutionMode::Manual) {
+    if (execModel->hasExecutionControls() && mode == ExecutionMode::Manual) {
         painter->save();
 
         // Badge position: top-left corner of main rectangle
@@ -393,12 +393,15 @@ void ExecutableNodePainter::paint(QPainter *painter, NodeGraphicsObject &ngo) co
     _defaultPainter.drawEntryLabels(painter, ngo);
     _defaultPainter.drawResizeRect(painter, ngo);
 
-    // Draw progress bar - always visible
-    drawProgressBar(painter, ngo, geo, progress, context);
+    if (execModel->hasExecutionControls()) {
+        drawProgressBar(painter, ngo, geo, progress, context);
+    }
 
     // Draw ears last so they are on top - only when selected
     if (isSelected) {
-        drawLeftEar(painter, ngo, geo, mode, state, context);
+        if (execModel->hasExecutionControls()) {
+            drawLeftEar(painter, ngo, geo, mode, state, context);
+        }
         drawRightEar(painter, ngo, geo, state, context);
     }
 }
@@ -613,10 +616,13 @@ void ExecutableNodePainter::drawCardLayout(QPainter *painter, NodeGraphicsObject
     QRectF footerRect(0, size.height() - CARD_FOOTER_HEIGHT, size.width(), CARD_FOOTER_HEIGHT);
 
     // Draw header
-    drawCardHeader(painter, ngo, headerRect, mode, state, context);
+    const bool hasExecutionControls = execModel->hasExecutionControls();
+    drawCardHeader(painter, ngo, headerRect, mode, state, hasExecutionControls, context);
 
     // Draw footer (status bar)
-    drawCardFooter(painter, ngo, footerRect, state, progress, context);
+    if (hasExecutionControls) {
+        drawCardFooter(painter, ngo, footerRect, state, progress, context);
+    }
 
     // Draw standard node elements (caption is drawn in header now, but need ports)
     // We still need the default painter to draw connection points and ports
@@ -670,7 +676,8 @@ void ExecutableNodePainter::drawCardLayout(QPainter *painter, NodeGraphicsObject
 
 void ExecutableNodePainter::drawCardHeader(QPainter *painter, NodeGraphicsObject &ngo,
                                              QRectF bounds, ExecutionMode mode,
-                                             ExecutionState state, ::QWidget* context) const
+                                             ExecutionState state, bool hasExecutionControls,
+                                             ::QWidget* context) const
 {
     AbstractGraphModel &model = ngo.graphModel();
     NodeId nodeId = ngo.nodeId();
@@ -678,7 +685,10 @@ void ExecutableNodePainter::drawCardHeader(QPainter *painter, NodeGraphicsObject
     // Determine header colors based on mode (matching design)
     QColor bgColor, textColor;
 
-    if (mode == ExecutionMode::Automatic) {
+    if (!hasExecutionControls) {
+        bgColor = themedColor(QColor(255, 255, 255), QColor(50, 50, 50), context);
+        textColor = themedColor(QColor(26, 28, 28), QColor(220, 220, 220), context);
+    } else if (mode == ExecutionMode::Automatic) {
         // Automatic mode: background #005fac (RGB 0, 95, 172), white text
         bgColor = themedColor(QColor(0, 95, 172), QColor(0, 95, 172), context);
         textColor = QColor(255, 255, 255);
@@ -704,7 +714,7 @@ void ExecutableNodePainter::drawCardHeader(QPainter *painter, NodeGraphicsObject
     painter->drawPath(path);
 
     // Add bottom border for manual mode
-    if (mode == ExecutionMode::Manual) {
+    if (hasExecutionControls && mode == ExecutionMode::Manual) {
         painter->setPen(QPen(themedColor(QColor(153, 71, 0), QColor(153, 71, 0), context), 2));
         painter->drawLine(bounds.bottomLeft(), bounds.bottomRight());
     }
@@ -721,47 +731,51 @@ void ExecutableNodePainter::drawCardHeader(QPainter *painter, NodeGraphicsObject
         painter->setFont(f);
         painter->setPen(textColor);
 
-        // Position: left after icon (16px + 8px)
-        painter->drawText(QRectF(28, 0, bounds.width() - 28 - 60, bounds.height()),
+        const double leftMargin = hasExecutionControls ? 28.0 : 8.0;
+        const double rightMargin = hasExecutionControls ? 60.0 : 36.0;
+        painter->drawText(QRectF(leftMargin, 0, bounds.width() - leftMargin - rightMargin, bounds.height()),
                          Qt::AlignVCenter, name);
         painter->restore();
     }
 
-    // Draw mode icon on the left
-    painter->save();
-    QPixmap const &pixmap = (mode == ExecutionMode::Automatic) ? _pixmapAutomatic : _pixmapManual;
-    double left = 4;
-    double top = bounds.top() + (bounds.height() - pixmap.height()) / 2.0;
-    QPoint topLeft = QPoint(static_cast<int>(left), static_cast<int>(top));
+    if (hasExecutionControls) {
+        // Draw mode icon on the left
+        painter->save();
+        QPixmap const &pixmap = (mode == ExecutionMode::Automatic) ? _pixmapAutomatic : _pixmapManual;
+        double left = 4;
+        double top = bounds.top() + (bounds.height() - pixmap.height()) / 2.0;
+        QPoint topLeft = QPoint(static_cast<int>(left), static_cast<int>(top));
 
-    // Recolor icon for automatic vs manual text contrast
-    if (mode == ExecutionMode::Automatic) {
-        // Already correctly colored
-        painter->drawPixmap(topLeft, pixmap);
-    } else {
-        // Manual mode needs icon color to match text color
-        // Draw with tint matching text color
-        QImage img = pixmap.toImage();
-        QColor tint = textColor;
-        for (int y = 0; y < img.height(); ++y) {
-            for (int x = 0; x < img.width(); ++x) {
-                QColor pixel = img.pixelColor(x, y);
-                if (pixel.alpha() > 0) {
-                    pixel.setRgb(tint.red(), tint.green(), tint.blue(), pixel.alpha());
-                    img.setPixelColor(x, y, pixel);
+        // Recolor icon for automatic vs manual text contrast
+        if (mode == ExecutionMode::Automatic) {
+            // Already correctly colored
+            painter->drawPixmap(topLeft, pixmap);
+        } else {
+            // Manual mode needs icon color to match text color
+            // Draw with tint matching text color
+            QImage img = pixmap.toImage();
+            QColor tint = textColor;
+            for (int y = 0; y < img.height(); ++y) {
+                for (int x = 0; x < img.width(); ++x) {
+                    QColor pixel = img.pixelColor(x, y);
+                    if (pixel.alpha() > 0) {
+                        pixel.setRgb(tint.red(), tint.green(), tint.blue(), pixel.alpha());
+                        img.setPixelColor(x, y, pixel);
+                    }
                 }
             }
+            painter->drawPixmap(topLeft, QPixmap::fromImage(img));
         }
-        painter->drawPixmap(topLeft, QPixmap::fromImage(img));
+        painter->restore();
     }
-    painter->restore();
 
     // Draw buttons on the right
-    drawCardHeaderButtons(painter, bounds, mode, state);
+    drawCardHeaderButtons(painter, bounds, mode, state, hasExecutionControls);
 }
 
 void ExecutableNodePainter::drawCardHeaderButtons(QPainter *painter, QRectF bounds,
-                                                    ExecutionMode mode, ExecutionState state) const
+                                                    ExecutionMode mode, ExecutionState state,
+                                                    bool hasExecutionControls) const
 {
     // Right to left: eye icon, then play/stop if manual - with better spacing
     double currentRight = bounds.right() - 12;
@@ -771,6 +785,10 @@ void ExecutableNodePainter::drawCardHeaderButtons(QPainter *painter, QRectF boun
     double eyeTop = bounds.top() + (bounds.height() - _pixmapEye.height()) / 2.0;
     painter->drawPixmap(QPoint(static_cast<int>(eyeLeft), static_cast<int>(eyeTop)), _pixmapEye);
     currentRight = eyeLeft - 16;
+
+    if (!hasExecutionControls) {
+        return;
+    }
 
     // Draw play/stop button - always visible, with better spacing
     QPixmap const &pixmap = (state == ExecutionState::Running) ? _pixmapStop : _pixmapPlay;

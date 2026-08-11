@@ -164,7 +164,8 @@ void PS_Candidate_Dialog::onAccept()
     m_generatedOutputPaths.clear();
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(root, m_preparedOutputNode, m_preparedOutputPaths,
-                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError, nullptr,
+                                           projectXmlPath())) {
         QMessageBox::warning(this, "Warning", transactionError);
         return;
     }
@@ -509,7 +510,8 @@ void PS_Network_Dialog::onAccept()
     m_generatedOutputPaths.clear();
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(root, m_preparedOutputNode, m_preparedOutputPaths,
-                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError, nullptr,
+                                           projectXmlPath())) {
         QMessageBox::warning(this, "Warning", transactionError);
         return;
     }
@@ -833,7 +835,8 @@ void PS_TimeSeries_Dialog::onAccept()
     m_generatedOutputPaths.clear();
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(root, m_preparedOutputNode, m_preparedOutputPaths,
-                                           m_preparedInputPaths, m_outputTransaction, &transactionError)) {
+                                           m_preparedInputPaths, m_outputTransaction, &transactionError, nullptr,
+                                           projectXmlPath())) {
         QMessageBox::warning(this, "Warning", transactionError);
         return;
     }

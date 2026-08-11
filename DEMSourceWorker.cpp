@@ -380,7 +380,8 @@ void DEMSourceWorker::fetch_dem(
         }
         else
         {
-            cacheDir = QDir::toNativeSeparators(QDir::currentPath() + "/.dem_cache");
+            emit errorProcess(QStringLiteral("DEM worker 缺少有效工程上下文，拒绝使用当前目录缓存。"));
+            return;
         }
     }
     

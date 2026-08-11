@@ -5,6 +5,7 @@
 #include "BasicGraphicsScene.hpp"
 #include "NodeData.hpp"
 #include <QTimer>
+#include <QList>
 
 #include <unordered_map>
 #include <memory>
@@ -20,7 +21,8 @@ class ExecutableNodeDelegateModel;
 enum class ExecutionMode
 {
     Automatic,
-    Manual
+    Manual,
+    Disabled
 };
 
 enum class ExecutionState
@@ -84,6 +86,10 @@ public:
 
     ExecutionMode executionMode() const { return _mode; }
     virtual void setExecutionMode(ExecutionMode mode);
+
+    // Configuration-only nodes may reuse executable persistence and propagation
+    // without exposing execution controls in the workflow UI.
+    virtual bool hasExecutionControls() const { return true; }
 
     ExecutionState executionState() const { return _state; }
 
@@ -204,6 +210,10 @@ public Q_SLOTS:
     /// Used when a source node is connected in auto mode
     void triggerAutoExecution();
 
+    /// Retry an automatic node after a non-port dependency becomes ready.
+    /// This follows the normal automatic execution path, including auto-trigger semantics.
+    void retryAutomaticExecution();
+
     void inputConnectionCreated(ConnectionId const &connectionId) override;
 
     void inputConnectionDeleted(ConnectionId const &connectionId) override;
@@ -269,6 +279,7 @@ protected:
     bool discardObsoleteAutomaticExecution();
 
     bool isAutomaticExecutionObsolete() const { return _restartAfterInputChange; }
+    bool executionStopRequested() const { return _stopRequested.load(); }
 
     OutputCommitLease acquireOutputCommitLease(std::uint64_t revision);
 
@@ -284,6 +295,14 @@ protected:
 
     /// 检查所有必需（非可选）的输入端口是否都已经连线
     bool allRequiredPortsConnected() const;
+
+    /// Check whether a port has an active graph connection, independent of
+    /// the current cached input data.
+    bool hasActiveInputConnection(PortIndex portIndex) const;
+
+    /// Optional input alternatives (for example entity DEM vs resource
+    /// reference). Every group requires at least one connected member.
+    virtual QList<QList<PortIndex>> alternativeInputGroups() const { return {}; }
 
 protected:
     void setState(ExecutionState state);
@@ -303,9 +322,9 @@ protected:
     std::unordered_map<PortIndex, std::uint64_t> _outputRevisions;
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _lastRevisionedOutputData;
     std::atomic<std::uint64_t> _executionRevision{1};
-    std::mutex _commitLeaseMutex;
     std::atomic<bool> _commitLeaseActive{false};
     std::atomic<bool> _commitInvalidationRequested{false};
+    std::atomic<bool> _stopRequested{false};
 
     // Widget managed by NodeDelegateModel base class (ownership handled by base)
     ::QWidget *_widget;

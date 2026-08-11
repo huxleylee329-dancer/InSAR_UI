@@ -3,6 +3,7 @@
 #include "InSARLogManager.h"
 #include <Utils.h>
 #include <FormatConversion.h>
+#include <Hdf5IO.h>
 #include <Registration.h>
 #include "NodeUtils.h"
 #include <QCoreApplication>
@@ -33,6 +34,42 @@ namespace {
 QString nativeText(const char* value)
 {
     return value ? QString::fromUtf8(value) : QString();
+}
+
+int copySentinelRegistrationMetadata(const std::string& sourcePath,
+                                     const std::string& outputPath)
+{
+    int sameFile = 0;
+    if (Hdf5IO::areSameExistingFile(sourcePath.c_str(), outputPath.c_str(), &sameFile) != 0 ||
+        sameFile != 0) {
+        return -1;
+    }
+
+    // Keep this list aligned with FormatConversion::Copy_para_from_h5_2_h5.
+    // Sentinel imports may legitimately contain only source_1, whereas that
+    // generic helper treats an unpaired source path as a failed copy.
+    static const char* const stringDatasets[] = {
+        "file_type", "sensor", "polarization", "imaging_mode", "lookside", "orbit_dir", "swath",
+        "acquisition_start_time", "acquisition_stop_time", "source_1", "source_2",
+        "source_path_encoding", "source_path_format_version"
+    };
+    static const char* const arrayDatasets[] = {
+        "orbit_altitude", "carrier_frequency", "heading", "prf", "inc_center", "gcps",
+        "azimuth_resolution", "range_resolution", "azimuth_spacing", "range_spacing", "state_vec",
+        "fine_state_vec", "doppler_centroid", "doppler_coefficient_a", "doppler_coefficient_b",
+        "lon_coefficient", "lat_coefficient", "row_coefficient", "col_coefficient", "inc_coefficient",
+        "inc_coefficient_r", "inc_center", "row_coefficient", "slant_range_first_pixel", "topLeftLon",
+        "topLeftLat", "topRightLon", "topRightLat", "bottomLeftLon", "bottomLeftLat", "bottomRightLon",
+        "bottomRightLat", "TR_mode"
+    };
+
+    int result = Hdf5IO::copyDatasetsIfPresent(sourcePath.c_str(), outputPath.c_str(),
+        stringDatasets, static_cast<int>(sizeof(stringDatasets) / sizeof(stringDatasets[0])), false);
+    if (result != 0) {
+        return result;
+    }
+    return Hdf5IO::copyDatasetsIfPresent(sourcePath.c_str(), outputPath.c_str(),
+        arrayDatasets, static_cast<int>(sizeof(arrayDatasets) / sizeof(arrayDatasets[0])), true);
 }
 
 struct Sentinel1ProductIdentity
@@ -100,6 +137,81 @@ ComplexOutputCoverage measureComplexOutputCoverage(const QString& h5Path)
     coverage.available = true;
     return coverage;
 }
+
+QString describeH5ForMetadataCopy(FormatConversion& conversion, const QString& h5Path)
+{
+    const QFileInfo fileInfo(h5Path);
+    QStringList details;
+    details << QStringLiteral("exists=%1").arg(fileInfo.isFile() ? QStringLiteral("true") : QStringLiteral("false"));
+    details << QStringLiteral("size=%1").arg(fileInfo.exists() ? QString::number(fileInfo.size()) : QStringLiteral("n/a"));
+    details << QStringLiteral("modified=%1").arg(fileInfo.exists()
+        ? fileInfo.lastModified().toString(Qt::ISODateWithMs) : QStringLiteral("n/a"));
+
+    static const char* const datasets[] = {
+        "s_re", "s_im", "swath", "polarization", "state_vec", "fine_state_vec",
+        "lat_coefficient", "lon_coefficient", "inc_coefficient", "prf",
+        "carrier_frequency", "range_spacing", "slant_range_first_pixel",
+        "azimuth_len", "range_len", "offset_row", "offset_col",
+        "s1_tops_back_geocoding_complete"
+    };
+    const std::string nativePath = h5Path.toStdString();
+    for (const char* dataset : datasets) {
+        int rows = 0;
+        int columns = 0;
+        const int result = conversion.get_dataset_dims(nativePath.c_str(), dataset, &rows, &columns);
+        details << (result == 0
+            ? QStringLiteral("%1=%2x%3").arg(QString::fromLatin1(dataset)).arg(rows).arg(columns)
+            : QStringLiteral("%1=unavailable(rc=%2)").arg(QString::fromLatin1(dataset)).arg(result));
+    }
+
+    static const char* const stringDatasets[] = {
+        "source_1", "source_2", "source_path_encoding", "source_path_format_version"
+    };
+    bool source1Present = false;
+    bool source2Present = false;
+    for (const char* dataset : stringDatasets) {
+        std::string value;
+        QString readError;
+        const bool present = NodeUtils::readStringFromH5(h5Path, QString::fromLatin1(dataset), value, &readError);
+        if (qstrcmp(dataset, "source_1") == 0) source1Present = present;
+        if (qstrcmp(dataset, "source_2") == 0) source2Present = present;
+        details << (present
+            ? QStringLiteral("%1=present(value=%2)").arg(QString::fromLatin1(dataset), QString::fromStdString(value))
+            : QStringLiteral("%1=absent(error=%2)").arg(QString::fromLatin1(dataset), readError));
+    }
+    QString sourcePairState;
+    if (source1Present && source2Present) {
+        sourcePairState = QStringLiteral("both_present");
+    } else if (source1Present) {
+        sourcePairState = QStringLiteral("only_source_1");
+    } else if (source2Present) {
+        sourcePairState = QStringLiteral("only_source_2");
+    } else {
+        sourcePairState = QStringLiteral("both_absent");
+    }
+    details << QStringLiteral("sourcePair=%1").arg(sourcePairState);
+    return details.join(QStringLiteral(", "));
+}
+
+QString describeH5MetadataCopySummary(FormatConversion& conversion, const QString& h5Path)
+{
+    const QFileInfo fileInfo(h5Path);
+    const std::string nativePath = h5Path.toStdString();
+    const auto dimensions = [&conversion, &nativePath](const char* dataset) {
+        int rows = 0;
+        int columns = 0;
+        const int result = conversion.get_dataset_dims(nativePath.c_str(), dataset, &rows, &columns);
+        return result == 0
+            ? QStringLiteral("%1x%2").arg(rows).arg(columns)
+            : QStringLiteral("unavailable(rc=%1)").arg(result);
+    };
+
+    return QStringLiteral("exists=%1, size=%2, s_re=%3, s_im=%4")
+        .arg(fileInfo.isFile() ? QStringLiteral("true") : QStringLiteral("false"))
+        .arg(fileInfo.exists() ? QString::number(fileInfo.size()) : QStringLiteral("n/a"))
+        .arg(dimensions("s_re"), dimensions("s_im"));
+}
+
 bool readSentinel1ProductIdentity(const QString& h5Path, Sentinel1ProductIdentity& identity,
                                   QString& errorMessage)
 {
@@ -245,6 +357,11 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
     if (event->severity == INSAR_DIAGNOSTIC_WARNING) level = InSARLogManager::LevelWarning;
     else if (event->severity == INSAR_DIAGNOSTIC_ERROR) level = InSARLogManager::LevelError;
     else if (event->severity == INSAR_DIAGNOSTIC_INFO) level = InSARLogManager::LevelInfo;
+
+    if (level == InSARLogManager::LevelDebug &&
+        (phase == QStringLiteral("sinc.start") || phase == QStringLiteral("amplitude_matching.sample"))) {
+        return;
+    }
 
     QString message = nativeText(event->message);
     const QString detail = nativeText(event->detail);
@@ -418,19 +535,9 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			.arg(m_bRangeRefine ? "enabled" : "disabled"),
 		"coregistration.environment");
 
-	// 优先使用项目全局高程路径，如为空则回退到运行程序下�?dem 文件�?
-	if (demPath.isEmpty()) {
-		QString appPath = QCoreApplication::applicationDirPath();
-		demPath = appPath + "/dem";
-	}
-	// 只有�?demPath 不是文件路径且目录不存在时，才创建目�?
-	if (!demPath.isEmpty()) {
-		bool isFile = demPath.endsWith(".tif", Qt::CaseInsensitive) || 
-		              demPath.endsWith(".tiff", Qt::CaseInsensitive) || 
-		              demPath.endsWith(".h5", Qt::CaseInsensitive);
-		if (!isFile && !QDir(demPath).exists()) {
-			QDir().mkpath(demPath);
-		}
+	if (demPath.isEmpty() || !QFileInfo(demPath).isFile()) {
+		emit errorProcess(QStringLiteral("Back-geocoding requires a resolved Auxiliary DEM file."));
+		return;
 	}
 	//后向地理编码配准
 	std::string tmpDem = demPath.toStdString();
@@ -1295,8 +1402,23 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			NodeUtils::Hdf5Locker locker_dst(SAR_images_regis.at(i));
 			const std::string& sourcePath = SAR_images.at(i);
 			const std::string& outputPath = SAR_images_regis.at(i);
-			const int copyResult = FC.Copy_para_from_h5_2_h5(sourcePath.c_str(), outputPath.c_str());
+			const QString sourceSummary = describeH5MetadataCopySummary(FC, QString::fromStdString(sourcePath));
+			const QString outputSummary = describeH5MetadataCopySummary(FC, QString::fromStdString(outputPath));
+			InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+				QStringLiteral("Registration metadata-copy preflight: image=%1, sourceLock=%2, outputLock=%3; source={%4}; output={%5}.")
+					.arg(i + 1).arg(locker_src.isLocked() ? QStringLiteral("locked") : QStringLiteral("unlocked"))
+					.arg(locker_dst.isLocked() ? QStringLiteral("locked") : QStringLiteral("unlocked"))
+					.arg(sourceSummary, outputSummary), "output.metadata_copy.preflight");
+			const int copyResult = copySentinelRegistrationMetadata(sourcePath, outputPath);
 			if (copyResult != 0) {
+				const QString sourceSnapshot = describeH5ForMetadataCopy(FC, QString::fromStdString(sourcePath));
+				const QString outputSnapshot = describeH5ForMetadataCopy(FC, QString::fromStdString(outputPath));
+				const QString failedOutputSnapshot = describeH5ForMetadataCopy(FC, QString::fromStdString(outputPath));
+				InSARLogManager::LogError("S1TopsBackGeocodingWorker",
+					QStringLiteral("Registration metadata copy failed: image=%1, rc=%2; source=%3; output=%4; "
+						"sourceSnapshot={%5}; outputBefore={%6}; outputAfterFailure={%7}.")
+						.arg(i + 1).arg(copyResult).arg(QString::fromStdString(sourcePath), QString::fromStdString(outputPath))
+						.arg(sourceSnapshot).arg(outputSnapshot).arg(failedOutputSnapshot));
 				emit errorProcess(QStringLiteral("Failed to copy registration metadata to %1 (rc=%2).")
 					.arg(QString::fromStdString(outputPath)).arg(copyResult));
 				return;

@@ -775,7 +775,8 @@ void OrbitRefinementNode::executeProcessing()
     }
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, expectedOutputPaths,
-                                           inputFilePaths, m_outputTransaction, &transactionError)) {
+                                           inputFilePaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

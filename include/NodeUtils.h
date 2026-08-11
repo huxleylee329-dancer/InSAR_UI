@@ -5,6 +5,7 @@
 #include <QMutex>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QMap>
 #include "QtNodes/internal/ProductContracts.hpp"
 
 #include <functional>
@@ -20,7 +21,170 @@ class XMLFile;
 class QStandardItem;
 class QThread;
 
+namespace QtNodes {
+class AuxiliaryDemData;
+class AuxiliaryDemReferenceData;
+class InsarDemData;
+}
+
 namespace NodeUtils {
+
+struct AuxiliaryDemBinding {
+    QString rasterPath;
+    QString identityH5Path;
+    QString resourceId;
+    QString pinnedProvenanceId;
+    QString rasterHash;
+    QString identityH5Hash;
+    QString canonicalMetadataHash;
+    bool fromReference = false;
+};
+
+struct DemExecutionSnapshot {
+    AuxiliaryDemBinding binding;
+    QJsonObject inputGeometry;
+
+    bool isValid() const
+    {
+        return !binding.resourceId.isEmpty() && !inputGeometry.isEmpty();
+    }
+};
+
+struct AuxiliaryDemRegistryEntry {
+    QString resourceId;
+    QString role;
+    QString rasterHash;
+    QString identityH5Hash;
+    QString canonicalMetadataHash;
+    QString managedRasterPath;
+    QString managedIdentityH5Path;
+    QJsonObject metadata;
+    QJsonArray provenanceHistory;
+    bool tombstone = false;
+};
+
+enum class AuxiliaryDemLabelMode {
+    FixedResource,
+    WorkflowOutput
+};
+
+// A workflow label is a project-local alias. Fixed labels immediately bind a
+// managed resource; workflow-output labels are declared before their producer
+// runs and become ready only when that exact producer publishes a new resource.
+struct AuxiliaryDemLabelBinding {
+    QString label;
+    QString resourceId;
+    QString pinnedProvenanceId;
+    AuxiliaryDemLabelMode mode = AuxiliaryDemLabelMode::FixedResource;
+    QString producerIdentity;
+    QString expectedProductType;
+
+    bool isPlanned() const
+    {
+        return mode == AuxiliaryDemLabelMode::WorkflowOutput &&
+               (resourceId.isEmpty() || pinnedProvenanceId.isEmpty());
+    }
+};
+
+enum class ResourceChangeKind {
+    ProvenanceAdded,
+    Tombstoned,
+    Removed,
+    ContentIntegrityFailed,
+    PinnedProvenanceMissing,
+    ExplicitRebind
+};
+
+using ResourceChangeCallback = std::function<void(const QString&, const QString&, ResourceChangeKind)>;
+using AuxiliaryDemLabelTableChangedCallback = std::function<void()>;
+using AuxiliaryDemLabelReboundCallback = std::function<void(const QString&)>;
+
+bool loadAuxiliaryDemRegistry(const QString& projectRoot,
+                              QMap<QString, AuxiliaryDemRegistryEntry>& entries,
+                              QString* errorMessage = nullptr);
+bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
+                                    const AuxiliaryDemRegistryEntry& entry,
+                                    QString* errorMessage = nullptr);
+bool tombstoneAuxiliaryDemResource(const QString& projectRoot,
+                                   const QString& resourceId,
+                                   QString* errorMessage = nullptr);
+bool removeAuxiliaryDemRegistryEntry(const QString& projectRoot,
+                                     const QString& resourceId,
+                                     QString* errorMessage = nullptr);
+bool loadAuxiliaryDemLabels(const QString& projectRoot,
+                            QMap<QString, AuxiliaryDemLabelBinding>& labels,
+                            QString* errorMessage = nullptr);
+bool bindAuxiliaryDemLabel(const QString& projectRoot,
+                           const AuxiliaryDemLabelBinding& binding,
+                           bool explicitRebind,
+                           QString* errorMessage = nullptr);
+bool declareWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                      const QString& label,
+                                      const QString& producerIdentity,
+                                      bool explicitConvert,
+                                      QString* errorMessage = nullptr);
+bool activateWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                       const QString& currentLabel,
+                                       const QString& nextLabel,
+                                       const QString& producerIdentity,
+                                       bool explicitConvert,
+                                       QString* errorMessage = nullptr);
+bool restoreWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                      const QString& label,
+                                      const QString& producerIdentity,
+                                      bool claimLegacyProducer,
+                                      QString* errorMessage = nullptr);
+bool invalidateWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                         const QString& label,
+                                         const QString& producerIdentity,
+                                         QString* errorMessage = nullptr);
+bool resolveWorkflowAuxiliaryDemLabel(const QString& projectRoot,
+                                      const QString& label,
+                                      const QString& producerIdentity,
+                                      const QString& resourceId,
+                                      const QString& pinnedProvenanceId,
+                                      QString* errorMessage = nullptr);
+void registerPendingAuxiliaryDemLabel(const AuxiliaryDemLabelBinding& binding);
+bool resolveAuxiliaryDemLabel(const QString& projectRoot,
+                              const QString& label,
+                              AuxiliaryDemBinding& binding,
+                              QString* errorMessage = nullptr,
+                              const QJsonObject& inputGeometry = QJsonObject());
+void registerResourceChangeCallback(const ResourceChangeCallback& callback);
+void registerAuxiliaryDemLabelTableChangedCallback(const AuxiliaryDemLabelTableChangedCallback& callback);
+void registerAuxiliaryDemLabelReboundCallback(const AuxiliaryDemLabelReboundCallback& callback);
+void publishResourceChange(const QString& resourceId,
+                           const QString& provenanceId,
+                           ResourceChangeKind kind);
+
+bool resolveAuxiliaryDemBinding(const QString& projectRoot,
+                                const QtNodes::AuxiliaryDemData& data,
+                                AuxiliaryDemBinding& binding,
+                                QString* errorMessage = nullptr,
+                                const QJsonObject& inputGeometry = QJsonObject());
+bool resolveAuxiliaryDemBinding(const QString& projectRoot,
+                                const QtNodes::AuxiliaryDemReferenceData& data,
+                                AuxiliaryDemBinding& binding,
+                                QString* errorMessage = nullptr,
+                                const QJsonObject& inputGeometry = QJsonObject());
+QJsonObject inputGeometryFromProductDescriptor(const QtNodes::ProductDescriptor::Ptr& descriptor);
+bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
+                                   const QtNodes::AuxiliaryDemData* entity,
+                                   const QtNodes::AuxiliaryDemReferenceData* reference,
+                                   AuxiliaryDemBinding& binding,
+                                   QString* errorMessage = nullptr,
+                                   const AuxiliaryDemBinding* expectedBinding = nullptr,
+                                   const QJsonObject& inputGeometry = QJsonObject());
+bool revalidateDemExecutionSnapshot(const QString& projectRoot,
+                                    const QtNodes::AuxiliaryDemData* entity,
+                                    const QtNodes::AuxiliaryDemReferenceData* reference,
+                                    const DemExecutionSnapshot& snapshot,
+                                    const QJsonObject& currentInputGeometry,
+                                    AuxiliaryDemBinding& binding,
+                                    QString* errorMessage = nullptr);
+bool resolveInsarDemProduct(const QtNodes::InsarDemData& data,
+                            QStringList& h5Paths,
+                            QString* errorMessage = nullptr);
 
 QMutex* getHdf5Mutex();
 
@@ -104,8 +268,33 @@ struct OutputTransaction {
     };
 
     QString projectRoot;
+    // Canonical identity of the active project XML captured before staging.
+    // Metadata commit and recovery must never switch to another root XML.
+    QString projectXmlPath;
     QString nodeName;
     QString runId;
+    QString transactionId;
+    QString resourceAction;
+    QString installedPath;
+    QString resourceStagingPath;
+    QString resourceRegistryBackupPath;
+    QString resourceRegistryBackupHash;
+    QString resourceRegistryCommittedHash;
+    QString baseRegistryHash;
+    QString baseXmlHash;
+    QString newMetadataHash;
+    QString baseRegistryGeneration;
+    QString baseXmlGeneration;
+    QString newRegistryGeneration;
+    QString newMetadataGeneration;
+    QJsonObject provenanceDelta;
+    QString provenanceManifestPath;
+    QStringList dependencyTransactions;
+    bool provenanceOnlyUpdate = false;
+    // Persisted before modifying the registry so recovery also covers a
+    // process failure between mergeAuxiliaryDemRegistryEntry() and its hash.
+    bool resourceRegistryMutationPrepared = false;
+    bool resourceRegistryCommitted = false;
     QString stagingName;
     QString backupName;
     QString journalPath;
@@ -121,6 +310,8 @@ struct OutputTransaction {
     bool hasPreviousFinal = false;
     bool backupCleanupDeferred = false;
     bool metadataBackupReady = false;
+    // Runtime-only lease for the project XML metadata commit critical section.
+    bool metadataCommitLockHeld = false;
     Stage stage = Stage::Inactive;
 };
 
@@ -139,7 +330,8 @@ bool beginOutputTransaction(const QString& projectRoot,
                             const QStringList& inputPaths,
                             OutputTransaction& transaction,
                             QString* errorMessage = nullptr,
-                            OutputTransactionRecoveryInfo* recoveryInfo = nullptr);
+                            OutputTransactionRecoveryInfo* recoveryInfo = nullptr,
+                            const QString& projectXmlPath = QString());
 // Performs only provably safe rollback/cleanup for an interrupted transaction.
 // Ambiguous states remain isolated and return false.
 bool recoverOutputTransaction(const QString& projectRoot,
@@ -163,6 +355,11 @@ bool promoteOutputTransaction(OutputTransaction& transaction,
 // The staged files must already have been validated and promoted successfully.
 bool completeOutputTransactionWithoutMetadata(OutputTransaction& transaction,
                                               QString* errorMessage = nullptr);
+// Completes a transaction that only installs or repairs a managed auxiliary
+// DEM resource. The caller must have persisted the resource/registry delta
+// before making filesystem changes. No node output directory is promoted.
+bool completeAuxiliaryDemResourceTransaction(OutputTransaction& transaction,
+                                             QString* errorMessage = nullptr);
 // Must be called before mutating the in-memory project XML. It persists a
 // transaction-owned XML backup so metadata and promoted files can roll back together.
 bool prepareOutputTransactionMetadataCommit(OutputTransaction& transaction,
@@ -205,6 +402,8 @@ bool workerOutputsMatchManifest(const QStringList& manifestPaths,
                                 QString* errorMessage = nullptr);
 bool saveProjectXmlAtomically(XMLFile* xml, const QString& xmlPath,
                               QString* errorMessage = nullptr);
+bool persistOutputTransactionState(OutputTransaction& transaction,
+                                   QString* errorMessage = nullptr);
 
 /**
  * @brief Checks if a node with the given name exists in the project tree,

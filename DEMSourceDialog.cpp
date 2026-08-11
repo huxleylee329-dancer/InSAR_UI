@@ -378,7 +378,7 @@ void DEMSourceDialog::onStartPressed()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedProjectRoot, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedInputPaths,
-                                           m_outputTransaction, &transactionError)) {
+                                           m_outputTransaction, &transactionError, nullptr, selectedXmlPath)) {
         NodeUtils::abandonOutputTransaction(m_outputTransaction, transactionError, iface->projectXml());
         QMessageBox::critical(this, QStringLiteral("无法启动"), transactionError);
         return;

@@ -26,6 +26,8 @@
 #include <QtConcurrent/QtConcurrent>
 #include <atomic>
 #include <memory>
+#include <QPointer>
+#include <QSignalBlocker>
 
 namespace QtNodes {
 
@@ -58,6 +60,29 @@ InterferometricFormationNode::InterferometricFormationNode()
 {
     qRegisterMetaType<InterferogramFileResult>("InterferogramFileResult");
     setExecutionMode(ExecutionMode::Automatic);
+    QPointer<InterferometricFormationNode> self(this);
+    NodeUtils::registerResourceChangeCallback([self](const QString& resourceId, const QString& provenanceId, NodeUtils::ResourceChangeKind kind) {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+        if (!self || self->m_preparedAuxiliaryDemBinding.resourceId != resourceId) return;
+        if (kind == NodeUtils::ResourceChangeKind::ProvenanceAdded && provenanceId != self->m_preparedAuxiliaryDemBinding.pinnedProvenanceId) return;
+        QTimer::singleShot(0, self.data(), [self]() {
+            if (!self) return;
+            self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding();
+            self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot();
+            self->m_demPath.clear();
+            self->m_preparedDemPath.clear();
+            self->m_demInputData.reset();
+            self->setProgress(0);
+            self->setLastErrorMessage(QStringLiteral("辅助 DEM 资源已变化，需要重新准备。"));
+            self->setState(ExecutionState::Pending);
+        });
+    });
+    NodeUtils::registerAuxiliaryDemLabelTableChangedCallback([self]() {
+        if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
+    });
+    NodeUtils::registerAuxiliaryDemLabelReboundCallback([self](const QString& label) {
+        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
+    });
 }
 
 InterferometricFormationNode::~InterferometricFormationNode()
@@ -115,7 +140,7 @@ NodeDataType InterferometricFormationNode::dataType(PortType portType, PortIndex
         if (portIndex == 0)
             return NodeDataType{"imported_file", "Imported File"};
         else
-            return NodeDataType{"dem_file", "DEM File"};
+            return NodeDataType{"auxiliary_dem", "Auxiliary DEM"};
     }
     else
     {
@@ -139,7 +164,7 @@ QString InterferometricFormationNode::portCaption(PortType portType, PortIndex p
         if (portIndex == 0)
             return QStringLiteral("输入图像");
         else
-            return QStringLiteral("DEM ?");
+            return QStringLiteral("辅助地形 DEM ?");
     } else {
         if (portIndex == 0)
             return QStringLiteral("成果 *");
@@ -158,6 +183,11 @@ bool InterferometricFormationNode::portIsOptional(PortType portType, PortIndex p
     return false;
 }
 
+QList<QList<PortIndex>> InterferometricFormationNode::alternativeInputGroups() const
+{
+    return {};
+}
+
 void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     if (port == 0) {
@@ -174,16 +204,22 @@ void InterferometricFormationNode::setInData(std::shared_ptr<NodeData> data, Por
             m_imageInfoData.reset();
         }
     } else if (port == 1) {
-        m_demInputData = std::dynamic_pointer_cast<DEMFileData>(data);
+        const auto auxiliary = std::dynamic_pointer_cast<AuxiliaryDemData>(data);
+        m_auxiliaryDemEntityData = auxiliary;
+        if (auxiliary) {
+            m_auxiliaryDemReferenceData.reset();
+            m_auxiliaryDemLabel.clear();
+            if (m_demLabelCombo) m_demLabelCombo->setCurrentIndex(0);
+        }
+        m_demInputData = auxiliary
+            ? std::make_shared<DEMFileData>(auxiliary->rasterPath(), auxiliary->nodeName(), auxiliary->identityH5Path())
+            : std::dynamic_pointer_cast<DEMFileData>(data);
+        if (auxiliary) m_demInputData->setProductDescriptor(auxiliary->productDescriptor());
         if (m_demInputData) {
-            m_demPath = m_demInputData->filePath();
-            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
+            m_demPath = auxiliary ? auxiliary->rasterPath() : m_demInputData->filePath();
         } else {
             if (!isRestoring()) {
                 m_demPath.clear();
-                if (m_demPathEdit) {
-                    m_demPathEdit->clear();
-                }
             }
         }
     }
@@ -220,7 +256,9 @@ QJsonObject InterferometricFormationNode::save() const
     modelJson["winH"] = m_winHEdit ? m_winHEdit->text().toInt() : m_winH;
     modelJson["multilookRg"] = m_multilookRgEdit ? m_multilookRgEdit->text().toInt() : m_multilookRg;
     modelJson["multilookAz"] = m_multilookAzEdit ? m_multilookAzEdit->text().toInt() : m_multilookAz;
-    modelJson[QStringLiteral("demPath")] = m_demPath;
+    modelJson[QStringLiteral("auxiliaryDemLabel")] = m_auxiliaryDemLabel;
+    modelJson[QStringLiteral("auxiliaryDemLegacyResourceId")] = m_legacyDemResourceId;
+    modelJson[QStringLiteral("auxiliaryDemLegacyPinnedProvenanceId")] = m_legacyDemProvenanceId;
     modelJson[QStringLiteral("hasOutputExecutionSettings")] = m_hasOutputExecutionSettings;
     modelJson[QStringLiteral("outputIsDeflat")] = m_outputIsDeflat;
     modelJson[QStringLiteral("outputIsTopoRemoval")] = m_outputIsTopoRemoval;
@@ -263,8 +301,9 @@ void InterferometricFormationNode::load(QJsonObject const &json)
     QJsonValue vMultilookAz = json["multilookAz"];
     if (!vMultilookAz.isUndefined()) m_multilookAz = vMultilookAz.toInt();
 
-    QJsonValue vDemPath = json[QStringLiteral("demPath")];
-    if (!vDemPath.isUndefined()) m_demPath = vDemPath.toString();
+    m_auxiliaryDemLabel = json.value(QStringLiteral("auxiliaryDemLabel")).toString().trimmed();
+    m_legacyDemResourceId = json.value(QStringLiteral("auxiliaryDemLegacyResourceId")).toString().trimmed();
+    m_legacyDemProvenanceId = json.value(QStringLiteral("auxiliaryDemLegacyPinnedProvenanceId")).toString().trimmed();
 
     QJsonValue vHasOutputSettings = json[QStringLiteral("hasOutputExecutionSettings")];
     if (!vHasOutputSettings.isUndefined()) m_hasOutputExecutionSettings = vHasOutputSettings.toBool();
@@ -552,64 +591,30 @@ void InterferometricFormationNode::createWidget()
 
     // 13. DEM路径
     auto* demLayout = new QHBoxLayout();
-    m_demPathLabel = new QLabel("DEM路径");
+    m_demPathLabel = new QLabel("辅助 DEM");
     m_demPathLabel->setFixedWidth(100);
     m_demPathLabel->setStyleSheet("QLabel:disabled { color: #888888; }");
     
-    if (m_demPath.isEmpty()) {
-        auto* iface = NodeUtils::getProjectContext(nullptr);
-        if (iface) {
-            m_demPath = NodeUtils::getGlobalDemPath(iface);
+    m_demLabelCombo = new QComboBox();
+    refreshAuxiliaryDemLabels();
+    connect(m_demLabelCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
+        const QString nextLabel = index > 0 ? m_demLabelCombo->itemData(index).toString() : QString();
+        if (!nextLabel.isEmpty() && hasActiveInputConnection(1)) {
+            QMessageBox::warning(nullptr, QStringLiteral("辅助 DEM"),
+                                 QStringLiteral("请先断开辅助 DEM 输入端口的直连，再选择工程标签。"));
+            m_demLabelCombo->blockSignals(true);
+            const int previousIndex = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+            m_demLabelCombo->setCurrentIndex(previousIndex >= 0 ? previousIndex : 0);
+            m_demLabelCombo->blockSignals(false);
+            return;
         }
-    }
-    
-    m_demPathEdit = new QLineEdit();
-    m_demPathEdit->setObjectName("demPathEdit");
-    m_demPathEdit->setText(m_demPath);
-    m_demPathEdit->setPlaceholderText(QStringLiteral("选择DEM数据 (*.h5, *.tiff)..."));
-    m_demPathEdit->setStyleSheet(
-        "QLineEdit:disabled {"
-        "  background-color: rgba(120, 120, 120, 0.1);"
-        "  color: #888888;"
-        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
-        "}"
-    );
-    connect(m_demPathEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        QString text = m_demPathEdit->text().trimmed();
-        if (m_demPath != text) {
-            m_demPath = text;
-            invalidateNodeData();
-            auto* iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-            }
-        }
-    });
-
-    m_demBrowseBtn = new QPushButton(QStringLiteral("浏览..."));
-    m_demBrowseBtn->setStyleSheet(
-        "QPushButton:disabled {"
-        "  background-color: rgba(120, 120, 120, 0.1);"
-        "  color: #888888;"
-        "  border: 1px dashed rgba(148, 163, 184, 0.2);"
-        "}"
-    );
-    connect(m_demBrowseBtn, &QPushButton::clicked, this, [this, invalidateNodeData]() {
-        QString file = QFileDialog::getOpenFileName(nullptr, QStringLiteral("选择DEM数据"), "", "DEM Files (*.h5 *.tiff *.tif)");
-        if (!file.isEmpty()) {
-            m_demPath = file;
-            if (m_demPathEdit) m_demPathEdit->setText(m_demPath);
-            invalidateNodeData();
-            auto* iface = NodeUtils::getProjectContext(_widget);
-            if (iface) {
-                NodeUtils::setGlobalDemPath(iface, m_demPath, true);
-            }
-        }
+        m_auxiliaryDemLabel = nextLabel;
+        if (!m_auxiliaryDemLabel.isEmpty()) { m_auxiliaryDemEntityData.reset(); m_auxiliaryDemReferenceData.reset(); }
+        invalidateNodeData();
     });
 
     demLayout->addWidget(m_demPathLabel);
-    demLayout->addWidget(m_demPathEdit);
-    demLayout->addWidget(m_demBrowseBtn);
+    demLayout->addWidget(m_demLabelCombo);
     layout->addLayout(demLayout);
 
     // Spacer
@@ -794,12 +799,27 @@ void InterferometricFormationNode::onProcessingFinished()
         discardObsoleteAutomaticExecution();
         return;
     }
+    refreshAuxiliaryDemLabels();
 
     OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
     if (!commitLease) {
         NodeUtils::abandonOutputTransaction(m_outputTransaction,
                                             QStringLiteral("obsolete execution revision"), projectXml());
         return;
+    }
+    if (m_isTopoRemoval && (m_auxiliaryDemEntityData || m_auxiliaryDemReferenceData)) {
+        NodeUtils::AuxiliaryDemBinding currentBinding;
+        QString bindingError;
+        if (!NodeUtils::revalidateDemExecutionSnapshot(projectPath(), m_auxiliaryDemEntityData.get(),
+                                                        m_auxiliaryDemReferenceData.get(), m_preparedDemExecutionSnapshot,
+                                                        NodeUtils::inputGeometryFromProductDescriptor(
+                                                            m_inputData ? m_inputData->physicalProductDescriptor() : nullptr),
+                                                        currentBinding, &bindingError)) {
+            NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("obsolete auxiliary DEM binding"), projectXml());
+            setLastErrorMessage(bindingError);
+            setState(ExecutionState::Error);
+            return;
+        }
     }
 
     QString transactionError;
@@ -876,7 +896,6 @@ void InterferometricFormationNode::onProcessingFinished()
             types.append(QStringLiteral("coherence"));
         }
     }
-
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
         m_outputTransaction.productDescriptor));
@@ -1147,12 +1166,54 @@ void InterferometricFormationNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Idle);
+        setState(ExecutionState::Pending);
     }
 }
 
 bool InterferometricFormationNode::prepareToStart()
 {
+    QJsonObject inputGeometry;
+    if (m_inputData) inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor());
+    if (m_isTopoRemoval && hasActiveInputConnection(1) && !m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("辅助 DEM 不能同时使用直接连线和命名标签。"));
+        return false;
+    }
+    if (m_isTopoRemoval && !m_auxiliaryDemEntityData && m_auxiliaryDemLabel.isEmpty()) {
+        setStartFailureMessage(QStringLiteral("去地形 DEM 必须通过直接连线或工程标签提供。"));
+        return false;
+    }
+    m_demPath.clear();
+    m_demInputData.reset();
+    if (m_isTopoRemoval && m_auxiliaryDemEntityData) {
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemBinding(projectPath(), *m_auxiliaryDemEntityData, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_demInputData = std::make_shared<DEMFileData>(binding.rasterPath, QStringLiteral("Auxiliary DEM"), binding.identityH5Path);
+        m_demInputData->setProductDescriptor(m_auxiliaryDemEntityData->productDescriptor());
+    }
+    if (m_isTopoRemoval && !m_auxiliaryDemLabel.isEmpty()) {
+        if (!m_legacyDemResourceId.isEmpty() && !m_legacyDemProvenanceId.isEmpty())
+            NodeUtils::registerPendingAuxiliaryDemLabel({m_auxiliaryDemLabel, m_legacyDemResourceId, m_legacyDemProvenanceId});
+        NodeUtils::AuxiliaryDemBinding binding;
+        QString error;
+        if (!NodeUtils::resolveAuxiliaryDemLabel(projectPath(), m_auxiliaryDemLabel, binding, &error, inputGeometry)) {
+            setStartFailureMessage(error);
+            return false;
+        }
+        m_preparedAuxiliaryDemBinding = binding;
+        m_preparedDemExecutionSnapshot.binding = binding;
+        m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
+        m_demPath = binding.rasterPath;
+        m_auxiliaryDemReferenceData = std::make_shared<AuxiliaryDemReferenceData>(binding.resourceId, binding.pinnedProvenanceId, 1);
+        m_demInputData = std::make_shared<DEMFileData>(binding.rasterPath, QStringLiteral("DEM Label"), binding.identityH5Path);
+    }
     if (!validateInputs())
         return false;
 
@@ -1202,18 +1263,21 @@ bool InterferometricFormationNode::prepareToStart()
             return false;
         }
 
-        QStringList demCommittedOutputs;
-        QString demManifestError;
-        if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_demInputData->nodeName(),
-                                                     demCommittedOutputs, &demManifestError) ||
-            !demCommittedOutputs.contains(QFileInfo(demIdentityH5Path).absoluteFilePath(), Qt::CaseInsensitive) ||
-            !demCommittedOutputs.contains(QFileInfo(demRasterPath).absoluteFilePath(), Qt::CaseInsensitive)) {
-            const QString reason = demManifestError.isEmpty()
-                ? QStringLiteral("辅助 DEM 的 TIFF 与 H5 不属于同一次已提交输出。")
-                : demManifestError;
-            setStartFailureMessage(reason);
-            setLastErrorMessage(reason);
-            return false;
+        const bool resourceBound = m_auxiliaryDemEntityData || m_auxiliaryDemReferenceData;
+        if (!resourceBound) {
+            QStringList demCommittedOutputs;
+            QString demManifestError;
+            if (!NodeUtils::loadCommittedOutputManifest(projectPath(), m_demInputData->nodeName(),
+                                                         demCommittedOutputs, &demManifestError) ||
+                !demCommittedOutputs.contains(QFileInfo(demIdentityH5Path).absoluteFilePath(), Qt::CaseInsensitive) ||
+                !demCommittedOutputs.contains(QFileInfo(demRasterPath).absoluteFilePath(), Qt::CaseInsensitive)) {
+                const QString reason = demManifestError.isEmpty()
+                    ? QStringLiteral("辅助 DEM 的 TIFF 与 H5 不属于同一次已提交输出。")
+                    : demManifestError;
+                setStartFailureMessage(reason);
+                setLastErrorMessage(reason);
+                return false;
+            }
         }
 
         QString demIdentityError;
@@ -1337,7 +1401,8 @@ void InterferometricFormationNode::executeProcessing()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedFileName,
                                            m_preparedOutputPaths, m_preparedInputPaths,
-                                           m_outputTransaction, &transactionError)) {
+                                           m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }
@@ -1596,8 +1661,30 @@ void InterferometricFormationNode::updateParameterWidgetsEnableState()
     bool demEnabled = enableWidgets && demNeeded && !hasDemConn;
 
     if (m_demPathLabel) m_demPathLabel->setEnabled(demEnabled);
-    if (m_demPathEdit) m_demPathEdit->setEnabled(demEnabled);
-    if (m_demBrowseBtn) m_demBrowseBtn->setEnabled(demEnabled);
+    if (m_demLabelCombo) m_demLabelCombo->setEnabled(demEnabled);
+}
+
+void InterferometricFormationNode::refreshAuxiliaryDemLabels()
+{
+    if (!m_demLabelCombo) return;
+    QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+    QString error;
+    NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
+    QSignalBlocker blocker(m_demLabelCombo);
+    m_demLabelCombo->clear();
+    m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
+        const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 来源 %3)").arg(it.value().label, status, it.value().producerIdentity.left(8)), it.value().label);
+    }
+    if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
+    for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
+        if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::FixedResource) continue;
+        m_demLabelCombo->addItem(QStringLiteral("@%1 (已注册资源)").arg(it.value().label), it.value().label);
+    }
+    const int index = m_demLabelCombo->findData(m_auxiliaryDemLabel);
+    m_demLabelCombo->setCurrentIndex(index < 0 ? 0 : index);
 }
 
 void InterferometricFormationNode::captureOutputExecutionSettings()

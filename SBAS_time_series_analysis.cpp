@@ -354,7 +354,8 @@ void SBAS_time_series_analysis::on_buttonBox_accepted()
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_activeProjectRoot, m_activeDstNode,
                                            m_activeOutputPaths, m_activeInputPaths,
-                                           m_outputTransaction, &transactionError)) {
+                                           m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(this))) {
         QMessageBox::warning(this, "Error", transactionError);
         return;
     }

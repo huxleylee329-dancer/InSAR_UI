@@ -2,6 +2,7 @@
 
 #include <Dem.h>
 #include <FormatConversion.h>
+#include <Utils.h>
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 
@@ -11,6 +12,7 @@
 #include <QMutexLocker>
 #include <QThread>
 #include <QUuid>
+#include <cmath>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
@@ -44,12 +46,32 @@ QString diagnosticText(const char* value)
     return value ? QString::fromUtf8(value) : QString();
 }
 
+thread_local QString demDiagnosticCallId;
+thread_local QStringList successfulHdf5Reads;
+
 void __stdcall demDiagnosticCallback(const DemDiagnosticEvent* event, void*)
 {
     if (!event) return;
 
-    QStringList fields;
     const QString callId = diagnosticText(event->callId);
+    const QString stage = diagnosticText(event->stage);
+    const QString message = diagnosticText(event->message);
+    const InSARLogManager::LogLevel level = toApplicationLogLevel(event->level);
+    if (stage == QStringLiteral("entry")) {
+        demDiagnosticCallId = callId;
+        successfulHdf5Reads.clear();
+    }
+
+    if (level == InSARLogManager::LevelDebug &&
+        message == QStringLiteral("HDF5 array read succeeded.")) {
+        successfulHdf5Reads.append(
+            QStringLiteral("%1:%2[%3x%4,CV%5]")
+                .arg(stage, diagnosticText(event->dataset))
+                .arg(event->rows).arg(event->columns).arg(event->cvType));
+        return;
+    }
+
+    QStringList fields;
     const QString detail = diagnosticText(event->detail);
     const QString h5File = diagnosticText(event->h5File);
     const QString dataset = diagnosticText(event->dataset);
@@ -63,12 +85,18 @@ void __stdcall demDiagnosticCallback(const DemDiagnosticEvent* event, void*)
         fields.append(QStringLiteral("cvType=%1").arg(event->cvType));
     }
     if (!detail.isEmpty()) fields.append(QStringLiteral("detail=%1").arg(detail));
+    if (stage == QStringLiteral("complete") && callId == demDiagnosticCallId &&
+        !successfulHdf5Reads.isEmpty()) {
+        fields.append(QStringLiteral("hdf5ReadCount=%1").arg(successfulHdf5Reads.size()));
+        fields.append(QStringLiteral("hdf5Reads=%1").arg(successfulHdf5Reads.join(QStringLiteral("|"))));
+        successfulHdf5Reads.clear();
+        demDiagnosticCallId.clear();
+    }
 
-    const QString message = diagnosticText(event->message);
-    InSARLogManager::LogDiagnostic(toApplicationLogLevel(event->level), QStringLiteral("DemDLL"),
+    InSARLogManager::LogDiagnostic(level, QStringLiteral("DemDLL"),
         fields.isEmpty() ? message : QStringLiteral("%1. %2").arg(message, fields.join(QStringLiteral(", "))),
         LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
-        QStringLiteral("dem.dll"), diagnosticText(event->stage));
+        QStringLiteral("dem.dll"), stage);
 }
 
 void logSourceDependency(const QString& inputH5, const QString& dataset, const QString& projectRoot)
@@ -85,6 +113,78 @@ void logSourceDependency(const QString& inputH5, const QString& dataset, const Q
             .arg(inputH5, dataset).arg(readOk ? QStringLiteral("true") : QStringLiteral("false"))
             .arg(raw, projectRoot, resolved).arg(exists ? QStringLiteral("true") : QStringLiteral("false")),
         QStringLiteral("dem.preflight.source"));
+}
+
+bool resolveSourceH5Path(const std::string& rawSourcePath,
+                         const QString& projectRoot,
+                         QString& resolvedPath,
+                         QString& error)
+{
+    if (rawSourcePath.empty()) {
+        error = QStringLiteral("source_1 is empty.");
+        return false;
+    }
+
+    PathResolver::Resolution resolution;
+    PathResolver::Error pathError = PathResolver::Error::None;
+    if (!PathResolver::resolve(rawSourcePath, projectRoot.toUtf8().toStdString(), resolution, &pathError)) {
+        error = QStringLiteral("Unable to resolve source_1: %1")
+                    .arg(QString::fromLatin1(PathResolver::errorMessage(pathError)));
+        return false;
+    }
+
+    resolvedPath = QString::fromUtf8(resolution.utf8.data(), static_cast<int>(resolution.utf8.size()));
+    if (!QFileInfo(resolvedPath).isFile()) {
+        error = QStringLiteral("Resolved source_1 H5 does not exist: %1").arg(resolvedPath);
+        return false;
+    }
+    return true;
+}
+
+bool sourceGeometryBounds(const QString& phaseH5,
+                          const QString& projectRoot,
+                          double& minLon,
+                          double& maxLon,
+                          double& minLat,
+                          double& maxLat,
+                          QString& error)
+{
+    std::string sourcePath;
+    if (!NodeUtils::readStringFromH5(phaseH5, QStringLiteral("source_1"), sourcePath)) {
+        error = QStringLiteral("Unable to read source_1 from DEM input: %1").arg(phaseH5);
+        return false;
+    }
+
+    QString masterH5;
+    if (!resolveSourceH5Path(sourcePath, projectRoot, masterH5, error)) {
+        return false;
+    }
+
+    int sceneWidth = 0;
+    int sceneHeight = 0;
+    int offsetRow = 0;
+    int offsetCol = 0;
+    Mat lonCoefficient;
+    Mat latCoefficient;
+    QString metadataError;
+    if (!NodeUtils::readScalarFromH5(masterH5, QStringLiteral("range_len"), sceneWidth, &metadataError) ||
+        !NodeUtils::readScalarFromH5(masterH5, QStringLiteral("azimuth_len"), sceneHeight, &metadataError) ||
+        !NodeUtils::readScalarFromH5(masterH5, QStringLiteral("offset_row"), offsetRow, &metadataError) ||
+        !NodeUtils::readScalarFromH5(masterH5, QStringLiteral("offset_col"), offsetCol, &metadataError) ||
+        !NodeUtils::readMatFromH5(masterH5, QStringLiteral("lon_coefficient"), lonCoefficient, -1, &metadataError) ||
+        !NodeUtils::readMatFromH5(masterH5, QStringLiteral("lat_coefficient"), latCoefficient, -1, &metadataError) ||
+        lonCoefficient.empty() || latCoefficient.empty()) {
+        error = QStringLiteral("Unable to read source geometry metadata from %1: %2")
+                    .arg(masterH5, metadataError);
+        return false;
+    }
+
+    if (Utils::computeImageGeoBoundry(latCoefficient, lonCoefficient, sceneHeight, sceneWidth,
+                                       offsetRow, offsetCol, &maxLon, &maxLat, &minLon, &minLat) != 0) {
+        error = QStringLiteral("Unable to determine source geometry bounds: %1").arg(masterH5);
+        return false;
+    }
+    return true;
 }
 
 class DemProgressCallContext
@@ -308,7 +408,12 @@ void DemWorker::Dem(int method,
             Mat value;
             NodeUtils::readStringFromH5(inputH5, "source_1", sourcePath);
             conversion.write_str_to_h5(outputH5.toStdString().c_str(), "source_1", sourcePath.c_str());
-            const QString masterPath = QDir::toNativeSeparators(savePath) + QString::fromStdString(sourcePath);
+            QString masterPath;
+            QString sourceResolutionError;
+            if (!resolveSourceH5Path(sourcePath, savePath, masterPath, sourceResolutionError)) {
+                emit errorProcess(QStringLiteral("Failed to resolve DEM master source: %1").arg(sourceResolutionError));
+                return;
+            }
             NodeUtils::readStringFromH5(inputH5, "source_2", sourcePath);
             conversion.write_str_to_h5(outputH5.toStdString().c_str(), "source_2", sourcePath.c_str());
             QString sourcePathMetadataError;
@@ -318,6 +423,37 @@ void DemWorker::Dem(int method,
             }
             NodeUtils::writeScalarToH5(outputH5, "dem_generation_method", method);
             NodeUtils::writeScalarToH5(outputH5, "dem_generation_iterations", times);
+
+            // Phase products normally carry mapped_lon/mapped_lat when a
+            // geographic mapping has already been calculated.  Older valid
+            // phase chains do not: derive their bounds from source_1's SAR
+            // geometry coefficients instead of expecting DEM-source lon/lat.
+            Mat lonGrid, latGrid;
+            double minLon = 0.0, maxLon = 0.0, minLat = 0.0, maxLat = 0.0;
+            const bool hasMappedGeometry =
+                NodeUtils::readMatFromH5(inputH5, "mapped_lon", lonGrid) &&
+                NodeUtils::readMatFromH5(inputH5, "mapped_lat", latGrid) &&
+                !lonGrid.empty() && !latGrid.empty() && lonGrid.size() == latGrid.size();
+            if (hasMappedGeometry) {
+                cv::minMaxLoc(lonGrid, &minLon, &maxLon);
+                cv::minMaxLoc(latGrid, &minLat, &maxLat);
+            } else {
+                QString geometryError;
+                if (!sourceGeometryBounds(inputH5, savePath, minLon, maxLon, minLat, maxLat, geometryError)) {
+                    emit errorProcess(QStringLiteral("Unable to determine DEM input geometry: %1").arg(geometryError));
+                    return;
+                }
+            }
+            if (!(std::isfinite(minLon) && std::isfinite(maxLon) &&
+                  std::isfinite(minLat) && std::isfinite(maxLat) &&
+                  maxLon > minLon && maxLat > minLat) ||
+                !NodeUtils::writeScalarToH5(outputH5, "dem_min_lon", minLon) ||
+                !NodeUtils::writeScalarToH5(outputH5, "dem_max_lon", maxLon) ||
+                !NodeUtils::writeScalarToH5(outputH5, "dem_min_lat", minLat) ||
+                !NodeUtils::writeScalarToH5(outputH5, "dem_max_lat", maxLat)) {
+                emit errorProcess(QStringLiteral("Failed to persist DEM geometry metadata: ") + outputH5);
+                return;
+            }
 
             if (NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficient", value) ||
                 NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficientficient", value)) {

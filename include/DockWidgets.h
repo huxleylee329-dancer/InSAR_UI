@@ -27,6 +27,7 @@
 #include <QComboBox>
 #include <QToolButton>
 #include <QProgressBar>
+#include <QPointer>
 #include <QVector>
 #include <memory>
 
@@ -162,12 +163,14 @@ public:
     void clearSelection();
 
     void refreshCurrentNode();  // Refresh properties of currently selected node
+    void updateProgress(QtNodes::NodeId nodeId, int percent);
     
     void updateThemeStyles(); // Refresh static UI elements when theme changes
 
     QtNodes::NodeId currentNodeId() const { return m_currentNodeId; }
 
 signals:
+    void selectedNodeChanged(QtNodes::NodeId nodeId);
     void propertyChanged(QtNodes::NodeId nodeId, const QString &property, const QVariant &value);
     void portDataChanged(QtNodes::NodeId nodeId, QtNodes::PortType portType, int portIndex, const QString& fieldKey, const QString& newValue);
 
@@ -213,7 +216,7 @@ private:
     QDoubleSpinBox *m_xSpinBox;
     QDoubleSpinBox *m_ySpinBox;
     QLabel *m_executionStateLabel;
-    QProgressBar *m_progressBar;
+    QPointer<QProgressBar> m_progressBar;
     QLabel *m_modeLabel;
 
     // Collapsible Sections
@@ -226,6 +229,7 @@ private:
     QtNodes::NodeId m_currentNodeId;
     bool m_updatingProperties;  // Flag to prevent recursive updates
     bool m_isExecutable;        // Whether current node is an ExecutableNode
+    bool m_hasExecutionControls;
 
     // Captured Data
     struct NodeData {

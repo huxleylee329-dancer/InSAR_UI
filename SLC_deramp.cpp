@@ -318,8 +318,7 @@ void SLC_deramp::on_buttonBox_accepted()
         return;
     }
 
-    auto* iface = NodeUtils::getProjectContext(this);
-    const QString demPath = iface ? NodeUtils::getGlobalDemPath(iface) : QString();
+    const QString demPath = m_demPathEdit ? m_demPathEdit->text().trimmed() : QString();
     if (demPath.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("Warning"), QStringLiteral("请先配置可用的 DEM 数据。"));
         return;

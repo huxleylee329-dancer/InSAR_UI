@@ -573,7 +573,8 @@ void DenoiseNode::executeProcessing()
 
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(savePath, dstNode, m_preparedOutputPaths,
-                                           phasePaths, m_outputTransaction, &transactionError)) {
+                                           phasePaths, m_outputTransaction, &transactionError, nullptr,
+                                           NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
         return;
     }

@@ -479,9 +479,10 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	if (!dir.exists(dstNode))
 		int ret = dir.mkdir(dstNode);
 
-    QString demPath = m_demPath;
-    if (demPath.isEmpty()) {
-        demPath = QDir::toNativeSeparators(savepath + "/.dem_cache");
+    const QString demPath = m_demPath;
+    if (demPath.isEmpty() || !QFileInfo(demPath).isFile()) {
+        Q_EMIT errorProcess(QStringLiteral("Coregistration requires a resolved Auxiliary DEM file."));
+        return;
     }
 	string dempath = demPath.toStdString();
 

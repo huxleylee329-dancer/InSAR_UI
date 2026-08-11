@@ -45,6 +45,7 @@ public:
     bool portCaptionVisible(PortType portType, PortIndex portIndex) const override;
     QString portCaption(PortType portType, PortIndex portIndex) const override;
     bool portIsOptional(PortType portType, PortIndex portIndex) const override;
+    QList<QList<PortIndex>> alternativeInputGroups() const override;
     ::QWidget* embeddedWidget() override;
 
     QJsonObject save() const override;
@@ -65,16 +66,20 @@ private:
     QLineEdit* m_outputNodeNameEdit;
     QLabel* m_masterIndexLabel;
     QLabel* m_demPathLabel = nullptr;
-    QLineEdit* m_demPathEdit = nullptr;
-    QPushButton* m_demBrowseBtn = nullptr;
+    QComboBox* m_demLabelCombo = nullptr;
 
     // Input/output data storage
     std::shared_ptr<ImportedFileData> m_inputData;
     std::shared_ptr<ImportedFileData> m_demInputData;
+    std::shared_ptr<AuxiliaryDemData> m_auxiliaryDemEntityData;
+    std::shared_ptr<AuxiliaryDemReferenceData> m_auxiliaryDemReferenceData;
     std::shared_ptr<ImportedFileData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     QString m_outputNodeName;
     QString m_demPath;
+    QString m_auxiliaryDemLabel;
+    QString m_legacyDemResourceId;
+    QString m_legacyDemProvenanceId;
     int m_masterIndex;
 
     // Worker thread
@@ -84,6 +89,7 @@ private:
 
     // Helper methods
     void createWidget();
+    void refreshAuxiliaryDemLabels();
     void updateLabels();
     void updateWidgetSize();
     void updateParameterWidgetsEnableState();
@@ -119,6 +125,8 @@ private:
     QString m_preparedSavePath;
     QString m_preparedProjectName;
     QString m_preparedDemPath;
+    NodeUtils::AuxiliaryDemBinding m_preparedAuxiliaryDemBinding;
+    NodeUtils::DemExecutionSnapshot m_preparedDemExecutionSnapshot;
     QStringList m_preparedInputPaths;
     QStringList m_preparedTransactionInputPaths;
     QStringList m_preparedOutputPaths;
