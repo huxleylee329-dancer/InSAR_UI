@@ -5,6 +5,21 @@
 #include "BaseWorker.h"
 #include <QStringList>
 
+// Kept deliberately small and value-only because it crosses the worker-thread
+// boundary.  The node persists the same facts into the managed DEM audit.
+struct DemCoverageAudit
+{
+    QString status;
+    QString evidence;
+    QStringList serverNotFoundTiles;
+    QStringList intersectingServerNotFoundTiles;
+    qint64 validPixelCount = 0;
+    qint64 invalidPixelCount = 0;
+    bool hasUnverifiedCoverage = false;
+};
+
+Q_DECLARE_METATYPE(DemCoverageAudit)
+
 class DEMSourceWorker : public BaseWorker
 {
     Q_OBJECT
@@ -35,7 +50,8 @@ signals:
         const QStringList& availableTiles,
         const QStringList& serverNotFoundTiles,
         int requestedTileCount,
-        bool outputValidated
+        bool outputValidated,
+        const DemCoverageAudit& coverageAudit
     );
 
 private:

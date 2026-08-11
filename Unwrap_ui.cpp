@@ -8,6 +8,9 @@
 #include<qmessagebox.h>
 #include<QFile>
 #include<QDir>
+#include <QFormLayout>
+#include <Unwrap.h>
+#include "InSARLogManager.h"
 
 Unwrap_ui::Unwrap_ui(QWidget* parent) :
     QWidget(parent),
@@ -22,6 +25,39 @@ Unwrap_ui::Unwrap_ui(QWidget* parent) :
     ui->progressBar->setMinimum(0);
     ui->progressBar->setMaximum(100);
     ui->progressBar->setHidden(1);
+    m_snaphuOptionsGroup = new QGroupBox(QStringLiteral("SNAPHU 高级参数"), this);
+    auto* snaphuForm = new QFormLayout(m_snaphuOptionsGroup);
+    m_snaphuTileRowsSpin = new QSpinBox(m_snaphuOptionsGroup);
+    m_snaphuTileColsSpin = new QSpinBox(m_snaphuOptionsGroup);
+    m_snaphuRowOverlapSpin = new QSpinBox(m_snaphuOptionsGroup);
+    m_snaphuColOverlapSpin = new QSpinBox(m_snaphuOptionsGroup);
+    m_snaphuTimeoutSpin = new QSpinBox(m_snaphuOptionsGroup);
+    m_snaphuKeepArtifactsCheck = new QCheckBox(QStringLiteral("成功后保留现场文件"), m_snaphuOptionsGroup);
+    m_snaphuTaskLabel = new QLabel(m_snaphuOptionsGroup);
+    m_snaphuTaskLabel->setWordWrap(true);
+    m_snaphuStatusLabel = new QLabel(QStringLiteral("状态: 未运行"), m_snaphuOptionsGroup);
+    m_snaphuStatusLabel->setWordWrap(true);
+    m_snaphuProcessLabel = new QLabel(QStringLiteral("并行进程: 1 (Windows SNAPHU)"), m_snaphuOptionsGroup);
+    m_snaphuTileRowsSpin->setRange(1, 256);
+    m_snaphuTileColsSpin->setRange(1, 256);
+    m_snaphuRowOverlapSpin->setRange(0, 100000);
+    m_snaphuColOverlapSpin->setRange(0, 100000);
+    m_snaphuTimeoutSpin->setRange(0, 30 * 24 * 60 * 60);
+    m_snaphuTimeoutSpin->setSpecialValueText(QStringLiteral("不超时"));
+    m_snaphuTimeoutSpin->setSuffix(QStringLiteral(" 秒"));
+    snaphuForm->addRow(QStringLiteral("分块行数"), m_snaphuTileRowsSpin);
+    snaphuForm->addRow(QStringLiteral("分块列数"), m_snaphuTileColsSpin);
+    snaphuForm->addRow(QStringLiteral("行重叠像素"), m_snaphuRowOverlapSpin);
+    snaphuForm->addRow(QStringLiteral("列重叠像素"), m_snaphuColOverlapSpin);
+    snaphuForm->addRow(QStringLiteral("最长运行时间"), m_snaphuTimeoutSpin);
+    snaphuForm->addRow(m_snaphuKeepArtifactsCheck);
+    snaphuForm->addRow(m_snaphuProcessLabel);
+    snaphuForm->addRow(m_snaphuTaskLabel);
+    snaphuForm->addRow(m_snaphuStatusLabel);
+    ui->verticalLayout->insertWidget(ui->verticalLayout->indexOf(ui->progressBar), m_snaphuOptionsGroup);
+    connect(m_snaphuTileRowsSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &Unwrap_ui::updateSnaphuOptionWidgets);
+    connect(m_snaphuTileColsSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &Unwrap_ui::updateSnaphuOptionWidgets);
+    updateSnaphuOptionWidgets();
     connect(ui->SPDButton, &QRadioButton::clicked, this, &Unwrap_ui::Change_Setting);
     connect(ui->MCFButton, &QRadioButton::clicked, this, &Unwrap_ui::Change_Setting);
     connect(ui->SnaphuButton, &QRadioButton::clicked, this, &Unwrap_ui::Change_Setting);
@@ -29,6 +65,16 @@ Unwrap_ui::Unwrap_ui(QWidget* parent) :
 }
 Unwrap_ui::~Unwrap_ui()
 {
+    // Core still owns the borrowed callback userData while SNAPHU is running.
+    // A parented QThread must therefore finish before this widget is destroyed.
+    if (Unwrap_worker) {
+        Unwrap_worker->StopProcess();
+    }
+    if (m_thread && m_thread->isRunning()) {
+        m_thread->requestInterruption();
+        m_thread->quit();
+        m_thread->wait();
+    }
     if (copy)
     {
         for (int i = 0; i < ui->comboBox->count(); i++)
@@ -44,9 +90,51 @@ Unwrap_ui::~Unwrap_ui()
 
 void Unwrap_ui::updateProcess(int value, QString information)
 {
+    if (value < 0) {
+        ui->progressBar->setRange(0, 0);
+        ui->progressBar->setFormat(information);
+        return;
+    }
+    if (ui->progressBar->minimum() == 0 && ui->progressBar->maximum() == 0) {
+        ui->progressBar->setRange(0, 100);
+    }
     ui->progressBar->setValue(value);
     ui->progressBar->setFormat(QStringLiteral("%1：%2%").arg(information).arg(value));
     ui->progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+}
+void Unwrap_ui::onSnaphuRunEvent(const SnaphuRunEventInfo& event)
+{
+    if (event.type == SNAPHU_RUN_EVENT_PREPARED) {
+        if (m_snaphuTaskLabel) {
+            m_snaphuTaskLabel->setText(QStringLiteral("现场: %1\n配置: %2")
+                .arg(event.taskDirectory, event.configPath));
+        }
+        if (m_snaphuStatusLabel) m_snaphuStatusLabel->setText(QStringLiteral("状态: 已准备，等待 SNAPHU 启动"));
+        InSARLogManager::LogInfo("Unwrap_ui", QStringLiteral("SNAPHU staging: %1; config: %2")
+            .arg(event.taskDirectory, event.configPath));
+        return;
+    }
+    if (event.type == SNAPHU_RUN_EVENT_STARTED || event.type == SNAPHU_RUN_EVENT_HEARTBEAT) {
+        QStringList metrics;
+        metrics.append(QStringLiteral("运行 %1 s").arg(event.elapsedMilliseconds / 1000));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_CPU_TIME)
+            ? QStringLiteral("CPU %1 s").arg(event.totalCpuMilliseconds / 1000) : QStringLiteral("CPU 未知"));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_PEAK_JOB_MEMORY)
+            ? QStringLiteral("内存 %1 MiB").arg(event.peakJobMemoryBytes / (1024 * 1024)) : QStringLiteral("内存未知"));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_READ_BYTES)
+            ? QStringLiteral("读取 %1 MiB").arg(event.readBytes / (1024 * 1024)) : QStringLiteral("读取未知"));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_WRITE_BYTES)
+            ? QStringLiteral("写入 %1 MiB").arg(event.writeBytes / (1024 * 1024)) : QStringLiteral("写入未知"));
+        const QString details = metrics.join(QStringLiteral(", "));
+        if (m_snaphuStatusLabel) {
+            m_snaphuStatusLabel->setText(QStringLiteral("状态: SNAPHU 正在运行，内部进度未知\n%1").arg(details));
+        }
+        updateProcess(-1, QStringLiteral("SNAPHU 运行中：%1 (%2)").arg(event.message, details));
+    } else if (event.type == SNAPHU_RUN_EVENT_COMPLETED) {
+        ui->progressBar->setRange(0, 100);
+    } else if (event.type == SNAPHU_RUN_EVENT_LOG || event.type == SNAPHU_RUN_EVENT_WARNING) {
+        InSARLogManager::LogInfo("Unwrap_ui", QStringLiteral("SNAPHU: %1").arg(event.message));
+    }
 }
 void Unwrap_ui::endProcess()
 {
@@ -101,11 +189,7 @@ void Unwrap_ui::StopThread()
     if (m_thread && m_thread->isRunning())
     {
         m_thread->requestInterruption();
-        m_thread->quit();
-        m_thread->wait();
     }
-    releaseStoppedThread();
-    abandonOutputTransaction(QStringLiteral("cancelled"));
 }
 void Unwrap_ui::onWorkerError(const QString& error)
 {
@@ -165,6 +249,7 @@ void Unwrap_ui::ChangeVision(bool Editable)
         ui->Q_MButton->setDisabled(0);
         ui->SnaphuButton->setDisabled(0);
         ui->coherence_threshold->setDisabled(0);
+        if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setDisabled(0);
         ui->buttonBox->buttons().at(0)->setDisabled(0);
     }
     else
@@ -177,6 +262,7 @@ void Unwrap_ui::ChangeVision(bool Editable)
         ui->Q_MButton->setDisabled(1);
         ui->SnaphuButton->setDisabled(1);
         ui->coherence_threshold->setDisabled(1);
+        if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setDisabled(1);
         ui->buttonBox->buttons().at(0)->setDisabled(1);
     }
 
@@ -374,6 +460,7 @@ void Unwrap_ui::on_buttonBox_accepted()
 
     connect(this, &Unwrap_ui::operate, Unwrap_worker, &UnwrapWorker::Unwrap, Qt::QueuedConnection);
     connect(Unwrap_worker, &UnwrapWorker::updateProcess, this, &Unwrap_ui::updateProcess);
+    connect(Unwrap_worker, &UnwrapWorker::snaphuRunEvent, this, &Unwrap_ui::onSnaphuRunEvent, Qt::QueuedConnection);
     connect(m_thread, &QThread::finished, Unwrap_worker, &QObject::deleteLater);
     connect(Unwrap_worker, &UnwrapWorker::endProcess, this, &Unwrap_ui::endProcess);
     connect(Unwrap_worker, &UnwrapWorker::unwrapFileGenerated, this, &Unwrap_ui::onUnwrapFileGenerated);
@@ -381,17 +468,21 @@ void Unwrap_ui::on_buttonBox_accepted()
     connect(Unwrap_worker, &UnwrapWorker::errorProcess, m_thread, &QThread::quit);
     connect(Unwrap_worker, &UnwrapWorker::cancelled, this, &Unwrap_ui::onWorkerCancelled);
     connect(Unwrap_worker, &UnwrapWorker::cancelled, m_thread, &QThread::quit);
-    connect(this, &QWidget::destroyed, this, &Unwrap_ui::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &Unwrap_ui::StopThread);
     
     m_thread->start();
     ChangeVision(false);
     emit operate(this->method, ui->coherence_threshold->text().toDouble(), this->save_path,
-                 m_outputTransaction.stagingName, phasePaths);
+                 m_outputTransaction.stagingName, phasePaths, snaphuOptions());
 }
 
 void Unwrap_ui::on_buttonBox_rejected()
 {
+    if (m_thread && m_thread->isRunning()) {
+        StopThread();
+        updateProcess(-1, QStringLiteral("正在取消 SNAPHU，等待外部进程退出…"));
+        return;
+    }
     this->close();
 }
 
@@ -414,6 +505,7 @@ void Unwrap_ui::Change_Setting()
         ui->ct_label->setHidden(1);
         ui->coherence_threshold->setHidden(1);
         this->method = 3;
+        if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setVisible(true);
     }
     else if (ui->Q_MButton->isChecked())
     {
@@ -427,4 +519,30 @@ void Unwrap_ui::Change_Setting()
         ui->coherence_threshold->setHidden(1);
         this->method = 0;
     }
+    if (m_snaphuOptionsGroup && !ui->SnaphuButton->isChecked()) m_snaphuOptionsGroup->setVisible(false);
+}
+
+SnaphuUiOptions Unwrap_ui::snaphuOptions() const
+{
+    SnaphuUiOptions options;
+    options.tileRows = static_cast<quint32>(m_snaphuTileRowsSpin->value());
+    options.tileCols = static_cast<quint32>(m_snaphuTileColsSpin->value());
+    options.rowOverlap = static_cast<quint32>(m_snaphuRowOverlapSpin->value());
+    options.colOverlap = static_cast<quint32>(m_snaphuColOverlapSpin->value());
+    options.wallTimeoutMilliseconds = static_cast<quint64>(m_snaphuTimeoutSpin->value()) * 1000;
+    options.keepArtifactsOnSuccess = m_snaphuKeepArtifactsCheck->isChecked();
+    return options;
+}
+
+void Unwrap_ui::updateSnaphuOptionWidgets()
+{
+    if (!m_snaphuTileRowsSpin) return;
+    const bool tiled = m_snaphuTileRowsSpin->value() > 1 || m_snaphuTileColsSpin->value() > 1;
+    m_snaphuRowOverlapSpin->setMinimum(tiled ? 400 : 0);
+    m_snaphuColOverlapSpin->setMinimum(tiled ? 400 : 0);
+    if (!tiled) {
+        m_snaphuRowOverlapSpin->setValue(0);
+        m_snaphuColOverlapSpin->setValue(0);
+    }
+    if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setVisible(ui->SnaphuButton->isChecked());
 }

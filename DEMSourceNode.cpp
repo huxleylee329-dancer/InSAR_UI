@@ -56,6 +56,15 @@ QByteArray sha256File(const QString& path)
     return hash.result().toHex();
 }
 
+bool demCoverageIsUnverified(const QString& h5Path)
+{
+    NodeUtils::Hdf5Locker locker(h5Path, 50);
+    std::string status;
+    return locker.isLocked() && NodeUtils::readStringFromH5(
+        h5Path, QStringLiteral("dem_coverage_precheck_status"), status) &&
+        status == "coverage_unverified";
+}
+
 QString fileGeneration(const QString& path)
 {
     const QFileInfo info(path);
@@ -580,13 +589,16 @@ struct DemFinalizationPreparation
     NodeUtils::OutputTransaction transaction;
     QString stagedH5Path;
     QString stagedTifPath;
+    QString stagedMaskTifPath;
     QString managedH5Path;
     QString managedTifPath;
+    QString managedMaskTifPath;
     QString resourceDirectory;
     QString resourceId;
     QString provenanceId;
     QByteArray rasterHash;
     QByteArray identityHash;
+    QByteArray maskHash;
     QByteArray canonicalMetadataHash;
     QJsonObject resourceMetadata;
     QJsonObject provenance;
@@ -613,6 +625,7 @@ DemFinalizationPreparation prepareDemFinalization(NodeUtils::OutputTransaction t
                                                                 << QStringLiteral("dem_x")
                                                                 << QStringLiteral("dem_y")
                                                                 << QStringLiteral("dem_z")
+                                                                << QStringLiteral("dem_valid_mask")
                                                                 << QStringLiteral("lon")
                                                                 << QStringLiteral("lat"),
                                                   &error)) {
@@ -630,16 +643,21 @@ DemFinalizationPreparation prepareDemFinalization(NodeUtils::OutputTransaction t
     for (const QString& fileName : transaction.expectedFileNames) {
         const QString path = stagedOutput.absoluteFilePath(fileName);
         if (fileName.endsWith(QStringLiteral(".h5"), Qt::CaseInsensitive)) result.stagedH5Path = path;
-        if (fileName.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive)) result.stagedTifPath = path;
+        if (fileName.endsWith(QStringLiteral("_dem_valid_mask.tif"), Qt::CaseInsensitive)) {
+            result.stagedMaskTifPath = path;
+        } else if (fileName.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive)) {
+            result.stagedTifPath = path;
+        }
     }
-    if (result.stagedH5Path.isEmpty() || result.stagedTifPath.isEmpty()) {
-        result.errorMessage = QStringLiteral("Promoted DEM transaction is missing its H5 or TIFF output.");
+    if (result.stagedH5Path.isEmpty() || result.stagedTifPath.isEmpty() || result.stagedMaskTifPath.isEmpty()) {
+        result.errorMessage = QStringLiteral("Promoted DEM transaction is missing its H5, TIFF, or validity mask output.");
         return result;
     }
 
     result.rasterHash = stagedOutputHash(result.transaction, QFileInfo(result.stagedTifPath).fileName());
     result.identityHash = stagedOutputHash(result.transaction, QFileInfo(result.stagedH5Path).fileName());
-    if (result.rasterHash.isEmpty() || result.identityHash.isEmpty() ||
+    result.maskHash = stagedOutputHash(result.transaction, QFileInfo(result.stagedMaskTifPath).fileName());
+    if (result.rasterHash.isEmpty() || result.identityHash.isEmpty() || result.maskHash.isEmpty() ||
         !buildDemResourceMetadata(result.stagedTifPath, result.stagedH5Path, result.resourceMetadata)) {
         result.errorMessage = QStringLiteral("DEM resource validation failed while preparing the managed resource.");
         return result;
@@ -658,17 +676,23 @@ DemFinalizationPreparation prepareDemFinalization(NodeUtils::OutputTransaction t
     result.resourceDirectory = resourceDir.absolutePath();
     result.managedTifPath = resourceDir.absoluteFilePath(QStringLiteral("dem.tif"));
     result.managedH5Path = resourceDir.absoluteFilePath(QStringLiteral("identity.h5"));
+    result.managedMaskTifPath = resourceDir.absoluteFilePath(QStringLiteral("dem_valid_mask.tif"));
     const bool hasManagedTif = QFileInfo::exists(result.managedTifPath);
     const bool hasManagedH5 = QFileInfo::exists(result.managedH5Path);
-    if (QFileInfo::exists(resourceDir.absolutePath()) && !(hasManagedTif && hasManagedH5)) {
+    const bool hasManagedMask = QFileInfo::exists(result.managedMaskTifPath);
+    if (QFileInfo::exists(resourceDir.absolutePath()) && !(hasManagedTif && hasManagedH5 && hasManagedMask)) {
         result.errorMessage = QStringLiteral("已存在不完整 DEM 资源目录，拒绝覆盖或复用。");
         return result;
     }
-    result.resourceAlreadyCommitted = hasManagedTif && hasManagedH5;
+    result.resourceAlreadyCommitted = hasManagedTif && hasManagedH5 && hasManagedMask;
     if (result.resourceAlreadyCommitted &&
         (sha256File(result.managedTifPath) != result.rasterHash ||
          sha256File(result.managedH5Path) != result.identityHash)) {
         result.errorMessage = QStringLiteral("已存在 DEM 资源目录的内容 hash 不匹配，拒绝复用。");
+        return result;
+    }
+    if (result.resourceAlreadyCommitted && sha256File(result.managedMaskTifPath) != result.maskHash) {
+        result.errorMessage = QStringLiteral("已存在 DEM 有效性 mask 的内容 hash 不匹配，拒绝复用。");
         return result;
     }
 
@@ -685,13 +709,18 @@ DemFinalizationPreparation prepareDemFinalization(NodeUtils::OutputTransaction t
     identityManifest.insert(QStringLiteral("path"), QStringLiteral("identity.h5"));
     identityManifest.insert(QStringLiteral("sha256"), QString::fromLatin1(result.identityHash));
     result.provenance.insert(QStringLiteral("identity.h5"), identityManifest);
+    QJsonObject maskManifest;
+    maskManifest.insert(QStringLiteral("path"), QStringLiteral("dem_valid_mask.tif"));
+    maskManifest.insert(QStringLiteral("sha256"), QString::fromLatin1(result.maskHash));
+    result.provenance.insert(QStringLiteral("dem_valid_mask.tif"), maskManifest);
 
     if (!result.resourceAlreadyCommitted) {
         const QString installPath = result.transaction.resourceStagingPath;
         if (installPath.isEmpty() || QDir(installPath).exists() ||
             !QDir().mkpath(installPath) ||
             !QFile::copy(result.stagedTifPath, QDir(installPath).absoluteFilePath(QStringLiteral("dem.tif"))) ||
-            !QFile::copy(result.stagedH5Path, QDir(installPath).absoluteFilePath(QStringLiteral("identity.h5")))) {
+            !QFile::copy(result.stagedH5Path, QDir(installPath).absoluteFilePath(QStringLiteral("identity.h5"))) ||
+            !QFile::copy(result.stagedMaskTifPath, QDir(installPath).absoluteFilePath(QStringLiteral("dem_valid_mask.tif")))) {
             QDir(installPath).removeRecursively();
             result.errorMessage = QStringLiteral("无法准备 DEM 资源隔离安装目录。");
             return result;
@@ -732,6 +761,7 @@ DEMSourceNode::DEMSourceNode()
     , m_workerThread(nullptr)
     , m_thread(nullptr)
 {
+    qRegisterMetaType<DemCoverageAudit>("DemCoverageAudit");
     m_workflowProducerIdentity = QUuid::createUuid().toString(QUuid::WithoutBraces);
     setExecutionMode(ExecutionMode::Automatic);
     
@@ -1436,7 +1466,8 @@ bool DEMSourceNode::prepareToStart()
     const QDir outputDirectory(m_preparedSavePath + "/" + m_preparedDstNode);
     m_preparedOutputPaths = QStringList()
         << outputDirectory.absoluteFilePath(m_preparedDstNode + "_dem.h5")
-        << outputDirectory.absoluteFilePath(m_preparedDstNode + "_dem.tif");
+        << outputDirectory.absoluteFilePath(m_preparedDstNode + "_dem.tif")
+        << outputDirectory.absoluteFilePath(m_preparedDstNode + "_dem_valid_mask.tif");
     if (_isAutoTriggered) {
         m_preparedOverwriteResult = NodeUtils::OverwriteResult::Overwrite;
     } else {
@@ -1507,6 +1538,7 @@ void DEMSourceNode::executeProcessing()
         return;
     }
     clearPublishedOutputs();
+    m_pendingCoverageAudit = DemCoverageAudit();
     const quint64 executionGeneration = ++m_executionGeneration;
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
@@ -1554,10 +1586,12 @@ void DEMSourceNode::executeProcessing()
             [this, executionGeneration](const QString& outputH5Path, const QString& stagingNode,
                                         const QString& projectName, int demSource, double targetResolution,
                                         const QStringList& availableTiles, const QStringList& serverNotFoundTiles,
-                                        int requestedTileCount, bool outputValidated) {
+                                        int requestedTileCount, bool outputValidated,
+                                        const DemCoverageAudit& coverageAudit) {
         if (executionGeneration == m_executionGeneration) {
             onProcessingFinished(outputH5Path, stagingNode, projectName, demSource, targetResolution,
-                                 availableTiles, serverNotFoundTiles, requestedTileCount, outputValidated);
+                                 availableTiles, serverNotFoundTiles, requestedTileCount, outputValidated,
+                                 coverageAudit);
         }
     });
     connect(m_workerThread, &DEMSourceWorker::demFetchFinished, m_thread, &QThread::quit);
@@ -1622,7 +1656,8 @@ void DEMSourceNode::onProcessingFinished(
     const QStringList& availableTiles,
     const QStringList& serverNotFoundTiles,
     int requestedTileCount,
-    bool outputValidated
+    bool outputValidated,
+    const DemCoverageAudit& coverageAudit
 )
 {
     m_workerThread = nullptr;
@@ -1672,14 +1707,15 @@ void DEMSourceNode::onProcessingFinished(
         connect(&m_finalizationWatcher, &QFutureWatcher<void>::finished, this,
                 [this, preparation, executionGeneration, revision, outputH5Path, stagingNode,
                  projectName, demSource, targetResolution, availableTiles, serverNotFoundTiles,
-                 requestedTileCount, outputValidated]() {
+                 requestedTileCount, outputValidated, coverageAudit]() {
             if (executionGeneration != m_executionGeneration || revision != executionRevision()) {
                 QDir(preparation->transaction.resourceStagingPath).removeRecursively();
                 return;
             }
             m_finalizationPreparation = preparation;
             onProcessingFinished(outputH5Path, stagingNode, projectName, demSource, targetResolution,
-                                 availableTiles, serverNotFoundTiles, requestedTileCount, outputValidated);
+                                 availableTiles, serverNotFoundTiles, requestedTileCount, outputValidated,
+                                 coverageAudit);
         });
         setProgress(96);
         m_finalizationWatcher.setFuture(QtConcurrent::run([preparation, transaction, outputH5Path]() {
@@ -1697,6 +1733,7 @@ void DEMSourceNode::onProcessingFinished(
         return;
     }
     m_outputTransaction = preparation->transaction;
+    m_pendingCoverageAudit = coverageAudit;
 
     OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
     if (!commitLease) {
@@ -1733,8 +1770,9 @@ void DEMSourceNode::onProcessingFinished(
     const QDir stagedOutput(QDir(m_outputTransaction.projectRoot).absoluteFilePath(m_outputTransaction.stagingName));
     QString h5Path = stagedOutput.absoluteFilePath(QFileInfo(m_preparedOutputPaths.value(0)).fileName());
     QString tifPath = stagedOutput.absoluteFilePath(QFileInfo(m_preparedOutputPaths.value(1)).fileName());
-    if (h5Path.isEmpty() || tifPath.isEmpty()) {
-        onError(QStringLiteral("Promoted DEM transaction is missing its H5 or TIFF output."));
+    const QString maskTifPath = stagedOutput.absoluteFilePath(QFileInfo(m_preparedOutputPaths.value(2)).fileName());
+    if (h5Path.isEmpty() || tifPath.isEmpty() || maskTifPath.isEmpty()) {
+        onError(QStringLiteral("Promoted DEM transaction is missing its H5, TIFF, or validity mask output."));
         return;
     }
 
@@ -1743,7 +1781,8 @@ void DEMSourceNode::onProcessingFinished(
     // same large H5 a second time on the completion path.
     const QByteArray rasterHash = preparation->rasterHash;
     const QByteArray identityHash = preparation->identityHash;
-    if (rasterHash.isEmpty() || identityHash.isEmpty()) {
+    const QByteArray maskHash = preparation->maskHash;
+    if (rasterHash.isEmpty() || identityHash.isEmpty() || maskHash.isEmpty()) {
         onError(QStringLiteral("无法计算 DEM 受管文件 hash。"));
         return;
     }
@@ -1760,8 +1799,9 @@ void DEMSourceNode::onProcessingFinished(
     const QDir resourceDir(preparation->resourceDirectory);
     const QString managedTif = resourceDir.absoluteFilePath(QStringLiteral("dem.tif"));
     const QString managedH5 = resourceDir.absoluteFilePath(QStringLiteral("identity.h5"));
+    const QString managedMaskTif = resourceDir.absoluteFilePath(QStringLiteral("dem_valid_mask.tif"));
     const bool hasPartialResource = QFile::exists(resourceDir.absolutePath()) &&
-        !(QFile::exists(managedTif) && QFile::exists(managedH5));
+        !(QFile::exists(managedTif) && QFile::exists(managedH5) && QFile::exists(managedMaskTif));
     if (hasPartialResource) {
         onError(QStringLiteral("已存在不完整 DEM 资源目录，拒绝覆盖或复用。"));
         return;
@@ -1791,6 +1831,10 @@ void DEMSourceNode::onProcessingFinished(
     identityManifest.insert(QStringLiteral("path"), QStringLiteral("identity.h5"));
     identityManifest.insert(QStringLiteral("sha256"), QString::fromLatin1(identityHash));
     provenance.insert(QStringLiteral("identity.h5"), identityManifest);
+    QJsonObject maskManifest;
+    maskManifest.insert(QStringLiteral("path"), QStringLiteral("dem_valid_mask.tif"));
+    maskManifest.insert(QStringLiteral("sha256"), QString::fromLatin1(maskHash));
+    provenance.insert(QStringLiteral("dem_valid_mask.tif"), maskManifest);
     const QString manifestRoot = resourceAlreadyCommitted ? resourceDir.absolutePath() : installDir.absolutePath();
     m_outputTransaction.provenanceManifestPath = QDir(manifestRoot).absoluteFilePath(
         QStringLiteral("provenance_%1.json").arg(provenanceId));
@@ -1895,13 +1939,15 @@ void DEMSourceNode::onProcessingFinished(
         QFile::remove(m_outputTransaction.resourceRegistryBackupPath);
     }
 
-    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，请求瓦片可用率 %3%，服务器 404 瓦片：%4，输出：%5，输出数据集校验：通过。")
+    const QString summary = QStringLiteral("DEM 获取完成：可用瓦片 %1/%2，请求瓦片可用率 %3%，服务器 404 瓦片：%4，DEM 覆盖状态：%5，有效/无效像元：%6/%7，输出：%8，输出数据集校验：通过。")
         .arg(availableTiles.size()).arg(requestedTileCount).arg(tileAvailability, 0, 'f', 1)
         .arg(serverNotFoundTiles.isEmpty() ? QStringLiteral("无") : serverNotFoundTiles.join(QStringLiteral(", ")))
+        .arg(coverageAudit.status).arg(coverageAudit.validPixelCount).arg(coverageAudit.invalidPixelCount)
         .arg(h5Path);
     InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo, "DEMSourceNode", summary,
                                   LogTargets(LogTarget::UserProjectLog),
-                                  QStringLiteral("artifact_validated"), QStringLiteral("completed"));
+                                  QStringLiteral("artifact_validated"), coverageAudit.hasUnverifiedCoverage
+                                      ? QStringLiteral("warning") : QStringLiteral("completed"));
 
     const QString dstNode = m_preparedDstNode;
     const QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
@@ -2027,8 +2073,14 @@ void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString&
             InSARLogManager::LogWarning("DEMSourceNode", "DEM preview JPG failed to generate: " + jpgPath);
         }
 
-        if (!jpgExists) {
-            setLastWarningMessage(QStringLiteral("DEM data was generated, but its preview image could not be generated."));
+        if (!jpgExists || m_pendingCoverageAudit.hasUnverifiedCoverage) {
+            QStringList warnings;
+            if (!jpgExists) warnings << QStringLiteral("DEM data was generated, but its preview image could not be generated.");
+            if (m_pendingCoverageAudit.hasUnverifiedCoverage) {
+                warnings << QStringLiteral("DEM coverage is unverified for HTTP 404 tile(s): %1.")
+                    .arg(m_pendingCoverageAudit.intersectingServerNotFoundTiles.join(QStringLiteral(", ")));
+            }
+            setLastWarningMessage(warnings.join(QLatin1Char(' ')));
             setState(ExecutionState::Running);
             finishExecutionWithWarning();
         } else {
@@ -2096,7 +2148,8 @@ bool DEMSourceNode::validateAndRestoreOutput()
     QString targetTif;
     for (const QString& path : committedPaths) {
         if (path.endsWith(QStringLiteral(".h5"), Qt::CaseInsensitive)) targetH5 = path;
-        if (path.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive)) targetTif = path;
+        if (path.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive) &&
+            !path.endsWith(QStringLiteral("_dem_valid_mask.tif"), Qt::CaseInsensitive)) targetTif = path;
     }
     if (targetH5.isEmpty() || targetTif.isEmpty()) {
         clearRestoredOutputs();
@@ -2201,10 +2254,13 @@ bool DEMSourceNode::validateAndRestoreOutput()
                     executionState() == ExecutionState::Pending ||
                     executionState() == ExecutionState::Completed) {
                     if (tifExists) {
-                        if (!jpgExists) {
-                            setLastWarningMessage(QStringLiteral("DEM data was restored, but its preview image could not be generated."));
+                        if (!jpgExists || demCoverageIsUnverified(targetH5)) {
+                            QStringList warnings;
+                            if (!jpgExists) warnings << QStringLiteral("DEM data was restored, but its preview image could not be generated.");
+                            if (demCoverageIsUnverified(targetH5)) warnings << QStringLiteral("DEM coverage remains unverified for an intersecting HTTP 404 tile.");
+                            setLastWarningMessage(warnings.join(QLatin1Char(' ')));
                             setState(ExecutionState::Warning);
-                            InSARLogManager::LogWarning("DEMSourceNode", "DEM recovery finished with warning: JPG preview generation failed.");
+                            InSARLogManager::LogWarning("DEMSourceNode", "DEM recovery finished with warning.");
                         } else {
                             setState(ExecutionState::Completed);
                         }
@@ -2289,7 +2345,12 @@ bool DEMSourceNode::validateAndRestoreOutput()
             setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(0);
             Q_EMIT dataUpdated(1);
-            setState(ExecutionState::Completed);
+            if (demCoverageIsUnverified(targetH5)) {
+                setLastWarningMessage(QStringLiteral("DEM coverage remains unverified for an intersecting HTTP 404 tile."));
+                setState(ExecutionState::Warning);
+            } else {
+                setState(ExecutionState::Completed);
+            }
         }
 
         updateCacheSizeLabel();
@@ -2395,7 +2456,8 @@ QStringList DEMSourceNode::getExpectedOutputFilePaths() const
     QString name = m_outputNodeName.isEmpty() ? generateDefaultOutputName() : m_outputNodeName;
     QString targetH5 = savePath + "/" + name + "/" + name + "_dem.h5";
     QString targetTif = savePath + "/" + name + "/" + name + "_dem.tif";
-    return QStringList() << targetH5 << targetTif;
+    QString targetMaskTif = savePath + "/" + name + "/" + name + "_dem_valid_mask.tif";
+    return QStringList() << targetH5 << targetTif << targetMaskTif;
 }
 
 // 提取输入图像地理边界的辅助函数

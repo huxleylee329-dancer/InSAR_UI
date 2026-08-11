@@ -36,10 +36,10 @@ LogTargets diagnosticTargets()
 
 LogTargets legacyTargets(InSARLogManager::LogLevel level)
 {
-    if (level == InSARLogManager::LevelError) {
-        return userTarget() | LogTarget::DebugConsole;
+    if (level == InSARLogManager::LevelInfo || level == InSARLogManager::LevelDebug) {
+        return diagnosticTargets();
     }
-    return userTarget();
+    return userTarget() | diagnosticTargets();
 }
 
 QString levelName(int level)
@@ -387,9 +387,14 @@ QString InSARLogManager::formatEntry(const LogEntry& entry)
     if (entry.scope != QStringLiteral("application")) details.append(QStringLiteral("scope=%1").arg(entry.scope));
     if (!entry.category.isEmpty()) details.append(QStringLiteral("category=%1").arg(entry.category));
 
+    QString message = entry.message;
+    message.replace(QStringLiteral("\r\n"), QStringLiteral("\\n"));
+    message.replace(QLatin1Char('\n'), QStringLiteral("\\n"));
+    message.replace(QLatin1Char('\r'), QStringLiteral("\\r"));
+
     const QString suffix = details.isEmpty() ? QString() : QStringLiteral(" [%1]").arg(details.join(QStringLiteral(", ")));
     return QStringLiteral("[%1] [%2] [%3] %4%5")
-        .arg(entry.timestamp, levelName(entry.level), source, entry.message, suffix);
+        .arg(entry.timestamp, levelName(entry.level), source, message, suffix);
 }
 
 QString InSARLogManager::getCurrentLogFilePath() const
@@ -406,6 +411,12 @@ QString InSARLogManager::getDiagnosticLogFilePath() const
 
 void InSARLogManager::appendEntry(LogEntry entry)
 {
+    // User-facing events are also useful when investigating the same run in a
+    // diagnostic sink. Ordinary INFO records stay diagnostic-only.
+    if (entry.targets.testFlag(LogTarget::UserProjectLog)) {
+        entry.targets |= diagnosticTargets();
+    }
+
     {
         QMutexLocker locker(&m_configurationMutex);
         entry.sequence = ++m_nextSequence;

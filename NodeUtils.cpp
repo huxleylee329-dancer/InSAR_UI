@@ -307,9 +307,11 @@ bool loadAuxiliaryDemRegistry(const QString& projectRoot,
         if (object.value(QStringLiteral("role")).toString() != QStringLiteral("auxiliary_terrain_dem") ||
             object.value(QStringLiteral("rasterHash")).toString().isEmpty() ||
             object.value(QStringLiteral("identityH5Hash")).toString().isEmpty() ||
+            object.value(QStringLiteral("validMaskHash")).toString().isEmpty() ||
             canonicalMetadataHash.isEmpty() ||
             object.value(QStringLiteral("managedRasterPath")).toString() != expectedRoot + QStringLiteral("/dem.tif") ||
             object.value(QStringLiteral("managedIdentityH5Path")).toString() != expectedRoot + QStringLiteral("/identity.h5") ||
+            object.value(QStringLiteral("managedValidMaskPath")).toString() != expectedRoot + QStringLiteral("/dem_valid_mask.tif") ||
             !object.value(QStringLiteral("metadata")).isObject() ||
             !object.value(QStringLiteral("provenanceHistory")).isArray() ||
             (object.contains(QStringLiteral("tombstone")) && !object.value(QStringLiteral("tombstone")).isBool())) {
@@ -350,9 +352,11 @@ bool loadAuxiliaryDemRegistry(const QString& projectRoot,
         entry.role = object.value(QStringLiteral("role")).toString();
         entry.rasterHash = object.value(QStringLiteral("rasterHash")).toString();
         entry.identityH5Hash = object.value(QStringLiteral("identityH5Hash")).toString();
+        entry.validMaskHash = object.value(QStringLiteral("validMaskHash")).toString();
         entry.canonicalMetadataHash = canonicalMetadataHash;
         entry.managedRasterPath = object.value(QStringLiteral("managedRasterPath")).toString();
         entry.managedIdentityH5Path = object.value(QStringLiteral("managedIdentityH5Path")).toString();
+        entry.managedValidMaskPath = object.value(QStringLiteral("managedValidMaskPath")).toString();
         entry.metadata = object.value(QStringLiteral("metadata")).toObject();
         entry.provenanceHistory = normalizedProvenanceHistory;
         entry.tombstone = object.value(QStringLiteral("tombstone")).toBool(false);
@@ -367,6 +371,7 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
 {
     if (entry.resourceId.isEmpty() || entry.role != QStringLiteral("auxiliary_terrain_dem") ||
         entry.rasterHash.isEmpty() || entry.identityH5Hash.isEmpty() ||
+        entry.validMaskHash.isEmpty() ||
         entry.canonicalMetadataHash.isEmpty() || entry.provenanceHistory.isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("DEM registry entry is incomplete.");
         return false;
@@ -383,7 +388,9 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
             provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem.tif") ||
             provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.rasterHash ||
             provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("identity.h5") ||
-            provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != entry.identityH5Hash) {
+            provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != entry.identityH5Hash ||
+            provenance.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem_valid_mask.tif") ||
+            provenance.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.validMaskHash) {
             if (errorMessage) *errorMessage = QStringLiteral("DEM registry provenance entry is incomplete or invalid.");
             return false;
         }
@@ -401,6 +408,7 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
     }
     if (!merged.resourceId.isEmpty() &&
         (merged.rasterHash != entry.rasterHash || merged.identityH5Hash != entry.identityH5Hash ||
+         merged.validMaskHash != entry.validMaskHash ||
          merged.canonicalMetadataHash != entry.canonicalMetadataHash)) {
         if (errorMessage) *errorMessage = QStringLiteral("DEM registry identity conflict for resourceId.");
         return false;
@@ -409,9 +417,11 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
     merged.role = entry.role;
     merged.rasterHash = entry.rasterHash;
     merged.identityH5Hash = entry.identityH5Hash;
+    merged.validMaskHash = entry.validMaskHash;
     merged.canonicalMetadataHash = entry.canonicalMetadataHash;
     merged.managedRasterPath = entry.managedRasterPath;
     merged.managedIdentityH5Path = entry.managedIdentityH5Path;
+    merged.managedValidMaskPath = entry.managedValidMaskPath;
     merged.metadata = entry.metadata;
     merged.tombstone = false;
     for (const QJsonValue& provenance : entry.provenanceHistory) {
@@ -432,9 +442,11 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
         object.insert(QStringLiteral("role"), it.value().role);
         object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
         object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
+        object.insert(QStringLiteral("validMaskHash"), it.value().validMaskHash);
         object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
         object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
         object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
+        object.insert(QStringLiteral("managedValidMaskPath"), it.value().managedValidMaskPath);
         object.insert(QStringLiteral("metadata"), it.value().metadata);
         object.insert(QStringLiteral("provenanceHistory"), it.value().provenanceHistory);
         object.insert(QStringLiteral("tombstone"), it.value().tombstone);
@@ -875,9 +887,11 @@ bool tombstoneAuxiliaryDemResource(const QString& projectRoot,
         object.insert(QStringLiteral("role"), it.value().role);
         object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
         object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
+        object.insert(QStringLiteral("validMaskHash"), it.value().validMaskHash);
         object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
         object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
         object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
+        object.insert(QStringLiteral("managedValidMaskPath"), it.value().managedValidMaskPath);
         object.insert(QStringLiteral("metadata"), it.value().metadata);
         object.insert(QStringLiteral("provenanceHistory"), it.value().provenanceHistory);
         object.insert(QStringLiteral("tombstone"), it.key() == resourceId ? true : it.value().tombstone);
@@ -3391,7 +3405,9 @@ void abandonOutputTransaction(OutputTransaction& transaction, const QString& rea
             QString ignored;
             persistTransaction(transaction, &ignored);
         }
-        if (!reason.isEmpty()) InSARLogManager::LogWarning("NodeUtils", QString("Output transaction abandoned: %1").arg(reason));
+        if (!reason.isEmpty()) InSARLogManager::LogDiagnostic(InSARLogManager::LevelDebug, "NodeUtils",
+            QString("Output transaction abandoned: %1").arg(reason),
+            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, "output.transaction");
         return;
     }
 
@@ -3451,7 +3467,9 @@ void abandonOutputTransaction(OutputTransaction& transaction, const QString& rea
         } else {
             InSARLogManager::LogError("NodeUtils", QString("Output transaction rollback requires recovery: %1").arg(transaction.journalPath));
         }
-        if (!reason.isEmpty()) InSARLogManager::LogWarning("NodeUtils", QString("Output transaction abandoned: %1").arg(reason));
+        if (!reason.isEmpty()) InSARLogManager::LogDiagnostic(InSARLogManager::LevelDebug, "NodeUtils",
+            QString("Output transaction abandoned: %1").arg(reason),
+            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, "output.transaction");
     }
 }
 
@@ -5077,6 +5095,35 @@ bool writeDemToTif(const QString& tifPath, const cv::Mat& dem, const double* gt,
         return false;
     }
 
+    return true;
+}
+
+bool writeDemValidityMaskToTif(const QString& tifPath, const cv::Mat& validMask,
+                               const double* gt, const char* wkt)
+{
+    if (validMask.empty() || validMask.type() != CV_8UC1) return false;
+
+    Hdf5Locker locker(tifPath);
+    GDALAllRegister();
+    GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+    if (!driver) return false;
+
+    GDALDataset* dataset = driver->Create(tifPath.toLocal8Bit().constData(), validMask.cols,
+                                          validMask.rows, 1, GDT_Byte, nullptr);
+    if (!dataset) return false;
+    dataset->SetGeoTransform(const_cast<double*>(gt));
+    if (wkt) dataset->SetProjection(wkt);
+
+    GDALRasterBand* band = dataset->GetRasterBand(1);
+    band->SetNoDataValue(0.0);
+    const CPLErr error = band->RasterIO(GF_Write, 0, 0, validMask.cols, validMask.rows,
+                                        const_cast<uchar*>(validMask.ptr<uchar>()), validMask.cols,
+                                        validMask.rows, GDT_Byte, 0, 0);
+    GDALClose(dataset);
+    if (error != CE_None) {
+        QFile::remove(tifPath);
+        return false;
+    }
     return true;
 }
 

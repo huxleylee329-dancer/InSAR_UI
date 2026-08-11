@@ -42,6 +42,30 @@ QString diagnosticString(const char* bytes, int capacity)
     return QString::fromUtf8(value.constData(), terminator >= 0 ? terminator : value.size()).trimmed();
 }
 
+QString eventString(const char* bytes, int capacity)
+{
+    return diagnosticString(bytes, capacity);
+}
+
+SnaphuRunOptionsV1 makeSnaphuRunOptions(const SnaphuUiOptions& uiOptions)
+{
+    SnaphuRunOptionsV1 options = {};
+    options.structSize = sizeof(options);
+    options.version = 1;
+    options.tileRows = uiOptions.tileRows;
+    options.tileCols = uiOptions.tileCols;
+    options.rowOverlap = uiOptions.rowOverlap;
+    options.colOverlap = uiOptions.colOverlap;
+    // Windows SNAPHU currently serializes tile execution internally.
+    options.requestedProcessCount = 1;
+    options.wallTimeoutMilliseconds = uiOptions.wallTimeoutMilliseconds;
+    options.heartbeatMilliseconds = 1000;
+    if (uiOptions.keepArtifactsOnSuccess) {
+        options.flags |= SNAPHU_RUN_OPTION_KEEP_ARTIFACTS_ON_SUCCESS;
+    }
+    return options;
+}
+
 QString diagnosticStageName(uint32_t stage)
 {
     switch (stage) {
@@ -146,6 +170,33 @@ bool readOffset(const QString& h5Path, const char* dataset, int& offset, QString
 
 } // namespace
 
+static bool __stdcall snaphuRunEventCallback(const SnaphuRunEventV1* event, void* userData)
+{
+    UnwrapWorker* worker = static_cast<UnwrapWorker*>(userData);
+    if (!worker) {
+        return false;
+    }
+
+    // SnaphuRunEventV1 is borrowed by Core. Copy all fields before crossing Qt threads.
+    SnaphuRunEventInfo copied;
+    if (event) {
+        copied.type = event->type;
+        copied.effectiveProcessCount = event->effectiveProcessCount;
+        copied.metricAvailability = event->metricAvailability;
+        copied.elapsedMilliseconds = event->elapsedMilliseconds;
+        copied.totalCpuMilliseconds = event->totalCpuMilliseconds;
+        copied.peakJobMemoryBytes = event->peakJobMemoryBytes;
+        copied.readBytes = event->readBytes;
+        copied.writeBytes = event->writeBytes;
+        copied.taskDirectory = eventString(event->taskDirectory, sizeof(event->taskDirectory));
+        copied.configPath = eventString(event->configPath, sizeof(event->configPath));
+        copied.message = eventString(event->message, sizeof(event->message));
+        Q_EMIT worker->snaphuRunEvent(copied);
+    }
+
+    return !worker->thread()->isInterruptionRequested() && !worker->isStopRequested();
+}
+
 static bool __stdcall unwrapProgressCallback(int progress, const char* message)
 {
     thread_local QElapsedTimer s_cbTimer;
@@ -212,13 +263,16 @@ UnwrapWorker::UnwrapWorker(QObject* parent)
     : BaseWorker(parent)
 {
     qRegisterMetaType<UnwrapFileResult>("UnwrapFileResult");
+    qRegisterMetaType<SnaphuUiOptions>("SnaphuUiOptions");
+    qRegisterMetaType<SnaphuRunEventInfo>("SnaphuRunEventInfo");
 }
 
 UnwrapWorker::~UnwrapWorker()
 {
 }
 
-void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString file_name, QStringList phasePaths)
+void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_path, QString file_name,
+                          QStringList phasePaths, SnaphuUiOptions snaphuOptions)
 {
     const auto finishCancelled = [this]() {
         InSARLogManager::LogInfo("UnwrapWorker", "Unwrap cancelled by user.");
@@ -308,7 +362,9 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         }
         const QString stderrTail = diagnosticString(diagnostic.stderrTail, sizeof(diagnostic.stderrTail));
         if (!stderrTail.isEmpty()) {
-            InSARLogManager::LogWarning("UnwrapWorker", QStringLiteral("%1 stderr: %2").arg(operation, stderrTail));
+            InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "UnwrapWorker",
+                QStringLiteral("%1 stderr: %2").arg(operation, stderrTail),
+                LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.stderr"));
         }
         emit errorProcess(diagnosticFailureMessage(operation, diagnostic, result));
     };
@@ -602,9 +658,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
             UnwrapDiagnostic diagnostic = {};
             diagnostic.structSize = sizeof(diagnostic);
-            ret = unwrap.SnaphuFileEx(phase_path.at(i).toStdString().c_str(), phase_unwrap,
-                                      save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
-                                      app_path.toStdString().c_str(), unwrapProgressCallback, &diagnostic);
+            const SnaphuRunOptionsV1 options = makeSnaphuRunOptions(snaphuOptions);
+            ret = unwrap.SnaphuFileEx2(phase_path.at(i).toStdString().c_str(), phase_unwrap,
+                                       save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
+                                       app_path.toStdString().c_str(), &options, snaphuRunEventCallback, this,
+                                       &diagnostic);
+            if (ret != 0 || snaphuOptions.keepArtifactsOnSuccess) {
+                snaphuWorkDir.setAutoRemove(false);
+                InSARLogManager::LogInfo("UnwrapWorker", QStringLiteral("SNAPHU artifacts retained at: %1")
+                    .arg(snaphuWorkDir.path()));
+            }
             if (ret != 0) {
                 failDiagnostic(QStringLiteral("SNAPHU"), diagnostic, ret);
                 return;

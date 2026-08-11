@@ -192,10 +192,11 @@ public:
                      const QString& identityH5Path,
                      const QString& resourceId,
                      const QString& pinnedProvenanceId,
-                     const QString& nodeName = QString())
+                     const QString& nodeName = QString(),
+                     const QString& validMaskPath = QString())
         : _rasterPath(rasterPath), _identityH5Path(identityH5Path),
           _resourceId(resourceId), _pinnedProvenanceId(pinnedProvenanceId),
-          _nodeName(nodeName) {}
+          _nodeName(nodeName), _validMaskPath(validMaskPath) {}
 
     NodeDataType type() const override
     {
@@ -203,6 +204,7 @@ public:
     }
     QString rasterPath() const { return _rasterPath; }
     QString identityH5Path() const { return _identityH5Path; }
+    QString validMaskPath() const { return _validMaskPath; }
     QString resourceId() const { return _resourceId; }
     QString pinnedProvenanceId() const { return _pinnedProvenanceId; }
     QString nodeName() const { return _nodeName; }
@@ -225,12 +227,14 @@ public:
             {QStringLiteral("Resource"), _resourceId, FieldEditType::None},
             {QStringLiteral("Provenance"), _pinnedProvenanceId, FieldEditType::None},
             {QStringLiteral("Raster"), _rasterPath, FieldEditType::None},
-            {QStringLiteral("Identity H5"), _identityH5Path, FieldEditType::None}};
+            {QStringLiteral("Identity H5"), _identityH5Path, FieldEditType::None},
+            {QStringLiteral("Validity mask"), _validMaskPath, FieldEditType::None}};
     }
 
 private:
     QString _rasterPath;
     QString _identityH5Path;
+    QString _validMaskPath;
     QString _resourceId;
     QString _pinnedProvenanceId;
     QString _nodeName;

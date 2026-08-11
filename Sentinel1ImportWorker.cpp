@@ -436,15 +436,21 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
         }
         int fineRows = 0;
         int fineColumns = 0;
+        bool hasUsableFineOrbit = false;
         const bool isPreciseOrbit = pod_file.contains(QStringLiteral("POEORB"), Qt::CaseInsensitive);
         const QString orbitType = isPreciseOrbit
             ? QStringLiteral("Precise (POE)")
             : QStringLiteral("Reconstructed (RES)");
         {
             NodeUtils::Hdf5Locker locker(outputPath);
-            conversion.get_dataset_dims(outputPath.toLocal8Bit().constData(),
-                                        "fine_state_vec", &fineRows, &fineColumns);
-            if (fineRows >= 5) {
+            cv::Mat fineOrbit;
+            if (conversion.read_array_from_h5(outputPath.toLocal8Bit().constData(),
+                                              "fine_state_vec", fineOrbit) == 0) {
+                fineRows = fineOrbit.rows;
+                fineColumns = fineOrbit.cols;
+                hasUsableFineOrbit = fineRows >= 7 && fineColumns == 7 && fineOrbit.type() == CV_64F;
+            }
+            if (hasUsableFineOrbit) {
                 const std::string orbitTypeUtf8 = orbitType.toStdString();
                 if (conversion.write_str_to_h5(outputPath.toLocal8Bit().constData(),
                                                "orbit_type", orbitTypeUtf8.c_str()) != 0) {
@@ -453,17 +459,24 @@ bool Sentinel1ImportWorker::convertToH5(const QStringList& arguments, const QStr
                     InSARLogManager::LogError("Sentinel1ImportWorker", outErrorMsg);
                     return false;
                 }
+                const std::string orbitSourceFile = QFileInfo(pod_file).fileName().toStdString();
+                if (conversion.write_str_to_h5(outputPath.toLocal8Bit().constData(),
+                                               "orbit_source_file", orbitSourceFile.c_str()) != 0) {
+                    outErrorMsg = QStringLiteral("精密轨道已生成但无法写入 orbit_source_file：file=%1，EOF=%2")
+                        .arg(outputPath, pod_file);
+                    InSARLogManager::LogError("Sentinel1ImportWorker", outErrorMsg);
+                    return false;
+                }
             }
         }
-        Q_UNUSED(fineColumns);
-        if (fineRows >= 5) {
+        if (hasUsableFineOrbit) {
             InSARLogManager::LogInfo("Sentinel1ImportWorker",
                 QStringLiteral("%1已应用并写入 H5：file=%2，fine_state_vec=%3 行，EOF=%4")
                     .arg(isPreciseOrbit ? QStringLiteral("精密轨道") : QStringLiteral("重建轨道"))
                     .arg(outputPath).arg(fineRows).arg(pod_file));
         } else {
-            outErrorMsg = QStringLiteral("外部 EOF 已传入但未生成有效 fine_state_vec：file=%1，EOF=%2")
-                .arg(outputPath, pod_file);
+            outErrorMsg = QStringLiteral("外部 EOF 已传入但未生成可用于基线计算的 fine_state_vec（需要 Float64、至少 7 行、7 列）：file=%1，rows=%2，columns=%3，EOF=%4")
+                .arg(outputPath).arg(fineRows).arg(fineColumns).arg(pod_file);
             InSARLogManager::LogError("Sentinel1ImportWorker", outErrorMsg);
             return false;
         }

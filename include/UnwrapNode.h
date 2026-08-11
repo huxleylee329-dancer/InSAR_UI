@@ -11,6 +11,9 @@
 #include <QLabel>
 #include <QComboBox>
 #include <QLineEdit>
+#include <QSpinBox>
+#include <QCheckBox>
+#include <QGroupBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QThread>
@@ -67,6 +70,14 @@ private:
     QLineEdit* m_coherenceEdit;
     
     QLineEdit* m_outputNodeNameEdit;
+    QGroupBox* m_snaphuOptionsGroup;
+    QLabel* m_snaphuStatusLabel;
+    QSpinBox* m_snaphuTileRowsSpin;
+    QSpinBox* m_snaphuTileColsSpin;
+    QSpinBox* m_snaphuRowOverlapSpin;
+    QSpinBox* m_snaphuColOverlapSpin;
+    QSpinBox* m_snaphuTimeoutSpin;
+    QCheckBox* m_snaphuKeepArtifactsCheck;
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
@@ -77,6 +88,7 @@ private:
     QString m_outputNodeName;
     int m_method; // 1: SPD Guided, 2: MCF, 3: Snaphu, 4: Quality Guided MCF
     double m_coherenceThreshold;
+    SnaphuUiOptions m_snaphuOptions;
 
     // Worker thread
     UnwrapWorker* m_workerThread;
@@ -94,10 +106,12 @@ private:
     QStringList m_preparedOutputPaths;
     int m_preparedMethod = 1;
     double m_preparedThreshold = 0.3;
+    SnaphuUiOptions m_preparedSnaphuOptions;
     NodeUtils::OutputTransaction m_outputTransaction;
     QList<UnwrapFileResult> m_pendingUnwrapResults;
     QString m_pendingWarningMessage;
     bool m_xmlDirty = false;
+    quint64 m_snaphuLastUiHeartbeatMilliseconds;
 
     // Helper methods
     void createWidget();
@@ -110,6 +124,8 @@ private:
     bool validateInputs() const;
     void updateWidgetSize();
     void onMethodChanged(int index);
+    void updateSnaphuOptionWidgets();
+    void onSnaphuRunEvent(const SnaphuRunEventInfo& event);
     QString generateDefaultOutputName() const;
     void executeProcessing();
     void cleanUpThreadAndWorker();
@@ -134,7 +150,8 @@ private:
     bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
-    void startUnwrap(int method, double coherenceThreshold, QString savePath, QString fileName, QStringList phasePaths);
+    void startUnwrap(int method, double coherenceThreshold, QString savePath, QString fileName,
+                     QStringList phasePaths, SnaphuUiOptions snaphuOptions);
 };
 
 } // namespace QtNodes

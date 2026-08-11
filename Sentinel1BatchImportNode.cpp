@@ -972,30 +972,18 @@ static bool extractExpectedAcquisitionStartTime(
     return false;
 }
 
-// 精轨缓存扫描辅助函数：与批量导入使用同一套 EOF 覆盖范围校验。
-static bool orbitCacheHasEof(const QString& manifestPath,
-                             const QString& projName,
-                             const QString& configuredCacheDir = QString())
+static bool isValidBaselineOrbit(const cv::Mat& orbit)
 {
-    QFileInfo manifestInfo(manifestPath);
-    QString cacheDir = configuredCacheDir.trimmed();
-    if (cacheDir.isEmpty()) {
-        cacheDir = defaultOrbitCacheDir(projName);
-    }
-    if (cacheDir.isEmpty() || !QDir(cacheDir).exists() || !manifestInfo.isFile()) return false;
-
-    QString orbitPath;
-    bool precise = false;
-    return OrbitSourceWorker::findCachedOrbitForManifest(manifestPath, cacheDir,
-                                                         orbitPath, precise, nullptr);
+    return !orbit.empty()
+        && orbit.rows >= 7
+        && orbit.cols == 7
+        && orbit.type() == CV_64F;
 }
 
 // 执行全量属性比对与数据抽查
 static std::vector<CompareItem> performComparison(
     const QString& h5Path,
     const QString& manifestPath,
-    const QString& projectName,
-    const QString& orbitCacheDir,
     bool importAllBursts,
     int startBurst,
     int endBurst
@@ -1220,13 +1208,19 @@ static std::vector<CompareItem> performComparison(
     cv::Mat h5Orbit;
     cv::Mat h5FineOrbit;
     QString h5OrbitType;
+    QString h5OrbitSourceFile;
+    bool fineOrbitRead = false;
     {
         NodeUtils::Hdf5Locker locker(h5Path);
         NodeUtils::readMatFromH5(h5Path, "state_vec", h5Orbit, CV_64F);
-        NodeUtils::readMatFromH5(h5Path, "fine_state_vec", h5FineOrbit, CV_64F);
+        fineOrbitRead = NodeUtils::readMatFromH5(h5Path, "fine_state_vec", h5FineOrbit);
         std::string orbitType;
         if (NodeUtils::readStringFromH5(h5Path, "orbit_type", orbitType)) {
             h5OrbitType = QString::fromStdString(orbitType).trimmed();
+        }
+        std::string orbitSourceFile;
+        if (NodeUtils::readStringFromH5(h5Path, "orbit_source_file", orbitSourceFile)) {
+            h5OrbitSourceFile = QString::fromStdString(orbitSourceFile).trimmed();
         }
     }
     std::vector<cv::Vec6d> xmlOrbits;
@@ -1255,30 +1249,43 @@ static std::vector<CompareItem> performComparison(
     double h5X = (!h5Orbit.empty() && h5Orbit.rows > 0) ? h5Orbit.at<double>(0, xCol) : 0.0;
     double xmlX = !xmlOrbits.empty() ? xmlOrbits[0][0] : 0.0;
 
-    // 检测输入端精轨可用性
-    bool hasEof = orbitCacheHasEof(manifestPath, projectName, orbitCacheDir);
-
     QString rawOrbitStr = xmlLoaded ? QStringLiteral("%1 点 (首点X: %2 m)").arg(xmlOrbits.size()).arg(xmlX, 0, 'f', 1) : QStringLiteral("未读取");
-    rawOrbitStr += hasEof ? QStringLiteral("\n（精轨库：有可用 EOF）") : QStringLiteral("\n（精轨库：无可用 EOF）");
-    const bool hasFineOrbit = !h5FineOrbit.empty() && h5FineOrbit.rows >= 5;
+    rawOrbitStr += QStringLiteral("\n（SAFE 内广播轨道）");
+    const bool hasFineOrbit = fineOrbitRead && isValidBaselineOrbit(h5FineOrbit);
     QString h5OrbitStr = h5Orbit.empty() ? QStringLiteral("无广播轨道") : QStringLiteral("广播轨道: %1 点").arg(h5Orbit.rows);
 
-    // 精轨应用结果必须以 fine_state_vec 为准；state_vec 仍可能只是广播轨道。
+    // 基线 DLL 与几何处理均要求 Float64、7 列、至少 7 个轨道点。
+    // 验证只读取产品本身，不能用当前缓存目录反推历史导入时是否应用 EOF。
     if (hasFineOrbit) {
-        orbitStatus = "PASS";
-        h5OrbitStr = QStringLiteral("精密轨道: %1 点").arg(h5FineOrbit.rows);
-        if (!h5OrbitType.isEmpty()) {
-            h5OrbitStr += QStringLiteral(" (%1)").arg(h5OrbitType);
-        }
-        h5OrbitStr += QStringLiteral(" [精密轨道已应用]");
-    } else if (hasEof) {
-        orbitStatus = "FAILED";
-        h5OrbitStr += QStringLiteral(" [缓存中有匹配 EOF，但 H5 缺少 fine_state_vec]");
-    } else if (!h5Orbit.empty() && h5Orbit.rows > 0) {
-        // 无可用 EOF 时，只验证广播轨道与原始 XML 是否一致。
-        if (!xmlOrbits.empty() && floatCompare(h5X, xmlX, 10.0)) {
+        const bool isPoeOrbit = h5OrbitType.contains(QStringLiteral("Precise"), Qt::CaseInsensitive)
+            || h5OrbitType.contains(QStringLiteral("POE"), Qt::CaseInsensitive);
+        const bool isResOrbit = h5OrbitType.contains(QStringLiteral("Reconstructed"), Qt::CaseInsensitive)
+            || h5OrbitType.contains(QStringLiteral("RES"), Qt::CaseInsensitive);
+        h5OrbitStr = QStringLiteral("fine_state_vec: %1 x %2 (Float64)")
+            .arg(h5FineOrbit.rows).arg(h5FineOrbit.cols);
+        h5OrbitStr += QStringLiteral("\n轨道类型: %1")
+            .arg(h5OrbitType.isEmpty() ? QStringLiteral("未记录（旧产物）") : h5OrbitType);
+        h5OrbitStr += QStringLiteral("\nEOF: %1")
+            .arg(h5OrbitSourceFile.isEmpty() ? QStringLiteral("未记录（旧产物）") : h5OrbitSourceFile);
+        if (isPoeOrbit) {
             orbitStatus = "PASS";
-            h5OrbitStr += QStringLiteral(" [广播轨道]");
+            h5OrbitStr += QStringLiteral("\n[POE 精密轨道已应用，可用于精轨基线]");
+        } else if (isResOrbit) {
+            orbitStatus = "WARNING";
+            h5OrbitStr += QStringLiteral("\n[RES 重建轨道已应用，精度低于 POE]");
+        } else {
+            orbitStatus = "WARNING";
+            h5OrbitStr += QStringLiteral("\n[有效 fine_state_vec 已应用，但轨道类型未审计]");
+        }
+    } else if (fineOrbitRead) {
+        orbitStatus = "FAILED";
+        h5OrbitStr += QStringLiteral("\nfine_state_vec 无法用于基线：%1 x %2, type=%3")
+            .arg(h5FineOrbit.rows).arg(h5FineOrbit.cols).arg(h5FineOrbit.type());
+    } else if (!h5Orbit.empty() && h5Orbit.rows > 0) {
+        // 未应用外部轨道时，仅核验广播轨道与 SAFE 内 orbitList 是否一致。
+        if (!xmlOrbits.empty() && floatCompare(h5X, xmlX, 10.0)) {
+            orbitStatus = "WARNING";
+            h5OrbitStr += QStringLiteral("\n[广播轨道；未检测到可用于基线的 fine_state_vec]");
         } else {
             orbitStatus = "FAILED";
             h5OrbitStr += QStringLiteral(" [广播轨道异常]");
@@ -1301,7 +1308,7 @@ static std::vector<CompareItem> performComparison(
         }
         xmlOrbitAltitude = sumAlt / xmlOrbits.size();
     }
-    results.push_back({gOrbit, QStringLiteral("轨道物理平均高度 (orbit_altitude)"),
+    results.push_back({gOrbit, QStringLiteral("广播轨道物理平均高度 (orbit_altitude)"),
                        xmlLoaded ? QString::number(xmlOrbitAltitude, 'f', 3) + " m" : QStringLiteral("未读取"),
                        QString::number(h5OrbitAltitude, 'f', 3) + " m",
                        (xmlLoaded && floatCompare(xmlOrbitAltitude, h5OrbitAltitude, 5.0)) ? "PASS" : "FAILED"});
@@ -1697,15 +1704,9 @@ private:
         bool importAll = saved["importAllBursts"].toBool(true);
         int startB = saved["startBurst"].toInt(0);
         int endB = saved["endBurst"].toInt(0);
-        const QString comparisonOrbitCacheDir = saved["orbitCacheDir"].toString().trimmed();
-
-        const QString comparisonProjectName = m_node->projectName();
         QFuture<std::vector<CompareItem>> future = QtConcurrent::run(
-            [h5Path, manifestPath, comparisonProjectName, comparisonOrbitCacheDir,
-             importAll, startB, endB]() {
-                return performComparison(h5Path, manifestPath, comparisonProjectName,
-                                         comparisonOrbitCacheDir,
-                                         importAll, startB, endB);
+            [h5Path, manifestPath, importAll, startB, endB]() {
+                return performComparison(h5Path, manifestPath, importAll, startB, endB);
             });
 
         auto* watcher = new QFutureWatcher<std::vector<CompareItem>>(this);
@@ -1813,7 +1814,9 @@ struct InterferometryResult
     bool baselinePass = false;
     int orbitPointCountMaster = 0;        // 主影像轨道向量点数
     int orbitPointCountSlave = 0;         // 辅影像轨道向量点数
-    bool isPreciseOrbit = false;          // 主辅是否均使用精密轨道（≥50点）
+    bool usesFineOrbitForBaseline = false;// 主辅是否均有可用于基线的 fine_state_vec
+    bool isPreciseOrbit = false;          // 主辅是否均为 POE 精密轨道
+    bool hasNonPoeFineOrbit = false;      // RES 或未审计的 fine_state_vec
 
     // 轨道参数
     int relativeOrbitMaster = -1;
@@ -2160,11 +2163,15 @@ private:
             blColor = "#F59E0B";
         } else {
             blText = QStringLiteral("B⊥ = %1 m").arg(result.perpendicularBaseline, 0, 'f', 1);
-            if (result.isPreciseOrbit) {
-                blText += QStringLiteral("（基于精密轨道，精度可靠）");
+            if (result.usesFineOrbitForBaseline) {
+                if (result.isPreciseOrbit) {
+                    blText += QStringLiteral("（基于 POE 精密轨道，精度可靠）");
+                } else {
+                    blText += QStringLiteral("（基于外部细轨道，但含 RES 或轨道类型未审计）");
+                }
                 if (std::abs(result.perpendicularBaseline) <= 100.0) {
-                    blStatus = QStringLiteral("PASS");
-                    blColor = "#10B981";
+                    blStatus = result.isPreciseOrbit ? QStringLiteral("PASS") : QStringLiteral("WARNING");
+                    blColor = result.isPreciseOrbit ? "#10B981" : "#F59E0B";
                 } else {
                     blStatus = QStringLiteral("超标");
                     blColor = "#EF4444";
@@ -2181,7 +2188,9 @@ private:
         addRow(grpBaseline,
             QStringLiteral("主影像轨道点数: %1 | 辅影像轨道点数: %2")
                 .arg(result.orbitPointCountMaster).arg(result.orbitPointCountSlave),
-            result.isPreciseOrbit ? QStringLiteral("精密轨道") : QStringLiteral("广播轨道"),
+            result.isPreciseOrbit ? QStringLiteral("POE 精密轨道")
+                : result.usesFineOrbitForBaseline ? QStringLiteral("RES/未审计细轨道")
+                : QStringLiteral("广播轨道"),
             result.isPreciseOrbit ? "#10B981" : "#F59E0B");
 
         // 时间基线
@@ -2363,19 +2372,39 @@ private:
         result.orbitMatch = (result.relativeOrbitMaster == result.relativeOrbitSlave
                              && result.relativeOrbitMaster >= 0);
 
-        // ---- 3. 读取轨道向量点数（用于轨道精度判定） ----
+        // ---- 3. 读取实际用于基线的轨道向量 ----
         {
             NodeUtils::Hdf5Locker locker;
-            cv::Mat stateVecM, stateVecS;
+            cv::Mat stateVecM, stateVecS, fineStateVecM, fineStateVecS;
+            std::string orbitTypeM, orbitTypeS;
             if (NodeUtils::readMatFromH5(masterH5, "state_vec", stateVecM, CV_64F)) {
                 result.orbitPointCountMaster = stateVecM.rows;
             }
             if (NodeUtils::readMatFromH5(slaveH5, "state_vec", stateVecS, CV_64F)) {
                 result.orbitPointCountSlave = stateVecS.rows;
             }
-            // 精密轨道判定：主辅均 ≥50 个轨道点
-            result.isPreciseOrbit = (result.orbitPointCountMaster >= 50
-                                     && result.orbitPointCountSlave >= 50);
+            const bool masterHasFine = NodeUtils::readMatFromH5(
+                masterH5, "fine_state_vec", fineStateVecM) && isValidBaselineOrbit(fineStateVecM);
+            const bool slaveHasFine = NodeUtils::readMatFromH5(
+                slaveH5, "fine_state_vec", fineStateVecS) && isValidBaselineOrbit(fineStateVecS);
+            result.usesFineOrbitForBaseline = masterHasFine && slaveHasFine;
+            if (masterHasFine) {
+                result.orbitPointCountMaster = fineStateVecM.rows;
+            }
+            if (slaveHasFine) {
+                result.orbitPointCountSlave = fineStateVecS.rows;
+            }
+
+            NodeUtils::readStringFromH5(masterH5, "orbit_type", orbitTypeM);
+            NodeUtils::readStringFromH5(slaveH5, "orbit_type", orbitTypeS);
+            const auto isPoeOrbit = [](const std::string& type) {
+                const QString value = QString::fromStdString(type);
+                return value.contains(QStringLiteral("Precise"), Qt::CaseInsensitive)
+                    || value.contains(QStringLiteral("POE"), Qt::CaseInsensitive);
+            };
+            result.isPreciseOrbit = result.usesFineOrbitForBaseline
+                && isPoeOrbit(orbitTypeM) && isPoeOrbit(orbitTypeS);
+            result.hasNonPoeFineOrbit = result.usesFineOrbitForBaseline && !result.isPreciseOrbit;
         }
 
         // ---- 4. 基线计算 ----
@@ -2454,17 +2483,14 @@ private:
             }
         }
 
-        // 环境因素提示（不易自动化检测）
-        result.recommendations.append(QString());
-        result.recommendations.append(
-            QStringLiteral("注意事项: 地表环境（积雪、植被物候、土壤湿度）可能影响干涉相干性，"
-               "请根据成像季节手动核查。建议优先选择冬季或旱季获取的影像对，"
-               "以减少大气延迟和地表变化的影响。"));
-
-        if (!result.isPreciseOrbit && result.perpendicularBaseline > -998.0) {
+        if (!result.usesFineOrbitForBaseline && result.perpendicularBaseline > -998.0) {
             result.recommendations.append(
-                QStringLiteral("轨道精度提示: 当前使用的轨道数据点数不足50个，建议优先匹配精密轨道文件（POEORB）"
-                   "以获得更准确的基线估计。"));
+                QStringLiteral("轨道精度提示: 至少一景缺少可用于基线的 fine_state_vec（Float64、7 列、至少 7 行），"
+                   "当前 B⊥ 由广播轨道计算。请重新匹配 POEORB 后导入。"));
+        } else if (result.hasNonPoeFineOrbit) {
+            result.recommendations.append(
+                QStringLiteral("轨道精度提示: 当前 B⊥ 使用了 fine_state_vec，但至少一景为 RES 重建轨道或未记录轨道类型；"
+                   "优先使用两景均为 POEORB 的影像对。"));
         }
 
         return result;

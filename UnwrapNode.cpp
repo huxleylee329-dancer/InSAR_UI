@@ -24,7 +24,9 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QTimer>
+#include <QSignalBlocker>
 #include <QtConcurrent/QtConcurrent>
+#include <Unwrap.h>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
@@ -40,13 +42,24 @@ UnwrapNode::UnwrapNode()
     , m_coherenceLabel(nullptr)
     , m_coherenceEdit(nullptr)
     , m_outputNodeNameEdit(nullptr)
+    , m_snaphuOptionsGroup(nullptr)
+    , m_snaphuStatusLabel(nullptr)
+    , m_snaphuTileRowsSpin(nullptr)
+    , m_snaphuTileColsSpin(nullptr)
+    , m_snaphuRowOverlapSpin(nullptr)
+    , m_snaphuColOverlapSpin(nullptr)
+    , m_snaphuTimeoutSpin(nullptr)
+    , m_snaphuKeepArtifactsCheck(nullptr)
     , m_outputNodeName("")
     , m_method(1) // default: SPD Guided
     , m_coherenceThreshold(0.2)
     , m_workerThread(nullptr)
     , m_thread(nullptr)
+    , m_snaphuLastUiHeartbeatMilliseconds(0)
 {
     qRegisterMetaType<UnwrapFileResult>("UnwrapFileResult");
+    qRegisterMetaType<SnaphuUiOptions>("SnaphuUiOptions");
+    qRegisterMetaType<SnaphuRunEventInfo>("SnaphuRunEventInfo");
     setExecutionMode(ExecutionMode::Automatic);
 }
 
@@ -145,6 +158,12 @@ QJsonObject UnwrapNode::save() const
     modelJson["outputNodeName"] = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
     modelJson["method"] = m_method;
     modelJson["coherenceThreshold"] = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
+    modelJson["snaphuTileRows"] = static_cast<int>(m_snaphuOptions.tileRows);
+    modelJson["snaphuTileCols"] = static_cast<int>(m_snaphuOptions.tileCols);
+    modelJson["snaphuRowOverlap"] = static_cast<int>(m_snaphuOptions.rowOverlap);
+    modelJson["snaphuColOverlap"] = static_cast<int>(m_snaphuOptions.colOverlap);
+    modelJson["snaphuTimeoutSeconds"] = static_cast<qint64>(m_snaphuOptions.wallTimeoutMilliseconds / 1000);
+    modelJson["snaphuKeepArtifactsOnSuccess"] = m_snaphuOptions.keepArtifactsOnSuccess;
 
     return modelJson;
 }
@@ -159,6 +178,14 @@ void UnwrapNode::load(QJsonObject const &json)
 
     QJsonValue vCoh = json["coherenceThreshold"];
     if (!vCoh.isUndefined()) m_coherenceThreshold = vCoh.toDouble();
+    if (!json["snaphuTileRows"].isUndefined()) m_snaphuOptions.tileRows = qBound(1, json["snaphuTileRows"].toInt(), 256);
+    if (!json["snaphuTileCols"].isUndefined()) m_snaphuOptions.tileCols = qBound(1, json["snaphuTileCols"].toInt(), 256);
+    if (!json["snaphuRowOverlap"].isUndefined()) m_snaphuOptions.rowOverlap = qMax(0, json["snaphuRowOverlap"].toInt());
+    if (!json["snaphuColOverlap"].isUndefined()) m_snaphuOptions.colOverlap = qMax(0, json["snaphuColOverlap"].toInt());
+    if (!json["snaphuTimeoutSeconds"].isUndefined()) {
+        m_snaphuOptions.wallTimeoutMilliseconds = static_cast<quint64>(qMax<qint64>(0, json["snaphuTimeoutSeconds"].toVariant().toLongLong())) * 1000;
+    }
+    if (!json["snaphuKeepArtifactsOnSuccess"].isUndefined()) m_snaphuOptions.keepArtifactsOnSuccess = json["snaphuKeepArtifactsOnSuccess"].toBool();
 
     // SOP Rule 15: load parameters BEFORE triggering validateAndRestoreOutput in base load
     ExecutableNodeDelegateModel::load(json);
@@ -169,6 +196,7 @@ void UnwrapNode::load(QJsonObject const &json)
     }
     if (m_coherenceEdit) m_coherenceEdit->setText(QString::number(m_coherenceThreshold));
 
+    updateSnaphuOptionWidgets();
     onMethodChanged(m_method - 1);
 }
 
@@ -238,6 +266,53 @@ void UnwrapNode::createWidget()
         }
     });
 
+    m_snaphuOptionsGroup = new QGroupBox(QStringLiteral("SNAPHU 高级参数"));
+    auto* snaphuForm = new QFormLayout(m_snaphuOptionsGroup);
+    m_snaphuTileRowsSpin = new QSpinBox();
+    m_snaphuTileColsSpin = new QSpinBox();
+    m_snaphuRowOverlapSpin = new QSpinBox();
+    m_snaphuColOverlapSpin = new QSpinBox();
+    m_snaphuTimeoutSpin = new QSpinBox();
+    m_snaphuKeepArtifactsCheck = new QCheckBox(QStringLiteral("成功后保留 SNAPHU 现场文件"));
+    m_snaphuStatusLabel = new QLabel(QStringLiteral("状态: 未运行"));
+    m_snaphuStatusLabel->setWordWrap(true);
+    m_snaphuTileRowsSpin->setRange(1, 256);
+    m_snaphuTileColsSpin->setRange(1, 256);
+    m_snaphuRowOverlapSpin->setRange(0, 100000);
+    m_snaphuColOverlapSpin->setRange(0, 100000);
+    m_snaphuTimeoutSpin->setRange(0, 30 * 24 * 60 * 60);
+    m_snaphuTimeoutSpin->setSpecialValueText(QStringLiteral("不超时"));
+    m_snaphuTimeoutSpin->setSuffix(QStringLiteral(" 秒"));
+    snaphuForm->addRow(QStringLiteral("分块行数"), m_snaphuTileRowsSpin);
+    snaphuForm->addRow(QStringLiteral("分块列数"), m_snaphuTileColsSpin);
+    snaphuForm->addRow(QStringLiteral("行重叠像素"), m_snaphuRowOverlapSpin);
+    snaphuForm->addRow(QStringLiteral("列重叠像素"), m_snaphuColOverlapSpin);
+    snaphuForm->addRow(QStringLiteral("最长运行时间"), m_snaphuTimeoutSpin);
+    snaphuForm->addRow(m_snaphuKeepArtifactsCheck);
+    snaphuForm->addRow(m_snaphuStatusLabel);
+
+    const auto applySnaphuChange = [this, invalidateNodeData]() {
+        if (!confirmParameterChange()) {
+            updateSnaphuOptionWidgets();
+            return;
+        }
+        m_snaphuOptions.tileRows = static_cast<quint32>(m_snaphuTileRowsSpin->value());
+        m_snaphuOptions.tileCols = static_cast<quint32>(m_snaphuTileColsSpin->value());
+        m_snaphuOptions.rowOverlap = static_cast<quint32>(m_snaphuRowOverlapSpin->value());
+        m_snaphuOptions.colOverlap = static_cast<quint32>(m_snaphuColOverlapSpin->value());
+        m_snaphuOptions.wallTimeoutMilliseconds = static_cast<quint64>(m_snaphuTimeoutSpin->value()) * 1000;
+        m_snaphuOptions.keepArtifactsOnSuccess = m_snaphuKeepArtifactsCheck->isChecked();
+        updateSnaphuOptionWidgets();
+        invalidateNodeData();
+    };
+    connect(m_snaphuTileRowsSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
+    connect(m_snaphuTileColsSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
+    connect(m_snaphuRowOverlapSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
+    connect(m_snaphuColOverlapSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
+    connect(m_snaphuTimeoutSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
+    connect(m_snaphuKeepArtifactsCheck, &QCheckBox::toggled, this, applySnaphuChange);
+    updateSnaphuOptionWidgets();
+
     // 5. 目标节点
     m_outputNodeNameEdit = new QLineEdit();
     m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -257,6 +332,7 @@ void UnwrapNode::createWidget()
 
     formLayout->addRow("解缠方法", m_methodCombo);
     formLayout->addRow(m_coherenceLabel, m_coherenceEdit);
+    formLayout->addRow(m_snaphuOptionsGroup);
     formLayout->addRow("目标节点", m_outputNodeNameEdit);
 
     onMethodChanged(m_method - 1);
@@ -265,11 +341,40 @@ void UnwrapNode::createWidget()
 void UnwrapNode::onMethodChanged(int index)
 {
     bool isQualityMCF = (index == 3);
+    bool isSnaphu = (index == 2);
 
     if (m_coherenceLabel) m_coherenceLabel->setVisible(isQualityMCF);
     if (m_coherenceEdit) m_coherenceEdit->setVisible(isQualityMCF);
+    if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setVisible(isSnaphu);
 
     updateWidgetSize();
+}
+
+void UnwrapNode::updateSnaphuOptionWidgets()
+{
+    const bool tiled = m_snaphuOptions.tileRows > 1 || m_snaphuOptions.tileCols > 1;
+    if (tiled) {
+        m_snaphuOptions.rowOverlap = qMax<quint32>(400, m_snaphuOptions.rowOverlap);
+        m_snaphuOptions.colOverlap = qMax<quint32>(400, m_snaphuOptions.colOverlap);
+    } else {
+        m_snaphuOptions.rowOverlap = 0;
+        m_snaphuOptions.colOverlap = 0;
+    }
+    if (!m_snaphuTileRowsSpin) return;
+    const QSignalBlocker rowsBlocker(m_snaphuTileRowsSpin);
+    const QSignalBlocker colsBlocker(m_snaphuTileColsSpin);
+    const QSignalBlocker rowOverlapBlocker(m_snaphuRowOverlapSpin);
+    const QSignalBlocker colOverlapBlocker(m_snaphuColOverlapSpin);
+    const QSignalBlocker timeoutBlocker(m_snaphuTimeoutSpin);
+    const QSignalBlocker artifactsBlocker(m_snaphuKeepArtifactsCheck);
+    m_snaphuRowOverlapSpin->setMinimum(tiled ? 400 : 0);
+    m_snaphuColOverlapSpin->setMinimum(tiled ? 400 : 0);
+    m_snaphuTileRowsSpin->setValue(static_cast<int>(m_snaphuOptions.tileRows));
+    m_snaphuTileColsSpin->setValue(static_cast<int>(m_snaphuOptions.tileCols));
+    m_snaphuRowOverlapSpin->setValue(static_cast<int>(m_snaphuOptions.rowOverlap));
+    m_snaphuColOverlapSpin->setValue(static_cast<int>(m_snaphuOptions.colOverlap));
+    m_snaphuTimeoutSpin->setValue(static_cast<int>(m_snaphuOptions.wallTimeoutMilliseconds / 1000));
+    m_snaphuKeepArtifactsCheck->setChecked(m_snaphuOptions.keepArtifactsOnSuccess);
 }
 
 void UnwrapNode::updateWidgetSize()
@@ -317,6 +422,13 @@ bool UnwrapNode::validateInputs() const
             return false;
         }
     }
+    if (m_method == 3) {
+        const bool tiled = m_snaphuOptions.tileRows > 1 || m_snaphuOptions.tileCols > 1;
+        if (m_snaphuOptions.tileRows == 0 || m_snaphuOptions.tileCols == 0 ||
+            (tiled && (m_snaphuOptions.rowOverlap < 400 || m_snaphuOptions.colOverlap < 400))) {
+            return false;
+        }
+    }
 
     return true;
 }
@@ -344,6 +456,7 @@ bool UnwrapNode::prepareToStart()
 
     m_preparedMethod = m_method;
     m_preparedThreshold = m_coherenceEdit ? m_coherenceEdit->text().toDouble() : m_coherenceThreshold;
+    m_preparedSnaphuOptions = m_snaphuOptions;
 
     // Precalculate output file paths for overwrite check
     m_preparedOutputPaths.clear();
@@ -417,6 +530,10 @@ void UnwrapNode::executeProcessing()
 
     setProgress(0);
     setState(ExecutionState::Running);
+    if (m_preparedMethod == 3 && m_snaphuStatusLabel) {
+        m_snaphuLastUiHeartbeatMilliseconds = 0;
+        m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 等待启动"));
+    }
     QString transactionError;
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedDstNode,
                                            m_preparedOutputPaths, m_preparedPhasePaths,
@@ -452,10 +569,13 @@ void UnwrapNode::executeProcessing()
     connect(this, &UnwrapNode::startUnwrap, m_workerThread, &UnwrapWorker::Unwrap);
     const QString stagingNode = m_outputTransaction.stagingName;
     connect(m_thread, &QThread::started, [this, stagingNode]() {
-        Q_EMIT startUnwrap(m_preparedMethod, m_preparedThreshold, m_preparedSavePath, stagingNode, m_preparedPhasePaths);
+        Q_EMIT startUnwrap(m_preparedMethod, m_preparedThreshold, m_preparedSavePath, stagingNode,
+                           m_preparedPhasePaths, m_preparedSnaphuOptions);
     });
     connect(m_workerThread, &UnwrapWorker::unwrapFileGenerated, this, &UnwrapNode::onUnwrapFileGenerated);
     connect(m_workerThread, &UnwrapWorker::updateProcess, this, &UnwrapNode::onProgressUpdate);
+    connect(m_workerThread, &UnwrapWorker::snaphuRunEvent, this, &UnwrapNode::onSnaphuRunEvent,
+            Qt::QueuedConnection);
     connect(m_workerThread, &UnwrapWorker::endProcess, this, &UnwrapNode::onProcessingFinished);
     connect(m_workerThread, &UnwrapWorker::endProcess, m_thread, &QThread::quit);
     connect(m_workerThread, &UnwrapWorker::cancelled, this, &UnwrapNode::onCancelled);
@@ -476,6 +596,7 @@ void UnwrapNode::executeProcessing()
     m_outputNodeNameEdit->setEnabled(false);
     m_methodCombo->setEnabled(false);
     if (m_coherenceEdit) m_coherenceEdit->setEnabled(false);
+    if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(false);
 
     deferAutomaticCompletion();
     m_thread->start();
@@ -488,6 +609,42 @@ void UnwrapNode::onProgressUpdate(int progress, const QString& message)
         return;
     }
     setProgress(progress);
+}
+
+void UnwrapNode::onSnaphuRunEvent(const SnaphuRunEventInfo& event)
+{
+    if (event.type == SNAPHU_RUN_EVENT_PREPARED) {
+        m_snaphuLastUiHeartbeatMilliseconds = 0;
+        InSARLogManager::LogDiagnostic(InSARLogManager::LevelDebug, "UnwrapNode",
+            QStringLiteral("SNAPHU staging: %1; config: %2").arg(event.taskDirectory, event.configPath),
+            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.staging"));
+    } else if (event.type == SNAPHU_RUN_EVENT_HEARTBEAT) {
+        QStringList metrics;
+        metrics.append(QStringLiteral("运行 %1 s").arg(event.elapsedMilliseconds / 1000));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_CPU_TIME)
+            ? QStringLiteral("CPU %1 s").arg(event.totalCpuMilliseconds / 1000) : QStringLiteral("CPU 未知"));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_PEAK_JOB_MEMORY)
+            ? QStringLiteral("内存 %1 MiB").arg(event.peakJobMemoryBytes / (1024 * 1024)) : QStringLiteral("内存未知"));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_READ_BYTES)
+            ? QStringLiteral("读取 %1 MiB").arg(event.readBytes / (1024 * 1024)) : QStringLiteral("读取未知"));
+        metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_WRITE_BYTES)
+            ? QStringLiteral("写入 %1 MiB").arg(event.writeBytes / (1024 * 1024)) : QStringLiteral("写入未知"));
+        if (m_snaphuStatusLabel &&
+            (m_snaphuLastUiHeartbeatMilliseconds == 0 ||
+             event.elapsedMilliseconds >= m_snaphuLastUiHeartbeatMilliseconds + 5000)) {
+            m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 正在运行，已用时 %1 s")
+                .arg(event.elapsedMilliseconds / 1000));
+            m_snaphuLastUiHeartbeatMilliseconds = event.elapsedMilliseconds;
+        }
+        InSARLogManager::LogDiagnostic(InSARLogManager::LevelDebug, "UnwrapNode",
+            QStringLiteral("SNAPHU running (%1): %2").arg(metrics.join(QStringLiteral(", ")), event.message),
+            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.heartbeat"));
+    } else if (event.type == SNAPHU_RUN_EVENT_WARNING || event.type == SNAPHU_RUN_EVENT_LOG) {
+        const InSARLogManager::LogLevel level = event.type == SNAPHU_RUN_EVENT_WARNING
+            ? InSARLogManager::LevelWarning : InSARLogManager::LevelDebug;
+        InSARLogManager::LogDiagnostic(level, "UnwrapNode", QStringLiteral("SNAPHU: %1").arg(event.message),
+            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.output"));
+    }
 }
 
 void UnwrapNode::onProcessingFinished()
@@ -505,6 +662,11 @@ void UnwrapNode::onProcessingFinished()
         m_imageInfoData.reset();
         setOutputData(0, nullptr);
         setOutputData(1, nullptr);
+        if (m_preparedMethod == 3) {
+            if (m_snaphuStatusLabel) m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已由输入变更取消"));
+            if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
+            onMethodChanged(m_method - 1);
+        }
         return;
     }
 
@@ -594,10 +756,14 @@ void UnwrapNode::onProcessingFinished()
         m_outputNodeNameEdit->setEnabled(true);
         m_methodCombo->setEnabled(true);
         if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
+        if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
         onMethodChanged(m_method - 1);
 
         setState(ExecutionState::Running);
         setProgress(100);
+        if (m_preparedMethod == 3 && m_snaphuStatusLabel) {
+            m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已完成"));
+        }
         InSARLogManager::LogInfo("UnwrapNode", "executeProcessing completed (empty output list).");
         finishExecution();
     }
@@ -605,6 +771,9 @@ void UnwrapNode::onProcessingFinished()
 
 void UnwrapNode::onCancelled()
 {
+    if (m_preparedMethod == 3 && m_snaphuStatusLabel) {
+        m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已取消"));
+    }
     InSARLogManager::LogInfo("UnwrapNode", "Unwrap cancellation cleanup completed.");
     cleanUpThreadAndWorker();
     NodeUtils::abandonOutputTransaction(m_outputTransaction, QStringLiteral("cancelled"), projectXml());
@@ -613,6 +782,11 @@ void UnwrapNode::onCancelled()
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
+        if (m_preparedMethod == 3) {
+            if (m_snaphuStatusLabel) m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已由输入变更取消"));
+            if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
+            onMethodChanged(m_method - 1);
+        }
         return;
     }
 
@@ -622,10 +796,14 @@ void UnwrapNode::onCancelled()
     m_outputNodeNameEdit->setEnabled(true);
     m_methodCombo->setEnabled(true);
     if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
+    if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
 }
 
 void UnwrapNode::onError(const QString& error)
 {
+    if (m_preparedMethod == 3 && m_snaphuStatusLabel) {
+        m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 失败"));
+    }
     cleanUpThreadAndWorker();
     NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
     m_outputData.reset();
@@ -633,14 +811,22 @@ void UnwrapNode::onError(const QString& error)
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
     if (discardObsoleteAutomaticExecution()) {
+        if (m_preparedMethod == 3) {
+            if (m_snaphuStatusLabel) m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已由输入变更取消"));
+            if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
+            onMethodChanged(m_method - 1);
+        }
         return;
     }
 
     m_outputNodeNameEdit->setEnabled(true);
     m_methodCombo->setEnabled(true);
     if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
+    if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
     onMethodChanged(m_method - 1);
 
+    setLastErrorMessage(error);
+    Q_EMIT executionError(error);
     setState(ExecutionState::Error);
 }
 
@@ -767,6 +953,11 @@ void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
         }
         if (completeExecution) {
             if (discardObsoleteAutomaticExecution()) {
+                if (m_preparedMethod == 3) {
+                    if (m_snaphuStatusLabel) m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已由输入变更取消"));
+                    if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
+                    onMethodChanged(m_method - 1);
+                }
                 return;
             }
 
@@ -775,9 +966,13 @@ void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
             m_outputNodeNameEdit->setEnabled(true);
             m_methodCombo->setEnabled(true);
             if (m_coherenceEdit) m_coherenceEdit->setEnabled(true);
+            if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
             onMethodChanged(m_method - 1);
             setState(ExecutionState::Running);
             setProgress(100);
+            if (m_preparedMethod == 3 && m_snaphuStatusLabel) {
+                m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已完成"));
+            }
             InSARLogManager::LogInfo("UnwrapNode", "executeProcessing completed.");
             if (!m_pendingWarningMessage.isEmpty()) {
                 setLastWarningMessage(m_pendingWarningMessage);
@@ -901,7 +1096,6 @@ void UnwrapNode::stopExecution()
     {
         m_workerThread->StopProcess();
     }
-    cleanUpThreadAndWorker();
 }
 
 void UnwrapNode::cleanUpThreadAndWorker()

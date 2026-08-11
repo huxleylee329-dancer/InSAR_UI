@@ -136,6 +136,7 @@ private:
     quint64 m_remedyGeneration = 0;
     QString m_remedyH5Path;
     QString m_remedyJpgPath;
+    DemCoverageAudit m_pendingCoverageAudit;
 
     // Helper methods
     void createWidget();
@@ -151,7 +152,8 @@ private:
         const QStringList& availableTiles,
         const QStringList& serverNotFoundTiles,
         int requestedTileCount,
-        bool outputValidated
+        bool outputValidated,
+        const DemCoverageAudit& coverageAudit
     );
     void onError(const QString& error);
     void onCancelled();

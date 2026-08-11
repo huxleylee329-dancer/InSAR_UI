@@ -32,10 +32,12 @@ namespace NodeUtils {
 struct AuxiliaryDemBinding {
     QString rasterPath;
     QString identityH5Path;
+    QString validMaskPath;
     QString resourceId;
     QString pinnedProvenanceId;
     QString rasterHash;
     QString identityH5Hash;
+    QString validMaskHash;
     QString canonicalMetadataHash;
     bool fromReference = false;
 };
@@ -55,9 +57,11 @@ struct AuxiliaryDemRegistryEntry {
     QString role;
     QString rasterHash;
     QString identityH5Hash;
+    QString validMaskHash;
     QString canonicalMetadataHash;
     QString managedRasterPath;
     QString managedIdentityH5Path;
+    QString managedValidMaskPath;
     QJsonObject metadata;
     QJsonArray provenanceHistory;
     bool tombstone = false;
@@ -602,5 +606,11 @@ QString projectDirectory(const QString& projectPath);
  * @brief 将 DEM 高程矩阵数据写入 TIF 成果文件
  */
 bool writeDemToTif(const QString& tifPath, const cv::Mat& dem, const double* gt, const char* wkt);
+
+// Write the companion validity raster for an auxiliary DEM.  1 is a source
+// elevation known to be valid; 0 is missing/NoData.  It deliberately has the
+// same grid as dem.tif so it can be audited without resampling.
+bool writeDemValidityMaskToTif(const QString& tifPath, const cv::Mat& validMask,
+                               const double* gt, const char* wkt);
 
 } // namespace NodeUtils

@@ -6,6 +6,10 @@
 #include <QThread>
 #include <QStringList>
 #include <QList>
+#include <QSpinBox>
+#include <QCheckBox>
+#include <QGroupBox>
+#include <QLabel>
 
 #include "UnwrapWorker.h"
 
@@ -25,6 +29,7 @@ public slots:
     void onWorkerError(const QString& error);
     void onWorkerCancelled();
     void onUnwrapFileGenerated(const UnwrapFileResult& result);
+    void onSnaphuRunEvent(const SnaphuRunEventInfo& event);
 private:
     Ui::Unwrap* ui;
     QStandardItemModel* copy;
@@ -36,11 +41,23 @@ private:
     NodeUtils::OutputTransaction m_outputTransaction;
     QStringList m_preparedOutputPaths;
     QList<UnwrapFileResult> m_pendingUnwrapResults;
+    QGroupBox* m_snaphuOptionsGroup = nullptr;
+    QLabel* m_snaphuTaskLabel = nullptr;
+    QLabel* m_snaphuStatusLabel = nullptr;
+    QLabel* m_snaphuProcessLabel = nullptr;
+    QSpinBox* m_snaphuTileRowsSpin = nullptr;
+    QSpinBox* m_snaphuTileColsSpin = nullptr;
+    QSpinBox* m_snaphuRowOverlapSpin = nullptr;
+    QSpinBox* m_snaphuColOverlapSpin = nullptr;
+    QSpinBox* m_snaphuTimeoutSpin = nullptr;
+    QCheckBox* m_snaphuKeepArtifactsCheck = nullptr;
     void ChangeVision(bool Editable);
+    SnaphuUiOptions snaphuOptions() const;
+    void updateSnaphuOptionWidgets();
     void abandonOutputTransaction(const QString& reason);
     void releaseStoppedThread();
 signals:
-    void operate(int, double, QString, QString, QStringList);
+    void operate(int, double, QString, QString, QStringList, SnaphuUiOptions);
     void sendCopy(QStandardItemModel*);
 private slots:
     void on_comboBox_currentIndexChanged();
