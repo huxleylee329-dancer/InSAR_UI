@@ -110,7 +110,8 @@ private:
     void publishGeocodingResultToProjectTree(const GeocodingFileResult& result);
     bool validateInputs() const;
     bool resolveInsarDemProduct(const std::shared_ptr<InsarDemData>& data,
-                                QStringList* resolvedPaths) const;
+                                QStringList* resolvedPaths,
+                                QString* errorMessage = nullptr) const;
     void updateWidgetSize();
     void updateParameterWidgetsEnableState();
     void onTypeChanged(int index);

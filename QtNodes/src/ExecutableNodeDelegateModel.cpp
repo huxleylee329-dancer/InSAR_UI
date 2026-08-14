@@ -107,6 +107,40 @@ void ExecutableNodeDelegateModel::setNodeContext(NodeId nodeId, BasicGraphicsSce
     _scene = scene;
 }
 
+QSet<QString> ExecutableNodeDelegateModel::workflowDeclaredDemLabels() const
+{
+    QSet<QString> declared;
+    if (_scene == nullptr) return declared;
+    auto* graph = dynamic_cast<DataFlowGraphModel*>(&_scene->graphModel());
+    if (graph == nullptr) return declared;
+    for (const NodeId nodeId : graph->allNodeIds()) {
+        auto* model = graph->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+        if (!model || model->name() != QStringLiteral("DEMSource")) continue;
+        const QJsonObject modelJson = model->save();
+        const QString label = modelJson.value(QStringLiteral("workflowDemLabel")).toString().trimmed();
+        if (!label.isEmpty()) declared.insert(label.toCaseFolded());
+    }
+    return declared;
+}
+
+QHash<QString, QString> ExecutableNodeDelegateModel::workflowDemProducerNodeIdMap() const
+{
+    QHash<QString, QString> producerNodeIds;
+    if (_scene == nullptr) return producerNodeIds;
+    auto* graph = dynamic_cast<DataFlowGraphModel*>(&_scene->graphModel());
+    if (graph == nullptr) return producerNodeIds;
+    for (const NodeId nodeId : graph->allNodeIds()) {
+        auto* model = graph->delegateModel<ExecutableNodeDelegateModel>(nodeId);
+        if (!model || model->name() != QStringLiteral("DEMSource")) continue;
+        const QJsonObject modelJson = model->save();
+        const QString identity = modelJson.value(QStringLiteral("workflowDemProducerIdentity")).toString().trimmed();
+        if (!identity.isEmpty()) {
+            producerNodeIds.insert(identity, QString::number(static_cast<quint32>(nodeId)));
+        }
+    }
+    return producerNodeIds;
+}
+
 void ExecutableNodeDelegateModel::triggerVisualUpdate()
 {
     if (_scene != nullptr) {
@@ -266,7 +300,7 @@ void ExecutableNodeDelegateModel::setInData(std::shared_ptr<NodeData> nodeData, 
             // or if it launched an asynchronous thread and is still Running,
             // we MUST NOT override its state with default completion logic!
             if (_state != ExecutionState::Running) {
-                if (!_startFailureMessage.isEmpty()) {
+                if (_state != ExecutionState::Pending && !_startFailureMessage.isEmpty()) {
                     Q_EMIT executionStartRejected(_startFailureMessage);
                 }
                 Q_EMIT executionStateChanged();
@@ -500,7 +534,7 @@ void ExecutableNodeDelegateModel::retryAutomaticExecution()
         return;
     }
     if (_state != ExecutionState::Running) {
-        if (!_startFailureMessage.isEmpty()) {
+        if (_state != ExecutionState::Pending && !_startFailureMessage.isEmpty()) {
             Q_EMIT executionStartRejected(_startFailureMessage);
         }
         Q_EMIT executionStateChanged();

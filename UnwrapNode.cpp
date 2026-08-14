@@ -613,12 +613,15 @@ void UnwrapNode::onProgressUpdate(int progress, const QString& message)
 
 void UnwrapNode::onSnaphuRunEvent(const SnaphuRunEventInfo& event)
 {
-    if (event.type == SNAPHU_RUN_EVENT_PREPARED) {
+if (event.type == SNAPHU_RUN_EVENT_PREPARED) {
         m_snaphuLastUiHeartbeatMilliseconds = 0;
+        m_snaphuLastLogHeartbeatMilliseconds = 0;
         InSARLogManager::LogDiagnostic(InSARLogManager::LevelDebug, "UnwrapNode",
             QStringLiteral("SNAPHU staging: %1; config: %2").arg(event.taskDirectory, event.configPath),
             LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.staging"));
     } else if (event.type == SNAPHU_RUN_EVENT_HEARTBEAT) {
+        const bool shouldLog = m_snaphuLastLogHeartbeatMilliseconds == 0 ||
+            event.elapsedMilliseconds >= m_snaphuLastLogHeartbeatMilliseconds + 5000;
         QStringList metrics;
         metrics.append(QStringLiteral("运行 %1 s").arg(event.elapsedMilliseconds / 1000));
         metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_CPU_TIME)
@@ -636,9 +639,12 @@ void UnwrapNode::onSnaphuRunEvent(const SnaphuRunEventInfo& event)
                 .arg(event.elapsedMilliseconds / 1000));
             m_snaphuLastUiHeartbeatMilliseconds = event.elapsedMilliseconds;
         }
-        InSARLogManager::LogDiagnostic(InSARLogManager::LevelDebug, "UnwrapNode",
-            QStringLiteral("SNAPHU running (%1): %2").arg(metrics.join(QStringLiteral(", ")), event.message),
-            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.heartbeat"));
+        if (shouldLog) {
+            m_snaphuLastLogHeartbeatMilliseconds = event.elapsedMilliseconds;
+            InSARLogManager::LogDiagnostic(InSARLogManager::LevelDebug, "UnwrapNode",
+                QStringLiteral("SNAPHU running (%1): %2").arg(metrics.join(QStringLiteral(", ")), event.message),
+                LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.heartbeat"));
+        }
     } else if (event.type == SNAPHU_RUN_EVENT_WARNING || event.type == SNAPHU_RUN_EVENT_LOG) {
         const InSARLogManager::LogLevel level = event.type == SNAPHU_RUN_EVENT_WARNING
             ? InSARLogManager::LevelWarning : InSARLogManager::LevelDebug;

@@ -5,6 +5,7 @@
 #include "NodeModels.h"
 #include "MainWindow.h"
 #include "WorkspaceUI.h"
+#include "NodeUtils.h"
 #include <QSignalBlocker>
 
 // ADS (Qt Advanced Docking System)
@@ -54,6 +55,7 @@
 #include <QPointer>
 #include <QLayout>
 #include <QUuid>
+#include <QDateTime>
 
 #include "InSARLogManager.h"
 // ============================================================================
@@ -966,6 +968,52 @@ void WorkflowUI::loadWorkflowFromJson(const QJsonObject& json)
     const QSignalBlocker blocker(m_scene);
     onClear();
     m_graphModel->load(json);
+
+    // 打开工程时对账流程 DEM 标签：仅保留当前工作流中 DEMSource 节点声明的标签，
+    // 其余 WorkflowOutput 标签视为孤儿并失效其资源绑定。
+    // m_projectPath 是 .insar 工程文件路径，DEM 标签注册表位于工程目录下。
+    const QString projectDir = NodeUtils::projectDirectory(m_projectPath);
+    QStringList invalidated;
+    if (!projectDir.isEmpty()) {
+        QMap<QString, QString> declared;
+        for (const QtNodes::NodeId nodeId : m_graphModel->allNodeIds()) {
+            auto* execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+            if (!execModel || execModel->name() != QStringLiteral("DEMSource")) continue;
+            const QJsonObject modelJson = execModel->save();
+            const QString label = modelJson.value(QStringLiteral("workflowDemLabel")).toString().trimmed();
+            const QString producer = modelJson.value(QStringLiteral("workflowDemProducerIdentity")).toString().trimmed();
+            if (!label.isEmpty()) declared.insert(label, producer);
+        }
+        QString error;
+        invalidated = NodeUtils::reconcileWorkflowAuxiliaryDemLabels(projectDir, declared, &error);
+        if (!error.isEmpty()) {
+            InSARLogManager::LogWarning("WorkflowUI",
+                QStringLiteral("流程 DEM 标签对账失败: %1").arg(error));
+        }
+        if (!invalidated.isEmpty()) {
+            InSARLogManager::LogWarning("WorkflowUI",
+                QStringLiteral("孤儿流程 DEM 标签已失效: %1").arg(invalidated.join(QStringLiteral("、"))));
+            emit workflowDemLabelsReconciled(invalidated);
+        }
+    }
+
+    // 对账未产生变更时才主动触发刷新；若对账已失效孤儿标签，
+    // reconcile 内部已发过标签表变化通知，避免双重刷新。
+    if (invalidated.isEmpty()) NodeUtils::emitAuxiliaryDemLabelTableChanged();
+}
+
+QSet<QString> WorkflowUI::workflowDeclaredDemLabels() const
+{
+    QSet<QString> declared;
+    if (!m_graphModel) return declared;
+    for (const QtNodes::NodeId nodeId : m_graphModel->allNodeIds()) {
+        auto* execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+        if (!execModel || execModel->name() != QStringLiteral("DEMSource")) continue;
+        const QJsonObject modelJson = execModel->save();
+        const QString label = modelJson.value(QStringLiteral("workflowDemLabel")).toString().trimmed();
+        if (!label.isEmpty()) declared.insert(NodeUtils::normalizedDemLabel(label));
+    }
+    return declared;
 }
 
 QList<QAction*> WorkflowUI::getViewActions() const
@@ -1077,8 +1125,26 @@ void WorkflowUI::onDelete()
     auto selectedNodeIds = m_scene->selectedNodes();
     int nodeCount = selectedNodeIds.size();
 
+    // 工程目录：m_projectPath 是 .insar 工程文件路径，而 DEM 标签注册表位于工程目录下
+    const QString projectDir = NodeUtils::projectDirectory(m_projectPath);
     for (auto nodeId : selectedNodeIds)
     {
+        // 删除 DEMSource 节点前，若其声明了流程 DEM 标签，先失效该标签的资源绑定，
+        // 避免下游节点继续静默使用已无人声明的旧绑定。
+        if (!projectDir.isEmpty()) {
+            auto* execModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(nodeId);
+            if (execModel && execModel->name() == QStringLiteral("DEMSource")) {
+                const QJsonObject modelJson = execModel->save();
+                const QString label = modelJson.value(QStringLiteral("workflowDemLabel")).toString().trimmed();
+                if (!label.isEmpty()) {
+                    QString error;
+                    if (!NodeUtils::invalidateWorkflowAuxiliaryDemLabelBinding(projectDir, label, &error)) {
+                        InSARLogManager::LogWarning("WorkflowUI",
+                            QStringLiteral("无法失效流程 DEM 标签 %1: %2").arg(label, error));
+                    }
+                }
+            }
+        }
         m_graphModel->deleteNode(nodeId);
     }
 
@@ -2064,6 +2130,8 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
             m_activeWorkflowRunId = QUuid::createUuid().toString(QUuid::WithoutBraces);
             m_activeWorkflowNodes.clear();
             m_workflowSucceededNodes = m_workflowWarningNodes = m_workflowFailedNodes = 0;
+            m_workflowBlockedWarningLogged = false;
+            m_lastPendingLogMs.clear();
             m_workflowRunTimer.start();
             InSARLogManager::instance().setActiveWorkflowRunId(m_activeWorkflowRunId);
             TaskLogContext context;
@@ -2149,10 +2217,37 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
             finishRun();
             Q_EMIT nodeExecutionFinished(nodeId, caption);
             break;
-        case QtNodes::ExecutionState::Idle:
         case QtNodes::ExecutionState::Pending:
-        case QtNodes::ExecutionState::Stopped:
+            // Pending is an in-flight workflow state: the node is waiting for an
+            // upstream prerequisite and may resume in the same workflow run.
+            // 同一节点在短时间内连续进入 Pending 时仅记录一次，避免日志刷屏。
+            {
+                const qint64 now = QDateTime::currentMSecsSinceEpoch();
+                const qint64 last = m_lastPendingLogMs.value(nodeId, -1);
+                if (last < 0 || now - last >= 3000) {
+                    m_lastPendingLogMs.insert(nodeId, now);
+                    logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点等待前置条件满足。"),
+                                    QStringLiteral("pending"));
+                }
+            }
+            break;
         case QtNodes::ExecutionState::Disabled:
+            if (m_activeWorkflowNodes.remove(nodeId)) {
+                logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点已禁用。"),
+                                QStringLiteral("disabled"));
+            }
+            finishRun();
+            Q_EMIT nodeExecutionStopped(nodeId, caption);
+            break;
+        case QtNodes::ExecutionState::Idle:
+            if (m_activeWorkflowNodes.remove(nodeId)) {
+                logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点处在空闲状态。"),
+                                QStringLiteral("idle"));
+            }
+            finishRun();
+            Q_EMIT nodeExecutionStopped(nodeId, caption);
+            break;
+        case QtNodes::ExecutionState::Stopped:
             if (m_activeWorkflowNodes.remove(nodeId)) {
                 logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点执行已停止。"),
                                 QStringLiteral("stopped"));
@@ -2174,6 +2269,70 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
             break;
         default:
             break;
+        }
+
+        // 运行受阻诊断：活动运行中无任何节点 Running 且仍有 Pending 节点，
+        // 若其被计划中/无人声明的流程 DEM 标签阻塞，延迟复核后向用户日志输出一次告警。
+        if (!m_activeWorkflowRunId.isEmpty() && !m_workflowBlockedWarningLogged && !hasActiveExecution()) {
+            const QString blockedProjectDir = NodeUtils::projectDirectory(m_projectPath);
+            const QSet<QString> declaredLabels = workflowDeclaredDemLabels();
+            bool anyDemBlockedPending = false;
+            if (!blockedProjectDir.isEmpty()) {
+                QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> demLabels;
+                QString demLoadError;
+                const bool demLoaded = NodeUtils::loadAuxiliaryDemLabels(blockedProjectDir, demLabels, &demLoadError);
+                // 注册表加载失败时跳过分类，避免误报"被标签阻塞"
+                if (demLoaded) {
+                    for (const QtNodes::NodeId activeNodeId : m_activeWorkflowNodes) {
+                        auto* activeModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(activeNodeId);
+                        if (!activeModel || activeModel->executionState() != QtNodes::ExecutionState::Pending) continue;
+                        const QString auxLabel = activeModel->save().value(QStringLiteral("auxiliaryDemLabel")).toString().trimmed();
+                        if (auxLabel.isEmpty()) continue;
+                        const QString normalized = NodeUtils::normalizedDemLabel(auxLabel);
+                        const auto demIt = demLabels.constFind(normalized);
+                        if (demIt == demLabels.constEnd() || demIt->isPlanned()) {
+                            anyDemBlockedPending = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (anyDemBlockedPending) {
+                QTimer::singleShot(600, this, [this, blockedProjectDir, declaredLabels]() {
+                    if (m_activeWorkflowRunId.isEmpty() || m_workflowBlockedWarningLogged || hasActiveExecution()) return;
+                    QStringList blockedNodes;
+                    QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> demLabels;
+                    QString demLoadError;
+                    const bool demLoaded = NodeUtils::loadAuxiliaryDemLabels(blockedProjectDir, demLabels, &demLoadError);
+                    // 注册表加载失败时视为无阻塞，避免误报
+                    if (demLoaded) {
+                        for (const QtNodes::NodeId activeNodeId : m_activeWorkflowNodes) {
+                            auto* activeModel = m_graphModel->delegateModel<QtNodes::ExecutableNodeDelegateModel>(activeNodeId);
+                            if (!activeModel || activeModel->executionState() != QtNodes::ExecutionState::Pending) continue;
+                            const QString auxLabel = activeModel->save().value(QStringLiteral("auxiliaryDemLabel")).toString().trimmed();
+                            if (auxLabel.isEmpty()) continue;
+                            const QString normalized = NodeUtils::normalizedDemLabel(auxLabel);
+                            const auto demIt = demLabels.constFind(normalized);
+                            if (demIt == demLabels.constEnd() || demIt->isPlanned()) {
+                                const QString reason = declaredLabels.contains(normalized)
+                                    ? QStringLiteral("节点 \"%1\" 等待流程 DEM 标签 %2，其生产者尚未运行")
+                                    : QStringLiteral("节点 \"%1\" 等待流程 DEM 标签 %2，但当前没有 DEMSource 节点声明该标签");
+                                blockedNodes.append(reason.arg(activeModel->caption(), normalized));
+                            }
+                        }
+                    }
+                    if (blockedNodes.isEmpty()) return;
+                    m_workflowBlockedWarningLogged = true;
+                    TaskLogContext context;
+                    context.runId = m_activeWorkflowRunId;
+                    context.displayName = QStringLiteral("工作流");
+                    InSARLogManager::LogTaskEvent(context, InSARLogManager::LevelWarning, "WorkflowUI",
+                        QStringLiteral("工作流运行受阻：%1。请声明该标签后重跑流程，或将节点切换为“不使用标签”。")
+                            .arg(blockedNodes.join(QStringLiteral("；"))),
+                        LogTargets(LogTarget::UserProjectLog),
+                        QStringLiteral("blocked"), QStringLiteral("waiting"));
+                });
+            }
         }
     }, Qt::QueuedConnection);
 

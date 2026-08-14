@@ -474,11 +474,16 @@ bool GeocodingNode::prepareToStart()
     m_preparedDstNode = dstNode;
 
     m_preparedInputPaths = m_inputData->filePaths();
-    if (m_insarDemInputData && !resolveInsarDemProduct(m_insarDemInputData, &m_preparedInputPaths)) {
-        const QString error = QStringLiteral("InSAR DEM 产品不可执行：缺少有效 H5、manifest/runId 或几何 metadata。");
-        setStartFailureMessage(error);
-        setLastErrorMessage(error);
-        return false;
+    if (m_insarDemInputData) {
+        QString demResolveError;
+        if (!resolveInsarDemProduct(m_insarDemInputData, &m_preparedInputPaths, &demResolveError)) {
+            const QString error = demResolveError.isEmpty()
+                ? QStringLiteral("InSAR DEM 产品不可执行：缺少有效 H5、manifest/runId 或几何 metadata。")
+                : QStringLiteral("InSAR DEM 产品不可执行：%1").arg(demResolveError);
+            setStartFailureMessage(error);
+            setLastErrorMessage(error);
+            return false;
+        }
     }
     QString identityError;
     if (!NodeUtils::validateH5Identities(m_preparedInputPaths, m_inputData->physicalProductDescriptor(),
@@ -849,12 +854,12 @@ void GeocodingNode::onError(const QString& error)
 }
 
 bool GeocodingNode::resolveInsarDemProduct(const std::shared_ptr<InsarDemData>& data,
-                                           QStringList* resolvedPaths) const
+                                           QStringList* resolvedPaths,
+                                           QString* errorMessage) const
 {
     if (!data) return false;
     QStringList paths;
-    QString error;
-    if (!NodeUtils::resolveInsarDemProduct(*data, paths, &error)) return false;
+    if (!NodeUtils::resolveInsarDemProduct(*data, paths, errorMessage)) return false;
     if (resolvedPaths) *resolvedPaths = paths;
     return true;
 }
@@ -958,8 +963,6 @@ bool GeocodingNode::validateAndRestoreOutput()
     QStringList expectedJpgPaths;
     QStringList types;
 
-    FormatConversion FC;
-    cv::Mat dummy;
     for (const QString& h5Path : h5Paths) {
         QString baseName = QFileInfo(h5Path).baseName();
         expectedJpgPaths.append(QFileInfo(h5Path).absolutePath() + "/" + baseName + ".jpg");
@@ -967,14 +970,13 @@ bool GeocodingNode::validateAndRestoreOutput()
         // Determine type dynamically from datasets
         QString type = "amplitude";
         {
-            NodeUtils::Hdf5Locker locker;
-            if (NodeUtils::readMatFromH5(h5Path, "phase", dummy)) {
+            if (NodeUtils::probeH5DatasetMetadata(h5Path, QStringLiteral("phase"))) {
                 type = "phase";
-            } else if (NodeUtils::readMatFromH5(h5Path, "coherence", dummy)) {
+            } else if (NodeUtils::probeH5DatasetMetadata(h5Path, QStringLiteral("coherence"))) {
                 type = "coherence";
-            } else if (NodeUtils::readMatFromH5(h5Path, "dem", dummy)) {
+            } else if (NodeUtils::probeH5DatasetMetadata(h5Path, QStringLiteral("dem"))) {
                 type = "dem";
-            } else if (NodeUtils::readMatFromH5(h5Path, "defomation_velocity", dummy)) {
+            } else if (NodeUtils::probeH5DatasetMetadata(h5Path, QStringLiteral("defomation_velocity"))) {
                 type = "SBAS";
             }
         }
@@ -1089,18 +1091,37 @@ QStandardItemModel* GeocodingNode::projectModel() const
 QString GeocodingNode::projectPath() const
 {
     IApplicationInterface* iface = nullptr;
-    if (_widget) iface = NodeUtils::getProjectContext(_widget);
-    if (!iface) {
-        for (QWidget* w : QApplication::topLevelWidgets()) {
-            if (auto* mainWin = qobject_cast<MainWindow*>(w)) {
-                if (mainWin->workspaceUI()) { iface = mainWin->workspaceUI(); break; }
-                if (mainWin->interfaceManager()) { iface = mainWin->interfaceManager()->currentInterface(); if (iface) break; }
+    if (_widget)
+    {
+        iface = NodeUtils::getProjectContext(_widget);
+    }
+    if (!iface)
+    {
+        for (QWidget* w : QApplication::topLevelWidgets())
+        {
+            if (auto* mainWin = qobject_cast<MainWindow*>(w))
+            {
+                if (mainWin->workspaceUI())
+                {
+                    iface = mainWin->workspaceUI();
+                    break;
+                }
+                if (mainWin->interfaceManager())
+                {
+                    iface = mainWin->interfaceManager()->currentInterface();
+                    if (iface)
+                    {
+                        break;
+                    }
+                }
             }
         }
     }
-    if (iface) {
+    if (iface)
+    {
         QString fullPath = iface->projectPath();
-        if (fullPath.endsWith(".insar", Qt::CaseInsensitive)) {
+        if (fullPath.endsWith(".insar", Qt::CaseInsensitive))
+        {
             return QFileInfo(fullPath).absolutePath();
         }
         return fullPath;
@@ -1150,7 +1171,27 @@ void GeocodingNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Pending);
+        QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+        bool isPlannedLabel = false;
+        if (!m_auxiliaryDemLabel.isEmpty() && NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels)) {
+            const auto labelBinding = labels.value(NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel));
+            if (labelBinding.isPlanned()) {
+                isPlannedLabel = true;
+            }
+        }
+        // 直接连线已连接但上游 DEM 尚未产出时，同样属于可等待前置条件，
+        // 与 planned 标签一致转入 Pending，避免自动流程误报执行失败。
+        const bool waitingForDemProducer =
+            !m_auxiliaryDemInputData && hasActiveInputConnection(1);
+        if (isPlannedLabel || waitingForDemProducer) {
+            setStartFailureMessage(QString());
+            setState(ExecutionState::Pending);
+        } else {
+            setLastErrorMessage(_startFailureMessage.isEmpty()
+                ? QStringLiteral("自动执行前置条件无效，且辅助 DEM 标签不可等待。")
+                : _startFailureMessage);
+            setState(ExecutionState::Error);
+        }
     }
 }
 
@@ -1175,6 +1216,8 @@ void GeocodingNode::updateParameterWidgetsEnableState()
 void GeocodingNode::refreshAuxiliaryDemLabels()
 {
     if (!m_demLabelCombo) return;
+    const QSet<QString> declared = workflowDeclaredDemLabels();
+    const QHash<QString, QString> producerNodeIds = workflowDemProducerNodeIdMap();
     QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
     QString error;
     NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
@@ -1183,8 +1226,19 @@ void GeocodingNode::refreshAuxiliaryDemLabels()
     m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
     for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
         if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
-        const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
-        m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 来源 %3)").arg(it.value().label, status, it.value().producerIdentity.left(8)), it.value().label);
+        const QString normalized = NodeUtils::normalizedDemLabel(it.value().label);
+        if (declared.contains(normalized)) {
+            const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+            const QString producerNode = producerNodeIds.value(it.value().producerIdentity);
+            if (producerNode.isEmpty()) {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2)").arg(it.value().label, status), it.value().label);
+            } else {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 节点 %3)").arg(it.value().label, status, producerNode), it.value().label);
+            }
+        } else if (NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel) == normalized) {
+            // 当前选中但无人声明的标签，保留显示并标记"无生产者"，避免选中项凭空消失
+            m_demLabelCombo->addItem(QStringLiteral("@%1 (无生产者)").arg(it.value().label), it.value().label);
+        }
     }
     if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
     for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {

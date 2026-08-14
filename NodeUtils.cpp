@@ -20,6 +20,7 @@
 #include <QSet>
 #include <QUuid>
 #include <QCryptographicHash>
+#include <QtDebug>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
@@ -33,6 +34,7 @@
 #include <Hdf5IO.h>
 #include <Utils.h>
 #include <cmath>
+#include <algorithm>
 
 #include <QMap>
 #include <QList>
@@ -62,12 +64,14 @@ QString resourceLabelPath(const QString& projectRoot)
 {
     return QDir(projectRoot).absoluteFilePath(QStringLiteral(".dem_resource_labels.json"));
 }
+}
 
 QString normalizedDemLabel(const QString& label)
 {
     return label.trimmed().toCaseFolded();
 }
 
+namespace {
 QByteArray sha256File(const QString& path)
 {
     QFile file(path);
@@ -90,6 +94,21 @@ QString fileGeneration(const QString& path)
         .arg(info.size())
         .arg(info.lastModified().toMSecsSinceEpoch())
         .arg(QString::fromLatin1(sha256File(path)));
+}
+
+bool matchesPersistedFileGeneration(const QFileInfo& file, const QJsonObject& entry)
+{
+    const QJsonValue size = entry.value(QStringLiteral("size"));
+    const QJsonValue modifiedMs = entry.value(QStringLiteral("modifiedMs"));
+    return file.isFile() && size.isDouble() && modifiedMs.isDouble() &&
+        static_cast<qint64>(size.toDouble()) == file.size() &&
+        static_cast<qint64>(modifiedMs.toDouble()) == file.lastModified().toMSecsSinceEpoch();
+}
+
+bool matchesPersistedFileGeneration(const QFileInfo& file, qint64 size, qint64 modifiedMs)
+{
+    return file.isFile() && size >= 0 && modifiedMs >= 0 &&
+        file.size() == size && file.lastModified().toMSecsSinceEpoch() == modifiedMs;
 }
 
 ProjectXmlRevision projectXmlRevision(const QString& path)
@@ -286,6 +305,8 @@ bool loadAuxiliaryDemRegistry(const QString& projectRoot,
         return false;
     }
     const QJsonObject resources = root.value(QStringLiteral("resources")).toObject();
+    QJsonObject resourcesForMigration = resources;
+    bool anyNormalization = false;
     for (auto it = resources.constBegin(); it != resources.constEnd(); ++it) {
         if (it.key().isEmpty() || !it.value().isObject()) {
             if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry contains an invalid entry: resourceId=%1, path=%2")
@@ -294,9 +315,38 @@ bool loadAuxiliaryDemRegistry(const QString& projectRoot,
         }
         const QJsonObject object = it.value().toObject();
         const QString expectedRoot = QStringLiteral(".dem_resources/%1").arg(it.key());
-        QString canonicalMetadataHash = object.value(QStringLiteral("canonicalMetadataHash")).toString();
+        QJsonObject normalizedObject = object;
+        const QString managedRasterPath = normalizedObject.value(QStringLiteral("managedRasterPath")).toString();
+        const QString managedIdentityPath = normalizedObject.value(QStringLiteral("managedIdentityH5Path")).toString();
+        const QString managedMaskPath = normalizedObject.value(QStringLiteral("managedValidMaskPath")).toString();
+        const QFileInfo managedRaster(QDir(projectRoot).absoluteFilePath(managedRasterPath));
+        const QFileInfo managedIdentity(QDir(projectRoot).absoluteFilePath(managedIdentityPath));
+        const QFileInfo managedMask(QDir(projectRoot).absoluteFilePath(managedMaskPath));
+        const bool missingGeneration =
+            !normalizedObject.value(QStringLiteral("rasterSize")).isDouble() ||
+            !normalizedObject.value(QStringLiteral("rasterModifiedMs")).isDouble() ||
+            !normalizedObject.value(QStringLiteral("identityH5Size")).isDouble() ||
+            !normalizedObject.value(QStringLiteral("identityH5ModifiedMs")).isDouble() ||
+            !normalizedObject.value(QStringLiteral("validMaskSize")).isDouble() ||
+            !normalizedObject.value(QStringLiteral("validMaskModifiedMs")).isDouble();
+        if (missingGeneration && managedRaster.isFile() && managedIdentity.isFile() && managedMask.isFile() &&
+            QString::fromLatin1(sha256File(managedRaster.absoluteFilePath())) ==
+                normalizedObject.value(QStringLiteral("rasterHash")).toString() &&
+            QString::fromLatin1(sha256File(managedIdentity.absoluteFilePath())) ==
+                normalizedObject.value(QStringLiteral("identityH5Hash")).toString() &&
+            QString::fromLatin1(sha256File(managedMask.absoluteFilePath())) ==
+                normalizedObject.value(QStringLiteral("validMaskHash")).toString()) {
+            normalizedObject.insert(QStringLiteral("rasterSize"), static_cast<double>(managedRaster.size()));
+            normalizedObject.insert(QStringLiteral("rasterModifiedMs"), static_cast<double>(managedRaster.lastModified().toMSecsSinceEpoch()));
+            normalizedObject.insert(QStringLiteral("identityH5Size"), static_cast<double>(managedIdentity.size()));
+            normalizedObject.insert(QStringLiteral("identityH5ModifiedMs"), static_cast<double>(managedIdentity.lastModified().toMSecsSinceEpoch()));
+            normalizedObject.insert(QStringLiteral("validMaskSize"), static_cast<double>(managedMask.size()));
+            normalizedObject.insert(QStringLiteral("validMaskModifiedMs"), static_cast<double>(managedMask.lastModified().toMSecsSinceEpoch()));
+        }
+        const QJsonObject effectiveObject = normalizedObject;
+        QString canonicalMetadataHash = effectiveObject.value(QStringLiteral("canonicalMetadataHash")).toString();
         const QByteArray expectedMetadataHash = QCryptographicHash::hash(
-            QJsonDocument(object.value(QStringLiteral("metadata")).toObject()).toJson(QJsonDocument::Compact),
+            QJsonDocument(effectiveObject.value(QStringLiteral("metadata")).toObject()).toJson(QJsonDocument::Compact),
             QCryptographicHash::Sha256);
         bool legacyCanonicalHash = false;
         if (canonicalMetadataHash.size() != 64 && canonicalMetadataHash.toLatin1().size() == 32 &&
@@ -304,27 +354,89 @@ bool loadAuxiliaryDemRegistry(const QString& projectRoot,
             canonicalMetadataHash = QString::fromLatin1(expectedMetadataHash.toHex());
             legacyCanonicalHash = true;
         }
-        if (object.value(QStringLiteral("role")).toString() != QStringLiteral("auxiliary_terrain_dem") ||
-            object.value(QStringLiteral("rasterHash")).toString().isEmpty() ||
-            object.value(QStringLiteral("identityH5Hash")).toString().isEmpty() ||
-            object.value(QStringLiteral("validMaskHash")).toString().isEmpty() ||
+        const bool legacyWithoutMask = effectiveObject.value(QStringLiteral("role")).toString() == QStringLiteral("auxiliary_terrain_dem") &&
+            effectiveObject.value(QStringLiteral("validMaskHash")).toString().isEmpty() &&
+            effectiveObject.value(QStringLiteral("managedValidMaskPath")).toString().isEmpty();
+        if (legacyWithoutMask) {
+            // Keep old resources visible for migration/history, but never allow
+            // them to satisfy a current auxiliary DEM binding.
+            AuxiliaryDemRegistryEntry legacy;
+            legacy.resourceId = it.key();
+            legacy.role = effectiveObject.value(QStringLiteral("role")).toString();
+            legacy.rasterHash = effectiveObject.value(QStringLiteral("rasterHash")).toString();
+            legacy.identityH5Hash = effectiveObject.value(QStringLiteral("identityH5Hash")).toString();
+            legacy.canonicalMetadataHash = canonicalMetadataHash;
+            legacy.managedRasterPath = effectiveObject.value(QStringLiteral("managedRasterPath")).toString();
+            legacy.managedIdentityH5Path = effectiveObject.value(QStringLiteral("managedIdentityH5Path")).toString();
+            legacy.metadata = effectiveObject.value(QStringLiteral("metadata")).toObject();
+            legacy.provenanceHistory = effectiveObject.value(QStringLiteral("provenanceHistory")).toArray();
+            legacy.tombstone = effectiveObject.value(QStringLiteral("tombstone")).toBool(false);
+            legacy.legacyUnverified = true;
+            entries.insert(legacy.resourceId, legacy);
+            continue;
+        }
+        if (effectiveObject.value(QStringLiteral("role")).toString() != QStringLiteral("auxiliary_terrain_dem") ||
+            effectiveObject.value(QStringLiteral("rasterHash")).toString().isEmpty() ||
+            effectiveObject.value(QStringLiteral("identityH5Hash")).toString().isEmpty() ||
+            effectiveObject.value(QStringLiteral("validMaskHash")).toString().isEmpty() ||
+            !effectiveObject.value(QStringLiteral("rasterSize")).isDouble() ||
+            !effectiveObject.value(QStringLiteral("rasterModifiedMs")).isDouble() ||
+            !effectiveObject.value(QStringLiteral("identityH5Size")).isDouble() ||
+            !effectiveObject.value(QStringLiteral("identityH5ModifiedMs")).isDouble() ||
+            !effectiveObject.value(QStringLiteral("validMaskSize")).isDouble() ||
+            !effectiveObject.value(QStringLiteral("validMaskModifiedMs")).isDouble() ||
             canonicalMetadataHash.isEmpty() ||
-            object.value(QStringLiteral("managedRasterPath")).toString() != expectedRoot + QStringLiteral("/dem.tif") ||
-            object.value(QStringLiteral("managedIdentityH5Path")).toString() != expectedRoot + QStringLiteral("/identity.h5") ||
-            object.value(QStringLiteral("managedValidMaskPath")).toString() != expectedRoot + QStringLiteral("/dem_valid_mask.tif") ||
-            !object.value(QStringLiteral("metadata")).isObject() ||
-            !object.value(QStringLiteral("provenanceHistory")).isArray() ||
-            (object.contains(QStringLiteral("tombstone")) && !object.value(QStringLiteral("tombstone")).isBool())) {
+            effectiveObject.value(QStringLiteral("managedRasterPath")).toString() != expectedRoot + QStringLiteral("/dem.tif") ||
+            effectiveObject.value(QStringLiteral("managedIdentityH5Path")).toString() != expectedRoot + QStringLiteral("/identity.h5") ||
+            effectiveObject.value(QStringLiteral("managedValidMaskPath")).toString() != expectedRoot + QStringLiteral("/dem_valid_mask.tif") ||
+            !effectiveObject.value(QStringLiteral("metadata")).isObject() ||
+            !effectiveObject.value(QStringLiteral("provenanceHistory")).isArray() ||
+            (effectiveObject.contains(QStringLiteral("tombstone")) && !effectiveObject.value(QStringLiteral("tombstone")).isBool())) {
             if (errorMessage) *errorMessage = QStringLiteral("DEM resource registry entry is incomplete or invalid: resourceId=%1, path=%2")
                 .arg(it.key(), registryFilePath);
             return false;
         }
-        const QJsonArray provenanceHistory = object.value(QStringLiteral("provenanceHistory")).toArray();
+        const QJsonArray provenanceHistory = effectiveObject.value(QStringLiteral("provenanceHistory")).toArray();
         QJsonArray normalizedProvenanceHistory;
+        bool historyGenerationNormalized = false;
+        bool historyCanonicalNormalized = false;
         QSet<QString> provenanceIds;
         int historyIndex = 0;
         for (const QJsonValue& provenance : provenanceHistory) {
             QJsonObject provenanceObject = provenance.toObject();
+            const QString historyRasterPath = QDir(projectRoot).absoluteFilePath(
+                expectedRoot + QStringLiteral("/dem.tif"));
+            const QString historyIdentityPath = QDir(projectRoot).absoluteFilePath(
+                expectedRoot + QStringLiteral("/identity.h5"));
+            const QString historyMaskPath = QDir(projectRoot).absoluteFilePath(
+                expectedRoot + QStringLiteral("/dem_valid_mask.tif"));
+            auto normalizeHistoryGeneration = [&historyGenerationNormalized](QJsonObject& fileObject, const QString& path,
+                                                                             const QString& expectedHash) {
+                const QFileInfo info(path);
+                if (!info.isFile() || !fileObject.value(QStringLiteral("size")).isDouble() ||
+                    !fileObject.value(QStringLiteral("modifiedMs")).isDouble()) {
+                    if (info.isFile() &&
+                        fileObject.value(QStringLiteral("size")).isUndefined() &&
+                        fileObject.value(QStringLiteral("modifiedMs")).isUndefined() &&
+                        QString::fromLatin1(sha256File(info.absoluteFilePath())) == expectedHash) {
+                        fileObject.insert(QStringLiteral("size"), static_cast<double>(info.size()));
+                        fileObject.insert(QStringLiteral("modifiedMs"), static_cast<double>(info.lastModified().toMSecsSinceEpoch()));
+                        historyGenerationNormalized = true;
+                    }
+                }
+            };
+            QJsonObject historyRaster = provenanceObject.value(QStringLiteral("dem.tif")).toObject();
+            QJsonObject historyIdentity = provenanceObject.value(QStringLiteral("identity.h5")).toObject();
+            QJsonObject historyMask = provenanceObject.value(QStringLiteral("dem_valid_mask.tif")).toObject();
+            normalizeHistoryGeneration(historyRaster, historyRasterPath,
+                                       effectiveObject.value(QStringLiteral("rasterHash")).toString());
+            normalizeHistoryGeneration(historyIdentity, historyIdentityPath,
+                                       effectiveObject.value(QStringLiteral("identityH5Hash")).toString());
+            normalizeHistoryGeneration(historyMask, historyMaskPath,
+                                       effectiveObject.value(QStringLiteral("validMaskHash")).toString());
+            provenanceObject.insert(QStringLiteral("dem.tif"), historyRaster);
+            provenanceObject.insert(QStringLiteral("identity.h5"), historyIdentity);
+            provenanceObject.insert(QStringLiteral("dem_valid_mask.tif"), historyMask);
             const QString pinnedId = provenanceObject.value(QStringLiteral("pinnedProvenanceId")).toString();
             const QString runId = provenanceObject.value(QStringLiteral("runId")).toString();
             const QString historyCanonicalHash = provenanceObject.value(QStringLiteral("canonicalMetadataHash")).toString();
@@ -332,6 +444,12 @@ bool loadAuxiliaryDemRegistry(const QString& projectRoot,
                 provenanceObject.value(QStringLiteral("role")).toString() != QStringLiteral("auxiliary_terrain_dem") ||
                 provenanceObject.value(QStringLiteral("resourceId")).toString() != it.key() ||
                 pinnedId.isEmpty() || runId != pinnedId || provenanceIds.contains(pinnedId) ||
+                !provenanceObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("size")).isDouble() ||
+                !provenanceObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("modifiedMs")).isDouble() ||
+                !provenanceObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("size")).isDouble() ||
+                !provenanceObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("modifiedMs")).isDouble() ||
+                !provenanceObject.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("size")).isDouble() ||
+                !provenanceObject.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("modifiedMs")).isDouble() ||
                 (!historyCanonicalHash.isEmpty() && historyCanonicalHash != canonicalMetadataHash) ||
                 (historyCanonicalHash.isEmpty() && !legacyCanonicalHash);
             if (invalid) {
@@ -342,25 +460,54 @@ bool loadAuxiliaryDemRegistry(const QString& projectRoot,
             }
             if (historyCanonicalHash.isEmpty()) {
                 provenanceObject.insert(QStringLiteral("canonicalMetadataHash"), canonicalMetadataHash);
+                historyCanonicalNormalized = true;
             }
             normalizedProvenanceHistory.append(provenanceObject);
             provenanceIds.insert(pinnedId);
             ++historyIndex;
         }
+        const bool entryNormalized = missingGeneration || historyGenerationNormalized ||
+                                     historyCanonicalNormalized;
+        if (entryNormalized) {
+            QJsonObject migratedEntryObject = effectiveObject;
+            migratedEntryObject.insert(QStringLiteral("provenanceHistory"), normalizedProvenanceHistory);
+            resourcesForMigration.insert(it.key(), migratedEntryObject);
+            anyNormalization = true;
+        }
         AuxiliaryDemRegistryEntry entry;
         entry.resourceId = it.key();
-        entry.role = object.value(QStringLiteral("role")).toString();
-        entry.rasterHash = object.value(QStringLiteral("rasterHash")).toString();
-        entry.identityH5Hash = object.value(QStringLiteral("identityH5Hash")).toString();
-        entry.validMaskHash = object.value(QStringLiteral("validMaskHash")).toString();
+        entry.role = effectiveObject.value(QStringLiteral("role")).toString();
+        entry.rasterHash = effectiveObject.value(QStringLiteral("rasterHash")).toString();
+        entry.identityH5Hash = effectiveObject.value(QStringLiteral("identityH5Hash")).toString();
+        entry.validMaskHash = effectiveObject.value(QStringLiteral("validMaskHash")).toString();
+        entry.rasterSize = static_cast<qint64>(effectiveObject.value(QStringLiteral("rasterSize")).toDouble());
+        entry.rasterModifiedMs = static_cast<qint64>(effectiveObject.value(QStringLiteral("rasterModifiedMs")).toDouble());
+        entry.identityH5Size = static_cast<qint64>(effectiveObject.value(QStringLiteral("identityH5Size")).toDouble());
+        entry.identityH5ModifiedMs = static_cast<qint64>(effectiveObject.value(QStringLiteral("identityH5ModifiedMs")).toDouble());
+        entry.validMaskSize = static_cast<qint64>(effectiveObject.value(QStringLiteral("validMaskSize")).toDouble());
+        entry.validMaskModifiedMs = static_cast<qint64>(effectiveObject.value(QStringLiteral("validMaskModifiedMs")).toDouble());
         entry.canonicalMetadataHash = canonicalMetadataHash;
-        entry.managedRasterPath = object.value(QStringLiteral("managedRasterPath")).toString();
-        entry.managedIdentityH5Path = object.value(QStringLiteral("managedIdentityH5Path")).toString();
-        entry.managedValidMaskPath = object.value(QStringLiteral("managedValidMaskPath")).toString();
-        entry.metadata = object.value(QStringLiteral("metadata")).toObject();
+        entry.managedRasterPath = effectiveObject.value(QStringLiteral("managedRasterPath")).toString();
+        entry.managedIdentityH5Path = effectiveObject.value(QStringLiteral("managedIdentityH5Path")).toString();
+        entry.managedValidMaskPath = effectiveObject.value(QStringLiteral("managedValidMaskPath")).toString();
+        entry.metadata = effectiveObject.value(QStringLiteral("metadata")).toObject();
         entry.provenanceHistory = normalizedProvenanceHistory;
-        entry.tombstone = object.value(QStringLiteral("tombstone")).toBool(false);
+        entry.tombstone = effectiveObject.value(QStringLiteral("tombstone")).toBool(false);
+        entry.legacyUnverified = false;
         entries.insert(entry.resourceId, entry);
+    }
+    if (anyNormalization) {
+        QJsonObject migratedRoot;
+        migratedRoot.insert(QStringLiteral("version"), 1);
+        migratedRoot.insert(QStringLiteral("resources"), resourcesForMigration);
+        QSaveFile migratedOutput(resourceRegistryPath(projectRoot));
+        if (!migratedOutput.open(QIODevice::WriteOnly) ||
+            migratedOutput.write(QJsonDocument(migratedRoot).toJson(QJsonDocument::Compact)) < 0 ||
+            !migratedOutput.commit()) {
+            qWarning() << "DEM resource registry migration failed to persist reconstructed size/mtime;"
+                       << "it will be retried on the next load."
+                       << migratedOutput.errorString();
+        }
     }
     return true;
 }
@@ -372,6 +519,9 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
     if (entry.resourceId.isEmpty() || entry.role != QStringLiteral("auxiliary_terrain_dem") ||
         entry.rasterHash.isEmpty() || entry.identityH5Hash.isEmpty() ||
         entry.validMaskHash.isEmpty() ||
+        entry.rasterSize < 0 || entry.rasterModifiedMs < 0 ||
+        entry.identityH5Size < 0 || entry.identityH5ModifiedMs < 0 ||
+        entry.validMaskSize < 0 || entry.validMaskModifiedMs < 0 ||
         entry.canonicalMetadataHash.isEmpty() || entry.provenanceHistory.isEmpty()) {
         if (errorMessage) *errorMessage = QStringLiteral("DEM registry entry is incomplete.");
         return false;
@@ -387,10 +537,16 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
             provenance.value(QStringLiteral("canonicalMetadataHash")).toString() != entry.canonicalMetadataHash ||
             provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem.tif") ||
             provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.rasterHash ||
+            !provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("size")).isDouble() ||
+            !provenance.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("modifiedMs")).isDouble() ||
             provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("identity.h5") ||
             provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != entry.identityH5Hash ||
+            !provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("size")).isDouble() ||
+            !provenance.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("modifiedMs")).isDouble() ||
             provenance.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem_valid_mask.tif") ||
-            provenance.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.validMaskHash) {
+            provenance.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.validMaskHash ||
+            !provenance.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("size")).isDouble() ||
+            !provenance.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("modifiedMs")).isDouble()) {
             if (errorMessage) *errorMessage = QStringLiteral("DEM registry provenance entry is incomplete or invalid.");
             return false;
         }
@@ -418,6 +574,12 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
     merged.rasterHash = entry.rasterHash;
     merged.identityH5Hash = entry.identityH5Hash;
     merged.validMaskHash = entry.validMaskHash;
+    merged.rasterSize = entry.rasterSize;
+    merged.rasterModifiedMs = entry.rasterModifiedMs;
+    merged.identityH5Size = entry.identityH5Size;
+    merged.identityH5ModifiedMs = entry.identityH5ModifiedMs;
+    merged.validMaskSize = entry.validMaskSize;
+    merged.validMaskModifiedMs = entry.validMaskModifiedMs;
     merged.canonicalMetadataHash = entry.canonicalMetadataHash;
     merged.managedRasterPath = entry.managedRasterPath;
     merged.managedIdentityH5Path = entry.managedIdentityH5Path;
@@ -443,6 +605,12 @@ bool mergeAuxiliaryDemRegistryEntry(const QString& projectRoot,
         object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
         object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
         object.insert(QStringLiteral("validMaskHash"), it.value().validMaskHash);
+        object.insert(QStringLiteral("rasterSize"), static_cast<double>(it.value().rasterSize));
+        object.insert(QStringLiteral("rasterModifiedMs"), static_cast<double>(it.value().rasterModifiedMs));
+        object.insert(QStringLiteral("identityH5Size"), static_cast<double>(it.value().identityH5Size));
+        object.insert(QStringLiteral("identityH5ModifiedMs"), static_cast<double>(it.value().identityH5ModifiedMs));
+        object.insert(QStringLiteral("validMaskSize"), static_cast<double>(it.value().validMaskSize));
+        object.insert(QStringLiteral("validMaskModifiedMs"), static_cast<double>(it.value().validMaskModifiedMs));
         object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
         object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
         object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
@@ -773,6 +941,66 @@ bool invalidateWorkflowAuxiliaryDemLabel(const QString& projectRoot,
     return true;
 }
 
+bool invalidateWorkflowAuxiliaryDemLabelBinding(const QString& projectRoot,
+                                                const QString& requestedLabel,
+                                                QString* errorMessage)
+{
+    const QString label = normalizedDemLabel(requestedLabel);
+    if (label.isEmpty()) return true;
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    const auto existing = labels.constFind(label);
+    if (existing == labels.constEnd()) return true;
+    if (existing->mode != AuxiliaryDemLabelMode::WorkflowOutput ||
+        (existing->resourceId.isEmpty() && existing->pinnedProvenanceId.isEmpty())) return true;
+    AuxiliaryDemLabelBinding binding = *existing;
+    binding.resourceId.clear();
+    binding.pinnedProvenanceId.clear();
+    labels.insert(label, binding);
+    if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return false;
+    notifyLabelRebound(label);
+    notifyLabelTableChanged();
+    return true;
+}
+
+QStringList reconcileWorkflowAuxiliaryDemLabels(const QString& projectRoot,
+                                                const QMap<QString, QString>& declaredLabels,
+                                                QString* errorMessage)
+{
+    QStringList invalidatedLabels;
+    QMap<QString, QString> declared;
+    for (auto it = declaredLabels.constBegin(); it != declaredLabels.constEnd(); ++it) {
+        declared.insert(normalizedDemLabel(it.key()), it.value().trimmed());
+    }
+    QMutexLocker locker(&g_resourceRegistryMutex);
+    QMap<QString, AuxiliaryDemLabelBinding> labels;
+    if (!loadAuxiliaryDemLabels(projectRoot, labels, errorMessage)) return invalidatedLabels;
+    bool changed = false;
+    for (auto it = labels.begin(); it != labels.end(); ++it) {
+        AuxiliaryDemLabelBinding& binding = it.value();
+        if (binding.mode != AuxiliaryDemLabelMode::WorkflowOutput) continue;
+        const auto declaredIt = declared.constFind(it.key());
+        const bool isDeclared = declaredIt != declared.constEnd() &&
+                                declaredIt.value() == binding.producerIdentity;
+        if (isDeclared) continue;
+        if (binding.resourceId.isEmpty() && binding.pinnedProvenanceId.isEmpty()) continue;
+        binding.resourceId.clear();
+        binding.pinnedProvenanceId.clear();
+        invalidatedLabels.append(it.key());
+        changed = true;
+    }
+    if (changed) {
+        if (!saveAuxiliaryDemLabels(projectRoot, labels, errorMessage)) {
+            invalidatedLabels.clear();
+            return invalidatedLabels;
+        }
+        for (const QString& label : invalidatedLabels) notifyLabelRebound(label);
+        notifyLabelTableChanged();
+    }
+    return invalidatedLabels;
+}
+
 bool resolveWorkflowAuxiliaryDemLabel(const QString& projectRoot,
                                       const QString& requestedLabel,
                                       const QString& producerIdentity,
@@ -888,6 +1116,12 @@ bool tombstoneAuxiliaryDemResource(const QString& projectRoot,
         object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
         object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
         object.insert(QStringLiteral("validMaskHash"), it.value().validMaskHash);
+        object.insert(QStringLiteral("rasterSize"), static_cast<double>(it.value().rasterSize));
+        object.insert(QStringLiteral("rasterModifiedMs"), static_cast<double>(it.value().rasterModifiedMs));
+        object.insert(QStringLiteral("identityH5Size"), static_cast<double>(it.value().identityH5Size));
+        object.insert(QStringLiteral("identityH5ModifiedMs"), static_cast<double>(it.value().identityH5ModifiedMs));
+        object.insert(QStringLiteral("validMaskSize"), static_cast<double>(it.value().validMaskSize));
+        object.insert(QStringLiteral("validMaskModifiedMs"), static_cast<double>(it.value().validMaskModifiedMs));
         object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
         object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
         object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
@@ -921,9 +1155,17 @@ bool removeAuxiliaryDemRegistryEntry(const QString& projectRoot,
         object.insert(QStringLiteral("role"), it.value().role);
         object.insert(QStringLiteral("rasterHash"), it.value().rasterHash);
         object.insert(QStringLiteral("identityH5Hash"), it.value().identityH5Hash);
+        object.insert(QStringLiteral("validMaskHash"), it.value().validMaskHash);
+        object.insert(QStringLiteral("rasterSize"), static_cast<double>(it.value().rasterSize));
+        object.insert(QStringLiteral("rasterModifiedMs"), static_cast<double>(it.value().rasterModifiedMs));
+        object.insert(QStringLiteral("identityH5Size"), static_cast<double>(it.value().identityH5Size));
+        object.insert(QStringLiteral("identityH5ModifiedMs"), static_cast<double>(it.value().identityH5ModifiedMs));
+        object.insert(QStringLiteral("validMaskSize"), static_cast<double>(it.value().validMaskSize));
+        object.insert(QStringLiteral("validMaskModifiedMs"), static_cast<double>(it.value().validMaskModifiedMs));
         object.insert(QStringLiteral("canonicalMetadataHash"), it.value().canonicalMetadataHash);
         object.insert(QStringLiteral("managedRasterPath"), it.value().managedRasterPath);
         object.insert(QStringLiteral("managedIdentityH5Path"), it.value().managedIdentityH5Path);
+        object.insert(QStringLiteral("managedValidMaskPath"), it.value().managedValidMaskPath);
         object.insert(QStringLiteral("metadata"), it.value().metadata);
         object.insert(QStringLiteral("provenanceHistory"), it.value().provenanceHistory);
         object.insert(QStringLiteral("tombstone"), it.value().tombstone);
@@ -940,6 +1182,44 @@ bool removeAuxiliaryDemRegistryEntry(const QString& projectRoot,
     }
     notifyResourceChange(resourceId, QString(), ResourceChangeKind::Removed);
     return true;
+}
+
+void pruneAuxiliaryDemResources(const QString& projectRoot, int keepCount)
+{
+    if (keepCount < 1) keepCount = 1;
+    const QDir resourcesRoot(QDir(projectRoot).absoluteFilePath(QStringLiteral(".dem_resources")));
+    if (!resourcesRoot.exists()) return;
+
+    // 仅处理内容寻址的受管 DEM 资源目录，避免误删其他目录。
+    QFileInfoList managedDirs;
+    const QFileInfoList entries = resourcesRoot.entryInfoList(
+        QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks);
+    for (const QFileInfo& info : entries) {
+        if (info.fileName().startsWith(QStringLiteral("auxiliary_terrain_dem-"))) {
+            managedDirs.append(info);
+        }
+    }
+    if (managedDirs.size() <= keepCount) return;
+
+    // 以资源内 dem.tif（缺失时回退目录）的修改时间排序，最新在前。
+    std::sort(managedDirs.begin(), managedDirs.end(), [](const QFileInfo& a, const QFileInfo& b) {
+        const QFileInfo tifA(a.absoluteFilePath() + QStringLiteral("/dem.tif"));
+        const QFileInfo tifB(b.absoluteFilePath() + QStringLiteral("/dem.tif"));
+        return (tifA.isFile() ? tifA.lastModified() : a.lastModified()) >
+               (tifB.isFile() ? tifB.lastModified() : b.lastModified());
+    });
+
+    for (int i = keepCount; i < managedDirs.size(); ++i) {
+        const QString resourceId = managedDirs[i].fileName();
+        const QString resourcePath = managedDirs[i].absoluteFilePath();
+        InSARLogManager::LogInfo("NodeUtils",
+            QStringLiteral("清理旧 DEM 资源以限制保留份数（%1/%2）：%3")
+                .arg(keepCount).arg(managedDirs.size()).arg(resourceId));
+        if (QDir(resourcePath).removeRecursively()) {
+            QString ignored;
+            removeAuxiliaryDemRegistryEntry(projectRoot, resourceId, &ignored);
+        }
+    }
 }
 
 void registerResourceChangeCallback(const ResourceChangeCallback& callback)
@@ -965,6 +1245,11 @@ void publishResourceChange(const QString& resourceId,
                            ResourceChangeKind kind)
 {
     notifyResourceChange(resourceId, provenanceId, kind);
+}
+
+void emitAuxiliaryDemLabelTableChanged()
+{
+    notifyLabelTableChanged();
 }
 
 QJsonObject inputGeometryFromProductDescriptor(const QtNodes::ProductDescriptor::Ptr& descriptor)
@@ -1029,19 +1314,25 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         return false;
     }
     const AuxiliaryDemRegistryEntry entry = registry.value(data.resourceId());
+    if (entry.legacyUnverified) {
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM resource is legacy and lacks a verifiable validity mask; regenerate it before use.");
+        return false;
+    }
     const QString expectedRaster = QDir(projectRoot).absoluteFilePath(entry.managedRasterPath);
     const QString expectedIdentity = QDir(projectRoot).absoluteFilePath(entry.managedIdentityH5Path);
+    const QString expectedMask = QDir(projectRoot).absoluteFilePath(entry.managedValidMaskPath);
+    const QFileInfo mask(expectedMask);
     if (QDir::cleanPath(expectedRaster).compare(QDir::cleanPath(raster.absoluteFilePath()), Qt::CaseInsensitive) != 0 ||
-        QDir::cleanPath(expectedIdentity).compare(QDir::cleanPath(identity.absoluteFilePath()), Qt::CaseInsensitive) != 0) {
+        QDir::cleanPath(expectedIdentity).compare(QDir::cleanPath(identity.absoluteFilePath()), Qt::CaseInsensitive) != 0 ||
+        !mask.isFile() || !mask.isReadable()) {
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM entity paths are not the registry-managed paths.");
         return false;
     }
-    const QByteArray rasterHash = sha256File(raster.absoluteFilePath());
-    const QByteArray identityHash = sha256File(identity.absoluteFilePath());
-    if (QString::fromLatin1(rasterHash) != entry.rasterHash ||
-        QString::fromLatin1(identityHash) != entry.identityH5Hash) {
+    if (!matchesPersistedFileGeneration(raster, entry.rasterSize, entry.rasterModifiedMs) ||
+        !matchesPersistedFileGeneration(identity, entry.identityH5Size, entry.identityH5ModifiedMs) ||
+        !matchesPersistedFileGeneration(mask, entry.validMaskSize, entry.validMaskModifiedMs)) {
         notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::ContentIntegrityFailed);
-        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM managed file hash does not match the registry.");
+        if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM managed file generation does not match the registry.");
         return false;
     }
     Hdf5Locker identityLock(identity.absoluteFilePath(), 50);
@@ -1111,8 +1402,13 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         entityManifest.fileName() != QStringLiteral("provenance_%1.json").arg(data.pinnedProvenanceId()) ||
         manifestObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem.tif") ||
         manifestObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("identity.h5") ||
+        manifestObject.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("path")).toString() != QStringLiteral("dem_valid_mask.tif") ||
         manifestObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.rasterHash ||
         manifestObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != entry.identityH5Hash ||
+        manifestObject.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("sha256")).toString() != entry.validMaskHash ||
+        !matchesPersistedFileGeneration(raster, manifestObject.value(QStringLiteral("dem.tif")).toObject()) ||
+        !matchesPersistedFileGeneration(identity, manifestObject.value(QStringLiteral("identity.h5")).toObject()) ||
+        !matchesPersistedFileGeneration(mask, manifestObject.value(QStringLiteral("dem_valid_mask.tif")).toObject()) ||
         manifestObject.value(QStringLiteral("canonicalMetadataHash")).toString() != entry.canonicalMetadataHash) {
         notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::ContentIntegrityFailed);
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM provenance manifest does not match registry hashes.");
@@ -1120,10 +1416,12 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
     }
     binding.rasterPath = raster.absoluteFilePath();
     binding.identityH5Path = identity.absoluteFilePath();
+    binding.validMaskPath = mask.absoluteFilePath();
     binding.resourceId = data.resourceId();
     binding.pinnedProvenanceId = data.pinnedProvenanceId();
     binding.rasterHash = entry.rasterHash;
     binding.identityH5Hash = entry.identityH5Hash;
+    binding.validMaskHash = entry.validMaskHash;
     binding.canonicalMetadataHash = entry.canonicalMetadataHash;
     binding.fromReference = false;
     return true;
@@ -1186,6 +1484,7 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         QStringLiteral(".dem_resources/%1").arg(data.resourceId())));
     const QFileInfo raster(resourceDir.absoluteFilePath(QStringLiteral("dem.tif")));
     const QFileInfo identity(resourceDir.absoluteFilePath(QStringLiteral("identity.h5")));
+    const QFileInfo mask(resourceDir.absoluteFilePath(QStringLiteral("dem_valid_mask.tif")));
     const QFileInfo manifest(resourceDir.absoluteFilePath(
         QStringLiteral("provenance_%1.json").arg(data.pinnedProvenanceId())));
     if (!manifest.isFile()) {
@@ -1193,7 +1492,7 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM pinned provenance manifest is unavailable.");
         return false;
     }
-    if (!raster.isFile() || !identity.isFile()) {
+    if (!raster.isFile() || !identity.isFile() || !mask.isFile()) {
         if (errorMessage) *errorMessage = QStringLiteral("Referenced DEM resource or pinned provenance is unavailable.");
         return false;
     }
@@ -1206,9 +1505,8 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
     const QJsonObject manifestObject = QJsonDocument::fromJson(manifestFile.readAll()).object();
     const auto verifyManagedFile = [](const QFileInfo& file, const QJsonValue& value) {
         const QJsonObject entry = value.toObject();
-        if (entry.value(QStringLiteral("path")).toString() != file.fileName()) return false;
-        return QString::fromLatin1(sha256File(file.absoluteFilePath())) ==
-            entry.value(QStringLiteral("sha256")).toString();
+        return entry.value(QStringLiteral("path")).toString() == file.fileName() &&
+            matchesPersistedFileGeneration(file, entry);
     };
     if (manifestObject.value(QStringLiteral("resourceId")).toString() != data.resourceId() ||
         manifestObject.value(QStringLiteral("pinnedProvenanceId")).toString() != data.pinnedProvenanceId() ||
@@ -1218,8 +1516,10 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         manifestObject.value(QStringLiteral("canonicalMetadataHash")).toString() != registryEntry.canonicalMetadataHash ||
         !verifyManagedFile(raster, manifestObject.value(QStringLiteral("dem.tif"))) ||
         !verifyManagedFile(identity, manifestObject.value(QStringLiteral("identity.h5"))) ||
+        !verifyManagedFile(mask, manifestObject.value(QStringLiteral("dem_valid_mask.tif"))) ||
         manifestObject.value(QStringLiteral("dem.tif")).toObject().value(QStringLiteral("sha256")).toString() != registryEntry.rasterHash ||
-        manifestObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != registryEntry.identityH5Hash) {
+        manifestObject.value(QStringLiteral("identity.h5")).toObject().value(QStringLiteral("sha256")).toString() != registryEntry.identityH5Hash ||
+        manifestObject.value(QStringLiteral("dem_valid_mask.tif")).toObject().value(QStringLiteral("sha256")).toString() != registryEntry.validMaskHash) {
         notifyResourceChange(data.resourceId(), data.pinnedProvenanceId(), ResourceChangeKind::ContentIntegrityFailed);
         if (errorMessage) *errorMessage = QStringLiteral("DEM provenance manifest does not match managed files.");
         return false;
@@ -1243,10 +1543,12 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
     }
     binding.rasterPath = raster.absoluteFilePath();
     binding.identityH5Path = identity.absoluteFilePath();
+    binding.validMaskPath = mask.absoluteFilePath();
     binding.resourceId = data.resourceId();
     binding.pinnedProvenanceId = data.pinnedProvenanceId();
     binding.rasterHash = registryEntry.rasterHash;
     binding.identityH5Hash = registryEntry.identityH5Hash;
+    binding.validMaskHash = registryEntry.validMaskHash;
     binding.canonicalMetadataHash = registryEntry.canonicalMetadataHash;
     binding.fromReference = true;
     return true;
@@ -1278,6 +1580,7 @@ bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
         binding.pinnedProvenanceId != expectedBinding->pinnedProvenanceId ||
         binding.rasterHash != expectedBinding->rasterHash ||
          binding.identityH5Hash != expectedBinding->identityH5Hash ||
+         binding.validMaskHash != expectedBinding->validMaskHash ||
          binding.canonicalMetadataHash != expectedBinding->canonicalMetadataHash) {
         notifyResourceChange(binding.resourceId, binding.pinnedProvenanceId, ResourceChangeKind::ExplicitRebind);
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM binding changed after preparation.");
@@ -1338,17 +1641,17 @@ bool resolveInsarDemProduct(const QtNodes::InsarDemData& data,
             return false;
         }
         bool listed = false;
-        const QByteArray actualHash = sha256File(info.absoluteFilePath());
         for (const QJsonValue& output : manifestObject.value(QStringLiteral("outputs")).toArray()) {
             const QJsonObject item = output.toObject();
             if (item.value(QStringLiteral("name")).toString() == info.fileName() &&
-                item.value(QStringLiteral("sha256")).toString() == QString::fromLatin1(actualHash)) {
+                item.value(QStringLiteral("sha256")).toString().size() == 64 &&
+                matchesPersistedFileGeneration(info, item)) {
                 listed = true;
                 break;
             }
         }
         if (!listed) {
-            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM H5 is not hash-bound by its committed manifest: %1").arg(path);
+            if (errorMessage) *errorMessage = QStringLiteral("InSAR DEM H5 generation is missing from or does not match its committed manifest: %1").arg(path);
             return false;
         }
         Hdf5Locker h5Lock(info.absoluteFilePath(), 50);
@@ -1393,8 +1696,8 @@ namespace {
 
 const char kProductDescriptorDataset[] = "semantic_product_descriptor";
 
-bool writeProductDescriptorToH5(const QString& filePath, const QJsonObject& descriptor,
-                                QString* errorMessage)
+bool writeStagedProductDescriptorToH5(const QString& filePath, const QJsonObject& descriptor,
+                                      QString* errorMessage)
 {
     const QByteArray path = filePath.toUtf8();
     const QByteArray json = QJsonDocument(descriptor).toJson(QJsonDocument::Compact);
@@ -2003,6 +2306,17 @@ QString transactionDirectoryPath(const QString& root)
 
 } // namespace
 
+QByteArray fileSha256(const QString& path)
+{
+    return sha256File(path);
+}
+
+bool writeProductDescriptorToH5(const QString& filePath, const QJsonObject& descriptor,
+                                QString* errorMessage)
+{
+    return writeStagedProductDescriptorToH5(filePath, descriptor, errorMessage);
+}
+
 bool persistOutputTransactionState(OutputTransaction& transaction, QString* errorMessage)
 {
     return persistTransaction(transaction, errorMessage);
@@ -2460,7 +2774,9 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
             }
         } else if ((journal.value(QStringLiteral("resourceRegistryCommitted")).toBool(false) ||
                     journal.value(QStringLiteral("resourceRegistryMutationPrepared")).toBool(false)) &&
-                   (action == QStringLiteral("installed") || action == QStringLiteral("reused"))) {
+                   (action == QStringLiteral("installed") ||
+                    (action == QStringLiteral("reused") &&
+                     journal.value(QStringLiteral("baseRegistryHash")).toString().isEmpty()))) {
             const QString resourceId = journal.value(QStringLiteral("provenanceDelta")).toObject()
                 .value(QStringLiteral("resourceId")).toString();
             if (!resourceId.isEmpty()) {
@@ -2926,6 +3242,11 @@ bool validateStagedOutputTransaction(OutputTransaction& transaction, QString* er
         QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
     for (const QFileInfo& entry : stagedEntries) {
         if (entry.isDir() || !expectedNames.contains(entry.fileName())) {
+            // 预览 JPG 是派生产物，允许不在声明清单中（Worker 可直接写入预生成预览，
+            // 避免最终化阶段再从 H5 全量读取）。
+            if (entry.suffix().compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0) {
+                continue;
+            }
             if (errorMessage) {
                 *errorMessage = QStringLiteral("Staged output contains an artifact outside the expected manifest: %1")
                     .arg(entry.absoluteFilePath());
@@ -2936,24 +3257,44 @@ bool validateStagedOutputTransaction(OutputTransaction& transaction, QString* er
 
     QJsonArray files;
     for (const QString& name : transaction.expectedFileNames) {
-        const QFileInfo info(staging.absoluteFilePath(name));
-        if (!validateOutputFile(info, errorMessage)) return false;
-        if (info.suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0 &&
-            !writeProductDescriptorToH5(info.absoluteFilePath(), transaction.productDescriptor, errorMessage)) {
+        const QString stagedPath = staging.absoluteFilePath(name);
+        // Worker 已写入 descriptor 并预计算哈希时（仅 DEM 路径），跳过重复的
+        // descriptor 写入与整文件哈希，避免最终化阶段再次读取数百 MB 的 H5。
+        const auto precomputedIt = transaction.precomputedOutputHashes.constFind(name);
+        const bool hasPrecomputedHash = precomputedIt != transaction.precomputedOutputHashes.constEnd();
+        // 写入 descriptor 前先预检文件存在且非空，缺失产物直接报清晰错误，
+        // 避免落到 descriptor 写入失败这类不够直观的消息上。
+        const QFileInfo preflight(stagedPath);
+        if (!preflight.isFile() || preflight.size() <= 0) {
+            if (errorMessage) *errorMessage = QStringLiteral("Missing or empty staged output: %1").arg(stagedPath);
             return false;
         }
+        // 嵌入 product descriptor 会就地改写 H5（约 +2.4 KB），因此必须先完成该
+        // 写入再对文件取 stat，保证 outputs 清单中记录的 size/修改时间与哈希一致。
+        if (preflight.suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0 &&
+            !hasPrecomputedHash &&
+            !writeStagedProductDescriptorToH5(stagedPath, transaction.productDescriptor, errorMessage)) {
+            return false;
+        }
+        const QFileInfo info(stagedPath);
+        if (!validateOutputFile(info, errorMessage)) return false;
         QJsonObject file;
         file.insert(QStringLiteral("name"), name);
         file.insert(QStringLiteral("size"), static_cast<double>(info.size()));
         file.insert(QStringLiteral("modifiedMs"), static_cast<double>(info.lastModified().toMSecsSinceEpoch()));
-        QFile artifact(info.absoluteFilePath());
-        if (!artifact.open(QIODevice::ReadOnly)) {
-            if (errorMessage) *errorMessage = QStringLiteral("Cannot hash staged output: %1").arg(info.absoluteFilePath());
-            return false;
+        QByteArray artifactHash;
+        if (hasPrecomputedHash) {
+            artifactHash = precomputedIt.value();
+        } else {
+            QFile artifact(stagedPath);
+            if (!artifact.open(QIODevice::ReadOnly)) {
+                if (errorMessage) *errorMessage = QStringLiteral("Cannot hash staged output: %1").arg(stagedPath);
+                return false;
+            }
+            artifactHash = sha256File(stagedPath);
         }
-        const QByteArray artifactHash = sha256File(info.absoluteFilePath());
         if (artifactHash.isEmpty()) {
-            if (errorMessage) *errorMessage = QStringLiteral("Cannot hash staged output: %1").arg(info.absoluteFilePath());
+            if (errorMessage) *errorMessage = QStringLiteral("Cannot hash staged output: %1").arg(stagedPath);
             return false;
         }
         file.insert(QStringLiteral("sha256"), QString::fromLatin1(artifactHash));
@@ -3010,17 +3351,27 @@ bool validateStagedH5Datasets(const OutputTransaction& transaction,
         }
         hasH5Output = true;
         const QString h5Path = staging.absoluteFilePath(name);
+        NodeUtils::Hdf5Locker locker(h5Path, 50);
+        if (!locker.isLocked()) {
+            if (errorMessage) *errorMessage = QStringLiteral("获取 H5 文件锁超时 (文件忙): %1").arg(h5Path);
+            return false;
+        }
         for (const QString& dataset : requiredDatasets) {
             if (dataset.isEmpty()) {
                 if (errorMessage) *errorMessage = QStringLiteral("Staged H5 validation contains an empty dataset name.");
                 return false;
             }
-            cv::Mat value;
-            QString readError;
-            if (!readMatFromH5(h5Path, dataset, value, -1, &readError) || value.empty()) {
+            // 仅探测数据集尺寸元数据，避免对数百 MB 的 H5 输出做全量读取，
+            // 显著缩短最终化阶段的阻塞时间。数据由 Worker 写入并已校验，
+            // 此处只需确认数据集存在且非空。
+            int rows = 0;
+            int columns = 0;
+            QString probeError;
+            if (!probeH5DatasetMetadata(h5Path, dataset, &rows, &columns, &probeError) ||
+                rows <= 0 || columns <= 0) {
                 if (errorMessage) {
                     *errorMessage = QStringLiteral("Staged H5 output is missing required dataset '%1': %2 (%3)")
-                        .arg(dataset, h5Path, readError);
+                        .arg(dataset, h5Path, probeError);
                 }
                 return false;
             }
@@ -3366,7 +3717,8 @@ void abandonOutputTransaction(OutputTransaction& transaction, const QString& rea
         } else if ((transaction.resourceRegistryCommitted || transaction.resourceRegistryMutationPrepared) &&
                    !transaction.provenanceDelta.isEmpty() &&
                    (transaction.resourceAction == QStringLiteral("installed") ||
-                    transaction.resourceAction == QStringLiteral("reused"))) {
+                    (transaction.resourceAction == QStringLiteral("reused") &&
+                     transaction.baseRegistryHash.isEmpty()))) {
             if (!removeAuxiliaryDemRegistryEntry(transaction.projectRoot,
                                                   transaction.provenanceDelta.value(QStringLiteral("resourceId")).toString(),
                                                   &registryError)) {
@@ -3879,6 +4231,85 @@ bool replaceJpgPreviewAtomically(const QString& temporaryJpgPath, const QString&
 #endif
 }
 
+// 手动归一化并保存预览 JPG 的备用逻辑，供 H5 预览与直接矩阵预览共用。
+static int savePhaseFallbackJpg(const cv::Mat& matToSave, const QString& type, const QString& jpgPath)
+{
+    cv::Mat phaseNormalized;
+    if (type == QStringLiteral("coherence"))
+    {
+        phaseNormalized = matToSave * 255.0;
+    }
+    else if (type == QStringLiteral("dem"))
+    {
+        // 排除 NoData 像元 (-32767)，避免归一化时被极端值拉偏色阶
+        cv::Mat noDataMask = (matToSave <= -32700.0);
+        cv::Mat validMask = (matToSave > -32700.0);
+        double minVal = 0.0, maxVal = 0.0;
+        if (cv::countNonZero(validMask) > 0)
+        {
+            cv::minMaxLoc(matToSave, &minVal, &maxVal, 0, 0, validMask);
+            if (maxVal - minVal > 1e-6)
+            {
+                phaseNormalized = (matToSave - minVal) * (255.0 / (maxVal - minVal));
+            }
+            else
+            {
+                phaseNormalized = cv::Mat::zeros(matToSave.size(), CV_64F);
+            }
+            phaseNormalized.setTo(0.0, noDataMask);
+        }
+        else
+        {
+            phaseNormalized = cv::Mat::zeros(matToSave.size(), CV_64F);
+        }
+    }
+    else
+    {
+        phaseNormalized = (matToSave + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
+    }
+
+    phaseNormalized.convertTo(phaseNormalized, CV_8U);
+
+    cv::Mat colorImage;
+    if (type == QStringLiteral("coherence"))
+    {
+        colorImage = phaseNormalized;
+    }
+    else
+    {
+        cv::applyColorMap(phaseNormalized, colorImage, cv::COLORMAP_JET);
+    }
+
+    return cv::imwrite(jpgPath.toStdString(), colorImage) ? 0 : -1;
+}
+
+// 直接从内存中的高程矩阵生成 DEM 预览 JPG，供 Worker 在写入输出后复用矩阵，
+// 避免最终化阶段再从 H5 全量读取生成预览。
+bool generateDemJpgFromMat(const cv::Mat& dem, const QString& jpgPath)
+{
+    if (dem.empty() || jpgPath.isEmpty()) return false;
+
+    cv::Mat demForPreview = dem.clone();
+    if (demForPreview.type() != CV_64F) demForPreview.convertTo(demForPreview, CV_64F);
+    // 与 H5 预览渲染一致：NoData 像元以 NaN 参与 savephase，避免极端值拉偏色阶
+    cv::Mat noDataMask = (demForPreview <= -32700.0);
+    demForPreview.setTo(std::numeric_limits<double>::quiet_NaN(), noDataMask);
+
+    const QFileInfo jpgInfo(jpgPath);
+    const QString tempPath = jpgInfo.absolutePath() + "/." + jpgInfo.completeBaseName() +
+        "." + QUuid::createUuid().toString(QUuid::WithoutBraces) + ".jpg";
+    QFile::remove(tempPath);
+
+    Utils util;
+    int ret = util.savephase(tempPath.toStdString().c_str(), "jet", demForPreview);
+    if (ret != 0) ret = savePhaseFallbackJpg(demForPreview, QStringLiteral("dem"), tempPath);
+    if (ret != 0 || !replaceJpgPreviewAtomically(tempPath, jpgPath)) {
+        QFile::remove(tempPath);
+        return false;
+    }
+    return true;
+}
+
 static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString& jpgPath,
                                             const QString& type, std::function<void(int, int)> cb);
 
@@ -3933,44 +4364,10 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
     FormatConversion FC;
 
     // 局部 Lambda 帮助函数：手动归一化与保存相位 JPG（用于 savephase 失败时的备用逻辑）
+    // 手动归一化与保存预览 JPG 的备用逻辑（savephase 失败时兜底），与
+    // generateDemJpgFromMat 共用实现，避免逻辑重复。
     auto savePhaseFallback = [&](const cv::Mat& mat_to_save, const QString& type_str) -> int {
-        cv::Mat phase_normalized;
-        if (type_str == "coherence")
-        {
-            phase_normalized = mat_to_save * 255.0;
-        }
-        else if (type_str == "dem")
-        {
-            double minVal, maxVal;
-            cv::minMaxLoc(mat_to_save, &minVal, &maxVal);
-            if (maxVal - minVal > 1e-6)
-            {
-                phase_normalized = (mat_to_save - minVal) * (255.0 / (maxVal - minVal));
-            }
-            else
-            {
-                phase_normalized = cv::Mat::zeros(mat_to_save.size(), CV_64F);
-            }
-        }
-        else
-        {
-            phase_normalized = (mat_to_save + 3.141592653589793) * (255.0 / (2.0 * 3.141592653589793));
-        }
-        
-        phase_normalized.convertTo(phase_normalized, CV_8U);
-        
-        cv::Mat color_image;
-        if (type_str == "coherence")
-        {
-            color_image = phase_normalized;
-        }
-        else
-        {
-            cv::applyColorMap(phase_normalized, color_image, cv::COLORMAP_JET);
-        }
-        
-        bool success_write = cv::imwrite(jpgPath.toStdString(), color_image);
-        return success_write ? 0 : -1;
+        return savePhaseFallbackJpg(mat_to_save, type_str, jpgPath);
     };
 
     if (type == "complex")
@@ -4090,6 +4487,9 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
             }
             else if (type == "dem")
             {
+                // 将 NoData 像元替换为 NaN，避免 -32767 极端值拉偏色阶
+                cv::Mat demNoDataMask = (phase <= -32700.0);
+                phase.setTo(std::numeric_limits<double>::quiet_NaN(), demNoDataMask);
                 ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
             }
             
@@ -4517,6 +4917,33 @@ bool readMatFromH5(const QString& filePath,
     if (targetType >= 0 && mat.type() != targetType) {
         mat.convertTo(mat, targetType);
     }
+    return true;
+}
+
+bool probeH5DatasetMetadata(const QString& filePath,
+                            const QString& dataset,
+                            int* rows,
+                            int* columns,
+                            QString* errMsg)
+{
+    if (!QFileInfo::exists(filePath)) {
+        if (errMsg) *errMsg = QStringLiteral("H5 文件不存在: %1").arg(filePath);
+        return false;
+    }
+    if (dataset.isEmpty()) {
+        if (errMsg) *errMsg = QStringLiteral("数据集名称为空");
+        return false;
+    }
+    int localRows = 0;
+    int localColumns = 0;
+    const QByteArray utf8Path = filePath.toUtf8();
+    const QByteArray utf8Dataset = dataset.toUtf8();
+    if (Hdf5IO::getDatasetDims(utf8Path.constData(), utf8Dataset.constData(), &localRows, &localColumns) != 0) {
+        if (errMsg) *errMsg = QStringLiteral("H5 数据集不存在或元数据读取失败: %1").arg(dataset);
+        return false;
+    }
+    if (rows) *rows = localRows;
+    if (columns) *columns = localColumns;
     return true;
 }
 

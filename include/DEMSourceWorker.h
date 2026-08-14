@@ -4,6 +4,7 @@
 
 #include "BaseWorker.h"
 #include <QStringList>
+#include <QJsonObject>
 
 // Kept deliberately small and value-only because it crosses the worker-thread
 // boundary.  The node persists the same facts into the managed DEM audit.
@@ -39,6 +40,10 @@ public slots:
         QString cacheDir
     );
 
+    // 在 Worker 启动前由节点注入输出事务的 product descriptor JSON，
+    // 用于写入阶段在 H5 中写入语义描述并据此预计算 H5 哈希。
+    void setProductDescriptorJson(const QJsonObject& descriptor);
+
 signals:
     void cancelled();
     void demFetchFinished(
@@ -51,12 +56,14 @@ signals:
         const QStringList& serverNotFoundTiles,
         int requestedTileCount,
         bool outputValidated,
+        const QString& outputH5Sha256,
         const DemCoverageAudit& coverageAudit
     );
 
 private:
     int downloadTile(const QString& url, const QString& savePath, bool requiresEarthdataAuth,
                      QString* failureDetail = nullptr);
+    QJsonObject m_productDescriptorJson;
 };
 
 #endif // DEM_SOURCE_WORKER_H

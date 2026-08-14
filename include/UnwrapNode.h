@@ -112,6 +112,7 @@ private:
     QString m_pendingWarningMessage;
     bool m_xmlDirty = false;
     quint64 m_snaphuLastUiHeartbeatMilliseconds;
+    quint64 m_snaphuLastLogHeartbeatMilliseconds;
 
     // Helper methods
     void createWidget();

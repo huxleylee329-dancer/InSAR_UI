@@ -14,6 +14,7 @@
 #include <QJsonObject>
 #include <QStandardItemModel>
 #include <QSet>
+#include <QHash>
 #include <QElapsedTimer>
 #include "PaletteOrder.h"
 
@@ -168,6 +169,9 @@ signals:
     void nodeExecutionTerminalState(QtNodes::NodeId nodeId);
     void nodeExecutionStartRejected(QtNodes::NodeId nodeId, const QString& nodeCaption, const QString& reason);
 
+    // 打开工程对账后，被判定为孤儿而失效资源绑定的流程 DEM 标签列表
+    void workflowDemLabelsReconciled(const QStringList& invalidatedLabels);
+
 private:
     void setupUi();
     void setupToolbar();
@@ -183,6 +187,9 @@ private:
 
     void openDetailView(QtNodes::NodeGraphicsObject* ngo, QtNodes::ExecutableNodeDelegateModel* execModel);
     void cleanupDetailWindow();
+
+    // 计算当前场景中 DEMSource 节点声明的流程 DEM 标签（归一化）集合
+    QSet<QString> workflowDeclaredDemLabels() const;
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -247,6 +254,10 @@ private:
     int m_workflowSucceededNodes = 0;
     int m_workflowWarningNodes = 0;
     int m_workflowFailedNodes = 0;
+    // 每次运行至多输出一次"流程 DEM 标签阻塞"告警
+    bool m_workflowBlockedWarningLogged = false;
+    // 同一节点在短时间内连续进入 Pending 时仅记录一次"等待前置条件满足"，避免刷屏
+    QHash<QtNodes::NodeId, qint64> m_lastPendingLogMs;
     QElapsedTimer m_workflowRunTimer;
 
     // Project context

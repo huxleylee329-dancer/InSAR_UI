@@ -62,6 +62,11 @@ public:
     // 获取输入数据供校验使用
     std::shared_ptr<ImportedFileData> getInputData() const { return m_inputData; }
 
+    // 流程 DEM 标签只读访问（供标签清理/对账使用）
+    QString workflowLabel() const { return m_workflowLabel; }
+    QString workflowDemLabel() const { return m_workflowLabel; }
+    QString workflowProducerIdentity() const { return m_workflowProducerIdentity; }
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
 
@@ -83,6 +88,7 @@ private:
     QLabel* m_cacheSizeLabel;
     QLineEdit* m_outputNodeNameEdit;
     QPushButton* m_createLabelBtn;
+    QPushButton* m_clearLabelBtn;
     QPushButton* m_importLocalDemBtn;
 
     // 登录相关控件
@@ -153,6 +159,7 @@ private:
         const QStringList& serverNotFoundTiles,
         int requestedTileCount,
         bool outputValidated,
+        const QString& outputH5Sha256,
         const DemCoverageAudit& coverageAudit
     );
     void onError(const QString& error);

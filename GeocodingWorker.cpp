@@ -73,7 +73,7 @@ static bool __stdcall geocodingProgressCallback(int progress, const char* messag
         }
 
         int start_prog = 2;
-        int end_prog = 20;
+        int end_prog = 90;
         int mapped_prog = start_prog + progress * (end_prog - start_prog) / 100;
 
         QString msgStr = QString::fromLocal8Bit(message);
@@ -305,7 +305,7 @@ void GeocodingWorker::GeocodingWithDem(
                 lon_new.copyTo(mapped_lat);
             }
         }
-        emit updateProcess(20, QStringLiteral("正在地理编码……"));
+emit updateProcess(90, QStringLiteral("正在地理编码……"));
         double lat_north, lat_south, lon_west, lon_east;
         for (int i = 0; i < input_files.size(); i++)
         {
@@ -410,7 +410,7 @@ void GeocodingWorker::GeocodingWithDem(
             }
             InSARLogManager::LogInfo("GeocodingWorker", QString("Geocoding output write finished: elapsed_ms=%1, output=%2")
                 .arg(outputTimer.elapsed()).arg(QString::fromStdString(output_files[i])));
-            int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
+int process = 90 + double(i + 1) / (double)input_files.size() * 9.0;
 
             emit updateProcess(process, QStringLiteral("正在地理编码……"));
         }
@@ -517,7 +517,7 @@ void GeocodingWorker::GeocodingWithDem(
             lon_new.copyTo(mapped_lat);
         }
 
-        emit updateProcess(20, QStringLiteral("正在地理编码……"));
+emit updateProcess(90, QStringLiteral("正在地理编码……"));
         double lat_north, lat_south, lon_west, lon_east;
         for (int i = 0; i < input_files.size(); i++)
         {
@@ -575,7 +575,7 @@ void GeocodingWorker::GeocodingWithDem(
             }
             InSARLogManager::LogInfo("GeocodingWorker", QString("Geocoding output write finished: elapsed_ms=%1, output=%2")
                 .arg(outputTimer.elapsed()).arg(QString::fromStdString(output_files[i])));
-            int process = 20 + double(i + 1) / (double)input_files.size() * 70.0;
+int process = 90 + double(i + 1) / (double)input_files.size() * 9.0;
             emit updateProcess(process, QStringLiteral("正在地理编码……"));
         }
     }

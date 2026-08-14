@@ -9,6 +9,7 @@
 #include <QGraphicsScene>
 #include <QStatusBar>
 #include <QElapsedTimer>
+#include <QTimer>
 // Include headers
 #include"Baseline.h"
 #include<Deformation_Average.h>
@@ -2425,6 +2426,16 @@ void MainWindow::initializeInterfaces(QStandardItemModel* model, XMLFile* projec
     connect(m_workflowUI, &WorkflowUI::workflowModified, this, [this]() {
         m_projectModified = true;
         updateWindowTitle();
+    });
+
+    // 连接流程 DEM 标签对账信号，提示孤儿标签的资源绑定已失效
+    connect(m_workflowUI, &WorkflowUI::workflowDemLabelsReconciled, this, [this](const QStringList& labels) {
+        if (labels.isEmpty()) return;
+        QTimer::singleShot(0, this, [this, labels]() {
+            QMessageBox::warning(this, QStringLiteral("DEM 标签对账"),
+                QStringLiteral("工程中以下 DEM 流程标签已无人声明，原资源绑定已失效，将不再提供给下游节点：\n%1\n请在工作流中重新声明并运行对应 DEM 节点。")
+                    .arg(labels.join(QStringLiteral("、"))));
+        });
     });
 
     // 连接工作流节点的进度和状态信号到 MainWindow 状态栏。

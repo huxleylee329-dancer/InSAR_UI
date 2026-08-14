@@ -50,7 +50,7 @@ constexpr double kDemNoData = -32767.0;
 bool parseDemTileBounds(const QString& tileName, double& minLon, double& maxLon,
                         double& minLat, double& maxLat)
 {
-    const QRegularExpression expression(QStringLiteral("^([NS])(\\d{2})([EW])(\\d{3})$"),
+    static const QRegularExpression expression(QStringLiteral("^([NS])(\\d{2})([EW])(\\d{3})$"),
                                         QRegularExpression::CaseInsensitiveOption);
     const QRegularExpressionMatch match = expression.match(QFileInfo(tileName).baseName());
     if (!match.hasMatch()) return false;
@@ -64,22 +64,32 @@ bool parseDemTileBounds(const QString& tileName, double& minLon, double& maxLon,
     return true;
 }
 
-bool belongsToMissingTile(double lon, double lat, const QStringList& missingTiles)
+struct MissingTileBounds {
+    double minLon = 0.0, maxLon = 0.0, minLat = 0.0, maxLat = 0.0;
+};
+
+QVector<MissingTileBounds> preParseMissingTiles(const QStringList& missingTiles)
 {
+    QVector<MissingTileBounds> result;
+    result.reserve(missingTiles.size());
     for (const QString& tile : missingTiles) {
-        double minLon = 0.0, maxLon = 0.0, minLat = 0.0, maxLat = 0.0;
-        if (parseDemTileBounds(tile, minLon, maxLon, minLat, maxLat) &&
-            lon >= minLon && lon < maxLon && lat >= minLat && lat < maxLat) {
-            return true;
+        MissingTileBounds b;
+        if (parseDemTileBounds(tile, b.minLon, b.maxLon, b.minLat, b.maxLat)) {
+            result.append(b);
         }
     }
-    return false;
+    return result;
 }
 }
 
 DEMSourceWorker::DEMSourceWorker(QObject* parent)
     : BaseWorker(parent)
 {
+}
+
+void DEMSourceWorker::setProductDescriptorJson(const QJsonObject& descriptor)
+{
+    m_productDescriptorJson = descriptor;
 }
 
 DEMSourceWorker::~DEMSourceWorker()
@@ -940,16 +950,38 @@ void DEMSourceWorker::fetch_dem(
     // HTTP-404 tiles are different: their geographic extent is known exactly.
     // Preserve that evidence in a separate mask before the data reaches any
     // terrain-sensitive consumer.
+    // Pre-parse server-not-found tile names into bounding rectangles so the
+    // per-pixel loop below only performs cheap numeric comparisons.
+    const QVector<MissingTileBounds> missingTileBounds = preParseMissingTiles(serverNotFoundTiles);
+
     Mat dem_valid_mask(cropped_dem.rows, cropped_dem.cols, CV_8UC1, Scalar(1));
     for (int row = 0; row < cropped_dem.rows; ++row) {
         for (int col = 0; col < cropped_dem.cols; ++col) {
-            const double centerCol = col + 0.5;
-            const double centerRow = row + 0.5;
-            const double lon = new_gt[0] + centerCol * new_gt[1] + centerRow * new_gt[2];
-            const double lat = new_gt[3] + centerCol * new_gt[4] + centerRow * new_gt[5];
+            // A target pixel may have been interpolated from a missing tile even
+            // when its centre lies just outside that tile. Treat any footprint
+            // overlap as invalid so the 404 mask remains conservative.
+            const double lon0 = new_gt[0] + col * new_gt[1] + row * new_gt[2];
+            const double lat0 = new_gt[3] + col * new_gt[4] + row * new_gt[5];
+            const double lon1 = new_gt[0] + (col + 1) * new_gt[1] + row * new_gt[2];
+            const double lat1 = new_gt[3] + (col + 1) * new_gt[4] + row * new_gt[5];
+            const double lon2 = new_gt[0] + col * new_gt[1] + (row + 1) * new_gt[2];
+            const double lat2 = new_gt[3] + col * new_gt[4] + (row + 1) * new_gt[5];
+            const double lon3 = new_gt[0] + (col + 1) * new_gt[1] + (row + 1) * new_gt[2];
+            const double lat3 = new_gt[3] + (col + 1) * new_gt[4] + (row + 1) * new_gt[5];
+            const double pixelMinLon = std::min(std::min(lon0, lon1), std::min(lon2, lon3));
+            const double pixelMaxLon = std::max(std::max(lon0, lon1), std::max(lon2, lon3));
+            const double pixelMinLat = std::min(std::min(lat0, lat1), std::min(lat2, lat3));
+            const double pixelMaxLat = std::max(std::max(lat0, lat1), std::max(lat2, lat3));
             const double elevation = cropped_dem.at<float>(row, col);
-            const bool invalid = !std::isfinite(elevation) || elevation == kDemNoData ||
-                belongsToMissingTile(lon, lat, serverNotFoundTiles);
+            bool inMissingTile = false;
+            for (const auto& b : missingTileBounds) {
+                if (pixelMinLon < b.maxLon && pixelMaxLon > b.minLon &&
+                    pixelMinLat < b.maxLat && pixelMaxLat > b.minLat) {
+                    inMissingTile = true;
+                    break;
+                }
+            }
+            const bool invalid = !std::isfinite(elevation) || elevation == kDemNoData || inMissingTile;
             if (invalid) {
                 dem_valid_mask.at<uchar>(row, col) = 0;
                 cropped_dem.at<float>(row, col) = static_cast<float>(kDemNoData);
@@ -1092,11 +1124,11 @@ void DEMSourceWorker::fetch_dem(
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_valid_mask_path",
                     QFileInfo(outputMaskTifPath).fileName().toStdString().c_str()) == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_mask_resampling_policy",
-                    "exact HTTP-404 tile extent at output pixel centres; external reader NoData fill is not reversible") == 0 &&
+                    "conservative HTTP-404 tile-footprint intersection; external reader NoData fill is not reversible") == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_coverage_evidence",
-                    "http_404_tile_extent_mask") == 0 &&
+                    "source_nodata_unverifiable;http_404_tile_footprint_mask") == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_coverage_precheck_status",
-                    serverNotFoundTilesIntersectingOutput.isEmpty() ? "complete_no_404_intersection" : "coverage_unverified") == 0 &&
+                    "coverage_unverified") == 0 &&
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_valid_pixel_count",
                     static_cast<double>(validPixelCount)) == 0 &&
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_invalid_pixel_count",
@@ -1125,6 +1157,36 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
+    // 仅当节点注入了 descriptor（工作流节点路径）时才在写入阶段生成预览 JPG 并
+    // 预计算 H5 哈希。旧的 DEMSourceDialog 路径不注入 descriptor，其 staging 内容
+    // 保持不变，避免破坏其既有输出契约。
+    QString outputH5Sha256;
+    if (!m_productDescriptorJson.isEmpty()) {
+        // 复用内存中的高程矩阵直接生成预览 JPG，避免最终化阶段再从 H5 全量读取。
+        const QString outputJpgPath = save_path + "/" + stagingNode + "/" + outputNodeName + "_dem.jpg";
+        if (!NodeUtils::generateDemJpgFromMat(cropped_dem, outputJpgPath)) {
+            InSARLogManager::LogWarning("DEMSourceWorker",
+                QStringLiteral("生成 DEM 预览 JPG 失败，最终化阶段将回退从 H5 生成：%1").arg(outputJpgPath));
+        }
+
+        // 写入阶段完成 H5 语义描述写入并预计算哈希，供最终化阶段复用，避免再次
+        // 整文件读取数百 MB 的 H5。任一步骤失败则返回空哈希，由最终化阶段按原路径
+        // 补写 descriptor 并重算哈希。
+        QString descriptorError;
+        if (NodeUtils::writeProductDescriptorToH5(outputH5Path, m_productDescriptorJson, &descriptorError)) {
+            const QByteArray hash = NodeUtils::fileSha256(outputH5Path);
+            if (!hash.isEmpty()) {
+                outputH5Sha256 = QString::fromLatin1(hash);
+            } else {
+                InSARLogManager::LogWarning("DEMSourceWorker",
+                    QStringLiteral("计算输出 H5 哈希失败，将由最终化阶段重算：%1").arg(outputH5Path));
+            }
+        } else {
+            InSARLogManager::LogWarning("DEMSourceWorker",
+                QStringLiteral("写入输出 H5 语义描述失败，将由最终化阶段处理：%1").arg(descriptorError));
+        }
+    }
+
     // 清理临时 .vrt 文件
     if (!vrtPath.isEmpty() && QFile::exists(vrtPath))
     {
@@ -1149,16 +1211,18 @@ void DEMSourceWorker::fetch_dem(
     DemCoverageAudit coverageAudit;
     coverageAudit.serverNotFoundTiles = serverNotFoundTiles;
     coverageAudit.intersectingServerNotFoundTiles = serverNotFoundTilesIntersectingOutput;
-    coverageAudit.status = serverNotFoundTilesIntersectingOutput.isEmpty()
-        ? QStringLiteral("complete_no_404_intersection") : QStringLiteral("coverage_unverified");
-    coverageAudit.evidence = QStringLiteral("http_404_tile_extent_mask");
-    coverageAudit.hasUnverifiedCoverage = !serverNotFoundTilesIntersectingOutput.isEmpty();
+    coverageAudit.status = QStringLiteral("coverage_unverified");
+    coverageAudit.evidence = QStringLiteral("source_nodata_unverifiable;http_404_tile_footprint_mask");
+    // The external reader normalizes source NoData to zero. A missing 404 tile
+    // is observable, but an absent 404 cannot prove complete source coverage.
+    coverageAudit.hasUnverifiedCoverage = true;
     coverageAudit.validPixelCount = validPixelCount;
     coverageAudit.invalidPixelCount = invalidPixelCount;
     const bool outputValidated = QFileInfo(outputH5Path).isFile() && QFileInfo(outputH5Path).size() > 0 &&
         QFileInfo(outputTifPath).isFile() && QFileInfo(outputTifPath).size() > 0 &&
         QFileInfo(outputMaskTifPath).isFile() && QFileInfo(outputMaskTifPath).size() > 0;
     emit demFetchFinished(outputH5Path, stagingNode, projectName, demSource, targetResolution,
-                          cachedFiles, serverNotFoundTiles, requestedTileCount, outputValidated, coverageAudit);
+                          cachedFiles, serverNotFoundTiles, requestedTileCount, outputValidated,
+                          outputH5Sha256, coverageAudit);
     emit endProcess();
 }

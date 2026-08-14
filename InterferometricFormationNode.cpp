@@ -1166,7 +1166,27 @@ void InterferometricFormationNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Pending);
+        QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+        bool isPlannedLabel = false;
+        if (!m_auxiliaryDemLabel.isEmpty() && NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels)) {
+            const auto labelBinding = labels.value(NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel));
+            if (labelBinding.isPlanned()) {
+                isPlannedLabel = true;
+            }
+        }
+        // 直接连线已连接但上游 DEM 尚未产出时，同样属于可等待前置条件，
+        // 与 planned 标签一致转入 Pending，避免自动流程误报执行失败。
+        const bool waitingForDemProducer =
+            !m_auxiliaryDemEntityData && hasActiveInputConnection(1);
+        if (isPlannedLabel || waitingForDemProducer) {
+            setStartFailureMessage(QString());
+            setState(ExecutionState::Pending);
+        } else {
+            setLastErrorMessage(_startFailureMessage.isEmpty()
+                ? QStringLiteral("自动执行前置条件无效，且辅助 DEM 标签不可等待。")
+                : _startFailureMessage);
+            setState(ExecutionState::Error);
+        }
     }
 }
 
@@ -1667,6 +1687,8 @@ void InterferometricFormationNode::updateParameterWidgetsEnableState()
 void InterferometricFormationNode::refreshAuxiliaryDemLabels()
 {
     if (!m_demLabelCombo) return;
+    const QSet<QString> declared = workflowDeclaredDemLabels();
+    const QHash<QString, QString> producerNodeIds = workflowDemProducerNodeIdMap();
     QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
     QString error;
     NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
@@ -1675,8 +1697,19 @@ void InterferometricFormationNode::refreshAuxiliaryDemLabels()
     m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
     for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
         if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
-        const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
-        m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 来源 %3)").arg(it.value().label, status, it.value().producerIdentity.left(8)), it.value().label);
+        const QString normalized = NodeUtils::normalizedDemLabel(it.value().label);
+        if (declared.contains(normalized)) {
+            const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+            const QString producerNode = producerNodeIds.value(it.value().producerIdentity);
+            if (producerNode.isEmpty()) {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2)").arg(it.value().label, status), it.value().label);
+            } else {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 节点 %3)").arg(it.value().label, status, producerNode), it.value().label);
+            }
+        } else if (NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel) == normalized) {
+            // 当前选中但无人声明的标签，保留显示并标记"无生产者"，避免选中项凭空消失
+            m_demLabelCombo->addItem(QStringLiteral("@%1 (无生产者)").arg(it.value().label), it.value().label);
+        }
     }
     if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
     for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
@@ -1954,6 +1987,17 @@ private:
         m_h5PathsCoh.clear();
         m_jpgPathsPhase.clear();
         m_jpgPathsCoh.clear();
+
+        // 与 Idle / Pending / Error 等状态处理方式一致：仅已完成（或警告）节点可展示可评估成果，
+        // 状态变化后不再暴露旧的已提交干涉对预览。
+        const ExecutionState state = m_node->executionState();
+        if (state != ExecutionState::Completed && state != ExecutionState::Warning) {
+            m_slaveCombo->addItem(tr("无干涉对"));
+            m_evalBtn->setEnabled(false);
+            m_imageView->setImage(QImage());
+            m_slaveCombo->blockSignals(false);
+            return;
+        }
 
         QStringList previews = m_node->previewImagePaths();
         for (const QString& jpgPath : previews) {

@@ -2,10 +2,12 @@
 
 #include <QString>
 #include <QStringList>
+#include <QByteArray>
 #include <QMutex>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QMap>
+#include <QHash>
 #include "QtNodes/internal/ProductContracts.hpp"
 
 #include <functional>
@@ -58,6 +60,12 @@ struct AuxiliaryDemRegistryEntry {
     QString rasterHash;
     QString identityH5Hash;
     QString validMaskHash;
+    qint64 rasterSize = -1;
+    qint64 rasterModifiedMs = -1;
+    qint64 identityH5Size = -1;
+    qint64 identityH5ModifiedMs = -1;
+    qint64 validMaskSize = -1;
+    qint64 validMaskModifiedMs = -1;
     QString canonicalMetadataHash;
     QString managedRasterPath;
     QString managedIdentityH5Path;
@@ -65,6 +73,7 @@ struct AuxiliaryDemRegistryEntry {
     QJsonObject metadata;
     QJsonArray provenanceHistory;
     bool tombstone = false;
+    bool legacyUnverified = false;
 };
 
 enum class AuxiliaryDemLabelMode {
@@ -115,6 +124,10 @@ bool tombstoneAuxiliaryDemResource(const QString& projectRoot,
 bool removeAuxiliaryDemRegistryEntry(const QString& projectRoot,
                                      const QString& resourceId,
                                      QString* errorMessage = nullptr);
+// 清理 .dem_resources 中按内容寻址的受管 DEM 资源目录，仅保留最近 keepCount 份。
+// 供在每次成功安装/提交新资源之后调用，防止目录无限膨胀（每份约 500MB）。
+void pruneAuxiliaryDemResources(const QString& projectRoot, int keepCount = 3);
+QString normalizedDemLabel(const QString& label);
 bool loadAuxiliaryDemLabels(const QString& projectRoot,
                             QMap<QString, AuxiliaryDemLabelBinding>& labels,
                             QString* errorMessage = nullptr);
@@ -142,6 +155,20 @@ bool invalidateWorkflowAuxiliaryDemLabel(const QString& projectRoot,
                                          const QString& label,
                                          const QString& producerIdentity,
                                          QString* errorMessage = nullptr);
+// 使流程 DEM 标签失效：清空其 resourceId/pinnedProvenanceId，进入 planned 态。
+// 与 invalidateWorkflowAuxiliaryDemLabel 不同，本函数不校验 producer 身份，
+// 供标签清理/对账等需要"无条件失效"的场景使用；仅对 WorkflowOutput 模式标签生效，
+// 标签不存在时视为成功（幂等）。
+bool invalidateWorkflowAuxiliaryDemLabelBinding(const QString& projectRoot,
+                                                const QString& requestedLabel,
+                                                QString* errorMessage = nullptr);
+
+// 对账流程 DEM 标签：declaredLabels 为当前工作流中实际声明的 (label -> producerIdentity) 映射。
+// 对 .dem_resource_labels.json 中所有未被 declaredLabels 声明（即 label 与 producerIdentity 均不一致）的
+// WorkflowOutput 标签清除资源绑定（进入 planned 态）。幂等。返回被失效的标签名列表。
+QStringList reconcileWorkflowAuxiliaryDemLabels(const QString& projectRoot,
+                                                const QMap<QString, QString>& declaredLabels,
+                                                QString* errorMessage = nullptr);
 bool resolveWorkflowAuxiliaryDemLabel(const QString& projectRoot,
                                       const QString& label,
                                       const QString& producerIdentity,
@@ -157,6 +184,8 @@ bool resolveAuxiliaryDemLabel(const QString& projectRoot,
 void registerResourceChangeCallback(const ResourceChangeCallback& callback);
 void registerAuxiliaryDemLabelTableChangedCallback(const AuxiliaryDemLabelTableChangedCallback& callback);
 void registerAuxiliaryDemLabelReboundCallback(const AuxiliaryDemLabelReboundCallback& callback);
+// 主动触发标签表变化通知（供工作流整体加载完成后驱动各消费者刷新下拉列表）
+void emitAuxiliaryDemLabelTableChanged();
 void publishResourceChange(const QString& resourceId,
                            const QString& provenanceId,
                            ResourceChangeKind kind);
@@ -316,6 +345,9 @@ struct OutputTransaction {
     bool metadataBackupReady = false;
     // Runtime-only lease for the project XML metadata commit critical section.
     bool metadataCommitLockHeld = false;
+    // Worker 在写入阶段已算好的产物哈希（按输出文件名），供 validateStagedOutputTransaction
+    // 复用，避免最终化阶段再次整文件读取。不参与事务序列化。
+    QHash<QString, QByteArray> precomputedOutputHashes;
     Stage stage = Stage::Inactive;
 };
 
@@ -341,6 +373,13 @@ bool beginOutputTransaction(const QString& projectRoot,
 bool recoverOutputTransaction(const QString& projectRoot,
                               const QString& nodeName,
                               QString* errorMessage = nullptr);
+// 计算文件的 SHA256（小端十六进制）。供 Worker 在写入阶段预计算大文件哈希，
+// 避免最终化阶段再次整文件读取。
+QByteArray fileSha256(const QString& path);
+// 向 H5 写入 product descriptor（semantic_product_descriptor 数据集）。
+// 供 Worker 在写入阶段完成描述写入后据此预计算 H5 哈希。
+bool writeProductDescriptorToH5(const QString& filePath, const QJsonObject& descriptor,
+                                QString* errorMessage = nullptr);
 bool validateStagedOutputTransaction(OutputTransaction& transaction,
                                      QString* errorMessage = nullptr);
 bool setOutputTransactionProductDescriptor(OutputTransaction& transaction,
@@ -436,6 +475,10 @@ bool removeOutputFiles(const QStringList& filePaths);
  */
 bool generateJpgPreviewFromH5(const QString& h5Path, const QString& jpgPath, const QString& type = "complex");
 
+// 直接从内存中的高程矩阵生成 DEM 预览 JPG（NoData 像元着黑），
+// 供 Worker 在写入输出后复用矩阵，避免最终化阶段再从 H5 全量读取。
+bool generateDemJpgFromMat(const cv::Mat& dem, const QString& jpgPath);
+
 // Validates and publishes a completed temporary JPG without exposing a partial target file.
 bool replaceJpgPreviewAtomically(const QString& temporaryJpgPath, const QString& jpgPath);
 
@@ -504,6 +547,14 @@ bool readMatFromH5(const QString& filePath,
                    cv::Mat& mat,
                    int targetType = -1,
                    QString* errMsg = nullptr);
+
+// Lightweight H5 dataset metadata probe. It opens the dataset and reads its
+// dimensions without materializing raster data.
+bool probeH5DatasetMetadata(const QString& filePath,
+                            const QString& dataset,
+                            int* rows = nullptr,
+                            int* columns = nullptr,
+                            QString* errMsg = nullptr);
 
 /**
  * @brief 从 H5 文件中读取标量数据（重载形式，支持 int, double, float, qint64）

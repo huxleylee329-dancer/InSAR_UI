@@ -1146,6 +1146,8 @@ bool S1TopsBackGeocodingNode::syncProjectTreeOrder(const QStringList& h5Paths, c
 void S1TopsBackGeocodingNode::refreshAuxiliaryDemLabels()
 {
     if (!m_demLabelCombo) return;
+    const QSet<QString> declared = workflowDeclaredDemLabels();
+    const QHash<QString, QString> producerNodeIds = workflowDemProducerNodeIdMap();
     QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
     QString error;
     NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error);
@@ -1154,8 +1156,19 @@ void S1TopsBackGeocodingNode::refreshAuxiliaryDemLabels()
     m_demLabelCombo->addItem(QStringLiteral("不使用标签"), QString());
     for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
         if (it.value().mode != NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) continue;
-        const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
-        m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 来源 %3)").arg(it.value().label, status, it.value().producerIdentity.left(8)), it.value().label);
+        const QString normalized = NodeUtils::normalizedDemLabel(it.value().label);
+        if (declared.contains(normalized)) {
+            const QString status = it.value().isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+            const QString producerNode = producerNodeIds.value(it.value().producerIdentity);
+            if (producerNode.isEmpty()) {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2)").arg(it.value().label, status), it.value().label);
+            } else {
+                m_demLabelCombo->addItem(QStringLiteral("@%1 (%2, 节点 %3)").arg(it.value().label, status, producerNode), it.value().label);
+            }
+        } else if (NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel) == normalized) {
+            // 当前选中但无人声明的标签，保留显示并标记"无生产者"，避免选中项凭空消失
+            m_demLabelCombo->addItem(QStringLiteral("@%1 (无生产者)").arg(it.value().label), it.value().label);
+        }
     }
     if (!labels.isEmpty()) m_demLabelCombo->insertSeparator(m_demLabelCombo->count());
     for (auto it = labels.constBegin(); it != labels.constEnd(); ++it) {
@@ -1263,7 +1276,7 @@ void S1TopsBackGeocodingNode::onProcessingFinished(
     Q_UNUSED(dstProject);
     Q_UNUSED(savePath);
     Q_UNUSED(dstNode);
-    Q_UNUSED(masterIndex);
+    m_appliedMasterIndex = masterIndex;
     if (!isCurrentGeneration(m_activeGeneration)) return;
     m_pendingWorkerH5Paths = regisH5Paths;
     m_processingWarning = hasQualityWarning;
@@ -1351,7 +1364,27 @@ void S1TopsBackGeocodingNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Pending);
+        QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+        bool isPlannedLabel = false;
+        if (!m_auxiliaryDemLabel.isEmpty() && NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels)) {
+            const auto labelBinding = labels.value(NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel));
+            if (labelBinding.isPlanned()) {
+                isPlannedLabel = true;
+            }
+        }
+        // 直接连线已连接但上游 DEM 尚未产出时，同样属于可等待前置条件，
+        // 与 planned 标签一致转入 Pending，避免自动流程误报执行失败。
+        const bool waitingForDemProducer =
+            !m_auxiliaryDemEntityData && hasActiveInputConnection(1);
+        if (isPlannedLabel || waitingForDemProducer) {
+            setStartFailureMessage(QString());
+            setState(ExecutionState::Pending);
+        } else {
+            setLastErrorMessage(_startFailureMessage.isEmpty()
+                ? QStringLiteral("自动执行前置条件无效，且辅助 DEM 标签不可等待。")
+                : _startFailureMessage);
+            setState(ExecutionState::Error);
+        }
     }
 }
 
@@ -2048,6 +2081,7 @@ bool S1TopsBackGeocodingNode::validateAndRestoreOutput()
     if (iface) {
         iface->refreshProjectTree();
     }
+    m_appliedMasterIndex = m_masterIndex;
     return true;
 }
 
@@ -2071,6 +2105,11 @@ QStringList S1TopsBackGeocodingNode::getOrderedH5Paths() const
 QStringList S1TopsBackGeocodingNode::getInputH5Paths() const
 {
     return m_inputData ? m_inputData->filePaths() : QStringList();
+}
+
+QStringList S1TopsBackGeocodingNode::orderedInputH5Paths() const
+{
+    return moveMasterToFront(getInputH5Paths(), qMax(1, m_appliedMasterIndex));
 }
 
 std::vector<QString> S1TopsBackGeocodingNode::processingInfo() const
@@ -2697,14 +2736,18 @@ private:
 
     void startEvaluation()
     {
+        const int slaveIndex = m_slaveCombo->currentIndex() + 1;
         if (m_watcher.isRunning()) {
+            m_requestedEvalSlaveIndex = slaveIndex;
             return;
         }
 
-        int slaveIndex = m_slaveCombo->currentIndex() + 1;
         if (m_h5Paths.size() <= 1 || slaveIndex < 1 || slaveIndex >= m_h5Paths.size()) {
             return;
         }
+
+        m_activeEvalSlaveIndex = slaveIndex;
+        m_requestedEvalSlaveIndex = -1;
 
         m_statusLabel->setText(tr("正在进行配准评估，计算较耗时，请稍候..."));
         if (m_visualModeCombo->currentData().toInt() != 2) {
@@ -2728,17 +2771,23 @@ private:
 
         m_slaveCombo->setEnabled(false);
 
-        // 获取配准前的输入 H5 路径
-        QStringList inputPaths = m_node->getInputH5Paths();
+        // 获取配准前的输入 H5 路径（按已应用的主影像索引重排，与输出严格对齐）
+        QStringList inputPaths = m_node->orderedInputH5Paths();
         QString inputMasterPath = !inputPaths.isEmpty() ? inputPaths[0] : "";
         QString inputSlavePath = (inputPaths.size() > slaveIndex) ? inputPaths[slaveIndex] : "";
 
         // 异步计算
         QFuture<EvalThreadResult> future = QtConcurrent::run([masterPath, slavePath, inputMasterPath, inputSlavePath]() {
-            NodeUtils::Hdf5Locker locker(masterPath);
-            std::unique_ptr<NodeUtils::Hdf5Locker> inputLocker;
+            // 固定锁顺序：主输出 -> 副输出 -> 输入主 -> 输入副
+            NodeUtils::Hdf5Locker masterLocker(masterPath);
+            NodeUtils::Hdf5Locker slaveLocker(slavePath);
+            std::unique_ptr<NodeUtils::Hdf5Locker> inMasterLocker;
+            std::unique_ptr<NodeUtils::Hdf5Locker> inSlaveLocker;
             if (!inputMasterPath.isEmpty() && QFile::exists(inputMasterPath)) {
-                inputLocker = std::make_unique<NodeUtils::Hdf5Locker>(inputMasterPath);
+                inMasterLocker = std::make_unique<NodeUtils::Hdf5Locker>(inputMasterPath);
+            }
+            if (!inputSlavePath.isEmpty() && QFile::exists(inputSlavePath)) {
+                inSlaveLocker = std::make_unique<NodeUtils::Hdf5Locker>(inputSlavePath);
             }
 
             EvalThreadResult threadRes{};
@@ -2831,7 +2880,7 @@ private:
             if (!cachedImage.isNull()) {
                 m_fullCoherenceImage = cachedImage;
                 m_fullCoherenceSlaveIndex = slaveIndex;
-                m_fullCoherenceStatusLabel->setText(tr("已加载全图相干性热力图（9 x 9 局部窗口）。"));
+                m_fullCoherenceStatusLabel->setText(tr("已加载全图相干性热力图（多视平滑预览）。"));
                 m_imageView->clearOverlayRects();
                 m_imageView->setImage(m_fullCoherenceImage);
                 updateFullCoherenceOverlay();
@@ -2910,7 +2959,7 @@ private:
             m_fullCoherenceSourceCols = result.sourceCols;
             if (m_visualModeCombo->currentData().toInt() == 2 &&
                 m_slaveCombo->currentIndex() + 1 == result.slaveIndex) {
-                m_fullCoherenceStatusLabel->setText(tr("已加载全图相干性热力图（9 x 9 局部窗口）。"));
+                m_fullCoherenceStatusLabel->setText(tr("已加载全图相干性热力图（多视平滑预览）。"));
                 m_imageView->clearOverlayRects();
                 m_imageView->setImage(m_fullCoherenceImage);
                 updateFullCoherenceOverlay();
@@ -2929,9 +2978,16 @@ private:
 
     void onEvaluationFinished()
     {
+        EvalThreadResult threadRes = m_watcher.result();
+        // 若在计算期间有新的排队请求，直接释放本次内存并启动最新任务，跳过陈旧数据的渲染
+        if (m_requestedEvalSlaveIndex != -1) {
+            FreeAlignmentResults(threadRes.results, 5);
+            startEvaluation();
+            return;
+        }
+
         m_slaveCombo->setEnabled(true);
 
-        EvalThreadResult threadRes = m_watcher.result();
         if (threadRes.retCode != 0) {
             m_statusLabel->setText(tr("配准评估计算失败，错误码：%1").arg(threadRes.retCode));
             FreeAlignmentResults(threadRes.results, 5);
@@ -2953,9 +3009,10 @@ private:
         m_statusLabel->setText(tr("配准评估完成。请在表格中选择采样区域查看细节。"));
 
         // 统计所有 5 个区域的数据，判定整体配准效果
-        int perfectCount = 0;   // 偏移为 0 的个数（包含低置信度点）
-        int warningCount = 0;   // 偏移在 [-2, 2] 内但非 0 的个数
-        int failedCount = 0;    // 偏移绝对值 > 2 的个数
+        int perfectCount = 0;   // 偏移为 0 的有效点个数
+        int warningCount = 0;   // 偏移在 [-2, 2] 内但非 0 的有效点个数
+        int failedCount = 0;    // 偏移绝对值 > 2 的有效点个数
+        int lowConfidenceCount = 0; // 低置信度点个数
         double sumCoh = 0.0;
         int validCohCount = 0;
         double sumPreCoh = 0.0;
@@ -2964,22 +3021,14 @@ private:
         for (int i = 0; i < 5; ++i) {
             double maxCorr = m_results[i].maxCorrelation;
             double postCoh = m_results[i].coherenceZeroShift;
+            bool isValid = (maxCorr >= 0.15 && postCoh >= 0.20);
             
-            if (maxCorr >= 0.15) {
+            if (isValid) {
                 sumCoh += postCoh;
                 validCohCount++;
-            }
-            if (m_inputCoherence[i] >= 0.0) {
-                sumPreCoh += m_inputCoherence[i];
-                preCohValidCount++;
-            }
-            
-            double dy = std::abs(m_results[i].offsetY);
-            double dx = std::abs(m_results[i].offsetX);
-            
-            if (maxCorr < 0.15 || postCoh < 0.20) {
-                perfectCount++;
-            } else {
+
+                double dy = std::abs(m_results[i].offsetY);
+                double dx = std::abs(m_results[i].offsetX);
                 if (dy < 0.01 && dx < 0.01) {
                     perfectCount++;
                 } else if (dy <= 2.0 && dx <= 2.0) {
@@ -2987,25 +3036,28 @@ private:
                 } else {
                     failedCount++;
                 }
+            } else {
+                lowConfidenceCount++;
+            }
+
+            if (m_inputCoherence[i] >= 0.0) {
+                sumPreCoh += m_inputCoherence[i];
+                preCohValidCount++;
             }
         }
         double meanCoh = (validCohCount > 0) ? (sumCoh / validCohCount) : 0.0;
-        // 如果所有采样点都是低相关，则退回到全局平均，防止零除
-        if (validCohCount == 0) {
-            double tempSum = 0.0;
-            for (int i = 0; i < 5; ++i) tempSum += m_results[i].coherenceZeroShift;
-            meanCoh = tempSum / 5.0;
-        }
         double meanPreCoh = (preCohValidCount > 0) ? (sumPreCoh / preCohValidCount) : -1.0;
 
-        const QString assessment = (failedCount == 0 && perfectCount == 5 && meanCoh >= 0.22)
-            ? QStringLiteral("pass")
-            : (failedCount > 0 || meanCoh < 0.18) ? QStringLiteral("failed") : QStringLiteral("warning");
+        const bool isPass = (validCohCount >= 3 && failedCount == 0 && warningCount == 0 && meanCoh >= 0.22);
+        const bool isFailed = (failedCount > 0 || (validCohCount >= 3 && meanCoh < 0.18));
+        const QString assessment = isPass ? QStringLiteral("pass")
+            : (isFailed ? QStringLiteral("failed") : QStringLiteral("warning"));
+
         InSARLogManager::LogDebug("S1TopsRegistrationEvalWidget",
-            QString("Coherence assessment: status=%1, preMean=%2, postMean=%3, change=%4, perfect=%5, warning=%6, failed=%7")
+            QString("Coherence assessment: status=%1, preMean=%2, postMean=%3, change=%4, valid=%5, lowConfidence=%6, perfect=%7, warning=%8, failed=%9")
                 .arg(assessment).arg(meanPreCoh, 0, 'f', 4).arg(meanCoh, 0, 'f', 4)
                 .arg(meanPreCoh >= 0.0 ? meanCoh - meanPreCoh : 0.0, 0, 'f', 4)
-                .arg(perfectCount).arg(warningCount).arg(failedCount),
+                .arg(validCohCount).arg(lowConfidenceCount).arg(perfectCount).arg(warningCount).arg(failedCount),
             "registration.assessment");
         for (int i = 0; i < 5; ++i) {
             InSARLogManager::LogDebug("S1TopsRegistrationEvalWidget",
@@ -3028,12 +3080,11 @@ private:
         }
 
         bool isDark = NodeDetailWindow::isDarkTheme(this);
-        // 合理放宽相干性阈值以适应 Sentinel-1 自然失相干情况 (底噪约 0.20)
-        if (failedCount == 0 && perfectCount == 5 && meanCoh >= 0.22) {
+        if (isPass) {
             m_statusCardTitle->setText(tr("通过 (PASS)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
             
-            QString desc = tr("配准精度优秀。所有置信采样区域的配准残余偏差均为 0。");
+            QString desc = tr("配准精度优秀。%1 个高置信采样区域对齐精确，残余偏差均为 0。").arg(validCohCount);
             if (meanPreCoh >= 0.0) {
                 desc += tr("平均相干系数由配准前的 %1 显著提升至配准后的 %2，配准对齐效果极佳。")
                     .arg(meanPreCoh, 0, 'f', 4).arg(meanCoh, 0, 'f', 4);
@@ -3046,16 +3097,16 @@ private:
             m_statusCardDesc->setText(desc);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #10B981; border-radius: 4px;")
                 .arg(isDark ? "#064E3B" : "#D1FAE5"));
-        } else if (failedCount > 0 || meanCoh < 0.18) {
+        } else if (isFailed) {
             m_statusCardTitle->setText(tr("异常 (FAILED)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             
-            QString desc = tr("配准未达标或发生严重偏差！");
+            QString desc = tr("配准未达标或发生显著偏差！");
             if (meanPreCoh >= 0.0) {
-                desc += tr("配准后平均相干系数（%1）较配准前（%2）无明显改善，或有置信测试区域偏移量超过 2 像素。建议开启 ESD 改正重新运行。")
+                desc += tr("配准后平均相干系数（%1）较配准前（%2）无明显改善，或存在残余偏移超过 2 像素的采样点。建议开启 ESD 改正重新运行。")
                     .arg(meanCoh, 0, 'f', 4).arg(meanPreCoh, 0, 'f', 4);
             } else {
-                desc += tr("有置信区域偏移量超过 2 像素或平均相干系数过低，建议开启 ESD 改正重新运行。");
+                desc += tr("存在残余偏移超过 2 像素的采样点或平均相干系数过低，建议开启 ESD 改正重新运行。");
             }
             if (hasMismatch) {
                 desc += tr("\n提示：检测到部分区域幅相不一致（可能存在相位噪声匹配干扰），建议在相干性较稳定的区域手动重新选点。");
@@ -3067,7 +3118,14 @@ private:
             m_statusCardTitle->setText(tr("提醒 (WARNING)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
             
-            QString desc = tr("配准精度一般。部分置信测试区域存在 1~2 像素的小幅偏差。");
+            QString desc;
+            if (validCohCount < 3) {
+                desc = tr("配准评估提醒：高置信采样点不足（仅 %1/5 个有效点满足置信门限），建议人工复核。").arg(validCohCount);
+            } else if (warningCount > 0) {
+                desc = tr("配准精度一般。部分置信测试区域存在 1~2 像素的小幅偏差。");
+            } else {
+                desc = tr("采样区域对齐正常，但平均相干系数处于临界区间（均值 %1），建议复核。").arg(meanCoh, 0, 'f', 4);
+            }
             if (meanPreCoh >= 0.0) {
                 desc += tr("配准后平均相干系数为 %1（配准前为 %2），可能由于地形起伏大或局部时间失相干导致。")
                     .arg(meanCoh, 0, 'f', 4).arg(meanPreCoh, 0, 'f', 4);
@@ -3090,6 +3148,7 @@ private:
             // 1. 配准前 0 位移相干性
             QString preCohStr = (m_inputCoherence[i] < 0.0) ? tr("N/A") : QString::number(m_inputCoherence[i], 'f', 4);
             auto* itemPreCoh = new QTableWidgetItem(preCohStr);
+            itemPreCoh->setToolTip(tr("原始几何零位移相干（仅作相对改善参考）"));
             itemPreCoh->setForeground(Qt::gray);
             m_resultsTable->setItem(i, 1, itemPreCoh);
  
@@ -3223,6 +3282,8 @@ private:
     bool m_hasResults;
 
     QFutureWatcher<EvalThreadResult> m_watcher;
+    int m_activeEvalSlaveIndex = -1;
+    int m_requestedEvalSlaveIndex = -1;
     QFutureWatcher<FullCoherenceResult> m_fullCoherenceWatcher;
     QImage m_fullCoherenceImage;
     int m_fullCoherenceSlaveIndex = -1;

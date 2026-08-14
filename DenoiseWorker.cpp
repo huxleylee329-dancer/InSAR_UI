@@ -61,8 +61,8 @@ bool __stdcall denoiseProgressCallback(int progress, const char* message)
         progressMessage += QString(" (%1)").arg(QString::fromUtf8(message));
     }
     emit currentWorker->updateProcess(mappedProgress, progressMessage);
-    if (progress == 0 || progress == 100 || lastLoggedMappedProgress < 0 ||
-        mappedProgress >= lastLoggedMappedProgress + 5) {
+if (progress == 0 || progress == 100 || lastLoggedMappedProgress < 0 ||
+        mappedProgress >= lastLoggedMappedProgress + 10) {
         InSARLogManager::LogDebug("DenoiseWorker",
             QStringLiteral("Filtering progress: image=%1/%2, innerProgress=%3%, mappedProgress=%4%")
                 .arg(currentImageIndex + 1).arg(totalImages).arg(progress).arg(mappedProgress),

@@ -6,6 +6,9 @@
 #include "NodeData.hpp"
 #include <QTimer>
 #include <QList>
+#include <QSet>
+#include <QHash>
+#include <QJsonObject>
 
 #include <unordered_map>
 #include <memory>
@@ -245,6 +248,12 @@ public:
     virtual void collapseDetailedList() {}
 
 protected:
+    /// 遍历当前场景，收集 DEMSource 节点声明的流程 DEM 标签集合（归一化后）
+    QSet<QString> workflowDeclaredDemLabels() const;
+
+    /// 遍历当前场景，收集 DEMSource 节点的 (workflowDemProducerIdentity -> 节点号) 映射
+    QHash<QString, QString> workflowDemProducerNodeIdMap() const;
+
     virtual void execute() = 0;
 
     virtual void stopExecution() = 0;

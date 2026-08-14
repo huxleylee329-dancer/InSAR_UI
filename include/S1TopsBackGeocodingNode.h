@@ -62,6 +62,7 @@ public:
     ::QWidget* createInterferometryWidget(::QWidget* parent) override;
     QStringList getOrderedH5Paths() const;
     QStringList getInputH5Paths() const;
+    QStringList orderedInputH5Paths() const;
     std::vector<QString> processingInfo() const override;
 
 protected:
@@ -108,6 +109,7 @@ private:
     QString m_legacyDemResourceId;
     QString m_legacyDemProvenanceId;
     int m_masterIndex;
+    int m_appliedMasterIndex = 1;
     bool m_useDefaultMaster;
     bool m_bESD;
     bool m_bRangeRefine;
