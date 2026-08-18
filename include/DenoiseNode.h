@@ -23,6 +23,61 @@ class XMLFile;
 
 namespace QtNodes {
 
+// Aggregated phase quality metrics for a single image (or averaged across files).
+struct PhaseQualityMetrics {
+    double gradientRms = 0.0;
+    double residueDensity = 0.0;
+    double positiveResidueCount = 0.0;
+    double negativeResidueCount = 0.0;
+    double totalResidueCount = 0.0;
+    double validPlaquetteCount = 0.0;
+    bool hasGradient = false;
+    bool hasResidueDensity = false;
+};
+
+// Aggregated validation results across all input/output image pairs.
+struct ValidationResults {
+    bool success = false;
+    QString errorMsg;
+    // Compare values
+    int expectedMethod = 1;
+    int actualMethod = 0;
+    int expectedPrefilter = 5;
+    int actualPrefilter = 0;
+    int expectedSlopeWindow = 5;
+    int actualSlopeWindow = 0;
+    int expectedGoldsteinWin = 64;
+    int actualGoldsteinWin = 0;
+    int expectedNPad = 16;
+    int actualNPad = 0;
+    double expectedAlpha = 0.5;
+    double actualAlpha = 0.0;
+    bool hasActualMethod = false;
+    bool hasActualPrefilter = false;
+    bool hasActualSlopeWindow = false;
+    bool hasActualGoldsteinWin = false;
+    bool hasActualNPad = false;
+    bool hasActualAlpha = false;
+    bool hasActualDenoiseDl = false;
+    bool methodInconsistent = false;
+    bool prefilterInconsistent = false;
+    bool slopeWindowInconsistent = false;
+    bool goldsteinWinInconsistent = false;
+    bool nPadInconsistent = false;
+    bool alphaInconsistent = false;
+    // Aggregated size / wrapped-difference stats
+    int inRows = 0, inCols = 0;
+    int outRows = 0, outCols = 0;
+    int imagePairCount = 0;
+    int matchingSizePairCount = 0;
+    double wrappedDiffMean = 0.0;
+    double wrappedDiffStd = 0.0;
+    double wrappedDiffResultant = 0.0;
+    bool hasWrappedDifference = false;
+    PhaseQualityMetrics inputQuality;
+    PhaseQualityMetrics outputQuality;
+};
+
 class DenoiseNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
@@ -47,6 +102,13 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+
+    std::vector<QString> processingInfo() const override;
+
+    // Validation result cache for the detail view (aggregated scalars only, no cv::Mat stored)
+    QString validationCacheKey() const;
+    bool loadValidationCache(const QString& key, ValidationResults& results) const;
+    void storeValidationCache(const QString& key, const ValidationResults& results);
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
@@ -139,6 +201,11 @@ private:
     NodeUtils::OutputTransaction m_outputTransaction;
     QList<DenoiseFileResult> m_pendingDenoiseResults;
     bool m_xmlDirty = false;
+
+    // Validation result cache for the detail view. The key includes file fingerprints
+    // (size + last modified time) of every input/output file, and the cache is cleared
+    // whenever inputs change or a new output is committed, so stale results are never reused.
+    QHash<QString, ValidationResults> m_validationCache;
 
 signals:
     void startDenoise(QList<int> para, double alpha, QString savePath, QString outputNode,

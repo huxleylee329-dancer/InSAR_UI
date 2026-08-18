@@ -131,6 +131,8 @@ struct PortDataInfo {
     QVector<QtNodes::DataField> fields;
     bool isConnected;
     bool showIndex;  // 是否需要显示序号后缀
+    bool isBound = false;
+    QString bindingSummary;
 };
 
 /**

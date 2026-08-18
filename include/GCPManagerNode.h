@@ -44,10 +44,6 @@ public:
     ProductInputContract productInputContract(PortIndex portIndex) const override;
     ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
-    // 属性面板接口
-    QVector<ParameterInfo> getParameters() const override;
-    void setParameter(const QString& paramName, const QString& value) override;
-
 protected:
     // 计算执行生命周期
     void execute() override;
@@ -84,6 +80,7 @@ private:
     QLineEdit* m_maxResidualEdit;
     QLineEdit* m_sigmaThresholdEdit;
     QComboBox* m_minQualityCombo;
+    QLineEdit* m_outputNodeNameEdit = nullptr;
     QLabel* m_statusLabel;
 
     // 内部数据库

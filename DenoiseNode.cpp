@@ -112,7 +112,12 @@ bool DenoiseNode::portIsOptional(PortType portType, PortIndex portIndex) const
 void DenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     Q_UNUSED(port);
+    const bool inputChanged = (!data || !m_inputData || m_inputData != data);
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+    if (inputChanged) {
+        // Invalidate detail-view validation cache when the input connection changes
+        m_validationCache.clear();
+    }
 
     if (!m_inputData || m_inputData->filePaths().isEmpty()) {
         m_outputData.reset();
@@ -201,6 +206,103 @@ void DenoiseNode::load(QJsonObject const &json)
     if (m_alphaEdit) m_alphaEdit->setText(QString::number(m_alpha));
 
     onMethodChanged(m_method - 1);
+}
+
+std::vector<QString> DenoiseNode::processingInfo() const
+{
+    std::vector<QString> info;
+
+    const QString outputNodeName = m_outputNodeNameEdit ? m_outputNodeNameEdit->text() : m_outputNodeName;
+    info.push_back(QStringLiteral("输出节点：%1").arg(outputNodeName.isEmpty() ? QStringLiteral("未指定") : outputNodeName));
+
+    const QString methodName = m_method == 1 ? QStringLiteral("斜坡自适应滤波")
+        : m_method == 2 ? QStringLiteral("Goldstein 滤波")
+        : QStringLiteral("深度学习滤波");
+    info.push_back(QStringLiteral("滤波方法：%1").arg(methodName));
+
+    if (m_method == 1) {
+        const int pre = m_prefilterWinEdit ? m_prefilterWinEdit->text().toInt() : m_prefilterWin;
+        const int slop = m_slopeWinEdit ? m_slopeWinEdit->text().toInt() : m_slopeWin;
+        info.push_back(QStringLiteral("预滤波窗口：%1，斜坡窗口：%2").arg(pre).arg(slop));
+    } else if (m_method == 2) {
+        const int gold = m_goldsteinWinEdit ? m_goldsteinWinEdit->text().toInt() : m_goldsteinWin;
+        const int pad = m_nPadEdit ? m_nPadEdit->text().toInt() : m_nPad;
+        const double alpha = m_alphaEdit ? m_alphaEdit->text().toDouble() : m_alpha;
+        info.push_back(QStringLiteral("滤波窗口：%1，补零窗口：%2，滤波参数 alpha：%3")
+            .arg(gold).arg(pad).arg(alpha, 0, 'f', 4));
+    }
+
+    if (m_inputData) {
+        info.push_back(QStringLiteral("输入影像数：%1 景").arg(m_inputData->filePaths().size()));
+    } else {
+        info.push_back(QStringLiteral("输入影像数：0 景"));
+    }
+
+    if (m_outputData) {
+        info.push_back(QStringLiteral("输出影像数：%1 景").arg(m_outputData->filePaths().size()));
+    } else {
+        info.push_back(QStringLiteral("输出影像数：0 景"));
+    }
+    return info;
+}
+
+QString DenoiseNode::validationCacheKey() const
+{
+    if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+        return QString();
+    }
+    if (!m_outputData || m_outputData->filePaths().isEmpty()) {
+        return QString();
+    }
+
+    const QStringList inPaths = m_inputData->filePaths();
+    const QStringList outPaths = m_outputData->filePaths();
+    const int pre = m_prefilterWinEdit ? m_prefilterWinEdit->text().toInt() : m_prefilterWin;
+    const int slop = m_slopeWinEdit ? m_slopeWinEdit->text().toInt() : m_slopeWin;
+    const int gold = m_goldsteinWinEdit ? m_goldsteinWinEdit->text().toInt() : m_goldsteinWin;
+    const int pad = m_nPadEdit ? m_nPadEdit->text().toInt() : m_nPad;
+    const double alpha = m_alphaEdit ? m_alphaEdit->text().toDouble() : m_alpha;
+
+    // File fingerprints (size + last modified time) so re-generated files with identical
+    // paths/parameters invalidate stale cached validation results.
+    const auto fileFingerprint = [](const QString& path) {
+        const QFileInfo info(path);
+        if (!info.exists()) {
+            return QStringLiteral("missing");
+        }
+        return QString::number(info.size()) + QLatin1Char('_')
+            + QString::number(info.lastModified().toMSecsSinceEpoch());
+    };
+    QString key;
+    for (const QString& inPath : inPaths) {
+        key += inPath + QLatin1Char('@') + fileFingerprint(inPath) + QLatin1Char('|');
+    }
+    key += QLatin1String("##");
+    for (const QString& outPath : outPaths) {
+        key += outPath + QLatin1Char('@') + fileFingerprint(outPath) + QLatin1Char('|');
+    }
+    key += QLatin1String("##") + QString::number(m_method)
+        + QLatin1String("##") + QString::number(pre)
+        + QLatin1String("##") + QString::number(slop)
+        + QLatin1String("##") + QString::number(gold)
+        + QLatin1String("##") + QString::number(pad)
+        + QLatin1String("##") + QString::number(alpha, 'f', 6);
+    return key;
+}
+
+bool DenoiseNode::loadValidationCache(const QString& key, ValidationResults& results) const
+{
+    const auto it = m_validationCache.constFind(key);
+    if (it == m_validationCache.constEnd()) {
+        return false;
+    }
+    results = it.value();
+    return true;
+}
+
+void DenoiseNode::storeValidationCache(const QString& key, const ValidationResults& results)
+{
+    m_validationCache.insert(key, results);
 }
 
 void DenoiseNode::setExecutionMode(ExecutionMode mode)
@@ -733,6 +835,9 @@ void DenoiseNode::onProcessingFinished()
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
     setOutputData(0, m_outputData);
 
+    // Output successfully committed; invalidate stale detail-view validation results.
+    m_validationCache.clear();
+
     if (!h5Paths.isEmpty())
     {
         startPreviewGeneration(h5Paths, jpgPaths, types, h5Paths, jpgPaths, true);
@@ -1106,10 +1211,6 @@ private:
         m_lblGradientSummary = createFeatureLabel();
         m_lblResidueCountSummary = createFeatureLabel();
         m_lblResidueSummary = createFeatureLabel();
-        m_lblInWidth = m_lblDiffMean;
-        m_lblOutWidth = m_lblDiffStd;
-        m_lblInMean = m_lblDiffResultant;
-        m_lblOutMean = m_lblGradientSummary;
 
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差圆均值 (rad):")), m_lblDiffMean);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差圆标准差 (rad):")), m_lblDiffStd);
@@ -1119,43 +1220,14 @@ private:
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("残差单元密度 (总数/有效 2 x 2 单元，输入 -> 输出):")), m_lblResidueSummary);
     }
 
-    struct PhaseQualityMetrics {
-        double gradientRms = 0.0;
-        double residueDensity = 0.0;
-        qint64 positiveResidueCount = 0;
-        qint64 negativeResidueCount = 0;
-        qint64 totalResidueCount = 0;
-        qint64 validPlaquetteCount = 0;
-        bool hasGradient = false;
-        bool hasResidueDensity = false;
-    };
-
-    struct ValidationResults {
-        bool success = false;
-        QString errorMsg;
-        // Compare values
-        int expectedMethod = 1;
-        int actualMethod = 0;
-        int expectedPrefilter = 5;
-        int actualPrefilter = 0;
-        int expectedSlopeWindow = 5;
-        int actualSlopeWindow = 0;
-        bool hasActualMethod = false;
-        bool hasActualPrefilter = false;
-        bool hasActualSlopeWindow = false;
-        // Calculated features
-        int inRows = 0, inCols = 0;
-        int outRows = 0, outCols = 0;
-        double wrappedDiffMean = 0.0;
-        double wrappedDiffStd = 0.0;
-        double wrappedDiffResultant = 0.0;
-        bool hasWrappedDifference = false;
-        PhaseQualityMetrics inputQuality;
-        PhaseQualityMetrics outputQuality;
-    };
-
     void startAsyncValidation() override
     {
+        if (m_cancelToken) {
+            m_cancelToken->store(true);
+        }
+        m_cancelToken = std::make_shared<std::atomic_bool>(false);
+        auto cancelToken = m_cancelToken;
+
         m_isTimedOut = false;
 
         // 1. Quick checks: If output not complete or inputs missing
@@ -1163,15 +1235,10 @@ private:
             m_statusTitle->setText(QObject::tr("验证未通过"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             m_statusDesc->setText(QObject::tr("未找到输入或输出文件的元数据，无法进行比对。"));
-            
+
             m_compTable->clearComparison();
             m_compTable->setEnabled(false);
-            
-            m_lblInWidth->setText(QObject::tr("未执行"));
-            m_lblOutWidth->setText(QObject::tr("未执行"));
-            m_lblInMean->setText(QObject::tr("未执行"));
-            m_lblOutMean->setText(QObject::tr("未执行"));
-            m_lblDiffStd->setText(QObject::tr("未执行"));
+
             m_lblDiffMean->setText(QObject::tr("未执行"));
             m_lblDiffStd->setText(QObject::tr("未执行"));
             m_lblDiffResultant->setText(QObject::tr("未执行"));
@@ -1194,127 +1261,308 @@ private:
 
         m_loadingOverlay->startLoading(QObject::tr("正在加载 H5 文件并计算统计特征值..."));
 
-        QString inH5 = inData->filePaths().first();
-        QString outH5 = outData->filePaths().first();
-        
-        // Settings to compare
-        int expMethod = m_node->save()["method"].toInt(1);
-        int expPrefilter = m_node->save()["prefilterWin"].toInt(5);
-        int expSlopeWindow = m_node->save()["slopeWin"].toInt(5);
+        const QStringList inPaths = inData->filePaths();
+        const QStringList outPaths = outData->filePaths();
+
+        // Settings to compare (same value source as save())
+        const QJsonObject nodeSave = m_node->save();
+        const int expMethod = nodeSave["method"].toInt(1);
+        const int expPrefilter = nodeSave["prefilterWin"].toInt(5);
+        const int expSlopeWindow = nodeSave["slopeWin"].toInt(5);
+        const int expGoldsteinWin = nodeSave["goldsteinWin"].toInt(64);
+        const int expNPad = nodeSave["nPad"].toInt(16);
+        const double expAlpha = nodeSave["alpha"].toDouble(0.5);
+
+        // Reuse cached aggregated results when inputs/outputs/parameters unchanged
+        const QString cacheKey = m_node->validationCacheKey();
+        ValidationResults cached;
+        if (!cacheKey.isEmpty() && m_node->loadValidationCache(cacheKey, cached)) {
+            applyValidationResults(cached);
+            return;
+        }
 
         // Run validation in background
-        QFuture<ValidationResults> future = QtConcurrent::run([inH5, outH5, expMethod, expPrefilter, expSlopeWindow]() {
-            NodeUtils::Hdf5Locker locker;
+        QFuture<ValidationResults> future = QtConcurrent::run([inPaths, outPaths, expMethod, expPrefilter,
+                                                               expSlopeWindow, expGoldsteinWin, expNPad, expAlpha, cancelToken]() {
             ValidationResults res;
             res.expectedMethod = expMethod;
             res.expectedPrefilter = expPrefilter;
             res.expectedSlopeWindow = expSlopeWindow;
+            res.expectedGoldsteinWin = expGoldsteinWin;
+            res.expectedNPad = expNPad;
+            res.expectedAlpha = expAlpha;
+            res.imagePairCount = inPaths.size();
 
-            // 1. Read metadata parameters from output H5
-            res.hasActualMethod = NodeUtils::readScalarFromH5(outH5, "denoise_method", res.actualMethod);
-            res.hasActualPrefilter = NodeUtils::readScalarFromH5(outH5, "denoise_slope_pre_win", res.actualPrefilter);
-            res.hasActualSlopeWindow = NodeUtils::readScalarFromH5(outH5, "denoise_slope_win", res.actualSlopeWindow);
-            
-            // 2. Read matrices
-            cv::Mat inPhase, outPhase;
-            bool ok1 = NodeUtils::readMatFromH5(inH5, "phase", inPhase, CV_32F);
-            bool ok2 = NodeUtils::readMatFromH5(outH5, "phase", outPhase, CV_32F);
+            if (inPaths.size() != outPaths.size()) {
+                res.success = false;
+                res.errorMsg = QObject::tr("输入与输出影像数量不一致（输入 %1 / 输出 %2），无法逐对校验。")
+                    .arg(inPaths.size()).arg(outPaths.size());
+                return res;
+            }
 
-            if (ok1 && ok2 && !inPhase.empty() && !outPhase.empty()) {
-                res.success = true;
-                res.inRows = inPhase.rows;
-                res.inCols = inPhase.cols;
-                res.outRows = outPhase.rows;
-                res.outCols = outPhase.cols;
+            const double pi = 3.14159265358979323846;
+            const double twoPi = 2.0 * pi;
+            const auto wrapDifference = [pi, twoPi](double delta) {
+                if (delta > pi) {
+                    return delta - twoPi;
+                }
+                if (delta <= -pi) {
+                    return delta + twoPi;
+                }
+                return delta;
+            };
 
-                const auto calculatePhaseQuality = [](const cv::Mat& phase) {
-                    const double pi = 3.14159265358979323846;
-                    const double twoPi = 2.0 * pi;
-                    const auto wrapDifference = [pi, twoPi](double delta) {
-                        if (delta > pi) {
-                            return delta - twoPi;
+            const auto calculatePhaseQuality = [wrapDifference, pi, cancelToken](const cv::Mat& phase) {
+                PhaseQualityMetrics metrics;
+                double gradientSumSquares = 0.0;
+                qint64 gradientCount = 0;
+                for (int row = 0; row < phase.rows; ++row) {
+                    if ((row & 127) == 0 && cancelToken && cancelToken->load()) {
+                        return metrics;
+                    }
+                    const float* values = phase.ptr<float>(row);
+                    const float* nextRow = row + 1 < phase.rows ? phase.ptr<float>(row + 1) : nullptr;
+                    for (int col = 0; col < phase.cols; ++col) {
+                        const double value = values[col];
+                        if (!std::isfinite(value)) {
+                            continue;
                         }
-                        if (delta <= -pi) {
-                            return delta + twoPi;
+                        if (col + 1 < phase.cols && std::isfinite(values[col + 1])) {
+                            const double gradient = wrapDifference(static_cast<double>(values[col + 1]) - value);
+                            gradientSumSquares += gradient * gradient;
+                            ++gradientCount;
                         }
-                        return delta;
-                    };
-
-                    PhaseQualityMetrics metrics;
-                    double gradientSumSquares = 0.0;
-                    qint64 gradientCount = 0;
-                    for (int row = 0; row < phase.rows; ++row) {
-                        const float* values = phase.ptr<float>(row);
-                        const float* nextRow = row + 1 < phase.rows ? phase.ptr<float>(row + 1) : nullptr;
-                        for (int col = 0; col < phase.cols; ++col) {
-                            const double value = values[col];
-                            if (!std::isfinite(value)) {
-                                continue;
-                            }
-                            if (col + 1 < phase.cols && std::isfinite(values[col + 1])) {
-                                const double gradient = wrapDifference(static_cast<double>(values[col + 1]) - value);
-                                gradientSumSquares += gradient * gradient;
-                                ++gradientCount;
-                            }
-                            if (nextRow && std::isfinite(nextRow[col])) {
-                                const double gradient = wrapDifference(static_cast<double>(nextRow[col]) - value);
-                                gradientSumSquares += gradient * gradient;
-                                ++gradientCount;
-                            }
+                        if (nextRow && std::isfinite(nextRow[col])) {
+                            const double gradient = wrapDifference(static_cast<double>(nextRow[col]) - value);
+                            gradientSumSquares += gradient * gradient;
+                            ++gradientCount;
                         }
                     }
-                    if (gradientCount > 0) {
-                        metrics.gradientRms = std::sqrt(gradientSumSquares / gradientCount);
-                        metrics.hasGradient = true;
+                }
+                if (gradientCount > 0) {
+                    metrics.gradientRms = std::sqrt(gradientSumSquares / gradientCount);
+                    metrics.hasGradient = true;
+                }
+
+                qint64 positiveResidueCount = 0;
+                qint64 negativeResidueCount = 0;
+                qint64 plaquetteCount = 0;
+                for (int row = 0; row + 1 < phase.rows; ++row) {
+                    if ((row & 127) == 0 && cancelToken && cancelToken->load()) {
+                        return metrics;
                     }
-
-                    qint64 positiveResidueCount = 0;
-                    qint64 negativeResidueCount = 0;
-                    qint64 plaquetteCount = 0;
-                    for (int row = 0; row + 1 < phase.rows; ++row) {
-                        const float* top = phase.ptr<float>(row);
-                        const float* bottom = phase.ptr<float>(row + 1);
-                        for (int col = 0; col + 1 < phase.cols; ++col) {
-                            const double p00 = top[col];
-                            const double p01 = top[col + 1];
-                            const double p11 = bottom[col + 1];
-                            const double p10 = bottom[col];
-                            if (!std::isfinite(p00) || !std::isfinite(p01) || !std::isfinite(p11) || !std::isfinite(p10)) {
-                                continue;
-                            }
-
-                            const double closure = wrapDifference(p01 - p00)
-                                + wrapDifference(p11 - p01)
-                                + wrapDifference(p10 - p11)
-                                + wrapDifference(p00 - p10);
-                            if (closure > pi) {
-                                ++positiveResidueCount;
-                            } else if (closure < -pi) {
-                                ++negativeResidueCount;
-                            }
-                            ++plaquetteCount;
+                    const float* top = phase.ptr<float>(row);
+                    const float* bottom = phase.ptr<float>(row + 1);
+                    for (int col = 0; col + 1 < phase.cols; ++col) {
+                        const double p00 = top[col];
+                        const double p01 = top[col + 1];
+                        const double p11 = bottom[col + 1];
+                        const double p10 = bottom[col];
+                        if (!std::isfinite(p00) || !std::isfinite(p01) || !std::isfinite(p11) || !std::isfinite(p10)) {
+                            continue;
                         }
+
+                        const double closure = wrapDifference(p01 - p00)
+                            + wrapDifference(p11 - p01)
+                            + wrapDifference(p10 - p11)
+                            + wrapDifference(p00 - p10);
+                        if (closure > pi) {
+                            ++positiveResidueCount;
+                        } else if (closure < -pi) {
+                            ++negativeResidueCount;
+                        }
+                        ++plaquetteCount;
                     }
-                    if (plaquetteCount > 0) {
-                        metrics.positiveResidueCount = positiveResidueCount;
-                        metrics.negativeResidueCount = negativeResidueCount;
-                        metrics.totalResidueCount = positiveResidueCount + negativeResidueCount;
-                        metrics.validPlaquetteCount = plaquetteCount;
-                        metrics.residueDensity = 100.0 * metrics.totalResidueCount / plaquetteCount;
-                        metrics.hasResidueDensity = true;
+                }
+                if (plaquetteCount > 0) {
+                    metrics.positiveResidueCount = static_cast<double>(positiveResidueCount);
+                    metrics.negativeResidueCount = static_cast<double>(negativeResidueCount);
+                    metrics.totalResidueCount = metrics.positiveResidueCount + metrics.negativeResidueCount;
+                    metrics.validPlaquetteCount = static_cast<double>(plaquetteCount);
+                    metrics.residueDensity = 100.0 * metrics.totalResidueCount / metrics.validPlaquetteCount;
+                    metrics.hasResidueDensity = true;
+                }
+                return metrics;
+            };
+
+            // Aggregators across all image pairs
+            int methodFiles = 0;
+            int prefilterFiles = 0;
+            int slopeFiles = 0;
+            int goldsteinFiles = 0;
+            int nPadFiles = 0;
+            int alphaFiles = 0;
+            int denoiseDlFiles = 0;
+            bool methodInconsistent = false;
+            bool prefilterInconsistent = false;
+            bool slopeInconsistent = false;
+            bool goldsteinInconsistent = false;
+            bool nPadInconsistent = false;
+            bool alphaInconsistent = false;
+
+            double sumSin = 0.0;
+            double sumCos = 0.0;
+            qint64 wrappedPixelCount = 0;
+
+            double gradientInputSum = 0.0, gradientOutputSum = 0.0;
+            int gradientInputFiles = 0, gradientOutputFiles = 0;
+            double residueDensityInputSum = 0.0, residueDensityOutputSum = 0.0;
+            double residuePosInputSum = 0.0, residuePosOutputSum = 0.0;
+            double residueNegInputSum = 0.0, residueNegOutputSum = 0.0;
+            double residueTotalInputSum = 0.0, residueTotalOutputSum = 0.0;
+            double residueValidInputSum = 0.0, residueValidOutputSum = 0.0;
+            int residueInputFiles = 0, residueOutputFiles = 0;
+
+            bool anyPhaseReadFailed = false;
+            bool dimsRecorded = false;
+
+            for (int i = 0; i < inPaths.size(); ++i) {
+                if (cancelToken && cancelToken->load()) {
+                    res.success = false;
+                    res.errorMsg = QObject::tr("验证任务已取消。");
+                    return res;
+                }
+
+                const QString& inH5 = inPaths.at(i);
+                const QString& outH5 = outPaths.at(i);
+
+                // 1. Read metadata parameters and matrices from H5 with narrowed lock scope
+                int fileMethod = 0;
+                int filePrefilter = 0;
+                int fileSlope = 0;
+                int fileGoldstein = 0;
+                int fileNPad = 0;
+                double fileAlpha = 0.0;
+                int fileDl = 0;
+                bool hasMethod = false;
+                bool hasPrefilter = false;
+                bool hasSlope = false;
+                bool hasGoldstein = false;
+                bool hasNPad = false;
+                bool hasAlpha = false;
+                bool hasDl = false;
+                cv::Mat inPhase, outPhase;
+                bool ok1 = false;
+                bool ok2 = false;
+
+                {
+                    NodeUtils::Hdf5Locker ioLocker;
+                    hasMethod = NodeUtils::readScalarFromH5(outH5, "denoise_method", fileMethod);
+                    hasPrefilter = NodeUtils::readScalarFromH5(outH5, "denoise_slope_pre_win", filePrefilter);
+                    hasSlope = NodeUtils::readScalarFromH5(outH5, "denoise_slope_win", fileSlope);
+                    hasGoldstein = NodeUtils::readScalarFromH5(outH5, "denoise_goldstein_win", fileGoldstein);
+                    hasNPad = NodeUtils::readScalarFromH5(outH5, "denoise_goldstein_npad", fileNPad);
+                    hasAlpha = NodeUtils::readScalarFromH5(outH5, "denoise_goldstein_alpha", fileAlpha);
+                    hasDl = NodeUtils::readScalarFromH5(outH5, "denoise_dl", fileDl);
+                    ok1 = NodeUtils::readMatFromH5(inH5, "phase", inPhase, CV_32F);
+                    ok2 = NodeUtils::readMatFromH5(outH5, "phase", outPhase, CV_32F);
+                }
+
+                if (hasMethod) {
+                    if (methodFiles == 0) {
+                        res.actualMethod = fileMethod;
+                    } else if (fileMethod != res.actualMethod) {
+                        methodInconsistent = true;
                     }
-                    return metrics;
-                };
+                    ++methodFiles;
+                }
+                if (hasPrefilter) {
+                    if (prefilterFiles == 0) {
+                        res.actualPrefilter = filePrefilter;
+                    } else if (filePrefilter != res.actualPrefilter) {
+                        prefilterInconsistent = true;
+                    }
+                    ++prefilterFiles;
+                }
+                if (hasSlope) {
+                    if (slopeFiles == 0) {
+                        res.actualSlopeWindow = fileSlope;
+                    } else if (fileSlope != res.actualSlopeWindow) {
+                        slopeInconsistent = true;
+                    }
+                    ++slopeFiles;
+                }
+                if (hasGoldstein) {
+                    if (goldsteinFiles == 0) {
+                        res.actualGoldsteinWin = fileGoldstein;
+                    } else if (fileGoldstein != res.actualGoldsteinWin) {
+                        goldsteinInconsistent = true;
+                    }
+                    ++goldsteinFiles;
+                }
+                if (hasNPad) {
+                    if (nPadFiles == 0) {
+                        res.actualNPad = fileNPad;
+                    } else if (fileNPad != res.actualNPad) {
+                        nPadInconsistent = true;
+                    }
+                    ++nPadFiles;
+                }
+                if (hasAlpha) {
+                    if (alphaFiles == 0) {
+                        res.actualAlpha = fileAlpha;
+                    } else if (qAbs(fileAlpha - res.actualAlpha) > 1e-6) {
+                        alphaInconsistent = true;
+                    }
+                    ++alphaFiles;
+                }
+                if (hasDl) {
+                    ++denoiseDlFiles;
+                }
 
-                res.inputQuality = calculatePhaseQuality(inPhase);
-                res.outputQuality = calculatePhaseQuality(outPhase);
+                // 2. Process matrices out of lock
+                if (!ok1 || !ok2 || inPhase.empty() || outPhase.empty()) {
+                    anyPhaseReadFailed = true;
+                    continue;
+                }
 
-                if (inPhase.rows == outPhase.rows && inPhase.cols == outPhase.cols) {
-                    double sumSin = 0.0;
-                    double sumCos = 0.0;
-                    qint64 count = 0;
+                if (!dimsRecorded) {
+                    res.inRows = inPhase.rows;
+                    res.inCols = inPhase.cols;
+                    res.outRows = outPhase.rows;
+                    res.outCols = outPhase.cols;
+                    dimsRecorded = true;
+                }
 
+                const bool sizeMatches = (inPhase.rows == outPhase.rows && inPhase.cols == outPhase.cols);
+                if (sizeMatches) {
+                    ++res.matchingSizePairCount;
+                }
+
+                const PhaseQualityMetrics inMetrics = calculatePhaseQuality(inPhase);
+                const PhaseQualityMetrics outMetrics = calculatePhaseQuality(outPhase);
+
+                if (inMetrics.hasGradient) {
+                    gradientInputSum += inMetrics.gradientRms;
+                    ++gradientInputFiles;
+                }
+                if (outMetrics.hasGradient) {
+                    gradientOutputSum += outMetrics.gradientRms;
+                    ++gradientOutputFiles;
+                }
+                if (inMetrics.hasResidueDensity) {
+                    residueDensityInputSum += inMetrics.residueDensity;
+                    residuePosInputSum += inMetrics.positiveResidueCount;
+                    residueNegInputSum += inMetrics.negativeResidueCount;
+                    residueTotalInputSum += inMetrics.totalResidueCount;
+                    residueValidInputSum += inMetrics.validPlaquetteCount;
+                    ++residueInputFiles;
+                }
+                if (outMetrics.hasResidueDensity) {
+                    residueDensityOutputSum += outMetrics.residueDensity;
+                    residuePosOutputSum += outMetrics.positiveResidueCount;
+                    residueNegOutputSum += outMetrics.negativeResidueCount;
+                    residueTotalOutputSum += outMetrics.totalResidueCount;
+                    residueValidOutputSum += outMetrics.validPlaquetteCount;
+                    ++residueOutputFiles;
+                }
+
+                // 3. Wrapped difference circular statistics, only for size-consistent pairs
+                if (sizeMatches) {
                     for (int row = 0; row < inPhase.rows; ++row) {
+                        if ((row & 127) == 0 && cancelToken && cancelToken->load()) {
+                            break;
+                        }
                         const float* inValues = inPhase.ptr<float>(row);
                         const float* outValues = outPhase.ptr<float>(row);
                         for (int col = 0; col < inPhase.cols; ++col) {
@@ -1327,124 +1575,262 @@ private:
                             const double delta = outputValue - inputValue;
                             sumSin += std::sin(delta);
                             sumCos += std::cos(delta);
-                            ++count;
+                            ++wrappedPixelCount;
                         }
                     }
-
-                    if (count > 0) {
-                        res.wrappedDiffMean = std::atan2(sumSin, sumCos);
-                        res.wrappedDiffResultant = std::min(1.0, std::hypot(sumSin / count, sumCos / count));
-                        res.wrappedDiffStd = std::sqrt(-2.0 * std::log(std::max(res.wrappedDiffResultant, 1e-12)));
-                        res.hasWrappedDifference = true;
-                    }
                 }
-            } else {
+            }
+
+            if (cancelToken && cancelToken->load()) {
                 res.success = false;
-                res.errorMsg = QObject::tr("读取相位数据集失败，可能文件已损坏或格式不兼容。");
+                res.errorMsg = QObject::tr("验证任务已取消。");
+                return res;
+            }
+
+            res.hasActualMethod = methodFiles > 0;
+            res.methodInconsistent = methodInconsistent;
+            res.hasActualPrefilter = prefilterFiles > 0;
+            res.prefilterInconsistent = prefilterInconsistent;
+            res.hasActualSlopeWindow = slopeFiles > 0;
+            res.slopeWindowInconsistent = slopeInconsistent;
+            res.hasActualGoldsteinWin = goldsteinFiles > 0;
+            res.goldsteinWinInconsistent = goldsteinInconsistent;
+            res.hasActualNPad = nPadFiles > 0;
+            res.nPadInconsistent = nPadInconsistent;
+            res.hasActualAlpha = alphaFiles > 0;
+            res.alphaInconsistent = alphaInconsistent;
+            res.hasActualDenoiseDl = denoiseDlFiles > 0;
+
+            if (wrappedPixelCount > 0) {
+                res.wrappedDiffMean = std::atan2(sumSin, sumCos);
+                res.wrappedDiffResultant = std::min(1.0, std::hypot(sumSin / wrappedPixelCount, sumCos / wrappedPixelCount));
+                res.wrappedDiffStd = std::sqrt(-2.0 * std::log(std::max(res.wrappedDiffResultant, 1e-12)));
+                res.hasWrappedDifference = true;
+            }
+
+            // Average per-file quality metrics across all pairs
+            if (gradientInputFiles > 0) {
+                res.inputQuality.gradientRms = gradientInputSum / gradientInputFiles;
+                res.inputQuality.hasGradient = true;
+            }
+            if (gradientOutputFiles > 0) {
+                res.outputQuality.gradientRms = gradientOutputSum / gradientOutputFiles;
+                res.outputQuality.hasGradient = true;
+            }
+            if (residueInputFiles > 0) {
+                res.inputQuality.residueDensity = residueDensityInputSum / residueInputFiles;
+                res.inputQuality.positiveResidueCount = residuePosInputSum / residueInputFiles;
+                res.inputQuality.negativeResidueCount = residueNegInputSum / residueInputFiles;
+                res.inputQuality.totalResidueCount = residueTotalInputSum / residueInputFiles;
+                res.inputQuality.validPlaquetteCount = residueValidInputSum / residueInputFiles;
+                res.inputQuality.hasResidueDensity = true;
+            }
+            if (residueOutputFiles > 0) {
+                res.outputQuality.residueDensity = residueDensityOutputSum / residueOutputFiles;
+                res.outputQuality.positiveResidueCount = residuePosOutputSum / residueOutputFiles;
+                res.outputQuality.negativeResidueCount = residueNegOutputSum / residueOutputFiles;
+                res.outputQuality.totalResidueCount = residueTotalOutputSum / residueOutputFiles;
+                res.outputQuality.validPlaquetteCount = residueValidOutputSum / residueOutputFiles;
+                res.outputQuality.hasResidueDensity = true;
+            }
+
+            if (anyPhaseReadFailed) {
+                res.success = false;
+                res.errorMsg = QObject::tr("部分影像的相位数据集读取失败，可能文件已损坏或格式不兼容。");
+            } else {
+                res.success = true;
             }
             return res;
         });
 
         // Use QFutureWatcher to monitor finished state and update UI
         auto* watcher = new QFutureWatcher<ValidationResults>(this);
-        connect(watcher, &QFutureWatcher<ValidationResults>::finished, this, [this, watcher]() {
+        connect(watcher, &QFutureWatcher<ValidationResults>::finished, this, [this, watcher, cacheKey]() {
+            // 超时分支：有意保留"验证超时"提示（不调用 stopLoading），让用户看到超时状态。
             if (m_isTimedOut) {
                 watcher->deleteLater();
                 return;
             }
 
             ValidationResults res = watcher->result();
-            m_loadingOverlay->stopLoading();
-
-            if (res.success) {
-                // Update parameters comparison table
-                m_compTable->clearComparison();
-                m_compTable->setEnabled(true);
-                
-                QString methodStrExp = res.expectedMethod == 1 ? "Slope" : (res.expectedMethod == 2 ? "Goldstein" : "DL");
-                QString methodStrAct = res.hasActualMethod
-                    ? (res.actualMethod == 1 ? "Slope" : (res.actualMethod == 2 ? "Goldstein" : (res.actualMethod == 3 ? "DL" : QObject::tr("未知"))))
-                    : QObject::tr("未记录（旧结果）");
-                m_compTable->addComparison(QObject::tr("滤波方法"), methodStrExp, methodStrAct);
-                if (res.expectedMethod == 1) {
-                    m_compTable->addComparison(QObject::tr("预滤波窗口大小"),
-                        QString::number(res.expectedPrefilter),
-                        res.hasActualPrefilter ? QString::number(res.actualPrefilter) : QObject::tr("未记录（旧结果）"));
-                    m_compTable->addComparison(QObject::tr("斜坡滤波窗口大小"),
-                        QString::number(res.expectedSlopeWindow),
-                        res.hasActualSlopeWindow ? QString::number(res.actualSlopeWindow) : QObject::tr("未记录（旧结果）"));
-                }
-                m_compTable->addComparison(QObject::tr("图像宽度 (列数)"), QString::number(res.inCols), QString::number(res.outCols));
-                m_compTable->addComparison(QObject::tr("图像高度 (行数)"), QString::number(res.inRows), QString::number(res.outRows));
-
-                // Update feature analysis labels
-                const auto transitionText = [](double input, bool hasInput, double output, bool hasOutput,
-                    int precision, const QString& unitSuffix) {
-                    if (!hasInput || !hasOutput || input <= 0.0) {
-                        return QObject::tr("无有效数据");
-                    }
-                    const QString inputText = QString::number(input, 'f', precision) + unitSuffix;
-                    const QString outputText = QString::number(output, 'f', precision) + unitSuffix;
-                    const double reduction = 100.0 * (input - output) / input;
-                    return QString("%1 -> %2 (%3%)").arg(inputText).arg(outputText).arg(QString::number(reduction, 'f', 2));
-                };
-                const auto residueCountText = [](const PhaseQualityMetrics& metrics) {
-                    if (!metrics.hasResidueDensity) {
-                        return QObject::tr("无有效单元");
-                    }
-                    return QObject::tr("+%1 / -%2 / %3（有效 %4）")
-                        .arg(metrics.positiveResidueCount)
-                        .arg(metrics.negativeResidueCount)
-                        .arg(metrics.totalResidueCount)
-                        .arg(metrics.validPlaquetteCount);
-                };
-                const auto residueDensityText = [](const PhaseQualityMetrics& input,
-                                                   const PhaseQualityMetrics& output) {
-                    if (!input.hasResidueDensity || !output.hasResidueDensity) {
-                        return QObject::tr("无有效单元");
-                    }
-                    const QString inputText = QString::number(input.residueDensity, 'f', 3) + QStringLiteral("%");
-                    const QString outputText = QString::number(output.residueDensity, 'f', 3) + QStringLiteral("%");
-                    if (input.totalResidueCount == 0) {
-                        return QStringLiteral("%1 -> %2").arg(inputText, outputText);
-                    }
-                    const double reduction = 100.0 * (input.residueDensity - output.residueDensity) / input.residueDensity;
-                    return QStringLiteral("%1 -> %2 (%3%)")
-                        .arg(inputText, outputText, QString::number(reduction, 'f', 2));
-                };
-                const auto setFeatureValue = [](QLabel* label, const QString& value) {
-                    label->setText(value);
-                    label->setToolTip(value);
-                };
-                setFeatureValue(m_lblDiffMean, res.hasWrappedDifference
-                    ? QString::number(res.wrappedDiffMean, 'f', 4)
-                    : QObject::tr("图像尺寸不一致"));
-                setFeatureValue(m_lblDiffStd, res.hasWrappedDifference
-                    ? QString::number(res.wrappedDiffStd, 'f', 4)
-                    : QObject::tr("图像尺寸不一致"));
-                setFeatureValue(m_lblDiffResultant, res.hasWrappedDifference
-                    ? QString::number(res.wrappedDiffResultant, 'f', 4)
-                    : QObject::tr("图像尺寸不一致"));
-                setFeatureValue(m_lblGradientSummary, transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
-                    res.outputQuality.gradientRms, res.outputQuality.hasGradient, 4, QString()));
-                setFeatureValue(m_lblResidueCountSummary, residueCountText(res.inputQuality)
-                    + QStringLiteral(" -> ") + residueCountText(res.outputQuality));
-                setFeatureValue(m_lblResidueSummary, residueDensityText(res.inputQuality, res.outputQuality));
-
-                // Final status card
-                m_statusTitle->setText(QObject::tr("验证通过"));
-                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
-                m_statusDesc->setText(QObject::tr("图像行列数比对无误，平滑窗口等重要滤波参数比对成功。实际滤波结果特征值已成功计算并展现。"));
-            } else {
-                m_statusTitle->setText(QObject::tr("验证失败"));
-                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-                m_statusDesc->setText(res.errorMsg);
+            if (!cacheKey.isEmpty() && res.success) {
+                m_node->storeValidationCache(cacheKey, res);
             }
-            
+            applyValidationResults(res);
             watcher->deleteLater();
         });
 
         watcher->setFuture(future);
+    }
+
+    void applyValidationResults(const ValidationResults& res)
+    {
+        m_loadingOverlay->stopLoading();
+
+        if (!res.success) {
+            m_statusTitle->setText(QObject::tr("验证失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(res.errorMsg);
+            // Clear any previously rendered comparison rows so stale success data is not kept
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(false);
+            return;
+        }
+
+        // Update parameters comparison table
+        m_compTable->clearComparison();
+        m_compTable->setEnabled(true);
+
+        const auto paramActualText = [](bool hasValue, const QString& value, bool inconsistent, bool mismatch, bool& verifiable) {
+            verifiable = hasValue;
+            if (!hasValue) {
+                return QObject::tr("未记录（旧结果）");
+            }
+            if (inconsistent) {
+                return value + QObject::tr("（多文件值不一致）");
+            }
+            if (mismatch) {
+                return value + QObject::tr("（与期望不一致）");
+            }
+            return value;
+        };
+
+        QString methodStrExp = res.expectedMethod == 1 ? "Slope" : (res.expectedMethod == 2 ? "Goldstein" : "DL");
+        QString methodStrAct;
+        bool methodVerifiable = false;
+        if (res.hasActualMethod) {
+            methodVerifiable = true;
+            methodStrAct = res.actualMethod == 1 ? "Slope" : (res.actualMethod == 2 ? "Goldstein" : (res.actualMethod == 3 ? "DL" : QObject::tr("未知")));
+            if (res.methodInconsistent) {
+                methodStrAct += QObject::tr("（多文件值不一致）");
+            } else if (res.actualMethod != res.expectedMethod) {
+                methodStrAct += QObject::tr("（与期望不一致）");
+            }
+        } else {
+            methodStrAct = QObject::tr("未记录（旧结果）");
+        }
+        m_compTable->addComparison(QObject::tr("滤波方法"), methodStrExp, methodStrAct, methodVerifiable);
+
+        if (res.expectedMethod == 1) {
+            bool verifiable = false;
+            m_compTable->addComparison(QObject::tr("预滤波窗口大小"),
+                QString::number(res.expectedPrefilter),
+                paramActualText(res.hasActualPrefilter, QString::number(res.actualPrefilter),
+                    res.prefilterInconsistent, res.actualPrefilter != res.expectedPrefilter, verifiable),
+                verifiable);
+            m_compTable->addComparison(QObject::tr("斜坡滤波窗口大小"),
+                QString::number(res.expectedSlopeWindow),
+                paramActualText(res.hasActualSlopeWindow, QString::number(res.actualSlopeWindow),
+                    res.slopeWindowInconsistent, res.actualSlopeWindow != res.expectedSlopeWindow, verifiable),
+                verifiable);
+        } else if (res.expectedMethod == 2) {
+            bool verifiable = false;
+            m_compTable->addComparison(QObject::tr("Goldstein 窗口"),
+                QString::number(res.expectedGoldsteinWin),
+                paramActualText(res.hasActualGoldsteinWin, QString::number(res.actualGoldsteinWin),
+                    res.goldsteinWinInconsistent, res.actualGoldsteinWin != res.expectedGoldsteinWin, verifiable),
+                verifiable);
+            m_compTable->addComparison(QObject::tr("补零窗口"),
+                QString::number(res.expectedNPad),
+                paramActualText(res.hasActualNPad, QString::number(res.actualNPad),
+                    res.nPadInconsistent, res.actualNPad != res.expectedNPad, verifiable),
+                verifiable);
+            m_compTable->addComparison(QObject::tr("滤波参数 alpha"),
+                QString::number(res.expectedAlpha, 'f', 4),
+                paramActualText(res.hasActualAlpha, QString::number(res.actualAlpha, 'f', 4),
+                    res.alphaInconsistent, qAbs(res.actualAlpha - res.expectedAlpha) > 1e-6, verifiable),
+                verifiable);
+        } else if (res.expectedMethod == 3) {
+            m_compTable->addComparison(QObject::tr("深度学习滤波标记"), QObject::tr("已记录"),
+                res.hasActualDenoiseDl ? QObject::tr("已记录") : QObject::tr("未记录（旧结果）"),
+                res.hasActualDenoiseDl);
+        }
+
+        m_compTable->addComparison(QObject::tr("图像宽度 (列数)"), QString::number(res.inCols), QString::number(res.outCols));
+        m_compTable->addComparison(QObject::tr("图像高度 (行数)"), QString::number(res.inRows), QString::number(res.outRows));
+
+        m_compTable->addDiagnostic(QObject::tr("参与校验的影像对数"), QString::number(res.imagePairCount));
+        m_compTable->addDiagnostic(QObject::tr("尺寸一致对数"), QString::number(res.matchingSizePairCount));
+
+        // Update feature analysis labels
+        const auto transitionText = [](double input, bool hasInput, double output, bool hasOutput,
+            int precision, const QString& unitSuffix) {
+            if (!hasInput || !hasOutput) {
+                return QObject::tr("无有效数据");
+            }
+            const QString inputText = QString::number(input, 'f', precision) + unitSuffix;
+            const QString outputText = QString::number(output, 'f', precision) + unitSuffix;
+            if (input != 0.0) {
+                const double reduction = 100.0 * (input - output) / input;
+                return QString("%1 -> %2 (%3%)").arg(inputText).arg(outputText).arg(QString::number(reduction, 'f', 2));
+            }
+            return QStringLiteral("%1 -> %2").arg(inputText, outputText);
+        };
+        const auto residueCountText = [](const PhaseQualityMetrics& metrics) {
+            if (!metrics.hasResidueDensity) {
+                return QObject::tr("无有效单元");
+            }
+            // Counts are averaged across files (double), format as whole numbers
+            return QObject::tr("+%1 / -%2 / %3（有效 %4）")
+                .arg(QString::number(metrics.positiveResidueCount, 'f', 0))
+                .arg(QString::number(metrics.negativeResidueCount, 'f', 0))
+                .arg(QString::number(metrics.totalResidueCount, 'f', 0))
+                .arg(QString::number(metrics.validPlaquetteCount, 'f', 0));
+        };
+        const auto residueDensityText = [](const PhaseQualityMetrics& input,
+                                           const PhaseQualityMetrics& output) {
+            if (!input.hasResidueDensity || !output.hasResidueDensity) {
+                return QObject::tr("无有效单元");
+            }
+            const QString inputText = QString::number(input.residueDensity, 'f', 3) + QStringLiteral("%");
+            const QString outputText = QString::number(output.residueDensity, 'f', 3) + QStringLiteral("%");
+            if (input.totalResidueCount == 0) {
+                return QStringLiteral("%1 -> %2").arg(inputText, outputText);
+            }
+            const double reduction = 100.0 * (input.residueDensity - output.residueDensity) / input.residueDensity;
+            return QStringLiteral("%1 -> %2 (%3%)")
+                .arg(inputText, outputText, QString::number(reduction, 'f', 2));
+        };
+        const auto setFeatureValue = [](QLabel* label, const QString& value) {
+            label->setText(value);
+            label->setToolTip(value);
+        };
+        setFeatureValue(m_lblDiffMean, res.hasWrappedDifference
+            ? QString::number(res.wrappedDiffMean, 'f', 4)
+            : QObject::tr("图像尺寸不一致"));
+        setFeatureValue(m_lblDiffStd, res.hasWrappedDifference
+            ? QString::number(res.wrappedDiffStd, 'f', 4)
+            : QObject::tr("图像尺寸不一致"));
+        setFeatureValue(m_lblDiffResultant, res.hasWrappedDifference
+            ? QString::number(res.wrappedDiffResultant, 'f', 4)
+            : QObject::tr("图像尺寸不一致"));
+        setFeatureValue(m_lblGradientSummary, transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
+            res.outputQuality.gradientRms, res.outputQuality.hasGradient, 4, QString()));
+        setFeatureValue(m_lblResidueCountSummary, residueCountText(res.inputQuality)
+            + QStringLiteral(" -> ") + residueCountText(res.outputQuality));
+        setFeatureValue(m_lblResidueSummary, residueDensityText(res.inputQuality, res.outputQuality));
+
+        // Final status card
+        m_statusTitle->setText(QObject::tr("验证通过"));
+        m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+        bool paramsUnverified = false;
+        if (res.expectedMethod == 1) {
+            paramsUnverified = !res.hasActualPrefilter || !res.hasActualSlopeWindow;
+        } else if (res.expectedMethod == 2) {
+            paramsUnverified = !res.hasActualGoldsteinWin || !res.hasActualNPad || !res.hasActualAlpha;
+        } else if (res.expectedMethod == 3) {
+            paramsUnverified = !res.hasActualDenoiseDl;
+        }
+        const QString unverifiedNote = paramsUnverified
+            ? QObject::tr("；该输出由旧版本生成，滤波参数未记录，无法逐项比对（结果特征值已计算）")
+            : QString();
+        if (res.matchingSizePairCount == res.imagePairCount) {
+            m_statusDesc->setText(QObject::tr("共校验 %1 对影像，行列尺寸全部一致；滤波参数及结果特征值比对完成。%2")
+                .arg(res.imagePairCount).arg(unverifiedNote));
+        } else {
+            m_statusDesc->setText(QObject::tr("共校验 %1 对影像，其中 %2 对行列尺寸一致；缠绕相位差统计仅针对尺寸一致的影像对。%3")
+                .arg(res.imagePairCount).arg(res.matchingSizePairCount).arg(unverifiedNote));
+        }
     }
 
 private:
@@ -1456,10 +1842,6 @@ private:
     QLabel* m_lblGradientSummary = nullptr;
     QLabel* m_lblResidueCountSummary = nullptr;
     QLabel* m_lblResidueSummary = nullptr;
-    QLabel* m_lblInWidth = nullptr;
-    QLabel* m_lblOutWidth = nullptr;
-    QLabel* m_lblInMean = nullptr;
-    QLabel* m_lblOutMean = nullptr;
 
 };
 

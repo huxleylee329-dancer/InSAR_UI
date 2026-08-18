@@ -182,7 +182,21 @@ public:
     /// Default implementation does nothing (parameters are read-only)
     virtual void setParameter(const QString& paramName, const QString& value);
 
-    /// Set whether the node is currently being restored from a project
+    /// Returns binding summary string for ports bound to virtual labels or sources (e.g. "@DEM_01")
+    /// Default implementation returns empty string.
+    virtual QString portBindingSummary(PortType portType, PortIndex portIndex) const { Q_UNUSED(portType); Q_UNUSED(portIndex); return QString(); }
+
+    /// Check if the node is actively performing asynchronous restoration/remedy
+    virtual bool isRestoringAsync() const { return false; }
+
+    /// Publish restored output data signals to downstream nodes after restoration state is finalized.
+    /// Default implementation is a no-op to prevent duplicate emissions.
+    virtual void publishRestoredOutputs() {}
+
+    ExecutionState pendingSavedState() const { return _pendingSavedState; }
+    void setPendingSavedState(ExecutionState state) { _pendingSavedState = state; }
+    void clearPendingSavedState() { _pendingSavedState = ExecutionState::Idle; }
+
     void setRestoring(bool restoring) { _isRestoring = restoring; }
 
     /// Check if the node is currently being restored from a project
@@ -313,7 +327,6 @@ protected:
     /// reference). Every group requires at least one connected member.
     virtual QList<QList<PortIndex>> alternativeInputGroups() const { return {}; }
 
-protected:
     void setState(ExecutionState state);
 
     /// 验证并恢复输出数据
@@ -321,9 +334,9 @@ protected:
     /// 返回true表示验证成功且已恢复output数据，返回false表示文件不存在或无法恢复
     virtual bool validateAndRestoreOutput() { return false; }
 
-protected:
     ExecutionMode _mode;
     ExecutionState _state;
+    ExecutionState _pendingSavedState{ExecutionState::Idle};
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _inputData;
     std::unordered_map<PortIndex, std::shared_ptr<NodeData>> _outputData;
     std::unordered_map<PortIndex, std::uint64_t> _inputRevisions;

@@ -904,18 +904,38 @@ void ExecutableNodeDelegateModel::load(QJsonObject const &json)
         } else if (savedState == ExecutionState::Completed || savedState == ExecutionState::Warning) {
             // 调用子类验证输出数据
             if (validateAndRestoreOutput()) {
-                _state = savedState;
-                _progress = 100;
-                if (savedState == ExecutionState::Warning) {
-                    QString savedWarningMessage = json["last-warning-message"].toString();
-                    if (!savedWarningMessage.isEmpty()) {
-                        _lastWarningMessage = savedWarningMessage;
+                if (isRestoringAsync()) {
+                    // 异步恢复中：暂存工程记录状态，置为 Running 状态等待子类异步收口
+                    _pendingSavedState = savedState;
+                    _state = ExecutionState::Running;
+                    _progress = 0;
+                    if (savedState == ExecutionState::Warning) {
+                        QString savedWarningMessage = json["last-warning-message"].toString();
+                        if (!savedWarningMessage.isEmpty()) {
+                            _lastWarningMessage = savedWarningMessage;
+                        }
                     }
+                    Q_EMIT progressUpdated(_progress);
+                    Q_EMIT executionStateChanged();
+                    triggerVisualUpdate();
+                } else {
+                    // 同步恢复成功：状态立即收口并门控广播
+                    _pendingSavedState = ExecutionState::Idle;
+                    _state = savedState;
+                    _progress = 100;
+                    if (savedState == ExecutionState::Warning) {
+                        QString savedWarningMessage = json["last-warning-message"].toString();
+                        if (!savedWarningMessage.isEmpty()) {
+                            _lastWarningMessage = savedWarningMessage;
+                        }
+                    }
+                    // 发送信号通知UI更新状态显示
+                    Q_EMIT progressUpdated(_progress);
+                    Q_EMIT executionStateChanged();
+                    triggerVisualUpdate();
+                    // 门控单次发布恢复的输出数据至下游
+                    publishRestoredOutputs();
                 }
-                // 发送信号通知UI更新状态显示
-                Q_EMIT progressUpdated(_progress);
-                Q_EMIT executionStateChanged();
-                triggerVisualUpdate();
             }
             // 否则保持Idle状态
         }

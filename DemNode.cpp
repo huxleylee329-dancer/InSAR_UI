@@ -1154,6 +1154,7 @@ struct DemGenerationValidationResults
 {
     bool success = false;
     QString errorMessage;
+    bool inputConnected = false;
     int expectedMethod = 1;
     int expectedIterations = 20;
     bool hasRecordedMethod = false;
@@ -1213,8 +1214,24 @@ private:
         m_issuesLabel->setText(QObject::tr("未执行"));
     }
 
+    void setInputDisconnectedState()
+    {
+        m_statusTitle->setText(QObject::tr("输入相位未连接"));
+        m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+        m_statusDesc->setText(QObject::tr("未找到输入相位 H5 文件（上游未连接或尚未重新流转）。仍可对已有 DEM 成果执行自包含诊断，仅无法核对尺寸与相位输入。"));
+        m_compTable->clearComparison();
+        m_compTable->setEnabled(false);
+        m_validPixelsLabel->setText(QObject::tr("待连接输入相位"));
+        m_heightRangeLabel->setText(QObject::tr("待连接输入相位"));
+        m_heightMomentsLabel->setText(QObject::tr("待连接输入相位"));
+        m_dimensionsLabel->setText(QObject::tr("待连接输入相位"));
+        m_dependenciesLabel->setText(QObject::tr("待连接输入相位"));
+        m_issuesLabel->setText(QObject::tr("待连接输入相位"));
+    }
+
     void startAsyncValidation() override
     {
+        const quint64 currentEpoch = ++m_validationEpoch;
         m_isTimedOut = false;
         if (m_node->executionState() != ExecutionState::Completed) {
             setNotExecutedState();
@@ -1222,19 +1239,32 @@ private:
         }
 
         const auto inputData = m_node->inputDataForValidation();
-        const auto outputData = std::dynamic_pointer_cast<ImportedFileData>(m_node->outData(0));
-        if (!inputData || inputData->filePaths().isEmpty() || !outputData || outputData->filePaths().isEmpty()) {
+        const auto outputData = std::dynamic_pointer_cast<InsarDemData>(m_node->outData(0));
+        if (!outputData || outputData->h5Paths().isEmpty()) {
             m_statusTitle->setText(QObject::tr("诊断失败"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusDesc->setText(QObject::tr("未找到完整的输入相位或输出 DEM H5 文件列表。"));
+            m_statusDesc->setText(QObject::tr("未找到完整的输出 DEM H5 文件列表。"));
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(false);
+            m_validPixelsLabel->setText(QObject::tr("诊断失败"));
+            m_heightRangeLabel->setText(QObject::tr("诊断失败"));
+            m_heightMomentsLabel->setText(QObject::tr("诊断失败"));
+            m_dimensionsLabel->setText(QObject::tr("诊断失败"));
+            m_dependenciesLabel->setText(QObject::tr("诊断失败"));
+            m_issuesLabel->setText(QObject::tr("诊断失败"));
             return;
         }
 
         const QJsonObject settings = m_node->save();
-        const QStringList inputPaths = inputData->filePaths();
-        const QStringList outputPaths = outputData->filePaths();
+        const QStringList inputPaths = inputData ? inputData->filePaths() : QStringList();
+        const QStringList outputPaths = outputData->h5Paths();
         const int expectedMethod = settings.value("method").toInt(1);
         const int expectedIterations = settings.value("times").toInt(20);
+
+        if (inputPaths.isEmpty()) {
+            setInputDisconnectedState();
+        }
+
         m_loadingOverlay->startLoading(QObject::tr("正在读取全部 DEM 结果并计算数值统计..."));
 
         QFuture<DemGenerationValidationResults> future = QtConcurrent::run(
@@ -1243,40 +1273,49 @@ private:
                 DemGenerationValidationResults result;
                 result.expectedMethod = expectedMethod;
                 result.expectedIterations = expectedIterations;
+                result.inputConnected = !inputPaths.isEmpty();
 
-                QHash<QString, QString> outputsByBaseName;
-                for (const QString& outputPath : outputPaths) {
-                    outputsByBaseName.insert(QFileInfo(outputPath).baseName(), outputPath);
+                const auto readIntScalar = [](const QString& filePath, const QString& dataset, int& value) {
+                    return NodeUtils::readScalarFromH5(filePath, dataset, value);
+                };
+                const auto readDoubleScalar = [](const QString& filePath, const QString& dataset, double& value) {
+                    return NodeUtils::readScalarFromH5(filePath, dataset, value);
+                };
+
+                QHash<QString, QString> inputsByBaseName;
+                for (const QString& inputPath : inputPaths) {
+                    inputsByBaseName.insert(QFileInfo(inputPath).baseName(), inputPath);
                 }
 
-                for (const QString& inputPath : inputPaths) {
+                for (const QString& outputPath : outputPaths) {
+                    const QString outputBase = QFileInfo(outputPath).baseName();
                     DemGenerationImageDiagnostics image;
-                    image.inputName = QFileInfo(inputPath).baseName();
-                    const QString outputPath = outputsByBaseName.value(image.inputName + QStringLiteral("_dem"));
-                    image.outputFound = !outputPath.isEmpty();
-                    if (!image.outputFound) {
-                        result.images.append(image);
-                        continue;
+                    image.inputName = outputBase.endsWith(QStringLiteral("_dem"))
+                        ? outputBase.left(outputBase.size() - 4)
+                        : outputBase;
+                    image.outputFound = true;
+
+                    const QString pairedInputPath = inputsByBaseName.value(image.inputName);
+                    if (!pairedInputPath.isEmpty()) {
+                        cv::Mat inputPhase;
+                        image.inputRead = NodeUtils::readMatFromH5(pairedInputPath, "phase", inputPhase) && !inputPhase.empty();
+                        if (image.inputRead) {
+                            image.inputRows = inputPhase.rows;
+                            image.inputCols = inputPhase.cols;
+                        }
                     }
 
-                    cv::Mat inputPhase;
                     cv::Mat dem;
-                    image.inputRead = NodeUtils::readMatFromH5(inputPath, "phase", inputPhase) && !inputPhase.empty();
                     image.outputRead = NodeUtils::readMatFromH5(outputPath, "dem", dem) && !dem.empty();
-                    if (image.inputRead) {
-                        image.inputRows = inputPhase.rows;
-                        image.inputCols = inputPhase.cols;
-                    }
                     if (image.outputRead) {
                         image.outputRows = dem.rows;
                         image.outputCols = dem.cols;
                     }
-                    image.dimensionsMatch = image.inputRead && image.outputRead && inputPhase.size() == dem.size();
+                    image.dimensionsMatch = image.inputRead && image.outputRead
+                        && image.inputRows == image.outputRows && image.inputCols == image.outputCols;
 
-                    image.hasRecordedMethod = NodeUtils::readScalarFromH5(
-                        outputPath, "dem_generation_method", image.recordedMethod);
-                    image.hasRecordedIterations = NodeUtils::readScalarFromH5(
-                        outputPath, "dem_generation_iterations", image.recordedIterations);
+                    image.hasRecordedMethod = readIntScalar(outputPath, "dem_generation_method", image.recordedMethod);
+                    image.hasRecordedIterations = readIntScalar(outputPath, "dem_generation_iterations", image.recordedIterations);
                     if (image.hasRecordedMethod) {
                         if (!result.hasRecordedMethod) {
                             result.hasRecordedMethod = true;
@@ -1303,6 +1342,13 @@ private:
                     const bool azimuthLengthPresent = NodeUtils::readMatFromH5(outputPath, "azimuth_len", auxiliary) && !auxiliary.empty();
                     const bool multilookRangePresent = NodeUtils::readMatFromH5(outputPath, "multilook_rg", auxiliary) && !auxiliary.empty();
                     const bool multilookAzimuthPresent = NodeUtils::readMatFromH5(outputPath, "multilook_az", auxiliary) && !auxiliary.empty();
+                    double minLon = 0.0, maxLon = 0.0, minLat = 0.0, maxLat = 0.0;
+                    const bool geometryPresent =
+                        readDoubleScalar(outputPath, "dem_min_lon", minLon) &&
+                        readDoubleScalar(outputPath, "dem_max_lon", maxLon) &&
+                        readDoubleScalar(outputPath, "dem_min_lat", minLat) &&
+                        readDoubleScalar(outputPath, "dem_max_lat", maxLat) &&
+                        maxLon > minLon && maxLat > minLat;
                     if (!source1Present) image.missingDependencies.append(QStringLiteral("source_1"));
                     if (!source2Present) image.missingDependencies.append(QStringLiteral("source_2"));
                     if (!flatPhasePresent) image.missingDependencies.append(QStringLiteral("flat_phase_coefficient"));
@@ -1310,6 +1356,7 @@ private:
                     if (!azimuthLengthPresent) image.missingDependencies.append(QStringLiteral("azimuth_len"));
                     if (!multilookRangePresent) image.missingDependencies.append(QStringLiteral("multilook_rg"));
                     if (!multilookAzimuthPresent) image.missingDependencies.append(QStringLiteral("multilook_az"));
+                    if (!geometryPresent) image.missingDependencies.append(QStringLiteral("dem_geometry(lon/lat)"));
                     image.dependenciesComplete = image.missingDependencies.isEmpty();
 
                     if (image.outputRead) {
@@ -1343,8 +1390,8 @@ private:
             });
 
         auto* watcher = new QFutureWatcher<DemGenerationValidationResults>(this);
-        connect(watcher, &QFutureWatcher<DemGenerationValidationResults>::finished, this, [this, watcher]() {
-            if (m_isTimedOut) {
+        connect(watcher, &QFutureWatcher<DemGenerationValidationResults>::finished, this, [this, watcher, currentEpoch]() {
+            if (currentEpoch != m_validationEpoch || m_isTimedOut) {
                 watcher->deleteLater();
                 return;
             }
@@ -1355,6 +1402,14 @@ private:
                 m_statusTitle->setText(QObject::tr("诊断失败"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
                 m_statusDesc->setText(result.errorMessage);
+                m_compTable->clearComparison();
+                m_compTable->setEnabled(false);
+                m_validPixelsLabel->setText(QObject::tr("诊断失败"));
+                m_heightRangeLabel->setText(QObject::tr("诊断失败"));
+                m_heightMomentsLabel->setText(QObject::tr("诊断失败"));
+                m_dimensionsLabel->setText(QObject::tr("诊断失败"));
+                m_dependenciesLabel->setText(QObject::tr("诊断失败"));
+                m_issuesLabel->setText(QObject::tr("诊断失败"));
                 watcher->deleteLater();
                 return;
             }
@@ -1390,21 +1445,20 @@ private:
 
             for (const DemGenerationImageDiagnostics& image : result.images) {
                 foundOutputs += image.outputFound ? 1 : 0;
-                const QString expectedSize = image.inputRead
-                    ? QStringLiteral("%1 x %2").arg(image.inputCols).arg(image.inputRows)
-                    : QObject::tr("输入 phase 不可读");
+                const QString expectedSize = !image.inputRead
+                    ? (result.inputConnected ? QObject::tr("输入 phase 不可读") : QObject::tr("未连接输入相位"))
+                    : QStringLiteral("%1 x %2").arg(image.inputCols).arg(image.inputRows);
                 QString actualSize;
-                if (!image.outputFound) {
-                    actualSize = QObject::tr("缺失输出");
-                    issues.append(image.inputName + QObject::tr(": 缺失输出"));
-                    ++invalidResults;
-                } else if (!image.outputRead) {
+                if (!image.outputRead) {
                     actualSize = QObject::tr("输出 dem 不可读");
                     issues.append(image.inputName + QObject::tr(": 输出 dem 不可读"));
                     ++invalidResults;
                 } else {
                     actualSize = QStringLiteral("%1 x %2").arg(image.outputCols).arg(image.outputRows);
-                    if (!image.dimensionsMatch) {
+                    if (!image.inputRead) {
+                        issues.append(image.inputName + QObject::tr(": 未连接或无法读取输入相位"));
+                        ++invalidResults;
+                    } else if (!image.dimensionsMatch) {
                         issues.append(image.inputName + QObject::tr(": 尺寸不匹配"));
                         ++invalidResults;
                     } else {
@@ -1451,14 +1505,20 @@ private:
             } else {
                 m_heightMomentsLabel->setText(QObject::tr("无有效 DEM 像元"));
             }
-            m_dimensionsLabel->setText(QObject::tr("%1 / %2 匹配").arg(dimensionsMatch).arg(result.images.size()));
+            m_dimensionsLabel->setText(result.inputConnected
+                ? QObject::tr("%1 / %2 匹配").arg(dimensionsMatch).arg(result.images.size())
+                : QObject::tr("未连接输入相位，无法核对尺寸"));
             m_dependenciesLabel->setText(QObject::tr("%1 / %2 齐全").arg(completeDependencies).arg(result.images.size()));
             m_issuesLabel->setText(issues.isEmpty() ? QObject::tr("未发现缺失或尺寸异常") : issues.join(QStringLiteral("\n")));
 
             const bool parametersMatch = result.metadataConsistent
                 && (!result.hasRecordedMethod || result.recordedMethod == result.expectedMethod)
                 && (!result.hasRecordedIterations || result.recordedIterations == result.expectedIterations);
-            if (invalidResults > 0 || finitePixels == 0) {
+            if (!result.inputConnected) {
+                m_statusTitle->setText(QObject::tr("需要复查"));
+                m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                m_statusDesc->setText(QObject::tr("未连接输入相位，无法核对尺寸与相位输入。已完成对已有 DEM 输出的自包含诊断：输出、元数据与高程数值统计结果仅反映固有产出，请连接上游相位节点后重新执行以获取完整诊断。"));
+            } else if (invalidResults > 0 || finitePixels == 0) {
                 m_statusTitle->setText(QObject::tr("需要复查"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
                 m_statusDesc->setText(QObject::tr("发现输出缺失、尺寸异常、无效高程或下游关键数据不完整。请检查对应影像和处理日志。"));

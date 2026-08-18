@@ -208,6 +208,8 @@ void GeocodingWorker::GeocodingWithDem(
             }
             sceneHeight = mapped_lon.rows;
             sceneWidth = mapped_lon.cols;
+            NodeUtils::readScalarFromH5(inputH5, "multilook_az", multilook_az);
+            NodeUtils::readScalarFromH5(inputH5, "multilook_rg", multilook_rg);
         }
         if (!hasMappedCoordinates)
         {
@@ -382,7 +384,14 @@ emit updateProcess(90, QStringLiteral("正在地理编码……"));
                     NodeUtils::writeScalarToH5(outputH5, "lon_east", lon_east, &outputError) &&
                     NodeUtils::writeScalarToH5(outputH5, "lon_west", lon_west, &outputError) &&
                     NodeUtils::writeScalarToH5(outputH5, "lat_north", lat_north, &outputError) &&
-                    NodeUtils::writeScalarToH5(outputH5, "lat_south", lat_south, &outputError);
+                    NodeUtils::writeScalarToH5(outputH5, "lat_south", lat_south, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "geocode_type", type, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "multi_rg", multilook_rg, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "multi_az", multilook_az, &outputError) &&
+                    NodeUtils::writeStringToH5(outputH5, "product_level", geocode_Rank_level.toStdString(), &outputError);
+                if (!demPath.isEmpty()) {
+                    writeSucceeded = writeSucceeded && NodeUtils::writeStringToH5(outputH5, "geocode_dem", QFileInfo(demPath).fileName().toStdString(), &outputError);
+                }
                 if (product_level == QString("phase-1.0") ||
                     product_level == QString("phase-2.0") ||
                     product_level == QString("phase-3.0")
@@ -563,11 +572,20 @@ emit updateProcess(90, QStringLiteral("正在地理编码……"));
                     return;
                 }
                 QString outputError;
-                if (!NodeUtils::writeScalarToH5(outputH5, "lon_east", lon_east, &outputError) ||
-                    !NodeUtils::writeScalarToH5(outputH5, "lon_west", lon_west, &outputError) ||
-                    !NodeUtils::writeScalarToH5(outputH5, "lat_north", lat_north, &outputError) ||
-                    !NodeUtils::writeScalarToH5(outputH5, "lat_south", lat_south, &outputError) ||
-                    !NodeUtils::writeMatToH5(outputH5, "amplitude", mapped_amplitude, &outputError)) {
+                bool writeSucceeded =
+                    NodeUtils::writeScalarToH5(outputH5, "lon_east", lon_east, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "lon_west", lon_west, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "lat_north", lat_north, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "lat_south", lat_south, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "geocode_type", type, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "multi_rg", multi_rg, &outputError) &&
+                    NodeUtils::writeScalarToH5(outputH5, "multi_az", multi_az, &outputError) &&
+                    NodeUtils::writeStringToH5(outputH5, "product_level", geocode_Rank_level.toStdString(), &outputError);
+                if (!demPath.isEmpty()) {
+                    writeSucceeded = writeSucceeded && NodeUtils::writeStringToH5(outputH5, "geocode_dem", QFileInfo(demPath).fileName().toStdString(), &outputError);
+                }
+                writeSucceeded = writeSucceeded && NodeUtils::writeMatToH5(outputH5, "amplitude", mapped_amplitude, &outputError);
+                if (!writeSucceeded) {
                     emit errorProcess(QStringLiteral("Unable to write geocoding output H5 %1: %2")
                                           .arg(outputH5, outputError));
                     return;

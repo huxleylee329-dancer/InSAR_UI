@@ -16,6 +16,8 @@
 #include <QtWidgets/QCheckBox>
 #include <QtWidgets/QRadioButton>
 #include <QTimer>
+#include <atomic>
+#include <memory>
 #include "QtNodes/internal/NodeDataSnapshot.hpp"
 
 class ImageView;
@@ -479,10 +481,20 @@ public:
     /// @param name Parameter name
     /// @param expected Expected value (e.g. parameter setting)
     /// @param actual Actual value (e.g. extracted from H5)
-    void addComparison(const QString& name, const QString& expected, const QString& actual);
+    /// @param verifiable Whether the actual value can be compared. When false (e.g.
+    ///        the attribute is not recorded in an older result), the conclusion
+    ///        column shows a neutral "未验证" instead of "一致"/"不一致".
+    void addComparison(const QString& name, const QString& expected, const QString& actual,
+                       bool verifiable = true, const QString& tooltip = QString());
 
     /// Add a read-only diagnostic value that does not affect parameter comparison.
-    void addDiagnostic(const QString& name, const QString& value);
+    /// @param tooltip Optional hover text attached to the parameter item.
+    /// @param conclusion Optional conclusion text shown in the fourth column.
+    ///        Empty keeps the neutral "诊断" label; otherwise the column renders the
+    ///        text and colors it green (conclusionIsWarning == false) or amber (true).
+    /// @param conclusionIsWarning Whether the conclusion signals a review-warning.
+    void addDiagnostic(const QString& name, const QString& value, const QString& tooltip = QString(),
+                       const QString& conclusion = QString(), bool conclusionIsWarning = false);
     
 private:
     void applyThemeStyle();
@@ -522,7 +534,7 @@ class NODE_EDITOR_PUBLIC BaseValidationWidget : public QWidget
     Q_OBJECT
 public:
     explicit BaseValidationWidget(ExecutableNodeDelegateModel* node, QWidget* parent = nullptr);
-    ~BaseValidationWidget() override = default;
+    ~BaseValidationWidget() override;
 
 protected:
     void setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText,
@@ -553,6 +565,8 @@ protected:
     ValidationLoadingOverlay* m_loadingOverlay = nullptr;
     
     bool m_isTimedOut = false;
+    quint64 m_validationEpoch = 0;
+    std::shared_ptr<std::atomic_bool> m_cancelToken;
 };
 
 } // namespace QtNodes

@@ -57,6 +57,11 @@ public:
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
+    std::vector<QString> processingInfo() const override;
+    QString portBindingSummary(PortType portType, PortIndex portIndex) const override;
+    QVector<ParameterInfo> getParameters() const override;
+    bool isRestoringAsync() const override;
+    void publishRestoredOutputs() override;
 
 protected:
     bool stopExecutionIsAsynchronous() const override { return true; }
@@ -143,11 +148,20 @@ private:
     bool m_outputIsCoherence = false;
     int m_outputWinW = 5;
     int m_outputWinH = 5;
+    int m_outputMultilookRg = 1;
+    int m_outputMultilookAz = 1;
+    bool m_isExecuting = false;
     NodeUtils::OutputTransaction m_outputTransaction;
     QList<InterferogramFileResult> m_pendingInterferogramResults;
     bool m_xmlDirty = false;
 
     // Helper methods
+    void finalizeRestoredOutput(ExecutionState fallbackState, bool isExecuting);
+    void captureOutputExecutionSettings();
+    void startPreviewGeneration(const QStringList& previewSourcePaths,
+                                const QStringList& jpgPaths,
+                                const QStringList& types,
+                                const QStringList& outputPaths);
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
@@ -161,11 +175,6 @@ private:
     void onCoherenceStateChanged(int state);
     QString generateDefaultOutputName() const;
     void executeProcessing();
-    void captureOutputExecutionSettings();
-    void startPreviewGeneration(const QStringList& previewSourcePaths,
-                                const QStringList& jpgPaths,
-                                const QStringList& types,
-                                const QStringList& outputPaths);
     void commitInterferogramResult(const InterferogramFileResult& result);
     void publishInterferogramResultToProjectTree(const InterferogramFileResult& result);
 

@@ -130,6 +130,9 @@ bool writeDenoisedPhase(FormatConversion& conversion,
                         int method,
                         int slopePrefilterWindow,
                         int slopeWindow,
+                        int goldsteinWindow,
+                        int nPad,
+                        double alpha,
                         int& offsetRow,
                         int& offsetCol,
                         QString& error)
@@ -144,9 +147,22 @@ bool writeDenoisedPhase(FormatConversion& conversion,
         error = QStringLiteral("Failed to write denoised phase data.");
         return false;
     }
-    if (!NodeUtils::writeScalarToH5(outputPath, "denoise_method", method) ||
-        (method == 1 && (!NodeUtils::writeScalarToH5(outputPath, "denoise_slope_pre_win", slopePrefilterWindow) ||
-                         !NodeUtils::writeScalarToH5(outputPath, "denoise_slope_win", slopeWindow)))) {
+
+    bool metadataOk = NodeUtils::writeScalarToH5(outputPath, "denoise_method", method);
+    if (method == 1) {
+        metadataOk = metadataOk &&
+            NodeUtils::writeScalarToH5(outputPath, "denoise_slope_pre_win", slopePrefilterWindow) &&
+            NodeUtils::writeScalarToH5(outputPath, "denoise_slope_win", slopeWindow);
+    } else if (method == 2) {
+        metadataOk = metadataOk &&
+            NodeUtils::writeScalarToH5(outputPath, "denoise_goldstein_win", goldsteinWindow) &&
+            NodeUtils::writeScalarToH5(outputPath, "denoise_goldstein_npad", nPad) &&
+            NodeUtils::writeScalarToH5(outputPath, "denoise_goldstein_alpha", alpha);
+    } else if (method == 3) {
+        metadataOk = metadataOk &&
+            NodeUtils::writeScalarToH5(outputPath, "denoise_dl", 1);
+    }
+    if (!metadataOk) {
         error = QStringLiteral("Failed to write denoise processing metadata.");
         return false;
     }
@@ -296,7 +312,8 @@ void DenoiseWorker::Denoise(QList<int> para,
         int offsetCol = 0;
         QString writeError;
         if (!writeDenoisedPhase(conversion, inputPath, outputPath, savePath, filteredPhase,
-                                method, para.at(0), para.at(1), offsetRow, offsetCol, writeError)) {
+                                method, para.at(0), para.at(1), para.at(2), para.at(3), alpha,
+                                offsetRow, offsetCol, writeError)) {
             QFile::remove(outputPath);
             emit errorProcess(writeError);
             return;

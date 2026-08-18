@@ -18,6 +18,7 @@
 #include <QThread>
 #include <QStandardItemModel>
 #include <QFutureWatcher>
+#include <QHash>
 #include <memory>
 
 class IApplicationInterface;
@@ -25,9 +26,85 @@ class XMLFile;
 
 namespace QtNodes {
 
+// 单个地理编码输出文件的诊断结果
+struct GeocodingFileDiagnostics {
+    QString fileName;
+    double lonEast = 0.0;
+    double lonWest = 0.0;
+    double latNorth = 0.0;
+    double latSouth = 0.0;
+    bool hasGeoBounds = false;
+    bool geoBoundsValid = false;
+
+    int rows = 0;
+    int cols = 0;
+    double validPixelPercent = 0.0;
+    QString primaryDataset;
+    bool datasetFound = false;
+
+    int fileType = 0;
+    int fileMultiRg = 0;
+    int fileMultiAz = 0;
+    QString fileProductLevel;
+    QString fileDemName;
+    bool hasType = false;
+    bool hasMultiRg = false;
+    bool hasMultiAz = false;
+    bool hasProductLevel = false;
+    bool hasDemName = false;
+};
+
+// 地理编码验证结果汇总
+struct GeocodingValidationResults {
+    bool success = false;
+    QString errorMsg;
+
+    // 期望参数
+    int expectedType = 1;
+    int expectedMultiRg = 1;
+    int expectedMultiAz = 1;
+    QString expectedProductLevel;
+    QString expectedDemName;
+    bool hasExpectedDemName = false;
+
+    // 实际聚合参数
+    int actualType = 0;
+    int actualMultiRg = 0;
+    int actualMultiAz = 0;
+    QString actualProductLevel;
+    QString actualDemName;
+
+    bool hasActualType = false;
+    bool hasActualMultiRg = false;
+    bool hasActualMultiAz = false;
+    bool hasActualProductLevel = false;
+    bool hasActualDemName = false;
+
+    bool typeInconsistent = false;
+    bool multiRgInconsistent = false;
+    bool multiAzInconsistent = false;
+    bool productLevelInconsistent = false;
+
+    // 聚合特征值
+    int totalFiles = 0;
+    int validFiles = 0;
+    int outRows = 0;
+    int outCols = 0;
+    double avgValidPixelPercent = 0.0;
+    double minLonWest = 0.0;
+    double maxLonEast = 0.0;
+    double minLatSouth = 0.0;
+    double maxLatNorth = 0.0;
+    bool allGeoBoundsValid = false;
+    bool hasAnyLegacyResults = false;
+
+    QList<GeocodingFileDiagnostics> fileDiagnostics;
+};
+
 class GeocodingNode : public ExecutableNodeDelegateModel
 {
     Q_OBJECT
+    friend class GeocodingValidationWidget;
 
 public:
     GeocodingNode();
@@ -51,8 +128,21 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+    std::vector<QString> processingInfo() const override;
+
+    // Validation interface implementation
+    bool supportsValidation() const override { return true; }
+    ::QWidget* createValidationWidget(::QWidget* parent) override;
+
+    QString validationCacheKey() const;
+    bool loadValidationCache(const QString& key, GeocodingValidationResults& results) const;
+    void storeValidationCache(const QString& key, const GeocodingValidationResults& results);
+    QString expectedOutputProductLevel() const;
+    QString effectiveAuxiliaryDemFileName() const;
+
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;
+    QString portBindingSummary(PortType portType, PortIndex portIndex) const override;
 
 protected:
     bool prepareToStart() override;
@@ -90,6 +180,9 @@ private:
     int m_type;       // 1: 干涉产品, 2: SAR图像
     int m_multiRg;    // default 1
     int m_multiAz;    // default 1
+
+    // Validation cache
+    QHash<QString, GeocodingValidationResults> m_validationCache;
 
     // Worker thread
     GeocodingWorker* m_workerThread;

@@ -29,6 +29,8 @@ struct NODE_EDITOR_PUBLIC PortDataInfo
     QVector<DataField> fields;
     bool isConnected;
     bool showIndex;
+    bool isBound = false;
+    QString bindingSummary;
 };
 
 /// Snapshot of node state and data for display in detail view

@@ -132,6 +132,9 @@ ProductOutputContract GCPManagerNode::productOutputContract(PortIndex portIndex)
 
 ::QWidget* GCPManagerNode::embeddedWidget()
 {
+    if (!_widget) {
+        createWidget();
+    }
     return _widget;
 }
 
@@ -167,14 +170,25 @@ void GCPManagerNode::createWidget()
     m_minQualityCombo->setCurrentIndex(1); // 默认中等质量
     form->addRow(QStringLiteral("最小质量等级:"), m_minQualityCombo);
 
+    // 5. 输出节点名
+    m_outputNodeNameEdit = new QLineEdit(m_outputNodeName, _widget);
+    form->addRow(QStringLiteral("输出节点:"), m_outputNodeNameEdit);
+    connect(m_outputNodeNameEdit, &QLineEdit::editingFinished, this, [this]() {
+        const QString text = m_outputNodeNameEdit->text().trimmed();
+        if (!text.isEmpty() && text != m_outputNodeName) {
+            m_outputNodeName = text;
+            invalidateNodeData();
+        }
+    });
+
     layout->addLayout(form);
 
-    // 5. 交互标注管理按钮
+    // 6. 交互标注管理按钮
     m_btnOpenDialog = new QPushButton(QStringLiteral("标注与管理控制点"), _widget);
     m_btnOpenDialog->setMinimumHeight(30);
     layout->addWidget(m_btnOpenDialog);
 
-    // 6. 状态显示
+    // 7. 状态显示
     m_statusLabel = new QLabel(QStringLiteral("状态：等待评估"), _widget);
     m_statusLabel->setWordWrap(true);
     layout->addWidget(m_statusLabel);
@@ -603,61 +617,10 @@ void GCPManagerNode::load(QJsonObject const& json)
         int idx = m_minQualityCombo->findData(m_minQuality);
         if (idx >= 0) m_minQualityCombo->setCurrentIndex(idx);
     }
+    if (m_outputNodeNameEdit) {
+        m_outputNodeNameEdit->setText(m_outputNodeName);
+    }
     updateWidgetSize();
-}
-
-QVector<ParameterInfo> GCPManagerNode::getParameters() const
-{
-    QVector<ParameterInfo> params;
-    params.append({QStringLiteral("最大残差 (m)"), "double", QString::number(m_maxResidual, 'f', 1), FieldEditType::Text});
-    params.append({QStringLiteral("粗差阈值 (Sigma)"), "double", QString::number(m_thresholdSigma, 'f', 1), FieldEditType::Text});
-    params.append({QStringLiteral("最小质量等级"), "int", QString::number(m_minQuality), FieldEditType::Text});
-    params.append({QStringLiteral("输出目录名"), "string", m_outputNodeName, FieldEditType::Text});
-    return params;
-}
-
-void GCPManagerNode::setParameter(const QString& paramName, const QString& value)
-{
-    bool ok;
-    bool modified = false;
-    if (paramName == QStringLiteral("最大残差 (m)")) {
-        double val = value.toDouble(&ok);
-        if (ok && val > 0.0 && val != m_maxResidual) {
-            m_maxResidual = val;
-            if (m_maxResidualEdit) m_maxResidualEdit->setText(value);
-            modified = true;
-        }
-    } 
-    else if (paramName == QStringLiteral("粗差阈值 (Sigma)")) {
-        double val = value.toDouble(&ok);
-        if (ok && val > 0.0 && val != m_thresholdSigma) {
-            m_thresholdSigma = val;
-            if (m_sigmaThresholdEdit) m_sigmaThresholdEdit->setText(value);
-            modified = true;
-        }
-    } 
-    else if (paramName == QStringLiteral("最小质量等级")) {
-        int val = value.toInt(&ok);
-        if (ok && (val >= 0 && val <= 2) && val != m_minQuality) {
-            m_minQuality = val;
-            if (m_minQualityCombo) {
-                int idx = m_minQualityCombo->findData(val);
-                if (idx >= 0) m_minQualityCombo->setCurrentIndex(idx);
-            }
-            modified = true;
-        }
-    } 
-    else if (paramName == QStringLiteral("输出目录名")) {
-        QString trimmed = value.trimmed();
-        if (trimmed != m_outputNodeName) {
-            m_outputNodeName = trimmed;
-            modified = true;
-        }
-    }
-
-    if (modified) {
-        invalidateNodeData();
-    }
 }
 
 void GCPManagerNode::invalidateNodeData()

@@ -1681,13 +1681,22 @@ void PropertyEditor::addPortCard(QVBoxLayout* layout, const PortDataInfo& info, 
         }
     }
 
-    // Connection status with color coding (using QChar for better Unicode support)
-    QString statusText = info.isConnected ?
-        QString(QChar(0x25CF)) + " Connected" :
-        QString(QChar(0x25CB)) + " Not connected";
-    QString statusColor = info.isConnected ? "#10B981" : "#94A3B8";
+    // Connection / Binding status with color coding (using QChar for better Unicode support)
+    QString statusText;
+    QString statusColor;
+    if (info.isConnected) {
+        statusText = QString(QChar(0x25CF)) + " Connected";
+        statusColor = "#10B981"; // 绿色
+    } else if (info.isBound) {
+        statusText = info.bindingSummary; // 显示如 "已绑定标签: @DEM_1"
+        statusColor = darkTheme ? "#60A5FA" : "#2563EB"; // 蓝色高亮
+    } else {
+        statusText = QString(QChar(0x25CB)) + " Not connected";
+        statusColor = "#94A3B8"; // 灰色
+    }
+
     QLabel* statusLabel = new QLabel(statusText);
-    statusLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-weight: bold;").arg(statusColor));
+    statusLabel->setStyleSheet(QString("color: %1; font-size: 11px; font-style: italic; text-transform: none;").arg(statusColor));
     cardLayout->addWidget(statusLabel);
 
     layout->addWidget(card);
@@ -1995,6 +2004,9 @@ void PropertyEditor::captureNodeData(QtNodes::NodeId nodeId)
                     info.summary = data->getSummary();
                     info.fields = data->getFields();
                 }
+            } else if (execModel) {
+                info.bindingSummary = execModel->portBindingSummary(QtNodes::PortType::In, i);
+                info.isBound = !info.bindingSummary.isEmpty();
             }
 
             m_nodeData.inputPorts.append(info);

@@ -2906,14 +2906,16 @@ bool recoverOutputTransaction(const QString& projectRoot, const QString& nodeNam
             if (errorMessage) *errorMessage = QStringLiteral("Staging recovery found an unexpected final or backup directory.");
             return false;
         }
-        if (hasPreviousFinal && !validatePreviousCommittedFinal(root, nodeName, journal, errorMessage)) {
+        const bool hasPreviousJournal = !journal.value(QStringLiteral("previousCommittedJournal")).toObject().isEmpty();
+        if (hasPreviousFinal && hasPreviousJournal &&
+            !validatePreviousCommittedFinal(root, nodeName, journal, errorMessage)) {
             return false;
         }
         if (!removeStaging()) {
             if (errorMessage) *errorMessage = QStringLiteral("Cannot remove isolated staging directory: %1").arg(stagingPath);
             return false;
         }
-        if (!journal.value(QStringLiteral("previousCommittedJournal")).toObject().isEmpty())
+        if (hasPreviousJournal)
             return restorePreviousCommittedJournal();
         return markFailed(QStringLiteral("discarded unpromoted staging output"));
     }
@@ -4479,6 +4481,7 @@ static bool generateJpgPreviewFromH5Direct(const QString& h5Path, const QString&
                 
             if (type == "phase")
             {
+                // 注意：savephase 内部将相位折叠映射至 [-pi, pi] 区间渲染伪彩色，解缠相位在预览图展示层折叠为缠绕色呈现
                 ret = util.savephase(jpgPath.toStdString().c_str(), "jet", phase);
             }
             else if (type == "coherence")

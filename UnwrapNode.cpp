@@ -959,6 +959,7 @@ void UnwrapNode::startPreviewGeneration(const QStringList& h5Paths,
         }
         if (completeExecution) {
             if (discardObsoleteAutomaticExecution()) {
+                m_pendingWarningMessage.clear();
                 if (m_preparedMethod == 3) {
                     if (m_snaphuStatusLabel) m_snaphuStatusLabel->setText(QStringLiteral("SNAPHU 已由输入变更取消"));
                     if (m_snaphuOptionsGroup) m_snaphuOptionsGroup->setEnabled(true);
@@ -1189,6 +1190,86 @@ struct UnwrapValidationResults
     QList<UnwrapImageDiagnostics> images;
 };
 
+// 为表格生成简短的影像标识（编号 + 主辅日期对），完整文件名放在 hover 提示中展示。
+QString shortImageLabel(int displayIndex, const QString& baseName)
+{
+    static const QRegularExpression datePattern(QStringLiteral("\\b\\d{8}\\b"));
+    QStringList dates;
+    QRegularExpressionMatchIterator dateIt = datePattern.globalMatch(baseName);
+    while (dateIt.hasNext() && dates.size() < 2) {
+        dates.append(dateIt.next().captured());
+    }
+    if (dates.size() >= 2) {
+        return QObject::tr("影像 %1 (%2-%3)").arg(displayIndex + 1)
+            .arg(dates.value(0), dates.value(1));
+    }
+    return QObject::tr("影像 %1").arg(displayIndex + 1);
+}
+
+// SNAPHU 幅度约束状态与原因的本地化文案（与 UnwrapWorker 写入的枚举镜像对齐）。
+QString amplitudeStatusText(const QString& status)
+{
+    if (status == QStringLiteral("used")) return QObject::tr("已使用幅度约束");
+    if (status == QStringLiteral("omitted_dimension_mismatch")) return QObject::tr("未使用幅度约束");
+    if (status == QStringLiteral("unavailable")) return QObject::tr("未使用幅度约束");
+    if (status == QStringLiteral("unknown")) return QObject::tr("幅度约束状态未知");
+    if (status == QStringLiteral("not_applicable")) return QObject::tr("不适用（非 SNAPHU）");
+    return status;
+}
+
+QString amplitudeReasonText(const QString& reason)
+{
+    if (reason == QStringLiteral("none")) return QString();
+    if (reason == QStringLiteral("source_amplitude_dimensions_do_not_match_phase"))
+        return QObject::tr("主/辅幅度尺寸与相位不匹配");
+    if (reason == QStringLiteral("source_amplitude_unavailable")) return QObject::tr("源幅度不可用");
+    if (reason == QStringLiteral("missing_amplitude_diagnostic")) return QObject::tr("缺少幅度诊断信息");
+    return reason;
+}
+
+struct UnwrapAmplitudeDisplay
+{
+    QString value;
+    QString conclusion;
+    bool warning = false;
+};
+
+// 构建单景幅度约束的展示文本与结论（降级时附原因与尺寸明细，正常时附约束网格）。
+UnwrapAmplitudeDisplay amplitudeDisplayInfo(const UnwrapImageDiagnostics& image)
+{
+    UnwrapAmplitudeDisplay display;
+    QString value = amplitudeStatusText(image.amplitudeStatus);
+    if (image.amplitudeDegraded) {
+        const QString reason = amplitudeReasonText(image.amplitudeReason);
+        if (!reason.isEmpty()) {
+            value += QObject::tr("：%1").arg(reason);
+        }
+        if (image.amplitudeExpectedRows > 0 && image.amplitudeExpectedCols > 0) {
+            value += QObject::tr("（期望 %1x%2")
+                .arg(image.amplitudeExpectedRows).arg(image.amplitudeExpectedCols);
+            if (image.amplitudeMasterRows > 0 && image.amplitudeMasterCols > 0) {
+                value += QObject::tr("，主幅度 %1x%2")
+                    .arg(image.amplitudeMasterRows).arg(image.amplitudeMasterCols);
+            }
+            if (image.amplitudeSlaveRows > 0 && image.amplitudeSlaveCols > 0) {
+                value += QObject::tr("，辅幅度 %1x%2")
+                    .arg(image.amplitudeSlaveRows).arg(image.amplitudeSlaveCols);
+            }
+            value += QStringLiteral(")");
+        }
+        display.conclusion = QObject::tr("需复查");
+        display.warning = true;
+    } else {
+        if (image.amplitudeExpectedRows > 0 && image.amplitudeExpectedCols > 0) {
+            value += QObject::tr("（约束网格 %1x%2）")
+                .arg(image.amplitudeExpectedRows).arg(image.amplitudeExpectedCols);
+        }
+        display.conclusion = QObject::tr("正常");
+    }
+    display.value = value;
+    return display;
+}
+
 class UnwrapValidationWidget : public BaseValidationWidget
 {
 public:
@@ -1245,6 +1326,20 @@ private:
         addMetric(4, 1, 1, QObject::tr("缺失或尺寸异常结果:"), m_missingLabel);
     }
 
+    void setLabelsState(const QString& stateText)
+    {
+        m_coverageLabel->setText(stateText);
+        m_rewrapRmseLabel->setText(stateText);
+        m_rewrapP95Label->setText(stateText);
+        m_componentLabel->setText(stateText);
+        m_largestComponentLabel->setText(stateText);
+        m_candidateJumpEdgeLabel->setText(stateText);
+        m_candidateJumpPointLabel->setText(stateText);
+        m_riskRegionLabel->setText(stateText);
+        m_amplitudeLabel->setText(stateText);
+        m_missingLabel->setText(stateText);
+    }
+
     void setNotExecutedState()
     {
         m_statusTitle->setText(QObject::tr("诊断不可用"));
@@ -1252,20 +1347,18 @@ private:
         m_statusDesc->setText(QObject::tr("请先成功执行解缠节点，再查看诊断结果。"));
         m_compTable->clearComparison();
         m_compTable->setEnabled(false);
-        m_coverageLabel->setText(QObject::tr("未执行"));
-        m_rewrapRmseLabel->setText(QObject::tr("未执行"));
-        m_rewrapP95Label->setText(QObject::tr("未执行"));
-        m_componentLabel->setText(QObject::tr("未执行"));
-        m_largestComponentLabel->setText(QObject::tr("未执行"));
-        m_candidateJumpEdgeLabel->setText(QObject::tr("未执行"));
-        m_candidateJumpPointLabel->setText(QObject::tr("未执行"));
-        m_riskRegionLabel->setText(QObject::tr("未执行"));
-        m_amplitudeLabel->setText(QObject::tr("未执行"));
-        m_missingLabel->setText(QObject::tr("未执行"));
+        setLabelsState(QObject::tr("未执行"));
     }
 
     void startAsyncValidation() override
     {
+        const quint64 currentEpoch = ++m_validationEpoch;
+        if (m_cancelToken) {
+            m_cancelToken->store(true);
+        }
+        m_cancelToken = std::make_shared<std::atomic_bool>(false);
+        auto cancelToken = m_cancelToken;
+
         m_isTimedOut = false;
         if (m_node->executionState() != ExecutionState::Completed) {
             setNotExecutedState();
@@ -1278,6 +1371,9 @@ private:
             m_statusTitle->setText(QObject::tr("诊断失败"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             m_statusDesc->setText(QObject::tr("未找到完整的输入或输出 H5 文件列表。"));
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(false);
+            setLabelsState(QObject::tr("诊断失败"));
             return;
         }
 
@@ -1288,23 +1384,40 @@ private:
         const double expectedThreshold = settings.value("coherenceThreshold").toDouble(0.2);
         m_loadingOverlay->startLoading(QObject::tr("正在计算全部影像的解缠诊断..."));
 
-        QFuture<UnwrapValidationResults> future = QtConcurrent::run([inputPaths, outputPaths, expectedMethod, expectedThreshold]() {
-            NodeUtils::Hdf5Locker locker;
+        QFuture<UnwrapValidationResults> future = QtConcurrent::run([inputPaths, outputPaths, expectedMethod, expectedThreshold, cancelToken]() {
             UnwrapValidationResults result;
             result.expectedMethod = expectedMethod;
             result.expectedThreshold = expectedThreshold;
 
-            QHash<QString, QString> outputsByBaseName;
+            QHash<QString, QString> fallbackOutputsByBaseName;
             for (const QString& outputPath : outputPaths) {
-                outputsByBaseName.insert(QFileInfo(outputPath).baseName(), outputPath);
+                const QString base = QFileInfo(outputPath).baseName();
+                if (!fallbackOutputsByBaseName.contains(base)) {
+                    fallbackOutputsByBaseName.insert(base, outputPath);
+                }
             }
 
             bool firstMetadata = true;
 
-            for (const QString& inputPath : inputPaths) {
+            for (int i = 0; i < inputPaths.size(); ++i) {
+                if (cancelToken && cancelToken->load()) {
+                    result.images.clear();
+                    result.success = false;
+                    result.errorMessage = QObject::tr("诊断任务已取消。");
+                    return result;
+                }
+
+                const QString& inputPath = inputPaths[i];
                 UnwrapImageDiagnostics image;
                 image.name = QFileInfo(inputPath).baseName();
-                const QString outputPath = outputsByBaseName.value(image.name + QStringLiteral("_unwrapped"));
+                const QString expectedOutputBase = image.name + QStringLiteral("_unwrapped");
+
+                QString outputPath;
+                if (i < outputPaths.size() && QFileInfo(outputPaths[i]).baseName() == expectedOutputBase) {
+                    outputPath = outputPaths[i];
+                } else {
+                    outputPath = fallbackOutputsByBaseName.value(expectedOutputBase);
+                }
                 image.outputFound = !outputPath.isEmpty();
 
                 if (!image.outputFound) {
@@ -1316,14 +1429,18 @@ private:
                 double threshold = 0.0;
                 const bool hasMethod = NodeUtils::readScalarFromH5(outputPath, "unwrap_method", method);
                 const bool hasThreshold = NodeUtils::readScalarFromH5(outputPath, "unwrap_coherence_threshold", threshold);
+
+                const bool methodMismatch = (!hasMethod || !result.hasRecordedMethod || method != result.recordedMethod);
+                const bool thresholdMismatch = (expectedMethod == 4) &&
+                    (!hasThreshold || !result.hasRecordedThreshold || std::abs(threshold - result.recordedThreshold) > 1e-9);
+
                 if (firstMetadata) {
                     result.hasRecordedMethod = hasMethod;
                     result.recordedMethod = method;
                     result.hasRecordedThreshold = hasThreshold;
                     result.recordedThreshold = threshold;
                     firstMetadata = false;
-                } else if ((!hasMethod || !result.hasRecordedMethod || method != result.recordedMethod)
-                           || (!hasThreshold || !result.hasRecordedThreshold || std::abs(threshold - result.recordedThreshold) > 1e-9)) {
+                } else if (methodMismatch || thresholdMismatch) {
                     result.outputMetadataConsistent = false;
                 }
 
@@ -1368,6 +1485,12 @@ private:
                 std::vector<double> residualSamples;
                 residualSamples.reserve(static_cast<size_t>(std::min<qint64>((pixelCount + sampleStride - 1) / sampleStride, maxResidualSamples)));
                 for (int row = 0; row < inputPhase.rows; ++row) {
+                    if (row % 128 == 0 && cancelToken && cancelToken->load()) {
+                        result.images.clear();
+                        result.success = false;
+                        result.errorMessage = QObject::tr("诊断任务已取消。");
+                        return result;
+                    }
                     const float* inputValues = inputPhase.ptr<float>(row);
                     const float* outputValues = image.dimensionsMatch ? outputPhase.ptr<float>(row) : nullptr;
                     for (int col = 0; col < inputPhase.cols; ++col) {
@@ -1404,6 +1527,12 @@ private:
                 cv::Mat validOutputMask = cv::Mat::zeros(outputPhase.size(), CV_8U);
                 cv::Mat gradientRiskMask = cv::Mat::zeros(outputPhase.size(), CV_8U);
                 for (int row = 0; row < outputPhase.rows; ++row) {
+                    if (row % 128 == 0 && cancelToken && cancelToken->load()) {
+                        result.images.clear();
+                        result.success = false;
+                        result.errorMessage = QObject::tr("诊断任务已取消。");
+                        return result;
+                    }
                     const float* outputValues = outputPhase.ptr<float>(row);
                     uchar* validMaskValues = validOutputMask.ptr<uchar>(row);
                     for (int col = 0; col < outputPhase.cols; ++col) {
@@ -1429,6 +1558,12 @@ private:
                 }
 
                 for (int row = 0; row < outputPhase.rows; ++row) {
+                    if (row % 128 == 0 && cancelToken && cancelToken->load()) {
+                        result.images.clear();
+                        result.success = false;
+                        result.errorMessage = QObject::tr("诊断任务已取消。");
+                        return result;
+                    }
                     const float* currentValues = outputPhase.ptr<float>(row);
                     const float* nextRowValues = row + 1 < outputPhase.rows ? outputPhase.ptr<float>(row + 1) : nullptr;
                     uchar* riskValues = gradientRiskMask.ptr<uchar>(row);
@@ -1490,8 +1625,8 @@ private:
         });
 
         auto* watcher = new QFutureWatcher<UnwrapValidationResults>(this);
-        connect(watcher, &QFutureWatcher<UnwrapValidationResults>::finished, this, [this, watcher]() {
-            if (m_isTimedOut) {
+        connect(watcher, &QFutureWatcher<UnwrapValidationResults>::finished, this, [this, watcher, currentEpoch]() {
+            if (currentEpoch != m_validationEpoch || m_isTimedOut) {
                 watcher->deleteLater();
                 return;
             }
@@ -1502,9 +1637,13 @@ private:
                 m_statusTitle->setText(QObject::tr("诊断失败"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
                 m_statusDesc->setText(result.errorMessage);
+                m_compTable->clearComparison();
+                m_compTable->setEnabled(false);
+                setLabelsState(QObject::tr("诊断失败"));
                 watcher->deleteLater();
                 return;
             }
+
 
             m_compTable->clearComparison();
             m_compTable->setEnabled(true);
@@ -1532,11 +1671,15 @@ private:
             int totalValidComponents = 0;
             int maxValidComponents = 0;
             double smallestLargestComponentRatio = 100.0;
-            const UnwrapImageDiagnostics* largestRiskImage = nullptr;
+const UnwrapImageDiagnostics* largestRiskImage = nullptr;
+            int largestRiskImageIndex = -1;
             int missingOrInvalid = 0;
             int amplitudeDegradedCount = 0;
-            int amplitudeMetadataMissingCount = 0;
-            for (const UnwrapImageDiagnostics& image : result.images) {
+int amplitudeMetadataMissingCount = 0;
+            const bool singleImage = (result.images.size() == 1);
+            for (int imageIndex = 0; imageIndex < result.images.size(); ++imageIndex) {
+                const UnwrapImageDiagnostics& image = result.images.at(imageIndex);
+                const QString shortLabel = shortImageLabel(imageIndex, image.name);
                 const QString expected = QStringLiteral("%1 x %2").arg(image.inputCols).arg(image.inputRows);
                 QString actual;
                 if (!image.outputFound) {
@@ -1551,32 +1694,29 @@ private:
                 } else {
                     actual = QStringLiteral("%1 x %2").arg(image.outputCols).arg(image.outputRows);
                 }
-                m_compTable->addComparison(image.name, expected, actual);
+m_compTable->addComparison(shortLabel, expected, actual, true, image.name);
 
-                if (image.amplitudeMetadataPresent) {
-                    QString amplitudeText = image.amplitudeStatus;
-                    if (image.amplitudeDegraded && image.amplitudeExpectedRows > 0 && image.amplitudeExpectedCols > 0) {
-                        amplitudeText += QObject::tr("（期望 %1x%2")
-                            .arg(image.amplitudeExpectedRows).arg(image.amplitudeExpectedCols);
-                        if (image.amplitudeMasterRows > 0 && image.amplitudeMasterCols > 0) {
-                            amplitudeText += QObject::tr("，主幅度 %1x%2")
-                                .arg(image.amplitudeMasterRows).arg(image.amplitudeMasterCols);
+                if (!singleImage) {
+                    if (image.amplitudeMetadataPresent) {
+                        const UnwrapAmplitudeDisplay amplitudeDisplay = amplitudeDisplayInfo(image);
+                        m_compTable->addDiagnostic(shortLabel + QObject::tr(" 幅度约束"),
+                            amplitudeDisplay.value, image.name,
+                            amplitudeDisplay.conclusion, amplitudeDisplay.warning);
+                        if (image.amplitudeDegraded) {
+                            ++amplitudeDegradedCount;
                         }
-                        if (image.amplitudeSlaveRows > 0 && image.amplitudeSlaveCols > 0) {
-                            amplitudeText += QObject::tr("，辅幅度 %1x%2")
-                                .arg(image.amplitudeSlaveRows).arg(image.amplitudeSlaveCols);
-                        }
-                        amplitudeText += QStringLiteral(")");
+                    } else if (result.expectedMethod == 3) {
+                        ++amplitudeMetadataMissingCount;
+                        m_compTable->addDiagnostic(shortLabel + QObject::tr(" 幅度约束"),
+                            QObject::tr("未记录（旧结果或元数据不完整）"), image.name,
+                            QObject::tr("需复查"), true);
                     }
-                    m_compTable->addDiagnostic(image.name + QObject::tr(" 幅度约束"),
-                        QObject::tr("%1，原因：%2").arg(amplitudeText, image.amplitudeReason));
+                } else if (image.amplitudeMetadataPresent) {
                     if (image.amplitudeDegraded) {
                         ++amplitudeDegradedCount;
                     }
                 } else if (result.expectedMethod == 3) {
                     ++amplitudeMetadataMissingCount;
-                    m_compTable->addDiagnostic(image.name + QObject::tr(" 幅度约束"),
-                        QObject::tr("未记录（旧结果或元数据不完整）"));
                 }
 
                 if (image.hasRewrapMetrics) {
@@ -1585,15 +1725,18 @@ private:
                         ? 100.0 * image.gradientRiskEdges / image.gradientComparedEdges : 0.0;
                     const double pointRatio = image.outputFinite > 0
                         ? 100.0 * image.candidateJumpPoints / image.outputFinite : 0.0;
-                    m_compTable->addDiagnostic(image.name + QObject::tr(" 诊断"),
-                        QObject::tr("覆盖 %1%, RMSE %2 rad, P95 %3 rad, 连通域 %4, 最大占比 %5%, 候选跳变边 %6%, 候选跳变点 %7%")
-                            .arg(QString::number(imageCoverage, 'f', 2),
-                                 QString::number(image.rewrapRmse, 'g', 4),
-                                 QString::number(image.rewrapP95, 'g', 4),
-                                 QString::number(image.validComponentCount),
-                                 QString::number(image.largestValidComponentRatio, 'f', 2),
-                                 QString::number(riskRatio, 'f', 4),
-                                 QString::number(pointRatio, 'f', 4)));
+                    if (!singleImage) {
+                        m_compTable->addDiagnostic(shortLabel + QObject::tr(" 诊断"),
+                            QObject::tr("覆盖 %1%, RMSE %2 rad, P95 %3 rad, 连通域 %4, 最大占比 %5%, 候选跳变边 %6%, 候选跳变点 %7%")
+                                .arg(QString::number(imageCoverage, 'f', 2),
+                                     QString::number(image.rewrapRmse, 'g', 4),
+                                     QString::number(image.rewrapP95, 'g', 4),
+                                     QString::number(image.validComponentCount),
+                                     QString::number(image.largestValidComponentRatio, 'f', 2),
+                                     QString::number(riskRatio, 'f', 4),
+                                     QString::number(pointRatio, 'f', 4)),
+                            image.name);
+                    }
                 }
 
                 inputFinite += image.inputFinite;
@@ -1612,6 +1755,7 @@ private:
                     if (image.largestGradientRiskPixels > 0
                         && (!largestRiskImage || image.largestGradientRiskPixels > largestRiskImage->largestGradientRiskPixels)) {
                         largestRiskImage = &image;
+                        largestRiskImageIndex = imageIndex;
                     }
                 }
             }
@@ -1626,12 +1770,18 @@ private:
                     worstP95 = std::max(worstP95, image.rewrapP95);
                 }
             }
-            m_rewrapP95Label->setText(pairedFinite > 0 ? QString::number(worstP95, 'g', 5) + QObject::tr("（逐幅最大估计值）") : QObject::tr("无有效配对像元"));
+            m_rewrapP95Label->setText(pairedFinite > 0
+                ? QString::number(worstP95, 'g', 5)
+                    + (singleImage ? QString() : QObject::tr("（逐幅最大估计值）"))
+                : QObject::tr("无有效配对像元"));
             m_componentLabel->setText(totalValidComponents > 0
-                ? QObject::tr("%1（逐幅最大 %2）").arg(totalValidComponents).arg(maxValidComponents)
+                ? singleImage
+                    ? QString::number(totalValidComponents)
+                    : QObject::tr("%1（逐幅最大 %2）").arg(totalValidComponents).arg(maxValidComponents)
                 : QObject::tr("无有效输出"));
             m_largestComponentLabel->setText(totalValidComponents > 0
-                ? QString::number(smallestLargestComponentRatio, 'f', 2) + QObject::tr("%（逐幅最小值）")
+                ? QString::number(smallestLargestComponentRatio, 'f', 2)
+                    + (singleImage ? QStringLiteral("%") : QObject::tr("%（逐幅最小值）"))
                 : QObject::tr("无有效输出"));
             m_candidateJumpEdgeLabel->setText(gradientComparedEdges > 0
                 ? QObject::tr("%1 / %2（%3%）")
@@ -1645,12 +1795,9 @@ private:
                     .arg(outputFinite)
                     .arg(QString::number(100.0 * candidateJumpPoints / outputFinite, 'f', 4))
                 : QObject::tr("无有效输出像元"));
-            if (largestRiskImage) {
+if (largestRiskImage) {
                 const QRect& bounds = largestRiskImage->largestGradientRiskBounds;
-                QString imageName = largestRiskImage->name;
-                if (imageName.size() > 40) {
-                    imageName = imageName.left(18) + QStringLiteral("...") + imageName.right(18);
-                }
+                const QString imageName = shortImageLabel(largestRiskImageIndex, largestRiskImage->name);
                 m_riskRegionLabel->setText(QObject::tr("%1\nx=%2, y=%3, %4 x %5 (%6 像元)")
                     .arg(imageName)
                     .arg(bounds.x()).arg(bounds.y()).arg(bounds.width()).arg(bounds.height())
@@ -1659,7 +1806,13 @@ private:
                 m_riskRegionLabel->setText(QObject::tr("未发现候选跳变区域"));
             }
             m_missingLabel->setText(QString::number(missingOrInvalid) + QStringLiteral(" / ") + QString::number(result.images.size()));
-            if (amplitudeDegradedCount > 0) {
+            if (singleImage) {
+                const UnwrapImageDiagnostics& only = result.images.first();
+                m_amplitudeLabel->setText(result.expectedMethod == 3
+                    ? (only.amplitudeMetadataPresent ? amplitudeDisplayInfo(only).value
+                                                     : QObject::tr("未记录（旧结果或元数据不完整）"))
+                    : QObject::tr("不适用（非 SNAPHU）"));
+            } else if (amplitudeDegradedCount > 0) {
                 m_amplitudeLabel->setText(QObject::tr("%1 / %2 幅降级")
                     .arg(amplitudeDegradedCount).arg(result.images.size()));
             } else if (amplitudeMetadataMissingCount > 0) {

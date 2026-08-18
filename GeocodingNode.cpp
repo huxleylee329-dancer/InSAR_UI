@@ -8,6 +8,7 @@
 #include "InSARLogManager.h"
 #include "FormatConversion.h"
 #include "tinyxml.h"
+#include "QtNodes/internal/NodeDetailWindow.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -23,6 +24,7 @@
 #include <QFileDialog>
 #include <QtConcurrent/QtConcurrent>
 #include <QPointer>
+#include <cmath>
 
 namespace QtNodes {
 
@@ -1248,6 +1250,771 @@ void GeocodingNode::refreshAuxiliaryDemLabels()
     const int index = m_demLabelCombo->findData(m_auxiliaryDemLabel);
     m_demLabelCombo->setCurrentIndex(index >= 0 ? index : 0);
     m_demLabelCombo->blockSignals(false);
+}
+
+QString GeocodingNode::portBindingSummary(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::In && portIndex == 1) {
+        if (!m_auxiliaryDemLabel.isEmpty()) {
+            QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+            QString error;
+            if (NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error)) {
+                const auto binding = labels.value(NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel));
+                if (!binding.label.isEmpty()) {
+                    QString detail;
+                    if (binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) {
+                        const QString status = binding.isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+                        const QString producerNode = workflowDemProducerNodeIdMap().value(binding.producerIdentity);
+                        detail = producerNode.isEmpty()
+                            ? status
+                            : QStringLiteral("节点 %1，%2").arg(producerNode, status);
+                    } else {
+                        detail = QStringLiteral("已注册资源");
+                    }
+                    return QStringLiteral("已绑定标签 @%1（%2）").arg(binding.label, detail);
+                }
+            }
+            const QString normalized = NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel);
+            return QStringLiteral("已绑定标签 @%1（待解析/未找到对应节点）").arg(normalized);
+        }
+    }
+    return QString();
+}
+
+std::vector<QString> GeocodingNode::processingInfo() const
+{
+    std::vector<QString> info;
+
+    // 1. 输入影像数
+    const int inCount = m_inputData ? m_inputData->filePaths().size() : 0;
+    info.push_back(QStringLiteral("输入影像数：%1 景").arg(inCount));
+
+    // 2. 输出 H5 清单与数量
+    QString dstNode = m_outputNodeName.trimmed();
+    if (dstNode.isEmpty() && m_outputNodeNameEdit) {
+        dstNode = m_outputNodeNameEdit->text().trimmed();
+    }
+    QStringList h5Paths;
+    if (!dstNode.isEmpty()) {
+        NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, h5Paths);
+    }
+    if (h5Paths.isEmpty() && m_outputData) {
+        h5Paths = m_outputData->filePaths();
+    }
+
+    if (!h5Paths.isEmpty()) {
+        QString fileListStr;
+        const int showMax = 3;
+        for (int i = 0; i < qMin(h5Paths.size(), showMax); ++i) {
+            if (i > 0) fileListStr += QStringLiteral(", ");
+            fileListStr += QFileInfo(h5Paths[i]).fileName();
+        }
+        if (h5Paths.size() > showMax) {
+            fileListStr += QStringLiteral(" 等 %1 个文件").arg(h5Paths.size());
+        }
+        info.push_back(QStringLiteral("输出 H5 成果：%1 景 (%2)").arg(h5Paths.size()).arg(fileListStr));
+    } else {
+        info.push_back(QStringLiteral("输出 H5 成果：0 景 (尚未生成)"));
+    }
+
+    // 3. 预览 JPG 是否齐全
+    const QStringList jpgs = previewImagePaths();
+    if (!h5Paths.isEmpty()) {
+        info.push_back(QStringLiteral("预览图生成状态：%1 / %2 景")
+            .arg(jpgs.size()).arg(h5Paths.size()));
+    }
+
+    // 4. 辅助 DEM 实际解析路径与绑定情况
+    QString demInfo;
+    if (!m_preparedDemPath.isEmpty()) {
+        demInfo = QFileInfo(m_preparedDemPath).fileName();
+    } else if (!m_demPath.isEmpty()) {
+        demInfo = QFileInfo(m_demPath).fileName();
+    }
+    if (!m_auxiliaryDemLabel.isEmpty()) {
+        if (demInfo.isEmpty()) {
+            info.push_back(QStringLiteral("辅助 DEM 绑定：标签 @%1").arg(m_auxiliaryDemLabel));
+        } else {
+            info.push_back(QStringLiteral("辅助 DEM 绑定：标签 @%1 (%2)").arg(m_auxiliaryDemLabel, demInfo));
+        }
+    } else if (!demInfo.isEmpty()) {
+        info.push_back(QStringLiteral("辅助 DEM 文件：%1").arg(demInfo));
+    } else {
+        info.push_back(QStringLiteral("辅助 DEM 状态：未绑定"));
+    }
+
+    // 5. 执行状态及错误/告警
+    QString stateStr;
+    switch (executionState()) {
+    case ExecutionState::Idle:      stateStr = QStringLiteral("空闲"); break;
+    case ExecutionState::Pending:   stateStr = QStringLiteral("等待执行"); break;
+    case ExecutionState::Running:   stateStr = QStringLiteral("正在执行 (%1%)").arg(progress()); break;
+    case ExecutionState::Completed: stateStr = QStringLiteral("执行完成"); break;
+    case ExecutionState::Stopped:   stateStr = QStringLiteral("已停止"); break;
+    case ExecutionState::Warning:   stateStr = QStringLiteral("警告"); break;
+    case ExecutionState::Error:     stateStr = QStringLiteral("错误"); break;
+    case ExecutionState::Disabled:  stateStr = QStringLiteral("已禁用"); break;
+    default:                        stateStr = QStringLiteral("未知"); break;
+    }
+    info.push_back(QStringLiteral("节点状态：%1").arg(stateStr));
+
+    if (!lastErrorMessage().isEmpty()) {
+        info.push_back(QStringLiteral("错误信息：%1").arg(lastErrorMessage()));
+    }
+    if (!lastWarningMessage().isEmpty()) {
+        info.push_back(QStringLiteral("告警信息：%1").arg(lastWarningMessage()));
+    }
+
+    return info;
+}
+
+QString GeocodingNode::expectedOutputProductLevel() const
+{
+    const int curType = m_typeCombo ? m_typeCombo->currentIndex() + 1 : m_type;
+    if (curType == 2) {
+        return QStringLiteral("amplitude-1.1");
+    }
+
+    QString inLevel = m_preparedProductLevel;
+    if (inLevel.isEmpty() && m_insarDemInputData) {
+        inLevel = QStringLiteral("dem-1.0");
+    }
+    if (inLevel.isEmpty() && m_inputData) {
+        const QString srcNode = m_inputData->nodeName();
+        QStandardItemModel* model = projectModel();
+        if (model) {
+            QList<QStandardItem*> projects = model->findItems(projectName());
+            if (!projects.isEmpty()) {
+                QStandardItem* project = projects.first();
+                for (int i = 0; i < project->rowCount(); ++i) {
+                    if (project->child(i, 0) && project->child(i, 0)->text() == srcNode) {
+                        if (project->child(i, 1)) {
+                            inLevel = project->child(i, 1)->text();
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (inLevel == QStringLiteral("phase-1.0")) return QStringLiteral("phase-1.1");
+    if (inLevel == QStringLiteral("phase-2.0")) return QStringLiteral("phase-2.1");
+    if (inLevel == QStringLiteral("phase-3.0")) return QStringLiteral("phase-3.1");
+    if (inLevel == QStringLiteral("coherence-1.0")) return QStringLiteral("coherence-1.1");
+    if (inLevel == QStringLiteral("dem-1.0")) return QStringLiteral("dem-1.1");
+    if (inLevel == QStringLiteral("SBAS-1.0")) return QStringLiteral("SBAS-1.1");
+
+    if (!inLevel.isEmpty() && inLevel.endsWith(QStringLiteral("-1.0"))) {
+        return inLevel.left(inLevel.size() - 4) + QStringLiteral("-1.1");
+    }
+    return QString();
+}
+
+QString GeocodingNode::effectiveAuxiliaryDemFileName() const
+{
+    if (!m_preparedDemPath.isEmpty()) {
+        return QFileInfo(m_preparedDemPath).fileName();
+    }
+    if (!m_preparedAuxiliaryDemBinding.rasterPath.isEmpty()) {
+        return QFileInfo(m_preparedAuxiliaryDemBinding.rasterPath).fileName();
+    }
+    if (!m_demPath.isEmpty()) {
+        return QFileInfo(m_demPath).fileName();
+    }
+    if (!m_auxiliaryDemLabel.isEmpty()) {
+        NodeUtils::AuxiliaryDemBinding binding;
+        if (NodeUtils::resolveAuxiliaryDemLabel(projectPath(), m_auxiliaryDemLabel, binding)) {
+            if (!binding.rasterPath.isEmpty()) {
+                return QFileInfo(binding.rasterPath).fileName();
+            }
+        }
+    }
+    return QString();
+}
+
+QString GeocodingNode::validationCacheKey() const
+{
+    QString dstNode = m_outputNodeName.trimmed();
+    if (dstNode.isEmpty() && m_outputNodeNameEdit) {
+        dstNode = m_outputNodeNameEdit->text().trimmed();
+    }
+    QStringList outPaths;
+    if (!dstNode.isEmpty()) {
+        NodeUtils::loadCommittedOutputManifest(projectPath(), dstNode, outPaths);
+    }
+    if (outPaths.isEmpty() && m_outputData) {
+        outPaths = m_outputData->filePaths();
+    }
+    if (outPaths.isEmpty()) {
+        return QString();
+    }
+
+    const auto fileFingerprint = [](const QString& path) {
+        const QFileInfo info(path);
+        if (!info.exists()) {
+            return QStringLiteral("missing");
+        }
+        return QString::number(info.size()) + QLatin1Char('_')
+            + QString::number(info.lastModified().toMSecsSinceEpoch());
+    };
+
+    QString key;
+    for (const QString& outPath : outPaths) {
+        key += outPath + QLatin1Char('@') + fileFingerprint(outPath) + QLatin1Char('|');
+    }
+
+    const int curType = m_typeCombo ? m_typeCombo->currentIndex() + 1 : m_type;
+    const int curRg = m_multiRgSpin ? m_multiRgSpin->value() : m_multiRg;
+    const int curAz = m_multiAzSpin ? m_multiAzSpin->value() : m_multiAz;
+    const QString expLevel = expectedOutputProductLevel();
+    const QString expDem = effectiveAuxiliaryDemFileName();
+
+    key += QLatin1String("##") + QString::number(curType)
+        + QLatin1String("##") + QString::number(curRg)
+        + QLatin1String("##") + QString::number(curAz)
+        + QLatin1String("##") + expLevel
+        + QLatin1String("##") + expDem;
+    return key;
+}
+
+bool GeocodingNode::loadValidationCache(const QString& key, GeocodingValidationResults& results) const
+{
+    const auto it = m_validationCache.constFind(key);
+    if (it == m_validationCache.constEnd()) {
+        return false;
+    }
+    results = it.value();
+    return true;
+}
+
+void GeocodingNode::storeValidationCache(const QString& key, const GeocodingValidationResults& results)
+{
+    if (!key.isEmpty()) {
+        m_validationCache.insert(key, results);
+    }
+}
+
+// ==========================================
+// GeocodingValidationWidget Implementation
+// ==========================================
+
+class GeocodingValidationWidget : public BaseValidationWidget
+{
+public:
+    GeocodingValidationWidget(GeocodingNode* node, QWidget* parent)
+        : BaseValidationWidget(node, parent)
+        , m_node(node)
+    {
+        setupUI();
+        startAsyncValidation();
+    }
+
+    ~GeocodingValidationWidget() override = default;
+
+private:
+    void setupUI()
+    {
+        setupBaseUI(QObject::tr("正在验证地理编码数据..."),
+                    QObject::tr("正在读取输出 H5 成果以校验地理范围、多视参数、产品级别及图像有效性。"),
+                    QObject::tr("地理编码与图像特征诊断"),
+                    QObject::tr("参数比对与验证"));
+
+        m_lblLonRange = createFeatureLabel();
+        m_lblLatRange = createFeatureLabel();
+        m_lblLonSpan = createFeatureLabel();
+        m_lblLatSpan = createFeatureLabel();
+        m_lblDimensions = createFeatureLabel();
+        m_lblValidPixels = createFeatureLabel();
+        m_lblDatasetSummary = createFeatureLabel();
+
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("经度覆盖范围 [西, 东]:")), m_lblLonRange);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("纬度覆盖范围 [南, 北]:")), m_lblLatRange);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("经度跨度 (度):")), m_lblLonSpan);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("纬度跨度 (度):")), m_lblLatSpan);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("栅格尺寸 (行 x 列):")), m_lblDimensions);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("有效像元比例 (非空/有效值):")), m_lblValidPixels);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("输出成果与数据集:")), m_lblDatasetSummary);
+    }
+
+    void setNotExecutedState()
+    {
+        m_statusTitle->setText(QObject::tr("验证不可用"));
+        m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+        m_statusDesc->setText(QObject::tr("请先成功执行 Geocoding 节点生成成果后再查看验证结果。"));
+
+        m_compTable->clearComparison();
+        m_compTable->setEnabled(false);
+
+        m_lblLonRange->setText(QObject::tr("未执行"));
+        m_lblLatRange->setText(QObject::tr("未执行"));
+        m_lblLonSpan->setText(QObject::tr("未执行"));
+        m_lblLatSpan->setText(QObject::tr("未执行"));
+        m_lblDimensions->setText(QObject::tr("未执行"));
+        m_lblValidPixels->setText(QObject::tr("未执行"));
+        m_lblDatasetSummary->setText(QObject::tr("未执行"));
+    }
+
+    void startAsyncValidation() override
+    {
+        const quint64 currentEpoch = ++m_validationEpoch;
+        if (m_cancelToken) {
+            m_cancelToken->store(true);
+        }
+        m_cancelToken = std::make_shared<std::atomic_bool>(false);
+        auto cancelToken = m_cancelToken;
+
+        m_isTimedOut = false;
+
+        if (m_node->executionState() != ExecutionState::Completed) {
+            setNotExecutedState();
+            return;
+        }
+
+        // 获取输出路径
+        QString dstNode = m_node->save().value("outputNodeName").toString().trimmed();
+        if (dstNode.isEmpty()) {
+            dstNode = m_node->name();
+        }
+        QStringList outPaths;
+        if (!dstNode.isEmpty()) {
+            NodeUtils::loadCommittedOutputManifest(m_node->projectPath(), dstNode, outPaths);
+        }
+        if (outPaths.isEmpty()) {
+            auto outData = std::dynamic_pointer_cast<ImportedFileData>(m_node->outData(0));
+            if (outData) {
+                outPaths = outData->filePaths();
+            }
+        }
+
+        if (outPaths.isEmpty()) {
+            m_statusTitle->setText(QObject::tr("验证失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(QObject::tr("未找到有效的地理编码输出 H5 文件列表。"));
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(false);
+
+            m_lblLonRange->setText(QObject::tr("未生成"));
+            m_lblLatRange->setText(QObject::tr("未生成"));
+            m_lblLonSpan->setText(QObject::tr("未生成"));
+            m_lblLatSpan->setText(QObject::tr("未生成"));
+            m_lblDimensions->setText(QObject::tr("未生成"));
+            m_lblValidPixels->setText(QObject::tr("未生成"));
+            m_lblDatasetSummary->setText(QObject::tr("未生成"));
+            return;
+        }
+
+        m_loadingOverlay->startLoading(QObject::tr("正在读取地理编码成果并解析地理坐标与特征值..."));
+
+        // 读取期望参数
+        const QJsonObject nodeSave = m_node->save();
+        const int expType = nodeSave.value("type").toInt(1);
+        const int expMultiRg = nodeSave.value("multiRg").toInt(1);
+        const int expMultiAz = nodeSave.value("multiAz").toInt(1);
+        const QString expProductLevel = m_node->expectedOutputProductLevel();
+        const QString expDemName = m_node->effectiveAuxiliaryDemFileName();
+
+        // 尝试从缓存加载
+        const QString cacheKey = m_node->validationCacheKey();
+        GeocodingValidationResults cached;
+        if (!cacheKey.isEmpty() && m_node->loadValidationCache(cacheKey, cached)) {
+            applyValidationResults(cached);
+            return;
+        }
+
+        // 异步运行验证逻辑
+        QFuture<GeocodingValidationResults> future = QtConcurrent::run([outPaths, expType, expMultiRg, expMultiAz, expProductLevel, expDemName, cancelToken]() {
+            GeocodingValidationResults res;
+            res.expectedType = expType;
+            res.expectedMultiRg = expMultiRg;
+            res.expectedMultiAz = expMultiAz;
+            res.expectedProductLevel = expProductLevel;
+            res.expectedDemName = expDemName;
+            res.hasExpectedDemName = !expDemName.isEmpty();
+            res.totalFiles = outPaths.size();
+
+            int typeFiles = 0;
+            int multiRgFiles = 0;
+            int multiAzFiles = 0;
+            int productLevelFiles = 0;
+            int demNameFiles = 0;
+
+            double sumValidPercent = 0.0;
+            int validPercentCount = 0;
+            bool firstGeo = true;
+            bool allBoundsOk = true;
+
+            const QStringList datasetCandidates = {
+                QStringLiteral("phase"),
+                QStringLiteral("coherence"),
+                QStringLiteral("dem"),
+                QStringLiteral("defomation_velocity"),
+                QStringLiteral("amplitude")
+            };
+
+            for (const QString& h5Path : outPaths) {
+                if (cancelToken && cancelToken->load()) {
+                    return res;
+                }
+
+                GeocodingFileDiagnostics diag;
+                diag.fileName = QFileInfo(h5Path).fileName();
+
+                double lonEast = 0.0, lonWest = 0.0, latNorth = 0.0, latSouth = 0.0;
+                int fileType = 0, multiRg = 0, multiAz = 0;
+                std::string prodLevel, demName;
+                QString readErr;
+
+                bool hasGeo = false;
+                bool hasType = false, hasRg = false, hasAz = false, hasLevel = false, hasDem = false;
+                cv::Mat mat;
+                QString foundDataset;
+
+                {
+                    NodeUtils::Hdf5Locker locker;
+                    hasGeo = NodeUtils::readScalarFromH5(h5Path, "lon_east", lonEast, &readErr) &&
+                             NodeUtils::readScalarFromH5(h5Path, "lon_west", lonWest, &readErr) &&
+                             NodeUtils::readScalarFromH5(h5Path, "lat_north", latNorth, &readErr) &&
+                             NodeUtils::readScalarFromH5(h5Path, "lat_south", latSouth, &readErr);
+
+                    hasType = NodeUtils::readScalarFromH5(h5Path, "geocode_type", fileType, &readErr);
+                    hasRg = NodeUtils::readScalarFromH5(h5Path, "multi_rg", multiRg, &readErr);
+                    hasAz = NodeUtils::readScalarFromH5(h5Path, "multi_az", multiAz, &readErr);
+                    hasLevel = NodeUtils::readStringFromH5(h5Path, "product_level", prodLevel, &readErr);
+                    hasDem = NodeUtils::readStringFromH5(h5Path, "geocode_dem", demName, &readErr);
+
+                    for (const QString& dname : datasetCandidates) {
+                        if (NodeUtils::probeH5DatasetMetadata(h5Path, dname)) {
+                            foundDataset = dname;
+                            NodeUtils::readMatFromH5(h5Path, dname, mat, -1, &readErr);
+                            break;
+                        }
+                    }
+                }
+
+                diag.hasGeoBounds = hasGeo;
+                if (hasGeo) {
+                    diag.lonEast = lonEast;
+                    diag.lonWest = lonWest;
+                    diag.latNorth = latNorth;
+                    diag.latSouth = latSouth;
+
+                    // 检查经纬度值域合法性 (-180~180, -90~90) 以及 east > west, north > south
+                    diag.geoBoundsValid = (lonWest >= -180.0 && lonEast <= 180.0 && lonEast > lonWest &&
+                                           latSouth >= -90.0 && latNorth <= 90.0 && latNorth > latSouth);
+                    if (!diag.geoBoundsValid) {
+                        allBoundsOk = false;
+                    }
+
+                    if (firstGeo) {
+                        res.minLonWest = lonWest;
+                        res.maxLonEast = lonEast;
+                        res.minLatSouth = latSouth;
+                        res.maxLatNorth = latNorth;
+                        firstGeo = false;
+                    } else {
+                        res.minLonWest = qMin(res.minLonWest, lonWest);
+                        res.maxLonEast = qMax(res.maxLonEast, lonEast);
+                        res.minLatSouth = qMin(res.minLatSouth, latSouth);
+                        res.maxLatNorth = qMax(res.maxLatNorth, latNorth);
+                    }
+                } else {
+                    allBoundsOk = false;
+                }
+
+                diag.hasType = hasType;
+                diag.fileType = fileType;
+                if (hasType) {
+                    if (typeFiles == 0) res.actualType = fileType;
+                    else if (fileType != res.actualType) res.typeInconsistent = true;
+                    ++typeFiles;
+                }
+
+                diag.hasMultiRg = hasRg;
+                diag.fileMultiRg = multiRg;
+                if (hasRg) {
+                    if (multiRgFiles == 0) res.actualMultiRg = multiRg;
+                    else if (multiRg != res.actualMultiRg) res.multiRgInconsistent = true;
+                    ++multiRgFiles;
+                }
+
+                diag.hasMultiAz = hasAz;
+                diag.fileMultiAz = multiAz;
+                if (hasAz) {
+                    if (multiAzFiles == 0) res.actualMultiAz = multiAz;
+                    else if (multiAz != res.actualMultiAz) res.multiAzInconsistent = true;
+                    ++multiAzFiles;
+                }
+
+                diag.hasProductLevel = hasLevel;
+                diag.fileProductLevel = QString::fromStdString(prodLevel);
+                if (hasLevel) {
+                    if (productLevelFiles == 0) res.actualProductLevel = diag.fileProductLevel;
+                    else if (diag.fileProductLevel != res.actualProductLevel) res.productLevelInconsistent = true;
+                    ++productLevelFiles;
+                }
+
+                diag.hasDemName = hasDem;
+                diag.fileDemName = QString::fromStdString(demName);
+                if (hasDem) {
+                    if (demNameFiles == 0) res.actualDemName = diag.fileDemName;
+                    ++demNameFiles;
+                }
+
+                diag.primaryDataset = foundDataset;
+                diag.datasetFound = !foundDataset.isEmpty() && !mat.empty();
+
+                if (diag.datasetFound) {
+                    diag.rows = mat.rows;
+                    diag.cols = mat.cols;
+                    if (res.outRows == 0 && res.outCols == 0) {
+                        res.outRows = mat.rows;
+                        res.outCols = mat.cols;
+                    }
+
+                    // 有效像元采样统计：仅将 NaN/Inf、-9999 及 amplitude 模式下的 0 视为空值，相位/相干系数/形变下的 0 均属于合法像元
+                    int totalSampled = 0;
+                    int validSampled = 0;
+                    int stepRow = qMax(1, mat.rows / 300);
+                    int stepCol = qMax(1, mat.cols / 300);
+                    for (int r = 0; r < mat.rows; r += stepRow) {
+                        for (int c = 0; c < mat.cols; c += stepCol) {
+                            ++totalSampled;
+                            double val = 0.0;
+                            if (mat.type() == CV_32F) val = mat.at<float>(r, c);
+                            else if (mat.type() == CV_64F) val = mat.at<double>(r, c);
+                            else if (mat.type() == CV_8U) val = mat.at<uchar>(r, c);
+                            else if (mat.type() == CV_16U) val = mat.at<ushort>(r, c);
+                            else if (mat.type() == CV_16S) val = mat.at<short>(r, c);
+                            else if (mat.type() == CV_32S) val = mat.at<int>(r, c);
+
+                            if (std::isfinite(val) && val != -9999.0 && val != -99999.0 && (diag.primaryDataset != QStringLiteral("amplitude") || val > 0.0)) {
+                                ++validSampled;
+                            }
+                        }
+                    }
+                    if (totalSampled > 0) {
+                        diag.validPixelPercent = 100.0 * validSampled / totalSampled;
+                        sumValidPercent += diag.validPixelPercent;
+                        ++validPercentCount;
+                    }
+                    ++res.validFiles;
+                }
+
+                res.fileDiagnostics.append(diag);
+            }
+
+            res.hasActualType = (typeFiles > 0);
+            res.hasActualMultiRg = (multiRgFiles > 0);
+            res.hasActualMultiAz = (multiAzFiles > 0);
+            res.hasActualProductLevel = (productLevelFiles > 0);
+            res.hasActualDemName = (demNameFiles > 0);
+            res.hasAnyLegacyResults = (!res.hasActualType || !res.hasActualMultiRg || !res.hasActualProductLevel);
+            res.allGeoBoundsValid = allBoundsOk && (!firstGeo);
+
+            if (validPercentCount > 0) {
+                res.avgValidPixelPercent = sumValidPercent / validPercentCount;
+            }
+
+            if (res.validFiles == 0) {
+                res.success = false;
+                res.errorMsg = QObject::tr("未能成功解析任何地理编码输出 H5 的数据集。");
+            } else {
+                res.success = true;
+            }
+
+            return res;
+        });
+
+        auto* watcher = new QFutureWatcher<GeocodingValidationResults>(this);
+        connect(watcher, &QFutureWatcher<GeocodingValidationResults>::finished, this, [this, watcher, cacheKey, currentEpoch]() {
+            if (m_validationEpoch != currentEpoch || m_isTimedOut) {
+                watcher->deleteLater();
+                return;
+            }
+            GeocodingValidationResults res = watcher->result();
+            if (!cacheKey.isEmpty() && res.success) {
+                m_node->storeValidationCache(cacheKey, res);
+            }
+            applyValidationResults(res);
+            watcher->deleteLater();
+        });
+
+        watcher->setFuture(future);
+    }
+
+    void applyValidationResults(const GeocodingValidationResults& res)
+    {
+        m_loadingOverlay->stopLoading();
+
+        if (!res.success) {
+            m_statusTitle->setText(QObject::tr("验证失败"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
+            m_statusDesc->setText(res.errorMsg.isEmpty() ? QObject::tr("地理编码输出数据读取或校验失败。") : res.errorMsg);
+            m_compTable->clearComparison();
+            m_compTable->setEnabled(false);
+            return;
+        }
+
+        // 填充参数比对表
+        m_compTable->clearComparison();
+        m_compTable->setEnabled(true);
+
+        const auto paramActualText = [](bool hasValue, const QString& value, bool inconsistent, bool mismatch, bool& verifiable) {
+            verifiable = hasValue;
+            if (!hasValue) {
+                return QObject::tr("未记录（旧结果）");
+            }
+            if (inconsistent) {
+                return value + QObject::tr("（多文件值不一致）");
+            }
+            if (mismatch) {
+                return value + QObject::tr("（与期望不一致）");
+            }
+            return value;
+        };
+
+        // 1. 处理类型
+        const QString expTypeStr = (res.expectedType == 1) ? QObject::tr("干涉产品 (1)") : QObject::tr("SAR图像 (2)");
+        QString actTypeStr;
+        bool typeVerifiable = false;
+        if (res.hasActualType) {
+            typeVerifiable = true;
+            actTypeStr = (res.actualType == 1) ? QObject::tr("干涉产品 (1)") : ((res.actualType == 2) ? QObject::tr("SAR图像 (2)") : QObject::tr("未知 (%1)").arg(res.actualType));
+            if (res.typeInconsistent) {
+                actTypeStr += QObject::tr("（多文件值不一致）");
+            } else if (res.actualType != res.expectedType) {
+                actTypeStr += QObject::tr("（与期望不一致）");
+            }
+        } else {
+            actTypeStr = QObject::tr("未记录（旧结果）");
+        }
+        m_compTable->addComparison(QObject::tr("处理类型"), expTypeStr, actTypeStr, typeVerifiable);
+
+        // 2. 距离多视数 / 3. 方位多视数
+        if (res.expectedType == 2) {
+            // SAR 图像模式：由本节点设置控制多视
+            bool multiRgVerifiable = false;
+            m_compTable->addComparison(QObject::tr("距离多视数"),
+                QString::number(res.expectedMultiRg),
+                paramActualText(res.hasActualMultiRg, QString::number(res.actualMultiRg),
+                    res.multiRgInconsistent, res.actualMultiRg != res.expectedMultiRg, multiRgVerifiable),
+                multiRgVerifiable);
+
+            bool multiAzVerifiable = false;
+            m_compTable->addComparison(QObject::tr("方位多视数"),
+                QString::number(res.expectedMultiAz),
+                paramActualText(res.hasActualMultiAz, QString::number(res.actualMultiAz),
+                    res.multiAzInconsistent, res.actualMultiAz != res.expectedMultiAz, multiAzVerifiable),
+                multiAzVerifiable);
+        } else {
+            // 干涉产品模式：多视参数继承自上游干涉输入，做诊断展示
+            bool multiRgVerifiable = false;
+            m_compTable->addComparison(QObject::tr("距离多视数 (继承输入)"),
+                QObject::tr("继承输入"),
+                paramActualText(res.hasActualMultiRg, QString::number(res.actualMultiRg),
+                    res.multiRgInconsistent, false, multiRgVerifiable),
+                multiRgVerifiable);
+
+            bool multiAzVerifiable = false;
+            m_compTable->addComparison(QObject::tr("方位多视数 (继承输入)"),
+                QObject::tr("继承输入"),
+                paramActualText(res.hasActualMultiAz, QString::number(res.actualMultiAz),
+                    res.multiAzInconsistent, false, multiAzVerifiable),
+                multiAzVerifiable);
+        }
+
+        // 4. 输出产品级别 (真实比对)
+        bool levelVerifiable = false;
+        const QString expLevelStr = res.expectedProductLevel.isEmpty() ? QObject::tr("自动推导") : res.expectedProductLevel;
+        const bool levelMismatch = !res.expectedProductLevel.isEmpty() && res.hasActualProductLevel && (res.actualProductLevel != res.expectedProductLevel);
+        m_compTable->addComparison(QObject::tr("输出产品级别"),
+            expLevelStr,
+            paramActualText(res.hasActualProductLevel, res.actualProductLevel,
+                res.productLevelInconsistent, levelMismatch, levelVerifiable),
+            levelVerifiable);
+
+        // 5. 辅助 DEM 文件名称 (真实比对)
+        if (res.hasExpectedDemName || res.hasActualDemName) {
+            bool demVerifiable = false;
+            const QString expDemStr = res.hasExpectedDemName ? res.expectedDemName : QObject::tr("未指定");
+            const bool demMismatch = res.hasExpectedDemName && res.hasActualDemName && (res.actualDemName != res.expectedDemName);
+            m_compTable->addComparison(QObject::tr("辅助 DEM 文件"),
+                expDemStr,
+                paramActualText(res.hasActualDemName, res.actualDemName,
+                    false, demMismatch, demVerifiable),
+                demVerifiable);
+        }
+
+        // 填充特征诊断区
+        if (res.allGeoBoundsValid) {
+            m_lblLonRange->setText(QStringLiteral("[%1°, %2°]").arg(res.minLonWest, 0, 'f', 4).arg(res.maxLonEast, 0, 'f', 4));
+            m_lblLatRange->setText(QStringLiteral("[%1°, %2°]").arg(res.minLatSouth, 0, 'f', 4).arg(res.maxLatNorth, 0, 'f', 4));
+            m_lblLonSpan->setText(QStringLiteral("%1°").arg(res.maxLonEast - res.minLonWest, 0, 'f', 4));
+            m_lblLatSpan->setText(QStringLiteral("%1°").arg(res.maxLatNorth - res.minLatSouth, 0, 'f', 4));
+        } else {
+            m_lblLonRange->setText(QObject::tr("异常或未解析"));
+            m_lblLatRange->setText(QObject::tr("异常或未解析"));
+            m_lblLonSpan->setText(QObject::tr("异常或未解析"));
+            m_lblLatSpan->setText(QObject::tr("异常或未解析"));
+        }
+
+        m_lblDimensions->setText(QStringLiteral("%1 行 x %2 列").arg(res.outRows).arg(res.outCols));
+        m_lblValidPixels->setText(QStringLiteral("%1%").arg(res.avgValidPixelPercent, 0, 'f', 2));
+
+        QString primaryDsets;
+        for (const auto& diag : res.fileDiagnostics) {
+            if (diag.datasetFound && !primaryDsets.contains(diag.primaryDataset)) {
+                if (!primaryDsets.isEmpty()) primaryDsets += QStringLiteral(", ");
+                primaryDsets += diag.primaryDataset;
+            }
+        }
+        m_lblDatasetSummary->setText(QStringLiteral("共 %1 个成果文件，主数据集: %2")
+            .arg(res.totalFiles).arg(primaryDsets.isEmpty() ? QObject::tr("无") : primaryDsets));
+
+        // 最终状态卡片判定
+        const bool typeMismatch = (res.hasActualType && res.actualType != res.expectedType) || res.typeInconsistent;
+        const bool multiRgMismatch = (res.expectedType == 2) && ((res.hasActualMultiRg && res.actualMultiRg != res.expectedMultiRg) || res.multiRgInconsistent);
+        const bool multiAzMismatch = (res.expectedType == 2) && ((res.hasActualMultiAz && res.actualMultiAz != res.expectedMultiAz) || res.multiAzInconsistent);
+        const bool levelMismatchFlag = (!res.expectedProductLevel.isEmpty() && res.hasActualProductLevel && res.actualProductLevel != res.expectedProductLevel) || res.productLevelInconsistent;
+        const bool demMismatchFlag = (res.hasExpectedDemName && res.hasActualDemName && res.actualDemName != res.expectedDemName);
+
+        const bool hasMismatch = typeMismatch || multiRgMismatch || multiAzMismatch || levelMismatchFlag || demMismatchFlag;
+
+        if (!res.allGeoBoundsValid) {
+            m_statusTitle->setText(QObject::tr("验证警告：地理坐标范围异常"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+            m_statusDesc->setText(QObject::tr("成果输出 H5 中的地理范围超出有效经纬度区间或东西/南北顺序倒置，请检查输入坐标参数与 DEM 范围。"));
+        } else if (hasMismatch) {
+            m_statusTitle->setText(QObject::tr("验证警告：参数与当前设置不完全一致"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+            m_statusDesc->setText(QObject::tr("输出成果中记录的元数据参数与节点当前设置存在差异，可能是参数修改后尚未重新运行。"));
+        } else if (res.hasAnyLegacyResults) {
+            m_statusTitle->setText(QObject::tr("验证通过（旧成果兼容）"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+            m_statusDesc->setText(QObject::tr("输出成果结构与地理坐标范围校验正常；部分元数据属性未记录（兼容早期旧成果）。"));
+        } else {
+            m_statusTitle->setText(QObject::tr("验证通过"));
+            m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+            m_statusDesc->setText(QObject::tr("所有地理编码输出文件参数匹配，地理范围合法，数据集与图像特征校验正常。"));
+        }
+    }
+
+private:
+    GeocodingNode* m_node = nullptr;
+
+    QLabel* m_lblLonRange = nullptr;
+    QLabel* m_lblLatRange = nullptr;
+    QLabel* m_lblLonSpan = nullptr;
+    QLabel* m_lblLatSpan = nullptr;
+    QLabel* m_lblDimensions = nullptr;
+    QLabel* m_lblValidPixels = nullptr;
+    QLabel* m_lblDatasetSummary = nullptr;
+};
+
+::QWidget* GeocodingNode::createValidationWidget(::QWidget* parent)
+{
+    return new GeocodingValidationWidget(this, parent);
 }
 
 } // namespace QtNodes

@@ -70,6 +70,9 @@ NODE_EDITOR_PUBLIC NodeDataSnapshot captureNodeData(ExecutableNodeDelegateModel*
                 info.summary = data->getSummary();
                 info.fields = data->getFields();
             }
+        } else {
+            info.bindingSummary = model->portBindingSummary(PortType::In, i);
+            info.isBound = !info.bindingSummary.isEmpty();
         }
         snapshot.inputPorts.push_back(info);
     }

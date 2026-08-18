@@ -87,6 +87,10 @@ InterferometricFormationNode::InterferometricFormationNode()
 
 InterferometricFormationNode::~InterferometricFormationNode()
 {
+    m_remedyWatcher.disconnect(this);
+    if (m_remedyWatcher.isRunning()) {
+        m_remedyWatcher.cancel();
+    }
     if (m_thread && m_thread->parent() == this) {
         m_thread->setParent(nullptr);
     }
@@ -265,6 +269,8 @@ QJsonObject InterferometricFormationNode::save() const
     modelJson[QStringLiteral("outputIsCoherence")] = m_outputIsCoherence;
     modelJson[QStringLiteral("outputWinW")] = m_outputWinW;
     modelJson[QStringLiteral("outputWinH")] = m_outputWinH;
+    modelJson[QStringLiteral("outputMultilookRg")] = m_outputMultilookRg;
+    modelJson[QStringLiteral("outputMultilookAz")] = m_outputMultilookAz;
 
     return modelJson;
 }
@@ -317,6 +323,10 @@ void InterferometricFormationNode::load(QJsonObject const &json)
     if (!vOutputWinW.isUndefined()) m_outputWinW = vOutputWinW.toInt();
     QJsonValue vOutputWinH = json[QStringLiteral("outputWinH")];
     if (!vOutputWinH.isUndefined()) m_outputWinH = vOutputWinH.toInt();
+    QJsonValue vOutputMultilookRg = json[QStringLiteral("outputMultilookRg")];
+    if (!vOutputMultilookRg.isUndefined()) m_outputMultilookRg = vOutputMultilookRg.toInt();
+    QJsonValue vOutputMultilookAz = json[QStringLiteral("outputMultilookAz")];
+    if (!vOutputMultilookAz.isUndefined()) m_outputMultilookAz = vOutputMultilookAz.toInt();
 
     ExecutableNodeDelegateModel::load(json);
 
@@ -611,6 +621,7 @@ void InterferometricFormationNode::createWidget()
         m_auxiliaryDemLabel = nextLabel;
         if (!m_auxiliaryDemLabel.isEmpty()) { m_auxiliaryDemEntityData.reset(); m_auxiliaryDemReferenceData.reset(); }
         invalidateNodeData();
+        triggerVisualUpdate();
     });
 
     demLayout->addWidget(m_demPathLabel);
@@ -932,7 +943,8 @@ ProductInputContract InterferometricFormationNode::productInputContract(PortInde
                                          : QStringLiteral("interferometric.input.auxiliary_terrain_dem");
     contract.optional = portIndex == 1;
     contract.allowedProductTypes = portIndex == 0
-        ? QStringList() << QStringLiteral("coregistered_complex_sar")
+        ? QStringList() << QStringLiteral("back_geocoded_complex_sar")
+                      << QStringLiteral("coregistered_complex_sar")
                       << QStringLiteral("ionosphere_corrected_complex_sar")
                       << QStringLiteral("slc_stack")
                       << QStringLiteral("cropped_complex_sar")
@@ -1405,11 +1417,30 @@ void InterferometricFormationNode::executeProcessing()
         
         updateParameterWidgetsEnableState();
 
+        m_isExecuting = true;
+        const ExecutionState fallbackState = lastWarningMessage().trimmed().isEmpty()
+            ? ExecutionState::Completed
+            : ExecutionState::Warning;
+
         setState(ExecutionState::Running);
-        setProgress(100);
         if (validateAndRestoreOutput()) {
-            finishExecution();
+            if (!isRestoringAsync()) {
+                finalizeRestoredOutput(fallbackState, true);
+            } else {
+                setProgress(0);
+                InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
+                                              "InterferometricFormationNode",
+                                              QStringLiteral("干涉成果已恢复，正在后台生成缺失的预览图..."),
+                                              LogTargets(LogTarget::UserProjectLog),
+                                              QStringLiteral("running"), QStringLiteral("running"));
+            }
         } else {
+            m_isExecuting = false;
+            // 失败时取消在途的异步补图任务，防止旧 watcher 完成时将 Error 状态洗回 Completed
+            m_remedyWatcher.disconnect(this);
+            if (m_remedyWatcher.isRunning()) {
+                m_remedyWatcher.cancel();
+            }
             setState(ExecutionState::Error);
         }
         return;
@@ -1496,6 +1527,54 @@ void InterferometricFormationNode::executeProcessing()
     });
 }
 
+bool InterferometricFormationNode::isRestoringAsync() const
+{
+    return m_remedyWatcher.isRunning();
+}
+
+void InterferometricFormationNode::publishRestoredOutputs()
+{
+    Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
+}
+
+void InterferometricFormationNode::finalizeRestoredOutput(ExecutionState fallbackState, bool isExecuting)
+{
+    // 1. 幂等更新有效 JPG 路径与 ImageInfoData
+    QStringList validJpgPaths = previewImagePaths();
+    if (!validJpgPaths.isEmpty()) {
+        m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
+        setOutputData(1, m_imageInfoData);
+    } else {
+        m_imageInfoData.reset();
+        setOutputData(1, nullptr);
+    }
+
+    // 2. 状态收口：若有 warning message，则强制为 Warning，否则采用 fallbackState
+    ExecutionState finalState = fallbackState;
+    if (!lastWarningMessage().isEmpty()) {
+        finalState = ExecutionState::Warning;
+    }
+    setState(finalState);
+    _progress = 100;
+    _targetProgress = 100.0;
+
+    // 3. UI 刷新与门控单次广播
+    Q_EMIT progressUpdated(100);
+    Q_EMIT executionStateChanged();
+    triggerVisualUpdate();
+    publishRestoredOutputs();
+
+    // 4. 清除基类暂存状态
+    clearPendingSavedState();
+
+    // 5. 若处于执行生命周期中，调用 finishExecution 结束任务
+    if (isExecuting) {
+        m_isExecuting = false;
+        finishExecution();
+    }
+}
+
 bool InterferometricFormationNode::validateAndRestoreOutput()
 {
     QString dstNode = m_outputNodeName.trimmed();
@@ -1538,7 +1617,6 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
     m_outputData = std::make_shared<ImportedFileData>(uniqueH5Paths, dstNode);
     m_outputData->setProductDescriptor(descriptor);
     setOutputData(0, m_outputData);
-    Q_EMIT dataUpdated(0);
 
     // Background preview JPG generation check and fix
     QStringList existingJpgPaths;
@@ -1552,12 +1630,6 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
         if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], jpgPath)) {
             existingJpgPaths.append(jpgPath);
         } else {
-            // Find corresponding h5 path
-            // Note: Since each expected H5 is listed once for phase and once for coherence (if enabled),
-            // the index in h5Paths maps to expectedJpgPaths based on construction.
-            // Let's trace it: 
-            // In construction: we append h5_path and type for phase, and then optionally h5_path and type for coh.
-            // So expectedJpgPaths has length = h5Paths length.
             missingH5s.append(h5Paths[i]);
             missingJpgs.append(jpgPath);
             missingTypes.append(types[i]);
@@ -1567,20 +1639,43 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
     if (missingH5s.isEmpty()) {
         m_imageInfoData = std::make_shared<ImageInfoData>(existingJpgPaths);
         setOutputData(1, m_imageInfoData);
-        Q_EMIT dataUpdated(1);
     } else {
         m_remedyWatcher.disconnect(this);
         if (m_remedyWatcher.isRunning()) {
             m_remedyWatcher.cancel();
-            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this]() {
+            // 重入上下文双值捕获：优先继承工程打开恢复暂存的 _pendingSavedState，否则根据当前警告消息确定
+            const bool wasExecuting = m_isExecuting;
+            const ExecutionState targetFallbackState = pendingSavedState() != ExecutionState::Idle
+                ? pendingSavedState()
+                : (lastWarningMessage().trimmed().isEmpty() ? ExecutionState::Completed : ExecutionState::Warning);
+
+            connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, wasExecuting, targetFallbackState]() {
                 m_remedyWatcher.disconnect(this);
-                QTimer::singleShot(0, this, [this]() { validateAndRestoreOutput(); });
+                QTimer::singleShot(0, this, [this, wasExecuting, targetFallbackState]() {
+                    if (validateAndRestoreOutput()) {
+                        if (!isRestoringAsync()) {
+                            // 复查转为同步成功：主动调用收口辅助函数，防止永久 Running 卡死
+                            finalizeRestoredOutput(targetFallbackState, wasExecuting);
+                        }
+                    } else {
+                        if (wasExecuting) {
+                            m_isExecuting = false;
+                            setState(ExecutionState::Error);
+                        }
+                    }
+                });
             });
             return true;
         }
 
-        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, h5Paths, expectedJpgPaths, missingH5s, missingJpgs]() {
-            QStringList validJpgPaths;
+        // 异步补图上下文双值捕获：优先继承工程打开恢复暂存的 _pendingSavedState，否则根据当前警告消息确定
+        const bool wasExecuting = m_isExecuting;
+        const ExecutionState targetFallbackState = pendingSavedState() != ExecutionState::Idle
+            ? pendingSavedState()
+            : (lastWarningMessage().trimmed().isEmpty() ? ExecutionState::Completed : ExecutionState::Warning);
+
+        connect(&m_remedyWatcher, &QFutureWatcher<void>::finished, this, [this, missingH5s, missingJpgs, wasExecuting, targetFallbackState]() {
+            m_remedyWatcher.disconnect(this);
             bool anyFailed = false;
             for (int i = 0; i < missingJpgs.size(); ++i) {
                 if (!NodeUtils::isJpgPreviewCurrent(missingH5s[i], missingJpgs[i])) {
@@ -1588,29 +1683,11 @@ bool InterferometricFormationNode::validateAndRestoreOutput()
                 }
             }
 
-            for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-                if (NodeUtils::isJpgPreviewCurrent(h5Paths[i], expectedJpgPaths[i])) {
-                    validJpgPaths.append(expectedJpgPaths[i]);
-                }
-            }
-
-            // 仅输出生成成功的 JPG，防止不存在的路径传入下游
-            if (!validJpgPaths.isEmpty()) {
-                m_imageInfoData = std::make_shared<ImageInfoData>(validJpgPaths);
-                setOutputData(1, m_imageInfoData);
-            } else {
-                m_imageInfoData.reset();
-                setOutputData(1, nullptr);
-            }
-            Q_EMIT dataUpdated(1);
-
             if (anyFailed) {
                 setLastWarningMessage(QStringLiteral("Interferometric products were restored, but some preview images could not be generated."));
-                setState(ExecutionState::Warning);
                 InSARLogManager::LogWarning("InterferometricFormationNode", "Output recovery finished with warnings. Some preview images failed to generate.");
-            } else {
-                setState(ExecutionState::Completed);
             }
+            finalizeRestoredOutput(anyFailed ? ExecutionState::Warning : targetFallbackState, wasExecuting);
         });
 
         QFuture<void> future = QtConcurrent::run([missingH5s, missingJpgs, missingTypes]() {
@@ -1728,6 +1805,8 @@ void InterferometricFormationNode::captureOutputExecutionSettings()
     m_outputIsCoherence = m_preparedIsCoherence;
     m_outputWinW = m_preparedWinW;
     m_outputWinH = m_preparedWinH;
+    m_outputMultilookRg = m_preparedMultilookRg;
+    m_outputMultilookAz = m_preparedMultilookAz;
 }
 
 void InterferometricFormationNode::startPreviewGeneration(const QStringList& previewSourcePaths,
@@ -1807,6 +1886,182 @@ void InterferometricFormationNode::startPreviewGeneration(const QStringList& pre
     }));
 }
 
+QVector<ParameterInfo> InterferometricFormationNode::getParameters() const
+{
+    QVector<ParameterInfo> params;
+
+    int mlRg = m_multilookRg;
+    int mlAz = m_multilookAz;
+    bool isDeflat = m_isDeflat;
+    bool isTopo = m_isTopoRemoval;
+    bool isCoh = m_isCoherence;
+    int winW = m_winW;
+    int winH = m_winH;
+
+    if (m_hasOutputExecutionSettings) {
+        mlRg = m_outputMultilookRg;
+        mlAz = m_outputMultilookAz;
+        isDeflat = m_outputIsDeflat;
+        isTopo = m_outputIsTopoRemoval;
+        isCoh = m_outputIsCoherence;
+        winW = m_outputWinW;
+        winH = m_outputWinH;
+    } else if (executionState() == ExecutionState::Running) {
+        mlRg = m_preparedMultilookRg;
+        mlAz = m_preparedMultilookAz;
+        isDeflat = m_preparedIsDeflat;
+        isTopo = m_preparedIsTopoRemoval;
+        isCoh = m_preparedIsCoherence;
+        winW = m_preparedWinW;
+        winH = m_preparedWinH;
+    }
+
+    // 注意：IFNode 的 setParameter 为基类 no-op，所有参数卡片必须使用 FieldEditType::None 纯只读渲染，
+    // 避免在 PropertyEditor 中生成无响应的编辑控件。
+    ParameterInfo pMultilookRg;
+    pMultilookRg.name = QStringLiteral("距离向视数");
+    pMultilookRg.value = QString::number(mlRg);
+    pMultilookRg.dataType = QStringLiteral("int");
+    pMultilookRg.editType = FieldEditType::None;
+    params.append(pMultilookRg);
+
+    ParameterInfo pMultilookAz;
+    pMultilookAz.name = QStringLiteral("方位向视数");
+    pMultilookAz.value = QString::number(mlAz);
+    pMultilookAz.dataType = QStringLiteral("int");
+    pMultilookAz.editType = FieldEditType::None;
+    params.append(pMultilookAz);
+
+    ParameterInfo pDeflat;
+    pDeflat.name = QStringLiteral("去平地相位");
+    pDeflat.value = isDeflat ? QStringLiteral("开启") : QStringLiteral("关闭");
+    pDeflat.dataType = QStringLiteral("bool");
+    pDeflat.editType = FieldEditType::None;
+    params.append(pDeflat);
+
+    ParameterInfo pTopo;
+    pTopo.name = QStringLiteral("去地形相位");
+    pTopo.value = isTopo ? QStringLiteral("开启") : QStringLiteral("关闭");
+    pTopo.dataType = QStringLiteral("bool");
+    pTopo.editType = FieldEditType::None;
+    params.append(pTopo);
+
+    ParameterInfo pCoh;
+    pCoh.name = QStringLiteral("相干系数计算");
+    pCoh.value = isCoh ? QStringLiteral("开启") : QStringLiteral("关闭");
+    pCoh.dataType = QStringLiteral("bool");
+    pCoh.editType = FieldEditType::None;
+    params.append(pCoh);
+
+    if (isCoh) {
+        ParameterInfo pWinW;
+        pWinW.name = QStringLiteral("相干窗口宽度");
+        pWinW.value = QString::number(winW);
+        pWinW.dataType = QStringLiteral("int");
+        pWinW.editType = FieldEditType::None;
+        params.append(pWinW);
+
+        ParameterInfo pWinH;
+        pWinH.name = QStringLiteral("相干窗口高度");
+        pWinH.value = QString::number(winH);
+        pWinH.dataType = QStringLiteral("int");
+        pWinH.editType = FieldEditType::None;
+        params.append(pWinH);
+    }
+
+    return params;
+}
+
+std::vector<QString> InterferometricFormationNode::processingInfo() const
+{
+    std::vector<QString> info;
+
+    int mlRg = m_multilookRg;
+    int mlAz = m_multilookAz;
+    bool isDeflat = m_isDeflat;
+    bool isTopo = m_isTopoRemoval;
+    bool isCoh = m_isCoherence;
+    int winW = m_winW;
+    int winH = m_winH;
+    const bool isCompletedOutput = m_hasOutputExecutionSettings;
+
+    if (m_hasOutputExecutionSettings) {
+        mlRg = m_outputMultilookRg;
+        mlAz = m_outputMultilookAz;
+        isDeflat = m_outputIsDeflat;
+        isTopo = m_outputIsTopoRemoval;
+        isCoh = m_outputIsCoherence;
+        winW = m_outputWinW;
+        winH = m_outputWinH;
+    } else if (executionState() == ExecutionState::Running) {
+        mlRg = m_preparedMultilookRg;
+        mlAz = m_preparedMultilookAz;
+        isDeflat = m_preparedIsDeflat;
+        isTopo = m_preparedIsTopoRemoval;
+        isCoh = m_preparedIsCoherence;
+        winW = m_preparedWinW;
+        winH = m_preparedWinH;
+    }
+
+    const QString suffix = isCompletedOutput ? QString() : QStringLiteral(" (当前配置)");
+    info.push_back(QStringLiteral("输出节点：%1").arg(m_outputNodeName.isEmpty() ? QStringLiteral("未指定") : m_outputNodeName));
+    info.push_back(QStringLiteral("多视设置：距离向 %1 视 x 方位向 %2 视%3").arg(mlRg).arg(mlAz).arg(suffix));
+    info.push_back(QStringLiteral("去平地相位：%1%2")
+        .arg(isDeflat ? QStringLiteral("开启 (轨道辅助)") : QStringLiteral("未开启"))
+        .arg(suffix));
+    
+    if (isTopo) {
+        QString demDesc = m_auxiliaryDemLabel.isEmpty() ? QStringLiteral("通过连线/自动匹配") : m_auxiliaryDemLabel;
+        if (!m_demPath.isEmpty()) {
+            demDesc += QStringLiteral(" (%1)").arg(QFileInfo(m_demPath).fileName());
+        }
+        info.push_back(QStringLiteral("去地形相位：开启 [DEM: %1]%2").arg(demDesc).arg(suffix));
+    } else {
+        info.push_back(QStringLiteral("去地形相位：未开启%1").arg(suffix));
+    }
+
+    if (isCoh) {
+        info.push_back(QStringLiteral("相干系数计算：开启 (窗口 %1 x %2, %3 Looks)%4")
+            .arg(winW).arg(winH).arg(winW * winH).arg(suffix));
+    } else {
+        info.push_back(QStringLiteral("相干系数计算：未开启%1").arg(suffix));
+    }
+
+    if (m_outputData && !m_outputData->filePaths().isEmpty()) {
+        info.push_back(QStringLiteral("干涉对生成数量：%1 对").arg(m_outputData->filePaths().size()));
+    }
+    return info;
+}
+
+QString InterferometricFormationNode::portBindingSummary(PortType portType, PortIndex portIndex) const
+{
+    if (portType == PortType::In && portIndex == 1) {
+        if (!m_auxiliaryDemLabel.isEmpty()) {
+            QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels;
+            QString error;
+            if (NodeUtils::loadAuxiliaryDemLabels(projectPath(), labels, &error)) {
+                const auto binding = labels.value(NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel));
+                if (!binding.label.isEmpty()) {
+                    QString detail;
+                    if (binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput) {
+                        const QString status = binding.isPlanned() ? QStringLiteral("待生成") : QStringLiteral("就绪");
+                        const QString producerNode = workflowDemProducerNodeIdMap().value(binding.producerIdentity);
+                        detail = producerNode.isEmpty()
+                            ? status
+                            : QStringLiteral("节点 %1，%2").arg(producerNode, status);
+                    } else {
+                        detail = QStringLiteral("已注册资源");
+                    }
+                    return QStringLiteral("已绑定标签 @%1（%2）").arg(binding.label, detail);
+                }
+            }
+            const QString normalized = NodeUtils::normalizedDemLabel(m_auxiliaryDemLabel);
+            return QStringLiteral("已绑定标签 @%1（待解析/未找到对应节点）").arg(normalized);
+        }
+    }
+    return QString();
+}
+
 // --------------------------------------------------------------------------------
 // InterferometricFormationEvalWidget - 干涉形成质量评估选项卡组件
 // --------------------------------------------------------------------------------
@@ -1824,7 +2079,7 @@ class InterferometricFormationEvalWidget : public QWidget
 {
 public:
     explicit InterferometricFormationEvalWidget(InterferometricFormationNode* node, QWidget* parent = nullptr)
-        : QWidget(parent), m_node(node), m_hasResults(false)
+        : QWidget(parent), m_node(node)
     {
         // 界面布局
         auto* mainLayout = new QHBoxLayout(this);
@@ -1979,12 +2234,21 @@ public:
     }
 
 private:
+    void setCoherenceVisualModeEnabled(bool enabled)
+    {
+        auto* itemModel = qobject_cast<QStandardItemModel*>(m_visualModeCombo->model());
+        if (itemModel && itemModel->rowCount() >= 2) {
+            if (QStandardItem* cohItem = itemModel->item(1)) {
+                cohItem->setEnabled(enabled);
+            }
+        }
+    }
+
     void updateAvailablePairs()
     {
         m_slaveCombo->blockSignals(true);
         m_slaveCombo->clear();
         m_h5PathsPhase.clear();
-        m_h5PathsCoh.clear();
         m_jpgPathsPhase.clear();
         m_jpgPathsCoh.clear();
 
@@ -1992,6 +2256,7 @@ private:
         // 状态变化后不再暴露旧的已提交干涉对预览。
         const ExecutionState state = m_node->executionState();
         if (state != ExecutionState::Completed && state != ExecutionState::Warning) {
+            setCoherenceVisualModeEnabled(false);
             m_slaveCombo->addItem(tr("无干涉对"));
             m_evalBtn->setEnabled(false);
             m_imageView->setImage(QImage());
@@ -2008,14 +2273,14 @@ private:
                 m_h5PathsPhase.append(h5Path);
             } else if (jpgPath.endsWith("_coh.jpg")) {
                 m_jpgPathsCoh.append(jpgPath);
-                QString h5Path = jpgPath;
-                h5Path.replace("_coh.jpg", ".h5");
-                m_h5PathsCoh.append(h5Path);
             }
         }
 
         if (m_jpgPathsPhase.isEmpty()) {
             m_slaveCombo->addItem(tr("无干涉对"));
+            setCoherenceVisualModeEnabled(false);
+            m_evalBtn->setEnabled(false);
+            m_imageView->setImage(QImage());
         } else {
             for (const QString& jpg : m_jpgPathsPhase) {
                 QString name = QFileInfo(jpg).baseName();
@@ -2024,12 +2289,52 @@ private:
             }
         }
         m_slaveCombo->blockSignals(false);
+
+        if (m_slaveCombo->count() > 0 && !m_jpgPathsPhase.isEmpty()) {
+            onPairChanged();
+        }
     }
 
     void onPairChanged()
     {
-        m_hasResults = false;
         resetMetrics();
+        const ExecutionState st = m_node->executionState();
+        if (st != ExecutionState::Completed && st != ExecutionState::Warning) {
+            setCoherenceVisualModeEnabled(false);
+            m_evalBtn->setEnabled(false);
+            updatePreviewImage();
+            return;
+        }
+
+        int pairIdx = m_slaveCombo->currentIndex();
+        if (pairIdx < 0 || pairIdx >= m_jpgPathsPhase.size()) {
+            setCoherenceVisualModeEnabled(false);
+            m_evalBtn->setEnabled(false);
+            updatePreviewImage();
+            return;
+        }
+
+        // 检查当前选中的干涉对是否存在对应的相干图
+        QString expectedCohJpg = m_jpgPathsPhase[pairIdx];
+        expectedCohJpg.replace("_phase.jpg", "_coh.jpg");
+        bool hasCurrentPairCoh = m_jpgPathsCoh.contains(expectedCohJpg);
+
+        if (hasCurrentPairCoh) {
+            setCoherenceVisualModeEnabled(true);
+            m_evalBtn->setEnabled(true);
+            m_statusLabel->setText(tr("准备就绪。请点击执行评估。"));
+        } else {
+            // 当前对无相干图：若处于相干模式则安全切回相位模式
+            if (m_visualModeCombo->currentIndex() == 1) {
+                m_visualModeCombo->blockSignals(true);
+                m_visualModeCombo->setCurrentIndex(0);
+                m_visualModeCombo->blockSignals(false);
+            }
+            setCoherenceVisualModeEnabled(false);
+            m_evalBtn->setEnabled(false);
+            m_statusLabel->setText(tr("当前选中的干涉对未包含相干系数数据（未启用或未生成相干系数）。"));
+        }
+
         updatePreviewImage();
     }
 
@@ -2048,13 +2353,10 @@ private:
             pathToLoad = m_jpgPathsPhase[pairIdx];
         } else { // Coherence
             // 查找对应的相干系数图
-            QString baseName = QFileInfo(m_jpgPathsPhase[pairIdx]).baseName();
-            baseName.replace("_phase", "_coh");
-            for (const QString& cohPath : m_jpgPathsCoh) {
-                if (QFileInfo(cohPath).baseName() == baseName) {
-                    pathToLoad = cohPath;
-                    break;
-                }
+            QString expectedCohJpg = m_jpgPathsPhase[pairIdx];
+            expectedCohJpg.replace("_phase.jpg", "_coh.jpg");
+            if (m_jpgPathsCoh.contains(expectedCohJpg)) {
+                pathToLoad = expectedCohJpg;
             }
         }
 
@@ -2072,6 +2374,12 @@ private:
         m_medianCohLabel->setText("-");
         m_maxCohLabel->setText("-");
         m_highCohPctLabel->setText("-");
+        m_phaseNoiseLabel->setText("-");
+        m_enlLabel->setText("-");
+        m_flatEarthLabel->setText("-");
+        m_flatEarthLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #6B7280;");
+        m_topoLabel->setText("-");
+        m_topoLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #6B7280;");
         
         m_statusCardTitle->setText(tr("未评估"));
         m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
@@ -2199,7 +2507,6 @@ private:
             return;
         }
 
-        m_hasResults = true;
         m_statusLabel->setText(tr("评估完成。"));
 
         m_meanCohLabel->setText(QString::number(res.meanCoh, 'f', 4));
@@ -2280,11 +2587,9 @@ private:
     QLabel* m_statusLabel;
 
     QStringList m_h5PathsPhase;
-    QStringList m_h5PathsCoh;
     QStringList m_jpgPathsPhase;
     QStringList m_jpgPathsCoh;
 
-    bool m_hasResults;
     QFutureWatcher<InterfEvalThreadResult> m_watcher;
 };
 

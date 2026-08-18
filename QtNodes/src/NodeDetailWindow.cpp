@@ -545,7 +545,7 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
     headerLayout->addStretch();
 
     // Status badge
-    bool hasData = !info.summary.isEmpty() || info.isConnected;
+    bool hasData = !info.summary.isEmpty() || info.isConnected || info.isBound;
     QLabel* badge = new QLabel(hasData ? QObject::tr("Ready") : QObject::tr("Empty"));
     badge->setObjectName("Badge");
     badge->setStyleSheet(hasData ? STYLE_BADGE_READY : STYLE_BADGE_EMPTY);
@@ -687,9 +687,16 @@ void NodeDetailWindow::renderPortCard(QVBoxLayout* layout, const PortDataInfo& i
 
     // Connection status
     if (!info.isConnected) {
-        QLabel* statusLabel = new QLabel(QObject::tr("Not connected"));
-        statusLabel->setStyleSheet(QString("color: %1; font-style: italic; font-size: 11px; text-transform: none;")
-            .arg(isDark ? "#F87171" : "#DC2626"));
+        QLabel* statusLabel = nullptr;
+        if (info.isBound) {
+            statusLabel = new QLabel(info.bindingSummary);
+            statusLabel->setStyleSheet(QString("color: %1; font-style: italic; font-size: 11px; text-transform: none;")
+                .arg(isDark ? "#60A5FA" : "#2563EB"));
+        } else {
+            statusLabel = new QLabel(QObject::tr("Not connected"));
+            statusLabel->setStyleSheet(QString("color: %1; font-style: italic; font-size: 11px; text-transform: none;")
+                .arg(isDark ? "#F87171" : "#DC2626"));
+        }
         cardLayout->addWidget(statusLabel);
     }
 
@@ -1829,34 +1836,43 @@ void ValidationComparisonTable::clearComparison()
     setRowCount(0);
 }
 
-void ValidationComparisonTable::addComparison(const QString& name, const QString& expected, const QString& actual)
+void ValidationComparisonTable::addComparison(const QString& name, const QString& expected,
+                                              const QString& actual, bool verifiable, const QString& tooltip)
 {
     int row = rowCount();
     insertRow(row);
     
     auto* item0 = new QTableWidgetItem(name);
+    if (!tooltip.isEmpty()) item0->setToolTip(tooltip);
     auto* item1 = new QTableWidgetItem(expected);
     auto* item2 = new QTableWidgetItem(actual);
     
     // Determine matching
     bool isMatch = false;
-    QString expTrim = expected.trimmed();
-    QString actTrim = actual.trimmed();
-    if (expTrim == actTrim) {
-        isMatch = true;
-    } else {
-        // Try numerical comparison
-        bool ok1, ok2;
-        double val1 = expTrim.toDouble(&ok1);
-        double val2 = actTrim.toDouble(&ok2);
-        if (ok1 && ok2 && std::abs(val1 - val2) < 1e-4) {
+    if (verifiable) {
+        QString expTrim = expected.trimmed();
+        QString actTrim = actual.trimmed();
+        if (expTrim == actTrim) {
             isMatch = true;
+        } else {
+            // Try numerical comparison
+            bool ok1, ok2;
+            double val1 = expTrim.toDouble(&ok1);
+            double val2 = actTrim.toDouble(&ok2);
+            if (ok1 && ok2 && std::abs(val1 - val2) < 1e-4) {
+                isMatch = true;
+            }
         }
     }
     
     QTableWidgetItem* item3 = nullptr;
     bool isDark = NodeDetailWindow::isDarkTheme(this);
-    if (isMatch) {
+    if (!verifiable) {
+        // Actual value could not be extracted (e.g. older result without recorded
+        // metadata): a neutral conclusion, not a red mismatch.
+        item3 = new QTableWidgetItem(QObject::tr("未验证"));
+        item3->setForeground(QBrush(QColor(isDark ? "#FBBF24" : "#B45309"))); // Amber
+    } else if (isMatch) {
         item3 = new QTableWidgetItem(QObject::tr("一致"));
         item3->setForeground(QBrush(QColor(isDark ? "#34D399" : "#10B981"))); // Green
     } else {
@@ -1877,22 +1893,32 @@ void ValidationComparisonTable::addComparison(const QString& name, const QString
     setItem(row, 3, item3);
 }
 
-void ValidationComparisonTable::addDiagnostic(const QString& name, const QString& value)
+void ValidationComparisonTable::addDiagnostic(const QString& name, const QString& value,
+                                              const QString& tooltip, const QString& conclusion,
+                                              bool conclusionIsWarning)
 {
     const int row = rowCount();
     insertRow(row);
 
     auto* nameItem = new QTableWidgetItem(name);
+    if (!tooltip.isEmpty()) nameItem->setToolTip(tooltip);
     auto* settingItem = new QTableWidgetItem(QStringLiteral("-"));
     auto* valueItem = new QTableWidgetItem(value);
-    auto* conclusionItem = new QTableWidgetItem(QObject::tr("诊断"));
+    auto* conclusionItem = new QTableWidgetItem(conclusion.isEmpty()
+        ? QObject::tr("诊断") : conclusion);
 
     const bool isDark = NodeDetailWindow::isDarkTheme(this);
     const QBrush textBrush = QColor(isDark ? "#D1D5DB" : "#374151");
     nameItem->setForeground(textBrush);
     settingItem->setForeground(textBrush);
     valueItem->setForeground(textBrush);
-    conclusionItem->setForeground(QBrush(QColor(isDark ? "#60A5FA" : "#2563EB")));
+    if (conclusion.isEmpty()) {
+        conclusionItem->setForeground(QBrush(QColor(isDark ? "#60A5FA" : "#2563EB")));
+    } else if (conclusionIsWarning) {
+        conclusionItem->setForeground(QBrush(QColor(isDark ? "#FBBF24" : "#B45309"))); // 琥珀 = 需复查
+    } else {
+        conclusionItem->setForeground(QBrush(QColor(isDark ? "#34D399" : "#10B981"))); // 绿 = 正常
+    }
 
     setItem(row, 0, nameItem);
     setItem(row, 1, settingItem);
@@ -2070,6 +2096,13 @@ BaseValidationWidget::BaseValidationWidget(ExecutableNodeDelegateModel* node, QW
 {
 }
 
+BaseValidationWidget::~BaseValidationWidget()
+{
+    if (m_cancelToken) {
+        m_cancelToken->store(true);
+    }
+}
+
 void BaseValidationWidget::setupBaseUI(const QString& initialTitle, const QString& initialDesc, const QString& featureTitleText,
     const QString& comparisonTitleText, bool stackContentVertically, bool scrollFeaturePanel)
 {
@@ -2211,6 +2244,9 @@ QLabel* BaseValidationWidget::createHeaderLabel(const QString& text)
 void BaseValidationWidget::onTimeout()
 {
     m_isTimedOut = true;
+    if (m_cancelToken) {
+        m_cancelToken->store(true);
+    }
     m_statusTitle->setText(QObject::tr("验证超时"));
     m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
     m_statusDesc->setText(QObject::tr("验证计算超时，后台未响应。可能发生进程挂起或文件过大。"));
