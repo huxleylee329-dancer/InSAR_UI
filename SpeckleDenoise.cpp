@@ -59,6 +59,59 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     ui->FilterProgressBar->setMaximum(100);
     ui->FilterProgressBar->setValue(0);
 
+    // 扩展滤波设置区域，并为五种算法提供统一入口。
+    resize(width(), 1014);
+    setMinimumHeight(950);
+    if (QWidget* mainContainer = findChild<QWidget*>("layoutWidget", Qt::FindDirectChildrenOnly))
+    {
+        mainContainer->resize(mainContainer->width(), 911);
+    }
+    ui->filterGroup->resize(ui->filterGroup->width(), 221);
+    ui->roiGroup->move(ui->roiGroup->x(), 540);
+    ui->enlGroup->move(ui->enlGroup->x(), 680);
+    ui->widget_2->move(ui->widget_2->x(), 132);
+    ui->FilterProgressBar->move(ui->FilterProgressBar->x(), 180);
+
+    QLabel* filterMethodLabel = new QLabel(QStringLiteral("滤波方法"), ui->filterGroup);
+    filterMethodLabel->setGeometry(40, 28, 90, 23);
+    filterMethodComboBox = new QComboBox(ui->filterGroup);
+    filterMethodComboBox->setGeometry(170, 28, 131, 23);
+    filterMethodComboBox->addItem("BM3D");
+    filterMethodComboBox->addItem("Lee");
+    filterMethodComboBox->addItem("Frost");
+    filterMethodComboBox->addItem("GammaMAP");
+    filterMethodComboBox->addItem("Kuan");
+
+    filterRadiusLabel = new QLabel(QStringLiteral("邻域半径"), ui->filterGroup);
+    filterRadiusLabel->setGeometry(40, 58, 90, 23);
+    filterRadiusSpinBox = new QSpinBox(ui->filterGroup);
+    filterRadiusSpinBox->setGeometry(170, 58, 131, 23);
+    filterRadiusSpinBox->setRange(1, 20);
+    filterRadiusSpinBox->setValue(3);
+
+    filterLooksLabel = new QLabel(QStringLiteral("等效视数"), ui->filterGroup);
+    filterLooksLabel->setGeometry(40, 88, 90, 23);
+    filterLooksSpinBox = new QDoubleSpinBox(ui->filterGroup);
+    filterLooksSpinBox->setGeometry(170, 88, 131, 23);
+    filterLooksSpinBox->setRange(0.1, 100.0);
+    filterLooksSpinBox->setDecimals(2);
+    filterLooksSpinBox->setValue(1.0);
+
+    frostDerampLabel = new QLabel(QStringLiteral("Frost 衰减"), ui->filterGroup);
+    frostDerampLabel->setGeometry(40, 88, 100, 23);
+    frostDerampSpinBox = new QDoubleSpinBox(ui->filterGroup);
+    frostDerampSpinBox->setGeometry(170, 88, 131, 23);
+    frostDerampSpinBox->setRange(0.001, 10.0);
+    frostDerampSpinBox->setDecimals(3);
+    frostDerampSpinBox->setSingleStep(0.05);
+    frostDerampSpinBox->setValue(0.1);
+
+    connect(filterMethodComboBox,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this,
+            [this](int) { updateFilterParameterVisibility(); });
+    updateFilterParameterVisibility();
+
 }
 
 SpeckleDenoise::~SpeckleDenoise()
@@ -409,7 +462,7 @@ void SpeckleDenoise::on_runFilterButton_clicked()
         return;
     }
 
-    cv::Mat filteredImage = runBm3dCoreLogic(inputGray);
+    cv::Mat filteredImage = runSelectedFilter(inputGray);
     if (filteredImage.empty())
     {
         InSARLogManager::LogWarning("UI", "Speckle denoise failed.");
@@ -422,7 +475,7 @@ void SpeckleDenoise::on_runFilterButton_clicked()
     filteredGrayMat = filteredImage.clone();
 
     QFileInfo inputInfo(input_image_name);
-    QString expectedImageName = inputInfo.completeBaseName() + "_BM3D";
+    QString expectedImageName = inputInfo.completeBaseName() + currentFilterSuffix();
     QString expectedPath = save_path + "/" + outputNodeName + "/" + expectedImageName + ".jpg";
 
     if (QFile::exists(expectedPath))
@@ -469,16 +522,95 @@ void SpeckleDenoise::on_imageTypeComboBox_currentIndexChanged(int index)
     updateDisplayedImage();
 }
 
-cv::Mat SpeckleDenoise::runBm3dCoreLogic(const cv::Mat& inputGray) const
+cv::Mat SpeckleDenoise::runSelectedFilter(const cv::Mat& inputGray) const
 {
-    if (inputGray.empty()) return cv::Mat();
-    cv::Mat output;
-    return SARProcessor::DenoiseGray(inputGray, 0.0, output) == 0 ? output : cv::Mat();
+    if (inputGray.empty())
+    {
+        return cv::Mat();
+    }
+
+    const int methodIndex =
+        filterMethodComboBox ? filterMethodComboBox->currentIndex() : 0;
+
+    if (methodIndex == 0)
+    {
+        // 保留最新版 master 的 BM3D 动态库接口。
+        cv::Mat output;
+        return SARProcessor::DenoiseGray(inputGray, 0.0, output) == 0
+            ? output
+            : cv::Mat();
+    }
+
+    SARProcessor::SpeckleFilterMethod method =
+        SARProcessor::SpeckleFilterMethod::Lee;
+
+    switch (methodIndex)
+    {
+    case 2:
+        method = SARProcessor::SpeckleFilterMethod::Frost;
+        break;
+    case 3:
+        method = SARProcessor::SpeckleFilterMethod::GammaMAP;
+        break;
+    case 4:
+        method = SARProcessor::SpeckleFilterMethod::Kuan;
+        break;
+    default:
+        method = SARProcessor::SpeckleFilterMethod::Lee;
+        break;
+    }
+
+    return SARProcessor::DespeckleGray(
+        inputGray,
+        method,
+        filterRadiusSpinBox ? filterRadiusSpinBox->value() : 3,
+        filterLooksSpinBox ? filterLooksSpinBox->value() : 1.0,
+        frostDerampSpinBox ? frostDerampSpinBox->value() : 0.1);
+}
+
+QString SpeckleDenoise::currentFilterSuffix() const
+{
+    if (!filterMethodComboBox)
+    {
+        return "_BM3D";
+    }
+
+    switch (filterMethodComboBox->currentIndex())
+    {
+    case 1:
+        return "_Lee";
+    case 2:
+        return "_Frost";
+    case 3:
+        return "_GammaMAP";
+    case 4:
+        return "_Kuan";
+    default:
+        return "_BM3D";
+    }
+}
+
+void SpeckleDenoise::updateFilterParameterVisibility()
+{
+    const int methodIndex =
+        filterMethodComboBox ? filterMethodComboBox->currentIndex() : 0;
+
+    const bool usesRadius = methodIndex > 0;
+    const bool usesLooks =
+        methodIndex == 1 || methodIndex == 3 || methodIndex == 4;
+    const bool usesDeramp = methodIndex == 2;
+
+    filterRadiusLabel->setVisible(usesRadius);
+    filterRadiusSpinBox->setVisible(usesRadius);
+    filterLooksLabel->setVisible(usesLooks);
+    filterLooksSpinBox->setVisible(usesLooks);
+    frostDerampLabel->setVisible(usesDeramp);
+    frostDerampSpinBox->setVisible(usesDeramp);
 }
 
 cv::Mat SpeckleDenoise::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const
 {
-    // 已由 runBm3dCoreLogic 统一调用 SARProcessor，此方法保留接口兼容
+    // BM3D 已统一由 runSelectedFilter 调用 SARProcessor，此方法保留接口兼容。
     Q_UNUSED(imgNorm);
     Q_UNUSED(sigmaFinal);
     return cv::Mat();
@@ -506,7 +638,7 @@ bool SpeckleDenoise::saveFilteredImage(const cv::Mat& filteredImage,
     }
 
     QFileInfo inputInfo(input_image_name);
-    outputImageName = inputInfo.completeBaseName() + "_BM3D";
+    outputImageName = inputInfo.completeBaseName() + currentFilterSuffix();
     outputPath = save_path + "/" + outputNodeName + "/" + outputImageName + ".jpg";
 
     if (QFile::exists(outputPath))
@@ -664,7 +796,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     }
 
     QFileInfo inputInfo(input_image_name);
-    QString outputImageName = inputInfo.completeBaseName() + "_BM3D";
+    QString outputImageName = inputInfo.completeBaseName() + currentFilterSuffix();
     QString outputPath = save_path + "/" + outputNodeName + "/" + outputImageName + ".jpg";
 
     int projectIndex = ui->projectComboBox->currentIndex();

@@ -12,6 +12,9 @@
 #include <QEvent>
 #include <QRect>
 #include <QPoint>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
 
 
 
@@ -55,12 +58,21 @@ private:
     QLabel* imageDisplayLabel;
     QPixmap originalPixmap;
     QPixmap filteredPixmap;
+    QComboBox* filterMethodComboBox = nullptr;
+    QSpinBox* filterRadiusSpinBox = nullptr;
+    QDoubleSpinBox* filterLooksSpinBox = nullptr;
+    QDoubleSpinBox* frostDerampSpinBox = nullptr;
+    QLabel* filterRadiusLabel = nullptr;
+    QLabel* filterLooksLabel = nullptr;
+    QLabel* frostDerampLabel = nullptr;
 
     void updateDisplayedImage();
 
-    cv::Mat runBm3dCoreLogic(const cv::Mat& inputGray) const;
+    cv::Mat runSelectedFilter(const cv::Mat& inputGray) const;
     cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
     double calcMedian(const cv::Mat& input) const;
+    QString currentFilterSuffix() const;
+    void updateFilterParameterVisibility();
 
     bool saveFilteredImage(const cv::Mat& filteredImage, QString& outputPath, QString& outputImageName);
     bool registerFilteredImage(const QString& outputNodeName,
