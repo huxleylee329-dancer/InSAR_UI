@@ -170,6 +170,14 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
         }
     } else if (port == 1) {
         const auto auxiliary = std::dynamic_pointer_cast<AuxiliaryDemData>(data);
+        InSARLogManager::LogDebug("CoregistrationNode",
+            auxiliary
+                ? QStringLiteral("Auxiliary DEM input received: projectRoot=%1, resourceId=%2, provenanceId=%3, raster=%4, identityH5=%5.")
+                    .arg(projectPath(), auxiliary->resourceId(), auxiliary->pinnedProvenanceId(),
+                         auxiliary->rasterPath(), auxiliary->identityH5Path())
+                : QStringLiteral("Auxiliary DEM input cleared: projectRoot=%1, incomingType=%2.")
+                    .arg(projectPath(), data ? data->type().id : QStringLiteral("null")),
+            QStringLiteral("dem.binding"));
         m_auxiliaryDemEntityData = auxiliary;
         if (auxiliary) {
             m_auxiliaryDemReferenceData.reset();
@@ -592,10 +600,29 @@ bool CoregistrationNode::prepareToStart()
     if (m_method == "Fine" && m_auxiliaryDemEntityData) {
         NodeUtils::AuxiliaryDemBinding binding;
         QString error;
+        InSARLogManager::LogDebug("CoregistrationNode",
+            QStringLiteral("Resolving Auxiliary DEM for Fine coregistration: revision=%1, projectRoot=%2, resourceId=%3, provenanceId=%4, directConnection=%5.")
+                .arg(executionRevision()).arg(projectPath(), m_auxiliaryDemEntityData->resourceId(),
+                                               m_auxiliaryDemEntityData->pinnedProvenanceId())
+                .arg(hasActiveInputConnection(1)),
+            QStringLiteral("dem.binding"));
+        InSARLogManager::LogDebug("CoregistrationNode",
+            QStringLiteral("Fine coregistration trusted input geometry: fields=[%1], Lon[%2, %3], Lat[%4, %5], crsPresent=%6.")
+                .arg(inputGeometry.keys().join(QStringLiteral(",")))
+                .arg(inputGeometry.value(QStringLiteral("minLon")).toDouble(), 0, 'g', 17)
+                .arg(inputGeometry.value(QStringLiteral("maxLon")).toDouble(), 0, 'g', 17)
+                .arg(inputGeometry.value(QStringLiteral("minLat")).toDouble(), 0, 'g', 17)
+                .arg(inputGeometry.value(QStringLiteral("maxLat")).toDouble(), 0, 'g', 17)
+                .arg(!inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed().isEmpty()),
+            QStringLiteral("dem.binding"));
         if (!NodeUtils::resolveAuxiliaryDemBinding(projectPath(), *m_auxiliaryDemEntityData, binding, &error, inputGeometry)) {
             setStartFailureMessage(error);
             return false;
         }
+        InSARLogManager::LogDebug("CoregistrationNode",
+            QStringLiteral("Resolved Auxiliary DEM for Fine coregistration: resourceId=%1, provenanceId=%2, raster=%3.")
+                .arg(binding.resourceId, binding.pinnedProvenanceId, binding.rasterPath),
+            QStringLiteral("dem.binding"));
         m_preparedAuxiliaryDemBinding = binding;
         m_preparedDemExecutionSnapshot.binding = binding;
         m_preparedDemExecutionSnapshot.inputGeometry = inputGeometry;
@@ -645,12 +672,21 @@ bool CoregistrationNode::prepareToStart()
     if (m_method == "Fine") {
         const auto demData = std::dynamic_pointer_cast<DEMFileData>(m_demInputData);
         if (!demData || demData->identityH5Path().isEmpty() ||
-            !NodeUtils::validateH5Identity(demData->identityH5Path(),
-                                           m_demInputData->physicalProductDescriptor(), nullptr, &identityError)) {
-            setStartFailureMessage(identityError);
-            setLastErrorMessage(identityError);
+            m_preparedAuxiliaryDemBinding.identityH5Path.isEmpty() ||
+            QDir::cleanPath(demData->identityH5Path()).compare(
+                QDir::cleanPath(m_preparedAuxiliaryDemBinding.identityH5Path),
+                Qt::CaseInsensitive) != 0) {
+            const QString error = QStringLiteral(
+                "Resolved auxiliary DEM identity does not match the prepared resource binding.");
+            setStartFailureMessage(error);
+            setLastErrorMessage(error);
             return false;
         }
+        // identity.h5 is an auxiliary-resource identity record, not a normal
+        // node output. resolveAuxiliaryDemBinding() already verified its
+        // registry entry, generation, descriptor, hashes and provenance manifest.
+        // validateH5Identity() would incorrectly require an output transaction
+        // journal under .dem_resources.
         m_preparedTransactionInputPaths.append(demData->identityH5Path());
     }
     m_preparedSavePath = getRealSavePath();
@@ -745,6 +781,17 @@ void CoregistrationNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("coregistration.output.coregistered_complex_sar"));
+    const QJsonObject inputGeometry = m_inputData
+        ? NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor())
+        : QJsonObject();
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            descriptorProvenance.insert(key, QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) descriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction, ProductDescriptor::create(
                 QStringLiteral("coregistered_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
@@ -1783,8 +1830,7 @@ QStandardItemModel* CoregistrationNode::projectModel() const
 
 QString CoregistrationNode::projectPath() const
 {
-    auto* iface = NodeUtils::getProjectContext(_widget);
-    return iface ? iface->projectPath() : QString();
+    return NodeUtils::getProjectDirectory(_widget);
 }
 
 QString CoregistrationNode::projectName() const

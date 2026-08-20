@@ -1,7 +1,7 @@
-#include "InSARLogManager.h"
-
+#include "InSARLogManager.h"
 #include "TargetDetectionNode.h"
 #include "NodeUtils.h"
+#include "ImportDataTypes.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFileInfo>
@@ -81,7 +81,6 @@ bool TargetDetectionNode::portCaptionVisible(PortType portType, PortIndex portIn
     Q_UNUSED(portIndex);
     return true;
 }
-
 QString TargetDetectionNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
@@ -94,7 +93,15 @@ QString TargetDetectionNode::portCaption(PortType portType, PortIndex portIndex)
 void TargetDetectionNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     if (port != 0) return;
-    m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
+    auto imageInfo = std::dynamic_pointer_cast<ImageInfoData>(data);
+    if (!imageInfo) {
+        const auto importedFiles = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (importedFiles) {
+            imageInfo = std::make_shared<ImageInfoData>(importedFiles->filePaths());
+            imageInfo->setProductDescriptor(importedFiles->productDescriptor());
+        }
+    }
+    m_inputData = imageInfo;
 
     if (m_inputData && !m_inputData->filePath().isEmpty()) {
         if (m_inputImageLabel) {
@@ -130,7 +137,10 @@ ProductInputContract TargetDetectionNode::productInputContract(PortIndex portInd
     Q_UNUSED(portIndex);
     ProductInputContract contract;
     contract.semanticId = QStringLiteral("target_detection.input.preview");
-    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("preview")
+                                                 << QStringLiteral("generic_sar_raster")
+                                                 << QStringLiteral("speckle_denoised_image")
+                                                 << QStringLiteral("clutter_suppressed_image");
     contract.requiredProvenanceFields = QStringList()
         << QStringLiteral("producer") << QStringLiteral("output_port");
     return contract;

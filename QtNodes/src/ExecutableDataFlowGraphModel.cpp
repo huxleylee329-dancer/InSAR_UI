@@ -60,13 +60,14 @@ void ExecutableDataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
 
     std::unique_ptr<NodeDelegateModel> model = _registry->create(delegateModelName);
 
+
+
     if (model) {
         connect(model.get(),
                 &NodeDelegateModel::dataUpdated,
                 [restoredNodeId, this](PortIndex const portIndex) {
                     onOutPortDataUpdated(restoredNodeId, portIndex);
                 });
-
         connect(model.get(),
                 &NodeDelegateModel::embeddedWidgetSizeUpdated,
                 [restoredNodeId, this]() {
@@ -118,12 +119,69 @@ void ExecutableDataFlowGraphModel::load(QJsonObject const &json)
     DataFlowGraphModel::load(json);
     _isRestoring = false;
 
-    // Input and connection callbacks are suppressed during restoration. Once
-    // all connections exist, recalculate readiness for automatic nodes.
+    // 先统一解除全图节点的恢复标记，确保后续 setPortData(nullptr) 能够正常穿透到子类执行 UI 清空
     for (auto const nodeId : allNodeIds()) {
         auto *execModel = delegateModel<ExecutableNodeDelegateModel>(nodeId);
         if (execModel) {
             execModel->setRestoring(false);
+        }
+    }
+
+    // 后置拓扑依赖校验 Pass：限定检查 0 输出端口的纯展示/叶子节点（保护处理节点合法的离线成果）
+    if (_scene) {
+        for (auto const nodeId : allNodeIds()) {
+            auto *execModel = delegateModel<ExecutableNodeDelegateModel>(nodeId);
+            if (!execModel || execModel->nPorts(PortType::Out) != 0 ||
+                (execModel->executionState() != ExecutionState::Completed &&
+                 execModel->executionState() != ExecutionState::Warning)) {
+                continue;
+            }
+
+            // 1. 连线未连齐时直接降级为 Idle，并清空非可选输入端口数据
+            if (!execModel->allRequiredPortsConnected()) {
+                execModel->setState(ExecutionState::Idle);
+                for (PortIndex inIdx = 0; inIdx < execModel->nPorts(PortType::In); ++inIdx) {
+                    if (!execModel->portIsOptional(PortType::In, inIdx)) {
+                        setPortData(nodeId, PortType::In, inIdx, QVariant{}, PortRole::Data);
+                    }
+                }
+                continue;
+            }
+
+            // 2. 检查所有必需输入端口连接的上游生产者状态（严格镜像 outputDataForPropagation）
+            bool allUpstreamValid = true;
+            for (PortIndex idx = 0; idx < execModel->nPorts(PortType::In); ++idx) {
+                if (execModel->portIsOptional(PortType::In, idx)) continue;
+                const auto connections = activeConnections(nodeId, PortType::In, idx);
+                for (const ConnectionId &conn : connections) {
+                    auto *sourceModel = delegateModel<ExecutableNodeDelegateModel>(conn.outNodeId);
+                    if (sourceModel && sourceModel->hasExecutionControls() &&
+                        sourceModel->executionState() != ExecutionState::Completed &&
+                        sourceModel->executionState() != ExecutionState::Warning) {
+                        allUpstreamValid = false;
+                        break;
+                    }
+                }
+                if (!allUpstreamValid) break;
+            }
+
+            // 3. 上游无效时降级并对所有非可选输入端口广播清空信号
+            if (!allUpstreamValid) {
+                const bool shouldBePending = (execModel->executionMode() == ExecutionMode::Automatic);
+                execModel->setState(shouldBePending ? ExecutionState::Pending : ExecutionState::Idle);
+                for (PortIndex inIdx = 0; inIdx < execModel->nPorts(PortType::In); ++inIdx) {
+                    if (!execModel->portIsOptional(PortType::In, inIdx)) {
+                        setPortData(nodeId, PortType::In, inIdx, QVariant{}, PortRole::Data);
+                    }
+                }
+            }
+        }
+    }
+
+    // 最终就绪状态刷新与视图重绘
+    for (auto const nodeId : allNodeIds()) {
+        auto *execModel = delegateModel<ExecutableNodeDelegateModel>(nodeId);
+        if (execModel) {
             execModel->refreshStateAfterRestoration();
             execModel->triggerVisualUpdate();
         }

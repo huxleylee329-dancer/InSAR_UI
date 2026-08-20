@@ -211,6 +211,15 @@ QStringList ImportNodeBase::previewImagePaths() const
 {
     QStringList jpgPaths;
     for (const QString& h5Path : m_importedFilePaths) {
+        if (QFileInfo::exists(h5Path)) {
+            const QString suffix = QFileInfo(h5Path).suffix().toLower();
+            if (suffix == QStringLiteral("jpg") || suffix == QStringLiteral("jpeg") ||
+                suffix == QStringLiteral("png") || suffix == QStringLiteral("bmp") ||
+                suffix == QStringLiteral("tif") || suffix == QStringLiteral("tiff")) {
+                jpgPaths.append(h5Path);
+                continue;
+            }
+        }
         QFileInfo fi(h5Path);
         QString jpg = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
         if (QFileInfo::exists(jpg)) {
@@ -316,7 +325,17 @@ void ImportNodeBase::execute()
     if (m_semanticTransactionActive) {
         const QStringList primaryPaths = getExpectedOutputFilePaths();
         QStringList expectedPaths = primaryPaths;
-        expectedPaths.append(getExpectedPreviewFilePaths());
+        QSet<QString> fileNames;
+        for (const QString& path : primaryPaths) {
+            fileNames.insert(QFileInfo(path).fileName());
+        }
+        for (const QString& previewPath : getExpectedPreviewFilePaths()) {
+            const QString fn = QFileInfo(previewPath).fileName();
+            if (!fileNames.contains(fn)) {
+                fileNames.insert(fn);
+                expectedPaths.append(previewPath);
+            }
+        }
         QString transactionError;
         if (primaryPaths.isEmpty() || !NodeUtils::beginOutputTransaction(projectPath(), getOutputNodeName(),
                 expectedPaths, transactionInputPaths(), m_outputTransaction, &transactionError, nullptr,
@@ -445,7 +464,11 @@ bool ImportNodeBase::validateAndRestoreOutput()
         m_importedFiles->setProductDescriptor(descriptor);
         setOutputData(0, m_importedFiles);
         if (nPorts(PortType::Out) > 1) {
-            m_imageInfo = std::make_shared<ImageInfoData>(jpgPaths);
+            QStringList previewPaths = jpgPaths;
+            if (previewPaths.isEmpty() && h5Paths.isEmpty()) {
+                previewPaths = primaryPaths;
+            }
+            m_imageInfo = std::make_shared<ImageInfoData>(previewPaths);
             QMap<QString, QString> previewProvenance;
             previewProvenance.insert(QStringLiteral("producer"), name());
             previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);
@@ -459,7 +482,7 @@ bool ImportNodeBase::validateAndRestoreOutput()
     if (expectedPaths.isEmpty())
         return false;
 
-    // Check that all expected H5 files exist on disk
+    // Check that all expected files exist on disk
     for (const QString& path : expectedPaths) {
         if (!QFile::exists(path)) {
             return false;
@@ -479,6 +502,11 @@ bool ImportNodeBase::validateAndRestoreOutput()
 
     for (const QString& h5Path : expectedPaths) {
         QFileInfo fi(h5Path);
+        const QString suffix = fi.suffix().toLower();
+        if (suffix != QStringLiteral("h5")) {
+            expectedJpgPaths.append(h5Path);
+            continue;
+        }
         QString jpgPath = fi.absolutePath() + "/" + fi.baseName() + ".jpg";
         expectedJpgPaths.append(jpgPath);
 
@@ -507,9 +535,10 @@ bool ImportNodeBase::validateAndRestoreOutput()
                 }
             }
 
-            // 收集所有最终有效的 JPG
+            // 收集所有最终有效的 JPG（非 H5 栅格直接作为预览，H5 需验证对应 JPG 存在）
             for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-                if (NodeUtils::isJpgPreviewCurrent(expectedPaths[i], expectedJpgPaths[i])) {
+                const bool isH5 = QFileInfo(expectedPaths[i]).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0;
+                if (!isH5 || NodeUtils::isJpgPreviewCurrent(expectedPaths[i], expectedJpgPaths[i])) {
                     validJpgPaths.append(expectedJpgPaths[i]);
                 }
             }
@@ -547,7 +576,8 @@ bool ImportNodeBase::validateAndRestoreOutput()
     } else {
         QStringList validJpgPaths;
         for (int i = 0; i < expectedJpgPaths.size(); ++i) {
-            if (NodeUtils::isJpgPreviewCurrent(expectedPaths[i], expectedJpgPaths[i])) {
+            const bool isH5 = QFileInfo(expectedPaths[i]).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0;
+            if (!isH5 || NodeUtils::isJpgPreviewCurrent(expectedPaths[i], expectedJpgPaths[i])) {
                 validJpgPaths.append(expectedJpgPaths[i]);
             }
         }
@@ -675,7 +705,20 @@ void ImportNodeBase::onImportFinished()
         m_importedFiles->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
         setOutputData(0, m_importedFiles);
         if (nPorts(PortType::Out) > 1) {
-            m_imageInfo = std::make_shared<ImageInfoData>(jpgPaths);
+            QStringList previewPaths = jpgPaths;
+            if (previewPaths.isEmpty() && !primaryPaths.isEmpty()) {
+                bool hasH5 = false;
+                for (const QString& p : primaryPaths) {
+                    if (QFileInfo(p).suffix().compare(QStringLiteral("h5"), Qt::CaseInsensitive) == 0) {
+                        hasH5 = true;
+                        break;
+                    }
+                }
+                if (!hasH5) {
+                    previewPaths = primaryPaths;
+                }
+            }
+            m_imageInfo = std::make_shared<ImageInfoData>(previewPaths);
             QMap<QString, QString> previewProvenance;
             previewProvenance.insert(QStringLiteral("producer"), name());
             previewProvenance.insert(QStringLiteral("output_port"), productOutputContract(1).semanticId);

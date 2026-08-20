@@ -223,6 +223,8 @@ _Pvt_Extensions
 x64/
 bin/
 tools/
+workboard/
+.opencode/
 
 # Claude related
 screenshot/

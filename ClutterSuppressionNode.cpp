@@ -5,6 +5,7 @@
 #include "InterfaceManager.h"
 #include "WorkspaceUI.h"
 #include "NodeUtils.h"
+#include "ImportDataTypes.h"
 #include "icon_source.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -60,7 +61,8 @@ ProductInputContract ClutterSuppressionNode::productInputContract(PortIndex port
     Q_UNUSED(portIndex);
     ProductInputContract contract;
     contract.semanticId = QStringLiteral("clutter_suppression.input.preview");
-    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("preview")
+                                                 << QStringLiteral("generic_sar_raster");
     contract.requiredProvenanceFields = QStringList()
         << QStringLiteral("producer") << QStringLiteral("output_port");
     return contract;
@@ -107,7 +109,15 @@ bool ClutterSuppressionNode::portIsOptional(PortType portType, PortIndex portInd
 void ClutterSuppressionNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     Q_UNUSED(port);
-    m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
+    auto imageInfo = std::dynamic_pointer_cast<ImageInfoData>(data);
+    if (!imageInfo) {
+        const auto importedFiles = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (importedFiles) {
+            imageInfo = std::make_shared<ImageInfoData>(importedFiles->filePaths());
+            imageInfo->setProductDescriptor(importedFiles->productDescriptor());
+        }
+    }
+    m_inputData = imageInfo;
 
     if (m_inputImageLabel) {
         if (m_inputData && !m_inputData->filePath().isEmpty()) {

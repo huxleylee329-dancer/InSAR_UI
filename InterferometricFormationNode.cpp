@@ -1262,6 +1262,7 @@ bool InterferometricFormationNode::prepareToStart()
     m_preparedIsTopoRemoval = m_isTopoRemoval;
     m_preparedIsCoherence = m_isCoherence;
     m_preparedDemPath = m_demPath;
+    m_preparedDemIdentityH5Path.clear();
 
     if (!m_preparedDemPath.isEmpty()) {
         if (!m_demInputData) {
@@ -1312,14 +1313,32 @@ bool InterferometricFormationNode::prepareToStart()
             }
         }
 
-        QString demIdentityError;
-        if (!NodeUtils::validateH5Identities(QStringList() << demIdentityH5Path,
-                                             m_demInputData->physicalProductDescriptor(), &demIdentityError)) {
-            setStartFailureMessage(demIdentityError);
-            setLastErrorMessage(demIdentityError);
-            return false;
+        if (resourceBound) {
+            if (m_preparedAuxiliaryDemBinding.identityH5Path.isEmpty() ||
+                demIdentityH5Path.compare(
+                    QDir::cleanPath(m_preparedAuxiliaryDemBinding.identityH5Path),
+                    Qt::CaseInsensitive) != 0) {
+                const QString reason = QStringLiteral(
+                    "已解析的辅助 DEM 身份文件与资源绑定不一致。");
+                setStartFailureMessage(reason);
+                setLastErrorMessage(reason);
+                return false;
+            }
+            // The auxiliary-resource resolver already verifies identity.h5 via
+            // the registry, generation metadata, descriptor, hashes and
+            // provenance manifest. It is not a normal node transaction output.
+        } else {
+            QString demIdentityError;
+            if (!NodeUtils::validateH5Identities(QStringList() << demIdentityH5Path,
+                                                 m_demInputData->physicalProductDescriptor(),
+                                                 &demIdentityError)) {
+                setStartFailureMessage(demIdentityError);
+                setLastErrorMessage(demIdentityError);
+                return false;
+            }
         }
         m_preparedDemPath = demRasterPath;
+        m_preparedDemIdentityH5Path = demIdentityH5Path;
     }
 
     m_preparedWinW = m_winWEdit ? m_winWEdit->text().toInt() : m_winW;
@@ -1450,8 +1469,12 @@ void InterferometricFormationNode::executeProcessing()
     setState(ExecutionState::Running);
 
     QString transactionError;
+    QStringList transactionInputPaths = m_preparedInputPaths;
+    if (!m_preparedDemIdentityH5Path.isEmpty()) {
+        transactionInputPaths.append(m_preparedDemIdentityH5Path);
+    }
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedFileName,
-                                           m_preparedOutputPaths, m_preparedInputPaths,
+                                           m_preparedOutputPaths, transactionInputPaths,
                                            m_outputTransaction, &transactionError, nullptr,
                                            NodeUtils::getProjectFilePath(_widget))) {
         onError(transactionError);
@@ -1462,6 +1485,17 @@ void InterferometricFormationNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("interferometric.output.interferogram"));
+    const QJsonObject inputGeometry = m_inputData
+        ? NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor())
+        : QJsonObject();
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            descriptorProvenance.insert(key, QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) descriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction,
             ProductDescriptor::create(QStringLiteral("interferogram"),

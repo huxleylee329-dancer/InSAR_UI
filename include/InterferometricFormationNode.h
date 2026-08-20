@@ -132,6 +132,7 @@ private:
     QStringList m_preparedInputPaths;
     QStringList m_preparedOutputPaths;
     QString m_preparedDemPath;
+    QString m_preparedDemIdentityH5Path;
     NodeUtils::AuxiliaryDemBinding m_preparedAuxiliaryDemBinding;
     NodeUtils::DemExecutionSnapshot m_preparedDemExecutionSnapshot;
     bool m_preparedIsDeflat = true;

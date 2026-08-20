@@ -76,6 +76,12 @@ bool ExportKMLNode::portCaptionVisible(PortType portType, PortIndex portIndex) c
 
 QString ExportKMLNode::portCaption(PortType portType, PortIndex portIndex) const
 {
+    Q_UNUSED(portIndex);
+    if (portType == PortType::In)
+    {
+        return tr("地理编码栅格");
+    }
+
     return tr("成果 *");
 }
 
@@ -136,9 +142,18 @@ void ExportKMLNode::setExecutionMode(ExecutionMode mode)
     if (_widget)
     {
         bool isManual = (mode == ExecutionMode::Manual);
-        m_outputPathEdit->setEnabled(isManual);
-        m_browseBtn->setEnabled(isManual);
-        m_fileNameEdit->setEnabled(isManual);
+        if (m_outputPathEdit)
+        {
+            m_outputPathEdit->setEnabled(isManual);
+        }
+        if (m_browseBtn)
+        {
+            m_browseBtn->setEnabled(isManual);
+        }
+        if (m_fileNameEdit)
+        {
+            m_fileNameEdit->setEnabled(isManual);
+        }
     }
 }
 
@@ -157,7 +172,7 @@ void ExportKMLNode::createWidget()
         QHBoxLayout* row = new QHBoxLayout();
         QLabel* label = new QLabel(labelText, _widget);
         label->setFixedWidth(80);
-        label->setStyleSheet("color: #E0E0E0; font-size: 11px;");
+        label->setStyleSheet("font-size: 11px;");
         row->addWidget(label);
         row->addWidget(fieldWidget);
         layout->addLayout(row);
@@ -165,7 +180,7 @@ void ExportKMLNode::createWidget()
 
     // Input node display
     m_inputNodeLabel = new QLabel(QStringLiteral("未连接"), _widget);
-    m_inputNodeLabel->setStyleSheet("color: #888888; font-size: 11px;");
+    m_inputNodeLabel->setStyleSheet("font-size: 11px;");
     addFormRow(QStringLiteral("输入节点:"), m_inputNodeLabel);
 
     // Output directory selection row
@@ -176,15 +191,14 @@ void ExportKMLNode::createWidget()
 
     m_outputPathEdit = new QLineEdit(pathWidget);
     m_outputPathEdit->setPlaceholderText(QStringLiteral("存储路径"));
-    m_outputPathEdit->setStyleSheet("color: white; background-color: #1F2937; border: 1px solid #4B5563; border-radius: 4px; padding: 2px; font-size: 11px;");
+    m_outputPathEdit->setStyleSheet("font-size: 11px;");
     connect(m_outputPathEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_outputPath = text;
     });
 
     m_browseBtn = new QPushButton(QStringLiteral("浏览"), pathWidget);
     m_browseBtn->setFixedWidth(50);
-    m_browseBtn->setStyleSheet("QPushButton { background-color: #374151; color: white; border-radius: 4px; padding: 2px; font-size: 11px; }"
-                               "QPushButton:hover { background-color: #4B5563; }");
+    m_browseBtn->setStyleSheet("font-size: 11px;");
     connect(m_browseBtn, &QPushButton::clicked, this, &ExportKMLNode::onBrowseClicked);
 
     pathLayout->addWidget(m_outputPathEdit);
@@ -194,7 +208,7 @@ void ExportKMLNode::createWidget()
     // Export File Name
     m_fileNameEdit = new QLineEdit(_widget);
     m_fileNameEdit->setText(m_fileName);
-    m_fileNameEdit->setStyleSheet("color: white; background-color: #1F2937; border: 1px solid #4B5563; border-radius: 4px; padding: 2px; font-size: 11px;");
+    m_fileNameEdit->setStyleSheet("font-size: 11px;");
     connect(m_fileNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_fileName = text;
     });
@@ -202,7 +216,7 @@ void ExportKMLNode::createWidget()
 
     // Result Label
     m_resultLabel = new QLabel(_widget);
-    m_resultLabel->setStyleSheet("color: #10B981; font-size: 10px;");
+    m_resultLabel->setStyleSheet("font-size: 10px;");
     m_resultLabel->setWordWrap(true);
     layout->addWidget(m_resultLabel);
 

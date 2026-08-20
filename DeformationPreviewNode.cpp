@@ -106,7 +106,7 @@ void DeformationPreviewNode::createWidget()
         QHBoxLayout* row = new QHBoxLayout();
         QLabel* label = new QLabel(labelText, _widget);
         label->setFixedWidth(80);
-        label->setStyleSheet("color: #E0E0E0; font-size: 11px;");
+        label->setStyleSheet("font-size: 11px;");
         row->addWidget(label);
         row->addWidget(fieldWidget);
         layout->addLayout(row);
@@ -114,14 +114,12 @@ void DeformationPreviewNode::createWidget()
 
     // Input node display
     m_inputNodeLabel = new QLabel(QStringLiteral("未连接"), _widget);
-    m_inputNodeLabel->setStyleSheet("color: #888888; font-size: 11px;");
+    m_inputNodeLabel->setStyleSheet("font-size: 11px;");
     addFormRow(QStringLiteral("输入节点:"), m_inputNodeLabel);
 
     // Preview Button
     m_previewBtn = new QPushButton(QStringLiteral("查看形变时间序列"), _widget);
-    m_previewBtn->setStyleSheet("QPushButton { background-color: #10B981; color: white; border-radius: 4px; padding: 6px 12px; font-size: 11px; font-weight: bold; }"
-                                "QPushButton:hover { background-color: #059669; }"
-                                "QPushButton:disabled { background-color: #4B5563; color: #9CA3AF; }");
+    m_previewBtn->setStyleSheet("font-size: 11px; font-weight: bold;");
     connect(m_previewBtn, &QPushButton::clicked, this, &DeformationPreviewNode::onPreviewClicked);
     layout->addWidget(m_previewBtn);
 

@@ -450,6 +450,7 @@ bool DemNode::prepareToStart()
         }
         QString phaseContractError;
         if (!NodeUtils::validateDemPhaseInput(inputH5, &phaseContractError)) {
+            setStartFailureMessage(phaseContractError);
             setLastErrorMessage(phaseContractError);
             setState(ExecutionState::Error);
             Q_EMIT executionError(phaseContractError);
@@ -1111,7 +1112,12 @@ void DemNode::processAutomatically()
     }
     else
     {
-        setState(ExecutionState::Pending);
+        // prepareToStart() reports a terminal Error for an invalid phase
+        // contract. Keep it visible instead of disguising it as a missing
+        // upstream-input Pending state.
+        if (executionState() == ExecutionState::Running) {
+            setState(ExecutionState::Pending);
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 #include "InSARLogManager.h"
 #include "EvaluationSCRNode.h"
 #include "SARProcessor.h"
+#include "ImportDataTypes.h"
 #include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -41,7 +42,9 @@ ProductInputContract EvaluationSCRNode::productInputContract(PortIndex portIndex
     contract.semanticId = portIndex == 0
         ? QStringLiteral("evaluation_scr.input.original_preview")
         : QStringLiteral("evaluation_scr.input.filtered_preview");
-    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.allowedProductTypes = portIndex == 0
+        ? (QStringList() << QStringLiteral("preview") << QStringLiteral("generic_sar_raster"))
+        : (QStringList() << QStringLiteral("preview") << QStringLiteral("speckle_denoised_image") << QStringLiteral("clutter_suppressed_image"));
     contract.requiredProvenanceFields = QStringList()
         << QStringLiteral("producer") << QStringLiteral("output_port");
     return contract;
@@ -99,6 +102,7 @@ void EvaluationSCRNode::createWidget()
     m_summaryLabel->hide();
     simpleLayout->addWidget(m_summaryLabel);
 
+
     tableLayout->addWidget(m_simpleResultWidget);
 
     m_expandLabel = new QLabel();
@@ -132,8 +136,6 @@ void EvaluationSCRNode::createWidget()
         }
     });
 
-    // Width is locked via setFixedWidth in widget creation above
-
     connect(m_regionComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EvaluationSCRNode::onRegionChanged);
 }
@@ -160,18 +162,27 @@ bool EvaluationSCRNode::portCaptionVisible(PortType portType, PortIndex portInde
 QString EvaluationSCRNode::portCaption(PortType portType, PortIndex portIndex) const
 {
     if (portType == PortType::In) {
-        if (portIndex == 0) return QStringLiteral("原图"); // 原图
-        if (portIndex == 1) return QStringLiteral("滤波后图像"); // 滤波后图像
+        if (portIndex == 0) return QStringLiteral("原图");
+        if (portIndex == 1) return QStringLiteral("滤波后图像");
     }
     return QString();
 }
 
 void EvaluationSCRNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
+    auto imageInfo = std::dynamic_pointer_cast<ImageInfoData>(data);
+    if (!imageInfo) {
+        const auto importedFiles = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (importedFiles) {
+            imageInfo = std::make_shared<ImageInfoData>(importedFiles->filePaths());
+            imageInfo->setProductDescriptor(importedFiles->productDescriptor());
+        }
+    }
+
     if (port == 0) {
-        m_originalData = std::dynamic_pointer_cast<ImageInfoData>(data);
+        m_originalData = imageInfo;
     } else if (port == 1) {
-        m_filteredData = std::dynamic_pointer_cast<ImageInfoData>(data);
+        m_filteredData = imageInfo;
     }
 
     ExecutableNodeDelegateModel::setInData(data, port);
@@ -180,9 +191,7 @@ void EvaluationSCRNode::setInData(std::shared_ptr<NodeData> data, PortIndex port
         return;
     }
     
-    if (isReady()) {
-        execute();
-    } else {
+    if (!isReady()) {
         calculateAndDisplaySCR();
     }
 }
@@ -256,13 +265,13 @@ void EvaluationSCRNode::stopExecution()
     }
     m_restartPending = false;
 }
-
 void EvaluationSCRNode::processAutomatically()
 {
     if (prepareToStart()) {
         execute();
-    } else if (!isReady()) {
-        setState(ExecutionState::Idle);
+    } else if (executionState() == ExecutionState::Running) {
+        const bool shouldBePending = (executionMode() == ExecutionMode::Automatic) && allRequiredPortsConnected();
+        setState(shouldBePending ? ExecutionState::Pending : ExecutionState::Idle);
     }
 }
 
@@ -283,7 +292,7 @@ double EvaluationSCRNode::calculateScr(const cv::Mat& targetGray, const cv::Mat&
 
 void EvaluationSCRNode::calculateAndDisplaySCR()
 {
-    // 如果两端口数据不同时有效，直接返回 Idle（不进入计算，避免单端口有数据时产生 Error）
+    const bool shouldBePending = (executionMode() == ExecutionMode::Automatic) && allRequiredPortsConnected();
     if (!isReady()) {
         if (m_resultsTable) m_resultsTable->setRowCount(0);
         if (m_originalScrLabel) m_originalScrLabel->setText("--");
@@ -291,7 +300,7 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         if (m_improvementLabel) m_improvementLabel->setText("--");
         if (m_summaryLabel) m_summaryLabel->setText("--");
         m_detectionResults.clear();
-        setState(ExecutionState::Idle);
+        setState(shouldBePending ? ExecutionState::Pending : ExecutionState::Idle);
         return;
     }
 
@@ -329,7 +338,7 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
         if (m_expandLabel) m_expandLabel->hide();
         if (m_resultsTable) m_resultsTable->hide();
         updateWidgetSize();
-        setState(ExecutionState::Idle);
+        setState(shouldBePending ? ExecutionState::Pending : ExecutionState::Idle);
         return;
     }
 
@@ -337,6 +346,7 @@ void EvaluationSCRNode::calculateAndDisplaySCR()
     m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
     m_restartPending = false;
     m_evaluationActive = true;
+    deferAutomaticCompletion();
 
     bool hasTargetRoi = m_hasTargetRoi;
     QRectF targetRoi = m_targetRoi;

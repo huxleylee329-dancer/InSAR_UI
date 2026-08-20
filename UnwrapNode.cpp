@@ -621,7 +621,7 @@ if (event.type == SNAPHU_RUN_EVENT_PREPARED) {
             LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.staging"));
     } else if (event.type == SNAPHU_RUN_EVENT_HEARTBEAT) {
         const bool shouldLog = m_snaphuLastLogHeartbeatMilliseconds == 0 ||
-            event.elapsedMilliseconds >= m_snaphuLastLogHeartbeatMilliseconds + 5000;
+            event.elapsedMilliseconds >= m_snaphuLastLogHeartbeatMilliseconds + 60000;
         QStringList metrics;
         metrics.append(QStringLiteral("运行 %1 s").arg(event.elapsedMilliseconds / 1000));
         metrics.append((event.metricAvailability & SNAPHU_RUN_METRIC_CPU_TIME)

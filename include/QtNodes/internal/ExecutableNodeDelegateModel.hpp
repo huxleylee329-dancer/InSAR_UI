@@ -20,6 +20,7 @@ namespace QtNodes {
 
 // Forward declarations
 class ExecutableNodeDelegateModel;
+class ExecutableDataFlowGraphModel;
 
 enum class ExecutionMode
 {
@@ -59,6 +60,7 @@ struct NODE_EDITOR_PUBLIC ParameterInfo
 class NODE_EDITOR_PUBLIC ExecutableNodeDelegateModel : public NodeDelegateModel
 {
     Q_OBJECT
+    friend class ExecutableDataFlowGraphModel;
 
 public:
     ExecutableNodeDelegateModel();

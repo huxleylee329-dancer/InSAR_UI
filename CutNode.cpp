@@ -21,6 +21,7 @@
 #include <QSet>
 #include <QSettings>
 #include <QtGlobal>
+#include <algorithm>
 #include <cmath>
 #include "InSARLogManager.h"
 #include <Utils.h>
@@ -34,6 +35,100 @@
 #include <QLabel>
 
 namespace QtNodes {
+
+namespace {
+
+const char kWgs84GeographicCrsWkt[] =
+    "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],"
+    "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]";
+
+bool buildCroppedGeometryProvenance(const QStringList& h5Paths,
+                                    QMap<QString, QString>& provenance,
+                                    QString* errorMessage)
+{
+    if (h5Paths.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("裁剪输出为空，无法建立可信地理范围。");
+        return false;
+    }
+
+    bool hasGeometry = false;
+    double minLon = 0.0;
+    double maxLon = 0.0;
+    double minLat = 0.0;
+    double maxLat = 0.0;
+    for (const QString& path : h5Paths) {
+        int width = 0;
+        int height = 0;
+        int offsetRow = 0;
+        int offsetCol = 0;
+        cv::Mat lonCoefficient;
+        cv::Mat latCoefficient;
+        {
+            NodeUtils::Hdf5Locker locker(path, 5000);
+            if (!locker.isLocked() ||
+                !NodeUtils::readScalarFromH5(path, QStringLiteral("range_len"), width) ||
+                !NodeUtils::readScalarFromH5(path, QStringLiteral("azimuth_len"), height) ||
+                !NodeUtils::readScalarFromH5(path, QStringLiteral("offset_row"), offsetRow) ||
+                !NodeUtils::readScalarFromH5(path, QStringLiteral("offset_col"), offsetCol) ||
+                !NodeUtils::readMatFromH5(path, QStringLiteral("lon_coefficient"), lonCoefficient) ||
+                !NodeUtils::readMatFromH5(path, QStringLiteral("lat_coefficient"), latCoefficient)) {
+                if (errorMessage) *errorMessage = QStringLiteral("无法读取裁剪输出的地理定位参数：%1").arg(path);
+                return false;
+            }
+        }
+
+        double imageMaxLon = 0.0;
+        double imageMaxLat = 0.0;
+        double imageMinLon = 0.0;
+        double imageMinLat = 0.0;
+        if (width <= 0 || height <= 0 ||
+            Utils::computeImageGeoBoundry(latCoefficient, lonCoefficient, height, width,
+                                           offsetRow, offsetCol, &imageMaxLon, &imageMaxLat,
+                                           &imageMinLon, &imageMinLat) != 0 ||
+            !std::isfinite(imageMinLon) || !std::isfinite(imageMaxLon) ||
+            !std::isfinite(imageMinLat) || !std::isfinite(imageMaxLat) ||
+            imageMaxLon <= imageMinLon || imageMaxLat <= imageMinLat) {
+            if (errorMessage) *errorMessage = QStringLiteral("无法从裁剪输出计算有效地理范围：%1").arg(path);
+            return false;
+        }
+
+        if (!hasGeometry) {
+            minLon = imageMinLon;
+            maxLon = imageMaxLon;
+            minLat = imageMinLat;
+            maxLat = imageMaxLat;
+            hasGeometry = true;
+        } else {
+            minLon = std::min(minLon, imageMinLon);
+            maxLon = std::max(maxLon, imageMaxLon);
+            minLat = std::min(minLat, imageMinLat);
+            maxLat = std::max(maxLat, imageMaxLat);
+        }
+    }
+
+    provenance.insert(QStringLiteral("minLon"), QString::number(minLon, 'g', 17));
+    provenance.insert(QStringLiteral("maxLon"), QString::number(maxLon, 'g', 17));
+    provenance.insert(QStringLiteral("minLat"), QString::number(minLat, 'g', 17));
+    provenance.insert(QStringLiteral("maxLat"), QString::number(maxLat, 'g', 17));
+    provenance.insert(QStringLiteral("crsWkt"), QString::fromLatin1(kWgs84GeographicCrsWkt));
+    return true;
+}
+
+ProductDescriptor::Ptr buildCroppedProductDescriptor(const QStringList& h5Paths,
+                                                      const QString& source,
+                                                      QString* errorMessage)
+{
+    QMap<QString, QString> provenance;
+    provenance.insert(QStringLiteral("producer"), source);
+    provenance.insert(QStringLiteral("output_port"),
+                      QStringLiteral("aoi_crop.output.cropped_complex_sar"));
+    if (!buildCroppedGeometryProvenance(h5Paths, provenance, errorMessage)) return {};
+    return ProductDescriptor::create(QStringLiteral("cropped_complex_sar"),
+                                     QStringLiteral("sat-explorer-product"), 1,
+                                     ProductState::Committed, source, provenance);
+}
+
+} // namespace
 
 CutNode::CutNode()
     : ExecutableNodeDelegateModel()
@@ -187,12 +282,23 @@ void CutNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
                     // 检查新旧影像中心经纬度差异是否在阈值（约1km，约0.01度）内
                     bool isSameExtent = false;
-                    if (m_lastInputLon != 0.0 || m_lastInputLat != 0.0) {
-                        double diff_lon = std::abs(new_lon - m_lastInputLon);
-                        double diff_lat = std::abs(new_lat - m_lastInputLat);
+                    double refLon = m_lastInputLon;
+                    double refLat = m_lastInputLat;
+                    // 若无历史记录但已有恢复的经纬度，使用节点当前的经纬度作为参考基准
+                    if (refLon == 0.0 && refLat == 0.0 && (m_lon != 0.0 || m_lat != 0.0)) {
+                        refLon = m_lon;
+                        refLat = m_lat;
+                    }
+
+                    if (refLon != 0.0 || refLat != 0.0) {
+                        double diff_lon = std::abs(new_lon - refLon);
+                        double diff_lat = std::abs(new_lat - refLat);
                         if (diff_lon < 0.01 && diff_lat < 0.01) {
                             isSameExtent = true;
                         }
+                    } else if (m_boxSelected) {
+                        // 首次载入或历史工程未记录参考经纬度，但已有有效框选参数，保留框选并记录当前中心
+                        isSameExtent = true;
                     }
 
                     if (isSameExtent) {
@@ -919,6 +1025,24 @@ void CutNode::onProcessingFinished()
             return;
         }
     }
+    const ProductDescriptor::Ptr outputDescriptor = buildCroppedProductDescriptor(
+        m_generatedOutputPaths, name(), &transactionError);
+    if (!outputDescriptor ||
+        !NodeUtils::setOutputTransactionProductDescriptor(m_outputTransaction, outputDescriptor,
+                                                           &transactionError)) {
+        onError(transactionError.isEmpty()
+            ? QStringLiteral("无法为裁剪输出建立可信地理范围。") : transactionError);
+        return;
+    }
+    const QMap<QString, QString> outputProvenance = outputDescriptor->provenance();
+    InSARLogManager::LogDebug("CutNode",
+        QStringLiteral("Committed crop geometry: Lon[%1, %2], Lat[%3, %4], CRS=WGS84 geographic, outputs=%5.")
+            .arg(outputProvenance.value(QStringLiteral("minLon")),
+                 outputProvenance.value(QStringLiteral("maxLon")),
+                 outputProvenance.value(QStringLiteral("minLat")),
+                 outputProvenance.value(QStringLiteral("maxLat")))
+            .arg(m_generatedOutputPaths.size()),
+        QStringLiteral("dem.binding"));
     if (!projectXml() ||
         !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
         !NodeUtils::validateStagedH5Datasets(m_outputTransaction,
@@ -983,6 +1107,7 @@ void CutNode::onProcessingFinished()
 
     // Set outputs
     m_outputData = std::make_shared<ImportedFileData>(m_outputPaths, dstNodeName);
+    m_outputData->setProductDescriptor(outputDescriptor);
     setOutputData(0, m_outputData);
 
     // Rebuild JPG paths
@@ -1627,6 +1752,8 @@ QJsonObject CutNode::save() const
     modelJson["bottom"] = m_bottom;
     modelJson["boxSelected"] = m_boxSelected;
     modelJson["coordsSet"] = m_coordsSet;
+    modelJson["lastInputLon"] = m_lastInputLon;
+    modelJson["lastInputLat"] = m_lastInputLat;
 
     modelJson["saveToProject"] = m_saveToProject;
     modelJson["outputNodeName"] = m_outputNodeName;
@@ -1655,6 +1782,8 @@ void CutNode::load(QJsonObject const &json)
     m_bottom = json["bottom"].toDouble(0.75);
     m_boxSelected = json["boxSelected"].toBool(false);
     m_coordsSet = json.contains("coordsSet") ? json["coordsSet"].toBool() : true;
+    m_lastInputLon = json["lastInputLon"].toDouble(0.0);
+    m_lastInputLat = json["lastInputLat"].toDouble(0.0);
     
     m_saveToProject = json["saveToProject"].toBool(true);
     m_outputNodeName = json["outputNodeName"].toString("AOI_Crop");

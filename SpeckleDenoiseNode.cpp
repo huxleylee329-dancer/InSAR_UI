@@ -1,9 +1,10 @@
-#include "SpeckleDenoiseNode.h"
+#include "SpeckleDenoiseNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 #include "InterfaceManager.h"
 #include "WorkspaceUI.h"
 #include "NodeUtils.h"
+#include "ImportDataTypes.h"
 #include "icon_source.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -63,7 +64,8 @@ ProductInputContract SpeckleDenoiseNode::productInputContract(PortIndex portInde
     Q_UNUSED(portIndex);
     ProductInputContract contract;
     contract.semanticId = QStringLiteral("speckle_denoise.input.preview");
-    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.allowedProductTypes = QStringList() << QStringLiteral("preview")
+                                                 << QStringLiteral("generic_sar_raster");
     contract.requiredProvenanceFields = QStringList()
         << QStringLiteral("producer") << QStringLiteral("output_port");
     return contract;
@@ -110,7 +112,15 @@ bool SpeckleDenoiseNode::portIsOptional(PortType portType, PortIndex portIndex) 
 void SpeckleDenoiseNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     Q_UNUSED(port);
-    m_inputData = std::dynamic_pointer_cast<ImageInfoData>(data);
+    auto imageInfo = std::dynamic_pointer_cast<ImageInfoData>(data);
+    if (!imageInfo) {
+        const auto importedFiles = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (importedFiles) {
+            imageInfo = std::make_shared<ImageInfoData>(importedFiles->filePaths());
+            imageInfo->setProductDescriptor(importedFiles->productDescriptor());
+        }
+    }
+    m_inputData = imageInfo;
 
     if (m_inputImageLabel) {
         if (m_inputData && !m_inputData->filePath().isEmpty()) {

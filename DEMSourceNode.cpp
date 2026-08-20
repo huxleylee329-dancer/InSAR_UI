@@ -2217,6 +2217,11 @@ void DEMSourceNode::onProcessingFinished(
     m_referenceData = std::make_shared<AuxiliaryDemReferenceData>(resourceId, provenanceId, 1);
     m_referenceData->setProductDescriptor(auxiliaryDemReferenceDescriptor(resourceId, provenanceId));
     m_imageInfoData.reset();
+    InSARLogManager::LogDebug("DEMSourceNode",
+        QStringLiteral("Committed Auxiliary DEM prepared for publication: revision=%1, projectRoot=%2, resourceId=%3, provenanceId=%4, raster=%5, identityH5=%6, state=%7.")
+            .arg(executionRevision()).arg(projectPath(), resourceId, provenanceId, managedTif, managedH5)
+            .arg(static_cast<int>(executionState())),
+        QStringLiteral("dem.binding"));
     setOutputData(0, m_outputData);
     setOutputData(1, nullptr);
     Q_EMIT dataUpdated(0);
@@ -2356,6 +2361,12 @@ void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString&
         // the DEM ports after the terminal transition so downstream nodes do
         // not retain the empty propagation emitted before preview generation.
         if (m_outputData) {
+            InSARLogManager::LogDebug("DEMSourceNode",
+                QStringLiteral("Publishing terminal Auxiliary DEM output: revision=%1, projectRoot=%2, resourceId=%3, provenanceId=%4, state=%5.")
+                    .arg(executionRevision()).arg(projectPath(), m_outputData->resourceId(),
+                                                   m_outputData->pinnedProvenanceId())
+                    .arg(static_cast<int>(executionState())),
+                QStringLiteral("dem.binding"));
             setOutputData(0, m_outputData);
             Q_EMIT dataUpdated(0);
         }

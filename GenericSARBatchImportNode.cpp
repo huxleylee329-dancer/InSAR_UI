@@ -31,7 +31,7 @@ GenericSARBatchImportNode::~GenericSARBatchImportNode()
 
 unsigned int GenericSARBatchImportNode::nPorts(PortType portType) const
 {
-    return portType == PortType::In ? 0 : 1;
+    return portType == PortType::In ? 0 : 2;
 }
 
 ProductOutputContract GenericSARBatchImportNode::productOutputContract(PortIndex portIndex) const
@@ -40,6 +40,9 @@ ProductOutputContract GenericSARBatchImportNode::productOutputContract(PortIndex
     if (portIndex == 0) {
         contract.semanticId = QStringLiteral("generic_sar_batch_import.output.generic_sar_raster");
         contract.publishedProductTypes = QStringList() << QStringLiteral("generic_sar_raster");
+    } else if (portIndex == 1) {
+        contract.semanticId = QStringLiteral("generic_sar_batch_import.output.preview");
+        contract.publishedProductTypes = QStringList() << QStringLiteral("preview");
     }
     return contract;
 }
@@ -282,7 +285,7 @@ QStringList GenericSARBatchImportNode::getExpectedOutputFilePaths() const
 
 QStringList GenericSARBatchImportNode::getExpectedPreviewFilePaths() const
 {
-    return QStringList();
+    return getExpectedOutputFilePaths();
 }
 
 QStringList GenericSARBatchImportNode::transactionInputPaths() const
@@ -339,9 +342,11 @@ void GenericSARBatchImportNode::onAddFilesClicked()
     {
         m_importedFilePaths.clear();
         setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         setState(ExecutionState::Idle);
 
         Q_EMIT dataUpdated(0);
+        Q_EMIT dataUpdated(1);
     }
 }
 
@@ -354,7 +359,7 @@ void GenericSARBatchImportNode::onRemoveFilesClicked()
     {
         int row = m_fileListWidget->row(item);
         m_imagePaths.removeAt(row);
-        delete item;
+        delete m_fileListWidget->takeItem(row);
         changed = true;
     }
 
@@ -362,9 +367,11 @@ void GenericSARBatchImportNode::onRemoveFilesClicked()
     {
         m_importedFilePaths.clear();
         setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
         setState(ExecutionState::Idle);
 
         Q_EMIT dataUpdated(0);
+        Q_EMIT dataUpdated(1);
     }
 }
 
@@ -446,6 +453,7 @@ NodeDataType GenericSARBatchImportNode::dataType(PortType portType, PortIndex po
 {
     if (portType == PortType::Out) {
         if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
     }
     return NodeDataType();
 }
@@ -456,6 +464,7 @@ bool GenericSARBatchImportNode::validateAndRestoreOutput()
         return false;
     }
     Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
     return true;
 }
 

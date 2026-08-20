@@ -1308,12 +1308,27 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
         return false;
     }
     QMap<QString, AuxiliaryDemRegistryEntry> registry;
-    if (!loadAuxiliaryDemRegistry(projectRoot, registry, errorMessage) ||
-        !registry.contains(data.resourceId()) || registry.value(data.resourceId()).tombstone) {
+    const bool registryLoaded = loadAuxiliaryDemRegistry(projectRoot, registry, errorMessage);
+    const auto registryIt = registry.constFind(data.resourceId());
+    const bool resourceFound = registryIt != registry.constEnd();
+    const bool resourceTombstoned = resourceFound && registryIt->tombstone;
+    if (!registryLoaded || !resourceFound || resourceTombstoned) {
+        InSARLogManager::LogDebug("NodeUtils",
+            QStringLiteral("Auxiliary DEM registry lookup failed: projectRoot=%1, registryPath=%2, requestedResourceId=%3, requestedProvenanceId=%4, registryLoaded=%5, resourceFound=%6, tombstone=%7, registeredResourceIds=[%8], resolverError=%9.")
+                .arg(projectRoot,
+                     resourceRegistryPath(projectRoot),
+                     data.resourceId(),
+                     data.pinnedProvenanceId())
+                .arg(registryLoaded)
+                .arg(resourceFound)
+                .arg(resourceTombstoned)
+                .arg(registry.keys().join(QStringLiteral(",")),
+                     errorMessage ? *errorMessage : QString()),
+            QStringLiteral("dem.binding"));
         if (errorMessage && errorMessage->isEmpty()) *errorMessage = QStringLiteral("Auxiliary DEM resource is not registered or is tombstoned.");
         return false;
     }
-    const AuxiliaryDemRegistryEntry entry = registry.value(data.resourceId());
+    const AuxiliaryDemRegistryEntry entry = *registryIt;
     if (entry.legacyUnverified) {
         if (errorMessage) *errorMessage = QStringLiteral("Auxiliary DEM resource is legacy and lacks a verifiable validity mask; regenerate it before use.");
         return false;
@@ -3166,8 +3181,12 @@ bool beginOutputTransaction(const QString& projectRoot,
         const QFileInfo info(expectedPath);
         if (QDir::cleanPath(info.absolutePath()).compare(
                 QDir::cleanPath(root.absoluteFilePath(nodeName)), Qt::CaseInsensitive) != 0 ||
-            info.fileName().isEmpty() || uniqueNames.contains(info.fileName())) {
+            info.fileName().isEmpty()) {
             if (errorMessage) *errorMessage = QStringLiteral("Expected output is not a direct child of the node output directory: %1").arg(expectedPath);
+            return false;
+        }
+        if (uniqueNames.contains(info.fileName())) {
+            if (errorMessage) *errorMessage = QStringLiteral("Duplicate expected output file name in transaction: %1").arg(info.fileName());
             return false;
         }
         uniqueNames.insert(info.fileName());

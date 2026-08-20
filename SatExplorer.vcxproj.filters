@@ -1546,9 +1546,6 @@
     <ClInclude Include="include\ImportDataTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\BaseImportWorker.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="include\ImportTask.h">
       <Filter>Header Files</Filter>
     </ClInclude>

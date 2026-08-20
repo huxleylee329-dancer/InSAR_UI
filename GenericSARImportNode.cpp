@@ -32,7 +32,7 @@ GenericSARImportNode::~GenericSARImportNode()
 
 unsigned int GenericSARImportNode::nPorts(PortType portType) const
 {
-    return portType == PortType::In ? 0 : 1;
+    return portType == PortType::In ? 0 : 2;
 }
 
 ProductOutputContract GenericSARImportNode::productOutputContract(PortIndex portIndex) const
@@ -41,6 +41,9 @@ ProductOutputContract GenericSARImportNode::productOutputContract(PortIndex port
     if (portIndex == 0) {
         contract.semanticId = QStringLiteral("generic_sar_import.output.generic_sar_raster");
         contract.publishedProductTypes = QStringList() << QStringLiteral("generic_sar_raster");
+    } else if (portIndex == 1) {
+        contract.semanticId = QStringLiteral("generic_sar_import.output.preview");
+        contract.publishedProductTypes = QStringList() << QStringLiteral("preview");
     }
     return contract;
 }
@@ -292,7 +295,7 @@ QStringList GenericSARImportNode::getExpectedOutputFilePaths() const
 
 QStringList GenericSARImportNode::getExpectedPreviewFilePaths() const
 {
-    return QStringList();
+    return getExpectedOutputFilePaths();
 }
 
 QStringList GenericSARImportNode::transactionInputPaths() const
@@ -325,9 +328,11 @@ void GenericSARImportNode::onImageBrowseClicked()
 
     m_importedFilePaths.clear();
     setOutputData(0, nullptr);
+    setOutputData(1, nullptr);
     setState(ExecutionState::Idle);
 
     Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
 }
 
 void GenericSARImportNode::onImportFinished()
@@ -390,6 +395,7 @@ NodeDataType GenericSARImportNode::dataType(PortType portType, PortIndex portInd
 {
     if (portType == PortType::Out) {
         if (portIndex == 0) return NodeDataType{"imported_file", "Imported File"};
+        if (portIndex == 1) return NodeDataType{"image_info", "Image Info"};
     }
     return NodeDataType();
 }
@@ -400,6 +406,7 @@ bool GenericSARImportNode::validateAndRestoreOutput()
         return false;
     }
     Q_EMIT dataUpdated(0);
+    Q_EMIT dataUpdated(1);
     return true;
 }
 

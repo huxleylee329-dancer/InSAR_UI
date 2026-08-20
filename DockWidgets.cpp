@@ -1279,56 +1279,22 @@ void PropertyEditor::generateBasicInfoSection()
 
 void PropertyEditor::generateInputSection()
 {
-    bool darkTheme = isDarkTheme();
-
     QVBoxLayout* contentLayout = qobject_cast<QVBoxLayout*>(m_inputSection.contentWidget->layout());
-    if (!contentLayout) return;
+    if (!contentLayout)
+        return;
 
-    // Remove stretch to add content
     contentLayout->removeItem(contentLayout->itemAt(contentLayout->count() - 1));
 
-    QString noPortsTextColor = darkTheme ? "#94A3B8" : "#94A3B8";
-    QString sectionTextColor = darkTheme ? "#94A3B8" : "#64748B";
-    QString sectionBgColor = darkTheme ? "rgba(64, 64, 64, 0.5)" : "rgba(241, 245, 249, 0.8)";
-
-    bool hasContent = false;
-
-    // Display input ports (from connected upstream nodes)
-    if (!m_nodeData.inputPorts.isEmpty()) {
-
-
-        for (const PortDataInfo& info : m_nodeData.inputPorts) {
-            // Input ports are generally not editable (data comes from connected nodes)
-            addPortCard(contentLayout, info, false);
-        }
-        hasContent = true;
-    }
-
-    // Display widget parameters (from node's controls like QLineEdit)
-    if (!m_nodeData.parameters.isEmpty()) {
-        if (hasContent) {
-            // Add separator
-            QLabel* separator = new QLabel();
-            separator->setStyleSheet(QString("background-color: %1; margin: 12px 0; max-height: 1px;").arg(sectionBgColor));
-            contentLayout->addWidget(separator);
-        }
-
-        QLabel* paramsLabel = new QLabel("Node Parameters");
-        paramsLabel->setStyleSheet(QString("color: %1; font-weight: bold; margin-top: 8px; margin-bottom: 4px;").arg(sectionTextColor));
-        contentLayout->addWidget(paramsLabel);
-
-        for (const QtNodes::ParameterInfo& param : m_nodeData.parameters) {
-            addParameterCard(contentLayout, param);
-        }
-        hasContent = true;
-    }
-
-    if (!hasContent) {
-        QLabel* noContentLabel = new QLabel("No input ports or parameters");
-        noContentLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(noPortsTextColor));
+    if (m_nodeData.inputPorts.isEmpty()) {
+        QLabel* noContentLabel = new QLabel("No input ports");
+        noContentLabel->setStyleSheet(QString("color: %1; font-style: italic;").arg(isDarkTheme() ? "#94A3B8" : "#94A3B8"));
         contentLayout->addWidget(noContentLabel);
+        return;
     }
-    // 不再添加 stretch，区域按实际内容大小排列
+
+    for (const PortDataInfo& info : m_nodeData.inputPorts) {
+        addPortCard(contentLayout, info, false);
+    }
 }
 
 void PropertyEditor::generateProcessingSection()

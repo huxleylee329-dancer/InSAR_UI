@@ -1,6 +1,6 @@
-
 #include "EvaluationENLNode.h"
 #include "SARProcessor.h"
+#include "ImportDataTypes.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -36,7 +36,9 @@ ProductInputContract EvaluationENLNode::productInputContract(PortIndex portIndex
     contract.semanticId = portIndex == 0
         ? QStringLiteral("evaluation_enl.input.original_preview")
         : QStringLiteral("evaluation_enl.input.filtered_preview");
-    contract.allowedProductTypes = QStringList() << QStringLiteral("preview");
+    contract.allowedProductTypes = portIndex == 0
+        ? (QStringList() << QStringLiteral("preview") << QStringLiteral("generic_sar_raster"))
+        : (QStringList() << QStringLiteral("preview") << QStringLiteral("speckle_denoised_image") << QStringLiteral("clutter_suppressed_image"));
     contract.requiredProvenanceFields = QStringList()
         << QStringLiteral("producer") << QStringLiteral("output_port");
     return contract;
@@ -127,8 +129,6 @@ void EvaluationENLNode::createWidget()
     });
     mainLayout->addLayout(tableLayout);
 
-    // Width is locked via setFixedWidth in widget creation above
-
     connect(m_regionComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EvaluationENLNode::onRegionChanged);
 }
@@ -163,10 +163,19 @@ QString EvaluationENLNode::portCaption(PortType portType, PortIndex portIndex) c
 
 void EvaluationENLNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
+    auto imageInfo = std::dynamic_pointer_cast<ImageInfoData>(data);
+    if (!imageInfo) {
+        const auto importedFiles = std::dynamic_pointer_cast<ImportedFileData>(data);
+        if (importedFiles) {
+            imageInfo = std::make_shared<ImageInfoData>(importedFiles->filePaths());
+            imageInfo->setProductDescriptor(importedFiles->productDescriptor());
+        }
+    }
+
     if (port == 0) {
-        m_originalData = std::dynamic_pointer_cast<ImageInfoData>(data);
+        m_originalData = imageInfo;
     } else if (port == 1) {
-        m_filteredData = std::dynamic_pointer_cast<ImageInfoData>(data);
+        m_filteredData = imageInfo;
     }
 
     // Call base class setInData to correctly update execution state
@@ -176,11 +185,7 @@ void EvaluationENLNode::setInData(std::shared_ptr<NodeData> data, PortIndex port
         return;
     }
     
-    // Auto execute if ready
-    if (isReady()) {
-        execute();
-    } else {
-        // Clear ENL if data is removed
+    if (!isReady()) {
         calculateAndDisplayENL();
     }
 }
@@ -259,8 +264,9 @@ void EvaluationENLNode::processAutomatically()
 {
     if (prepareToStart()) {
         execute();
-    } else if (!isReady()) {
-        setState(ExecutionState::Idle);
+    } else if (executionState() == ExecutionState::Running) {
+        const bool shouldBePending = (executionMode() == ExecutionMode::Automatic) && allRequiredPortsConnected();
+        setState(shouldBePending ? ExecutionState::Pending : ExecutionState::Idle);
     }
 }
 
@@ -307,7 +313,8 @@ void EvaluationENLNode::calculateAndDisplayENL()
         if (m_expandLabel) m_expandLabel->hide();
         if (m_resultsTable) m_resultsTable->hide();
         updateWidgetSize();
-        setState(ExecutionState::Idle);
+        const bool shouldBePending = (executionMode() == ExecutionMode::Automatic) && allRequiredPortsConnected();
+        setState(shouldBePending ? ExecutionState::Pending : ExecutionState::Idle);
         return;
     }
     
@@ -332,6 +339,7 @@ void EvaluationENLNode::calculateAndDisplayENL()
     m_stopFlagPtr = std::make_shared<std::atomic<bool>>(false);
     m_restartPending = false;
     m_evaluationActive = true;
+    deferAutomaticCompletion();
 
     bool hasCustomRoi = m_hasCustomRoi;
     cv::Rect customRoi = m_customRoi;

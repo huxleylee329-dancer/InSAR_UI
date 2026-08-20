@@ -277,7 +277,7 @@ QString SBASReferenceReselectionNode::portCaption(PortType portType, PortIndex p
 {
     if (portType == PortType::In)
     {
-        return tr("成果 *");
+        return tr("SBAS时间序列");
     }
     else
     {
@@ -357,8 +357,14 @@ void SBASReferenceReselectionNode::setExecutionMode(ExecutionMode mode)
     if (_widget)
     {
         bool isManual = (mode == ExecutionMode::Manual);
-        m_selectBtn->setEnabled(isManual);
-        m_outputNodeNameEdit->setEnabled(isManual);
+        if (m_selectBtn)
+        {
+            m_selectBtn->setEnabled(isManual);
+        }
+        if (m_outputNodeNameEdit)
+        {
+            m_outputNodeNameEdit->setEnabled(isManual);
+        }
     }
 }
 
@@ -377,7 +383,7 @@ void SBASReferenceReselectionNode::createWidget()
         QHBoxLayout* row = new QHBoxLayout();
         QLabel* label = new QLabel(labelText, _widget);
         label->setFixedWidth(80);
-        label->setStyleSheet("color: #E0E0E0; font-size: 11px;");
+        label->setStyleSheet("font-size: 11px;");
         row->addWidget(label);
         row->addWidget(fieldWidget);
         layout->addLayout(row);
@@ -385,24 +391,22 @@ void SBASReferenceReselectionNode::createWidget()
 
     // Input node display
     m_inputNodeLabel = new QLabel(QStringLiteral("未连接"), _widget);
-    m_inputNodeLabel->setStyleSheet("color: #888888; font-size: 11px;");
+    m_inputNodeLabel->setStyleSheet("font-size: 11px;");
     addFormRow(QStringLiteral("输入节点:"), m_inputNodeLabel);
 
     // Selected Reference Point display
     m_refPointLabel = new QLabel(QStringLiteral("未选择"), _widget);
-    m_refPointLabel->setStyleSheet("color: #E0E0E0; font-size: 11px;");
+    m_refPointLabel->setStyleSheet("font-size: 11px;");
     addFormRow(QStringLiteral("参考点:"), m_refPointLabel);
 
     // Selected GCPs count display
     m_gcpLabel = new QLabel(QStringLiteral("0 GCPs"), _widget);
-    m_gcpLabel->setStyleSheet("color: #E0E0E0; font-size: 11px;");
+    m_gcpLabel->setStyleSheet("font-size: 11px;");
     addFormRow(QStringLiteral("GCP数量:"), m_gcpLabel);
 
     // Select Button
     m_selectBtn = new QPushButton(QStringLiteral("选择参考点与GCP"), _widget);
-    m_selectBtn->setStyleSheet("QPushButton { background-color: #3B82F6; color: white; border-radius: 4px; padding: 4px 8px; font-size: 11px; }"
-                               "QPushButton:hover { background-color: #2563EB; }"
-                               "QPushButton:disabled { background-color: #4B5563; color: #9CA3AF; }");
+    m_selectBtn->setStyleSheet("font-size: 11px;");
     connect(m_selectBtn, &QPushButton::clicked, this, &SBASReferenceReselectionNode::onSelectClicked);
     layout->addWidget(m_selectBtn);
 
@@ -410,7 +414,7 @@ void SBASReferenceReselectionNode::createWidget()
     m_outputNodeNameEdit = new QLineEdit(_widget);
     m_outputNodeNameEdit->setPlaceholderText(QStringLiteral("自动生成或手动输入"));
     m_outputNodeNameEdit->setText(QStringLiteral("自动生成或手动输入"));
-    m_outputNodeNameEdit->setStyleSheet("color: white; background-color: #1F2937; border: 1px solid #4B5563; border-radius: 4px; padding: 2px; font-size: 11px;");
+    m_outputNodeNameEdit->setStyleSheet("font-size: 11px;");
     connect(m_outputNodeNameEdit, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_outputNodeName = text;
         updateWidgetSize();
@@ -419,7 +423,7 @@ void SBASReferenceReselectionNode::createWidget()
 
     // Progress/Result label
     m_resultLabel = new QLabel(_widget);
-    m_resultLabel->setStyleSheet("color: #10B981; font-size: 10px;");
+    m_resultLabel->setStyleSheet("font-size: 10px;");
     m_resultLabel->setWordWrap(true);
     layout->addWidget(m_resultLabel);
 
