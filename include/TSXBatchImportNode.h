@@ -24,6 +24,9 @@ public:
     TSXBatchImportNode();
     ~TSXBatchImportNode() = default;
 
+    bool supportsValidation() const override { return true; }
+    ::QWidget* createValidationWidget(::QWidget* parent) override;
+
     // NodeDelegateModel interface
     QString caption() const override { return QStringLiteral("TerraSAR-X Batch Import"); }
     QString name() const override { return QStringLiteral("TSXBatchImport"); }
@@ -32,11 +35,21 @@ public:
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
 
+    // This name is captured with a committed manifest snapshot. It is not a
+    // source-product lookup key.
+    QString validationOutputNodeName() const { return getOutputNodeName(); }
+
+    // These paths restore the node's current configuration so Detail View can
+    // preselect a source product for an explicit, user-visible comparison.
+    // They do not prove the source of a previously committed run.
+    QStringList validationSourceXmlPaths() const { return m_xmlPaths; }
+
 protected:
     // ImportNodeBase interface
     QWidget* createWidget() override;
     void executeImport() override;
     QStringList getExpectedOutputFilePaths() const override;
+    QStringList transactionInputPaths() const override;
     QString getOutputNodeName() const override;
 
     // Helper methods
@@ -51,7 +64,6 @@ private:
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
     QComboBox* m_polarizationCombo;
-    QLabel* m_projectLabel;
 
     // State
     QStringList m_xmlPaths;

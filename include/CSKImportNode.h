@@ -47,7 +47,6 @@ private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QLabel* m_projectLabel;
     QPushButton* m_importButton;
     QPushButton* m_stopButton;
 

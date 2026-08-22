@@ -16,7 +16,6 @@ AIRSATImportNode::AIRSATImportNode()
     , m_widget(nullptr)
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
-    , m_projectLabel(nullptr)
     , m_dataFilePaths()
     , m_xmlFilePaths()
     , m_outputNodeName()
@@ -68,10 +67,6 @@ QWidget* AIRSATImportNode::createWidget()
     topSection->addLayout(buttonLayout);
 
     mainLayout->addLayout(topSection);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Bottom section: configuration options
     auto* bottomSection = new QHBoxLayout();

@@ -53,6 +53,30 @@ QString levelName(int level)
     }
 }
 
+bool isTransformedGlyphMetricsWarning(QtMsgType type, const QString& message)
+{
+    static const QString prefix = QStringLiteral(
+        "QWinFontEngine: unable to query transformed glyph metrics "
+        "(GetGlyphOutline() failed, error 1003)");
+    return type == QtCriticalMsg && message.startsWith(prefix);
+}
+
+bool shouldLogTransformedGlyphMetricsWarning()
+{
+    static std::mutex rateLimitMutex;
+    static std::chrono::steady_clock::time_point lastLogged;
+
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(rateLimitMutex);
+    if (lastLogged.time_since_epoch().count() != 0
+        && now - lastLogged < std::chrono::seconds(5)) {
+        return false;
+    }
+
+    lastLogged = now;
+    return true;
+}
+
 void qtMessageHandler(QtMsgType type, const QMessageLogContext& context, const QString& message)
 {
     if (g_qtMessageHandlerActive) {
@@ -63,6 +87,12 @@ void qtMessageHandler(QtMsgType type, const QMessageLogContext& context, const Q
     }
 
     g_qtMessageHandlerActive = true;
+    const bool transformedGlyphMetricsWarning = isTransformedGlyphMetricsWarning(type, message);
+    if (transformedGlyphMetricsWarning && !shouldLogTransformedGlyphMetricsWarning()) {
+        g_qtMessageHandlerActive = false;
+        return;
+    }
+
     InSARLogManager::LogLevel level = InSARLogManager::LevelDebug;
     switch (type) {
     case QtDebugMsg: level = InSARLogManager::LevelDebug; break;
@@ -90,8 +120,14 @@ void qtMessageHandler(QtMsgType type, const QMessageLogContext& context, const Q
     if (type == QtCriticalMsg || type == QtFatalMsg) {
         targets |= LogTarget::UserProjectLog;
     }
-    InSARLogManager::LogDiagnostic(level, source, message, targets,
-                                   context.category ? QString::fromLocal8Bit(context.category) : QStringLiteral("qt"));
+    QString category = context.category
+        ? QString::fromLocal8Bit(context.category) : QStringLiteral("qt");
+    if (transformedGlyphMetricsWarning) {
+        level = InSARLogManager::LevelWarning;
+        targets = diagnosticTargets();
+        category = QStringLiteral("qt.font");
+    }
+    InSARLogManager::LogDiagnostic(level, source, message, targets, category);
     if (type == QtFatalMsg) {
         InSARLogManager::flushAll(1000);
     }

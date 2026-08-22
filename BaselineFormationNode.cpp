@@ -714,6 +714,17 @@ QJsonObject BaselineFormationNode::save() const
     return root;
 }
 
+void BaselineFormationNode::prepareForPaste(QJsonObject& json,
+                                            PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // Baseline arrays are the completed result consumed directly by the
+    // status panel, chart button and validateAndRestoreOutput().
+    json.remove(QStringLiteral("temporalBaselines"));
+    json.remove(QStringLiteral("spatialBaselines"));
+}
+
 void BaselineFormationNode::load(QJsonObject const& json)
 {
     m_useDefaultMaster = json["useDefaultMaster"].toBool(true);

@@ -16,7 +16,7 @@ public:
     ~CoregistrationWorker();
 
     void setDemPath(const QString& path) { m_demPath = path; }
-    void setFilePattern(const QString& pattern) { m_filePattern = pattern; }
+    void setDemValidMaskPath(const QString& path) { m_demValidMaskPath = path; }
     double getStageStart() const { return m_stageStart; }
     double getStageWidth() const { return m_stageWidth; }
     void setStage(double start, double width) { m_stageStart = start; m_stageWidth = width; }
@@ -41,7 +41,7 @@ private:
     QString resolveOutputFileName(const QString& originalName) const;
 
     QString m_demPath;
-    QString m_filePattern;
+    QString m_demValidMaskPath;
     double m_stageStart = 60.0;
     double m_stageWidth = 30.0;
 };

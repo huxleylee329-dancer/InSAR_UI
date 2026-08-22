@@ -65,7 +65,6 @@ private:
     QLineEdit* m_imageEdit;
     QLineEdit* m_outputNodeNameEdit;
     QLineEdit* m_outputFileNameEdit;
-    QLabel* m_projectLabel;
 
     QString m_imagePath;
     QString m_outputNodeName;

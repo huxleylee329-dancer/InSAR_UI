@@ -49,7 +49,6 @@ private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QLabel* m_projectLabel;
     QComboBox* m_productTypeCombo;
     QSpinBox* m_rhPercentileSpin;
     QLabel* m_rhLabel;

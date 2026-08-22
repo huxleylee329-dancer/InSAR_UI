@@ -49,7 +49,6 @@ private:
     QComboBox* m_modeCombo;
     QListWidget* m_fileListWidget;
     QLineEdit* m_outputNodeNameEdit;
-    QLabel* m_projectLabel;
 
     // State
     QStringList m_dataFiles;

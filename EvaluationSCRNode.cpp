@@ -609,6 +609,20 @@ QJsonObject EvaluationSCRNode::save() const
     return modelJson;
 }
 
+void EvaluationSCRNode::prepareForPaste(QJsonObject& json,
+                                        PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // Keep the selected region and target/clutter ROIs, but clear completed
+    // evaluation data that load() would otherwise render into the result UI.
+    json.remove(QStringLiteral("results"));
+    json.remove(QStringLiteral("origScr"));
+    json.remove(QStringLiteral("filtScr"));
+    json.remove(QStringLiteral("imp"));
+    json.remove(QStringLiteral("summary"));
+}
+
 void EvaluationSCRNode::load(QJsonObject const &json)
 {
     if (json.contains("regionIndex")) {

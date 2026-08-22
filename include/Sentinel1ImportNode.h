@@ -55,7 +55,6 @@ private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
     QLineEdit* m_outputFileNameEdit;
-    QLabel* m_projectLabel;
     QLineEdit* m_manifestEdit;
     QLineEdit* m_podEdit;
     QComboBox* m_subswathCombo;

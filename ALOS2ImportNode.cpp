@@ -13,7 +13,6 @@ ALOS2ImportNode::ALOS2ImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
-    , m_projectLabel(nullptr)
     , m_imgPaths()
     , m_outputNodeName()
 {
@@ -63,10 +62,6 @@ QWidget* ALOS2ImportNode::createWidget()
     topSection->addLayout(buttonLayout);
 
     mainLayout->addLayout(topSection, 4);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Bottom section: configuration options - stretch 4
     auto* bottomSection = new QHBoxLayout();

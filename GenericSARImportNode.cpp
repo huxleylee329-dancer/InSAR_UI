@@ -18,7 +18,6 @@ GenericSARImportNode::GenericSARImportNode()
     , m_imageEdit(nullptr)
     , m_outputNodeNameEdit(nullptr)
     , m_outputFileNameEdit(nullptr)
-    , m_projectLabel(nullptr)
 {
     m_outputFileName = "{InputName}";
 }
@@ -67,10 +66,6 @@ QWidget* GenericSARImportNode::createWidget()
         setOutputData(0, nullptr);
         invalidateExecution();
     };
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    layout->addWidget(m_projectLabel);
 
     // 通用 SAR 图像 + 浏览按钮 [3:7:0]
     auto* imageRow = new QHBoxLayout();

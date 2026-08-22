@@ -67,6 +67,96 @@ struct WorkerResetGuard {
     }
 };
 
+static bool buildSlcPairValidMask(const ComplexMat& master, const ComplexMat& slave, Mat& validMask)
+{
+    validMask.release();
+    if (master.GetRows() != slave.GetRows() || master.GetCols() != slave.GetCols() ||
+        master.type() != CV_32F || slave.type() != CV_32F ||
+        master.re.empty() || master.im.empty() || slave.re.empty() || slave.im.empty()) {
+        return false;
+    }
+
+    validMask.create(master.GetRows(), master.GetCols(), CV_8U);
+#pragma omp parallel for schedule(static)
+    for (int row = 0; row < master.GetRows(); ++row) {
+        const float* masterRe = master.re.ptr<float>(row);
+        const float* masterIm = master.im.ptr<float>(row);
+        const float* slaveRe = slave.re.ptr<float>(row);
+        const float* slaveIm = slave.im.ptr<float>(row);
+        uchar* valid = validMask.ptr<uchar>(row);
+        for (int column = 0; column < master.GetCols(); ++column) {
+            const bool finite = std::isfinite(masterRe[column]) && std::isfinite(masterIm[column]) &&
+                std::isfinite(slaveRe[column]) && std::isfinite(slaveIm[column]);
+            const bool masterHasEnergy = masterRe[column] != 0.0f || masterIm[column] != 0.0f;
+            const bool slaveHasEnergy = slaveRe[column] != 0.0f || slaveIm[column] != 0.0f;
+            valid[column] = finite && masterHasEnergy && slaveHasEnergy ? 1 : 0;
+        }
+    }
+    return true;
+}
+
+static bool reduceStrictValidMask(const Mat& inputMask, int multilookRg, int multilookAz, Mat& outputMask)
+{
+    outputMask.release();
+    if (inputMask.empty() || inputMask.type() != CV_8U ||
+        multilookRg < 1 || multilookAz < 1 ||
+        inputMask.cols < multilookRg || inputMask.rows < multilookAz) {
+        return false;
+    }
+    if (multilookRg == 1 && multilookAz == 1) {
+        inputMask.copyTo(outputMask);
+        return true;
+    }
+
+    const int outputRows = inputMask.rows / multilookAz;
+    const int outputColumns = inputMask.cols / multilookRg;
+    Mat integralMask;
+    integral(inputMask, integralMask, CV_32S);
+    outputMask.create(outputRows, outputColumns, CV_8U);
+    const int required = multilookRg * multilookAz;
+#pragma omp parallel for schedule(static)
+    for (int row = 0; row < outputRows; ++row) {
+        const int top = row * multilookAz;
+        const int bottom = top + multilookAz;
+        const int* integralTop = integralMask.ptr<int>(top);
+        const int* integralBottom = integralMask.ptr<int>(bottom);
+        uchar* output = outputMask.ptr<uchar>(row);
+        for (int column = 0; column < outputColumns; ++column) {
+            const int left = column * multilookRg;
+            const int right = left + multilookRg;
+            const int count = integralBottom[right] - integralBottom[left] -
+                integralTop[right] + integralTop[left];
+            output[column] = count == required ? 1 : 0;
+        }
+    }
+    return true;
+}
+
+static bool buildCoherenceSupportCount(
+    const Mat& phaseValidMask, int windowRg, int windowAz, Mat& validSampleCount)
+{
+    validSampleCount.release();
+    if (phaseValidMask.empty() || phaseValidMask.type() != CV_8U ||
+        windowRg < 3 || windowAz < 3 || windowRg % 2 == 0 || windowAz % 2 == 0 ||
+        phaseValidMask.cols < windowRg || phaseValidMask.rows < windowAz) {
+        return false;
+    }
+
+    Mat fullSupport16;
+    boxFilter(phaseValidMask, fullSupport16, CV_16U, Size(windowRg, windowAz),
+              Point(-1, -1), false);
+    const int radiusRg = windowRg / 2;
+    const int radiusAz = windowAz / 2;
+    const Rect innerRect(radiusRg, radiusAz,
+                         phaseValidMask.cols - 2 * radiusRg,
+                         phaseValidMask.rows - 2 * radiusAz);
+    Mat reflectedSupport16;
+    copyMakeBorder(fullSupport16(innerRect), reflectedSupport16,
+                   radiusAz, radiusAz, radiusRg, radiusRg, BORDER_REFLECT);
+    reflectedSupport16.convertTo(validSampleCount, CV_32S);
+    return validSampleCount.size() == phaseValidMask.size();
+}
+
 InterferometricFormationWorker::InterferometricFormationWorker(QObject* parent)
     : BaseWorker(parent)
 {
@@ -138,9 +228,30 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
     QString absolute_path = save_path + "/" + file_name;
 
     const QString demPath = dem_path;
+    const QString demValidMaskPath = m_demValidMaskPath;
+    qint64 demMaskTotalPixelCount = 0;
+    qint64 demMaskValidPixelCount = 0;
     if (istopo_removal && (demPath.isEmpty() || !QFileInfo(demPath).isFile())) {
         emit errorProcess(QStringLiteral("Interferometric formation requires a resolved Auxiliary DEM file."));
         return;
+    }
+    if (istopo_removal) {
+        if (!m_hasDemRequiredBounds) {
+            emit errorProcess(QStringLiteral(
+                "地形相位处理已停止：缺少可信的输入影像地理范围，无法审核 DEM 有效覆盖。"));
+            return;
+        }
+        QString demMaskError;
+        if (!NodeUtils::validateDemValidityMaskForScene(
+                demPath, demValidMaskPath,
+                m_demRequiredMinLon, m_demRequiredMaxLon,
+                m_demRequiredMinLat, m_demRequiredMaxLat,
+                &demMaskTotalPixelCount,
+                &demMaskValidPixelCount, &demMaskError)) {
+            InSARLogManager::LogError("InterferometricFormationWorker", demMaskError);
+            emit errorProcess(QStringLiteral("地形相位处理已停止：%1").arg(demMaskError));
+            return;
+        }
     }
 
     if (master_index < 0 || master_index >= input_paths.size()) {
@@ -265,6 +376,11 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             emit updateProcess(pair_prog_start + pair_span * 0.1, QStringLiteral("生成第%1/%2幅干涉图：正在计算多视相干乘积……").arg(pair).arg(total_pairs));
             if (Master.type() != CV_32F) Master.convertTo(Master, CV_32F);
             if (Slave.type() != CV_32F) Slave.convertTo(Slave, CV_32F);
+            Mat slcPairValidMask;
+            if (iscoherence && !buildSlcPairValidMask(Master, Slave, slcPairValidMask)) {
+                emit errorProcess(QStringLiteral("无法构建主辅影像有效样本掩膜"));
+                return;
+            }
             ret = util.Multilook(Master, Slave, 1, 1, phase);
             if (ret < 0 || phase.empty()) {
                 const QString error = QStringLiteral("干涉相位计算失败: %1").arg(slave_path);
@@ -370,6 +486,14 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                         !NodeUtils::writeScalarToH5(h5_path, "phase_processing_schema_version", 1) ||
                         !NodeUtils::writeScalarToH5(h5_path, "phase_flat_earth_removed", isdeflat ? 1 : 0) ||
                         !NodeUtils::writeScalarToH5(h5_path, "phase_topography_removed", istopo_removal ? 1 : 0) ||
+                        (istopo_removal &&
+                         (!NodeUtils::writeScalarToH5(h5_path, "terrain_dem_coverage_schema_version", 2) ||
+                          !NodeUtils::writeScalarToH5(h5_path, "terrain_dem_mask_total_pixel_count",
+                              static_cast<double>(demMaskTotalPixelCount)) ||
+                          !NodeUtils::writeScalarToH5(h5_path, "terrain_dem_mask_valid_pixel_count",
+                              static_cast<double>(demMaskValidPixelCount)) ||
+                          !NodeUtils::writeStringToH5(h5_path, "terrain_dem_coverage_status",
+                              std::string("full_source_support_verified")))) ||
                         !writeArray(h5_path, "range_len", Mat(1, 1, CV_32S, &sceneWidth)) ||
                         !writeArray(h5_path, "azimuth_len", Mat(1, 1, CV_32S, &sceneHeight)) ||
                         !writeArray(h5_path, "multilook_rg", Mat(1, 1, CV_32S, &multilook_rg)) ||
@@ -394,7 +518,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             {
                 g_substep_prog_start = pair_prog_start + pair_span * 0.8;
                 g_substep_prog_end = pair_prog_start + pair_span * 0.98;
-                g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在计算干涉相干系数").arg(pair).arg(total_pairs);
+                g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在计算二倍角相位集中度").arg(pair).arg(total_pairs);
 
                 if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
                 {
@@ -403,7 +527,15 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     return;
                 }
                 Mat coherence;
-                int ret_coh = util.phase_coherence(phase, win_width, win_height, coherence, DeflatProgressCallbackImpl);
+                Mat phaseValidMask;
+                Mat validSampleCount;
+                if (!reduceStrictValidMask(
+                        slcPairValidMask, multilook_rg, multilook_az, phaseValidMask) ||
+                    phaseValidMask.size() != phase.size()) {
+                    emit errorProcess(QStringLiteral("相干性有效样本掩膜与相位网格不一致"));
+                    return;
+                }
+                int ret_coh = util.phase_axial_concentration(phase, win_width, win_height, coherence, DeflatProgressCallbackImpl);
                 if (ret_coh == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Coherence calculation cancelled by user.");
                     emit cancelled();
@@ -411,13 +543,41 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 }
                 else if (ret_coh < 0) {
                     InSARLogManager::LogError("InterferometricFormationWorker", "Coherence calculation failed.");
-                    emit errorProcess(QStringLiteral("相干系数计算失败"));
+                    emit errorProcess(QStringLiteral("二倍角相位集中度计算失败"));
+                    return;
+                }
+                if (!buildCoherenceSupportCount(
+                        phaseValidMask, win_width, win_height, validSampleCount) ||
+                    validSampleCount.size() != coherence.size()) {
+                    emit errorProcess(QStringLiteral("相干性有效样本支持数计算失败"));
                     return;
                 }
 
                 {
                     NodeUtils::Hdf5Locker locker;
-                    if (!writeArray(h5_path, "coherence", coherence)) {
+                    if (!writeArray(h5_path, "coherence", coherence) ||
+                        !writeArray(h5_path,
+                                    NodeUtils::CoherenceSupport::kValidSampleCountDataset,
+                                    validSampleCount) ||
+                        !NodeUtils::writeScalarToH5(
+                            h5_path,
+                            QString::fromLatin1(NodeUtils::CoherenceSupport::kWindowRangeDataset),
+                            win_width) ||
+                        !NodeUtils::writeScalarToH5(
+                            h5_path,
+                            QString::fromLatin1(NodeUtils::CoherenceSupport::kWindowAzimuthDataset),
+                            win_height)) {
+                        return;
+                    }
+                    // 标注该数据集的语义：当前由 Utils::phase_axial_concentration() 生成，
+                    // 即二倍角轴向集中度 R2，并非复相干系数 gamma。
+                    // 下游必须按标签解释数值，不可假定为 gamma。
+                    QString semanticsError;
+                    if (!NodeUtils::writeCoherenceSemantics(
+                            h5_path,
+                            QString::fromLatin1(NodeUtils::CoherenceSemantics::kPhaseAxialR2),
+                            &semanticsError)) {
+                        emit errorProcess(QStringLiteral("写入相干性语义标签失败: %1").arg(semanticsError));
                         return;
                     }
                 }

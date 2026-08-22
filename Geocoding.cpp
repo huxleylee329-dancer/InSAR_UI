@@ -235,8 +235,16 @@ void Geocoding::persistGeneratedResults()
     }
 
     for (const GeocodingFileResult& result : m_generatedResults) {
-        xml.XMLFile_add_geocoding(result.dstNode.toStdString().c_str(), result.geocodeName.toStdString().c_str(),
-            result.relativePath.toStdString().c_str(), result.rankLevel.toStdString().c_str());
+        if (xml.XMLFile_add_geocoding(result.dstNode.toStdString().c_str(), result.geocodeName.toStdString().c_str(),
+                result.relativePath.toStdString().c_str(), result.rankLevel.toStdString().c_str()) < 0 ||
+            (result.rankLevel == QStringLiteral("coherence-1.1") &&
+             xml.XMLFile_set_coherence_semantics(
+                 result.dstNode.toStdString().c_str(), result.geocodeName.toStdString().c_str(),
+                 result.coherenceSemantics.toStdString().c_str()) < 0)) {
+            QMessageBox::warning(this, "Warning!", "Unable to persist coherence semantics to the project XML.");
+            m_generatedResults.clear();
+            return;
+        }
     }
     if (xml.XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
         QMessageBox::warning(this, "Warning!", "Unable to save geocoding output to the project XML.");

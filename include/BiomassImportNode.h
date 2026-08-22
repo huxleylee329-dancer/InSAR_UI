@@ -46,7 +46,6 @@ private:
     // UI elements
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QLabel* m_projectLabel;
     QWidget* m_widget;
 
     // State (parallel lists for batch imported datasets)

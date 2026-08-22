@@ -21,7 +21,6 @@ Sentinel1ImportNode::Sentinel1ImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_outputFileNameEdit(nullptr)
-    , m_projectLabel(nullptr)
     , m_manifestEdit(nullptr)
     , m_podEdit(nullptr)
     , m_subswathCombo(nullptr)
@@ -59,10 +58,6 @@ QWidget* Sentinel1ImportNode::createWidget()
         for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
         invalidateExecution();
     };
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    layout->addWidget(m_projectLabel);
 
     // 哨兵图像文件（.safe） + 浏览按钮 [3:7:0]
     auto* manifestLayout = new QHBoxLayout();

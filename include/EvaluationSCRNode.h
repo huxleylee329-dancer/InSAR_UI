@@ -66,6 +66,7 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    void prepareForPaste(QJsonObject& json, PasteContext& context) const override;
 
     bool prepareToStart() override;
     bool validateAndRestoreOutput() override;

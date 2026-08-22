@@ -404,6 +404,11 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
+    const double sceneMinLon = min_lon;
+    const double sceneMaxLon = max_lon;
+    const double sceneMinLat = min_lat;
+    const double sceneMaxLat = max_lat;
+
     // 外扩 0.05 度以保证边缘插值时不溢出
     min_lon -= 0.05;
     max_lon += 0.05;
@@ -913,22 +918,27 @@ void DEMSourceWorker::fetch_dem(
 
     // 6. 调用 DEMSourceManager 执行裁剪转换
     DEMSourceManager manager;
-    Mat cropped_dem, dem_x, dem_y, dem_z;
+    Mat cropped_dem, dem_valid_mask, dem_x, dem_y, dem_z;
     double new_gt[6] = { 0 };
     char wkt_projection[1024] = { 0 };
 
 
 
-    int ret = manager.read_crop_and_resample_dem(
-        QDir::toNativeSeparators(finalInputFile).toLocal8Bit().constData(),
-        min_lon, max_lon,
-        min_lat, max_lat,
-        targetResolution,
-        cropped_dem,
-        new_gt,
-        wkt_projection,
-        1024
-    );
+    int ret = -1;
+    {
+        NodeUtils::Hdf5Locker locker;
+        ret = manager.read_crop_and_resample_dem_ex(
+            QDir::toNativeSeparators(finalInputFile).toLocal8Bit().constData(),
+            min_lon, max_lon,
+            min_lat, max_lat,
+            targetResolution,
+            cropped_dem,
+            dem_valid_mask,
+            new_gt,
+            wkt_projection,
+            1024
+        );
+    }
 
     if (ret != 0)
     {
@@ -944,17 +954,20 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
-    // DEMSourceManager is supplied by the precompiled Dem library.  Its ABI
-    // reports only an elevation matrix and documents NoData filling, so source
-    // NoData that it has already converted to zero cannot be reconstructed.
-    // HTTP-404 tiles are different: their geographic extent is known exactly.
-    // Preserve that evidence in a separate mask before the data reaches any
-    // terrain-sensitive consumer.
+    if (dem_valid_mask.empty() || dem_valid_mask.type() != CV_8UC1 ||
+        dem_valid_mask.size() != cropped_dem.size()) {
+        emit errorProcess(QStringLiteral("Core 返回的 DEM 源有效性 mask 无效。"));
+        return;
+    }
+
+    // Core preserves source GDAL mask/NoData evidence. HTTP-404 tile footprints
+    // are additional known-invalid regions and are conservatively intersected
+    // with that source mask.
     // Pre-parse server-not-found tile names into bounding rectangles so the
     // per-pixel loop below only performs cheap numeric comparisons.
     const QVector<MissingTileBounds> missingTileBounds = preParseMissingTiles(serverNotFoundTiles);
 
-    Mat dem_valid_mask(cropped_dem.rows, cropped_dem.cols, CV_8UC1, Scalar(1));
+    Mat scene_footprint_mask(cropped_dem.rows, cropped_dem.cols, CV_8UC1, Scalar(0));
     for (int row = 0; row < cropped_dem.rows; ++row) {
         for (int col = 0; col < cropped_dem.cols; ++col) {
             // A target pixel may have been interpolated from a missing tile even
@@ -972,7 +985,6 @@ void DEMSourceWorker::fetch_dem(
             const double pixelMaxLon = std::max(std::max(lon0, lon1), std::max(lon2, lon3));
             const double pixelMinLat = std::min(std::min(lat0, lat1), std::min(lat2, lat3));
             const double pixelMaxLat = std::max(std::max(lat0, lat1), std::max(lat2, lat3));
-            const double elevation = cropped_dem.at<float>(row, col);
             bool inMissingTile = false;
             for (const auto& b : missingTileBounds) {
                 if (pixelMinLon < b.maxLon && pixelMaxLon > b.minLon &&
@@ -981,25 +993,52 @@ void DEMSourceWorker::fetch_dem(
                     break;
                 }
             }
-            const bool invalid = !std::isfinite(elevation) || elevation == kDemNoData || inMissingTile;
-            if (invalid) {
+            if (inMissingTile) {
                 dem_valid_mask.at<uchar>(row, col) = 0;
-                cropped_dem.at<float>(row, col) = static_cast<float>(kDemNoData);
+            }
+            const double centerColumn = col + 0.5;
+            const double centerRow = row + 0.5;
+            const double centerLon = new_gt[0] + centerColumn * new_gt[1] + centerRow * new_gt[2];
+            const double centerLat = new_gt[3] + centerColumn * new_gt[4] + centerRow * new_gt[5];
+            if (centerLon >= sceneMinLon && centerLon <= sceneMaxLon &&
+                centerLat >= sceneMinLat && centerLat <= sceneMaxLat) {
+                scene_footprint_mask.at<uchar>(row, col) = 1;
             }
         }
     }
-    const qint64 validPixelCount = cv::countNonZero(dem_valid_mask);
-    const qint64 invalidPixelCount = static_cast<qint64>(dem_valid_mask.total()) - validPixelCount;
+    cropped_dem.setTo(Scalar(kDemNoData), dem_valid_mask == 0);
+    Mat dem_effective_mask;
+    bitwise_and(dem_valid_mask, scene_footprint_mask, dem_effective_mask);
+    const qint64 sourceValidPixelCount = cv::countNonZero(dem_valid_mask);
+    const qint64 sourceInvalidPixelCount = static_cast<qint64>(dem_valid_mask.total()) - sourceValidPixelCount;
+    const qint64 scenePixelCount = cv::countNonZero(scene_footprint_mask);
+    const qint64 sceneValidPixelCount = cv::countNonZero(dem_effective_mask);
+    const qint64 sceneInvalidPixelCount = scenePixelCount - sceneValidPixelCount;
+    if (scenePixelCount <= 0) {
+        emit errorProcess(QStringLiteral("目标 DEM 网格未覆盖输入影像范围。"));
+        return;
+    }
+    const QString coverageStatus = sceneInvalidPixelCount == 0
+        ? QStringLiteral("source_coverage_verified")
+        : QStringLiteral("land_coverage_unknown");
+    const QString coverageEvidence = serverNotFoundTilesIntersectingOutput.isEmpty()
+        ? QStringLiteral("gdal_source_mask;source_nodata;finite_value;source_coverage")
+        : QStringLiteral("gdal_source_mask;source_nodata;finite_value;source_coverage;http_404_tile_footprint_mask");
 
     emit updateProcess(80, QStringLiteral("转换高程坐标至 ECEF……"));
-    ret = manager.convert_dem_to_ecef(
-        cropped_dem,
-        new_gt,
-        wkt_projection,
-        dem_x,
-        dem_y,
-        dem_z
-    );
+    Mat ecef_dem = cropped_dem.clone();
+    ecef_dem.setTo(Scalar(0), dem_valid_mask == 0);
+    {
+        NodeUtils::Hdf5Locker locker;
+        ret = manager.convert_dem_to_ecef(
+            ecef_dem,
+            new_gt,
+            wkt_projection,
+            dem_x,
+            dem_y,
+            dem_z
+        );
+    }
 
     if (ret != 0)
     {
@@ -1015,17 +1054,11 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
-    // A zero ECEF triplet is a valid numeric value to many callers.  Missing
-    // DEM positions must remain distinguishable after the coordinate transform.
-    for (int row = 0; row < dem_valid_mask.rows; ++row) {
-        for (int col = 0; col < dem_valid_mask.cols; ++col) {
-            if (dem_valid_mask.at<uchar>(row, col) == 0) {
-                dem_x.at<float>(row, col) = std::numeric_limits<float>::quiet_NaN();
-                dem_y.at<float>(row, col) = std::numeric_limits<float>::quiet_NaN();
-                dem_z.at<float>(row, col) = std::numeric_limits<float>::quiet_NaN();
-            }
-        }
-    }
+    // Missing DEM positions must remain distinguishable after conversion.
+    const double quietNaN = std::numeric_limits<double>::quiet_NaN();
+    dem_x.setTo(Scalar(quietNaN), dem_valid_mask == 0);
+    dem_y.setTo(Scalar(quietNaN), dem_valid_mask == 0);
+    dem_z.setTo(Scalar(quietNaN), dem_valid_mask == 0);
 
     emit updateProcess(90, QStringLiteral("写入 H5 数据文件……"));
 
@@ -1091,6 +1124,9 @@ void DEMSourceWorker::fetch_dem(
 
             const bool datasetsWritten =
                 FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem", cropped_dem) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_source_valid_mask", dem_valid_mask) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "scene_footprint_mask", scene_footprint_mask) == 0 &&
+                FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_effective_mask", dem_effective_mask) == 0 &&
                 FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_valid_mask", dem_valid_mask) == 0 &&
                 FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_x", dem_x) == 0 &&
                 FC.write_array_to_h5(outputH5Path.toStdString().c_str(), "dem_y", dem_y) == 0 &&
@@ -1104,6 +1140,10 @@ void DEMSourceWorker::fetch_dem(
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lon", max_lon) == 0 &&
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_min_lat", min_lat) == 0 &&
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_max_lat", max_lat) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_scene_min_lon", sceneMinLon) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_scene_max_lon", sceneMaxLon) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_scene_min_lat", sceneMinLat) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_scene_max_lat", sceneMaxLat) == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_cache_path",
                                    QDir::toNativeSeparators(cacheDir).toStdString().c_str()) == 0;
             const QString serverNotFoundTileText = serverNotFoundTiles.isEmpty()
@@ -1119,20 +1159,36 @@ void DEMSourceWorker::fetch_dem(
                     intersectingServerNotFoundTileText.toStdString().c_str()) == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_server_404_policy",
                     "HTTP 404 is recorded as server-not-found; it is not treated as confirmed ocean.") == 0 &&
-                FC.write_int_to_h5(outputH5Path.toStdString().c_str(), "dem_coverage_schema_version", 1) == 0 &&
+                FC.write_int_to_h5(outputH5Path.toStdString().c_str(), "dem_coverage_schema_version", 2) == 0 &&
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_nodata_sentinel", kDemNoData) == 0 &&
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_source_valid_mask_path",
+                    QFileInfo(outputMaskTifPath).fileName().toStdString().c_str()) == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_valid_mask_path",
                     QFileInfo(outputMaskTifPath).fileName().toStdString().c_str()) == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_mask_resampling_policy",
-                    "conservative HTTP-404 tile-footprint intersection; external reader NoData fill is not reversible") == 0 &&
+                    "GDAL source mask averaged to target grid; full support required; one-pixel boundary erosion; HTTP-404 footprints excluded") == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_coverage_evidence",
-                    "source_nodata_unverifiable;http_404_tile_footprint_mask") == 0 &&
+                    coverageEvidence.toStdString().c_str()) == 0 &&
                 FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_coverage_precheck_status",
-                    "coverage_unverified") == 0 &&
+                    coverageStatus.toStdString().c_str()) == 0 &&
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_land_water_status",
+                    "unavailable") == 0 &&
+                FC.write_str_to_h5(outputH5Path.toStdString().c_str(), "dem_land_coverage_status",
+                    "unknown") == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_source_valid_pixel_count",
+                    static_cast<double>(sourceValidPixelCount)) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_source_invalid_pixel_count",
+                    static_cast<double>(sourceInvalidPixelCount)) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_scene_pixel_count",
+                    static_cast<double>(scenePixelCount)) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_scene_source_valid_pixel_count",
+                    static_cast<double>(sceneValidPixelCount)) == 0 &&
+                FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_scene_source_invalid_pixel_count",
+                    static_cast<double>(sceneInvalidPixelCount)) == 0 &&
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_valid_pixel_count",
-                    static_cast<double>(validPixelCount)) == 0 &&
+                    static_cast<double>(sourceValidPixelCount)) == 0 &&
                 FC.write_double_to_h5(outputH5Path.toStdString().c_str(), "dem_invalid_pixel_count",
-                    static_cast<double>(invalidPixelCount)) == 0;
+                    static_cast<double>(sourceInvalidPixelCount)) == 0;
             if (!serverNotFoundMetadataWritten) {
                 InSARLogManager::LogError("DEMSourceWorker", "Failed to write DEM server-404 audit metadata.");
             }
@@ -1211,13 +1267,11 @@ void DEMSourceWorker::fetch_dem(
     DemCoverageAudit coverageAudit;
     coverageAudit.serverNotFoundTiles = serverNotFoundTiles;
     coverageAudit.intersectingServerNotFoundTiles = serverNotFoundTilesIntersectingOutput;
-    coverageAudit.status = QStringLiteral("coverage_unverified");
-    coverageAudit.evidence = QStringLiteral("source_nodata_unverifiable;http_404_tile_footprint_mask");
-    // The external reader normalizes source NoData to zero. A missing 404 tile
-    // is observable, but an absent 404 cannot prove complete source coverage.
-    coverageAudit.hasUnverifiedCoverage = true;
-    coverageAudit.validPixelCount = validPixelCount;
-    coverageAudit.invalidPixelCount = invalidPixelCount;
+    coverageAudit.status = coverageStatus;
+    coverageAudit.evidence = coverageEvidence;
+    coverageAudit.hasUnverifiedCoverage = sceneInvalidPixelCount > 0;
+    coverageAudit.validPixelCount = sceneValidPixelCount;
+    coverageAudit.invalidPixelCount = sceneInvalidPixelCount;
     const bool outputValidated = QFileInfo(outputH5Path).isFile() && QFileInfo(outputH5Path).size() > 0 &&
         QFileInfo(outputTifPath).isFile() && QFileInfo(outputTifPath).size() > 0 &&
         QFileInfo(outputMaskTifPath).isFile() && QFileInfo(outputMaskTifPath).size() > 0;

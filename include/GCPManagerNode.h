@@ -45,6 +45,8 @@ public:
     ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 
 protected:
+    QString outputNodeNameJsonKey() const override { return QStringLiteral("output_node_name"); }
+
     // 计算执行生命周期
     void execute() override;
     void stopExecution() override;

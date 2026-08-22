@@ -245,6 +245,13 @@ void PhaseElevationRegressionWorker::doRegression(
                 !NodeUtils::writeMatToH5(outH5, "coherence", coherence)) {
                 h5WriteError = QStringLiteral("无法写入 coherence");
             }
+            // coherence 为原样复制，语义不变，随之传播标签
+            if (h5WriteError.isEmpty() && has_coherence) {
+                QString semanticsError;
+                if (!NodeUtils::copyCoherenceSemantics(phaseH5, outH5, &semanticsError)) {
+                    h5WriteError = QStringLiteral("无法写入 coherence 语义标签：%1").arg(semanticsError);
+                }
+            }
             if (h5WriteError.isEmpty() && !NodeUtils::writeMatToH5(outH5, "phase", corrected_phase)) {
                 h5WriteError = QStringLiteral("无法写入校正后的 phase");
             }

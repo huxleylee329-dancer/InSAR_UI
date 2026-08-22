@@ -1045,7 +1045,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				cv::Mat phase0, coh;
 				util.multilook(overlap_phase, phase0, 16, 4);
 
-				util.phase_coherence(phase0, coh);
+				util.phase_axial_concentration(phase0, coh);
 				for (int mm = 0; mm < coh.rows; mm++)
 				{
 					for (int nn = 0; nn < coh.cols; nn++)

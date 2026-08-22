@@ -540,14 +540,21 @@ void Interferometric_Formation::on_buttonBox_accepted()
             res.isTopoRemoval, res.isCoherence, res.winWidth, res.winHeight,
             res.multilookRg, res.multilookAz);
         if (res.isCoherence) {
-            xml.XMLFile_add_interferometric_phase(
+            if (xml.XMLFile_add_interferometric_phase(
                 ui->file_name->text().toStdString().c_str(),
                 res.cohName.toStdString().c_str(),
                 res.relativePath.toStdString().c_str(),
                 res.masterName.toStdString().c_str(),
                 "coherence-1.0", res.offsetRow, res.offsetCol, res.isDeflat,
                 res.isTopoRemoval, res.isCoherence, res.winWidth, res.winHeight,
-                res.multilookRg, res.multilookAz);
+                res.multilookRg, res.multilookAz) < 0 ||
+                xml.XMLFile_set_coherence_semantics(
+                    ui->file_name->text().toStdString().c_str(),
+                    res.cohName.toStdString().c_str(),
+                    NodeUtils::CoherenceSemantics::kPhaseAxialR2) < 0) {
+                QMessageBox::warning(this, "Warning!", "Unable to persist coherence semantics to the project XML.");
+                return;
+            }
         }
         if (xml.XMLFile_save(xmlPath.toStdString().c_str()) < 0) {
             QMessageBox::warning(this, "Warning!", "Unable to save interferometric output to the project XML.");

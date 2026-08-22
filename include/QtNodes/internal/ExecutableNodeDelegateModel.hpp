@@ -41,6 +41,15 @@ enum class ExecutionState
     Disabled    // 禁用状态（人工设置进入）
 };
 
+// Context supplied only while a workflow node is being pasted.  Project
+// restoration and delete-command undo deliberately do not use this path.
+struct NODE_EDITOR_PUBLIC PasteContext
+{
+    QString projectDirectory;
+    QSet<QString> reservedOutputNodeNames;
+    QSet<QString> reservedOutputArtifactPaths;
+};
+
 /**
  * @brief ParameterInfo - 控件参数信息
  * 用于显示和编辑节点控件中的参数（如 QLineEdit、QSpinBox 等）
@@ -173,6 +182,26 @@ public:
     QJsonObject save() const override;
 
     void load(QJsonObject const &json) override;
+
+    /// Prepare persisted configuration for a Ctrl+C/Ctrl+V clone.  The base
+    /// implementation resets execution-only state and gives conventional
+    /// outputNodeName fields a fresh, project-safe directory name.  Nodes
+    /// with extra persisted runtime snapshots may extend this hook.
+    virtual void prepareForPaste(QJsonObject& json, PasteContext& context) const;
+
+    /// Returns the persisted key used as this node's output directory name.
+    /// Empty means this node has no independently persisted output directory.
+    virtual QString outputNodeNameJsonKey() const { return QStringLiteral("outputNodeName"); }
+
+    QString outputNodeNameForPaste(QJsonObject const& json) const;
+
+    /// Returns independent artifact targets that must be reserved while a
+    /// workflow paste is being prepared.  These are intentionally separate
+    /// from project-child output directory names.
+    virtual QStringList outputArtifactPathsForPaste(QJsonObject const&) const
+    {
+        return QStringList();
+    }
 
     /// Get widget parameters for display and editing in Properties panel
     /// Returns parameters from node's widgets (e.g., QLineEdit, QSpinBox, etc.)
@@ -375,6 +404,7 @@ protected:
     QString _startFailureMessage;
 
 private:
+    QString uniquePastedOutputNodeName(const QString& sourceName, PasteContext& context) const;
     std::uint64_t inputRevisionFromGraph(PortIndex portIndex) const;
     void invalidateOutputArtifact(PortIndex portIndex);
     void restartAutomaticExecutionAfterInputChange();

@@ -596,6 +596,20 @@ QJsonObject EvaluationENLNode::save() const
     return modelJson;
 }
 
+void EvaluationENLNode::prepareForPaste(QJsonObject& json,
+                                        PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // Region selection is configuration.  The table and its summary labels
+    // are completed evaluation output and must not appear in an Idle clone.
+    json.remove(QStringLiteral("results"));
+    json.remove(QStringLiteral("origEnl"));
+    json.remove(QStringLiteral("filtEnl"));
+    json.remove(QStringLiteral("epi"));
+    json.remove(QStringLiteral("summary"));
+}
+
 void EvaluationENLNode::load(QJsonObject const &json)
 {
     if (json.contains("regionIndex")) {

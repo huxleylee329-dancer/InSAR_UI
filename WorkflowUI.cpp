@@ -1471,6 +1471,11 @@ void WorkflowUI::setProjectContext(QStandardItemModel* model, const QString& pat
     m_projectName = name;
     m_projectXml = projectXml;
 
+    if (m_graphModel) {
+        m_graphModel->setProjectOutputContext(m_projectModel,
+                                              NodeUtils::projectDirectory(m_projectPath));
+    }
+
     // Set workflow path for workflow browser
     if (m_workflowBrowser && !path.isEmpty())
     {
@@ -2164,9 +2169,10 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
             return;
         }
 
-        const auto logNodeTerminal = [this, nodeId, caption](InSARLogManager::LogLevel level,
-                                                              const QString& message,
-                                                              const QString& status) {
+        const auto logNodeState = [this, nodeId, caption](InSARLogManager::LogLevel level,
+                                                          const QString& message,
+                                                          const QString& phase,
+                                                          const QString& status) {
             TaskLogContext context;
             context.runId = m_activeWorkflowRunId;
             context.nodeId = QString::number(static_cast<qulonglong>(nodeId));
@@ -2174,7 +2180,7 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
             context.scope = QStringLiteral("workflow");
             InSARLogManager::LogTaskEvent(context, level, "WorkflowUI", message,
                                           LogTargets(LogTarget::UserProjectLog),
-                                          QStringLiteral("completed"), status);
+                                          phase, status);
         };
 
         const auto finishRun = [this]() {
@@ -2202,8 +2208,8 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
         case QtNodes::ExecutionState::Completed:
             if (m_activeWorkflowNodes.remove(nodeId)) {
                 ++m_workflowSucceededNodes;
-                logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点执行完成。"),
-                                QStringLiteral("completed"));
+                logNodeState(InSARLogManager::LevelInfo, QStringLiteral("节点执行完成。"),
+                             QStringLiteral("completed"), QStringLiteral("completed"));
             }
             finishRun();
             Q_EMIT nodeExecutionFinished(nodeId, caption);
@@ -2211,8 +2217,8 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
         case QtNodes::ExecutionState::Warning:
             if (m_activeWorkflowNodes.remove(nodeId)) {
                 ++m_workflowWarningNodes;
-                logNodeTerminal(InSARLogManager::LevelWarning, QStringLiteral("节点执行完成，但存在告警。"),
-                                QStringLiteral("completed_with_warnings"));
+                logNodeState(InSARLogManager::LevelWarning, QStringLiteral("节点执行完成，但存在告警。"),
+                             QStringLiteral("completed"), QStringLiteral("completed_with_warnings"));
             }
             finishRun();
             Q_EMIT nodeExecutionFinished(nodeId, caption);
@@ -2220,37 +2226,40 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
         case QtNodes::ExecutionState::Pending:
             // Pending is an in-flight workflow state: the node is waiting for an
             // upstream prerequisite and may resume in the same workflow run.
+            if (m_activeWorkflowRunId.isEmpty()) {
+                break;
+            }
             // 同一节点在短时间内连续进入 Pending 时仅记录一次，避免日志刷屏。
             {
                 const qint64 now = QDateTime::currentMSecsSinceEpoch();
                 const qint64 last = m_lastPendingLogMs.value(nodeId, -1);
                 if (last < 0 || now - last >= 3000) {
                     m_lastPendingLogMs.insert(nodeId, now);
-                    logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点等待前置条件满足。"),
-                                    QStringLiteral("pending"));
+                    logNodeState(InSARLogManager::LevelInfo, QStringLiteral("节点等待前置条件满足。"),
+                                 QStringLiteral("waiting"), QStringLiteral("pending"));
                 }
             }
             break;
         case QtNodes::ExecutionState::Disabled:
             if (m_activeWorkflowNodes.remove(nodeId)) {
-                logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点已禁用。"),
-                                QStringLiteral("disabled"));
+                logNodeState(InSARLogManager::LevelInfo, QStringLiteral("节点已禁用。"),
+                             QStringLiteral("completed"), QStringLiteral("disabled"));
             }
             finishRun();
             Q_EMIT nodeExecutionStopped(nodeId, caption);
             break;
         case QtNodes::ExecutionState::Idle:
             if (m_activeWorkflowNodes.remove(nodeId)) {
-                logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点处在空闲状态。"),
-                                QStringLiteral("idle"));
+                logNodeState(InSARLogManager::LevelInfo, QStringLiteral("节点处在空闲状态。"),
+                             QStringLiteral("completed"), QStringLiteral("idle"));
             }
             finishRun();
             Q_EMIT nodeExecutionStopped(nodeId, caption);
             break;
         case QtNodes::ExecutionState::Stopped:
             if (m_activeWorkflowNodes.remove(nodeId)) {
-                logNodeTerminal(InSARLogManager::LevelInfo, QStringLiteral("节点执行已停止。"),
-                                QStringLiteral("stopped"));
+                logNodeState(InSARLogManager::LevelInfo, QStringLiteral("节点执行已停止。"),
+                             QStringLiteral("completed"), QStringLiteral("stopped"));
             }
             finishRun();
             Q_EMIT nodeExecutionStopped(nodeId, caption);
@@ -2259,10 +2268,10 @@ void WorkflowUI::onNodeCreated(QtNodes::NodeId const nodeId)
             if (m_activeWorkflowNodes.remove(nodeId)) {
                 ++m_workflowFailedNodes;
                 const QString error = weakModel->lastErrorMessage().trimmed();
-                logNodeTerminal(InSARLogManager::LevelError,
-                                error.isEmpty() ? QStringLiteral("节点执行失败。")
-                                                : QStringLiteral("节点执行失败：%1").arg(error),
-                                QStringLiteral("failed"));
+                logNodeState(InSARLogManager::LevelError,
+                             error.isEmpty() ? QStringLiteral("节点执行失败。")
+                                             : QStringLiteral("节点执行失败：%1").arg(error),
+                             QStringLiteral("completed"), QStringLiteral("failed"));
             }
             finishRun();
             Q_EMIT nodeExecutionTerminalState(nodeId);

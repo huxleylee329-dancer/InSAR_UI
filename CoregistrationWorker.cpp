@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <cmath>
 #include <QFileInfo>
-#include <QRegularExpression>
 #include "InSARLogManager.h"
 #include <omp.h>
 #include <QElapsedTimer>
@@ -86,6 +85,129 @@ RobustFitSettings loadRobustFitSettings()
     values.huberCutoffSigma = readPositiveSetting(settings, "Coregistration/RobustHuberCutoffSigma", 2.4477);
     values.inlierSigma = readPositiveSetting(settings, "Coregistration/RobustResidualInlierSigma", 3.0);
     return values;
+}
+
+QString formatDemPositionDiagnostics(const QString& imageRole,
+    const DemRadarPositionDiagnostics& diagnostics)
+{
+    return QStringLiteral("Fine coregistration DEM geometry [%1]: total=%2, valid=%3, zeroDopplerFailed=%4, outsideScene=%5, azimuthBefore=%6, azimuthAfter=%7, rangeBefore=%8, rangeAfter=%9.")
+        .arg(imageRole)
+        .arg(diagnostics.totalDemPointCount)
+        .arg(diagnostics.validPointCount)
+        .arg(diagnostics.zeroDopplerFailureCount)
+        .arg(diagnostics.outsideScenePointCount)
+        .arg(diagnostics.azimuthBeforeSceneCount)
+        .arg(diagnostics.azimuthAfterSceneCount)
+        .arg(diagnostics.rangeBeforeSceneCount)
+        .arg(diagnostics.rangeAfterSceneCount);
+}
+
+QString formatDemOverlapDiagnostics(int slaveIndex,
+    const DemCoregistrationOverlapDiagnostics& diagnostics)
+{
+    return QStringLiteral("Fine coregistration shared DEM controls [slave=%1]: total=%2, masterValid=%3, slaveValid=%4, commonAzimuth=%5, commonRange=%6, commonBoth=%7.")
+        .arg(slaveIndex)
+        .arg(diagnostics.totalDemPointCount)
+        .arg(diagnostics.masterValidPointCount)
+        .arg(diagnostics.slaveValidPointCount)
+        .arg(diagnostics.commonAzimuthPointCount)
+        .arg(diagnostics.commonRangePointCount)
+        .arg(diagnostics.commonPointCount);
+}
+
+bool resolveAcquisitionTimes(const QString& imagePath,
+    FormatConversion& conversion,
+    std::string& startTimeText,
+    std::string& stopTimeText,
+    double& startTime,
+    double& stopTime,
+    QString& source,
+    QString& error)
+{
+    std::string stateVectorScale;
+    QString stateVectorScaleError;
+    const bool hasStateVectorScale = NodeUtils::readStringFromH5(imagePath,
+        "state_vec_time_scale", stateVectorScale, &stateVectorScaleError);
+    if (hasStateVectorScale && QString::fromStdString(stateVectorScale).trimmed().compare(
+        QStringLiteral("GPS"), Qt::CaseInsensitive) != 0)
+    {
+        error = QStringLiteral("state_vec 时间尺度不受支持：%1")
+            .arg(QString::fromStdString(stateVectorScale));
+        return false;
+    }
+
+    double startGps = 0.0;
+    double stopGps = 0.0;
+    QString startGpsError;
+    QString stopGpsError;
+    const bool hasStartGps = NodeUtils::readScalarFromH5(imagePath,
+        QStringLiteral("acquisition_start_time_gps"), startGps, &startGpsError);
+    const bool hasStopGps = NodeUtils::readScalarFromH5(imagePath,
+        QStringLiteral("acquisition_stop_time_gps"), stopGps, &stopGpsError);
+    if (hasStartGps || hasStopGps)
+    {
+        std::string gpsTimeScale;
+        QString gpsTimeScaleError;
+        const bool hasGpsTimeScale = NodeUtils::readStringFromH5(imagePath,
+            "acquisition_time_gps_scale", gpsTimeScale, &gpsTimeScaleError);
+        if (hasGpsTimeScale && QString::fromStdString(gpsTimeScale).trimmed().compare(
+            QStringLiteral("GPS"), Qt::CaseInsensitive) != 0)
+        {
+            error = QStringLiteral("采集 GPS 时刻尺度不受支持：%1")
+                .arg(QString::fromStdString(gpsTimeScale));
+            return false;
+        }
+        if (!hasStartGps || !hasStopGps || !std::isfinite(startGps) ||
+            !std::isfinite(stopGps) || !(stopGps > startGps))
+        {
+            error = QStringLiteral("GPS 采集时刻不完整或无效：%1 / %2")
+                .arg(startGpsError, stopGpsError);
+            return false;
+        }
+        startTime = startGps;
+        stopTime = stopGps;
+        source = hasStateVectorScale && hasGpsTimeScale
+            ? QStringLiteral("H5 GPS")
+            : QStringLiteral("H5 GPS (legacy unmarked)");
+        return true;
+    }
+
+    if (!hasStateVectorScale)
+    {
+        error = QStringLiteral("旧 H5 未声明 state_vec 时间尺度，无法与修正后的 UTC 时间安全配对；请重新导入原始影像。");
+        return false;
+    }
+
+    if (!NodeUtils::readStringFromH5(imagePath, "acquisition_start_time", startTimeText, &error) ||
+        !NodeUtils::readStringFromH5(imagePath, "acquisition_stop_time", stopTimeText, &error) ||
+        conversion.utc2gps(startTimeText.c_str(), &startTime) < 0 ||
+        conversion.utc2gps(stopTimeText.c_str(), &stopTime) < 0 ||
+        !std::isfinite(startTime) || !std::isfinite(stopTime) || !(stopTime > startTime))
+    {
+        if (error.isEmpty())
+        {
+            error = QStringLiteral("UTC 采集时刻无效");
+        }
+        return false;
+    }
+    source = QStringLiteral("UTC converted to GPS");
+    return true;
+}
+
+QString formatFineAcquisitionTimeDiagnostics(const QString& imageRole,
+    const QString& source,
+    double startTime,
+    double stopTime,
+    const Mat& stateVector)
+{
+    const double orbitStart = stateVector.empty() ? 0.0 : stateVector.at<double>(0, 0);
+    const double orbitStop = stateVector.empty() ? 0.0 : stateVector.at<double>(stateVector.rows - 1, 0);
+    return QStringLiteral("Fine coregistration acquisition time [%1]: source=%2, start=%3, stop=%4, orbitStart=%5, orbitStop=%6.")
+        .arg(imageRole, source)
+        .arg(startTime, 0, 'f', 6)
+        .arg(stopTime, 0, 'f', 6)
+        .arg(orbitStart, 0, 'f', 6)
+        .arg(orbitStop, 0, 'f', 6);
 }
 
 }
@@ -164,7 +286,6 @@ struct CoregisThreadLocalGuard {
 CoregistrationWorker::CoregistrationWorker(QObject* parent)
     : BaseWorker(parent)
     , m_demPath("")
-    , m_filePattern("{InputName}_regis")
 {
 }
 
@@ -271,19 +392,8 @@ void CoregistrationWorker::ResampleSlaveInverseWithAffineOffset(const ComplexMat
 
 QString CoregistrationWorker::resolveOutputFileName(const QString& originalName) const
 {
-    QString pattern = m_filePattern.trimmed();
-    if (pattern.isEmpty()) {
-        pattern = "{InputName}_regis";
-    }
-    // Normalize brackets
-    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
-    pattern.replace(re, "{InputName}");
-    if (pattern.contains("{InputName}")) {
-        pattern.replace("{InputName}", originalName);
-    } else {
-        pattern = originalName + "_" + pattern;
-    }
-    return pattern;
+    // 固定命名规则：输入文件名 + "_regis"
+    return originalName + QStringLiteral("_regis");
 }
 
 void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString project_name, QString file_name, QStringList inputPaths)
@@ -329,6 +439,29 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 	int maxThreads = omp_get_num_procs();
 	omp_set_num_threads(maxThreads);
 
+	FormatConversion FC;
+	{
+		NodeUtils::Hdf5Locker locker;
+		for (int imageIndex = 0; imageIndex < image_number; ++imageIndex)
+		{
+			const QString imagePath = QString::fromStdString(SAR_images.at(imageIndex));
+			std::string startTimeText;
+			std::string stopTimeText;
+			double startTime = 0.0;
+			double stopTime = 0.0;
+			QString timeSource;
+			QString timeError;
+			if (!resolveAcquisitionTimes(imagePath, FC, startTimeText, stopTimeText,
+				startTime, stopTime, timeSource, timeError))
+			{
+				InSARLogManager::LogError("CoregistrationWorker",
+					QStringLiteral("无法预检第 %1 幅影像的时标契约：%2").arg(imageIndex + 1).arg(timeError));
+				Q_EMIT errorProcess(QStringLiteral("第 %1 幅影像时间元数据无效：%2").arg(imageIndex + 1).arg(timeError));
+				return;
+			}
+		}
+	}
+
 	Mat offset_row_out, offset_col_out;
     int ret = Registration_copy(SAR_images, SAR_images_regis, offset_row_out, offset_col_out, index, interp_times, block_size);
     if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested())
@@ -342,15 +475,15 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 		Q_EMIT errorProcess(QStringLiteral("配准计算失败。"));
 		return;
 	}
-    FormatConversion FC;
-    /*获取主星参数*/
+	/*获取主星参数*/
     Mat State_Vec_Master, Lon_Coeff_Master, Lat_Coeff_Master;
     Mat tmp_double = Mat::zeros(1, 1, CV_64FC1);
     double interp_interval;
     double offset_row = 0.0, offset_col = 0.0;
     int Rows, Cols;
     double time_Master = 0;
-    string time_master_str;
+    std::string timeMasterStartText;
+    std::string timeMasterStopText;
     {
         NodeUtils::Hdf5Locker locker;
         QString masterImgPath = QString::fromStdString(SAR_images.at(index - 1));
@@ -364,8 +497,23 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
 
         NodeUtils::readScalarFromH5(masterImgPath, "offset_row", offset_row);
         NodeUtils::readScalarFromH5(masterImgPath, "offset_col", offset_col);
-        NodeUtils::readStringFromH5(masterImgPath, "acquisition_start_time", time_master_str);
-        FC.utc2gps(time_master_str.c_str(), &time_Master);
+        double masterStopTime = 0.0;
+        QString timeSource;
+        QString timeError;
+        if (!resolveAcquisitionTimes(masterImgPath, FC, timeMasterStartText, timeMasterStopText,
+            time_Master, masterStopTime, timeSource, timeError))
+        {
+            InSARLogManager::LogError("CoregistrationWorker",
+                QStringLiteral("无法解析主影像基线时间：%1").arg(timeError));
+            Q_EMIT errorProcess(QStringLiteral("主影像时间元数据无效：%1").arg(timeError));
+            return;
+        }
+        InSARLogManager::LogDebug("CoregistrationWorker",
+            QStringLiteral("Coregistration baseline acquisition time [master]: source=%1, start=%2, stop=%3.")
+                .arg(timeSource)
+                .arg(time_Master, 0, 'f', 6)
+                .arg(masterStopTime, 0, 'f', 6),
+            QStringLiteral("coregistration.geometry"));
         ComplexMat SLC;
         FC.read_slc_from_h5(SAR_images_regis.at(index - 1).c_str(), SLC);
         Rows = SLC.GetRows();
@@ -390,6 +538,13 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
             FC.Copy_para_from_h5_2_h5(SAR_images.at(i).c_str(), SAR_images_regis.at(i).c_str());
             FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
             FC.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
+            if (FC.write_str_to_h5(SAR_images_regis.at(i).c_str(),
+                                   "coregistration_method", "coarse") < 0 ||
+                FC.write_str_to_h5(SAR_images_regis.at(i).c_str(),
+                                   "coregistration_dem_coverage_status", "not_used") < 0) {
+                Q_EMIT errorProcess(QStringLiteral("写入粗配准 DEM 使用审计失败。"));
+                return;
+            }
             
             QString slaveImgPath = QString::fromStdString(SAR_images.at(i));
             NodeUtils::readScalarFromH5(slaveImgPath, "offset_row", offset_row);
@@ -417,7 +572,8 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
             double V_baseline = 0, H_baseline = 0;
             double sigma_V = 0, sigma_H = 0;
             double time_Slave = 0;
-            string time_slave_str;
+            std::string timeSlaveStartText;
+            std::string timeSlaveStopText;
             {
                 NodeUtils::Hdf5Locker locker;
                 QString slaveImgPath = QString::fromStdString(SAR_images.at(i));
@@ -429,8 +585,24 @@ void CoregistrationWorker::Regis(QList<int> para, QString save_path, QString pro
                 NodeUtils::readScalarFromH5(slaveImgPath, "prf", prf_slave);
                 interp_interval_slave = 1 / prf_slave;
                 
-                NodeUtils::readStringFromH5(slaveImgPath, "acquisition_start_time", time_slave_str);
-                FC.utc2gps(time_slave_str.c_str(), &time_Slave);
+                double slaveStopTime = 0.0;
+                QString timeSource;
+                QString timeError;
+                if (!resolveAcquisitionTimes(slaveImgPath, FC, timeSlaveStartText, timeSlaveStopText,
+                    time_Slave, slaveStopTime, timeSource, timeError))
+                {
+                    InSARLogManager::LogError("CoregistrationWorker",
+                        QStringLiteral("无法解析第 %1 幅影像基线时间：%2").arg(i + 1).arg(timeError));
+                    Q_EMIT errorProcess(QStringLiteral("第 %1 幅影像时间元数据无效：%2").arg(i + 1).arg(timeError));
+                    return;
+                }
+                InSARLogManager::LogDebug("CoregistrationWorker",
+                    QStringLiteral("Coregistration baseline acquisition time [slave %1]: source=%2, start=%3, stop=%4.")
+                        .arg(i + 1)
+                        .arg(timeSource)
+                        .arg(time_Slave, 0, 'f', 6)
+                        .arg(slaveStopTime, 0, 'f', 6),
+                    QStringLiteral("coregistration.geometry"));
             }
             double delta = (time_Slave - time_Master) / 60 / 60 / 24;
             char tmp_d2s[512];
@@ -476,15 +648,18 @@ void CoregistrationWorker::DEMAssistCoregistration(
 		return;
 	}
 	QDir dir(savepath);
-	if (!dir.exists(dstNode))
-		int ret = dir.mkdir(dstNode);
+	if (!dir.exists(dstNode) && !dir.mkpath(dstNode))
+	{
+		Q_EMIT errorProcess(QStringLiteral("无法创建 DEM 辅助配准输出目录。"));
+		return;
+	}
 
     const QString demPath = m_demPath;
     if (demPath.isEmpty() || !QFileInfo(demPath).isFile()) {
         Q_EMIT errorProcess(QStringLiteral("Coregistration requires a resolved Auxiliary DEM file."));
         return;
     }
-	string dempath = demPath.toStdString();
+    string dempath = demPath.toStdString();
 
 	Utils util;
 	FormatConversion conversion; Registration coregis;
@@ -513,60 +688,154 @@ void CoregistrationWorker::DEMAssistCoregistration(
 	CoregisThreadLocalGuard tlGuard(this);
 	masterIndex = masterIndex < 1 ? 1 : masterIndex;
 	masterIndex = masterIndex > images_number ? images_number : masterIndex;
+	const auto cancellationRequested = [this]() {
+		return isStopRequested() || QThread::currentThread()->isInterruptionRequested();
+	};
+	const auto abortFineCoregistration = [this, &cancellationRequested](const QString& step, int ret,
+		bool cancellationResult = false) {
+		if ((cancellationResult && ret == -2) || cancellationRequested())
+		{
+			Q_EMIT cancelled();
+			return;
+		}
+		const QString error = QStringLiteral("DEM 辅助配准失败：%1（错误码 %2）。").arg(step).arg(ret);
+		InSARLogManager::LogError("CoregistrationWorker", error);
+		Q_EMIT errorProcess(error);
+	};
 
-	double lonMax, lonMin, latMax, latMin, lon_upperleft, lat_upperleft, rangeSpacing, rangeSpacing2,
-		nearRangeTime, nearRangeTime2, wavelength, prf, prf2,
-		start, end, start2, end2, a0, a1, a2, b0, b1, b2;
-	int sceneHeight, sceneWidth, sceneHeight2, sceneWidth2, offset_row, offset_col, offset_row2, offset_col2;
+	double lonMax = 0.0, lonMin = 0.0, latMax = 0.0, latMin = 0.0;
+	double lon_upperleft = 0.0, lat_upperleft = 0.0, rangeSpacing = 0.0, rangeSpacing2 = 0.0;
+	double nearRangeTime = 0.0, nearRangeTime2 = 0.0, wavelength = 0.0, prf = 0.0, prf2 = 0.0;
+	double start = 0.0, end = 0.0, start2 = 0.0, end2 = 0.0;
+	double a0 = 0.0, a1 = 0.0, a2 = 0.0, b0 = 0.0, b1 = 0.0, b2 = 0.0;
+	int sceneHeight = 0, sceneWidth = 0, sceneHeight2 = 0, sceneWidth2 = 0;
+	int offset_row = 0, offset_col = 0, offset_row2 = 0, offset_col2 = 0;
 	Mat lon_coef, lat_coef, dem, statevec, rangePos, azimuthPos,
 		lon_coef2, lat_coef2, statevec2, rangePos2, azimuthPos2, slaveRangeOffset, slaveAzimuthOffset;
+	DemRadarPositionDiagnostics masterGeometryDiagnostics{};
+	masterGeometryDiagnostics.structSize = sizeof(DemRadarPositionDiagnostics);
+	masterGeometryDiagnostics.version = 1;
 	string start_time, end_time;
 	ComplexMat slave;
-	offset_row = offset_col = 0;
 	const char* master_file = SAR_images[masterIndex - 1].c_str();
 	const char* slave_file = NULL;
 	{
 		NodeUtils::Hdf5Locker locker;
 		QString masterPath = QString::fromStdString(master_file);
-		NodeUtils::readScalarFromH5(masterPath, "range_len", sceneWidth);
-		NodeUtils::readScalarFromH5(masterPath, "azimuth_len", sceneHeight);
-		NodeUtils::readScalarFromH5(masterPath, "offset_row", offset_row);
-		NodeUtils::readScalarFromH5(masterPath, "offset_col", offset_col);
-		NodeUtils::readMatFromH5(masterPath, "lon_coefficient", lon_coef);
-		NodeUtils::readMatFromH5(masterPath, "lat_coefficient", lat_coef);
-		NodeUtils::readScalarFromH5(masterPath, "prf", prf);
-		NodeUtils::readScalarFromH5(masterPath, "carrier_frequency", wavelength);
+		QString readError;
+		const bool masterMetadataReady =
+			NodeUtils::readScalarFromH5(masterPath, "range_len", sceneWidth, &readError) &&
+			NodeUtils::readScalarFromH5(masterPath, "azimuth_len", sceneHeight, &readError) &&
+			NodeUtils::readScalarFromH5(masterPath, "offset_row", offset_row, &readError) &&
+			NodeUtils::readScalarFromH5(masterPath, "offset_col", offset_col, &readError) &&
+			NodeUtils::readMatFromH5(masterPath, "lon_coefficient", lon_coef, CV_64F, &readError) &&
+			NodeUtils::readMatFromH5(masterPath, "lat_coefficient", lat_coef, CV_64F, &readError) &&
+			NodeUtils::readScalarFromH5(masterPath, "prf", prf, &readError) &&
+			NodeUtils::readScalarFromH5(masterPath, "carrier_frequency", wavelength, &readError) &&
+			NodeUtils::readScalarFromH5(masterPath, "range_spacing", rangeSpacing, &readError) &&
+			NodeUtils::readScalarFromH5(masterPath, "slant_range_first_pixel", nearRangeTime, &readError) &&
+			NodeUtils::readMatFromH5(masterPath, "state_vec", statevec, CV_64F, &readError);
+		QString timeSource;
+		QString timeError;
+		if (!masterMetadataReady || !resolveAcquisitionTimes(masterPath, conversion, start_time, end_time,
+			start, end, timeSource, timeError) ||
+			conversion.read_slc_from_h5(master_file, slave) < 0)
+		{
+			const QString metadataError = !readError.isEmpty() ? readError : timeError;
+			abortFineCoregistration(metadataError.isEmpty()
+				? QStringLiteral("读取主影像元数据")
+				: QStringLiteral("读取主影像元数据：%1").arg(metadataError), -1);
+			return;
+		}
+		if (!std::isfinite(wavelength) || wavelength <= 0.0)
+		{
+			abortFineCoregistration(QStringLiteral("主影像载波频率无效"), -1);
+			return;
+		}
 		wavelength = VEL_C / wavelength;
-		NodeUtils::readScalarFromH5(masterPath, "range_spacing", rangeSpacing);
-		NodeUtils::readScalarFromH5(masterPath, "slant_range_first_pixel", nearRangeTime);
 		nearRangeTime = 2.0 * nearRangeTime / VEL_C;
-		NodeUtils::readStringFromH5(masterPath, "acquisition_start_time", start_time);
-		conversion.utc2gps(start_time.c_str(), &start);
-		NodeUtils::readStringFromH5(masterPath, "acquisition_stop_time", end_time);
-		conversion.utc2gps(end_time.c_str(), &end);
-		NodeUtils::readMatFromH5(masterPath, "state_vec", statevec);
-		conversion.read_slc_from_h5(master_file, slave);
 		InSARLogManager::LogInfo("CoregistrationWorker", QString("Master image resolved. Size: %1 x %2 (Width x Height)").arg(sceneWidth).arg(sceneHeight));
-		
-		conversion.creat_new_h5(SAR_images_regis[masterIndex - 1].c_str());
-		conversion.write_slc_to_h5(SAR_images_regis[masterIndex - 1].c_str(), slave);
-		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "range_len", slave.GetCols());
-		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "azimuth_len", slave.GetRows());
-		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_row", offset_row);
-		conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_col", offset_col);
-		conversion.Copy_para_from_h5_2_h5(SAR_images[masterIndex - 1].c_str(), SAR_images_regis[masterIndex - 1].c_str());
-		conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "process_state", "coregistration");
-		conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "comment", "complex-2.0");
+		InSARLogManager::LogDebug("CoregistrationWorker",
+			formatFineAcquisitionTimeDiagnostics(QStringLiteral("master"), timeSource, start, end, statevec),
+			QStringLiteral("coregistration.geometry"));
 	}
 	Mat Row_offset(images_number, 1, CV_32S); Row_offset.at<int>(masterIndex - 1, 0) = 0;
 	Mat Col_offset(images_number, 1, CV_32S); Col_offset.at<int>(masterIndex - 1, 0) = 0;
 	
-	Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
+	int ret = Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
 		&lonMax, &latMax, &lonMin, &latMin);
-	Utils::getSRTMDEM(dempath.c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
+	if (ret < 0)
+	{
+		abortFineCoregistration(QStringLiteral("计算主影像地理范围"), ret);
+		return;
+	}
+	qint64 demMaskRequiredPixelCount = 0;
+	qint64 demMaskValidPixelCount = 0;
+	QString demMaskError;
+	if (!NodeUtils::validateDemValidityMaskForScene(
+			demPath, m_demValidMaskPath, lonMin, lonMax, latMin, latMax,
+			&demMaskRequiredPixelCount, &demMaskValidPixelCount, &demMaskError))
+	{
+		InSARLogManager::LogError("CoregistrationWorker", demMaskError);
+		Q_EMIT errorProcess(QStringLiteral("DEM 辅助精配准已停止：%1").arg(demMaskError));
+		return;
+	}
+	const auto writeFineDemAudit = [&conversion, demMaskRequiredPixelCount,
+		demMaskValidPixelCount](const char* outputPath) {
+		int auditRet = conversion.write_str_to_h5(
+			outputPath, "coregistration_method", "fine");
+		if (auditRet >= 0) auditRet = conversion.write_int_to_h5(
+			outputPath, "coregistration_dem_coverage_schema_version", 2);
+		if (auditRet >= 0) auditRet = conversion.write_double_to_h5(
+			outputPath, "coregistration_dem_mask_required_pixel_count",
+			static_cast<double>(demMaskRequiredPixelCount));
+		if (auditRet >= 0) auditRet = conversion.write_double_to_h5(
+			outputPath, "coregistration_dem_mask_valid_pixel_count",
+			static_cast<double>(demMaskValidPixelCount));
+		if (auditRet >= 0) auditRet = conversion.write_str_to_h5(
+			outputPath, "coregistration_dem_coverage_status",
+			"full_source_support_verified");
+		if (auditRet >= 0) auditRet = conversion.write_str_to_h5(
+			outputPath, "coregistration_dem_mask_policy",
+			"core_computed_scene_bounds_plus_one_dem_pixel;binary_mask;finite_non_nodata_elevation");
+		return auditRet;
+	};
+	ret = Utils::getSRTMDEM(dempath.c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
+	if (ret < 0 || dem.empty() || dem.type() != CV_16S)
+	{
+		abortFineCoregistration(QStringLiteral("读取覆盖主影像范围的 DEM"), ret < 0 ? ret : -1);
+		return;
+	}
 	this->setStage(10.0, 20.0);
-	coregis.getDEMRgAzPos(dem, statevec, rangePos, azimuthPos, lon_upperleft, lat_upperleft, offset_row, offset_col,
-		sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback, this);
+	ret = coregis.getDEMRgAzPosWithDiagnostics(dem, statevec, rangePos, azimuthPos, lon_upperleft, lat_upperleft, offset_row, offset_col,
+		sceneHeight, sceneWidth, prf, rangeSpacing, wavelength, nearRangeTime, start, end, 5.0 / 6000.0, 5.0 / 6000.0,
+		&masterGeometryDiagnostics, coregisProgressCallback, this);
+	if (ret < 0)
+	{
+		abortFineCoregistration(QStringLiteral("建立主影像 DEM 雷达定位"), ret, true);
+		return;
+	}
+	InSARLogManager::LogDebug("CoregistrationWorker",
+		formatDemPositionDiagnostics(QStringLiteral("master"), masterGeometryDiagnostics),
+		QStringLiteral("coregistration.geometry"));
+	{
+		NodeUtils::Hdf5Locker locker;
+		ret = conversion.creat_new_h5(SAR_images_regis[masterIndex - 1].c_str());
+		if (ret >= 0) ret = conversion.write_slc_to_h5(SAR_images_regis[masterIndex - 1].c_str(), slave);
+		if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "range_len", slave.GetCols());
+		if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "azimuth_len", slave.GetRows());
+		if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_row", offset_row);
+		if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "offset_col", offset_col);
+		if (ret >= 0) ret = conversion.Copy_para_from_h5_2_h5(SAR_images[masterIndex - 1].c_str(), SAR_images_regis[masterIndex - 1].c_str());
+		if (ret >= 0) ret = conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "process_state", "coregistration");
+		if (ret >= 0) ret = conversion.write_str_to_h5(SAR_images_regis[masterIndex - 1].c_str(), "comment", "complex-2.0");
+		if (ret >= 0) ret = writeFineDemAudit(SAR_images_regis[masterIndex - 1].c_str());
+	}
+	if (ret < 0)
+	{
+		abortFineCoregistration(QStringLiteral("写入主影像配准输出"), ret);
+		return;
+	}
 	int count = 0;
 	for (int i = 0; i < images_number; i++)
 	{
@@ -575,55 +844,130 @@ void CoregistrationWorker::DEMAssistCoregistration(
 			Q_EMIT cancelled();
 			return;
 		}
-		int offset_r, offset_c;
+		int offset_r = 0, offset_c = 0;
 		offset_row2 = offset_col2 = 0;
 		slave_file = SAR_images[i].c_str();
 		{
 			NodeUtils::Hdf5Locker locker;
 			QString slavePath = QString::fromStdString(slave_file);
-			NodeUtils::readScalarFromH5(slavePath, "range_len", sceneWidth2);
-			NodeUtils::readScalarFromH5(slavePath, "azimuth_len", sceneHeight2);
-			NodeUtils::readScalarFromH5(slavePath, "offset_row", offset_row2);
-			NodeUtils::readScalarFromH5(slavePath, "offset_col", offset_col2);
-			NodeUtils::readMatFromH5(slavePath, "lon_coefficient", lon_coef2);
-			NodeUtils::readMatFromH5(slavePath, "lat_coefficient", lat_coef2);
-			NodeUtils::readScalarFromH5(slavePath, "prf", prf2);
-			NodeUtils::readScalarFromH5(slavePath, "range_spacing", rangeSpacing2);
-			NodeUtils::readScalarFromH5(slavePath, "slant_range_first_pixel", nearRangeTime2);
+			QString readError;
+			const bool slaveMetadataReady =
+				NodeUtils::readScalarFromH5(slavePath, "range_len", sceneWidth2, &readError) &&
+				NodeUtils::readScalarFromH5(slavePath, "azimuth_len", sceneHeight2, &readError) &&
+				NodeUtils::readScalarFromH5(slavePath, "offset_row", offset_row2, &readError) &&
+				NodeUtils::readScalarFromH5(slavePath, "offset_col", offset_col2, &readError) &&
+				NodeUtils::readMatFromH5(slavePath, "lon_coefficient", lon_coef2, CV_64F, &readError) &&
+				NodeUtils::readMatFromH5(slavePath, "lat_coefficient", lat_coef2, CV_64F, &readError) &&
+				NodeUtils::readScalarFromH5(slavePath, "prf", prf2, &readError) &&
+				NodeUtils::readScalarFromH5(slavePath, "range_spacing", rangeSpacing2, &readError) &&
+				NodeUtils::readScalarFromH5(slavePath, "slant_range_first_pixel", nearRangeTime2, &readError) &&
+				NodeUtils::readMatFromH5(slavePath, "state_vec", statevec2, CV_64F, &readError);
+			QString timeSource;
+			QString timeError;
+			if (!slaveMetadataReady || !resolveAcquisitionTimes(slavePath, conversion, start_time, end_time,
+				start2, end2, timeSource, timeError) ||
+				conversion.read_slc_from_h5(slave_file, slave) < 0)
+			{
+				const QString metadataError = !readError.isEmpty() ? readError : timeError;
+				abortFineCoregistration(metadataError.isEmpty()
+					? QStringLiteral("读取第 %1 幅影像元数据").arg(i + 1)
+					: QStringLiteral("读取第 %1 幅影像元数据：%2").arg(i + 1).arg(metadataError), -1);
+				return;
+			}
 			nearRangeTime2 = 2.0 * nearRangeTime2 / VEL_C;
-			NodeUtils::readStringFromH5(slavePath, "acquisition_start_time", start_time);
-			conversion.utc2gps(start_time.c_str(), &start2);
-			NodeUtils::readStringFromH5(slavePath, "acquisition_stop_time", end_time);
-			conversion.utc2gps(end_time.c_str(), &end2);
-			NodeUtils::readMatFromH5(slavePath, "state_vec", statevec2);
-			conversion.read_slc_from_h5(slave_file, slave);
 			InSARLogManager::LogInfo("CoregistrationWorker", QString("Slave image resolved. Index: %1, Size: %2 x %3 (Width x Height)").arg(i + 1).arg(sceneWidth2).arg(sceneHeight2));
+			InSARLogManager::LogDebug("CoregistrationWorker",
+				formatFineAcquisitionTimeDiagnostics(QStringLiteral("slave %1").arg(i + 1), timeSource, start2, end2, statevec2),
+				QStringLiteral("coregistration.geometry"));
 		}
  
 		double totalWidth = 60.0 / double(images_number - 1);
 		double currentSlaveStart = 30.0 + double(count) * totalWidth;
 		this->setStage(currentSlaveStart, totalWidth * 0.40);
-		coregis.getDEMRgAzPos(dem, statevec2, rangePos2, azimuthPos2, lon_upperleft, lat_upperleft, offset_row2, offset_col2,
-			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0, coregisProgressCallback, this);
- 
-		coregis.computeSlaveOffset(rangePos, azimuthPos, rangePos2, azimuthPos2, slaveAzimuthOffset, slaveRangeOffset);
-		coregis.fitSlaveOffset(slaveAzimuthOffset, rangePos, azimuthPos, &a0, &a1, &a2);
-		coregis.fitSlaveOffset(slaveRangeOffset, rangePos, azimuthPos, &b0, &b1, &b2);
+		DemRadarPositionDiagnostics slaveGeometryDiagnostics{};
+		slaveGeometryDiagnostics.structSize = sizeof(DemRadarPositionDiagnostics);
+		slaveGeometryDiagnostics.version = 1;
+		ret = coregis.getDEMRgAzPosWithDiagnostics(dem, statevec2, rangePos2, azimuthPos2, lon_upperleft, lat_upperleft, offset_row2, offset_col2,
+			sceneHeight2, sceneWidth2, prf2, rangeSpacing2, wavelength, nearRangeTime2, start2, end2, 5.0 / 6000.0, 5.0 / 6000.0,
+			&slaveGeometryDiagnostics, coregisProgressCallback, this);
+		if (ret < 0)
+		{
+			abortFineCoregistration(QStringLiteral("建立第 %1 幅影像的 DEM 雷达定位").arg(i + 1), ret, true);
+			return;
+		}
+		InSARLogManager::LogDebug("CoregistrationWorker",
+			formatDemPositionDiagnostics(QStringLiteral("slave %1").arg(i + 1), slaveGeometryDiagnostics),
+			QStringLiteral("coregistration.geometry"));
+
+		DemCoregistrationOverlapDiagnostics overlapDiagnostics{};
+		overlapDiagnostics.structSize = sizeof(DemCoregistrationOverlapDiagnostics);
+		overlapDiagnostics.version = 1;
+		ret = coregis.computeSlaveOffsetWithDiagnostics(rangePos, azimuthPos, rangePos2, azimuthPos2,
+			slaveAzimuthOffset, slaveRangeOffset, &overlapDiagnostics);
+		if (ret < 0)
+		{
+			abortFineCoregistration(QStringLiteral("计算第 %1 幅影像的 DEM 偏移").arg(i + 1), ret);
+			return;
+		}
+		InSARLogManager::LogDebug("CoregistrationWorker", formatDemOverlapDiagnostics(i + 1, overlapDiagnostics),
+			QStringLiteral("coregistration.geometry"));
+		if (overlapDiagnostics.commonAzimuthPointCount < 4 || overlapDiagnostics.commonRangePointCount < 4)
+		{
+			abortFineCoregistration(
+				QStringLiteral("主辅影像共同有效 DEM 控制点不足（方位 %1，距离 %2，至少 4 个）")
+					.arg(overlapDiagnostics.commonAzimuthPointCount)
+					.arg(overlapDiagnostics.commonRangePointCount), -1);
+			return;
+		}
+		ret = coregis.fitSlaveOffset(slaveAzimuthOffset, rangePos, azimuthPos, &a0, &a1, &a2);
+		if (ret < 0)
+		{
+			abortFineCoregistration(QStringLiteral("拟合第 %1 幅影像的方位偏移").arg(i + 1), ret);
+			return;
+		}
+		ret = coregis.fitSlaveOffset(slaveRangeOffset, rangePos, azimuthPos, &b0, &b1, &b2);
+		if (ret < 0)
+		{
+			abortFineCoregistration(QStringLiteral("拟合第 %1 幅影像的距离偏移").arg(i + 1), ret);
+			return;
+		}
+		if (!std::isfinite(a0) || !std::isfinite(a1) || !std::isfinite(a2) ||
+			!std::isfinite(b0) || !std::isfinite(b1) || !std::isfinite(b2))
+		{
+			abortFineCoregistration(QStringLiteral("第 %1 幅影像的偏移拟合系数无效").arg(i + 1), -1);
+			return;
+		}
 		this->setStage(currentSlaveStart + totalWidth * 0.40, totalWidth * 0.60);
-		coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c, coregisProgressCallback, this);
+		ret = coregis.performBilinearResampling(slave, sceneHeight, sceneWidth, b0, b1, b2, a0, a1, a2, &offset_r, &offset_c, coregisProgressCallback, this);
+		if (ret < 0)
+		{
+			abortFineCoregistration(QStringLiteral("重采样第 %1 幅影像").arg(i + 1), ret, true);
+			return;
+		}
+		if (slave.isEmpty() || slave.GetRows() != sceneHeight || slave.GetCols() != sceneWidth)
+		{
+			abortFineCoregistration(QStringLiteral("第 %1 幅影像重采样尺寸无效").arg(i + 1), -1);
+			return;
+		}
 		{
 			NodeUtils::Hdf5Locker locker;
-			conversion.creat_new_h5(SAR_images_regis[i].c_str());
-			conversion.write_slc_to_h5(SAR_images_regis[i].c_str(), slave);
-			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "range_len", slave.GetCols());
-			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "azimuth_len", slave.GetRows());
-			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_row", offset_row2 + offset_r);
+			ret = conversion.creat_new_h5(SAR_images_regis[i].c_str());
+			if (ret >= 0) ret = conversion.write_slc_to_h5(SAR_images_regis[i].c_str(), slave);
+			if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "range_len", slave.GetCols());
+			if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "azimuth_len", slave.GetRows());
+			if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_row", offset_row2 + offset_r);
 			Row_offset.at<int>(i, 0) = offset_row2 + offset_r;
-			conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_col", offset_col2 + offset_c);
+			if (ret >= 0) ret = conversion.write_int_to_h5(SAR_images_regis[i].c_str(), "offset_col", offset_col2 + offset_c);
 			Col_offset.at<int>(i, 0) = offset_col2 + offset_c;
-			conversion.Copy_para_from_h5_2_h5(SAR_images[i].c_str(), SAR_images_regis.at(i).c_str());
-			conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
-			conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
+			if (ret >= 0) ret = conversion.Copy_para_from_h5_2_h5(SAR_images[i].c_str(), SAR_images_regis.at(i).c_str());
+			if (ret >= 0) ret = conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "process_state", "coregistration");
+			if (ret >= 0) ret = conversion.write_str_to_h5(SAR_images_regis.at(i).c_str(), "comment", "complex-2.0");
+			if (ret >= 0) ret = writeFineDemAudit(SAR_images_regis.at(i).c_str());
+		}
+		if (ret < 0)
+		{
+			abortFineCoregistration(QStringLiteral("写入第 %1 幅影像的配准输出").arg(i + 1), ret);
+			return;
 		}
 		count++;
 		emit updateProcess(10 + double(count) / double(images_number - 1) * 80, QStringLiteral("正在处理..."));

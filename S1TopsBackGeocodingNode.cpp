@@ -468,6 +468,22 @@ QJsonObject S1TopsBackGeocodingNode::save() const
     return modelJson;
 }
 
+void S1TopsBackGeocodingNode::prepareForPaste(QJsonObject& json,
+                                               PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // Back-geocoding persists enough result state to render its diagnostics
+    // without calling validateAndRestoreOutput().  None of it is clone
+    // configuration: retaining it would resolve source H5/JPG paths while the
+    // pasted node is still Idle.
+    json.remove(QStringLiteral("outputPaths"));
+    json.remove(QStringLiteral("masterOutputPath"));
+    json.remove(QStringLiteral("processingWarning"));
+    json.remove(QStringLiteral("processingQualityWarnings"));
+    json.remove(QStringLiteral("registrationOffsets"));
+}
+
 void S1TopsBackGeocodingNode::load(QJsonObject const &json)
 {
     QJsonValue vName = json["outputNodeName"];

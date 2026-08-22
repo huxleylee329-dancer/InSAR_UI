@@ -119,6 +119,13 @@ bool copyCompatibleCoherence(const QString& inputPath, const QString& outputPath
         error = QStringLiteral("Failed to preserve coherence metadata.");
         return false;
     }
+    // 随 coherence 一并传播语义标签：该数据集为原样复制，语义不变。
+    // 输入无标签时保持"未知"，不隐式升级。
+    QString semanticsError;
+    if (!NodeUtils::copyCoherenceSemantics(inputPath, outputPath, &semanticsError)) {
+        error = QStringLiteral("Failed to preserve coherence semantics: %1").arg(semanticsError);
+        return false;
+    }
     return true;
 }
 

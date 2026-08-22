@@ -905,8 +905,14 @@ void GeocodingNode::commitGeocodingResult(const GeocodingFileResult& result)
 {
     XMLFile* xml = projectXml();
     if (xml) {
-        xml->XMLFile_add_geocoding(result.dstNode.toStdString().c_str(), result.geocodeName.toStdString().c_str(),
-            result.relativePath.toStdString().c_str(), result.rankLevel.toStdString().c_str());
+        if (xml->XMLFile_add_geocoding(result.dstNode.toStdString().c_str(), result.geocodeName.toStdString().c_str(),
+                result.relativePath.toStdString().c_str(), result.rankLevel.toStdString().c_str()) < 0 ||
+            (result.rankLevel == QStringLiteral("coherence-1.1") &&
+             xml->XMLFile_set_coherence_semantics(
+                 result.dstNode.toStdString().c_str(), result.geocodeName.toStdString().c_str(),
+                 result.coherenceSemantics.toStdString().c_str()) < 0)) {
+            return;
+        }
         m_xmlDirty = true;
     }
 }

@@ -25,6 +25,7 @@
 #include <QFileDialog>
 #include <QtConcurrent/QtConcurrent>
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <QPointer>
 #include <QSignalBlocker>
@@ -71,6 +72,7 @@ InterferometricFormationNode::InterferometricFormationNode()
             self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot();
             self->m_demPath.clear();
             self->m_preparedDemPath.clear();
+            self->m_preparedDemValidMaskPath.clear();
             self->m_demInputData.reset();
             self->setProgress(0);
             self->setLastErrorMessage(QStringLiteral("辅助 DEM 资源已变化，需要重新准备。"));
@@ -273,6 +275,24 @@ QJsonObject InterferometricFormationNode::save() const
     modelJson[QStringLiteral("outputMultilookAz")] = m_outputMultilookAz;
 
     return modelJson;
+}
+
+void InterferometricFormationNode::prepareForPaste(QJsonObject& json,
+                                                   PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // These values describe the committed source artifact rather than the
+    // clone's editable execution configuration.  Keeping them would make the
+    // interferometry preview/evaluation tab interpret a future output as old.
+    json.remove(QStringLiteral("hasOutputExecutionSettings"));
+    json.remove(QStringLiteral("outputIsDeflat"));
+    json.remove(QStringLiteral("outputIsTopoRemoval"));
+    json.remove(QStringLiteral("outputIsCoherence"));
+    json.remove(QStringLiteral("outputWinW"));
+    json.remove(QStringLiteral("outputWinH"));
+    json.remove(QStringLiteral("outputMultilookRg"));
+    json.remove(QStringLiteral("outputMultilookAz"));
 }
 
 void InterferometricFormationNode::load(QJsonObject const &json)
@@ -988,7 +1008,7 @@ void InterferometricFormationNode::commitInterferogramResult(const Interferogram
         result.multilookAz);
 
     if (result.isCoherence) {
-        xml->XMLFile_add_interferometric_phase(
+        if (xml->XMLFile_add_interferometric_phase(
             m_preparedFileName.toStdString().c_str(),
             result.cohName.toStdString().c_str(),
             result.relativePath.toStdString().c_str(),
@@ -1002,7 +1022,13 @@ void InterferometricFormationNode::commitInterferogramResult(const Interferogram
             result.winWidth,
             result.winHeight,
             result.multilookRg,
-            result.multilookAz);
+            result.multilookAz) < 0 ||
+            xml->XMLFile_set_coherence_semantics(
+                m_preparedFileName.toStdString().c_str(),
+                result.cohName.toStdString().c_str(),
+                NodeUtils::CoherenceSemantics::kPhaseAxialR2) < 0) {
+            return;
+        }
     }
     m_xmlDirty = true;
 }
@@ -1262,6 +1288,7 @@ bool InterferometricFormationNode::prepareToStart()
     m_preparedIsTopoRemoval = m_isTopoRemoval;
     m_preparedIsCoherence = m_isCoherence;
     m_preparedDemPath = m_demPath;
+    m_preparedDemValidMaskPath.clear();
     m_preparedDemIdentityH5Path.clear();
 
     if (!m_preparedDemPath.isEmpty()) {
@@ -1297,6 +1324,13 @@ bool InterferometricFormationNode::prepareToStart()
         }
 
         const bool resourceBound = m_auxiliaryDemEntityData || m_auxiliaryDemReferenceData;
+        if (m_isTopoRemoval && !resourceBound) {
+            const QString reason = QStringLiteral(
+                "去地形处理要求使用带可验证有效性 mask 的托管辅助 DEM；请重新生成或重新绑定 DEM。");
+            setStartFailureMessage(reason);
+            setLastErrorMessage(reason);
+            return false;
+        }
         if (!resourceBound) {
             QStringList demCommittedOutputs;
             QString demManifestError;
@@ -1339,6 +1373,15 @@ bool InterferometricFormationNode::prepareToStart()
         }
         m_preparedDemPath = demRasterPath;
         m_preparedDemIdentityH5Path = demIdentityH5Path;
+        m_preparedDemValidMaskPath = m_preparedAuxiliaryDemBinding.validMaskPath;
+        const QFileInfo demMaskInfo(m_preparedDemValidMaskPath);
+        if (m_isTopoRemoval && (m_preparedDemValidMaskPath.isEmpty() ||
+                                !demMaskInfo.isFile() || !demMaskInfo.isReadable())) {
+            const QString reason = QStringLiteral("托管辅助 DEM 缺少可读的有效性 mask。");
+            setStartFailureMessage(reason);
+            setLastErrorMessage(reason);
+            return false;
+        }
     }
 
     m_preparedWinW = m_winWEdit ? m_winWEdit->text().toInt() : m_winW;
@@ -1473,6 +1516,9 @@ void InterferometricFormationNode::executeProcessing()
     if (!m_preparedDemIdentityH5Path.isEmpty()) {
         transactionInputPaths.append(m_preparedDemIdentityH5Path);
     }
+    if (!m_preparedDemValidMaskPath.isEmpty()) {
+        transactionInputPaths.append(m_preparedDemValidMaskPath);
+    }
     if (!NodeUtils::beginOutputTransaction(m_preparedSavePath, m_preparedFileName,
                                            m_preparedOutputPaths, transactionInputPaths,
                                            m_outputTransaction, &transactionError, nullptr,
@@ -1519,6 +1565,18 @@ void InterferometricFormationNode::executeProcessing()
     workerLogContext.displayName = caption();
     workerLogContext.scope = QStringLiteral("task");
     m_workerThread->setTaskLogContext(workerLogContext);
+    m_workerThread->setDemValidMaskPath(m_preparedDemValidMaskPath);
+    const QJsonObject demRequiredGeometry = m_preparedDemExecutionSnapshot.inputGeometry;
+    if (demRequiredGeometry.value(QStringLiteral("minLon")).isDouble() &&
+        demRequiredGeometry.value(QStringLiteral("maxLon")).isDouble() &&
+        demRequiredGeometry.value(QStringLiteral("minLat")).isDouble() &&
+        demRequiredGeometry.value(QStringLiteral("maxLat")).isDouble()) {
+        m_workerThread->setDemRequiredBounds(
+            demRequiredGeometry.value(QStringLiteral("minLon")).toDouble(),
+            demRequiredGeometry.value(QStringLiteral("maxLon")).toDouble(),
+            demRequiredGeometry.value(QStringLiteral("minLat")).toDouble(),
+            demRequiredGeometry.value(QStringLiteral("maxLat")).toDouble());
+    }
     m_workerThread->moveToThread(m_thread);
 
     connect(this, &InterferometricFormationNode::startInterferometric, m_workerThread, &InterferometricFormationWorker::InterferometricWithDem);
@@ -1981,7 +2039,7 @@ QVector<ParameterInfo> InterferometricFormationNode::getParameters() const
     params.append(pTopo);
 
     ParameterInfo pCoh;
-    pCoh.name = QStringLiteral("相干系数计算");
+    pCoh.name = QStringLiteral("二倍角相位集中度计算");
     pCoh.value = isCoh ? QStringLiteral("开启") : QStringLiteral("关闭");
     pCoh.dataType = QStringLiteral("bool");
     pCoh.editType = FieldEditType::None;
@@ -2055,10 +2113,10 @@ std::vector<QString> InterferometricFormationNode::processingInfo() const
     }
 
     if (isCoh) {
-        info.push_back(QStringLiteral("相干系数计算：开启 (窗口 %1 x %2, %3 Looks)%4")
+        info.push_back(QStringLiteral("相位集中度计算：开启 (窗口 %1 x %2, 名义样本数 %3)%4")
             .arg(winW).arg(winH).arg(winW * winH).arg(suffix));
     } else {
-        info.push_back(QStringLiteral("相干系数计算：未开启%1").arg(suffix));
+        info.push_back(QStringLiteral("相位集中度计算：未开启%1").arg(suffix));
     }
 
     if (m_outputData && !m_outputData->filePaths().isEmpty()) {
@@ -2106,6 +2164,13 @@ struct InterfEvalThreadResult {
     float medianCoh;
     float maxCoh;
     float highCohPct;
+    bool hasSupportMetadata;
+    float excludedSupportPct;
+    int supportWindowRg;
+    int supportWindowAz;
+    // 该 coherence 数据集的语义标签（见 NodeUtils::kCoherenceSemantics*）。
+    // 缺标签的存量文件为 legacy_unknown，不可假定为任一具体语义。
+    QString semantics;
     QString errorMessage;
 };
 
@@ -2178,7 +2243,6 @@ public:
         m_medianCohLabel = createValueLabel();
         m_maxCohLabel = createValueLabel();
         m_highCohPctLabel = createValueLabel();
-        m_phaseNoiseLabel = createValueLabel();
         m_enlLabel = createValueLabel();
         m_flatEarthLabel = createValueLabel();
         m_topoLabel = createValueLabel();
@@ -2189,12 +2253,23 @@ public:
             formLayout->addRow(label, valueWidget);
         };
 
-        addFormRow(tr("平均相干系数:"), m_meanCohLabel);
-        addFormRow(tr("中位相干系数:"), m_medianCohLabel);
-        addFormRow(tr("最高相干系数:"), m_maxCohLabel);
-        addFormRow(tr("高相干占比 (>0.5):"), m_highCohPctLabel);
-        addFormRow(tr("预估相位噪声 (标准差):"), m_phaseNoiseLabel);
-        addFormRow(tr("相干估算窗口 (视数):"), m_enlLabel);
+        // 生成可后续改写文本的行标题
+        auto makeTitleLabel = [isDark](const QString& title) {
+            auto* label = new QLabel(title);
+            label->setStyleSheet(QString("font-size: 11px; color: %1;").arg(isDark ? "#9CA3AF" : "#6B7280"));
+            return label;
+        };
+
+        // 指标行标题在评估完成后按 H5 中的 coherence_semantics 标签动态改写，
+        // 因为同名数据集可能是 gamma、R1 或 R2，量纲不同且不可换算。
+        m_meanTitleLabel = makeTitleLabel(tr("平均值:"));
+        m_medianTitleLabel = makeTitleLabel(tr("中位值:"));
+        m_maxTitleLabel = makeTitleLabel(tr("最高值:"));
+        formLayout->addRow(m_meanTitleLabel, m_meanCohLabel);
+        formLayout->addRow(m_medianTitleLabel, m_medianCohLabel);
+        formLayout->addRow(m_maxTitleLabel, m_maxCohLabel);
+        addFormRow(tr("高值占比 (>0.5):"), m_highCohPctLabel);
+        addFormRow(tr("集中度估算窗口:"), m_enlLabel);
         addFormRow(tr("平地相位状态:"), m_flatEarthLabel);
         addFormRow(tr("地形相位状态:"), m_topoLabel);
 
@@ -2404,11 +2479,13 @@ private:
 
     void resetMetrics()
     {
+        m_meanTitleLabel->setText(tr("平均值:"));
+        m_medianTitleLabel->setText(tr("中位值:"));
+        m_maxTitleLabel->setText(tr("最高值:"));
         m_meanCohLabel->setText("-");
         m_medianCohLabel->setText("-");
         m_maxCohLabel->setText("-");
         m_highCohPctLabel->setText("-");
-        m_phaseNoiseLabel->setText("-");
         m_enlLabel->setText("-");
         m_flatEarthLabel->setText("-");
         m_flatEarthLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #6B7280;");
@@ -2457,6 +2534,14 @@ private:
             res.medianCoh = 0.0f;
             res.maxCoh = 0.0f;
             res.highCohPct = 0.0f;
+            res.hasSupportMetadata = false;
+            res.excludedSupportPct = 0.0f;
+            res.supportWindowRg = 0;
+            res.supportWindowAz = 0;
+            // 读取语义标签：存量文件无标签时退回 legacy_unknown，不假定为任何具体语义
+            if (!NodeUtils::readCoherenceSemantics(cohH5Path, res.semantics, nullptr)) {
+                res.semantics = QString::fromLatin1(NodeUtils::CoherenceSemantics::kLegacyUnknown);
+            }
 
             cv::Mat cohMat;
             QString errMsg;
@@ -2470,6 +2555,41 @@ private:
                 return res;
             }
 
+            cv::Mat validSampleCount;
+            int supportWindowRg = 0;
+            int supportWindowAz = 0;
+            const bool supportCountRead = NodeUtils::readMatFromH5(
+                cohH5Path,
+                QString::fromLatin1(NodeUtils::CoherenceSupport::kValidSampleCountDataset),
+                validSampleCount,
+                CV_32S,
+                nullptr);
+            const bool supportWindowRgRead = NodeUtils::readScalarFromH5(
+                cohH5Path,
+                QString::fromLatin1(NodeUtils::CoherenceSupport::kWindowRangeDataset),
+                supportWindowRg);
+            const bool supportWindowAzRead = NodeUtils::readScalarFromH5(
+                cohH5Path,
+                QString::fromLatin1(NodeUtils::CoherenceSupport::kWindowAzimuthDataset),
+                supportWindowAz);
+            const bool hasAnySupportMetadata = supportCountRead || supportWindowRgRead || supportWindowAzRead;
+            if (hasAnySupportMetadata &&
+                (!supportCountRead || !supportWindowRgRead || !supportWindowAzRead)) {
+                res.errorMessage = QStringLiteral("相干性有效样本支持元数据不完整。");
+                return res;
+            }
+            if (hasAnySupportMetadata) {
+                if (validSampleCount.empty() || validSampleCount.size() != cohMat.size() ||
+                    supportWindowRg < 1 || supportWindowAz < 1 ||
+                    supportWindowRg > std::numeric_limits<int>::max() / supportWindowAz) {
+                    res.errorMessage = QStringLiteral("相干性有效样本支持元数据无效或尺寸不匹配。");
+                    return res;
+                }
+                res.hasSupportMetadata = true;
+                res.supportWindowRg = supportWindowRg;
+                res.supportWindowAz = supportWindowAz;
+            }
+
             // 计算统计信息
             // 为了计算中位数和占比，需要遍历所有有效像素
             std::vector<float> validPixels;
@@ -2481,14 +2601,26 @@ private:
             
             float maxCoh = 0.0f;
             double sumCoh = 0.0;
-            int highCount = 0;
+            long long highCount = 0;
+            long long sampledCount = 0;
+            long long excludedSupportCount = 0;
+            const int requiredSupport = res.hasSupportMetadata
+                ? res.supportWindowRg * res.supportWindowAz : 0;
 
-            if (cohMat.isContinuous()) {
+            if (cohMat.isContinuous() &&
+                (!res.hasSupportMetadata || validSampleCount.isContinuous())) {
                 const float* ptr = cohMat.ptr<float>();
+                const int* supportPtr = res.hasSupportMetadata
+                    ? validSampleCount.ptr<int>() : nullptr;
                 int total = cohMat.total();
                 for (int i = 0; i < total; i += step) {
+                    ++sampledCount;
+                    if (supportPtr != nullptr && supportPtr[i] != requiredSupport) {
+                        ++excludedSupportCount;
+                        continue;
+                    }
                     float val = ptr[i];
-                    if (!std::isnan(val) && val >= 0.0f && val <= 1.0f) {
+                    if (std::isfinite(val) && val >= 0.0f && val <= 1.0f) {
                         validPixels.push_back(val);
                         sumCoh += val;
                         if (val > maxCoh) maxCoh = val;
@@ -2496,17 +2628,29 @@ private:
                     }
                 }
             } else {
-                for (int r = 0; r < cohMat.rows; r += step) {
+                // 非连续矩阵按“全局线性下标”抽样，保持与连续分支一致的 1/step 抽样比例
+                // （若行、列各自按 step 跳跃，实际抽样比例会退化为 1/step^2）
+                size_t linearIdx = 0;
+                for (int r = 0; r < cohMat.rows; ++r) {
                     const float* ptr = cohMat.ptr<float>(r);
-                    for (int c = 0; c < cohMat.cols; c += step) {
+                    const int* supportPtr = res.hasSupportMetadata
+                        ? validSampleCount.ptr<int>(r) : nullptr;
+                    int c = (int)((step - (linearIdx % step)) % step);
+                    for (; c < cohMat.cols; c += step) {
+                        ++sampledCount;
+                        if (supportPtr != nullptr && supportPtr[c] != requiredSupport) {
+                            ++excludedSupportCount;
+                            continue;
+                        }
                         float val = ptr[c];
-                        if (!std::isnan(val) && val >= 0.0f && val <= 1.0f) {
+                        if (std::isfinite(val) && val >= 0.0f && val <= 1.0f) {
                             validPixels.push_back(val);
                             sumCoh += val;
                             if (val > maxCoh) maxCoh = val;
                             if (val > 0.5f) highCount++;
                         }
                     }
+                    linearIdx += (size_t)cohMat.cols;
                 }
             }
 
@@ -2518,6 +2662,10 @@ private:
             res.meanCoh = sumCoh / validPixels.size();
             res.maxCoh = maxCoh;
             res.highCohPct = (float)highCount / validPixels.size() * 100.0f;
+            if (res.hasSupportMetadata && sampledCount > 0) {
+                res.excludedSupportPct = static_cast<float>(excludedSupportCount) /
+                    static_cast<float>(sampledCount) * 100.0f;
+            }
 
             size_t n = validPixels.size() / 2;
             std::nth_element(validPixels.begin(), validPixels.begin() + n, validPixels.end());
@@ -2547,27 +2695,37 @@ private:
         m_medianCohLabel->setText(QString::number(res.medianCoh, 'f', 4));
         m_maxCohLabel->setText(QString::number(res.maxCoh, 'f', 4));
         m_highCohPctLabel->setText(QString("%1 %").arg(res.highCohPct, 0, 'f', 2));
-        
-        // 计算预估相位噪声
-        // 理论上，当完全失相干(y=0)时，相位服从[-180, 180]的均匀分布，其标准差约为 104° (即 180/sqrt(3))。
-        // 当完全相干(y=1)时，标准差为 0°。这里使用稳健的经验线性映射进行直观展示。
-        double phaseNoise = 104.0 * (1.0 - res.meanCoh);
-        if (phaseNoise < 0.0) phaseNoise = 0.0;
-        
-        m_phaseNoiseLabel->setText(QString(tr("约 %1°")).arg(phaseNoise, 0, 'f', 1));
-        
-        if (!m_node->m_hasOutputExecutionSettings) {
+
+        // 按 H5 中的语义标签决定指标名称：coherence 数据集可能是 gamma、R1 或 R2，
+        // 三者量纲不同且不可换算，必须按标签展示，不能沿用固定文案
+        const QString metricName = NodeUtils::coherenceSemanticsDisplayName(res.semantics);
+        m_meanTitleLabel->setText(tr("平均%1:").arg(metricName));
+        m_medianTitleLabel->setText(tr("中位%1:").arg(metricName));
+        m_maxTitleLabel->setText(tr("最高%1:").arg(metricName));
+
+        if (res.hasSupportMetadata) {
+            const int samples = res.supportWindowRg * res.supportWindowAz;
+            m_enlLabel->setText(QString(tr("%1 x %2 (名义样本数 %3)"))
+                .arg(res.supportWindowRg)
+                .arg(res.supportWindowAz)
+                .arg(samples));
+        } else if (m_node->m_hasOutputExecutionSettings) {
+            const int looks = m_node->m_outputWinW * m_node->m_outputWinH;
+            // 窗口像元数仅为名义样本数，不等同于有效视数（ENL）
+            m_enlLabel->setText(QString(tr("%1 x %2 (名义样本数 %3)"))
+                .arg(m_node->m_outputWinW)
+                .arg(m_node->m_outputWinH)
+                .arg(looks));
+        } else {
             m_enlLabel->setText(tr("未记录"));
+        }
+
+        if (!m_node->m_hasOutputExecutionSettings) {
             m_flatEarthLabel->setText(tr("未记录"));
             m_topoLabel->setText(tr("未记录"));
             m_flatEarthLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #6B7280;");
             m_topoLabel->setStyleSheet("font-size: 11px; font-weight: bold; color: #6B7280;");
         } else {
-            const int looks = m_node->m_outputWinW * m_node->m_outputWinH;
-            m_enlLabel->setText(QString("%1 x %2 (%3 Looks)")
-                .arg(m_node->m_outputWinW)
-                .arg(m_node->m_outputWinH)
-                .arg(looks));
             m_flatEarthLabel->setText(m_node->m_outputIsDeflat
                 ? tr("[√] 已移除 (轨道辅助)") : tr("未移除"));
             m_flatEarthLabel->setStyleSheet(QString("font-size: 11px; font-weight: bold; color: %1;")
@@ -2578,23 +2736,60 @@ private:
                 .arg(m_node->m_outputIsTopoRemoval ? "#10B981" : "#6B7280"));
         }
 
-        // 根据经验阈值更新诊断卡片
-        if (res.meanCoh > 0.4f && res.highCohPct > 30.0f) {
-            m_statusCardTitle->setText(tr("干涉质量良好"));
+        const bool isAxialR2 =
+            res.semantics == QString::fromLatin1(NodeUtils::CoherenceSemantics::kPhaseAxialR2);
+        const bool isCircularR1 =
+            res.semantics == QString::fromLatin1(NodeUtils::CoherenceSemantics::kPhaseCircularR1);
+        const bool isComplexGamma =
+            res.semantics == QString::fromLatin1(NodeUtils::CoherenceSemantics::kComplexGamma);
+
+        QString processingState;
+        if (!m_node->m_hasOutputExecutionSettings) {
+            processingState = tr("平地和地形相位处理状态未记录");
+        } else {
+            processingState = tr("平地相位%1，地形相位%2")
+                .arg(m_node->m_outputIsDeflat ? tr("已移除") : tr("未移除"))
+                .arg(m_node->m_outputIsTopoRemoval ? tr("已移除") : tr("未移除"));
+        }
+
+        const QString supportState = res.hasSupportMetadata
+            ? tr("统计已排除 %1% 样本支持不足的估算窗口")
+                .arg(res.excludedSupportPct, 0, 'f', 2)
+            : tr("文件未记录有效样本支持数，零填充可能影响最高值和高值占比");
+        const QString assessmentContext = tr("%1；%2").arg(processingState, supportState);
+
+        // 旧阈值仅属于当前 R2 口径。R1、gamma 与未知口径没有经过生产数据标定，
+        // 因此只展示统计值，不复用 R2 的等级或给出处理建议。
+        if (!isAxialR2) {
+            m_statusCardTitle->setText(isCircularR1
+                ? tr("圆统计集中度")
+                : (isComplexGamma ? tr("复相干系数统计") : tr("指标语义未标注")));
+            if (isCircularR1) {
+                m_statusCardDesc->setText(tr("当前数据为 2π 周期的一阶相位集中度 R₁。尚未建立生产数据分级阈值，仅展示统计值。%1。").arg(assessmentContext));
+            } else if (isComplexGamma) {
+                m_statusCardDesc->setText(tr("当前数据为主辅 SLC 的归一化复相干系数 γ。当前面板尚未获得有效视数，暂不进行质量分级。%1。").arg(assessmentContext));
+            } else {
+                m_statusCardDesc->setText(tr("该 coherence 数据集缺少可识别的语义标签，无法确定数值口径或应用质量阈值。%1。").arg(assessmentContext));
+            }
+            m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #4B5563;");
+            m_statusCardDesc->setStyleSheet("font-size: 11px; color: #6B7280;");
+            m_statusCard->setStyleSheet("background-color: rgba(107, 114, 128, 0.08); border: 1px solid rgba(107, 114, 128, 0.25); border-radius: 4px;");
+        } else if (res.meanCoh > 0.4f && res.highCohPct > 30.0f) {
+            m_statusCardTitle->setText(tr("相位集中度较高"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #059669;"); // 绿色
-            m_statusCardDesc->setText(tr("整体相干性较高，干涉条纹预期清晰。符合后续相位解缠和形变提取要求。"));
+            m_statusCardDesc->setText(tr("二倍角残余相位在估算窗口内较为集中。该 R₂ 等级仅沿用原口径作相对比较，不等价于相干系数。%1。").arg(assessmentContext));
             m_statusCardDesc->setStyleSheet("font-size: 11px; color: #10B981;");
             m_statusCard->setStyleSheet("background-color: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 4px;");
         } else if (res.meanCoh >= 0.2f) {
-            m_statusCardTitle->setText(tr("相干性一般"));
+            m_statusCardTitle->setText(tr("相位集中度中等"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #D97706;"); // 橙色
-            m_statusCardDesc->setText(tr("存在一定的去相干（可能受植被覆盖、较长基线或时间跨度影响）。建议在后续节点适当增加滤波强度。"));
+            m_statusCardDesc->setText(tr("二倍角残余相位集中度中等。该 R₂ 等级仅沿用原口径作相对比较，不等价于相干系数。%1。").arg(assessmentContext));
             m_statusCardDesc->setStyleSheet("font-size: 11px; color: #F59E0B;");
             m_statusCard->setStyleSheet("background-color: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 4px;");
         } else {
-            m_statusCardTitle->setText(tr("严重去相干"));
+            m_statusCardTitle->setText(tr("相位集中度较低"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #DC2626;"); // 红色
-            m_statusCardDesc->setText(tr("整体相干性极低，干涉相位可能完全被噪声掩盖。请检查输入影像的时空基线，或确保前置配准精度达标。"));
+            m_statusCardDesc->setText(tr("二倍角残余相位在估算窗口内较为分散。该 R₂ 等级仅沿用原口径作相对比较，不等价于相干系数。%1。").arg(assessmentContext));
             m_statusCardDesc->setStyleSheet("font-size: 11px; color: #EF4444;");
             m_statusCard->setStyleSheet("background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 4px;");
         }
@@ -2610,11 +2805,13 @@ private:
     QLabel* m_statusCardTitle;
     QLabel* m_statusCardDesc;
 
+    QLabel* m_meanTitleLabel;
+    QLabel* m_medianTitleLabel;
+    QLabel* m_maxTitleLabel;
     QLabel* m_meanCohLabel;
     QLabel* m_medianCohLabel;
     QLabel* m_maxCohLabel;
     QLabel* m_highCohPctLabel;
-    QLabel* m_phaseNoiseLabel;
     QLabel* m_enlLabel;
     QLabel* m_flatEarthLabel;
     QLabel* m_topoLabel;

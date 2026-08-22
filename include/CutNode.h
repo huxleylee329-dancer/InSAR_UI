@@ -67,6 +67,7 @@ public:
     // Serialization
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    void prepareForPaste(QJsonObject& json, PasteContext& context) const override;
 protected:
     bool validateAndRestoreOutput() override;
     bool prepareToStart() override;

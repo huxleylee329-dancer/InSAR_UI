@@ -1,6 +1,7 @@
 #include "InSARLogManager.h"
 
 #include "TSXBatchImportNode.h"
+#include "TSXBatchImportValidationWidget.h"
 #include "TSXImportWorker.h"
 #include "ImportTask.h"
 #include "IApplicationInterface.h"
@@ -17,7 +18,6 @@ TSXBatchImportNode::TSXBatchImportNode()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_projectLabel(nullptr)
     , m_xmlPaths()
     , m_outputNodeName()
     , m_polarization("HH")
@@ -34,6 +34,11 @@ ProductOutputContract TSXBatchImportNode::productOutputContract(PortIndex portIn
         ? QStringList() << QStringLiteral("complex_sar")
         : QStringList() << QStringLiteral("preview");
     return contract;
+}
+
+::QWidget* TSXBatchImportNode::createValidationWidget(::QWidget* parent)
+{
+    return createTsxBatchImportValidationWidget(this, parent);
 }
 
 QWidget* TSXBatchImportNode::createWidget()
@@ -68,10 +73,6 @@ QWidget* TSXBatchImportNode::createWidget()
     topSection->addLayout(buttonLayout);
 
     mainLayout->addLayout(topSection, 4);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Bottom section: configuration options - stretch 4
     auto* bottomSection = new QHBoxLayout();
@@ -219,6 +220,14 @@ QStringList TSXBatchImportNode::getExpectedOutputFilePaths() const
         }
     }
     return paths;
+}
+
+QStringList TSXBatchImportNode::transactionInputPaths() const
+{
+    // These XML paths are captured at transaction start only to reject a run
+    // whose inputs changed. Detail validation never uses them to reverse-map a
+    // committed H5 to a source product.
+    return m_xmlPaths;
 }
 
 QString TSXBatchImportNode::getOutputNodeName() const

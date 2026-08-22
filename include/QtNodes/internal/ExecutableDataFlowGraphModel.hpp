@@ -5,6 +5,8 @@
 #include "BasicGraphicsScene.hpp"
 #include "Export.hpp"
 
+class QStandardItemModel;
+
 namespace QtNodes {
 
 class NODE_EDITOR_PUBLIC ExecutableDataFlowGraphModel : public DataFlowGraphModel
@@ -19,6 +21,16 @@ public:
 
     /// Set the scene pointer after construction
     void setScene(BasicGraphicsScene *scene) { _scene = scene; }
+
+    /// Supplies the project ownership boundary used to allocate paste-safe
+    /// output names without involving overwrite or load-existing prompts.
+    void setProjectOutputContext(QStandardItemModel* projectModel,
+                                 const QString& projectDirectory);
+
+    /// Brackets a single paste operation so sibling clones reserve output
+    /// names against one another as well as against the existing project.
+    void beginPasteConfigurationClone();
+    void endPasteConfigurationClone();
 
     /// Set whether the model is currently being restored from a project
     void setRestoring(bool restoring) { _isRestoring = restoring; }
@@ -45,7 +57,13 @@ private Q_SLOTS:
     void onOutPortDataUpdated(NodeId const nodeId, PortIndex const portIndex);
 
 private:
+    PasteContext pasteContext() const;
+
     BasicGraphicsScene *_scene = nullptr;
+    QStandardItemModel* _projectModel = nullptr;
+    QString _projectDirectory;
+    PasteContext _activePasteContext;
+    bool _pasteConfigurationCloneActive = false;
     bool _isRestoring = false;
 };
 

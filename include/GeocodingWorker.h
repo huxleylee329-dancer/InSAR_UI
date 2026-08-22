@@ -7,6 +7,8 @@ struct GeocodingFileResult {
     QString geocodePath;
     QString relativePath;
     QString rankLevel;
+    // coherence-1.1 输出沿用输入 H5 的语义；非 coherence 产品为空。
+    QString coherenceSemantics;
 };
 Q_DECLARE_METATYPE(GeocodingFileResult)
 

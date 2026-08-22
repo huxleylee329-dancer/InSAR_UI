@@ -16,7 +16,6 @@ CSKImportNode::CSKImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
-    , m_projectLabel(nullptr)
     , m_importButton(nullptr)
     , m_stopButton(nullptr)
     , m_filePaths()
@@ -68,10 +67,6 @@ QWidget* CSKImportNode::createWidget()
     topSection->addLayout(buttonLayout);
 
     mainLayout->addLayout(topSection, 4);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Bottom section: configuration options - stretch 4
     auto* bottomSection = new QHBoxLayout();

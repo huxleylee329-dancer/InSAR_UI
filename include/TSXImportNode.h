@@ -52,7 +52,6 @@ private:
     QLineEdit* m_outputFileNameEdit;
     QLineEdit* m_xmlEdit;
     QComboBox* m_polarizationCombo;
-    QLabel* m_projectLabel;
 
     // State
     QString m_xmlPath;

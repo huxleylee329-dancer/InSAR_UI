@@ -599,7 +599,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
             Mat phase_unwrap;
             Mat coherence, residue;
-            ret = util.phase_coherence(phase, coherence);
+            ret = util.phase_axial_concentration(phase, coherence);
             ret = util.residue(phase, residue);
             QString app_path = QCoreApplication::applicationDirPath();
             UnwrapDiagnostic diagnostic = {};

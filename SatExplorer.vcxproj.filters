@@ -472,6 +472,9 @@
     <ClCompile Include="TSXBatchImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TSXBatchImportValidationWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="TSXImportNode.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1137,6 +1140,9 @@
     <QtMoc Include="include\TSXBatchImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="include\TSXBatchImportValidationWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="include\TSXImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>

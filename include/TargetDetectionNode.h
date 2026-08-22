@@ -51,6 +51,7 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    void prepareForPaste(QJsonObject& json, PasteContext& context) const override;
     ProductInputContract productInputContract(PortIndex portIndex) const override;
     ProductOutputContract productOutputContract(PortIndex portIndex) const override;
 

@@ -402,6 +402,8 @@ emit updateProcess(90, QStringLiteral("正在地理编码……"));
                 if (product_level == QString("coherence-1.0"))
                 {
                     writeSucceeded = writeSucceeded && NodeUtils::writeMatToH5(outputH5, "coherence", mapped_phase, &outputError);
+                    // 地理编码只做重采样，不改变指标语义，随之传播标签
+                    writeSucceeded = writeSucceeded && NodeUtils::copyCoherenceSemantics(inputH5, outputH5, &outputError);
                 }
                 if (product_level == QString("dem-1.0"))
                 {
@@ -608,6 +610,15 @@ int process = 90 + double(i + 1) / (double)input_files.size() * 9.0;
         gRes.geocodePath = fileinfo.absoluteFilePath();
         gRes.relativePath = "/" + dstNode + "/" + geocode_name + ".h5";
         gRes.rankLevel = geocode_Rank_level;
+        if (product_level == QStringLiteral("coherence-1.0")) {
+            QString semanticsError;
+            if (!NodeUtils::readCoherenceSemantics(
+                    QString::fromStdString(input_files[i]), gRes.coherenceSemantics, &semanticsError)) {
+                emit errorProcess(QStringLiteral("Unable to read coherence semantics for %1: %2")
+                                      .arg(QString::fromStdString(input_files[i]), semanticsError));
+                return;
+            }
+        }
         Q_EMIT geocodingGenerated(gRes);
     }
 

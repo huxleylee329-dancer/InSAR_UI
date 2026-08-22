@@ -116,7 +116,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>false</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>bin;D:\SRC\InSAR\bin;D:\SRC\InSAR\lib;D:\SRC\opencv\build\x64\vc15\lib;D:\Qt\5.15.2\msvc2019_64\lib;D:\SRC\release-1930-x64-gdal-3-10-0-mapserver-8-2-2-libs\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>SARProcessing.lib;qtmain.lib;Qt5Core.lib;Qt5Gui.lib;Qt5Widgets.lib;Qt5Charts.lib;Qt5OpenGL.lib;Qt5Svg.lib;Qt5Concurrent.lib;Utils.lib;Deflat.lib;FormatConversion.lib;Hdf5IO.lib;ComplexMat.lib;Registration.lib;Filter.lib;Unwrap.lib;Dem.lib;SBAS.lib;PSI.lib;DeformationRateField.lib;Qt5Sql.lib;gdal_i.lib;GCPManager.lib;AtmosphericCorrection.lib;$(CoreLibraryDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -319,6 +319,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TSXBatchImportNode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TSXBatchImportValidationWidget.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CutWorker.cpp">
@@ -1040,6 +1043,9 @@
     <QtMoc Include="include\TSXBatchImportNode.h">
       <Filter>Header Files</Filter>
     </QtMoc>
+    <ClInclude Include="include\TSXBatchImportValidationWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <QtMoc Include="include\CutWorker.h">
       <Filter>Header Files</Filter>
     </QtMoc>

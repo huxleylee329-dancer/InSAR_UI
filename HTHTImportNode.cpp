@@ -19,7 +19,6 @@ HTHTImportNode::HTHTImportNode()
     , m_modeCombo(nullptr)
     , m_fileListWidget(nullptr)
     , m_outputNodeNameEdit(nullptr)
-    , m_projectLabel(nullptr)
 {
     m_outputNodeName = "HTHT_Import";
 }
@@ -91,10 +90,6 @@ QWidget* HTHTImportNode::createWidget()
     m_fileListWidget = new QListWidget();
     m_fileListWidget->setMaximumHeight(80);
     mainLayout->addWidget(m_fileListWidget);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Target node row
     auto* nodeRow = new QHBoxLayout();

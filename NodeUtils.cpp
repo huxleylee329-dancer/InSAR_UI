@@ -1,6 +1,7 @@
 #include "include/NodeUtils.h"
 #include "InSARLogManager.h"
 #include <gdal_priv.h>
+#include <ogr_spatialref.h>
 #include <QWidget>
 #include <QStandardItem>
 #include <QStandardItemModel>
@@ -3939,6 +3940,166 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
     return !outputPaths.isEmpty();
 }
 
+bool loadCommittedOutputManifestReadOnly(const QString& projectRoot,
+                                         const QString& nodeName,
+                                         QStringList& outputPaths,
+                                         QString& runId,
+                                         std::uint64_t& executionRevision,
+                                         int& manifestVersion,
+                                         QString* errorMessage)
+{
+    outputPaths.clear();
+    runId.clear();
+    executionRevision = 0;
+    manifestVersion = 0;
+    const QDir root(projectRoot);
+    if (!root.exists() || !isDirectProjectChild(root.absolutePath(), nodeName)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output target is unavailable.");
+        return false;
+    }
+
+    const QString journalPath = QDir(transactionDirectoryPath(root.absolutePath()))
+        .absoluteFilePath(nodeName + QStringLiteral(".json"));
+    QFile journal(journalPath);
+    if (!journal.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output journal is unavailable.");
+        return false;
+    }
+    const QByteArray journalBytes = journal.readAll();
+    QJsonParseError journalParseError;
+    const QJsonDocument journalDocument = QJsonDocument::fromJson(journalBytes, &journalParseError);
+    journal.close();
+    if (journalParseError.error != QJsonParseError::NoError || !journalDocument.isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output journal is malformed.");
+        return false;
+    }
+    const QJsonObject journalObject = journalDocument.object();
+    if (!journalNamesAreSafe(root, nodeName, journalObject)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output journal has unsafe paths.");
+        return false;
+    }
+    const QString stage = journalObject.value(QStringLiteral("stage")).toString();
+    if (stage != QStringLiteral("MetadataCommitted") && stage != QStringLiteral("Completed")) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output is not in a terminal state.");
+        return false;
+    }
+    const QJsonValue revisionValue = journalObject.value(QStringLiteral("executionRevision"));
+    if (!revisionValue.isDouble() || revisionValue.toDouble() < 0.0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output journal revision is invalid.");
+        return false;
+    }
+    executionRevision = static_cast<std::uint64_t>(revisionValue.toDouble());
+    runId = journalObject.value(QStringLiteral("runId")).toString();
+    if (journalObject.value(QStringLiteral("nodeName")).toString() != nodeName || runId.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output journal identity is invalid.");
+        runId.clear();
+        return false;
+    }
+
+    QFile manifest(QDir(root.absoluteFilePath(nodeName)).absoluteFilePath(
+        QString::fromLatin1(kOutputManifestFile)));
+    if (!manifest.open(QIODevice::ReadOnly)) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest is unavailable.");
+        runId.clear();
+        return false;
+    }
+    const QByteArray manifestBytes = manifest.readAll();
+    QJsonParseError manifestParseError;
+    const QJsonDocument manifestDocument = QJsonDocument::fromJson(manifestBytes, &manifestParseError);
+    manifest.close();
+    if (manifestParseError.error != QJsonParseError::NoError || !manifestDocument.isObject()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest is malformed.");
+        runId.clear();
+        return false;
+    }
+    const QJsonObject manifestObject = manifestDocument.object();
+    const QJsonValue versionValue = manifestObject.value(QStringLiteral("version"));
+    if (!versionValue.isDouble() || versionValue.toInt() <= 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest version is invalid.");
+        runId.clear();
+        executionRevision = 0;
+        return false;
+    }
+    manifestVersion = versionValue.toInt();
+    if (manifestObject.value(QStringLiteral("nodeName")).toString() != nodeName ||
+        manifestObject.value(QStringLiteral("runId")).toString() != runId) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest identity does not match its journal.");
+        outputPaths.clear();
+        runId.clear();
+        return false;
+    }
+    QString descriptorError;
+    const QtNodes::ProductDescriptor::Ptr descriptor = QtNodes::ProductDescriptor::fromJson(
+        manifestObject.value(QStringLiteral("productDescriptor")).toObject(), &descriptorError);
+    if (!descriptor || descriptor->state() != QtNodes::ProductState::Committed) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest has no committed product descriptor.");
+        outputPaths.clear();
+        runId.clear();
+        return false;
+    }
+
+    QSet<QString> expectedNames;
+    for (const QJsonValue& value : journalObject.value(QStringLiteral("expectedFiles")).toArray()) {
+        const QString name = value.toString();
+        if (name.isEmpty() || expectedNames.contains(name)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Committed output file list is invalid.");
+            outputPaths.clear();
+            runId.clear();
+            return false;
+        }
+        expectedNames.insert(name);
+    }
+    const QJsonArray outputs = manifestObject.value(QStringLiteral("outputs")).toArray();
+    if (expectedNames.isEmpty() || outputs.size() != expectedNames.size()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output file list is incomplete.");
+        outputPaths.clear();
+        runId.clear();
+        return false;
+    }
+    QSet<QString> actualNames;
+    for (const QJsonValue& value : outputs) {
+        const QJsonObject outputObject = value.toObject();
+        const QString name = outputObject.value(QStringLiteral("name")).toString();
+        if (name.isEmpty() || !expectedNames.contains(name) || actualNames.contains(name)) {
+            if (errorMessage) *errorMessage = QStringLiteral("Committed output contains an invalid artifact list.");
+            outputPaths.clear();
+            runId.clear();
+            return false;
+        }
+        actualNames.insert(name);
+        const QFileInfo info(root.absoluteFilePath(nodeName + "/" + name));
+        const QJsonValue expectedSize = outputObject.value(QStringLiteral("size"));
+        const QJsonValue expectedModified = outputObject.value(QStringLiteral("modifiedMs"));
+        if (!expectedSize.isDouble() || !expectedModified.isDouble() ||
+            expectedSize.toDouble() < 0.0 || expectedModified.toDouble() < 0.0 ||
+            static_cast<qint64>(expectedSize.toDouble()) != info.size() ||
+            static_cast<qint64>(expectedModified.toDouble()) != info.lastModified().toMSecsSinceEpoch()) {
+            if (errorMessage) *errorMessage = QStringLiteral("Committed output metadata changed.");
+            outputPaths.clear();
+            runId.clear();
+            executionRevision = 0;
+            manifestVersion = 0;
+            return false;
+        }
+        if (!validateOutputFile(info, errorMessage)) {
+            outputPaths.clear();
+            runId.clear();
+            executionRevision = 0;
+            manifestVersion = 0;
+            return false;
+        }
+        outputPaths.append(info.absoluteFilePath());
+    }
+    if (outputPaths.isEmpty()) {
+        if (errorMessage) *errorMessage = QStringLiteral("Committed output manifest has no artifacts.");
+        runId.clear();
+        executionRevision = 0;
+        manifestVersion = 0;
+        return false;
+    }
+    return true;
+}
+
 bool loadCommittedOutputProductDescriptor(const QString& projectRoot,
                                           const QString& nodeName,
                                           QtNodes::ProductDescriptor::Ptr& descriptor,
@@ -5287,6 +5448,131 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
     return true;
 }
 
+// --------------------------------------------------------------------------
+// coherence 语义标签
+//
+// 背景：H5 中的 "coherence" 数据集在不同来源下含义不同：
+//   - 干涉形成节点与 Core SBAS 当前写入的是 Utils::phase_axial_concentration() 的输出，
+//     即二倍角轴向集中度 R2 = |mean(exp(i*2*phi))|，并不是复相干系数 gamma；
+//   - 后续可能改为常规圆统计集中度 R1，或真正的 gamma。
+// 三者量纲不同且**不可相互换算**（R2 = R1^4 仅在包裹高斯下近似成立，实测在
+// 低相干区偏差可达 43%），故必须显式标注，不能依赖推断。
+//
+// 存量文件没有该标签，一律视为 kCoherenceSemanticsLegacyUnknown，不静态断言
+// 为 R2 —— 写入方包括 UI 与 Core 多处，来源不可穷举。
+// --------------------------------------------------------------------------
+
+namespace CoherenceSemantics {
+const char* const kComplexGamma     = "complex_gamma";
+const char* const kPhaseCircularR1  = "phase_circular_r1";
+const char* const kPhaseAxialR2     = "phase_axial_r2";
+const char* const kLegacyUnknown    = "legacy_unknown";
+}  // namespace CoherenceSemantics
+
+namespace CoherenceSupport {
+const char* const kValidSampleCountDataset = "coherence_valid_sample_count";
+const char* const kWindowRangeDataset      = "coherence_window_rg";
+const char* const kWindowAzimuthDataset    = "coherence_window_az";
+}  // namespace CoherenceSupport
+
+namespace {
+// H5 中承载语义标签的数据集名
+constexpr const char* kCoherenceSemanticsDataset = "coherence_semantics";
+
+// 判断标签取值是否为已知的具体语义（不含 legacy_unknown）
+bool isConcreteCoherenceSemantics(const QString& semantics)
+{
+    return semantics == QString::fromLatin1(CoherenceSemantics::kComplexGamma) ||
+           semantics == QString::fromLatin1(CoherenceSemantics::kPhaseCircularR1) ||
+           semantics == QString::fromLatin1(CoherenceSemantics::kPhaseAxialR2);
+}
+}  // namespace
+
+bool writeCoherenceSemantics(const QString& filePath,
+                             const QString& semantics,
+                             QString* errMsg)
+{
+    if (!isConcreteCoherenceSemantics(semantics) &&
+        semantics != QString::fromLatin1(CoherenceSemantics::kLegacyUnknown)) {
+        if (errMsg) *errMsg = QStringLiteral("非法的 coherence 语义标签：%1").arg(semantics);
+        return false;
+    }
+    return writeStringToH5(filePath,
+                           QString::fromLatin1(kCoherenceSemanticsDataset),
+                           semantics.toStdString(),
+                           errMsg);
+}
+
+bool readCoherenceSemantics(const QString& filePath,
+                            QString& semantics,
+                            QString* errMsg)
+{
+    Hdf5Locker locker(filePath, 50);
+    if (!locker.isLocked()) {
+        if (errMsg) *errMsg = QStringLiteral("读取 coherence 语义标签时获取文件锁超时：%1").arg(filePath);
+        return false;
+    }
+
+    int exists = 0;
+    const QByteArray nativePath = filePath.toUtf8();
+    const int existsRc = Hdf5IO::datasetExists(
+        nativePath.constData(), kCoherenceSemanticsDataset, &exists);
+    if (existsRc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("检查 coherence 语义标签失败：%1 (rc=%2)")
+            .arg(filePath).arg(existsRc);
+        return false;
+    }
+    if (exists == 0) {
+        // 缺标签属正常情况（存量产品），不视为读取错误。
+        semantics = QString::fromLatin1(CoherenceSemantics::kLegacyUnknown);
+        return true;
+    }
+
+    std::string value;
+    FormatConversion conversion;
+    const int readRc = conversion.read_str_from_h5(
+        nativePath.constData(), kCoherenceSemanticsDataset, value);
+    if (readRc != 0) {
+        if (errMsg) *errMsg = QStringLiteral("读取 coherence 语义标签失败：%1 (rc=%2)")
+            .arg(filePath).arg(readRc);
+        return false;
+    }
+    const QString parsed = QString::fromStdString(value).trimmed();
+    // 标签存在但取值无法识别（例如更高版本写入的新取值）时退回未知，
+    // 避免按错误语义解释数值
+    semantics = isConcreteCoherenceSemantics(parsed)
+                    ? parsed
+                    : QString::fromLatin1(CoherenceSemantics::kLegacyUnknown);
+    return true;
+}
+
+bool copyCoherenceSemantics(const QString& inputPath,
+                            const QString& outputPath,
+                            QString* errMsg)
+{
+    QString semantics;
+    if (!readCoherenceSemantics(inputPath, semantics, errMsg)) {
+        return false;
+    }
+    // 输入无标签时显式写入 legacy_unknown：派生产品若完全不带标签，
+    // 下游无法区分“上游未标注”与“该文件未经标注流程”
+    return writeCoherenceSemantics(outputPath, semantics, errMsg);
+}
+
+QString coherenceSemanticsDisplayName(const QString& semantics)
+{
+    if (semantics == QString::fromLatin1(CoherenceSemantics::kComplexGamma)) {
+        return QStringLiteral("相干系数");
+    }
+    if (semantics == QString::fromLatin1(CoherenceSemantics::kPhaseCircularR1)) {
+        return QStringLiteral("相位集中度");
+    }
+    if (semantics == QString::fromLatin1(CoherenceSemantics::kPhaseAxialR2)) {
+        return QStringLiteral("二倍角相位集中度");
+    }
+    return QStringLiteral("相干性指标（语义未标注）");
+}
+
 bool validateDemPhaseInput(const QString& inputPath, QString* errMsg)
 {
     constexpr int kPhaseProcessingSchemaVersion = 1;
@@ -5571,6 +5857,220 @@ bool writeDemValidityMaskToTif(const QString& tifPath, const cv::Mat& validMask,
     GDALClose(dataset);
     if (error != CE_None) {
         QFile::remove(tifPath);
+        return false;
+    }
+    return true;
+}
+
+bool validateDemValidityMaskForScene(const QString& demTifPath,
+                                     const QString& validMaskTifPath,
+                                     double requiredMinLon,
+                                     double requiredMaxLon,
+                                     double requiredMinLat,
+                                     double requiredMaxLat,
+                                     qint64* totalPixelCount,
+                                     qint64* validPixelCount,
+                                     QString* errorMessage)
+{
+    if (totalPixelCount) *totalPixelCount = 0;
+    if (validPixelCount) *validPixelCount = 0;
+    if (errorMessage) errorMessage->clear();
+    if (!std::isfinite(requiredMinLon) || !std::isfinite(requiredMaxLon) ||
+        !std::isfinite(requiredMinLat) || !std::isfinite(requiredMaxLat) ||
+        requiredMaxLon <= requiredMinLon || requiredMaxLat <= requiredMinLat) {
+        if (errorMessage) *errorMessage = QStringLiteral("输入影像地理范围无效，无法审核 DEM 覆盖。");
+        return false;
+    }
+
+    const QFileInfo demInfo(demTifPath);
+    const QFileInfo maskInfo(validMaskTifPath);
+    if (!demInfo.isFile() || !demInfo.isReadable() ||
+        !maskInfo.isFile() || !maskInfo.isReadable()) {
+        if (errorMessage) *errorMessage = QStringLiteral("辅助 DEM 或其有效性 mask 不可读。");
+        return false;
+    }
+
+    Hdf5Locker locker;
+    GDALAllRegister();
+    GDALDataset* demDataset = static_cast<GDALDataset*>(
+        GDALOpen(QDir::toNativeSeparators(demInfo.absoluteFilePath()).toLocal8Bit().constData(), GA_ReadOnly));
+    GDALDataset* maskDataset = static_cast<GDALDataset*>(
+        GDALOpen(QDir::toNativeSeparators(maskInfo.absoluteFilePath()).toLocal8Bit().constData(), GA_ReadOnly));
+    if (!demDataset || !maskDataset) {
+        if (demDataset) GDALClose(demDataset);
+        if (maskDataset) GDALClose(maskDataset);
+        if (errorMessage) *errorMessage = QStringLiteral("无法打开辅助 DEM 或其有效性 mask。");
+        return false;
+    }
+
+    const int columns = demDataset->GetRasterXSize();
+    const int rows = demDataset->GetRasterYSize();
+    bool compatible = columns > 0 && rows > 0 && demDataset->GetRasterCount() >= 1 &&
+        maskDataset->GetRasterCount() == 1 && maskDataset->GetRasterXSize() == columns &&
+        maskDataset->GetRasterYSize() == rows;
+
+    double demTransform[6] = {0.0};
+    double maskTransform[6] = {0.0};
+    compatible = compatible && demDataset->GetGeoTransform(demTransform) == CE_None &&
+        maskDataset->GetGeoTransform(maskTransform) == CE_None;
+    if (compatible) {
+        for (int index = 0; index < 6; ++index) {
+            const double scale = std::max(1.0, std::max(std::abs(demTransform[index]),
+                                                        std::abs(maskTransform[index])));
+            if (std::abs(demTransform[index] - maskTransform[index]) > 1e-10 * scale) {
+                compatible = false;
+                break;
+            }
+        }
+    }
+
+    const char* demProjection = demDataset->GetProjectionRef();
+    const char* maskProjection = maskDataset->GetProjectionRef();
+    OGRSpatialReference demSrs;
+    OGRSpatialReference maskSrs;
+    OGRSpatialReference wgs84Srs;
+    const bool projectionsValid = demProjection && maskProjection && demProjection[0] != '\0' &&
+        maskProjection[0] != '\0' && demSrs.SetFromUserInput(demProjection) == OGRERR_NONE &&
+        maskSrs.SetFromUserInput(maskProjection) == OGRERR_NONE &&
+        wgs84Srs.importFromEPSG(4326) == OGRERR_NONE && demSrs.IsSame(&maskSrs) &&
+        demSrs.IsSame(&wgs84Srs);
+    const double transformTolerance = 1e-12;
+    const bool coreGridCompatible = std::abs(demTransform[2]) <= transformTolerance &&
+        std::abs(demTransform[4]) <= transformTolerance &&
+        demTransform[1] > 0.0 && demTransform[5] < 0.0;
+    compatible = compatible && projectionsValid && coreGridCompatible;
+
+    // The source DEM is intentionally padded beyond the scene. Audit the scene
+    // footprint plus one DEM pixel needed by interpolation, not the padded DEM
+    // rectangle or its conservatively eroded outer edge.
+    const double longitudeMargin = std::abs(demTransform[1]) + std::abs(demTransform[2]);
+    const double latitudeMargin = std::abs(demTransform[4]) + std::abs(demTransform[5]);
+    const double auditMinLon = requiredMinLon - longitudeMargin;
+    const double auditMaxLon = requiredMaxLon + longitudeMargin;
+    const double auditMinLat = requiredMinLat - latitudeMargin;
+    const double auditMaxLat = requiredMaxLat + latitudeMargin;
+
+    double rasterMinLon = std::numeric_limits<double>::infinity();
+    double rasterMaxLon = -std::numeric_limits<double>::infinity();
+    double rasterMinLat = std::numeric_limits<double>::infinity();
+    double rasterMaxLat = -std::numeric_limits<double>::infinity();
+    const double cornerColumns[4] = {0.0, static_cast<double>(columns), 0.0, static_cast<double>(columns)};
+    const double cornerRows[4] = {0.0, 0.0, static_cast<double>(rows), static_cast<double>(rows)};
+    for (int index = 0; index < 4; ++index) {
+        const double longitude = demTransform[0] + cornerColumns[index] * demTransform[1] +
+            cornerRows[index] * demTransform[2];
+        const double latitude = demTransform[3] + cornerColumns[index] * demTransform[4] +
+            cornerRows[index] * demTransform[5];
+        rasterMinLon = std::min(rasterMinLon, longitude);
+        rasterMaxLon = std::max(rasterMaxLon, longitude);
+        rasterMinLat = std::min(rasterMinLat, latitude);
+        rasterMaxLat = std::max(rasterMaxLat, latitude);
+    }
+    const bool auditBoundsCovered = rasterMinLon <= auditMinLon && rasterMaxLon >= auditMaxLon &&
+        rasterMinLat <= auditMinLat && rasterMaxLat >= auditMaxLat;
+
+    if (!compatible) {
+        GDALClose(maskDataset);
+        GDALClose(demDataset);
+        if (errorMessage) {
+            *errorMessage = QStringLiteral(
+                "辅助 DEM/mask 必须尺寸与网格一致，并采用 Core 支持的无旋转 WGS 84 等经纬度网格。");
+        }
+        return false;
+    }
+    if (!auditBoundsCovered) {
+        GDALClose(maskDataset);
+        GDALClose(demDataset);
+        if (errorMessage) *errorMessage = QStringLiteral("辅助 DEM 未完整覆盖输入影像范围及一像元插值保护区。");
+        return false;
+    }
+
+    cv::Mat mask(rows, columns, CV_8UC1);
+    GDALRasterBand* maskBand = maskDataset->GetRasterBand(1);
+    const CPLErr readResult = maskBand->RasterIO(
+        GF_Read, 0, 0, columns, rows, mask.data, columns, rows, GDT_Byte, 0, 0);
+    GDALClose(maskDataset);
+    if (readResult != CE_None) {
+        GDALClose(demDataset);
+        if (errorMessage) *errorMessage = QStringLiteral("读取辅助 DEM 有效性 mask 失败。");
+        return false;
+    }
+
+    GDALRasterBand* demBand = demDataset->GetRasterBand(1);
+    int hasDemNoData = 0;
+    const double demNoData = demBand->GetNoDataValue(&hasDemNoData);
+    cv::Mat demRow(1, columns, CV_32FC1);
+    qint64 required = 0;
+    qint64 valid = 0;
+    bool binary = true;
+    bool demReadable = true;
+    bool demValuesConsistent = true;
+    for (int row = 0; row < rows && binary && demValuesConsistent; ++row) {
+        if (demBand->RasterIO(GF_Read, 0, row, columns, 1,
+                              demRow.data, columns, 1, GDT_Float32, 0, 0) != CE_None) {
+            demReadable = false;
+            break;
+        }
+        const uchar* values = mask.ptr<uchar>(row);
+        const float* elevations = demRow.ptr<float>(0);
+        for (int column = 0; column < columns; ++column) {
+            if (values[column] > 1) {
+                binary = false;
+                break;
+            }
+            const double centerColumn = column + 0.5;
+            const double centerRow = row + 0.5;
+            const double longitude = demTransform[0] + centerColumn * demTransform[1] +
+                centerRow * demTransform[2];
+            const double latitude = demTransform[3] + centerColumn * demTransform[4] +
+                centerRow * demTransform[5];
+            if (longitude >= auditMinLon && longitude <= auditMaxLon &&
+                latitude >= auditMinLat && latitude <= auditMaxLat) {
+                ++required;
+                if (values[column] == 1) {
+                    const double elevation = elevations[column];
+                    const bool matchesNoData = hasDemNoData &&
+                        ((std::isnan(demNoData) && std::isnan(elevation)) ||
+                         (!std::isnan(demNoData) &&
+                          std::abs(elevation - demNoData) < 1e-3));
+                    if (!std::isfinite(elevation) || matchesNoData) {
+                        demValuesConsistent = false;
+                        break;
+                    }
+                    ++valid;
+                }
+            }
+        }
+    }
+    GDALClose(demDataset);
+    if (totalPixelCount) *totalPixelCount = required;
+    if (validPixelCount) *validPixelCount = valid;
+    if (!demReadable) {
+        if (errorMessage) *errorMessage = QStringLiteral("读取辅助 DEM 高程数据失败。");
+        return false;
+    }
+    if (!binary) {
+        if (errorMessage) *errorMessage = QStringLiteral("辅助 DEM 有效性 mask 不是 0/1 二值栅格。");
+        return false;
+    }
+    if (!demValuesConsistent) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("辅助 DEM 有效性 mask 将 NaN 或 NoData 高程标记为有效，覆盖契约不一致。");
+        }
+        return false;
+    }
+    if (required <= 0) {
+        if (errorMessage) *errorMessage = QStringLiteral("DEM 网格与输入影像范围没有可审核的重叠像元。");
+        return false;
+    }
+    if (valid != required) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral(
+                "辅助 DEM 缺少完整源支持：%1 / %2 像元有效（%3% 无效）。当前没有权威陆海 mask，不能把缺失区推断为海洋。")
+                .arg(valid).arg(required)
+                .arg(QString::number(100.0 * static_cast<double>(required - valid) /
+                                     static_cast<double>(required), 'f', 2));
+        }
         return false;
     }
     return true;

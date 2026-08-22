@@ -1,4 +1,4 @@
-#include "SpeckleDenoiseNode.h"
+#include "SpeckleDenoiseNode.h"
 #include "IApplicationInterface.h"
 #include "MainWindow.h"
 #include "InterfaceManager.h"

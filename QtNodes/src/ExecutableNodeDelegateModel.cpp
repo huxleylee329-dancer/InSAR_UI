@@ -4,6 +4,9 @@
 #include "BasicGraphicsScene.hpp"
 #include <QMessageBox>
 #include <QTimer>
+#include <QDir>
+#include <QFileInfo>
+#include <QStringList>
 #include "DataFlowGraphModel.hpp"
 
 #include <memory>
@@ -105,6 +108,81 @@ void ExecutableNodeDelegateModel::setNodeContext(NodeId nodeId, BasicGraphicsSce
 {
     _nodeId = nodeId;
     _scene = scene;
+}
+
+QString ExecutableNodeDelegateModel::outputNodeNameForPaste(QJsonObject const& json) const
+{
+    const QString key = outputNodeNameJsonKey();
+    return key.isEmpty() ? QString() : json.value(key).toString().trimmed();
+}
+
+QString ExecutableNodeDelegateModel::uniquePastedOutputNodeName(const QString& sourceName,
+                                                                 PasteContext& context) const
+{
+    QString baseName = sourceName.trimmed();
+    const auto isDirectProjectChildName = [](const QString& value) {
+        return !value.isEmpty() && value != QStringLiteral(".") && value != QStringLiteral("..") &&
+            !value.contains(QLatin1Char('/')) && !value.contains(QLatin1Char('\\'));
+    };
+    if (!isDirectProjectChildName(baseName)) {
+        baseName = name();
+    }
+
+    const auto conflicts = [&context](const QString& candidate) {
+        if (context.reservedOutputNodeNames.contains(candidate.toCaseFolded())) {
+            return true;
+        }
+        if (context.projectDirectory.isEmpty()) {
+            return false;
+        }
+
+        const QDir root(context.projectDirectory);
+        return root.exists(candidate) ||
+            QFileInfo::exists(root.absoluteFilePath(
+                QStringLiteral(".node_transactions/%1.json").arg(candidate)));
+    };
+
+    QString candidate = baseName + QStringLiteral("_copy");
+    int suffix = 2;
+    while (conflicts(candidate)) {
+        candidate = baseName + QStringLiteral("_copy_%1").arg(suffix++);
+    }
+
+    context.reservedOutputNodeNames.insert(candidate.toCaseFolded());
+    return candidate;
+}
+
+void ExecutableNodeDelegateModel::prepareForPaste(QJsonObject& json, PasteContext& context) const
+{
+    const QString outputNameKey = outputNodeNameJsonKey();
+    if (!outputNameKey.isEmpty() && json.contains(outputNameKey)) {
+        QString sourceName = json.value(outputNameKey).toString().trimmed();
+        if (sourceName.isEmpty()) sourceName = name();
+        json.insert(outputNameKey, uniquePastedOutputNodeName(sourceName, context));
+    }
+
+    // Persisted terminal state is an artifact reference, not clone
+    // configuration.  A pasted Disabled node keeps its mode but cannot restore
+    // the source artifact because the saved state is now Idle.
+    json.insert(QStringLiteral("execution-state"), static_cast<int>(ExecutionState::Idle));
+
+    // These keys conventionally represent a prior execution result rather
+    // than editable configuration.  Node-specific subclasses may clear
+    // additional snapshots in their prepareForPaste override.
+    const QStringList runtimeSnapshotKeys = {
+        QStringLiteral("last-warning-message"),
+        QStringLiteral("last-error-message"),
+        QStringLiteral("execution-progress"),
+        QStringLiteral("outputPaths"),
+        QStringLiteral("outputFiles"),
+        QStringLiteral("masterOutputPath"),
+        QStringLiteral("processingWarning"),
+        QStringLiteral("processingQualityWarnings"),
+        QStringLiteral("registrationOffsets")
+    };
+    for (const QString& key : runtimeSnapshotKeys) {
+        json.remove(key);
+    }
 }
 
 QSet<QString> ExecutableNodeDelegateModel::workflowDeclaredDemLabels() const

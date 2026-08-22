@@ -16,7 +16,6 @@ TSXImportNode::TSXImportNode()
     , m_outputFileNameEdit(nullptr)
     , m_xmlEdit(nullptr)
     , m_polarizationCombo(nullptr)
-    , m_projectLabel(nullptr)
     , m_xmlPath()
     , m_outputFileName()
 {
@@ -46,10 +45,6 @@ QWidget* TSXImportNode::createWidget()
         for(int i = 0; i < outCount; ++i) setOutputData(i, nullptr);
         invalidateExecution();
     };
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    layout->addWidget(m_projectLabel);
 
     // XML file row: Label:LineEdit:Button
     auto* xmlRow = new QHBoxLayout();

@@ -481,7 +481,9 @@ bool ExportKMLNode::validateAndRestoreOutput()
             productOutputContract(0).schemaId, productOutputContract(0).schemaVersion,
             productOutputContract(0).publishedState, name(), provenance));
         setOutputData(0, m_outputData);
-        m_resultLabel->setText(QStringLiteral("检测到已有导出文件，已恢复。"));
+        if (m_resultLabel) {
+            m_resultLabel->setText(QStringLiteral("检测到已有导出文件，已恢复。"));
+        }
         setState(ExecutionState::Completed);
         Q_EMIT dataUpdated(0);
         return true;
@@ -497,11 +499,70 @@ QJsonObject ExportKMLNode::save() const
     return json;
 }
 
+QStringList ExportKMLNode::outputArtifactPathsForPaste(QJsonObject const& json) const
+{
+    const QString outputPath = json.value(QStringLiteral("outputPath")).toString().trimmed();
+    const QString fileName = json.value(QStringLiteral("fileName")).toString().trimmed();
+    if (outputPath.isEmpty() || fileName.isEmpty()) {
+        return QStringList();
+    }
+
+    return QStringList() << QDir(outputPath).absoluteFilePath(
+        fileName + QStringLiteral(".kml"));
+}
+
+void ExportKMLNode::prepareForPaste(QJsonObject& json,
+                                    PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    const QString outputPath = json.value(QStringLiteral("outputPath")).toString().trimmed();
+    const QString sourceName = json.value(QStringLiteral("fileName")).toString().trimmed();
+    if (outputPath.isEmpty() || sourceName.isEmpty()) {
+        return;
+    }
+
+    const QDir outputDirectory(outputPath);
+    const auto artifactReservationKey = [&outputDirectory](const QString& fileName) {
+        return QDir::cleanPath(outputDirectory.absoluteFilePath(
+            fileName + QStringLiteral(".kml"))).toCaseFolded();
+    };
+    const auto existsCaseInsensitive = [&outputDirectory](const QString& fileName) {
+        const QString candidateFileName = fileName + QStringLiteral(".kml");
+        if (QFileInfo::exists(outputDirectory.absoluteFilePath(candidateFileName))) {
+            return true;
+        }
+
+        const QString caseFoldedCandidate = candidateFileName.toCaseFolded();
+        const QStringList existingFiles = outputDirectory.entryList(QDir::Files | QDir::NoSymLinks);
+        for (const QString& existingFile : existingFiles) {
+            if (existingFile.toCaseFolded() == caseFoldedCandidate) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto conflicts = [&context, &artifactReservationKey, &existsCaseInsensitive](
+        const QString& candidate) {
+        return context.reservedOutputArtifactPaths.contains(artifactReservationKey(candidate)) ||
+            existsCaseInsensitive(candidate);
+    };
+
+    QString candidate = sourceName + QStringLiteral("_copy");
+    int suffix = 2;
+    while (conflicts(candidate)) {
+        candidate = sourceName + QStringLiteral("_copy_%1").arg(suffix++);
+    }
+
+    json.insert(QStringLiteral("fileName"), candidate);
+    context.reservedOutputArtifactPaths.insert(artifactReservationKey(candidate));
+}
+
 void ExportKMLNode::load(QJsonObject const& json)
 {
-    ExecutableNodeDelegateModel::load(json);
     m_outputPath = json["outputPath"].toString();
     m_fileName = json["fileName"].toString();
+    ExecutableNodeDelegateModel::load(json);
 
     if (m_outputPathEdit)
     {

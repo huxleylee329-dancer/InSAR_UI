@@ -385,8 +385,10 @@ void CutNode::createWidget()
     layout->setSpacing(6);
 
     auto invalidateNodeData = [this]() {
-                if (m_outputData) m_outputData.reset();
+        if (m_outputData) m_outputData.reset();
         if (m_previewData) m_previewData.reset();
+        m_outputPaths.clear();
+        m_savedOutputFileNames.clear();
         setOutputData(0, nullptr);
         setOutputData(1, nullptr);
         invalidateExecution();
@@ -597,6 +599,8 @@ void CutNode::onModeChanged(int index)
 
     if (m_outputData) m_outputData.reset();
     if (m_previewData) m_previewData.reset();
+    m_outputPaths.clear();
+    m_savedOutputFileNames.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
     invalidateExecution();
@@ -619,6 +623,8 @@ void CutNode::onBoxSelected(double left, double right, double top, double bottom
     
     if (m_outputData) m_outputData.reset();
     if (m_previewData) m_previewData.reset();
+    m_outputPaths.clear();
+    m_savedOutputFileNames.clear();
     setOutputData(0, nullptr);
     setOutputData(1, nullptr);
     invalidateExecution();
@@ -1767,9 +1773,20 @@ QJsonObject CutNode::save() const
     return modelJson;
 }
 
+void CutNode::prepareForPaste(QJsonObject& json, PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // outputFiles is already a conventional runtime field cleared by the
+    // base.  Keep an explicit marker so load also clears in-memory paths if
+    // this hook is ever used on an already-instantiated node.
+    json.insert(QStringLiteral("paste-runtime-reset"), true);
+}
+
 void CutNode::load(QJsonObject const &json)
 {
         // 先恢复CutNode自己的参数，因为基类load()会调用validateAndRestoreOutput()
+    const bool resetRuntimeArtifacts = json.value(QStringLiteral("paste-runtime-reset")).toBool(false);
     m_mode = json["mode"].toInt(0);
     m_lon = json["lon"].toDouble(0.0);
     m_lat = json["lat"].toDouble(0.0);
@@ -1790,6 +1807,11 @@ void CutNode::load(QJsonObject const &json)
 
     QJsonArray outputFiles = json["outputFiles"].toArray();
     m_savedOutputFileNames.clear();
+    if (resetRuntimeArtifacts) {
+        m_outputPaths.clear();
+        m_outputData.reset();
+        m_previewData.reset();
+    }
     for (const auto& f : outputFiles) {
         m_savedOutputFileNames.append(f.toString());
     }
@@ -1883,6 +1905,7 @@ public:
         : QWidget(parent)
         , m_node(node)
         , m_hasResults(false)
+        , m_outputRevision(m_node->executionRevision())
     {
         m_outputPaths = m_node->getOutputPaths();
 
@@ -2059,6 +2082,17 @@ private:
             return;
         }
 
+        const quint64 currentRevision = m_node->executionRevision();
+        const QStringList currentPaths = m_node->getOutputPaths();
+        if (m_outputRevision != currentRevision || !sameOutputPaths(m_outputPaths, currentPaths)) {
+            m_outputPaths = currentPaths;
+            m_outputRevision = currentRevision;
+            m_hasResults = false;
+            m_imageView->setImage(QImage());
+            m_statusLabel->setText(tr("裁剪输出已变化，请关闭并重新打开此页面后再评估。"));
+            return;
+        }
+
         int slaveIndex = m_slaveCombo->currentIndex() + 1;
         if (m_outputPaths.size() <= 1 || slaveIndex < 1 || slaveIndex >= m_outputPaths.size()) {
             return;
@@ -2126,16 +2160,27 @@ private:
     {
         m_slaveCombo->setEnabled(true);
 
+        const QStringList currentPaths = m_node->getOutputPaths();
+        if (m_outputRevision != m_node->executionRevision() ||
+            !sameOutputPaths(m_outputPaths, currentPaths)) {
+            m_hasResults = false;
+            m_imageView->setImage(QImage());
+            m_statusLabel->setText(tr("裁剪输出已变化，已丢弃过期评估结果。"));
+            return;
+        }
+
         CropEvalThreadResult threadRes = m_watcher.result();
         if (threadRes.retCode != 0) {
             m_hasResults = false;
             m_imageView->setImage(QImage());
             const bool isDark = NodeDetailWindow::isDarkTheme(this);
-            m_statusLabel->setText(tr("裁剪配准评估失败，错误码：%1").arg(threadRes.retCode));
+            const QString errorText = threadRes.retCode == -8
+                ? tr("裁剪影像尺寸不一致，不能直接进行像素级干涉评估。请先完成 Coregistration。")
+                : tr("裁剪配准评估失败，错误码：%1").arg(threadRes.retCode);
+            m_statusLabel->setText(errorText);
             m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusCardDesc->setText(tr("底层评估调用失败，错误码：%1。请检查输入数据和处理日志。")
-                .arg(threadRes.retCode));
+            m_statusCardDesc->setText(errorText);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
                 .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
             return;
@@ -2248,6 +2293,19 @@ private:
         updateImageView();
     }
 
+    static bool sameOutputPaths(const QStringList& first, const QStringList& second)
+    {
+        if (first.size() != second.size()) {
+            return false;
+        }
+        for (int i = 0; i < first.size(); ++i) {
+            if (first.at(i) != second.at(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     void updateImageView()
     {
         if (!m_hasResults) {
@@ -2289,6 +2347,7 @@ private:
 
     CropEvalResult m_evalResult;
     bool m_hasResults;
+    quint64 m_outputRevision;
     QFutureWatcher<CropEvalThreadResult> m_watcher;
 };
 

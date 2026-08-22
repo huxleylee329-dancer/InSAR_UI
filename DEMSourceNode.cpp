@@ -2871,7 +2871,7 @@ private:
         m_lblBoundsCheck = createFeatureLabel();
 
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("高程数值范围:")), m_lblElevationRange);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("可观察有效像元:")), m_lblValidPixelRate);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("源 DEM 可观察覆盖率:")), m_lblValidPixelRate);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("覆盖证据:")), m_lblCoverageEvidence);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("404 相交瓦片:")), m_lbl404Tiles);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("DEM 像元行列数:")), m_lblDemResolution);
@@ -2908,8 +2908,13 @@ private:
         bool hasElevationRange = false;
         bool hasValidityMask = false;
         bool validRateKnown = false;
+        bool maskContractValid = false;
+        bool maskCountsMatch = false;
+        int coverageSchemaVersion = 0;
         QString coverageStatus;
         QString coverageEvidence;
+        QString landWaterStatus;
+        QString landCoverageStatus;
         QString intersecting404Tiles;
         bool hasIntersecting404Tiles = false;
         
@@ -2996,11 +3001,19 @@ private:
             std::string dem_source_str;
             std::string coverage_status_str;
             std::string coverage_evidence_str;
+            std::string land_water_status_str;
+            std::string land_coverage_status_str;
             std::string intersecting_404_tiles_str;
             cv::Mat dem;
             cv::Mat validMask;
-            double validPixelCount = 0.0;
-            double invalidPixelCount = 0.0;
+            cv::Mat sourceValidMask;
+            cv::Mat sceneFootprintMask;
+            cv::Mat storedEffectiveMask;
+            double sourceValidPixelCount = 0.0;
+            double sourceInvalidPixelCount = 0.0;
+            double scenePixelCount = 0.0;
+            double sceneValidPixelCount = 0.0;
+            double sceneInvalidPixelCount = 0.0;
             bool read_h5_ok = false;
             {
                 NodeUtils::Hdf5Locker locker;
@@ -3012,18 +3025,72 @@ private:
                               NodeUtils::readStringFromH5(h5Path, "dem_source", dem_source_str));
                 NodeUtils::readStringFromH5(h5Path, "dem_coverage_precheck_status", coverage_status_str);
                 NodeUtils::readStringFromH5(h5Path, "dem_coverage_evidence", coverage_evidence_str);
+                NodeUtils::readStringFromH5(h5Path, "dem_land_water_status", land_water_status_str);
+                NodeUtils::readStringFromH5(h5Path, "dem_land_coverage_status", land_coverage_status_str);
                 NodeUtils::readStringFromH5(h5Path, "dem_server_404_intersecting_output_tiles", intersecting_404_tiles_str);
-                const bool hasMaskCounts =
-                    NodeUtils::readScalarFromH5(h5Path, "dem_valid_pixel_count", validPixelCount) &&
-                    NodeUtils::readScalarFromH5(h5Path, "dem_invalid_pixel_count", invalidPixelCount);
-                if (NodeUtils::readMatFromH5(h5Path, "dem_valid_mask", validMask) &&
-                    validMask.type() == CV_8UC1 && validMask.size() == dem.size()) {
+                NodeUtils::readScalarFromH5(h5Path, "dem_coverage_schema_version", res.coverageSchemaVersion);
+                const bool hasSourceMaskCounts =
+                    NodeUtils::readScalarFromH5(h5Path, "dem_source_valid_pixel_count", sourceValidPixelCount) &&
+                    NodeUtils::readScalarFromH5(h5Path, "dem_source_invalid_pixel_count", sourceInvalidPixelCount);
+                const bool hasSceneMaskCounts =
+                    NodeUtils::readScalarFromH5(h5Path, "dem_scene_pixel_count", scenePixelCount) &&
+                    NodeUtils::readScalarFromH5(h5Path, "dem_scene_source_valid_pixel_count", sceneValidPixelCount) &&
+                    NodeUtils::readScalarFromH5(h5Path, "dem_scene_source_invalid_pixel_count", sceneInvalidPixelCount);
+                const bool hasCanonicalMasks =
+                    NodeUtils::readMatFromH5(h5Path, "dem_source_valid_mask", sourceValidMask) &&
+                    NodeUtils::readMatFromH5(h5Path, "scene_footprint_mask", sceneFootprintMask) &&
+                    NodeUtils::readMatFromH5(h5Path, "dem_effective_mask", storedEffectiveMask);
+                if (!hasCanonicalMasks && res.coverageSchemaVersion < 2) {
+                    NodeUtils::readMatFromH5(h5Path, "dem_valid_mask", validMask);
+                }
+                if (hasCanonicalMasks && sourceValidMask.type() == CV_8UC1 &&
+                    sceneFootprintMask.type() == CV_8UC1 && storedEffectiveMask.type() == CV_8UC1 &&
+                    sourceValidMask.size() == dem.size() && sceneFootprintMask.size() == dem.size() &&
+                    storedEffectiveMask.size() == dem.size()) {
                     res.hasValidityMask = true;
-                    if (hasMaskCounts && validPixelCount >= 0.0 && invalidPixelCount >= 0.0 &&
-                        validPixelCount + invalidPixelCount > 0.0) {
-                        res.validRate = validPixelCount / (validPixelCount + invalidPixelCount);
+                    bool binaryMask = true;
+                    qint64 recomputedSourceValid = 0;
+                    qint64 recomputedScenePixels = 0;
+                    qint64 recomputedSceneValid = 0;
+                    bitwise_and(sourceValidMask, sceneFootprintMask, validMask);
+                    for (int row = 0; row < sourceValidMask.rows && binaryMask; ++row) {
+                        const uchar* sourceValues = sourceValidMask.ptr<uchar>(row);
+                        const uchar* sceneValues = sceneFootprintMask.ptr<uchar>(row);
+                        const uchar* effectiveValues = validMask.ptr<uchar>(row);
+                        const uchar* storedEffectiveValues = storedEffectiveMask.ptr<uchar>(row);
+                        for (int column = 0; column < sourceValidMask.cols; ++column) {
+                            if (sourceValues[column] > 1 || sceneValues[column] > 1 ||
+                                storedEffectiveValues[column] > 1 ||
+                                storedEffectiveValues[column] != effectiveValues[column]) {
+                                binaryMask = false;
+                                break;
+                            }
+                            recomputedSourceValid += sourceValues[column] == 1 ? 1 : 0;
+                            recomputedScenePixels += sceneValues[column] == 1 ? 1 : 0;
+                            recomputedSceneValid += effectiveValues[column] == 1 ? 1 : 0;
+                        }
+                    }
+                    const qint64 recomputedSourceInvalid =
+                        static_cast<qint64>(sourceValidMask.total()) - recomputedSourceValid;
+                    const qint64 recomputedSceneInvalid = recomputedScenePixels - recomputedSceneValid;
+                    res.maskCountsMatch = hasSourceMaskCounts && hasSceneMaskCounts &&
+                        sourceValidPixelCount >= 0.0 && sourceInvalidPixelCount >= 0.0 &&
+                        scenePixelCount > 0.0 && sceneValidPixelCount >= 0.0 && sceneInvalidPixelCount >= 0.0 &&
+                        std::abs(sourceValidPixelCount - static_cast<double>(recomputedSourceValid)) < 0.5 &&
+                        std::abs(sourceInvalidPixelCount - static_cast<double>(recomputedSourceInvalid)) < 0.5 &&
+                        std::abs(scenePixelCount - static_cast<double>(recomputedScenePixels)) < 0.5 &&
+                        std::abs(sceneValidPixelCount - static_cast<double>(recomputedSceneValid)) < 0.5 &&
+                        std::abs(sceneInvalidPixelCount - static_cast<double>(recomputedSceneInvalid)) < 0.5;
+                    res.maskContractValid = res.coverageSchemaVersion >= 2 && binaryMask &&
+                        recomputedScenePixels > 0 && res.maskCountsMatch;
+                    if (res.maskContractValid) {
+                        res.validRate = static_cast<double>(recomputedSceneValid) /
+                            static_cast<double>(recomputedScenePixels);
                         res.validRateKnown = true;
                     }
+                } else if (!validMask.empty() && validMask.type() == CV_8UC1 &&
+                           validMask.size() == dem.size()) {
+                    res.hasValidityMask = true;
                 }
             }
 
@@ -3042,6 +3109,8 @@ private:
                 res.rows = dem.rows;
                 res.coverageStatus = QString::fromStdString(coverage_status_str);
                 res.coverageEvidence = QString::fromStdString(coverage_evidence_str);
+                res.landWaterStatus = QString::fromStdString(land_water_status_str);
+                res.landCoverageStatus = QString::fromStdString(land_coverage_status_str);
                 res.intersecting404Tiles = QString::fromStdString(intersecting_404_tiles_str);
                 res.hasIntersecting404Tiles = !res.intersecting404Tiles.trimmed().isEmpty() &&
                     res.intersecting404Tiles.compare(QStringLiteral("none"), Qt::CaseInsensitive) != 0;
@@ -3190,15 +3259,21 @@ private:
                 m_lblValidPixelRate->setText(res.validRateKnown
                     ? QString("%1%").arg(res.validRate * 100.0, 0, 'f', 2)
                     : QObject::tr("无有效性 mask 审计"));
-                const bool coverageUnverified = res.coverageStatus != QStringLiteral("verified_no_impact") &&
-                    res.coverageStatus != QStringLiteral("ocean_only");
-                if (coverageUnverified) {
-                    m_lblCoverageEvidence->setText(QObject::tr("未验证 (%1)").arg(
-                        res.coverageEvidence.isEmpty() ? QObject::tr("缺少覆盖审计") : res.coverageEvidence));
+                const bool legacyCoverage = !res.maskContractValid;
+                const bool sourceCoverageComplete = res.maskContractValid &&
+                    res.coverageStatus == QStringLiteral("source_coverage_verified") &&
+                    res.validRateKnown && res.validRate >= 1.0;
+                const bool coverageUnverified = !sourceCoverageComplete;
+                if (legacyCoverage) {
+                    m_lblCoverageEvidence->setText(QObject::tr("旧成果或 mask 契约不完整，覆盖语义未知"));
+                    m_lblCoverageEvidence->setStyleSheet("color: #F59E0B; font-weight: bold;");
+                } else if (coverageUnverified) {
+                    m_lblCoverageEvidence->setText(QObject::tr("存在源 NoData；无陆海 mask，陆地覆盖率未知 (%1)").arg(
+                        res.coverageEvidence.isEmpty() ? QObject::tr("缺少覆盖证据") : res.coverageEvidence));
                     m_lblCoverageEvidence->setStyleSheet("color: #F59E0B; font-weight: bold;");
                 } else {
-                    m_lblCoverageEvidence->setText(res.coverageEvidence.isEmpty()
-                        ? QObject::tr("已验证") : res.coverageEvidence);
+                    m_lblCoverageEvidence->setText(QObject::tr("源覆盖已验证；陆海分类不可用但不影响完整覆盖判定 (%1)").arg(
+                        res.coverageEvidence.isEmpty() ? QObject::tr("显式源有效性 mask") : res.coverageEvidence));
                     m_lblCoverageEvidence->setStyleSheet("color: #10B981; font-weight: bold;");
                 }
                 m_lbl404Tiles->setText(!res.hasIntersecting404Tiles
@@ -3230,22 +3305,19 @@ private:
                     m_statusTitle->setText(QObject::tr("坐标系不匹配"));
                     m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
                     m_statusDesc->setText(QObject::tr("DEM 坐标系不是验证所需的 WGS 84，无法确认其与当前地理范围检查使用的是同一坐标语义。"));
-                } else if (coverageUnverified) {
-                    m_statusTitle->setText(QObject::tr("覆盖情况未验证"));
+                } else if (legacyCoverage) {
+                    m_statusTitle->setText(QObject::tr("覆盖契约不可验证"));
                     m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-                    QString detail = QObject::tr("外部 DEM 读取器会将源 NoData 归一化为零高程；当前成果可使用，但无法证明地形敏感区域未受缺失 DEM 影响。");
+                    m_statusDesc->setText(QObject::tr("成果缺少 v2 源有效性 mask 契约，或 mask 与记录计数不一致。请重新运行 DEM Source 节点。"));
+                } else if (coverageUnverified) {
+                    m_statusTitle->setText(QObject::tr("陆地覆盖情况未知"));
+                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
+                    QString detail = QObject::tr("显式源有效性 mask 检测到 %1% 不可观察像元；当前没有权威陆海 mask，不能判断缺失区域是否影响陆地。").arg(
+                        QString::number((1.0 - res.validRate) * 100.0, 'f', 2));
                     if (res.hasIntersecting404Tiles) {
                         detail += QObject::tr(" 与输出范围相交的 HTTP 404 瓦片：%1。").arg(res.intersecting404Tiles);
                     }
                     m_statusDesc->setText(detail);
-                } else if (res.validRateKnown && res.validRate < 0.95) {
-                    m_statusTitle->setText(QObject::tr("可观察有效像元偏低"));
-                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-                    m_statusDesc->setText(QObject::tr("Core 生成的有效性 mask 显示 %1% 像元不可观察；沿海或海面区域可能属于正常现象。").arg(QString::number((1.0 - res.validRate) * 100.0, 'f', 1)));
-                } else if (!res.hasValidityMask || !res.validRateKnown) {
-                    m_statusTitle->setText(QObject::tr("覆盖审计缺失"));
-                    m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-                    m_statusDesc->setText(QObject::tr("成果缺少 Core 生成的有效性 mask 或有效像元计数，不能据此证明 NoData 覆盖完整。"));
                 } else {
                     m_statusTitle->setText(QObject::tr("验证通过"));
                     m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");

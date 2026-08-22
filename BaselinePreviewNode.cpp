@@ -607,6 +607,17 @@ QJsonObject BaselinePreviewNode::save() const
     return root;
 }
 
+void BaselinePreviewNode::prepareForPaste(QJsonObject& json,
+                                          PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // These arrays are the completed baseline estimate consumed directly by
+    // the result label, chart button and restored output publication.
+    json.remove(QStringLiteral("temporalBaselines"));
+    json.remove(QStringLiteral("spatialBaselines"));
+}
+
 void BaselinePreviewNode::load(QJsonObject const& json)
 {
     m_useDefaultMaster = json["useDefaultMaster"].toBool(true);

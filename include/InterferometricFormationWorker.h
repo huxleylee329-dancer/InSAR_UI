@@ -32,6 +32,15 @@ public:
     ~InterferometricFormationWorker();
 
     void setTaskLogContext(const TaskLogContext& context) { m_taskLogContext = context; }
+    void setDemValidMaskPath(const QString& path) { m_demValidMaskPath = path; }
+    void setDemRequiredBounds(double minLon, double maxLon, double minLat, double maxLat)
+    {
+        m_demRequiredMinLon = minLon;
+        m_demRequiredMaxLon = maxLon;
+        m_demRequiredMinLat = minLat;
+        m_demRequiredMaxLat = maxLat;
+        m_hasDemRequiredBounds = true;
+    }
 
 public slots:
     void Interferometric(bool isdeflat, bool istopo_removal, bool iscoherence,
@@ -53,4 +62,10 @@ signals:
 
 private:
     TaskLogContext m_taskLogContext;
+    QString m_demValidMaskPath;
+    double m_demRequiredMinLon = 0.0;
+    double m_demRequiredMaxLon = 0.0;
+    double m_demRequiredMinLat = 0.0;
+    double m_demRequiredMaxLat = 0.0;
+    bool m_hasDemRequiredBounds = false;
 };

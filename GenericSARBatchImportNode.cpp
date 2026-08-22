@@ -18,7 +18,6 @@ GenericSARBatchImportNode::GenericSARBatchImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
-    , m_projectLabel(nullptr)
 {
 }
 
@@ -91,10 +90,6 @@ QWidget* GenericSARBatchImportNode::createWidget()
     topSection->addLayout(buttonLayout);
 
     mainLayout->addLayout(topSection, 4);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Bottom section: configuration options
     auto* bottomSection = new QHBoxLayout();

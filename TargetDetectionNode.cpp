@@ -1,4 +1,4 @@
-#include "InSARLogManager.h"
+#include "InSARLogManager.h"
 #include "TargetDetectionNode.h"
 #include "NodeUtils.h"
 #include "ImportDataTypes.h"
@@ -621,6 +621,18 @@ QJsonObject TargetDetectionNode::save() const
     modelJson["results"] = resultsArray;
 
     return modelJson;
+}
+
+void TargetDetectionNode::prepareForPaste(QJsonObject& json,
+                                          PasteContext& context) const
+{
+    ExecutableNodeDelegateModel::prepareForPaste(json, context);
+
+    // Threshold and expansion preference are configuration.  Both current
+    // and legacy result payloads would repopulate an Idle clone's result UI.
+    json.remove(QStringLiteral("results"));
+    json.remove(QStringLiteral("resultText"));
+    json.remove(QStringLiteral("shipProb"));
 }
 
 void TargetDetectionNode::load(QJsonObject const &json)

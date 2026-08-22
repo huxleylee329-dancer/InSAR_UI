@@ -52,7 +52,6 @@ private:
     QWidget* m_widget;
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QLabel* m_projectLabel;
     QCheckBox* m_spotlightCheckBox;
 
     // State

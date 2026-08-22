@@ -113,9 +113,8 @@ private:
     QLabel* m_demPathLabel = nullptr;
     QComboBox* m_demLabelCombo = nullptr;
 
-    // Output node & pattern
+    // Output node
     QLineEdit* m_outputNodeNameEdit = nullptr;
-    QLineEdit* m_outputFileNameEdit = nullptr;
 
     // Data
     std::shared_ptr<ImportedFileData> m_inputData = nullptr;
@@ -129,7 +128,6 @@ private:
     QStringList m_outputJpgPaths;
     QStringList m_savedOutputFiles;
     QString m_outputNodeName;
-    QString m_outputFileName;
 
     // Parameters
     QString m_method; // "Coarse" or "Fine"
@@ -161,6 +159,7 @@ private:
     QString m_preparedProjectName;
     QStringList m_preparedInputPaths;
     QStringList m_preparedTransactionInputPaths;
+    QString m_preparedDemValidMaskPath;
     QStringList m_preparedH5Paths;
     QStringList m_preparedJpgPaths;
     QStringList m_preparedOutputNames;

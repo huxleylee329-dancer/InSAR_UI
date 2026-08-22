@@ -105,9 +105,6 @@ protected:
     // 辅助启动函数：子类只需调用此函数即可启动异步导入
     void startWorker(BaseImportWorker* worker, const std::vector<ImportTask>& tasks);
 
-    // Helper: create a styled project badge label (shared across all import nodes)
-    static QLabel* createProjectBadge(const QString& projectName);
-
     // Helper methods
     void onProgressUpdate(int progress, const QString& message);
     void onError(const QString& error);

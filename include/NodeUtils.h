@@ -418,6 +418,16 @@ bool loadCommittedOutputManifest(const QString& projectRoot,
                                  const QString& nodeName,
                                  QStringList& outputPaths,
                                  QString* errorMessage = nullptr);
+// Strict read-only committed snapshot loader for diagnostics/Detail View.
+// Unlike loadCommittedOutputManifest(), this never performs transaction
+// recovery, cleanup, promotion, or journal mutation.
+bool loadCommittedOutputManifestReadOnly(const QString& projectRoot,
+                                         const QString& nodeName,
+                                         QStringList& outputPaths,
+                                         QString& runId,
+                                         std::uint64_t& executionRevision,
+                                         int& manifestVersion,
+                                         QString* errorMessage = nullptr);
 bool loadCommittedOutputProductDescriptor(const QString& projectRoot,
                                           const QString& nodeName,
                                           QtNodes::ProductDescriptor::Ptr& descriptor,
@@ -598,6 +608,60 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
 // Validates the phase-processing contract required by DEM inversion.
 bool validateDemPhaseInput(const QString& inputPath, QString* errMsg = nullptr);
 
+// ---------------------------------------------------------------------------
+// coherence 数据集的语义标签
+//
+// 背景：H5 中名为 "coherence" 的数据集在不同来源下含义并不相同：
+//   - 干涉形成节点与 Core SBAS 目前写入的是 Utils::phase_axial_concentration() 的结果，
+//     即二倍角轴向集中度 R2 = |mean(exp(i*2*phi))|，并非复相干系数 gamma；
+//   - Utils::phase_circular_concentration() 给出常规圆统计集中度 R1；
+//   - Utils::complex_coherence_demodulated() 给出去参考相位后的真 gamma。
+// 三者量纲与阈值标定基准都不同，且无法互相换算（实测表明 R2 = R1^4 仅在
+// 高相干区近似成立），因此必须显式标注，不能靠来源推断。
+//
+// 该标签独立于 phase_processing_schema_version：后者是相位处理契约，
+// 其校验方（validateDemPhaseInput）只接受版本 1，不可借用。
+// ---------------------------------------------------------------------------
+namespace CoherenceSemantics {
+// 去参考相位后的归一化复相干系数 gamma
+extern const char* const kComplexGamma;
+// 一阶圆统计集中度 R1 = |mean(exp(i*phi))|
+extern const char* const kPhaseCircularR1;
+// 二倍角轴向集中度 R2 = |mean(exp(i*2*phi))|
+extern const char* const kPhaseAxialR2;
+// 无标签的存量产品：来源不可穷举，不得静态断言为 R2
+extern const char* const kLegacyUnknown;
+}  // namespace CoherenceSemantics
+
+// coherence 估计的有效样本支持元数据。valid_sample_count 与 coherence
+// 同尺寸，记录每个估算窗口中实际有效的相位样本数；窗口尺寸用于判断是否
+// 达到完整支持。旧文件可缺少这三项，读取方必须显式降级而不能假定完整支持。
+namespace CoherenceSupport {
+extern const char* const kValidSampleCountDataset;
+extern const char* const kWindowRangeDataset;
+extern const char* const kWindowAzimuthDataset;
+}  // namespace CoherenceSupport
+
+// 写入 coherence 语义标签。dataset 名为 "coherence_semantics"。
+bool writeCoherenceSemantics(const QString& filePath,
+                             const QString& semantics,
+                             QString* errMsg = nullptr);
+
+// 读取 coherence 语义标签；缺标签时返回 kLegacyUnknown 并返回 true。
+// 注意：缺标签只表示“未标注”，不表示 R2。
+bool readCoherenceSemantics(const QString& filePath,
+                            QString& semantics,
+                            QString* errMsg = nullptr);
+
+// 在派生产品间传播语义标签。输入无标签时写入 kLegacyUnknown，
+// 避免派生链上出现“上游未标注、下游被误当作已标注”的空档。
+bool copyCoherenceSemantics(const QString& inputPath,
+                            const QString& outputPath,
+                            QString* errMsg = nullptr);
+
+// 将语义标签转为界面可读的短名称（用于评估面板标题与指标行）。
+QString coherenceSemanticsDisplayName(const QString& semantics);
+
 /**
  * @brief 向 H5 文件中写入 cv::Mat 矩阵数据（带自动线程锁）
  */
@@ -663,5 +727,18 @@ bool writeDemToTif(const QString& tifPath, const cv::Mat& dem, const double* gt,
 // same grid as dem.tif so it can be audited without resampling.
 bool writeDemValidityMaskToTif(const QString& tifPath, const cv::Mat& validMask,
                                const double* gt, const char* wkt);
+
+// Verify that a managed DEM mask is binary, grid-aligned with the DEM, agrees
+// with finite/non-NoData elevations and has complete source support.
+// DEM-dependent processing must fail closed otherwise.
+bool validateDemValidityMaskForScene(const QString& demTifPath,
+                                     const QString& validMaskTifPath,
+                                     double requiredMinLon,
+                                     double requiredMaxLon,
+                                     double requiredMinLat,
+                                     double requiredMaxLat,
+                                     qint64* totalPixelCount = nullptr,
+                                     qint64* validPixelCount = nullptr,
+                                     QString* errorMessage = nullptr);
 
 } // namespace NodeUtils

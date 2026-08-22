@@ -69,7 +69,6 @@ private:
 
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QLabel* m_projectLabel;
 
     QStringList m_imagePaths;
     QString m_outputNodeName;

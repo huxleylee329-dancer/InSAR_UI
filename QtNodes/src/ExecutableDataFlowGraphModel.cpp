@@ -6,6 +6,9 @@
 #include "QtNodes/internal/DataFlowGraphModel.hpp"
 
 #include <QVariant>
+#include <QDir>
+#include <QFileInfo>
+#include <QStandardItemModel>
 
 namespace QtNodes {
 
@@ -45,6 +48,75 @@ ExecutableDataFlowGraphModel::ExecutableDataFlowGraphModel(std::shared_ptr<NodeD
 {
 }
 
+void ExecutableDataFlowGraphModel::setProjectOutputContext(QStandardItemModel* projectModel,
+                                                            const QString& projectDirectory)
+{
+    _projectModel = projectModel;
+    _projectDirectory = projectDirectory.isEmpty()
+        ? QString()
+        : QDir::cleanPath(projectDirectory);
+}
+
+void ExecutableDataFlowGraphModel::beginPasteConfigurationClone()
+{
+    _activePasteContext = pasteContext();
+    _pasteConfigurationCloneActive = true;
+}
+
+void ExecutableDataFlowGraphModel::endPasteConfigurationClone()
+{
+    _pasteConfigurationCloneActive = false;
+    _activePasteContext = PasteContext();
+}
+
+namespace {
+void reserveProjectTreeNames(QStandardItem* parent, QSet<QString>& reservedNames)
+{
+    if (parent == nullptr) return;
+
+    for (int row = 0; row < parent->rowCount(); ++row) {
+        QStandardItem* item = parent->child(row, 0);
+        if (item == nullptr) continue;
+
+        const QString name = item->text().trimmed();
+        if (!name.isEmpty()) reservedNames.insert(name.toCaseFolded());
+        reserveProjectTreeNames(item, reservedNames);
+    }
+}
+}
+
+PasteContext ExecutableDataFlowGraphModel::pasteContext() const
+{
+    PasteContext context;
+    context.projectDirectory = _projectDirectory;
+
+    for (NodeId nodeId : allNodeIds()) {
+        const auto* model = delegateModelConst<ExecutableNodeDelegateModel>(this, nodeId);
+        if (model == nullptr) continue;
+
+        const QJsonObject modelJson = model->save();
+        const QString outputName = model->outputNodeNameForPaste(modelJson);
+        if (!outputName.isEmpty()) {
+            context.reservedOutputNodeNames.insert(outputName.toCaseFolded());
+        }
+
+        for (const QString& artifactPath : model->outputArtifactPathsForPaste(modelJson)) {
+            if (!artifactPath.isEmpty()) {
+                const QString reservationKey = QDir::cleanPath(
+                    QFileInfo(artifactPath).absoluteFilePath()).toCaseFolded();
+                context.reservedOutputArtifactPaths.insert(reservationKey);
+            }
+        }
+    }
+
+    if (_projectModel != nullptr) {
+        reserveProjectTreeNames(_projectModel->invisibleRootItem(),
+                                context.reservedOutputNodeNames);
+    }
+
+    return context;
+}
+
 void ExecutableDataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
 {
     // 在 DataFlowGraphModel::loadNode 调用 model->load(internalDataJson) 之前，
@@ -56,6 +128,8 @@ void ExecutableDataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
     _nextNodeId = std::max(_nextNodeId, restoredNodeId + 1);
 
     QJsonObject const internalDataJson = nodeJson["internal-data"].toObject();
+    const bool isConfigurationClone = nodeJson
+        .value(QStringLiteral("paste-configuration-clone")).toBool(false);
     QString delegateModelName = internalDataJson["model-name"].toString();
 
     std::unique_ptr<NodeDelegateModel> model = _registry->create(delegateModelName);
@@ -82,6 +156,16 @@ void ExecutableDataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
             }
         }
 
+        QJsonObject dataToLoad = internalDataJson;
+        if (isConfigurationClone && execModel) {
+            if (_pasteConfigurationCloneActive) {
+                execModel->prepareForPaste(dataToLoad, _activePasteContext);
+            } else {
+                PasteContext context = pasteContext();
+                execModel->prepareForPaste(dataToLoad, context);
+            }
+        }
+
         _models[restoredNodeId] = std::move(model);
 
         Q_EMIT nodeCreated(restoredNodeId);
@@ -91,7 +175,7 @@ void ExecutableDataFlowGraphModel::loadNode(QJsonObject const &nodeJson)
 
         setNodeData(restoredNodeId, NodeRole::Position, pos);
 
-        _models[restoredNodeId]->load(internalDataJson);
+        _models[restoredNodeId]->load(dataToLoad);
     } else {
         qCritical() << "Error: No registered model with name" << delegateModelName
                    << ". Skipping node with ID" << restoredNodeId;

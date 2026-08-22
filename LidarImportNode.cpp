@@ -14,7 +14,6 @@ LidarImportNode::LidarImportNode()
     : ImportNodeBase()
     , m_outputNodeNameEdit(nullptr)
     , m_fileListWidget(nullptr)
-    , m_projectLabel(nullptr)
     , m_productTypeCombo(nullptr)
     , m_rhPercentileSpin(nullptr)
     , m_rhLabel(nullptr)
@@ -66,10 +65,6 @@ QWidget* LidarImportNode::createWidget()
     topSection->addLayout(buttonLayout, 2);
 
     mainLayout->addLayout(topSection);
-
-    // Project Name Badge
-    m_projectLabel = createProjectBadge(projectName());
-    mainLayout->addWidget(m_projectLabel);
 
     // Configuration Options
     auto* configLayout = new QVBoxLayout();

@@ -55,6 +55,7 @@ public:
 
     QJsonObject save() const override;
     void load(QJsonObject const &json) override;
+    void prepareForPaste(QJsonObject& json, PasteContext& context) const override;
 
     // ExecutableNodeDelegateModel interface implementation
     void setExecutionMode(ExecutionMode mode) override;

@@ -62,6 +62,7 @@ public:
     QVector<ParameterInfo> getParameters() const override;
     bool isRestoringAsync() const override;
     void publishRestoredOutputs() override;
+    void prepareForPaste(QJsonObject& json, PasteContext& context) const override;
 
 protected:
     bool stopExecutionIsAsynchronous() const override { return true; }
@@ -132,6 +133,7 @@ private:
     QStringList m_preparedInputPaths;
     QStringList m_preparedOutputPaths;
     QString m_preparedDemPath;
+    QString m_preparedDemValidMaskPath;
     QString m_preparedDemIdentityH5Path;
     NodeUtils::AuxiliaryDemBinding m_preparedAuxiliaryDemBinding;
     NodeUtils::DemExecutionSnapshot m_preparedDemExecutionSnapshot;

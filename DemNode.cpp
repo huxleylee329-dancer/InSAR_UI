@@ -1186,7 +1186,7 @@ private:
     void setupUI()
     {
         setupBaseUI(QObject::tr("正在诊断 DEM 反演结果..."),
-                    QObject::tr("正在核对输出完整性、参数记录、几何尺寸和高程数值有效性。"),
+                    QObject::tr("正在核对输出完整性、参数记录、几何尺寸和高程有限值统计。"),
                     QObject::tr("DEM 反演诊断汇总"),
                     QObject::tr("DEM 参数与结果诊断"));
 
@@ -1197,7 +1197,7 @@ private:
         m_dependenciesLabel = createFeatureLabel();
         m_issuesLabel = createFeatureLabel();
 
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("有效 DEM 像元:")), m_validPixelsLabel);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("有限值比例（非覆盖率）:")), m_validPixelsLabel);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("高程数值范围:")), m_heightRangeLabel);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("均值 / 标准差:")), m_heightMomentsLabel);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("尺寸匹配结果:")), m_dimensionsLabel);
@@ -1471,7 +1471,7 @@ private:
                         ++dimensionsMatch;
                     }
                     if (image.finitePixels == 0) {
-                        issues.append(image.inputName + QObject::tr(": 无有效 DEM 像元"));
+                        issues.append(image.inputName + QObject::tr(": 无有限 DEM 数值"));
                         ++invalidResults;
                     }
                 }
@@ -1499,17 +1499,17 @@ private:
             const double validRatio = totalPixels > 0 ? 100.0 * finitePixels / totalPixels : 0.0;
             m_validPixelsLabel->setText(totalPixels > 0
                 ? QObject::tr("%1 / %2 (%3%)").arg(finitePixels).arg(totalPixels).arg(QString::number(validRatio, 'f', 2))
-                : QObject::tr("无可读取的 DEM 像元"));
+                : QObject::tr("无可读取的 DEM 数值"));
             m_heightRangeLabel->setText(finitePixels > 0
                 ? QObject::tr("%1 ~ %2").arg(QString::number(minimumHeight, 'g', 7), QString::number(maximumHeight, 'g', 7))
-                : QObject::tr("无有效 DEM 像元"));
+                : QObject::tr("无有限 DEM 数值"));
             if (finitePixels > 0) {
                 const double meanHeight = sumHeight / finitePixels;
                 const double variance = std::max(0.0, sumSquaredHeight / finitePixels - meanHeight * meanHeight);
                 m_heightMomentsLabel->setText(QObject::tr("%1 / %2")
                     .arg(QString::number(meanHeight, 'g', 7), QString::number(std::sqrt(variance), 'g', 7)));
             } else {
-                m_heightMomentsLabel->setText(QObject::tr("无有效 DEM 像元"));
+                m_heightMomentsLabel->setText(QObject::tr("无有限 DEM 数值"));
             }
             m_dimensionsLabel->setText(result.inputConnected
                 ? QObject::tr("%1 / %2 匹配").arg(dimensionsMatch).arg(result.images.size())
@@ -1527,7 +1527,7 @@ private:
             } else if (invalidResults > 0 || finitePixels == 0) {
                 m_statusTitle->setText(QObject::tr("需要复查"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
-                m_statusDesc->setText(QObject::tr("发现输出缺失、尺寸异常、无效高程或下游关键数据不完整。请检查对应影像和处理日志。"));
+                m_statusDesc->setText(QObject::tr("发现输出缺失、尺寸异常、无有限高程数值或下游关键数据不完整。请检查对应影像和处理日志。"));
             } else if (!parametersMatch) {
                 m_statusTitle->setText(QObject::tr("参数与结果不一致"));
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #F59E0B;");
@@ -1537,7 +1537,7 @@ private:
                 m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
                 m_statusDesc->setText((!result.hasRecordedMethod || !result.hasRecordedIterations)
                     ? QObject::tr("输出完整且数值可读。旧结果未记录反演参数，无法确认其与当前设置是否一致。")
-                    : QObject::tr("输出完整、尺寸匹配且高程数值可读。数值统计仅用于结果完整性诊断，不构成绝对高程精度评估。"));
+                    : QObject::tr("输出完整、尺寸匹配且高程数值可读。有限值比例仅用于数值完整性诊断，不代表地理覆盖率，也不构成绝对高程精度评估。"));
             }
             watcher->deleteLater();
         });

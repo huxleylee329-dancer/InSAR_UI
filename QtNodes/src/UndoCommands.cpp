@@ -2,8 +2,10 @@
 
 #include "BasicGraphicsScene.hpp"
 #include "ConnectionGraphicsObject.hpp"
+#include "ConnectionIdHash.hpp"
 #include "ConnectionIdUtils.hpp"
 #include "Definitions.hpp"
+#include "ExecutableDataFlowGraphModel.hpp"
 #include "NodeGraphicsObject.hpp"
 
 #include <QtCore/QJsonArray>
@@ -37,14 +39,18 @@ static QJsonObject serializeSelectedItems(BasicGraphicsScene *scene)
 
     QJsonArray connJsonArray;
 
-    for (QGraphicsItem *item : scene->selectedItems()) {
-        if (auto c = qgraphicsitem_cast<ConnectionGraphicsObject *>(item)) {
-            auto const &cid = c->connectionId();
-
+    // Internal edges belong to a selected node group even when their graphics
+    // objects are not explicitly selected by the user.
+    std::unordered_set<ConnectionId> selectedConnections;
+    for (const NodeId nodeId : selectedNodes) {
+        for (const ConnectionId& cid : graphModel.allConnectionIds(nodeId)) {
             if (selectedNodes.count(cid.outNodeId) > 0 && selectedNodes.count(cid.inNodeId) > 0) {
-                connJsonArray.append(toJson(cid));
+                selectedConnections.insert(cid);
             }
         }
+    }
+    for (const ConnectionId& cid : selectedConnections) {
+        connJsonArray.append(toJson(cid));
     }
 
     serializedScene["nodes"] = nodesJsonArray;
@@ -53,20 +59,53 @@ static QJsonObject serializeSelectedItems(BasicGraphicsScene *scene)
     return serializedScene;
 }
 
-static void insertSerializedItems(QJsonObject const &json, BasicGraphicsScene *scene)
+static void insertSerializedItems(QJsonObject &json, BasicGraphicsScene *scene,
+                                  bool captureLoadedNodes = false)
 {
     AbstractGraphModel &graphModel = scene->graphModel();
 
     QJsonArray const &nodesJsonArray = json["nodes"].toArray();
+    QJsonArray loadedNodesJsonArray;
+    std::unordered_set<NodeId> loadedNodeIds;
+    auto* executableGraph = dynamic_cast<ExecutableDataFlowGraphModel*>(&graphModel);
+    if (captureLoadedNodes && executableGraph != nullptr) {
+        executableGraph->beginPasteConfigurationClone();
+    }
 
-    for (QJsonValue node : nodesJsonArray) {
-        QJsonObject obj = node.toObject();
+    try {
+        for (QJsonValue node : nodesJsonArray) {
+            QJsonObject obj = node.toObject();
 
-        graphModel.loadNode(obj);
+            graphModel.loadNode(obj);
 
-        auto id = obj["id"].toInt();
-        scene->nodeGraphicsObject(id)->setZValue(1.0);
-        scene->nodeGraphicsObject(id)->setSelected(true);
+            auto id = obj["id"].toInt();
+            NodeGraphicsObject* graphicsObject = scene->nodeGraphicsObject(id);
+            if (!graphModel.nodeExists(id) || graphicsObject == nullptr) {
+                continue;
+            }
+            loadedNodeIds.insert(id);
+            graphicsObject->setZValue(1.0);
+            graphicsObject->setSelected(true);
+
+            if (captureLoadedNodes) {
+                loadedNodesJsonArray.append(graphModel.saveNode(id));
+            }
+        }
+    } catch (...) {
+        if (captureLoadedNodes && executableGraph != nullptr) {
+            executableGraph->endPasteConfigurationClone();
+        }
+        throw;
+    }
+    if (captureLoadedNodes && executableGraph != nullptr) {
+        executableGraph->endPasteConfigurationClone();
+    }
+
+    // The first paste is loaded through the configuration-clone path.  Keep
+    // that prepared payload for redo so undo/redo does not keep adding suffixes
+    // or ever reintroduce the source node's execution state.
+    if (captureLoadedNodes) {
+        json["nodes"] = loadedNodesJsonArray;
     }
 
     QJsonArray const &connJsonArray = json["connections"].toArray();
@@ -76,10 +115,17 @@ static void insertSerializedItems(QJsonObject const &json, BasicGraphicsScene *s
 
         ConnectionId connId = fromJson(connJson);
 
+        if (loadedNodeIds.count(connId.outNodeId) == 0 ||
+            loadedNodeIds.count(connId.inNodeId) == 0) {
+            continue;
+        }
+
         // Restore the connection
         graphModel.addConnection(connId);
 
-        scene->connectionGraphicsObject(connId)->setSelected(true);
+        if (auto* graphicsObject = scene->connectionGraphicsObject(connId)) {
+            graphicsObject->setSelected(true);
+        }
     }
 }
 
@@ -292,7 +338,7 @@ void PasteCommand::redo()
 
     // Ignore if pasted in content does not generate nodes.
     try {
-        insertSerializedItems(_newSceneJson, _scene);
+        insertSerializedItems(_newSceneJson, _scene, true);
     } catch (...) {
         // If the paste does not work, delete all selected nodes and connections
         // `deleteNode(...)` implicitly removed connections
@@ -345,6 +391,10 @@ QJsonObject PasteCommand::makeNewNodeIdsInScene(QJsonObject const &sceneJson)
         // Replace NodeId in json
         nodeJson["id"] = static_cast<qint64>(newNodeId);
 
+        // This marker is consumed only by ExecutableDataFlowGraphModel before
+        // model load.  It is never written to project files or delete undo.
+        nodeJson["paste-configuration-clone"] = true;
+
         // A pasted DEM source is a distinct workflow producer.  Retaining the
         // copied label UUID would let it publish into the original producer's
         // virtual dependency, so require an explicit label declaration.
@@ -366,9 +416,15 @@ QJsonObject PasteCommand::makeNewNodeIdsInScene(QJsonObject const &sceneJson)
 
         ConnectionId connId = fromJson(connJson);
 
-        ConnectionId newConnId{mapNodeIds[connId.outNodeId],
+        const auto source = mapNodeIds.find(connId.outNodeId);
+        const auto target = mapNodeIds.find(connId.inNodeId);
+        if (source == mapNodeIds.end() || target == mapNodeIds.end()) {
+            continue;
+        }
+
+        ConnectionId newConnId{source->second,
                                connId.outPortIndex,
-                               mapNodeIds[connId.inNodeId],
+                               target->second,
                                connId.inPortIndex};
 
         newConnJsonArray.append(toJson(newConnId));

@@ -281,7 +281,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             ret = NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F) ? 0 : -1;
             if (ret < 0)
             {
-                util.phase_coherence(phase, coherence);
+                util.phase_axial_concentration(phase, coherence);
             }
             sbas.set_high_coherence_node_phase(mask, nodes, edges, phase);
             sbas.set_weight_by_coherence(coherence, nodes, edges);
@@ -346,7 +346,7 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             ret = NodeUtils::readMatFromH5(pFile, "coherence", coherence, CV_64F) ? 0 : -1;
             if (ret < 0)
             {
-                util.phase_coherence(phase, coherence);
+                util.phase_axial_concentration(phase, coherence);
             }
             Mat residue, phase2;
             util.residue(phase, residue);
@@ -354,7 +354,11 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
             diagnostic.structSize = sizeof(diagnostic);
             if (unwrap_method == 2)//SNAPHU方法
             {
-                ret = unwrap.SnaphuMatrixEx(phase, phase2, path1.c_str(), nullptr, &diagnostic);
+                // 通过 H5 路径运行，让 Core 校验 coherence_semantics；
+                // phase-only R2 不会被伪装成 SNAPHU 所需的物理 gamma。
+                ret = unwrap.SnaphuFileEx2(
+                    pFile.toStdString().c_str(), phase2, projectPath.toStdString().c_str(),
+                    path1.c_str(), appPath.c_str(), nullptr, nullptr, nullptr, &diagnostic);
             }
             else//MCF方法
             {

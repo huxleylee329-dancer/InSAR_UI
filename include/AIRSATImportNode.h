@@ -49,7 +49,6 @@ private:
     QWidget* m_widget;
     QLineEdit* m_outputNodeNameEdit;
     QListWidget* m_fileListWidget;
-    QLabel* m_projectLabel;
 
     // State
     QStringList m_dataFilePaths;

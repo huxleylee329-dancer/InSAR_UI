@@ -43,7 +43,6 @@ CoregistrationNode::CoregistrationNode()
     , m_blockSize(64)
     , m_demPath("")
     , m_outputNodeName("Coregistration")
-    , m_outputFileName("{InputName}_regis")
     , m_worker(nullptr)
     , m_thread(nullptr)
     , m_isExecuting(false)
@@ -59,6 +58,7 @@ CoregistrationNode::CoregistrationNode()
             self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding();
             self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot();
             self->m_demPath.clear();
+            self->m_preparedDemValidMaskPath.clear();
             self->m_demInputData.reset();
             self->setProgress(0);
             self->setLastErrorMessage(QStringLiteral("辅助 DEM 资源已变化，需要重新准备。"));
@@ -69,7 +69,7 @@ CoregistrationNode::CoregistrationNode()
         if (self) QTimer::singleShot(0, self.data(), [self]() { if (self) self->refreshAuxiliaryDemLabels(); });
     });
     NodeUtils::registerAuxiliaryDemLabelReboundCallback([self](const QString& label) {
-        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
+        if (self && self->m_auxiliaryDemLabel == label) QTimer::singleShot(0, self.data(), [self]() { if (self) { self->m_preparedAuxiliaryDemBinding = NodeUtils::AuxiliaryDemBinding(); self->m_preparedDemExecutionSnapshot = NodeUtils::DemExecutionSnapshot(); self->m_preparedDemValidMaskPath.clear(); self->setProgress(0); self->setState(ExecutionState::Pending); QMap<QString, NodeUtils::AuxiliaryDemLabelBinding> labels; const auto result = NodeUtils::loadAuxiliaryDemLabels(self->projectPath(), labels); const auto binding = labels.value(self->m_auxiliaryDemLabel); if (result && binding.mode == NodeUtils::AuxiliaryDemLabelMode::WorkflowOutput && !binding.isPlanned()) self->retryAutomaticExecution(); } });
     });
 }
 
@@ -170,14 +170,28 @@ void CoregistrationNode::setInData(std::shared_ptr<NodeData> data, PortIndex por
         }
     } else if (port == 1) {
         const auto auxiliary = std::dynamic_pointer_cast<AuxiliaryDemData>(data);
-        InSARLogManager::LogDebug("CoregistrationNode",
-            auxiliary
-                ? QStringLiteral("Auxiliary DEM input received: projectRoot=%1, resourceId=%2, provenanceId=%3, raster=%4, identityH5=%5.")
-                    .arg(projectPath(), auxiliary->resourceId(), auxiliary->pinnedProvenanceId(),
-                         auxiliary->rasterPath(), auxiliary->identityH5Path())
-                : QStringLiteral("Auxiliary DEM input cleared: projectRoot=%1, incomingType=%2.")
+        const auto previousAuxiliary = m_auxiliaryDemEntityData;
+        const bool hadDemInput = static_cast<bool>(m_demInputData);
+        const bool hadDemPath = !m_demPath.isEmpty();
+        if (auxiliary) {
+            const bool bindingChanged = !previousAuxiliary
+                || previousAuxiliary->resourceId() != auxiliary->resourceId()
+                || previousAuxiliary->pinnedProvenanceId() != auxiliary->pinnedProvenanceId()
+                || previousAuxiliary->rasterPath() != auxiliary->rasterPath()
+                || previousAuxiliary->identityH5Path() != auxiliary->identityH5Path();
+            if (bindingChanged) {
+                InSARLogManager::LogDebug("CoregistrationNode",
+                    QStringLiteral("Auxiliary DEM input received: projectRoot=%1, resourceId=%2, provenanceId=%3, raster=%4, identityH5=%5.")
+                        .arg(projectPath(), auxiliary->resourceId(), auxiliary->pinnedProvenanceId(),
+                             auxiliary->rasterPath(), auxiliary->identityH5Path()),
+                    QStringLiteral("dem.binding"));
+            }
+        } else if (previousAuxiliary || hadDemInput || hadDemPath || data) {
+            InSARLogManager::LogDebug("CoregistrationNode",
+                QStringLiteral("Auxiliary DEM input cleared: projectRoot=%1, incomingType=%2.")
                     .arg(projectPath(), data ? data->type().id : QStringLiteral("null")),
-            QStringLiteral("dem.binding"));
+                QStringLiteral("dem.binding"));
+        }
         m_auxiliaryDemEntityData = auxiliary;
         if (auxiliary) {
             m_auxiliaryDemReferenceData.reset();
@@ -394,19 +408,6 @@ void CoregistrationNode::createWidget()
     outNodeLabel->setFixedWidth(100);
     formLayout2->addRow(outNodeLabel, m_outputNodeNameEdit);
 
-    m_outputFileNameEdit = new QLineEdit();
-    m_outputFileNameEdit->setText(m_outputFileName);
-    connect(m_outputFileNameEdit, &QLineEdit::editingFinished, this, [this, invalidateNodeData]() {
-        QString text = m_outputFileNameEdit->text().trimmed();
-        if (m_outputFileName != text) {
-            m_outputFileName = text;
-            invalidateNodeData();
-        }
-    });
-    QLabel* outFileLabel = new QLabel(QStringLiteral("文件名命名规则："));
-    outFileLabel->setFixedWidth(100);
-    formLayout2->addRow(outFileLabel, m_outputFileNameEdit);
-
     layout->addLayout(formLayout2);
 
     // 4. DEM Row container
@@ -483,7 +484,6 @@ void CoregistrationNode::updateParameterWidgetsEnableState()
     if (m_demPathLabel) m_demPathLabel->setEnabled(enableWidgets && !isCoarse);
     if (m_demLabelCombo) m_demLabelCombo->setEnabled(enableWidgets && !isCoarse);
     if (m_outputNodeNameEdit) m_outputNodeNameEdit->setEnabled(enableWidgets);
-    if (m_outputFileNameEdit) m_outputFileNameEdit->setEnabled(enableWidgets);
 }
 
 
@@ -509,19 +509,8 @@ QString CoregistrationNode::getRealSavePath() const
 
 QString CoregistrationNode::resolveOutputFileName(const QString& originalName) const
 {
-    QString pattern = m_outputFileName.trimmed();
-    if (pattern.isEmpty()) {
-        pattern = "{InputName}_regis";
-    }
-    // Normalize brackets
-    QRegularExpression re("[\\{\\x{FF5B}]\\s*InputName\\s*[\\}\\x{FF5D}]", QRegularExpression::CaseInsensitiveOption);
-    pattern.replace(re, "{InputName}");
-    if (pattern.contains("{InputName}")) {
-        pattern.replace("{InputName}", originalName);
-    } else {
-        pattern = originalName + "_" + pattern;
-    }
-    return pattern;
+    // 固定命名规则：输入文件名 + "_regis"
+    return originalName + QStringLiteral("_regis");
 }
 
 void CoregistrationNode::processAutomatically()
@@ -596,6 +585,7 @@ bool CoregistrationNode::prepareToStart()
         return false;
     }
     m_demPath.clear();
+    m_preparedDemValidMaskPath.clear();
     m_demInputData.reset();
     if (m_method == "Fine" && m_auxiliaryDemEntityData) {
         NodeUtils::AuxiliaryDemBinding binding;
@@ -688,6 +678,17 @@ bool CoregistrationNode::prepareToStart()
         // validateH5Identity() would incorrectly require an output transaction
         // journal under .dem_resources.
         m_preparedTransactionInputPaths.append(demData->identityH5Path());
+        m_preparedDemValidMaskPath = m_preparedAuxiliaryDemBinding.validMaskPath;
+        const QFileInfo demMaskInfo(m_preparedDemValidMaskPath);
+        if (m_preparedDemValidMaskPath.isEmpty() ||
+            !demMaskInfo.isFile() || !demMaskInfo.isReadable()) {
+            const QString error = QStringLiteral("精配准使用的托管辅助 DEM 缺少可读的有效性 mask。");
+            setStartFailureMessage(error);
+            setLastErrorMessage(error);
+            return false;
+        }
+        m_preparedDemValidMaskPath = demMaskInfo.absoluteFilePath();
+        m_preparedTransactionInputPaths.append(m_preparedDemValidMaskPath);
     }
     m_preparedSavePath = getRealSavePath();
     m_preparedDstNode = m_outputNodeName.trimmed();
@@ -808,7 +809,7 @@ void CoregistrationNode::executeProcessing()
     m_worker->moveToThread(m_thread);
 
     m_worker->setDemPath(m_demPath);
-    m_worker->setFilePattern(m_outputFileName);
+    m_worker->setDemValidMaskPath(m_preparedDemValidMaskPath);
 
     connect(m_worker, &CoregistrationWorker::updateProcess, this, &CoregistrationNode::onProgressUpdate, Qt::QueuedConnection);
     connect(m_worker, &CoregistrationWorker::outputsGenerated, this,
@@ -1214,7 +1215,6 @@ QJsonObject CoregistrationNode::save() const
     modelJson["auxiliaryDemLegacyResourceId"] = m_legacyDemResourceId;
     modelJson["auxiliaryDemLegacyPinnedProvenanceId"] = m_legacyDemProvenanceId;
     modelJson["outputNodeName"] = m_outputNodeName;
-    modelJson["outputFileName"] = m_outputFileName;
 
     QJsonArray h5FilesArr;
     for (const QString& path : m_outputImagePaths) {
@@ -1236,7 +1236,6 @@ void CoregistrationNode::load(QJsonObject const &json)
     m_legacyDemResourceId = json["auxiliaryDemLegacyResourceId"].toString().trimmed();
     m_legacyDemProvenanceId = json["auxiliaryDemLegacyPinnedProvenanceId"].toString().trimmed();
     m_outputNodeName = json["outputNodeName"].toString("Coregistration");
-    m_outputFileName = json["outputFileName"].toString("{InputName}_regis");
 
     m_savedOutputFiles.clear();
     if (json.contains("outputFiles")) {
@@ -1263,9 +1262,6 @@ void CoregistrationNode::load(QJsonObject const &json)
     refreshAuxiliaryDemLabels();
     if (m_outputNodeNameEdit) {
         m_outputNodeNameEdit->setText(m_outputNodeName);
-    }
-    if (m_outputFileNameEdit) {
-        m_outputFileNameEdit->setText(m_outputFileName);
     }
 
     updateMasterImageCombo();
@@ -1846,9 +1842,77 @@ XMLFile* CoregistrationNode::projectXml() const
 }
 
 
+enum class CoregistrationDemAuditState {
+    LegacyUnknown = 0,
+    FullSourceSupport = 1,
+    NotUsed = 2,
+    Invalid = 3
+};
+
+struct CoregistrationDemAuditRecord {
+    CoregistrationDemAuditState state = CoregistrationDemAuditState::LegacyUnknown;
+    qint64 requiredPixelCount = 0;
+    qint64 validPixelCount = 0;
+};
+
+static CoregistrationDemAuditRecord readCoregistrationDemAudit(const QString& h5Path)
+{
+    CoregistrationDemAuditRecord record;
+    std::string method;
+    if (!NodeUtils::readStringFromH5(h5Path, "coregistration_method", method)) {
+        return record;
+    }
+
+    std::string status;
+    if (!NodeUtils::readStringFromH5(h5Path, "coregistration_dem_coverage_status", status)) {
+        record.state = CoregistrationDemAuditState::Invalid;
+        return record;
+    }
+    const QString methodName = QString::fromStdString(method).trimmed().toLower();
+    const QString statusName = QString::fromStdString(status).trimmed().toLower();
+    if (methodName == QStringLiteral("coarse")) {
+        record.state = statusName == QStringLiteral("not_used")
+            ? CoregistrationDemAuditState::NotUsed
+            : CoregistrationDemAuditState::Invalid;
+        return record;
+    }
+    if (methodName != QStringLiteral("fine")) {
+        record.state = CoregistrationDemAuditState::Invalid;
+        return record;
+    }
+
+    int schemaVersion = 0;
+    double requiredPixelCount = 0.0;
+    double validPixelCount = 0.0;
+    std::string policy;
+    const bool metadataComplete =
+        NodeUtils::readScalarFromH5(h5Path, "coregistration_dem_coverage_schema_version", schemaVersion) &&
+        NodeUtils::readScalarFromH5(h5Path, "coregistration_dem_mask_required_pixel_count", requiredPixelCount) &&
+        NodeUtils::readScalarFromH5(h5Path, "coregistration_dem_mask_valid_pixel_count", validPixelCount) &&
+        NodeUtils::readStringFromH5(h5Path, "coregistration_dem_mask_policy", policy);
+    const QString policyName = QString::fromStdString(policy).trimmed().toLower();
+    if (!metadataComplete || schemaVersion != 2 ||
+        policyName != QStringLiteral("core_computed_scene_bounds_plus_one_dem_pixel;binary_mask;finite_non_nodata_elevation") ||
+        !std::isfinite(requiredPixelCount) || !std::isfinite(validPixelCount) ||
+        requiredPixelCount <= 0.0 || validPixelCount < 0.0 ||
+        std::abs(requiredPixelCount - std::round(requiredPixelCount)) > 1e-6 ||
+        std::abs(validPixelCount - std::round(validPixelCount)) > 1e-6) {
+        record.state = CoregistrationDemAuditState::Invalid;
+        return record;
+    }
+    record.requiredPixelCount = static_cast<qint64>(std::llround(requiredPixelCount));
+    record.validPixelCount = static_cast<qint64>(std::llround(validPixelCount));
+    record.state = statusName == QStringLiteral("full_source_support_verified") &&
+        record.validPixelCount == record.requiredPixelCount
+        ? CoregistrationDemAuditState::FullSourceSupport
+        : CoregistrationDemAuditState::Invalid;
+    return record;
+}
+
 struct CoregisEvalThreadResult {
     int retCode;
     CropEvalResult evalResult;
+    CoregistrationDemAuditRecord demAudit;
 };
 
 struct CropEvaluationThresholds {
@@ -1976,6 +2040,7 @@ public:
         m_snrLabel = createValueLabel();
         m_offsetYLabel = createValueLabel();
         m_offsetXLabel = createValueLabel();
+        m_demSupportLabel = createValueLabel();
 
         auto addFormRow = [formLayout, isDark](const QString& title, QWidget* valueWidget) {
             auto* label = new QLabel(title);
@@ -1990,6 +2055,7 @@ public:
         addFormRow(tr("残余偏移估计 SNR:"), m_snrLabel);
         addFormRow(tr("垂直残余偏移 (Y):"), m_offsetYLabel);
         addFormRow(tr("水平残余偏移 (X):"), m_offsetXLabel);
+        addFormRow(tr("DEM 几何支持:"), m_demSupportLabel);
 
         leftLayout->addWidget(metricsFrame);
 
@@ -2072,12 +2138,14 @@ private:
         m_snrLabel->setText("-");
         m_offsetYLabel->setText("-");
         m_offsetXLabel->setText("-");
+        m_demSupportLabel->setText("-");
 
         const bool isDark = NodeDetailWindow::isDarkTheme(this);
         const QString defaultValueStyle = QString("font-size: 12px; font-weight: bold; color: %1;")
             .arg(isDark ? "#F3F4F6" : "#1F2937");
         m_offsetYLabel->setStyleSheet(defaultValueStyle);
         m_offsetXLabel->setStyleSheet(defaultValueStyle);
+        m_demSupportLabel->setStyleSheet(defaultValueStyle);
 
         m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
         m_statusCardTitle->setText(tr("未评估"));
@@ -2126,11 +2194,13 @@ private:
         m_snrLabel->setText("-");
         m_offsetYLabel->setText("-");
         m_offsetXLabel->setText("-");
+        m_demSupportLabel->setText("-");
         const bool isDark = NodeDetailWindow::isDarkTheme(this);
         const QString defaultValueStyle = QString("font-size: 12px; font-weight: bold; color: %1;")
             .arg(isDark ? "#F3F4F6" : "#1F2937");
         m_offsetYLabel->setStyleSheet(defaultValueStyle);
         m_offsetXLabel->setStyleSheet(defaultValueStyle);
+        m_demSupportLabel->setStyleSheet(defaultValueStyle);
         m_statusCard->setStyleSheet("background-color: transparent; border: 1px dashed #E5E7EB; border-radius: 4px;");
         m_statusCardTitle->setText(tr("未评估"));
         m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #6B7280;");
@@ -2171,6 +2241,18 @@ private:
                 -1.0, -1.0, -1.0, -1.0,
                 &res.evalResult
             );
+            const CoregistrationDemAuditRecord masterAudit = readCoregistrationDemAudit(masterPath);
+            const CoregistrationDemAuditRecord slaveAudit = readCoregistrationDemAudit(slavePath);
+            if (masterAudit.state == slaveAudit.state &&
+                (masterAudit.state == CoregistrationDemAuditState::LegacyUnknown ||
+                 masterAudit.state == CoregistrationDemAuditState::NotUsed ||
+                 (masterAudit.state == CoregistrationDemAuditState::FullSourceSupport &&
+                  masterAudit.requiredPixelCount == slaveAudit.requiredPixelCount &&
+                  masterAudit.validPixelCount == slaveAudit.validPixelCount))) {
+                res.demAudit = masterAudit;
+            } else {
+                res.demAudit.state = CoregistrationDemAuditState::Invalid;
+            }
             return res;
         });
 
@@ -2187,11 +2269,13 @@ private:
             m_hasResults = false;
             m_imageView->setImage(QImage());
             const bool isDark = NodeDetailWindow::isDarkTheme(this);
-            m_statusLabel->setText(tr("配准质量评估失败，错误码：%1").arg(threadRes.retCode));
+            const QString errorText = threadRes.retCode == -8
+                ? tr("主图像与副图像尺寸不一致，无法进行像素级干涉质量评估。")
+                : tr("配准质量评估失败，错误码：%1").arg(threadRes.retCode);
+            m_statusLabel->setText(errorText);
             m_statusCardTitle->setText(tr("无法评估 (FAILED)"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
-            m_statusCardDesc->setText(tr("底层评估调用失败，错误码：%1。请检查输入数据和处理日志。")
-                .arg(threadRes.retCode));
+            m_statusCardDesc->setText(errorText);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #EF4444; border-radius: 4px;")
                 .arg(isDark ? "#7F1D1D" : "#FEE2E2"));
             return;
@@ -2214,7 +2298,6 @@ private:
         const bool validCoherenceMetrics = validMeanCoherence && validMedianCoherence &&
             validMaxCoherence && validHighCoherencePct;
         const bool validAssessmentStatus = m_evalResult.assessmentStatus >= 0 && m_evalResult.assessmentStatus <= 2;
-        const bool validMetrics = validCoherenceMetrics && validAssessmentStatus;
         const bool validOffsets = std::isfinite(m_evalResult.offsetY) && std::isfinite(m_evalResult.offsetX) &&
             std::abs(m_evalResult.offsetY) < 1000.0 && std::abs(m_evalResult.offsetX) < 1000.0;
         const bool validSnr = std::isfinite(m_evalResult.snr) && m_evalResult.snr >= 0.0;
@@ -2233,6 +2316,28 @@ private:
         m_offsetYLabel->setText(validOffsets ? QString::number(m_evalResult.offsetY, 'f', 2) : "-");
         m_offsetXLabel->setText(validOffsets ? QString::number(m_evalResult.offsetX, 'f', 2) : "-");
 
+        QString demSummary;
+        if (threadRes.demAudit.state == CoregistrationDemAuditState::FullSourceSupport) {
+            m_demSupportLabel->setText(tr("完整源支持 (%1/%2)")
+                .arg(threadRes.demAudit.validPixelCount)
+                .arg(threadRes.demAudit.requiredPixelCount));
+            m_demSupportLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #10B981;");
+            demSummary = tr("精配准 DEM 场景及插值保护区源支持已验证");
+        } else if (threadRes.demAudit.state == CoregistrationDemAuditState::NotUsed) {
+            m_demSupportLabel->setText(tr("未使用 (粗配准)"));
+            m_demSupportLabel->setStyleSheet(QString("font-size: 12px; font-weight: bold; color: %1;")
+                .arg(isDark ? "#9CA3AF" : "#6B7280"));
+            demSummary = tr("粗配准未使用 DEM");
+        } else if (threadRes.demAudit.state == CoregistrationDemAuditState::LegacyUnknown) {
+            m_demSupportLabel->setText(tr("未记录 (旧成果)"));
+            m_demSupportLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #F59E0B;");
+            demSummary = tr("DEM 使用审计未记录");
+        } else {
+            m_demSupportLabel->setText(tr("审计异常"));
+            m_demSupportLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
+            demSummary = tr("主辅配准成果的 DEM 使用审计缺失、无效或不一致");
+        }
+
         if (offsetWarning) {
             m_offsetYLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
             m_offsetXLabel->setStyleSheet("font-size: 12px; font-weight: bold; color: #EF4444;");
@@ -2240,31 +2345,6 @@ private:
             QString defaultColor = QString("font-size: 12px; font-weight: bold; color: %1;").arg(isDark ? "#F3F4F6" : "#1F2937");
             m_offsetYLabel->setStyleSheet(defaultColor);
             m_offsetXLabel->setStyleSheet(defaultColor);
-        }
-
-        QStringList reasons;
-        if (!validCoherenceMetrics) {
-            reasons << tr("相干性统计指标无效");
-        }
-        if (!validAssessmentStatus) {
-            reasons << tr("相干性评估状态无效");
-        } else if (m_evalResult.assessmentStatus == 1) {
-            reasons << tr("相干性一般");
-        } else if (m_evalResult.assessmentStatus == 2) {
-            reasons << tr("相干性不足");
-        }
-        if (!validOffsets) {
-            reasons << tr("残余偏移估计不可用");
-        } else if (std::abs(m_evalResult.offsetY) > thresholds.warningOffsetPixels) {
-            reasons << tr("方位残余偏移 %1 px").arg(m_evalResult.offsetY, 0, 'f', 2);
-        }
-        if (validOffsets && std::abs(m_evalResult.offsetX) > thresholds.warningOffsetPixels) {
-            reasons << tr("距离残余偏移 %1 px").arg(m_evalResult.offsetX, 0, 'f', 2);
-        }
-        if (!validSnr) {
-            reasons << tr("残余偏移估计 SNR 无效");
-        } else if (lowSnr) {
-            reasons << tr("残余偏移估计 SNR=%1，低于 %2").arg(m_evalResult.snr, 0, 'f', 2).arg(thresholds.minimumSnr, 0, 'f', 2);
         }
 
         auto setStatusCard = [this, isDark](const QString& title, const QString& titleColor,
@@ -2277,26 +2357,63 @@ private:
                 .arg(isDark ? darkBackground : lightBackground).arg(borderColor));
         };
 
-        const QString reasonText = reasons.isEmpty() ? tr("相干性、几何残余和估计置信度均满足当前阈值。") : reasons.join(tr("；"));
-        if (!validMetrics || !validOffsets || !validSnr) {
+        QString geometrySummary;
+        if (validOffsets) {
+            geometrySummary = tr("残余偏移 Y=%1 px、X=%2 px")
+                .arg(m_evalResult.offsetY, 0, 'f', 2)
+                .arg(m_evalResult.offsetX, 0, 'f', 2);
+        } else {
+            geometrySummary = tr("残余偏移估计不可用");
+        }
+
+        const QString snrSummary = validSnr
+            ? tr("残余偏移估计 SNR=%1").arg(m_evalResult.snr, 0, 'f', 2)
+            : tr("残余偏移估计 SNR 无效");
+
+        QString coherenceSummary;
+        if (!validCoherenceMetrics || !validAssessmentStatus) {
+            coherenceSummary = tr("干涉相干性无法评估");
+        } else if (m_evalResult.assessmentStatus == 0) {
+            coherenceSummary = tr("干涉相干性满足当前阈值");
+        } else if (m_evalResult.assessmentStatus == 1) {
+            coherenceSummary = tr("干涉相干性一般");
+        } else {
+            coherenceSummary = tr("干涉相干性不足");
+        }
+
+        const QString detailText = tr("%1；%2；%3；%4。")
+            .arg(geometrySummary, snrSummary, coherenceSummary, demSummary);
+        if (!validOffsets || !validSnr) {
             setStatusCard(tr("无法评估 (FAILED)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
-                reasonText + tr("。无法给出可靠的配准结论。"));
+                detailText + tr("无法给出可靠的几何配准结论。"));
+        } else if (threadRes.demAudit.state == CoregistrationDemAuditState::Invalid) {
+            setStatusCard(tr("几何配准 DEM 审计异常 (FAILED)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
+                detailText + tr("无法证明本次精配准使用了完整有效的 DEM 支持。"));
         } else if (lowSnr) {
-            setStatusCard(tr("结果不确定 (INCONCLUSIVE)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
-                reasonText + tr("。请复核影像纹理或扩大有效评估区域。"));
+            setStatusCard(tr("几何配准结果不确定 (INCONCLUSIVE)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
+                detailText + tr("请复核影像纹理或扩大有效评估区域。"));
         } else if (offsetSevere) {
             setStatusCard(tr("几何配准异常 (FAILED)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
-                reasonText + tr("。残余偏移超过严重阈值。"));
+                detailText + tr("残余偏移超过严重阈值。"));
+        } else if (offsetWarning) {
+            setStatusCard(tr("几何配准需复核 (WARNING)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
+                detailText + tr("残余偏移超过提醒阈值。"));
+        } else if (threadRes.demAudit.state == CoregistrationDemAuditState::LegacyUnknown) {
+            setStatusCard(tr("几何配准通过 / DEM 审计未记录"), "#D97706", "#F59E0B", "#78350F", "#FEF3C7",
+                detailText + tr("旧成果无法追溯 DEM 有效覆盖，请重新运行配准节点。"));
+        } else if (!validCoherenceMetrics || !validAssessmentStatus) {
+            setStatusCard(tr("几何配准通过 / 干涉质量未评估"), "#D97706", "#F59E0B", "#78350F", "#FEF3C7",
+                detailText);
         } else if (m_evalResult.assessmentStatus == 2) {
-            setStatusCard(tr("低相干 (LOW COHERENCE)"), "#EF4444", "#EF4444", "#7F1D1D", "#FEE2E2",
-                reasonText + tr("。请注意后续干涉和解缠质量。"));
-        } else if (m_evalResult.assessmentStatus == 1 || offsetWarning) {
-            setStatusCard(tr("提醒 (WARNING)"), "#F59E0B", "#F59E0B", "#78350F", "#FEF3C7",
-                reasonText + tr("。建议复核质量。"));
+            setStatusCard(tr("几何配准通过 / 干涉相干性不足"), "#D97706", "#F59E0B", "#78350F", "#FEF3C7",
+                detailText + tr("请注意后续干涉和解缠质量。"));
+        } else if (m_evalResult.assessmentStatus == 1) {
+            setStatusCard(tr("几何配准通过 / 干涉相干性一般"), "#D97706", "#F59E0B", "#78350F", "#FEF3C7",
+                detailText + tr("建议在后续干涉处理中复核质量。"));
         } else {
-            m_statusCardTitle->setText(tr("通过 (PASS)"));
+            m_statusCardTitle->setText(tr("几何配准通过 / 干涉相干性良好"));
             m_statusCardTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
-            m_statusCardDesc->setText(reasonText);
+            m_statusCardDesc->setText(detailText);
             m_statusCard->setStyleSheet(QString("background-color: %1; border: 1px solid #10B981; border-radius: 4px;")
                 .arg(isDark ? "#064E3B" : "#D1FAE5"));
         }
@@ -2343,6 +2460,7 @@ private:
     QLabel* m_snrLabel;
     QLabel* m_offsetYLabel;
     QLabel* m_offsetXLabel;
+    QLabel* m_demSupportLabel;
     QLabel* m_statusLabel;
 
     // The worker owns a copy while it writes, so closing Detail View cannot
