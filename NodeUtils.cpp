@@ -1717,7 +1717,11 @@ bool writeStagedProductDescriptorToH5(const QString& filePath, const QJsonObject
 {
     const QByteArray path = filePath.toUtf8();
     const QByteArray json = QJsonDocument(descriptor).toJson(QJsonDocument::Compact);
-    const int result = Hdf5IO::createString(path.constData(), kProductDescriptorDataset, json.constData());
+    // Staged H5 files may already carry the descriptor from an upstream node
+    // (for example, orbit application copies an imported H5 before promotion).
+    // createString() intentionally fails when the dataset exists, so use the
+    // replacement API for both first-write and update cases.
+    const int result = Hdf5IO::writeString(path.constData(), kProductDescriptorDataset, json.constData());
     if (result != 0 && errorMessage) {
         *errorMessage = QStringLiteral("Cannot write staged H5 product descriptor: %1").arg(filePath);
     }
@@ -5277,6 +5281,63 @@ bool writeStringToH5(const QString& filePath,
     return true;
 }
 
+bool validateSentinelGeometryContract(const QString& filePath, QString* errMsg)
+{
+    Hdf5Locker identityProbeLocker(filePath, 50);
+    if (!identityProbeLocker.isLocked()) {
+        if (errMsg) {
+            *errMsg = QStringLiteral("获取 Sentinel-1 几何契约校验锁超时：%1").arg(filePath);
+        }
+        return false;
+    }
+    const QByteArray utf8Path = filePath.toUtf8();
+    int swathExists = 0;
+    int polarizationExists = 0;
+    if (Hdf5IO::datasetExists(utf8Path.constData(), "swath", &swathExists) != 0 ||
+        Hdf5IO::datasetExists(utf8Path.constData(), "polarization", &polarizationExists) != 0) {
+        if (errMsg) {
+            *errMsg = QStringLiteral("无法检查 Sentinel-1 身份数据集：%1").arg(filePath);
+        }
+        return false;
+    }
+
+    // Products without either Sentinel identity field belong to another
+    // sensor/product family and are outside this contract.
+    if (swathExists == 0 && polarizationExists == 0) {
+        return true;
+    }
+
+    std::string swath;
+    std::string polarization;
+    QString swathError;
+    QString polarizationError;
+    const bool hasSwath = readStringFromH5(filePath, QStringLiteral("swath"), swath, &swathError);
+    const bool hasPolarization = readStringFromH5(filePath, QStringLiteral("polarization"), polarization, &polarizationError);
+    if (!hasSwath || !hasPolarization || swath.empty() || polarization.empty()) {
+        if (errMsg) {
+            *errMsg = QStringLiteral("Sentinel-1 H5 的 swath/polarization 身份不完整：%1")
+                .arg(filePath);
+        }
+        return false;
+    }
+
+    std::string contract;
+    QString contractError;
+    if (!readStringFromH5(filePath,
+                          QStringLiteral("sentinel_geometry_coefficient_contract"),
+                          contract, &contractError) ||
+        QString::fromStdString(contract).trimmed() !=
+            QStringLiteral("row_col_scene_dimensions_v2")) {
+        if (errMsg) {
+            *errMsg = QStringLiteral(
+                "Sentinel-1 H5 使用了旧的或缺失的地理多项式契约，必须重新导入原始 SAFE：%1")
+                .arg(filePath);
+        }
+        return false;
+    }
+    return true;
+}
+
 bool copySourcePathMetadata(const QString& inputPath,
                             const QString& outputPath,
                             QString* errMsg)
@@ -5371,6 +5432,101 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
     constexpr const char* kTopoDataset = "phase_topography_removed";
     constexpr const char* kCoefficientDataset = "flat_phase_coefficient";
 
+    const auto copyCommonCoverageContract = [&]() -> bool {
+        int contractExists = 0;
+        const QByteArray inputUtf8 = inputPath.toUtf8();
+        if (Hdf5IO::datasetExists(inputUtf8.constData(), "s1_tops_product_contract", &contractExists) != 0) {
+            if (errMsg) *errMsg = QStringLiteral("无法检查共同 burst 产品契约：%1").arg(inputPath);
+            return false;
+        }
+        if (contractExists == 0) {
+            return true;
+        }
+
+        std::string contract;
+        if (!readStringFromH5(inputPath, QStringLiteral("s1_tops_product_contract"), contract, errMsg)) {
+            return false;
+        }
+        if (QString::fromStdString(contract) != QStringLiteral("continuous_deburst_common_coverage_v1")) {
+            // An unrelated product contract remains outside this specialised propagation path.
+            return true;
+        }
+
+        const QStringList stringDatasets = {
+            QStringLiteral("s1_tops_product_contract"),
+            QStringLiteral("s1_tops_coverage_signature"),
+            QStringLiteral("s1_tops_source_frame_mapping"),
+            QStringLiteral("s1_tops_geometry_reference_file"),
+            QStringLiteral("s1_tops_geometry_reference_path"),
+            QStringLiteral("s1_tops_output_source_row_map_semantics")
+        };
+        const QStringList scalarDatasets = {
+            QStringLiteral("s1_tops_source_full_burst_row_count"),
+            QStringLiteral("s1_tops_common_master_first_burst"),
+            QStringLiteral("s1_tops_common_master_last_burst"),
+            QStringLiteral("s1_tops_common_master_burst_count"),
+            QStringLiteral("s1_tops_partial_burst_coverage"),
+            QStringLiteral("s1_tops_output_source_row_origin"),
+            QStringLiteral("s1_tops_source_burst_first"),
+            QStringLiteral("s1_tops_source_burst_last"),
+            QStringLiteral("s1_tops_source_burst_offset"),
+            QStringLiteral("s1_tops_output_source_row_map_multilook_azimuth_factor")
+        };
+        const QStringList matrixDatasets = {
+            QStringLiteral("s1_tops_output_source_row_map"),
+            QStringLiteral("s1_tops_retained_master_burst_indices"),
+            QStringLiteral("s1_tops_retained_source_row_ranges")
+        };
+
+        for (const QString& dataset : stringDatasets) {
+            std::string value;
+            if (!readStringFromH5(inputPath, dataset, value, errMsg) ||
+                value.empty() || !writeStringToH5(outputPath, dataset, value, errMsg)) {
+                if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("共同 burst 字符串 provenance 无效：%1").arg(dataset);
+                return false;
+            }
+        }
+        for (const QString& dataset : scalarDatasets) {
+            int value = 0;
+            if (!readScalarFromH5(inputPath, dataset, value, errMsg) ||
+                !writeScalarToH5(outputPath, dataset, value, errMsg)) {
+                if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("共同 burst 标量 provenance 无效：%1").arg(dataset);
+                return false;
+            }
+        }
+        for (const QString& dataset : matrixDatasets) {
+            cv::Mat value;
+            if (!readMatFromH5(inputPath, dataset, value, -1, errMsg) || value.empty() ||
+                !writeMatToH5(outputPath, dataset, value, errMsg)) {
+                if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("共同 burst 映射 provenance 无效：%1").arg(dataset);
+                return false;
+            }
+        }
+        int coefficientContractExists = 0;
+        const QByteArray optionalContractPath = inputPath.toUtf8();
+        if (Hdf5IO::datasetExists(optionalContractPath.constData(),
+                                  "s1_tops_flat_phase_coefficient_contract",
+                                  &coefficientContractExists) != 0) {
+            if (errMsg) *errMsg = QStringLiteral("无法检查分段平地相位系数契约：%1").arg(inputPath);
+            return false;
+        }
+        if (coefficientContractExists != 0) {
+            std::string value;
+            if (!readStringFromH5(inputPath, QStringLiteral("s1_tops_flat_phase_coefficient_contract"), value, errMsg) ||
+                value.empty() || !writeStringToH5(outputPath, QStringLiteral("s1_tops_flat_phase_coefficient_contract"), value, errMsg)) {
+                return false;
+            }
+            cv::Mat segmentCoefficients;
+            if (!readMatFromH5(inputPath, QStringLiteral("s1_tops_segment_flat_phase_coefficients"),
+                              segmentCoefficients, -1, errMsg) || segmentCoefficients.empty() ||
+                !writeMatToH5(outputPath, QStringLiteral("s1_tops_segment_flat_phase_coefficients"),
+                              segmentCoefficients, errMsg)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
     cv::Mat flatPhaseCoefficient;
     QString coefficientError;
     const bool hasCoefficient = readMatFromH5(inputPath, QString::fromLatin1(kCoefficientDataset),
@@ -5405,7 +5561,7 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
                                              flatPhaseCoefficient, errMsg)) {
             return false;
         }
-        return true;
+        return copyCommonCoverageContract();
     }
 
     int schemaVersion = 0;
@@ -5445,7 +5601,7 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
         !writeScalarToH5(outputPath, QString::fromLatin1(kTopoDataset), topoRemoved, errMsg)) {
         return false;
     }
-    return true;
+    return copyCommonCoverageContract();
 }
 
 // --------------------------------------------------------------------------

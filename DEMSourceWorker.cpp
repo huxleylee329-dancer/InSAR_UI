@@ -12,6 +12,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
@@ -79,6 +80,149 @@ QVector<MissingTileBounds> preParseMissingTiles(const QStringList& missingTiles)
         }
     }
     return result;
+}
+
+class DemStageTracker
+{
+public:
+    explicit DemStageTracker(const QString& targetNode)
+        : m_targetNode(targetNode)
+    {
+        m_totalTimer.start();
+    }
+
+    ~DemStageTracker()
+    {
+        if (!m_closed && !m_stage.isEmpty()) {
+            finishCurrent(QStringLiteral("aborted"));
+        }
+    }
+
+    void begin(const QString& stage)
+    {
+        if (stage == m_stage) {
+            return;
+        }
+        if (!m_stage.isEmpty()) {
+            finishCurrent(QStringLiteral("completed"));
+        }
+        m_stage = stage;
+        m_stageTimer.start();
+        logStage(QStringLiteral("started"), 0);
+    }
+
+    void finishCurrent(const QString& status)
+    {
+        if (m_stage.isEmpty()) {
+            return;
+        }
+        logStage(status, m_stageTimer.elapsed());
+        m_stage.clear();
+    }
+
+    void close()
+    {
+        if (!m_stage.isEmpty()) {
+            finishCurrent(QStringLiteral("completed"));
+        }
+        InSARLogManager::LogDiagnostic(
+            InSARLogManager::LevelDebug,
+            "DEMSourceWorker",
+            QStringLiteral("External DEM processing completed: node=%1, total_elapsed_ms=%2")
+                .arg(m_targetNode).arg(m_totalTimer.elapsed()),
+            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+            QStringLiteral("dem.stage"), QStringLiteral("total"), QStringLiteral("completed"),
+            m_totalTimer.elapsed());
+        m_closed = true;
+    }
+
+private:
+    void logStage(const QString& status, qint64 elapsedMs)
+    {
+        InSARLogManager::LogDiagnostic(
+            InSARLogManager::LevelDebug,
+            "DEMSourceWorker",
+            QStringLiteral("External DEM stage: node=%1, stage=%2, status=%3, stage_elapsed_ms=%4, total_elapsed_ms=%5")
+                .arg(m_targetNode, m_stage, status).arg(elapsedMs).arg(m_totalTimer.elapsed()),
+            LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile,
+            QStringLiteral("dem.stage"), m_stage, status, elapsedMs);
+    }
+
+    QString m_targetNode;
+    QString m_stage;
+    QElapsedTimer m_totalTimer;
+    QElapsedTimer m_stageTimer;
+    bool m_closed = false;
+};
+
+bool extractSentinel1CornerAoi(const QStringList& inputPaths,
+                               double& minLon, double& maxLon,
+                               double& minLat, double& maxLat)
+{
+    const QStringList latitudeFields = {
+        QStringLiteral("topLeftLat"), QStringLiteral("topRightLat"),
+        QStringLiteral("bottomLeftLat"), QStringLiteral("bottomRightLat")};
+    const QStringList longitudeFields = {
+        QStringLiteral("topLeftLon"), QStringLiteral("topRightLon"),
+        QStringLiteral("bottomLeftLon"), QStringLiteral("bottomRightLon")};
+    bool found = false;
+    for (const QString& inputPath : inputPaths) {
+        if (!QFileInfo(inputPath).isFile()) return false;
+
+        double localMinLon = 0.0;
+        double localMaxLon = 0.0;
+        double localMinLat = 0.0;
+        double localMaxLat = 0.0;
+        bool valid = true;
+        {
+            NodeUtils::Hdf5Locker locker(inputPath);
+            if (!locker.isLocked()) return false;
+            for (int index = 0; index < latitudeFields.size(); ++index) {
+                double value = 0.0;
+                if (!NodeUtils::readScalarFromH5(inputPath, latitudeFields.at(index), value) ||
+                    !std::isfinite(value) || value < -90.0 || value > 90.0) {
+                    valid = false;
+                    break;
+                }
+                if (index == 0) localMinLat = localMaxLat = value;
+                else {
+                    localMinLat = qMin(localMinLat, value);
+                    localMaxLat = qMax(localMaxLat, value);
+                }
+            }
+
+            if (valid) {
+                for (int index = 0; index < longitudeFields.size(); ++index) {
+                    double value = 0.0;
+                    if (!NodeUtils::readScalarFromH5(inputPath, longitudeFields.at(index), value) ||
+                        !std::isfinite(value) || value < -180.0 || value > 180.0) {
+                        valid = false;
+                        break;
+                    }
+                    if (index == 0) localMinLon = localMaxLon = value;
+                    else {
+                        localMinLon = qMin(localMinLon, value);
+                        localMaxLon = qMax(localMaxLon, value);
+                    }
+                }
+            }
+        }
+        if (!valid || localMaxLon <= localMinLon || localMaxLat <= localMinLat) return false;
+
+        if (!found) {
+            minLon = localMinLon;
+            maxLon = localMaxLon;
+            minLat = localMinLat;
+            maxLat = localMaxLat;
+            found = true;
+        } else {
+            minLon = qMin(minLon, localMinLon);
+            maxLon = qMax(maxLon, localMaxLon);
+            minLat = qMin(minLat, localMinLat);
+            maxLat = qMax(maxLat, localMaxLat);
+        }
+    }
+    return found;
 }
 }
 
@@ -289,6 +433,12 @@ void DEMSourceWorker::fetch_dem(
 {
     InSARLogManager::LogInfo("DEMSourceWorker", QString("External DEM fetch started. Target node: %1, Source Type: %2").arg(outputNodeName).arg(demSource));
 
+    DemStageTracker stageTracker(outputNodeName);
+    const auto reportProgress = [&](int progress, const QString& message, const QString& stage) {
+        stageTracker.begin(stage);
+        emit updateProcess(qBound(0, progress, 95), message);
+    };
+
     if (projectPath.isEmpty() || projectName.isEmpty() || stagingNode.isEmpty() ||
         outputNodeName.isEmpty() || filePaths.isEmpty())
     {
@@ -296,7 +446,7 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
-    emit updateProcess(5, QStringLiteral("准备解析范围……"));
+    reportProgress(5, QStringLiteral("准备解析范围……"), QStringLiteral("prepare_aoi"));
 
     // 1. 获取绝对工作目录（防止二次剥离目录路径）
     QString save_path = projectPath;
@@ -316,10 +466,27 @@ void DEMSourceWorker::fetch_dem(
 
     FormatConversion FC;
 
+    // Sentinel-1 batches carry the acquisition footprint per H5.  Use the
+    // union before any single-image fallback so the DEM covers every input.
+    QStringList resolvedInputPaths;
+    resolvedInputPaths.reserve(filePaths.size());
+    for (const QString& inputPath : filePaths) {
+        resolvedInputPaths.append(QFileInfo(inputPath).isRelative()
+            ? QDir(save_path).absoluteFilePath(inputPath)
+            : inputPath);
+    }
+    if (extractSentinel1CornerAoi(resolvedInputPaths, min_lon, max_lon, min_lat, max_lat))
+    {
+        aoi_ok = true;
+        InSARLogManager::LogInfo("DEMSourceWorker",
+            QString("Extracted AOI from trusted Sentinel-1 H5 corner coordinates: Lon[%1, %2], Lat[%3, %4]")
+                .arg(min_lon).arg(max_lon).arg(min_lat).arg(max_lat));
+    }
+
     // 检查是否存在 mapped_lon/mapped_lat (已地理编码的 H5)并从其提取 AOI 范围
     Mat mat_lon, mat_lat;
     bool mapped_check = false;
-    {
+    if (!aoi_ok) {
         NodeUtils::Hdf5Locker locker;
         mapped_check = (NodeUtils::readMatFromH5(firstInput, "mapped_lon", mat_lon) &&
                         NodeUtils::readMatFromH5(firstInput, "mapped_lat", mat_lat));
@@ -615,7 +782,8 @@ void DEMSourceWorker::fetch_dem(
     QStringList serverNotFoundTiles;
     QStringList serverNotFoundTilesIntersectingOutput;
     const int requestedTileCount = (endLat - startLat + 1) * (endLon - startLon + 1);
-    emit updateProcess(10, QStringLiteral("检索本地缓存及下载瓦片中……"));
+    reportProgress(10, QStringLiteral("检索本地缓存及下载瓦片中……"),
+                   QStringLiteral("download_tiles"));
 
     for (int lat = startLat; lat <= endLat; ++lat)
     {
@@ -731,7 +899,9 @@ void DEMSourceWorker::fetch_dem(
                     targetZipOrTif = expectedFile; // 即 [tileName].tif
                 }
 
-                emit updateProcess(10 + (lat - startLat) * 30 / (endLat - startLat + 1), QStringLiteral("正在下载 DEM 瓦片 %1……").arg(tileName));
+                reportProgress(10 + (lat - startLat) * 30 / (endLat - startLat + 1),
+                               QStringLiteral("正在下载 DEM 瓦片 %1……").arg(tileName),
+                               QStringLiteral("download_tiles"));
                 
                 QString downloadFailure;
                 const bool requiresEarthdataAuth = demSource != 2;
@@ -821,7 +991,8 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
-    emit updateProcess(50, QStringLiteral("构建瓦片拼接与重采样……"));
+    reportProgress(50, QStringLiteral("构建瓦片拼接与重采样……"),
+                   QStringLiteral("mosaic_resample"));
 
     // 5. 多瓦片拼接机制 (VRT)
     QString finalInputFile;
@@ -914,7 +1085,8 @@ void DEMSourceWorker::fetch_dem(
         finalInputFile = vrtPath;
     }
 
-    emit updateProcess(65, QStringLiteral("裁剪高程数据中……"));
+    reportProgress(65, QStringLiteral("裁剪高程数据中……"),
+                   QStringLiteral("crop_resample"));
 
     // 6. 调用 DEMSourceManager 执行裁剪转换
     DEMSourceManager manager;
@@ -1025,7 +1197,8 @@ void DEMSourceWorker::fetch_dem(
         ? QStringLiteral("gdal_source_mask;source_nodata;finite_value;source_coverage")
         : QStringLiteral("gdal_source_mask;source_nodata;finite_value;source_coverage;http_404_tile_footprint_mask");
 
-    emit updateProcess(80, QStringLiteral("转换高程坐标至 ECEF……"));
+    reportProgress(80, QStringLiteral("转换高程坐标至 ECEF……"),
+                   QStringLiteral("ecef_conversion"));
     Mat ecef_dem = cropped_dem.clone();
     ecef_dem.setTo(Scalar(0), dem_valid_mask == 0);
     {
@@ -1060,7 +1233,8 @@ void DEMSourceWorker::fetch_dem(
     dem_y.setTo(Scalar(quietNaN), dem_valid_mask == 0);
     dem_z.setTo(Scalar(quietNaN), dem_valid_mask == 0);
 
-    emit updateProcess(90, QStringLiteral("写入 H5 数据文件……"));
+    reportProgress(90, QStringLiteral("写入 H5 数据文件……"),
+                   QStringLiteral("write_outputs"));
 
     // 7. 写入 H5 文件
     QString outputH5Name = outputNodeName + "_dem.h5";
@@ -1213,6 +1387,9 @@ void DEMSourceWorker::fetch_dem(
         return;
     }
 
+    reportProgress(94, QStringLiteral("写入产品描述并计算输出哈希……"),
+                   QStringLiteral("descriptor_hash"));
+
     // 仅当节点注入了 descriptor（工作流节点路径）时才在写入阶段生成预览 JPG 并
     // 预计算 H5 哈希。旧的 DEMSourceDialog 路径不注入 descriptor，其 staging 内容
     // 保持不变，避免破坏其既有输出契约。
@@ -1262,7 +1439,9 @@ void DEMSourceWorker::fetch_dem(
                 .arg(serverNotFoundTilesIntersectingOutput.join(", ")));
     }
 
-    emit updateProcess(100, QStringLiteral("外部 DEM 获取完成。"));
+    stageTracker.begin(QStringLiteral("worker_output_ready"));
+    emit updateProcess(95, QStringLiteral("外部 DEM 核心成果已生成，正在完成事务……"));
+    stageTracker.close();
     // 清理完成后再通知主线程挂载输出，取消时不会提前暴露部分结果。
     DemCoverageAudit coverageAudit;
     coverageAudit.serverNotFoundTiles = serverNotFoundTiles;

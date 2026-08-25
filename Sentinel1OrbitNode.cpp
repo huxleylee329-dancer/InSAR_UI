@@ -45,6 +45,15 @@ namespace {
 
 const QString kOrbitReferenceFile = QStringLiteral(".orbit-reference.json");
 
+bool isStaleOrbitOutputName(const QString& name, const QString& publishedNodeName)
+{
+    const QString prefix = QStringLiteral(".") + publishedNodeName + QStringLiteral(".staging-");
+    if (!name.startsWith(prefix)) return false;
+    // Orbit transaction names end in the UUID only.  DEM and registration
+    // outputs intentionally carry a suffix and are handled by their nodes.
+    return !name.mid(prefix.size()).contains(QLatin1Char('_'));
+}
+
 bool isSafeProjectRelativePath(const QString& relativePath)
 {
     if (relativePath.isEmpty() || QDir::isAbsolutePath(relativePath)) {
@@ -1065,6 +1074,19 @@ void Sentinel1OrbitNode::onProcessingFinished(
     m_workerThread = nullptr;
     m_thread = nullptr;
 
+    // The worker writes into the transaction staging directory and returns
+    // that directory name in its completion signal.  Never expose that
+    // transient name through XML, the project tree, or downstream data.
+    const QString publishedNodeName = m_outputTransaction.nodeName;
+    if (publishedNodeName.isEmpty() ||
+        (!m_preparedReferenceMode && targetDirName != m_outputTransaction.stagingName) ||
+        (m_preparedReferenceMode && targetDirName != publishedNodeName)) {
+        const QString error = QStringLiteral("Orbit worker returned an unexpected output directory name.");
+        NodeUtils::abandonOutputTransaction(m_outputTransaction, error, projectXml());
+        onError(error);
+        return;
+    }
+
     if (discardObsoleteAutomaticExecution()) {
         NodeUtils::abandonOutputTransaction(m_outputTransaction,
                                             QStringLiteral("obsolete automatic execution"), projectXml());
@@ -1128,7 +1150,7 @@ void Sentinel1OrbitNode::onProcessingFinished(
     // Metadata mutation occurs only after the staged artifacts have been promoted.
     auto* iface = NodeUtils::getProjectContext(_widget);
     if (iface) {
-        NodeUtils::removeDataNodeFromProject(iface, targetDirName);
+        NodeUtils::removeDataNodeFromProject(iface, publishedNodeName, false, false);
     }
 
     qDebug() << "[OrbitNode] POD apply results: ok=" << podApplyOk << "fail=" << podApplyFail << "skipped=" << podSkipped;
@@ -1141,7 +1163,7 @@ void Sentinel1OrbitNode::onProcessingFinished(
 
     // 传播输出数据
     if (!publishedH5Paths.isEmpty()) {
-        m_outputData = std::make_shared<ImportedFileData>(publishedH5Paths, targetDirName);
+        m_outputData = std::make_shared<ImportedFileData>(publishedH5Paths, publishedNodeName);
         const ProductDescriptor::Ptr committedDescriptor =
             ProductDescriptor::fromJson(m_outputTransaction.productDescriptor);
         m_outputData->setProductDescriptor(committedDescriptor);
@@ -1170,8 +1192,21 @@ void Sentinel1OrbitNode::onProcessingFinished(
             TiXmlElement* root = nullptr;
             xml->get_root(root);
             if (root) {
+                // A project opened from an earlier build may still contain
+                // the old staging root. Remove only the root belonging to
+                // this published orbit node; suffixed DEM/registration
+                // entries are migrated by their own successful commits.
+                for (TiXmlElement* node = root->FirstChildElement("DataNode"); node; ) {
+                    TiXmlElement* next = node->NextSiblingElement("DataNode");
+                    const char* nameAttr = node->Attribute("name");
+                    if (nameAttr && isStaleOrbitOutputName(QString::fromUtf8(nameAttr), publishedNodeName)) {
+                        root->RemoveChild(node);
+                    }
+                    node = next;
+                }
+
                 TiXmlElement* dataNodeElem = new TiXmlElement("DataNode");
-                dataNodeElem->SetAttribute("name", targetDirName.toStdString().c_str());
+                dataNodeElem->SetAttribute("name", publishedNodeName.toStdString().c_str());
                 dataNodeElem->SetAttribute("data_count", std::to_string(publishedH5Paths.size()).c_str());
                 dataNodeElem->SetAttribute("data_processing", "orbit");
                 dataNodeElem->SetAttribute("rank", "complex-1.0");
@@ -1193,7 +1228,7 @@ void Sentinel1OrbitNode::onProcessingFinished(
 
                 for (int i = 0; i < publishedH5Paths.size(); i++) {
                     QFileInfo fileinfo(publishedH5Paths.at(i));
-                    QString relativePath = QString("/%1/%2").arg(targetDirName).arg(fileinfo.fileName());
+                    QString relativePath = QString("/%1/%2").arg(publishedNodeName).arg(fileinfo.fileName());
                     if (m_preparedReferenceMode) {
                         const QString projectRoot = NodeUtils::projectDirectory(m_preparedSavePath);
                         const QString sourceRelativePath = QDir(projectRoot).relativeFilePath(
@@ -1267,17 +1302,24 @@ void Sentinel1OrbitNode::onProcessingFinished(
             if (!foundProjects.isEmpty()) {
                 QStandardItem* projectItem = foundProjects.first();
 
+                for (int i = projectItem->rowCount() - 1; i >= 0; --i) {
+                    QStandardItem* node = projectItem->child(i, 0);
+                    if (node && isStaleOrbitOutputName(node->text(), publishedNodeName)) {
+                        projectItem->removeRow(i);
+                    }
+                }
+
                 // 1. 查找或建立 Orbit 根节点
                 QStandardItem* orbitItem = nullptr;
                 for (int i = 0; i < projectItem->rowCount(); i++) {
-                    if (projectItem->child(i, 0)->text() == targetDirName) {
+                    if (projectItem->child(i, 0)->text() == publishedNodeName) {
                         orbitItem = projectItem->child(i, 0);
                         break;
                     }
                 }
 
                 if (!orbitItem) {
-                    orbitItem = new QStandardItem(targetDirName);
+                    orbitItem = new QStandardItem(publishedNodeName);
                     orbitItem->setToolTip(projectName());
                     int insert = 0;
                     for (; insert < projectItem->rowCount(); insert++) {

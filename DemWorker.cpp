@@ -160,6 +160,12 @@ bool sourceGeometryBounds(const QString& phaseH5,
         return false;
     }
 
+    QString geometryContractError;
+    if (!NodeUtils::validateSentinelGeometryContract(masterH5, &geometryContractError)) {
+        error = geometryContractError;
+        return false;
+    }
+
     int sceneWidth = 0;
     int sceneHeight = 0;
     int offsetRow = 0;

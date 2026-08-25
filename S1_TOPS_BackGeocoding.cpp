@@ -19,7 +19,10 @@
 #endif
 S1_TOPS_BackGeocoding::S1_TOPS_BackGeocoding(QWidget* parent) :
     QWidget(parent),
-    ui(new Ui::S1TopsBackGeocoding)
+    ui(new Ui::S1TopsBackGeocoding),
+    copy(nullptr),
+    S1_TOPS_BackGeocoding_thread(nullptr),
+    image_number(0)
 {
     ui->setupUi(this);
     ui->progressBar->setMinimum(0);
@@ -49,15 +52,19 @@ void S1_TOPS_BackGeocoding::updateProcess(int value, QString information)
 }
 void S1_TOPS_BackGeocoding::endProcess()
 {
-    S1_TOPS_BackGeocoding_thread->thread()->quit();
-    S1_TOPS_BackGeocoding_thread->thread()->wait();
+    if (S1_TOPS_BackGeocoding_thread && S1_TOPS_BackGeocoding_thread->thread()) {
+        S1_TOPS_BackGeocoding_thread->thread()->quit();
+        S1_TOPS_BackGeocoding_thread->thread()->wait();
+    }
     ui->progressBar->hide();
     this->close();
 }
 void S1_TOPS_BackGeocoding::endThread()
 {
-    S1_TOPS_BackGeocoding_thread->thread()->quit();
-    S1_TOPS_BackGeocoding_thread->thread()->wait();
+    if (S1_TOPS_BackGeocoding_thread && S1_TOPS_BackGeocoding_thread->thread()) {
+        S1_TOPS_BackGeocoding_thread->thread()->quit();
+        S1_TOPS_BackGeocoding_thread->thread()->wait();
+    }
 }
 void S1_TOPS_BackGeocoding::StopThread()
 {
@@ -65,6 +72,7 @@ void S1_TOPS_BackGeocoding::StopThread()
     {
         if (S1_TOPS_BackGeocoding_thread->thread()->isRunning())
         {
+            S1_TOPS_BackGeocoding_thread->requestCancel();
             S1_TOPS_BackGeocoding_thread->thread()->requestInterruption();
             S1_TOPS_BackGeocoding_thread->thread()->quit();
             S1_TOPS_BackGeocoding_thread->thread()->wait();
@@ -362,10 +370,27 @@ void S1_TOPS_BackGeocoding::on_buttonBox_accepted()
     connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::updateProcess, this, &S1_TOPS_BackGeocoding::updateProcess);
     connect(S1_TOPS_BackGeocoding_thread->thread(), &QThread::finished, S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::deleteLater);
     connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::endProcess, this, &S1_TOPS_BackGeocoding::endProcess);
+    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::errorProcess, this,
+        [this](const QString& error) {
+            QMessageBox::critical(this, tr("Back-Geocoding Error"), error);
+            endProcess();
+        });
+    connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::cancelled, this,
+        [this](const QStringList& cleanupFailures) {
+            if (!cleanupFailures.isEmpty()) {
+                QMessageBox::warning(this, tr("Back-Geocoding Cancelled"),
+                                     tr("任务已取消，但部分临时文件未能删除：\n%1")
+                                         .arg(cleanupFailures.join('\n')));
+            }
+            endProcess();
+        });
     connect(S1_TOPS_BackGeocoding_thread, &S1TopsBackGeocodingWorker::registrationFinished, this,
         [this](const QStringList& paths, const QString& dstNode, const QString& dstProject,
-               const QString& savePath, int masterIndex, bool, const QStringList&) {
+               const QString& savePath, int masterIndex, bool hasQualityWarning, const QStringList& qualityWarnings) {
             onRegistrationFinished(paths, dstNode, dstProject, savePath, masterIndex);
+            if (hasQualityWarning && !qualityWarnings.isEmpty()) {
+                QMessageBox::warning(this, tr("Back-Geocoding Warning"), qualityWarnings.join('\n'));
+            }
         });
     connect(this, &QWidget::destroyed, this, &S1_TOPS_BackGeocoding::StopThread);
     connect(ui->buttonBox, &QDialogButtonBox::rejected, this, &S1_TOPS_BackGeocoding::StopThread);// , Qt::QueuedConnection);

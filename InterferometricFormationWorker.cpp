@@ -2,6 +2,7 @@
 #include <Utils.h>
 #include <Deflat.h>
 #include <FormatConversion.h>
+#include <Hdf5IO.h>
 #include "Package.h"
 #include "icon_source.h"
 #include <QMessageBox>
@@ -12,6 +13,7 @@
 #include <QThread>
 #include <QElapsedTimer>
 #include <cmath>
+#include <vector>
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
 
@@ -34,6 +36,308 @@ static thread_local InterferometricFormationWorker* current_worker = nullptr;
 static thread_local int g_substep_prog_start = 0;
 static thread_local int g_substep_prog_end = 0;
 static thread_local QString g_current_pair_info;
+
+static bool __stdcall DeflatProgressCallbackImpl(int progress, const char* message);
+
+struct CommonCoverageRun
+{
+    int outputFirstRow = 0;
+    int sourceFirstRow = 0;
+    int rowCount = 0;
+};
+
+struct CommonCoverageContract
+{
+    bool applies = false;
+    QString signature;
+    QString sourceFrameMapping;
+    QString geometryReferenceFile;
+    int sourceRowCount = 0;
+    int sourceRowOrigin = 0;
+    int sourceFirstBurst = 0;
+    int sourceLastBurst = 0;
+    int sourceBurstOffset = 0;
+    int commonFirstBurst = 0;
+    int commonLastBurst = 0;
+    int commonBurstCount = 0;
+    int partialCoverage = 0;
+    QString sourceRowMapSemantics;
+    int sourceRowMapAzimuthFactor = 1;
+    cv::Mat sourceRowMap;
+    cv::Mat retainedIndices;
+    cv::Mat sourceRowRanges;
+    std::vector<CommonCoverageRun> runs;
+};
+
+static bool loadCommonCoverageContract(const QString& h5Path, int expectedRows,
+                                       CommonCoverageContract& contract, QString& error)
+{
+    contract = CommonCoverageContract();
+    FormatConversion conversion;
+    std::string productContract;
+    NodeUtils::Hdf5Locker locker(h5Path.toStdString());
+    if (!locker.isLocked()) {
+        error = QStringLiteral("Unable to lock common-coverage input: %1").arg(h5Path);
+        return false;
+    }
+    int contractExists = 0;
+    const QByteArray h5Utf8 = h5Path.toUtf8();
+    if (Hdf5IO::datasetExists(h5Utf8.constData(), "s1_tops_product_contract", &contractExists) != 0) {
+        error = QStringLiteral("Unable to inspect common-coverage contract: %1").arg(h5Path);
+        return false;
+    }
+    if (contractExists == 0) {
+        return true;
+    }
+    if (conversion.read_str_from_h5(h5Path.toStdString().c_str(), "s1_tops_product_contract", productContract) != 0 ||
+        QString::fromStdString(productContract) != QStringLiteral("continuous_deburst_common_coverage_v1")) {
+        error = QStringLiteral("Common-coverage product contract is missing or unknown: %1").arg(h5Path);
+        return false;
+    }
+
+    std::string signature;
+    std::string sourceFrameMapping;
+    std::string geometryReferenceFile;
+    if (conversion.read_str_from_h5(h5Path.toStdString().c_str(), "s1_tops_coverage_signature", signature) != 0 ||
+        conversion.read_str_from_h5(h5Path.toStdString().c_str(), "s1_tops_source_frame_mapping", sourceFrameMapping) != 0 ||
+        conversion.read_str_from_h5(h5Path.toStdString().c_str(), "s1_tops_geometry_reference_file", geometryReferenceFile) != 0 ||
+        conversion.read_str_from_h5(h5Path.toStdString().c_str(), "s1_tops_output_source_row_map_semantics", productContract) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_output_source_row_map_multilook_azimuth_factor", &contract.sourceRowMapAzimuthFactor) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_source_full_burst_row_count", &contract.sourceRowCount) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_output_source_row_origin", &contract.sourceRowOrigin) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_source_burst_first", &contract.sourceFirstBurst) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_source_burst_last", &contract.sourceLastBurst) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_source_burst_offset", &contract.sourceBurstOffset) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_common_master_first_burst", &contract.commonFirstBurst) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_common_master_last_burst", &contract.commonLastBurst) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_common_master_burst_count", &contract.commonBurstCount) != 0 ||
+        conversion.read_int_from_h5(h5Path.toStdString().c_str(), "s1_tops_partial_burst_coverage", &contract.partialCoverage) != 0 ||
+        conversion.read_array_from_h5(h5Path.toStdString().c_str(), "s1_tops_output_source_row_map", contract.sourceRowMap) != 0 ||
+        conversion.read_array_from_h5(h5Path.toStdString().c_str(), "s1_tops_retained_master_burst_indices", contract.retainedIndices) != 0 ||
+        conversion.read_array_from_h5(h5Path.toStdString().c_str(), "s1_tops_retained_source_row_ranges", contract.sourceRowRanges) != 0 ||
+        signature.empty() || sourceFrameMapping.empty() || geometryReferenceFile.empty() ||
+        contract.sourceRowCount <= 0 || contract.sourceRowOrigin < 0 ||
+        contract.sourceRowOrigin >= contract.sourceRowCount || contract.commonFirstBurst < 1 ||
+        contract.commonLastBurst < contract.commonFirstBurst ||
+        contract.commonBurstCount != contract.commonLastBurst - contract.commonFirstBurst + 1 ||
+        contract.sourceFirstBurst != contract.commonFirstBurst + contract.sourceBurstOffset ||
+        contract.sourceLastBurst != contract.commonLastBurst + contract.sourceBurstOffset ||
+        (contract.partialCoverage != 0 && contract.partialCoverage != 1) ||
+        contract.sourceRowMap.type() != CV_32S || contract.sourceRowMap.rows != expectedRows || contract.sourceRowMap.cols != 1 ||
+        contract.retainedIndices.type() != CV_32S || contract.retainedIndices.rows != 1 ||
+        contract.retainedIndices.cols != contract.commonBurstCount ||
+        contract.sourceRowRanges.type() != CV_32S || contract.sourceRowRanges.rows != contract.commonBurstCount ||
+        contract.sourceRowRanges.cols != 2 ||
+        (QString::fromStdString(productContract) != QStringLiteral("full_deburst_source_row_v1") &&
+         QString::fromStdString(productContract) != QStringLiteral("multilook_azimuth_block_center_v1")) ||
+        contract.sourceRowMapAzimuthFactor < 1 ||
+        (QString::fromStdString(productContract) == QStringLiteral("full_deburst_source_row_v1") && contract.sourceRowMapAzimuthFactor != 1) ||
+        (QString::fromStdString(productContract) == QStringLiteral("multilook_azimuth_block_center_v1") && contract.sourceRowMapAzimuthFactor <= 1)) {
+        error = QStringLiteral("Common-coverage contract is incomplete or invalid: %1").arg(h5Path);
+        return false;
+    }
+
+    contract.signature = QString::fromStdString(signature);
+    contract.sourceFrameMapping = QString::fromStdString(sourceFrameMapping);
+    contract.geometryReferenceFile = QString::fromStdString(geometryReferenceFile);
+    contract.sourceRowMapSemantics = QString::fromStdString(productContract);
+    for (int segment = 0; segment < contract.commonBurstCount; ++segment) {
+        const int rangeStart = contract.sourceRowRanges.at<int>(segment, 0);
+        const int rangeEnd = contract.sourceRowRanges.at<int>(segment, 1);
+        if (contract.retainedIndices.at<int>(0, segment) != contract.commonFirstBurst + segment ||
+            rangeStart < 0 || rangeEnd <= rangeStart || rangeEnd > contract.sourceRowCount) {
+            error = QStringLiteral("Common-coverage retained burst range is invalid: %1").arg(h5Path);
+            return false;
+        }
+    }
+    for (int row = 0; row < contract.sourceRowMap.rows; ++row) {
+        const int sourceRow = contract.sourceRowMap.at<int>(row, 0);
+        bool inRetainedRange = false;
+        for (int segment = 0; segment < contract.commonBurstCount; ++segment) {
+            if (sourceRow >= contract.sourceRowRanges.at<int>(segment, 0) &&
+                sourceRow < contract.sourceRowRanges.at<int>(segment, 1)) {
+                inRetainedRange = true;
+                break;
+            }
+        }
+        if (!inRetainedRange || (row > 0 && sourceRow <= contract.sourceRowMap.at<int>(row - 1, 0))) {
+            error = QStringLiteral("Common-coverage source-row map does not match retained ranges: %1").arg(h5Path);
+            return false;
+        }
+    }
+    contract.runs.clear();
+    int runStart = 0;
+    for (int row = 1; row <= contract.sourceRowMap.rows; ++row) {
+        if (row < contract.sourceRowMap.rows &&
+            contract.sourceRowMap.at<int>(row, 0) == contract.sourceRowMap.at<int>(row - 1, 0) + 1) continue;
+        CommonCoverageRun run;
+        run.outputFirstRow = runStart;
+        run.sourceFirstRow = contract.sourceRowMap.at<int>(runStart, 0);
+        run.rowCount = row - runStart;
+        contract.runs.push_back(run);
+        runStart = row;
+    }
+    if (contract.sourceRowMap.rows != expectedRows || contract.runs.empty() ||
+        contract.sourceRowMap.at<int>(0, 0) != contract.sourceRowOrigin) {
+        error = QStringLiteral("Common-coverage source-row map has an invalid length: %1").arg(h5Path);
+        return false;
+    }
+    contract.applies = true;
+    return true;
+}
+
+static bool contractsMatch(const CommonCoverageContract& master, const CommonCoverageContract& slave)
+{
+    return master.applies == slave.applies && (!master.applies ||
+        (master.signature == slave.signature && master.sourceFrameMapping == slave.sourceFrameMapping &&
+         master.geometryReferenceFile == slave.geometryReferenceFile && master.sourceRowCount == slave.sourceRowCount &&
+         master.sourceRowOrigin == slave.sourceRowOrigin &&
+         master.sourceRowMapSemantics == slave.sourceRowMapSemantics &&
+         master.sourceRowMapAzimuthFactor == slave.sourceRowMapAzimuthFactor &&
+         master.commonFirstBurst == slave.commonFirstBurst &&
+         master.commonLastBurst == slave.commonLastBurst &&
+         master.commonBurstCount == slave.commonBurstCount &&
+         master.partialCoverage == slave.partialCoverage &&
+         master.retainedIndices.size() == slave.retainedIndices.size() &&
+         master.sourceRowRanges.size() == slave.sourceRowRanges.size() &&
+         cv::countNonZero(master.retainedIndices != slave.retainedIndices) == 0 &&
+         cv::countNonZero(master.sourceRowRanges != slave.sourceRowRanges) == 0 &&
+         master.sourceRowMap.size() == slave.sourceRowMap.size() &&
+         cv::countNonZero(master.sourceRowMap != slave.sourceRowMap) == 0));
+}
+
+static bool writeCommonCoverageContract(const QString& outputPath, const CommonCoverageContract& contract,
+                                        const QString& masterPath, QString& error)
+{
+    if (!contract.applies) return true;
+    const QString masterName = QFileInfo(masterPath).fileName();
+    if (contract.geometryReferenceFile != masterName) {
+        error = QStringLiteral("Common-coverage geometry reference does not identify the master output: %1").arg(masterPath);
+        return false;
+    }
+    return NodeUtils::writeStringToH5(outputPath, QStringLiteral("s1_tops_product_contract"),
+                                      std::string("continuous_deburst_common_coverage_v1"), &error) &&
+        NodeUtils::writeStringToH5(outputPath, QStringLiteral("s1_tops_coverage_signature"), contract.signature.toStdString(), &error) &&
+        NodeUtils::writeStringToH5(outputPath, QStringLiteral("s1_tops_source_frame_mapping"), contract.sourceFrameMapping.toStdString(), &error) &&
+        NodeUtils::writeStringToH5(outputPath, QStringLiteral("s1_tops_output_source_row_map_semantics"), contract.sourceRowMapSemantics.toStdString(), &error) &&
+        NodeUtils::writeStringToH5(outputPath, QStringLiteral("s1_tops_geometry_reference_file"), masterName.toStdString(), &error) &&
+        NodeUtils::writeStringToH5(outputPath, QStringLiteral("s1_tops_geometry_reference_path"), masterPath.toStdString(), &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_source_full_burst_row_count"), contract.sourceRowCount, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_output_source_row_origin"), contract.sourceRowOrigin, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_source_burst_first"), contract.sourceFirstBurst, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_source_burst_last"), contract.sourceLastBurst, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_source_burst_offset"), contract.sourceBurstOffset, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_common_master_first_burst"), contract.commonFirstBurst, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_common_master_last_burst"), contract.commonLastBurst, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_common_master_burst_count"), contract.commonBurstCount, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_partial_burst_coverage"), contract.partialCoverage, &error) &&
+        NodeUtils::writeScalarToH5(outputPath, QStringLiteral("s1_tops_output_source_row_map_multilook_azimuth_factor"), contract.sourceRowMapAzimuthFactor, &error) &&
+        NodeUtils::writeMatToH5(outputPath, QStringLiteral("s1_tops_output_source_row_map"), contract.sourceRowMap, &error) &&
+        NodeUtils::writeMatToH5(outputPath, QStringLiteral("s1_tops_retained_master_burst_indices"), contract.retainedIndices, &error) &&
+        NodeUtils::writeMatToH5(outputPath, QStringLiteral("s1_tops_retained_source_row_ranges"), contract.sourceRowRanges, &error);
+}
+
+static int applySegmentedDeflat(Deflat& flat, const CommonCoverageContract& contract,
+                                const Mat& stateVec1, const Mat& stateVec2, const Mat& lonCoef, const Mat& latCoef,
+                                const Mat& phase, int offsetRow, int offsetCol, double prf1, double prf2,
+                                double wavelength, Mat& correctedPhase, Mat& segmentCoefficients)
+{
+    if (!contract.applies) {
+        return flat.deflat(stateVec1, stateVec2, lonCoef, latCoef, phase, offsetRow, offsetCol, 0,
+                           1 / prf1, 1 / prf2, 1, wavelength, correctedPhase, segmentCoefficients,
+                           DeflatProgressCallbackImpl);
+    }
+    correctedPhase.create(phase.rows, phase.cols, phase.type());
+    segmentCoefficients.create(static_cast<int>(contract.runs.size()), 6, CV_64F);
+    for (int index = 0; index < static_cast<int>(contract.runs.size()); ++index) {
+        const CommonCoverageRun& run = contract.runs[index];
+        Mat segmentPhase = phase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount);
+        Mat correctedSegment;
+        Mat coefficient;
+        const int result = flat.deflat(stateVec1, stateVec2, lonCoef, latCoef, segmentPhase,
+                                       run.sourceFirstRow, offsetCol, 0, 1 / prf1, 1 / prf2, 1, wavelength,
+                                       correctedSegment, coefficient, DeflatProgressCallbackImpl);
+        if (result != 0 || correctedSegment.size() != segmentPhase.size() || coefficient.type() != CV_64F ||
+            coefficient.rows != 1 || coefficient.cols != 6) return result == 0 ? -1 : result;
+        correctedSegment.copyTo(correctedPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount));
+        coefficient.copyTo(segmentCoefficients.row(index));
+    }
+    return 0;
+}
+
+static int applySegmentedTopography(Deflat& flat, const CommonCoverageContract& contract,
+                                    Mat& stateVec1, Mat& stateVec2, Mat& lonCoef, Mat& latCoef, Mat& incCoef,
+                                    double prf1, double prf2, int sceneWidth, int offsetRow, int offsetCol,
+                                    double nearRangeTime, double rangeSpacing, double wavelength,
+                                    double acquisitionStartTime, double acquisitionStopTime, const QString& demPath,
+                                    const Mat& inputPhase, Mat& outputPhase)
+{
+    if (!contract.applies) {
+        Mat topographyPhase;
+        const int result = flat.topography_simulation(topographyPhase, stateVec1, stateVec2, lonCoef, latCoef, incCoef,
+            prf1, prf2, inputPhase.rows, sceneWidth, offsetRow, offsetCol, nearRangeTime, rangeSpacing, wavelength,
+            acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str(), 20, DeflatProgressCallbackImpl);
+        if (result != 0 || topographyPhase.size() != inputPhase.size()) return result == 0 ? -1 : result;
+        outputPhase = inputPhase - topographyPhase;
+        Utils util;
+        return util.wrap(outputPhase, outputPhase);
+    }
+    outputPhase.create(inputPhase.rows, inputPhase.cols, inputPhase.type());
+    for (const CommonCoverageRun& run : contract.runs) {
+        Mat inputSegment = inputPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount);
+        Mat topographySegment;
+        const int result = flat.topography_simulation(topographySegment, stateVec1, stateVec2, lonCoef, latCoef, incCoef,
+            prf1, prf2, run.rowCount, sceneWidth, run.sourceFirstRow, offsetCol, nearRangeTime, rangeSpacing, wavelength,
+            acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str(), 20, DeflatProgressCallbackImpl);
+        if (result != 0 || topographySegment.size() != inputSegment.size()) return result == 0 ? -1 : result;
+        Mat correctedSegment = inputSegment - topographySegment;
+        Utils util;
+        if (util.wrap(correctedSegment, correctedSegment) != 0) return -1;
+        correctedSegment.copyTo(outputPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount));
+    }
+    return 0;
+}
+
+static int multilookCommonCoveragePhase(Utils& util,
+                                        const CommonCoverageContract& contract,
+                                        const Mat& inputPhase,
+                                        Mat& outputPhase,
+                                        int multilook_rg,
+                                        int multilook_az)
+{
+    if (!contract.applies || multilook_az <= 1) {
+        return util.multilook(inputPhase, outputPhase, multilook_rg, multilook_az);
+    }
+    if (inputPhase.empty() || inputPhase.rows != contract.sourceRowMap.rows ||
+        multilook_rg < 1 || multilook_az < 1 || contract.runs.empty()) {
+        return -1;
+    }
+
+    std::vector<Mat> runOutputs;
+    runOutputs.reserve(contract.runs.size());
+    int expectedRows = 0;
+    for (const CommonCoverageRun& run : contract.runs) {
+        if (run.outputFirstRow < 0 || run.rowCount <= 0 ||
+            run.outputFirstRow + run.rowCount > inputPhase.rows) {
+            return -1;
+        }
+        const int runOutputRows = run.rowCount / multilook_az;
+        if (runOutputRows <= 0) continue;
+
+        Mat runOutput;
+        const int result = util.multilook(
+            inputPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount),
+            runOutput, multilook_rg, multilook_az);
+        if (result != 0 || runOutput.empty() || runOutput.rows != runOutputRows) {
+            return result == 0 ? -1 : result;
+        }
+        runOutputs.push_back(runOutput);
+        expectedRows += runOutputRows;
+    }
+    if (runOutputs.empty() || expectedRows <= 0) return -1;
+    cv::vconcat(runOutputs, outputPhase);
+    return outputPhase.rows == expectedRows ? 0 : -1;
+}
 
 static bool __stdcall DeflatProgressCallbackImpl(int progress, const char* message) {
     thread_local QElapsedTimer s_cbTimer;
@@ -130,6 +434,43 @@ static bool reduceStrictValidMask(const Mat& inputMask, int multilookRg, int mul
         }
     }
     return true;
+}
+
+static bool reduceStrictValidMaskCommonCoverage(const CommonCoverageContract& contract,
+                                                const Mat& inputMask,
+                                                int multilookRg,
+                                                int multilookAz,
+                                                Mat& outputMask)
+{
+    if (!contract.applies || multilookAz <= 1) {
+        return reduceStrictValidMask(inputMask, multilookRg, multilookAz, outputMask);
+    }
+    if (inputMask.empty() || inputMask.rows != contract.sourceRowMap.rows ||
+        contract.runs.empty()) {
+        return false;
+    }
+
+    std::vector<Mat> runOutputs;
+    runOutputs.reserve(contract.runs.size());
+    for (const CommonCoverageRun& run : contract.runs) {
+        const int runOutputRows = run.rowCount / multilookAz;
+        if (run.outputFirstRow < 0 || run.rowCount <= 0 ||
+            run.outputFirstRow + run.rowCount > inputMask.rows) {
+            return false;
+        }
+        if (runOutputRows <= 0) continue;
+        Mat runOutput;
+        if (!reduceStrictValidMask(inputMask.rowRange(run.outputFirstRow,
+                                                     run.outputFirstRow + run.rowCount),
+                                   multilookRg, multilookAz, runOutput) ||
+            runOutput.rows != runOutputRows) {
+            return false;
+        }
+        runOutputs.push_back(runOutput);
+    }
+    if (runOutputs.empty()) return false;
+    cv::vconcat(runOutputs, outputMask);
+    return !outputMask.empty();
 }
 
 static bool buildCoherenceSupportCount(
@@ -326,6 +667,17 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
         emit errorProcess(error);
         return;
     }
+
+    CommonCoverageContract commonCoverage;
+    QString commonCoverageError;
+    if (!loadCommonCoverageContract(master_path, sceneHeight, commonCoverage, commonCoverageError)) {
+        emit errorProcess(commonCoverageError);
+        return;
+    }
+    if (commonCoverage.applies && commonCoverage.geometryReferenceFile != QFileInfo(master_path).fileName()) {
+        emit errorProcess(QStringLiteral("共同 burst 几何参考不是实际主图输出：%1").arg(master_path));
+        return;
+    }
     
     int total_pairs = input_paths.size() - 1;
     if (total_pairs <= 0) total_pairs = 1;
@@ -346,6 +698,14 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 return;
             }
             QString slave_path = input_paths.at(i);
+            CommonCoverageContract outputCommonCoverage = commonCoverage;
+
+            CommonCoverageContract slaveCoverage;
+            if (!loadCommonCoverageContract(slave_path, sceneHeight, slaveCoverage, commonCoverageError) ||
+                !contractsMatch(commonCoverage, slaveCoverage)) {
+                emit errorProcess(QStringLiteral("主辅干涉输入的共同 burst coverage contract 不一致：%1").arg(slave_path));
+                return;
+            }
 
             QFileInfo slave_fileinfo(slave_path);
             QString slave_name = slave_fileinfo.baseName();
@@ -416,8 +776,8 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     NodeUtils::readScalarFromH5(slave_path, "prf", prf2);
                 }
 
-                int ret_deflat = flat.deflat(statevec, statevec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0,
-                    1 / prf, 1 / prf2, 1, wavelength, phase_deflatted, flat_phase_coefficient, DeflatProgressCallbackImpl);
+                int ret_deflat = applySegmentedDeflat(flat, commonCoverage, statevec, statevec2, lon_coef, lat_coef,
+                    phase, offset_row, offset_col, prf, prf2, wavelength, phase_deflatted, flat_phase_coefficient);
                 phase_deflatted.copyTo(phase);
 
                 if (ret_deflat == -2) {
@@ -438,9 +798,11 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 g_substep_prog_end = pair_prog_start + pair_span * 0.8;
                 g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在进行地形相位模拟").arg(pair).arg(total_pairs);
 
-                int ret_topo = flat.topography_simulation(phase_deflatted, statevec, statevec2, lon_coef, lat_coef, inc_coef, prf, prf2,
-                    sceneHeight, sceneWidth, offset_row, offset_col, nearRangeTime, rangeSpacing, wavelength,
-                    acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str(), 20, DeflatProgressCallbackImpl);
+                if (!isdeflat) phase_deflatted = phase.clone();
+                Mat topographyCorrected;
+                int ret_topo = applySegmentedTopography(flat, commonCoverage, statevec, statevec2, lon_coef, lat_coef,
+                    inc_coef, prf, prf2, sceneWidth, offset_row, offset_col, nearRangeTime, rangeSpacing, wavelength,
+                    acquisitionStartTime, acquisitionStopTime, demPath, phase_deflatted, topographyCorrected);
 
                 if (ret_topo == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Topography simulation cancelled by user.");
@@ -453,22 +815,59 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     return;
                 }
                 else {
-                    phase_deflatted = phase - phase_deflatted;
-                    if (util.wrap(phase_deflatted, phase) < 0) {
-                        emit errorProcess(QStringLiteral("地形相位包裹失败"));
-                        return;
-                    }
+                    phase_deflatted = topographyCorrected;
+                    phase_deflatted.copyTo(phase);
                 }
             }
 
             if (multilook_rg > 1 || multilook_az > 1)
             {
-                if (util.multilook(phase, phase_deflatted, multilook_rg, multilook_az) < 0 ||
+                if (multilookCommonCoveragePhase(util, outputCommonCoverage, phase,
+                                                 phase_deflatted, multilook_rg, multilook_az) < 0 ||
                     phase_deflatted.empty()) {
                     emit errorProcess(QStringLiteral("干涉相位多视处理失败"));
                     return;
                 }
                 phase_deflatted.copyTo(phase);
+            }
+
+            if (outputCommonCoverage.applies && multilook_az == 1 &&
+                outputCommonCoverage.sourceRowMap.rows != phase.rows) {
+                emit errorProcess(QStringLiteral("共同 burst source-row map 与相位行数不一致"));
+                return;
+            }
+            if (outputCommonCoverage.applies && multilook_az > 1)
+            {
+                const cv::Mat sourceRowMapBeforeMultilook = outputCommonCoverage.sourceRowMap;
+                std::vector<int> representatives;
+                representatives.reserve(static_cast<size_t>(phase.rows));
+                for (const CommonCoverageRun& run : outputCommonCoverage.runs) {
+                    const int runOutputRows = run.rowCount / multilook_az;
+                    for (int block = 0; block < runOutputRows; ++block) {
+                        const int representativeRow = run.outputFirstRow +
+                            block * multilook_az + multilook_az / 2;
+                        if (representativeRow < run.outputFirstRow ||
+                            representativeRow >= run.outputFirstRow + run.rowCount ||
+                            representativeRow >= sourceRowMapBeforeMultilook.rows) {
+                            emit errorProcess(QStringLiteral("共同 burst 多视 source-row representative 越界"));
+                            return;
+                        }
+                        representatives.push_back(
+                            sourceRowMapBeforeMultilook.at<int>(representativeRow, 0));
+                    }
+                }
+                if (representatives.empty() || static_cast<int>(representatives.size()) != phase.rows) {
+                    emit errorProcess(QStringLiteral("共同 burst source-row map 与多视相位行数不一致"));
+                    return;
+                }
+                cv::Mat multilookSourceRowMap(static_cast<int>(representatives.size()), 1, CV_32S);
+                for (int row = 0; row < multilookSourceRowMap.rows; ++row) {
+                    multilookSourceRowMap.at<int>(row, 0) = representatives[row];
+                }
+                outputCommonCoverage.sourceRowMap = multilookSourceRowMap;
+                outputCommonCoverage.sourceRowOrigin = multilookSourceRowMap.at<int>(0, 0);
+                outputCommonCoverage.sourceRowMapSemantics = QStringLiteral("multilook_azimuth_block_center_v1");
+                outputCommonCoverage.sourceRowMapAzimuthFactor *= multilook_az;
             }
 
             if (isdeflat && flat_phase_coefficient.empty())
@@ -479,10 +878,18 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
 
             {
                 NodeUtils::Hdf5Locker locker;
+                const int outputSceneHeight = commonCoverage.applies ? phase.rows : sceneHeight;
+                int outputSceneHeightValue = outputSceneHeight;
                 ret = FC.creat_new_h5(h5_path.toStdString().c_str());
                 if (ret >= 0) {
                     if ((!flat_phase_coefficient.empty() &&
                          !writeArray(h5_path, "flat_phase_coefficient", flat_phase_coefficient)) ||
+                        (commonCoverage.applies && !flat_phase_coefficient.empty() &&
+                         !writeArray(h5_path, "s1_tops_segment_flat_phase_coefficients", flat_phase_coefficient)) ||
+                        (commonCoverage.applies && !flat_phase_coefficient.empty() &&
+                         !NodeUtils::writeStringToH5(h5_path,
+                             QStringLiteral("s1_tops_flat_phase_coefficient_contract"),
+                             std::string("per_source_row_run_v1; flat_phase_coefficient rows are not a single-scene model; use s1_tops_output_source_row_map"))) ||
                         !NodeUtils::writeScalarToH5(h5_path, "phase_processing_schema_version", 1) ||
                         !NodeUtils::writeScalarToH5(h5_path, "phase_flat_earth_removed", isdeflat ? 1 : 0) ||
                         !NodeUtils::writeScalarToH5(h5_path, "phase_topography_removed", istopo_removal ? 1 : 0) ||
@@ -495,7 +902,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                           !NodeUtils::writeStringToH5(h5_path, "terrain_dem_coverage_status",
                               std::string("full_source_support_verified")))) ||
                         !writeArray(h5_path, "range_len", Mat(1, 1, CV_32S, &sceneWidth)) ||
-                        !writeArray(h5_path, "azimuth_len", Mat(1, 1, CV_32S, &sceneHeight)) ||
+                        !writeArray(h5_path, "azimuth_len", Mat(1, 1, CV_32S, &outputSceneHeightValue)) ||
                         !writeArray(h5_path, "multilook_rg", Mat(1, 1, CV_32S, &multilook_rg)) ||
                         !writeArray(h5_path, "multilook_az", Mat(1, 1, CV_32S, &multilook_az)) ||
                         !writeArray(h5_path, "phase", phase)) {
@@ -505,6 +912,10 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     if (!NodeUtils::writeSourcePathMetadata(h5_path, master_path.toStdString(),
                                                             slave_path.toStdString(), &sourcePathMetadataError)) {
                         emit errorProcess(QStringLiteral("写入源路径元数据失败: %1").arg(sourcePathMetadataError));
+                        return;
+                    }
+                    if (!writeCommonCoverageContract(h5_path, outputCommonCoverage, master_path, sourcePathMetadataError)) {
+                        emit errorProcess(QStringLiteral("写入共同 burst coverage provenance 失败: %1").arg(sourcePathMetadataError));
                         return;
                     }
                 }
@@ -529,8 +940,9 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 Mat coherence;
                 Mat phaseValidMask;
                 Mat validSampleCount;
-                if (!reduceStrictValidMask(
-                        slcPairValidMask, multilook_rg, multilook_az, phaseValidMask) ||
+                if (!reduceStrictValidMaskCommonCoverage(
+                        outputCommonCoverage, slcPairValidMask, multilook_rg,
+                        multilook_az, phaseValidMask) ||
                     phaseValidMask.size() != phase.size()) {
                     emit errorProcess(QStringLiteral("相干性有效样本掩膜与相位网格不一致"));
                     return;

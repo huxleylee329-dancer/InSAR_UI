@@ -2,6 +2,7 @@
 #include <QtWidgets/QMainWindow>
 #include <QStringList>
 #include<qstandarditemmodel.h>
+#include <QPointer>
 #include "ui_S1TopsBackGeocoding.h"
 #include "S1TopsBackGeocodingWorker.h"
 
@@ -28,7 +29,7 @@ public slots:
 private:
     Ui::S1TopsBackGeocoding* ui;
     QStandardItemModel* copy;
-    S1TopsBackGeocodingWorker* S1_TOPS_BackGeocoding_thread;
+    QPointer<S1TopsBackGeocodingWorker> S1_TOPS_BackGeocoding_thread;
     QString save_path;
     QString projectFile;
     int image_number;

@@ -58,5 +58,7 @@ private:
     std::atomic<bool> m_stopRequested{false};
     mutable std::mutex m_backGeocodingMutex;
     std::shared_ptr<Sentinel1BackGeocoding> m_backGeocoding;
+    QString m_lastNativeErrorMessage;
+    QStringList m_nativeQualityWarnings;
     TaskLogContext m_taskLogContext;
 };

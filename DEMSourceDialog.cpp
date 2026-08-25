@@ -486,6 +486,8 @@ void DEMSourceDialog::restoreUiAfterFailure()
 
 void DEMSourceDialog::onFinished()
 {
+    m_progressBar->setValue(100);
+    m_statusLabel->setText(QStringLiteral("DEM 处理完成"));
     if (m_thread) {
         m_thread->quit();
         m_thread->wait();

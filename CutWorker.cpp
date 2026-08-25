@@ -72,6 +72,12 @@ void CutWorker::Cut(QList<double> para,
         QFileInfo fileinfo = QFileInfo(path);
         QString name = fileinfo.baseName();
         QByteArray path_str = path.toLocal8Bit();
+
+        QString geometryContractError;
+        if (!NodeUtils::validateSentinelGeometryContract(path, &geometryContractError)) {
+            emit errorProcess(geometryContractError);
+            return;
+        }
         
         {
             NodeUtils::Hdf5Locker locker(path, 5000);
@@ -217,6 +223,11 @@ void CutWorker::Cut2(double h5_left,
         QString path = inputPaths.at(i);
         QFileInfo fileinfo = QFileInfo(path);
         QString name = fileinfo.baseName();
+        QString geometryContractError;
+        if (!NodeUtils::validateSentinelGeometryContract(path, &geometryContractError)) {
+            emit errorProcess(geometryContractError);
+            return;
+        }
         QByteArray path_str = path.toLocal8Bit();
         int rows = 0, cols = 0;
         {

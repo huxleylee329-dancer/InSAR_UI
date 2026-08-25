@@ -1531,6 +1531,32 @@ void InterferometricFormationNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("interferometric.output.interferogram"));
+    const ProductDescriptor::Ptr inputDescriptor = m_inputData
+        ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr();
+    if (inputDescriptor) {
+        const QMap<QString, QString> inputProvenance = inputDescriptor->provenance();
+        if (inputProvenance.value(QStringLiteral("product_contract")) ==
+            QStringLiteral("continuous_deburst_common_coverage_v1")) {
+            const QStringList coverageFields = {
+                QStringLiteral("partial_burst_coverage"),
+                QStringLiteral("product_contract"),
+                QStringLiteral("coverage_signature"),
+                QStringLiteral("common_master_first_burst"),
+                QStringLiteral("common_master_last_burst"),
+                QStringLiteral("common_master_burst_count"),
+                QStringLiteral("source_row_map_required"),
+                QStringLiteral("geometry_reference_required")
+            };
+            for (const QString& field : coverageFields) {
+                const QString value = inputProvenance.value(field).trimmed();
+                if (value.isEmpty()) {
+                    onError(QStringLiteral("共同 burst 输入缺少描述符 provenance：%1").arg(field));
+                    return;
+                }
+                descriptorProvenance.insert(field, value);
+            }
+        }
+    }
     const QJsonObject inputGeometry = m_inputData
         ? NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor())
         : QJsonObject();

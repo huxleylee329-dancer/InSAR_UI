@@ -51,7 +51,8 @@ int copySentinelRegistrationMetadata(const std::string& sourcePath,
     static const char* const stringDatasets[] = {
         "file_type", "sensor", "polarization", "imaging_mode", "lookside", "orbit_dir", "swath",
         "acquisition_start_time", "acquisition_stop_time", "source_1", "source_2",
-        "source_path_encoding", "source_path_format_version"
+        "source_path_encoding", "source_path_format_version",
+        "sentinel_geometry_coefficient_contract"
     };
     static const char* const arrayDatasets[] = {
         "orbit_altitude", "carrier_frequency", "heading", "prf", "inc_center", "gcps",
@@ -295,6 +296,12 @@ struct BackGeocodingOutputCleanupGuard {
 					cleanupFailures.append(jpgPath);
 				}
 			}
+			// Full-burst files are worker-owned scratch artifacts even if the final
+			// output path existed before this legacy non-staging run.
+			const QString fullBurstPath = path + QStringLiteral(".fullburst");
+			if (QFile::exists(fullBurstPath) && !QFile::remove(fullBurstPath)) {
+				cleanupFailures.append(fullBurstPath);
+			}
 		}
 		QDir outputDir(savePath + "/" + dstNode);
 		if (!outputDirExisted && outputDir.exists() &&
@@ -371,6 +378,19 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
     if (!h5File.isEmpty()) message += QStringLiteral(" [h5=%1]").arg(h5File);
     if (!dataset.isEmpty()) message += QStringLiteral(" [dataset=%1]").arg(dataset);
 
+    if (event->severity == INSAR_DIAGNOSTIC_ERROR &&
+        (phase == QStringLiteral("burst_mapping.preflight") ||
+         phase == QStringLiteral("burst_alignment.preflight") ||
+         phase == QStringLiteral("refinement.burst_offset_fallback"))) {
+        m_lastNativeErrorMessage = message;
+    }
+    if (event->severity == INSAR_DIAGNOSTIC_WARNING &&
+        (phase == QStringLiteral("burst_mapping.partial_coverage") ||
+         phase == QStringLiteral("range.partial_coverage_skipped") ||
+         phase == QStringLiteral("esd.partial_coverage_skipped"))) {
+        m_nativeQualityWarnings.append(message);
+    }
+
     LogTargets targets = LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile;
     if (level == InSARLogManager::LevelError || level == InSARLogManager::LevelWarning) {
         targets |= LogTarget::UserProjectLog;
@@ -382,6 +402,8 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
 void S1TopsBackGeocodingWorker::prepareForStart()
 {
 	m_stopRequested.store(false, std::memory_order_release);
+	m_lastNativeErrorMessage.clear();
+	m_nativeQualityWarnings.clear();
 	std::lock_guard<std::mutex> locker(m_backGeocodingMutex);
 	m_backGeocoding.reset();
 }
@@ -446,6 +468,11 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
         QString identityError;
         if (!readSentinel1ProductIdentity(inputPaths.at(index), identity, identityError)) {
             emit errorProcess(identityError);
+            return;
+        }
+        QString geometryContractError;
+        if (!NodeUtils::validateSentinelGeometryContract(inputPaths.at(index), &geometryContractError)) {
+            emit errorProcess(geometryContractError);
             return;
         }
         if (index == 0) {
@@ -582,7 +609,21 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	ret = backgeocoding.backGeoCodingCoregistration(&refinementOptions, &refinementResult,
 		&S1TopsBackGeocodingWorker::onNativeDiagnostic, this);
 	if (ret == -2 || cancellationRequested()) { finishCancelled(); return; }
-	if (ret != 0) { emit errorProcess(QStringLiteral("Sentinel-1 registration transaction failed: %1").arg(ret)); return; }
+	if (ret != 0) {
+		if (ret == SENTINEL_BACK_GEOCODING_BURST_MAPPING_ERROR ||
+			ret == SENTINEL_BACK_GEOCODING_BURST_OFFSET_FALLBACK_ERROR) {
+			const QString diagnostic = m_lastNativeErrorMessage.trimmed();
+			const QString failureKind = ret == SENTINEL_BACK_GEOCODING_BURST_MAPPING_ERROR
+				? QStringLiteral("burst mapping preflight")
+				: QStringLiteral("burst alignment preflight");
+			emit errorProcess(diagnostic.isEmpty()
+				? QStringLiteral("Sentinel-1 %1 failed (error %2): burst alignment must be estimated before DEM projection.").arg(failureKind).arg(ret)
+				: QStringLiteral("Sentinel-1 %1 failed: %2").arg(failureKind, diagnostic));
+		} else {
+			emit errorProcess(QStringLiteral("Sentinel-1 registration transaction failed: %1").arg(ret));
+		}
+		return;
+	}
 
 	const bool hasRangeOffsets = refinementOptions.rangeOffsets != nullptr;
 	const bool expectsCoreOnlyBaseline = refinementOptions.enableEsd == 0 &&
@@ -1389,6 +1430,8 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	int rows = outArray.rows;
 	int cols = outArray.cols;
 	int offset_col = 0;
+	const QString geometryReferenceFile = QFileInfo(QString::fromStdString(masterOutputPath)).fileName();
+	const QByteArray geometryReferenceFileUtf8 = geometryReferenceFile.toUtf8();
 
 	/*写入辅助参数到h5*/
 	for (int i = 0; i < images_number; i++)
@@ -1435,7 +1478,8 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			};
 			const StringWrite stringWrites[] = {
 				{"process_state", "coregistration"},
-				{"comment", "complex-2.0"}
+				{"comment", "complex-2.0"},
+				{"s1_tops_geometry_reference_file", geometryReferenceFileUtf8.constData()}
 			};
 			for (const StringWrite& write : stringWrites) {
 				const int writeResult = writeString(write.dataset, write.value);
@@ -1449,8 +1493,15 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				const char* dataset;
 				int value;
 			};
+			int outputSourceRowOrigin = 0;
+			if (FC.read_int_from_h5(outputPath.c_str(), "s1_tops_output_source_row_origin", &outputSourceRowOrigin) != 0 ||
+				outputSourceRowOrigin < 0) {
+				emit errorProcess(QStringLiteral("Missing Core common-coverage source-row provenance in %1.")
+					.arg(QString::fromStdString(outputPath)));
+				return;
+			}
 			const IntWrite intWrites[] = {
-				{"offset_row", 0},
+				{"offset_row", outputSourceRowOrigin},
 				{"offset_col", 0},
 				{"azimuth_len", rows},
 				{"range_len", cols}
@@ -1551,8 +1602,9 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 				.arg(zeroDopplerStatisticsRet).arg(static_cast<qulonglong>(zeroDopplerStatistics.size())), "quality.zero_doppler");
 	}
 
-	bool hasQualityWarning = hasRefinementWarning;
+	bool hasQualityWarning = hasRefinementWarning || !m_nativeQualityWarnings.isEmpty();
 	QStringList qualityWarnings = refinementWarnings;
+	qualityWarnings.append(m_nativeQualityWarnings);
 	qint64 zeroDopplerFailureCount = 0;
 	for (const SentinelZeroDopplerFailureStatistic& statistic : zeroDopplerStatistics)
 	{
@@ -1668,6 +1720,13 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	if (QFileInfo::exists(refinementManifestPath) && !QFile::remove(refinementManifestPath)) {
 		emit errorProcess(QStringLiteral("Cannot remove staging refinement transaction manifest: %1").arg(refinementManifestPath));
 		return;
+	}
+	for (const std::string& outputPath : SAR_images_regis) {
+		const QString fullBurstPath = QString::fromStdString(outputPath) + QStringLiteral(".fullburst");
+		if (QFile::exists(fullBurstPath) && !QFile::remove(fullBurstPath)) {
+			emit errorProcess(QStringLiteral("Cannot remove completed full-burst scratch output: %1").arg(fullBurstPath));
+			return;
+		}
 	}
 
 	cleanupGuard.dismiss();

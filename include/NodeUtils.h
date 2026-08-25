@@ -587,6 +587,12 @@ bool writeStringToH5(const QString& filePath,
                      const std::string& value,
                      QString* errMsg = nullptr);
 
+// Sentinel-1 geometry coefficients use a versioned row/column scene-dimension
+// contract.  Non-Sentinel products are accepted unchanged; Sentinel products
+// without the contract must be re-imported with the corrected importer.
+bool validateSentinelGeometryContract(const QString& filePath,
+                                      QString* errMsg = nullptr);
+
 // Validates the source-path contract on an input H5 and verifies that the
 // derived H5 already contains the same source paths. Legacy inputs are
 // accepted only when both source paths are valid UTF-8.
