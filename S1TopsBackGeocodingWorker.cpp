@@ -1605,7 +1605,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 	bool hasQualityWarning = hasRefinementWarning || !m_nativeQualityWarnings.isEmpty();
 	QStringList qualityWarnings = refinementWarnings;
 	qualityWarnings.append(m_nativeQualityWarnings);
-	qint64 zeroDopplerFailureCount = 0;
+	QSet<QString> zeroDopplerAffectedBurstPairs;
 	for (const SentinelZeroDopplerFailureStatistic& statistic : zeroDopplerStatistics)
 	{
 		if (statistic.count <= 0) {
@@ -1613,11 +1613,13 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		}
 
 		hasQualityWarning = true;
-		zeroDopplerFailureCount += statistic.count;
+		zeroDopplerAffectedBurstPairs.insert(QStringLiteral("%1:%2")
+			.arg(statistic.imageIndex).arg(statistic.burstIndex));
 		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", zeroDopplerStatisticText(statistic), "quality.zero_doppler");
 	}
-	if (zeroDopplerFailureCount > 0) {
-        qualityWarnings.append(QStringLiteral("Detected %1 zero-Doppler solver failures; affected bursts were handled by the quality policy.").arg(zeroDopplerFailureCount));
+	if (!zeroDopplerAffectedBurstPairs.isEmpty()) {
+		qualityWarnings.append(QStringLiteral("Zero-Doppler projection rejections affected %1 retained burst pairs; burst-attributed counts are available in diagnostic logs and were handled by the quality policy.")
+			.arg(zeroDopplerAffectedBurstPairs.size()));
 	}
 
 	if (!zeroDopplerStatistics.empty()) {
@@ -1667,7 +1669,10 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		}
 	}
 	if (partialInvalidBurstCount > 0) {
-        qualityWarnings.append(QStringLiteral("%1 bursts have geometric projection failures; valid coverage %2%-%3%.").arg(partialInvalidBurstCount).arg(minValidRatio * 100.0, 0, 'f', 1).arg(maxValidRatio * 100.0, 0, 'f', 1));
+		qualityWarnings.append(QStringLiteral("%1 retained burst pairs had geometric projection rejections; joint-valid points occupy %2%-%3% of the full DEM grid, not SAR footprint or final output coverage.")
+			.arg(partialInvalidBurstCount)
+			.arg(minValidRatio * 100.0, 0, 'f', 1)
+			.arg(maxValidRatio * 100.0, 0, 'f', 1));
 	}
 	if (zeroOffsetFallbackCount > 0) {
         qualityWarnings.append(QStringLiteral("%1 bursts fell back to zero burst offset.").arg(zeroOffsetFallbackCount));
