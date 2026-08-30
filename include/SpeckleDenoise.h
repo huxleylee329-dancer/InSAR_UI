@@ -15,6 +15,7 @@
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
+#include <QFutureWatcher>
 
 
 
@@ -45,6 +46,7 @@ private slots:
 
     void on_deleteFilterButton_clicked();
     void on_calculateEnlButton_clicked();
+    void onFilterFinished();
 
 
 private:
@@ -55,6 +57,10 @@ private:
     QString input_node_name;
     QString input_image_name;
     QString input_image_path;
+    QString loaded_image_path;
+    QString pending_output_node_name;
+    QString pending_output_image_name;
+    QString pending_output_path;
     QLabel* imageDisplayLabel;
     QPixmap originalPixmap;
     QPixmap filteredPixmap;
@@ -65,16 +71,20 @@ private:
     QLabel* filterRadiusLabel = nullptr;
     QLabel* filterLooksLabel = nullptr;
     QLabel* frostDerampLabel = nullptr;
+    QFutureWatcher<cv::Mat>* filterWatcher = nullptr;
 
     void updateDisplayedImage();
 
-    cv::Mat runSelectedFilter(const cv::Mat& inputGray) const;
     cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
     double calcMedian(const cv::Mat& input) const;
     QString currentFilterSuffix() const;
     void updateFilterParameterVisibility();
+    void setFilterRunning(bool running);
+    void resetLoadedImageState();
+    bool isValidOutputNodeName(const QString& name) const;
+    QString currentOutputImageName() const;
 
-    bool saveFilteredImage(const cv::Mat& filteredImage, QString& outputPath, QString& outputImageName);
+    bool saveFilteredImage(const cv::Mat& filteredImage, const QString& outputPath);
     bool registerFilteredImage(const QString& outputNodeName,
                                const QString& outputImageName,
                                const QString& outputPath);

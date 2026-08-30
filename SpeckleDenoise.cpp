@@ -11,8 +11,90 @@
 #include "icon_source.h"
 #include <vector>
 #include "SARProcessor.h"
+#include <QtConcurrent/QtConcurrentRun>
+#include <cmath>
+#include <exception>
+#include <limits>
 
 #include "InSARLogManager.h"
+
+static bool containsNonAsciiPath(const QString& text)
+{
+    for (const QChar& ch : text)
+    {
+        if (ch.unicode() > 127)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static QString parameterToken(double value, int decimals)
+{
+    QString token = QString::number(value, 'f', decimals);
+    token.replace('.', 'p');
+    return token;
+}
+
+static QString formatEnlValue(double value)
+{
+    if (std::isinf(value))
+    {
+        return QStringLiteral("∞");
+    }
+    if (!std::isfinite(value))
+    {
+        return "--";
+    }
+    return QString::number(value, 'f', 4);
+}
+
+static cv::Mat runFilterSnapshot(const cv::Mat& inputGray,
+                                 int methodIndex,
+                                 int radius,
+                                 double numberOfLooks,
+                                 double frostDeramp)
+{
+    try
+    {
+        if (methodIndex == 0)
+        {
+            cv::Mat output;
+            return SARProcessor::DenoiseGray(inputGray, 0.0, output) == 0
+                ? output
+                : cv::Mat();
+        }
+
+        SARProcessor::SpeckleFilterMethod method = SARProcessor::SpeckleFilterMethod::Lee;
+        switch (methodIndex)
+        {
+        case 2:
+            method = SARProcessor::SpeckleFilterMethod::Frost;
+            break;
+        case 3:
+            method = SARProcessor::SpeckleFilterMethod::GammaMAP;
+            break;
+        case 4:
+            method = SARProcessor::SpeckleFilterMethod::Kuan;
+            break;
+        default:
+            break;
+        }
+
+        return SARProcessor::DespeckleGray(
+            inputGray, method, radius, numberOfLooks, frostDeramp);
+    }
+    catch (const cv::Exception&)
+    {
+        return cv::Mat();
+    }
+    catch (const std::exception&)
+    {
+        return cv::Mat();
+    }
+}
+
 SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     : QWidget(parent),
       ui(new Ui::SpeckleDenoise),
@@ -111,6 +193,12 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
             this,
             [this](int) { updateFilterParameterVisibility(); });
     updateFilterParameterVisibility();
+
+    filterWatcher = new QFutureWatcher<cv::Mat>(this);
+    connect(filterWatcher,
+            &QFutureWatcher<cv::Mat>::finished,
+            this,
+            &SpeckleDenoise::onFilterFinished);
 
 }
 
@@ -246,12 +334,18 @@ void SpeckleDenoise::on_nodeComboBox_currentIndexChanged(int index)
 
 void SpeckleDenoise::on_inputImageComboBox_currentIndexChanged(int index)
 {
-    if (!copy || index < 0)
+    if (!copy)
     {
         return;
     }
 
     input_image_path.clear();
+    input_image_name.clear();
+    resetLoadedImageState();
+    if (index < 0)
+    {
+        return;
+    }
 
     int projectIndex = ui->projectComboBox->currentIndex();
     if (projectIndex < 0)
@@ -336,6 +430,7 @@ void SpeckleDenoise::on_loadImageButton_clicked()
         return;
     }
 
+    loaded_image_path = input_image_path;
     filteredPixmap = QPixmap();
     filteredGrayMat.release();
     ui->imageTypeComboBox->setCurrentText("Original");
@@ -428,27 +523,57 @@ void SpeckleDenoise::on_clearRoiButton_clicked()
 
 void SpeckleDenoise::on_runFilterButton_clicked()
 {
+    if (filterWatcher && filterWatcher->isRunning())
+    {
+        return;
+    }
 
-    ui->FilterProgressBar->show();
-    ui->FilterProgressBar->setRange(0, 0);
-
-   
     if (input_image_path.isEmpty() || !QFile::exists(input_image_path))
     {
         InSARLogManager::LogWarning("UI", "Please load an input image first.");
         QMessageBox::warning(this, "Warning!", "Please load an input image first.");
-        ui->FilterProgressBar->show();
-        ui->FilterProgressBar->setRange(0, 0);
         return;
     }
 
-    QString outputNodeName = ui->NodeWindowSpinBox->text();
-    if (outputNodeName.isEmpty())
+    if (save_path.isEmpty() || project_name.isEmpty())
     {
-        InSARLogManager::LogWarning("UI", "Please input output node name.");
-        QMessageBox::warning(this, "Warning!", "Please input output node name.");
-        ui->FilterProgressBar->show();
-        ui->FilterProgressBar->setRange(0, 0);
+        InSARLogManager::LogWarning("UI", "Project path is invalid.");
+        QMessageBox::warning(this, "Warning!", "Project path is invalid.");
+        return;
+    }
+
+    if (containsNonAsciiPath(input_image_path) || containsNonAsciiPath(save_path))
+    {
+        InSARLogManager::LogWarning("UI", "Image path or project path contains non-ASCII characters.");
+        QMessageBox::warning(
+            this,
+            "Warning!",
+            QStringLiteral("当前图像路径或工程路径包含中文或非 ASCII 字符，OpenCV 可能无法读取或保存图像。\n请将工程保存到英文路径下后重试。")
+        );
+        return;
+    }
+
+    QString outputNodeName = ui->NodeWindowSpinBox->text().trimmed();
+    if (!isValidOutputNodeName(outputNodeName))
+    {
+        InSARLogManager::LogWarning("UI", "Invalid output node name.");
+        QMessageBox::warning(
+            this,
+            "Warning!",
+            QStringLiteral("输出节点名不能为空，且不能包含 \\ / : * ? \" < > |，也不能以点结尾。"));
+        return;
+    }
+    ui->NodeWindowSpinBox->setText(outputNodeName);
+
+    const QString outputImageName = currentOutputImageName();
+    const QString outputDirectory = QDir(save_path).filePath(outputNodeName);
+    const QString outputPath = QDir(outputDirectory).filePath(outputImageName + ".jpg");
+    if (QFile::exists(outputPath))
+    {
+        QMessageBox::information(
+            this,
+            "Info",
+            QStringLiteral("该参数组合的结果文件已存在：\n%1").arg(outputPath));
         return;
     }
 
@@ -457,61 +582,94 @@ void SpeckleDenoise::on_runFilterButton_clicked()
     {
         InSARLogManager::LogWarning("UI", "Failed to read input image.");
         QMessageBox::warning(this, "Warning!", "Failed to read input image.");
-        ui->FilterProgressBar->show();
-        ui->FilterProgressBar->setRange(0, 0);
         return;
     }
 
-    cv::Mat filteredImage = runSelectedFilter(inputGray);
+    if (loaded_image_path != input_image_path || originalGrayMat.empty())
+    {
+        QPixmap currentPixmap(input_image_path);
+        if (currentPixmap.isNull())
+        {
+            InSARLogManager::LogWarning("UI", "Failed to load input image preview.");
+            QMessageBox::warning(this, "Warning!", "Failed to load input image preview.");
+            return;
+        }
+
+        originalGrayMat = inputGray.clone();
+        originalPixmap = currentPixmap;
+        loaded_image_path = input_image_path;
+        filteredGrayMat.release();
+        filteredPixmap = QPixmap();
+        currentRoiImageRect = QRect();
+        roiSelecting = false;
+        roiModeEnabled = false;
+        updateRoiDisplay();
+        ui->originalEnlValueLabel->setText("--");
+        ui->filteredEnlValueLabel->setText("--");
+        ui->imageTypeComboBox->setCurrentText("Original");
+        updateDisplayedImage();
+    }
+
+    pending_output_node_name = outputNodeName;
+    pending_output_image_name = outputImageName;
+    pending_output_path = outputPath;
+
+    const int methodIndex = filterMethodComboBox->currentIndex();
+    const int radius = filterRadiusSpinBox->value();
+    const double numberOfLooks = filterLooksSpinBox->value();
+    const double frostDeramp = frostDerampSpinBox->value();
+    const cv::Mat inputSnapshot = inputGray.clone();
+
+    setFilterRunning(true);
+    filterWatcher->setFuture(QtConcurrent::run(
+        [inputSnapshot, methodIndex, radius, numberOfLooks, frostDeramp]() {
+            return runFilterSnapshot(
+                inputSnapshot, methodIndex, radius, numberOfLooks, frostDeramp);
+        }));
+}
+
+void SpeckleDenoise::onFilterFinished()
+{
+    const cv::Mat filteredImage = filterWatcher->result();
+    setFilterRunning(false);
+
     if (filteredImage.empty())
     {
+        ui->FilterProgressBar->setValue(0);
         InSARLogManager::LogWarning("UI", "Speckle denoise failed.");
         QMessageBox::warning(this, "Warning!", "Speckle denoise failed.");
-        ui->FilterProgressBar->show();
-        ui->FilterProgressBar->setRange(0, 0);
         return;
     }
 
-    filteredGrayMat = filteredImage.clone();
-
-    QFileInfo inputInfo(input_image_name);
-    QString expectedImageName = inputInfo.completeBaseName() + currentFilterSuffix();
-    QString expectedPath = save_path + "/" + outputNodeName + "/" + expectedImageName + ".jpg";
-
-    if (QFile::exists(expectedPath))
+    if (!saveFilteredImage(filteredImage, pending_output_path))
     {
-        QMessageBox::information(
-            this,
-            "Info",
-        QStringLiteral("该结果文件已存在：\n%1").arg(expectedPath)
-
-        );
-        return;
-    }
-
-    QString outputPath;
-    QString outputImageName;
-    if (!saveFilteredImage(filteredImage, outputPath, outputImageName))
-    {
+        ui->FilterProgressBar->setValue(0);
         InSARLogManager::LogWarning("UI", "Failed to save filtered image.");
         QMessageBox::warning(this, "Warning!", "Failed to save filtered image.");
         return;
     }
 
-    if (!registerFilteredImage(outputNodeName, outputImageName, outputPath))
+    if (!registerFilteredImage(
+            pending_output_node_name, pending_output_image_name, pending_output_path))
     {
+        const bool rollbackSucceeded = QFile::remove(pending_output_path);
+        ui->FilterProgressBar->setValue(0);
         InSARLogManager::LogWarning("UI", "Failed to register filtered image.");
-        QMessageBox::warning(this, "Warning!", "Failed to register filtered image.");
+        QMessageBox::warning(
+            this,
+            "Warning!",
+            rollbackSucceeded
+                ? QStringLiteral("滤波结果注册失败，已回滚刚生成的图像文件。")
+                : QStringLiteral("滤波结果注册失败，且图像文件回滚失败：\n%1")
+                      .arg(pending_output_path));
         return;
     }
 
-    filteredPixmap.load(outputPath);
+    filteredGrayMat = filteredImage.clone();
+    filteredPixmap.load(pending_output_path);
     ui->imageTypeComboBox->setCurrentText("Filtered");
     updateDisplayedImage();
-
-    ui->FilterProgressBar->setRange(0, 100);
     ui->FilterProgressBar->setValue(100);
-
     emit sendCopy(copy);
 }
 
@@ -520,52 +678,6 @@ void SpeckleDenoise::on_imageTypeComboBox_currentIndexChanged(int index)
 {
     Q_UNUSED(index);
     updateDisplayedImage();
-}
-
-cv::Mat SpeckleDenoise::runSelectedFilter(const cv::Mat& inputGray) const
-{
-    if (inputGray.empty())
-    {
-        return cv::Mat();
-    }
-
-    const int methodIndex =
-        filterMethodComboBox ? filterMethodComboBox->currentIndex() : 0;
-
-    if (methodIndex == 0)
-    {
-        // 保留最新版 master 的 BM3D 动态库接口。
-        cv::Mat output;
-        return SARProcessor::DenoiseGray(inputGray, 0.0, output) == 0
-            ? output
-            : cv::Mat();
-    }
-
-    SARProcessor::SpeckleFilterMethod method =
-        SARProcessor::SpeckleFilterMethod::Lee;
-
-    switch (methodIndex)
-    {
-    case 2:
-        method = SARProcessor::SpeckleFilterMethod::Frost;
-        break;
-    case 3:
-        method = SARProcessor::SpeckleFilterMethod::GammaMAP;
-        break;
-    case 4:
-        method = SARProcessor::SpeckleFilterMethod::Kuan;
-        break;
-    default:
-        method = SARProcessor::SpeckleFilterMethod::Lee;
-        break;
-    }
-
-    return SARProcessor::DespeckleGray(
-        inputGray,
-        method,
-        filterRadiusSpinBox ? filterRadiusSpinBox->value() : 3,
-        filterLooksSpinBox ? filterLooksSpinBox->value() : 1.0,
-        frostDerampSpinBox ? frostDerampSpinBox->value() : 0.1);
 }
 
 QString SpeckleDenoise::currentFilterSuffix() const
@@ -578,15 +690,22 @@ QString SpeckleDenoise::currentFilterSuffix() const
     switch (filterMethodComboBox->currentIndex())
     {
     case 1:
-        return "_Lee";
+        return QString("_Lee_R%1_L%2")
+            .arg(filterRadiusSpinBox->value())
+            .arg(parameterToken(filterLooksSpinBox->value(), 2));
     case 2:
-        return "_Frost";
+        return QString("_Frost_R%1_D%2")
+            .arg(filterRadiusSpinBox->value())
+            .arg(parameterToken(frostDerampSpinBox->value(), 3));
     case 3:
-        return "_GammaMAP";
+        return QString("_GammaMAP_R%1_L%2")
+            .arg(filterRadiusSpinBox->value())
+            .arg(parameterToken(filterLooksSpinBox->value(), 2));
     case 4:
-        return "_Kuan";
-    default:
-        return "_BM3D";
+        return QString("_Kuan_R%1_L%2")
+            .arg(filterRadiusSpinBox->value())
+            .arg(parameterToken(filterLooksSpinBox->value(), 2));
+    default: return "_BM3D";
     }
 }
 
@@ -608,9 +727,89 @@ void SpeckleDenoise::updateFilterParameterVisibility()
     frostDerampSpinBox->setVisible(usesDeramp);
 }
 
+void SpeckleDenoise::setFilterRunning(bool running)
+{
+    ui->runFilterButton->setEnabled(!running);
+    ui->deleteFilterButton->setEnabled(!running);
+    ui->loadImageButton->setEnabled(!running);
+    ui->projectComboBox->setEnabled(!running);
+    ui->nodeComboBox->setEnabled(!running);
+    ui->inputImageComboBox->setEnabled(!running);
+    ui->NodeWindowSpinBox->setEnabled(!running);
+    filterMethodComboBox->setEnabled(!running);
+    filterRadiusSpinBox->setEnabled(!running);
+    filterLooksSpinBox->setEnabled(!running);
+    frostDerampSpinBox->setEnabled(!running);
+
+    ui->FilterProgressBar->show();
+    if (running)
+    {
+        ui->FilterProgressBar->setRange(0, 0);
+    }
+    else
+    {
+        ui->FilterProgressBar->setRange(0, 100);
+    }
+}
+
+void SpeckleDenoise::resetLoadedImageState()
+{
+    loaded_image_path.clear();
+    originalGrayMat.release();
+    filteredGrayMat.release();
+    originalPixmap = QPixmap();
+    filteredPixmap = QPixmap();
+    currentRoiImageRect = QRect();
+    roiSelecting = false;
+    roiModeEnabled = false;
+
+    updateRoiDisplay();
+    ui->originalEnlValueLabel->setText("--");
+    ui->filteredEnlValueLabel->setText("--");
+    ui->imageTypeComboBox->setCurrentText("Original");
+    updateDisplayedImage();
+}
+
+bool SpeckleDenoise::isValidOutputNodeName(const QString& name) const
+{
+    if (name.isEmpty() || name == "." || name == ".." || name.endsWith('.'))
+    {
+        return false;
+    }
+
+    const QString invalidCharacters = QStringLiteral("\\/:*?\"<>|");
+    for (const QChar character : invalidCharacters)
+    {
+        if (name.contains(character))
+        {
+            return false;
+        }
+    }
+
+    const QString deviceName = name.section('.', 0, 0).toUpper();
+    static const char* reservedNames[] = {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
+    for (const char* reservedName : reservedNames)
+    {
+        if (deviceName == reservedName)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+QString SpeckleDenoise::currentOutputImageName() const
+{
+    return QFileInfo(input_image_name).completeBaseName() + currentFilterSuffix();
+}
+
 cv::Mat SpeckleDenoise::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const
 {
-    // BM3D 已统一由 runSelectedFilter 调用 SARProcessor，此方法保留接口兼容。
+    // BM3D 已统一由后台滤波任务调用 SARProcessor，此方法保留接口兼容。
     Q_UNUSED(imgNorm);
     Q_UNUSED(sigmaFinal);
     return cv::Mat();
@@ -619,34 +818,35 @@ cv::Mat SpeckleDenoise::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal
 
 
 bool SpeckleDenoise::saveFilteredImage(const cv::Mat& filteredImage,
-                                       QString& outputPath,
-                                       QString& outputImageName)
+                                       const QString& outputPath)
 {
-    QString outputNodeName = ui->NodeWindowSpinBox->text();
-    if (save_path.isEmpty() || outputNodeName.isEmpty() || input_image_name.isEmpty())
+    if (filteredImage.empty() || outputPath.isEmpty())
     {
         return false;
     }
 
-    QDir projectDir(save_path);
-    if (!projectDir.exists(outputNodeName))
+    QDir outputDirectory = QFileInfo(outputPath).dir();
+    if (!outputDirectory.exists())
     {
-        if (!projectDir.mkdir(outputNodeName))
+        if (!outputDirectory.mkpath("."))
         {
             return false;
         }
     }
-
-    QFileInfo inputInfo(input_image_name);
-    outputImageName = inputInfo.completeBaseName() + currentFilterSuffix();
-    outputPath = save_path + "/" + outputNodeName + "/" + outputImageName + ".jpg";
 
     if (QFile::exists(outputPath))
     {
         return false;
     }
 
-    return cv::imwrite(outputPath.toStdString(), filteredImage);
+    try
+    {
+        return cv::imwrite(outputPath.toStdString(), filteredImage);
+    }
+    catch (const cv::Exception&)
+    {
+        return false;
+    }
 }
 
 double SpeckleDenoise::calcMedian(const cv::Mat& input) const
@@ -717,17 +917,7 @@ bool SpeckleDenoise::registerFilteredImage(const QString& outputNodeName,
         }
     }
 
-    if (!outputNode)
-    {
-        outputNode = new QStandardItem(outputNodeName);
-        outputNode->setIcon(QIcon(FOLDER_ICON));
-        project->appendRow(outputNode);
-
-        QStandardItem* rank = new QStandardItem("complex-0.0");
-        project->setChild(project->rowCount() - 1, 1, rank);
-    }
-
-    for (int i = 0; i < outputNode->rowCount(); i++)
+    for (int i = 0; outputNode && i < outputNode->rowCount(); i++)
     {
         QStandardItem* image = outputNode->child(i, 0);
         if (image && image->text() == outputImageName)
@@ -758,6 +948,16 @@ bool SpeckleDenoise::registerFilteredImage(const QString& outputNodeName,
         return false;
     }
 
+    if (!outputNode)
+    {
+        outputNode = new QStandardItem(outputNodeName);
+        outputNode->setIcon(QIcon(FOLDER_ICON));
+        project->appendRow(outputNode);
+
+        QStandardItem* rank = new QStandardItem("complex-0.0");
+        project->setChild(project->rowCount() - 1, 1, rank);
+    }
+
     QStandardItem* imageItem = new QStandardItem(outputImageName);
     imageItem->setToolTip("complex");
     imageItem->setIcon(QIcon(IMAGEDATA_ICON));
@@ -780,11 +980,11 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
         return;
     }
 
-    QString outputNodeName = ui->NodeWindowSpinBox->text();
-    if (outputNodeName.isEmpty())
+    QString outputNodeName = ui->NodeWindowSpinBox->text().trimmed();
+    if (!isValidOutputNodeName(outputNodeName))
     {
-        InSARLogManager::LogWarning("UI", "Please input output node name.");
-        QMessageBox::warning(this, "Warning!", "Please input output node name.");
+        InSARLogManager::LogWarning("UI", "Invalid output node name.");
+        QMessageBox::warning(this, "Warning!", "Invalid output node name.");
         return;
     }
 
@@ -795,9 +995,9 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
         return;
     }
 
-    QFileInfo inputInfo(input_image_name);
-    QString outputImageName = inputInfo.completeBaseName() + currentFilterSuffix();
-    QString outputPath = save_path + "/" + outputNodeName + "/" + outputImageName + ".jpg";
+    const QString outputImageName = currentOutputImageName();
+    const QString outputPath = QDir(QDir(save_path).filePath(outputNodeName))
+                                   .filePath(outputImageName + ".jpg");
 
     int projectIndex = ui->projectComboBox->currentIndex();
     if (projectIndex < 0)
@@ -849,38 +1049,70 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
         return;
     }
 
+    const QString backupPath = outputPath + ".deleting";
+    bool fileMovedToBackup = false;
+    if (QFile::exists(outputPath))
+    {
+        if (QFile::exists(backupPath) || !QFile::rename(outputPath, backupPath))
+        {
+            InSARLogManager::LogWarning("UI", "Failed to prepare filtered image deletion.");
+            QMessageBox::warning(this, "Warning!", "Failed to prepare filtered image deletion.");
+            return;
+        }
+        fileMovedToBackup = true;
+    }
+
+    const auto restoreBackup = [&]() {
+        return !fileMovedToBackup || QFile::rename(backupPath, outputPath);
+    };
+
     XMLFile xml;
     if (xml.XMLFile_load((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
+        const bool restored = restoreBackup();
         InSARLogManager::LogWarning("UI", "Failed to load project XML.");
-        QMessageBox::warning(this, "Warning!", "Failed to load project XML.");
+        QMessageBox::warning(
+            this,
+            "Warning!",
+            restored
+                ? QStringLiteral("工程 XML 加载失败，图像文件已恢复。")
+                : QStringLiteral("工程 XML 加载失败，且图像文件恢复失败：\n%1").arg(backupPath));
         return;
     }
 
+    const QString relativePath = "/" + outputNodeName + "/" + outputImageName + ".jpg";
     if (xml.XMLFile_remove_node(outputNodeName.toStdString().c_str(),
                                 outputImageName.toStdString().c_str(),
-                                outputPath.toStdString().c_str()) < 0)
+                                relativePath.toStdString().c_str()) < 0)
     {
+        const bool restored = restoreBackup();
         InSARLogManager::LogWarning("UI", "Failed to remove node from project XML.");
-        QMessageBox::warning(this, "Warning!", "Failed to remove node from project XML.");
+        QMessageBox::warning(
+            this,
+            "Warning!",
+            restored
+                ? QStringLiteral("工程 XML 删除失败，图像文件已恢复。")
+                : QStringLiteral("工程 XML 删除失败，且图像文件恢复失败：\n%1").arg(backupPath));
         return;
     }
 
     if (xml.XMLFile_save((save_path + "/" + project_name).toStdString().c_str()) < 0)
     {
+        const bool restored = restoreBackup();
         InSARLogManager::LogWarning("UI", "Failed to save project XML.");
-        QMessageBox::warning(this, "Warning!", "Failed to save project XML.");
+        QMessageBox::warning(
+            this,
+            "Warning!",
+            restored
+                ? QStringLiteral("工程 XML 保存失败，图像文件已恢复。")
+                : QStringLiteral("工程 XML 保存失败，且图像文件恢复失败：\n%1").arg(backupPath));
         return;
     }
 
-    if (QFile::exists(outputPath))
+    bool backupRemoved = true;
+    if (fileMovedToBackup)
     {
-        if (!QFile::remove(outputPath))
-        {
-            InSARLogManager::LogWarning("UI", "Failed to delete filtered image file.");
-            QMessageBox::warning(this, "Warning!", "Failed to delete filtered image file.");
-            return;
-        }
+        backupRemoved = QFile::remove(backupPath);
     }
 
     if (imageRow >= 0)
@@ -889,12 +1121,24 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     }
 
     filteredPixmap = QPixmap();
+    filteredGrayMat.release();
     ui->imageTypeComboBox->setCurrentText("Original");
     updateDisplayedImage();
 
     emit sendCopy(copy);
 
-    QMessageBox::information(this, "Info", "Filtered image deleted.");
+    if (backupRemoved)
+    {
+        QMessageBox::information(this, "Info", "Filtered image deleted.");
+    }
+    else
+    {
+        InSARLogManager::LogWarning("UI", "Filtered image metadata was deleted, but backup cleanup failed.");
+        QMessageBox::warning(
+            this,
+            "Warning!",
+            QStringLiteral("滤波结果记录已删除，但临时备份文件清理失败：\n%1").arg(backupPath));
+    }
 }
 
 
@@ -916,7 +1160,7 @@ double SpeckleDenoise::calculateEnl(const cv::Mat& roiGray) const
 
     if (variance <= 1e-12)
     {
-        return 0.0;
+        return std::numeric_limits<double>::infinity();
     }
 
     return (mean * mean) / variance;
@@ -951,7 +1195,7 @@ void SpeckleDenoise::updateEnlResults()
 
     cv::Mat originalRoi = originalGrayMat(roi).clone();
     double originalEnl = calculateEnl(originalRoi);
-    ui->originalEnlValueLabel->setText(QString::number(originalEnl, 'f', 4));
+    ui->originalEnlValueLabel->setText(formatEnlValue(originalEnl));
 
     if (!filteredGrayMat.empty())
     {
@@ -962,7 +1206,7 @@ void SpeckleDenoise::updateEnlResults()
         {
             cv::Mat filteredRoi = filteredGrayMat(filteredRoiRect).clone();
             double filteredEnl = calculateEnl(filteredRoi);
-            ui->filteredEnlValueLabel->setText(QString::number(filteredEnl, 'f', 4));
+            ui->filteredEnlValueLabel->setText(formatEnlValue(filteredEnl));
         }
         else
         {
