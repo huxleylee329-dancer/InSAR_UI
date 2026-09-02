@@ -13,6 +13,7 @@
 #include <QThread>
 #include <QElapsedTimer>
 #include <cmath>
+#include <limits>
 #include <vector>
 #include "InSARLogManager.h"
 #include "NodeUtils.h"
@@ -68,6 +69,24 @@ struct CommonCoverageContract
     cv::Mat sourceRowRanges;
     std::vector<CommonCoverageRun> runs;
 };
+
+static void rebuildCommonCoverageRuns(CommonCoverageContract& contract)
+{
+	contract.runs.clear();
+	if (contract.sourceRowMap.type() != CV_32S || contract.sourceRowMap.rows < 1 ||
+		contract.sourceRowMap.cols != 1) return;
+	int runStart = 0;
+	for (int row = 1; row <= contract.sourceRowMap.rows; ++row) {
+		if (row < contract.sourceRowMap.rows &&
+			contract.sourceRowMap.at<int>(row, 0) == contract.sourceRowMap.at<int>(row - 1, 0) + 1) continue;
+		CommonCoverageRun run;
+		run.outputFirstRow = runStart;
+		run.sourceFirstRow = contract.sourceRowMap.at<int>(runStart, 0);
+		run.rowCount = row - runStart;
+		contract.runs.push_back(run);
+		runStart = row;
+	}
+}
 
 static bool loadCommonCoverageContract(const QString& h5Path, int expectedRows,
                                        CommonCoverageContract& contract, QString& error)
@@ -165,18 +184,7 @@ static bool loadCommonCoverageContract(const QString& h5Path, int expectedRows,
             return false;
         }
     }
-    contract.runs.clear();
-    int runStart = 0;
-    for (int row = 1; row <= contract.sourceRowMap.rows; ++row) {
-        if (row < contract.sourceRowMap.rows &&
-            contract.sourceRowMap.at<int>(row, 0) == contract.sourceRowMap.at<int>(row - 1, 0) + 1) continue;
-        CommonCoverageRun run;
-        run.outputFirstRow = runStart;
-        run.sourceFirstRow = contract.sourceRowMap.at<int>(runStart, 0);
-        run.rowCount = row - runStart;
-        contract.runs.push_back(run);
-        runStart = row;
-    }
+	rebuildCommonCoverageRuns(contract);
     if (contract.sourceRowMap.rows != expectedRows || contract.runs.empty() ||
         contract.sourceRowMap.at<int>(0, 0) != contract.sourceRowOrigin) {
         error = QStringLiteral("Common-coverage source-row map has an invalid length: %1").arg(h5Path);
@@ -204,6 +212,22 @@ static bool contractsMatch(const CommonCoverageContract& master, const CommonCov
          cv::countNonZero(master.sourceRowRanges != slave.sourceRowRanges) == 0 &&
          master.sourceRowMap.size() == slave.sourceRowMap.size() &&
          cv::countNonZero(master.sourceRowMap != slave.sourceRowMap) == 0));
+}
+
+static bool commonCoverageMapsInsideSlaveMetadata(const CommonCoverageContract& master,
+                                                  const CommonCoverageContract& slave,
+                                                  const TopsBurstPhaseMetadata& slaveTops)
+{
+    if (!master.applies) return true;
+    if (!slave.applies || master.commonFirstBurst < 1 ||
+        master.commonLastBurst < master.commonFirstBurst ||
+        slaveTops.burstAzimuthTime.rows < 1 || slaveTops.linesPerBurst <= 0) {
+        return false;
+    }
+    const int firstSlaveBurst = master.commonFirstBurst + slave.sourceBurstOffset;
+    const int lastSlaveBurst = master.commonLastBurst + slave.sourceBurstOffset;
+    return firstSlaveBurst >= 1 && lastSlaveBurst >= firstSlaveBurst &&
+        lastSlaveBurst <= slaveTops.burstAzimuthTime.rows;
 }
 
 static bool writeCommonCoverageContract(const QString& outputPath, const CommonCoverageContract& contract,
@@ -237,106 +261,303 @@ static bool writeCommonCoverageContract(const QString& outputPath, const CommonC
         NodeUtils::writeMatToH5(outputPath, QStringLiteral("s1_tops_retained_source_row_ranges"), contract.sourceRowRanges, &error);
 }
 
-static int applySegmentedDeflat(Deflat& flat, const CommonCoverageContract& contract,
-                                const Mat& stateVec1, const Mat& stateVec2, const Mat& lonCoef, const Mat& latCoef,
-                                const Mat& phase, int offsetRow, int offsetCol, double prf1, double prf2,
-                                double wavelength, Mat& correctedPhase, Mat& segmentCoefficients)
+static bool sourceRowMapForPhase(const CommonCoverageContract& contract, int rows, int sourceRowCount,
+                                 int originalRowOffset, Mat& sourceRowMap)
 {
-    if (!contract.applies) {
-        return flat.deflat(stateVec1, stateVec2, lonCoef, latCoef, phase, offsetRow, offsetCol, 0,
-                           1 / prf1, 1 / prf2, 1, wavelength, correctedPhase, segmentCoefficients,
-                           DeflatProgressCallbackImpl);
+    if (rows < 1 || sourceRowCount < 1) return false;
+    if (contract.applies) {
+        if (contract.sourceRowMap.type() != CV_32S || contract.sourceRowMap.cols != 1 ||
+            contract.sourceRowMap.rows != rows || contract.sourceRowCount != sourceRowCount) return false;
+        sourceRowMap = contract.sourceRowMap;
+        return true;
     }
-    correctedPhase.create(phase.rows, phase.cols, phase.type());
-    segmentCoefficients.create(static_cast<int>(contract.runs.size()), 6, CV_64F);
-    for (int index = 0; index < static_cast<int>(contract.runs.size()); ++index) {
-        const CommonCoverageRun& run = contract.runs[index];
-        Mat segmentPhase = phase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount);
-        Mat correctedSegment;
-        Mat coefficient;
-        const int result = flat.deflat(stateVec1, stateVec2, lonCoef, latCoef, segmentPhase,
-                                       run.sourceFirstRow, offsetCol, 0, 1 / prf1, 1 / prf2, 1, wavelength,
-                                       correctedSegment, coefficient, DeflatProgressCallbackImpl);
-        if (result != 0 || correctedSegment.size() != segmentPhase.size() || coefficient.type() != CV_64F ||
-            coefficient.rows != 1 || coefficient.cols != 6) return result == 0 ? -1 : result;
-        correctedSegment.copyTo(correctedPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount));
-        coefficient.copyTo(segmentCoefficients.row(index));
-    }
-    return 0;
+    sourceRowMap.create(rows, 1, CV_32S);
+    for (int row = 0; row < rows; ++row) sourceRowMap.at<int>(row, 0) = originalRowOffset + row;
+    return originalRowOffset >= 0 && sourceRowMap.at<int>(rows - 1, 0) < sourceRowCount;
 }
 
-static int applySegmentedTopography(Deflat& flat, const CommonCoverageContract& contract,
+enum class TopsMetadataReadResult
+{
+    Success,
+    BaseFieldReadOrValueInvalid,
+    RegistrationProvenanceReadFailed,
+    RegistrationProvenanceSemanticsMismatch
+};
+
+static TopsMetadataReadResult readTopsBurstPhaseMetadata(const QString& h5Path, TopsBurstPhaseMetadata& metadata,
+                                                          bool requireRegistrationReference = false)
+{
+	metadata = TopsBurstPhaseMetadata();
+	const bool baseMetadata = NodeUtils::readMatFromH5(h5Path, "burstAzimuthTime", metadata.burstAzimuthTime) &&
+        NodeUtils::readMatFromH5(h5Path, "azimuthFmRateList", metadata.azimuthFmRateList) &&
+        NodeUtils::readMatFromH5(h5Path, "dcEstimateList", metadata.dcEstimateList) &&
+        NodeUtils::readMatFromH5(h5Path, "firstValidLine", metadata.firstValidLine) &&
+        NodeUtils::readMatFromH5(h5Path, "lastValidLine", metadata.lastValidLine) &&
+        NodeUtils::readMatFromH5(h5Path, "firstValidSample", metadata.firstValidSample) &&
+        NodeUtils::readMatFromH5(h5Path, "lastValidSample", metadata.lastValidSample) &&
+        NodeUtils::readScalarFromH5(h5Path, "linesPerBurst", metadata.linesPerBurst) &&
+        NodeUtils::readScalarFromH5(h5Path, "azimuthSteeringRate", metadata.azimuthSteeringRate) &&
+		NodeUtils::readScalarFromH5(h5Path, "range_spacing", metadata.rangeSpacing) &&
+		NodeUtils::readScalarFromH5(h5Path, "slant_range_first_pixel", metadata.slantRangeFirstPixel);
+	if (!baseMetadata || metadata.linesPerBurst <= 0) {
+        return TopsMetadataReadResult::BaseFieldReadOrValueInvalid;
+    }
+	if (!requireRegistrationReference) return TopsMetadataReadResult::Success;
+	std::string mappingSemantics;
+	const bool registrationMapping =
+		NodeUtils::readMatFromH5(h5Path, "s1_tops_registration_mapping_coefficients", metadata.registrationMappingCoefficients) &&
+		NodeUtils::readMatFromH5(h5Path, "s1_tops_retained_master_burst_indices", metadata.registrationMappingMasterBurstIndices) &&
+		NodeUtils::readStringFromH5(h5Path, "s1_tops_registration_mapping_semantics", mappingSemantics);
+	if (!registrationMapping) return TopsMetadataReadResult::RegistrationProvenanceReadFailed;
+	if (mappingSemantics != "pull_source_row_and_column_offsets_a0_a1_column_a2_master_burst_line_v1") {
+        return TopsMetadataReadResult::RegistrationProvenanceSemanticsMismatch;
+    }
+	// Reramp provenance belongs to the registration implementation.  v6 FEP
+	// uses the mapping only as a local slave zero-Doppler seed, so an absent
+	// reramp field is valid.  Read it only when the producer supplied it.
+	NodeUtils::readMatFromH5(h5Path, "s1_tops_registration_reramp_phase", metadata.registrationRerampPhase);
+	return TopsMetadataReadResult::Success;
+}
+
+static QString topsMetadataReadError(const QString& imageRole, TopsMetadataReadResult result, const QString& path)
+{
+    switch (result) {
+    case TopsMetadataReadResult::BaseFieldReadOrValueInvalid:
+        return QStringLiteral("%1影像 TOPS 字段读取失败或字段值不合法：%2").arg(imageRole, path);
+    case TopsMetadataReadResult::RegistrationProvenanceReadFailed:
+        return QStringLiteral("%1影像缺少注册 mapping provenance：%2").arg(imageRole, path);
+    case TopsMetadataReadResult::RegistrationProvenanceSemanticsMismatch:
+        return QStringLiteral("%1影像注册 mapping provenance 语义不一致：%2").arg(imageRole, path);
+    case TopsMetadataReadResult::Success:
+        break;
+    }
+    return QStringLiteral("%1影像 TOPS 元数据状态未知：%2").arg(imageRole, path);
+}
+
+static bool readGpsScalarOrSingleValue(const QString& h5Path, const QString& dataset, double& value)
+{
+    if (NodeUtils::readScalarFromH5(h5Path, dataset, value) && std::isfinite(value)) return true;
+    Mat matrix;
+    return NodeUtils::readMatFromH5(h5Path, dataset, matrix) && matrix.type() == CV_64F &&
+           matrix.total() == 1 && std::isfinite(matrix.at<double>(0, 0)) && (value = matrix.at<double>(0, 0), true);
+}
+
+static bool validGpsOrbitMatrix(const Mat& stateVectors, double geometryStartGps, double geometryStopGps,
+								double interpolationMarginSeconds, double& osvStartGps, double& osvStopGps)
+{
+    if (stateVectors.type() != CV_64F || stateVectors.cols != 7 || stateVectors.rows < 4 ||
+		!std::isfinite(geometryStartGps) || !std::isfinite(geometryStopGps) ||
+		!std::isfinite(interpolationMarginSeconds) || interpolationMarginSeconds <= 0.0 ||
+		!(geometryStopGps > geometryStartGps)) return false;
+    for (int row = 0; row < stateVectors.rows; ++row) {
+        for (int column = 0; column < stateVectors.cols; ++column) {
+            if (!std::isfinite(stateVectors.at<double>(row, column))) return false;
+        }
+        if (row > 0 && stateVectors.at<double>(row, 0) <= stateVectors.at<double>(row - 1, 0)) return false;
+    }
+    osvStartGps = stateVectors.at<double>(0, 0);
+    osvStopGps = stateVectors.at<double>(stateVectors.rows - 1, 0);
+    return osvStartGps <= geometryStartGps - interpolationMarginSeconds &&
+		osvStopGps >= geometryStopGps + interpolationMarginSeconds;
+}
+
+// SNAP-compatible interpolation evaluates the raw state_vec directly with a
+// clamped contiguous 8-OSV window.  Unlike the fine 1-second orbit grid, it
+// does not need an extra padding interval outside the actual geometry query.
+static bool validRawSnapCompatibleOrbitMatrix(const Mat& stateVectors, double geometryStartGps,
+											  double geometryStopGps, double& osvStartGps, double& osvStopGps)
+{
+	if (stateVectors.type() != CV_64F || stateVectors.cols != 7 || stateVectors.rows < 8 ||
+		!std::isfinite(geometryStartGps) || !std::isfinite(geometryStopGps) ||
+		!(geometryStopGps > geometryStartGps)) return false;
+	for (int row = 0; row < stateVectors.rows; ++row) {
+		for (int column = 0; column < stateVectors.cols; ++column) {
+			if (!std::isfinite(stateVectors.at<double>(row, column))) return false;
+		}
+		if (row > 0 && stateVectors.at<double>(row, 0) <= stateVectors.at<double>(row - 1, 0)) return false;
+	}
+	osvStartGps = stateVectors.at<double>(0, 0);
+	osvStopGps = stateVectors.at<double>(stateVectors.rows - 1, 0);
+	return osvStartGps <= geometryStartGps && osvStopGps >= geometryStopGps;
+}
+
+static bool readStrictTopsV5Orbit(const QString& h5Path, double geometryStartGps, double geometryStopGps,
+							  double interpolationMarginSeconds, TopsFepV5Orbit& orbit, QString& error)
+{
+    orbit = TopsFepV5Orbit();
+	std::string timeReferenceVersion;
+    std::string acquisitionScale;
+    std::string stateVectorScale;
+	if (!NodeUtils::readStringFromH5(h5Path, QStringLiteral("h5_time_reference_version"), timeReferenceVersion) ||
+		timeReferenceVersion != "2" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("acquisition_time_gps_scale"), acquisitionScale) ||
+        acquisitionScale != "GPS" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("state_vec_time_scale"), stateVectorScale) ||
+        stateVectorScale != "GPS" ||
+        !readGpsScalarOrSingleValue(h5Path, QStringLiteral("acquisition_start_time_gps"), orbit.acquisitionStartGps) ||
+		!readGpsScalarOrSingleValue(h5Path, QStringLiteral("acquisition_stop_time_gps"), orbit.acquisitionStopGps) ||
+		!std::isfinite(geometryStartGps) || !std::isfinite(geometryStopGps) || !(geometryStopGps > geometryStartGps) ||
+		!std::isfinite(interpolationMarginSeconds) || interpolationMarginSeconds <= 0.0) {
+        error = QStringLiteral("v5 平地相位要求明确的 GPS 时间字段和 state_vec 时间尺度：%1").arg(h5Path);
+        return false;
+    }
+	orbit.geometryStartGps = geometryStartGps;
+	orbit.geometryStopGps = geometryStopGps;
+	orbit.interpolationMarginSeconds = interpolationMarginSeconds;
+    Mat fineStateVectors;
+    int fineExists = 0;
+    const QByteArray utf8Path = h5Path.toUtf8();
+    if (Hdf5IO::datasetExists(utf8Path.constData(), "fine_state_vec", &fineExists) != 0) {
+        error = QStringLiteral("无法检查 fine_state_vec：%1").arg(h5Path);
+        return false;
+    }
+    std::string fineScale;
+    bool fineValid = false;
+    if (fineExists != 0 && NodeUtils::readMatFromH5(h5Path, QStringLiteral("fine_state_vec"), fineStateVectors) &&
+        NodeUtils::readStringFromH5(h5Path, QStringLiteral("fine_state_vec_time_scale"), fineScale) && fineScale == "GPS") {
+        double fineStart = 0.0;
+        double fineStop = 0.0;
+		fineValid = validGpsOrbitMatrix(fineStateVectors, geometryStartGps, geometryStopGps, interpolationMarginSeconds,
+                                        fineStart, fineStop);
+        if (fineValid) {
+            orbit.stateVectors = fineStateVectors;
+            orbit.osvStartGps = fineStart;
+            orbit.osvStopGps = fineStop;
+            orbit.source = "fine_state_vec";
+			orbit.selectionReason = "fine_state_vec_valid_preferred_v1";
+			orbit.timeScale = "GPS";
+			orbit.interpolationStrategy = "fine_state_vec_cubic_hermite_v2";
+			return true;
+        }
+    }
+	if (!NodeUtils::readMatFromH5(h5Path, QStringLiteral("state_vec"), orbit.stateVectors) ||
+		!validRawSnapCompatibleOrbitMatrix(orbit.stateVectors, geometryStartGps, geometryStopGps,
+			orbit.osvStartGps, orbit.osvStopGps) || orbit.stateVectors.rows < 8) {
+		error = QStringLiteral("v5 平地相位要求有效 fine_state_vec，或覆盖任务时窗的原始 8 点 GPS state_vec：%1").arg(h5Path);
+		return false;
+	}
+	orbit.source = "state_vec";
+	orbit.selectionReason = fineExists != 0
+		? "fine_state_vec_invalid__raw_snap_compatible_fallback_v1"
+		: "fine_state_vec_absent__raw_snap_compatible_fallback_v1";
+	orbit.timeScale = "GPS";
+	orbit.interpolationStrategy = "raw_state_vec_nearest_contiguous_8_osv_cubic_least_squares_v1";
+	return true;
+}
+
+static bool readStrictLookSide(const QString& h5Path, int& lookSide, QString& source, QString& error)
+{
+    source.clear();
+    std::string value;
+    const QByteArray utf8Path = h5Path.toUtf8();
+    int looksideExists = 0;
+    if (Hdf5IO::datasetExists(utf8Path.constData(), "lookside", &looksideExists) != 0) {
+        error = QStringLiteral("v5 平地相位无法检查主影像观测侧字段：%1").arg(h5Path);
+        return false;
+    }
+    if (looksideExists != 0) {
+        if (!NodeUtils::readStringFromH5(h5Path, QStringLiteral("lookside"), value)) {
+            error = QStringLiteral("v5 平地相位主影像观测侧字段无法读取：%1").arg(h5Path);
+            return false;
+        }
+        const QString normalized = QString::fromStdString(value).trimmed().toUpper();
+        if (normalized == QStringLiteral("RIGHT")) {
+            lookSide = 1;
+            source = QStringLiteral("h5_lookside_v1");
+            return true;
+        }
+        if (normalized == QStringLiteral("LEFT")) {
+            lookSide = -1;
+            source = QStringLiteral("h5_lookside_v1");
+            return true;
+        }
+        error = QStringLiteral("v5 平地相位主影像观测侧无效：%1").arg(h5Path);
+        return false;
+    }
+
+    std::string sensor;
+    if (!NodeUtils::readStringFromH5(h5Path, QStringLiteral("sensor"), sensor)) {
+        error = QStringLiteral("v5 平地相位缺少主影像观测侧约束和传感器身份：%1").arg(h5Path);
+        return false;
+    }
+    const QString normalizedSensor = QString::fromStdString(sensor).trimmed().toLower();
+    if (normalizedSensor == QStringLiteral("sentinel") || normalizedSensor == QStringLiteral("sentinel-1") ||
+        normalizedSensor == QStringLiteral("sentinel1")) {
+        // Sentinel-1 SAR is right-looking; preserve that this is a derived, not stored, constraint.
+        lookSide = 1;
+        source = QStringLiteral("sentinel1_fixed_right_looking_v1");
+        return true;
+    }
+    error = QStringLiteral("v5 平地相位缺少可验证的主影像观测侧约束：%1").arg(h5Path);
+    return false;
+}
+
+static bool nativeTopsGeometryCoverage(const TopsBurstPhaseMetadata& tops, int masterLinesPerBurst, const Mat& sourceRowMap,
+								   int slaveBurstOffset, bool useSlaveBurst, double extraSearchSeconds,
+								   double& startGps, double& stopGps)
+{
+	if (sourceRowMap.type() != CV_32S || sourceRowMap.cols != 1 || sourceRowMap.rows < 1 ||
+		tops.burstAzimuthTime.type() != CV_64F || tops.burstAzimuthTime.cols != 1 ||
+		tops.linesPerBurst < 1 || masterLinesPerBurst < 1 || !std::isfinite(tops.azimuthIntervalSeconds) ||
+		tops.azimuthIntervalSeconds <= 0.0 || !std::isfinite(extraSearchSeconds) || extraSearchSeconds < 0.0) return false;
+	startGps = std::numeric_limits<double>::infinity();
+	stopGps = -std::numeric_limits<double>::infinity();
+	for (int row = 0; row < sourceRowMap.rows; ++row) {
+		const int sourceRow = sourceRowMap.at<int>(row, 0);
+		const int masterBurst = sourceRow / masterLinesPerBurst;
+		const int nativeLine = sourceRow % masterLinesPerBurst;
+		const int burst = useSlaveBurst ? masterBurst + slaveBurstOffset : masterBurst;
+		if (sourceRow < 0 || masterBurst < 0 || burst < 0 || burst >= tops.burstAzimuthTime.rows) return false;
+		const double burstStart = tops.burstAzimuthTime.at<double>(burst, 0);
+		const double first = useSlaveBurst ? burstStart : burstStart + nativeLine * tops.azimuthIntervalSeconds;
+		const double last = useSlaveBurst ? burstStart + (tops.linesPerBurst - 1) * tops.azimuthIntervalSeconds : first;
+		if (!std::isfinite(first) || !std::isfinite(last)) return false;
+		startGps = std::min(startGps, first);
+		stopGps = std::max(stopGps, last);
+	}
+	startGps -= extraSearchSeconds;
+	stopGps += extraSearchSeconds;
+	return std::isfinite(startGps) && std::isfinite(stopGps) && stopGps > startGps;
+}
+
+static bool validateTopographyRuns(const CommonCoverageContract& contract, const Mat& sourceRowMap)
+{
+    if (!contract.applies) return true;
+    for (const CommonCoverageRun& run : contract.runs) {
+        if (run.outputFirstRow < 0 || run.rowCount < 1 ||
+            run.outputFirstRow + run.rowCount > sourceRowMap.rows) return false;
+        for (int row = 0; row < run.rowCount; ++row) {
+            if (sourceRowMap.at<int>(run.outputFirstRow + row, 0) != run.sourceFirstRow + row) return false;
+        }
+    }
+    return true;
+}
+
+static int computeSourceRowAwareTopography(Deflat& flat, const CommonCoverageContract& contract,
                                     Mat& stateVec1, Mat& stateVec2, Mat& lonCoef, Mat& latCoef, Mat& incCoef,
                                     double prf1, double prf2, int sceneWidth, int offsetRow, int offsetCol,
                                     double nearRangeTime, double rangeSpacing, double wavelength,
                                     double acquisitionStartTime, double acquisitionStopTime, const QString& demPath,
-                                    const Mat& inputPhase, Mat& outputPhase)
+                                    const Mat& sourceRowMap, Mat& topographyPhase)
 {
     if (!contract.applies) {
-        Mat topographyPhase;
-        const int result = flat.topography_simulation(topographyPhase, stateVec1, stateVec2, lonCoef, latCoef, incCoef,
-            prf1, prf2, inputPhase.rows, sceneWidth, offsetRow, offsetCol, nearRangeTime, rangeSpacing, wavelength,
+        return flat.topography_simulation(topographyPhase, stateVec1, stateVec2, lonCoef, latCoef, incCoef,
+            prf1, prf2, sourceRowMap.rows, sceneWidth, offsetRow, offsetCol, nearRangeTime, rangeSpacing, wavelength,
             acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str(), 20, DeflatProgressCallbackImpl);
-        if (result != 0 || topographyPhase.size() != inputPhase.size()) return result == 0 ? -1 : result;
-        outputPhase = inputPhase - topographyPhase;
-        Utils util;
-        return util.wrap(outputPhase, outputPhase);
     }
-    outputPhase.create(inputPhase.rows, inputPhase.cols, inputPhase.type());
+    if (!validateTopographyRuns(contract, sourceRowMap)) return -1;
+    topographyPhase.create(sourceRowMap.rows, sceneWidth, CV_64F);
     for (const CommonCoverageRun& run : contract.runs) {
-        Mat inputSegment = inputPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount);
         Mat topographySegment;
         const int result = flat.topography_simulation(topographySegment, stateVec1, stateVec2, lonCoef, latCoef, incCoef,
             prf1, prf2, run.rowCount, sceneWidth, run.sourceFirstRow, offsetCol, nearRangeTime, rangeSpacing, wavelength,
             acquisitionStartTime, acquisitionStopTime, demPath.toStdString().c_str(), 20, DeflatProgressCallbackImpl);
-        if (result != 0 || topographySegment.size() != inputSegment.size()) return result == 0 ? -1 : result;
-        Mat correctedSegment = inputSegment - topographySegment;
-        Utils util;
-        if (util.wrap(correctedSegment, correctedSegment) != 0) return -1;
-        correctedSegment.copyTo(outputPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount));
-    }
-    return 0;
-}
-
-static int multilookCommonCoveragePhase(Utils& util,
-                                        const CommonCoverageContract& contract,
-                                        const Mat& inputPhase,
-                                        Mat& outputPhase,
-                                        int multilook_rg,
-                                        int multilook_az)
-{
-    if (!contract.applies || multilook_az <= 1) {
-        return util.multilook(inputPhase, outputPhase, multilook_rg, multilook_az);
-    }
-    if (inputPhase.empty() || inputPhase.rows != contract.sourceRowMap.rows ||
-        multilook_rg < 1 || multilook_az < 1 || contract.runs.empty()) {
-        return -1;
-    }
-
-    std::vector<Mat> runOutputs;
-    runOutputs.reserve(contract.runs.size());
-    int expectedRows = 0;
-    for (const CommonCoverageRun& run : contract.runs) {
-        if (run.outputFirstRow < 0 || run.rowCount <= 0 ||
-            run.outputFirstRow + run.rowCount > inputPhase.rows) {
-            return -1;
-        }
-        const int runOutputRows = run.rowCount / multilook_az;
-        if (runOutputRows <= 0) continue;
-
-        Mat runOutput;
-        const int result = util.multilook(
-            inputPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount),
-            runOutput, multilook_rg, multilook_az);
-        if (result != 0 || runOutput.empty() || runOutput.rows != runOutputRows) {
+        if (result != 0 || topographySegment.rows != run.rowCount || topographySegment.cols != sceneWidth) {
             return result == 0 ? -1 : result;
         }
-        runOutputs.push_back(runOutput);
-        expectedRows += runOutputRows;
+        topographySegment.copyTo(topographyPhase.rowRange(run.outputFirstRow, run.outputFirstRow + run.rowCount));
     }
-    if (runOutputs.empty() || expectedRows <= 0) return -1;
-    cv::vconcat(runOutputs, outputPhase);
-    return outputPhase.rows == expectedRows ? 0 : -1;
+    return 0;
 }
 
 static bool __stdcall DeflatProgressCallbackImpl(int progress, const char* message) {
@@ -620,6 +841,11 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
     
     emit updateProcess(5, QStringLiteral("正在解析主影像元数据……"));
     Mat statevec, lon_coef, lat_coef, inc_coef, statevec2;
+    TopsBurstPhaseMetadata masterTops, slaveTops;
+    TopsFepV5Orbit masterFepOrbit;
+    int masterLookSide = 0;
+    QString strictOrbitError;
+    QString masterLookSideSource;
     double prf = 0.0, prf2 = 0.0, rangeSpacing = 0.0, wavelength = 0.0;
     double nearRangeTime = 0.0, acquisitionStartTime = 0.0, acquisitionStopTime = 0.0;
     string start, end;
@@ -678,6 +904,26 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
         emit errorProcess(QStringLiteral("共同 burst 几何参考不是实际主图输出：%1").arg(master_path));
         return;
     }
+    if (isdeflat) {
+        NodeUtils::Hdf5Locker locker;
+        const TopsMetadataReadResult masterTopsResult = readTopsBurstPhaseMetadata(master_path, masterTops);
+        if (masterTopsResult != TopsMetadataReadResult::Success) {
+            emit errorProcess(topsMetadataReadError(QStringLiteral("主"), masterTopsResult, master_path));
+            return;
+        }
+		strictOrbitError.clear();
+		if (!readStrictLookSide(master_path, masterLookSide, masterLookSideSource, strictOrbitError)) {
+			emit errorProcess(strictOrbitError);
+			return;
+		}
+		masterTops.azimuthIntervalSeconds = 1.0 / prf;
+    }
+    Mat sourceRowMap;
+    const int sourceRowCount = commonCoverage.applies ? commonCoverage.sourceRowCount : offset_row + Master.GetRows();
+    if (!sourceRowMapForPhase(commonCoverage, Master.GetRows(), sourceRowCount, offset_row, sourceRowMap)) {
+        emit errorProcess(QStringLiteral("共同 burst source-row map 与主影像行数或源场景不一致"));
+        return;
+    }
     
     int total_pairs = input_paths.size() - 1;
     if (total_pairs <= 0) total_pairs = 1;
@@ -701,9 +947,12 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             CommonCoverageContract outputCommonCoverage = commonCoverage;
 
             CommonCoverageContract slaveCoverage;
-            if (!loadCommonCoverageContract(slave_path, sceneHeight, slaveCoverage, commonCoverageError) ||
-                !contractsMatch(commonCoverage, slaveCoverage)) {
-                emit errorProcess(QStringLiteral("主辅干涉输入的共同 burst coverage contract 不一致：%1").arg(slave_path));
+            if (!loadCommonCoverageContract(slave_path, sceneHeight, slaveCoverage, commonCoverageError)) {
+                emit errorProcess(QStringLiteral("辅影像共同 burst coverage contract 字段读取失败或不合法：%1").arg(slave_path));
+                return;
+            }
+            if (!contractsMatch(commonCoverage, slaveCoverage)) {
+                emit errorProcess(QStringLiteral("主辅影像共同 burst mapping 不一致：%1").arg(slave_path));
                 return;
             }
 
@@ -737,32 +986,48 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             if (Master.type() != CV_32F) Master.convertTo(Master, CV_32F);
             if (Slave.type() != CV_32F) Slave.convertTo(Slave, CV_32F);
             Mat slcPairValidMask;
-            if (iscoherence && !buildSlcPairValidMask(Master, Slave, slcPairValidMask)) {
+            if (!buildSlcPairValidMask(Master, Slave, slcPairValidMask)) {
                 emit errorProcess(QStringLiteral("无法构建主辅影像有效样本掩膜"));
                 return;
             }
-            ret = util.Multilook(Master, Slave, 1, 1, phase);
-            if (ret < 0 || phase.empty()) {
-                const QString error = QStringLiteral("干涉相位计算失败: %1").arg(slave_path);
-                InSARLogManager::LogError("InterferometricFormationWorker", error);
-                emit errorProcess(error);
-                return;
-            }
-            
+            TopsMetadataReadResult slaveTopsResult = TopsMetadataReadResult::Success;
+			TopsFepV5Orbit slaveFepOrbit;
+			QString strictSlaveOrbitError;
             {
                 NodeUtils::Hdf5Locker locker;
                 ret = NodeUtils::readMatFromH5(slave_path, "state_vec", statevec2) ? 0 : -1;
                 if (ret == 0) {
                     ret = NodeUtils::readScalarFromH5(slave_path, "prf", prf2) ? 0 : -1;
                 }
+                if (ret == 0 && isdeflat) {
+                    slaveTopsResult = readTopsBurstPhaseMetadata(slave_path, slaveTops, true);
+                }
             }
             if (ret < 0 || statevec2.empty() || !std::isfinite(prf2) || prf2 <= 0.0) {
-                const QString error = QStringLiteral("Slave image metadata is incomplete or invalid: %1").arg(slave_path);
+                const QString error = strictSlaveOrbitError.isEmpty()
+                    ? QStringLiteral("辅影像基础字段读取失败或字段值不合法：%1").arg(slave_path)
+                    : strictSlaveOrbitError;
                 InSARLogManager::LogError("InterferometricFormationWorker", error);
                 emit errorProcess(error);
                 return;
             }
-            Mat phase_deflatted, flat_phase_coefficient;
+            if (isdeflat && slaveTopsResult != TopsMetadataReadResult::Success) {
+                const QString error = topsMetadataReadError(QStringLiteral("辅"), slaveTopsResult, slave_path);
+                InSARLogManager::LogError("InterferometricFormationWorker", error);
+                emit errorProcess(error);
+                return;
+            }
+			if (isdeflat) slaveTops.azimuthIntervalSeconds = 1.0 / prf2;
+            if (isdeflat && !commonCoverageMapsInsideSlaveMetadata(commonCoverage, slaveCoverage, slaveTops)) {
+                const QString error = QStringLiteral("共同 burst 映射越界：主 burst 范围经辅影像 burst offset 后超出辅影像 TOPS 元数据范围：%1")
+                    .arg(slave_path);
+                InSARLogManager::LogError("InterferometricFormationWorker", error);
+                emit errorProcess(error);
+                return;
+            }
+			Mat flatEarthPhase;
+			TopsFepV5Provenance flatEarthProvenance;
+			Mat correctionReference = Mat::zeros(Master.GetRows(), Master.GetCols(), CV_64F);
             
             if (isdeflat)
             {
@@ -770,15 +1035,34 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 g_substep_prog_end = pair_prog_start + pair_span * 0.4;
                 g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在消除平地相位").arg(pair).arg(total_pairs);
 
-                {
-                    NodeUtils::Hdf5Locker locker;
-                    NodeUtils::readMatFromH5(slave_path, "state_vec", statevec2);
-                    NodeUtils::readScalarFromH5(slave_path, "prf", prf2);
-                }
-
-                int ret_deflat = applySegmentedDeflat(flat, commonCoverage, statevec, statevec2, lon_coef, lat_coef,
-                    phase, offset_row, offset_col, prf, prf2, wavelength, phase_deflatted, flat_phase_coefficient);
-                phase_deflatted.copyTo(phase);
+                TopsFepV5Options fepOptions;
+                fepOptions.masterLookSide = masterLookSide;
+				constexpr double kInterpolationMarginSeconds = 10.0;
+				double masterGeometryStart = 0.0;
+				double masterGeometryStop = 0.0;
+				double slaveGeometryStart = 0.0;
+				double slaveGeometryStop = 0.0;
+				if (!nativeTopsGeometryCoverage(masterTops, masterTops.linesPerBurst, sourceRowMap, 0, false, 0.0,
+						masterGeometryStart, masterGeometryStop) ||
+					!nativeTopsGeometryCoverage(slaveTops, masterTops.linesPerBurst, sourceRowMap, slaveCoverage.sourceBurstOffset, true,
+						fepOptions.slaveSearchMaximumHalfWindowSeconds, slaveGeometryStart, slaveGeometryStop) ||
+					!readStrictTopsV5Orbit(master_path, masterGeometryStart, masterGeometryStop,
+						kInterpolationMarginSeconds, masterFepOrbit, strictOrbitError) ||
+					!readStrictTopsV5Orbit(slave_path, slaveGeometryStart, slaveGeometryStop,
+						kInterpolationMarginSeconds, slaveFepOrbit, strictSlaveOrbitError)) {
+					const QString error = !strictOrbitError.isEmpty() ? strictOrbitError : strictSlaveOrbitError;
+					InSARLogManager::LogError("InterferometricFormationWorker", error);
+					emit errorProcess(error);
+					return;
+				}
+				InSARLogManager::LogInfo("InterferometricFormationWorker",
+					QStringLiteral("平地相位轨道策略已锁定：主=%1，从=%2。").arg(
+						QString::fromStdString(masterFepOrbit.interpolationStrategy),
+						QString::fromStdString(slaveFepOrbit.interpolationStrategy)));
+				int ret_deflat = flat.computeSentinel1FlatEarthPhaseV5(
+					masterFepOrbit, slaveFepOrbit, masterTops, slaveTops, sourceRowMap, slcPairValidMask,
+					sourceRowCount, Master.GetCols(), offset_col, slaveCoverage.sourceBurstOffset, 1, wavelength,
+					fepOptions, flatEarthPhase, flatEarthProvenance, DeflatProgressCallbackImpl);
 
                 if (ret_deflat == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Deflat process cancelled by user.");
@@ -790,6 +1074,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     emit errorProcess(QStringLiteral("平地相位消除失败"));
                     return;
                 }
+                correctionReference = flatEarthPhase;
             }
 
             if (istopo_removal)
@@ -798,11 +1083,10 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 g_substep_prog_end = pair_prog_start + pair_span * 0.8;
                 g_current_pair_info = QStringLiteral("生成第%1/%2幅干涉图：正在进行地形相位模拟").arg(pair).arg(total_pairs);
 
-                if (!isdeflat) phase_deflatted = phase.clone();
-                Mat topographyCorrected;
-                int ret_topo = applySegmentedTopography(flat, commonCoverage, statevec, statevec2, lon_coef, lat_coef,
+                Mat topographyPhase;
+                int ret_topo = computeSourceRowAwareTopography(flat, commonCoverage, statevec, statevec2, lon_coef, lat_coef,
                     inc_coef, prf, prf2, sceneWidth, offset_row, offset_col, nearRangeTime, rangeSpacing, wavelength,
-                    acquisitionStartTime, acquisitionStopTime, demPath, phase_deflatted, topographyCorrected);
+                    acquisitionStartTime, acquisitionStopTime, demPath, sourceRowMap, topographyPhase);
 
                 if (ret_topo == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Topography simulation cancelled by user.");
@@ -815,20 +1099,30 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     return;
                 }
                 else {
-                    phase_deflatted = topographyCorrected;
-                    phase_deflatted.copyTo(phase);
+                    correctionReference += topographyPhase;
                 }
             }
 
-            if (multilook_rg > 1 || multilook_az > 1)
-            {
-                if (multilookCommonCoveragePhase(util, outputCommonCoverage, phase,
-                                                 phase_deflatted, multilook_rg, multilook_az) < 0 ||
-                    phase_deflatted.empty()) {
-                    emit errorProcess(QStringLiteral("干涉相位多视处理失败"));
-                    return;
-                }
-                phase_deflatted.copyTo(phase);
+            Mat outputFlatEarthReference;
+            Mat phaseValidMask;
+            Mat phaseValidSampleCount;
+            const int correctedMultilookResult = util.multilookCorrectedInterferogram(
+                Master, Slave, correctionReference, flatEarthPhase, sourceRowMap, slcPairValidMask,
+                multilook_rg, multilook_az, phase, outputFlatEarthReference, phaseValidMask,
+                phaseValidSampleCount, DeflatProgressCallbackImpl);
+            if (correctedMultilookResult == -2) {
+                InSARLogManager::LogInfo("InterferometricFormationWorker", "Corrected interferogram multilooking cancelled by user.");
+                emit cancelled();
+                return;
+            }
+            if (correctedMultilookResult != 0 || phase.empty()) {
+                emit errorProcess(QStringLiteral("复干涉量参考校正或多视处理失败"));
+                return;
+            }
+            if (phaseValidMask.type() != CV_8U || phaseValidMask.size() != phase.size() ||
+                phaseValidSampleCount.type() != CV_32S || phaseValidSampleCount.size() != phase.size()) {
+                emit errorProcess(QStringLiteral("相位有效性契约与多视输出网格不一致"));
+                return;
             }
 
             if (outputCommonCoverage.applies && multilook_az == 1 &&
@@ -870,27 +1164,149 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 outputCommonCoverage.sourceRowMapAzimuthFactor *= multilook_az;
             }
 
-            if (isdeflat && flat_phase_coefficient.empty())
+            if (isdeflat && (outputFlatEarthReference.type() != CV_64F ||
+                             outputFlatEarthReference.size() != phase.size()))
             {
-                emit errorProcess(QStringLiteral("平地相位消除未生成有效系数"));
+                emit errorProcess(QStringLiteral("平地相位参考场与多视输出网格不一致"));
                 return;
             }
+			Mat flatEarthBurstStatistics;
+			Mat flatEarthSolverBurstStatistics;
+			Mat flatEarthFailureBurstStatistics;
+			const bool hasRegistrationRerampProvenance =
+				slaveTops.registrationRerampPhase.type() == CV_64F &&
+				slaveTops.registrationRerampPhase.size() == phase.size() &&
+				cv::checkRange(slaveTops.registrationRerampPhase, true, nullptr);
+			if (isdeflat) {
+				flatEarthBurstStatistics = Mat::zeros(static_cast<int>(flatEarthProvenance.burstStatistics.size()), 13, CV_64F);
+				flatEarthSolverBurstStatistics = Mat::zeros(flatEarthBurstStatistics.rows, 5, CV_64F);
+				flatEarthFailureBurstStatistics = Mat::zeros(flatEarthBurstStatistics.rows, 3, CV_64F);
+				for (int burst = 0; burst < flatEarthBurstStatistics.rows; ++burst) {
+					const TopsFepV5BurstStatistics& stats = flatEarthProvenance.burstStatistics[burst];
+					flatEarthBurstStatistics.at<double>(burst, 0) = static_cast<double>(stats.solvedSamples);
+					flatEarthBurstStatistics.at<double>(burst, 1) = static_cast<double>(stats.nativeSupportMaskedSamples);
+					flatEarthBurstStatistics.at<double>(burst, 2) = stats.maxRdeIterations;
+					flatEarthBurstStatistics.at<double>(burst, 3) = stats.maxZeroDopplerIterations;
+					flatEarthBurstStatistics.at<double>(burst, 4) = stats.maxMasterRangeResidual;
+					flatEarthBurstStatistics.at<double>(burst, 5) = stats.maxMasterZeroDopplerResidual;
+					flatEarthBurstStatistics.at<double>(burst, 6) = stats.maxSlaveZeroDopplerResidual;
+					flatEarthBurstStatistics.at<double>(burst, 7) = stats.maxEllipsoidResidual;
+					flatEarthBurstStatistics.at<double>(burst, 8) = stats.maxJacobianCondition;
+					flatEarthBurstStatistics.at<double>(burst, 9) = stats.maxLastGeometryPhaseChange;
+					flatEarthBurstStatistics.at<double>(burst, 10) = stats.maxDifferentialRangeErrorBound;
+					flatEarthBurstStatistics.at<double>(burst, 11) = stats.maxSlaveSearchHalfWindowSeconds;
+					flatEarthBurstStatistics.at<double>(burst, 12) = stats.maxSlaveSearchExpansions;
+					flatEarthSolverBurstStatistics.at<double>(burst, 0) = static_cast<double>(stats.solvedSamples);
+					flatEarthSolverBurstStatistics.at<double>(burst, 1) = static_cast<double>(stats.totalRdeIterations);
+					flatEarthSolverBurstStatistics.at<double>(burst, 2) = static_cast<double>(stats.totalZeroDopplerIterations);
+					flatEarthSolverBurstStatistics.at<double>(burst, 3) = static_cast<double>(stats.totalSlaveDopplerEvaluations);
+					flatEarthSolverBurstStatistics.at<double>(burst, 4) = stats.maxSlaveDopplerEvaluations;
+					flatEarthFailureBurstStatistics.at<double>(burst, 0) = static_cast<double>(stats.masterRdeFailureCount);
+					flatEarthFailureBurstStatistics.at<double>(burst, 1) = static_cast<double>(stats.slaveZeroDopplerFailureCount);
+					flatEarthFailureBurstStatistics.at<double>(burst, 2) = static_cast<double>(stats.closureFailureCount);
+				}
+			}
 
             {
                 NodeUtils::Hdf5Locker locker;
-                const int outputSceneHeight = commonCoverage.applies ? phase.rows : sceneHeight;
+                const int outputSceneHeight = phase.rows;
+                const int outputSceneWidth = phase.cols;
                 int outputSceneHeightValue = outputSceneHeight;
+                int outputSceneWidthValue = outputSceneWidth;
                 ret = FC.creat_new_h5(h5_path.toStdString().c_str());
                 if (ret >= 0) {
-                    if ((!flat_phase_coefficient.empty() &&
-                         !writeArray(h5_path, "flat_phase_coefficient", flat_phase_coefficient)) ||
-                        (commonCoverage.applies && !flat_phase_coefficient.empty() &&
-                         !writeArray(h5_path, "s1_tops_segment_flat_phase_coefficients", flat_phase_coefficient)) ||
-                        (commonCoverage.applies && !flat_phase_coefficient.empty() &&
-                         !NodeUtils::writeStringToH5(h5_path,
-                             QStringLiteral("s1_tops_flat_phase_coefficient_contract"),
-                             std::string("per_source_row_run_v1; flat_phase_coefficient rows are not a single-scene model; use s1_tops_output_source_row_map"))) ||
-                        !NodeUtils::writeScalarToH5(h5_path, "phase_processing_schema_version", 1) ||
+                    if ((isdeflat &&
+                         (!writeArray(h5_path, "flat_earth_reference_phase", outputFlatEarthReference) ||
+						  !writeArray(h5_path, "flat_earth_rde_burst_statistics", flatEarthBurstStatistics) ||
+						  !writeArray(h5_path, "flat_earth_solver_burst_statistics", flatEarthSolverBurstStatistics) ||
+						  !writeArray(h5_path, "flat_earth_failure_burst_statistics", flatEarthFailureBurstStatistics) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_model_version", 6) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_model_source_row_count", sourceRowCount) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_orbit_osv_start_gps", flatEarthProvenance.masterOrbit.osvStartGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_orbit_osv_stop_gps", flatEarthProvenance.masterOrbit.osvStopGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_geometry_start_gps", flatEarthProvenance.masterOrbit.geometryStartGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_geometry_stop_gps", flatEarthProvenance.masterOrbit.geometryStopGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_orbit_osv_start_gps", flatEarthProvenance.slaveOrbit.osvStartGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_orbit_osv_stop_gps", flatEarthProvenance.slaveOrbit.osvStopGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_geometry_start_gps", flatEarthProvenance.slaveOrbit.geometryStartGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_geometry_stop_gps", flatEarthProvenance.slaveOrbit.geometryStopGps) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_orbit_interpolation_margin_seconds", flatEarthProvenance.masterOrbit.interpolationMarginSeconds) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_rde_epsilon_phase", flatEarthProvenance.options.epsilonPhase) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_rde_max_residual", flatEarthProvenance.options.maxRdeResidual) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_zero_doppler_max_residual", flatEarthProvenance.options.maxZeroDopplerResidual) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_rde_max_jacobian_condition", flatEarthProvenance.options.maxJacobianCondition) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_search_initial_half_window_seconds", flatEarthProvenance.options.slaveSearchHalfWindowSeconds) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_search_maximum_half_window_seconds", flatEarthProvenance.options.slaveSearchMaximumHalfWindowSeconds) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_search_expansion_factor", flatEarthProvenance.options.slaveSearchExpansionFactor) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_search_max_expansions", flatEarthProvenance.options.maxSlaveSearchExpansions) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_rde_max_iterations", flatEarthProvenance.options.maxRdeIterations) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_zero_doppler_max_iterations", flatEarthProvenance.options.maxZeroDopplerIterations) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_look_side", flatEarthProvenance.options.masterLookSide) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_master_look_side_source"),
+							  masterLookSideSource.toStdString()) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_wavelength_meters", wavelength) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_transmit_receive_mode", 1) ||
+						  !writeArray(h5_path, "flat_earth_master_burst_azimuth_time", masterTops.burstAzimuthTime) ||
+						  !writeArray(h5_path, "flat_earth_slave_burst_azimuth_time", slaveTops.burstAzimuthTime) ||
+						  !writeArray(h5_path, "flat_earth_master_azimuth_fm_rate_list", masterTops.azimuthFmRateList) ||
+						  !writeArray(h5_path, "flat_earth_slave_azimuth_fm_rate_list", slaveTops.azimuthFmRateList) ||
+						  !writeArray(h5_path, "flat_earth_master_dc_estimate_list", masterTops.dcEstimateList) ||
+						  !writeArray(h5_path, "flat_earth_slave_dc_estimate_list", slaveTops.dcEstimateList) ||
+						  !writeArray(h5_path, "flat_earth_master_first_valid_line", masterTops.firstValidLine) ||
+						  !writeArray(h5_path, "flat_earth_master_last_valid_line", masterTops.lastValidLine) ||
+						  !writeArray(h5_path, "flat_earth_slave_first_valid_line", slaveTops.firstValidLine) ||
+						  !writeArray(h5_path, "flat_earth_slave_last_valid_line", slaveTops.lastValidLine) ||
+						  !writeArray(h5_path, "flat_earth_master_first_valid_sample", masterTops.firstValidSample) ||
+						  !writeArray(h5_path, "flat_earth_master_last_valid_sample", masterTops.lastValidSample) ||
+						  !writeArray(h5_path, "flat_earth_slave_first_valid_sample", slaveTops.firstValidSample) ||
+						  !writeArray(h5_path, "flat_earth_slave_last_valid_sample", slaveTops.lastValidSample) ||
+						  (hasRegistrationRerampProvenance &&
+						   !writeArray(h5_path, "flat_earth_slave_registration_reramp_phase", slaveTops.registrationRerampPhase)) ||
+						  !writeArray(h5_path, "flat_earth_slave_registration_mapping_coefficients", slaveTops.registrationMappingCoefficients) ||
+						  !writeArray(h5_path, "flat_earth_slave_registration_mapping_master_burst_indices", slaveTops.registrationMappingMasterBurstIndices) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_lines_per_burst", masterTops.linesPerBurst) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_lines_per_burst", slaveTops.linesPerBurst) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_azimuth_steering_rate", masterTops.azimuthSteeringRate) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_azimuth_steering_rate", slaveTops.azimuthSteeringRate) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_range_spacing", masterTops.rangeSpacing) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_range_spacing", slaveTops.rangeSpacing) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_slant_range_first_pixel", masterTops.slantRangeFirstPixel) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_slant_range_first_pixel", slaveTops.slantRangeFirstPixel) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_source_burst_offset", slaveCoverage.sourceBurstOffset) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_model_source_row_semantics"),
+							  std::string("source_row_map_selects_master_native_burst_line_only_v1")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_geolocation_coordinate_semantics"),
+							  std::string("master_native_line_sample_to_h0_rde__slave_zero_doppler_range_v1")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_algorithm_entry"),
+							  std::string("deflat_compute_sentinel1_flat_earth_phase_v5")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_geometry_branch"),
+							  std::string("master_native_range_doppler_h0__slave_independent_zero_doppler__registration_time_seed_only_v1")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_model_timing_semantics"),
+							  std::string("strict_gps_h5_time_v2__registration_time_seed_not_geometry_truth_v1")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_processing_phase_semantics"),
+							  std::string("master_native_phase;slave_registration_mapping_seed_only_m_conjugate_s_v2")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_slave_registration_mapping_semantics"),
+							  std::string("pull_source_row_and_column_offsets_a0_a1_column_a2_master_burst_line_v1")) ||
+						  (hasRegistrationRerampProvenance &&
+						   !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"),
+							   std::string("resampled_slave_deramp_demod_phase_registration_only_v1"))) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_model_status"),
+							  std::string("tops_native_range_doppler_h0_geometry_only_reference_v2")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_master_orbit_source"),
+							  flatEarthProvenance.masterOrbit.source) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_master_orbit_selection_reason"),
+							  flatEarthProvenance.masterOrbit.selectionReason) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_slave_orbit_source"),
+							  flatEarthProvenance.slaveOrbit.source) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_slave_orbit_selection_reason"),
+							  flatEarthProvenance.slaveOrbit.selectionReason) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_orbit_time_scale"),
+							  std::string("GPS")) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_orbit_interpolation_strategy"),
+							  flatEarthProvenance.masterOrbit.interpolationStrategy) ||
+						  !NodeUtils::writeStringToH5(h5_path, QStringLiteral("flat_earth_reference_phase_semantics"),
+							  std::string("unwrapped_master_native_h0_rde_geometry_only_reference_v6")))) ||
+                        !NodeUtils::writeScalarToH5(h5_path, "phase_processing_schema_version", isdeflat ? 2 : 1) ||
                         !NodeUtils::writeScalarToH5(h5_path, "phase_flat_earth_removed", isdeflat ? 1 : 0) ||
                         !NodeUtils::writeScalarToH5(h5_path, "phase_topography_removed", istopo_removal ? 1 : 0) ||
                         (istopo_removal &&
@@ -901,10 +1317,12 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                               static_cast<double>(demMaskValidPixelCount)) ||
                           !NodeUtils::writeStringToH5(h5_path, "terrain_dem_coverage_status",
                               std::string("full_source_support_verified")))) ||
-                        !writeArray(h5_path, "range_len", Mat(1, 1, CV_32S, &sceneWidth)) ||
+                        !writeArray(h5_path, "range_len", Mat(1, 1, CV_32S, &outputSceneWidthValue)) ||
                         !writeArray(h5_path, "azimuth_len", Mat(1, 1, CV_32S, &outputSceneHeightValue)) ||
                         !writeArray(h5_path, "multilook_rg", Mat(1, 1, CV_32S, &multilook_rg)) ||
                         !writeArray(h5_path, "multilook_az", Mat(1, 1, CV_32S, &multilook_az)) ||
+                        !writeArray(h5_path, "phase_valid_mask", phaseValidMask) ||
+                        !writeArray(h5_path, "phase_valid_sample_count", phaseValidSampleCount) ||
                         !writeArray(h5_path, "phase", phase)) {
                         return;
                     }
@@ -938,15 +1356,16 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     return;
                 }
                 Mat coherence;
-                Mat phaseValidMask;
+                Mat coherencePhaseValidMask;
                 Mat validSampleCount;
                 if (!reduceStrictValidMaskCommonCoverage(
                         outputCommonCoverage, slcPairValidMask, multilook_rg,
-                        multilook_az, phaseValidMask) ||
-                    phaseValidMask.size() != phase.size()) {
+                        multilook_az, coherencePhaseValidMask) ||
+                    coherencePhaseValidMask.size() != phase.size()) {
                     emit errorProcess(QStringLiteral("相干性有效样本掩膜与相位网格不一致"));
                     return;
                 }
+                cv::bitwise_and(coherencePhaseValidMask, phaseValidMask, coherencePhaseValidMask);
                 int ret_coh = util.phase_axial_concentration(phase, win_width, win_height, coherence, DeflatProgressCallbackImpl);
                 if (ret_coh == -2) {
                     InSARLogManager::LogInfo("InterferometricFormationWorker", "Coherence calculation cancelled by user.");
@@ -959,7 +1378,7 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                     return;
                 }
                 if (!buildCoherenceSupportCount(
-                        phaseValidMask, win_width, win_height, validSampleCount) ||
+                        coherencePhaseValidMask, win_width, win_height, validSampleCount) ||
                     validSampleCount.size() != coherence.size()) {
                     emit errorProcess(QStringLiteral("相干性有效样本支持数计算失败"));
                     return;

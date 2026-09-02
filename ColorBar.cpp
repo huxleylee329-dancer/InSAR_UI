@@ -36,9 +36,42 @@ int ColorBar::SetData(QString Data_path, QString Type)
         QMessageBox::warning(NULL, "Warning!", QStringLiteral("未检测到数据,请确保数据没有被删除或移动"));
         return -1;
     }
-    if (Type == "phase" ||
-        Type == "coherence" ||
-        Type == "dem") 
+
+    if (Type == "coherence")
+    {
+        if (!QFileInfo::exists(Data_path))
+        {
+            return -1;
+        }
+
+        // Coherence previews and their legend use the fixed physical [0, 1]
+        // range. Do not synchronously read the full H5 coherence matrix only
+        // to calculate a range that is already defined by the product.
+        mType = Type;
+        mMin = 0.0;
+        mMax = 1.0;
+        update();
+        return 0;
+    }
+
+    if (Type == "phase")
+    {
+        if (!QFileInfo::exists(Data_path))
+        {
+            return -1;
+        }
+
+        // Phase previews are rendered as wrapped phase by savephase(), so
+        // their display range is always [-pi, pi]. Avoid reading a full H5
+        // matrix again solely to calculate a range the preview does not use.
+        mType = Type;
+        mMin = -3.14159265358979323846;
+        mMax = 3.14159265358979323846;
+        update();
+        return 0;
+    }
+
+    if (Type == "dem")
     {
         Mat V;
         if (!NodeUtils::readMatFromH5(Data_path, Type, V))
@@ -104,6 +137,17 @@ void ColorBar::paintEvent(QPaintEvent* event)
         for (int i = 0; i < Rect_height; i++)
         {
             int s = i * 255 / Rect_height;
+            if (mType == "coherence")
+            {
+                // Coherence previews use 0..1 grayscale: low coherence is
+                // black at the bottom of the scale and high coherence is
+                // white at the top. Keep the legend in the same mapping.
+                const int gray = 255 - s;
+                Pen_color.setColor(QColor(gray, gray, gray));
+                painter.setPen(Pen_color);
+                painter.drawLine(Rect_Left, Rect_Top + i, Rect_Right, Rect_Top + i);
+                continue;
+            }
             if (s < 32)
             {
                 Pen_color.setColor(QColor(128 + s * 4, 0, 0));

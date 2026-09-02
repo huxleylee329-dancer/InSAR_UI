@@ -352,16 +352,23 @@ void DemWorker::Dem(int method,
                 return;
             }
 
-            Mat flatPhaseCoefficient;
-            if (!NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficient", flatPhaseCoefficient) ||
-                flatPhaseCoefficient.empty()) {
-                emit errorProcess(QStringLiteral("Input phase file has no valid flat_phase_coefficient: ") + inputH5);
+            Mat flatPhaseMetadata;
+            QString flatPhaseDataset = QStringLiteral("flat_earth_reference_phase");
+            if (!NodeUtils::readMatFromH5(inputH5, flatPhaseDataset, flatPhaseMetadata) || flatPhaseMetadata.empty()) {
+                flatPhaseDataset = QStringLiteral("flat_phase_coefficient");
+                if (!NodeUtils::readMatFromH5(inputH5, flatPhaseDataset, flatPhaseMetadata) || flatPhaseMetadata.empty()) {
+                    emit errorProcess(QStringLiteral("Input phase file has no valid flat-earth reference contract: ") + inputH5);
+                    return;
+                }
+            }
+            if (flatPhaseDataset == QStringLiteral("flat_earth_reference_phase") && flatPhaseMetadata.size() != phase.size()) {
+                emit errorProcess(QStringLiteral("Input flat-earth reference field does not match phase grid: ") + inputH5);
                 return;
             }
 
-            InSARLogManager::LogDebug("DemWorker", QString("DEM input preflight: phase=%1, phaseShape=%2x%3, phaseType=%4, flatPhaseShape=%5x%6, flatPhaseType=%7, projectRoot=%8, iterations=%9, method=%10")
+            InSARLogManager::LogDebug("DemWorker", QString("DEM input preflight: phase=%1, phaseShape=%2x%3, phaseType=%4, flatPhaseDataset=%5, flatPhaseShape=%6x%7, flatPhaseType=%8, projectRoot=%9, iterations=%10, method=%11")
                 .arg(inputH5).arg(phase.rows).arg(phase.cols).arg(phase.type())
-                .arg(flatPhaseCoefficient.rows).arg(flatPhaseCoefficient.cols).arg(flatPhaseCoefficient.type())
+                .arg(flatPhaseDataset).arg(flatPhaseMetadata.rows).arg(flatPhaseMetadata.cols).arg(flatPhaseMetadata.type())
                 .arg(savePath).arg(times).arg(method), "dem.preflight.input");
             logSourceDependency(inputH5, QStringLiteral("source_1"), savePath);
             logSourceDependency(inputH5, QStringLiteral("source_2"), savePath);
@@ -461,9 +468,10 @@ void DemWorker::Dem(int method,
                 return;
             }
 
-            if (NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficient", value) ||
-                NodeUtils::readMatFromH5(inputH5, "flat_phase_coefficientficient", value)) {
-                NodeUtils::writeMatToH5(outputH5, "flat_phase_coefficient", value);
+            QString phaseMetadataError;
+            if (!NodeUtils::copyPhaseProcessingMetadata(inputH5, outputH5, &phaseMetadataError)) {
+                emit errorProcess(QStringLiteral("Failed to preserve flat-earth phase contract: %1").arg(phaseMetadataError));
+                return;
             }
             const char* const copiedDatasets[] = {
                 "range_len", "azimuth_len", "multilook_rg", "multilook_az"

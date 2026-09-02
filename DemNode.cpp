@@ -1343,7 +1343,12 @@ private:
                     cv::Mat auxiliary;
                     const bool source1Present = NodeUtils::readStringFromH5(outputPath, "source_1", source);
                     const bool source2Present = NodeUtils::readStringFromH5(outputPath, "source_2", source);
-                    const bool flatPhasePresent = NodeUtils::readMatFromH5(outputPath, "flat_phase_coefficient", auxiliary) && !auxiliary.empty();
+                    const bool flatPhasePresent =
+                        (NodeUtils::readMatFromH5(outputPath, "flat_earth_reference_phase", auxiliary) && !auxiliary.empty()) ||
+                        (NodeUtils::readMatFromH5(outputPath, "flat_phase_coefficient", auxiliary) && !auxiliary.empty());
+					QString flatEarthContractError;
+					const bool flatEarthContractValid = NodeUtils::validateFlatEarthReferenceContract(
+						outputPath, &flatEarthContractError);
                     const bool rangeLengthPresent = NodeUtils::readMatFromH5(outputPath, "range_len", auxiliary) && !auxiliary.empty();
                     const bool azimuthLengthPresent = NodeUtils::readMatFromH5(outputPath, "azimuth_len", auxiliary) && !auxiliary.empty();
                     const bool multilookRangePresent = NodeUtils::readMatFromH5(outputPath, "multilook_rg", auxiliary) && !auxiliary.empty();
@@ -1357,7 +1362,8 @@ private:
                         maxLon > minLon && maxLat > minLat;
                     if (!source1Present) image.missingDependencies.append(QStringLiteral("source_1"));
                     if (!source2Present) image.missingDependencies.append(QStringLiteral("source_2"));
-                    if (!flatPhasePresent) image.missingDependencies.append(QStringLiteral("flat_phase_coefficient"));
+                    if (!flatPhasePresent) image.missingDependencies.append(QStringLiteral("flat_earth_reference_phase/flat_phase_coefficient"));
+					if (!flatEarthContractValid) image.missingDependencies.append(QStringLiteral("flat_earth_contract: %1").arg(flatEarthContractError));
                     if (!rangeLengthPresent) image.missingDependencies.append(QStringLiteral("range_len"));
                     if (!azimuthLengthPresent) image.missingDependencies.append(QStringLiteral("azimuth_len"));
                     if (!multilookRangePresent) image.missingDependencies.append(QStringLiteral("multilook_rg"));

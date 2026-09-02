@@ -35,6 +35,7 @@
 #include <Hdf5IO.h>
 #include <Utils.h>
 #include <cmath>
+#include <cfloat>
 #include <algorithm>
 
 #include <QMap>
@@ -5422,15 +5423,372 @@ bool writeSourcePathMetadata(const QString& outputPath,
     return true;
 }
 
+namespace {
+bool validateVersionedFlatEarthContract(const QString& inputPath, QString* errMsg)
+{
+    int modelVersion = 0;
+    if (!readScalarFromH5(inputPath, QStringLiteral("flat_earth_model_version"), modelVersion, errMsg) ||
+        (modelVersion != 5 && modelVersion != 6)) {
+        if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("不支持的平地相位模型版本：%1").arg(inputPath);
+        return false;
+    }
+    const bool geometryOnly = modelVersion == 6;
+    const char* const expectedProcessing = geometryOnly ?
+        "master_native_phase;slave_registration_mapping_seed_only_m_conjugate_s_v2" :
+        "master_native_phase;slave_registered_mapping_and_resampled_reramp_reference_m_conjugate_s_v1";
+    const char* const expectedStatus = geometryOnly ?
+        "tops_native_range_doppler_h0_geometry_only_reference_v2" :
+        "tops_native_range_doppler_h0_reference_v1";
+    const char* const expectedReferenceSemantics = geometryOnly ?
+        "unwrapped_master_native_h0_rde_geometry_only_reference_v6" :
+        "unwrapped_master_native_h0_rde_geometry_plus_slave_native_processing_effective_complex_block_reference_v5";
+    const auto readRequiredInt = [&](const QString& dataset, int expected) {
+        int value = 0;
+        return readScalarFromH5(inputPath, dataset, value, errMsg) && value == expected;
+    };
+	const auto readRequiredString = [&](const QString& dataset, const char* expected) {
+		std::string value;
+		return readStringFromH5(inputPath, dataset, value, errMsg) && value == expected;
+	};
+	const auto readSupportedFineOrbitStrategy = [&]() {
+		std::string value;
+		return readStringFromH5(inputPath, QStringLiteral("flat_earth_orbit_interpolation_strategy"), value, errMsg) &&
+			(value == "fine_state_vec_cubic_hermite_v2" ||
+			 value == "raw_state_vec_nearest_contiguous_8_osv_cubic_least_squares_v1");
+	};
+	const auto readOrbitSourceAndReason = [&](const QString& sourceDataset, const QString& reasonDataset) {
+		std::string source;
+		std::string reason;
+		if (!readStringFromH5(inputPath, sourceDataset, source, errMsg) ||
+			!readStringFromH5(inputPath, reasonDataset, reason, errMsg)) return false;
+		return (source == "fine_state_vec" && reason == "fine_state_vec_valid_preferred_v1") ||
+			(source == "state_vec" && (reason == "fine_state_vec_invalid__raw_snap_compatible_fallback_v1" ||
+				reason == "fine_state_vec_absent__raw_snap_compatible_fallback_v1"));
+	};
+	const auto readLookSideSource = [&]() {
+		std::string source;
+		return readStringFromH5(inputPath, QStringLiteral("flat_earth_master_look_side_source"), source, errMsg) &&
+			(source == "h5_lookside_v1" || source == "sentinel1_fixed_right_looking_v1");
+	};
+    if (!readRequiredString(QStringLiteral("flat_earth_model_source_row_semantics"),
+                            "source_row_map_selects_master_native_burst_line_only_v1") ||
+		!readRequiredString(QStringLiteral("flat_earth_model_timing_semantics"),
+							"strict_gps_h5_time_v2__registration_time_seed_not_geometry_truth_v1") ||
+		!readRequiredString(QStringLiteral("flat_earth_processing_phase_semantics"),
+							expectedProcessing) ||
+		!readRequiredString(QStringLiteral("flat_earth_slave_registration_mapping_semantics"),
+							"pull_source_row_and_column_offsets_a0_a1_column_a2_master_burst_line_v1") ||
+		(!geometryOnly && !readRequiredString(QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"),
+							"resampled_slave_deramp_demod_phase_before_conjugated_reramp_v1")) ||
+		!readRequiredString(QStringLiteral("flat_earth_model_status"), expectedStatus) ||
+		!readRequiredString(QStringLiteral("flat_earth_geolocation_coordinate_semantics"), "master_native_line_sample_to_h0_rde__slave_zero_doppler_range_v1") ||
+		!readRequiredString(QStringLiteral("flat_earth_orbit_time_scale"), "GPS") ||
+		!readSupportedFineOrbitStrategy() ||
+		!readOrbitSourceAndReason(QStringLiteral("flat_earth_master_orbit_source"), QStringLiteral("flat_earth_master_orbit_selection_reason")) ||
+		!readOrbitSourceAndReason(QStringLiteral("flat_earth_slave_orbit_source"), QStringLiteral("flat_earth_slave_orbit_selection_reason")) ||
+		!readLookSideSource() ||
+		!readRequiredString(QStringLiteral("flat_earth_reference_phase_semantics"),
+							expectedReferenceSemantics)) {
+		if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("版本化平地相位描述符缺失、类型错误或值不受支持：%1").arg(inputPath);
+        return false;
+    }
+    int sourceRowCount = 0;
+    if (!readScalarFromH5(inputPath, QStringLiteral("flat_earth_model_source_row_count"), sourceRowCount, errMsg) ||
+        sourceRowCount < 1) {
+		if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("版本化 source-row 计数无效：%1").arg(inputPath);
+        return false;
+    }
+	int masterLinesPerBurst = 0;
+	int slaveLinesPerBurst = 0;
+	int slaveBurstOffset = 0;
+	cv::Mat masterBurstTimes;
+	cv::Mat slaveBurstTimes;
+	if (!readScalarFromH5(inputPath, QStringLiteral("flat_earth_master_lines_per_burst"), masterLinesPerBurst, errMsg) ||
+		!readScalarFromH5(inputPath, QStringLiteral("flat_earth_slave_lines_per_burst"), slaveLinesPerBurst, errMsg) ||
+		!readScalarFromH5(inputPath, QStringLiteral("flat_earth_slave_source_burst_offset"), slaveBurstOffset, errMsg) ||
+		masterLinesPerBurst < 1 || slaveLinesPerBurst < 1 ||
+		!readMatFromH5(inputPath, QStringLiteral("flat_earth_master_burst_azimuth_time"), masterBurstTimes, -1, errMsg) ||
+		!readMatFromH5(inputPath, QStringLiteral("flat_earth_slave_burst_azimuth_time"), slaveBurstTimes, -1, errMsg) ||
+		masterBurstTimes.type() != CV_64F || masterBurstTimes.cols != 1 || masterBurstTimes.rows < 1 ||
+		slaveBurstTimes.type() != CV_64F || slaveBurstTimes.cols != 1 ||
+		sourceRowCount > masterBurstTimes.rows * masterLinesPerBurst ||
+		!cv::checkRange(masterBurstTimes, true, nullptr) ||
+		!cv::checkRange(slaveBurstTimes, true, nullptr)) {
+		if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("版本化 TOPS burst 时序 provenance 无效：%1").arg(inputPath);
+		return false;
+	}
+	const QStringList phaseMatrices64 = {
+		QStringLiteral("flat_earth_master_azimuth_fm_rate_list"), QStringLiteral("flat_earth_slave_azimuth_fm_rate_list"),
+		QStringLiteral("flat_earth_master_dc_estimate_list"), QStringLiteral("flat_earth_slave_dc_estimate_list") };
+	const QStringList phaseMatrices32 = {
+		QStringLiteral("flat_earth_master_first_valid_line"), QStringLiteral("flat_earth_master_last_valid_line"),
+		QStringLiteral("flat_earth_slave_first_valid_line"), QStringLiteral("flat_earth_slave_last_valid_line"),
+		QStringLiteral("flat_earth_master_first_valid_sample"), QStringLiteral("flat_earth_master_last_valid_sample"),
+		QStringLiteral("flat_earth_slave_first_valid_sample"), QStringLiteral("flat_earth_slave_last_valid_sample") };
+	for (const QString& dataset : phaseMatrices64) {
+		cv::Mat value;
+		if (!readMatFromH5(inputPath, dataset, value, -1, errMsg) || value.type() != CV_64F ||
+			value.rows < 1 || value.cols < 5 || !cv::checkRange(value, true, nullptr)) return false;
+	}
+	for (const QString& dataset : phaseMatrices32) {
+		cv::Mat value;
+		if (!readMatFromH5(inputPath, dataset, value, -1, errMsg) || value.type() != CV_32S ||
+			value.cols != 1 || value.rows < 1) return false;
+	}
+	const auto validateBurstVector = [&](const QString& dataset, int expectedRows) {
+		cv::Mat value;
+		return readMatFromH5(inputPath, dataset, value, -1, errMsg) && value.type() == CV_32S &&
+			value.rows == expectedRows && value.cols == 1;
+	};
+	if (!validateBurstVector(QStringLiteral("flat_earth_master_first_valid_line"), masterBurstTimes.rows) ||
+		!validateBurstVector(QStringLiteral("flat_earth_master_last_valid_line"), masterBurstTimes.rows) ||
+		!validateBurstVector(QStringLiteral("flat_earth_master_first_valid_sample"), masterBurstTimes.rows) ||
+		!validateBurstVector(QStringLiteral("flat_earth_master_last_valid_sample"), masterBurstTimes.rows) ||
+		!validateBurstVector(QStringLiteral("flat_earth_slave_first_valid_line"), slaveBurstTimes.rows) ||
+		!validateBurstVector(QStringLiteral("flat_earth_slave_last_valid_line"), slaveBurstTimes.rows) ||
+		!validateBurstVector(QStringLiteral("flat_earth_slave_first_valid_sample"), slaveBurstTimes.rows) ||
+		!validateBurstVector(QStringLiteral("flat_earth_slave_last_valid_sample"), slaveBurstTimes.rows)) return false;
+	const QStringList phaseScalars = {
+		QStringLiteral("flat_earth_master_azimuth_steering_rate"), QStringLiteral("flat_earth_slave_azimuth_steering_rate"),
+		QStringLiteral("flat_earth_master_range_spacing"), QStringLiteral("flat_earth_slave_range_spacing"),
+		QStringLiteral("flat_earth_master_slant_range_first_pixel"), QStringLiteral("flat_earth_slave_slant_range_first_pixel") };
+	for (const QString& dataset : phaseScalars) {
+		double value = 0.0;
+		if (!readScalarFromH5(inputPath, dataset, value, errMsg) || !std::isfinite(value) ||
+			(dataset.contains(QStringLiteral("range")) && value <= 0.0) ||
+			(dataset.contains(QStringLiteral("steering")) && std::fabs(value) <= DBL_EPSILON)) return false;
+	}
+	int rdeMaxIterations = 0;
+	int zeroDopplerMaxIterations = 0;
+	int transmitReceiveMode = 0;
+	if (!readScalarFromH5(inputPath, QStringLiteral("flat_earth_rde_max_iterations"), rdeMaxIterations, errMsg) || rdeMaxIterations < 1 ||
+		!readScalarFromH5(inputPath, QStringLiteral("flat_earth_zero_doppler_max_iterations"), zeroDopplerMaxIterations, errMsg) || zeroDopplerMaxIterations < 1 ||
+		!readScalarFromH5(inputPath, QStringLiteral("flat_earth_transmit_receive_mode"), transmitReceiveMode, errMsg) ||
+		(transmitReceiveMode != 1 && transmitReceiveMode != 2)) return false;
+	cv::Mat phase, reference, rerampPhase, mappingCoefficients, mappingBurstIndices, rdeStatistics;
+    const bool hasPhaseGrid = readMatFromH5(inputPath, QStringLiteral("phase"), phase, -1, errMsg) && !phase.empty();
+    if (!hasPhaseGrid) {
+        if (errMsg) errMsg->clear();
+        if (!readMatFromH5(inputPath, QStringLiteral("dem"), phase, -1, errMsg) || phase.empty()) {
+			if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("版本化平地相位契约缺少 phase 或 DEM 输出网格：%1").arg(inputPath);
+            return false;
+        }
+    }
+    if (
+        !readMatFromH5(inputPath, QStringLiteral("flat_earth_reference_phase"), reference, -1, errMsg) ||
+        reference.type() != CV_64F || reference.size() != phase.size() || !cv::checkRange(reference, true, nullptr) ||
+		!readMatFromH5(inputPath, QStringLiteral("flat_earth_rde_burst_statistics"), rdeStatistics, -1, errMsg) ||
+		rdeStatistics.type() != CV_64F || rdeStatistics.rows != masterBurstTimes.rows || rdeStatistics.cols != 13 ||
+		!cv::checkRange(rdeStatistics, true, nullptr)) {
+		if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("版本化平地相位参考场或 RDE 汇总统计形状无效：%1").arg(inputPath);
+		return false;
+    }
+	if ((!geometryOnly &&
+		 (!readMatFromH5(inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), rerampPhase, -1, errMsg) ||
+		  rerampPhase.type() != CV_64F || rerampPhase.size() != phase.size() || !cv::checkRange(rerampPhase, true, nullptr))) ||
+		!readMatFromH5(inputPath, QStringLiteral("flat_earth_slave_registration_mapping_coefficients"), mappingCoefficients, -1, errMsg) ||
+		mappingCoefficients.type() != CV_64F || mappingCoefficients.rows < 1 || mappingCoefficients.cols != 6 || !cv::checkRange(mappingCoefficients, true, nullptr) ||
+		!readMatFromH5(inputPath, QStringLiteral("flat_earth_slave_registration_mapping_master_burst_indices"), mappingBurstIndices, -1, errMsg) ||
+		mappingBurstIndices.type() != CV_32S || mappingBurstIndices.rows != 1 ||
+		mappingBurstIndices.cols != mappingCoefficients.rows) {
+		if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("版本化注册 mapping provenance 无效：%1").arg(inputPath);
+		return false;
+	}
+	for (int index = 0; index < mappingBurstIndices.cols; ++index) {
+		const int burst = mappingBurstIndices.at<int>(0, index);
+		if (burst < 1) return false;
+		for (int previous = 0; previous < index; ++previous) {
+			if (mappingBurstIndices.at<int>(0, previous) == burst) return false;
+		}
+	}
+	if (geometryOnly) {
+		int rerampExists = 0;
+		int rerampSemanticsExists = 0;
+		const QByteArray utf8Path = inputPath.toUtf8();
+		if (Hdf5IO::datasetExists(utf8Path.constData(), "flat_earth_slave_registration_reramp_phase", &rerampExists) != 0 ||
+			Hdf5IO::datasetExists(utf8Path.constData(), "flat_earth_slave_registration_reramp_phase_semantics", &rerampSemanticsExists) != 0 ||
+			rerampExists != rerampSemanticsExists) return false;
+		if (rerampExists != 0) {
+			std::string rerampSemantics;
+			if (!readMatFromH5(inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), rerampPhase, -1, errMsg) ||
+				rerampPhase.type() != CV_64F || rerampPhase.size() != phase.size() || !cv::checkRange(rerampPhase, true, nullptr) ||
+				!readStringFromH5(inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"), rerampSemantics, errMsg) ||
+				rerampSemantics != "resampled_slave_deramp_demod_phase_registration_only_v1") return false;
+		}
+	}
+    const QStringList scalarNames = {
+        QStringLiteral("flat_earth_master_orbit_osv_start_gps"), QStringLiteral("flat_earth_master_orbit_osv_stop_gps"),
+		QStringLiteral("flat_earth_master_geometry_start_gps"), QStringLiteral("flat_earth_master_geometry_stop_gps"),
+        QStringLiteral("flat_earth_slave_orbit_osv_start_gps"), QStringLiteral("flat_earth_slave_orbit_osv_stop_gps"),
+		QStringLiteral("flat_earth_slave_geometry_start_gps"), QStringLiteral("flat_earth_slave_geometry_stop_gps"),
+		QStringLiteral("flat_earth_orbit_interpolation_margin_seconds"),
+        QStringLiteral("flat_earth_rde_epsilon_phase"), QStringLiteral("flat_earth_rde_max_residual"),
+        QStringLiteral("flat_earth_zero_doppler_max_residual"), QStringLiteral("flat_earth_rde_max_jacobian_condition"),
+        QStringLiteral("flat_earth_slave_search_initial_half_window_seconds"),
+        QStringLiteral("flat_earth_slave_search_maximum_half_window_seconds"),
+		QStringLiteral("flat_earth_slave_search_expansion_factor"), QStringLiteral("flat_earth_wavelength_meters") };
+	double epsilonPhase = 0.0;
+	double jacobianCondition = 0.0;
+	double initialWindow = 0.0;
+	double maximumWindow = 0.0;
+	double expansionFactor = 0.0;
+	double wavelength = 0.0;
+	double masterOrbitStart = 0.0;
+	double masterOrbitStop = 0.0;
+	double masterGeometryStart = 0.0;
+	double masterGeometryStop = 0.0;
+	double slaveOrbitStart = 0.0;
+	double slaveOrbitStop = 0.0;
+	double slaveGeometryStart = 0.0;
+	double slaveGeometryStop = 0.0;
+	double interpolationMargin = 0.0;
+    for (const QString& dataset : scalarNames) {
+        double value = 0.0;
+		if (!readScalarFromH5(inputPath, dataset, value, errMsg) || !std::isfinite(value) ||
+			(dataset.endsWith(QStringLiteral("epsilon_phase")) && value <= 0.0) || value <= 0.0) {
+			if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("v5 RDE 数值描述符无效：%1 (%2)").arg(inputPath, dataset);
+            return false;
+        }
+		if (dataset == QStringLiteral("flat_earth_rde_epsilon_phase")) epsilonPhase = value;
+		else if (dataset == QStringLiteral("flat_earth_rde_max_jacobian_condition")) jacobianCondition = value;
+		else if (dataset == QStringLiteral("flat_earth_slave_search_initial_half_window_seconds")) initialWindow = value;
+		else if (dataset == QStringLiteral("flat_earth_slave_search_maximum_half_window_seconds")) maximumWindow = value;
+		else if (dataset == QStringLiteral("flat_earth_slave_search_expansion_factor")) expansionFactor = value;
+		else if (dataset == QStringLiteral("flat_earth_wavelength_meters")) wavelength = value;
+		else if (dataset == QStringLiteral("flat_earth_master_orbit_osv_start_gps")) masterOrbitStart = value;
+		else if (dataset == QStringLiteral("flat_earth_master_orbit_osv_stop_gps")) masterOrbitStop = value;
+		else if (dataset == QStringLiteral("flat_earth_master_geometry_start_gps")) masterGeometryStart = value;
+		else if (dataset == QStringLiteral("flat_earth_master_geometry_stop_gps")) masterGeometryStop = value;
+		else if (dataset == QStringLiteral("flat_earth_slave_orbit_osv_start_gps")) slaveOrbitStart = value;
+		else if (dataset == QStringLiteral("flat_earth_slave_orbit_osv_stop_gps")) slaveOrbitStop = value;
+		else if (dataset == QStringLiteral("flat_earth_slave_geometry_start_gps")) slaveGeometryStart = value;
+		else if (dataset == QStringLiteral("flat_earth_slave_geometry_stop_gps")) slaveGeometryStop = value;
+		else if (dataset == QStringLiteral("flat_earth_orbit_interpolation_margin_seconds")) interpolationMargin = value;
+    }
+	int maxSlaveSearchExpansions = 0;
+	if (!readScalarFromH5(inputPath, QStringLiteral("flat_earth_slave_search_max_expansions"), maxSlaveSearchExpansions, errMsg) ||
+		maxSlaveSearchExpansions < 0 || maximumWindow < initialWindow || expansionFactor <= 1.0 ||
+		!(masterGeometryStop > masterGeometryStart) || !(slaveGeometryStop > slaveGeometryStart) ||
+		masterOrbitStart > masterGeometryStart - interpolationMargin || masterOrbitStop < masterGeometryStop + interpolationMargin ||
+		slaveOrbitStart > slaveGeometryStart - interpolationMargin || slaveOrbitStop < slaveGeometryStop + interpolationMargin) return false;
+	const double differentialRangeBudget = epsilonPhase * wavelength * transmitReceiveMode / (4.0 * CV_PI);
+	if (!std::isfinite(differentialRangeBudget) || differentialRangeBudget <= 0.0) return false;
+	for (int burst = 0; burst < rdeStatistics.rows; ++burst) {
+		if (rdeStatistics.at<double>(burst, 0) == 0.0) continue;
+		if (rdeStatistics.at<double>(burst, 2) > rdeMaxIterations ||
+			rdeStatistics.at<double>(burst, 3) > zeroDopplerMaxIterations ||
+			rdeStatistics.at<double>(burst, 8) > jacobianCondition ||
+			rdeStatistics.at<double>(burst, 9) > epsilonPhase ||
+			rdeStatistics.at<double>(burst, 10) > differentialRangeBudget ||
+			rdeStatistics.at<double>(burst, 11) < initialWindow ||
+			rdeStatistics.at<double>(burst, 11) > maximumWindow ||
+			rdeStatistics.at<double>(burst, 12) > maxSlaveSearchExpansions) return false;
+	}
+    return true;
+}
+} // namespace
+
+bool validateFlatEarthReferenceContract(const QString& inputPath, QString* errMsg)
+{
+    const QByteArray path = inputPath.toUtf8();
+    int schemaExists = 0;
+    int modelExists = 0;
+    if (Hdf5IO::datasetExists(path.constData(), "phase_processing_schema_version", &schemaExists) != 0 ||
+        Hdf5IO::datasetExists(path.constData(), "flat_earth_model_version", &modelExists) != 0) {
+        if (errMsg) *errMsg = QStringLiteral("无法检查平地相位契约版本：%1").arg(inputPath);
+        return false;
+    }
+    int schemaVersion = 0;
+    if (schemaExists != 0 && !readScalarFromH5(inputPath, QStringLiteral("phase_processing_schema_version"), schemaVersion, errMsg)) {
+        return false;
+    }
+    const bool v2 = schemaVersion == 2 || modelExists != 0;
+    if (v2) {
+        if (schemaVersion != 2) {
+            if (errMsg) *errMsg = QStringLiteral("版本化平地相位模型必须使用 phase_processing_schema_version=2：%1").arg(inputPath);
+            return false;
+        }
+        return validateVersionedFlatEarthContract(inputPath, errMsg) &&
+               validatePhaseValidityContract(inputPath, false, errMsg);
+    }
+    if (schemaExists != 0 && schemaVersion != 1) {
+        if (errMsg) *errMsg = QStringLiteral("不支持的相位处理契约版本：%1").arg(schemaVersion);
+        return false;
+    }
+    cv::Mat coefficient;
+    if (!readMatFromH5(inputPath, QStringLiteral("flat_phase_coefficient"), coefficient, -1, errMsg) ||
+        coefficient.type() != CV_64F || coefficient.rows != 1 || coefficient.cols != 6) {
+        if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("旧平地相位模型必须为 CV_64F 1x6：%1").arg(inputPath);
+        return false;
+    }
+    return true;
+}
+
+bool validatePhaseValidityContract(const QString& inputPath,
+                                   bool requireAllValid,
+                                   QString* errMsg)
+{
+    const QByteArray path = inputPath.toUtf8();
+    int schemaExists = 0;
+    if (Hdf5IO::datasetExists(path.constData(), "phase_processing_schema_version", &schemaExists) != 0) {
+        if (errMsg) *errMsg = QStringLiteral("无法检查相位有效性契约版本：%1").arg(inputPath);
+        return false;
+    }
+    if (schemaExists == 0) return true;
+
+    int schemaVersion = 0;
+    if (!readScalarFromH5(inputPath, QStringLiteral("phase_processing_schema_version"), schemaVersion, errMsg)) {
+        return false;
+    }
+    if (schemaVersion != 2) return true;
+
+    cv::Mat phase, validMask, validSampleCount;
+    if (!readMatFromH5(inputPath, QStringLiteral("phase"), phase, -1, errMsg) || phase.empty() ||
+        !readMatFromH5(inputPath, QStringLiteral("phase_valid_mask"), validMask, -1, errMsg) ||
+        validMask.type() != CV_8U || validMask.size() != phase.size() ||
+        !readMatFromH5(inputPath, QStringLiteral("phase_valid_sample_count"), validSampleCount, -1, errMsg) ||
+        validSampleCount.type() != CV_32S || validSampleCount.size() != phase.size()) {
+        if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("v2 相位有效性契约缺失或网格不一致：%1").arg(inputPath);
+        return false;
+    }
+
+    int invalidCount = 0;
+    for (int row = 0; row < phase.rows; ++row) {
+        const uchar* valid = validMask.ptr<uchar>(row);
+        const int* samples = validSampleCount.ptr<int>(row);
+        for (int column = 0; column < phase.cols; ++column) {
+            if (valid[column] != 0 && valid[column] != 1) {
+                if (errMsg) *errMsg = QStringLiteral("v2 相位有效掩膜不是二值：%1").arg(inputPath);
+                return false;
+            }
+            if (samples[column] < 0 || (valid[column] != 0 && samples[column] == 0)) {
+                if (errMsg) *errMsg = QStringLiteral("v2 相位有效样本数无效：%1").arg(inputPath);
+                return false;
+            }
+            if (valid[column] == 0) ++invalidCount;
+        }
+    }
+    if (requireAllValid && invalidCount != 0) {
+        if (errMsg) *errMsg = QStringLiteral("输入相位包含 %1 个无效像元，当前处理不支持掩膜相位：%2")
+                               .arg(invalidCount).arg(inputPath);
+        return false;
+    }
+    return true;
+}
+
 bool copyPhaseProcessingMetadata(const QString& inputPath,
                                  const QString& outputPath,
                                  QString* errMsg)
 {
-    constexpr int kPhaseProcessingSchemaVersion = 1;
+    constexpr int kLegacyPhaseProcessingSchemaVersion = 1;
+    constexpr int kFlatEarthReferenceSchemaVersion = 2;
     constexpr const char* kSchemaDataset = "phase_processing_schema_version";
     constexpr const char* kFlatDataset = "phase_flat_earth_removed";
     constexpr const char* kTopoDataset = "phase_topography_removed";
     constexpr const char* kCoefficientDataset = "flat_phase_coefficient";
+    constexpr const char* kReferenceDataset = "flat_earth_reference_phase";
+    constexpr const char* kPhaseValidMaskDataset = "phase_valid_mask";
+    constexpr const char* kPhaseValidSampleCountDataset = "phase_valid_sample_count";
 
     const auto copyCommonCoverageContract = [&]() -> bool {
         int contractExists = 0;
@@ -5547,6 +5905,14 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
         if (errMsg) *errMsg = QStringLiteral("平地相位系数为空：%1").arg(inputPath);
         return false;
     }
+    cv::Mat flatEarthReference;
+    QString referenceError;
+    const bool hasReference = readMatFromH5(inputPath, QString::fromLatin1(kReferenceDataset),
+                                            flatEarthReference, -1, &referenceError);
+    if (hasReference && flatEarthReference.empty()) {
+        if (errMsg) *errMsg = QStringLiteral("平地相位参考场为空：%1").arg(inputPath);
+        return false;
+    }
 
     QString schemaError;
     const H5DatasetProbeResult schemaProbe = probeH5Dataset(
@@ -5556,6 +5922,16 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
         return false;
     }
     if (schemaProbe == H5DatasetProbeResult::Missing) {
+		int versionedModelExists = 0;
+		const QByteArray versionedModelPath = inputPath.toUtf8();
+		if (Hdf5IO::datasetExists(versionedModelPath.constData(), "flat_earth_model_version", &versionedModelExists) != 0) {
+			if (errMsg) *errMsg = QStringLiteral("无法检查版本化平地相位模型标记：%1").arg(inputPath);
+			return false;
+		}
+		if (versionedModelExists != 0) {
+			if (errMsg) *errMsg = QStringLiteral("版本化平地相位模型缺少 phase_processing_schema_version=2：%1").arg(inputPath);
+			return false;
+		}
         // Legacy products can continue through generic phase-processing nodes.
         if (hasCoefficient && !writeMatToH5(outputPath, QString::fromLatin1(kCoefficientDataset),
                                              flatPhaseCoefficient, errMsg)) {
@@ -5570,11 +5946,19 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
         if (errMsg) *errMsg = schemaError;
         return false;
     }
-    if (schemaVersion != kPhaseProcessingSchemaVersion) {
+    if (schemaVersion != kLegacyPhaseProcessingSchemaVersion && schemaVersion != kFlatEarthReferenceSchemaVersion) {
         if (errMsg) *errMsg = QStringLiteral("不支持的相位处理契约版本：%1").arg(schemaVersion);
         return false;
     }
-
+    cv::Mat phaseValidMask;
+    cv::Mat phaseValidSampleCount;
+    if (schemaVersion == kFlatEarthReferenceSchemaVersion) {
+        if (!validatePhaseValidityContract(inputPath, false, errMsg) ||
+            !readMatFromH5(inputPath, QString::fromLatin1(kPhaseValidMaskDataset), phaseValidMask, -1, errMsg) ||
+            !readMatFromH5(inputPath, QString::fromLatin1(kPhaseValidSampleCountDataset), phaseValidSampleCount, -1, errMsg)) {
+            return false;
+        }
+    }
     int flatRemoved = 0;
     int topoRemoved = 0;
     if (!readScalarFromH5(inputPath, QString::fromLatin1(kFlatDataset), flatRemoved, errMsg) ||
@@ -5585,21 +5969,135 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
         if (errMsg) *errMsg = QStringLiteral("相位处理状态无效：%1").arg(inputPath);
         return false;
     }
-    if (flatRemoved == 1 && !hasCoefficient) {
+	if (flatRemoved == 1 && !validateFlatEarthReferenceContract(inputPath, errMsg)) {
+		return false;
+	}
+    if (flatRemoved == 1 && schemaVersion == kLegacyPhaseProcessingSchemaVersion && !hasCoefficient) {
         if (errMsg) *errMsg = QStringLiteral("已去平地的相位缺少平地相位系数：%1").arg(inputPath);
         return false;
     }
-    if (flatRemoved == 0 && hasCoefficient) {
+    if (flatRemoved == 1 && schemaVersion == kFlatEarthReferenceSchemaVersion && !hasReference) {
+        if (errMsg) *errMsg = QStringLiteral("已去平地的 v2 相位缺少同网格平地相位参考场：%1").arg(inputPath);
+        return false;
+    }
+    if (flatRemoved == 0 && (hasCoefficient || hasReference)) {
         if (errMsg) *errMsg = QStringLiteral("未去平地的相位不应包含平地相位系数：%1").arg(inputPath);
         return false;
     }
 
     if ((hasCoefficient && !writeMatToH5(outputPath, QString::fromLatin1(kCoefficientDataset),
-                                          flatPhaseCoefficient, errMsg)) ||
+                                           flatPhaseCoefficient, errMsg)) ||
+        (hasReference && !writeMatToH5(outputPath, QString::fromLatin1(kReferenceDataset), flatEarthReference, errMsg)) ||
+        (schemaVersion == kFlatEarthReferenceSchemaVersion &&
+         (!writeMatToH5(outputPath, QString::fromLatin1(kPhaseValidMaskDataset), phaseValidMask, errMsg) ||
+          !writeMatToH5(outputPath, QString::fromLatin1(kPhaseValidSampleCountDataset), phaseValidSampleCount, errMsg))) ||
         !writeScalarToH5(outputPath, QString::fromLatin1(kSchemaDataset), schemaVersion, errMsg) ||
         !writeScalarToH5(outputPath, QString::fromLatin1(kFlatDataset), flatRemoved, errMsg) ||
         !writeScalarToH5(outputPath, QString::fromLatin1(kTopoDataset), topoRemoved, errMsg)) {
         return false;
+    }
+	if (schemaVersion == kFlatEarthReferenceSchemaVersion && flatRemoved == 1) {
+		QStringList matrixDatasets = {
+			QStringLiteral("flat_earth_rde_burst_statistics"),
+			QStringLiteral("flat_earth_master_burst_azimuth_time"),
+			QStringLiteral("flat_earth_slave_burst_azimuth_time"),
+			QStringLiteral("flat_earth_master_azimuth_fm_rate_list"), QStringLiteral("flat_earth_slave_azimuth_fm_rate_list"),
+			QStringLiteral("flat_earth_master_dc_estimate_list"), QStringLiteral("flat_earth_slave_dc_estimate_list"),
+			QStringLiteral("flat_earth_master_first_valid_line"), QStringLiteral("flat_earth_master_last_valid_line"),
+			QStringLiteral("flat_earth_slave_first_valid_line"), QStringLiteral("flat_earth_slave_last_valid_line"),
+			QStringLiteral("flat_earth_master_first_valid_sample"), QStringLiteral("flat_earth_master_last_valid_sample"),
+			QStringLiteral("flat_earth_slave_first_valid_sample"), QStringLiteral("flat_earth_slave_last_valid_sample"),
+			QStringLiteral("flat_earth_slave_registration_reramp_phase"),
+			QStringLiteral("flat_earth_slave_registration_mapping_coefficients"),
+			QStringLiteral("flat_earth_slave_registration_mapping_master_burst_indices") };
+		const QStringList intDatasets = {
+			QStringLiteral("flat_earth_model_version"), QStringLiteral("flat_earth_model_source_row_count"),
+			QStringLiteral("flat_earth_rde_max_iterations"), QStringLiteral("flat_earth_zero_doppler_max_iterations"),
+			QStringLiteral("flat_earth_slave_search_max_expansions"),
+			QStringLiteral("flat_earth_transmit_receive_mode"),
+			QStringLiteral("flat_earth_master_look_side"),
+			QStringLiteral("flat_earth_master_lines_per_burst"), QStringLiteral("flat_earth_slave_lines_per_burst"),
+			QStringLiteral("flat_earth_slave_source_burst_offset") };
+		const QStringList doubleDatasets = {
+			QStringLiteral("flat_earth_master_orbit_osv_start_gps"), QStringLiteral("flat_earth_master_orbit_osv_stop_gps"),
+			QStringLiteral("flat_earth_master_geometry_start_gps"), QStringLiteral("flat_earth_master_geometry_stop_gps"),
+			QStringLiteral("flat_earth_slave_orbit_osv_start_gps"), QStringLiteral("flat_earth_slave_orbit_osv_stop_gps"),
+			QStringLiteral("flat_earth_slave_geometry_start_gps"), QStringLiteral("flat_earth_slave_geometry_stop_gps"),
+			QStringLiteral("flat_earth_orbit_interpolation_margin_seconds"),
+			QStringLiteral("flat_earth_rde_epsilon_phase"),
+			QStringLiteral("flat_earth_rde_max_residual"), QStringLiteral("flat_earth_zero_doppler_max_residual"),
+			QStringLiteral("flat_earth_rde_max_jacobian_condition"),
+			QStringLiteral("flat_earth_slave_search_initial_half_window_seconds"),
+			QStringLiteral("flat_earth_slave_search_maximum_half_window_seconds"),
+			QStringLiteral("flat_earth_slave_search_expansion_factor"),
+			QStringLiteral("flat_earth_wavelength_meters"),
+			QStringLiteral("flat_earth_master_azimuth_steering_rate"), QStringLiteral("flat_earth_slave_azimuth_steering_rate"),
+			QStringLiteral("flat_earth_master_range_spacing"), QStringLiteral("flat_earth_slave_range_spacing"),
+			QStringLiteral("flat_earth_master_slant_range_first_pixel"), QStringLiteral("flat_earth_slave_slant_range_first_pixel") };
+		QStringList stringDatasets = {
+			QStringLiteral("flat_earth_reference_phase_semantics"),
+			QStringLiteral("flat_earth_model_status"),
+			QStringLiteral("flat_earth_model_source_row_semantics"),
+			QStringLiteral("flat_earth_model_timing_semantics"), QStringLiteral("flat_earth_processing_phase_semantics"),
+			QStringLiteral("flat_earth_geolocation_coordinate_semantics"),
+			QStringLiteral("flat_earth_master_orbit_source"), QStringLiteral("flat_earth_slave_orbit_source"),
+			QStringLiteral("flat_earth_master_orbit_selection_reason"), QStringLiteral("flat_earth_slave_orbit_selection_reason"),
+			QStringLiteral("flat_earth_master_look_side_source"),
+			QStringLiteral("flat_earth_orbit_time_scale"), QStringLiteral("flat_earth_orbit_interpolation_strategy"),
+			QStringLiteral("flat_earth_slave_registration_mapping_semantics"),
+			QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics") };
+		int modelVersion = 0;
+		if (!readScalarFromH5(inputPath, QStringLiteral("flat_earth_model_version"), modelVersion, errMsg)) {
+			return false;
+		}
+		if (modelVersion == 6) {
+			matrixDatasets.removeAll(QStringLiteral("flat_earth_slave_registration_reramp_phase"));
+			stringDatasets.removeAll(QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"));
+		}
+        for (const QString& dataset : matrixDatasets) {
+            cv::Mat value;
+            if (!readMatFromH5(inputPath, dataset, value, -1, errMsg) || value.empty() ||
+                !writeMatToH5(outputPath, dataset, value, errMsg)) return false;
+        }
+        for (const QString& dataset : intDatasets) {
+            int value = 0;
+            if (!readScalarFromH5(inputPath, dataset, value, errMsg) ||
+                !writeScalarToH5(outputPath, dataset, value, errMsg)) return false;
+        }
+        for (const QString& dataset : doubleDatasets) {
+            double value = 0.0;
+            if (!readScalarFromH5(inputPath, dataset, value, errMsg) ||
+                !writeScalarToH5(outputPath, dataset, value, errMsg)) return false;
+        }
+        for (const QString& dataset : stringDatasets) {
+            std::string value;
+            if (!readStringFromH5(inputPath, dataset, value, errMsg) || value.empty() ||
+                !writeStringToH5(outputPath, dataset, value, errMsg)) return false;
+        }
+		if (modelVersion == 6) {
+			QString rerampError;
+			const H5DatasetProbeResult rerampProbe = probeH5Dataset(
+				inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), &rerampError);
+			const H5DatasetProbeResult rerampSemanticsProbe = probeH5Dataset(
+				inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"), &rerampError);
+			if (rerampProbe == H5DatasetProbeResult::Error ||
+				rerampSemanticsProbe == H5DatasetProbeResult::Error ||
+				rerampProbe != rerampSemanticsProbe) {
+				if (errMsg) *errMsg = rerampError.isEmpty() ?
+					QStringLiteral("v6 可选注册 reramp provenance 不完整：%1").arg(inputPath) : rerampError;
+				return false;
+			}
+			if (rerampProbe == H5DatasetProbeResult::Exists) {
+				cv::Mat reramp;
+				std::string rerampSemantics;
+				if (!readMatFromH5(inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), reramp, -1, errMsg) ||
+					reramp.empty() || !readStringFromH5(inputPath,
+						QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"), rerampSemantics, errMsg) ||
+					rerampSemantics != "resampled_slave_deramp_demod_phase_registration_only_v1" ||
+					!writeMatToH5(outputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), reramp, errMsg) ||
+					!writeStringToH5(outputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"), rerampSemantics, errMsg)) return false;
+			}
+		}
     }
     return copyCommonCoverageContract();
 }
@@ -5731,21 +6229,22 @@ QString coherenceSemanticsDisplayName(const QString& semantics)
 
 bool validateDemPhaseInput(const QString& inputPath, QString* errMsg)
 {
-    constexpr int kPhaseProcessingSchemaVersion = 1;
+    constexpr int kLegacyPhaseProcessingSchemaVersion = 1;
+    constexpr int kFlatEarthReferenceSchemaVersion = 2;
     int schemaVersion = 0;
     int flatRemoved = 0;
     int topoRemoved = 0;
-    cv::Mat flatPhaseCoefficient;
+    cv::Mat flatPhaseCoefficient, flatEarthReference;
 
     if (!readScalarFromH5(inputPath, QStringLiteral("phase_processing_schema_version"), schemaVersion, errMsg)) {
         if (errMsg) *errMsg = QStringLiteral("输入相位缺少处理状态契约，请从干涉形成节点重新运行：%1").arg(inputPath);
         return false;
     }
-    if (schemaVersion != kPhaseProcessingSchemaVersion) {
+    if (schemaVersion != kLegacyPhaseProcessingSchemaVersion && schemaVersion != kFlatEarthReferenceSchemaVersion) {
         if (errMsg) *errMsg = QStringLiteral("不支持的相位处理契约版本：%1").arg(schemaVersion);
         return false;
     }
-    if (!readScalarFromH5(inputPath, QStringLiteral("phase_flat_earth_removed"), flatRemoved, errMsg) ||
+	if (!readScalarFromH5(inputPath, QStringLiteral("phase_flat_earth_removed"), flatRemoved, errMsg) ||
         !readScalarFromH5(inputPath, QStringLiteral("phase_topography_removed"), topoRemoved, errMsg)) {
         return false;
     }
@@ -5757,12 +6256,28 @@ bool validateDemPhaseInput(const QString& inputPath, QString* errMsg)
         if (errMsg) *errMsg = QStringLiteral("DEM 反演要求输入相位已消除平地相位：%1").arg(inputPath);
         return false;
     }
+	if (!validateFlatEarthReferenceContract(inputPath, errMsg) ||
+		!validatePhaseValidityContract(inputPath, true, errMsg)) {
+		return false;
+	}
     if (topoRemoved != 0) {
         if (errMsg) *errMsg = QStringLiteral("DEM 反演要求保留地形相位，当前输入已去地形：%1").arg(inputPath);
         return false;
     }
-    if (!readMatFromH5(inputPath, QStringLiteral("flat_phase_coefficient"), flatPhaseCoefficient, -1, errMsg) ||
-        flatPhaseCoefficient.empty()) {
+    if (schemaVersion == kFlatEarthReferenceSchemaVersion) {
+        if (!readMatFromH5(inputPath, QStringLiteral("flat_earth_reference_phase"), flatEarthReference, -1, errMsg) ||
+            flatEarthReference.empty()) {
+            if (errMsg) *errMsg = QStringLiteral("输入相位缺少有效的平地相位参考场：%1").arg(inputPath);
+            return false;
+        }
+        cv::Mat phase;
+        if (!readMatFromH5(inputPath, QStringLiteral("phase"), phase, -1, errMsg) || phase.empty() ||
+            flatEarthReference.type() != CV_64F || flatEarthReference.size() != phase.size()) {
+            if (errMsg) *errMsg = QStringLiteral("v2 平地相位参考场必须为与 phase 同尺寸的 CV_64F 数据集：%1").arg(inputPath);
+            return false;
+        }
+    } else if (!readMatFromH5(inputPath, QStringLiteral("flat_phase_coefficient"), flatPhaseCoefficient, -1, errMsg) ||
+               flatPhaseCoefficient.empty()) {
         if (errMsg) *errMsg = QStringLiteral("输入相位缺少有效的平地相位系数：%1").arg(inputPath);
         return false;
     }

@@ -22,6 +22,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <QFuture>
 #include <QFutureWatcher>
+#include <cstdint>
 
 // Icons now use SVG currentColor - automatically follows widget color property
 // No manual tinting needed - theme colors are set via stylesheet
@@ -325,10 +326,25 @@ void TreeView::CleanOrphanedFiles()
     if (!pathItem) return;
     QString projectPath = pathItem->text();
     
-    // Get all active node folder names from the project tree
+    QDir rootDir(projectPath);
+    if (!rootDir.exists()) {
+        return;
+    }
+
+    const auto normalizedProjectPath = [&rootDir](const QString& path) {
+        const QFileInfo info(path);
+        return QDir::cleanPath(info.isAbsolute()
+            ? info.absoluteFilePath()
+            : rootDir.absoluteFilePath(path));
+    };
+
+    // Get all active node folder names and their committed output artifacts.
+    // A tree item usually points only to the primary H5, while a committed
+    // manifest also owns previews, TIFFs, masks, and its own provenance file.
     QStringList activeNodeNames;
     QSet<QString> activeFiles;
     QSet<QString> activeNodeItemKeys;
+    QSet<QString> protectedActiveDirectories;
     for (int i = 0; i < projItem->rowCount(); ++i) {
         QStandardItem* nodeItem = projItem->child(i, 0);
         if (nodeItem) {
@@ -341,15 +357,36 @@ void TreeView::CleanOrphanedFiles()
                     activeNodeItemKeys.insert(nodeName + "/" + nameItem->text());
                 }
                 if (pathItem && !pathItem->text().isEmpty()) {
-                    activeFiles.insert(QDir::cleanPath(pathItem->text()));
+                    activeFiles.insert(normalizedProjectPath(pathItem->text()));
                 }
             }
+
+            const QString nodeDirectory = rootDir.absoluteFilePath(nodeName);
+            const QString manifestPath = QDir(nodeDirectory).absoluteFilePath(
+                QStringLiteral(".node_output_manifest.json"));
+            if (!QFileInfo::exists(manifestPath)) {
+                continue;
+            }
+
+            activeFiles.insert(QDir::cleanPath(manifestPath));
+            QStringList manifestOutputs;
+            QString runId;
+            std::uint64_t executionRevision = 0;
+            int manifestVersion = 0;
+            QString manifestError;
+            if (NodeUtils::loadCommittedOutputManifestReadOnly(
+                    rootDir.absolutePath(), nodeName, manifestOutputs, runId,
+                    executionRevision, manifestVersion, &manifestError)) {
+                for (const QString& outputPath : manifestOutputs) {
+                    activeFiles.insert(normalizedProjectPath(outputPath));
+                }
+            }
+            else {
+                // A damaged or interrupted active output must be recovered by
+                // its node transaction, never removed by a convenience menu.
+                protectedActiveDirectories.insert(nodeName);
+            }
         }
-    }
-    
-    QDir rootDir(projectPath);
-    if (!rootDir.exists()) {
-        return;
     }
     
     QStringList allDirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
@@ -357,14 +394,20 @@ void TreeView::CleanOrphanedFiles()
     QStringList orphanedFiles;
     
     for (const QString& dirName : allDirs) {
-        // 内部缓存目录不属于节点输出，不能作为孤立目录清理。
+        // Internal state is owned by the workflow/resource transaction layer.
+        // It has its own recovery and retention policy and is never an orphan.
         if (dirName == "temp" || dirName == ".temp" || dirName == "logs" ||
-            dirName.compare(".dem_cache", Qt::CaseInsensitive) == 0) {
+            dirName.compare(".dem_cache", Qt::CaseInsensitive) == 0 ||
+            dirName.compare(".dem_resources", Qt::CaseInsensitive) == 0 ||
+            dirName.compare(".node_transactions", Qt::CaseInsensitive) == 0) {
             continue;
         }
         if (!activeNodeNames.contains(dirName)) {
             orphanedDirs.append(dirName);
         } else {
+            if (protectedActiveDirectories.contains(dirName)) {
+                continue;
+            }
             QDir activeDir(projectPath + "/" + dirName);
             QStringList filesInDir = activeDir.entryList(QDir::Files | QDir::NoDotAndDotDot);
             for (const QString& fileName : filesInDir) {

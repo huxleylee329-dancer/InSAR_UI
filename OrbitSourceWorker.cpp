@@ -538,6 +538,29 @@ bool OrbitSourceWorker::parseOrbitValidity(const QString& fileName, QDateTime& v
     return validStart.isValid() && validEnd.isValid() && validStart <= validEnd;
 }
 
+bool OrbitSourceWorker::parseOrbitGenerationTime(const QString& fileName, QDateTime& generationTime) const
+{
+    const QRegularExpression re("(?:^|_)OPOD_(\\d{8}T\\d{6})_V", QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch match = re.match(fileName);
+    if (!match.hasMatch()) {
+        generationTime = QDateTime();
+        return false;
+    }
+    generationTime = QDateTime::fromString(match.captured(1), "yyyyMMddTHHmmss");
+    generationTime.setTimeSpec(Qt::UTC);
+    return generationTime.isValid();
+}
+
+bool OrbitSourceWorker::preferOrbitProduct(const OrbitProduct& left, const OrbitProduct& right)
+{
+    const qint64 leftSpan = left.validStart.secsTo(left.validEnd);
+    const qint64 rightSpan = right.validStart.secsTo(right.validEnd);
+    if (leftSpan != rightSpan) return leftSpan < rightSpan;
+    if (left.generationTime.isValid() != right.generationTime.isValid()) return left.generationTime.isValid();
+    if (left.generationTime != right.generationTime) return left.generationTime > right.generationTime;
+    return left.fileName < right.fileName;
+}
+
 bool OrbitSourceWorker::productCovers(const OrbitProduct& product, const SlcInfo& info) const
 {
     return product.validStart.isValid() && product.validEnd.isValid()
@@ -575,7 +598,8 @@ bool OrbitSourceWorker::findCachedOrbit(const QString& cacheDir, const SlcInfo& 
         candidate.fileName = name;
         candidate.downloadUrl = QUrl::fromLocalFile(file.absoluteFilePath());
         candidate.isPrecise = precise;
-        if (!parseOrbitValidity(name, candidate.validStart, candidate.validEnd) || !productCovers(candidate, info)) {
+        if (!parseOrbitValidity(name, candidate.validStart, candidate.validEnd) ||
+            !parseOrbitGenerationTime(name, candidate.generationTime) || !productCovers(candidate, info)) {
             continue;
         }
         QString xmlError;
@@ -591,12 +615,7 @@ bool OrbitSourceWorker::findCachedOrbit(const QString& cacheDir, const SlcInfo& 
     if (matches.isEmpty()) {
         return false;
     }
-    std::sort(matches.begin(), matches.end(), [](const OrbitProduct& left, const OrbitProduct& right) {
-        const qint64 leftSpan = left.validStart.secsTo(left.validEnd);
-        const qint64 rightSpan = right.validStart.secsTo(right.validEnd);
-        if (leftSpan != rightSpan) return leftSpan < rightSpan;
-        return left.fileName < right.fileName;
-    });
+    std::sort(matches.begin(), matches.end(), preferOrbitProduct);
     product = matches.first();
     return true;
 }
@@ -682,7 +701,8 @@ bool OrbitSourceWorker::findAsfOrbit(const SlcInfo& info, bool precise, OrbitPro
         candidate.fileName = fileName;
         candidate.downloadUrl = QUrl(listingUrl + fileName);
         candidate.isPrecise = precise;
-        if (parseOrbitValidity(fileName, candidate.validStart, candidate.validEnd) && productCovers(candidate, info)) {
+        if (parseOrbitValidity(fileName, candidate.validStart, candidate.validEnd) &&
+            parseOrbitGenerationTime(fileName, candidate.generationTime) && productCovers(candidate, info)) {
             candidates.append(candidate);
         }
     }
@@ -692,11 +712,7 @@ bool OrbitSourceWorker::findAsfOrbit(const SlcInfo& info, bool precise, OrbitPro
             .arg(precise ? "POEORB" : "RESORB");
         return false;
     }
-    std::sort(candidates.begin(), candidates.end(), [](const OrbitProduct& left, const OrbitProduct& right) {
-        const qint64 leftSpan = left.validStart.secsTo(left.validEnd);
-        const qint64 rightSpan = right.validStart.secsTo(right.validEnd);
-        return leftSpan == rightSpan ? left.fileName < right.fileName : leftSpan < rightSpan;
-    });
+    std::sort(candidates.begin(), candidates.end(), preferOrbitProduct);
     product = candidates.first();
     return true;
 }
@@ -884,6 +900,7 @@ bool OrbitSourceWorker::findCdseOrbit(const SlcInfo& info, bool precise, OrbitPr
                 continue;
             }
             if (!parseOrbitValidity(candidate.fileName, candidate.validStart, candidate.validEnd)
+                || !parseOrbitGenerationTime(candidate.fileName, candidate.generationTime)
                 || !productCovers(candidate, info)) {
                 continue;
             }
@@ -916,11 +933,7 @@ bool OrbitSourceWorker::findCdseOrbit(const SlcInfo& info, bool precise, OrbitPr
         errorMessage = QStringLiteral("CDSE 未找到覆盖成像时段的 %1 文件。").arg(orbitType);
         return false;
     }
-    std::sort(candidates.begin(), candidates.end(), [](const OrbitProduct& left, const OrbitProduct& right) {
-        const qint64 leftSpan = left.validStart.secsTo(left.validEnd);
-        const qint64 rightSpan = right.validStart.secsTo(right.validEnd);
-        return leftSpan == rightSpan ? left.fileName < right.fileName : leftSpan < rightSpan;
-    });
+    std::sort(candidates.begin(), candidates.end(), preferOrbitProduct);
     product = candidates.first();
     return true;
 }
@@ -1191,6 +1204,10 @@ bool OrbitSourceWorker::resolveAndDownloadOrbit(OrbitSource source, const QStrin
         if (findCachedOrbit(cacheDir, info, precise, product)) {
             localEofPath = QDir(cacheDir).absoluteFilePath(product.fileName);
             isPrecise = precise;
+            InSARLogManager::LogInfo("OrbitSourceWorker",
+                QStringLiteral("已选择缓存%1轨道：EOF=%2，OPOD 生成时间=%3")
+                    .arg(precise ? QStringLiteral("精密") : QStringLiteral("重建"), product.fileName,
+                         product.generationTime.toString(QStringLiteral("yyyy-MM-ddTHH:mm:ssZ"))));
             return true;
         }
 
@@ -1217,6 +1234,10 @@ bool OrbitSourceWorker::resolveAndDownloadOrbit(OrbitSource source, const QStrin
         }
         localEofPath = savePath;
         isPrecise = precise;
+        InSARLogManager::LogInfo("OrbitSourceWorker",
+            QStringLiteral("已下载并选择%1轨道：EOF=%2，OPOD 生成时间=%3")
+                .arg(precise ? QStringLiteral("精密") : QStringLiteral("重建"), product.fileName,
+                     product.generationTime.toString(QStringLiteral("yyyy-MM-ddTHH:mm:ssZ"))));
         return true;
     }
     return false;

@@ -235,6 +235,10 @@ docs/
 code-simplifier-skill/
 code-simplifier.skill
 
+# Python audit caches
+__pycache__/
+*.py[cod]
+
 # *.vcxproj
 # *.filters
 *.docx

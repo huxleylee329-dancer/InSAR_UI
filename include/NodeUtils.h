@@ -614,6 +614,17 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
 // Validates the phase-processing contract required by DEM inversion.
 bool validateDemPhaseInput(const QString& inputPath, QString* errMsg = nullptr);
 
+// Validates either the strict legacy 1x6 model or the complete v2 candidate
+// flat-earth contract. A v2 marker never falls back to legacy coefficients.
+bool validateFlatEarthReferenceContract(const QString& inputPath, QString* errMsg = nullptr);
+
+// Validates the v2 per-pixel phase-validity contract. Legacy products without
+// the dataset remain compatible. requireAllValid is for consumers that cannot
+// represent masked phase samples safely.
+bool validatePhaseValidityContract(const QString& inputPath,
+                                   bool requireAllValid,
+                                   QString* errMsg = nullptr);
+
 // ---------------------------------------------------------------------------
 // coherence 数据集的语义标签
 //
@@ -626,7 +637,7 @@ bool validateDemPhaseInput(const QString& inputPath, QString* errMsg = nullptr);
 // 高相干区近似成立），因此必须显式标注，不能靠来源推断。
 //
 // 该标签独立于 phase_processing_schema_version：后者是相位处理契约，
-// 其校验方（validateDemPhaseInput）只接受版本 1，不可借用。
+// validateDemPhaseInput() 接受旧的 v1 六项模型和 v2 参考场模型，二者不可混用。
 // ---------------------------------------------------------------------------
 namespace CoherenceSemantics {
 // 去参考相位后的归一化复相干系数 gamma

@@ -279,6 +279,12 @@ void DenoiseWorker::Denoise(QList<int> para,
         const QString filterName = phaseName + "_denoised";
         const QString outputPath = outputDirectory + "/" + filterName + ".h5";
 
+        QString phaseValidityError;
+        if (!NodeUtils::validatePhaseValidityContract(inputPath, true, &phaseValidityError)) {
+            emit errorProcess(phaseValidityError);
+            return;
+        }
+
         emit updateProcess(10 + i * 80 / imageCount,
                             QString("Filtering image %1/%2").arg(i + 1).arg(imageCount));
 

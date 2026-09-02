@@ -74,6 +74,7 @@ private:
         QUrl downloadUrl;
         QDateTime validStart;
         QDateTime validEnd;
+        QDateTime generationTime;
         QString checksum;
         QString checksumAlgorithm;
         bool isPrecise = false;
@@ -98,6 +99,8 @@ private:
     QString getOriginalGranuleName(const QString& h5FilePath, const QString& projectDir);
     bool readSlcInfo(const QString& h5FilePath, const QString& projectDir, SlcInfo& info, QString& errorMessage);
     bool parseOrbitValidity(const QString& fileName, QDateTime& validStart, QDateTime& validEnd) const;
+    bool parseOrbitGenerationTime(const QString& fileName, QDateTime& generationTime) const;
+    static bool preferOrbitProduct(const OrbitProduct& left, const OrbitProduct& right);
     bool productCovers(const OrbitProduct& product, const SlcInfo& info) const;
     bool findCachedOrbit(const QString& cacheDir, const SlcInfo& info, bool precise, OrbitProduct& product) const;
     bool findAsfOrbit(const SlcInfo& info, bool precise, OrbitProduct& product, QString& errorMessage);

@@ -534,6 +534,14 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         }
     };
 
+    for (int i = 0; i < image_number; ++i) {
+        QString phaseValidityError;
+        if (!NodeUtils::validatePhaseValidityContract(phase_path.at(i), true, &phaseValidityError)) {
+            emit errorProcess(phaseValidityError);
+            return;
+        }
+    }
+
     if (method == 1)
     {
         for (int i = 0; i < image_number; i++)

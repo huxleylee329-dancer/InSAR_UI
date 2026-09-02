@@ -16,6 +16,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cmath>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Utils_d.lib")
@@ -36,7 +37,8 @@ QString nativeText(const char* value)
     return value ? QString::fromUtf8(value) : QString();
 }
 
-int copySentinelRegistrationMetadata(const std::string& sourcePath,
+int copySentinelRegistrationMetadata(FormatConversion& conversion,
+                                     const std::string& sourcePath,
                                      const std::string& outputPath)
 {
     int sameFile = 0;
@@ -51,14 +53,18 @@ int copySentinelRegistrationMetadata(const std::string& sourcePath,
     static const char* const stringDatasets[] = {
         "file_type", "sensor", "polarization", "imaging_mode", "lookside", "orbit_dir", "swath",
         "acquisition_start_time", "acquisition_stop_time", "source_1", "source_2",
-        "source_path_encoding", "source_path_format_version",
+        "source_path_encoding", "source_path_format_version", "state_vec_time_scale",
+        "fine_state_vec_time_scale", "acquisition_time_gps_scale", "h5_time_reference_version",
         "sentinel_geometry_coefficient_contract"
     };
     static const char* const arrayDatasets[] = {
         "orbit_altitude", "carrier_frequency", "heading", "prf", "inc_center", "gcps",
         "azimuth_resolution", "range_resolution", "azimuth_spacing", "range_spacing", "state_vec",
-        "fine_state_vec", "doppler_centroid", "doppler_coefficient_a", "doppler_coefficient_b",
-        "lon_coefficient", "lat_coefficient", "row_coefficient", "col_coefficient", "inc_coefficient",
+		"acquisition_start_time_gps", "acquisition_stop_time_gps",
+		"fine_state_vec", "doppler_centroid", "doppler_coefficient_a", "doppler_coefficient_b",
+		"burstAzimuthTime", "azimuthFmRateList", "dcEstimateList", "firstValidSample", "lastValidSample",
+		"firstValidLine", "lastValidLine", "burstCount", "linesPerBurst", "azimuthSteeringRate",
+		"lon_coefficient", "lat_coefficient", "row_coefficient", "col_coefficient", "inc_coefficient",
         "inc_coefficient_r", "inc_center", "row_coefficient", "slant_range_first_pixel", "topLeftLon",
         "topLeftLat", "topRightLon", "topRightLat", "bottomLeftLon", "bottomLeftLat", "bottomRightLon",
         "bottomRightLat", "TR_mode"
@@ -69,8 +75,63 @@ int copySentinelRegistrationMetadata(const std::string& sourcePath,
     if (result != 0) {
         return result;
     }
-    return Hdf5IO::copyDatasetsIfPresent(sourcePath.c_str(), outputPath.c_str(),
+    result = Hdf5IO::copyDatasetsIfPresent(sourcePath.c_str(), outputPath.c_str(),
         arrayDatasets, static_cast<int>(sizeof(arrayDatasets) / sizeof(arrayDatasets[0])), true);
+    if (result != 0) {
+        return result;
+    }
+
+    // A legacy Sentinel-1 input may already declare the v2/GPS orbit-time
+    // contract but lack explicit acquisition GPS scalars. Materialize those
+    // scalars only while producing the registered H5; v5 consumers continue
+    // to reject UTC-derived time at their read boundary.
+    int timeReferenceExists = 0;
+    int stateVectorScaleExists = 0;
+    if (Hdf5IO::datasetExists(outputPath.c_str(), "h5_time_reference_version", &timeReferenceExists) != 0 ||
+        Hdf5IO::datasetExists(outputPath.c_str(), "state_vec_time_scale", &stateVectorScaleExists) != 0) {
+        return -1;
+    }
+    if (timeReferenceExists != 0 && stateVectorScaleExists != 0) {
+        std::string timeReferenceVersion;
+        std::string stateVectorScale;
+        if (Hdf5IO::readString(outputPath.c_str(), "h5_time_reference_version", timeReferenceVersion) != 0 ||
+            Hdf5IO::readString(outputPath.c_str(), "state_vec_time_scale", stateVectorScale) != 0) {
+            return -1;
+        }
+        if (timeReferenceVersion == "2" && stateVectorScale == "GPS") {
+            int startGpsExists = 0;
+            int stopGpsExists = 0;
+            int gpsScaleExists = 0;
+            if (Hdf5IO::datasetExists(outputPath.c_str(), "acquisition_start_time_gps", &startGpsExists) != 0 ||
+                Hdf5IO::datasetExists(outputPath.c_str(), "acquisition_stop_time_gps", &stopGpsExists) != 0 ||
+                Hdf5IO::datasetExists(outputPath.c_str(), "acquisition_time_gps_scale", &gpsScaleExists) != 0) {
+                return -1;
+            }
+            if (startGpsExists == 0 && stopGpsExists == 0 && gpsScaleExists == 0) {
+                std::string startUtc;
+                std::string stopUtc;
+                double startGps = 0.0;
+                double stopGps = 0.0;
+                if (Hdf5IO::readString(outputPath.c_str(), "acquisition_start_time", startUtc) != 0 ||
+                    Hdf5IO::readString(outputPath.c_str(), "acquisition_stop_time", stopUtc) != 0 ||
+                    conversion.utc2gps(startUtc.c_str(), &startGps) != 0 ||
+                    conversion.utc2gps(stopUtc.c_str(), &stopGps) != 0 ||
+                    !std::isfinite(startGps) || !std::isfinite(stopGps) || !(stopGps > startGps)) {
+                    return -1;
+                }
+                const cv::Mat startGpsMat(1, 1, CV_64F, cv::Scalar(startGps));
+                const cv::Mat stopGpsMat(1, 1, CV_64F, cv::Scalar(stopGps));
+                if (Hdf5IO::writeArray(outputPath.c_str(), "acquisition_start_time_gps", startGpsMat) != 0 ||
+                    Hdf5IO::writeArray(outputPath.c_str(), "acquisition_stop_time_gps", stopGpsMat) != 0 ||
+                    Hdf5IO::writeString(outputPath.c_str(), "acquisition_time_gps_scale", "GPS") != 0) {
+                    return -1;
+                }
+            } else if (startGpsExists == 0 || stopGpsExists == 0 || gpsScaleExists == 0) {
+                return -1;
+            }
+        }
+    }
+    return 0;
 }
 
 struct Sentinel1ProductIdentity
@@ -1452,7 +1513,7 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 					.arg(i + 1).arg(locker_src.isLocked() ? QStringLiteral("locked") : QStringLiteral("unlocked"))
 					.arg(locker_dst.isLocked() ? QStringLiteral("locked") : QStringLiteral("unlocked"))
 					.arg(sourceSummary, outputSummary), "output.metadata_copy.preflight");
-			const int copyResult = copySentinelRegistrationMetadata(sourcePath, outputPath);
+			const int copyResult = copySentinelRegistrationMetadata(FC, sourcePath, outputPath);
 			if (copyResult != 0) {
 				const QString sourceSnapshot = describeH5ForMetadataCopy(FC, QString::fromStdString(sourcePath));
 				const QString outputSnapshot = describeH5ForMetadataCopy(FC, QString::fromStdString(outputPath));

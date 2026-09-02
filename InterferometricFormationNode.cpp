@@ -980,7 +980,8 @@ ProductOutputContract InterferometricFormationNode::productOutputContract(PortIn
     contract.semanticId = portIndex == 0 ? QStringLiteral("interferometric.output.interferogram")
                                          : QStringLiteral("interferometric.output.preview");
     contract.publishedProductTypes = portIndex == 0
-        ? QStringList{QStringLiteral("interferogram")} : QStringList{QStringLiteral("preview")};
+        ? QStringList{QStringLiteral("interferogram")}
+        : QStringList{QStringLiteral("preview")};
     return contract;
 }
 
@@ -1530,7 +1531,7 @@ void InterferometricFormationNode::executeProcessing()
     QMap<QString, QString> descriptorProvenance;
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
-                                QStringLiteral("interferometric.output.interferogram"));
+                                productOutputContract(0).semanticId);
     const ProductDescriptor::Ptr inputDescriptor = m_inputData
         ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr();
     if (inputDescriptor) {
@@ -1570,7 +1571,8 @@ void InterferometricFormationNode::executeProcessing()
     if (!inputCrsWkt.isEmpty()) descriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction,
-            ProductDescriptor::create(QStringLiteral("interferogram"),
+            ProductDescriptor::create(
+                productOutputContract(0).publishedProductTypes.first(),
                                       QStringLiteral("sat-explorer-product"), 1,
                                       ProductState::Committed, name(), descriptorProvenance),
             &transactionError)) {
