@@ -625,6 +625,14 @@ bool validatePhaseValidityContract(const QString& inputPath,
                                    bool requireAllValid,
                                    QString* errMsg = nullptr);
 
+// A v2 Goldstein Denoise product carries an independent FFT support raster.
+// Non-Denoise and non-Goldstein products intentionally have no such contract.
+bool validateDenoiseFilterSupportContract(const QString& inputPath,
+                                          QString* errMsg = nullptr);
+bool copyDenoiseFilterSupportContract(const QString& inputPath,
+                                      const QString& outputPath,
+                                      QString* errMsg = nullptr);
+
 // ---------------------------------------------------------------------------
 // coherence 数据集的语义标签
 //

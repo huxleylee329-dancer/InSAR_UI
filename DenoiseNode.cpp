@@ -22,6 +22,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <algorithm>
 #include <cmath>
+#include <omp.h>
 #include "QtNodes/internal/NodeDetailWindow.hpp"
 
 namespace QtNodes {
@@ -1259,10 +1260,12 @@ private:
             return;
         }
 
-        m_loadingOverlay->startLoading(QObject::tr("正在加载 H5 文件并计算统计特征值..."));
-
         const QStringList inPaths = inData->filePaths();
         const QStringList outPaths = outData->filePaths();
+
+        // 根据影像对数量动态设置超时时间，保障大数据集有充分的计算窗口
+        const int timeoutMs = qMax(60000, inPaths.size() * 30000);
+        m_loadingOverlay->startLoading(QObject::tr("正在加载 H5 文件并计算统计特征值..."), timeoutMs);
 
         // Settings to compare (same value source as save())
         const QJsonObject nodeSave = m_node->save();
@@ -1314,11 +1317,17 @@ private:
 
             const auto calculatePhaseQuality = [wrapDifference, pi, cancelToken](const cv::Mat& phase) {
                 PhaseQualityMetrics metrics;
+                if (phase.empty() || phase.rows <= 0 || phase.cols <= 0) {
+                    return metrics;
+                }
+
                 double gradientSumSquares = 0.0;
-                qint64 gradientCount = 0;
+                double gradientCount = 0.0;
+
+                #pragma omp parallel for reduction(+:gradientSumSquares, gradientCount) schedule(static)
                 for (int row = 0; row < phase.rows; ++row) {
-                    if ((row & 127) == 0 && cancelToken && cancelToken->load()) {
-                        return metrics;
+                    if (cancelToken && cancelToken->load()) {
+                        continue;
                     }
                     const float* values = phase.ptr<float>(row);
                     const float* nextRow = row + 1 < phase.rows ? phase.ptr<float>(row + 1) : nullptr;
@@ -1330,30 +1339,37 @@ private:
                         if (col + 1 < phase.cols && std::isfinite(values[col + 1])) {
                             const double gradient = wrapDifference(static_cast<double>(values[col + 1]) - value);
                             gradientSumSquares += gradient * gradient;
-                            ++gradientCount;
+                            gradientCount += 1.0;
                         }
                         if (nextRow && std::isfinite(nextRow[col])) {
                             const double gradient = wrapDifference(static_cast<double>(nextRow[col]) - value);
                             gradientSumSquares += gradient * gradient;
-                            ++gradientCount;
+                            gradientCount += 1.0;
                         }
                     }
                 }
-                if (gradientCount > 0) {
+
+                if (cancelToken && cancelToken->load()) {
+                    return metrics;
+                }
+
+                if (gradientCount > 0.0) {
                     metrics.gradientRms = std::sqrt(gradientSumSquares / gradientCount);
                     metrics.hasGradient = true;
                 }
 
-                qint64 positiveResidueCount = 0;
-                qint64 negativeResidueCount = 0;
-                qint64 plaquetteCount = 0;
-                for (int row = 0; row + 1 < phase.rows; ++row) {
-                    if ((row & 127) == 0 && cancelToken && cancelToken->load()) {
-                        return metrics;
+                double positiveResidueCount = 0.0;
+                double negativeResidueCount = 0.0;
+                double plaquetteCount = 0.0;
+
+                #pragma omp parallel for reduction(+:positiveResidueCount, negativeResidueCount, plaquetteCount) schedule(static)
+                for (int row = 0; row < phase.rows - 1; ++row) {
+                    if (cancelToken && cancelToken->load()) {
+                        continue;
                     }
                     const float* top = phase.ptr<float>(row);
                     const float* bottom = phase.ptr<float>(row + 1);
-                    for (int col = 0; col + 1 < phase.cols; ++col) {
+                    for (int col = 0; col < phase.cols - 1; ++col) {
                         const double p00 = top[col];
                         const double p01 = top[col + 1];
                         const double p11 = bottom[col + 1];
@@ -1367,18 +1383,23 @@ private:
                             + wrapDifference(p10 - p11)
                             + wrapDifference(p00 - p10);
                         if (closure > pi) {
-                            ++positiveResidueCount;
+                            positiveResidueCount += 1.0;
                         } else if (closure < -pi) {
-                            ++negativeResidueCount;
+                            negativeResidueCount += 1.0;
                         }
-                        ++plaquetteCount;
+                        plaquetteCount += 1.0;
                     }
                 }
-                if (plaquetteCount > 0) {
-                    metrics.positiveResidueCount = static_cast<double>(positiveResidueCount);
-                    metrics.negativeResidueCount = static_cast<double>(negativeResidueCount);
-                    metrics.totalResidueCount = metrics.positiveResidueCount + metrics.negativeResidueCount;
-                    metrics.validPlaquetteCount = static_cast<double>(plaquetteCount);
+
+                if (cancelToken && cancelToken->load()) {
+                    return metrics;
+                }
+
+                if (plaquetteCount > 0.0) {
+                    metrics.positiveResidueCount = positiveResidueCount;
+                    metrics.negativeResidueCount = negativeResidueCount;
+                    metrics.totalResidueCount = positiveResidueCount + negativeResidueCount;
+                    metrics.validPlaquetteCount = plaquetteCount;
                     metrics.residueDensity = 100.0 * metrics.totalResidueCount / metrics.validPlaquetteCount;
                     metrics.hasResidueDensity = true;
                 }
@@ -1402,7 +1423,7 @@ private:
 
             double sumSin = 0.0;
             double sumCos = 0.0;
-            qint64 wrappedPixelCount = 0;
+            double wrappedPixelCount = 0.0;
 
             double gradientInputSum = 0.0, gradientOutputSum = 0.0;
             int gradientInputFiles = 0, gradientOutputFiles = 0;
@@ -1557,15 +1578,20 @@ private:
                     ++residueOutputFiles;
                 }
 
-                // 3. Wrapped difference circular statistics, only for size-consistent pairs
+                // 3. 缠绕相位差圆统计：对尺寸一致的影像对进行自适应步长采样，避免千万级像素密集调用三角函数
                 if (sizeMatches) {
-                    for (int row = 0; row < inPhase.rows; ++row) {
-                        if ((row & 127) == 0 && cancelToken && cancelToken->load()) {
-                            break;
+                    const qint64 totalPixels = static_cast<qint64>(inPhase.rows) * inPhase.cols;
+                    constexpr qint64 maxWrappedSamples = 500000;
+                    const int stride = static_cast<int>(std::max<qint64>(1, static_cast<qint64>(std::sqrt(static_cast<double>(totalPixels) / maxWrappedSamples))));
+
+                    #pragma omp parallel for reduction(+:sumSin, sumCos, wrappedPixelCount) schedule(static)
+                    for (int row = 0; row < inPhase.rows; row += stride) {
+                        if (cancelToken && cancelToken->load()) {
+                            continue;
                         }
                         const float* inValues = inPhase.ptr<float>(row);
                         const float* outValues = outPhase.ptr<float>(row);
-                        for (int col = 0; col < inPhase.cols; ++col) {
+                        for (int col = 0; col < inPhase.cols; col += stride) {
                             const double inputValue = inValues[col];
                             const double outputValue = outValues[col];
                             if (!std::isfinite(inputValue) || !std::isfinite(outputValue)) {
@@ -1575,10 +1601,14 @@ private:
                             const double delta = outputValue - inputValue;
                             sumSin += std::sin(delta);
                             sumCos += std::cos(delta);
-                            ++wrappedPixelCount;
+                            wrappedPixelCount += 1.0;
                         }
                     }
                 }
+
+                // 及时释放大图像矩阵内存，降低多景批处理峰值内存占用
+                inPhase.release();
+                outPhase.release();
             }
 
             if (cancelToken && cancelToken->load()) {
@@ -1601,7 +1631,7 @@ private:
             res.alphaInconsistent = alphaInconsistent;
             res.hasActualDenoiseDl = denoiseDlFiles > 0;
 
-            if (wrappedPixelCount > 0) {
+            if (wrappedPixelCount > 0.0) {
                 res.wrappedDiffMean = std::atan2(sumSin, sumCos);
                 res.wrappedDiffResultant = std::min(1.0, std::hypot(sumSin / wrappedPixelCount, sumCos / wrappedPixelCount));
                 res.wrappedDiffStd = std::sqrt(-2.0 * std::log(std::max(res.wrappedDiffResultant, 1e-12)));
@@ -1643,19 +1673,16 @@ private:
             return res;
         });
 
-        // Use QFutureWatcher to monitor finished state and update UI
+        // 使用 QFutureWatcher 监听异步执行状态并平滑更新 UI
         auto* watcher = new QFutureWatcher<ValidationResults>(this);
         connect(watcher, &QFutureWatcher<ValidationResults>::finished, this, [this, watcher, cacheKey]() {
-            // 超时分支：有意保留"验证超时"提示（不调用 stopLoading），让用户看到超时状态。
-            if (m_isTimedOut) {
-                watcher->deleteLater();
-                return;
-            }
-
             ValidationResults res = watcher->result();
             if (!cacheKey.isEmpty() && res.success) {
                 m_node->storeValidationCache(cacheKey, res);
             }
+
+            // 若在超时触发后后台最终成功完成，平滑解除超时状态并渲染特征值，避免陷入死锁
+            m_isTimedOut = false;
             applyValidationResults(res);
             watcher->deleteLater();
         });

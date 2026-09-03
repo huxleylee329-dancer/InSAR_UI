@@ -13,6 +13,8 @@
 #include <QCoreApplication>
 #include <QByteArray>
 #include <QRegularExpression>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #ifdef _DEBUG
@@ -457,7 +459,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return false;
             }
         }
-        if (!NodeUtils::copyPhaseProcessingMetadata(phaseH5, unwrapH5, &metadataError)) {
+        if (!NodeUtils::copyPhaseProcessingMetadata(phaseH5, unwrapH5, &metadataError) ||
+            !NodeUtils::copyDenoiseFilterSupportContract(phaseH5, unwrapH5, &metadataError)) {
             return false;
         }
 
@@ -478,15 +481,44 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         return true;
     };
 
-    auto writeOutputPhase = [&](int idx, Mat& phase_unwrap) -> bool {
+    auto writeOutputPhase = [&](int idx, Mat& phase_unwrap,
+                                const Mat* connectedComponent = nullptr) -> bool {
         if (phase_unwrap.type() != CV_32F) {
             phase_unwrap.convertTo(phase_unwrap, CV_32F);
         }
+		if (connectedComponent != nullptr) {
+			if (connectedComponent->type() != CV_32S || connectedComponent->size() != phase_unwrap.size()) {
+				metadataError = QStringLiteral("解缠连通分量类型或网格不一致");
+				return false;
+			}
+			for (int row = 0; row < phase_unwrap.rows; ++row) {
+				const int* componentRow = connectedComponent->ptr<int>(row);
+				float* phaseRow = phase_unwrap.ptr<float>(row);
+				for (int column = 0; column < phase_unwrap.cols; ++column) {
+					if (componentRow[column] > 0) {
+						if (!std::isfinite(phaseRow[column])) {
+							metadataError = QStringLiteral("解缠有效连通分量包含非有限相位");
+							return false;
+						}
+					} else if (componentRow[column] == 0) {
+						phaseRow[column] = std::numeric_limits<float>::quiet_NaN();
+					} else {
+						metadataError = QStringLiteral("解缠连通分量包含负编号");
+						return false;
+					}
+				}
+			}
+		}
 
         const QString& outputPath = absolute_unwrap_path.at(idx);
         if (!NodeUtils::writeMatToH5(outputPath, "phase", phase_unwrap)) {
             return false;
         }
+		if (connectedComponent != nullptr &&
+			!NodeUtils::writeMatToH5(outputPath, "unwrap_connected_component", *connectedComponent)) {
+			metadataError = QStringLiteral("无法写入解缠连通分量");
+			return false;
+		}
 
         if (!NodeUtils::writeScalarToH5(outputPath, "unwrap_method", method) ||
             !NodeUtils::writeScalarToH5(outputPath, "unwrap_coherence_threshold", coherence_threshold)) {
@@ -525,7 +557,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
         return true;
     };
 
-    const auto finishMetadataFailure = [&]() {
+    const auto finishMetadataFailure = [&](int idx) {
+		QFile::remove(absolute_unwrap_path.at(idx));
         if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
             finishCancelled();
         } else {
@@ -536,10 +569,14 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
     for (int i = 0; i < image_number; ++i) {
         QString phaseValidityError;
-        if (!NodeUtils::validatePhaseValidityContract(phase_path.at(i), true, &phaseValidityError)) {
+        if (!NodeUtils::validatePhaseValidityContract(phase_path.at(i), method != 1, &phaseValidityError)) {
             emit errorProcess(phaseValidityError);
             return;
         }
+		if (!NodeUtils::validateDenoiseFilterSupportContract(phase_path.at(i), &phaseValidityError)) {
+			emit errorProcess(phaseValidityError);
+			return;
+		}
     }
 
     if (method == 1)
@@ -562,8 +599,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return;
             }
 
-            Mat phase_unwrap;
-            ret = unwrap.SPD_Guided_Unwrap(phase, phase_unwrap, unwrapProgressCallback);
+			Mat validMask;
+			const bool hasV2ValidMask = NodeUtils::readMatFromH5(phase_path.at(i), "phase_valid_mask",
+				validMask, CV_8U);
+			if (!hasV2ValidMask) {
+				validMask = Mat::ones(phase.size(), CV_8U);
+			}
+			Mat phase_unwrap;
+			Mat connectedComponent;
+			ret = unwrap.SPD_Guided_Unwrap_Masked(phase, validMask, phase_unwrap,
+				connectedComponent, unwrapProgressCallback);
             if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
                 finishCancelled();
                 return;
@@ -573,11 +618,12 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return;
             }
 
-            if (!copyH5Metadata(i)) {
-                finishMetadataFailure();
+			if (!copyH5Metadata(i)) {
+				finishMetadataFailure(i);
                 return;
             }
-            if (!writeOutputPhase(i, phase_unwrap)) {
+			const Mat* outputComponent = hasV2ValidMask ? &connectedComponent : nullptr;
+			if (!writeOutputPhase(i, phase_unwrap, outputComponent)) {
                 QFile::remove(absolute_unwrap_path.at(i));
                 failImage(i, QStringLiteral("writing output"), -1);
                 return;
@@ -626,7 +672,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
 
             if (!copyH5Metadata(i)) {
-                finishMetadataFailure();
+				finishMetadataFailure(i);
                 return;
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
@@ -707,7 +753,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
 
             if (!copyH5Metadata(i)) {
-                finishMetadataFailure();
+				finishMetadataFailure(i);
                 return;
             }
             if (!writeOutputPhase(i, phase_unwrap)) {
@@ -761,7 +807,7 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             }
 
             if (!copyH5Metadata(i)) {
-                finishMetadataFailure();
+				finishMetadataFailure(i);
                 return;
             }
             if (!writeOutputPhase(i, phase_unwrap)) {

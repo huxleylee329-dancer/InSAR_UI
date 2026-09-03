@@ -134,6 +134,7 @@ bool writeDenoisedPhase(FormatConversion& conversion,
                         const QString& outputPath,
                         const QString& projectPath,
                         const Mat& filteredPhase,
+						const Mat* filterSupportMask,
                         int method,
                         int slopePrefilterWindow,
                         int slopeWindow,
@@ -193,9 +194,22 @@ bool writeDenoisedPhase(FormatConversion& conversion,
         NodeUtils::readMatFromH5(inputPath, dataset, value);
         NodeUtils::writeMatToH5(outputPath, dataset, value);
     }
-    if (!NodeUtils::copyPhaseProcessingMetadata(inputPath, outputPath, &error)) {
+	if (!NodeUtils::copyPhaseProcessingMetadata(inputPath, outputPath, &error)) {
         return false;
     }
+	if (method == 2 && filterSupportMask != nullptr) {
+		const int supportCount = countNonZero(*filterSupportMask);
+		if (!NodeUtils::writeMatToH5(outputPath, QStringLiteral("denoise_filter_support_mask"), *filterSupportMask) ||
+			!NodeUtils::writeScalarToH5(outputPath, QStringLiteral("denoise_mask_contract_version"), 1) ||
+			!NodeUtils::writeScalarToH5(outputPath, QStringLiteral("denoise_filter_support_count"), supportCount) ||
+			!NodeUtils::writeStringToH5(outputPath, QStringLiteral("denoise_filter_support_semantics"),
+				"fully_valid_fft_window_coverage_v1") ||
+			!NodeUtils::writeStringToH5(outputPath, QStringLiteral("denoise_filter_fallback_semantics"),
+				"input_phase_passthrough_when_unsupported_v1")) {
+			error = QStringLiteral("Failed to write Goldstein filter support contract.");
+			return false;
+		}
+	}
     if (!copyCompatibleCoherence(inputPath, outputPath, filteredPhase, error)) {
         return false;
     }
@@ -280,10 +294,14 @@ void DenoiseWorker::Denoise(QList<int> para,
         const QString outputPath = outputDirectory + "/" + filterName + ".h5";
 
         QString phaseValidityError;
-        if (!NodeUtils::validatePhaseValidityContract(inputPath, true, &phaseValidityError)) {
+		if (!NodeUtils::validatePhaseValidityContract(inputPath, false, &phaseValidityError)) {
             emit errorProcess(phaseValidityError);
             return;
         }
+		if (!NodeUtils::validateDenoiseFilterSupportContract(inputPath, &phaseValidityError)) {
+			emit errorProcess(phaseValidityError);
+			return;
+		}
 
         emit updateProcess(10 + i * 80 / imageCount,
                             QString("Filtering image %1/%2").arg(i + 1).arg(imageCount));
@@ -294,12 +312,25 @@ void DenoiseWorker::Denoise(QList<int> para,
             return;
         }
 
-        Mat filteredPhase;
+		Mat inputValidMask;
+		const bool hasV2ValidMask = NodeUtils::readMatFromH5(inputPath, "phase_valid_mask", inputValidMask, CV_8U);
+		if (!hasV2ValidMask) {
+			inputValidMask = Mat::ones(phase.size(), CV_8U);
+		}
+		const int inputValidCount = countNonZero(inputValidMask);
+		if (method != 2 && inputValidCount != phase.rows * phase.cols) {
+			emit errorProcess(QStringLiteral("当前滤波方法不支持掩膜相位；请选择 Goldstein 滤波：%1").arg(inputPath));
+			return;
+		}
+
+		Mat filteredPhase;
+		Mat filterSupportMask;
         int result = -1;
         if (method == 1) {
             result = filter.slope_adaptive_filter(phase, filteredPhase, para.at(1), para.at(0), denoiseProgressCallback);
         } else if (method == 2) {
-            result = filter.Goldstein_filter(phase, filteredPhase, alpha, para.at(2), para.at(3), denoiseProgressCallback);
+			result = filter.Goldstein_filter_masked(phase, inputValidMask, filteredPhase, filterSupportMask,
+				alpha, para.at(2), para.at(3), denoiseProgressCallback);
         } else if (method == 3) {
             const QString applicationPath = QCoreApplication::applicationDirPath();
             const QString modelPath = applicationPath + "\\other\\net.pt";
@@ -320,11 +351,41 @@ void DenoiseWorker::Denoise(QList<int> para,
             emit errorProcess(QStringLiteral("Denoise processing failed."));
             return;
         }
+		Mat publishedPhase;
+		const Mat* supportForMetadata = nullptr;
+		if (method == 2 && hasV2ValidMask) {
+			if (filterSupportMask.type() != CV_8U || filterSupportMask.channels() != 1 ||
+				filterSupportMask.size() != phase.size()) {
+				emit errorProcess(QStringLiteral("Goldstein 滤波支持掩膜类型或网格不一致：%1").arg(inputPath));
+				return;
+			}
+			for (int row = 0; row < phase.rows; ++row) {
+				const uchar* valid = inputValidMask.ptr<uchar>(row);
+				const uchar* support = filterSupportMask.ptr<uchar>(row);
+				const double* filtered = filteredPhase.ptr<double>(row);
+				for (int column = 0; column < phase.cols; ++column) {
+					if ((support[column] != 0 && support[column] != 1) ||
+						(support[column] != 0 && valid[column] == 0) ||
+						(support[column] != 0 && !std::isfinite(filtered[column]))) {
+						emit errorProcess(QStringLiteral("Goldstein 滤波支持掩膜或结果无效：%1").arg(inputPath));
+						return;
+					}
+				}
+			}
+			publishedPhase = phase.clone();
+			filteredPhase.copyTo(publishedPhase, filterSupportMask);
+			supportForMetadata = &filterSupportMask;
+			InSARLogManager::LogInfo("DenoiseWorker",
+				QStringLiteral("Goldstein filter support: inputValid=%1, fftSupported=%2, total=%3")
+					.arg(inputValidCount).arg(countNonZero(filterSupportMask)).arg(phase.rows * phase.cols));
+		} else {
+			publishedPhase = filteredPhase;
+		}
 
         int offsetRow = 0;
         int offsetCol = 0;
         QString writeError;
-        if (!writeDenoisedPhase(conversion, inputPath, outputPath, savePath, filteredPhase,
+		if (!writeDenoisedPhase(conversion, inputPath, outputPath, savePath, publishedPhase, supportForMetadata,
                                 method, para.at(0), para.at(1), para.at(2), para.at(3), alpha,
                                 offsetRow, offsetCol, writeError)) {
             QFile::remove(outputPath);

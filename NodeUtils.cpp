@@ -5751,6 +5751,11 @@ bool validatePhaseValidityContract(const QString& inputPath,
         if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("v2 相位有效性契约缺失或网格不一致：%1").arg(inputPath);
         return false;
     }
+	if (phase.channels() != 1 || (phase.type() != CV_32F && phase.type() != CV_64F)) {
+		if (errMsg) *errMsg = QStringLiteral("v2 相位必须为单通道浮点矩阵：%1").arg(inputPath);
+		return false;
+	}
+	const bool phaseIsFloat = phase.type() == CV_32F;
 
     int invalidCount = 0;
     for (int row = 0; row < phase.rows; ++row) {
@@ -5765,12 +5770,155 @@ bool validatePhaseValidityContract(const QString& inputPath,
                 if (errMsg) *errMsg = QStringLiteral("v2 相位有效样本数无效：%1").arg(inputPath);
                 return false;
             }
+			if (valid[column] != 0) {
+				const double phaseValue = phaseIsFloat
+					? static_cast<double>(phase.ptr<float>(row)[column])
+					: phase.ptr<double>(row)[column];
+				if (!std::isfinite(phaseValue)) {
+					if (errMsg) *errMsg = QStringLiteral("v2 有效相位包含非有限像元：%1").arg(inputPath);
+					return false;
+				}
+			}
             if (valid[column] == 0) ++invalidCount;
         }
     }
     if (requireAllValid && invalidCount != 0) {
         if (errMsg) *errMsg = QStringLiteral("输入相位包含 %1 个无效像元，当前处理不支持掩膜相位：%2")
                                .arg(invalidCount).arg(inputPath);
+        return false;
+    }
+    return true;
+}
+
+bool validateDenoiseFilterSupportContract(const QString& inputPath, QString* errMsg)
+{
+    const QByteArray path = inputPath.toUtf8();
+    int methodExists = 0;
+    if (Hdf5IO::datasetExists(path.constData(), "denoise_method", &methodExists) != 0) {
+        if (errMsg) *errMsg = QStringLiteral("无法检查 Denoise 方法元数据：%1").arg(inputPath);
+        return false;
+    }
+    if (methodExists == 0) return true;
+
+    int method = 0;
+    if (!readScalarFromH5(inputPath, QStringLiteral("denoise_method"), method, errMsg)) return false;
+    if (method != 2) return true;
+
+    int schemaVersion = 0;
+	int schemaExists = 0;
+	if (Hdf5IO::datasetExists(path.constData(), "phase_processing_schema_version", &schemaExists) != 0) {
+		if (errMsg) *errMsg = QStringLiteral("无法检查相位处理契约版本：%1").arg(inputPath);
+		return false;
+	}
+	if (schemaExists == 0) return true;
+	if (!readScalarFromH5(inputPath, QStringLiteral("phase_processing_schema_version"), schemaVersion, errMsg)) {
+		return false;
+	}
+	if (schemaVersion != 2) return true;
+
+    cv::Mat phase, validMask, supportMask;
+    int contractVersion = 0;
+    int supportCount = 0;
+    int window = 0;
+    int nPad = 0;
+    double alpha = 0.0;
+    std::string supportSemantics;
+    std::string fallbackSemantics;
+    if (!validatePhaseValidityContract(inputPath, false, errMsg) ||
+        !readMatFromH5(inputPath, QStringLiteral("phase"), phase, -1, errMsg) || phase.empty() ||
+        !readMatFromH5(inputPath, QStringLiteral("phase_valid_mask"), validMask, -1, errMsg) ||
+        !readMatFromH5(inputPath, QStringLiteral("denoise_filter_support_mask"), supportMask, -1, errMsg) ||
+        supportMask.type() != CV_8U || supportMask.channels() != 1 || supportMask.size() != phase.size() ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_mask_contract_version"), contractVersion, errMsg) ||
+        contractVersion != 1 ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_filter_support_count"), supportCount, errMsg) ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_win"), window, errMsg) || window < 5 ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_npad"), nPad, errMsg) || nPad < 0 ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_alpha"), alpha, errMsg) ||
+        !std::isfinite(alpha) || alpha <= 0.0 ||
+        !readStringFromH5(inputPath, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, errMsg) ||
+        supportSemantics != "fully_valid_fft_window_coverage_v1" ||
+        !readStringFromH5(inputPath, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, errMsg) ||
+        fallbackSemantics != "input_phase_passthrough_when_unsupported_v1") {
+        if (errMsg && errMsg->isEmpty()) {
+            *errMsg = QStringLiteral("Goldstein Denoise 掩膜支持契约缺失或无效，请重新执行滤波：%1").arg(inputPath);
+        }
+        return false;
+    }
+
+    int actualCount = 0;
+    for (int row = 0; row < supportMask.rows; ++row) {
+        const uchar* valid = validMask.ptr<uchar>(row);
+        const uchar* support = supportMask.ptr<uchar>(row);
+        for (int column = 0; column < supportMask.cols; ++column) {
+            if ((support[column] != 0 && support[column] != 1) ||
+                (support[column] != 0 && valid[column] == 0)) {
+                if (errMsg) *errMsg = QStringLiteral("Goldstein Denoise 支持掩膜必须是 phase_valid_mask 的二值子集：%1").arg(inputPath);
+                return false;
+            }
+            actualCount += support[column] != 0 ? 1 : 0;
+        }
+    }
+    if (supportCount != actualCount) {
+        if (errMsg) *errMsg = QStringLiteral("Goldstein Denoise 支持像元计数不一致，请重新执行滤波：%1").arg(inputPath);
+        return false;
+    }
+    return true;
+}
+
+bool copyDenoiseFilterSupportContract(const QString& inputPath,
+                                      const QString& outputPath,
+                                      QString* errMsg)
+{
+    const QByteArray path = inputPath.toUtf8();
+    int methodExists = 0;
+    if (Hdf5IO::datasetExists(path.constData(), "denoise_method", &methodExists) != 0) {
+        if (errMsg) *errMsg = QStringLiteral("无法检查 Denoise 方法元数据：%1").arg(inputPath);
+        return false;
+    }
+    if (methodExists == 0) return true;
+
+    int method = 0;
+    if (!readScalarFromH5(inputPath, QStringLiteral("denoise_method"), method, errMsg)) return false;
+    if (method != 2) return true;
+    if (!validateDenoiseFilterSupportContract(inputPath, errMsg)) return false;
+	int schemaExists = 0;
+	if (Hdf5IO::datasetExists(path.constData(), "phase_processing_schema_version", &schemaExists) != 0) {
+		if (errMsg) *errMsg = QStringLiteral("无法检查相位处理契约版本：%1").arg(inputPath);
+		return false;
+	}
+	if (schemaExists == 0) return true;
+	int schemaVersion = 0;
+	if (!readScalarFromH5(inputPath, QStringLiteral("phase_processing_schema_version"), schemaVersion, errMsg)) {
+		return false;
+	}
+	if (schemaVersion != 2) return true;
+
+    cv::Mat supportMask;
+    int contractVersion = 0;
+    int supportCount = 0;
+    int window = 0;
+    int nPad = 0;
+    double alpha = 0.0;
+    std::string supportSemantics;
+    std::string fallbackSemantics;
+    if (!readMatFromH5(inputPath, QStringLiteral("denoise_filter_support_mask"), supportMask, -1, errMsg) ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_mask_contract_version"), contractVersion, errMsg) ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_filter_support_count"), supportCount, errMsg) ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_win"), window, errMsg) ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_npad"), nPad, errMsg) ||
+        !readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_alpha"), alpha, errMsg) ||
+        !readStringFromH5(inputPath, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, errMsg) ||
+        !readStringFromH5(inputPath, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, errMsg) ||
+        !writeScalarToH5(outputPath, QStringLiteral("denoise_method"), method, errMsg) ||
+        !writeScalarToH5(outputPath, QStringLiteral("denoise_goldstein_win"), window, errMsg) ||
+        !writeScalarToH5(outputPath, QStringLiteral("denoise_goldstein_npad"), nPad, errMsg) ||
+        !writeScalarToH5(outputPath, QStringLiteral("denoise_goldstein_alpha"), alpha, errMsg) ||
+        !writeMatToH5(outputPath, QStringLiteral("denoise_filter_support_mask"), supportMask, errMsg) ||
+        !writeScalarToH5(outputPath, QStringLiteral("denoise_mask_contract_version"), contractVersion, errMsg) ||
+        !writeScalarToH5(outputPath, QStringLiteral("denoise_filter_support_count"), supportCount, errMsg) ||
+        !writeStringToH5(outputPath, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, errMsg) ||
+        !writeStringToH5(outputPath, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, errMsg)) {
         return false;
     }
     return true;
@@ -5997,6 +6145,8 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
         return false;
     }
 	if (schemaVersion == kFlatEarthReferenceSchemaVersion && flatRemoved == 1) {
+		const QString rerampDataset = QStringLiteral("flat_earth_slave_registration_reramp_phase");
+		const QString rerampSemanticsDataset = QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics");
 		QStringList matrixDatasets = {
 			QStringLiteral("flat_earth_rde_burst_statistics"),
 			QStringLiteral("flat_earth_master_burst_azimuth_time"),
@@ -6007,7 +6157,6 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
 			QStringLiteral("flat_earth_slave_first_valid_line"), QStringLiteral("flat_earth_slave_last_valid_line"),
 			QStringLiteral("flat_earth_master_first_valid_sample"), QStringLiteral("flat_earth_master_last_valid_sample"),
 			QStringLiteral("flat_earth_slave_first_valid_sample"), QStringLiteral("flat_earth_slave_last_valid_sample"),
-			QStringLiteral("flat_earth_slave_registration_reramp_phase"),
 			QStringLiteral("flat_earth_slave_registration_mapping_coefficients"),
 			QStringLiteral("flat_earth_slave_registration_mapping_master_burst_indices") };
 		const QStringList intDatasets = {
@@ -6044,15 +6193,27 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
 			QStringLiteral("flat_earth_master_orbit_selection_reason"), QStringLiteral("flat_earth_slave_orbit_selection_reason"),
 			QStringLiteral("flat_earth_master_look_side_source"),
 			QStringLiteral("flat_earth_orbit_time_scale"), QStringLiteral("flat_earth_orbit_interpolation_strategy"),
-			QStringLiteral("flat_earth_slave_registration_mapping_semantics"),
-			QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics") };
-		int modelVersion = 0;
-		if (!readScalarFromH5(inputPath, QStringLiteral("flat_earth_model_version"), modelVersion, errMsg)) {
+			QStringLiteral("flat_earth_slave_registration_mapping_semantics") };
+		const auto datasetExists = [&](const QString& dataset, int& exists) {
+			const QByteArray inputUtf8 = inputPath.toUtf8();
+			const QByteArray datasetUtf8 = dataset.toUtf8();
+			if (Hdf5IO::datasetExists(inputUtf8.constData(), datasetUtf8.constData(), &exists) == 0) {
+				return true;
+			}
+			if (errMsg) *errMsg = QStringLiteral("无法检查 H5 数据集 %1：%2").arg(dataset, inputPath);
+			return false;
+		};
+		int rerampExists = 0;
+		int rerampSemanticsExists = 0;
+		if (!datasetExists(rerampDataset, rerampExists) ||
+			!datasetExists(rerampSemanticsDataset, rerampSemanticsExists)) {
 			return false;
 		}
-		if (modelVersion == 6) {
-			matrixDatasets.removeAll(QStringLiteral("flat_earth_slave_registration_reramp_phase"));
-			stringDatasets.removeAll(QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"));
+
+		const bool hasCompleteRerampProvenance = rerampExists != 0 && rerampSemanticsExists != 0;
+		if (rerampExists != rerampSemanticsExists) {
+			if (errMsg) *errMsg = QStringLiteral("注册 reramp provenance 不完整：%1").arg(inputPath);
+			return false;
 		}
         for (const QString& dataset : matrixDatasets) {
             cv::Mat value;
@@ -6074,31 +6235,16 @@ bool copyPhaseProcessingMetadata(const QString& inputPath,
             if (!readStringFromH5(inputPath, dataset, value, errMsg) || value.empty() ||
                 !writeStringToH5(outputPath, dataset, value, errMsg)) return false;
         }
-		if (modelVersion == 6) {
-			QString rerampError;
-			const H5DatasetProbeResult rerampProbe = probeH5Dataset(
-				inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), &rerampError);
-			const H5DatasetProbeResult rerampSemanticsProbe = probeH5Dataset(
-				inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"), &rerampError);
-			if (rerampProbe == H5DatasetProbeResult::Error ||
-				rerampSemanticsProbe == H5DatasetProbeResult::Error ||
-				rerampProbe != rerampSemanticsProbe) {
-				if (errMsg) *errMsg = rerampError.isEmpty() ?
-					QStringLiteral("v6 可选注册 reramp provenance 不完整：%1").arg(inputPath) : rerampError;
-				return false;
-			}
-			if (rerampProbe == H5DatasetProbeResult::Exists) {
-				cv::Mat reramp;
-				std::string rerampSemantics;
-				if (!readMatFromH5(inputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), reramp, -1, errMsg) ||
-					reramp.empty() || !readStringFromH5(inputPath,
-						QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"), rerampSemantics, errMsg) ||
-					rerampSemantics != "resampled_slave_deramp_demod_phase_registration_only_v1" ||
-					!writeMatToH5(outputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase"), reramp, errMsg) ||
-					!writeStringToH5(outputPath, QStringLiteral("flat_earth_slave_registration_reramp_phase_semantics"), rerampSemantics, errMsg)) return false;
-			}
+		if (hasCompleteRerampProvenance) {
+			cv::Mat reramp;
+			std::string rerampSemantics;
+			if (!readMatFromH5(inputPath, rerampDataset, reramp, -1, errMsg) ||
+				reramp.empty() || !readStringFromH5(inputPath, rerampSemanticsDataset, rerampSemantics, errMsg) ||
+				rerampSemantics != "resampled_slave_deramp_demod_phase_registration_only_v1" ||
+				!writeMatToH5(outputPath, rerampDataset, reramp, errMsg) ||
+				!writeStringToH5(outputPath, rerampSemanticsDataset, rerampSemantics, errMsg)) return false;
 		}
-    }
+	}
     return copyCommonCoverageContract();
 }
 
