@@ -38,6 +38,9 @@ struct PhaseQualityMetrics {
 // Aggregated validation results across all input/output image pairs.
 struct ValidationResults {
     bool success = false;
+    // Detail View opens with bounded sampling. A full-grid contract audit is
+    // only performed after the user explicitly requests it.
+    bool quickValidation = false;
     QString errorMsg;
     // Compare values
     int expectedMethod = 1;

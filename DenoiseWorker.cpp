@@ -13,6 +13,7 @@
 #include <QThread>
 
 #include <cmath>
+#include <limits>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Filter_d.lib")
@@ -129,6 +130,72 @@ bool copyCompatibleCoherence(const QString& inputPath, const QString& outputPath
     return true;
 }
 
+bool readSnapCompatibleInputs(const QString& inputPath,
+                              Mat& interferogramReal,
+                              Mat& interferogramImaginary,
+                              Mat& complexGamma,
+                              Mat& gammaValidMask,
+                              QString& error)
+{
+	QString phaseContractError;
+	int phaseSchemaVersion = 0;
+	if (!NodeUtils::validatePhaseValidityContract(inputPath, false, &phaseContractError) ||
+		!NodeUtils::readScalarFromH5(inputPath, "phase_processing_schema_version", phaseSchemaVersion) ||
+		phaseSchemaVersion != 2) {
+		error = phaseContractError.isEmpty()
+			? QStringLiteral("GoldsteinSnapCompatibleV1 requires phase_processing_schema_version=2: %1").arg(inputPath)
+			: phaseContractError;
+		return false;
+	}
+    Mat gammaValidSampleCount;
+    if (!NodeUtils::readMatFromH5(inputPath, "interferogram_i", interferogramReal, CV_32F) ||
+        !NodeUtils::readMatFromH5(inputPath, "interferogram_q", interferogramImaginary, CV_32F) ||
+        !NodeUtils::readMatFromH5(inputPath, "complex_gamma", complexGamma, CV_64F) ||
+        !NodeUtils::readMatFromH5(inputPath, "complex_gamma_valid_mask", gammaValidMask, CV_8U) ||
+        !NodeUtils::readMatFromH5(inputPath, "complex_gamma_valid_sample_count", gammaValidSampleCount, CV_32S)) {
+        error = QStringLiteral("GoldsteinSnapCompatibleV1 requires interferogram_i/q and true complex_gamma datasets: %1")
+                    .arg(inputPath);
+        return false;
+    }
+    if (interferogramReal.empty() || interferogramImaginary.empty() || complexGamma.empty() || gammaValidMask.empty() ||
+        interferogramReal.size() != interferogramImaginary.size() || interferogramReal.size() != complexGamma.size() ||
+        interferogramReal.size() != gammaValidMask.size() || interferogramReal.size() != gammaValidSampleCount.size()) {
+        error = QStringLiteral("GoldsteinSnapCompatibleV1 input datasets have inconsistent grids: %1").arg(inputPath);
+        return false;
+    }
+    int gammaWindowRange = 0;
+    int gammaWindowAzimuth = 0;
+    std::string gammaSemantics;
+    std::string gammaAlgorithm;
+    if (!NodeUtils::readStringFromH5(inputPath, "complex_gamma_semantics", gammaSemantics) ||
+        QString::fromStdString(gammaSemantics) != QString::fromLatin1(NodeUtils::CoherenceSemantics::kComplexGamma) ||
+        !NodeUtils::readStringFromH5(inputPath, "complex_gamma_algorithm", gammaAlgorithm) ||
+        gammaAlgorithm != "corrected_multilooked_source_row_aware_v1" ||
+        !NodeUtils::readScalarFromH5(inputPath, "complex_gamma_window_range", gammaWindowRange) ||
+        !NodeUtils::readScalarFromH5(inputPath, "complex_gamma_window_azimuth", gammaWindowAzimuth) ||
+        gammaWindowRange < 3 || gammaWindowAzimuth < 3 ||
+        gammaWindowRange % 2 == 0 || gammaWindowAzimuth % 2 == 0) {
+        error = QStringLiteral("GoldsteinSnapCompatibleV1 requires complex_gamma semantics, not phase concentration: %1")
+                    .arg(inputPath);
+        return false;
+    }
+    for (int row = 0; row < complexGamma.rows; ++row) {
+        const double* gammaRow = complexGamma.ptr<double>(row);
+        const uchar* maskRow = gammaValidMask.ptr<uchar>(row);
+        const int* countRow = gammaValidSampleCount.ptr<int>(row);
+        for (int column = 0; column < complexGamma.cols; ++column) {
+            if ((maskRow[column] != 0 && maskRow[column] != 1) || countRow[column] < 0 ||
+                (maskRow[column] != 0 && (countRow[column] <= 0 || !std::isfinite(gammaRow[column]) ||
+                                           gammaRow[column] < 0.0 || gammaRow[column] > 1.0)) ||
+                (maskRow[column] == 0 && countRow[column] != 0)) {
+                error = QStringLiteral("GoldsteinSnapCompatibleV1 complex_gamma values or support mask are invalid: %1").arg(inputPath);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool writeDenoisedPhase(FormatConversion& conversion,
                         const QString& inputPath,
                         const QString& outputPath,
@@ -141,6 +208,8 @@ bool writeDenoisedPhase(FormatConversion& conversion,
                         int goldsteinWindow,
                         int nPad,
                         double alpha,
+						const Mat* filteredInterferogramReal,
+						const Mat* filteredInterferogramImaginary,
                         int& offsetRow,
                         int& offsetCol,
                         QString& error)
@@ -169,6 +238,17 @@ bool writeDenoisedPhase(FormatConversion& conversion,
     } else if (method == 3) {
         metadataOk = metadataOk &&
             NodeUtils::writeScalarToH5(outputPath, "denoise_dl", 1);
+	} else if (method == 4) {
+		metadataOk = metadataOk &&
+			NodeUtils::writeStringToH5(outputPath, "denoise_goldstein_profile", "GoldsteinSnapCompatibleV1") &&
+			NodeUtils::writeScalarToH5(outputPath, "denoise_goldstein_win", 64) &&
+			NodeUtils::writeScalarToH5(outputPath, "denoise_goldstein_npad", 0) &&
+			NodeUtils::writeStringToH5(outputPath, "denoise_goldstein_alpha_semantics",
+				"clamp_1_minus_mean_complex_gamma_0.2_1.0_v1") &&
+			NodeUtils::writeStringToH5(outputPath, "denoise_goldstein_spectral_smoothing",
+				"mean_3x3_skip_zero_power_v1") &&
+			NodeUtils::writeStringToH5(outputPath, "denoise_goldstein_overlap_window",
+				"separable_triangular_v1");
     }
     if (!metadataOk) {
         error = QStringLiteral("Failed to write denoise processing metadata.");
@@ -197,15 +277,17 @@ bool writeDenoisedPhase(FormatConversion& conversion,
 	if (!NodeUtils::copyPhaseProcessingMetadata(inputPath, outputPath, &error)) {
         return false;
     }
-	if (method == 2 && filterSupportMask != nullptr) {
+	if ((method == 2 || method == 4) && filterSupportMask != nullptr) {
 		const int supportCount = countNonZero(*filterSupportMask);
 		if (!NodeUtils::writeMatToH5(outputPath, QStringLiteral("denoise_filter_support_mask"), *filterSupportMask) ||
-			!NodeUtils::writeScalarToH5(outputPath, QStringLiteral("denoise_mask_contract_version"), 1) ||
+			!NodeUtils::writeScalarToH5(outputPath, QStringLiteral("denoise_mask_contract_version"), method == 4 ? 2 : 1) ||
 			!NodeUtils::writeScalarToH5(outputPath, QStringLiteral("denoise_filter_support_count"), supportCount) ||
 			!NodeUtils::writeStringToH5(outputPath, QStringLiteral("denoise_filter_support_semantics"),
-				"fully_valid_fft_window_coverage_v1") ||
+				method == 4 ? "original_valid_pixel_with_at_least_one_processed_fft_window_v2"
+					: "fully_valid_fft_window_coverage_v1") ||
 			!NodeUtils::writeStringToH5(outputPath, QStringLiteral("denoise_filter_fallback_semantics"),
-				"input_phase_passthrough_when_unsupported_v1")) {
+				method == 4 ? "input_phase_passthrough_when_unsupported_v2"
+					: "input_phase_passthrough_when_unsupported_v1")) {
 			error = QStringLiteral("Failed to write Goldstein filter support contract.");
 			return false;
 		}
@@ -213,6 +295,34 @@ bool writeDenoisedPhase(FormatConversion& conversion,
     if (!copyCompatibleCoherence(inputPath, outputPath, filteredPhase, error)) {
         return false;
     }
+	if (method == 4) {
+		Mat value;
+		std::string text;
+		if (filteredInterferogramReal == nullptr || filteredInterferogramImaginary == nullptr ||
+			!NodeUtils::writeMatToH5(outputPath, "interferogram_i", *filteredInterferogramReal) ||
+			!NodeUtils::writeMatToH5(outputPath, "interferogram_q", *filteredInterferogramImaginary) ||
+			!NodeUtils::readMatFromH5(inputPath, "complex_gamma", value, CV_64F) ||
+			!NodeUtils::writeMatToH5(outputPath, "complex_gamma", value) ||
+			!NodeUtils::readMatFromH5(inputPath, "complex_gamma_valid_mask", value, CV_8U) ||
+			!NodeUtils::writeMatToH5(outputPath, "complex_gamma_valid_mask", value) ||
+			!NodeUtils::readMatFromH5(inputPath, "complex_gamma_valid_sample_count", value, CV_32S) ||
+			!NodeUtils::writeMatToH5(outputPath, "complex_gamma_valid_sample_count", value) ||
+			!NodeUtils::readStringFromH5(inputPath, "complex_gamma_semantics", text) ||
+			!NodeUtils::writeStringToH5(outputPath, "complex_gamma_semantics", text) ||
+			!NodeUtils::readStringFromH5(inputPath, "complex_gamma_algorithm", text) ||
+			!NodeUtils::writeStringToH5(outputPath, "complex_gamma_algorithm", text)) {
+			error = QStringLiteral("Failed to preserve GoldsteinSnapCompatibleV1 I/Q or complex-gamma provenance.");
+			return false;
+		}
+		int window = 0;
+		if (!NodeUtils::readScalarFromH5(inputPath, "complex_gamma_window_range", window) ||
+			!NodeUtils::writeScalarToH5(outputPath, "complex_gamma_window_range", window) ||
+			!NodeUtils::readScalarFromH5(inputPath, "complex_gamma_window_azimuth", window) ||
+			!NodeUtils::writeScalarToH5(outputPath, "complex_gamma_window_azimuth", window)) {
+			error = QStringLiteral("Failed to preserve GoldsteinSnapCompatibleV1 complex-gamma window provenance.");
+			return false;
+		}
+	}
     if (NodeUtils::readMatFromH5(inputPath, "mapped_lon", value)) {
         NodeUtils::writeMatToH5(outputPath, "mapped_lon", value);
     }
@@ -318,19 +428,56 @@ void DenoiseWorker::Denoise(QList<int> para,
 			inputValidMask = Mat::ones(phase.size(), CV_8U);
 		}
 		const int inputValidCount = countNonZero(inputValidMask);
-		if (method != 2 && inputValidCount != phase.rows * phase.cols) {
+		if (method != 2 && method != 4 && inputValidCount != phase.rows * phase.cols) {
 			emit errorProcess(QStringLiteral("当前滤波方法不支持掩膜相位；请选择 Goldstein 滤波：%1").arg(inputPath));
 			return;
 		}
 
 		Mat filteredPhase;
 		Mat filterSupportMask;
+		Mat inputInterferogramReal;
+		Mat inputInterferogramImaginary;
+		Mat filteredInterferogramReal;
+		Mat filteredInterferogramImaginary;
         int result = -1;
         if (method == 1) {
             result = filter.slope_adaptive_filter(phase, filteredPhase, para.at(1), para.at(0), denoiseProgressCallback);
         } else if (method == 2) {
 			result = filter.Goldstein_filter_masked(phase, inputValidMask, filteredPhase, filterSupportMask,
 				alpha, para.at(2), para.at(3), denoiseProgressCallback);
+		} else if (method == 4) {
+			Mat interferogramReal;
+			Mat interferogramImaginary;
+			Mat complexGamma;
+			Mat gammaValidMask;
+			QString snapInputError;
+			if (!readSnapCompatibleInputs(inputPath, interferogramReal, interferogramImaginary,
+				complexGamma, gammaValidMask, snapInputError) ||
+				interferogramReal.size() != phase.size()) {
+				emit errorProcess(snapInputError.isEmpty()
+					? QStringLiteral("GoldsteinSnapCompatibleV1 I/Q grid does not match phase: %1").arg(inputPath)
+					: snapInputError);
+				return;
+			}
+			inputInterferogramReal = interferogramReal;
+			inputInterferogramImaginary = interferogramImaginary;
+			result = filter.Goldstein_filter_snap_compatible(interferogramReal, interferogramImaginary,
+				complexGamma, gammaValidMask, inputValidMask, filteredInterferogramReal,
+				filteredInterferogramImaginary, filterSupportMask, denoiseProgressCallback);
+			if (result == 0) {
+				filteredPhase.create(phase.size(), CV_64F);
+				for (int row = 0; row < filteredPhase.rows; ++row) {
+					const float* realRow = filteredInterferogramReal.ptr<float>(row);
+					const float* imaginaryRow = filteredInterferogramImaginary.ptr<float>(row);
+					const uchar* supportRow = filterSupportMask.ptr<uchar>(row);
+					double* phaseRow = filteredPhase.ptr<double>(row);
+					for (int column = 0; column < filteredPhase.cols; ++column) {
+						phaseRow[column] = supportRow[column] != 0
+							? std::atan2(static_cast<double>(imaginaryRow[column]), static_cast<double>(realRow[column]))
+							: std::numeric_limits<double>::quiet_NaN();
+					}
+				}
+			}
         } else if (method == 3) {
             const QString applicationPath = QCoreApplication::applicationDirPath();
             const QString modelPath = applicationPath + "\\other\\net.pt";
@@ -352,8 +499,10 @@ void DenoiseWorker::Denoise(QList<int> para,
             return;
         }
 		Mat publishedPhase;
+		Mat publishedInterferogramReal;
+		Mat publishedInterferogramImaginary;
 		const Mat* supportForMetadata = nullptr;
-		if (method == 2 && hasV2ValidMask) {
+		if ((method == 2 || method == 4) && hasV2ValidMask) {
 			if (filterSupportMask.type() != CV_8U || filterSupportMask.channels() != 1 ||
 				filterSupportMask.size() != phase.size()) {
 				emit errorProcess(QStringLiteral("Goldstein 滤波支持掩膜类型或网格不一致：%1").arg(inputPath));
@@ -374,9 +523,16 @@ void DenoiseWorker::Denoise(QList<int> para,
 			}
 			publishedPhase = phase.clone();
 			filteredPhase.copyTo(publishedPhase, filterSupportMask);
+			if (method == 4) {
+				publishedInterferogramReal = inputInterferogramReal.clone();
+				publishedInterferogramImaginary = inputInterferogramImaginary.clone();
+				filteredInterferogramReal.copyTo(publishedInterferogramReal, filterSupportMask);
+				filteredInterferogramImaginary.copyTo(publishedInterferogramImaginary, filterSupportMask);
+			}
 			supportForMetadata = &filterSupportMask;
 			InSARLogManager::LogInfo("DenoiseWorker",
-				QStringLiteral("Goldstein filter support: inputValid=%1, fftSupported=%2, total=%3")
+				QStringLiteral("Goldstein filter support: profile=%1, inputValid=%2, fftSupported=%3, total=%4")
+					.arg(method == 4 ? QStringLiteral("GoldsteinSnapCompatibleV1") : QStringLiteral("GoldsteinPhaseLegacyV1"))
 					.arg(inputValidCount).arg(countNonZero(filterSupportMask)).arg(phase.rows * phase.cols));
 		} else {
 			publishedPhase = filteredPhase;
@@ -386,7 +542,9 @@ void DenoiseWorker::Denoise(QList<int> para,
         int offsetCol = 0;
         QString writeError;
 		if (!writeDenoisedPhase(conversion, inputPath, outputPath, savePath, publishedPhase, supportForMetadata,
-                                method, para.at(0), para.at(1), para.at(2), para.at(3), alpha,
+								method, para.at(0), para.at(1), para.at(2), para.at(3), alpha,
+								method == 4 ? &publishedInterferogramReal : nullptr,
+								method == 4 ? &publishedInterferogramImaginary : nullptr,
                                 offsetRow, offsetCol, writeError)) {
             QFile::remove(outputPath);
             emit errorProcess(writeError);

@@ -18,14 +18,112 @@
 #include <QDateTime>
 #include <QStandardItemModel>
 #include <QMessageBox>
+#include <QPair>
+#include <QPushButton>
 #include <QTimer>
+#include <QVector>
 #include <QtConcurrent/QtConcurrent>
+#include <Hdf5IO.h>
 #include <algorithm>
 #include <cmath>
 #include <omp.h>
 #include "QtNodes/internal/NodeDetailWindow.hpp"
 
 namespace QtNodes {
+
+namespace {
+
+bool validateSnapCompatibleRestorePreflight(const QString& h5Path, QString* errorMessage)
+{
+    int method = 0;
+    int schemaVersion = 0;
+    int contractVersion = 0;
+    int supportCount = 0;
+    int window = 0;
+    int nPad = -1;
+    int gammaWindowRange = 0;
+    int gammaWindowAzimuth = 0;
+    std::string profile;
+    std::string alphaSemantics;
+    std::string spectralSmoothing;
+    std::string overlapWindow;
+    std::string supportSemantics;
+    std::string fallbackSemantics;
+    std::string gammaSemantics;
+    std::string gammaAlgorithm;
+    if (!NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_method"), method, errorMessage) || method != 4 ||
+        !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("phase_processing_schema_version"), schemaVersion, errorMessage) || schemaVersion != 2 ||
+        !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_mask_contract_version"), contractVersion, errorMessage) || contractVersion != 2 ||
+        !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_filter_support_count"), supportCount, errorMessage) || supportCount < 0 ||
+        !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_goldstein_win"), window, errorMessage) || window != 64 ||
+        !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_goldstein_npad"), nPad, errorMessage) || nPad != 0 ||
+        !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("complex_gamma_window_range"), gammaWindowRange, errorMessage) ||
+        !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("complex_gamma_window_azimuth"), gammaWindowAzimuth, errorMessage) ||
+        gammaWindowRange < 3 || gammaWindowAzimuth < 3 || gammaWindowRange % 2 == 0 || gammaWindowAzimuth % 2 == 0 ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_profile"), profile, errorMessage) || profile != "GoldsteinSnapCompatibleV1" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_alpha_semantics"), alphaSemantics, errorMessage) ||
+        alphaSemantics != "clamp_1_minus_mean_complex_gamma_0.2_1.0_v1" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_spectral_smoothing"), spectralSmoothing, errorMessage) ||
+        spectralSmoothing != "mean_3x3_skip_zero_power_v1" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_overlap_window"), overlapWindow, errorMessage) ||
+        overlapWindow != "separable_triangular_v1" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, errorMessage) ||
+        supportSemantics != "original_valid_pixel_with_at_least_one_processed_fft_window_v2" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, errorMessage) ||
+        fallbackSemantics != "input_phase_passthrough_when_unsupported_v2" ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("complex_gamma_semantics"), gammaSemantics, errorMessage) ||
+        gammaSemantics != NodeUtils::CoherenceSemantics::kComplexGamma ||
+        !NodeUtils::readStringFromH5(h5Path, QStringLiteral("complex_gamma_algorithm"), gammaAlgorithm, errorMessage) ||
+        gammaAlgorithm != "corrected_multilooked_source_row_aware_v1") {
+        if (errorMessage && errorMessage->isEmpty()) {
+            *errorMessage = QStringLiteral("GoldsteinSnapCompatibleV1 恢复预检的元数据或语义不匹配：%1").arg(h5Path);
+        }
+        return false;
+    }
+
+    int phaseRows = 0;
+    int phaseCols = 0;
+    if (!NodeUtils::probeH5DatasetMetadata(h5Path, QStringLiteral("phase"), &phaseRows, &phaseCols, errorMessage) ||
+        phaseRows <= 0 || phaseCols <= 0) {
+        if (errorMessage && errorMessage->isEmpty()) {
+            *errorMessage = QStringLiteral("GoldsteinSnapCompatibleV1 恢复预检缺少非空 phase 栅格：%1").arg(h5Path);
+        }
+        return false;
+    }
+
+    const QStringList requiredRasters = {
+        QStringLiteral("phase_valid_mask"),
+        QStringLiteral("phase_valid_sample_count"),
+        QStringLiteral("denoise_filter_support_mask"),
+        QStringLiteral("interferogram_i"),
+        QStringLiteral("interferogram_q"),
+        QStringLiteral("complex_gamma"),
+        QStringLiteral("complex_gamma_valid_mask"),
+        QStringLiteral("complex_gamma_valid_sample_count")
+    };
+    for (const QString& dataset : requiredRasters) {
+        int rows = 0;
+        int cols = 0;
+        if (!NodeUtils::probeH5DatasetMetadata(h5Path, dataset, &rows, &cols, errorMessage) ||
+            rows != phaseRows || cols != phaseCols) {
+            if (errorMessage && errorMessage->isEmpty()) {
+                *errorMessage = QStringLiteral("GoldsteinSnapCompatibleV1 恢复预检的栅格缺失、为空或尺寸不匹配：%1 (%2)")
+                    .arg(h5Path, dataset);
+            }
+            return false;
+        }
+    }
+
+    if (static_cast<qint64>(supportCount) > static_cast<qint64>(phaseRows) * phaseCols) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("GoldsteinSnapCompatibleV1 恢复预检的支持像元计数越界：%1").arg(h5Path);
+        }
+        return false;
+    }
+    return true;
+}
+
+} // namespace
 
 DenoiseNode::DenoiseNode()
     : ExecutableNodeDelegateModel()
@@ -217,8 +315,9 @@ std::vector<QString> DenoiseNode::processingInfo() const
     info.push_back(QStringLiteral("输出节点：%1").arg(outputNodeName.isEmpty() ? QStringLiteral("未指定") : outputNodeName));
 
     const QString methodName = m_method == 1 ? QStringLiteral("斜坡自适应滤波")
-        : m_method == 2 ? QStringLiteral("Goldstein 滤波")
-        : QStringLiteral("深度学习滤波");
+        : m_method == 2 ? QStringLiteral("Goldstein 相位滤波")
+        : m_method == 3 ? QStringLiteral("深度学习滤波")
+        : QStringLiteral("Goldstein SNAP 兼容滤波");
     info.push_back(QStringLiteral("滤波方法：%1").arg(methodName));
 
     if (m_method == 1) {
@@ -231,6 +330,8 @@ std::vector<QString> DenoiseNode::processingInfo() const
         const double alpha = m_alphaEdit ? m_alphaEdit->text().toDouble() : m_alpha;
         info.push_back(QStringLiteral("滤波窗口：%1，补零窗口：%2，滤波参数 alpha：%3")
             .arg(gold).arg(pad).arg(alpha, 0, 'f', 4));
+	} else if (m_method == 4) {
+		info.push_back(QStringLiteral("固定 64x64、步长 16、无补零；I/Q 与 complex_gamma 为必需输入"));
     }
 
     if (m_inputData) {
@@ -345,6 +446,7 @@ void DenoiseNode::createWidget()
     m_methodCombo->addItem("斜坡自适应滤波");
     m_methodCombo->addItem("Goldstein 滤波");
     m_methodCombo->addItem("深度学习滤波");
+	m_methodCombo->addItem("Goldstein SNAP 兼容滤波");
     m_methodCombo->setCurrentIndex(m_method - 1);
     connect(m_methodCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, invalidateNodeData](int index) {
         int val = index + 1;
@@ -562,6 +664,9 @@ bool DenoiseNode::validateInputs() const
         if ((gold & (gold - 1)) != 0 || (pad & (pad - 1)) != 0 || gold <= 1 || pad <= 1 || alpha < 0 || alpha > 1) {
             return false;
         }
+	} else if (m_method == 4) {
+		// Parameters are intentionally fixed to SNAP's compatibility profile.
+		return true;
     }
 
     return true;
@@ -906,6 +1011,13 @@ bool DenoiseNode::validateAndRestoreOutput()
         !NodeUtils::loadCommittedOutputProductDescriptor(projectPath(), dstNode, descriptor, &identityError) ||
         !validatePublishedDescriptor(productOutputContract(0), descriptor).accepted ||
         !NodeUtils::validateH5Identities(h5Paths, descriptor, &identityError)) return false;
+	if (m_method == 4) {
+		for (const QString& h5Path : h5Paths) {
+			if (!validateSnapCompatibleRestorePreflight(h5Path, &identityError)) {
+				return false;
+			}
+		}
+	}
 
     QStringList expectedJpgPaths;
     QStringList types;
@@ -1136,6 +1248,10 @@ void DenoiseNode::commitDenoiseResult(const DenoiseFileResult& result)
             xml->XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
                 result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "Goldstein",
                 0, 0, m_preparedPara.at(2), m_preparedPara.at(3), m_preparedAlpha, "", "", "");
+		} else if (method == 4) {
+			xml->XMLFile_add_denoise(result.fileName.toStdString().c_str(), result.filterName.toStdString().c_str(),
+				result.relativePath.toStdString().c_str(), result.offsetRow, result.offsetCol, "GoldsteinSnapCompatibleV1",
+				0, 0, 64, 0, 0, "", "", "");
         } else if (method == 3) {
             const QString applicationPath = QCoreApplication::applicationDirPath();
             const QString modelPath = applicationPath + "\\other\\net.pt";
@@ -1216,13 +1332,41 @@ private:
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差圆均值 (rad):")), m_lblDiffMean);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差圆标准差 (rad):")), m_lblDiffStd);
         m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位差集中度 R (0-1):")), m_lblDiffResultant);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("缠绕相位梯度 RMS (输入 -> 输出):")), m_lblGradientSummary);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("正/负/总残差单元数 (plaquette，输入 -> 输出):")), m_lblResidueCountSummary);
-        m_featureLayout->addRow(createHeaderLabel(QObject::tr("残差单元密度 (总数/有效 2 x 2 单元，输入 -> 输出):")), m_lblResidueSummary);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("抽样缠绕相位梯度 RMS (输入 -> 输出):")), m_lblGradientSummary);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("抽样正/负/总残差单元数 (plaquette，输入 -> 输出):")), m_lblResidueCountSummary);
+        m_featureLayout->addRow(createHeaderLabel(QObject::tr("抽样残差单元密度 (总数/有效 2 x 2 单元，输入 -> 输出):")), m_lblResidueSummary);
+
+        auto* fullValidationLayout = new QHBoxLayout();
+        fullValidationLayout->setContentsMargins(0, 0, 0, 0);
+        fullValidationLayout->setSpacing(8);
+        m_fullValidationButton = new QPushButton(QObject::tr("执行完整验证（可能耗时较长）"), m_statusCard);
+        m_fullValidationButton->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        m_fullValidationButton->setToolTip(QObject::tr("完整验证会读取全量 I/Q，并逐像元检查滤波支持、complex_gamma 与掩膜合同。"));
+        m_fullValidationProgressLabel = new QLabel(m_statusCard);
+        const QString fullValidationProgressText = QObject::tr("完整验证中...");
+        m_fullValidationProgressLabel->setText(fullValidationProgressText);
+        m_fullValidationProgressLabel->setFixedWidth(120);
+        m_fullValidationProgressLabel->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Preferred);
+        m_fullValidationProgressLabel->setStyleSheet(
+            "font-size: 12px; color: #2563EB; background: transparent; border: none; padding: 0;");
+        m_fullValidationProgressLabel->hide();
+        fullValidationLayout->addWidget(m_fullValidationButton, 0, Qt::AlignLeft);
+        fullValidationLayout->addWidget(m_fullValidationProgressLabel, 0, Qt::AlignVCenter);
+        fullValidationLayout->addStretch(1);
+        if (auto* statusLayout = qobject_cast<QVBoxLayout*>(m_statusCard->layout())) {
+            statusLayout->addLayout(fullValidationLayout);
+        }
+        connect(m_fullValidationButton, &QPushButton::clicked, this, [this]() {
+            m_requestedDeepValidation = true;
+            startAsyncValidation();
+        });
     }
 
     void startAsyncValidation() override
     {
+        const bool deepValidation = m_requestedDeepValidation;
+        m_requestedDeepValidation = false;
+        const quint64 validationEpoch = ++m_validationEpoch;
         if (m_cancelToken) {
             m_cancelToken->store(true);
         }
@@ -1230,6 +1374,16 @@ private:
         auto cancelToken = m_cancelToken;
 
         m_isTimedOut = false;
+        m_loadingOverlay->stopLoading();
+        if (m_fullValidationProgressLabel) {
+            m_fullValidationProgressLabel->setVisible(deepValidation);
+            if (deepValidation) {
+                m_statusDesc->setText(QObject::tr("正在执行完整 H5 合同验证，并计算特征值。"));
+            }
+        }
+        if (m_fullValidationButton) {
+            m_fullValidationButton->setEnabled(false);
+        }
 
         // 1. Quick checks: If output not complete or inputs missing
         if (m_node->executionState() != ExecutionState::Completed) {
@@ -1246,6 +1400,8 @@ private:
             m_lblGradientSummary->setText(QObject::tr("未执行"));
             m_lblResidueCountSummary->setText(QObject::tr("未执行"));
             m_lblResidueSummary->setText(QObject::tr("未执行"));
+            if (m_fullValidationProgressLabel) m_fullValidationProgressLabel->hide();
+            if (m_fullValidationButton) m_fullValidationButton->setEnabled(true);
 
             return;
         }
@@ -1257,15 +1413,33 @@ private:
             m_statusTitle->setText(QObject::tr("验证失败"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             m_statusDesc->setText(QObject::tr("未找到输入或输出文件的元数据，无法进行比对。"));
+            if (m_fullValidationProgressLabel) m_fullValidationProgressLabel->hide();
+            if (m_fullValidationButton) m_fullValidationButton->setEnabled(true);
             return;
         }
 
         const QStringList inPaths = inData->filePaths();
         const QStringList outPaths = outData->filePaths();
 
-        // 根据影像对数量动态设置超时时间，保障大数据集有充分的计算窗口
-        const int timeoutMs = qMax(60000, inPaths.size() * 30000);
-        m_loadingOverlay->startLoading(QObject::tr("正在加载 H5 文件并计算统计特征值..."), timeoutMs);
+        // The default Detail View check is bounded. Full-grid validation is an
+        // explicit user action and receives a size-scaled timeout.
+        qint64 validationBytes = 0;
+        for (const QString& path : inPaths) validationBytes += QFileInfo(path).size();
+        for (const QString& path : outPaths) validationBytes += QFileInfo(path).size();
+        constexpr qint64 kGiB = 1024LL * 1024LL * 1024LL;
+        constexpr qint64 kBaseTimeoutMs = 120000;
+        constexpr qint64 kTimeoutPerGiBMs = 30000;
+        constexpr qint64 kMaximumTimeoutMs = 30LL * 60LL * 1000LL;
+        const qint64 sizeBasedTimeoutMs = kBaseTimeoutMs
+            + ((validationBytes + kGiB - 1) / kGiB) * kTimeoutPerGiBMs;
+        const int timeoutMs = deepValidation
+            ? static_cast<int>(std::min(kMaximumTimeoutMs,
+                std::max<qint64>(sizeBasedTimeoutMs, inPaths.size() * 30000LL)))
+            : 60000;
+        if (!deepValidation) {
+            m_loadingOverlay->startLoading(
+                QObject::tr("正在执行快速 H5 合同抽样验证..."), timeoutMs);
+        }
 
         // Settings to compare (same value source as save())
         const QJsonObject nodeSave = m_node->save();
@@ -1277,7 +1451,8 @@ private:
         const double expAlpha = nodeSave["alpha"].toDouble(0.5);
 
         // Reuse cached aggregated results when inputs/outputs/parameters unchanged
-        const QString cacheKey = m_node->validationCacheKey();
+        const QString cacheKey = m_node->validationCacheKey()
+            + (deepValidation ? QStringLiteral("|deep") : QStringLiteral("|quick"));
         ValidationResults cached;
         if (!cacheKey.isEmpty() && m_node->loadValidationCache(cacheKey, cached)) {
             applyValidationResults(cached);
@@ -1286,8 +1461,10 @@ private:
 
         // Run validation in background
         QFuture<ValidationResults> future = QtConcurrent::run([inPaths, outPaths, expMethod, expPrefilter,
-                                                               expSlopeWindow, expGoldsteinWin, expNPad, expAlpha, cancelToken]() {
+                                                               expSlopeWindow, expGoldsteinWin, expNPad, expAlpha,
+                                                               deepValidation, cancelToken]() {
             ValidationResults res;
+            res.quickValidation = !deepValidation;
             res.expectedMethod = expMethod;
             res.expectedPrefilter = expPrefilter;
             res.expectedSlopeWindow = expSlopeWindow;
@@ -1300,6 +1477,215 @@ private:
                 res.success = false;
                 res.errorMsg = QObject::tr("输入与输出影像数量不一致（输入 %1 / 输出 %2），无法逐对校验。")
                     .arg(inPaths.size()).arg(outPaths.size());
+                return res;
+            }
+            if (expMethod == 4 && deepValidation) {
+				for (const QString& outH5 : outPaths) {
+					int method = 0;
+					std::string profile;
+					QString validationError;
+					if (!NodeUtils::readScalarFromH5(outH5, "denoise_method", method) || method != 4 ||
+						!NodeUtils::readStringFromH5(outH5, "denoise_goldstein_profile", profile) ||
+						profile != "GoldsteinSnapCompatibleV1" ||
+						!NodeUtils::validateDenoiseFilterSupportContract(outH5, &validationError)) {
+						res.success = false;
+						res.errorMsg = validationError.isEmpty()
+							? QObject::tr("SNAP 兼容 Goldstein 输出合同缺失或不匹配：%1").arg(outH5)
+							: validationError;
+						return res;
+					}
+				}
+			}
+
+            const auto validateSnapCompatibleQuick = [cancelToken](const QString& h5Path, QString* error) {
+                constexpr int kSampleSide = 32;
+                int phaseRows = 0, phaseCols = 0;
+                const auto probe = [&h5Path, &phaseRows, &phaseCols, error](const QString& dataset,
+                    int expectedType, bool isPhase = false) {
+                    int rows = 0, cols = 0;
+                    if (!NodeUtils::probeH5DatasetMetadata(h5Path, dataset, &rows, &cols, error) ||
+                        rows <= 0 || cols <= 0 || (isPhase ? false : (rows != phaseRows || cols != phaseCols))) {
+                        if (error && error->isEmpty()) {
+                            *error = QObject::tr("快速验证的数据集尺寸缺失或不匹配：%1 (%2)").arg(h5Path, dataset);
+                        }
+                        return false;
+                    }
+                    Q_UNUSED(expectedType);
+                    if (isPhase) {
+                        phaseRows = rows;
+                        phaseCols = cols;
+                    }
+                    return true;
+                };
+
+                int schemaVersion = 0, contractVersion = 0, supportCount = 0, window = 0, nPad = -1;
+                int gammaWindowRange = 0, gammaWindowAzimuth = 0;
+                std::string profile, alphaSemantics, smoothing, overlapWindow;
+                std::string supportSemantics, fallbackSemantics, gammaSemantics, gammaAlgorithm;
+                if (!NodeUtils::readScalarFromH5(h5Path, QStringLiteral("phase_processing_schema_version"), schemaVersion, error) ||
+                    schemaVersion != 2 ||
+                    !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_mask_contract_version"), contractVersion, error) ||
+                    contractVersion != 2 ||
+                    !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_filter_support_count"), supportCount, error) ||
+                    supportCount < 0 ||
+                    !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_goldstein_win"), window, error) || window != 64 ||
+                    !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("denoise_goldstein_npad"), nPad, error) || nPad != 0 ||
+                    !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("complex_gamma_window_range"), gammaWindowRange, error) ||
+                    !NodeUtils::readScalarFromH5(h5Path, QStringLiteral("complex_gamma_window_azimuth"), gammaWindowAzimuth, error) ||
+                    gammaWindowRange < 3 || gammaWindowAzimuth < 3 || gammaWindowRange % 2 == 0 || gammaWindowAzimuth % 2 == 0 ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_profile"), profile, error) || profile != "GoldsteinSnapCompatibleV1" ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_alpha_semantics"), alphaSemantics, error) ||
+                    alphaSemantics != "clamp_1_minus_mean_complex_gamma_0.2_1.0_v1" ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_spectral_smoothing"), smoothing, error) ||
+                    smoothing != "mean_3x3_skip_zero_power_v1" ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_goldstein_overlap_window"), overlapWindow, error) ||
+                    overlapWindow != "separable_triangular_v1" ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, error) ||
+                    supportSemantics != "original_valid_pixel_with_at_least_one_processed_fft_window_v2" ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, error) ||
+                    fallbackSemantics != "input_phase_passthrough_when_unsupported_v2" ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("complex_gamma_semantics"), gammaSemantics, error) ||
+                    gammaSemantics != NodeUtils::CoherenceSemantics::kComplexGamma ||
+                    !NodeUtils::readStringFromH5(h5Path, QStringLiteral("complex_gamma_algorithm"), gammaAlgorithm, error) ||
+                    gammaAlgorithm != "corrected_multilooked_source_row_aware_v1" ||
+                    !probe(QStringLiteral("phase"), CV_64F, true) ||
+                    !probe(QStringLiteral("phase_valid_mask"), CV_8U) ||
+                    !probe(QStringLiteral("denoise_filter_support_mask"), CV_8U) ||
+                    !probe(QStringLiteral("interferogram_i"), CV_32F) ||
+                    !probe(QStringLiteral("interferogram_q"), CV_32F) ||
+                    !probe(QStringLiteral("complex_gamma"), CV_64F) ||
+                    !probe(QStringLiteral("complex_gamma_valid_mask"), CV_8U) ||
+                    !probe(QStringLiteral("complex_gamma_valid_sample_count"), CV_32S) ||
+                    static_cast<qint64>(supportCount) > static_cast<qint64>(phaseRows) * phaseCols) {
+                    if (error && error->isEmpty()) *error = QObject::tr("SNAP 兼容 Goldstein 快速合同检查失败：%1").arg(h5Path);
+                    return false;
+                }
+
+                const QByteArray utf8Path = h5Path.toUtf8();
+                Hdf5IO::ReadSession* session = Hdf5IO::openReadSession(utf8Path.constData());
+                if (!session) {
+                    if (error) *error = QObject::tr("无法打开 H5 进行快速抽样：%1").arg(h5Path);
+                    return false;
+                }
+                const std::unique_ptr<Hdf5IO::ReadSession, void(*)(Hdf5IO::ReadSession*)> sessionGuard(
+                    session, Hdf5IO::closeReadSession);
+                const QVector<QPair<int, int>> origins = {
+                    { 0, 0 }, { 0, std::max(0, phaseCols - kSampleSide) },
+                    { std::max(0, phaseRows - kSampleSide), 0 },
+                    { std::max(0, phaseRows - kSampleSide), std::max(0, phaseCols - kSampleSide) },
+                    { std::max(0, phaseRows / 2 - kSampleSide / 2), std::max(0, phaseCols / 2 - kSampleSide / 2) }
+                };
+                for (const auto& origin : origins) {
+                    if (cancelToken && cancelToken->load()) return false;
+                    const int rows = std::min(kSampleSide, phaseRows - origin.first);
+                    const int cols = std::min(kSampleSide, phaseCols - origin.second);
+                    cv::Mat phase, validMask, supportMask, filteredI, filteredQ, gamma, gammaMask, gammaCount;
+                    if (Hdf5IO::readSubarray(session, "phase", origin.first, origin.second, rows, cols, phase) != 0 ||
+                        Hdf5IO::readSubarray(session, "phase_valid_mask", origin.first, origin.second, rows, cols, validMask) != 0 ||
+                        Hdf5IO::readSubarray(session, "denoise_filter_support_mask", origin.first, origin.second, rows, cols, supportMask) != 0 ||
+                        Hdf5IO::readSubarray(session, "interferogram_i", origin.first, origin.second, rows, cols, filteredI) != 0 ||
+                        Hdf5IO::readSubarray(session, "interferogram_q", origin.first, origin.second, rows, cols, filteredQ) != 0 ||
+                        Hdf5IO::readSubarray(session, "complex_gamma", origin.first, origin.second, rows, cols, gamma) != 0 ||
+                        Hdf5IO::readSubarray(session, "complex_gamma_valid_mask", origin.first, origin.second, rows, cols, gammaMask) != 0 ||
+                        Hdf5IO::readSubarray(session, "complex_gamma_valid_sample_count", origin.first, origin.second, rows, cols, gammaCount) != 0 ||
+                        phase.type() != CV_64F || validMask.type() != CV_8U || supportMask.type() != CV_8U ||
+                        filteredI.type() != CV_32F || filteredQ.type() != CV_32F || gamma.type() != CV_64F ||
+                        gammaMask.type() != CV_8U || gammaCount.type() != CV_32S) {
+                        if (error) *error = QObject::tr("无法读取 SNAP 兼容 Goldstein 快速抽样块：%1").arg(h5Path);
+                        return false;
+                    }
+                    for (int row = 0; row < rows; ++row) {
+                        const double* phaseRow = phase.ptr<double>(row);
+                        const uchar* validRow = validMask.ptr<uchar>(row);
+                        const uchar* supportRow = supportMask.ptr<uchar>(row);
+                        const float* iRow = filteredI.ptr<float>(row);
+                        const float* qRow = filteredQ.ptr<float>(row);
+                        const double* gammaRow = gamma.ptr<double>(row);
+                        const uchar* gammaMaskRow = gammaMask.ptr<uchar>(row);
+                        const int* gammaCountRow = gammaCount.ptr<int>(row);
+                        for (int col = 0; col < cols; ++col) {
+                            const bool finiteOutput = std::isfinite(phaseRow[col]) &&
+                                std::isfinite(iRow[col]) && std::isfinite(qRow[col]);
+                            const double amplitude = std::hypot(static_cast<double>(iRow[col]),
+                                static_cast<double>(qRow[col]));
+                            const bool phaseIqMismatch = validRow[col] != 0 && finiteOutput && amplitude > 1e-12 &&
+                                std::abs(std::atan2(std::sin(phaseRow[col] - std::atan2(qRow[col], iRow[col])),
+                                    std::cos(phaseRow[col] - std::atan2(qRow[col], iRow[col])))) > 1e-5;
+                            const bool invalid = validRow[col] > 1 || supportRow[col] > 1 || gammaMaskRow[col] > 1 ||
+                                (supportRow[col] != 0 && validRow[col] == 0) || gammaCountRow[col] < 0 ||
+                                (gammaMaskRow[col] != 0 && gammaCountRow[col] <= 0) ||
+                                (gammaMaskRow[col] == 0 && gammaCountRow[col] != 0) ||
+                                (gammaMaskRow[col] != 0 && (!std::isfinite(gammaRow[col]) || gammaRow[col] < 0.0 || gammaRow[col] > 1.0)) ||
+                                (validRow[col] != 0 && !finiteOutput) || phaseIqMismatch;
+                            if (invalid) {
+                                if (error) *error = QObject::tr("SNAP 兼容 Goldstein 快速抽样合同无效于 (%1,%2)：%3")
+                                    .arg(origin.first + row).arg(origin.second + col).arg(h5Path);
+                                return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            };
+
+            if (!deepValidation) {
+                for (int i = 0; i < inPaths.size(); ++i) {
+                    if (cancelToken && cancelToken->load()) {
+                        res.success = false;
+                        res.errorMsg = QObject::tr("验证任务已取消。");
+                        return res;
+                    }
+                    const QString& inH5 = inPaths.at(i);
+                    const QString& outH5 = outPaths.at(i);
+                    int inRows = 0, inCols = 0, outRows = 0, outCols = 0;
+                    QString error;
+                    if (!NodeUtils::probeH5DatasetMetadata(inH5, QStringLiteral("phase"), &inRows, &inCols, &error) ||
+                        !NodeUtils::probeH5DatasetMetadata(outH5, QStringLiteral("phase"), &outRows, &outCols, &error) ||
+                        inRows != outRows || inCols != outCols) {
+                        res.success = false;
+                        res.errorMsg = error.isEmpty()
+                            ? QObject::tr("输入与输出 phase 矩阵尺寸不一致：%1").arg(outH5) : error;
+                        return res;
+                    }
+                    if (i == 0) {
+                        res.inRows = inRows; res.inCols = inCols;
+                        res.outRows = outRows; res.outCols = outCols;
+                    }
+                    ++res.matchingSizePairCount;
+
+                    int fileMethod = 0, fileGoldstein = 0, fileNPad = 0;
+                    const bool hasMethod = NodeUtils::readScalarFromH5(outH5, QStringLiteral("denoise_method"), fileMethod);
+                    const bool hasGoldstein = NodeUtils::readScalarFromH5(outH5, QStringLiteral("denoise_goldstein_win"), fileGoldstein);
+                    const bool hasNPad = NodeUtils::readScalarFromH5(outH5, QStringLiteral("denoise_goldstein_npad"), fileNPad);
+                    if (hasMethod) {
+                        if (res.hasActualMethod && fileMethod != res.actualMethod) res.methodInconsistent = true;
+                        res.actualMethod = res.hasActualMethod ? res.actualMethod : fileMethod;
+                        res.hasActualMethod = true;
+                    }
+                    if (hasGoldstein) {
+                        if (res.hasActualGoldsteinWin && fileGoldstein != res.actualGoldsteinWin) res.goldsteinWinInconsistent = true;
+                        res.actualGoldsteinWin = res.hasActualGoldsteinWin ? res.actualGoldsteinWin : fileGoldstein;
+                        res.hasActualGoldsteinWin = true;
+                    }
+                    if (hasNPad) {
+                        if (res.hasActualNPad && fileNPad != res.actualNPad) res.nPadInconsistent = true;
+                        res.actualNPad = res.hasActualNPad ? res.actualNPad : fileNPad;
+                        res.hasActualNPad = true;
+                    }
+                    if (expMethod == 4) {
+                        if (!hasMethod || fileMethod != 4 || !validateSnapCompatibleQuick(outH5, &error)) {
+                            res.success = false;
+                            if (cancelToken && cancelToken->load()) {
+                                res.errorMsg = QObject::tr("验证任务已取消。");
+                                return res;
+                            }
+                            res.errorMsg = error.isEmpty()
+                                ? QObject::tr("SNAP 兼容 Goldstein 快速合同检查失败：%1").arg(outH5) : error;
+                            return res;
+                        }
+                    }
+                }
+                res.success = true;
                 return res;
             }
 
@@ -1321,17 +1707,31 @@ private:
                     return metrics;
                 }
 
+                // Detail View quality indicators are diagnostic summaries. Keep
+                // their cost bounded for production-scale phase grids while
+                // preserving immediate-neighbour gradients and plaquettes.
+                constexpr qint64 kMaxQualitySamples = 1000000;
+                const qint64 qualityRowBudget = std::min<qint64>({ phase.rows, kMaxQualitySamples,
+                    std::max<qint64>(1, static_cast<qint64>(std::floor(std::sqrt(
+                        static_cast<double>(kMaxQualitySamples) * phase.rows / phase.cols)))) });
+                const qint64 qualityColBudget = std::min<qint64>(phase.cols,
+                    std::max<qint64>(1, kMaxQualitySamples / qualityRowBudget));
+                const int qualityRowStride = static_cast<int>((static_cast<qint64>(phase.rows)
+                    + qualityRowBudget - 1) / qualityRowBudget);
+                const int qualityColStride = static_cast<int>((static_cast<qint64>(phase.cols)
+                    + qualityColBudget - 1) / qualityColBudget);
+
                 double gradientSumSquares = 0.0;
                 double gradientCount = 0.0;
 
                 #pragma omp parallel for reduction(+:gradientSumSquares, gradientCount) schedule(static)
-                for (int row = 0; row < phase.rows; ++row) {
+                for (int row = 0; row < phase.rows; row += qualityRowStride) {
                     if (cancelToken && cancelToken->load()) {
                         continue;
                     }
                     const float* values = phase.ptr<float>(row);
                     const float* nextRow = row + 1 < phase.rows ? phase.ptr<float>(row + 1) : nullptr;
-                    for (int col = 0; col < phase.cols; ++col) {
+                    for (int col = 0; col < phase.cols; col += qualityColStride) {
                         const double value = values[col];
                         if (!std::isfinite(value)) {
                             continue;
@@ -1363,13 +1763,13 @@ private:
                 double plaquetteCount = 0.0;
 
                 #pragma omp parallel for reduction(+:positiveResidueCount, negativeResidueCount, plaquetteCount) schedule(static)
-                for (int row = 0; row < phase.rows - 1; ++row) {
+                for (int row = 0; row < phase.rows - 1; row += qualityRowStride) {
                     if (cancelToken && cancelToken->load()) {
                         continue;
                     }
                     const float* top = phase.ptr<float>(row);
                     const float* bottom = phase.ptr<float>(row + 1);
-                    for (int col = 0; col < phase.cols - 1; ++col) {
+                    for (int col = 0; col < phase.cols - 1; col += qualityColStride) {
                         const double p00 = top[col];
                         const double p01 = top[col + 1];
                         const double p11 = bottom[col + 1];
@@ -1580,18 +1980,25 @@ private:
 
                 // 3. 缠绕相位差圆统计：对尺寸一致的影像对进行自适应步长采样，避免千万级像素密集调用三角函数
                 if (sizeMatches) {
-                    const qint64 totalPixels = static_cast<qint64>(inPhase.rows) * inPhase.cols;
                     constexpr qint64 maxWrappedSamples = 500000;
-                    const int stride = static_cast<int>(std::max<qint64>(1, static_cast<qint64>(std::sqrt(static_cast<double>(totalPixels) / maxWrappedSamples))));
+                    const qint64 wrappedRowBudget = std::min<qint64>({ inPhase.rows, maxWrappedSamples,
+                        std::max<qint64>(1, static_cast<qint64>(std::floor(std::sqrt(
+                            static_cast<double>(maxWrappedSamples) * inPhase.rows / inPhase.cols)))) });
+                    const qint64 wrappedColBudget = std::min<qint64>(inPhase.cols,
+                        std::max<qint64>(1, maxWrappedSamples / wrappedRowBudget));
+                    const int wrappedRowStride = static_cast<int>((static_cast<qint64>(inPhase.rows)
+                        + wrappedRowBudget - 1) / wrappedRowBudget);
+                    const int wrappedColStride = static_cast<int>((static_cast<qint64>(inPhase.cols)
+                        + wrappedColBudget - 1) / wrappedColBudget);
 
                     #pragma omp parallel for reduction(+:sumSin, sumCos, wrappedPixelCount) schedule(static)
-                    for (int row = 0; row < inPhase.rows; row += stride) {
+                    for (int row = 0; row < inPhase.rows; row += wrappedRowStride) {
                         if (cancelToken && cancelToken->load()) {
                             continue;
                         }
                         const float* inValues = inPhase.ptr<float>(row);
                         const float* outValues = outPhase.ptr<float>(row);
-                        for (int col = 0; col < inPhase.cols; col += stride) {
+                        for (int col = 0; col < inPhase.cols; col += wrappedColStride) {
                             const double inputValue = inValues[col];
                             const double outputValue = outValues[col];
                             if (!std::isfinite(inputValue) || !std::isfinite(outputValue)) {
@@ -1675,7 +2082,12 @@ private:
 
         // 使用 QFutureWatcher 监听异步执行状态并平滑更新 UI
         auto* watcher = new QFutureWatcher<ValidationResults>(this);
-        connect(watcher, &QFutureWatcher<ValidationResults>::finished, this, [this, watcher, cacheKey]() {
+        connect(watcher, &QFutureWatcher<ValidationResults>::finished, this, [this, watcher, cacheKey, validationEpoch]() {
+            if (validationEpoch != m_validationEpoch) {
+                watcher->deleteLater();
+                return;
+            }
+
             ValidationResults res = watcher->result();
             if (!cacheKey.isEmpty() && res.success) {
                 m_node->storeValidationCache(cacheKey, res);
@@ -1693,8 +2105,10 @@ private:
     void applyValidationResults(const ValidationResults& res)
     {
         m_loadingOverlay->stopLoading();
+        if (m_fullValidationProgressLabel) m_fullValidationProgressLabel->hide();
 
         if (!res.success) {
+            if (m_fullValidationButton) m_fullValidationButton->setEnabled(true);
             m_statusTitle->setText(QObject::tr("验证失败"));
             m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #EF4444;");
             m_statusDesc->setText(res.errorMsg);
@@ -1722,12 +2136,16 @@ private:
             return value;
         };
 
-        QString methodStrExp = res.expectedMethod == 1 ? "Slope" : (res.expectedMethod == 2 ? "Goldstein" : "DL");
+		QString methodStrExp = res.expectedMethod == 1 ? "Slope" :
+			(res.expectedMethod == 2 ? "GoldsteinPhaseLegacyV1" :
+				(res.expectedMethod == 3 ? "DL" : "GoldsteinSnapCompatibleV1"));
         QString methodStrAct;
         bool methodVerifiable = false;
         if (res.hasActualMethod) {
             methodVerifiable = true;
-            methodStrAct = res.actualMethod == 1 ? "Slope" : (res.actualMethod == 2 ? "Goldstein" : (res.actualMethod == 3 ? "DL" : QObject::tr("未知")));
+			methodStrAct = res.actualMethod == 1 ? "Slope" :
+				(res.actualMethod == 2 ? "GoldsteinPhaseLegacyV1" :
+					(res.actualMethod == 3 ? "DL" : (res.actualMethod == 4 ? "GoldsteinSnapCompatibleV1" : QObject::tr("未知"))));
             if (res.methodInconsistent) {
                 methodStrAct += QObject::tr("（多文件值不一致）");
             } else if (res.actualMethod != res.expectedMethod) {
@@ -1757,16 +2175,23 @@ private:
                 paramActualText(res.hasActualGoldsteinWin, QString::number(res.actualGoldsteinWin),
                     res.goldsteinWinInconsistent, res.actualGoldsteinWin != res.expectedGoldsteinWin, verifiable),
                 verifiable);
-            m_compTable->addComparison(QObject::tr("补零窗口"),
-                QString::number(res.expectedNPad),
-                paramActualText(res.hasActualNPad, QString::number(res.actualNPad),
-                    res.nPadInconsistent, res.actualNPad != res.expectedNPad, verifiable),
-                verifiable);
-            m_compTable->addComparison(QObject::tr("滤波参数 alpha"),
-                QString::number(res.expectedAlpha, 'f', 4),
-                paramActualText(res.hasActualAlpha, QString::number(res.actualAlpha, 'f', 4),
-                    res.alphaInconsistent, qAbs(res.actualAlpha - res.expectedAlpha) > 1e-6, verifiable),
-                verifiable);
+		} else if (res.expectedMethod == 4) {
+			m_compTable->addComparison(QObject::tr("Goldstein profile"), "GoldsteinSnapCompatibleV1",
+				res.actualMethod == 4 ? "GoldsteinSnapCompatibleV1" : QObject::tr("未记录或不匹配"),
+				res.actualMethod == 4 && !res.methodInconsistent);
+			m_compTable->addComparison(QObject::tr("FFT / 补零"), "64 / 0", "64 / 0",
+				res.hasActualGoldsteinWin && res.actualGoldsteinWin == 64 &&
+				res.hasActualNPad && res.actualNPad == 0);
+			const bool snapContractVerified = res.actualMethod == 4 && !res.methodInconsistent;
+			m_compTable->addDiagnostic(QObject::tr("I/Q、complex_gamma 与 v2 掩膜合同"),
+				snapContractVerified
+                    ? (res.quickValidation ? QObject::tr("抽样通过（非完整）") : QObject::tr("完整验证通过"))
+                    : QObject::tr("未验证"),
+                QObject::tr("此项是输出合同状态，不是设置值与实际值的等值参数比较。"),
+                snapContractVerified
+                    ? (res.quickValidation ? QObject::tr("抽样通过（非完整）") : QObject::tr("完整验证通过"))
+                    : QObject::tr("未验证"),
+                !snapContractVerified);
         } else if (res.expectedMethod == 3) {
             m_compTable->addComparison(QObject::tr("深度学习滤波标记"), QObject::tr("已记录"),
                 res.hasActualDenoiseDl ? QObject::tr("已记录") : QObject::tr("未记录（旧结果）"),
@@ -1822,36 +2247,54 @@ private:
             label->setText(value);
             label->setToolTip(value);
         };
-        setFeatureValue(m_lblDiffMean, res.hasWrappedDifference
-            ? QString::number(res.wrappedDiffMean, 'f', 4)
-            : QObject::tr("图像尺寸不一致"));
-        setFeatureValue(m_lblDiffStd, res.hasWrappedDifference
-            ? QString::number(res.wrappedDiffStd, 'f', 4)
-            : QObject::tr("图像尺寸不一致"));
-        setFeatureValue(m_lblDiffResultant, res.hasWrappedDifference
-            ? QString::number(res.wrappedDiffResultant, 'f', 4)
-            : QObject::tr("图像尺寸不一致"));
-        setFeatureValue(m_lblGradientSummary, transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
-            res.outputQuality.gradientRms, res.outputQuality.hasGradient, 4, QString()));
-        setFeatureValue(m_lblResidueCountSummary, residueCountText(res.inputQuality)
-            + QStringLiteral(" -> ") + residueCountText(res.outputQuality));
-        setFeatureValue(m_lblResidueSummary, residueDensityText(res.inputQuality, res.outputQuality));
+        if (res.quickValidation) {
+            const QString notComputed = QObject::tr("快速验证未计算（执行完整验证可获取）");
+            setFeatureValue(m_lblDiffMean, notComputed);
+            setFeatureValue(m_lblDiffStd, notComputed);
+            setFeatureValue(m_lblDiffResultant, notComputed);
+            setFeatureValue(m_lblGradientSummary, notComputed);
+            setFeatureValue(m_lblResidueCountSummary, notComputed);
+            setFeatureValue(m_lblResidueSummary, notComputed);
+        } else {
+            setFeatureValue(m_lblDiffMean, res.hasWrappedDifference
+                ? QString::number(res.wrappedDiffMean, 'f', 4)
+                : QObject::tr("图像尺寸不一致"));
+            setFeatureValue(m_lblDiffStd, res.hasWrappedDifference
+                ? QString::number(res.wrappedDiffStd, 'f', 4)
+                : QObject::tr("图像尺寸不一致"));
+            setFeatureValue(m_lblDiffResultant, res.hasWrappedDifference
+                ? QString::number(res.wrappedDiffResultant, 'f', 4)
+                : QObject::tr("图像尺寸不一致"));
+            setFeatureValue(m_lblGradientSummary, transitionText(res.inputQuality.gradientRms, res.inputQuality.hasGradient,
+                res.outputQuality.gradientRms, res.outputQuality.hasGradient, 4, QString()));
+            setFeatureValue(m_lblResidueCountSummary, residueCountText(res.inputQuality)
+                + QStringLiteral(" -> ") + residueCountText(res.outputQuality));
+            setFeatureValue(m_lblResidueSummary, residueDensityText(res.inputQuality, res.outputQuality));
+        }
 
         // Final status card
-        m_statusTitle->setText(QObject::tr("验证通过"));
+        m_statusTitle->setText(res.quickValidation ? QObject::tr("快速验证通过（非完整）") : QObject::tr("完整验证通过"));
         m_statusTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #10B981;");
+        if (m_fullValidationButton) m_fullValidationButton->setEnabled(res.quickValidation);
         bool paramsUnverified = false;
         if (res.expectedMethod == 1) {
             paramsUnverified = !res.hasActualPrefilter || !res.hasActualSlopeWindow;
         } else if (res.expectedMethod == 2) {
             paramsUnverified = !res.hasActualGoldsteinWin || !res.hasActualNPad || !res.hasActualAlpha;
+		} else if (res.expectedMethod == 4) {
+			paramsUnverified = !res.hasActualMethod || res.actualMethod != 4 ||
+				!res.hasActualGoldsteinWin || res.actualGoldsteinWin != 64 ||
+				!res.hasActualNPad || res.actualNPad != 0;
         } else if (res.expectedMethod == 3) {
             paramsUnverified = !res.hasActualDenoiseDl;
         }
         const QString unverifiedNote = paramsUnverified
             ? QObject::tr("；该输出由旧版本生成，滤波参数未记录，无法逐项比对（结果特征值已计算）")
             : QString();
-        if (res.matchingSizePairCount == res.imagePairCount) {
+        if (res.quickValidation) {
+            m_statusDesc->setText(QObject::tr("共快速校验 %1 对影像：检查元数据、矩阵尺寸及确定性 I/Q、complex_gamma、掩膜抽样；未执行逐像元完整扫描。")
+                .arg(res.imagePairCount));
+        } else if (res.matchingSizePairCount == res.imagePairCount) {
             m_statusDesc->setText(QObject::tr("共校验 %1 对影像，行列尺寸全部一致；滤波参数及结果特征值比对完成。%2")
                 .arg(res.imagePairCount).arg(unverifiedNote));
         } else {
@@ -1862,6 +2305,10 @@ private:
 
 private:
     DenoiseNode* m_node = nullptr;
+    quint64 m_validationEpoch = 0;
+    bool m_requestedDeepValidation = false;
+    QPushButton* m_fullValidationButton = nullptr;
+    QLabel* m_fullValidationProgressLabel = nullptr;
     
     QLabel* m_lblDiffMean = nullptr;
     QLabel* m_lblDiffStd = nullptr;

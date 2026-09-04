@@ -487,9 +487,9 @@ void InterferometricFormationNode::createWidget()
     topoRemovalLayout->addWidget(m_topoRemovalCheckBox);
     layout->addLayout(topoRemovalLayout);
 
-    // 7. 计算相干系数
+    // 7. Optional legacy R2 preview. The gamma product is always generated.
     auto* coherenceLayout = new QHBoxLayout();
-    QLabel* coherenceLabel = new QLabel("计算相干系数");
+    QLabel* coherenceLabel = new QLabel("生成 R2 相位集中度预览（可选）");
     coherenceLayout->addWidget(coherenceLabel);
     m_coherenceCheckBox = new QCheckBox();
     m_coherenceCheckBox->setChecked(m_isCoherence);
@@ -510,10 +510,11 @@ void InterferometricFormationNode::createWidget()
     coherenceLayout->addWidget(m_coherenceCheckBox);
     layout->addLayout(coherenceLayout);
 
-    // 8. 相干估计窗口 W
+    // 8. Complex-gamma estimation window W
     auto* winWLayout = new QHBoxLayout();
-    m_winWLabel = new QLabel("相干估计窗口 W");
-    m_winWLabel->setFixedWidth(100);
+    m_winWLabel = new QLabel("复相干系数 gamma 估计窗口 W");
+    m_winWLabel->setFixedWidth(170);
+    m_winWLabel->setToolTip("复相干系数 gamma 估计窗口宽度");
     winWLayout->addWidget(m_winWLabel);
     m_winWEdit = new QLineEdit();
     m_winWEdit->setText(QString::number(m_winW));
@@ -531,10 +532,11 @@ void InterferometricFormationNode::createWidget()
     winWLayout->addWidget(m_winWEdit);
     layout->addLayout(winWLayout);
 
-    // 9. 相干估计窗口 H
+    // 9. Complex-gamma estimation window H
     auto* winHLayout = new QHBoxLayout();
-    m_winHLabel = new QLabel("相干估计窗口 H");
-    m_winHLabel->setFixedWidth(100);
+    m_winHLabel = new QLabel("复相干系数 gamma 估计窗口 H");
+    m_winHLabel->setFixedWidth(170);
+    m_winHLabel->setToolTip("复相干系数 gamma 估计窗口高度");
     winHLayout->addWidget(m_winHLabel);
     m_winHEdit = new QLineEdit();
     m_winHEdit->setText(QString::number(m_winH));
@@ -772,10 +774,10 @@ bool InterferometricFormationNode::validateInputs() const
     int mRg = m_multilookRgEdit ? m_multilookRgEdit->text().toInt(&ok3) : m_multilookRg;
     int mAz = m_multilookAzEdit ? m_multilookAzEdit->text().toInt(&ok4) : m_multilookAz;
 
-    if (m_isCoherence) {
-        if (!ok1 || !ok2 || winW <= 0 || winH <= 0 || winW % 2 == 0 || winH % 2 == 0) {
-            return false;
-        }
+    // complex_gamma is always written for GoldsteinSnapCompatibleV1, even
+    // when the optional legacy R2 coherence preview is disabled.
+    if (!ok1 || !ok2 || winW < 3 || winH < 3 || winW % 2 == 0 || winH % 2 == 0) {
+        return false;
     }
     if (!ok3 || !ok4 || mRg <= 0 || mAz <= 0) {
         return false;
@@ -1864,11 +1866,10 @@ void InterferometricFormationNode::updateParameterWidgetsEnableState()
     if (m_topoRemovalCheckBox) m_topoRemovalCheckBox->setEnabled(enableWidgets);
     if (m_coherenceCheckBox) m_coherenceCheckBox->setEnabled(enableWidgets);
 
-    bool coherenceEnabled = enableWidgets && m_isCoherence;
-    if (m_winWLabel) m_winWLabel->setEnabled(coherenceEnabled);
-    if (m_winWEdit) m_winWEdit->setEnabled(coherenceEnabled);
-    if (m_winHLabel) m_winHLabel->setEnabled(coherenceEnabled);
-    if (m_winHEdit) m_winHEdit->setEnabled(coherenceEnabled);
+    if (m_winWLabel) m_winWLabel->setEnabled(enableWidgets);
+    if (m_winWEdit) m_winWEdit->setEnabled(enableWidgets);
+    if (m_winHLabel) m_winHLabel->setEnabled(enableWidgets);
+    if (m_winHEdit) m_winHEdit->setEnabled(enableWidgets);
 
     if (m_multilookRgEdit) m_multilookRgEdit->setEnabled(enableWidgets);
     if (m_multilookAzEdit) m_multilookAzEdit->setEnabled(enableWidgets);
@@ -2067,27 +2068,25 @@ QVector<ParameterInfo> InterferometricFormationNode::getParameters() const
     params.append(pTopo);
 
     ParameterInfo pCoh;
-    pCoh.name = QStringLiteral("二倍角相位集中度计算");
+    pCoh.name = QStringLiteral("R2 相位集中度预览");
     pCoh.value = isCoh ? QStringLiteral("开启") : QStringLiteral("关闭");
     pCoh.dataType = QStringLiteral("bool");
     pCoh.editType = FieldEditType::None;
     params.append(pCoh);
 
-    if (isCoh) {
-        ParameterInfo pWinW;
-        pWinW.name = QStringLiteral("相干窗口宽度");
-        pWinW.value = QString::number(winW);
-        pWinW.dataType = QStringLiteral("int");
-        pWinW.editType = FieldEditType::None;
-        params.append(pWinW);
+    ParameterInfo pWinW;
+    pWinW.name = QStringLiteral("复相干系数 gamma 估计窗口宽度");
+    pWinW.value = QString::number(winW);
+    pWinW.dataType = QStringLiteral("int");
+    pWinW.editType = FieldEditType::None;
+    params.append(pWinW);
 
-        ParameterInfo pWinH;
-        pWinH.name = QStringLiteral("相干窗口高度");
-        pWinH.value = QString::number(winH);
-        pWinH.dataType = QStringLiteral("int");
-        pWinH.editType = FieldEditType::None;
-        params.append(pWinH);
-    }
+    ParameterInfo pWinH;
+    pWinH.name = QStringLiteral("复相干系数 gamma 估计窗口高度");
+    pWinH.value = QString::number(winH);
+    pWinH.dataType = QStringLiteral("int");
+    pWinH.editType = FieldEditType::None;
+    params.append(pWinH);
 
     return params;
 }
@@ -2140,12 +2139,11 @@ std::vector<QString> InterferometricFormationNode::processingInfo() const
         info.push_back(QStringLiteral("去地形相位：未开启%1").arg(suffix));
     }
 
-    if (isCoh) {
-        info.push_back(QStringLiteral("相位集中度计算：开启 (窗口 %1 x %2, 名义样本数 %3)%4")
-            .arg(winW).arg(winH).arg(winW * winH).arg(suffix));
-    } else {
-        info.push_back(QStringLiteral("相位集中度计算：未开启%1").arg(suffix));
-    }
+    info.push_back(QStringLiteral("复相干系数 gamma 估计窗口：%1 x %2 (名义样本数 %3)%4")
+        .arg(winW).arg(winH).arg(winW * winH).arg(suffix));
+    info.push_back(isCoh
+        ? QStringLiteral("R2 相位集中度预览：生成（复用 gamma 估计窗口）%1").arg(suffix)
+        : QStringLiteral("R2 相位集中度预览：未生成%1").arg(suffix));
 
     if (m_outputData && !m_outputData->filePaths().isEmpty()) {
         info.push_back(QStringLiteral("干涉对生成数量：%1 对").arg(m_outputData->filePaths().size()));
@@ -2547,7 +2545,7 @@ private:
         }
 
         if (cohH5Path.isEmpty() || !QFile::exists(cohH5Path)) {
-            m_statusLabel->setText(tr("无法评估：未找到该干涉对的相干系数成果文件。请检查节点是否勾选了“计算相干系数”。"));
+            m_statusLabel->setText(tr("无法评估：未找到该干涉对的 R2 相位集中度预览成果文件。请检查节点是否勾选了“生成 R2 相位集中度预览（可选）”。"));
             return;
         }
 

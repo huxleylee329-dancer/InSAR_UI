@@ -1980,19 +1980,23 @@ ValidationLoadingOverlay::ValidationLoadingOverlay(QWidget* parent)
     
     // Background overlay container (transparent/semi-transparent black)
     QVBoxLayout* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(12);
     layout->setAlignment(Qt::AlignCenter);
     
     _messageLabel = new QLabel(this);
     _messageLabel->setAlignment(Qt::AlignCenter);
     _messageLabel->setWordWrap(true);
-    layout->addWidget(_messageLabel);
+    _messageLabel->setTextFormat(Qt::PlainText);
+    _messageLabel->setMinimumWidth(0);
+    _messageLabel->setMaximumWidth(520);
+    _messageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    layout->addWidget(_messageLabel, 0, Qt::AlignHCenter);
 
     _retryButton = new QPushButton(QObject::tr("重试"), this);
     _retryButton->setFixedSize(80, 28);
     _retryButton->hide();
-    layout->addWidget(_retryButton);
+    layout->addWidget(_retryButton, 0, Qt::AlignHCenter);
 
     connect(_retryButton, &QPushButton::clicked, this, [this]() {
         _retryButton->hide();

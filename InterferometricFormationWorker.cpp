@@ -1106,10 +1106,13 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
             Mat outputFlatEarthReference;
             Mat phaseValidMask;
             Mat phaseValidSampleCount;
+			Mat correctedInterferogramReal;
+			Mat correctedInterferogramImaginary;
             const int correctedMultilookResult = util.multilookCorrectedInterferogram(
                 Master, Slave, correctionReference, flatEarthPhase, sourceRowMap, slcPairValidMask,
                 multilook_rg, multilook_az, phase, outputFlatEarthReference, phaseValidMask,
-                phaseValidSampleCount, DeflatProgressCallbackImpl);
+				phaseValidSampleCount, DeflatProgressCallbackImpl,
+				&correctedInterferogramReal, &correctedInterferogramImaginary);
             if (correctedMultilookResult == -2) {
                 InSARLogManager::LogInfo("InterferometricFormationWorker", "Corrected interferogram multilooking cancelled by user.");
                 emit cancelled();
@@ -1124,6 +1127,33 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                 emit errorProcess(QStringLiteral("相位有效性契约与多视输出网格不一致"));
                 return;
             }
+			if (correctedInterferogramReal.type() != CV_32F ||
+				correctedInterferogramImaginary.type() != CV_32F ||
+				correctedInterferogramReal.size() != phase.size() ||
+				correctedInterferogramImaginary.size() != phase.size()) {
+				emit errorProcess(QStringLiteral("校正多视复干涉图 I/Q 与相位输出网格不一致"));
+				return;
+			}
+			Mat complexGamma;
+			Mat complexGammaValidMask;
+			Mat complexGammaValidSampleCount;
+			const int complexGammaResult = util.complex_coherence_corrected_multilooked(
+				Master, Slave, correctionReference, sourceRowMap, slcPairValidMask,
+				multilook_rg, multilook_az, win_width, win_height,
+				complexGamma, complexGammaValidMask, complexGammaValidSampleCount,
+				DeflatProgressCallbackImpl);
+			if (complexGammaResult == -2) {
+				InSARLogManager::LogInfo("InterferometricFormationWorker", "Complex-gamma calculation cancelled by user.");
+				emit cancelled();
+				return;
+			}
+			if (complexGammaResult != 0 || complexGamma.type() != CV_64F ||
+				complexGammaValidMask.type() != CV_8U || complexGammaValidSampleCount.type() != CV_32S ||
+				complexGamma.size() != phase.size() || complexGammaValidMask.size() != phase.size() ||
+				complexGammaValidSampleCount.size() != phase.size()) {
+				emit errorProcess(QStringLiteral("校正多视复相干系数 gamma 与相位输出网格不一致或计算失败"));
+				return;
+			}
 
             if (outputCommonCoverage.applies && multilook_az == 1 &&
                 outputCommonCoverage.sourceRowMap.rows != phase.rows) {
@@ -1323,6 +1353,17 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
                         !writeArray(h5_path, "multilook_az", Mat(1, 1, CV_32S, &multilook_az)) ||
                         !writeArray(h5_path, "phase_valid_mask", phaseValidMask) ||
                         !writeArray(h5_path, "phase_valid_sample_count", phaseValidSampleCount) ||
+						!writeArray(h5_path, "interferogram_i", correctedInterferogramReal) ||
+						!writeArray(h5_path, "interferogram_q", correctedInterferogramImaginary) ||
+						!writeArray(h5_path, "complex_gamma", complexGamma) ||
+						!writeArray(h5_path, "complex_gamma_valid_mask", complexGammaValidMask) ||
+						!writeArray(h5_path, "complex_gamma_valid_sample_count", complexGammaValidSampleCount) ||
+						!NodeUtils::writeScalarToH5(h5_path, "complex_gamma_window_range", win_width) ||
+						!NodeUtils::writeScalarToH5(h5_path, "complex_gamma_window_azimuth", win_height) ||
+						!NodeUtils::writeStringToH5(h5_path, "complex_gamma_semantics",
+							NodeUtils::CoherenceSemantics::kComplexGamma) ||
+						!NodeUtils::writeStringToH5(h5_path, "complex_gamma_algorithm",
+							"corrected_multilooked_source_row_aware_v1") ||
                         !writeArray(h5_path, "phase", phase)) {
                         return;
                     }

@@ -5802,7 +5802,7 @@ bool validateDenoiseFilterSupportContract(const QString& inputPath, QString* err
 
     int method = 0;
     if (!readScalarFromH5(inputPath, QStringLiteral("denoise_method"), method, errMsg)) return false;
-    if (method != 2) return true;
+    if (method != 2 && method != 4) return true;
 
     int schemaVersion = 0;
 	int schemaExists = 0;
@@ -5810,11 +5810,105 @@ bool validateDenoiseFilterSupportContract(const QString& inputPath, QString* err
 		if (errMsg) *errMsg = QStringLiteral("无法检查相位处理契约版本：%1").arg(inputPath);
 		return false;
 	}
-	if (schemaExists == 0) return true;
+	if (schemaExists == 0 && method == 2) return true;
+	if (schemaExists == 0 && method == 4) {
+		if (errMsg) *errMsg = QStringLiteral("GoldsteinSnapCompatibleV1 requires an explicit phase-processing contract: %1").arg(inputPath);
+		return false;
+	}
 	if (!readScalarFromH5(inputPath, QStringLiteral("phase_processing_schema_version"), schemaVersion, errMsg)) {
 		return false;
 	}
-	if (schemaVersion != 2) return true;
+	if (method == 4 && schemaVersion != 2) {
+		if (errMsg) *errMsg = QStringLiteral("GoldsteinSnapCompatibleV1 requires phase_processing_schema_version=2: %1").arg(inputPath);
+		return false;
+	}
+	if (schemaVersion != 2 && method == 2) return true;
+
+	if (method == 4) {
+		cv::Mat phase, validMask, supportMask, filteredI, filteredQ, gamma, gammaMask, gammaCount;
+		int contractVersion = 0;
+		int supportCount = 0;
+		int window = 0;
+		int nPad = -1;
+		std::string profile, alphaSemantics, spectralSmoothing, overlapWindow;
+		std::string supportSemantics, fallbackSemantics, gammaSemantics, gammaAlgorithm;
+		if (!validatePhaseValidityContract(inputPath, false, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("phase"), phase, CV_64F, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("phase_valid_mask"), validMask, CV_8U, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("denoise_filter_support_mask"), supportMask, CV_8U, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("interferogram_i"), filteredI, CV_32F, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("interferogram_q"), filteredQ, CV_32F, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("complex_gamma"), gamma, CV_64F, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("complex_gamma_valid_mask"), gammaMask, CV_8U, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("complex_gamma_valid_sample_count"), gammaCount, CV_32S, errMsg) ||
+			phase.empty() || validMask.size() != phase.size() || supportMask.size() != phase.size() ||
+			filteredI.size() != phase.size() || filteredQ.size() != phase.size() ||
+			gamma.size() != phase.size() || gammaMask.size() != phase.size() || gammaCount.size() != phase.size() ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_mask_contract_version"), contractVersion, errMsg) || contractVersion != 2 ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_filter_support_count"), supportCount, errMsg) ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_win"), window, errMsg) || window != 64 ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_npad"), nPad, errMsg) || nPad != 0 ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_profile"), profile, errMsg) || profile != "GoldsteinSnapCompatibleV1" ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_alpha_semantics"), alphaSemantics, errMsg) ||
+			alphaSemantics != "clamp_1_minus_mean_complex_gamma_0.2_1.0_v1" ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_spectral_smoothing"), spectralSmoothing, errMsg) ||
+			spectralSmoothing != "mean_3x3_skip_zero_power_v1" ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_overlap_window"), overlapWindow, errMsg) ||
+			overlapWindow != "separable_triangular_v1" ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, errMsg) ||
+			supportSemantics != "original_valid_pixel_with_at_least_one_processed_fft_window_v2" ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, errMsg) ||
+			fallbackSemantics != "input_phase_passthrough_when_unsupported_v2" ||
+			!readStringFromH5(inputPath, QStringLiteral("complex_gamma_semantics"), gammaSemantics, errMsg) ||
+			gammaSemantics != CoherenceSemantics::kComplexGamma ||
+			!readStringFromH5(inputPath, QStringLiteral("complex_gamma_algorithm"), gammaAlgorithm, errMsg) ||
+			gammaAlgorithm != "corrected_multilooked_source_row_aware_v1") {
+			if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("GoldsteinSnapCompatibleV1 contract is missing or invalid: %1").arg(inputPath);
+			return false;
+		}
+		int gammaWindowRange = 0;
+		int gammaWindowAzimuth = 0;
+		if (!readScalarFromH5(inputPath, QStringLiteral("complex_gamma_window_range"), gammaWindowRange, errMsg) ||
+			!readScalarFromH5(inputPath, QStringLiteral("complex_gamma_window_azimuth"), gammaWindowAzimuth, errMsg) ||
+			gammaWindowRange < 3 || gammaWindowAzimuth < 3 ||
+			gammaWindowRange % 2 == 0 || gammaWindowAzimuth % 2 == 0) {
+			if (errMsg && errMsg->isEmpty()) *errMsg = QStringLiteral("GoldsteinSnapCompatibleV1 complex-gamma window contract is invalid: %1").arg(inputPath);
+			return false;
+		}
+		for (int row = 0; row < gamma.rows; ++row) {
+			const double* gammaRow = gamma.ptr<double>(row);
+			const uchar* gammaMaskRow = gammaMask.ptr<uchar>(row);
+			const int* gammaCountRow = gammaCount.ptr<int>(row);
+			for (int column = 0; column < gamma.cols; ++column) {
+				const bool invalidMask = gammaMaskRow[column] != 0 && gammaMaskRow[column] != 1;
+				const bool invalidCount = gammaCountRow[column] < 0 ||
+					(gammaMaskRow[column] != 0 && gammaCountRow[column] <= 0) ||
+					(gammaMaskRow[column] == 0 && gammaCountRow[column] != 0);
+				const bool invalidGamma = gammaMaskRow[column] != 0 &&
+					(!std::isfinite(gammaRow[column]) || gammaRow[column] < 0.0 || gammaRow[column] > 1.0);
+				if (invalidMask || invalidCount || invalidGamma) {
+					if (errMsg) *errMsg = QStringLiteral(
+						"GoldsteinSnapCompatibleV1 complex-gamma mask/count/value contract is invalid at (%1,%2): %3")
+						.arg(row).arg(column).arg(inputPath);
+					return false;
+				}
+			}
+		}
+		int actualCount = 0;
+		for (int row = 0; row < phase.rows; ++row) {
+			const uchar* valid = validMask.ptr<uchar>(row);
+			const uchar* support = supportMask.ptr<uchar>(row);
+			for (int column = 0; column < phase.cols; ++column) {
+				if ((support[column] != 0 && support[column] != 1) || (support[column] != 0 && valid[column] == 0)) return false;
+				actualCount += support[column] != 0 ? 1 : 0;
+			}
+		}
+		if (actualCount != supportCount) {
+			if (errMsg) *errMsg = QStringLiteral("GoldsteinSnapCompatibleV1 support count is inconsistent: %1").arg(inputPath);
+			return false;
+		}
+		return true;
+	}
 
     cv::Mat phase, validMask, supportMask;
     int contractVersion = 0;
@@ -5880,8 +5974,57 @@ bool copyDenoiseFilterSupportContract(const QString& inputPath,
 
     int method = 0;
     if (!readScalarFromH5(inputPath, QStringLiteral("denoise_method"), method, errMsg)) return false;
-    if (method != 2) return true;
+    if (method != 2 && method != 4) return true;
     if (!validateDenoiseFilterSupportContract(inputPath, errMsg)) return false;
+	if (method == 4) {
+		cv::Mat supportMask, filteredI, filteredQ, gamma, gammaMask, gammaCount;
+		int contractVersion = 0, supportCount = 0, window = 0, nPad = -1, gammaWindow = 0;
+		std::string profile, alphaSemantics, spectralSmoothing, overlapWindow;
+		std::string supportSemantics, fallbackSemantics, gammaSemantics, gammaAlgorithm;
+		if (!readMatFromH5(inputPath, QStringLiteral("denoise_filter_support_mask"), supportMask, CV_8U, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("interferogram_i"), filteredI, CV_32F, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("interferogram_q"), filteredQ, CV_32F, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("complex_gamma"), gamma, CV_64F, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("complex_gamma_valid_mask"), gammaMask, CV_8U, errMsg) ||
+			!readMatFromH5(inputPath, QStringLiteral("complex_gamma_valid_sample_count"), gammaCount, CV_32S, errMsg) ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_mask_contract_version"), contractVersion, errMsg) ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_filter_support_count"), supportCount, errMsg) ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_win"), window, errMsg) ||
+			!readScalarFromH5(inputPath, QStringLiteral("denoise_goldstein_npad"), nPad, errMsg) ||
+			!readScalarFromH5(inputPath, QStringLiteral("complex_gamma_window_range"), gammaWindow, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_profile"), profile, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_alpha_semantics"), alphaSemantics, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_spectral_smoothing"), spectralSmoothing, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_goldstein_overlap_window"), overlapWindow, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("complex_gamma_semantics"), gammaSemantics, errMsg) ||
+			!readStringFromH5(inputPath, QStringLiteral("complex_gamma_algorithm"), gammaAlgorithm, errMsg)) return false;
+		int gammaWindowAzimuth = 0;
+		if (!readScalarFromH5(inputPath, QStringLiteral("complex_gamma_window_azimuth"), gammaWindowAzimuth, errMsg) ||
+			!writeScalarToH5(outputPath, QStringLiteral("denoise_method"), method, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("denoise_goldstein_profile"), profile, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("denoise_goldstein_alpha_semantics"), alphaSemantics, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("denoise_goldstein_spectral_smoothing"), spectralSmoothing, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("denoise_goldstein_overlap_window"), overlapWindow, errMsg) ||
+			!writeScalarToH5(outputPath, QStringLiteral("denoise_goldstein_win"), window, errMsg) ||
+			!writeScalarToH5(outputPath, QStringLiteral("denoise_goldstein_npad"), nPad, errMsg) ||
+			!writeMatToH5(outputPath, QStringLiteral("denoise_filter_support_mask"), supportMask, errMsg) ||
+			!writeScalarToH5(outputPath, QStringLiteral("denoise_mask_contract_version"), contractVersion, errMsg) ||
+			!writeScalarToH5(outputPath, QStringLiteral("denoise_filter_support_count"), supportCount, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("denoise_filter_support_semantics"), supportSemantics, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("denoise_filter_fallback_semantics"), fallbackSemantics, errMsg) ||
+			!writeMatToH5(outputPath, QStringLiteral("interferogram_i"), filteredI, errMsg) ||
+			!writeMatToH5(outputPath, QStringLiteral("interferogram_q"), filteredQ, errMsg) ||
+			!writeMatToH5(outputPath, QStringLiteral("complex_gamma"), gamma, errMsg) ||
+			!writeMatToH5(outputPath, QStringLiteral("complex_gamma_valid_mask"), gammaMask, errMsg) ||
+			!writeMatToH5(outputPath, QStringLiteral("complex_gamma_valid_sample_count"), gammaCount, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("complex_gamma_semantics"), gammaSemantics, errMsg) ||
+			!writeStringToH5(outputPath, QStringLiteral("complex_gamma_algorithm"), gammaAlgorithm, errMsg) ||
+			!writeScalarToH5(outputPath, QStringLiteral("complex_gamma_window_range"), gammaWindow, errMsg) ||
+			!writeScalarToH5(outputPath, QStringLiteral("complex_gamma_window_azimuth"), gammaWindowAzimuth, errMsg)) return false;
+		return true;
+	}
 	int schemaExists = 0;
 	if (Hdf5IO::datasetExists(path.constData(), "phase_processing_schema_version", &schemaExists) != 0) {
 		if (errMsg) *errMsg = QStringLiteral("无法检查相位处理契约版本：%1").arg(inputPath);
