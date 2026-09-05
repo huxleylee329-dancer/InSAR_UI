@@ -16,6 +16,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QFutureWatcher>
+#include <QTextBrowser>
 
 
 
@@ -72,6 +73,7 @@ private:
     QLabel* filterLooksLabel = nullptr;
     QLabel* frostDerampLabel = nullptr;
     QFutureWatcher<cv::Mat>* filterWatcher = nullptr;
+    QTextBrowser* methodDescriptionBrowser = nullptr;
 
     void updateDisplayedImage();
 
@@ -79,6 +81,7 @@ private:
     double calcMedian(const cv::Mat& input) const;
     QString currentFilterSuffix() const;
     void updateFilterParameterVisibility();
+    void updateFilterDescription();
     void setFilterRunning(bool running);
     void resetLoadedImageState();
     bool isValidOutputNodeName(const QString& name) const;

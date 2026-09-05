@@ -135,6 +135,10 @@
       <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">stdcpp17</LanguageStandard>
     </ClCompile>
     <ClCompile Include="ClutterSuppression.cpp" />
+    <ClCompile Include="ClutterSuppressionAlgorithms.cpp">
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">stdcpp17</LanguageStandard>
+      <LanguageStandard Condition="'$(Configuration)|$(Platform)'=='Release|x64'">stdcpp17</LanguageStandard>
+    </ClCompile>
     <ClCompile Include="ColorBar.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -907,6 +911,7 @@
     </QtMoc>
     <QtMoc Include="include\EvaluationENLNode.h" />
     <QtMoc Include="include\EvaluationSCRNode.h" />
+    <ClInclude Include="include\ClutterSuppressionAlgorithms.h" />
     <ClInclude Include="include\icon_source.h">
       <Filter>Header Files</Filter>
     </ClInclude>

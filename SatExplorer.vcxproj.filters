@@ -673,6 +673,9 @@
     <ClCompile Include="ClutterSuppression.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ClutterSuppressionAlgorithms.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="BatchTargetRecognition.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -1531,6 +1534,9 @@
     </QtUic>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\ClutterSuppressionAlgorithms.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="include\tinystr.h">
       <Filter>Header Files</Filter>
     </ClInclude>

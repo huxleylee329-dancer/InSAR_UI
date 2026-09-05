@@ -11,7 +11,12 @@
 #include <QEvent>
 #include <QRect>
 #include <QPoint>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QTextBrowser>
 #include <opencv2/opencv.hpp>
+#include "ClutterSuppressionAlgorithms.h"
 
 
 class ClutterSuppression : public QWidget
@@ -58,9 +63,19 @@ private:
     QLabel* imageDisplayLabel;
     QPixmap originalPixmap;
     QPixmap filteredPixmap;
+    QPixmap targetMaskPixmap;
 
     cv::Mat originalGrayMat;
     cv::Mat filteredGrayMat;
+    cv::Mat targetMaskMat;
+
+    QComboBox* methodComboBox;
+    QSpinBox* guardRadiusSpinBox;
+    QSpinBox* clutterRadiusSpinBox;
+    QDoubleSpinBox* pfaSpinBox;
+    QDoubleSpinBox* censoringSpinBox;
+    QSpinBox* mixtureCountSpinBox;
+    QTextBrowser* methodDescriptionBrowser;
 
     bool targetRoiModeEnabled;
     bool clutterRoiModeEnabled;
@@ -83,7 +98,11 @@ private:
     double calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray) const;
     void updateScrResults();
 
-    cv::Mat runClutterSuppressionCoreLogic(const cv::Mat& inputGray) const;
+    cv::Mat runClutterSuppressionCoreLogic(const cv::Mat& inputGray);
+    ClutterSuppressionParameters currentParameters() const;
+    QString currentMethodSuffix() const;
+    void updateMethodControls();
+    void updateMethodDescription();
     cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
     double calcMedian(const cv::Mat& input) const;
 

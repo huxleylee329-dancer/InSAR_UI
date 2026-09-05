@@ -3,6 +3,7 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QVBoxLayout>
+#include <QGroupBox>
 #include <QFile>
 #include <QDir>
 #include <QtMath>
@@ -153,6 +154,17 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     ui->enlGroup->move(ui->enlGroup->x(), 680);
     ui->widget_2->move(ui->widget_2->x(), 132);
     ui->FilterProgressBar->move(ui->FilterProgressBar->x(), 180);
+
+    auto* descriptionGroup = new QGroupBox(QStringLiteral("方法说明"), ui->RightPanel);
+    descriptionGroup->setGeometry(0, 630, 405, 255);
+    auto* descriptionLayout = new QVBoxLayout(descriptionGroup);
+    descriptionLayout->setContentsMargins(8, 8, 8, 8);
+    methodDescriptionBrowser = new QTextBrowser(descriptionGroup);
+    methodDescriptionBrowser->setReadOnly(true);
+    methodDescriptionBrowser->setOpenExternalLinks(false);
+    methodDescriptionBrowser->setStyleSheet(
+        "QTextBrowser { background: #fafafa; border: 1px solid #d7d7d7; padding: 4px; }");
+    descriptionLayout->addWidget(methodDescriptionBrowser);
 
     QLabel* filterMethodLabel = new QLabel(QStringLiteral("滤波方法"), ui->filterGroup);
     filterMethodLabel->setGeometry(40, 28, 90, 23);
@@ -725,6 +737,54 @@ void SpeckleDenoise::updateFilterParameterVisibility()
     filterLooksSpinBox->setVisible(usesLooks);
     frostDerampLabel->setVisible(usesDeramp);
     frostDerampSpinBox->setVisible(usesDeramp);
+    updateFilterDescription();
+}
+
+void SpeckleDenoise::updateFilterDescription()
+{
+    if (!methodDescriptionBrowser) return;
+
+    const int methodIndex = filterMethodComboBox ? filterMethodComboBox->currentIndex() : 0;
+    QString html;
+    switch (methodIndex)
+    {
+    case 1:
+        html = QStringLiteral(
+            "<b>Lee 滤波</b><br>"
+            "<b>适合：</b>大面积均匀区域，如平静海面、农田和低纹理地表。<br>"
+            "<b>特点：</b>利用局部均值和方差抑制乘性斑点，速度快；强边缘附近可能略有模糊。<br>"
+            "<b>参数：</b>邻域半径越大，平滑越强；等效视数越大，假定的斑点噪声越弱。");
+        break;
+    case 2:
+        html = QStringLiteral(
+            "<b>Frost 滤波</b><br>"
+            "<b>适合：</b>既有均匀区域又有明显边缘的 SAR 图像，如海岸、道路和建筑区。<br>"
+            "<b>特点：</b>按距离和局部变化自适应加权，通常比简单均值更能保留边缘。<br>"
+            "<b>参数：</b>邻域半径控制范围；衰减系数越大，远处像素权重下降越快、边缘保留越强。");
+        break;
+    case 3:
+        html = QStringLiteral(
+            "<b>Gamma-MAP 滤波</b><br>"
+            "<b>适合：</b>符合乘性 Gamma 噪声模型的强度图，尤其适合均匀到中等纹理区域。<br>"
+            "<b>特点：</b>采用最大后验估计，在平滑和目标保持之间较稳健；模型或视数不准时效果会下降。<br>"
+            "<b>参数：</b>邻域半径决定统计范围；等效视数应尽量与数据产品一致。");
+        break;
+    case 4:
+        html = QStringLiteral(
+            "<b>Kuan 滤波</b><br>"
+            "<b>适合：</b>需要快速处理的普通单通道 SAR 强度图，以及轻到中等斑点噪声。<br>"
+            "<b>特点：</b>通过变异系数把乘性噪声近似为局部线性估计，速度快、细节保持适中。<br>"
+            "<b>参数：</b>较大的邻域增强平滑但可能损失小目标；等效视数控制噪声强度估计。");
+        break;
+    default:
+        html = QStringLiteral(
+            "<b>BM3D</b><br>"
+            "<b>适合：</b>纹理丰富、结构细节较多且斑点较强的单通道 SAR 显示图。<br>"
+            "<b>特点：</b>寻找相似图块并进行协同滤波，细节保持通常较好，但计算量最大。<br>"
+            "<b>提示：</b>当前实现自动估计噪声，不使用邻域半径、等效视数和 Frost 衰减参数。");
+        break;
+    }
+    methodDescriptionBrowser->setHtml(html);
 }
 
 void SpeckleDenoise::setFilterRunning(bool running)
