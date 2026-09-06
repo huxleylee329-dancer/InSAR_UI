@@ -408,21 +408,29 @@ void SpeckleDenoiseNode::executeProcessing()
     m_outputImagePaths = outputPaths;
 
     m_isExecuting = true;
-    m_task = new BM3DEnhancementTask(EnhancementType::SpeckleDenoise, inputPaths, outputPaths,
-                                     !saveToProject);
+    auto* task = new BM3DEnhancementTask(EnhancementType::SpeckleDenoise, inputPaths, outputPaths,
+                                         !saveToProject);
+    m_task = task;
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
 
-    connect(m_task, &BM3DEnhancementTask::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::cancelled, this, &SpeckleDenoiseNode::onCancelled, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::outputsGenerated, this,
+    connect(task, &BM3DEnhancementTask::updateProcess, this, &SpeckleDenoiseNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::endProcess, this, &SpeckleDenoiseNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::errorProcess, this, &SpeckleDenoiseNode::onError, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::cancelled, this, &SpeckleDenoiseNode::onCancelled, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::askUserError, this, &SpeckleDenoiseNode::onAskUserError, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::outputsGenerated, this,
         [this](const QStringList& outputPaths) { m_generatedOutputPaths = outputPaths; }, Qt::QueuedConnection);
 
-    QThreadPool::globalInstance()->start(m_task);
+    connect(task, &BM3DEnhancementTask::endProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::errorProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::cancelled,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+
+    QThreadPool::globalInstance()->start(task);
     updateParameterWidgetsEnableState();
 }
 

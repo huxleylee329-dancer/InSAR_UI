@@ -46,7 +46,6 @@ private slots:
     void on_inputImageComboBox_currentIndexChanged(int index);
 
     void on_deleteFilterButton_clicked();
-    void on_calculateEnlButton_clicked();
     void onFilterFinished();
 
 
@@ -84,7 +83,10 @@ private:
     void updateFilterDescription();
     void setFilterRunning(bool running);
     void resetLoadedImageState();
+    void clearEnlResults();
+    bool refreshCurrentResult();
     bool isValidOutputNodeName(const QString& name) const;
+    QString inputFingerprintToken() const;
     QString currentOutputImageName() const;
 
     bool saveFilteredImage(const cv::Mat& filteredImage, const QString& outputPath);

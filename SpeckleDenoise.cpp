@@ -6,6 +6,7 @@
 #include <QGroupBox>
 #include <QFile>
 #include <QDir>
+#include <QCryptographicHash>
 #include <QtMath>
 #include <algorithm>
 #include "FormatConversion.h"
@@ -151,7 +152,9 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     }
     ui->filterGroup->resize(ui->filterGroup->width(), 221);
     ui->roiGroup->move(ui->roiGroup->x(), 540);
-    ui->enlGroup->move(ui->enlGroup->x(), 680);
+    ui->roiGroup->resize(ui->roiGroup->width(), 91);
+    ui->widget->resize(ui->widget->width(), 61);
+    ui->enlGroup->move(ui->enlGroup->x(), 640);
     ui->widget_2->move(ui->widget_2->x(), 132);
     ui->FilterProgressBar->move(ui->FilterProgressBar->x(), 180);
 
@@ -203,7 +206,10 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     connect(filterMethodComboBox,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             this,
-            [this](int) { updateFilterParameterVisibility(); });
+            [this](int) {
+                updateFilterParameterVisibility();
+                refreshCurrentResult();
+            });
     updateFilterParameterVisibility();
 
     filterWatcher = new QFutureWatcher<cv::Mat>(this);
@@ -211,6 +217,15 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
             &QFutureWatcher<cv::Mat>::finished,
             this,
             &SpeckleDenoise::onFilterFinished);
+
+    connect(filterRadiusSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int) { refreshCurrentResult(); });
+    connect(filterLooksSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { refreshCurrentResult(); });
+    connect(frostDerampSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { refreshCurrentResult(); });
+    connect(ui->NodeWindowSpinBox, &QLineEdit::editingFinished,
+            this, [this]() { refreshCurrentResult(); });
 
 }
 
@@ -443,10 +458,7 @@ void SpeckleDenoise::on_loadImageButton_clicked()
     }
 
     loaded_image_path = input_image_path;
-    filteredPixmap = QPixmap();
-    filteredGrayMat.release();
-    ui->imageTypeComboBox->setCurrentText("Original");
-    updateDisplayedImage();
+    refreshCurrentResult();
 }
 
 void SpeckleDenoise::updateDisplayedImage()
@@ -510,6 +522,7 @@ void SpeckleDenoise::on_startRoiButton_clicked()
 
     roiModeEnabled = true;
     roiSelecting = false;
+    clearEnlResults();
 }
 
 
@@ -526,8 +539,7 @@ void SpeckleDenoise::on_clearRoiButton_clicked()
     ui->roiHeightValueLabel->setText("--");
     ui->roiPixelCountValueLabel->setText("--");
 
-    ui->originalEnlValueLabel->setText("--");
-    ui->filteredEnlValueLabel->setText("--");
+    clearEnlResults();
 
     updateDisplayedImage();
 }
@@ -580,12 +592,8 @@ void SpeckleDenoise::on_runFilterButton_clicked()
     const QString outputImageName = currentOutputImageName();
     const QString outputDirectory = QDir(save_path).filePath(outputNodeName);
     const QString outputPath = QDir(outputDirectory).filePath(outputImageName + ".jpg");
-    if (QFile::exists(outputPath))
+    if (refreshCurrentResult())
     {
-        QMessageBox::information(
-            this,
-            "Info",
-            QStringLiteral("该参数组合的结果文件已存在：\n%1").arg(outputPath));
         return;
     }
 
@@ -681,6 +689,7 @@ void SpeckleDenoise::onFilterFinished()
     filteredPixmap.load(pending_output_path);
     ui->imageTypeComboBox->setCurrentText("Filtered");
     updateDisplayedImage();
+    updateEnlResults();
     ui->FilterProgressBar->setValue(100);
     emit sendCopy(copy);
 }
@@ -753,35 +762,39 @@ void SpeckleDenoise::updateFilterDescription()
             "<b>Lee 滤波</b><br>"
             "<b>适合：</b>大面积均匀区域，如平静海面、农田和低纹理地表。<br>"
             "<b>特点：</b>利用局部均值和方差抑制乘性斑点，速度快；强边缘附近可能略有模糊。<br>"
-            "<b>参数：</b>邻域半径越大，平滑越强；等效视数越大，假定的斑点噪声越弱。");
+            "<b>推荐参数：</b>邻域半径 3（7×7 窗口）；等效视数优先填写产品标称值，未知时先用 1.0。"
+            "均匀区噪声仍强可将半径增至 4，小目标较多时可降至 2。");
         break;
     case 2:
         html = QStringLiteral(
             "<b>Frost 滤波</b><br>"
             "<b>适合：</b>既有均匀区域又有明显边缘的 SAR 图像，如海岸、道路和建筑区。<br>"
             "<b>特点：</b>按距离和局部变化自适应加权，通常比简单均值更能保留边缘。<br>"
-            "<b>参数：</b>邻域半径控制范围；衰减系数越大，远处像素权重下降越快、边缘保留越强。");
+            "<b>推荐参数：</b>邻域半径 3、衰减系数 0.10。噪声较强可将半径增至 4；"
+            "边缘被抹平时适当增大衰减系数，平滑不足时适当减小。");
         break;
     case 3:
         html = QStringLiteral(
             "<b>Gamma-MAP 滤波</b><br>"
             "<b>适合：</b>符合乘性 Gamma 噪声模型的强度图，尤其适合均匀到中等纹理区域。<br>"
             "<b>特点：</b>采用最大后验估计，在平滑和目标保持之间较稳健；模型或视数不准时效果会下降。<br>"
-            "<b>参数：</b>邻域半径决定统计范围；等效视数应尽量与数据产品一致。");
+            "<b>推荐参数：</b>邻域半径 3；等效视数使用产品标称值，单视数据先用 1.0。"
+            "均匀区可尝试半径 4，密集小目标区建议半径 2。");
         break;
     case 4:
         html = QStringLiteral(
             "<b>Kuan 滤波</b><br>"
             "<b>适合：</b>需要快速处理的普通单通道 SAR 强度图，以及轻到中等斑点噪声。<br>"
             "<b>特点：</b>通过变异系数把乘性噪声近似为局部线性估计，速度快、细节保持适中。<br>"
-            "<b>参数：</b>较大的邻域增强平滑但可能损失小目标；等效视数控制噪声强度估计。");
+            "<b>推荐参数：</b>邻域半径 3；等效视数使用产品标称值，未知时先用 1.0。"
+            "弱噪声或小目标场景可将半径降至 2。");
         break;
     default:
         html = QStringLiteral(
             "<b>BM3D</b><br>"
             "<b>适合：</b>纹理丰富、结构细节较多且斑点较强的单通道 SAR 显示图。<br>"
             "<b>特点：</b>寻找相似图块并进行协同滤波，细节保持通常较好，但计算量最大。<br>"
-            "<b>提示：</b>当前实现自动估计噪声，不使用邻域半径、等效视数和 Frost 衰减参数。");
+            "<b>推荐参数：</b>当前实现自动估计噪声，无需设置参数；邻域半径、等效视数和 Frost 衰减均不生效。");
         break;
     }
     methodDescriptionBrowser->setHtml(html);
@@ -824,10 +837,87 @@ void SpeckleDenoise::resetLoadedImageState()
     roiModeEnabled = false;
 
     updateRoiDisplay();
-    ui->originalEnlValueLabel->setText("--");
-    ui->filteredEnlValueLabel->setText("--");
+    clearEnlResults();
     ui->imageTypeComboBox->setCurrentText("Original");
     updateDisplayedImage();
+}
+
+void SpeckleDenoise::clearEnlResults()
+{
+    ui->originalEnlValueLabel->setText("--");
+    ui->filteredEnlValueLabel->setText("--");
+}
+
+QString SpeckleDenoise::inputFingerprintToken() const
+{
+    const QFileInfo info(input_image_path);
+    if (!info.isFile()) {
+        return QString();
+    }
+
+    QByteArray identity = QDir::cleanPath(info.absoluteFilePath()).toLower().toUtf8();
+    identity += '|';
+    identity += QByteArray::number(info.size());
+    identity += '|';
+    identity += QByteArray::number(info.lastModified().toMSecsSinceEpoch());
+    return QString::fromLatin1(
+        QCryptographicHash::hash(identity, QCryptographicHash::Sha256).toHex().left(12));
+}
+
+bool SpeckleDenoise::refreshCurrentResult()
+{
+    if ((filterWatcher && filterWatcher->isRunning()) ||
+        originalGrayMat.empty() || loaded_image_path != input_image_path ||
+        save_path.isEmpty() || input_image_name.isEmpty()) {
+        return false;
+    }
+
+    const QString outputNodeName = ui->NodeWindowSpinBox->text().trimmed();
+    if (!isValidOutputNodeName(outputNodeName)) {
+        filteredGrayMat.release();
+        filteredPixmap = QPixmap();
+        ui->imageTypeComboBox->setCurrentText("Original");
+        clearEnlResults();
+        updateDisplayedImage();
+        return false;
+    }
+
+    QStringList candidateNames;
+    candidateNames << currentOutputImageName();
+    // Results produced before input fingerprints were added remain readable.
+    const QString legacyName = QFileInfo(input_image_name).completeBaseName() +
+                               currentFilterSuffix();
+    if (!candidateNames.contains(legacyName)) {
+        candidateNames << legacyName;
+    }
+
+    for (const QString& resultName : candidateNames) {
+        const QString resultPath = QDir(QDir(save_path).filePath(outputNodeName))
+                                       .filePath(resultName + ".jpg");
+        if (!QFileInfo::exists(resultPath)) {
+            continue;
+        }
+
+        cv::Mat resultGray = cv::imread(resultPath.toStdString(), cv::IMREAD_GRAYSCALE);
+        QPixmap resultPixmap(resultPath);
+        if (resultGray.empty() || resultPixmap.isNull()) {
+            continue;
+        }
+
+        filteredGrayMat = resultGray;
+        filteredPixmap = resultPixmap;
+        ui->imageTypeComboBox->setCurrentText("Filtered");
+        updateDisplayedImage();
+        updateEnlResults();
+        return true;
+    }
+
+    filteredGrayMat.release();
+    filteredPixmap = QPixmap();
+    ui->imageTypeComboBox->setCurrentText("Original");
+    clearEnlResults();
+    updateDisplayedImage();
+    return false;
 }
 
 bool SpeckleDenoise::isValidOutputNodeName(const QString& name) const
@@ -864,7 +954,8 @@ bool SpeckleDenoise::isValidOutputNodeName(const QString& name) const
 
 QString SpeckleDenoise::currentOutputImageName() const
 {
-    return QFileInfo(input_image_name).completeBaseName() + currentFilterSuffix();
+    return QFileInfo(input_image_name).completeBaseName() + currentFilterSuffix() +
+           "_I" + inputFingerprintToken();
 }
 
 cv::Mat SpeckleDenoise::runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const
@@ -1279,27 +1370,6 @@ void SpeckleDenoise::updateEnlResults()
     }
 }
 
-void SpeckleDenoise::on_calculateEnlButton_clicked()
-{
-    if (currentRoiImageRect.isNull() ||
-        currentRoiImageRect.width() < 2 ||
-        currentRoiImageRect.height() < 2)
-    {
-        InSARLogManager::LogWarning("UI", "Please select a valid ROI first.");
-        QMessageBox::warning(this, "Warning!", "Please select a valid ROI first.");
-        return;
-    }
-
-    if (originalGrayMat.empty())
-    {
-        InSARLogManager::LogWarning("UI", "Original image is not loaded.");
-        QMessageBox::warning(this, "Warning!", "Original image is not loaded.");
-        return;
-    }
-
-    updateEnlResults();
-}
-
 void SpeckleDenoise::updateRoiDisplay()
 {
     if (currentRoiImageRect.isNull() ||
@@ -1397,6 +1467,7 @@ bool SpeckleDenoise::eventFilter(QObject* watched, QEvent* event)
                     currentRoiImageRect = QRect(roiStartImagePoint, roiEndImagePoint).normalized();
                     roiSelecting = true;
 
+                    clearEnlResults();
                     updateRoiDisplay();
                     updateDisplayedImage();
                     return true;
@@ -1414,6 +1485,7 @@ bool SpeckleDenoise::eventFilter(QObject* watched, QEvent* event)
                     roiEndImagePoint = imagePoint;
                     currentRoiImageRect = QRect(roiStartImagePoint, roiEndImagePoint).normalized();
 
+                    clearEnlResults();
                     updateRoiDisplay();
                     updateDisplayedImage();
                     return true;
@@ -1437,6 +1509,7 @@ bool SpeckleDenoise::eventFilter(QObject* watched, QEvent* event)
 
                 updateRoiDisplay();
                 updateDisplayedImage();
+                updateEnlResults();
                 return true;
             }
         }

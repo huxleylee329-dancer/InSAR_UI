@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QCheckBox>
 #include <QFileInfo>
+#include <QPointer>
 #include <QThreadPool>
 
 class IApplicationInterface;
@@ -100,7 +101,7 @@ private:
     NodeUtils::OutputTransaction m_outputTransaction;
 
     // Threading
-    BM3DEnhancementTask* m_task = nullptr;
+    QPointer<BM3DEnhancementTask> m_task;
     bool m_isExecuting = false;
 };
 

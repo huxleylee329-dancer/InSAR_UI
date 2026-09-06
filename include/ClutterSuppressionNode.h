@@ -7,10 +7,8 @@
 #include <QLineEdit>
 #include <QLabel>
 #include <QCheckBox>
-#include <QComboBox>
-#include <QSpinBox>
-#include <QDoubleSpinBox>
 #include <QFileInfo>
+#include <QPointer>
 #include <QThreadPool>
 
 
@@ -90,12 +88,6 @@ private:
     QCheckBox* m_saveToProjectCheckBox = nullptr;
     QLineEdit* m_outputNodeNameEdit = nullptr;
     QLineEdit* m_outputFileNameEdit = nullptr;
-    QComboBox* m_methodComboBox = nullptr;
-    QSpinBox* m_guardRadiusSpinBox = nullptr;
-    QSpinBox* m_clutterRadiusSpinBox = nullptr;
-    QDoubleSpinBox* m_pfaSpinBox = nullptr;
-    QDoubleSpinBox* m_censoringSpinBox = nullptr;
-    QSpinBox* m_mixtureCountSpinBox = nullptr;
 
     // 数据
     std::shared_ptr<ImageInfoData> m_inputData = nullptr;
@@ -108,10 +100,9 @@ private:
     QStringList m_savedOutputFiles;
     bool m_saveToProject = true;
     NodeUtils::OutputTransaction m_outputTransaction;
-    ClutterSuppressionParameters m_clutterParameters;
 
     // Threading
-    BM3DEnhancementTask* m_task = nullptr;
+    QPointer<BM3DEnhancementTask> m_task;
     bool m_isExecuting = false;
 };
 

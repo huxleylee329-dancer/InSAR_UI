@@ -15,6 +15,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QTextBrowser>
+#include <QFutureWatcher>
 #include <opencv2/opencv.hpp>
 #include "ClutterSuppressionAlgorithms.h"
 
@@ -44,6 +45,7 @@ private slots:
     void on_startRoiButton_2_clicked();
     void on_clearRoiButton_2_clicked();
     void on_deleteFilterButton_clicked();
+    void onFilterFinished();
 
 signals:
     void sendCopy(QStandardItemModel* copy);
@@ -59,6 +61,10 @@ private:
     QString input_node_name;
     QString input_image_name;
     QString input_image_path;
+    QString loaded_image_path;
+    QString pending_output_node_name;
+    QString pending_output_image_name;
+    QString pending_output_path;
 
     QLabel* imageDisplayLabel;
     QPixmap originalPixmap;
@@ -76,6 +82,7 @@ private:
     QDoubleSpinBox* censoringSpinBox;
     QSpinBox* mixtureCountSpinBox;
     QTextBrowser* methodDescriptionBrowser;
+    QFutureWatcher<ClutterSuppressionResult>* filterWatcher = nullptr;
 
     bool targetRoiModeEnabled;
     bool clutterRoiModeEnabled;
@@ -101,8 +108,14 @@ private:
     cv::Mat runClutterSuppressionCoreLogic(const cv::Mat& inputGray);
     ClutterSuppressionParameters currentParameters() const;
     QString currentMethodSuffix() const;
+    QString currentOutputImageName() const;
+    QString inputFingerprintToken() const;
     void updateMethodControls();
     void updateMethodDescription();
+    void setFilterRunning(bool running);
+    void clearScrResults();
+    bool refreshCurrentResult();
+    void resetLoadedImageState();
     cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
     double calcMedian(const cv::Mat& input) const;
 

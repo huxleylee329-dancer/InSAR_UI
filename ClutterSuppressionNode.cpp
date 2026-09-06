@@ -201,86 +201,10 @@ void ClutterSuppressionNode::createWidget()
     });
     layout->addWidget(m_saveToProjectCheckBox);
 
-    auto* methodLayout = new QHBoxLayout();
-    methodLayout->setStretch(0, 3);
-    methodLayout->setStretch(1, 7);
-    methodLayout->addWidget(new QLabel("Method:"));
-    m_methodComboBox = new QComboBox();
-    const ClutterSuppressionMethod methods[] = {
-        ClutterSuppressionMethod::BM3D,
-        ClutterSuppressionMethod::CACFAR,
-        ClutterSuppressionMethod::ACCFAR,
-        ClutterSuppressionMethod::AAFCFAR,
-        ClutterSuppressionMethod::VICFAR,
-        ClutterSuppressionMethod::RmSATCFAR
-    };
-    for (ClutterSuppressionMethod method : methods)
-        m_methodComboBox->addItem(ClutterSuppressionAlgorithms::methodName(method),
-                                  static_cast<int>(method));
-    m_methodComboBox->setCurrentIndex(m_methodComboBox->findData(
-        static_cast<int>(m_clutterParameters.method)));
-    connect(m_methodComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this, invalidateNodeData](int) {
-        m_clutterParameters.method = static_cast<ClutterSuppressionMethod>(
-            m_methodComboBox->currentData().toInt());
-        const bool cfar = m_clutterParameters.method != ClutterSuppressionMethod::BM3D;
-        m_guardRadiusSpinBox->setEnabled(cfar);
-        m_clutterRadiusSpinBox->setEnabled(cfar);
-        m_pfaSpinBox->setEnabled(cfar);
-        m_censoringSpinBox->setEnabled(m_clutterParameters.method == ClutterSuppressionMethod::ACCFAR);
-        m_mixtureCountSpinBox->setEnabled(m_clutterParameters.method == ClutterSuppressionMethod::RmSATCFAR);
-        invalidateNodeData();
-    });
-    methodLayout->addWidget(m_methodComboBox);
-    layout->addLayout(methodLayout);
-
-    auto* cfarLayout = new QGridLayout();
-    m_guardRadiusSpinBox = new QSpinBox();
-    m_guardRadiusSpinBox->setRange(0, 32);
-    m_guardRadiusSpinBox->setValue(m_clutterParameters.guardRadius);
-    m_clutterRadiusSpinBox = new QSpinBox();
-    m_clutterRadiusSpinBox->setRange(1, 128);
-    m_clutterRadiusSpinBox->setValue(m_clutterParameters.clutterRadius);
-    m_pfaSpinBox = new QDoubleSpinBox();
-    m_pfaSpinBox->setDecimals(8);
-    m_pfaSpinBox->setRange(1e-8, 0.1);
-    m_pfaSpinBox->setValue(m_clutterParameters.probabilityFalseAlarm);
-    m_censoringSpinBox = new QDoubleSpinBox();
-    m_censoringSpinBox->setRange(0.01, 0.45);
-    m_censoringSpinBox->setSingleStep(0.05);
-    m_censoringSpinBox->setValue(m_clutterParameters.censoringFraction);
-    m_mixtureCountSpinBox = new QSpinBox();
-    m_mixtureCountSpinBox->setRange(1, 4);
-    m_mixtureCountSpinBox->setValue(m_clutterParameters.maximumMixtureCount);
-    cfarLayout->addWidget(new QLabel("Guard"), 0, 0);
-    cfarLayout->addWidget(m_guardRadiusSpinBox, 0, 1);
-    cfarLayout->addWidget(new QLabel("Clutter"), 0, 2);
-    cfarLayout->addWidget(m_clutterRadiusSpinBox, 0, 3);
-    cfarLayout->addWidget(new QLabel("Pfa"), 1, 0);
-    cfarLayout->addWidget(m_pfaSpinBox, 1, 1);
-    cfarLayout->addWidget(new QLabel("Censor"), 1, 2);
-    cfarLayout->addWidget(m_censoringSpinBox, 1, 3);
-    cfarLayout->addWidget(new QLabel("Mixtures"), 2, 0);
-    cfarLayout->addWidget(m_mixtureCountSpinBox, 2, 1);
-    layout->addLayout(cfarLayout);
-
-    connect(m_guardRadiusSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this,
-            [this, invalidateNodeData](int value) { m_clutterParameters.guardRadius = value; invalidateNodeData(); });
-    connect(m_clutterRadiusSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this,
-            [this, invalidateNodeData](int value) { m_clutterParameters.clutterRadius = value; invalidateNodeData(); });
-    connect(m_pfaSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-            [this, invalidateNodeData](double value) { m_clutterParameters.probabilityFalseAlarm = value; invalidateNodeData(); });
-    connect(m_censoringSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-            [this, invalidateNodeData](double value) { m_clutterParameters.censoringFraction = value; invalidateNodeData(); });
-    connect(m_mixtureCountSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this,
-            [this, invalidateNodeData](int value) { m_clutterParameters.maximumMixtureCount = value; invalidateNodeData(); });
-
-    const bool cfarEnabled = m_clutterParameters.method != ClutterSuppressionMethod::BM3D;
-    m_guardRadiusSpinBox->setEnabled(cfarEnabled);
-    m_clutterRadiusSpinBox->setEnabled(cfarEnabled);
-    m_pfaSpinBox->setEnabled(cfarEnabled);
-    m_censoringSpinBox->setEnabled(m_clutterParameters.method == ClutterSuppressionMethod::ACCFAR);
-    m_mixtureCountSpinBox->setEnabled(m_clutterParameters.method == ClutterSuppressionMethod::RmSATCFAR);
+    auto* methodLabel = new QLabel(
+        QStringLiteral("工作流固定使用 BM3D；CFAR 请在独立窗口中人工选择。"));
+    methodLabel->setWordWrap(true);
+    layout->addWidget(methodLabel);
 
     auto* nodeNameLayout = new QHBoxLayout();
     nodeNameLayout->setStretch(0, 3);
@@ -485,25 +409,37 @@ void ClutterSuppressionNode::executeProcessing()
 
     m_isExecuting = true;
 
-    m_task = new BM3DEnhancementTask(
+    ClutterSuppressionParameters workflowParameters;
+    workflowParameters.method = ClutterSuppressionMethod::BM3D;
+    auto* task = new BM3DEnhancementTask(
         EnhancementType::ClutterSuppression,
         inputPaths,
         outputPaths,
         !saveToProject,
-        m_clutterParameters);
+        workflowParameters);
+    m_task = task;
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
 
-    connect(m_task, &BM3DEnhancementTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::cancelled, this, &ClutterSuppressionNode::onCancelled, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::outputsGenerated, this,
+    connect(task, &BM3DEnhancementTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::cancelled, this, &ClutterSuppressionNode::onCancelled, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::outputsGenerated, this,
         [this](const QStringList& outputPaths) { m_generatedOutputPaths = outputPaths; }, Qt::QueuedConnection);
 
-    QThreadPool::globalInstance()->start(m_task);
+    // The runnable is not auto-deleted by QThreadPool.  Delete it on its QObject
+    // affinity thread after the node has processed the terminal signal.
+    connect(task, &BM3DEnhancementTask::endProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::errorProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::cancelled,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+
+    QThreadPool::globalInstance()->start(task);
     updateParameterWidgetsEnableState();
 }
 
@@ -706,12 +642,6 @@ QJsonObject ClutterSuppressionNode::save() const
     modelJson["saveToProject"] = m_saveToProject;
     modelJson["outputNodeName"] = m_outputNodeName;
     modelJson["outputFileName"] = m_outputFileName;
-    modelJson["clutterMethod"] = static_cast<int>(m_clutterParameters.method);
-    modelJson["guardRadius"] = m_clutterParameters.guardRadius;
-    modelJson["clutterRadius"] = m_clutterParameters.clutterRadius;
-    modelJson["probabilityFalseAlarm"] = m_clutterParameters.probabilityFalseAlarm;
-    modelJson["censoringFraction"] = m_clutterParameters.censoringFraction;
-    modelJson["maximumMixtureCount"] = m_clutterParameters.maximumMixtureCount;
 
     QJsonArray outputFiles;
     if (m_outputData) {
@@ -730,13 +660,6 @@ void ClutterSuppressionNode::load(QJsonObject const &json)
     m_saveToProject = json["saveToProject"].toBool(true);
     m_outputNodeName = json["outputNodeName"].toString();
     m_outputFileName = json["outputFileName"].toString();
-    m_clutterParameters.method = static_cast<ClutterSuppressionMethod>(
-        json["clutterMethod"].toInt(static_cast<int>(ClutterSuppressionMethod::RmSATCFAR)));
-    m_clutterParameters.guardRadius = json["guardRadius"].toInt(3);
-    m_clutterParameters.clutterRadius = json["clutterRadius"].toInt(12);
-    m_clutterParameters.probabilityFalseAlarm = json["probabilityFalseAlarm"].toDouble(1e-4);
-    m_clutterParameters.censoringFraction = json["censoringFraction"].toDouble(0.20);
-    m_clutterParameters.maximumMixtureCount = json["maximumMixtureCount"].toInt(3);
 
     m_savedOutputFiles.clear();
     if (json.contains("outputFiles")) {
@@ -756,15 +679,6 @@ void ClutterSuppressionNode::load(QJsonObject const &json)
     }
     if (m_outputFileNameEdit) {
         m_outputFileNameEdit->setText(m_outputFileName);
-    }
-    if (m_methodComboBox) {
-        m_methodComboBox->setCurrentIndex(m_methodComboBox->findData(
-            static_cast<int>(m_clutterParameters.method)));
-        m_guardRadiusSpinBox->setValue(m_clutterParameters.guardRadius);
-        m_clutterRadiusSpinBox->setValue(m_clutterParameters.clutterRadius);
-        m_pfaSpinBox->setValue(m_clutterParameters.probabilityFalseAlarm);
-        m_censoringSpinBox->setValue(m_clutterParameters.censoringFraction);
-        m_mixtureCountSpinBox->setValue(m_clutterParameters.maximumMixtureCount);
     }
 }
 

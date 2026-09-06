@@ -30,6 +30,10 @@ BM3DEnhancementTask::BM3DEnhancementTask(
     , m_stopFlag(false)
     , m_clutterParameters(clutterParameters)
 {
+    // QObject lifetime is managed on its affinity (UI) thread.  QRunnable's
+    // default auto-delete would destroy this object on a pool thread and leave
+    // node-side task pointers dangling until queued terminal signals run.
+    setAutoDelete(false);
 }
 
 void BM3DEnhancementTask::stop()
