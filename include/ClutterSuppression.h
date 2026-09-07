@@ -14,8 +14,10 @@
 #include <QComboBox>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
+#include <QPushButton>
 #include <QTextBrowser>
 #include <QFutureWatcher>
+#include <QTabBar>
 #include <opencv2/opencv.hpp>
 #include "ClutterSuppressionAlgorithms.h"
 
@@ -81,7 +83,12 @@ private:
     QDoubleSpinBox* pfaSpinBox;
     QDoubleSpinBox* censoringSpinBox;
     QSpinBox* mixtureCountSpinBox;
+    QPushButton* recommendedParametersButton = nullptr;
     QTextBrowser* methodDescriptionBrowser;
+    QLabel* clutterRoiHintLabel = nullptr;
+    QTabBar* imageTabBar = nullptr;
+    bool imageDisplayRefreshPending = false;
+    bool imageDisplayUpdateInProgress = false;
     QFutureWatcher<ClutterSuppressionResult>* filterWatcher = nullptr;
 
     bool targetRoiModeEnabled;
@@ -111,6 +118,7 @@ private:
     QString currentOutputImageName() const;
     QString inputFingerprintToken() const;
     void updateMethodControls();
+    void applyRecommendedParameters();
     void updateMethodDescription();
     void setFilterRunning(bool running);
     void clearScrResults();

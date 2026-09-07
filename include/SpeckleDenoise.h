@@ -17,6 +17,7 @@
 #include <QDoubleSpinBox>
 #include <QFutureWatcher>
 #include <QTextBrowser>
+#include <QTabBar>
 
 
 
@@ -73,6 +74,9 @@ private:
     QLabel* frostDerampLabel = nullptr;
     QFutureWatcher<cv::Mat>* filterWatcher = nullptr;
     QTextBrowser* methodDescriptionBrowser = nullptr;
+    QTabBar* imageTabBar = nullptr;
+    bool imageDisplayRefreshPending = false;
+    bool imageDisplayUpdateInProgress = false;
 
     void updateDisplayedImage();
 

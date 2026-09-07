@@ -3,13 +3,23 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QGridLayout>
+#include <QFormLayout>
 #include <QGroupBox>
+#include <QSplitter>
+#include <QScrollArea>
+#include <QFrame>
+#include <QSizePolicy>
+#include <QSignalBlocker>
+#include <QScopedValueRollback>
+#include <QTimer>
 #include <QFile>
 #include <QDir>
 #include <QCryptographicHash>
 #include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
+#include <cmath>
 #include <vector>
 #include "FormatConversion.h"
 #include "icon_source.h"
@@ -66,28 +76,29 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     imageDisplayLabel = new QLabel(ui->imageDisplayWidget);
     imageDisplayLabel->setAlignment(Qt::AlignCenter);
     imageDisplayLabel->setScaledContents(false);
+    imageDisplayLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     imageDisplayLabel->installEventFilter(this);
+    ui->imageDisplayWidget->installEventFilter(this);
 
     QVBoxLayout* imageLayout = new QVBoxLayout(ui->imageDisplayWidget);
     imageLayout->setContentsMargins(0, 0, 0, 0);
     imageLayout->addWidget(imageDisplayLabel);
     ui->imageDisplayWidget->setLayout(imageLayout);
 
-    resize(width(), 1014);
-    setMinimumHeight(950);
-    if (QWidget* mainContainer = findChild<QWidget*>("layoutWidget", Qt::FindDirectChildrenOnly))
-        mainContainer->resize(mainContainer->width(), 911);
-
-    auto* descriptionGroup = new QGroupBox(QStringLiteral("方法说明"), ui->RightPanel);
-    descriptionGroup->setGeometry(0, 630, 405, 255);
+    auto* descriptionGroup = new QGroupBox(QStringLiteral("方法说明"), this);
+    descriptionGroup->setCheckable(true);
+    descriptionGroup->setChecked(true);
     auto* descriptionLayout = new QVBoxLayout(descriptionGroup);
     descriptionLayout->setContentsMargins(8, 8, 8, 8);
     methodDescriptionBrowser = new QTextBrowser(descriptionGroup);
     methodDescriptionBrowser->setReadOnly(true);
     methodDescriptionBrowser->setOpenExternalLinks(false);
+    methodDescriptionBrowser->setFixedHeight(127);
     methodDescriptionBrowser->setStyleSheet(
         "QTextBrowser { background: #fafafa; border: 1px solid #d7d7d7; padding: 4px; }");
     descriptionLayout->addWidget(methodDescriptionBrowser);
+    connect(descriptionGroup, &QGroupBox::toggled,
+            methodDescriptionBrowser, &QTextBrowser::setVisible);
 
     ui->projectComboBox->clear();
     ui->InputComboBox->clear();
@@ -97,18 +108,6 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     ui->imageTypeComboBox->addItem("Original");
     ui->imageTypeComboBox->addItem("Filtered");
     ui->imageTypeComboBox->addItem("Target mask");
-
-    // The .ui file originally contained only two BM3D buttons. Build the CFAR
-    // controls here to keep the generated UI header stable across Qt versions.
-    ui->filterGroup->setGeometry(0, 260, 359, 171);
-    ui->widget_2->setGeometry(10, 20, 339, 141);
-    ui->roiGroup->move(0, 440);
-    ui->enlGroup->move(1, 580);
-
-    auto* filterLayout = new QGridLayout(ui->widget_2);
-    filterLayout->setContentsMargins(0, 0, 0, 0);
-    filterLayout->setHorizontalSpacing(5);
-    filterLayout->setVerticalSpacing(3);
 
     methodComboBox = new QComboBox(ui->widget_2);
     const ClutterSuppressionMethod methods[] = {
@@ -127,39 +126,31 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
 
     guardRadiusSpinBox = new QSpinBox(ui->widget_2);
     guardRadiusSpinBox->setRange(0, 32);
-    guardRadiusSpinBox->setValue(3);
+    guardRadiusSpinBox->setValue(10);
     clutterRadiusSpinBox = new QSpinBox(ui->widget_2);
     clutterRadiusSpinBox->setRange(1, 128);
-    clutterRadiusSpinBox->setValue(12);
+    clutterRadiusSpinBox->setValue(16);
     pfaSpinBox = new QDoubleSpinBox(ui->widget_2);
     pfaSpinBox->setDecimals(8);
     pfaSpinBox->setRange(1e-8, 0.1);
     pfaSpinBox->setSingleStep(0.0001);
-    pfaSpinBox->setValue(0.0001);
+    pfaSpinBox->setValue(0.00001);
     pfaSpinBox->setToolTip("Probability of false alarm");
     censoringSpinBox = new QDoubleSpinBox(ui->widget_2);
     censoringSpinBox->setDecimals(2);
     censoringSpinBox->setRange(0.01, 0.45);
     censoringSpinBox->setSingleStep(0.05);
-    censoringSpinBox->setValue(0.20);
+    censoringSpinBox->setValue(0.01);
     mixtureCountSpinBox = new QSpinBox(ui->widget_2);
     mixtureCountSpinBox->setRange(1, 4);
-    mixtureCountSpinBox->setValue(3);
+    mixtureCountSpinBox->setValue(1);
 
-    filterLayout->addWidget(new QLabel("Method", ui->widget_2), 0, 0);
-    filterLayout->addWidget(methodComboBox, 0, 1, 1, 3);
-    filterLayout->addWidget(new QLabel("Guard", ui->widget_2), 1, 0);
-    filterLayout->addWidget(guardRadiusSpinBox, 1, 1);
-    filterLayout->addWidget(new QLabel("Clutter", ui->widget_2), 1, 2);
-    filterLayout->addWidget(clutterRadiusSpinBox, 1, 3);
-    filterLayout->addWidget(new QLabel("Pfa", ui->widget_2), 2, 0);
-    filterLayout->addWidget(pfaSpinBox, 2, 1);
-    filterLayout->addWidget(new QLabel("Censor", ui->widget_2), 2, 2);
-    filterLayout->addWidget(censoringSpinBox, 2, 3);
-    filterLayout->addWidget(new QLabel("Mixtures", ui->widget_2), 3, 0);
-    filterLayout->addWidget(mixtureCountSpinBox, 3, 1);
-    filterLayout->addWidget(ui->runFilterButton, 4, 0, 1, 2);
-    filterLayout->addWidget(ui->deleteFilterButton, 4, 2, 1, 2);
+    recommendedParametersButton = new QPushButton(
+        QStringLiteral("应用 SSDD 实测推荐参数"), ui->filterGroup);
+    recommendedParametersButton->setToolTip(QStringLiteral(
+        "使用 341 张船舶正样本和 307 张海面负样本验证得到的 128×128 切片参数起点"));
+    connect(recommendedParametersButton, &QPushButton::clicked,
+            this, &ClutterSuppression::applyRecommendedParameters);
 
     connect(methodComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, [this](int) {
@@ -185,6 +176,179 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
             this, [this](int) { refreshCurrentResult(); });
     connect(ui->NodeWindowSpinBox, &QLineEdit::editingFinished,
             this, [this]() { refreshCurrentResult(); });
+
+    // Rebuild the dialog as the same responsive workspace used by the
+    // speckle-denoise dialog, while keeping all processing logic independent.
+    QWidget* legacyContainer =
+        findChild<QWidget*>("layoutWidget", Qt::FindDirectChildrenOnly);
+
+    auto* dataLayout = new QGridLayout(ui->dataGroup);
+    dataLayout->setContentsMargins(12, 10, 12, 10);
+    dataLayout->setHorizontalSpacing(10);
+    dataLayout->setVerticalSpacing(8);
+    dataLayout->addWidget(new QLabel(QStringLiteral("工程："), ui->dataGroup), 0, 0);
+    dataLayout->addWidget(ui->projectComboBox, 0, 1);
+    dataLayout->addWidget(new QLabel(QStringLiteral("输入节点："), ui->dataGroup), 0, 2);
+    dataLayout->addWidget(ui->InputComboBox, 0, 3);
+    dataLayout->addWidget(new QLabel(QStringLiteral("输入影像："), ui->dataGroup), 1, 0);
+    dataLayout->addWidget(ui->inputImageComboBox, 1, 1, 1, 3);
+    dataLayout->addWidget(new QLabel(QStringLiteral("输出节点："), ui->dataGroup), 2, 0);
+    dataLayout->addWidget(ui->NodeWindowSpinBox, 2, 1, 1, 2);
+    dataLayout->addWidget(ui->loadImageButton, 2, 3);
+    dataLayout->setColumnStretch(1, 2);
+    dataLayout->setColumnStretch(3, 3);
+    ui->dataGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    ui->dataWidget->hide();
+
+    auto* displayLayout = new QVBoxLayout(ui->imageDisplayGroup);
+    displayLayout->setContentsMargins(4, 4, 4, 4);
+    displayLayout->addWidget(ui->imageDisplayWidget);
+    ui->imageDisplayWidget->setMinimumSize(560, 370);
+    ui->imageDisplayWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    imageTabBar = new QTabBar(this);
+    imageTabBar->setDocumentMode(true);
+    imageTabBar->setExpanding(false);
+    imageTabBar->addTab(QStringLiteral("原图"));
+    imageTabBar->addTab(QStringLiteral("抑制结果"));
+    imageTabBar->addTab(QStringLiteral("目标掩膜"));
+    imageTabBar->setTabToolTip(
+        2, QStringLiteral("CFAR 检测结果：白色表示判定目标，黑色表示背景"));
+    imageTabBar->setTabEnabled(1, false);
+    imageTabBar->setTabEnabled(2, false);
+    connect(imageTabBar, &QTabBar::currentChanged, this, [this](int index) {
+        if (ui->imageTypeComboBox->currentIndex() != index)
+            ui->imageTypeComboBox->setCurrentIndex(index);
+    });
+    connect(ui->imageTypeComboBox,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            imageTabBar, &QTabBar::setCurrentIndex);
+    ui->imageToolbarWidget->hide();
+
+    auto* roiLayout = new QVBoxLayout(ui->roiGroup);
+    roiLayout->setContentsMargins(8, 5, 8, 5);
+    roiLayout->setSpacing(5);
+    clutterRoiHintLabel = new QLabel(
+        QStringLiteral("<b>背景框选提醒：</b>请在目标附近选择同类背景，避免距离过远，"
+                       "也不要跨越海陆、岸线等明显边界。参数不确定时可使用右侧 SSDD 实测推荐值。"),
+        ui->roiGroup);
+    clutterRoiHintLabel->setWordWrap(true);
+    clutterRoiHintLabel->setStyleSheet(QStringLiteral(
+        "QLabel { background: #fff3cd; border: 1px solid #e0b84f; "
+        "border-radius: 3px; padding: 4px 7px; color: #5f4b00; }"));
+    clutterRoiHintLabel->setVisible(
+        currentParameters().method != ClutterSuppressionMethod::BM3D);
+    roiLayout->addWidget(clutterRoiHintLabel);
+
+    auto* roiButtonLayout = new QHBoxLayout();
+    roiButtonLayout->setSpacing(6);
+    roiButtonLayout->addWidget(ui->startRoiButton);
+    roiButtonLayout->addWidget(ui->clearRoiButton);
+    roiButtonLayout->addWidget(ui->startRoiButton_2);
+    roiButtonLayout->addWidget(ui->clearRoiButton_2);
+    roiLayout->addLayout(roiButtonLayout);
+    auto* roiLegend = new QLabel(
+        QStringLiteral("<span style='color:#d32f2f'>■ 目标区域</span>　"
+                       "<span style='color:#2e7d32'>■ 杂波区域</span>"),
+        ui->roiGroup);
+    roiLayout->addWidget(roiLegend);
+    auto* roiInfoLayout = new QHBoxLayout();
+    roiInfoLayout->setSpacing(4);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("左上："), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->roiTopLeftValueLabel);
+    roiInfoLayout->addSpacing(10);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("尺寸："), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->label_4);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("×"), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->roiHeightValueLabel);
+    roiInfoLayout->addSpacing(10);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("像素："), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->roiPixelCountValueLabel);
+    roiInfoLayout->addStretch();
+    roiLayout->addLayout(roiInfoLayout);
+    ui->roiGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    ui->roiGroup->setStyleSheet(QStringLiteral("QGroupBox QLabel { font-size: 11px; }"));
+    ui->widget->hide();
+
+    auto* filterLayout = new QFormLayout(ui->filterGroup);
+    filterLayout->setContentsMargins(10, 8, 10, 8);
+    filterLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    filterLayout->addRow(QStringLiteral("方法："), methodComboBox);
+    filterLayout->addRow(QStringLiteral("保护半径："), guardRadiusSpinBox);
+    filterLayout->addRow(QStringLiteral("杂波半径："), clutterRadiusSpinBox);
+    filterLayout->addRow(QStringLiteral("虚警概率 Pfa："), pfaSpinBox);
+    filterLayout->addRow(QStringLiteral("删失比例："), censoringSpinBox);
+    filterLayout->addRow(QStringLiteral("混合分量数："), mixtureCountSpinBox);
+    filterLayout->addRow(recommendedParametersButton);
+    ui->widget_2->hide();
+
+    const auto oldResultContainers =
+        ui->enlGroup->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget* child : oldResultContainers)
+        child->hide();
+
+    auto* resultLayout = new QFormLayout(ui->enlGroup);
+    resultLayout->setContentsMargins(10, 8, 10, 8);
+    resultLayout->addRow(QStringLiteral("原图 SCR（dB）："), ui->originalEnlValueLabel);
+    resultLayout->addRow(QStringLiteral("处理后 SCR（dB）："), ui->filteredEnlValueLabel);
+    resultLayout->addRow(QStringLiteral("SCR 提升（线性）："), ui->beishu);
+    ui->beishu->setToolTip(QStringLiteral(
+        "先将 SCR 从 dB 还原为线性比值，再计算相对提升百分比"));
+
+    auto* viewerPanel = new QWidget(this);
+    auto* viewerLayout = new QVBoxLayout(viewerPanel);
+    viewerLayout->setContentsMargins(0, 0, 0, 0);
+    viewerLayout->setSpacing(8);
+    viewerLayout->addWidget(imageTabBar);
+    viewerLayout->addWidget(ui->imageDisplayGroup, 1);
+    viewerLayout->addWidget(ui->roiGroup);
+
+    auto* parameterPanel = new QWidget(this);
+    auto* parameterLayout = new QVBoxLayout(parameterPanel);
+    parameterLayout->setContentsMargins(0, 0, 4, 0);
+    parameterLayout->setSpacing(8);
+    parameterLayout->addWidget(ui->filterGroup);
+    parameterLayout->addWidget(descriptionGroup);
+    parameterLayout->addWidget(ui->enlGroup);
+    parameterLayout->addStretch();
+
+    auto* parameterScroll = new QScrollArea(this);
+    parameterScroll->setWidgetResizable(true);
+    parameterScroll->setFrameShape(QFrame::NoFrame);
+    parameterScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    parameterScroll->setWidget(parameterPanel);
+    parameterScroll->setMinimumWidth(330);
+
+    auto* splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->setChildrenCollapsible(false);
+    splitter->addWidget(viewerPanel);
+    splitter->addWidget(parameterScroll);
+    splitter->setStretchFactor(0, 8);
+    splitter->setStretchFactor(1, 3);
+    splitter->setSizes({870, 330});
+
+    auto* footerLayout = new QHBoxLayout();
+    auto* processHint = new QLabel(
+        QStringLiteral("处理在后台执行，完成后自动显示对应结果。"), this);
+    processHint->setStyleSheet(QStringLiteral("color: #666666;"));
+    footerLayout->addWidget(processHint, 1);
+    ui->deleteFilterButton->setMinimumWidth(120);
+    ui->runFilterButton->setMinimumWidth(120);
+    footerLayout->addWidget(ui->deleteFilterButton);
+    footerLayout->addWidget(ui->runFilterButton);
+
+    if (legacyContainer)
+        legacyContainer->hide();
+
+    auto* rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(14, 12, 14, 12);
+    rootLayout->setSpacing(10);
+    rootLayout->addWidget(ui->dataGroup);
+    rootLayout->addWidget(splitter, 1);
+    rootLayout->addLayout(footerLayout);
+
+    resize(1280, 840);
+    setMinimumSize(1000, 700);
 
     targetRoiModeEnabled = false;
     clutterRoiModeEnabled = false;
@@ -453,22 +617,41 @@ void ClutterSuppression::on_inputImageComboBox_currentIndexChanged(int index)
 
 void ClutterSuppression::updateDisplayedImage()
 {
-    if (!imageDisplayLabel)
+    if (!imageDisplayLabel || imageDisplayUpdateInProgress)
     {
         return;
+    }
+    QScopedValueRollback<bool> updateGuard(imageDisplayUpdateInProgress, true);
+
+    const bool hasFilteredResult = !filteredPixmap.isNull();
+    const bool hasTargetMask = !targetMaskPixmap.isNull();
+    int selectedIndex = ui->imageTypeComboBox->currentIndex();
+    if ((!hasFilteredResult && selectedIndex == 1) ||
+        (!hasTargetMask && selectedIndex == 2))
+    {
+        selectedIndex = 0;
+        const QSignalBlocker comboBlocker(ui->imageTypeComboBox);
+        ui->imageTypeComboBox->setCurrentIndex(selectedIndex);
+    }
+    if (imageTabBar)
+    {
+        const QSignalBlocker tabBlocker(imageTabBar);
+        imageTabBar->setTabEnabled(1, hasFilteredResult);
+        imageTabBar->setTabEnabled(2, hasTargetMask);
+        imageTabBar->setCurrentIndex(selectedIndex);
     }
 
     QPixmap pixmap;
 
-    if (ui->imageTypeComboBox->currentText() == "Original")
+    if (selectedIndex == 0)
     {
         pixmap = originalPixmap;
     }
-    else if (ui->imageTypeComboBox->currentText() == "Filtered")
+    else if (selectedIndex == 1)
     {
         pixmap = filteredPixmap;
     }
-    else if (ui->imageTypeComboBox->currentText() == "Target mask")
+    else if (selectedIndex == 2)
     {
         pixmap = targetMaskPixmap;
     }
@@ -658,6 +841,16 @@ void ClutterSuppression::updateCurrentRoiDisplay()
 
 bool ClutterSuppression::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == ui->imageDisplayWidget && event->type() == QEvent::Resize &&
+        !imageDisplayRefreshPending)
+    {
+        imageDisplayRefreshPending = true;
+        QTimer::singleShot(0, this, [this]() {
+            imageDisplayRefreshPending = false;
+            updateDisplayedImage();
+        });
+    }
+
     if (watched == imageDisplayLabel && (targetRoiModeEnabled || clutterRoiModeEnabled))
     {
         if (event->type() == QEvent::MouseButtonPress)
@@ -822,13 +1015,18 @@ void ClutterSuppression::updateScrResults()
 
             double filteredScr = calculateScr(filteredTarget, filteredClutter);
             ui->filteredEnlValueLabel->setText(QString::number(filteredScr, 'f', 4));
-            double improvementPercent = 0.0;
-            if (std::abs(originalScr) > 1e-12)
+            const double linearGain = std::pow(
+                10.0, (filteredScr - originalScr) / 20.0);
+            if (std::isfinite(linearGain))
             {
-                improvementPercent = ((filteredScr - originalScr) / std::abs(originalScr)) * 100.0;
+                const double improvementPercent = (linearGain - 1.0) * 100.0;
+                ui->beishu->setText(
+                    QStringLiteral("%1%").arg(QString::number(improvementPercent, 'f', 2)));
             }
-
-            ui->beishu->setText(QString("%1%").arg(QString::number(improvementPercent, 'f', 2)));
+            else
+            {
+                ui->beishu->setText("--");
+            }
         }
         else
         {
@@ -980,8 +1178,18 @@ void ClutterSuppression::resetLoadedImageState()
     roiSelecting = false;
     targetRoiModeEnabled = false;
     clutterRoiModeEnabled = false;
+    {
+        const QSignalBlocker comboBlocker(ui->imageTypeComboBox);
+        ui->imageTypeComboBox->setCurrentIndex(0);
+    }
+    if (imageTabBar)
+    {
+        const QSignalBlocker tabBlocker(imageTabBar);
+        imageTabBar->setCurrentIndex(0);
+        imageTabBar->setTabEnabled(1, false);
+        imageTabBar->setTabEnabled(2, false);
+    }
     clearScrResults();
-    ui->imageTypeComboBox->setCurrentText("Original");
     updateCurrentRoiDisplay();
     updateDisplayedImage();
 }
@@ -995,7 +1203,57 @@ void ClutterSuppression::updateMethodControls()
     pfaSpinBox->setEnabled(isCfar);
     censoringSpinBox->setEnabled(method == ClutterSuppressionMethod::ACCFAR);
     mixtureCountSpinBox->setEnabled(method == ClutterSuppressionMethod::RmSATCFAR);
+    if (clutterRoiHintLabel)
+        clutterRoiHintLabel->setVisible(isCfar);
+    if (recommendedParametersButton)
+        recommendedParametersButton->setEnabled(isCfar);
     updateMethodDescription();
+}
+
+void ClutterSuppression::applyRecommendedParameters()
+{
+    const QSignalBlocker guardBlocker(guardRadiusSpinBox);
+    const QSignalBlocker clutterBlocker(clutterRadiusSpinBox);
+    const QSignalBlocker pfaBlocker(pfaSpinBox);
+    const QSignalBlocker censorBlocker(censoringSpinBox);
+    const QSignalBlocker mixtureBlocker(mixtureCountSpinBox);
+
+    switch (currentParameters().method)
+    {
+    case ClutterSuppressionMethod::CACFAR:
+        guardRadiusSpinBox->setValue(32);
+        clutterRadiusSpinBox->setValue(12);
+        pfaSpinBox->setValue(0.000001);
+        break;
+    case ClutterSuppressionMethod::ACCFAR:
+        guardRadiusSpinBox->setValue(16);
+        clutterRadiusSpinBox->setValue(8);
+        pfaSpinBox->setValue(0.00000001);
+        censoringSpinBox->setValue(0.01);
+        break;
+    case ClutterSuppressionMethod::AAFCFAR:
+        guardRadiusSpinBox->setValue(24);
+        clutterRadiusSpinBox->setValue(12);
+        pfaSpinBox->setValue(0.000001);
+        break;
+    case ClutterSuppressionMethod::VICFAR:
+        guardRadiusSpinBox->setValue(32);
+        clutterRadiusSpinBox->setValue(28);
+        pfaSpinBox->setValue(0.00001);
+        break;
+    case ClutterSuppressionMethod::RmSATCFAR:
+        guardRadiusSpinBox->setValue(10);
+        clutterRadiusSpinBox->setValue(16);
+        pfaSpinBox->setValue(0.00001);
+        mixtureCountSpinBox->setValue(1);
+        break;
+    case ClutterSuppressionMethod::BM3D:
+    default:
+        return;
+    }
+
+    updateMethodControls();
+    refreshCurrentResult();
 }
 
 void ClutterSuppression::updateMethodDescription()
@@ -1003,10 +1261,6 @@ void ClutterSuppression::updateMethodDescription()
     if (!methodDescriptionBrowser) return;
 
     const ClutterSuppressionMethod method = currentParameters().method;
-    const QString nearbyClutterReminder = QStringLiteral(
-        "<br><div style='margin-top:6px;padding:5px;background:#fff3cd;border:1px solid #e0b84f;'>"
-        "<b>背景框选提醒：</b>杂波区域应选择在目标附近，并尽量与目标处于同一类背景中；"
-        "不要选择离目标很远或跨越海陆、岸线等明显边界的区域。</div>");
     QString html;
     switch (method)
     {
@@ -1014,41 +1268,31 @@ void ClutterSuppression::updateMethodDescription()
         html = QStringLiteral(
             "<b>CA-CFAR</b><br>"
             "<b>适合：</b>背景比较均匀的区域，如远海、开阔水面或稳定地表。<br>"
-            "<b>特点：</b>用周围训练单元的平均功率估计杂波，速度快、适合作为基线；海岸和强杂波边缘容易虚警。<br>"
-            "<b>推荐参数：</b>Guard=3、Clutter=12、Pfa=1e-4。小目标可将 Guard 降至 2；"
-            "背景起伏较大时可把 Clutter 调至 16～24。");
+            "<b>特点：</b>用周围训练单元的平均功率估计杂波，速度快、适合作为基线；海岸和强杂波边缘容易虚警。");
         break;
     case ClutterSuppressionMethod::ACCFAR:
         html = QStringLiteral(
             "<b>AC-CFAR</b><br>"
             "<b>适合：</b>训练窗口内含其他目标、亮散射点或少量异常值的场景。<br>"
-            "<b>特点：</b>先删去较亮的异常训练单元，再估计杂波，可减少邻近目标对门限的抬高。<br>"
-            "<b>推荐参数：</b>Guard=3、Clutter=12、Pfa=1e-4、Censor=0.20。"
-            "邻近强散射点较多时可将 Censor 调至 0.25，但不建议超过 0.30。");
+            "<b>特点：</b>先删去较亮的异常训练单元，再估计杂波，可减少邻近目标对门限的抬高。");
         break;
     case ClutterSuppressionMethod::AAFCFAR:
         html = QStringLiteral(
             "<b>AAF-CFAR</b><br>"
             "<b>适合：</b>高分辨率、目标密集或局部统计变化明显的 SAR 图像。<br>"
-            "<b>特点：</b>根据局部均值和方差自动剔除异常训练单元，无需固定删失比例，兼顾速度和复杂背景适应性。<br>"
-            "<b>推荐参数：</b>Guard=3、Clutter=12、Pfa=1e-4。港区或多船场景可将 Clutter 调至 16；"
-            "弱目标漏检时可把 Pfa 逐步增至 5e-4。");
+            "<b>特点：</b>根据局部均值和方差自动剔除异常训练单元，无需固定删失比例，兼顾速度和复杂背景适应性。");
         break;
     case ClutterSuppressionMethod::VICFAR:
         html = QStringLiteral(
             "<b>VI-CFAR</b><br>"
             "<b>适合：</b>海岸线、港口、岛礁和地物边界等非均匀杂波区域。<br>"
-            "<b>特点：</b>利用局部变化指数识别杂波边缘，并采用更保守的背景估计，通常能降低边界虚警。<br>"
-            "<b>推荐参数：</b>Guard=3、Clutter=12、Pfa=1e-4。弱小目标漏检时可将 Pfa 增至 5e-4，"
-            "或把 Clutter 降至 8～10；边界虚警多时反向调整。");
+            "<b>特点：</b>利用局部变化指数识别杂波边缘，并采用更保守的背景估计，通常能降低边界虚警。");
         break;
     case ClutterSuppressionMethod::RmSATCFAR:
         html = QStringLiteral(
             "<b>RmSAT-CFAR</b><br>"
             "<b>适合：</b>包含多种杂波分布的复杂场景，如海陆混合区、港区和强度变化明显的海面。<br>"
-            "<b>特点：</b>以 Rayleigh 混合模型描述多峰杂波，并通过局部积分统计加速；适应性强但计算量较大。<br>"
-            "<b>推荐参数：</b>Guard=3、Clutter=12、Pfa=1e-4、Mixtures=3。"
-            "背景较简单时用 2 个分量；不建议在较小背景区域中使用 4 个分量。");
+            "<b>特点：</b>以 Rayleigh 混合模型描述多峰杂波，并通过局部积分统计加速；适应性强但计算量较大。");
         break;
     case ClutterSuppressionMethod::BM3D:
     default:
@@ -1060,8 +1304,6 @@ void ClutterSuppression::updateMethodDescription()
             "如果重点是目标检测，优先选择 CFAR 方法。");
         break;
     }
-    if (method != ClutterSuppressionMethod::BM3D)
-        html += nearbyClutterReminder;
     methodDescriptionBrowser->setHtml(html);
 }
 

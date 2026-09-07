@@ -3,7 +3,17 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QGridLayout>
+#include <QFormLayout>
 #include <QGroupBox>
+#include <QSplitter>
+#include <QScrollArea>
+#include <QFrame>
+#include <QSizePolicy>
+#include <QSignalBlocker>
+#include <QScopedValueRollback>
+#include <QTimer>
 #include <QFile>
 #include <QDir>
 #include <QCryptographicHash>
@@ -106,7 +116,9 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     imageDisplayLabel = new QLabel(ui->imageDisplayWidget);
     imageDisplayLabel->setAlignment(Qt::AlignCenter);
     imageDisplayLabel->setScaledContents(false);
+    imageDisplayLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     imageDisplayLabel->installEventFilter(this);
+    ui->imageDisplayWidget->installEventFilter(this);
 
 
 
@@ -143,36 +155,23 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     ui->FilterProgressBar->setMaximum(100);
     ui->FilterProgressBar->setValue(0);
 
-    // 扩展滤波设置区域，并为五种算法提供统一入口。
-    resize(width(), 1014);
-    setMinimumHeight(950);
-    if (QWidget* mainContainer = findChild<QWidget*>("layoutWidget", Qt::FindDirectChildrenOnly))
-    {
-        mainContainer->resize(mainContainer->width(), 911);
-    }
-    ui->filterGroup->resize(ui->filterGroup->width(), 221);
-    ui->roiGroup->move(ui->roiGroup->x(), 540);
-    ui->roiGroup->resize(ui->roiGroup->width(), 91);
-    ui->widget->resize(ui->widget->width(), 61);
-    ui->enlGroup->move(ui->enlGroup->x(), 640);
-    ui->widget_2->move(ui->widget_2->x(), 132);
-    ui->FilterProgressBar->move(ui->FilterProgressBar->x(), 180);
-
-    auto* descriptionGroup = new QGroupBox(QStringLiteral("方法说明"), ui->RightPanel);
-    descriptionGroup->setGeometry(0, 630, 405, 255);
+    auto* descriptionGroup = new QGroupBox(QStringLiteral("方法说明"), this);
+    descriptionGroup->setCheckable(true);
+    descriptionGroup->setChecked(true);
     auto* descriptionLayout = new QVBoxLayout(descriptionGroup);
     descriptionLayout->setContentsMargins(8, 8, 8, 8);
     methodDescriptionBrowser = new QTextBrowser(descriptionGroup);
     methodDescriptionBrowser->setReadOnly(true);
     methodDescriptionBrowser->setOpenExternalLinks(false);
+    methodDescriptionBrowser->setMinimumHeight(170);
     methodDescriptionBrowser->setStyleSheet(
         "QTextBrowser { background: #fafafa; border: 1px solid #d7d7d7; padding: 4px; }");
     descriptionLayout->addWidget(methodDescriptionBrowser);
+    connect(descriptionGroup, &QGroupBox::toggled,
+            methodDescriptionBrowser, &QTextBrowser::setVisible);
 
     QLabel* filterMethodLabel = new QLabel(QStringLiteral("滤波方法"), ui->filterGroup);
-    filterMethodLabel->setGeometry(40, 28, 90, 23);
     filterMethodComboBox = new QComboBox(ui->filterGroup);
-    filterMethodComboBox->setGeometry(170, 28, 131, 23);
     filterMethodComboBox->addItem("BM3D");
     filterMethodComboBox->addItem("Lee");
     filterMethodComboBox->addItem("Frost");
@@ -180,24 +179,18 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     filterMethodComboBox->addItem("Kuan");
 
     filterRadiusLabel = new QLabel(QStringLiteral("邻域半径"), ui->filterGroup);
-    filterRadiusLabel->setGeometry(40, 58, 90, 23);
     filterRadiusSpinBox = new QSpinBox(ui->filterGroup);
-    filterRadiusSpinBox->setGeometry(170, 58, 131, 23);
     filterRadiusSpinBox->setRange(1, 20);
     filterRadiusSpinBox->setValue(3);
 
     filterLooksLabel = new QLabel(QStringLiteral("等效视数"), ui->filterGroup);
-    filterLooksLabel->setGeometry(40, 88, 90, 23);
     filterLooksSpinBox = new QDoubleSpinBox(ui->filterGroup);
-    filterLooksSpinBox->setGeometry(170, 88, 131, 23);
     filterLooksSpinBox->setRange(0.1, 100.0);
     filterLooksSpinBox->setDecimals(2);
     filterLooksSpinBox->setValue(1.0);
 
     frostDerampLabel = new QLabel(QStringLiteral("Frost 衰减"), ui->filterGroup);
-    frostDerampLabel->setGeometry(40, 88, 100, 23);
     frostDerampSpinBox = new QDoubleSpinBox(ui->filterGroup);
-    frostDerampSpinBox->setGeometry(170, 88, 131, 23);
     frostDerampSpinBox->setRange(0.001, 10.0);
     frostDerampSpinBox->setDecimals(3);
     frostDerampSpinBox->setSingleStep(0.05);
@@ -226,6 +219,149 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
             this, [this](double) { refreshCurrentResult(); });
     connect(ui->NodeWindowSpinBox, &QLineEdit::editingFinished,
             this, [this]() { refreshCurrentResult(); });
+
+    // Rebuild the dialog as a responsive workspace while retaining the
+    // existing widgets and their signal/slot connections.
+    QWidget* legacyContainer =
+        findChild<QWidget*>("layoutWidget", Qt::FindDirectChildrenOnly);
+
+    auto* dataLayout = new QGridLayout(ui->dataGroup);
+    dataLayout->setContentsMargins(12, 10, 12, 10);
+    dataLayout->setHorizontalSpacing(10);
+    dataLayout->setVerticalSpacing(8);
+    dataLayout->addWidget(new QLabel(QStringLiteral("工程："), ui->dataGroup), 0, 0);
+    dataLayout->addWidget(ui->projectComboBox, 0, 1);
+    dataLayout->addWidget(new QLabel(QStringLiteral("输入节点："), ui->dataGroup), 0, 2);
+    dataLayout->addWidget(ui->nodeComboBox, 0, 3);
+    dataLayout->addWidget(new QLabel(QStringLiteral("输入影像："), ui->dataGroup), 1, 0);
+    dataLayout->addWidget(ui->inputImageComboBox, 1, 1, 1, 3);
+    dataLayout->addWidget(new QLabel(QStringLiteral("输出节点："), ui->dataGroup), 2, 0);
+    dataLayout->addWidget(ui->NodeWindowSpinBox, 2, 1, 1, 2);
+    dataLayout->addWidget(ui->loadImageButton, 2, 3);
+    dataLayout->setColumnStretch(1, 2);
+    dataLayout->setColumnStretch(3, 3);
+    ui->dataGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    ui->dataWidget->hide();
+
+    auto* displayLayout = new QVBoxLayout(ui->imageDisplayGroup);
+    displayLayout->setContentsMargins(4, 4, 4, 4);
+    displayLayout->addWidget(ui->imageDisplayWidget);
+    ui->imageDisplayWidget->setMinimumSize(560, 390);
+    ui->imageDisplayWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    imageTabBar = new QTabBar(this);
+    imageTabBar->setDocumentMode(true);
+    imageTabBar->setExpanding(false);
+    imageTabBar->addTab(QStringLiteral("原图"));
+    imageTabBar->addTab(QStringLiteral("滤波结果"));
+    imageTabBar->setTabEnabled(1, false);
+    connect(imageTabBar, &QTabBar::currentChanged, this, [this](int index) {
+        if (ui->imageTypeComboBox->currentIndex() != index)
+            ui->imageTypeComboBox->setCurrentIndex(index);
+    });
+    connect(ui->imageTypeComboBox,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            imageTabBar, &QTabBar::setCurrentIndex);
+    ui->imageToolbarWidget->hide();
+
+    auto* roiLayout = new QVBoxLayout(ui->roiGroup);
+    roiLayout->setContentsMargins(8, 5, 8, 5);
+    roiLayout->setSpacing(5);
+    auto* roiButtonLayout = new QHBoxLayout();
+    roiButtonLayout->setSpacing(6);
+    roiButtonLayout->addWidget(ui->startRoiButton);
+    roiButtonLayout->addWidget(ui->clearRoiButton);
+    roiLayout->addLayout(roiButtonLayout);
+    auto* roiInfoLayout = new QHBoxLayout();
+    roiInfoLayout->setSpacing(4);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("左上："), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->roiTopLeftValueLabel);
+    roiInfoLayout->addSpacing(10);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("尺寸："), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->label_4);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("×"), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->roiHeightValueLabel);
+    roiInfoLayout->addSpacing(10);
+    roiInfoLayout->addWidget(new QLabel(QStringLiteral("像素："), ui->roiGroup));
+    roiInfoLayout->addWidget(ui->roiPixelCountValueLabel);
+    roiInfoLayout->addStretch();
+    roiLayout->addLayout(roiInfoLayout);
+    ui->roiGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    ui->roiGroup->setStyleSheet(QStringLiteral("QLabel { font-size: 11px; }"));
+    ui->widget->hide();
+
+    auto* filterLayout = new QFormLayout(ui->filterGroup);
+    filterLayout->setContentsMargins(10, 8, 10, 8);
+    filterLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    filterLayout->addRow(filterMethodLabel, filterMethodComboBox);
+    filterLayout->addRow(filterRadiusLabel, filterRadiusSpinBox);
+    filterLayout->addRow(filterLooksLabel, filterLooksSpinBox);
+    filterLayout->addRow(frostDerampLabel, frostDerampSpinBox);
+    ui->widget_2->hide();
+
+    const auto oldResultContainers =
+        ui->enlGroup->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget* child : oldResultContainers)
+        child->hide();
+
+    auto* resultLayout = new QFormLayout(ui->enlGroup);
+    resultLayout->setContentsMargins(10, 8, 10, 8);
+    resultLayout->addRow(QStringLiteral("原图 ENL："), ui->originalEnlValueLabel);
+    resultLayout->addRow(QStringLiteral("滤波后 ENL："), ui->filteredEnlValueLabel);
+
+    auto* viewerPanel = new QWidget(this);
+    auto* viewerLayout = new QVBoxLayout(viewerPanel);
+    viewerLayout->setContentsMargins(0, 0, 0, 0);
+    viewerLayout->setSpacing(8);
+    viewerLayout->addWidget(imageTabBar);
+    viewerLayout->addWidget(ui->imageDisplayGroup, 1);
+    viewerLayout->addWidget(ui->roiGroup);
+
+    auto* parameterPanel = new QWidget(this);
+    auto* parameterLayout = new QVBoxLayout(parameterPanel);
+    parameterLayout->setContentsMargins(0, 0, 4, 0);
+    parameterLayout->setSpacing(8);
+    parameterLayout->addWidget(ui->filterGroup);
+    parameterLayout->addWidget(descriptionGroup);
+    parameterLayout->addWidget(ui->enlGroup);
+    parameterLayout->addStretch();
+
+    auto* parameterScroll = new QScrollArea(this);
+    parameterScroll->setWidgetResizable(true);
+    parameterScroll->setFrameShape(QFrame::NoFrame);
+    parameterScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    parameterScroll->setWidget(parameterPanel);
+    parameterScroll->setMinimumWidth(320);
+
+    auto* splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->setChildrenCollapsible(false);
+    splitter->addWidget(viewerPanel);
+    splitter->addWidget(parameterScroll);
+    splitter->setStretchFactor(0, 8);
+    splitter->setStretchFactor(1, 3);
+    splitter->setSizes({880, 320});
+
+    auto* footerLayout = new QHBoxLayout();
+    footerLayout->addWidget(new QLabel(QStringLiteral("处理状态："), this));
+    footerLayout->addWidget(ui->FilterProgressBar, 1);
+    footerLayout->addSpacing(12);
+    ui->deleteFilterButton->setMinimumWidth(120);
+    ui->runFilterButton->setMinimumWidth(120);
+    footerLayout->addWidget(ui->deleteFilterButton);
+    footerLayout->addWidget(ui->runFilterButton);
+
+    if (legacyContainer)
+        legacyContainer->hide();
+
+    auto* rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(14, 12, 14, 12);
+    rootLayout->setSpacing(10);
+    rootLayout->addWidget(ui->dataGroup);
+    rootLayout->addWidget(splitter, 1);
+    rootLayout->addLayout(footerLayout);
+
+    resize(1280, 840);
+    setMinimumSize(980, 680);
 
 }
 
@@ -463,18 +599,34 @@ void SpeckleDenoise::on_loadImageButton_clicked()
 
 void SpeckleDenoise::updateDisplayedImage()
 {
-    if (!imageDisplayLabel)
+    if (!imageDisplayLabel || imageDisplayUpdateInProgress)
     {
         return;
+    }
+    QScopedValueRollback<bool> updateGuard(imageDisplayUpdateInProgress, true);
+
+    const bool hasFilteredResult = !filteredPixmap.isNull();
+    int selectedIndex = ui->imageTypeComboBox->currentIndex();
+    if (!hasFilteredResult && selectedIndex == 1)
+    {
+        selectedIndex = 0;
+        const QSignalBlocker comboBlocker(ui->imageTypeComboBox);
+        ui->imageTypeComboBox->setCurrentIndex(selectedIndex);
+    }
+    if (imageTabBar)
+    {
+        const QSignalBlocker tabBlocker(imageTabBar);
+        imageTabBar->setTabEnabled(1, hasFilteredResult);
+        imageTabBar->setCurrentIndex(selectedIndex);
     }
 
     QPixmap pixmap;
 
-    if (ui->imageTypeComboBox->currentText() == "Original")
+    if (selectedIndex == 0)
     {
         pixmap = originalPixmap;
     }
-    else if (ui->imageTypeComboBox->currentText() == "Filtered")
+    else if (selectedIndex == 1)
     {
         pixmap = filteredPixmap;
     }
@@ -836,9 +988,18 @@ void SpeckleDenoise::resetLoadedImageState()
     roiSelecting = false;
     roiModeEnabled = false;
 
+    {
+        const QSignalBlocker comboBlocker(ui->imageTypeComboBox);
+        ui->imageTypeComboBox->setCurrentIndex(0);
+    }
+    if (imageTabBar)
+    {
+        const QSignalBlocker tabBlocker(imageTabBar);
+        imageTabBar->setCurrentIndex(0);
+        imageTabBar->setTabEnabled(1, false);
+    }
     updateRoiDisplay();
     clearEnlResults();
-    ui->imageTypeComboBox->setCurrentText("Original");
     updateDisplayedImage();
 }
 
@@ -1453,6 +1614,16 @@ QPoint SpeckleDenoise::mapLabelPointToImagePoint(const QPoint& labelPoint) const
 
 bool SpeckleDenoise::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == ui->imageDisplayWidget && event->type() == QEvent::Resize &&
+        !imageDisplayRefreshPending)
+    {
+        imageDisplayRefreshPending = true;
+        QTimer::singleShot(0, this, [this]() {
+            imageDisplayRefreshPending = false;
+            updateDisplayedImage();
+        });
+    }
+
     if (watched == imageDisplayLabel && roiModeEnabled)
     {
         if (event->type() == QEvent::MouseButtonPress)
