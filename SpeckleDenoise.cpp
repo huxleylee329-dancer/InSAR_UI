@@ -1275,6 +1275,7 @@ void SpeckleDenoise::on_deleteFilterButton_clicked()
     filteredGrayMat.release();
     ui->imageTypeComboBox->setCurrentText("Original");
     updateDisplayedImage();
+    updateEnlResults();
 
     emit sendCopy(copy);
 
