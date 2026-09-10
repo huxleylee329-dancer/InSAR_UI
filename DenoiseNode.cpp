@@ -791,6 +791,20 @@ void DenoiseNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("denoise.output.filtered_interferogram"));
+    const QJsonObject inputGeometry = m_inputData
+        ? NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor())
+        : QJsonObject();
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            descriptorProvenance.insert(key,
+                QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) {
+        descriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
+    }
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction, ProductDescriptor::create(
                 QStringLiteral("filtered_interferogram"), QStringLiteral("sat-explorer-product"), 1,

@@ -81,6 +81,7 @@ protected:
     bool prepareToStart() override;
 
 private:
+    bool rebindCommittedManagedDemResource();
     ::QWidget* _widget;
     QComboBox* m_demSourceCombo;
     QComboBox* m_resolutionCombo;

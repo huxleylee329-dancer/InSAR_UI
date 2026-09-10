@@ -569,7 +569,8 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
 
     for (int i = 0; i < image_number; ++i) {
         QString phaseValidityError;
-        if (!NodeUtils::validatePhaseValidityContract(phase_path.at(i), method != 1, &phaseValidityError)) {
+        const bool supportsMaskedPhase = method == 1 || method == 3;
+        if (!NodeUtils::validatePhaseValidityContract(phase_path.at(i), !supportsMaskedPhase, &phaseValidityError)) {
             emit errorProcess(phaseValidityError);
             return;
         }
@@ -703,6 +704,23 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return;
             }
 
+            Mat validMask;
+            const bool hasV2ValidMask = NodeUtils::readMatFromH5(phase_path.at(i), "phase_valid_mask",
+                validMask, CV_8U);
+            if (hasV2ValidMask && (validMask.size() != phase.size() || validMask.type() != CV_8UC1)) {
+                emit errorProcess(QStringLiteral("SNAPHU 输入 phase_valid_mask 与相位网格不一致：%1")
+                                      .arg(phase_path.at(i)));
+                return;
+            }
+            const int validPixelCount = hasV2ValidMask ? countNonZero(validMask) : 0;
+            const bool hasMaskedPixels = hasV2ValidMask &&
+                static_cast<qint64>(validPixelCount) != static_cast<qint64>(validMask.rows) * validMask.cols;
+            if (hasMaskedPixels) {
+                InSARLogManager::LogInfo("UnwrapWorker", QStringLiteral(
+                    "SNAPHU will apply the phase-validity mask: %1 invalid pixels.")
+                    .arg(static_cast<qint64>(validMask.rows) * validMask.cols - validPixelCount));
+            }
+
             Mat phase_unwrap;
             QString app_path = QCoreApplication::applicationDirPath();
             QTemporaryDir snaphuWorkDir;
@@ -713,10 +731,17 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             UnwrapDiagnostic diagnostic = {};
             diagnostic.structSize = sizeof(diagnostic);
             const SnaphuRunOptionsV1 options = makeSnaphuRunOptions(snaphuOptions);
-            ret = unwrap.SnaphuFileEx2(phase_path.at(i).toStdString().c_str(), phase_unwrap,
-                                       save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
-                                       app_path.toStdString().c_str(), &options, snaphuRunEventCallback, this,
-                                       &diagnostic);
+            if (hasMaskedPixels) {
+                ret = unwrap.SnaphuFileMaskedEx2(phase_path.at(i).toStdString().c_str(), validMask, phase_unwrap,
+                                                  save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
+                                                  app_path.toStdString().c_str(), &options, snaphuRunEventCallback, this,
+                                                  &diagnostic);
+            } else {
+                ret = unwrap.SnaphuFileEx2(phase_path.at(i).toStdString().c_str(), phase_unwrap,
+                                           save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),
+                                           app_path.toStdString().c_str(), &options, snaphuRunEventCallback, this,
+                                           &diagnostic);
+            }
             if (ret != 0 || snaphuOptions.keepArtifactsOnSuccess) {
                 snaphuWorkDir.setAutoRemove(false);
                 InSARLogManager::LogInfo("UnwrapWorker", QStringLiteral("SNAPHU artifacts retained at: %1")
@@ -725,6 +750,29 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             if (ret != 0) {
                 failDiagnostic(QStringLiteral("SNAPHU"), diagnostic, ret);
                 return;
+            }
+            if (hasMaskedPixels) {
+                if (phase_unwrap.size() != validMask.size()) {
+                    emit errorProcess(QStringLiteral("SNAPHU 输出网格与 phase_valid_mask 不一致：%1")
+                                          .arg(phase_path.at(i)));
+                    return;
+                }
+                if (phase_unwrap.type() != CV_64F) {
+                    phase_unwrap.convertTo(phase_unwrap, CV_64F);
+                }
+                for (int row = 0; row < phase_unwrap.rows; ++row) {
+                    const uchar* maskRow = validMask.ptr<uchar>(row);
+                    double* outputRow = phase_unwrap.ptr<double>(row);
+                    for (int column = 0; column < phase_unwrap.cols; ++column) {
+                        if (maskRow[column] == 0) {
+                            outputRow[column] = std::numeric_limits<double>::quiet_NaN();
+                        } else if (!std::isfinite(outputRow[column])) {
+                            emit errorProcess(QStringLiteral("SNAPHU 输出的有效相位包含非有限像元：%1")
+                                                  .arg(phase_path.at(i)));
+                            return;
+                        }
+                    }
+                }
             }
             const QString diagnosticSummary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
             if (!diagnosticSummary.isEmpty()) {

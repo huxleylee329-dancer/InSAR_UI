@@ -118,5 +118,8 @@
         <file>stylesheets/themes/fusion.qss</file>
         <file>BigIcon.PNG</file>
         <file>guide.png</file>
+        <!-- Geoid Models -->
+        <file>geoid/us_nga_egm96_15.tif</file>
+        <file>geoid/registry.json</file>
     </qresource>
 </RCC>

@@ -72,6 +72,7 @@ private:
 
     // Input/output data
     std::shared_ptr<ImportedFileData> m_inputData;
+    std::shared_ptr<AuxiliaryDemData> m_auxiliaryDemData;
     std::shared_ptr<InsarDemData> m_outputData;
     std::shared_ptr<ImageInfoData> m_imageInfoData;
     
@@ -93,7 +94,10 @@ private:
     QString m_preparedProjectName;
     QString m_preparedSrcNode;
     QStringList m_preparedPhasePaths;
+    QList<DemPhaseAnchorInputSnapshot> m_preparedPhaseInputSnapshots;
     QStringList m_preparedOutputPaths;
+    NodeUtils::DemExecutionSnapshot m_preparedAuxiliaryDemSnapshot;
+    DemAbsolutePhaseAnchorV2Policy m_preparedAnchorPolicy;
     int m_preparedMethod = 1;
     int m_preparedTimes = 20;
     NodeUtils::OutputTransaction m_outputTransaction;
@@ -135,8 +139,7 @@ private:
     bool supportsAutomaticRestartAfterInputChange() const override { return true; }
 
 signals:
-    void startDem(int method, int times, QString savePath, QString outputNode,
-                  QStringList phaseNames, QStringList phasePaths);
+    void startDem(DemAbsolutePhaseAnchorV2Request request);
 };
 
 } // namespace QtNodes

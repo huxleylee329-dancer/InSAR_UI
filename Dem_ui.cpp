@@ -323,7 +323,7 @@ void Dem_ui::on_buttonBox_accepted()
     para.push_back(this->method);
     // para.push_back(this->image_number);
      //this->thread()->msleep(1);
-    connect(this, &Dem_ui::operate, Dem_thread, &DemWorker::Dem, Qt::QueuedConnection);
+    connect(this, &Dem_ui::operate, Dem_thread, &DemWorker::DemLegacy, Qt::QueuedConnection);
     const int times = ui->times->text().toInt();
     const QString savePath = this->save_path;
     connect(Dem_thread, &DemWorker::demFileGenerated, this,

@@ -41,6 +41,11 @@ struct AuxiliaryDemBinding {
     QString identityH5Hash;
     QString validMaskHash;
     QString canonicalMetadataHash;
+    // Populated only for consumers that explicitly require an orthometric to
+    // ellipsoidal conversion. It is never inferred from a directory.
+    QString geoidModelPath;
+    QString geoidModelHash;
+    QString geoidModelId;
     bool fromReference = false;
 };
 
@@ -50,7 +55,9 @@ struct DemExecutionSnapshot {
 
     bool isValid() const
     {
-        return !binding.resourceId.isEmpty() && !inputGeometry.isEmpty();
+        return !binding.resourceId.isEmpty() && !binding.geoidModelPath.isEmpty() &&
+               !binding.geoidModelHash.isEmpty() && !binding.geoidModelId.isEmpty() &&
+               !inputGeometry.isEmpty();
     }
 };
 
@@ -127,6 +134,8 @@ bool removeAuxiliaryDemRegistryEntry(const QString& projectRoot,
 // 清理 .dem_resources 中按内容寻址的受管 DEM 资源目录，仅保留最近 keepCount 份。
 // 供在每次成功安装/提交新资源之后调用，防止目录无限膨胀（每份约 500MB）。
 void pruneAuxiliaryDemResources(const QString& projectRoot, int keepCount = 3);
+// 确保工程目录下已安装官方 EGM96 大地水准面模型及注册清单（若缺失或哈希不符则从内嵌资源释放）
+bool ensureProjectGeoidModelInstalled(const QString& projectRoot, QString* errorMessage = nullptr);
 QString normalizedDemLabel(const QString& label);
 bool loadAuxiliaryDemLabels(const QString& projectRoot,
                             QMap<QString, AuxiliaryDemLabelBinding>& labels,
@@ -194,12 +203,14 @@ bool resolveAuxiliaryDemBinding(const QString& projectRoot,
                                 const QtNodes::AuxiliaryDemData& data,
                                 AuxiliaryDemBinding& binding,
                                 QString* errorMessage = nullptr,
-                                const QJsonObject& inputGeometry = QJsonObject());
+                                const QJsonObject& inputGeometry = QJsonObject(),
+                                bool requireGeoidModel = false);
 bool resolveAuxiliaryDemBinding(const QString& projectRoot,
                                 const QtNodes::AuxiliaryDemReferenceData& data,
                                 AuxiliaryDemBinding& binding,
                                 QString* errorMessage = nullptr,
-                                const QJsonObject& inputGeometry = QJsonObject());
+                                const QJsonObject& inputGeometry = QJsonObject(),
+                                bool requireGeoidModel = false);
 QJsonObject inputGeometryFromProductDescriptor(const QtNodes::ProductDescriptor::Ptr& descriptor);
 bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
                                    const QtNodes::AuxiliaryDemData* entity,
@@ -207,7 +218,8 @@ bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
                                    AuxiliaryDemBinding& binding,
                                    QString* errorMessage = nullptr,
                                    const AuxiliaryDemBinding* expectedBinding = nullptr,
-                                   const QJsonObject& inputGeometry = QJsonObject());
+                                   const QJsonObject& inputGeometry = QJsonObject(),
+                                   bool requireGeoidModel = false);
 bool revalidateDemExecutionSnapshot(const QString& projectRoot,
                                     const QtNodes::AuxiliaryDemData* entity,
                                     const QtNodes::AuxiliaryDemReferenceData* reference,

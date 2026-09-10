@@ -253,9 +253,11 @@ std::shared_ptr<NodeData> Sentinel1OrbitNode::outData(PortIndex port)
 
 void Sentinel1OrbitNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
-    qDebug() << "[OrbitNode] setInData() port:" << port
-             << "data:" << (data ? "valid" : "null")
-             << "currentState:" << (int)executionState();
+    if (!m_inputData || m_inputData != std::dynamic_pointer_cast<ImportedFileData>(data)) {
+        qDebug() << "[OrbitNode] setInData() port:" << port
+                 << "data:" << (data ? "valid" : "null")
+                 << "currentState:" << (int)executionState();
+    }
     m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
 
     if (m_inputData)

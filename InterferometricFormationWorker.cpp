@@ -1300,6 +1300,8 @@ void InterferometricFormationWorker::InterferometricWithDem(bool isdeflat, bool 
 						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_azimuth_steering_rate", slaveTops.azimuthSteeringRate) ||
 						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_range_spacing", masterTops.rangeSpacing) ||
 						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_range_spacing", slaveTops.rangeSpacing) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_azimuth_interval_seconds", masterTops.azimuthIntervalSeconds) ||
+						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_azimuth_interval_seconds", slaveTops.azimuthIntervalSeconds) ||
 						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_master_slant_range_first_pixel", masterTops.slantRangeFirstPixel) ||
 						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_slant_range_first_pixel", slaveTops.slantRangeFirstPixel) ||
 						  !NodeUtils::writeScalarToH5(h5_path, "flat_earth_slave_source_burst_offset", slaveCoverage.sourceBurstOffset) ||

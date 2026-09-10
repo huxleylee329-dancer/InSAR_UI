@@ -446,13 +446,11 @@ void ExecutableNodeDelegateModel::start()
         if (!_startFailureMessage.isEmpty()) {
             Q_EMIT executionStartRejected(_startFailureMessage);
         }
-        // A manual start with an invalid required binding is a terminal
-        // preparation error; automatic orchestration keeps the node Pending
-        // in its processAutomatically() path.
-        if (_mode == ExecutionMode::Manual) {
-            if (!_startFailureMessage.isEmpty()) setLastErrorMessage(_startFailureMessage);
-            setState(ExecutionState::Error);
-        }
+        // start() is an explicit user action regardless of the configured
+        // execution mode. It must surface a terminal preparation failure;
+        // automatic orchestration uses processAutomatically() instead.
+        if (!_startFailureMessage.isEmpty()) setLastErrorMessage(_startFailureMessage);
+        setState(ExecutionState::Error);
         return;
     }
 

@@ -1851,6 +1851,16 @@ void S1TopsBackGeocodingNode::executeProcessing()
     descriptorProvenance.insert(QStringLiteral("producer"), name());
     descriptorProvenance.insert(QStringLiteral("output_port"),
                                 QStringLiteral("s1_tops_back_geocoding.output.back_geocoded_complex_sar"));
+    const QJsonObject inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(
+        m_inputData ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr());
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            descriptorProvenance.insert(key, QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) descriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction, ProductDescriptor::create(
                 QStringLiteral("back_geocoded_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
@@ -2118,6 +2128,16 @@ void S1TopsBackGeocodingNode::finalizeStagedTransaction(quint64 generation)
     coverageDescriptorProvenance.insert(QStringLiteral("producer"), name());
     coverageDescriptorProvenance.insert(QStringLiteral("output_port"),
                                         QStringLiteral("s1_tops_back_geocoding.output.back_geocoded_complex_sar"));
+    const QJsonObject inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(
+        m_inputData ? m_inputData->physicalProductDescriptor() : ProductDescriptor::Ptr());
+    for (const QString& key : {QStringLiteral("minLon"), QStringLiteral("maxLon"),
+                               QStringLiteral("minLat"), QStringLiteral("maxLat")}) {
+        if (inputGeometry.value(key).isDouble()) {
+            coverageDescriptorProvenance.insert(key, QString::number(inputGeometry.value(key).toDouble(), 'g', 17));
+        }
+    }
+    const QString inputCrsWkt = inputGeometry.value(QStringLiteral("crsWkt")).toString().trimmed();
+    if (!inputCrsWkt.isEmpty()) coverageDescriptorProvenance.insert(QStringLiteral("crsWkt"), inputCrsWkt);
     if (!NodeUtils::setOutputTransactionProductDescriptor(
             m_outputTransaction, ProductDescriptor::create(
                 QStringLiteral("back_geocoded_complex_sar"), QStringLiteral("sat-explorer-product"), 1,
