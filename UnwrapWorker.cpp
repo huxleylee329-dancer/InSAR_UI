@@ -14,6 +14,8 @@
 #include <QByteArray>
 #include <QRegularExpression>
 #include <cmath>
+#include <climits>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -167,6 +169,239 @@ bool readOffset(const QString& h5Path, const char* dataset, int& offset, QString
         return false;
     }
     offset = value.at<int>(0, 0);
+    return true;
+}
+
+bool auditAndNormalizeMcfInputs(const cv::Mat& phase,
+                                const cv::Mat& coherence,
+                                cv::Mat& residue,
+                                qint64& normalizedResidues,
+                                qint64& nonZeroResidues,
+                                QString& error)
+{
+    normalizedResidues = 0;
+    nonZeroResidues = 0;
+    if (phase.empty() || phase.type() != CV_64F || phase.channels() != 1 ||
+        coherence.empty() || coherence.type() != CV_64F || coherence.channels() != 1 ||
+        residue.empty() || residue.type() != CV_64F || residue.channels() != 1) {
+        error = QStringLiteral("MCF 输入矩阵类型或尺寸无效");
+        return false;
+    }
+    if (coherence.size() != phase.size() ||
+        residue.rows != phase.rows - 1 || residue.cols != phase.cols - 1) {
+        error = QStringLiteral("MCF 输入矩阵尺寸不匹配：phase=%1x%2, coherence=%3x%4, residue=%5x%6")
+            .arg(phase.rows).arg(phase.cols)
+            .arg(coherence.rows).arg(coherence.cols)
+            .arg(residue.rows).arg(residue.cols);
+        return false;
+    }
+
+    for (int row = 0; row < phase.rows; ++row) {
+        const double* values = phase.ptr<double>(row);
+        for (int column = 0; column < phase.cols; ++column) {
+            if (!std::isfinite(values[column])) {
+                error = QStringLiteral("MCF phase 包含非有限值：row=%1, col=%2")
+                    .arg(row).arg(column);
+                return false;
+            }
+        }
+    }
+    for (int row = 0; row < coherence.rows; ++row) {
+        const double* values = coherence.ptr<double>(row);
+        for (int column = 0; column < coherence.cols; ++column) {
+            if (!std::isfinite(values[column]) || values[column] < 0.0) {
+                error = QStringLiteral("MCF coherence 包含非法值：row=%1, col=%2, value=%3")
+                    .arg(row).arg(column).arg(values[column], 0, 'g', 17);
+                return false;
+            }
+        }
+    }
+
+    // Utils::write_DIMACS() serializes residue supplies as integers. The
+    // residue calculation is mathematically integral, but can produce values
+    // such as 1.0000000000000002 after floating-point wrapping.
+    constexpr double kResidueIntegerTolerance = 1e-9;
+    for (int row = 0; row < residue.rows; ++row) {
+        double* values = residue.ptr<double>(row);
+        for (int column = 0; column < residue.cols; ++column) {
+            const double value = values[column];
+            if (!std::isfinite(value)) {
+                error = QStringLiteral("MCF residue 包含非有限值：row=%1, col=%2")
+                    .arg(row).arg(column);
+                return false;
+            }
+            if (std::fabs(value) <= 0.5) {
+                continue;
+            }
+            ++nonZeroResidues;
+            const double rounded = std::round(value);
+            if (!std::isfinite(rounded) || std::fabs(value - rounded) > kResidueIntegerTolerance) {
+                error = QStringLiteral("MCF residue 不是整数：row=%1, col=%2, value=%3")
+                    .arg(row).arg(column).arg(value, 0, 'g', 17);
+                return false;
+            }
+            if (value != rounded) {
+                values[column] = rounded;
+                ++normalizedResidues;
+            }
+        }
+    }
+    return true;
+}
+
+// Keep the UI gate aligned with Core's CS2 working-set estimate so a clearly
+// unsupported network is rejected before the expensive coherence calculation.
+struct UiCs2NodeLayoutEstimate
+{
+    int64_t excess;
+    int64_t price;
+    void* first;
+    void* current;
+    void* suspended;
+    void* qNext;
+    void* bucketNext;
+    void* bucketPrevious;
+    long rank;
+    long input;
+};
+
+struct UiCs2ArcLayoutEstimate
+{
+    long residualCapacity;
+    int64_t cost;
+    void* head;
+    void* sister;
+    long sourceIndex;
+};
+
+struct UiCs2BucketLayoutEstimate
+{
+    void* first;
+};
+
+struct UiMcfInputArcLayoutEstimate
+{
+    long tail;
+    long head;
+    long lower;
+    long upper;
+    long long cost;
+};
+
+struct McfDimensionPreflight
+{
+    qint64 nodes = 0;
+    qint64 arcs = 0;
+    quint64 estimatedWorkingSetBytes = 0;
+    QString failure;
+};
+
+constexpr quint64 kMcfWorkingSetBudgetBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
+
+bool checkedMcfAdd(quint64 left, quint64 right, quint64& output)
+{
+    if (right > (std::numeric_limits<quint64>::max)() - left) return false;
+    output = left + right;
+    return true;
+}
+
+bool checkedMcfMultiply(quint64 left, quint64 right, quint64& output)
+{
+    if (left != 0 && right > (std::numeric_limits<quint64>::max)() / left) return false;
+    output = left * right;
+    return true;
+}
+
+QString formatMcfBytes(quint64 bytes)
+{
+    return QStringLiteral("%1 GiB").arg(
+        static_cast<double>(bytes) / (1024.0 * 1024.0 * 1024.0), 0, 'f', 1);
+}
+
+bool preflightMcfDimensions(int phaseRows, int phaseCols, McfDimensionPreflight& report)
+{
+    report = McfDimensionPreflight{};
+    if (phaseRows < 3 || phaseCols < 3) {
+        report.failure = QStringLiteral("MCF phase 尺寸不支持：至少需要 3x3，当前为 %1x%2")
+            .arg(phaseRows).arg(phaseCols);
+        return false;
+    }
+
+    const quint64 residueRows = static_cast<quint64>(phaseRows - 1);
+    const quint64 residueCols = static_cast<quint64>(phaseCols - 1);
+    quint64 pixelCount = 0;
+    quint64 nodes = 0;
+    quint64 arcs = 0;
+    quint64 term = 0;
+    if (!checkedMcfMultiply(residueRows, residueCols, pixelCount) ||
+        !checkedMcfAdd(pixelCount, 1, nodes) ||
+        !checkedMcfMultiply(2, residueRows - 1, term) ||
+        !checkedMcfMultiply(term, residueCols, term) ||
+        !checkedMcfAdd(arcs, term, arcs) ||
+        !checkedMcfMultiply(2, residueRows, term) ||
+        !checkedMcfMultiply(term, residueCols - 1, term) ||
+        !checkedMcfAdd(arcs, term, arcs) ||
+        !checkedMcfMultiply(4, residueCols, term) ||
+        !checkedMcfAdd(arcs, term, arcs) ||
+        !checkedMcfMultiply(4, residueRows - 2, term) ||
+        !checkedMcfAdd(arcs, term, arcs)) {
+        report.failure = QStringLiteral("MCF 网络尺寸计算溢出");
+        return false;
+    }
+    if (nodes > static_cast<quint64>((std::numeric_limits<qint64>::max)()) ||
+        arcs > static_cast<quint64>((std::numeric_limits<qint64>::max)()) ||
+        nodes > static_cast<quint64>(LONG_MAX) || arcs > static_cast<quint64>(LONG_MAX)) {
+        report.nodes = nodes > static_cast<quint64>((std::numeric_limits<qint64>::max)())
+            ? (std::numeric_limits<qint64>::max)() : static_cast<qint64>(nodes);
+        report.arcs = arcs > static_cast<quint64>((std::numeric_limits<qint64>::max)())
+            ? (std::numeric_limits<qint64>::max)() : static_cast<qint64>(arcs);
+        report.failure = QStringLiteral("MCF 网络规模超过 DIMACS/solver 整数限制：nodes=%1, arcs=%2")
+            .arg(QString::number(nodes)).arg(QString::number(arcs));
+        return false;
+    }
+
+    report.nodes = static_cast<qint64>(nodes);
+    report.arcs = static_cast<qint64>(arcs);
+    quint64 directedArcSlots = 0;
+    quint64 twoArcSlots = 0;
+    quint64 bucketCount = 0;
+    quint64 count = 0;
+    if (!checkedMcfMultiply(2, arcs, twoArcSlots) ||
+        !checkedMcfAdd(twoArcSlots, 1, directedArcSlots) ||
+        !checkedMcfAdd(nodes, 1, bucketCount) ||
+        !checkedMcfMultiply(bucketCount, 12, bucketCount) ||
+        !checkedMcfAdd(bucketCount, 2, bucketCount) ||
+        !checkedMcfAdd(nodes, 2, count)) {
+        report.failure = QStringLiteral("MCF 工作集估算溢出");
+        return false;
+    }
+
+    quint64 bytes = 0;
+    const auto addAllocation = [&bytes](quint64 itemCount, size_t itemSize) {
+        quint64 allocation = 0;
+        quint64 next = 0;
+        return checkedMcfMultiply(itemCount, static_cast<quint64>(itemSize), allocation) &&
+            checkedMcfAdd(bytes, allocation, next) && (bytes = next, true);
+    };
+    if (!addAllocation(count, sizeof(UiCs2NodeLayoutEstimate)) ||
+        !addAllocation(directedArcSlots, sizeof(UiCs2ArcLayoutEstimate)) ||
+        !addAllocation(twoArcSlots, sizeof(long)) ||
+        !addAllocation(twoArcSlots, sizeof(long)) ||
+        !addAllocation(count, sizeof(long)) ||
+        !addAllocation(bucketCount, sizeof(UiCs2BucketLayoutEstimate)) ||
+        !addAllocation(nodes, sizeof(int64_t)) ||
+        !addAllocation(arcs, sizeof(UiMcfInputArcLayoutEstimate)) ||
+        !addAllocation(nodes, sizeof(long long)) ||
+        !addAllocation(arcs, sizeof(long))) {
+        report.failure = QStringLiteral("MCF 工作集估算溢出");
+        return false;
+    }
+    report.estimatedWorkingSetBytes = bytes;
+    if (bytes > kMcfWorkingSetBudgetBytes) {
+        report.failure = QStringLiteral(
+            "MCF 网络规模不受当前 CS2 实现支持；建议使用 SNAPHU tiled 或 SPD Guided");
+        return false;
+    }
     return true;
 }
 
@@ -652,10 +887,64 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
                 return;
             }
 
+            McfDimensionPreflight dimensionPreflight;
+            if (!preflightMcfDimensions(phase.rows, phase.cols, dimensionPreflight)) {
+                const QString detail = QStringLiteral(
+                    "%1：phase=%2x%3, nodes=%4, arcs=%5, estimatedWorkingSet=%6, budget=%7")
+                    .arg(dimensionPreflight.failure)
+                    .arg(phase.rows).arg(phase.cols)
+                    .arg(dimensionPreflight.nodes).arg(dimensionPreflight.arcs)
+                    .arg(formatMcfBytes(dimensionPreflight.estimatedWorkingSetBytes))
+                    .arg(formatMcfBytes(kMcfWorkingSetBudgetBytes));
+                InSARLogManager::LogDebug("UnwrapWorker",
+                    QStringLiteral("MCF dimension preflight rejected: %1").arg(detail),
+                    "unwrap.mcf.preflight");
+                emit errorProcess(QStringLiteral("MCF 网络规模预检失败：%1").arg(detail));
+                return;
+            }
+            InSARLogManager::LogDebug("UnwrapWorker",
+                QStringLiteral("MCF dimension preflight passed: phase=%1x%2, nodes=%3, arcs=%4, estimatedWorkingSet=%5, budget=%6")
+                    .arg(phase.rows).arg(phase.cols)
+                    .arg(dimensionPreflight.nodes).arg(dimensionPreflight.arcs)
+                    .arg(formatMcfBytes(dimensionPreflight.estimatedWorkingSetBytes))
+                    .arg(formatMcfBytes(kMcfWorkingSetBudgetBytes)),
+                "unwrap.mcf.preflight");
+
             Mat phase_unwrap;
             Mat coherence, residue;
-            ret = util.phase_axial_concentration(phase, coherence);
+            InSARLogManager::LogDebug("UnwrapWorker",
+                QStringLiteral("MCF coherence calculation started after dimension preflight: phase=%1x%2")
+                    .arg(phase.rows).arg(phase.cols),
+                "unwrap.mcf.preflight");
+            ret = util.phase_axial_concentration(phase, coherence, unwrapProgressCallback);
+            if (ret == -2 || QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
+                finishCancelled();
+                return;
+            }
+            if (ret < 0) {
+                failImage(i, QStringLiteral("calculating coherence"), ret);
+                return;
+            }
             ret = util.residue(phase, residue);
+            if (ret < 0) {
+                failImage(i, QStringLiteral("calculating residue"), ret);
+                return;
+            }
+            qint64 normalizedResidues = 0;
+            qint64 nonZeroResidues = 0;
+            QString mcfInputError;
+            if (!auditAndNormalizeMcfInputs(phase, coherence, residue,
+                                             normalizedResidues, nonZeroResidues, mcfInputError)) {
+                emit errorProcess(QStringLiteral("MCF 输入预检失败：%1").arg(mcfInputError));
+                return;
+            }
+            InSARLogManager::LogDebug("UnwrapWorker",
+                QStringLiteral("MCF input preflight passed: coherence=%1x%2, residue=%3x%4, nonZeroResidues=%5, normalizedResidues=%6, networkNodes=%7, networkArcs=%8")
+                    .arg(coherence.rows).arg(coherence.cols)
+                    .arg(residue.rows).arg(residue.cols)
+                    .arg(nonZeroResidues).arg(normalizedResidues)
+                    .arg(dimensionPreflight.nodes).arg(dimensionPreflight.arcs),
+                "unwrap.mcf.preflight");
             QString app_path = QCoreApplication::applicationDirPath();
             UnwrapDiagnostic diagnostic = {};
             diagnostic.structSize = sizeof(diagnostic);

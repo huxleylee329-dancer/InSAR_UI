@@ -140,10 +140,17 @@ QList<QList<PortIndex>> GeocodingNode::alternativeInputGroups() const
 void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 {
     if (port == 0) {
-        m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        m_insarDemInputData = std::dynamic_pointer_cast<InsarDemData>(data);
+        if (m_insarDemInputData && !m_insarDemInputData->h5Paths().isEmpty()) {
+            m_inputData = std::make_shared<ImportedFileData>(
+                m_insarDemInputData->h5Paths(), QStringLiteral("DEM Generation"));
+            m_inputData->setProductDescriptor(m_insarDemInputData->productDescriptor());
+        } else {
+            m_insarDemInputData.reset();
+            m_inputData = std::dynamic_pointer_cast<ImportedFileData>(data);
+        }
 
         if (!m_inputData || m_inputData->filePaths().isEmpty()) {
-            m_insarDemInputData.reset();
             m_outputData.reset();
             m_imageInfoData.reset();
             setOutputData(0, nullptr);
@@ -175,7 +182,7 @@ void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             }
         }
 
-        if (m_inputData && m_outputNodeName.isEmpty()) {
+        if (m_inputData && m_outputNodeName.trimmed().isEmpty()) {
             m_outputNodeName = generateDefaultOutputName();
             if (m_outputNodeNameEdit) {
                 m_outputNodeNameEdit->setText(m_outputNodeName);
@@ -197,14 +204,6 @@ void GeocodingNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
             if (!isRestoring()) {
                 m_demPath.clear();
             }
-        }
-    }
-
-    if (port == 0) {
-        m_insarDemInputData = std::dynamic_pointer_cast<InsarDemData>(data);
-        if (m_insarDemInputData && !m_insarDemInputData->h5Paths().isEmpty()) {
-            m_inputData = std::make_shared<ImportedFileData>(m_insarDemInputData->h5Paths(), QStringLiteral("DEM Generation"));
-            m_inputData->setProductDescriptor(m_insarDemInputData->productDescriptor());
         }
     }
 
@@ -387,9 +386,14 @@ void GeocodingNode::onTypeChanged(int index)
 QString GeocodingNode::generateDefaultOutputName() const
 {
     if (m_inputData && !m_inputData->nodeName().isEmpty()) {
-        return m_inputData->nodeName() + "_geocoded";
+        QString sourceName = m_inputData->nodeName().trimmed();
+        sourceName.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_]")), QStringLiteral("_"));
+        sourceName.remove(QRegularExpression(QStringLiteral("^_+|_+$")));
+        if (!sourceName.isEmpty()) {
+            return sourceName + QStringLiteral("_geocoded");
+        }
     }
-    return "Geocoded";
+    return QStringLiteral("Geocoded");
 }
 
 bool GeocodingNode::validateInputs() const
@@ -414,11 +418,23 @@ bool GeocodingNode::prepareToStart()
     QJsonObject inputGeometry;
     if (m_inputData) inputGeometry = NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor());
     if (!validateInputs())
+    {
+        const QString outputName = m_outputNodeNameEdit
+            ? m_outputNodeNameEdit->text().trimmed()
+            : m_outputNodeName.trimmed();
+        if (!m_inputData || m_inputData->filePaths().isEmpty()) {
+            setStartFailureMessage(QStringLiteral("待地理编码产品尚未就绪。"));
+        } else if (outputName.isEmpty()) {
+            setStartFailureMessage(QStringLiteral("地理编码输出节点名为空。"));
+        } else {
+            setStartFailureMessage(QStringLiteral("地理编码输出节点名只能包含字母、数字或下划线：%1").arg(outputName));
+        }
         return false;
+    }
 
-    QString dstNode = m_outputNodeNameEdit->text().trimmed().isEmpty()
-        ? generateDefaultOutputName()
-        : m_outputNodeNameEdit->text().trimmed();
+    const QString dstNode = m_outputNodeNameEdit
+        ? m_outputNodeNameEdit->text().trimmed()
+        : m_outputNodeName.trimmed();
 
     QString savePath = projectPath();
 
@@ -1187,16 +1203,19 @@ void GeocodingNode::processAutomatically()
                 isPlannedLabel = true;
             }
         }
-        // 直接连线已连接但上游 DEM 尚未产出时，同样属于可等待前置条件，
-        // 与 planned 标签一致转入 Pending，避免自动流程误报执行失败。
+        // A connected upstream product or DEM producer may publish its output
+        // after this automatic attempt.  Keep the node Pending until the input
+        // update retries preparation.
+        const bool waitingForUpstreamProduct =
+            !m_inputData && hasActiveInputConnection(0);
         const bool waitingForDemProducer =
             !m_auxiliaryDemInputData && hasActiveInputConnection(1);
-        if (isPlannedLabel || waitingForDemProducer) {
+        if (isPlannedLabel || waitingForUpstreamProduct || waitingForDemProducer) {
             setStartFailureMessage(QString());
             setState(ExecutionState::Pending);
         } else {
             setLastErrorMessage(_startFailureMessage.isEmpty()
-                ? QStringLiteral("自动执行前置条件无效，且辅助 DEM 标签不可等待。")
+                ? QStringLiteral("自动执行前置条件无效。")
                 : _startFailureMessage);
             setState(ExecutionState::Error);
         }

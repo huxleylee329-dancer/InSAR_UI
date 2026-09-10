@@ -17,6 +17,7 @@
 #include <QThread>
 #include <QElapsedTimer>
 #include <vector>
+#include <exception>
 #include "InSARLogManager.h"
 
 using namespace cv;
@@ -543,7 +544,7 @@ void GeocodingWorker::GeocodingWithDem(
     int masterIndex,
     QString dstNode,
     QString demPath
-)
+) try
 {
     GeocodingThreadLocalGuard guard(this);
     if (QThread::currentThread()->isInterruptionRequested() || isStopRequested()) {
@@ -884,7 +885,18 @@ emit updateProcess(90, QStringLiteral("正在地理编码……"));
             QElapsedTimer sar2UtmTimer;
             sar2UtmTimer.start();
             InSARLogManager::LogInfo("GeocodingWorker", QString("SAR2UTM started: %1").arg(inputH5));
-            ret = util.SAR2UTM(mapped_lon, mapped_lat, phase, mapped_phase, 1, &lon_east, &lon_west, &lat_north, &lat_south);
+            try {
+                ret = util.SAR2UTM(mapped_lon, mapped_lat, phase, mapped_phase, 1,
+                                   &lon_east, &lon_west, &lat_north, &lat_south);
+            } catch (const cv::Exception& exception) {
+                emit errorProcess(QStringLiteral("SAR2UTM OpenCV exception for %1: %2")
+                                      .arg(inputH5, QString::fromLocal8Bit(exception.what())));
+                return;
+            } catch (const std::exception& exception) {
+                emit errorProcess(QStringLiteral("SAR2UTM exception for %1: %2")
+                                      .arg(inputH5, QString::fromLocal8Bit(exception.what())));
+                return;
+            }
             InSARLogManager::LogInfo("GeocodingWorker", QString("SAR2UTM finished: status=%1, elapsed_ms=%2, input=%3")
                 .arg(ret).arg(sar2UtmTimer.elapsed()).arg(inputH5));
             if (ret < 0 || mapped_phase.empty()) {
@@ -1169,7 +1181,18 @@ emit updateProcess(90, QStringLiteral("正在地理编码……"));
             QElapsedTimer sar2UtmTimer;
             sar2UtmTimer.start();
             InSARLogManager::LogInfo("GeocodingWorker", QString("SAR2UTM started: %1").arg(inputH5));
-            ret = util.SAR2UTM(mapped_lon, mapped_lat, amplitude, mapped_amplitude, 1, &lon_east, &lon_west, &lat_north, &lat_south);
+            try {
+                ret = util.SAR2UTM(mapped_lon, mapped_lat, amplitude, mapped_amplitude, 1,
+                                   &lon_east, &lon_west, &lat_north, &lat_south);
+            } catch (const cv::Exception& exception) {
+                emit errorProcess(QStringLiteral("SAR2UTM OpenCV exception for %1: %2")
+                                      .arg(inputH5, QString::fromLocal8Bit(exception.what())));
+                return;
+            } catch (const std::exception& exception) {
+                emit errorProcess(QStringLiteral("SAR2UTM exception for %1: %2")
+                                      .arg(inputH5, QString::fromLocal8Bit(exception.what())));
+                return;
+            }
             InSARLogManager::LogInfo("GeocodingWorker", QString("SAR2UTM finished: status=%1, elapsed_ms=%2, input=%3")
                 .arg(ret).arg(sar2UtmTimer.elapsed()).arg(inputH5));
             if (ret < 0 || mapped_amplitude.empty()) {
@@ -1239,4 +1262,18 @@ int process = 90 + double(i + 1) / (double)input_files.size() * 9.0;
     emit updateProcess(100, QStringLiteral("完成……"));
     InSARLogManager::LogInfo("GeocodingWorker", QString("Task completed: ") + QString(__FUNCTION__));
     emit endProcess();
+}
+catch (const cv::Exception& exception)
+{
+    const QString error = QStringLiteral("Geocoding OpenCV exception: %1")
+                              .arg(QString::fromLocal8Bit(exception.what()));
+    InSARLogManager::LogError("GeocodingWorker", error);
+    emit errorProcess(error);
+}
+catch (const std::exception& exception)
+{
+    const QString error = QStringLiteral("Geocoding exception: %1")
+                              .arg(QString::fromLocal8Bit(exception.what()));
+    InSARLogManager::LogError("GeocodingWorker", error);
+    emit errorProcess(error);
 }
