@@ -102,6 +102,8 @@ private:
     int m_preparedTimes = 20;
     NodeUtils::OutputTransaction m_outputTransaction;
     QList<DemFileResult> m_pendingDemResults;
+    // 绝对相位锚定残差超限等非致命质量问题，用于收口时进入 Warning 状态
+    QStringList m_anchorQualityWarnings;
     bool m_xmlDirty = false;
     bool m_previewGenerationPending = false;
     quint64 m_previewGenerationId = 0;
@@ -112,6 +114,8 @@ private:
     void createWidget();
     void onProgressUpdate(int progress, const QString& message);
     void onProcessingFinished();
+    // 按绝对相位锚定质量收口：存在残差超限告警时进入 Warning，否则 Completed
+    void finishDemExecution();
     void onCancelled();
     void onError(const QString& error);
     void handleDemFileGenerated(const DemFileResult& result);

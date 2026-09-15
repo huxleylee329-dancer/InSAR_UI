@@ -2477,7 +2477,8 @@ void DEMSourceNode::onProcessingFinished(
     const QString jpgPath = h5Path.left(h5Path.lastIndexOf('.')) + ".jpg";
     m_outputData = std::make_shared<AuxiliaryDemData>(managedTif, managedH5, resourceId, provenanceId, dstNode,
                                                        managedMaskTif);
-    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(m_outputTransaction.productDescriptor));
+    m_outputData->setProductDescriptor(auxiliaryDemEntityDescriptor(resourceId, provenanceId, canonicalMetadataHash));
+    m_outputTransaction.productDescriptor = m_outputData->productDescriptor()->toJson();
     m_referenceData = std::make_shared<AuxiliaryDemReferenceData>(resourceId, provenanceId, 1);
     m_referenceData->setProductDescriptor(auxiliaryDemReferenceDescriptor(resourceId, provenanceId));
     m_imageInfoData.reset();
@@ -2620,6 +2621,20 @@ void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString&
             InSARLogManager::LogWarning("DEMSourceNode", "DEM preview JPG failed to generate: " + jpgPath);
         }
 
+        // 在终态转换前先将输出数据挂载到端口，防止 finishExecution 触发下游自动调度时读到空数据
+        if (m_outputData) {
+            InSARLogManager::LogDebug("DEMSourceNode",
+                QStringLiteral("Publishing terminal Auxiliary DEM output: revision=%1, projectRoot=%2, resourceId=%3, provenanceId=%4, state=%5.")
+                    .arg(executionRevision()).arg(projectPath(), m_outputData->resourceId(),
+                                                   m_outputData->pinnedProvenanceId())
+                    .arg(static_cast<int>(executionState())),
+                QStringLiteral("dem.binding"));
+            setOutputData(0, m_outputData);
+        }
+        if (m_imageInfoData) {
+            setOutputData(1, m_imageInfoData);
+        }
+
         if (!jpgExists || m_pendingCoverageAudit.hasUnverifiedCoverage) {
             QStringList warnings;
             if (!jpgExists) warnings << QStringLiteral("DEM data was generated, but its preview image could not be generated.");
@@ -2638,21 +2653,10 @@ void DEMSourceNode::startPreviewGeneration(const QString& h5Path, const QString&
             setState(ExecutionState::Running);
             finishExecution();
         }
-        // outData() intentionally hides products while Running.  Re-publish
-        // the DEM ports after the terminal transition so downstream nodes do
-        // not retain the empty propagation emitted before preview generation.
         if (m_outputData) {
-            InSARLogManager::LogDebug("DEMSourceNode",
-                QStringLiteral("Publishing terminal Auxiliary DEM output: revision=%1, projectRoot=%2, resourceId=%3, provenanceId=%4, state=%5.")
-                    .arg(executionRevision()).arg(projectPath(), m_outputData->resourceId(),
-                                                   m_outputData->pinnedProvenanceId())
-                    .arg(static_cast<int>(executionState())),
-                QStringLiteral("dem.binding"));
-            setOutputData(0, m_outputData);
             Q_EMIT dataUpdated(0);
         }
         if (m_imageInfoData) {
-            setOutputData(1, m_imageInfoData);
             Q_EMIT dataUpdated(1);
         }
         updateCacheSizeLabel();

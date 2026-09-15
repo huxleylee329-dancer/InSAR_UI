@@ -1930,13 +1930,6 @@ bool WorkflowUI::eventFilter(QObject *obj, QEvent *event)
 
         if (controlNode && controlModel) {
             const QtNodes::NodeId nodeId = controlNode->nodeId();
-            InSARLogManager::LogDebug("WorkflowUI",
-                QString("Execution control click: node=%1, state=%2, modeHit=%3, startHit=%4, detailHit=%5")
-                    .arg(static_cast<qulonglong>(nodeId))
-                    .arg(static_cast<int>(controlModel->executionState()))
-                    .arg(modeHit ? 1 : 0)
-                    .arg(startHit ? 1 : 0)
-                    .arg(detailHit ? 1 : 0));
 
             if (controlModel->hasExecutionControls() && modeHit) {
                 const QtNodes::ExecutionMode currentMode = controlModel->executionMode();

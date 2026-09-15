@@ -953,6 +953,8 @@ void DenoiseNode::onProcessingFinished()
     }
 
     m_outputData = std::make_shared<ImportedFileData>(h5Paths, dstNode);
+    m_outputData->setProductDescriptor(ProductDescriptor::fromJson(
+        m_outputTransaction.productDescriptor));
     setOutputData(0, m_outputData);
 
     // Output successfully committed; invalidate stale detail-view validation results.

@@ -55,9 +55,13 @@ struct DemExecutionSnapshot {
 
     bool isValid() const
     {
-        return !binding.resourceId.isEmpty() && !binding.geoidModelPath.isEmpty() &&
-               !binding.geoidModelHash.isEmpty() && !binding.geoidModelId.isEmpty() &&
-               !inputGeometry.isEmpty();
+        if (binding.resourceId.isEmpty() || inputGeometry.isEmpty()) {
+            return false;
+        }
+        if (!binding.geoidModelPath.isEmpty() || !binding.geoidModelHash.isEmpty() || !binding.geoidModelId.isEmpty()) {
+            return !binding.geoidModelPath.isEmpty() && !binding.geoidModelHash.isEmpty() && !binding.geoidModelId.isEmpty();
+        }
+        return true;
     }
 };
 

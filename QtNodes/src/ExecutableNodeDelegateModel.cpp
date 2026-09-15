@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QStringList>
 #include "DataFlowGraphModel.hpp"
+#include "InSARLogManager.h"
 
 #include <memory>
 #include <unordered_map>
@@ -866,6 +867,11 @@ void ExecutableNodeDelegateModel::setOutputData(PortIndex portIndex, std::shared
             // A node without an explicit, unique output contract cannot publish.
             data.reset();
         } else if (!data->productDescriptor()) {
+            if (!contract.publishedProductTypes.contains(QStringLiteral("preview"))) {
+                InSARLogManager::LogWarning("ExecutableNodeDelegateModel",
+                    QStringLiteral("节点 [%1] 端口 [%2] 发布的 NodeData 未携带产品描述符，已回退为最小合成描述符（可能缺失几何与空间元数据）。")
+                        .arg(name()).arg(portIndex));
+            }
             QMap<QString, QString> provenance;
             provenance.insert(QStringLiteral("producer"), name());
             provenance.insert(QStringLiteral("output_port"), contract.semanticId);

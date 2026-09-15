@@ -426,8 +426,13 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
     else if (event->severity == INSAR_DIAGNOSTIC_ERROR) level = InSARLogManager::LevelError;
     else if (event->severity == INSAR_DIAGNOSTIC_INFO) level = InSARLogManager::LevelInfo;
 
+    if (phase == QStringLiteral("projection.summary") || phase == QStringLiteral("zero_doppler.summary")) {
+        level = InSARLogManager::LevelDebug;
+    }
+
     if (level == InSARLogManager::LevelDebug &&
-        (phase == QStringLiteral("sinc.start") || phase == QStringLiteral("amplitude_matching.sample"))) {
+        (phase == QStringLiteral("sinc.start") || phase == QStringLiteral("amplitude_matching.sample") ||
+         (phase == QStringLiteral("sinc.complete") && nativeText(event->message).contains(QStringLiteral("zeroFilledOutputSamples"))))) {
         return;
     }
 
@@ -435,7 +440,7 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
     const QString detail = nativeText(event->detail);
     const QString h5File = nativeText(event->h5File);
     const QString dataset = nativeText(event->dataset);
-    if (!detail.isEmpty()) message += QStringLiteral("; %1").arg(detail);
+    if (!detail.isEmpty() && level == InSARLogManager::LevelError) message += QStringLiteral("; %1").arg(detail);
     if (!h5File.isEmpty()) message += QStringLiteral(" [h5=%1]").arg(h5File);
     if (!dataset.isEmpty()) message += QStringLiteral(" [dataset=%1]").arg(dataset);
 
@@ -446,8 +451,7 @@ void S1TopsBackGeocodingWorker::appendNativeDiagnostic(const InSARDiagnosticEven
         m_lastNativeErrorMessage = message;
     }
     if (event->severity == INSAR_DIAGNOSTIC_WARNING &&
-        (phase == QStringLiteral("burst_mapping.partial_coverage") ||
-         phase == QStringLiteral("range.partial_coverage_skipped") ||
+        (phase == QStringLiteral("range.partial_coverage_skipped") ||
          phase == QStringLiteral("esd.partial_coverage_skipped"))) {
         m_nativeQualityWarnings.append(message);
     }
@@ -1625,31 +1629,18 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 		emit errorProcess("Failed to retrieve Back-Geocoding quality status.");
 		return;
 	}
-	InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
-		QString("Back-Geocoding quality status: return=%1, entries=%2.")
-			.arg(ret).arg(static_cast<qulonglong>(burstQualityStatus.size())), "quality.summary");
 
 	for (const SentinelBurstQualityStatus& status : burstQualityStatus)
 	{
-        const double demGridProjectionCoverage = status.attemptedPoints > 0
-            ? 100.0 * static_cast<double>(status.validPoints) / status.attemptedPoints : 0.0;
-        const double rangeOrBurstRejectionRatio = status.attemptedPoints > 0
-            ? 100.0 * static_cast<double>(status.rangeOrBurstFailures) / status.attemptedPoints : 0.0;
-        InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
-            QString("Burst projection context: image=%1, burst=%2, demGridValid=%3/%4 (%5%), "
-                    "rangeOrBurstRejections=%6 (%7%), zeroDopplerFailures=%8. "
-                    "These ratios use the full DEM grid as their denominator and are not SAR footprint coverage.")
-                .arg(status.imageIndex).arg(status.burstIndex)
-                .arg(status.validPoints).arg(status.attemptedPoints)
-                .arg(demGridProjectionCoverage, 0, 'f', 1)
-                .arg(status.rangeOrBurstFailures).arg(rangeOrBurstRejectionRatio, 0, 'f', 1)
-                .arg(status.zeroDopplerFailures), "quality.projection_context");
+		const double demGridProjectionCoverage = status.attemptedPoints > 0
+			? 100.0 * static_cast<double>(status.validPoints) / status.attemptedPoints : 0.0;
 		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
-			QString("Burst quality: image=%1, burst=%2, code=%3, valid=%4/%5, zeroDopplerFailures=%6, rangeOrBurstFailures=%7, fitPoints=%8, fitRms=%9.")
+			QString("Burst quality: image=%1, burst=%2, code=%3, demGridValid=%4/%5 (%6%), fitPoints=%7, fitRms=%8, zeroDopplerFailures=%9, rangeFailures=%10.")
 				.arg(status.imageIndex).arg(status.burstIndex).arg(status.qualityCode)
 				.arg(status.validPoints).arg(status.attemptedPoints)
-				.arg(status.zeroDopplerFailures).arg(status.rangeOrBurstFailures)
-				.arg(status.fitPointCount).arg(status.fitRms, 0, 'g', 8), "quality.burst");
+				.arg(demGridProjectionCoverage, 0, 'f', 1)
+				.arg(status.fitPointCount).arg(status.fitRms, 0, 'g', 8)
+				.arg(status.zeroDopplerFailures).arg(status.rangeOrBurstFailures), "quality.burst");
 	}
 
 	std::vector<SentinelZeroDopplerFailureStatistic> zeroDopplerStatistics;
@@ -1673,14 +1664,14 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			continue;
 		}
 
-		hasQualityWarning = true;
 		zeroDopplerAffectedBurstPairs.insert(QStringLiteral("%1:%2")
 			.arg(statistic.imageIndex).arg(statistic.burstIndex));
 		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker", zeroDopplerStatisticText(statistic), "quality.zero_doppler");
 	}
 	if (!zeroDopplerAffectedBurstPairs.isEmpty()) {
-		qualityWarnings.append(QStringLiteral("Zero-Doppler projection rejections affected %1 retained burst pairs; burst-attributed counts are available in diagnostic logs and were handled by the quality policy.")
-			.arg(zeroDopplerAffectedBurstPairs.size()));
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+			QStringLiteral("Zero-Doppler projection rejections affected %1 retained burst pairs; DEM points outside coverage were safely excluded.")
+				.arg(zeroDopplerAffectedBurstPairs.size()), "quality.zero_doppler");
 	}
 
 	if (!zeroDopplerStatistics.empty()) {
@@ -1713,30 +1704,29 @@ void S1TopsBackGeocodingWorker::S1_TOPS_BackGeocoding(
 			return;
 		}
 
-		if (status.qualityCode == SENTINEL_BURST_WARNING_PARTIAL_INVALID ||
-			status.qualityCode == SENTINEL_BURST_WARNING_ZERO_OFFSET_FALLBACK)
+		if (status.qualityCode == SENTINEL_BURST_WARNING_ZERO_OFFSET_FALLBACK)
 		{
 			hasQualityWarning = true;
-			if (status.qualityCode == SENTINEL_BURST_WARNING_PARTIAL_INVALID) {
-				++partialInvalidBurstCount;
-				const double validRatio = status.attemptedPoints > 0
-					? static_cast<double>(status.validPoints) / status.attemptedPoints : 0.0;
-				minValidRatio = qMin(minValidRatio, validRatio);
-				maxValidRatio = qMax(maxValidRatio, validRatio);
-			}
-			else {
-				++zeroOffsetFallbackCount;
-			}
+			++zeroOffsetFallbackCount;
+		}
+		else if (status.qualityCode == SENTINEL_BURST_WARNING_PARTIAL_INVALID)
+		{
+			++partialInvalidBurstCount;
+			const double validRatio = status.attemptedPoints > 0
+				? static_cast<double>(status.validPoints) / status.attemptedPoints : 0.0;
+			minValidRatio = qMin(minValidRatio, validRatio);
+			maxValidRatio = qMax(maxValidRatio, validRatio);
 		}
 	}
 	if (partialInvalidBurstCount > 0) {
-		qualityWarnings.append(QStringLiteral("%1 retained burst pairs had geometric projection rejections; joint-valid points occupy %2%-%3% of the full DEM grid, not SAR footprint or final output coverage.")
-			.arg(partialInvalidBurstCount)
-			.arg(minValidRatio * 100.0, 0, 'f', 1)
-			.arg(maxValidRatio * 100.0, 0, 'f', 1));
+		InSARLogManager::LogDebug("S1TopsBackGeocodingWorker",
+			QStringLiteral("%1 retained burst pairs had geometric projection rejections; joint-valid points occupy %2%-%3% of the full DEM grid.")
+				.arg(partialInvalidBurstCount)
+				.arg(minValidRatio * 100.0, 0, 'f', 1)
+				.arg(maxValidRatio * 100.0, 0, 'f', 1), "quality.partial_coverage");
 	}
 	if (zeroOffsetFallbackCount > 0) {
-        qualityWarnings.append(QStringLiteral("%1 bursts fell back to zero burst offset.").arg(zeroOffsetFallbackCount));
+		qualityWarnings.append(QStringLiteral("%1 bursts fell back to zero burst offset.").arg(zeroOffsetFallbackCount));
 	}
 
 	if (cancellationRequested()) {

@@ -1206,6 +1206,36 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
                     .arg(QString::fromUtf8(callId)).arg(result).arg(QString::fromLatin1(anchorResult.status)));
                 return;
             }
+            {
+                // 将绝对相位锚定的 K 直方图与独立验证残差统计写入用户日志，便于与外部参考（如 SNAP）对标
+                QString histogramText;
+                for (uint32_t histogramIndex = 0; histogramIndex < anchorResult.histogramCount; ++histogramIndex) {
+                    if (!histogramText.isEmpty()) histogramText += QStringLiteral(", ");
+                    histogramText += QStringLiteral("K=%1:%2")
+                        .arg(anchorResult.kHistogramPairs[histogramIndex * 2])
+                        .arg(anchorResult.kHistogramPairs[histogramIndex * 2 + 1]);
+                }
+                const double* residualStats = anchorResult.sparseHeightResidualStats;
+                const QString anchorQualitySummary = QStringLiteral(
+                    "绝对相位锚定质量：phase=%1, selectedK=%2, consensus=%3, candidates=%4, K直方图=[%5], "
+                    "独立验证残差 count=%6, mean=%7 m, rms=%8 m, maxAbs=%9 m")
+                    .arg(QFileInfo(inputH5).fileName())
+                    .arg(anchorResult.selectedK)
+                    .arg(anchorResult.consensusFraction, 0, 'f', 6)
+                    .arg(anchorResult.candidateCount)
+                    .arg(histogramText)
+                    .arg(residualStats[0], 0, 'f', 0)
+                    .arg(residualStats[1], 0, 'f', 3)
+                    .arg(residualStats[2], 0, 'f', 3)
+                    .arg(residualStats[3], 0, 'f', 3)
+                    + QStringLiteral("（策略上限 %1 m）")
+                          .arg(request.policy.maximumSparseHeightResidualMeters, 0, 'f', 1);
+                if (residualStats[3] > request.policy.maximumSparseHeightResidualMeters) {
+                    InSARLogManager::LogWarning("DemWorker", anchorQualitySummary);
+                } else {
+                    InSARLogManager::LogInfo("DemWorker", anchorQualitySummary);
+                }
+            }
             if (!revalidateAbsolutePhaseAnchorV2Snapshot(coreSnapshotRequest, snapshotError) ||
                 !revalidatePhaseInputSnapshot(corePhaseSnapshot, corePhaseSnapshot.phase.absolutePath,
                                                coreSnapshotDirectory, snapshotError)) {
@@ -1231,11 +1261,10 @@ void DemWorker::Dem(DemAbsolutePhaseAnchorV2Request request)
                     double* demRow = phaseDem.ptr<double>(row);
                     const uchar* validRow = phaseValidMask.ptr<uchar>(row);
                     for (int column = 0; column < phaseDem.cols; ++column) {
-                        if (validRow[column] == 0) {
+                        // 相位无效、或核心因低相干/海面掩膜而主动放弃求解的像元，统一记为无数据。
+                        // 掩膜像元落在 phase_valid_mask==1 的区域内属预期行为，不再视为求解失败。
+                        if (validRow[column] == 0 || !std::isfinite(demRow[column])) {
                             demRow[column] = std::numeric_limits<double>::quiet_NaN();
-                        } else if (!std::isfinite(demRow[column])) {
-                            emit errorProcess(QStringLiteral("DEM contains a non-finite value in the valid phase region: ") + inputH5);
-                            return;
                         }
                     }
                 }

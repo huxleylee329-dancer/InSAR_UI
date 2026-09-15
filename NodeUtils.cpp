@@ -1851,8 +1851,9 @@ bool revalidateDemExecutionSnapshot(const QString& projectRoot,
         if (errorMessage) *errorMessage = QStringLiteral("Input geometry changed after DEM preparation.");
         return false;
     }
+    const bool expectGeoid = !snapshot.binding.geoidModelPath.isEmpty();
     return revalidateAuxiliaryDemBinding(projectRoot, entity, reference, binding, errorMessage,
-                                         &snapshot.binding, snapshot.inputGeometry, true);
+                                         &snapshot.binding, snapshot.inputGeometry, expectGeoid);
 }
 
 bool resolveInsarDemProduct(const QtNodes::InsarDemData& data,

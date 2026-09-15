@@ -208,7 +208,8 @@ bool validateAcceptedDemAnchorProvenance(const QString& h5Path,
                                          const QString& expectedGeoidModelId,
                                          const QString& expectedGeoidModelHash,
                                          const QList<int>& expectedRetainedMasterBursts,
-                                         QString* errorMessage)
+                                         QString* errorMessage,
+                                         QString* qualityWarning = nullptr)
 {
     int version = 0;
     int selectedK = 0;
@@ -332,12 +333,22 @@ bool validateAcceptedDemAnchorProvenance(const QString& h5Path,
             if (errorMessage) *errorMessage = QStringLiteral("DEM output has an uncovered burst in its absolute-phase anchor provenance: %1").arg(h5Path);
             return false;
         }
+        bool hasSelectionRange = false;
+        bool hasValidationRange = false;
         for (int range = 0; range < policy.rangeCellsPerBurst; ++range) {
-            if (selectionRangeCoverage.at<int>(row, range) != 1 ||
-                validationRangeCoverage.at<int>(row, range) != 1) {
-                if (errorMessage) *errorMessage = QStringLiteral("DEM output lacks selection or independent validation coverage for a required burst/range stratum: %1").arg(h5Path);
+            const int sel = selectionRangeCoverage.at<int>(row, range);
+            const int val = validationRangeCoverage.at<int>(row, range);
+            if ((sel != 0 && sel != 1) || (val != 0 && val != 1)) {
+                if (errorMessage) *errorMessage = QStringLiteral("DEM output has invalid burst/range stratum coverage values: %1").arg(h5Path);
                 return false;
             }
+            if (sel == 1) hasSelectionRange = true;
+            if (val == 1) hasValidationRange = true;
+        }
+        // 保留每 Burst 双集合非空与陆地覆盖约束，海域等无陆地像元分层允许为 0，不再强制所有距离分层必须有候选
+        if (!hasSelectionRange || !hasValidationRange) {
+            if (errorMessage) *errorMessage = QStringLiteral("DEM output lacks independent terrain-supported selection or validation range coverage for an active burst: %1").arg(h5Path);
+            return false;
         }
         countedCandidates += count;
         countedValidationCandidates += validationCount;
@@ -420,11 +431,23 @@ bool validateAcceptedDemAnchorProvenance(const QString& h5Path,
         !std::isfinite(residualMean) || !std::isfinite(residualRms) || residualRms < 0.0 ||
         !std::isfinite(residualMaxAbs) || residualMaxAbs < 0.0 ||
         std::fabs(residualMean) > residualMaxAbs || residualRms > residualMaxAbs ||
-        residualMaxAbs > policy.maximumSparseHeightResidualMeters ||
         recomputedConsensus < policy.minimumConsensusFraction ||
         std::fabs(consensus - recomputedConsensus) > 1e-12) {
         if (errorMessage) *errorMessage = QStringLiteral("DEM output has invalid absolute-phase anchoring v2 burst coverage or K histogram: %1").arg(h5Path);
         return false;
+    }
+    // 残差超限不再拒绝出图，仅作为质量告警浮出到节点状态；K 共识等其余契约仍严格校验
+    if (qualityWarning) {
+        qualityWarning->clear();
+        if (residualMaxAbs > policy.maximumSparseHeightResidualMeters) {
+            *qualityWarning = QStringLiteral(
+                "%1：绝对相位锚定残差超出策略——maxAbs=%2 m > 上限 %3 m（count=%4, mean=%5 m, rms=%6 m）。"
+                "已按质量告警继续出图，结果精度可能不足。")
+                .arg(h5Path)
+                .arg(residualMaxAbs, 0, 'f', 3).arg(policy.maximumSparseHeightResidualMeters, 0, 'f', 1)
+                .arg(residualValidationCount, 0, 'f', 0)
+                .arg(residualMean, 0, 'f', 3).arg(residualRms, 0, 'f', 3);
+        }
     }
     for (const QString& dataset : requiredStrings) {
         std::string value;
@@ -999,7 +1022,7 @@ void DemNode::executeProcessing()
         setProgress(100);
         if (validateAndRestoreOutput()) {
             if (!m_remedyWatcher.isRunning()) {
-                finishExecution();
+                finishDemExecution();
             }
         } else {
             setState(ExecutionState::Error);
@@ -1120,8 +1143,19 @@ void DemNode::onProgressUpdate(int progress, const QString& message)
     setProgress(progress);
 }
 
+void DemNode::finishDemExecution()
+{
+    if (m_anchorQualityWarnings.isEmpty()) {
+        finishExecution();
+        return;
+    }
+    setLastWarningMessage(m_anchorQualityWarnings.join('\n'));
+    finishExecutionWithWarning();
+}
+
 void DemNode::onProcessingFinished()
 {
+    m_anchorQualityWarnings.clear();
     QStringList h5Paths;
     QStringList jpgPaths;
     QStringList types;
@@ -1170,6 +1204,7 @@ void DemNode::onProcessingFinished()
         return;
     }
     for (int resultIndex = 0; resultIndex < workerPaths.size(); ++resultIndex) {
+        QString anchorQualityWarning;
         if (resultIndex >= m_preparedPhaseInputSnapshots.size() ||
             !validateAcceptedDemAnchorProvenance(
                 workerPaths.at(resultIndex), m_preparedAnchorPolicy,
@@ -1178,10 +1213,11 @@ void DemNode::onProcessingFinished()
                 m_preparedAuxiliaryDemSnapshot.binding.geoidModelId,
                 m_preparedAuxiliaryDemSnapshot.binding.geoidModelHash,
                 m_preparedPhaseInputSnapshots.at(resultIndex).retainedMasterBurstIndices,
-                &transactionError)) {
+                &transactionError, &anchorQualityWarning)) {
             onError(transactionError);
             return;
         }
+        if (!anchorQualityWarning.isEmpty()) m_anchorQualityWarnings.append(anchorQualityWarning);
     }
     if (!projectXml() || !NodeUtils::validateStagedOutputTransaction(m_outputTransaction, &transactionError) ||
         !NodeUtils::validateStagedH5Datasets(
@@ -1303,7 +1339,7 @@ void DemNode::onProcessingFinished()
             setState(ExecutionState::Running);
             setProgress(100);
             InSARLogManager::LogInfo("DemNode", "executeProcessing completed.");
-            finishExecution();
+            finishDemExecution();
         });
 
         QFuture<void> future = QtConcurrent::run([h5Paths, previewJpgPaths, types]() {
@@ -1326,7 +1362,7 @@ void DemNode::onProcessingFinished()
         setState(ExecutionState::Running);
         setProgress(100);
         InSARLogManager::LogInfo("DemNode", "executeProcessing completed (empty output list).");
-        finishExecution();
+        finishDemExecution();
     }
 }
 
@@ -1465,6 +1501,7 @@ void DemNode::onModelUpdated(QStandardItemModel* model)
 
 bool DemNode::validateAndRestoreOutput()
 {
+    m_anchorQualityWarnings.clear();
     QString dstNode = m_outputNodeName.trimmed();
     if (dstNode.isEmpty())
         return false;
@@ -1508,14 +1545,16 @@ bool DemNode::validateAndRestoreOutput()
     }
     for (const QString& h5Path : h5Paths) {
         QString anchorError;
+        QString anchorQualityWarning;
         const DemAbsolutePhaseAnchorV2Policy restorePolicy;
         if (!validateAcceptedDemAnchorProvenance(h5Path, restorePolicy,
                                                  committedResourceId, committedCanonicalHash,
                                                  committedGeoidId, committedGeoidHash,
-                                                 QList<int>(), &anchorError)) {
+                                                 QList<int>(), &anchorError, &anchorQualityWarning)) {
             setLastErrorMessage(anchorError);
             return false;
         }
+        if (!anchorQualityWarning.isEmpty()) m_anchorQualityWarnings.append(anchorQualityWarning);
     }
     QString descriptorError;
     descriptor = descriptorWithDemGeometry(descriptor, h5Paths, &descriptorError);
@@ -1622,7 +1661,7 @@ bool DemNode::validateAndRestoreOutput()
 
             if (executionState() == ExecutionState::Running) {
                 setProgress(100);
-                finishExecution();
+                finishDemExecution();
             } else {
                 Q_EMIT dataUpdated(1);
             }

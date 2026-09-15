@@ -64,6 +64,7 @@ SnaphuRunOptionsV1 makeSnaphuRunOptions(const SnaphuUiOptions& uiOptions)
     options.requestedProcessCount = 1;
     options.wallTimeoutMilliseconds = uiOptions.wallTimeoutMilliseconds;
     options.heartbeatMilliseconds = 1000;
+    options.statisticalCostMode = uiOptions.statisticalCostMode;
     if (uiOptions.keepArtifactsOnSuccess) {
         options.flags |= SNAPHU_RUN_OPTION_KEEP_ARTIFACTS_ON_SUCCESS;
     }
@@ -90,7 +91,8 @@ QString diagnosticFailureMessage(const QString& operation, const UnwrapDiagnosti
 {
     const QString tool = diagnosticString(diagnostic.tool, sizeof(diagnostic.tool));
     const QString summary = diagnosticString(diagnostic.summary, sizeof(diagnostic.summary));
-    return QStringLiteral("%1 failed (%2, stage=%3, status=%4, win32Error=%5, exitCode=%6): %7")
+    const QString stderrTail = diagnosticString(diagnostic.stderrTail, sizeof(diagnostic.stderrTail)).trimmed();
+    QString msg = QStringLiteral("%1 failed (%2, stage=%3, status=%4, win32Error=%5, exitCode=%6): %7")
         .arg(operation,
              tool.isEmpty() ? QStringLiteral("unwrap") : tool,
              diagnosticStageName(diagnostic.stage))
@@ -98,6 +100,13 @@ QString diagnosticFailureMessage(const QString& operation, const UnwrapDiagnosti
         .arg(diagnostic.win32Error)
         .arg(diagnostic.exitCode)
         .arg(summary.isEmpty() ? QStringLiteral("No diagnostic summary.") : summary);
+    if (!stderrTail.isEmpty()) {
+        QString cleanStderr = stderrTail;
+        cleanStderr.replace(QLatin1Char('\r'), QLatin1String(""));
+        cleanStderr.replace(QLatin1Char('\n'), QLatin1String(" | "));
+        msg += QStringLiteral(" | stderr: %1").arg(cleanStderr);
+    }
+    return msg;
 }
 
 struct UnwrapAmplitudeStatus
@@ -597,12 +606,6 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             finishCancelled();
             return;
         }
-        const QString stderrTail = diagnosticString(diagnostic.stderrTail, sizeof(diagnostic.stderrTail));
-        if (!stderrTail.isEmpty()) {
-            InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "UnwrapWorker",
-                QStringLiteral("%1 stderr: %2").arg(operation, stderrTail),
-                LogTargets(LogTarget::DebugConsole) | LogTarget::DiagnosticFile, QStringLiteral("snaphu.stderr"));
-        }
         emit errorProcess(diagnosticFailureMessage(operation, diagnostic, result));
     };
 
@@ -1020,6 +1023,16 @@ void UnwrapWorker::Unwrap(int method, double coherence_threshold, QString save_p
             UnwrapDiagnostic diagnostic = {};
             diagnostic.structSize = sizeof(diagnostic);
             const SnaphuRunOptionsV1 options = makeSnaphuRunOptions(snaphuOptions);
+            // 记录生效的 SNAPHU 统计代价模式，便于与外部参考（SNAP 导出默认 DEFO）对标
+            {
+                const QString costModeName = snaphuOptions.statisticalCostMode == 1 ? QStringLiteral("DEFO")
+                    : (snaphuOptions.statisticalCostMode == 2 ? QStringLiteral("SMOOTH") : QStringLiteral("TOPO"));
+                InSARLogManager::LogInfo("UnwrapWorker", QStringLiteral(
+                    "SNAPHU 参数：统计代价模式=%1，分块=%2x%3，重叠=%4/%5")
+                    .arg(costModeName)
+                    .arg(snaphuOptions.tileRows).arg(snaphuOptions.tileCols)
+                    .arg(snaphuOptions.rowOverlap).arg(snaphuOptions.colOverlap));
+            }
             if (hasMaskedPixels) {
                 ret = unwrap.SnaphuFileMaskedEx2(phase_path.at(i).toStdString().c_str(), validMask, phase_unwrap,
                                                   save_path.toStdString().c_str(), snaphuWorkDir.path().toStdString().c_str(),

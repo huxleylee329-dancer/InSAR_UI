@@ -797,7 +797,9 @@ void InterferometricFormationNode::onProgressUpdate(int progress, const QString&
     }
     setProgress(progress);
 
-    if (m_heartbeatTimer.isValid() && m_heartbeatTimer.elapsed() >= 30000) {
+    const bool progressChanged = (progress != m_lastLoggedProgress) || (message != m_lastLoggedMessage);
+    const bool heartbeatExpired = m_heartbeatTimer.isValid() && m_heartbeatTimer.elapsed() >= 300000; // 5分钟保活打点
+    if (progressChanged || heartbeatExpired) {
         TaskLogContext logContext;
         logContext.displayName = caption();
         InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,
@@ -806,6 +808,8 @@ void InterferometricFormationNode::onProgressUpdate(int progress, const QString&
                                       LogTargets(LogTarget::UserProjectLog),
                                       QStringLiteral("heartbeat"), QStringLiteral("running"),
                                       m_executionTimer.isValid() ? m_executionTimer.elapsed() : -1);
+        m_lastLoggedProgress = progress;
+        m_lastLoggedMessage = message;
         m_heartbeatTimer.restart();
     }
 }
@@ -1468,6 +1472,8 @@ void InterferometricFormationNode::executeProcessing()
 {
     m_executionTimer.start();
     m_heartbeatTimer.start();
+    m_lastLoggedProgress = -1;
+    m_lastLoggedMessage.clear();
     TaskLogContext logContext;
     logContext.displayName = caption();
     InSARLogManager::LogTaskEvent(logContext, InSARLogManager::LevelInfo,

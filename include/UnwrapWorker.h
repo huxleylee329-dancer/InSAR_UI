@@ -10,6 +10,9 @@ struct SnaphuUiOptions
     quint32 colOverlap = 0;
     quint64 wallTimeoutMilliseconds = 0;
     bool keepArtifactsOnSuccess = false;
+    // SNAPHU 统计代价模式，取值与 Unwrap.h 的 SnaphuStatisticalCostMode 对应：
+    // 0=TOPO（SNAPHU 默认，本工程既有行为），1=DEFO，2=SMOOTH
+    quint32 statisticalCostMode = 0;
 };
 Q_DECLARE_METATYPE(SnaphuUiOptions)
 

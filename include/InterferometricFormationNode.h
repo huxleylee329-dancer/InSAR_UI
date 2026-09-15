@@ -124,6 +124,8 @@ private:
     QFutureWatcher<void> m_remedyWatcher;
     QElapsedTimer m_executionTimer;
     QElapsedTimer m_heartbeatTimer;
+    int m_lastLoggedProgress = -1;
+    QString m_lastLoggedMessage;
 
     NodeUtils::OverwriteResult m_preparedOverwriteResult = NodeUtils::OverwriteResult::NoConflict;
     QString m_preparedDstNode;
