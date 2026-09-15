@@ -20,14 +20,20 @@ BM3DEnhancementTask::BM3DEnhancementTask(
     EnhancementType type,
     QStringList inputPaths,
     QStringList outputPaths,
-    bool allowSkipOnError
+    bool allowSkipOnError,
+    ClutterSuppressionParameters clutterParameters
 )
     : m_type(type)
     , m_inputPaths(inputPaths)
     , m_outputPaths(outputPaths)
     , m_allowSkipOnError(allowSkipOnError)
     , m_stopFlag(false)
+    , m_clutterParameters(clutterParameters)
 {
+    // QObject lifetime is managed on its affinity (UI) thread.  QRunnable's
+    // default auto-delete would destroy this object on a pool thread and leave
+    // node-side task pointers dangling until queued terminal signals run.
+    setAutoDelete(false);
 }
 
 void BM3DEnhancementTask::stop()
@@ -154,7 +160,10 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
     if (m_type == EnhancementType::SpeckleDenoise) {
         processMsg = QStringLiteral("执行BM3D去噪 (可能耗时较长)...");
     } else { // ClutterSuppression
-        processMsg = QStringLiteral("执行BM3D去杂波 (可能耗时较长)...");
+        processMsg = QStringLiteral("Executing %1 clutter suppression...")
+            .arg(QString::fromLatin1(
+                ClutterSuppressionAlgorithms::methodName(
+                    m_clutterParameters.method)));
     }
 
     emit updateProcess(baseProgress + progressStep * 0.0, QStringLiteral("加载图像..."));
@@ -171,16 +180,51 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
     emit updateProcess(baseProgress + progressStep * 0.4, processMsg);
 
     cv::Mat output8U;
-    const int ret = SARProcessor::DenoiseGray(
-        inputGray, 0.0, output8U,
-        &isCancellationRequested, &m_stopFlag, nullptr, nullptr);
+    cv::Mat targetMask;
 
-    if (ret == -2 || isStopped()) {
-        return false;
+    if (m_type == EnhancementType::ClutterSuppression &&
+        m_clutterParameters.method != ClutterSuppressionMethod::BM3D)
+    {
+        if (isStopped()) {
+            return false;
+        }
+
+        const ClutterSuppressionResult result =
+            ClutterSuppressionAlgorithms::process(
+                inputGray, m_clutterParameters);
+
+        if (isStopped()) {
+            return false;
+        }
+
+        output8U = result.suppressedImage;
+        targetMask = result.targetMask;
+
+        if (output8U.empty()) {
+            outError = QStringLiteral(
+                "Clutter suppression returned an empty image");
+            return false;
+        }
     }
-    if (ret != 0 || output8U.empty()) {
-        outError = QStringLiteral("BM3D处理失败");
-        return false;
+    else
+    {
+        const int ret = SARProcessor::DenoiseGray(
+            inputGray,
+            0.0,
+            output8U,
+            &isCancellationRequested,
+            &m_stopFlag,
+            nullptr,
+            nullptr);
+
+        if (ret == -2 || isStopped()) {
+            return false;
+        }
+
+        if (ret != 0 || output8U.empty()) {
+            outError = QStringLiteral("BM3D processing failed");
+            return false;
+        }
     }
 
     emit updateProcess(baseProgress + progressStep * 0.8, QStringLiteral("后处理及保存..."));
@@ -189,11 +233,32 @@ bool BM3DEnhancementTask::processBM3DEnhancement(
     }
 
     if (!cv::imwrite(outputPath.toStdString(), output8U)) {
-        outError = QStringLiteral("无法保存处理结果");
+        outError = QStringLiteral("Failed to save processed image");
         return false;
     }
+
+    QString maskPath;
+
+    if (!targetMask.empty()) {
+        const QFileInfo outputInfo(outputPath);
+        maskPath = outputInfo.absolutePath() + "/" +
+                outputInfo.completeBaseName() +
+                "_mask.png";
+
+        if (!cv::imwrite(maskPath.toStdString(), targetMask)) {
+            QFile::remove(outputPath);
+            outError = QStringLiteral("Failed to save CFAR target mask");
+            return false;
+        }
+    }
+
     if (isStopped()) {
         QFile::remove(outputPath);
+
+        if (!maskPath.isEmpty()) {
+            QFile::remove(maskPath);
+        }
+
         return false;
     }
 

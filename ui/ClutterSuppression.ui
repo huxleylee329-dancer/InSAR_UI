@@ -331,7 +331,7 @@
           </rect>
          </property>
          <property name="text">
-          <string>加载滤波图像</string>
+          <string>删除滤波图像</string>
          </property>
         </widget>
        </widget>
