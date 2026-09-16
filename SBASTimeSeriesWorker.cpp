@@ -865,29 +865,122 @@ void SBASTimeSeriesWorker::SBAS_time_series(double temporal_thresh_low, double t
     if (cancellationRequested()) { finishCancelled(); return; }
     if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "residue_topography", z), QStringLiteral("residue_topography"))) return;
     if (cancellationRequested()) { finishCancelled(); return; }
-    for (int ii = 0; ii < phaseFiles.size(); ii++)
+    bool mappedCoordinatesFound = false;
+
+    // 优先从 SBAS 生成的临时干涉图中读取。
+    for (int ii = 0; ii < static_cast<int>(phaseFiles.size()); ++ii)
     {
-        QString pFile = QString::fromStdString(phaseFiles[ii]);
-        if (NodeUtils::readMatFromH5(pFile, "mapped_lat", mapped_lat))
+        const QString phaseFile = QString::fromStdString(phaseFiles[ii]);
+
+        Mat candidateLat;
+        Mat candidateLon;
+        if (NodeUtils::readMatFromH5(phaseFile, "mapped_lat", candidateLat) &&
+            NodeUtils::readMatFromH5(phaseFile, "mapped_lon", candidateLon) &&
+            !candidateLat.empty() &&
+            !candidateLon.empty() &&
+            candidateLat.size() == candidateLon.size())
         {
-            NodeUtils::readMatFromH5(pFile, "mapped_lon", mapped_lon);
-            Mat lon_new(temporal_coh.rows, temporal_coh.cols, CV_32F), lat_new(temporal_coh.rows, temporal_coh.cols, CV_32F);
-            for (int r_idx = 0; r_idx < temporal_coh.rows; r_idx++)
-            {
-                for (int c_idx = 0; c_idx < temporal_coh.cols; c_idx++)
-                {
-                    lon_new.at<float>(r_idx, c_idx) = cv::mean(mapped_lon(cv::Range(r_idx * multilook_az, r_idx * multilook_az + multilook_az),
-                        cv::Range(c_idx * multilook_rg, c_idx * multilook_rg + multilook_rg)))[0];
-                    lat_new.at<float>(r_idx, c_idx) = cv::mean(mapped_lat(cv::Range(r_idx * multilook_az, r_idx * multilook_az + multilook_az),
-                        cv::Range(c_idx * multilook_rg, c_idx * multilook_rg + multilook_rg)))[0];
-                }
-            }
-            if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lat", lat_new), QStringLiteral("mapped_lat"))) return;
-            if (cancellationRequested()) { finishCancelled(); return; }
-            if (!writeOrFail(conversion.write_array_to_h5(times_series_h5.c_str(), "mapped_lon", lon_new), QStringLiteral("mapped_lon"))) return;
-            if (cancellationRequested()) { finishCancelled(); return; }
+            mapped_lat = candidateLat;
+            mapped_lon = candidateLon;
+            mappedCoordinatesFound = true;
             break;
         }
+    }
+
+    // 临时干涉图中没有时，回到原始 Deramp 输入中查找。
+    // Deramp 当前只在主影像 H5 中保存 mapped_lat/mapped_lon。
+    if (!mappedCoordinatesFound)
+    {
+        for (const QString& inputFile : filePaths)
+        {
+            Mat candidateLat;
+            Mat candidateLon;
+            if (NodeUtils::readMatFromH5(inputFile, "mapped_lat", candidateLat) &&
+                NodeUtils::readMatFromH5(inputFile, "mapped_lon", candidateLon) &&
+                !candidateLat.empty() &&
+                !candidateLon.empty() &&
+                candidateLat.size() == candidateLon.size())
+            {
+                mapped_lat = candidateLat;
+                mapped_lon = candidateLon;
+                mappedCoordinatesFound = true;
+                break;
+            }
+        }
+    }
+
+    if (mappedCoordinatesFound)
+    {
+        const int requiredRows = temporal_coh.rows * multilook_az;
+        const int requiredCols = temporal_coh.cols * multilook_rg;
+
+        if (mapped_lat.rows < requiredRows ||
+            mapped_lat.cols < requiredCols ||
+            mapped_lon.rows < requiredRows ||
+            mapped_lon.cols < requiredCols)
+        {
+            emit errorProcess(QStringLiteral(
+                "mapped_lat/mapped_lon dimensions do not match the SBAS multilook result."));
+            return;
+        }
+
+        Mat lon_new(temporal_coh.rows, temporal_coh.cols, CV_32F);
+        Mat lat_new(temporal_coh.rows, temporal_coh.cols, CV_32F);
+
+        for (int r_idx = 0; r_idx < temporal_coh.rows; ++r_idx)
+        {
+            for (int c_idx = 0; c_idx < temporal_coh.cols; ++c_idx)
+            {
+                const cv::Range rowRange(
+                    r_idx * multilook_az,
+                    (r_idx + 1) * multilook_az);
+
+                const cv::Range colRange(
+                    c_idx * multilook_rg,
+                    (c_idx + 1) * multilook_rg);
+
+                lon_new.at<float>(r_idx, c_idx) =
+                    static_cast<float>(cv::mean(mapped_lon(rowRange, colRange))[0]);
+
+                lat_new.at<float>(r_idx, c_idx) =
+                    static_cast<float>(cv::mean(mapped_lat(rowRange, colRange))[0]);
+            }
+        }
+
+        if (!writeOrFail(
+            conversion.write_array_to_h5(
+                times_series_h5.c_str(), "mapped_lat", lat_new),
+            QStringLiteral("mapped_lat")))
+        {
+            return;
+        }
+
+        if (cancellationRequested())
+        {
+            finishCancelled();
+            return;
+        }
+
+        if (!writeOrFail(
+            conversion.write_array_to_h5(
+                times_series_h5.c_str(), "mapped_lon", lon_new),
+            QStringLiteral("mapped_lon")))
+        {
+            return;
+        }
+
+        if (cancellationRequested())
+        {
+            finishCancelled();
+            return;
+        }
+    }
+    else
+    {
+        emit errorProcess(QStringLiteral(
+            "Unable to find mapped_lat and mapped_lon in either "
+            "the generated interferograms or the input Deramp H5 files."));
+        return;
     }
     
     QString times_series_h5_forward = QString::fromStdString(times_series_h5).replace('\\', '/');

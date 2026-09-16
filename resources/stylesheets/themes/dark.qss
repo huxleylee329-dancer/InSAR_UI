@@ -1,5 +1,11 @@
 /* Dark theme - comprehensive color overrides - themes/dark.qss */
 
+/* Apply the dark palette to standalone QWidget-based tool windows. */
+QWidget:window {
+    background-color: #1A1C1C;
+    color: #F2F2F2;
+}
+
 QMainWindow {
     background-color: #1A1C1C;
 }

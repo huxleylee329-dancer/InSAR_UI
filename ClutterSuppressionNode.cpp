@@ -201,6 +201,11 @@ void ClutterSuppressionNode::createWidget()
     });
     layout->addWidget(m_saveToProjectCheckBox);
 
+    auto* methodLabel = new QLabel(
+        QStringLiteral("工作流固定使用 BM3D；CFAR 请在独立窗口中人工选择。"));
+    methodLabel->setWordWrap(true);
+    layout->addWidget(methodLabel);
+
     auto* nodeNameLayout = new QHBoxLayout();
     nodeNameLayout->setStretch(0, 3);
     nodeNameLayout->setStretch(1, 7);
@@ -403,21 +408,38 @@ void ClutterSuppressionNode::executeProcessing()
     m_outputImagePaths = outputPaths;
 
     m_isExecuting = true;
-    m_task = new BM3DEnhancementTask(EnhancementType::ClutterSuppression, inputPaths, outputPaths,
-                                     !saveToProject);
+
+    ClutterSuppressionParameters workflowParameters;
+    workflowParameters.method = ClutterSuppressionMethod::BM3D;
+    auto* task = new BM3DEnhancementTask(
+        EnhancementType::ClutterSuppression,
+        inputPaths,
+        outputPaths,
+        !saveToProject,
+        workflowParameters);
+    m_task = task;
 
     setState(ExecutionState::Running);
     deferAutomaticCompletion();
 
-    connect(m_task, &BM3DEnhancementTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::cancelled, this, &ClutterSuppressionNode::onCancelled, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::QueuedConnection);
-    connect(m_task, &BM3DEnhancementTask::outputsGenerated, this,
+    connect(task, &BM3DEnhancementTask::updateProcess, this, &ClutterSuppressionNode::onProgressUpdate, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::endProcess, this, &ClutterSuppressionNode::onProcessingFinished, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::errorProcess, this, &ClutterSuppressionNode::onError, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::cancelled, this, &ClutterSuppressionNode::onCancelled, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::askUserError, this, &ClutterSuppressionNode::onAskUserError, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::outputsGenerated, this,
         [this](const QStringList& outputPaths) { m_generatedOutputPaths = outputPaths; }, Qt::QueuedConnection);
 
-    QThreadPool::globalInstance()->start(m_task);
+    // The runnable is not auto-deleted by QThreadPool.  Delete it on its QObject
+    // affinity thread after the node has processed the terminal signal.
+    connect(task, &BM3DEnhancementTask::endProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::errorProcess,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+    connect(task, &BM3DEnhancementTask::cancelled,
+            task, &QObject::deleteLater, Qt::QueuedConnection);
+
+    QThreadPool::globalInstance()->start(task);
     updateParameterWidgetsEnableState();
 }
 

@@ -12,6 +12,12 @@
 #include <QEvent>
 #include <QRect>
 #include <QPoint>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QFutureWatcher>
+#include <QTextBrowser>
+#include <QTabBar>
 
 
 
@@ -41,7 +47,7 @@ private slots:
     void on_inputImageComboBox_currentIndexChanged(int index);
 
     void on_deleteFilterButton_clicked();
-    void on_calculateEnlButton_clicked();
+    void onFilterFinished();
 
 
 private:
@@ -52,17 +58,42 @@ private:
     QString input_node_name;
     QString input_image_name;
     QString input_image_path;
+    QString loaded_image_path;
+    QString pending_output_node_name;
+    QString pending_output_image_name;
+    QString pending_output_path;
     QLabel* imageDisplayLabel;
     QPixmap originalPixmap;
     QPixmap filteredPixmap;
+    QComboBox* filterMethodComboBox = nullptr;
+    QSpinBox* filterRadiusSpinBox = nullptr;
+    QDoubleSpinBox* filterLooksSpinBox = nullptr;
+    QDoubleSpinBox* frostDerampSpinBox = nullptr;
+    QLabel* filterRadiusLabel = nullptr;
+    QLabel* filterLooksLabel = nullptr;
+    QLabel* frostDerampLabel = nullptr;
+    QFutureWatcher<cv::Mat>* filterWatcher = nullptr;
+    QTextBrowser* methodDescriptionBrowser = nullptr;
+    QTabBar* imageTabBar = nullptr;
+    bool imageDisplayRefreshPending = false;
+    bool imageDisplayUpdateInProgress = false;
 
     void updateDisplayedImage();
 
-    cv::Mat runBm3dCoreLogic(const cv::Mat& inputGray) const;
     cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
     double calcMedian(const cv::Mat& input) const;
+    QString currentFilterSuffix() const;
+    void updateFilterParameterVisibility();
+    void updateFilterDescription();
+    void setFilterRunning(bool running);
+    void resetLoadedImageState();
+    void clearEnlResults();
+    bool refreshCurrentResult();
+    bool isValidOutputNodeName(const QString& name) const;
+    QString inputFingerprintToken() const;
+    QString currentOutputImageName() const;
 
-    bool saveFilteredImage(const cv::Mat& filteredImage, QString& outputPath, QString& outputImageName);
+    bool saveFilteredImage(const cv::Mat& filteredImage, const QString& outputPath);
     bool registerFilteredImage(const QString& outputNodeName,
                                const QString& outputImageName,
                                const QString& outputPath);

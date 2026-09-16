@@ -7,6 +7,7 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <atomic>
+#include "ClutterSuppressionAlgorithms.h"
 
 // BM3D增强类型枚举
 enum class EnhancementType {
@@ -22,8 +23,9 @@ public:
         EnhancementType type,
         QStringList inputPaths,
         QStringList outputPaths,
-        bool allowSkipOnError
-    );
+        bool allowSkipOnError,
+        ClutterSuppressionParameters clutterParameters =
+            ClutterSuppressionParameters());
 
     void stop();
     void resolveErrorDecision(quint64 requestId, bool skip);
@@ -61,6 +63,7 @@ private:
     quint64 m_pendingRequestId = 0;
     bool m_hasDecision = false;
     bool m_skipCurrentFile = false;
+    ClutterSuppressionParameters m_clutterParameters;
 };
 
 #endif // BM3DENHANCEMENTTASK_H

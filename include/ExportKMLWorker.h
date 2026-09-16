@@ -17,5 +17,5 @@ signals:
     void cancelled();
 
 private:
-    void paintColorbar(double mMin, double mMax, QString save_path);
+    bool paintColorbar(double mMin, double mMax, QString save_path);
 };

@@ -11,7 +11,15 @@
 #include <QEvent>
 #include <QRect>
 #include <QPoint>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QPushButton>
+#include <QTextBrowser>
+#include <QFutureWatcher>
+#include <QTabBar>
 #include <opencv2/opencv.hpp>
+#include "ClutterSuppressionAlgorithms.h"
 
 
 class ClutterSuppression : public QWidget
@@ -39,6 +47,7 @@ private slots:
     void on_startRoiButton_2_clicked();
     void on_clearRoiButton_2_clicked();
     void on_deleteFilterButton_clicked();
+    void onFilterFinished();
 
 signals:
     void sendCopy(QStandardItemModel* copy);
@@ -54,13 +63,33 @@ private:
     QString input_node_name;
     QString input_image_name;
     QString input_image_path;
+    QString loaded_image_path;
+    QString pending_output_node_name;
+    QString pending_output_image_name;
+    QString pending_output_path;
 
     QLabel* imageDisplayLabel;
     QPixmap originalPixmap;
     QPixmap filteredPixmap;
+    QPixmap targetMaskPixmap;
 
     cv::Mat originalGrayMat;
     cv::Mat filteredGrayMat;
+    cv::Mat targetMaskMat;
+
+    QComboBox* methodComboBox;
+    QSpinBox* guardRadiusSpinBox;
+    QSpinBox* clutterRadiusSpinBox;
+    QDoubleSpinBox* pfaSpinBox;
+    QDoubleSpinBox* censoringSpinBox;
+    QSpinBox* mixtureCountSpinBox;
+    QPushButton* recommendedParametersButton = nullptr;
+    QTextBrowser* methodDescriptionBrowser;
+    QLabel* clutterRoiHintLabel = nullptr;
+    QTabBar* imageTabBar = nullptr;
+    bool imageDisplayRefreshPending = false;
+    bool imageDisplayUpdateInProgress = false;
+    QFutureWatcher<ClutterSuppressionResult>* filterWatcher = nullptr;
 
     bool targetRoiModeEnabled;
     bool clutterRoiModeEnabled;
@@ -83,7 +112,18 @@ private:
     double calculateScr(const cv::Mat& targetGray, const cv::Mat& clutterGray) const;
     void updateScrResults();
 
-    cv::Mat runClutterSuppressionCoreLogic(const cv::Mat& inputGray) const;
+    cv::Mat runClutterSuppressionCoreLogic(const cv::Mat& inputGray);
+    ClutterSuppressionParameters currentParameters() const;
+    QString currentMethodSuffix() const;
+    QString currentOutputImageName() const;
+    QString inputFingerprintToken() const;
+    void updateMethodControls();
+    void applyRecommendedParameters();
+    void updateMethodDescription();
+    void setFilterRunning(bool running);
+    void clearScrResults();
+    bool refreshCurrentResult();
+    void resetLoadedImageState();
     cv::Mat runBm3dDenoise(const cv::Mat& imgNorm, double sigmaFinal) const;
     double calcMedian(const cv::Mat& input) const;
 
