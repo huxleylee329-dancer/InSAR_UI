@@ -574,9 +574,14 @@ void DemNode::setInData(std::shared_ptr<NodeData> data, PortIndex port)
 
     ExecutableNodeDelegateModel::setInData(data, port);
 
-    if (!m_inputData || m_inputData->filePaths().isEmpty() || !m_auxiliaryDemData) {
+    // 恢复期不得清理：工程加载时本节点的输入尚未传播到位，清空会打掉刚恢复出来的输出。
+    if (!isRestoring() && (!m_inputData || m_inputData->filePaths().isEmpty() || !m_auxiliaryDemData)) {
+        // 输入缺失时除清空成员外还必须显式让出输出端口，否则下游仍持有旧的 NodeData 指针、
+        // 在不重跑本节点的情况下继续消费陈旧数据。（与 DenoiseNode::setInData 的既有做法一致）
         m_outputData.reset();
         m_imageInfoData.reset();
+        setOutputData(0, nullptr);
+        setOutputData(1, nullptr);
     }
 }
 
@@ -1527,22 +1532,41 @@ bool DemNode::validateAndRestoreOutput()
     const QString committedCanonicalHash = committedProvenance.value(QStringLiteral("demAnchorReferenceHash"));
     const QString committedGeoidId = committedProvenance.value(QStringLiteral("demAnchorGeoidModelId"));
     const QString committedGeoidHash = committedProvenance.value(QStringLiteral("demAnchorGeoidModelHash"));
+    // 加载期校验必须自包含：不得依赖 m_inputData / m_auxiliaryDemData —— 这两个成员只由上游 setInData
+    // 赋值，而本节点在存档的 nodes 数组里往往先于上游被加载（实测 DEM 节点排第 1、其上游排第 15），
+    // 依赖它们会让恢复必然失败、节点停在 Idle。改为用「已提交 provenance + 工程内 DEM 资源注册表」
+    // 在磁盘上重解析绑定：资源是否仍存在、metadata 哈希 / pinned provenance / 三个资源文件是否一致。
+    // 说明：覆盖性判定（auxiliaryDemCoversInput）此处退化为用已提交几何自比 —— 该覆盖性早在运行期
+    // 就已针对真实输入几何校验过并冻结进 provenance，加载期只需复核资源完整性；"当前绑定是否匹配"
+    // 则仍由重跑路径（prepareToStart 解析活绑定 + 覆盖提示）负责。
     NodeUtils::AuxiliaryDemBinding currentBinding;
     QString currentBindingError;
-    const QJsonObject restoreGeometry = m_inputData
-        ? NodeUtils::inputGeometryFromProductDescriptor(m_inputData->physicalProductDescriptor()) : QJsonObject();
-    if (!m_auxiliaryDemData || restoreGeometry.isEmpty() ||
-        !NodeUtils::resolveAuxiliaryDemBinding(projectPath(), *m_auxiliaryDemData,
-                                               currentBinding, &currentBindingError, restoreGeometry, true) ||
+    const QtNodes::AuxiliaryDemReferenceData committedReference(
+        committedResourceId, committedProvenance.value(QStringLiteral("demAnchorReferenceProvenanceId")));
+    const QJsonObject committedGeometry = NodeUtils::inputGeometryFromProductDescriptor(descriptor);
+    if (committedReference.pinnedProvenanceId().isEmpty() || committedGeometry.isEmpty() ||
+        !NodeUtils::resolveAuxiliaryDemBinding(projectPath(), committedReference,
+                                               currentBinding, &currentBindingError, committedGeometry,
+                                               !committedGeoidId.isEmpty()) ||
         currentBinding.resourceId != committedResourceId ||
         currentBinding.canonicalMetadataHash != committedCanonicalHash ||
         currentBinding.geoidModelId != committedGeoidId ||
         currentBinding.geoidModelHash != committedGeoidHash) {
         setLastErrorMessage(currentBindingError.isEmpty()
-            ? QStringLiteral("Committed DEM absolute-phase anchor provenance no longer matches the current auxiliary terrain DEM binding.")
+            ? QStringLiteral("已提交 DEM 的绝对相位锚定来源无法在工程内 DEM 资源注册表中复现（资源缺失、哈希不符或 pinned provenance 丢失）。")
             : currentBindingError);
+        InSARLogManager::LogWarning("DemNode", QStringLiteral(
+            "DEM 输出恢复失败：已提交锚定来源无法在工程内 DEM 资源注册表中复现 [resourceId=%1, pinnedProvenanceId=%2]：%3")
+            .arg(committedResourceId,
+                 committedProvenance.value(QStringLiteral("demAnchorReferenceProvenanceId")),
+                 lastErrorMessage()));
         return false;
     }
+    InSARLogManager::LogDebug("DemNode", QStringLiteral(
+        "DEM 输出已自包含恢复：已提交锚定来源在资源注册表中复现通过 [resourceId=%1, pinnedProvenanceId=%2]。")
+        .arg(committedResourceId,
+             committedProvenance.value(QStringLiteral("demAnchorReferenceProvenanceId"))),
+        QStringLiteral("dem.restore"));
     for (const QString& h5Path : h5Paths) {
         QString anchorError;
         QString anchorQualityWarning;

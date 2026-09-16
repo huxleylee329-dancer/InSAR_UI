@@ -60,13 +60,17 @@ SnaphuRunOptionsV1 makeSnaphuRunOptions(const SnaphuUiOptions& uiOptions)
     options.tileCols = uiOptions.tileCols;
     options.rowOverlap = uiOptions.rowOverlap;
     options.colOverlap = uiOptions.colOverlap;
-    // Windows SNAPHU currently serializes tile execution internally.
-    options.requestedProcessCount = 1;
+    // 分片驱动：1 = 既有单进程路径；>1 时由 DLL 起多个 worker 并行解缠，随后统一装配。
+    // Windows 版 SNAPHU 自身不能 fork，分片并行由 DLL 侧编排（DOTILEMASKFILE + --assemble）。
+    options.requestedProcessCount = qBound<quint32>(1u, uiOptions.tileWorkerCount, 256u);
     options.wallTimeoutMilliseconds = uiOptions.wallTimeoutMilliseconds;
     options.heartbeatMilliseconds = 1000;
     options.statisticalCostMode = uiOptions.statisticalCostMode;
     if (uiOptions.keepArtifactsOnSuccess) {
         options.flags |= SNAPHU_RUN_OPTION_KEEP_ARTIFACTS_ON_SUCCESS;
+    }
+    if (uiOptions.assembleOnly) {
+        options.flags |= SNAPHU_RUN_OPTION_ASSEMBLE_ONLY;
     }
     return options;
 }

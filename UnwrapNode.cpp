@@ -53,6 +53,8 @@ UnwrapNode::UnwrapNode()
     , m_snaphuTimeoutSpin(nullptr)
     , m_snaphuKeepArtifactsCheck(nullptr)
     , m_snaphuCostModeCombo(nullptr)
+    , m_snaphuTileWorkerSpin(nullptr)
+    , m_snaphuAssembleOnlyCheck(nullptr)
     , m_outputNodeName("")
     , m_method(1) // default: SPD Guided
     , m_coherenceThreshold(0.2)
@@ -168,6 +170,8 @@ QJsonObject UnwrapNode::save() const
     modelJson["snaphuTimeoutSeconds"] = static_cast<qint64>(m_snaphuOptions.wallTimeoutMilliseconds / 1000);
     modelJson["snaphuKeepArtifactsOnSuccess"] = m_snaphuOptions.keepArtifactsOnSuccess;
     modelJson["snaphuStatisticalCostMode"] = static_cast<int>(m_snaphuOptions.statisticalCostMode);
+    modelJson["snaphuTileWorkerCount"] = static_cast<int>(m_snaphuOptions.tileWorkerCount);
+    modelJson["snaphuAssembleOnly"] = m_snaphuOptions.assembleOnly;
 
     return modelJson;
 }
@@ -192,6 +196,12 @@ void UnwrapNode::load(QJsonObject const &json)
     if (!json["snaphuKeepArtifactsOnSuccess"].isUndefined()) m_snaphuOptions.keepArtifactsOnSuccess = json["snaphuKeepArtifactsOnSuccess"].toBool();
     if (!json["snaphuStatisticalCostMode"].isUndefined()) {
         m_snaphuOptions.statisticalCostMode = static_cast<quint32>(qBound(0, json["snaphuStatisticalCostMode"].toInt(), 2));
+    }
+    if (!json["snaphuTileWorkerCount"].isUndefined()) {
+        m_snaphuOptions.tileWorkerCount = static_cast<quint32>(qBound(1, json["snaphuTileWorkerCount"].toInt(), 32));
+    }
+    if (!json["snaphuAssembleOnly"].isUndefined()) {
+        m_snaphuOptions.assembleOnly = json["snaphuAssembleOnly"].toBool();
     }
 
     // SOP Rule 15: load parameters BEFORE triggering validateAndRestoreOutput in base load
@@ -286,6 +296,14 @@ void UnwrapNode::createWidget()
     m_snaphuCostModeCombo->addItem(QStringLiteral("TOPO（默认，地形相位）"));
     m_snaphuCostModeCombo->addItem(QStringLiteral("DEFO（SNAP 默认）"));
     m_snaphuCostModeCombo->addItem(QStringLiteral("SMOOTH"));
+    m_snaphuTileWorkerSpin = new QSpinBox();
+    m_snaphuAssembleOnlyCheck = new QCheckBox(QStringLiteral("仅装配重放（不重跑解缠）"));
+    m_snaphuTileWorkerSpin->setToolTip(QStringLiteral(
+        "DOTILEMASK 分片驱动：>1 时由 DLL 起多个 snaphu 进程并行解缠互不相交的分块子集，"
+        "全部结束后再统一装配一次。上限受分块数与本层 32 约束；1 = 既有单进程行为。"));
+    m_snaphuAssembleOnlyCheck->setToolTip(QStringLiteral(
+        "跳过全部解缠，只对上一次留下的 tile 现场跑一次装配（实测 16 小时的分块阶段约 4 分钟重放）。"
+        "前提：上次运行勾选过“成功后保留 SNAPHU 现场文件”，且复用的 tile 必须与本轮输入一致。"));
     m_snaphuStatusLabel = new QLabel(QStringLiteral("状态: 未运行"));
     m_snaphuStatusLabel->setWordWrap(true);
     m_snaphuTileRowsSpin->setRange(1, 256);
@@ -295,12 +313,17 @@ void UnwrapNode::createWidget()
     m_snaphuTimeoutSpin->setRange(0, 30 * 24 * 60 * 60);
     m_snaphuTimeoutSpin->setSpecialValueText(QStringLiteral("不超时"));
     m_snaphuTimeoutSpin->setSuffix(QStringLiteral(" 秒"));
+    m_snaphuTileWorkerSpin->setRange(1, 32);
+    m_snaphuTileWorkerSpin->setSpecialValueText(QStringLiteral("1（单进程）"));
+    m_snaphuTileWorkerSpin->setSuffix(QStringLiteral(" 个进程"));
     snaphuForm->addRow(QStringLiteral("分块行数"), m_snaphuTileRowsSpin);
     snaphuForm->addRow(QStringLiteral("分块列数"), m_snaphuTileColsSpin);
     snaphuForm->addRow(QStringLiteral("行重叠像素"), m_snaphuRowOverlapSpin);
     snaphuForm->addRow(QStringLiteral("列重叠像素"), m_snaphuColOverlapSpin);
     snaphuForm->addRow(QStringLiteral("最长运行时间"), m_snaphuTimeoutSpin);
     snaphuForm->addRow(QStringLiteral("统计代价模式"), m_snaphuCostModeCombo);
+    snaphuForm->addRow(QStringLiteral("分片并行进程数"), m_snaphuTileWorkerSpin);
+    snaphuForm->addRow(m_snaphuAssembleOnlyCheck);
     snaphuForm->addRow(m_snaphuKeepArtifactsCheck);
     snaphuForm->addRow(m_snaphuStatusLabel);
 
@@ -316,6 +339,8 @@ void UnwrapNode::createWidget()
         m_snaphuOptions.wallTimeoutMilliseconds = static_cast<quint64>(m_snaphuTimeoutSpin->value()) * 1000;
         m_snaphuOptions.keepArtifactsOnSuccess = m_snaphuKeepArtifactsCheck->isChecked();
         m_snaphuOptions.statisticalCostMode = static_cast<quint32>(m_snaphuCostModeCombo->currentIndex());
+        m_snaphuOptions.tileWorkerCount = static_cast<quint32>(m_snaphuTileWorkerSpin->value());
+        m_snaphuOptions.assembleOnly = m_snaphuAssembleOnlyCheck->isChecked();
         updateSnaphuOptionWidgets();
         invalidateNodeData();
     };
@@ -326,6 +351,8 @@ void UnwrapNode::createWidget()
     connect(m_snaphuTimeoutSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
     connect(m_snaphuKeepArtifactsCheck, &QCheckBox::toggled, this, applySnaphuChange);
     connect(m_snaphuCostModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, applySnaphuChange);
+    connect(m_snaphuTileWorkerSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, applySnaphuChange);
+    connect(m_snaphuAssembleOnlyCheck, &QCheckBox::toggled, this, applySnaphuChange);
     updateSnaphuOptionWidgets();
 
     // 5. 目标节点
@@ -385,6 +412,11 @@ void UnwrapNode::updateSnaphuOptionWidgets()
     const QSignalBlocker timeoutBlocker(m_snaphuTimeoutSpin);
     const QSignalBlocker artifactsBlocker(m_snaphuKeepArtifactsCheck);
     const QSignalBlocker costModeBlocker(m_snaphuCostModeCombo);
+    const QSignalBlocker tileWorkerBlocker(m_snaphuTileWorkerSpin);
+    const QSignalBlocker assembleOnlyBlocker(m_snaphuAssembleOnlyCheck);
+    // 分片进程数与装配重放都只在分块模式下有意义；重放模式下没有 worker，进程数置灰
+    m_snaphuTileWorkerSpin->setEnabled(tiled && !m_snaphuOptions.assembleOnly);
+    m_snaphuAssembleOnlyCheck->setEnabled(tiled);
     m_snaphuRowOverlapSpin->setEnabled(tiled);
     m_snaphuColOverlapSpin->setEnabled(tiled);
     m_snaphuRowOverlapSpin->setMinimum(tiled ? 50 : 0);
@@ -396,6 +428,8 @@ void UnwrapNode::updateSnaphuOptionWidgets()
     m_snaphuTimeoutSpin->setValue(static_cast<int>(m_snaphuOptions.wallTimeoutMilliseconds / 1000));
     m_snaphuKeepArtifactsCheck->setChecked(m_snaphuOptions.keepArtifactsOnSuccess);
     m_snaphuCostModeCombo->setCurrentIndex(qBound(0, static_cast<int>(m_snaphuOptions.statisticalCostMode), 2));
+    m_snaphuTileWorkerSpin->setValue(qBound(1, static_cast<int>(m_snaphuOptions.tileWorkerCount), 32));
+    m_snaphuAssembleOnlyCheck->setChecked(m_snaphuOptions.assembleOnly);
 }
 
 void UnwrapNode::updateWidgetSize()
@@ -446,7 +480,9 @@ bool UnwrapNode::validateInputs() const
     if (m_method == 3) {
         const bool tiled = m_snaphuOptions.tileRows > 1 || m_snaphuOptions.tileCols > 1;
         if (m_snaphuOptions.tileRows == 0 || m_snaphuOptions.tileCols == 0 ||
-            (tiled && (m_snaphuOptions.rowOverlap < 50 || m_snaphuOptions.colOverlap < 50))) {
+            (tiled && (m_snaphuOptions.rowOverlap < 50 || m_snaphuOptions.colOverlap < 50)) ||
+            (m_snaphuOptions.assembleOnly && !tiled) ||
+            (m_snaphuOptions.tileWorkerCount > 1 && !tiled)) {
             return false;
         }
     }
@@ -484,6 +520,18 @@ bool UnwrapNode::prepareToStart()
                 "SNAPHU 分块重叠较小 (行重叠=%1, 列重叠=%2 < 建议值 400)，可能影响跨块边界处的相位对齐与连续性。")
                 .arg(m_preparedSnaphuOptions.rowOverlap).arg(m_preparedSnaphuOptions.colOverlap),
                 LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole | LogTarget::DiagnosticFile);
+        }
+        // 装配重放复用上一次留下的 tile，本节点无法自证那批 tile 与本轮输入一致，必须前置提示
+        if (m_preparedSnaphuOptions.assembleOnly) {
+            InSARLogManager::LogDiagnostic(InSARLogManager::LevelWarning, "UnwrapNode", QStringLiteral(
+                "SNAPHU 装配重放已开启：本轮跳过全部解缠，直接复用上一次保留的 tile 现场做装配。"
+                "请确认那批 tile 与本轮的输入、参数一致——复用了陈旧 tile 会静默产出错误结果。"),
+                LogTargets(LogTarget::UserProjectLog) | LogTarget::DebugConsole | LogTarget::DiagnosticFile);
+        }
+        else if (m_preparedSnaphuOptions.tileWorkerCount > 1) {
+            InSARLogManager::LogInfo("UnwrapNode", QStringLiteral(
+                "SNAPHU 分片驱动已开启：将起 %1 个进程并行解缠互不相交的分块子集，随后统一装配。")
+                .arg(m_preparedSnaphuOptions.tileWorkerCount));
         }
     }
 

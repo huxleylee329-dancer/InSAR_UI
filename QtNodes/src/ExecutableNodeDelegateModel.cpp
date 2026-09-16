@@ -791,9 +791,8 @@ void ExecutableNodeDelegateModel::completeAutomaticExecution()
 
 void ExecutableNodeDelegateModel::invalidateExecution()
 {
-    // Do not block cancellation or invalidation behind output finalization.
-    std::unique_lock<std::mutex> leaseLock(*projectCommitLeaseMutex(_scene), std::try_to_lock);
-    if (!leaseLock.owns_lock()) {
+    // 避免在输出提交阶段阻塞取消或失效。若本节点正在持有提交租约，则延后失效处理
+    if (_commitLeaseActive.load()) {
         _commitInvalidationRequested.store(true);
         return;
     }

@@ -1804,6 +1804,11 @@ bool revalidateAuxiliaryDemBinding(const QString& projectRoot,
                                    bool requireGeoidModel)
 {
     if (!entity && !reference) {
+        // 注意：entity / reference 两个空指针语义是"当前没有任何辅助 DEM 输入变体"，
+        // 而不是"可以无输入地重校验"。本函数必须至少拿到一个活输入对象才能解析绑定，
+        // 因此它不适用于工程加载等输入尚未传播到位的场景；那种场景请改为
+        // 用已提交 provenance 构造 AuxiliaryDemReferenceData 后调用
+        // resolveAuxiliaryDemBinding 的 reference 重载（纯磁盘解析，见 DemNode 的恢复路径）。
         if (errorMessage) *errorMessage = QStringLiteral("No auxiliary DEM binding is active.");
         return false;
     }

@@ -1104,11 +1104,9 @@ void Sentinel1OrbitNode::onProcessingFinished(
         onError(error);
         return;
     }
-
     OutputCommitLease commitLease = acquireOutputCommitLease(m_outputTransaction.executionRevision);
     if (!commitLease) {
-        NodeUtils::abandonOutputTransaction(m_outputTransaction,
-                                            QStringLiteral("obsolete execution revision"), projectXml());
+        onError(QStringLiteral("无法获取输出提交租约（执行版本已作废或存在未决失效）。"));
         return;
     }
 
