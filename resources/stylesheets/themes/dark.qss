@@ -6,6 +6,51 @@ QWidget:window {
     color: #F2F2F2;
 }
 
+/* Foreground/background pairs for controls that otherwise inherit only one
+   side of the palette from legacy .ui files or local widget styles. */
+QDialog, QMessageBox,
+QScrollArea, QScrollArea > QWidget > QWidget,
+QStackedWidget, QToolBox {
+    background-color: #1A1C1C;
+    color: #F2F2F2;
+}
+
+QTextEdit, QPlainTextEdit, QTextBrowser,
+QAbstractItemView {
+    background-color: #2B2B2B;
+    color: #FFFFFF;
+    border: 1px solid #555555;
+    selection-background-color: #005FAC;
+    selection-color: #FFFFFF;
+}
+
+QTextBrowser#methodDescriptionBrowser {
+    background-color: #242626;
+    color: #FFFFFF;
+    border: 1px solid #555555;
+    padding: 4px;
+}
+
+QGroupBox#enlGroup,
+QGroupBox#enlGroup QLabel {
+    background-color: transparent;
+    color: #FFFFFF;
+}
+
+QCheckBox, QRadioButton {
+    color: #FFFFFF;
+}
+
+QLabel#secondaryHintLabel {
+    color: #B8B8B8;
+}
+
+QToolTip {
+    background-color: #2B2B2B;
+    color: #FFFFFF;
+    border: 1px solid #666666;
+}
+
 QMainWindow {
     background-color: #1A1C1C;
 }

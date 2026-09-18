@@ -36,6 +36,23 @@ QString clutterParameterToken(double value)
     return token;
 }
 
+bool isCfarMethod(ClutterSuppressionMethod method)
+{
+    switch (method)
+    {
+    case ClutterSuppressionMethod::CACFAR:
+    case ClutterSuppressionMethod::ACCFAR:
+    case ClutterSuppressionMethod::AAFCFAR:
+    case ClutterSuppressionMethod::VICFAR:
+    case ClutterSuppressionMethod::RmSATCFAR:
+        return true;
+    case ClutterSuppressionMethod::BM3D:
+    case ClutterSuppressionMethod::MCA:
+    default:
+        return false;
+    }
+}
+
 ClutterSuppressionResult runClutterFilterSnapshot(
     const cv::Mat& inputGray,
     const ClutterSuppressionParameters& parameters)
@@ -93,9 +110,8 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     methodDescriptionBrowser = new QTextBrowser(descriptionGroup);
     methodDescriptionBrowser->setReadOnly(true);
     methodDescriptionBrowser->setOpenExternalLinks(false);
+    methodDescriptionBrowser->setObjectName(QStringLiteral("methodDescriptionBrowser"));
     methodDescriptionBrowser->setFixedHeight(127);
-    methodDescriptionBrowser->setStyleSheet(
-        "QTextBrowser { background: #fafafa; border: 1px solid #d7d7d7; padding: 4px; }");
     descriptionLayout->addWidget(methodDescriptionBrowser);
     connect(descriptionGroup, &QGroupBox::toggled,
             methodDescriptionBrowser, &QTextBrowser::setVisible);
@@ -116,7 +132,8 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
         ClutterSuppressionMethod::ACCFAR,
         ClutterSuppressionMethod::AAFCFAR,
         ClutterSuppressionMethod::VICFAR,
-        ClutterSuppressionMethod::RmSATCFAR
+        ClutterSuppressionMethod::RmSATCFAR,
+        ClutterSuppressionMethod::MCA
     };
     for (ClutterSuppressionMethod method : methods)
         methodComboBox->addItem(ClutterSuppressionAlgorithms::methodName(method),
@@ -144,6 +161,50 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     mixtureCountSpinBox = new QSpinBox(ui->widget_2);
     mixtureCountSpinBox->setRange(1, 4);
     mixtureCountSpinBox->setValue(1);
+
+    mcaPatchSizeSpinBox = new QSpinBox(ui->widget_2);
+    mcaPatchSizeSpinBox->setRange(8, 32);
+    mcaPatchSizeSpinBox->setValue(20);
+    mcaPatchSizeSpinBox->setToolTip(QStringLiteral("稀疏字典使用的方形图块边长"));
+    mcaPatchStrideSpinBox = new QSpinBox(ui->widget_2);
+    mcaPatchStrideSpinBox->setRange(1, 20);
+    mcaPatchStrideSpinBox->setValue(15);
+    mcaPatchStrideSpinBox->setToolTip(QStringLiteral("相邻图块的采样步长；越小越平滑但越慢"));
+    mcaSparsitySpinBox = new QSpinBox(ui->widget_2);
+    mcaSparsitySpinBox->setRange(1, 20);
+    mcaSparsitySpinBox->setValue(10);
+    mcaSparsitySpinBox->setToolTip(QStringLiteral("OMP 每个图块最多使用的字典原子数"));
+    mcaIterationsSpinBox = new QSpinBox(ui->widget_2);
+    mcaIterationsSpinBox->setRange(5, 40);
+    mcaIterationsSpinBox->setValue(15);
+    mcaIterationsSpinBox->setToolTip(QStringLiteral("MCA 分量交替更新次数"));
+    mcaThresholdSpinBox = new QDoubleSpinBox(ui->widget_2);
+    mcaThresholdSpinBox->setDecimals(1);
+    mcaThresholdSpinBox->setRange(0.5, 20.0);
+    mcaThresholdSpinBox->setSingleStep(0.5);
+    mcaThresholdSpinBox->setValue(4.0);
+    mcaThresholdSpinBox->setToolTip(QStringLiteral("迭代末期的方向系数阈值"));
+    mcaTvGammaSpinBox = new QDoubleSpinBox(ui->widget_2);
+    mcaTvGammaSpinBox->setDecimals(1);
+    mcaTvGammaSpinBox->setRange(0.0, 20.0);
+    mcaTvGammaSpinBox->setSingleStep(0.5);
+    mcaTvGammaSpinBox->setValue(6.0);
+    mcaTvGammaSpinBox->setToolTip(QStringLiteral("Haar-TV 软阈值强度；越大抑制越强"));
+    mcaScalesSpinBox = new QSpinBox(ui->widget_2);
+    mcaScalesSpinBox->setRange(1, 6);
+    mcaScalesSpinBox->setValue(4);
+    mcaScalesSpinBox->setToolTip(QStringLiteral("多尺度方向分解的尺度数"));
+    mcaAnglesSpinBox = new QSpinBox(ui->widget_2);
+    mcaAnglesSpinBox->setRange(2, 32);
+    mcaAnglesSpinBox->setSingleStep(2);
+    mcaAnglesSpinBox->setValue(8);
+    mcaAnglesSpinBox->setToolTip(QStringLiteral("每个尺度使用的方向数"));
+
+    connect(mcaPatchSizeSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int value) {
+                mcaPatchStrideSpinBox->setMaximum(value);
+                refreshCurrentResult();
+            });
 
     recommendedParametersButton = new QPushButton(
         QStringLiteral("应用 SSDD 实测推荐参数"), ui->filterGroup);
@@ -173,6 +234,20 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     connect(censoringSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, [this](double) { refreshCurrentResult(); });
     connect(mixtureCountSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int) { refreshCurrentResult(); });
+    connect(mcaPatchStrideSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int) { refreshCurrentResult(); });
+    connect(mcaSparsitySpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int) { refreshCurrentResult(); });
+    connect(mcaIterationsSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int) { refreshCurrentResult(); });
+    connect(mcaThresholdSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { refreshCurrentResult(); });
+    connect(mcaTvGammaSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { refreshCurrentResult(); });
+    connect(mcaScalesSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int) { refreshCurrentResult(); });
+    connect(mcaAnglesSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int) { refreshCurrentResult(); });
     connect(ui->NodeWindowSpinBox, &QLineEdit::editingFinished,
             this, [this]() { refreshCurrentResult(); });
@@ -237,7 +312,7 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
         "QLabel { background: #fff3cd; border: 1px solid #e0b84f; "
         "border-radius: 3px; padding: 4px 7px; color: #5f4b00; }"));
     clutterRoiHintLabel->setVisible(
-        currentParameters().method != ClutterSuppressionMethod::BM3D);
+        isCfarMethod(currentParameters().method));
     roiLayout->addWidget(clutterRoiHintLabel);
 
     auto* roiButtonLayout = new QHBoxLayout();
@@ -279,6 +354,14 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     filterLayout->addRow(QStringLiteral("虚警概率 Pfa："), pfaSpinBox);
     filterLayout->addRow(QStringLiteral("删失比例："), censoringSpinBox);
     filterLayout->addRow(QStringLiteral("混合分量数："), mixtureCountSpinBox);
+    filterLayout->addRow(QStringLiteral("图块大小："), mcaPatchSizeSpinBox);
+    filterLayout->addRow(QStringLiteral("图块步长："), mcaPatchStrideSpinBox);
+    filterLayout->addRow(QStringLiteral("OMP 稀疏度："), mcaSparsitySpinBox);
+    filterLayout->addRow(QStringLiteral("MCA 迭代次数："), mcaIterationsSpinBox);
+    filterLayout->addRow(QStringLiteral("终止阈值："), mcaThresholdSpinBox);
+    filterLayout->addRow(QStringLiteral("TV 强度 γ："), mcaTvGammaSpinBox);
+    filterLayout->addRow(QStringLiteral("方向尺度数："), mcaScalesSpinBox);
+    filterLayout->addRow(QStringLiteral("每尺度方向数："), mcaAnglesSpinBox);
     filterLayout->addRow(recommendedParametersButton);
     ui->widget_2->hide();
 
@@ -330,7 +413,7 @@ ClutterSuppression::ClutterSuppression(QWidget* parent)
     auto* footerLayout = new QHBoxLayout();
     auto* processHint = new QLabel(
         QStringLiteral("处理在后台执行，完成后自动显示对应结果。"), this);
-    processHint->setStyleSheet(QStringLiteral("color: #666666;"));
+    processHint->setObjectName(QStringLiteral("secondaryHintLabel"));
     footerLayout->addWidget(processHint, 1);
     ui->deleteFilterButton->setMinimumWidth(120);
     ui->runFilterButton->setMinimumWidth(120);
@@ -1050,6 +1133,14 @@ ClutterSuppressionParameters ClutterSuppression::currentParameters() const
     parameters.probabilityFalseAlarm = pfaSpinBox->value();
     parameters.censoringFraction = censoringSpinBox->value();
     parameters.maximumMixtureCount = mixtureCountSpinBox->value();
+    parameters.mcaPatchSize = mcaPatchSizeSpinBox->value();
+    parameters.mcaPatchStride = mcaPatchStrideSpinBox->value();
+    parameters.mcaSparsity = mcaSparsitySpinBox->value();
+    parameters.mcaIterations = mcaIterationsSpinBox->value();
+    parameters.mcaTerminalThreshold = mcaThresholdSpinBox->value();
+    parameters.mcaTvGamma = mcaTvGammaSpinBox->value();
+    parameters.mcaCurveletScales = mcaScalesSpinBox->value();
+    parameters.mcaCurveletAngles = mcaAnglesSpinBox->value();
     return parameters;
 }
 
@@ -1078,7 +1169,7 @@ QString ClutterSuppression::currentOutputImageName() const
 {
     const ClutterSuppressionParameters parameters = currentParameters();
     QString parameterSuffix;
-    if (parameters.method != ClutterSuppressionMethod::BM3D) {
+    if (isCfarMethod(parameters.method)) {
         parameterSuffix = QString("_G%1_C%2_P%3")
             .arg(parameters.guardRadius)
             .arg(parameters.clutterRadius)
@@ -1090,7 +1181,17 @@ QString ClutterSuppression::currentOutputImageName() const
     if (parameters.method == ClutterSuppressionMethod::RmSATCFAR) {
         parameterSuffix += QString("_M%1").arg(parameters.maximumMixtureCount);
     }
-
+    if (parameters.method == ClutterSuppressionMethod::MCA) {
+        parameterSuffix = QString("_B%1_S%2_K%3_I%4_T%5_V%6_CS%7_CA%8")
+            .arg(parameters.mcaPatchSize)
+            .arg(parameters.mcaPatchStride)
+            .arg(parameters.mcaSparsity)
+            .arg(parameters.mcaIterations)
+            .arg(clutterParameterToken(parameters.mcaTerminalThreshold))
+            .arg(clutterParameterToken(parameters.mcaTvGamma))
+            .arg(parameters.mcaCurveletScales)
+            .arg(parameters.mcaCurveletAngles);
+    }
     return QFileInfo(input_image_name).completeBaseName() + "_" +
            currentMethodSuffix() + parameterSuffix + "_I" +
            inputFingerprintToken() + "_Clutter";
@@ -1197,16 +1298,50 @@ void ClutterSuppression::resetLoadedImageState()
 void ClutterSuppression::updateMethodControls()
 {
     const ClutterSuppressionMethod method = currentParameters().method;
-    const bool isCfar = method != ClutterSuppressionMethod::BM3D;
+    const bool isCfar = isCfarMethod(method);
+    const bool isMca = method == ClutterSuppressionMethod::MCA;
+    QFormLayout* form = qobject_cast<QFormLayout*>(ui->filterGroup->layout());
+    const auto setFieldVisible = [form](QWidget* field, bool visible) {
+        field->setVisible(visible);
+        if (form) {
+            if (QWidget* label = form->labelForField(field))
+                label->setVisible(visible);
+        }
+    };
+
+    setFieldVisible(guardRadiusSpinBox, isCfar);
+    setFieldVisible(clutterRadiusSpinBox, isCfar);
+    setFieldVisible(pfaSpinBox, isCfar);
+    setFieldVisible(censoringSpinBox,
+                    method == ClutterSuppressionMethod::ACCFAR);
+    setFieldVisible(mixtureCountSpinBox,
+                    method == ClutterSuppressionMethod::RmSATCFAR);
+    setFieldVisible(mcaPatchSizeSpinBox, isMca);
+    setFieldVisible(mcaPatchStrideSpinBox, isMca);
+    setFieldVisible(mcaSparsitySpinBox, isMca);
+    setFieldVisible(mcaIterationsSpinBox, isMca);
+    setFieldVisible(mcaThresholdSpinBox, isMca);
+    setFieldVisible(mcaTvGammaSpinBox, isMca);
+    setFieldVisible(mcaScalesSpinBox, isMca);
+    setFieldVisible(mcaAnglesSpinBox, isMca);
+
     guardRadiusSpinBox->setEnabled(isCfar);
     clutterRadiusSpinBox->setEnabled(isCfar);
     pfaSpinBox->setEnabled(isCfar);
     censoringSpinBox->setEnabled(method == ClutterSuppressionMethod::ACCFAR);
     mixtureCountSpinBox->setEnabled(method == ClutterSuppressionMethod::RmSATCFAR);
+    mcaPatchSizeSpinBox->setEnabled(isMca);
+    mcaPatchStrideSpinBox->setEnabled(isMca);
+    mcaSparsitySpinBox->setEnabled(isMca);
+    mcaIterationsSpinBox->setEnabled(isMca);
+    mcaThresholdSpinBox->setEnabled(isMca);
+    mcaTvGammaSpinBox->setEnabled(isMca);
+    mcaScalesSpinBox->setEnabled(isMca);
+    mcaAnglesSpinBox->setEnabled(isMca);
     if (clutterRoiHintLabel)
         clutterRoiHintLabel->setVisible(isCfar);
     if (recommendedParametersButton)
-        recommendedParametersButton->setEnabled(isCfar);
+        recommendedParametersButton->setEnabled(isCfar || isMca);
     updateMethodDescription();
 }
 
@@ -1217,6 +1352,14 @@ void ClutterSuppression::applyRecommendedParameters()
     const QSignalBlocker pfaBlocker(pfaSpinBox);
     const QSignalBlocker censorBlocker(censoringSpinBox);
     const QSignalBlocker mixtureBlocker(mixtureCountSpinBox);
+    const QSignalBlocker mcaPatchBlocker(mcaPatchSizeSpinBox);
+    const QSignalBlocker mcaStrideBlocker(mcaPatchStrideSpinBox);
+    const QSignalBlocker mcaSparsityBlocker(mcaSparsitySpinBox);
+    const QSignalBlocker mcaIterationsBlocker(mcaIterationsSpinBox);
+    const QSignalBlocker mcaThresholdBlocker(mcaThresholdSpinBox);
+    const QSignalBlocker mcaTvBlocker(mcaTvGammaSpinBox);
+    const QSignalBlocker mcaScalesBlocker(mcaScalesSpinBox);
+    const QSignalBlocker mcaAnglesBlocker(mcaAnglesSpinBox);
 
     switch (currentParameters().method)
     {
@@ -1246,6 +1389,17 @@ void ClutterSuppression::applyRecommendedParameters()
         clutterRadiusSpinBox->setValue(16);
         pfaSpinBox->setValue(0.00001);
         mixtureCountSpinBox->setValue(1);
+        break;
+    case ClutterSuppressionMethod::MCA:
+        mcaPatchSizeSpinBox->setValue(20);
+        mcaPatchStrideSpinBox->setMaximum(20);
+        mcaPatchStrideSpinBox->setValue(15);
+        mcaSparsitySpinBox->setValue(10);
+        mcaIterationsSpinBox->setValue(15);
+        mcaThresholdSpinBox->setValue(4.0);
+        mcaTvGammaSpinBox->setValue(6.0);
+        mcaScalesSpinBox->setValue(4);
+        mcaAnglesSpinBox->setValue(8);
         break;
     case ClutterSuppressionMethod::BM3D:
     default:
@@ -1293,6 +1447,18 @@ void ClutterSuppression::updateMethodDescription()
             "<b>RmSAT-CFAR</b><br>"
             "<b>适合：</b>包含多种杂波分布的复杂场景，如海陆混合区、港区和强度变化明显的海面。<br>"
             "<b>特点：</b>以 Rayleigh 混合模型描述多峰杂波，并通过局部积分统计加速；适应性强但计算量较大。");
+        break;
+    case ClutterSuppressionMethod::MCA:
+        html = QStringLiteral(
+            "<b>MCA方法</b><br>"
+            "<b>适合：</b>从结构化、方向性明显的复杂杂波中分离舰船等亮目标。<br>"
+            "<b>特点：</b>利用多尺度方向分解与稀疏字典交替分离结构目标和背景杂波，"
+            "对具有明显边缘、方向和形状特征的舰船目标保持较好，但计算量高于 CFAR。<br>"
+            "<b>推荐参数：</b>图块 20、步长 15、OMP 稀疏度 10、迭代 15 次、"
+            "终止阈值 4.0、TV 强度 6.0、尺度数 4、方向数 8。<br>"
+            "<b>参数：</b>迭代次数和方向数越大通常分离更充分但耗时更长；"
+            "终止阈值与 TV 强度越大，杂波抑制越强，也更可能削弱弱目标。"
+        );
         break;
     case ClutterSuppressionMethod::BM3D:
     default:
@@ -1498,6 +1664,14 @@ void ClutterSuppression::setFilterRunning(bool running)
     pfaSpinBox->setEnabled(!running);
     censoringSpinBox->setEnabled(!running);
     mixtureCountSpinBox->setEnabled(!running);
+    mcaPatchSizeSpinBox->setEnabled(!running);
+    mcaPatchStrideSpinBox->setEnabled(!running);
+    mcaSparsitySpinBox->setEnabled(!running);
+    mcaIterationsSpinBox->setEnabled(!running);
+    mcaThresholdSpinBox->setEnabled(!running);
+    mcaTvGammaSpinBox->setEnabled(!running);
+    mcaScalesSpinBox->setEnabled(!running);
+    mcaAnglesSpinBox->setEnabled(!running);
 
     if (!running) {
         updateMethodControls();

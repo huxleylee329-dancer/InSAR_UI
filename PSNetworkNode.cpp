@@ -240,7 +240,7 @@ void PSNetworkNode::updateLabels()
     if (m_candidatesNodeLabel) {
         if (m_candidatesData) {
             m_candidatesNodeLabel->setText(m_candidatesData->nodeName());
-            m_candidatesNodeLabel->setStyleSheet("color: black;");
+            m_candidatesNodeLabel->setStyleSheet("color: #10B981; font-weight: bold;");
         } else {
             m_candidatesNodeLabel->setText(QStringLiteral("等待输入"));
             m_candidatesNodeLabel->setStyleSheet("color: gray;");
@@ -249,7 +249,7 @@ void PSNetworkNode::updateLabels()
     if (m_slcNodeLabel) {
         if (m_slcData) {
             m_slcNodeLabel->setText(m_slcData->nodeName());
-            m_slcNodeLabel->setStyleSheet("color: black;");
+            m_slcNodeLabel->setStyleSheet("color: #10B981; font-weight: bold;");
         } else {
             m_slcNodeLabel->setText(QStringLiteral("等待输入"));
             m_slcNodeLabel->setStyleSheet("color: gray;");

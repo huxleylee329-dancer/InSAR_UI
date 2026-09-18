@@ -10,7 +10,8 @@ enum class ClutterSuppressionMethod
     ACCFAR,
     AAFCFAR,
     VICFAR,
-    RmSATCFAR
+    RmSATCFAR,
+    MCA
 };
 
 struct ClutterSuppressionParameters
@@ -21,6 +22,14 @@ struct ClutterSuppressionParameters
     double probabilityFalseAlarm = 1e-4;
     double censoringFraction = 0.20;
     int maximumMixtureCount = 3;
+    int mcaPatchSize = 20;
+    int mcaPatchStride = 15;
+    int mcaSparsity = 10;
+    int mcaIterations = 15;
+    double mcaTerminalThreshold = 4.0;
+    double mcaTvGamma = 6.0;
+    int mcaCurveletScales = 4;
+    int mcaCurveletAngles = 8;
 };
 
 struct ClutterSuppressionResult

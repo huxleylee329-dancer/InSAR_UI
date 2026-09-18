@@ -6,6 +6,49 @@ QWidget:window {
     color: #222222;
 }
 
+/* Keep every light surface paired with a dark foreground. */
+QDialog, QMessageBox,
+QScrollArea, QScrollArea > QWidget > QWidget,
+QStackedWidget, QToolBox {
+    background-color: #F9F9F9;
+    color: #222222;
+}
+
+QTextEdit, QPlainTextEdit, QTextBrowser,
+QAbstractItemView {
+    background-color: #FFFFFF;
+    color: #222222;
+    selection-background-color: #005FAC;
+    selection-color: #FFFFFF;
+}
+
+QTextBrowser#methodDescriptionBrowser {
+    background-color: #FAFAFA;
+    color: #222222;
+    border: 1px solid #D7D7D7;
+    padding: 4px;
+}
+
+QGroupBox#enlGroup,
+QGroupBox#enlGroup QLabel {
+    background-color: transparent;
+    color: #222222;
+}
+
+QCheckBox, QRadioButton {
+    color: #222222;
+}
+
+QLabel#secondaryHintLabel {
+    color: #666666;
+}
+
+QToolTip {
+    background-color: #FFFFDC;
+    color: #222222;
+    border: 1px solid #767676;
+}
+
 QMainWindow {
     background-color: #F9F9F9;
 }

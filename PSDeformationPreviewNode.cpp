@@ -116,7 +116,7 @@ void PSDeformationPreviewNode::updateLabels()
     if (m_inputNodeLabel) {
         if (m_inputData) {
             m_inputNodeLabel->setText(m_inputData->nodeName());
-            m_inputNodeLabel->setStyleSheet("color: black;");
+            m_inputNodeLabel->setStyleSheet("color: #10B981; font-weight: bold;");
             m_previewBtn->setEnabled(true);
         } else {
             m_inputNodeLabel->setText(QStringLiteral("等待输入"));

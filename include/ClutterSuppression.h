@@ -83,6 +83,14 @@ private:
     QDoubleSpinBox* pfaSpinBox;
     QDoubleSpinBox* censoringSpinBox;
     QSpinBox* mixtureCountSpinBox;
+    QSpinBox* mcaPatchSizeSpinBox = nullptr;
+    QSpinBox* mcaPatchStrideSpinBox = nullptr;
+    QSpinBox* mcaSparsitySpinBox = nullptr;
+    QSpinBox* mcaIterationsSpinBox = nullptr;
+    QDoubleSpinBox* mcaThresholdSpinBox = nullptr;
+    QDoubleSpinBox* mcaTvGammaSpinBox = nullptr;
+    QSpinBox* mcaScalesSpinBox = nullptr;
+    QSpinBox* mcaAnglesSpinBox = nullptr;
     QPushButton* recommendedParametersButton = nullptr;
     QTextBrowser* methodDescriptionBrowser;
     QLabel* clutterRoiHintLabel = nullptr;

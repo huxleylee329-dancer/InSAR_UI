@@ -163,9 +163,8 @@ SpeckleDenoise::SpeckleDenoise(QWidget* parent)
     methodDescriptionBrowser = new QTextBrowser(descriptionGroup);
     methodDescriptionBrowser->setReadOnly(true);
     methodDescriptionBrowser->setOpenExternalLinks(false);
+    methodDescriptionBrowser->setObjectName(QStringLiteral("methodDescriptionBrowser"));
     methodDescriptionBrowser->setMinimumHeight(170);
-    methodDescriptionBrowser->setStyleSheet(
-        "QTextBrowser { background: #fafafa; border: 1px solid #d7d7d7; padding: 4px; }");
     descriptionLayout->addWidget(methodDescriptionBrowser);
     connect(descriptionGroup, &QGroupBox::toggled,
             methodDescriptionBrowser, &QTextBrowser::setVisible);

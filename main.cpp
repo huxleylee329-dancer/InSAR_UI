@@ -25,6 +25,13 @@
 #include <iostream>
 #include "NodeUtils.h"
 #include "InSARLogManager.h"
+#include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
+#include <QColor>
+#include <QPalette>
+#include <QStyle>
+
 
 /**
  * @brief 初始化调试控制台并重定向标准输出/标准错误
@@ -81,6 +88,22 @@ QString loadStyleSheet(const QString &fileName)
 // Global function to apply theme
 void applyTheme(const QString &theme = "light")
 {
+    QPalette palette = qApp->style()->standardPalette();
+    if (theme.compare(QStringLiteral("dark"), Qt::CaseInsensitive) == 0) {
+        palette.setColor(QPalette::Window, QColor(QStringLiteral("#1A1C1C")));
+        palette.setColor(QPalette::WindowText, QColor(QStringLiteral("#F2F2F2")));
+        palette.setColor(QPalette::Base, QColor(QStringLiteral("#2B2B2B")));
+        palette.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#353535")));
+        palette.setColor(QPalette::Text, QColor(QStringLiteral("#FFFFFF")));
+        palette.setColor(QPalette::Button, QColor(QStringLiteral("#404040")));
+        palette.setColor(QPalette::ButtonText, QColor(QStringLiteral("#FFFFFF")));
+        palette.setColor(QPalette::ToolTipBase, QColor(QStringLiteral("#2B2B2B")));
+        palette.setColor(QPalette::ToolTipText, QColor(QStringLiteral("#FFFFFF")));
+        palette.setColor(QPalette::Highlight, QColor(QStringLiteral("#005FAC")));
+        palette.setColor(QPalette::HighlightedText, QColor(QStringLiteral("#FFFFFF")));
+    }
+    qApp->setPalette(palette);
+
     // Load base styles from Qt resources
     QString appStyle = loadStyleSheet(":/SatExplorer/stylesheets/application.qss");
     QString widgetStyle = loadStyleSheet(":/SatExplorer/stylesheets/widgets.qss");
@@ -119,6 +142,36 @@ int main(int argc, char *argv[])
                                      "qt.network.monitor.warning=false");
 
     QApplication a(argc, argv);
+    const QString applicationDirectory =
+        QCoreApplication::applicationDirPath();
+
+    const QString projDataDirectory =
+        QDir(applicationDirectory).absoluteFilePath(
+            QStringLiteral("proj/share"));
+
+    const QString projDatabase =
+        QDir(projDataDirectory).absoluteFilePath(
+            QStringLiteral("proj.db"));
+
+    if (QFileInfo::exists(projDatabase))
+    {
+        const QByteArray encodedProjPath =
+            QFile::encodeName(QDir::toNativeSeparators(projDataDirectory));
+
+        qputenv("PROJ_DATA", encodedProjPath);
+        qputenv("PROJ_LIB", encodedProjPath);
+    }
+
+    const QString gdalDataDirectory =
+        QDir(applicationDirectory).absoluteFilePath(
+            QStringLiteral("gdal-data"));
+
+    if (QDir(gdalDataDirectory).exists())
+    {
+        qputenv(
+            "GDAL_DATA",
+            QFile::encodeName(QDir::toNativeSeparators(gdalDataDirectory)));
+    }
     a.setWindowIcon(QIcon(APP_ICON));
 
     qRegisterMetaType<QList<QPersistentModelIndex>>("QList<QPersistentModelIndex>");

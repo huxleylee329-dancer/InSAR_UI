@@ -248,4 +248,16 @@ __pycache__/
 dllmain.cpp
 ReadMe.txt
 
+# Local MCA comparison build products and generated images
+/diagnostics/mca_compare/mca_compare.exe
+/diagnostics/mca_compare/mca_benchmark.exe
+/diagnostics/mca_compare/obj/
+/diagnostics/mca_compare/tmp/
+/diagnostics/mca_compare/opencv_include/
+/diagnostics/mca_compare/opencv_lib/
+/diagnostics/mca_compare/opencv_bin/
+/diagnostics/mca_compare/outputs/
+/diagnostics/mca_compare/outputs_after_removal/
+/diagnostics/mca_compare/benchmark_outputs/
+
 

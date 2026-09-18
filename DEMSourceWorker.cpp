@@ -13,11 +13,7 @@
 #include <QFileInfo>
 #include <QDateTime>
 #include <QElapsedTimer>
-#include <QNetworkAccessManager>
-#include <QNetworkRequest>
-#include <QNetworkReply>
-#include <QAuthenticator>
-#include <QEventLoop>
+
 #include <QSettings>
 #include <QStandardPaths>
 #include <QCoreApplication>
@@ -25,10 +21,11 @@
 #include <QTextStream>
 #include <QMap>
 #include <QRegularExpression>
-#include <QTimer>
 #include <cmath>
 #include <limits>
 
+#include <curl/curl.h>
+#include <memory>
 
 #ifdef _DEBUG
 #pragma comment(lib, "Dem_d.lib")
@@ -40,9 +37,98 @@
 #pragma comment(lib, "FormatConversion.lib")
 #endif
 
+#pragma comment(lib, "libcurl_imp.lib")
 
 
 using namespace std;
+namespace
+{
+
+class CurlGlobalRuntime
+{
+public:
+    CurlGlobalRuntime()
+        : result(curl_global_init(CURL_GLOBAL_DEFAULT))
+    {
+    }
+
+    ~CurlGlobalRuntime()
+    {
+        if (result == CURLE_OK)
+        {
+            curl_global_cleanup();
+        }
+    }
+
+    CURLcode result;
+};
+
+CurlGlobalRuntime& curlGlobalRuntime()
+{
+    static CurlGlobalRuntime runtime;
+    return runtime;
+}
+
+struct CurlDownloadContext
+{
+    QFile* file = nullptr;
+    DEMSourceWorker* worker = nullptr;
+};
+
+size_t curlWriteCallback(
+    char* data,
+    size_t elementSize,
+    size_t elementCount,
+    void* userData)
+{
+    auto* context =
+        static_cast<CurlDownloadContext*>(userData);
+
+    if (!context || !context->file)
+    {
+        return 0;
+    }
+
+    const size_t byteCount = elementSize * elementCount;
+
+    const qint64 written = context->file->write(
+        data,
+        static_cast<qint64>(byteCount));
+
+    if (written != static_cast<qint64>(byteCount))
+    {
+        return 0;
+    }
+
+    return byteCount;
+}
+
+int curlProgressCallback(
+    void* userData,
+    curl_off_t,
+    curl_off_t,
+    curl_off_t,
+    curl_off_t)
+{
+    auto* context =
+        static_cast<CurlDownloadContext*>(userData);
+
+    if (!context || !context->worker)
+    {
+        return 1;
+    }
+
+    if (QThread::currentThread()->isInterruptionRequested() ||
+        context->worker->isStopRequested())
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
+} // namespace
+
 using namespace cv;
 
 namespace {
@@ -240,184 +326,558 @@ DEMSourceWorker::~DEMSourceWorker()
 {
 }
 
-int DEMSourceWorker::downloadTile(const QString& url, const QString& savePath, bool requiresEarthdataAuth,
-                                  QString* failureDetail)
+int DEMSourceWorker::downloadTile(
+    const QString& url,
+    const QString& savePath,
+    bool requiresEarthdataAuth,
+    QString* failureDetail)
 {
-    QNetworkAccessManager manager;
-    QNetworkRequest request((QUrl(url)));
-    request.setAttribute(QNetworkRequest::FollowRedirectsAttribute, true);
-
-    if (requiresEarthdataAuth)
+    if (failureDetail)
     {
-        // Earthdata-protected sources need Basic authentication. Public Copernicus S3
-        // rejects this header with HTTP 400, so it must never be sent there.
-        QSettings settings(NodeUtils::getConfigPath(), QSettings::IniFormat);
-        QString encryptedUser = settings.value("DEM/EarthdataUser", "").toString();
-        QString encryptedPass = settings.value("DEM/EarthdataPassword", "").toString();
-        QString username = QString::fromUtf8(QByteArray::fromBase64(encryptedUser.toUtf8()));
-        QString password = QString::fromUtf8(QByteArray::fromBase64(encryptedPass.toUtf8()));
-
-        QByteArray authHeader = "Basic " + QByteArray(QString("%1:%2").arg(username).arg(password).toUtf8()).toBase64();
-        request.setRawHeader("Authorization", authHeader);
-
-        connect(&manager, &QNetworkAccessManager::authenticationRequired,
-                this, [username, password](QNetworkReply*, QAuthenticator* authenticator) {
-                    authenticator->setUser(username);
-                    authenticator->setPassword(password);
-                });
+        failureDetail->clear();
     }
 
-    QString tempPath = savePath + ".part";
+    CurlGlobalRuntime& runtime = curlGlobalRuntime();
+    if (runtime.result != CURLE_OK)
+    {
+        const QString message = QStringLiteral(
+            "libcurl 初始化失败：%1")
+            .arg(QString::fromLatin1(
+                curl_easy_strerror(runtime.result)));
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
+        }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            message);
+
+        return -1;
+    }
+
+    const QString caBundlePath =
+        QDir(QCoreApplication::applicationDirPath())
+            .filePath(QStringLiteral("curl-ca-bundle.crt"));
+
+    if (!QFileInfo::exists(caBundlePath))
+    {
+        const QString message = QStringLiteral(
+            "缺少 HTTPS 根证书文件：%1")
+            .arg(caBundlePath);
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
+        }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            message);
+
+        return -1;
+    }
+
+    const QString tempPath = savePath + QStringLiteral(".part");
+
+    // 删除上一次失败留下的临时文件。
+    if (QFileInfo::exists(tempPath))
+    {
+        QFile::remove(tempPath);
+    }
+
     QFile tempFile(tempPath);
     if (!tempFile.open(QIODevice::WriteOnly))
     {
-        InSARLogManager::LogError("DEMSourceWorker", QString("Failed to open temp file for write: ") + tempPath);
-        if (failureDetail) {
-            *failureDetail = QStringLiteral("无法写入临时文件：%1").arg(tempPath);
+        const QString message = QStringLiteral(
+            "无法写入临时文件：%1")
+            .arg(tempPath);
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
         }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            message);
+
         return -1;
     }
 
-    QNetworkReply* reply = manager.get(request);
+    std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> curl(
+        curl_easy_init(),
+        &curl_easy_cleanup);
 
-    constexpr int kDownloadInactivityTimeoutMs = 30000;
-    bool downloadTimedOut = false;
-    qint64 downloadedBytes = 0;
+    if (!curl)
+    {
+        tempFile.close();
+        QFile::remove(tempPath);
 
-    QTimer inactivityTimer;
-    inactivityTimer.setSingleShot(true);
-    connect(&inactivityTimer, &QTimer::timeout, reply, [&]() {
-        downloadTimedOut = true;
-        InSARLogManager::LogWarning("DEMSourceWorker", QString("Download tile stalled for %1 ms: %2")
-            .arg(kDownloadInactivityTimeoutMs).arg(url));
-        reply->abort();
-    });
+        const QString message =
+            QStringLiteral("无法创建 libcurl 请求");
 
-    // 绑定读取信号
-    connect(reply, &QNetworkReply::readyRead, this, [&]() {
-        const QByteArray data = reply->readAll();
-        if (!data.isEmpty()) {
-            tempFile.write(data);
-            inactivityTimer.start(kDownloadInactivityTimeoutMs);
-        }
-    });
-
-    QEventLoop loop;
-    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-
-    connect(reply, &QNetworkReply::downloadProgress, &inactivityTimer,
-            [&](qint64 bytesReceived, qint64) {
-        if (bytesReceived > downloadedBytes) {
-            downloadedBytes = bytesReceived;
-            inactivityTimer.start(kDownloadInactivityTimeoutMs);
-        }
-    });
-
-    QTimer cancelCheckTimer;
-    connect(&cancelCheckTimer, &QTimer::timeout, this, [&]() {
-        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+        if (failureDetail)
         {
-            InSARLogManager::LogInfo("DEMSourceWorker", "User requested stop during tile download.");
-            reply->abort();
+            *failureDetail = message;
         }
-    });
 
-    inactivityTimer.start(kDownloadInactivityTimeoutMs);
-    cancelCheckTimer.start(200); // 200ms
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            message);
 
-    loop.exec(); // 阻塞当前线程直到下载完毕、超时或被取消
+        return -1;
+    }
 
-    inactivityTimer.stop();
-    cancelCheckTimer.stop();
+    const QByteArray urlUtf8 = url.toUtf8();
+    const QByteArray caBundleUtf8 =
+        QDir::toNativeSeparators(caBundlePath).toUtf8();
 
+    QByteArray usernameUtf8;
+    QByteArray passwordUtf8;
+
+    if (requiresEarthdataAuth)
+    {
+        QSettings settings(
+            NodeUtils::getConfigPath(),
+            QSettings::IniFormat);
+
+        const QString encryptedUser =
+            settings.value(
+                QStringLiteral("DEM/EarthdataUser"),
+                QString()).toString();
+
+        const QString encryptedPassword =
+            settings.value(
+                QStringLiteral("DEM/EarthdataPassword"),
+                QString()).toString();
+
+        const QString username =
+            QString::fromUtf8(
+                QByteArray::fromBase64(
+                    encryptedUser.toUtf8()));
+
+        const QString password =
+            QString::fromUtf8(
+                QByteArray::fromBase64(
+                    encryptedPassword.toUtf8()));
+
+        if (username.isEmpty() || password.isEmpty())
+        {
+            tempFile.close();
+            QFile::remove(tempPath);
+
+            const QString message =
+                QStringLiteral("Earthdata 用户名或密码为空");
+
+            if (failureDetail)
+            {
+                *failureDetail = message;
+            }
+
+            return -1;
+        }
+
+        usernameUtf8 = username.toUtf8();
+        passwordUtf8 = password.toUtf8();
+    }
+
+    CurlDownloadContext context;
+    context.file = &tempFile;
+    context.worker = this;
+
+    char errorBuffer[CURL_ERROR_SIZE] = {};
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_ERRORBUFFER,
+        errorBuffer);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_URL,
+        urlUtf8.constData());
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_USERAGENT,
+        "SatExplorer/1.0");
+
+    // 自动处理 301、302、307、308。
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_FOLLOWLOCATION,
+        1L);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_MAXREDIRS,
+        10L);
+
+    // 多线程环境必须禁用 Unix 信号处理。
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_NOSIGNAL,
+        1L);
+
+    // 建立连接最多等待 15 秒。
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_CONNECTTIMEOUT_MS,
+        15000L);
+
+    // 连续 30 秒低于 1 字节/秒，视为下载超时。
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_LOW_SPEED_LIMIT,
+        1L);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_LOW_SPEED_TIME,
+        30L);
+
+    // 保持 HTTPS 证书验证，不能关闭。
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_SSL_VERIFYPEER,
+        1L);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_SSL_VERIFYHOST,
+        2L);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_CAINFO,
+        caBundleUtf8.constData());
+
+    // 文件写入回调。
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_WRITEFUNCTION,
+        curlWriteCallback);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_WRITEDATA,
+        &context);
+
+    // 进度回调同时用于检测取消。
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_NOPROGRESS,
+        0L);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_XFERINFOFUNCTION,
+        curlProgressCallback);
+
+    curl_easy_setopt(
+        curl.get(),
+        CURLOPT_XFERINFODATA,
+        &context);
+
+    if (requiresEarthdataAuth)
+    {
+        curl_easy_setopt(
+            curl.get(),
+            CURLOPT_HTTPAUTH,
+            CURLAUTH_BASIC);
+
+        curl_easy_setopt(
+            curl.get(),
+            CURLOPT_USERNAME,
+            usernameUtf8.constData());
+
+        curl_easy_setopt(
+            curl.get(),
+            CURLOPT_PASSWORD,
+            passwordUtf8.constData());
+    }
+
+    const CURLcode result =
+        curl_easy_perform(curl.get());
+
+    long statusCode = 0;
+    char* contentTypePointer = nullptr;
+    char* effectiveUrlPointer = nullptr;
+    curl_off_t expectedSize = -1;
+
+    curl_easy_getinfo(
+        curl.get(),
+        CURLINFO_RESPONSE_CODE,
+        &statusCode);
+
+    curl_easy_getinfo(
+        curl.get(),
+        CURLINFO_CONTENT_TYPE,
+        &contentTypePointer);
+
+    curl_easy_getinfo(
+        curl.get(),
+        CURLINFO_EFFECTIVE_URL,
+        &effectiveUrlPointer);
+
+    curl_easy_getinfo(
+        curl.get(),
+        CURLINFO_CONTENT_LENGTH_DOWNLOAD_T,
+        &expectedSize);
+
+    const QString contentType =
+        contentTypePointer
+        ? QString::fromLatin1(contentTypePointer)
+        : QString();
+
+    const QString effectiveUrl =
+        effectiveUrlPointer
+        ? QString::fromUtf8(effectiveUrlPointer)
+        : url;
+
+    tempFile.flush();
     tempFile.close();
 
-    int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    QNetworkReply::NetworkError err = reply->error();
-    QString contentType = reply->header(QNetworkRequest::ContentTypeHeader).toString();
-    QString finalUrl = reply->url().toString();
-    QString errorString = reply->errorString();
+    const bool cancelled =
+        QThread::currentThread()->isInterruptionRequested() ||
+        isStopRequested();
 
-    if (err == QNetworkReply::OperationCanceledError)
+    if (result != CURLE_OK)
     {
-        tempFile.remove();
-        reply->deleteLater();
-        if (QThread::currentThread()->isInterruptionRequested() || isStopRequested())
+        QFile::remove(tempPath);
+
+        QString curlMessage;
+
+        if (errorBuffer[0] != '\0')
         {
-            InSARLogManager::LogInfo("DEMSourceWorker", "Download canceled by user.");
+            curlMessage =
+                QString::fromLocal8Bit(errorBuffer);
         }
-        else if (downloadTimedOut)
+        else
         {
-            InSARLogManager::LogError("DEMSourceWorker", QString("Download timeout. URL: %1").arg(url));
-            if (failureDetail) {
-                *failureDetail = QStringLiteral("下载 %1 秒内无数据进度").arg(kDownloadInactivityTimeoutMs / 1000);
+            curlMessage =
+                QString::fromLatin1(
+                    curl_easy_strerror(result));
+        }
+
+        if (result == CURLE_ABORTED_BY_CALLBACK &&
+            cancelled)
+        {
+            if (failureDetail)
+            {
+                *failureDetail =
+                    QStringLiteral("下载已由用户取消");
+            }
+
+            InSARLogManager::LogInfo(
+                "DEMSourceWorker",
+                QStringLiteral(
+                    "DEM 下载已取消：%1").arg(url));
+
+            return -1;
+        }
+
+        if (result == CURLE_OPERATION_TIMEDOUT)
+        {
+            if (failureDetail)
+            {
+                *failureDetail =
+                    QStringLiteral(
+                        "连接或下载超时：%1")
+                        .arg(curlMessage);
             }
         }
         else
         {
-            InSARLogManager::LogError("DEMSourceWorker", QString("Download aborted. URL: %1").arg(url));
-            if (failureDetail) {
-                *failureDetail = QStringLiteral("下载被中止");
+            if (failureDetail)
+            {
+                *failureDetail =
+                    QStringLiteral(
+                        "HTTPS 下载失败：%1")
+                        .arg(curlMessage);
             }
         }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            QStringLiteral(
+                "libcurl 下载失败。URL：%1，"
+                "最终 URL：%2，错误：%3")
+                .arg(url, effectiveUrl, curlMessage));
+
         return -1;
     }
 
-
-    if (err == QNetworkReply::NoError && (statusCode == 200 || statusCode == 206) && !contentType.contains("html", Qt::CaseInsensitive))
+    if (statusCode == 404)
     {
-        // 增加下载内容一致性校验：确保下载文件大小与 Content-Length 一致
-        qint64 expectedSize = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong();
-        qint64 actualSize = tempFile.size();
-        if (expectedSize > 0 && actualSize != expectedSize)
-        {
-            InSARLogManager::LogError("DEMSourceWorker", QString("Downloaded file size mismatch. Expected: %1, Actual: %2").arg(expectedSize).arg(actualSize));
-            if (failureDetail) {
-                *failureDetail = QStringLiteral("下载文件大小不完整，期望 %1 字节，实际 %2 字节").arg(expectedSize).arg(actualSize);
-            }
-            tempFile.remove();
-            reply->deleteLater();
-            return -1;
-        }
-
-        if (QFile::exists(savePath))
-        {
-            QFile::remove(savePath);
-        }
-        tempFile.rename(savePath);
-        reply->deleteLater();
-        return 1;
+        QFile::remove(tempPath);
+        return 0;
     }
-    else
+
+    if (statusCode == 401 ||
+        statusCode == 403)
     {
-        tempFile.remove();
-        reply->deleteLater();
+        QFile::remove(tempPath);
 
-        if (err == QNetworkReply::ContentNotFoundError || statusCode == 404)
-        {
-            return 0; // 404 Not Found (例如海洋瓦片不存在)
-        }
-        else if (err == QNetworkReply::AuthenticationRequiredError || statusCode == 401)
-        {
-            if (failureDetail) {
-                *failureDetail = QStringLiteral("HTTP %1：%2").arg(statusCode).arg(errorString);
-            }
-            InSARLogManager::LogError("DEMSourceWorker", QString("DEM authentication failed. URL: %1, Status Code: %2, Error: %3")
-                .arg(url).arg(statusCode).arg(errorString));
-            return -1;
-        }
-        else
-        {
-            QString errorMessage = QString("Download failed: URL: %1, Final URL: %2, Status Code: %3, Content-Type: %4, Error: %5")
-                .arg(url).arg(finalUrl).arg(statusCode).arg(contentType).arg(errorString);
-            InSARLogManager::LogWarning("DEMSourceWorker", errorMessage);
+        const QString message =
+            QStringLiteral(
+                "DEM 下载认证失败，HTTP %1")
+                .arg(statusCode);
 
-            if (failureDetail) {
-                *failureDetail = QStringLiteral("HTTP %1：%2").arg(statusCode).arg(errorString);
-            }
-            return -1;
+        if (failureDetail)
+        {
+            *failureDetail = message;
         }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            QStringLiteral(
+                "%1，URL：%2")
+                .arg(message, effectiveUrl));
+
+        return -1;
     }
+
+    if (statusCode != 200 &&
+        statusCode != 206)
+    {
+        QFile::remove(tempPath);
+
+        const QString message =
+            QStringLiteral(
+                "DEM 下载失败，HTTP %1")
+                .arg(statusCode);
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
+        }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            QStringLiteral(
+                "%1，URL：%2")
+                .arg(message, effectiveUrl));
+
+        return -1;
+    }
+
+    if (contentType.contains(
+            QStringLiteral("html"),
+            Qt::CaseInsensitive))
+    {
+        QFile::remove(tempPath);
+
+        const QString message =
+            QStringLiteral(
+                "服务器返回了 HTML 页面，"
+                "没有返回 DEM 数据");
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
+        }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            QStringLiteral(
+                "%1。URL：%2")
+                .arg(message, effectiveUrl));
+
+        return -1;
+    }
+
+    const qint64 actualSize =
+        QFileInfo(tempPath).size();
+
+    if (expectedSize > 0 &&
+        actualSize !=
+            static_cast<qint64>(expectedSize))
+    {
+        QFile::remove(tempPath);
+
+        const QString message =
+            QStringLiteral(
+                "下载文件大小不完整，"
+                "期望 %1 字节，实际 %2 字节")
+                .arg(static_cast<qint64>(expectedSize))
+                .arg(actualSize);
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
+        }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            message);
+
+        return -1;
+    }
+
+    if (actualSize <= 0)
+    {
+        QFile::remove(tempPath);
+
+        if (failureDetail)
+        {
+            *failureDetail =
+                QStringLiteral(
+                    "下载结果为空文件");
+        }
+
+        return -1;
+    }
+
+    if (QFileInfo::exists(savePath) &&
+        !QFile::remove(savePath))
+    {
+        QFile::remove(tempPath);
+
+        const QString message =
+            QStringLiteral(
+                "无法覆盖已有文件：%1")
+                .arg(savePath);
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
+        }
+
+        return -1;
+    }
+
+    if (!QFile::rename(tempPath, savePath))
+    {
+        QFile::remove(tempPath);
+
+        const QString message =
+            QStringLiteral(
+                "无法将临时文件重命名为：%1")
+                .arg(savePath);
+
+        if (failureDetail)
+        {
+            *failureDetail = message;
+        }
+
+        InSARLogManager::LogError(
+            "DEMSourceWorker",
+            message);
+
+        return -1;
+    }
+
+    InSARLogManager::LogInfo(
+        "DEMSourceWorker",
+        QStringLiteral(
+            "DEM 下载成功：%1，%2 字节")
+            .arg(savePath)
+            .arg(actualSize));
+
+    return 1;
 }
 
 void DEMSourceWorker::fetch_dem(
